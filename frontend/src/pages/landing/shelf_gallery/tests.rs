@@ -11,6 +11,7 @@ fn summary(owner_user_id: i64, kind: ShelfKind) -> ShelfSummary {
         id: 7,
         owner_user_id,
         owner_username: "elena".into(),
+        owner_has_avatar: false,
         kind,
         name: "Lunch Break Picks".into(),
         visibility: Visibility::Private,
