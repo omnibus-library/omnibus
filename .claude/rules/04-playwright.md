@@ -65,7 +65,9 @@ open a shelf *there* with `selectShelfInGallery()` and assert against the
 landing surface — `lib-section-title` for the name, `shelf-facets` for
 kind/visibility/rules, `shelf-edit` for the pencil, `lib-grid` for members,
 `lib-page-error` for a failed member fetch. Shelf delete, add-books, the member
-sort control, and the Kobo badge exist **only** on `/shelves/:id`.
+sort control, and the Kobo badge exist **only** on `/shelves/:id`, where a
+viewer who can't change the shelf still gets them — greyed, not removed (see
+[04a](04a-playwright-surfaces.md)).
 
 ## Structure — one file per flow
 

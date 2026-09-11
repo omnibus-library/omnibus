@@ -12,6 +12,16 @@ tile (`components/cover_tile.rs`) is a router `Link` that also overrides
 matches nothing and times out. Use `bookTile()` from `utils/shelves.ts`
 (`getByRole("listitem", …)`) or the per-book `ebook-tile-<ident>` testid.
 
+**A shelf page's actions are greyed, not gone.** `/shelves/:id` renders Add
+books / Edit shelf / ⋯ for every viewer and marks them `aria-disabled="true"`
+when the viewer can't change the shelf, each described by the
+`shelf-lock-reason` note that says why. `toBeDisabled()` matches that — and so
+does Playwright's actionability check, so a plain `click()` on one waits out
+its timeout: assert it's inert with `click({ force: true })`, then that nothing
+opened. The suite's admin may change every shelf but a Wishlist, so its own
+Wishlist is the only locked shelf it sees; the not-your-shelf lock needs a
+second, non-admin reader on a cookie-less context (`shelf_detail.spec.ts`).
+
 **The book detail panel reads two ways.** `book_detail_scroll_stops` (off by
 default) chooses between the flow — one continuous scroller, `#bdmq-flow`,
 sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book

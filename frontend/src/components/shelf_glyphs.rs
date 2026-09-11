@@ -1,7 +1,7 @@
 //! Inline SVG marks for shelves — kind (smart cog, wishlist heart, hand-picked
-//! bookmark), visibility (padlock, people), and the "All books" stack. Shared
-//! by the landing shelves row, the shelf rail, and the shelves index so every
-//! surface marks a shelf the same way.
+//! bookmark), visibility (padlock, people), the add / remove actions, and the
+//! "All books" stack. Shared by the landing shelves row, the shelves index,
+//! and the shelf page so every surface marks a shelf the same way.
 
 use dioxus::prelude::*;
 use omnibus_shared::{ShelfKind, Visibility};
@@ -20,6 +20,30 @@ pub fn visibility_icon(visibility: Visibility) -> Element {
     match visibility {
         Visibility::Private => lock_icon(),
         Visibility::Public => people_icon(),
+    }
+}
+
+/// Plus glyph for the add actions.
+pub fn plus_icon() -> Element {
+    rsx! {
+        svg {
+            width: "14", height: "14", view_box: "0 0 24 24",
+            fill: "none", stroke: "currentColor", stroke_width: "2.2",
+            stroke_linecap: "round", stroke_linejoin: "round",
+            path { d: "M12 5v14M5 12h14" }
+        }
+    }
+}
+
+/// Cross glyph for taking a book off a shelf.
+pub fn x_icon() -> Element {
+    rsx! {
+        svg {
+            width: "14", height: "14", view_box: "0 0 24 24",
+            fill: "none", stroke: "currentColor", stroke_width: "2.2",
+            stroke_linecap: "round", stroke_linejoin: "round",
+            path { d: "M18 6 6 18M6 6l12 12" }
+        }
     }
 }
 

@@ -99,6 +99,7 @@ pub fn CoverTile(
                     r#type: "button",
                     class: "{class}",
                     "aria-pressed": if selected { "true" } else { "false" },
+                    "data-testid": "picker-tile-{uuid}",
                     onclick: move |_| on_toggle.call(()),
                     Cover { book, src_override: src, srcset, sizes: cover_sizes }
                 }

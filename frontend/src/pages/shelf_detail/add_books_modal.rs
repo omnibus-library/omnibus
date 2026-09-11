@@ -1,6 +1,6 @@
 //! The "Add books" modal: search + pick from the whole library, then append
 //! the picked uuids to a manual shelf. Shared by both the web and mobile
-//! shelf-detail surfaces.
+//! shelf-detail surfaces. A failed add keeps the picks and says why.
 
 use dioxus::prelude::*;
 use omnibus_shared::EbookMetadata;
@@ -21,6 +21,7 @@ pub(super) fn AddBooksModal(
     let mut query = use_signal(String::new);
     let picked = use_signal(Vec::<String>::new);
     let mut saving = use_signal(|| false);
+    let mut error = use_signal(|| None::<String>);
 
     use_library_fetch(server_url.clone(), library);
 
@@ -33,9 +34,11 @@ pub(super) fn AddBooksModal(
         let uuids = picked.read().clone();
         let on_added = on_added;
         saving.set(true);
+        error.set(None);
         spawn(async move {
-            if data::add_shelf_books(&url, shelf_id, uuids).await.is_ok() {
-                on_added.call(());
+            match data::add_shelf_books(&url, shelf_id, uuids).await {
+                Ok(()) => on_added.call(()),
+                Err(e) => error.set(Some(e.to_string())),
             }
             saving.set(false);
         });
@@ -59,13 +62,20 @@ pub(super) fn AddBooksModal(
             onclick: move |_| on_close.call(()),
             div {
                 class: "shelf-modal-card",
+                role: "dialog",
+                "aria-modal": "true",
+                "aria-label": "Add books",
                 onclick: move |e| e.stop_propagation(),
+                div { class: "shelf-modal-head",
+                    h2 { class: "shelf-modal-title", "Add books" }
+                }
                 div { class: "shelf-modal-body",
                     div { class: "shelf-picker-bar",
                         input {
                             r#type: "search",
                             class: "shelf-picker-search",
                             placeholder: "Search your library\u{2026}",
+                            "aria-label": "Search your library",
                             "data-testid": "add-books-search",
                             value: "{query}",
                             oninput: move |e| query.set(e.value()),
@@ -73,6 +83,14 @@ pub(super) fn AddBooksModal(
                         span { class: "mono shelf-picker-count", "Selected \u{b7} {picked_count}" }
                     }
                     LibraryPickerGrid { books: filtered, server_url: server_url.clone(), picked }
+                }
+                if let Some(msg) = error() {
+                    p {
+                        role: "alert",
+                        class: "shelf-modal-error",
+                        "data-testid": "add-books-error",
+                        "Couldn\u{2019}t add these books: {msg}"
+                    }
                 }
                 div { class: "shelf-modal-foot",
                     button {

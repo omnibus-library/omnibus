@@ -10,8 +10,8 @@ use dioxus_router::Link;
 use omnibus_shared::{ShelfKind, ShelfSummary, Visibility};
 
 use crate::components::shelf_glyphs::{cog_icon, heart_icon};
-use crate::components::shelves_rail::shows_owner_attribution;
 use crate::components::CreateShelfModal;
+use crate::shelf_access::shows_owner_attribution;
 use crate::shelf_selection::ShelfSelection;
 use crate::Route;
 
