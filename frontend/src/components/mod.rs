@@ -162,6 +162,7 @@ pub mod auth;
 // create-shelf modal it mounts. Platform-agnostic so the rail renders the
 // same under web SSR/WASM and mobile native.
 pub mod create_shelf_modal;
+pub mod shelf_glyphs;
 pub mod shelves_rail;
 pub use create_shelf_modal::CreateShelfModal;
 pub use shelves_rail::{RailActive, ShelvesRail};

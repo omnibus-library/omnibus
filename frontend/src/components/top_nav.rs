@@ -1,7 +1,7 @@
 //! Web top navigation bar.
 //!
-//! Brand link, primary section links (Library / Authors / Series), the
-//! search-palette trigger, and the user menu. Mounted by
+//! Brand link, primary section links (Library / Shelves / Authors / Series /
+//! Stats), the search-palette trigger, and the user menu. Mounted by
 //! [`crate::ScreenLayout`] on every web route except the immersive reader.
 
 use dioxus::prelude::*;
@@ -27,6 +27,7 @@ pub fn TopNav() -> Element {
     // clutters the chrome.
     let on_settings = matches!(route, Route::Settings { .. });
     let is_library = matches!(route, Route::Landing {});
+    let is_shelves = matches!(route, Route::Shelves {} | Route::ShelfDetail { .. });
     let is_authors = matches!(route, Route::AuthorsIndex {} | Route::AuthorDetail { .. });
     let is_series = matches!(route, Route::SeriesIndex {} | Route::SeriesDetail { .. });
     let is_stats = matches!(route, Route::Stats {});
@@ -45,6 +46,11 @@ pub fn TopNav() -> Element {
                     to: Route::Landing {},
                     class: if is_library { "on" } else { "" },
                     "Library"
+                }
+                Link {
+                    to: Route::Shelves {},
+                    class: if is_shelves { "on" } else { "" },
+                    "Shelves"
                 }
                 Link {
                     to: Route::AuthorsIndex {},

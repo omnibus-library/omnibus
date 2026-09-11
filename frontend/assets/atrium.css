@@ -2146,6 +2146,181 @@ a.idx-letter-on:focus-visible {
   color: var(--ink-2);
 }
 
+/* ===== Shelves index — /shelves (web) =====
+   Rides the /authors + /series chrome above (`.idx-header`, `.idx-toolbar`,
+   `.idx-btn`) and adds owner chips, owner-grouped sections, and shelf cards
+   whose member covers stand on a ledge lit in the shelf's accent. */
+.shv-head-row {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap;
+}
+.shv-new { flex-shrink: 0; }
+.shv-new-plus { font-size: 15px; line-height: 1; }
+/* `.atrium` scope: a bare class loses its margin to `.atrium p { margin: 0 }`. */
+.atrium .shv-admin-note {
+  margin-top: 10px;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; color: var(--ink-2);
+}
+
+.shv-owners {
+  margin-top: 14px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+.shv-owners > .label { margin-right: 6px; }
+.shv-owner-chip { font: inherit; font-size: 12.5px; padding: 3px 11px 3px 3px; }
+.shv-owner-chip--all { padding-left: 11px; }
+.shv-owner-chip.on { background: var(--bg-3); }
+
+/* Owner avatars: each site draws its circle and `UserAvatar` fills it. */
+.shv-chip-av,
+.shv-group-av,
+.shv-card-owner-av {
+  display: inline-grid; place-items: center; flex: none;
+  border-radius: 50%; overflow: hidden;
+  background: var(--bg-3); color: var(--ink-1);
+  font-family: var(--mono); font-weight: 600; letter-spacing: .02em;
+}
+.shv-chip-av { width: 22px; height: 22px; font-size: 8.5px; }
+.shv-group-av { width: 36px; height: 36px; font-size: 12px; border: 1px solid var(--line-2); }
+.shv-card-owner-av { width: 22px; height: 22px; font-size: 8.5px; border: 1px solid var(--line-2); }
+.shv-av { display: grid; place-items: center; width: 100%; height: 100%; }
+.shv-av-photo {
+  width: 100%; height: 100%; aspect-ratio: 1 / 1;
+  border-radius: 50%; object-fit: cover; display: block;
+}
+
+.shv-body { padding-bottom: 12px; }
+.shv-group { margin-top: 34px; }
+.shv-group-head {
+  display: flex; align-items: center; gap: 12px;
+  padding-bottom: 12px; margin-bottom: 18px;
+  border-bottom: 1px solid var(--line-2);
+}
+/* `.atrium` scope: outranks the base `.atrium h2` display size. */
+.atrium .shv-group-title { font-size: 28px; line-height: 1.05; min-width: 0; }
+.shv-group-count { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+
+.shv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 18px;
+}
+.shv-cell { display: flex; min-width: 0; }
+.shv-card {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2); border-radius: var(--r-lg);
+  overflow: hidden; color: inherit; text-decoration: none;
+  transition: border-color .15s, background .15s;
+}
+@media (hover: hover) {
+  .shv-card:hover {
+    border-color: color-mix(in oklch, var(--shelf-accent) 55%, var(--line));
+    background: var(--bg-2);
+  }
+}
+.shv-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The ledge: member covers standing on a plank lit in the shelf's accent. */
+.shv-ledge {
+  position: relative; height: 134px;
+  display: flex; align-items: flex-end; justify-content: center; gap: 8px;
+  padding: 18px 18px 14px;
+  background:
+    radial-gradient(120% 95% at 50% 115%,
+      color-mix(in oklch, var(--shelf-accent) 30%, transparent), transparent 72%),
+    var(--bg-2);
+  border-bottom: 1px solid var(--line-2);
+}
+.shv-ledge::after {
+  content: ''; position: absolute; left: 14px; right: 14px; bottom: 10px;
+  height: 4px; border-radius: 2px;
+  background: color-mix(in oklch, var(--shelf-accent) 40%, var(--bg-3));
+  box-shadow: 0 4px 10px color-mix(in oklch, black 38%, transparent);
+}
+.shv-ledge-book {
+  position: relative; z-index: 1;
+  flex: 0 1 58px; min-width: 0; aspect-ratio: 2 / 3; margin-bottom: 4px;
+  border-radius: 2px 4px 4px 2px; overflow: hidden;
+  background: var(--cover-fallback-bg);
+  box-shadow:
+    0 10px 16px color-mix(in oklch, black 42%, transparent),
+    inset 0 0 0 1px color-mix(in oklch, black 18%, transparent);
+  transition: transform .3s cubic-bezier(.2,.7,.2,1);
+}
+.shv-ledge-book img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shv-ledge-book--blank {
+  background: linear-gradient(165deg,
+    color-mix(in oklch, var(--shelf-accent) 18%, var(--bg-3)), var(--cover-fallback-bg));
+}
+/* The last book leans on its neighbour, the way it does on a shelf that isn't full. */
+.shv-ledge-book:last-child:not(:only-child) { transform: rotate(-6deg); transform-origin: 100% 100%; }
+@media (hover: hover) {
+  .shv-card:hover .shv-ledge-book { transform: translateY(-4px); }
+  .shv-card:hover .shv-ledge-book:nth-child(2) { transition-delay: .03s; }
+  .shv-card:hover .shv-ledge-book:nth-child(3) { transition-delay: .06s; }
+  .shv-card:hover .shv-ledge-book:last-child:not(:only-child) {
+    transform: translateY(-4px) rotate(-6deg); transition-delay: .09s;
+  }
+}
+@media (prefers-reduced-motion: reduce) { .shv-ledge-book { transition: none; } }
+.shv-ledge-empty {
+  position: relative; z-index: 1; align-self: center;
+  display: inline-flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 12px 18px; border: 1.5px dashed var(--line); border-radius: 10px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.shv-ledge-empty svg { color: color-mix(in oklch, var(--shelf-accent) 70%, var(--ink-2)); }
+
+.shv-card-body {
+  flex: 1 1 auto; display: flex; flex-direction: column; gap: 8px;
+  padding: 14px 16px 15px;
+}
+.shv-card-name {
+  font-family: var(--serif); font-weight: 600;
+  font-size: 22px; line-height: 1.08; letter-spacing: -0.005em;
+  color: var(--ink-0);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+.shv-card-facets { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.shv-facet {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+.shv-facet--kind { color: color-mix(in oklch, var(--shelf-accent) 78%, var(--ink-1)); }
+.shv-card-foot {
+  margin-top: auto; padding-top: 6px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 12.5px; color: var(--ink-1);
+}
+.shv-card-count { white-space: nowrap; }
+.shv-card-owner {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-width: 0; color: var(--ink-2);
+}
+.shv-card-owner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.shv-empty {
+  margin-top: 36px; padding: 52px 24px;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  text-align: center;
+  border: 1.5px dashed var(--line); border-radius: var(--r-lg);
+}
+.shv-empty-msg { max-width: 440px; font-size: 14px; color: var(--ink-2); }
+
+@media (max-width: 600px) {
+  .shv-grid { grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 12px; }
+  .shv-ledge { height: 112px; gap: 5px; padding: 14px 12px 12px; }
+  .shv-ledge-book { flex-basis: 42px; }
+  .shv-card-body { padding: 12px 12px 13px; }
+  .shv-card-name { font-size: 19px; }
+}
+
 
 /* ── F5.1 Metadata edit form ────────────────────────────────────────
  *
@@ -11804,6 +11979,7 @@ html {
   background: transparent; border: 0; cursor: pointer; padding: 0;
 }
 .lmq-slink:hover { color: var(--accent); }
+.lmq-slab-acts { display: inline-flex; align-items: baseline; gap: 20px; }
 
 .lmq-shwrap { position: relative; display: flex; align-items: stretch; }
 /* The peek needs room INSIDE the scroller: `overflow-x: auto` clips the block

@@ -56,17 +56,16 @@ can reach and hides the fact that it is unreachable.
 (`components/back_link.rs`, #2291); on web the top nav is the way back and
 those testids do not exist. `tags-back` went with the tag cloud page (#2157).
 
-**`/shelves` and `/shelves/:id` are mobile-only.** On web the landing shelf
-gallery filters the book list in place and never navigates; the only `Link`s to
-`Route::ShelfDetail` live in `ShelvesRail`, which is mounted on that page and
-nowhere else. Open a shelf with `selectShelfInGallery()` from
-`utils/shelves.ts`, and assert against the landing surface — `lib-section-title`
-for the name, `shelf-facets` for kind/visibility/rules, `shelf-edit` for the
-pencil, `lib-grid` for members, `lib-page-error` for a failed member fetch.
-Shelf delete, add-books, the member sort control, and the Kobo badge exist
-**only** on `/shelves/:id`, so they have no web E2E coverage — assert those
-contracts on the wire (`expectMutation`) or leave them to the Rust tests until
-the page grows a web entry point.
+**A shelf opens two ways on web, and they are different surfaces.** The top
+nav's Shelves link reaches the `/shelves` index, whose cards
+(`shelf-card-<id>`) navigate to `/shelves/:id` — use `openShelfFromIndex()`
+from `utils/shelves.ts`, never a bare `page.goto` to an id. The landing shelf
+gallery is the other: it filters the book list in place and never navigates, so
+open a shelf *there* with `selectShelfInGallery()` and assert against the
+landing surface — `lib-section-title` for the name, `shelf-facets` for
+kind/visibility/rules, `shelf-edit` for the pencil, `lib-grid` for members,
+`lib-page-error` for a failed member fetch. Shelf delete, add-books, the member
+sort control, and the Kobo badge exist **only** on `/shelves/:id`.
 
 ## Structure — one file per flow
 

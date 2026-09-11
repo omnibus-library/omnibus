@@ -1,15 +1,19 @@
 //! The shelves row below the stack, drawn text first: names as type on a
 //! hairline rule with up to three member covers peeking in above the name on
 //! hover, which costs ~110px instead of the 170px the cover-mosaic tiles took.
-//! Selecting filters the landing book list in place; nothing here navigates.
-//! Horizontal paging (the `‹`/`›` arrows) is driven by `marquee.js`.
+//! Selecting filters the landing book list in place; only the slab's "All
+//! shelves" link leaves, for the full `/shelves` index. Horizontal paging (the
+//! `‹`/`›` arrows) is driven by `marquee.js`.
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 use omnibus_shared::{ShelfKind, ShelfSummary, Visibility};
 
-use crate::components::shelves_rail::{cog_icon, heart_icon, shows_owner_attribution};
+use crate::components::shelf_glyphs::{cog_icon, heart_icon};
+use crate::components::shelves_rail::shows_owner_attribution;
 use crate::components::CreateShelfModal;
 use crate::shelf_selection::ShelfSelection;
+use crate::Route;
 
 /// How many member covers peek in above a shelf name on hover. Three reads as
 /// a hint of the shelf without becoming a mosaic again.
@@ -114,12 +118,20 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
             aria_label: "Shelves",
             div { class: "lmq-slab",
                 span { class: "k", "{slab_line(!all_active)}" }
-                button {
-                    r#type: "button",
-                    class: "lmq-slink",
-                    "data-testid": "new-shelf",
-                    onclick: move |_| show_create.set(true),
-                    "\u{FF0B} New shelf"
+                div { class: "lmq-slab-acts",
+                    button {
+                        r#type: "button",
+                        class: "lmq-slink",
+                        "data-testid": "new-shelf",
+                        onclick: move |_| show_create.set(true),
+                        "\u{FF0B} New shelf"
+                    }
+                    Link {
+                        to: Route::Shelves {},
+                        class: "lmq-slink",
+                        "data-testid": "gallery-all-shelves",
+                        "All shelves \u{2192}"
+                    }
                 }
             }
             div { class: "lmq-shwrap",
