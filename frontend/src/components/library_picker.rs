@@ -1,9 +1,8 @@
 //! Shared "pick books from the whole library" surface: the fetch-on-mount
 //! hook, the substring filter, and the picker itself — a searchable card grid
-//! where every book carries its title, author and format, books the shelf
-//! already holds are marked and unselectable, and the picks so far sit in a
-//! tray above the list. Used by the create-shelf modal's hand-picked body and
-//! the shelf page's "Add books" modal.
+//! where every book carries its title, author and format, and books the shelf
+//! already holds are marked and unselectable. Used by the create-shelf modal's
+//! hand-picked body and the shelf page's "Add books" modal.
 
 use dioxus::prelude::*;
 use omnibus_shared::EbookMetadata;
@@ -79,9 +78,10 @@ fn toggled(list: &[String], uuid: &str) -> Vec<String> {
     next
 }
 
-/// The line above the grid: how much of the library is in view, and how much
-/// of it is picked.
-fn status_line(total: usize, matched: usize, shown: usize, picked: usize) -> String {
+/// The line above the grid: how much of the library is in view. The count of
+/// what's picked belongs to the host modal's submit button, which is the one
+/// place it's reported.
+fn status_line(total: usize, matched: usize, shown: usize) -> String {
     let mut line = if matched == total {
         plural(total, "book", "books")
     } else {
@@ -89,9 +89,6 @@ fn status_line(total: usize, matched: usize, shown: usize, picked: usize) -> Str
     };
     if shown < matched {
         line.push_str(&format!(" \u{b7} showing the first {shown}"));
-    }
-    if picked > 0 {
-        line.push_str(&format!(" \u{b7} {picked} picked"));
     }
     line
 }
@@ -128,7 +125,7 @@ pub fn LibraryPicker(
     let ctx = CardCtx {
         server_url,
         already,
-        picked_now: picked_now.clone(),
+        picked_now,
         picked,
         bust,
     };
@@ -163,10 +160,9 @@ pub fn LibraryPicker(
                     }
                 }
                 p { class: "pick-status", role: "status", "data-testid": "picker-status",
-                    "{status_line(total, matched, shown.len(), picked_now.len())}"
+                    "{status_line(total, matched, shown.len())}"
                 }
             }
-            {tray(&books, &picked_now, picked)}
             div { class: "pick-body",
                 {body(&shown, total, &text, loading, &ctx)}
             }
@@ -287,44 +283,6 @@ fn card(book: &EbookMetadata, ctx: &CardCtx) -> Element {
     }
 }
 
-/// The picks so far, each chip unpicking itself — so a reader can see and undo
-/// a selection without hunting for it back in the grid.
-fn tray(books: &[EbookMetadata], picked_now: &[String], picked: Signal<Vec<String>>) -> Element {
-    if picked_now.is_empty() {
-        return rsx! {};
-    }
-    rsx! {
-        div { class: "pick-tray", "data-testid": "picker-tray",
-            span { class: "pick-tray-label", "Picked" }
-            for uuid in picked_now.iter().cloned() {
-                {tray_chip(books, uuid, picked)}
-            }
-        }
-    }
-}
-
-/// One tray chip: the book's title, and a cross that unpicks it.
-fn tray_chip(books: &[EbookMetadata], uuid: String, mut picked: Signal<Vec<String>>) -> Element {
-    let label = books
-        .iter()
-        .find(|b| b.unique_identifier.as_deref() == Some(uuid.as_str()))
-        .map(|b| fallback_title(b.title.as_deref(), &b.filename))
-        .unwrap_or_else(|| "This book".to_string());
-    let key = uuid.clone();
-    rsx! {
-        button {
-            key: "{key}",
-            r#type: "button",
-            class: "pick-chip",
-            "data-testid": "picker-chip-{key}",
-            "aria-label": "Unpick {label}",
-            onclick: move |_| toggle_picked(&mut picked, &uuid),
-            span { "{label}" }
-            {x_icon()}
-        }
-    }
-}
-
 fn search_icon() -> Element {
     rsx! {
         svg {
@@ -435,18 +393,14 @@ mod tests {
     #[test]
     fn status_line_counts_the_whole_library_and_says_when_it_truncated() {
         assert_eq!(
-            status_line(127, 127, 120, 0),
+            status_line(127, 127, 120),
             "127 books \u{b7} showing the first 120"
         );
-        assert_eq!(status_line(1, 1, 1, 0), "1 book");
+        assert_eq!(status_line(1, 1, 1), "1 book");
     }
 
     #[test]
-    fn status_line_reports_matches_and_picks() {
-        assert_eq!(status_line(127, 12, 12, 0), "12 of 127 books");
-        assert_eq!(
-            status_line(127, 12, 12, 2),
-            "12 of 127 books \u{b7} 2 picked"
-        );
+    fn status_line_reports_how_many_matched() {
+        assert_eq!(status_line(127, 12, 12), "12 of 127 books");
     }
 }

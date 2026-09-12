@@ -1,6 +1,6 @@
 //! The "Add books" modal: search the library, pick books, and append them to
 //! a hand-picked shelf. It names the shelf it is adding to, marks the books
-//! already on it, keeps the picks in view, and on a failure keeps everything
+//! already on it, says how many it will add, and on a failure keeps everything
 //! and says why. Shared by the web and mobile shelf-detail surfaces.
 
 use dioxus::prelude::*;
@@ -107,13 +107,6 @@ pub(super) fn AddBooksModal(
                 }
 
                 div { class: "pick-foot",
-                    span { class: "pick-foot-count", "data-testid": "add-books-count",
-                        if count == 0 {
-                            "Nothing picked yet"
-                        } else {
-                            "{count} picked"
-                        }
-                    }
                     button {
                         r#type: "button",
                         class: "btn shelf-btn-ghost",

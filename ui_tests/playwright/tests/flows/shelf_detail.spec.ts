@@ -184,8 +184,9 @@ test("adds a book to a hand-picked shelf", async ({ page, request }) => {
   await expect(tile).toContainText("Alpha");
   expect((await tile.boundingBox())?.width ?? 0).toBeGreaterThan(40);
   await tile.click();
-  // What you picked stays in view, and the button says what it will do.
-  await expect(modal.getByTestId("picker-tray")).toContainText("Alpha");
+  // The card reads as picked, and the submit button — the one place the count
+  // is reported — says what it will do.
+  await expect(tile).toHaveAttribute("aria-pressed", "true");
   await expect(modal.getByTestId("add-books-submit")).toHaveText("Add 1 book");
   await expectMutation(
     page,
@@ -251,7 +252,7 @@ test("marks a book already on the shelf instead of offering it again", async ({
   await expect(tile).toBeDisabled();
   // Inert, not merely styled: a member can't be picked into a second copy.
   await tile.click({ force: true });
-  await expect(modal.getByTestId("picker-tray")).toHaveCount(0);
+  await expect(modal.getByTestId("add-books-submit")).toHaveText("Add books");
   await expect(modal.getByTestId("add-books-submit")).toBeDisabled();
 });
 
