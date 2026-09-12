@@ -181,10 +181,11 @@ fn sort_group(shelves: &mut [ShelfSummary], sort: IndexSort) {
 }
 
 /// The header's census: how many shelves, how many are the viewer's, and how
-/// many other readers the rest come from.
+/// many other readers the rest come from. A count line, not a sentence — no
+/// trailing stop, and no flourish on top of the numbers.
 pub fn census(all: &[ShelfSummary], viewer_id: Option<i64>) -> String {
     if all.is_empty() {
-        return "No shelves yet.".into();
+        return "No shelves yet".into();
     }
     let total = plural(all.len(), "shelf", "shelves");
     let yours = all
@@ -197,8 +198,9 @@ pub fn census(all: &[ShelfSummary], viewer_id: Option<i64>) -> String {
         .filter(|o| !o.is_viewer)
         .count();
     match (yours, others) {
-        (_, 0) => format!("{total}, all yours."),
-        (0, _) => format!("{total} from {}.", plural(readers, "reader", "readers")),
+        // Every shelf is the viewer's, and the groups already say so.
+        (_, 0) => total,
+        (0, _) => format!("{total} from {}", plural(readers, "reader", "readers")),
         _ => format!(
             "{total} \u{b7} {yours} yours \u{b7} {others} from {}",
             plural(readers, "other reader", "other readers")

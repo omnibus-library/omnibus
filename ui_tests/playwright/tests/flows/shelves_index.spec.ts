@@ -48,7 +48,7 @@ test("renders the shelves index layout", async ({ page }) => {
 
   await expectNavVisible(page);
   await expect(
-    page.getByRole("heading", { level: 1, name: "On shelves." }),
+    page.getByRole("heading", { level: 1, name: "Shelves" }),
   ).toBeVisible();
   await expect(page.getByTestId("shelves-census")).toBeVisible();
   await expect(page.getByTestId("new-shelf")).toBeVisible();

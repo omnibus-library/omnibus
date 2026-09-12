@@ -147,19 +147,14 @@ struct HeaderView {
     admin_note: bool,
 }
 
-/// Kicker, hero title, census line, and the primary New shelf action.
+/// Hero title, census line, and the primary New shelf action.
 #[component]
 fn ShelvesIndexHeader(view: HeaderView, on_new: EventHandler<()>) -> Element {
     rsx! {
         div { class: "idx-header shv-header",
             div { class: "shv-head-row",
                 div {
-                    span { class: "label", "Library lens" }
-                    h1 { class: "disc-hero-title",
-                        "On "
-                        em { "shelves" }
-                        "."
-                    }
+                    h1 { class: "disc-hero-title", "Shelves" }
                     p { class: "idx-subtitle", "data-testid": "shelves-census", "{view.census}" }
                     if view.admin_note {
                         p { class: "shv-admin-note", "data-testid": "shelves-admin-note",

@@ -155,13 +155,15 @@ fn census_splits_the_viewers_shelves_from_other_readers() {
 }
 
 #[test]
-fn census_reads_all_yours_when_nobody_else_shares_a_shelf() {
+fn census_reports_just_the_count_when_every_shelf_is_the_viewers() {
     let mine: Vec<ShelfSummary> = library()
         .into_iter()
         .filter(|s| s.owner_user_id == ME.0)
         .collect();
-    assert_eq!(census(&mine, VIEWER), "3 shelves, all yours.");
-    assert_eq!(census(&mine[..1], VIEWER), "1 shelf, all yours.");
+    // The group headings below already say whose these are, so the count
+    // stands on its own rather than adding "all yours".
+    assert_eq!(census(&mine, VIEWER), "3 shelves");
+    assert_eq!(census(&mine[..1], VIEWER), "1 shelf");
 }
 
 #[test]
@@ -170,8 +172,8 @@ fn census_counts_other_readers_when_the_viewer_has_none() {
         .into_iter()
         .filter(|s| s.owner_user_id == ALICE.0)
         .collect();
-    assert_eq!(census(&theirs, VIEWER), "2 shelves from 1 reader.");
-    assert_eq!(census(&[], VIEWER), "No shelves yet.");
+    assert_eq!(census(&theirs, VIEWER), "2 shelves from 1 reader");
+    assert_eq!(census(&[], VIEWER), "No shelves yet");
 }
 
 #[test]
