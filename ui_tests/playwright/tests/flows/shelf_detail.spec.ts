@@ -172,7 +172,12 @@ test("adds a book to a hand-picked shelf", async ({ page, request }) => {
   await addButton(page).click();
   const modal = page.getByTestId("add-books-modal");
   await modal.getByTestId("add-books-search").fill("Alpha");
-  await modal.getByTestId(`picker-tile-${alpha}`).click();
+  const tile = modal.getByTestId(`picker-tile-${alpha}`);
+  // A picker tile is a <button>, which shrink-wraps instead of stretching to
+  // its grid track — so it can be clickable and still render as nothing. The
+  // whole picker was invisible that way; assert a real box, not just a hit.
+  expect((await tile.boundingBox())?.width ?? 0).toBeGreaterThan(40);
+  await tile.click();
   await expectMutation(
     page,
     {

@@ -7814,7 +7814,12 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .shelf-picker-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 
 .shelf-cover-tile { display: block; }
+/* `width: 100%` is load-bearing: a <button> shrink-wraps rather than stretching
+   to its grid track, and the cover inside is absolutely positioned with only an
+   aspect ratio to size from — so without it every picker tile collapsed to its
+   4px of border and the grid rendered empty. */
 .shelf-cover-tile--selectable {
+  width: 100%;
   padding: 0; border: 2px solid transparent; border-radius: 10px;
   background: transparent; cursor: pointer; transition: border-color .12s;
 }
