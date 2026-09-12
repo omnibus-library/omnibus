@@ -1,71 +1,277 @@
-//! Shared "pick books from the whole library" surface: the fetch-on-mount
-//! hook, the substring filter, and the picker itself — a searchable card grid
+//! Shared "pick books from the whole library" surface: a searchable card grid
 //! where every book carries its title, author and format, and books the shelf
 //! already holds are marked and unselectable. Used by the create-shelf modal's
 //! hand-picked body and the shelf page's "Add books" modal.
+//!
+//! The grid is server-backed, mirroring the landing grid's split: an empty
+//! query browses keyset pages that append as you scroll, and a typed query
+//! goes to FTS5 through [`crate::data::search_ebooks`]. Nothing is ever
+//! dropped once fetched — only the fetch is bounded.
 
+use std::collections::HashSet;
+
+use dioxus::core::Task;
 use dioxus::prelude::*;
-use omnibus_shared::EbookMetadata;
+use omnibus_shared::{EbookMetadata, SortDir, SortKey, ViewFilters};
 
 use crate::components::atrium::{fallback_title, Cover};
 use crate::components::cover_tile::thumb_srcs;
 use crate::contexts::{cover_bust_for, CoverCacheBust};
 use crate::data;
 use crate::focus_after_paint::focus_after_paint;
+use crate::platform_sleep::async_sleep_ms;
 
-/// How many matches the grid draws at once. A library runs to thousands of
-/// rows; past a screenful a reader narrows with the search box rather than
-/// scrolling, and every extra card is DOM the modal pays for.
-const RENDER_CAP: usize = 120;
+/// One keyset page, matching the landing grid's page size — the picker scrolls
+/// the same library through the same endpoint, so a different size here would
+/// only make the two surfaces disagree about how much a "page" is.
+const PAGE_SIZE: i64 = 100;
 
-/// Fetches the full library once on mount, for a picker's search/select UI.
-/// `loading` starts true and flips once the fetch settles either way, so the
-/// picker can say "loading" instead of "your library is empty".
-pub fn use_library_fetch(
-    server_url: String,
-    mut library: Signal<Vec<EbookMetadata>>,
-    mut loading: Signal<bool>,
-) {
+/// How long a typed query sits still before it reaches FTS5. Matches the
+/// command palette, which searches the same index.
+const DEBOUNCE_MS: u32 = 150;
+
+/// The picker's server feed: the rows it has, how to ask for more, and the
+/// lifecycle flags the grid renders from. `Copy` (Dioxus signals), so it is
+/// passed by value into effects and helpers.
+#[derive(Clone, Copy)]
+struct PickerFeed {
+    books: Signal<Vec<EbookMetadata>>,
+    /// `Some` only while browsing — a search returns one capped result set
+    /// with no cursor, so there is nothing to page through.
+    next_cursor: Signal<Option<String>>,
+    /// The server's own count: library size when browsing, true FTS hit count
+    /// when searching. `None` when the server didn't say.
+    total: Signal<Option<i64>>,
+    loading: Signal<bool>,
+    loading_more: Signal<bool>,
+    errored: Signal<bool>,
+    /// Bumped on every query change; an in-flight fetch whose epoch is stale
+    /// drops its result rather than splicing it onto a newer list.
+    epoch: Signal<u32>,
+    /// Handle of the debounce+fetch task, cancelled on the next keystroke.
+    task: Signal<Option<Task>>,
+    /// Bumped to ask for the next page.
+    want_more: Signal<u32>,
+}
+
+/// Wire the picker's two fetch effects: the query-driven page-1/search fetch,
+/// and the append-the-next-page fetch. Returns the feed the grid reads.
+fn use_picker_feed(server_url: String, query: Signal<String>) -> PickerFeed {
+    let feed = PickerFeed {
+        books: use_signal(Vec::<EbookMetadata>::new),
+        next_cursor: use_signal(|| None::<String>),
+        total: use_signal(|| None::<i64>),
+        loading: use_signal(|| true),
+        loading_more: use_signal(|| false),
+        errored: use_signal(|| false),
+        epoch: use_signal(|| 0u32),
+        task: use_signal(|| None::<Task>),
+        want_more: use_signal(|| 0u32),
+    };
+    use_query_effect(server_url.clone(), query, feed);
+    use_load_more_effect(server_url, feed);
+    use_load_more_observer(feed.next_cursor);
+    feed
+}
+
+/// Refetch from scratch whenever the query settles: keyset page 1 when it is
+/// empty, FTS5 otherwise.
+fn use_query_effect(server_url: String, query: Signal<String>, feed: PickerFeed) {
+    let PickerFeed {
+        mut loading,
+        mut errored,
+        mut epoch,
+        mut task,
+        ..
+    } = feed;
     use_effect(move || {
+        let q = query();
+        // One task at a time: a keystroke cancels the pending sleep and any
+        // request it had already issued.
+        if let Some(prev) = task.write().take() {
+            prev.cancel();
+        }
+        let mine = {
+            epoch.with_mut(|e| *e += 1);
+            *epoch.peek()
+        };
+        // Flip to loading synchronously so the grid shows a state rather than
+        // a blank gap while the debounce runs.
+        loading.set(true);
+        errored.set(false);
         let url = server_url.clone();
-        spawn(async move {
-            if let Ok(lib) = data::get_ebooks(&url).await {
-                library.set(lib.books);
+        let handle = spawn(async move {
+            let trimmed = q.trim().to_string();
+            // Only a typed query pays the debounce — clearing the box should
+            // put the library back immediately.
+            if !trimmed.is_empty() {
+                async_sleep_ms(DEBOUNCE_MS).await;
             }
-            loading.set(false);
+            if trimmed.is_empty() {
+                let result = browse_page(&url, None).await;
+                if *epoch.peek() == mine {
+                    apply_browse(feed, result);
+                }
+            } else {
+                let result = data::search_ebooks(&url, &trimmed).await;
+                if *epoch.peek() == mine {
+                    apply_search(feed, result);
+                }
+            }
+            if *epoch.peek() == mine {
+                loading.set(false);
+            }
+        });
+        task.set(Some(handle));
+    });
+}
+
+/// Append the next keyset page when `want_more` bumps. Browsing only — a
+/// search has no cursor.
+fn use_load_more_effect(server_url: String, feed: PickerFeed) {
+    let PickerFeed {
+        mut books,
+        mut next_cursor,
+        mut loading_more,
+        mut errored,
+        epoch,
+        want_more,
+        ..
+    } = feed;
+    use_effect(move || {
+        let trigger = want_more();
+        if trigger == 0 || *loading_more.peek() || next_cursor.peek().is_none() {
+            return;
+        }
+        let cursor = next_cursor.peek().clone();
+        let mine = *epoch.peek();
+        let url = server_url.clone();
+        loading_more.set(true);
+        spawn(async move {
+            let result = browse_page(&url, cursor).await;
+            // Drop the append if a new query superseded us mid-flight —
+            // otherwise an old result stream is spliced onto the new list and
+            // overwrites its cursor.
+            if *epoch.peek() != mine {
+                loading_more.set(false);
+                return;
+            }
+            match result {
+                Ok(page) => {
+                    books.with_mut(|b| b.extend(page.books));
+                    next_cursor.set(page.next_cursor);
+                }
+                Err(_) => errored.set(true),
+            }
+            loading_more.set(false);
         });
     });
 }
 
-/// Library books whose title (or filename fallback) or any credited name
-/// contains `query`, case-insensitively; an empty query matches everything.
-pub fn filter_library<'a>(books: &'a [EbookMetadata], query: &str) -> Vec<&'a EbookMetadata> {
-    let q = query.trim().to_lowercase();
-    books
-        .iter()
-        .filter(|b| q.is_empty() || haystack(b).contains(&q))
-        .collect()
+/// One browse page. The picker browses title-ascending with no facet filters:
+/// it is a find-this-book surface, not the reader's configured library view.
+async fn browse_page(
+    server_url: &str,
+    cursor: Option<String>,
+) -> Result<omnibus_shared::LibraryPage, data::DataError> {
+    data::get_ebooks_page(
+        server_url,
+        SortKey::Title,
+        SortDir::Asc,
+        ViewFilters::default(),
+        Vec::new(),
+        cursor,
+        PAGE_SIZE,
+    )
+    .await
 }
 
-/// What the filter matches on. Authors are in it because a reader typing
-/// "austen" means the author, and a title-only filter answers "no books match".
-fn haystack(book: &EbookMetadata) -> String {
-    let mut hay = fallback_title(book.title.as_deref(), &book.filename).to_lowercase();
-    for creator in &book.creators {
-        hay.push(' ');
-        hay.push_str(&creator.name.to_lowercase());
+/// Apply a browse page-1 result.
+fn apply_browse(feed: PickerFeed, result: Result<omnibus_shared::LibraryPage, data::DataError>) {
+    let PickerFeed {
+        mut books,
+        mut next_cursor,
+        mut total,
+        mut errored,
+        ..
+    } = feed;
+    match result {
+        Ok(page) => {
+            next_cursor.set(page.next_cursor);
+            total.set(page.total);
+            books.set(page.books);
+            errored.set(false);
+        }
+        Err(_) => {
+            books.set(Vec::new());
+            next_cursor.set(None);
+            total.set(None);
+            errored.set(true);
+        }
     }
-    hay
 }
 
-/// Toggle a book `uuid` in the picker's selection (remove if present, else append).
-pub fn toggle_picked(picked: &mut Signal<Vec<String>>, uuid: &str) {
-    picked.with_mut(|v| *v = toggled(v, uuid));
+/// Apply a search result: one capped set, no cursor, `total` carrying the true
+/// hit count from the single FTS5 pass.
+fn apply_search(feed: PickerFeed, result: Result<omnibus_shared::EbookLibrary, data::DataError>) {
+    let PickerFeed {
+        mut books,
+        mut next_cursor,
+        mut total,
+        mut errored,
+        ..
+    } = feed;
+    next_cursor.set(None);
+    match result {
+        Ok(lib) => {
+            total.set(lib.total);
+            books.set(lib.books);
+            errored.set(false);
+        }
+        Err(_) => {
+            books.set(Vec::new());
+            total.set(None);
+            errored.set(true);
+        }
+    }
 }
 
-/// `uuid` dropped when `list` already holds it, appended otherwise — the rule
-/// [`toggle_picked`] applies, split out so it is testable without a Dioxus
-/// runtime (`Signal::new` panics outside one).
+/// Auto-bump the load-more sentinel as it nears the picker's scroll area.
+///
+/// The hook is declared unconditionally on every target and only its *body*
+/// is gated, so SSR and the first WASM render agree on hook order (rule 07).
+/// The observer is keyed to its own global and testid rather than sharing the
+/// landing grid's — two observers on one handle would disconnect each other.
+fn use_load_more_observer(next_cursor: Signal<Option<String>>) {
+    use_effect(move || {
+        // Re-arm after each append: the sentinel is replaced, so the old
+        // observation is stale.
+        let _rearm_on = next_cursor.read().is_some();
+        #[cfg(feature = "web")]
+        {
+            let _ = dioxus::document::eval(
+                r#"
+                if (window.__omnibusPickerMoreObs) {
+                    window.__omnibusPickerMoreObs.disconnect();
+                    window.__omnibusPickerMoreObs = null;
+                }
+                const el = document.querySelector('[data-testid="picker-load-more"]');
+                if (el) {
+                    const obs = new IntersectionObserver((entries) => {
+                        if (entries.some((e) => e.isIntersecting)) { el.click(); }
+                    }, { root: document.querySelector('.pick-body'), rootMargin: "300px" });
+                    obs.observe(el);
+                    window.__omnibusPickerMoreObs = obs;
+                }
+                "#,
+            );
+        }
+    });
+}
+
+/// `uuid` dropped when `list` already holds it, appended otherwise. Split out
+/// so the rule is testable without a Dioxus runtime (`Signal::new` panics
+/// outside one).
 fn toggled(list: &[String], uuid: &str) -> Vec<String> {
     let mut next: Vec<String> = list
         .iter()
@@ -78,17 +284,43 @@ fn toggled(list: &[String], uuid: &str) -> Vec<String> {
     next
 }
 
-/// The line above the grid: how much of the library is in view. The count of
-/// what's picked belongs to the host modal's submit button, which is the one
-/// place it's reported.
-fn status_line(total: usize, matched: usize, shown: usize) -> String {
-    let mut line = if matched == total {
-        plural(total, "book", "books")
+/// The same rule over the picked books' metadata, which the picker keeps so
+/// the "Picked" view can render a book that the current result set no longer
+/// contains — pick it under one search, review it under another.
+fn toggled_meta(list: &[EbookMetadata], book: &EbookMetadata, uuid: &str) -> Vec<EbookMetadata> {
+    let mut next: Vec<EbookMetadata> = list
+        .iter()
+        .filter(|b| b.unique_identifier.as_deref() != Some(uuid))
+        .cloned()
+        .collect();
+    if next.len() == list.len() {
+        next.push(book.clone());
+    }
+    next
+}
+
+/// The line above the grid: what the server holds, and how much of it is
+/// loaded. The count of what's *picked* belongs to the host modal's submit
+/// button, which is the one place it's reported.
+fn status_line(searching: bool, shown: usize, total: Option<i64>) -> String {
+    let (one, many) = if searching {
+        ("match", "matches")
     } else {
-        format!("{matched} of {}", plural(total, "book", "books"))
+        ("book", "books")
     };
-    if shown < matched {
-        line.push_str(&format!(" \u{b7} showing the first {shown}"));
+    let Some(t) = total.map(|t| t.max(0) as usize) else {
+        // The server didn't say — report only what we can see rather than
+        // implying the grid is the whole library.
+        return plural(shown, one, many);
+    };
+    if t <= shown {
+        return plural(t, one, many);
+    }
+    let mut line = format!("Showing {shown} of {}", plural(t, one, many));
+    // A search is capped server-side with no cursor, so scrolling can't reach
+    // the rest — say the thing that can.
+    if searching {
+        line.push_str(" \u{b7} narrow your search");
     }
     line
 }
@@ -106,65 +338,131 @@ fn plural(n: usize, one: &str, many: &str) -> String {
 /// host modal; `autofocus` puts the caret in it when the modal opens.
 #[component]
 pub fn LibraryPicker(
-    books: Vec<EbookMetadata>,
     server_url: String,
     picked: Signal<Vec<String>>,
     #[props(default)] already: Vec<String>,
-    #[props(default)] loading: bool,
     search_testid: String,
     #[props(default)] autofocus: bool,
 ) -> Element {
-    let mut query = use_signal(String::new);
+    let query = use_signal(String::new);
+    let mut show_picked = use_signal(|| false);
+    let picked_meta = use_signal(Vec::<EbookMetadata>::new);
     let bust = use_context::<CoverCacheBust>();
+    let feed = use_picker_feed(server_url.clone(), query);
+
     let text = query();
-    let matches = filter_library(&books, &text);
-    let total = books.len();
-    let matched = matches.len();
-    let shown: Vec<&EbookMetadata> = matches.into_iter().take(RENDER_CAP).collect();
-    let picked_now = picked.read().clone();
+    let searching = !text.trim().is_empty();
+    let reviewing = show_picked();
+    let picked_now: HashSet<String> = picked.read().iter().cloned().collect();
+    let pick_count = picked_now.len();
+    // Reviewing picks is a view over what you chose, not over the result set,
+    // so it renders from the metadata cache instead of the feed.
+    let rows: Vec<EbookMetadata> = if reviewing {
+        picked_meta.read().clone()
+    } else {
+        feed.books.read().clone()
+    };
+    let status = if reviewing {
+        plural(pick_count, "book picked", "books picked")
+    } else {
+        status_line(searching, rows.len(), feed.total.read().as_ref().copied())
+    };
     let ctx = CardCtx {
         server_url,
-        already,
+        already: already.into_iter().collect(),
         picked_now,
         picked,
+        picked_meta,
         bust,
     };
 
     rsx! {
         div { class: "pick",
             div { class: "pick-search-row",
-                div { class: "pick-search",
-                    {search_icon()}
-                    input {
-                        r#type: "search",
-                        placeholder: "Search by title or author\u{2026}",
-                        "aria-label": "Search your library",
-                        "data-testid": "{search_testid}",
-                        value: "{text}",
-                        oninput: move |e| query.set(e.value()),
-                        onmounted: move |evt: MountedEvent| {
-                            if autofocus {
-                                focus_after_paint(&evt);
-                            }
-                        },
-                    }
-                    if !text.is_empty() {
-                        button {
-                            r#type: "button",
-                            class: "pick-search-clear",
-                            "aria-label": "Clear search",
-                            "data-testid": "picker-clear-search",
-                            onclick: move |_| query.set(String::new()),
-                            {x_icon()}
-                        }
+                {search_box(query, &text, &search_testid, autofocus)}
+                if pick_count > 0 {
+                    button {
+                        r#type: "button",
+                        class: "pick-review",
+                        "aria-pressed": if reviewing { "true" } else { "false" },
+                        "data-testid": "picker-review-picked",
+                        onclick: move |_| show_picked.with_mut(|v| *v = !*v),
+                        "Picked ({pick_count})"
                     }
                 }
                 p { class: "pick-status", role: "status", "data-testid": "picker-status",
-                    "{status_line(total, matched, shown.len())}"
+                    "{status}"
                 }
             }
             div { class: "pick-body",
-                {body(&shown, total, &text, loading, &ctx)}
+                {body(&rows, BodyState {
+                    loading: feed.loading.read().to_owned(),
+                    errored: feed.errored.read().to_owned(),
+                    searching,
+                    reviewing,
+                    query: text.trim().to_string(),
+                }, &ctx)}
+                {load_more(feed, reviewing)}
+            }
+        }
+    }
+}
+
+/// The search input and its clear button.
+fn search_box(
+    mut query: Signal<String>,
+    text: &str,
+    search_testid: &str,
+    autofocus: bool,
+) -> Element {
+    rsx! {
+        div { class: "pick-search",
+            {search_icon()}
+            input {
+                r#type: "search",
+                placeholder: "Search by title or author\u{2026}",
+                "aria-label": "Search your library",
+                "data-testid": "{search_testid}",
+                value: "{text}",
+                oninput: move |e| query.set(e.value()),
+                onmounted: move |evt: MountedEvent| {
+                    if autofocus {
+                        focus_after_paint(&evt);
+                    }
+                },
+            }
+            if !text.is_empty() {
+                button {
+                    r#type: "button",
+                    class: "pick-search-clear",
+                    "aria-label": "Clear search",
+                    "data-testid": "picker-clear-search",
+                    onclick: move |_| query.set(String::new()),
+                    {x_icon()}
+                }
+            }
+        }
+    }
+}
+
+/// The load-more sentinel. A real button so mobile and Playwright have a
+/// deterministic trigger; on web the observer clicks it as it nears view.
+fn load_more(feed: PickerFeed, reviewing: bool) -> Element {
+    let mut want_more = feed.want_more;
+    let has_more = feed.next_cursor.read().is_some();
+    let busy = feed.loading_more.read().to_owned();
+    if reviewing || !has_more {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "pick-more-row",
+            button {
+                r#type: "button",
+                class: "btn pick-more",
+                "data-testid": "picker-load-more",
+                disabled: busy,
+                onclick: move |_| want_more.with_mut(|n| *n += 1),
+                if busy { "Loading\u{2026}" } else { "Load more" }
             }
         }
     }
@@ -174,48 +472,64 @@ pub fn LibraryPicker(
 /// clippy's argument cap.
 struct CardCtx {
     server_url: String,
-    already: Vec<String>,
-    picked_now: Vec<String>,
+    /// A set, not a list: this is consulted once per rendered card, and a
+    /// shelf can hold thousands of books.
+    already: HashSet<String>,
+    picked_now: HashSet<String>,
     picked: Signal<Vec<String>>,
+    picked_meta: Signal<Vec<EbookMetadata>>,
     bust: CoverCacheBust,
 }
 
-/// The grid, or the state that says why there isn't one.
-fn body(
-    shown: &[&EbookMetadata],
-    total: usize,
-    query: &str,
+/// Which non-grid state the body may be in.
+struct BodyState {
     loading: bool,
-    ctx: &CardCtx,
-) -> Element {
-    if loading {
+    errored: bool,
+    searching: bool,
+    reviewing: bool,
+    query: String,
+}
+
+/// The grid, or the state that says why there isn't one.
+fn body(rows: &[EbookMetadata], state: BodyState, ctx: &CardCtx) -> Element {
+    if state.loading && rows.is_empty() {
         return rsx! {
             p { class: "pick-state", "data-testid": "picker-loading",
                 "Loading your library\u{2026}"
             }
         };
     }
-    if total == 0 {
+    if state.errored && rows.is_empty() {
         return rsx! {
-            p { class: "pick-state", "data-testid": "picker-empty",
-                "No books in your library yet."
+            p { role: "alert", class: "pick-state", "data-testid": "picker-error",
+                "Couldn\u{2019}t reach your library. Check your connection and try again."
             }
         };
     }
-    if shown.is_empty() {
-        let q = query.trim().to_string();
+    if rows.is_empty() {
         return rsx! {
             p { class: "pick-state", "data-testid": "picker-empty",
-                "No books match \u{201c}{q}\u{201d}."
+                {empty_message(&state)}
             }
         };
     }
     rsx! {
         div { class: "pick-grid",
-            for book in shown.iter() {
+            for book in rows.iter() {
                 {card(book, ctx)}
             }
         }
+    }
+}
+
+/// Why the grid is empty, in the reader's terms.
+fn empty_message(state: &BodyState) -> String {
+    if state.reviewing {
+        "Nothing picked yet.".to_string()
+    } else if state.searching {
+        format!("No books match \u{201c}{}\u{201d}.", state.query)
+    } else {
+        "No books in your library yet.".to_string()
     }
 }
 
@@ -239,19 +553,23 @@ fn card(book: &EbookMetadata, ctx: &CardCtx) -> Element {
         cover_bust_for(ctx.bust.0, &uuid),
     );
     let mut picked = ctx.picked;
+    let mut picked_meta = ctx.picked_meta;
     let pick_uuid = uuid.clone();
+    let pick_book = book.clone();
     rsx! {
         button {
-            key: "{book.id}",
+            key: "{uuid}",
             r#type: "button",
             class: "pick-card",
             "data-testid": "picker-tile-{uuid}",
             "aria-pressed": if selected { "true" } else { "false" },
             "aria-disabled": if on_shelf { "true" } else { "false" },
             onclick: move |_| {
-                if !on_shelf {
-                    toggle_picked(&mut picked, &pick_uuid);
+                if on_shelf {
+                    return;
                 }
+                picked.with_mut(|v| *v = toggled(v, &pick_uuid));
+                picked_meta.with_mut(|v| *v = toggled_meta(v, &pick_book, &pick_uuid));
             },
             span { class: "pick-cover",
                 Cover {
@@ -319,66 +637,15 @@ fn check_icon() -> Element {
 
 #[cfg(test)]
 mod tests {
-    use omnibus_shared::Contributor;
-
     use super::*;
 
-    fn book(title: Option<&str>, filename: &str) -> EbookMetadata {
+    fn book(title: &str, uuid: &str) -> EbookMetadata {
         EbookMetadata {
-            title: title.map(str::to_string),
-            filename: filename.to_string(),
+            title: Some(title.to_string()),
+            unique_identifier: Some(uuid.to_string()),
+            filename: format!("{uuid}.epub"),
             ..Default::default()
         }
-    }
-
-    fn by(title: &str, author: &str) -> EbookMetadata {
-        EbookMetadata {
-            creators: vec![Contributor {
-                name: author.to_string(),
-                ..Default::default()
-            }],
-            ..book(Some(title), "x.epub")
-        }
-    }
-
-    #[test]
-    fn filter_library_matches_title_case_insensitively() {
-        let books = vec![book(Some("The Great Gatsby"), "gatsby.epub")];
-        assert_eq!(filter_library(&books, "great").len(), 1);
-        assert_eq!(filter_library(&books, "GATSBY").len(), 1);
-        assert_eq!(filter_library(&books, "moby").len(), 0);
-    }
-
-    #[test]
-    fn filter_library_falls_back_to_filename_when_title_is_missing() {
-        let books = vec![book(None, "untitled-scan.epub")];
-        assert_eq!(filter_library(&books, "untitled").len(), 1);
-    }
-
-    #[test]
-    fn filter_library_matches_an_author() {
-        // The reader types a name, not a title — the title-only filter used to
-        // answer "no books match".
-        let books = vec![
-            by("Persuasion", "Jane Austen"),
-            by("Dracula", "Bram Stoker"),
-        ];
-        let found = filter_library(&books, "austen");
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].title.as_deref(), Some("Persuasion"));
-    }
-
-    #[test]
-    fn filter_library_ignores_surrounding_whitespace() {
-        let books = vec![book(Some("Dracula"), "d.epub")];
-        assert_eq!(filter_library(&books, "  dracula ").len(), 1);
-    }
-
-    #[test]
-    fn filter_library_returns_every_book_when_query_is_empty() {
-        let books = vec![book(Some("A"), "a.epub"), book(Some("B"), "b.epub")];
-        assert_eq!(filter_library(&books, "").len(), 2);
-        assert_eq!(filter_library(&books, "   ").len(), 2);
     }
 
     #[test]
@@ -391,16 +658,70 @@ mod tests {
     }
 
     #[test]
-    fn status_line_counts_the_whole_library_and_says_when_it_truncated() {
-        assert_eq!(
-            status_line(127, 127, 120),
-            "127 books \u{b7} showing the first 120"
-        );
-        assert_eq!(status_line(1, 1, 1), "1 book");
+    fn toggled_meta_keeps_the_picked_books_in_step_with_their_uuids() {
+        let a = book("Alpha", "a");
+        let b = book("Beta", "b");
+        let list = toggled_meta(&[], &a, "a");
+        assert_eq!(list.len(), 1);
+        let list = toggled_meta(&list, &b, "b");
+        assert_eq!(list.len(), 2);
+        let list = toggled_meta(&list, &a, "a");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].title.as_deref(), Some("Beta"));
     }
 
     #[test]
-    fn status_line_reports_how_many_matched() {
-        assert_eq!(status_line(127, 12, 12), "12 of 127 books");
+    fn status_line_reports_the_library_size_when_everything_is_loaded() {
+        assert_eq!(status_line(false, 42, Some(42)), "42 books");
+        assert_eq!(status_line(false, 1, Some(1)), "1 book");
+    }
+
+    #[test]
+    fn status_line_says_how_much_of_a_big_library_is_loaded() {
+        // Browsing: the rest is reachable by scrolling, so no advice.
+        assert_eq!(
+            status_line(false, 100, Some(2310)),
+            "Showing 100 of 2310 books"
+        );
+    }
+
+    #[test]
+    fn status_line_tells_a_truncated_search_to_narrow() {
+        // A search is capped server-side and carries no cursor, so scrolling
+        // cannot reach the rest.
+        assert_eq!(
+            status_line(true, 50, Some(2310)),
+            "Showing 50 of 2310 matches \u{b7} narrow your search"
+        );
+        assert_eq!(status_line(true, 3, Some(3)), "3 matches");
+    }
+
+    #[test]
+    fn status_line_reports_only_what_it_can_see_when_the_server_sent_no_total() {
+        // "Can't tell" must not render as "this is the whole library".
+        assert_eq!(status_line(false, 12, None), "12 books");
+    }
+
+    #[test]
+    fn empty_message_distinguishes_no_picks_from_no_matches() {
+        let state = |searching, reviewing, q: &str| BodyState {
+            loading: false,
+            errored: false,
+            searching,
+            reviewing,
+            query: q.to_string(),
+        };
+        assert_eq!(
+            empty_message(&state(false, true, "")),
+            "Nothing picked yet."
+        );
+        assert_eq!(
+            empty_message(&state(true, false, "zzz")),
+            "No books match \u{201c}zzz\u{201d}."
+        );
+        assert_eq!(
+            empty_message(&state(false, false, "")),
+            "No books in your library yet."
+        );
     }
 }

@@ -4,9 +4,7 @@
 //! and says why. Shared by the web and mobile shelf-detail surfaces.
 
 use dioxus::prelude::*;
-use omnibus_shared::EbookMetadata;
 
-use crate::components::library_picker::use_library_fetch;
 use crate::components::LibraryPicker;
 use crate::{data, use_server_url};
 
@@ -21,13 +19,9 @@ pub(super) fn AddBooksModal(
     on_added: EventHandler<()>,
 ) -> Element {
     let server_url = use_server_url();
-    let library = use_signal(Vec::<EbookMetadata>::new);
-    let loading = use_signal(|| true);
     let picked = use_signal(Vec::<String>::new);
     let mut saving = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
-
-    use_library_fetch(server_url.clone(), library, loading);
 
     let add_url = server_url.clone();
     let on_add = move |_| {
@@ -88,11 +82,9 @@ pub(super) fn AddBooksModal(
                 }
 
                 LibraryPicker {
-                    books: library(),
                     server_url: server_url.clone(),
                     picked,
                     already: members,
-                    loading: loading(),
                     search_testid: "add-books-search",
                     autofocus: true,
                 }

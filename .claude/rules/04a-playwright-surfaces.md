@@ -22,6 +22,21 @@ opened. The suite's admin may change every shelf but a Wishlist, so its own
 Wishlist is the only locked shelf it sees; the not-your-shelf lock needs a
 second, non-admin reader on a cookie-less context (`shelf_detail.spec.ts`).
 
+**The library picker holds one page, not the library.**
+`components/library_picker.rs` (the Add books modal and the hand-picked
+create-shelf body) is server-backed: an empty search box browses keyset pages
+of 100 behind a `picker-load-more` button — on web an `IntersectionObserver`
+clicks it as it nears view — while a typed query goes to FTS5 instead and
+returns one server-capped set with **no** cursor. So a book past the first page
+is simply not in the DOM: `picker-tile-<uuid>` for an arbitrary book times out
+unless the spec searches for it first, which is what a reader does anyway.
+`picker-status` reports the server's own counts ("Showing 100 of 2310 books",
+"… matches · narrow your search") and **never** the picked count — that lives
+only on the host modal's submit button (`add-books-submit`, "Add 2 books").
+Picks are uuids, so they survive a query change even though the cards don't;
+`picker-review-picked` toggles a view of just them. `picker-error` is the
+failed-fetch state and is distinct from `picker-empty`.
+
 **The book detail panel reads two ways.** `book_detail_scroll_stops` (off by
 default) chooses between the flow — one continuous scroller, `#bdmq-flow`,
 sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book

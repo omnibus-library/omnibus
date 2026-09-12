@@ -5,11 +5,8 @@
 //! and submit through [`crate::data::create_shelf`].
 
 use dioxus::prelude::*;
-use omnibus_shared::{
-    CreateShelfRequest, EbookMetadata, MatchMode, Shelf, ShelfKind, ShelfRule, Visibility,
-};
+use omnibus_shared::{CreateShelfRequest, MatchMode, Shelf, ShelfKind, ShelfRule, Visibility};
 
-use crate::components::library_picker::use_library_fetch;
 use crate::components::shelf_rule_builder::{RuleBuilder, RuleDraft};
 use crate::components::LibraryPicker;
 use crate::{data, use_server_url};
@@ -74,7 +71,11 @@ pub fn CreateShelfModal(on_close: EventHandler<()>, on_created: EventHandler<She
                             }
                         },
                         ShelfKind::Manual | ShelfKind::Wishlist => rsx! {
-                            PickerBody { picked, server_url: server_url.clone() }
+                            LibraryPicker {
+                                picked,
+                                server_url: server_url.clone(),
+                                search_testid: "shelf-picker-search",
+                            }
                         },
                     }
                 }
@@ -289,26 +290,6 @@ pub fn VisibilityToggle(visibility: Visibility, on_change: EventHandler<Visibili
                 onclick: move |_| on_change.call(Visibility::Public),
                 "Public"
             }
-        }
-    }
-}
-
-/// Hand-picked body: the shared library picker over the whole library. The
-/// modal's own foot carries the running count, so this is just the picker.
-#[component]
-fn PickerBody(picked: Signal<Vec<String>>, server_url: String) -> Element {
-    let library = use_signal(Vec::<EbookMetadata>::new);
-    let loading = use_signal(|| true);
-
-    use_library_fetch(server_url.clone(), library, loading);
-
-    rsx! {
-        LibraryPicker {
-            books: library(),
-            server_url,
-            picked,
-            loading: loading(),
-            search_testid: "shelf-picker-search",
         }
     }
 }
