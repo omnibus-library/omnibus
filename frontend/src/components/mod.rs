@@ -76,10 +76,10 @@ pub mod credential_card;
 pub mod back_link;
 pub use back_link::disc_back_link;
 
-// Shared "pick books from the whole library" fetch/filter/grid, used by the
-// create-shelf hand-picked body and the shelf-detail "add books" modal.
-pub mod library_picker_grid;
-pub use library_picker_grid::{filter_library, use_library_fetch, LibraryPickerGrid};
+// Shared "pick books from the whole library" fetch/filter/picker, used by the
+// create-shelf hand-picked body and the shelf page's "add books" modal.
+pub mod library_picker;
+pub use library_picker::{filter_library, use_library_fetch, LibraryPicker};
 
 // F1.11 follow-up: hover-overlay "edit photo" affordance + modal with
 // three actions (paste URL, upload file, scan Open Library). Mounted by

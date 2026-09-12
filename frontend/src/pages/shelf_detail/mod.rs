@@ -82,9 +82,17 @@ pub fn ShelfDetailPage(id: i64) -> Element {
         },
     );
 
+    // The add-books picker marks what the shelf already holds, so it needs the
+    // current membership rather than discovering it by a failed add.
+    let members: Vec<String> = books
+        .read()
+        .iter()
+        .filter_map(|b| b.unique_identifier.clone())
+        .collect();
+
     rsx! {
         {body}
-        {shelf_detail_modals(id, current, show_add, edit_shelf, reload)}
+        {shelf_detail_modals(current, members, show_add, edit_shelf, reload)}
     }
 }
 
@@ -156,16 +164,20 @@ fn shelf_detail_body(
 /// The "Add books" and "Edit shelf" modals, shown when their respective
 /// signals flip true; both bump `reload` on success so the parent refetches.
 fn shelf_detail_modals(
-    shelf_id: i64,
     current: Shelf,
+    members: Vec<String>,
     mut show_add: Signal<bool>,
     mut edit_shelf: Signal<bool>,
     mut reload: Signal<u32>,
 ) -> Element {
+    let shelf_id = current.id;
+    let shelf_name = current.name.clone();
     rsx! {
         if show_add() {
             AddBooksModal {
                 shelf_id,
+                shelf_name,
+                members,
                 on_close: move |_| show_add.set(false),
                 on_added: move |_| {
                     show_add.set(false);

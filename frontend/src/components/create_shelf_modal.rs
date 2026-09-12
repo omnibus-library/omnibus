@@ -9,9 +9,9 @@ use omnibus_shared::{
     CreateShelfRequest, EbookMetadata, MatchMode, Shelf, ShelfKind, ShelfRule, Visibility,
 };
 
-use crate::components::library_picker_grid::{filter_library, use_library_fetch};
+use crate::components::library_picker::use_library_fetch;
 use crate::components::shelf_rule_builder::{RuleBuilder, RuleDraft};
-use crate::components::LibraryPickerGrid;
+use crate::components::LibraryPicker;
 use crate::{data, use_server_url};
 
 #[cfg(test)]
@@ -293,39 +293,22 @@ pub fn VisibilityToggle(visibility: Visibility, on_change: EventHandler<Visibili
     }
 }
 
-/// Hand-picked picker: a searchable, selectable cover grid over the library.
+/// Hand-picked body: the shared library picker over the whole library. The
+/// modal's own foot carries the running count, so this is just the picker.
 #[component]
 fn PickerBody(picked: Signal<Vec<String>>, server_url: String) -> Element {
     let library = use_signal(Vec::<EbookMetadata>::new);
-    let mut query = use_signal(String::new);
+    let loading = use_signal(|| true);
 
-    use_library_fetch(server_url.clone(), library);
-
-    // Memoized so filter only reruns when library/query change, not on every render.
-    let filtered = use_memo(move || {
-        let library_books = library.read();
-        filter_library(&library_books, &query.read())
-            .into_iter()
-            .cloned()
-            .collect::<Vec<EbookMetadata>>()
-    });
-    let filtered = filtered();
-    let picked_count = picked.read().len();
+    use_library_fetch(server_url.clone(), library, loading);
 
     rsx! {
-        div { class: "shelf-picker",
-            div { class: "shelf-picker-bar",
-                input {
-                    r#type: "search",
-                    class: "shelf-picker-search",
-                    placeholder: "Search your library\u{2026}",
-                    "data-testid": "shelf-picker-search",
-                    value: "{query}",
-                    oninput: move |e| query.set(e.value()),
-                }
-                span { class: "mono shelf-picker-count", "On this shelf \u{b7} {picked_count}" }
-            }
-            LibraryPickerGrid { books: filtered, server_url: server_url.clone(), picked }
+        LibraryPicker {
+            books: library(),
+            server_url,
+            picked,
+            loading: loading(),
+            search_testid: "shelf-picker-search",
         }
     }
 }

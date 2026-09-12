@@ -159,10 +159,8 @@ test("opens a book from the shelf", async ({ page, request }) => {
 
 test("adds a book to a hand-picked shelf", async ({ page, request }) => {
   const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Detail Add ${Date.now()}`,
-  });
+  const shelfName = `E2E Detail Add ${Date.now()}`;
+  const id = await createShelf(request, { kind: "manual", name: shelfName });
 
   await openShelfFromIndex(page, id);
   await expect(page.getByTestId("shelf-empty")).toContainText(
@@ -171,13 +169,24 @@ test("adds a book to a hand-picked shelf", async ({ page, request }) => {
 
   await addButton(page).click();
   const modal = page.getByTestId("add-books-modal");
+  // The dialog names the shelf it is adding to, and can't add nothing.
+  await expect(
+    modal.getByRole("heading", { level: 2, name: shelfName }),
+  ).toBeVisible();
+  await expect(modal.getByTestId("add-books-submit")).toBeDisabled();
+
   await modal.getByTestId("add-books-search").fill("Alpha");
   const tile = modal.getByTestId(`picker-tile-${alpha}`);
-  // A picker tile is a <button>, which shrink-wraps instead of stretching to
-  // its grid track — so it can be clickable and still render as nothing. The
-  // whole picker was invisible that way; assert a real box, not just a hit.
+  // A card, not a bare cover: it names the book, so a coverless library is
+  // still pickable. The tile is a <button>, which shrink-wraps instead of
+  // stretching to its grid track — so it can take a click and still render as
+  // nothing. Assert a real box, not just a hit.
+  await expect(tile).toContainText("Alpha");
   expect((await tile.boundingBox())?.width ?? 0).toBeGreaterThan(40);
   await tile.click();
+  // What you picked stays in view, and the button says what it will do.
+  await expect(modal.getByTestId("picker-tray")).toContainText("Alpha");
+  await expect(modal.getByTestId("add-books-submit")).toHaveText("Add 1 book");
   await expectMutation(
     page,
     {
@@ -219,6 +228,31 @@ test("keeps the picker open and says so when adding fails", async ({
 
   await expect(modal.getByTestId("add-books-error")).toBeVisible();
   await expect(modal).toBeVisible();
+});
+
+test("marks a book already on the shelf instead of offering it again", async ({
+  page,
+  request,
+}) => {
+  const alpha = await fetchBookUuidByTitle(request, "Alpha");
+  const id = await createShelf(request, {
+    kind: "manual",
+    name: `E2E Detail Member ${Date.now()}`,
+    book_uuids: [alpha],
+  });
+
+  await openShelfFromIndex(page, id);
+  await addButton(page).click();
+  const modal = page.getByTestId("add-books-modal");
+  await modal.getByTestId("add-books-search").fill("Alpha");
+  const tile = modal.getByTestId(`picker-tile-${alpha}`);
+
+  await expect(tile).toContainText("On this shelf");
+  await expect(tile).toBeDisabled();
+  // Inert, not merely styled: a member can't be picked into a second copy.
+  await tile.click({ force: true });
+  await expect(modal.getByTestId("picker-tray")).toHaveCount(0);
+  await expect(modal.getByTestId("add-books-submit")).toBeDisabled();
 });
 
 test("takes a book off a hand-picked shelf", async ({ page, request }) => {

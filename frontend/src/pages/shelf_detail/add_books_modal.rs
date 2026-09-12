@@ -1,29 +1,33 @@
-//! The "Add books" modal: search + pick from the whole library, then append
-//! the picked uuids to a manual shelf. Shared by both the web and mobile
-//! shelf-detail surfaces. A failed add keeps the picks and says why.
+//! The "Add books" modal: search the library, pick books, and append them to
+//! a hand-picked shelf. It names the shelf it is adding to, marks the books
+//! already on it, keeps the picks in view, and on a failure keeps everything
+//! and says why. Shared by the web and mobile shelf-detail surfaces.
 
 use dioxus::prelude::*;
 use omnibus_shared::EbookMetadata;
 
-use crate::components::library_picker_grid::{filter_library, use_library_fetch};
-use crate::components::LibraryPickerGrid;
+use crate::components::library_picker::use_library_fetch;
+use crate::components::LibraryPicker;
 use crate::{data, use_server_url};
 
-/// Modal that appends library books to an existing manual shelf.
+/// Modal that appends library books to an existing manual shelf. `members`
+/// are the uuids the shelf already holds; `shelf_name` titles the dialog.
 #[component]
 pub(super) fn AddBooksModal(
     shelf_id: i64,
+    shelf_name: String,
+    members: Vec<String>,
     on_close: EventHandler<()>,
     on_added: EventHandler<()>,
 ) -> Element {
     let server_url = use_server_url();
     let library = use_signal(Vec::<EbookMetadata>::new);
-    let mut query = use_signal(String::new);
+    let loading = use_signal(|| true);
     let picked = use_signal(Vec::<String>::new);
     let mut saving = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
 
-    use_library_fetch(server_url.clone(), library);
+    use_library_fetch(server_url.clone(), library, loading);
 
     let add_url = server_url.clone();
     let on_add = move |_| {
@@ -32,7 +36,6 @@ pub(super) fn AddBooksModal(
         }
         let url = add_url.clone();
         let uuids = picked.read().clone();
-        let on_added = on_added;
         saving.set(true);
         error.set(None);
         spawn(async move {
@@ -44,16 +47,12 @@ pub(super) fn AddBooksModal(
         });
     };
 
-    // Memoized so filter only reruns when library/query change, not on every render.
-    let filtered = use_memo(move || {
-        let library_books = library.read();
-        filter_library(&library_books, &query.read())
-            .into_iter()
-            .cloned()
-            .collect::<Vec<EbookMetadata>>()
-    });
-    let filtered = filtered();
-    let picked_count = picked.read().len();
+    let count = picked.read().len();
+    let add_label = match count {
+        0 => "Add books".to_string(),
+        1 => "Add 1 book".to_string(),
+        n => format!("Add {n} books"),
+    };
 
     rsx! {
         div {
@@ -64,26 +63,40 @@ pub(super) fn AddBooksModal(
                 class: "shelf-modal-card",
                 role: "dialog",
                 "aria-modal": "true",
-                "aria-label": "Add books",
+                "aria-labelledby": "add-books-title",
+                tabindex: "-1",
                 onclick: move |e| e.stop_propagation(),
-                div { class: "shelf-modal-head",
-                    h2 { class: "shelf-modal-title", "Add books" }
-                }
-                div { class: "shelf-modal-body",
-                    div { class: "shelf-picker-bar",
-                        input {
-                            r#type: "search",
-                            class: "shelf-picker-search",
-                            placeholder: "Search your library\u{2026}",
-                            "aria-label": "Search your library",
-                            "data-testid": "add-books-search",
-                            value: "{query}",
-                            oninput: move |e| query.set(e.value()),
-                        }
-                        span { class: "mono shelf-picker-count", "Selected \u{b7} {picked_count}" }
+                onkeydown: move |e| {
+                    if e.key() == Key::Escape {
+                        on_close.call(());
                     }
-                    LibraryPickerGrid { books: filtered, server_url: server_url.clone(), picked }
+                },
+
+                div { class: "pick-head",
+                    div {
+                        span { class: "pick-kicker", "Adding to" }
+                        h2 { class: "pick-title", id: "add-books-title", "{shelf_name}" }
+                    }
+                    button {
+                        r#type: "button",
+                        class: "pick-close",
+                        "aria-label": "Close",
+                        "data-testid": "add-books-close",
+                        onclick: move |_| on_close.call(()),
+                        "\u{2715}"
+                    }
                 }
+
+                LibraryPicker {
+                    books: library(),
+                    server_url: server_url.clone(),
+                    picked,
+                    already: members,
+                    loading: loading(),
+                    search_testid: "add-books-search",
+                    autofocus: true,
+                }
+
                 if let Some(msg) = error() {
                     p {
                         role: "alert",
@@ -92,18 +105,29 @@ pub(super) fn AddBooksModal(
                         "Couldn\u{2019}t add these books: {msg}"
                     }
                 }
-                div { class: "shelf-modal-foot",
+
+                div { class: "pick-foot",
+                    span { class: "pick-foot-count", "data-testid": "add-books-count",
+                        if count == 0 {
+                            "Nothing picked yet"
+                        } else {
+                            "{count} picked"
+                        }
+                    }
                     button {
-                        r#type: "button", class: "btn shelf-btn-ghost",
+                        r#type: "button",
+                        class: "btn shelf-btn-ghost",
+                        "data-testid": "add-books-cancel",
                         onclick: move |_| on_close.call(()),
                         "Cancel"
                     }
                     button {
-                        r#type: "button", class: "btn shelf-btn-primary",
+                        r#type: "button",
+                        class: "btn shelf-btn-primary",
                         "data-testid": "add-books-submit",
-                        disabled: saving(),
+                        disabled: saving() || count == 0,
                         onclick: on_add,
-                        if saving() { "Adding\u{2026}" } else { "Add \u{b7} {picked_count}" }
+                        if saving() { "Adding\u{2026}" } else { "{add_label}" }
                     }
                 }
             }
