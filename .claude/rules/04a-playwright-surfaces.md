@@ -30,9 +30,11 @@ clicks it as it nears view — while a typed query goes to FTS5 instead and
 returns one server-capped set with **no** cursor. So a book past the first page
 is simply not in the DOM: `picker-tile-<uuid>` for an arbitrary book times out
 unless the spec searches for it first, which is what a reader does anyway.
-`picker-status` reports the server's own counts ("Showing 100 of 2310 books",
-"… matches · narrow your search") and **never** the picked count — that lives
-only on the host modal's submit button (`add-books-submit`, "Add 2 books").
+`picker-status` reports the server's own count — "2310 books" while browsing,
+since paging reaches every one of them, and "Showing 50 of 2310 matches ·
+narrow your search" only for a search, where the capped rows are genuinely out
+of reach. It **never** carries the picked count: that lives only on the host
+modal's submit button (`add-books-submit`, "Add 2 books").
 Picks are uuids, so they survive a query change even though the cards don't;
 `picker-review-picked` toggles a view of just them. `picker-error` is the
 failed-fetch state and is distinct from `picker-empty`.

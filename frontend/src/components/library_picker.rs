@@ -299,9 +299,14 @@ fn toggled_meta(list: &[EbookMetadata], book: &EbookMetadata, uuid: &str) -> Vec
     next
 }
 
-/// The line above the grid: what the server holds, and how much of it is
-/// loaded. The count of what's *picked* belongs to the host modal's submit
-/// button, which is the one place it's reported.
+/// The line above the grid: how much the server holds.
+///
+/// Browsing pages until every book is loaded, so how many are on screen at
+/// this instant is noise — scrolling reaches all of them — and the line simply
+/// says how many there are. A search is the one case that withholds rows: it
+/// is capped server-side and carries no cursor, so the shortfall is real and
+/// worth naming. The count of what's *picked* belongs to the host modal's
+/// submit button, which is the one place it's reported.
 fn status_line(searching: bool, shown: usize, total: Option<i64>) -> String {
     let (one, many) = if searching {
         ("match", "matches")
@@ -313,16 +318,13 @@ fn status_line(searching: bool, shown: usize, total: Option<i64>) -> String {
         // implying the grid is the whole library.
         return plural(shown, one, many);
     };
-    if t <= shown {
+    if !searching || t <= shown {
         return plural(t, one, many);
     }
-    let mut line = format!("Showing {shown} of {}", plural(t, one, many));
-    // A search is capped server-side with no cursor, so scrolling can't reach
-    // the rest — say the thing that can.
-    if searching {
-        line.push_str(" \u{b7} narrow your search");
-    }
-    line
+    format!(
+        "Showing {shown} of {} \u{b7} narrow your search",
+        plural(t, one, many)
+    )
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -677,12 +679,11 @@ mod tests {
     }
 
     #[test]
-    fn status_line_says_how_much_of_a_big_library_is_loaded() {
-        // Browsing: the rest is reachable by scrolling, so no advice.
-        assert_eq!(
-            status_line(false, 100, Some(2310)),
-            "Showing 100 of 2310 books"
-        );
+    fn status_line_reports_the_whole_library_while_browsing_a_partial_page() {
+        // Only 100 rows are loaded, but paging reaches every one of the rest,
+        // so the line says how many there are rather than how many happen to
+        // be on screen at this instant.
+        assert_eq!(status_line(false, 100, Some(2310)), "2310 books");
     }
 
     #[test]
