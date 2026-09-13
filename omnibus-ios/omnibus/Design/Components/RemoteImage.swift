@@ -249,6 +249,11 @@ actor ImageCache {
     /// third party (Google Books, Open Library).
     func externalImage(for url: String) async -> UIImage? {
         if let cached = image(for: url) { return cached }
+        // These keys are provider URLs, so no cover write ever invalidates one
+        // — but `clearDisk` invalidates everything, and this is still a fetch.
+        // Caught here so the guarantee holds for every fetch in this type
+        // rather than for most of them.
+        let generation = generation(for: url)
         // Provider metadata is untrusted input: only fetch http(s), and only
         // cache bodies a 2xx actually vouched for.
         guard let remote = URL(string: url),
@@ -258,7 +263,9 @@ actor ImageCache {
               (200..<300).contains(http.statusCode),
               let decoded = UIImage(data: data)
         else { return nil }
-        store(decoded, data: data, for: url)
+        // The caller asked for this image and is about to draw it, so it is
+        // still returned; only the cache write is refused.
+        store(decoded, data: data, for: url, generation: generation)
         return decoded
     }
 

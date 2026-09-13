@@ -108,6 +108,25 @@ struct ImageCacheInvalidationTests {
         #expect(await cache.image(for: key) != nil)
     }
 
+    @Test("every fetch in the type is guarded, not just the cover ones")
+    func externalFetchesAreGuardedToo() async {
+        // Provider URLs are never invalidated by a cover write, so only
+        // `clearDisk` moves their generation — which is exactly what a per-key
+        // counter alone would miss, on the one fetch here that does not go
+        // through the Omnibus server.
+        let cache = makeCache()
+        let providerURL = "https://books.example/cover.jpg"
+        let (art, bytes) = cover(red: 0, green: 1, blue: 1)
+
+        let generation = await cache.generation(for: providerURL)
+        await cache.clearDisk()
+
+        #expect(
+            await cache.store(art, data: bytes, for: providerURL, generation: generation) == false
+        )
+        #expect(await cache.image(for: providerURL) == nil)
+    }
+
     @Test("a key's generation only ever rises")
     func generationsAreMonotonic() async {
         // `clearDisk` adds to the per-key counts rather than resetting them,
