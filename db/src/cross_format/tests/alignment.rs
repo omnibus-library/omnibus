@@ -240,3 +240,61 @@ async fn alignment_view_issues_a_query_count_independent_of_audio_file_count() {
          for 40"
     );
 }
+
+#[tokio::test]
+async fn alignment_view_reports_a_user_anchored_match_when_a_sync_point_discards_the_chapters() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let (_, uuid, audio) = seed_dual_book(&pool, &[600.0]).await;
+    // Chapters that match cleanly on their own: without a sync point this
+    // is the `(3, 3)` ChapterAnchored view the test above asserts.
+    seed_epub_chapters(&pool, &[("Alpha", 0), ("Bravo", 40), ("Charlie", 80)], 40).await;
+    seed_audio_chapters(
+        &pool,
+        audio[0],
+        &[("Alpha", 0.0), ("Bravo", 200.0), ("Charlie", 400.0)],
+    )
+    .await;
+    upsert_link(&pool, user, &uuid, CrossFormatLinkMode::Sequence, None)
+        .await
+        .unwrap();
+
+    // The reader declares that 33% of the text is 90% of the way through
+    // the audio — far more than a chapter from what the map claims.
+    progress::upsert_progress(&pool, user, &epub_percent_update(&uuid, 33, 1_000))
+        .await
+        .unwrap();
+    declare_sync_point(
+        &pool,
+        user,
+        &DeclareSyncPoint {
+            book_uuid: uuid.clone(),
+            format: ProgressFormat::Audio,
+            ebook_fraction: None,
+            epub_cfi: None,
+            audio_book_file_id: Some(audio[0]),
+            audio_seconds: Some(540.0),
+        },
+    )
+    .await
+    .unwrap();
+
+    let view = alignment_view(&pool, user, &uuid).await.unwrap();
+    let m = view
+        .anchor_match
+        .expect("a user-anchored mapping still reports a match, just not a chapter one");
+    assert_eq!(
+        m.confidence,
+        omnibus_shared::cross_format::MappingConfidence::UserAnchored,
+        "the modal must not label this percentage-based — it is anchored, to the reader's pair"
+    );
+    assert_eq!(
+        m.matched, 0,
+        "and must not advertise chapter matches the mapping discarded"
+    );
+    assert_eq!(
+        view.anchor_pairs.len(),
+        1,
+        "only the declared pair drives the mapping now"
+    );
+}

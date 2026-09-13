@@ -675,6 +675,15 @@ pub(super) fn interpolate(anchors: &[Anchor], frac: f64, text_to_audio: bool) ->
 /// Fold user-declared sync points into the anchor set. User pairs are
 /// ground truth: they seed the set, and chapter anchors survive only where
 /// they stay strictly monotonic between the user pairs on both axes.
+///
+/// A chapter map the reader's own pair *contradicts* is dropped whole
+/// rather than trimmed. The map is one hypothesis, not a bag of
+/// independent observations — its usual failure is a displacement that
+/// runs the length of the book, so the pairs that still fit around a
+/// contradicting sync point fit by arithmetic rather than by being right.
+/// Splicing them kept a correction alive for the couple of chapters either
+/// side of the declaration and then handed the reader back to the same
+/// wrong map.
 pub(super) fn merge_user_anchors(user: &[Anchor], chapter: Option<AnchorMap>) -> Option<AnchorMap> {
     if user.is_empty() {
         return chapter;
@@ -686,6 +695,15 @@ pub(super) fn merge_user_anchors(user: &[Anchor], chapter: Option<AnchorMap>) ->
         Some(m) => (m.anchors.as_slice(), m.matched, m.ebook_chapters),
         None => (&[][..], 0, 0),
     };
+    if contradicts(&merged, chapter_anchors) {
+        // `matched: 0` is what tells the alignment readout to stop
+        // advertising a chapter match the mapping no longer consults.
+        return Some(AnchorMap {
+            anchors: merged,
+            matched: 0,
+            ebook_chapters,
+        });
+    }
     let mut out: Vec<Anchor> = merged.clone();
     for c in chapter_anchors {
         // Strictly between its would-be neighbors on both axes, measured
@@ -704,4 +722,37 @@ pub(super) fn merge_user_anchors(user: &[Anchor], chapter: Option<AnchorMap>) ->
         matched,
         ebook_chapters,
     })
+}
+
+/// Whether the chapter map disagrees with a reader's own pair by more than
+/// about one chapter. Compared against the map's own typical anchor
+/// spacing rather than a fixed fraction: "one chapter out" is the point at
+/// which a jump lands somewhere the reader would call wrong, and it means
+/// a different thing on a three-hour recording than on a fifty-hour one.
+///
+/// Any single disagreement condemns the map — see [`merge_user_anchors`].
+/// This does trust the declaration over the map, which is the trust order
+/// the rest of this module already uses.
+fn contradicts(user: &[Anchor], chapter: &[Anchor]) -> bool {
+    let Some(tolerance) = typical_anchor_gap(chapter) else {
+        return false;
+    };
+    user.iter()
+        .any(|u| (interpolate(chapter, u.text_frac, true) - u.audio_frac).abs() > tolerance)
+}
+
+/// Median distance between consecutive chapter anchors on the audio axis —
+/// the map's own sense of a chapter's length. `None` below two anchors,
+/// where there is no spacing to measure and so nothing to be a chapter out
+/// of.
+fn typical_anchor_gap(chapter: &[Anchor]) -> Option<f64> {
+    if chapter.len() < 2 {
+        return None;
+    }
+    let mut gaps: Vec<f64> = chapter
+        .windows(2)
+        .map(|w| w[1].audio_frac - w[0].audio_frac)
+        .collect();
+    gaps.sort_by(f64::total_cmp);
+    Some(gaps[gaps.len() / 2])
 }

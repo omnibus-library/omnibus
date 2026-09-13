@@ -121,19 +121,36 @@ async fn anchor_preview(
     let chapter_map =
         anchors::anchor_map_from_marks(pool, ebook_file_id, &timeline, &audio).await?;
     let user = preview_user_anchors(raw_link, &timeline);
-    let stats = chapter_map.as_ref().map(|m| (m.matched, m.ebook_chapters));
-    if let Some(merged) = anchors::merge_user_anchors(&user, chapter_map) {
-        out.anchor_pairs = merged
+    let user_driven = !user.is_empty();
+    let merged = anchors::merge_user_anchors(&user, chapter_map);
+    if let Some(m) = &merged {
+        out.anchor_pairs = m
             .anchors
             .iter()
             .map(|a| (a.text_frac, a.audio_frac))
             .collect();
     }
-    out.anchor_match = stats.map(|(matched, ebook_chapters)| AlignmentMatch {
-        matched,
-        ebook_chapters,
-        confidence: MappingConfidence::ChapterAnchored,
-    });
+    // Read after the merge, not before: a sync point that contradicts the
+    // chapter map discards it, and quoting "N of M matched" for a map the
+    // mapping no longer consults is the readout describing something else.
+    // A set left running on the reader's own pairs says so rather than
+    // falling through to the percentage copy — that mapping is anchored,
+    // just not to chapters.
+    out.anchor_match = merged
+        .as_ref()
+        .and_then(|m| match (m.matched, user_driven) {
+            (0, false) => None,
+            (0, true) => Some(AlignmentMatch {
+                matched: 0,
+                ebook_chapters: m.ebook_chapters,
+                confidence: MappingConfidence::UserAnchored,
+            }),
+            _ => Some(AlignmentMatch {
+                matched: m.matched,
+                ebook_chapters: m.ebook_chapters,
+                confidence: MappingConfidence::ChapterAnchored,
+            }),
+        });
     Ok(out)
 }
 

@@ -2,7 +2,7 @@
 //! sub-header and warn-pill sentences that explain a percentage mapping,
 //! the confirm-button label, and the duration/recency formatters.
 
-use omnibus_shared::AlignmentView;
+use omnibus_shared::{AlignmentView, MappingConfidence};
 
 /// `"6h 31m"` / `"41m"` for lane labels and the mapped preview. Floor
 /// minutes — a duration label must never claim more time than exists.
@@ -44,6 +44,10 @@ pub(super) enum AlignMode {
     Stale,
     /// Chapter anchoring engaged — jumps land chapter-accurately.
     Anchored,
+    /// The reader's own sync points are setting the alignment: either the
+    /// chapters never matched, or a declared pair contradicted the match
+    /// and discarded it. Anchored, just not to chapters.
+    UserAnchored,
     /// Marks exist but can't be paired 1:1 — percent mapping.
     Mismatch,
     /// No usable marks at all — percent mapping.
@@ -53,8 +57,11 @@ pub(super) enum AlignMode {
 pub(super) fn align_mode(view: &AlignmentView) -> AlignMode {
     if view.link.as_ref().is_some_and(|l| l.stale) {
         AlignMode::Stale
-    } else if view.anchor_match.is_some() {
-        AlignMode::Anchored
+    } else if let Some(m) = view.anchor_match {
+        match m.confidence {
+            MappingConfidence::UserAnchored => AlignMode::UserAnchored,
+            _ => AlignMode::Anchored,
+        }
     } else if view.audio_chapter_marks > 0 {
         AlignMode::Mismatch
     } else {
@@ -90,6 +97,7 @@ pub(super) fn sub_header(mode: AlignMode, marks: i64, ebook_chapters: Option<usi
     let marks_n = plural(marks, "chapter mark", "chapter marks");
     match mode {
         AlignMode::Stale | AlignMode::Anchored => SUB_DEFAULT.into(),
+        AlignMode::UserAnchored => "Your own sync points are setting the alignment here.".into(),
         AlignMode::NoMarks => "This audiobook carries no chapter markers, so there\u{2019}s \
              nothing to anchor the mapping to."
             .into(),
@@ -140,6 +148,8 @@ pub(super) fn confirm_label(mode: AlignMode, save_order: bool) -> &'static str {
         (AlignMode::Stale, true) => "Save order & turn on sync",
         (AlignMode::Anchored, false) => "Sync Based On Chapters",
         (AlignMode::Anchored, true) => "Save order — Sync Based On Chapters",
+        (AlignMode::UserAnchored, false) => "Sync Based On Your Sync Points",
+        (AlignMode::UserAnchored, true) => "Save order — Sync Based On Your Sync Points",
         (AlignMode::Mismatch | AlignMode::NoMarks, false) => "Sync Based Off Percentage",
         (AlignMode::Mismatch | AlignMode::NoMarks, true) => {
             "Save order — Sync Based Off Percentage"
@@ -151,7 +161,7 @@ pub(super) fn confirm_label(mode: AlignMode, save_order: bool) -> &'static str {
 /// the warn banner already carries the caveat.
 pub(super) fn foot_note(mode: AlignMode) -> Option<&'static str> {
     match mode {
-        AlignMode::Stale | AlignMode::Anchored => {
+        AlignMode::Stale | AlignMode::Anchored | AlignMode::UserAnchored => {
             Some("Sync stays off until you confirm. You can unlink any time.")
         }
         AlignMode::Mismatch | AlignMode::NoMarks => None,
