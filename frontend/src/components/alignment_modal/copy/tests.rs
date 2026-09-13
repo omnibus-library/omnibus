@@ -133,3 +133,28 @@ fn fmt_hm_floors_and_renders_hours_and_bare_minutes() {
     // 59:59 must not over-report as an hour.
     assert_eq!(fmt_hm(3_599.0), "59m");
 }
+
+#[test]
+fn align_mode_reads_a_user_anchored_match_as_its_own_mode() {
+    // Marks exist and none of them matched, which alone would read as the
+    // percentage mismatch — but the mapping is running on the reader's own
+    // pairs, so the copy must not call it percentage-based.
+    let mut v = bare_view(23);
+    assert_eq!(align_mode(&v), AlignMode::Mismatch);
+    v.anchor_match = Some(AlignmentMatch {
+        matched: 0,
+        ebook_chapters: 14,
+        confidence: MappingConfidence::UserAnchored,
+    });
+    assert_eq!(align_mode(&v), AlignMode::UserAnchored);
+    assert_ne!(sub_header(align_mode(&v), 23, Some(14)), SUB_DEFAULT);
+    assert_eq!(
+        confirm_label(AlignMode::UserAnchored, false),
+        "Sync Based On Your Sync Points",
+        "the CTA must not promise chapters or percentage here"
+    );
+    assert!(
+        foot_note(AlignMode::UserAnchored).is_some(),
+        "an anchored mode keeps the footer; only the percentage modes drop it"
+    );
+}

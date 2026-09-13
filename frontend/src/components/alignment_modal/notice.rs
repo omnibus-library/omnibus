@@ -3,7 +3,7 @@
 //! then the percent-mapping warning with its two-way copy.
 
 use dioxus::prelude::*;
-use omnibus_shared::{AlignmentMatch, AlignmentView};
+use omnibus_shared::{AlignmentMatch, AlignmentView, MappingConfidence};
 
 use super::copy::{ebook_chapter_count, linear_pill};
 
@@ -42,9 +42,16 @@ pub(super) fn render_notice(view: &AlignmentView) -> Element {
                 "the alignment re-checks when you confirm again."
             }
         } else if let NoticeKind::Anchored(m) = kind {
-            p { class: "al-matched", role: "note", "data-testid": "alignment-match",
-                "\u{2713} {m.matched} of {m.ebook_chapters} chapters matched — "
-                "jumps land chapter-accurately."
+            if m.confidence == MappingConfidence::UserAnchored {
+                p { class: "al-matched", role: "note", "data-testid": "alignment-match",
+                    "\u{2713} Using your sync points — the audiobook\u{2019}s chapters "
+                    "didn\u{2019}t line up with the book\u{2019}s, so they\u{2019}re set aside."
+                }
+            } else {
+                p { class: "al-matched", role: "note", "data-testid": "alignment-match",
+                    "\u{2713} {m.matched} of {m.ebook_chapters} chapters matched — "
+                    "jumps land chapter-accurately."
+                }
             }
         } else {
             p { class: "al-matched al-matched-warn", role: "note", "data-testid": "alignment-linear-pill",
