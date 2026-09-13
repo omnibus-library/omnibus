@@ -478,7 +478,7 @@ async fn anchoring_shifts_by_a_constant_offset_when_the_audio_numbers_front_matt
     // when it is really chapter 3 — and did it at full confidence.
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "alice").await;
-    let (_, uuid, audio) = seed_dual_book(&pool, &[700.0]).await;
+    let (_, uuid, audio) = seed_dual_book(&pool, &[800.0]).await;
     seed_epub_chapters(
         &pool,
         &[
@@ -504,6 +504,12 @@ async fn anchoring_shifts_by_a_constant_offset_when_the_audio_numbers_front_matt
             ("Chapter 5", 400.0),
             ("Chapter 6", 500.0),
             ("Chapter 7", 600.0),
+            // A credits mark the book has no counterpart for. Its job is to
+            // make the two mark lists differ in length: at equal lengths
+            // `positional_fallback` pairs them index-for-index and returns
+            // the same answer, so the assertion below would hold even if
+            // this rung never ran.
+            ("End Credits", 700.0),
         ],
     )
     .await;
@@ -511,7 +517,7 @@ async fn anchoring_shifts_by_a_constant_offset_when_the_audio_numbers_front_matt
         .await
         .unwrap();
     // Listening at audio "Chapter 5" (400s), which narrates the book's
-    // chapter 3 — 400 of 700 chars, 57%.
+    // chapter 3 — 400 of the 700 text chars, 57%.
     progress::upsert_progress(
         &pool,
         user,
@@ -546,7 +552,7 @@ async fn anchoring_keeps_equality_when_the_audios_extra_numbers_are_back_matter(
     // geometry — this is the test that the arbitration actually arbitrates.
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "alice").await;
-    let (_, uuid, audio) = seed_dual_book(&pool, &[700.0]).await;
+    let (_, uuid, audio) = seed_dual_book(&pool, &[800.0]).await;
     seed_epub_chapters(
         &pool,
         &[
@@ -572,6 +578,10 @@ async fn anchoring_keeps_equality_when_the_audios_extra_numbers_are_back_matter(
             ("Chapter 5", 400.0),
             ("Chapter 6", 500.0),
             ("Chapter 7", 600.0),
+            // Unequal mark counts, for the reason the front-matter test
+            // spells out: index-for-index pairing would otherwise answer
+            // this test correctly without the chapter rung running at all.
+            ("End Credits", 700.0),
         ],
     )
     .await;
@@ -590,6 +600,11 @@ async fn anchoring_keeps_equality_when_the_audios_extra_numbers_are_back_matter(
         .await
         .unwrap();
     let c = r.candidate.unwrap();
+    assert_eq!(
+        c.confidence,
+        omnibus_shared::cross_format::MappingConfidence::ChapterAnchored,
+        "the equality pairing must be what answers here, not a linear estimate"
+    );
     assert_eq!(
         c.percent.unwrap(),
         57,

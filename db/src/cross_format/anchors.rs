@@ -350,7 +350,10 @@ fn match_chapter_numbers(
         return shifted;
     }
     match (front_residual(&shifted), front_residual(&base)) {
-        (Some(alt), Some(cur)) if alt * OFFSET_SCORE_MARGIN <= cur => shifted,
+        // Strictly better, so a dead heat goes to equality — two maps that
+        // both sit exactly on the diagonal score `0.0` against `0.0`, which
+        // a `<=` reads as the offset winning.
+        (Some(alt), Some(cur)) if alt * OFFSET_SCORE_MARGIN < cur => shifted,
         _ => base,
     }
 }
