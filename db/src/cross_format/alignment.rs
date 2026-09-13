@@ -121,19 +121,25 @@ async fn anchor_preview(
     let chapter_map =
         anchors::anchor_map_from_marks(pool, ebook_file_id, &timeline, &audio).await?;
     let user = preview_user_anchors(raw_link, &timeline);
-    let stats = chapter_map.as_ref().map(|m| (m.matched, m.ebook_chapters));
-    if let Some(merged) = anchors::merge_user_anchors(&user, chapter_map) {
-        out.anchor_pairs = merged
+    let merged = anchors::merge_user_anchors(&user, chapter_map);
+    if let Some(m) = &merged {
+        out.anchor_pairs = m
             .anchors
             .iter()
             .map(|a| (a.text_frac, a.audio_frac))
             .collect();
     }
-    out.anchor_match = stats.map(|(matched, ebook_chapters)| AlignmentMatch {
-        matched,
-        ebook_chapters,
-        confidence: MappingConfidence::ChapterAnchored,
-    });
+    // Read after the merge, not before: a sync point that contradicts the
+    // chapter map discards it, and quoting "N of M matched" for a map the
+    // mapping no longer consults is the readout describing something else.
+    out.anchor_match = merged
+        .as_ref()
+        .filter(|m| m.matched > 0)
+        .map(|m| AlignmentMatch {
+            matched: m.matched,
+            ebook_chapters: m.ebook_chapters,
+            confidence: MappingConfidence::ChapterAnchored,
+        });
     Ok(out)
 }
 

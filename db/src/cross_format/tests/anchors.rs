@@ -612,3 +612,87 @@ async fn anchoring_keeps_equality_when_the_audios_extra_numbers_are_back_matter(
          offset would have placed the reader at chapter 3"
     );
 }
+
+/// A ten-rung chapter map on the diagonal: anchors every 10% on both axes,
+/// so its typical gap — the contradiction tolerance — is 0.1.
+fn diagonal_chapter_map() -> super::super::anchors::AnchorMap {
+    use super::super::anchors::{Anchor, AnchorMap};
+    AnchorMap {
+        anchors: (0..10)
+            .map(|i| {
+                let f = 0.05 + 0.1 * i as f64;
+                Anchor {
+                    text_frac: f,
+                    audio_frac: f,
+                }
+            })
+            .collect(),
+        matched: 10,
+        ebook_chapters: 10,
+    }
+}
+
+#[test]
+fn merge_user_anchors_discards_a_chapter_map_its_user_pair_contradicts() {
+    use super::super::anchors::{merge_user_anchors, Anchor};
+    // The reader says text 50% is audio 70%; the map says it is audio 50%,
+    // two chapters away on a map whose chapters are 10% apart.
+    let user = [Anchor {
+        text_frac: 0.5,
+        audio_frac: 0.7,
+    }];
+    let merged = merge_user_anchors(&user, Some(diagonal_chapter_map())).unwrap();
+    assert_eq!(
+        merged
+            .anchors
+            .iter()
+            .map(|a| (a.text_frac, a.audio_frac))
+            .collect::<Vec<_>>(),
+        vec![(0.5, 0.7)],
+        "a contradicted map goes whole, not trimmed to the pairs that still fit"
+    );
+    assert_eq!(
+        merged.matched, 0,
+        "and stops being reported as a chapter match"
+    );
+}
+
+#[test]
+fn merge_user_anchors_keeps_a_chapter_map_its_user_pair_agrees_with() {
+    use super::super::anchors::{merge_user_anchors, Anchor};
+    // Well inside one chapter of what the map already says — ordinary
+    // within-chapter drift, not a contradiction.
+    let user = [Anchor {
+        text_frac: 0.5,
+        audio_frac: 0.52,
+    }];
+    let merged = merge_user_anchors(&user, Some(diagonal_chapter_map())).unwrap();
+    assert_eq!(
+        merged.anchors.len(),
+        11,
+        "all ten chapter anchors survive alongside the declared pair"
+    );
+    assert_eq!(merged.matched, 10);
+}
+
+#[test]
+fn merge_user_anchors_cannot_be_contradicted_by_a_single_anchor_map() {
+    use super::super::anchors::{merge_user_anchors, Anchor, AnchorMap};
+    // One anchor has no spacing to measure, so there is no "a chapter out"
+    // to be — the splice still applies rather than discarding on a guess.
+    let chapter = AnchorMap {
+        anchors: vec![Anchor {
+            text_frac: 0.2,
+            audio_frac: 0.2,
+        }],
+        matched: 1,
+        ebook_chapters: 10,
+    };
+    let user = [Anchor {
+        text_frac: 0.5,
+        audio_frac: 0.95,
+    }];
+    let merged = merge_user_anchors(&user, Some(chapter)).unwrap();
+    assert_eq!(merged.anchors.len(), 2);
+    assert_eq!(merged.matched, 1);
+}
