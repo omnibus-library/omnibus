@@ -268,6 +268,44 @@ private func sitting(
     #expect(preview == "Cannot believe \u{2588}\u{2588}\u{2588} honestly")
 }
 
+// MARK: - Journal kicker
+
+private func journalEntry(
+    author: Int64, status: JournalStatus = .published
+) -> JournalEntry {
+    JournalEntry(
+        id: author, bookUUID: "b", authorId: author, authorName: "r\(author)",
+        bodyMd: "body", bodyHtml: "<p>body</p>", progress: nil, status: status,
+        clientID: nil, createdAt: 0, updatedAt: 0
+    )
+}
+
+/// The wording here is a mirror of `marquee_journal_kicker` in
+/// `frontend/src/pages/book_detail/journal.rs`; these cases are the web
+/// suite's, so a change to one client that isn't made to the other fails here.
+@Test func journalKickerCountsEntriesAndReaders() {
+    #expect(DetailJournal.kicker([journalEntry(author: 1)]) == "1 entry from 1 reader")
+    #expect(
+        DetailJournal.kicker(
+            [journalEntry(author: 1), journalEntry(author: 2), journalEntry(author: 2)]
+        ) == "3 entries from 2 readers"
+    )
+}
+
+@Test func journalKickerAppendsDraftsApartFromThePublishedTotal() {
+    // A draft is visible only to its own author, so it is reported beside the
+    // published count rather than folded into it.
+    let entries = [
+        journalEntry(author: 1),
+        journalEntry(author: 1, status: .draft),
+    ]
+    #expect(DetailJournal.kicker(entries) == "1 entry from 1 reader · 1 draft")
+}
+
+@Test func journalKickerReportsTheEmptyFeedWithoutCounts() {
+    #expect(DetailJournal.kicker([]) == "No entries yet")
+}
+
 // MARK: - Journal composer target
 
 private func entry(id: Int64, clientID: String? = nil) -> JournalEntry {

@@ -177,7 +177,7 @@ pub(super) fn MarqueeJournalStop(uuid: String, wish_mode: bool) -> Element {
     rsx! {
         div { id: "journal", class: "bd-journal bdmq-journal", "data-testid": "journal-section",
         div { class: "bdmq-journalhead",
-            div { class: "bdmq-k", "{kicker}" }
+            div { class: "bdmq-k", "data-testid": "journal-kicker", "{kicker}" }
             span { class: "bdmq-headspacer" }
             if !wish_mode {
                 button {
