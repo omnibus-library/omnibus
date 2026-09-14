@@ -247,6 +247,8 @@ pub(super) fn MarqueeJournalStop(uuid: String, wish_mode: bool) -> Element {
                         server_url: server_url.clone(),
                         reload,
                         dates_ready,
+                        // Opening the row already asked for the whole entry.
+                        collapsible: false,
                     }
                     button {
                         class: "btn ghost sm bdmq-ocard-close",

@@ -325,6 +325,12 @@ pub(super) fn BdJournalEntryCard(
     server_url: String,
     reload: Signal<u32>,
     dates_ready: ReadSignal<bool>,
+    /// Whether a long body may open collapsed behind a "Show more" toggle.
+    /// False wherever opening the card *is* the reader's request for the
+    /// whole entry — the marquee's journal overlay — so the toggle never
+    /// asks a second time for what the reader already clicked through to.
+    #[props(default = true)]
+    collapsible: bool,
 ) -> Element {
     let edit = JournalEntryEditState {
         editing: use_signal(|| false),
@@ -350,7 +356,7 @@ pub(super) fn BdJournalEntryCard(
     };
     let entry_id = entry.id;
     let entry_progress = entry.progress;
-    let can_expand = should_show_more_button(&entry.body_md);
+    let can_expand = collapsible && should_show_more_button(&entry.body_md);
     let body_class = if can_expand && !expanded() {
         "bd-journal-entry-body bd-journal-entry-body-collapsed"
     } else {
@@ -627,6 +633,62 @@ mod render_tests {
         assert!(html.contains("data-testid=\"journal-delete\""));
         assert!(!html.contains("data-testid=\"journal-delete-modal\""));
         assert!(!html.contains("data-testid=\"journal-delete-confirm\""));
+    }
+
+    fn long_entry() -> JournalEntry {
+        JournalEntry {
+            id: 11,
+            book_uuid: "book-uuid".to_string(),
+            author_id: 3,
+            author_name: "Mira Reyes".to_string(),
+            author_has_avatar: false,
+            body_md: "x".repeat(JOURNAL_COLLAPSE_CHAR_THRESHOLD + 1),
+            body_html: "<p>a long entry</p>".to_string(),
+            progress: None,
+            status: JournalStatus::Published,
+            client_id: None,
+            created_at: 1_779_019_200,
+            updated_at: 1_779_019_200,
+            created_at_iso: None,
+            updated_at_iso: None,
+        }
+    }
+
+    #[component]
+    fn CardHarness(collapsible: bool) -> Element {
+        let dates_ready = crate::pages::book_detail::dates::use_local_dates_ready();
+        rsx! {
+            BdJournalEntryCard {
+                entry: long_entry(),
+                current_user: None,
+                server_url: "http://localhost".to_string(),
+                reload: Signal::new(0),
+                dates_ready,
+                collapsible,
+            }
+        }
+    }
+
+    /// The feed's default: a body past the collapse threshold opens clipped,
+    /// behind a "Show more" toggle.
+    #[test]
+    fn entry_card_collapses_a_long_body_behind_show_more_by_default() {
+        let html = render_in_vdom(|| rsx! { CardHarness { collapsible: true } });
+        assert!(html.contains("data-testid=\"journal-show-more\""), "{html}");
+        assert!(html.contains("bd-journal-entry-body-collapsed"), "{html}");
+    }
+
+    /// The marquee overlay opens the card *because* the reader clicked
+    /// through for the whole entry, so the same body renders in full with no
+    /// toggle asking them a second time.
+    #[test]
+    fn entry_card_renders_a_long_body_in_full_when_not_collapsible() {
+        let html = render_in_vdom(|| rsx! { CardHarness { collapsible: false } });
+        assert!(
+            !html.contains("data-testid=\"journal-show-more\""),
+            "{html}"
+        );
+        assert!(!html.contains("bd-journal-entry-body-collapsed"), "{html}");
     }
 
     /// AC1 + AC2: once delete is pending, the confirm modal renders a

@@ -367,6 +367,140 @@ test("renders a markdown preview and blurs spoilers until clicked", async ({
 });
 
 // ---------------------------------------------------------------------------
+// Action — the overlay shows the whole entry, in a card sized to it
+// ---------------------------------------------------------------------------
+
+test("opens a long entry whole, filling the backdrop rather than a fixed box", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await gotoReady(page, `/books/${uuid}`);
+
+  // Past both collapse thresholds (900 chars / 12 lines), so the feed card's
+  // "Show more" toggle would fire if the overlay inherited it, and taller
+  // than the backdrop at any plausible window size, so the card's own height
+  // is decided by the cap rather than by its content.
+  const marker = `e2e-whole-${Date.now()}`;
+  const filler = Array.from(
+    { length: 30 },
+    (_, i) => `- padding line ${i} ${"long enough to matter ".repeat(4)}`,
+  ).join("\n");
+  await publish(page, `${marker} intro\n\n${filler}`);
+
+  const card = await openEntry(page, marker);
+
+  // Opening the row already asked for the whole entry — no second ask.
+  await expect(page.getByTestId("journal-show-more")).toHaveCount(0);
+  await expect(card.locator(".bd-journal-entry-body-collapsed")).toHaveCount(0);
+
+  // The overlay card takes the room the backdrop has rather than the old
+  // fixed 640x560 box, which forced a scrollbar onto an ordinary entry.
+  const overlayBox = await page.getByTestId("journal-overlay").boundingBox();
+  const cardBox = await page.locator(".bdmq-ocard").boundingBox();
+  expect(overlayBox, "the overlay must have a box").not.toBeNull();
+  expect(cardBox, "the overlay card must have a box").not.toBeNull();
+  expect(cardBox!.width).toBeGreaterThan(640);
+  // This body outruns the window, so the card's height is the cap — which is
+  // now the backdrop's own content box (its box less 36px of padding each
+  // edge) rather than a fixed 560px. An entry that *fits* stays shorter than
+  // this, which is the point: the card is content-sized until the room runs
+  // out.
+  expect(cardBox!.height).toBeGreaterThanOrEqual(overlayBox!.height - 74);
+
+  await deleteEntry(page, marker);
+});
+
+test("sizes an entry that fits to its own content, with no scrollbar", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await gotoReady(page, `/books/${uuid}`);
+
+  // The counterpart to the spec above, and the reported complaint: an ordinary
+  // entry used to open into a fixed 560px box that scrolled. `max-height`
+  // rather than `height` is what keeps this branch content-sized, and only a
+  // short entry distinguishes the two.
+  const marker = `e2e-fits-${Date.now()}`;
+  await publish(
+    page,
+    `${marker} intro\n\n- one note\n- another note\n- a third note`,
+  );
+
+  await openEntry(page, marker);
+
+  const overlayBox = await page.getByTestId("journal-overlay").boundingBox();
+  const cardBox = await page.locator(".bdmq-ocard").boundingBox();
+  expect(overlayBox, "the overlay must have a box").not.toBeNull();
+  expect(cardBox, "the overlay card must have a box").not.toBeNull();
+  expect(cardBox!.height).toBeLessThan(overlayBox!.height - 74);
+
+  // Nothing to scroll: the whole entry is on screen at once.
+  const overflow = await page
+    .locator(".bdmq-ocard")
+    .evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(overflow).toBeLessThanOrEqual(1);
+
+  await deleteEntry(page, marker);
+});
+
+test("wraps a spoiler too wide for its line without breaking the list", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await gotoReady(page, `/books/${uuid}`);
+
+  // Typed through the keyboard, not `fill`: only the editor's own newline
+  // handling produces a real `<ul>`, and the bug is about how the spoiler box
+  // sits inside its list item.
+  const marker = `e2e-wrap-${Date.now()}`;
+  const long = "a spoiler far too long to sit on one line ".repeat(5);
+  await page.getByTestId("journal-open-composer").click();
+  await editor(page).click();
+  await page.keyboard.type(`${marker} intro\n\n- ||${long}||`);
+  await expectMutation(
+    page,
+    { method: "POST", url: SAVE_URL, expectedStatus: 200 },
+    async () => page.getByTestId("journal-publish").click(),
+  );
+
+  const card = await openEntry(page, marker);
+  const spoiler = card.locator(".spoiler");
+
+  // A `<button>` inherits `text-align: center` from the UA sheet, which makes
+  // a wrapped spoiler read as a stray centred paragraph mid-list.
+  await expect(spoiler).toHaveCSS("text-align", "start");
+
+  const box = await spoiler.evaluate((el) => {
+    const li = el.closest("li");
+    const e = el.getBoundingClientRect();
+    return {
+      inList: li !== null,
+      height: e.height,
+      lineHeight: Number.parseFloat(getComputedStyle(el).lineHeight),
+      topDelta: li ? Math.abs(e.top - li.getBoundingClientRect().top) : -1,
+    };
+  });
+
+  // Geometry, not just the declaration. The fixture has to genuinely wrap for
+  // the rule above to mean anything — a spoiler that fits on one line
+  // shrink-to-fits to its own text, where centred and left-aligned are
+  // indistinguishable.
+  expect(box.inList, "the fixture must build a real list item").toBe(true);
+  expect(
+    box.height,
+    "the spoiler must wrap for this spec to cover the bug",
+  ).toBeGreaterThan(box.lineHeight * 1.5);
+  // `vertical-align: top` — without it the box aligns on its *last* line's
+  // baseline and the list marker drops to the bottom of the spoiler.
+  expect(box.topDelta).toBeLessThanOrEqual(1);
+
+  await deleteEntry(page, marker);
+});
+
+// ---------------------------------------------------------------------------
 // Action — keyboard users can reveal a spoiler with Enter or Space
 // ---------------------------------------------------------------------------
 
