@@ -11679,6 +11679,9 @@ html {
   justify-items: center;
   text-align: center;
   padding: 14px 0 22px;
+  /* Row separation the removed keyboard-hint row used to carry. Sized against
+     the fan's ~7px rotation overhang, not the nominal gap. */
+  gap: 24px;
 }
 .lmq-stack-side { max-width: 720px; }
 .lmq-kicker {
@@ -11720,21 +11723,6 @@ html {
 .lmq-alt svg { flex: 0 0 auto; }
 .lmq-alt--invite { color: var(--ink-2); font-size: 12px; white-space: normal; }
 
-.lmq-stack-keys {
-  margin-top: 10px; display: flex; justify-content: center; gap: 22px;
-  flex-wrap: wrap;
-}
-.lmq-key {
-  display: flex; align-items: center; gap: 10px;
-  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--ink-3);
-}
-.lmq-key kbd {
-  font-family: var(--mono); font-size: 10px; color: var(--ink-1);
-  border: 1px solid var(--line-2); border-radius: 5px; padding: 3px 7px;
-  background: var(--bg-1);
-}
-
 .lmq-fan {
   display: flex; align-items: flex-end; justify-content: center;
   padding: 4px 0 12px;
@@ -11751,9 +11739,9 @@ html {
 .lmq-fcard .cover-wrap { filter: drop-shadow(0 26px 34px oklch(0 0 0 / .6)); }
 .lmq-fcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 /* Pointing anywhere at the fan spreads it; pointing at one cover tilts that
-   one forward in 3-D. Both are hover-only affordances — the same states are
-   reachable from the keyboard through `:focus-visible` above plus the arrow
-   keys, which move the lead. */
+   one forward in 3-D. Both are hover-only affordances — a keyboard user
+   reaches a card through `:focus-visible` above and activates it with Enter,
+   each card being a real link. */
 @media (hover: hover) {
   .lmq-fan:hover .lmq-fcard { margin-left: 16px; transform: rotate(0deg) translateY(0); }
   .lmq-fan:hover .lmq-fcard:first-child { margin-left: 0; }

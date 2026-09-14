@@ -203,10 +203,9 @@ pub(super) fn stack_kicker(count: usize) -> String {
 
 /// The stack: the lead book named in type on the left of nothing — centred —
 /// with every open book fanned beneath it. Clicking the lead cover resumes;
-/// clicking any other brings it forward, as do the arrow keys while a card
-/// holds focus.
+/// clicking any other brings it forward.
 #[component]
-pub(super) fn ResumeStack(entries: Vec<StackEntry>, mut lead: Signal<usize>) -> Element {
+pub(super) fn ResumeStack(entries: Vec<StackEntry>, lead: Signal<usize>) -> Element {
     let count = entries.len();
     let at = lead().min(count.saturating_sub(1));
     let Some(front) = entries.get(at).cloned() else {
@@ -235,36 +234,9 @@ pub(super) fn ResumeStack(entries: Vec<StackEntry>, mut lead: Signal<usize>) -> 
                 }
                 div { class: "lmq-where", "{front.where_line}" }
                 StackAlts { front: front.clone() }
-                div { class: "lmq-stack-keys",
-                    span { class: "lmq-key", kbd { "\u{21b5}" } "resume the front book" }
-                    // Nothing to bring forward when the fan holds one book.
-                    if count > 1 {
-                        span { class: "lmq-key",
-                            kbd { "\u{2190}" }
-                            kbd { "\u{2192}" }
-                            "bring another forward"
-                        }
-                    }
-                }
             }
             div {
                 class: "lmq-fan",
-                // Arrow keys live on the fan, not on each card: `Link` takes
-                // no key listener, and a document-level one would fight the
-                // search box for the same keys. Events bubble here from
-                // whichever card holds focus, so the on-screen hint is true.
-                onkeydown: move |evt: Event<KeyboardData>| {
-                    let step = match evt.key() {
-                        Key::ArrowLeft => Some(count.saturating_sub(1)),
-                        Key::ArrowRight => Some(1),
-                        _ => None,
-                    };
-                    if let Some(step) = step {
-                        evt.prevent_default();
-                        let at = *lead.peek();
-                        lead.set(at.saturating_add(step) % count.max(1));
-                    }
-                },
                 for (i, entry) in entries.into_iter().enumerate() {
                     FanCard {
                         key: "{entry.uuid}",
@@ -367,7 +339,7 @@ fn FanCard(entry: StackEntry, index: usize, is_lead: bool, mut lead: Signal<usiz
         // siblings (rule 07), and the href is what keeps middle-click and
         // open-in-new-tab working on the resume affordance. `onclick_only`
         // suppresses the navigation for the cards behind the front one, whose
-        // click means "come forward" — the same thing the arrow keys do.
+        // click means "come forward".
         Link {
             to: crate::routes::link_target(resume_route),
             onclick_only: !is_lead,

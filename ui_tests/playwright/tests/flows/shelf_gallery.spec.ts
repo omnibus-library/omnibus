@@ -391,9 +391,12 @@ test("a book behind the front one comes forward instead of navigating", async ({
   request,
 }) => {
   // `standalone-island` and `standalone-garden` are reserved for this test and
-  // read by no other spec: it needs two books on the stack at once, and any
-  // book another spec asserts read status on could be filtered off the rail
-  // mid-run (`db::progress::recent_progress` drops `unread` and `finished`).
+  // its keyboard sibling below, and read by no other spec: both need two books
+  // on the stack at once, and any book another spec asserts read status on
+  // could be filtered off the rail mid-run
+  // (`db::progress::recent_progress` drops `unread` and `finished`). Neither
+  // test writes to them beyond that shared progress row, and which card leads
+  // is client-only state, so the two can still run in parallel.
   const island = await fetchBookUuidByTitle(request, "The Isle of Functions");
   const garden = await fetchBookUuidByTitle(request, "The Garden of Closures");
   await seedProgressAndOpenLanding(page, request, island);
@@ -436,6 +439,52 @@ test("a book behind the front one comes forward instead of navigating", async ({
   await expect(
     stack.locator(`[data-testid="${frontId}"] .lmq-veil-lab`),
   ).toHaveCount(0);
+});
+
+test("the fan answers Enter but no longer answers the arrow keys", async ({
+  page,
+  request,
+}) => {
+  // The fan's arrow-key handler was removed: bringing a card forward is a
+  // click or a focused Enter, both of which the cards already carried as real
+  // links. Pinning both halves here means a re-added handler — or a hydration
+  // regression that drops the link activation — cannot pass unnoticed.
+  const island = await fetchBookUuidByTitle(request, "The Isle of Functions");
+  const garden = await fetchBookUuidByTitle(request, "The Garden of Closures");
+  await seedProgressAndOpenLanding(page, request, island);
+  await seedProgressAndOpenLanding(page, request, garden);
+
+  const stack = page.getByTestId("continue-stack");
+  const cards = stack.locator(".lmq-fcard");
+  await expect.poll(async () => cards.count()).toBeGreaterThan(1);
+
+  // Read the fan rather than assuming an order: the rail is ordered on a
+  // second-granularity timestamp with the uuid as tiebreak.
+  const behind = stack.locator(".lmq-fcard:not(.lead)").first();
+  const behindId = await behind.getAttribute("data-testid");
+  const frontId = await stack
+    .locator(".lmq-fcard.lead")
+    .getAttribute("data-testid");
+  expect(behindId, "the fan must have a card behind it").toBeTruthy();
+
+  // An arrow key on a focused card must do nothing at all.
+  await behind.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(stack.locator(`[data-testid="${frontId}"]`)).toHaveClass(
+    /\blead\b/,
+  );
+  await expect(stack.locator(`[data-testid="${behindId}"]`)).not.toHaveClass(
+    /\blead\b/,
+  );
+
+  // Enter on that same card still brings it forward, and still suppresses the
+  // link's own navigation.
+  await behind.focus();
+  await page.keyboard.press("Enter");
+  await expect(stack.locator(`[data-testid="${behindId}"]`)).toHaveClass(
+    /\blead\b/,
+  );
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test("resume stays reachable as an edge ribbon once the stack scrolls away", async ({
