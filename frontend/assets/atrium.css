@@ -11729,9 +11729,9 @@ html {
 .lmq-fcard .cover-wrap { filter: drop-shadow(0 26px 34px oklch(0 0 0 / .6)); }
 .lmq-fcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 /* Pointing anywhere at the fan spreads it; pointing at one cover tilts that
-   one forward in 3-D. Both are hover-only affordances — the same states are
-   reachable from the keyboard through `:focus-visible` above plus the arrow
-   keys, which move the lead. */
+   one forward in 3-D. Both are hover-only affordances — a keyboard user
+   reaches a card through `:focus-visible` above and activates it with Enter,
+   each card being a real link. */
 @media (hover: hover) {
   .lmq-fan:hover .lmq-fcard { margin-left: 16px; transform: rotate(0deg) translateY(0); }
   .lmq-fan:hover .lmq-fcard:first-child { margin-left: 0; }
