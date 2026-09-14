@@ -126,10 +126,12 @@ test("renders the journal section layout", async ({ page, request }) => {
 
   await expectNavVisible(page);
 
-  // Journal stop: kicker + collapsed composer prompt.
+  // Journal stop: kicker + collapsed composer prompt. The kicker is counts
+  // only, and this book's feed carries whatever the serial tests below left,
+  // so match the shape ("No entries yet" / "N entries from M readers").
   await expect(page.getByTestId("journal-section")).toBeVisible();
   await expect(page.getByTestId("journal-section")).toContainText(
-    /The journal/i,
+    /entr(y|ies)/i,
   );
   await expect(page.getByTestId("journal-open-composer")).toBeVisible();
 

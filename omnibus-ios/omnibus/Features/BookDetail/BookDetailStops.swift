@@ -1130,7 +1130,7 @@ struct StopStats: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let record = DetailStats.record(from: model.sessions) {
-                DetailKicker(text: "What this read has looked like")
+                DetailKicker(text: "At a glance stats")
 
                 statGrid(record)
                     .padding(.top, 16)
@@ -1418,9 +1418,11 @@ struct StopJournals: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
+                // Counts only: the stop is already named by the dot rail and
+                // the nav strip, matching the web kicker.
                 DetailKicker(text: entries.isEmpty
-                    ? "The journal · empty"
-                    : "The journal · \(entries.count) \(entries.count == 1 ? "entry" : "entries")")
+                    ? "No entries yet"
+                    : "\(entries.count) \(entries.count == 1 ? "entry" : "entries")")
                 Spacer(minLength: Spacing.sm)
                 writePill
             }
@@ -1581,7 +1583,7 @@ struct StopFiles: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DetailKicker(text: "Every way you hold this book")
+            DetailKicker(text: "Formats and copies")
 
             InsetList {
                 if book.hasEbook {
