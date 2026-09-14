@@ -534,7 +534,7 @@ test("greys out another reader's shelf and names its owner", async ({
   }
 });
 
-test("lets an admin change another reader's shelf and says whose it is", async ({
+test("lets an admin change another reader's shelf without explaining why", async ({
   page,
   request,
   playwright,
@@ -555,10 +555,10 @@ test("lets an admin change another reader's shelf and says whose it is", async (
 
     await openShelfFromIndex(page, id);
 
+    // The hero still names the owner; nothing explains why an admin *may*
+    // edit, because only a refusal earns a note.
     await expect(page.getByTestId("shelf-owner-name")).toHaveText(username);
-    await expect(page.getByTestId("shelf-admin-note")).toContainText(
-      `${username}’s shelf`,
-    );
+    await expect(page.getByTestId("shelf-admin-note")).toHaveCount(0);
     await expect(editButton(page)).toBeEnabled();
     await expect(lockNote(page)).toHaveCount(0);
   } finally {

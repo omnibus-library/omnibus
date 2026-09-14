@@ -55,7 +55,7 @@ pub(super) fn ShelfHero(
                 on_edit,
                 on_changed,
             }
-            {access_note(&shelf, &access)}
+            {access_note(&access)}
         }
     }
 }
@@ -128,9 +128,12 @@ fn rules_row(shelf: &Shelf) -> Element {
     }
 }
 
-/// The note under the actions: why they're greyed out, or — for an admin
-/// changing someone else's shelf — whose it is.
-fn access_note(shelf: &Shelf, access: &ShelfAccess) -> Element {
+/// The note under the actions: why they're greyed out, when they are.
+///
+/// Nothing is said to a viewer who *may* edit, an admin changing someone
+/// else's shelf included. A permission note earns its place only by explaining
+/// a refusal — and the hero already names the owner either way.
+fn access_note(access: &ShelfAccess) -> Element {
     match access {
         ShelfAccess::Locked(reason) => rsx! {
             div {
@@ -145,12 +148,7 @@ fn access_note(shelf: &Shelf, access: &ShelfAccess) -> Element {
                 }
             }
         },
-        ShelfAccess::Admin => rsx! {
-            p { class: "shd-note shd-note--admin", "data-testid": "shelf-admin-note",
-                "{shelf.owner_username}\u{2019}s shelf \u{2014} you can change it because you\u{2019}re an admin."
-            }
-        },
-        ShelfAccess::Owner | ShelfAccess::Pending => rsx! {},
+        ShelfAccess::Owner | ShelfAccess::Admin | ShelfAccess::Pending => rsx! {},
     }
 }
 
