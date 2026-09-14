@@ -60,25 +60,18 @@ test("renders the shelves index layout", async ({ page }) => {
       .first()
       .getByRole("heading"),
   ).toHaveText("Your shelves");
+});
+
+test("reaches the index from the library's shelves row", async ({ page }) => {
+  // The library's shelf section is the only way in — the top nav has no
+  // Shelves link.
+  await gotoReady(page, "/");
   await expect(
     page
       .getByRole("navigation", { name: "Primary" })
       .getByRole("link", { name: "Shelves" }),
-  ).toHaveClass(/\bon\b/);
-});
+  ).toHaveCount(0);
 
-test("reaches the index from the top nav and from the library's shelves row", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Shelves" })
-    .click();
-  await expect(page).toHaveURL(/\/shelves$/);
-  await expect(page.getByTestId("shelves-index")).toBeVisible();
-
-  await gotoReady(page, "/");
   await page.getByTestId("gallery-all-shelves").click();
   await expect(page).toHaveURL(/\/shelves$/);
   await expect(page.getByTestId("shelves-index")).toBeVisible();

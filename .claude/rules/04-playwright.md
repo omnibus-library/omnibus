@@ -56,17 +56,24 @@ can reach and hides the fact that it is unreachable.
 (`components/back_link.rs`, #2291); on web the top nav is the way back and
 those testids do not exist. `tags-back` went with the tag cloud page (#2157).
 
-**A shelf opens two ways on web, and they are different surfaces.** The top
-nav's Shelves link reaches the `/shelves` index, whose cards
-(`shelf-card-<id>`) navigate to `/shelves/:id` — use `openShelfFromIndex()`
-from `utils/shelves.ts`, never a bare `page.goto` to an id. The landing shelf
-gallery is the other: it filters the book list in place and never navigates, so
-open a shelf *there* with `selectShelfInGallery()` and assert against the
-landing surface — `lib-section-title` for the name, `shelf-facets` for
-kind/visibility/rules, `shelf-edit` for the pencil, `lib-grid` for members,
-`lib-page-error` for a failed member fetch. Shelf delete, add-books, the member
-sort control, and the Kobo badge exist **only** on `/shelves/:id`, where a
-viewer who can't change the shelf still gets them — greyed, not removed (see
+**A shelf opens two ways on web, and they are different surfaces.** Both start
+in the landing library's shelf section, because **the top nav has no Shelves
+link** — a spec that reaches for one in the `Primary` navigation is asserting a
+control that no longer exists.
+
+- The section's `gallery-all-shelves` link **navigates** to the `/shelves`
+  index, whose cards (`shelf-card-<id>`) then open `/shelves/:id` — use
+  `openShelfFromIndex()` from `utils/shelves.ts`, never a bare `page.goto` to
+  an id.
+- Selecting a shelf *card* in that same section **does not navigate**: it
+  filters the book list in place. Open one with `selectShelfInGallery()` and
+  assert against the landing surface — `lib-section-title` for the name,
+  `shelf-facets` for kind/visibility/rules, `shelf-edit` for the pencil,
+  `lib-grid` for members, `lib-page-error` for a failed member fetch.
+
+Shelf delete, add-books, the member sort control, and the Kobo badge exist
+**only** on `/shelves/:id`, where a viewer who can't change the shelf still
+gets them — greyed, not removed (see
 [04a](04a-playwright-surfaces.md)).
 
 ## Structure — one file per flow

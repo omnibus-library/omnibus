@@ -29,12 +29,17 @@ export async function createShelf(
   return ((await resp.json()) as { id: number }).id;
 }
 
-// A shelf opens two ways on web, and they are different surfaces. The top
-// nav's Shelves link reaches the `/shelves` index, whose cards navigate to
-// `/shelves/:id` (`openShelfFromIndex`). The landing page's shelf gallery
+// A shelf opens two ways on web, and they are different surfaces. Both start
+// in the landing page's shelf row — the top nav has no Shelves link. The row's
+// "All shelves" link reaches the `/shelves` index, whose cards navigate to
+// `/shelves/:id` (`openShelfFromIndex`); selecting a shelf in the row itself
 // filters the landing book list in place and never navigates
 // (`selectShelfInGallery`). Never `page.goto` a shelf id directly — arrive
 // the way a reader does.
+//
+// The row carries a subset: another reader's private shelves and *any*
+// wishlist but the viewer's own stocked one are filtered out of it (see
+// `rail_shelves`). Reach those through the index, which lists everything.
 
 /** The card for `shelfId` on the `/shelves` index. */
 export function shelfCard(page: Page, shelfId: number): Locator {
