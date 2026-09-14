@@ -367,6 +367,59 @@ test("renders a markdown preview and blurs spoilers until clicked", async ({
 });
 
 // ---------------------------------------------------------------------------
+// Action — the overlay shows the whole entry, laid out as prose
+// ---------------------------------------------------------------------------
+
+test("opens a long entry whole, with spoilers left-aligned in their list", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await gotoReady(page, `/books/${uuid}`);
+
+  // Past both collapse thresholds (900 chars / 12 lines), so the feed card's
+  // "Show more" toggle would fire if the overlay inherited it, and taller
+  // than the backdrop at any plausible window size, so the card's own height
+  // is decided by the cap rather than by its content. The bulleted spoiler is
+  // long enough to wrap, which is what exposed the centring.
+  const marker = `e2e-whole-${Date.now()}`;
+  const filler = Array.from(
+    { length: 30 },
+    (_, i) => `- padding line ${i} ${"long enough to matter ".repeat(4)}`,
+  ).join("\n");
+  const spoilerLine =
+    "- ||a spoiler long enough that it has to wrap onto a second line inside its own button box||";
+  await publish(page, `${marker} intro\n\n${filler}\n${spoilerLine}`);
+
+  const card = await openEntry(page, marker);
+
+  // Opening the row already asked for the whole entry — no second ask.
+  await expect(page.getByTestId("journal-show-more")).toHaveCount(0);
+  await expect(card.locator(".bd-journal-entry-body-collapsed")).toHaveCount(0);
+
+  // A `<button>` inherits `text-align: center` from the UA sheet, which makes
+  // a wrapped spoiler read as a stray centred paragraph mid-list.
+  const spoiler = card.locator(".spoiler");
+  await expect(spoiler).toHaveCSS("text-align", "start");
+
+  // The overlay card takes the room the backdrop has rather than the old
+  // fixed 640x560 box, which forced a scrollbar onto an ordinary entry.
+  const overlayBox = await page.getByTestId("journal-overlay").boundingBox();
+  const cardBox = await page.locator(".bdmq-ocard").boundingBox();
+  expect(overlayBox, "the overlay must have a box").not.toBeNull();
+  expect(cardBox, "the overlay card must have a box").not.toBeNull();
+  expect(cardBox!.width).toBeGreaterThan(640);
+  // This body outruns the window, so the card's height is the cap — which is
+  // now the backdrop's own content box (its box less 36px of padding each
+  // edge) rather than a fixed 560px. An entry that *fits* stays shorter than
+  // this, which is the point: the card is content-sized until the room runs
+  // out.
+  expect(cardBox!.height).toBeGreaterThanOrEqual(overlayBox!.height - 74);
+
+  await deleteEntry(page, marker);
+});
+
+// ---------------------------------------------------------------------------
 // Action — keyboard users can reveal a spoiler with Enter or Space
 // ---------------------------------------------------------------------------
 
