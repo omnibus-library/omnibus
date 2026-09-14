@@ -119,9 +119,9 @@ fn highlight_locator_returns_none_when_the_spine_step_is_not_an_element() {
 
 #[test]
 fn passages_kicker_singularizes_and_reports_the_empty_case() {
-    assert_eq!(passages_kicker(0), "Quotes \u{00b7} none saved");
-    assert_eq!(passages_kicker(1), "Quotes \u{00b7} 1 saved passage");
-    assert_eq!(passages_kicker(4), "Quotes \u{00b7} 4 saved passages");
+    assert_eq!(passages_kicker(0), "No saved passages");
+    assert_eq!(passages_kicker(1), "1 saved passage");
+    assert_eq!(passages_kicker(4), "4 saved passages");
 }
 
 #[test]
@@ -217,7 +217,9 @@ mod render_tests {
         let html = render_in_vdom(section_first_paint);
         assert!(html.contains("data-testid=\"highlights-section\""));
         assert!(html.contains("data-testid=\"highlights-empty\""));
-        assert!(html.contains("Quotes \u{00b7} none saved"));
+        // Anchored on the kicker element: the empty-state body below it opens
+        // with the same three words, so a bare substring proves nothing.
+        assert!(html.contains("bd-section-kicker\">No saved passages<"));
         assert!(!html.contains("data-testid=\"highlights-list\""));
         // No passage is targeted on first paint, so no modal either (rule 07).
         assert!(!html.contains("data-testid=\"quote-card-modal\""));

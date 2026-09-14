@@ -177,7 +177,7 @@ pub(super) fn MarqueeJournalStop(uuid: String, wish_mode: bool) -> Element {
     rsx! {
         div { id: "journal", class: "bd-journal bdmq-journal", "data-testid": "journal-section",
         div { class: "bdmq-journalhead",
-            div { class: "bdmq-k", "{kicker}" }
+            div { class: "bdmq-k", "data-testid": "journal-kicker", "{kicker}" }
             span { class: "bdmq-headspacer" }
             if !wish_mode {
                 button {
@@ -319,7 +319,9 @@ fn render_ladder_row(
     }
 }
 
-/// The marquee journal kicker: `The journal · N entries from M readers · d draft`.
+/// The marquee journal kicker: `N entries from M readers · d draft`. The stop
+/// is already named by its section label and the dot rail, so the kicker
+/// carries only the counts.
 #[cfg(not(feature = "mobile"))]
 fn marquee_journal_kicker(
     published: usize,
@@ -328,15 +330,14 @@ fn marquee_journal_kicker(
     wish_mode: bool,
 ) -> String {
     if wish_mode {
-        return "The journal \u{b7} empty".to_string();
+        return "Empty".to_string();
     }
     if published + drafts == 0 {
-        return "The journal \u{b7} no entries yet".to_string();
+        return "No entries yet".to_string();
     }
     let entry_word = if published == 1 { "entry" } else { "entries" };
     let reader_word = if readers == 1 { "reader" } else { "readers" };
-    let mut out =
-        format!("The journal \u{b7} {published} {entry_word} from {readers} {reader_word}");
+    let mut out = format!("{published} {entry_word} from {readers} {reader_word}");
     if drafts > 0 {
         out.push_str(&format!(
             " \u{b7} {drafts} {}",

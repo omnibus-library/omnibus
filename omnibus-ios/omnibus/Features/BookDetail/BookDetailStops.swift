@@ -10,6 +10,32 @@ import SwiftUI
 
 /// Copy and numbers the stops derive from the record — pure, so the suite can
 /// assert them without a screen.
+/// Journal-stop copy. Kept as a free function rather than inline in the view
+/// so the wording is unit-testable, and deliberately a mirror of
+/// `marquee_journal_kicker` in `frontend/src/pages/book_detail/journal.rs` —
+/// the two clients render the same stop and must not word it differently.
+enum DetailJournal {
+    /// `N entries from M readers · d drafts`, or the empty note. Drafts are
+    /// counted apart from the published total, the way the web stop does it:
+    /// a draft is visible only to its own author, so folding it into the
+    /// public count would overstate what another reader can actually open.
+    static func kicker(_ entries: [JournalEntry]) -> String {
+        let published = entries.filter { $0.status != .draft }
+        let drafts = entries.count - published.count
+        if published.isEmpty, drafts == 0 { return "No entries yet" }
+        // Unique authors over *every* entry, drafts included — the web counts
+        // them the same way, and parity with it beats a local improvement.
+        let readers = Set(entries.map(\.authorId)).count
+        let entryWord = published.count == 1 ? "entry" : "entries"
+        let readerWord = readers == 1 ? "reader" : "readers"
+        var out = "\(published.count) \(entryWord) from \(readers) \(readerWord)"
+        if drafts > 0 {
+            out += " · \(drafts) \(drafts == 1 ? "draft" : "drafts")"
+        }
+        return out
+    }
+}
+
 enum DetailRead {
     /// The Home stop's kicker line: where this book sits in the catalog.
     static func kicker(
@@ -1130,7 +1156,7 @@ struct StopStats: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let record = DetailStats.record(from: model.sessions) {
-                DetailKicker(text: "What this read has looked like")
+                DetailKicker(text: "At a glance stats")
 
                 statGrid(record)
                     .padding(.top, 16)
@@ -1418,9 +1444,9 @@ struct StopJournals: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                DetailKicker(text: entries.isEmpty
-                    ? "The journal · empty"
-                    : "The journal · \(entries.count) \(entries.count == 1 ? "entry" : "entries")")
+                // Counts only: the stop is already named by the dot rail and
+                // the nav strip.
+                DetailKicker(text: DetailJournal.kicker(entries))
                 Spacer(minLength: Spacing.sm)
                 writePill
             }
@@ -1581,7 +1607,7 @@ struct StopFiles: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DetailKicker(text: "Every way you hold this book")
+            DetailKicker(text: "Formats and copies")
 
             InsetList {
                 if book.hasEbook {

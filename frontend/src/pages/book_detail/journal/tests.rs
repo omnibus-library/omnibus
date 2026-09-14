@@ -1,6 +1,40 @@
-//! Tests for the marquee journal stop's excerpt helper and its two-line ladder row.
+//! Tests for the marquee journal stop's kicker, its excerpt helper, and its
+//! two-line ladder row.
 
 use super::*;
+
+#[test]
+fn marquee_journal_kicker_counts_entries_and_readers() {
+    assert_eq!(
+        marquee_journal_kicker(1, 1, 0, false),
+        "1 entry from 1 reader"
+    );
+    assert_eq!(
+        marquee_journal_kicker(4, 2, 0, false),
+        "4 entries from 2 readers"
+    );
+}
+
+#[test]
+fn marquee_journal_kicker_appends_the_draft_count_apart_from_the_published_total() {
+    // A draft is visible only to its own author, so it is reported beside the
+    // published count rather than folded into it.
+    assert_eq!(
+        marquee_journal_kicker(2, 1, 1, false),
+        "2 entries from 1 reader \u{b7} 1 draft"
+    );
+    assert_eq!(
+        marquee_journal_kicker(2, 1, 3, false),
+        "2 entries from 1 reader \u{b7} 3 drafts"
+    );
+}
+
+#[test]
+fn marquee_journal_kicker_reports_the_empty_and_wishlist_cases_without_counts() {
+    assert_eq!(marquee_journal_kicker(0, 0, 0, false), "No entries yet");
+    // Wishlist-only books have no feed to count, whatever was passed.
+    assert_eq!(marquee_journal_kicker(3, 2, 1, true), "Empty");
+}
 
 #[test]
 fn journal_excerpt_takes_the_first_non_empty_line_and_strips_markup() {

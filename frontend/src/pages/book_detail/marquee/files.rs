@@ -1,4 +1,4 @@
-//! Stop 06 · The files — every way you hold this book: the per-format rows
+//! Stop 06 · The files — formats and copies: the per-format rows
 //! with their read/listen/send/download actions, the physical copies +
 //! wishlist slot, the metadata mini-table, and the edit / merge / delete
 //! actions.
@@ -41,7 +41,7 @@ pub(super) fn MarqueeFilesStop(
         format_instant_short_opt(raw, offset)
     });
     rsx! {
-        div { class: "bdmq-k", "Every way you hold this book" }
+        div { class: "bdmq-k", "Formats and copies" }
         // One list, one row per way you hold the book — file formats first,
         // then the physical copies and the wishlist. The design has no
         // separate badge row or physical panel here: a copy row *is* the

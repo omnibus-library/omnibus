@@ -12094,7 +12094,21 @@ html {
    the list is capped so the stop keeps its own scroll rather than growing
    past the viewport. */
 .bdmq .st-log-compact { max-width: 560px; }
-.bdmq .st-log-compact .st-log-list { max-height: min(280px, 34vh); overflow-y: auto; }
+/* The gutter is load-bearing: the duration column is flush right, so without
+   it an overlay scrollbar lands on top of the figures. Same thin bar as the
+   highlights list and the journal ladder, the stop's other two scrollers. */
+.bdmq .st-log-compact .st-log-list {
+  max-height: min(280px, 34vh); overflow-y: auto; padding-right: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent) 75%, var(--bg-3)) var(--bg-2);
+}
+.bdmq .st-log-compact .st-log-list::-webkit-scrollbar { display: block; width: 6px; }
+.bdmq .st-log-compact .st-log-list::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent) 75%, var(--bg-3)); border-radius: 99px;
+}
+.bdmq .st-log-compact .st-log-list::-webkit-scrollbar-track {
+  background: var(--bg-2); border-radius: 99px;
+}
 .bdmq-logk { margin-top: 30px; }
 
 @media (max-width: 720px) {

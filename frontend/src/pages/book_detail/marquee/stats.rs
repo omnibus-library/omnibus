@@ -1,4 +1,4 @@
-//! Stop 03 · Stats — what this read has looked like: the 2×2 record grid
+//! Stop 03 · Stats — the at-a-glance record: the 2×2 record grid
 //! (Started / Time in book / Pickups / Longest sit), a time-left note, the
 //! per-day activity spark over the last 22 days, the session log behind those
 //! figures, and the rating widget.
@@ -37,11 +37,11 @@ pub(super) fn MarqueeStatsStop(
     // they must all land on the reader's calendar together (#2464).
     let dates_ready = use_local_dates_ready()();
     rsx! {
-        div { class: "bdmq-k", if wish_mode { "Stats" } else { "What this read has looked like" } }
+        div { class: "bdmq-k", if wish_mode { "Stats" } else { "At a glance stats" } }
         match insights {
             Some(i) if i.sessions > 0 && !wish_mode => rsx! {
                 {render_stats(&i, &progress, audio_only, dates_ready)}
-                div { class: "bdmq-k bdmq-logk", "The sittings behind it" }
+                div { class: "bdmq-k bdmq-logk", "Your sessions" }
                 SessionLogList { book: Some(uuid.clone()), compact: true }
             },
             _ => rsx! {

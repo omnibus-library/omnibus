@@ -126,10 +126,14 @@ test("renders the journal section layout", async ({ page, request }) => {
 
   await expectNavVisible(page);
 
-  // Journal stop: kicker + collapsed composer prompt.
+  // Journal stop: kicker + collapsed composer prompt. Asserted on the kicker
+  // element itself — scoping to the whole section would also match the "New
+  // entry" button, so the assertion would pass against any kicker at all. The
+  // kicker is counts only, and this book's feed carries whatever the serial
+  // tests below left, so pin the full string to one of its two shapes.
   await expect(page.getByTestId("journal-section")).toBeVisible();
-  await expect(page.getByTestId("journal-section")).toContainText(
-    /The journal/i,
+  await expect(page.getByTestId("journal-kicker")).toHaveText(
+    /^(No entries yet|\d+ entr(y|ies) from \d+ readers?( · \d+ drafts?)?)$/,
   );
   await expect(page.getByTestId("journal-open-composer")).toBeVisible();
 

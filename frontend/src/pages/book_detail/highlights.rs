@@ -159,13 +159,13 @@ fn render_quote_modal(quote_target: Signal<Option<Highlight>>, meta: BdQuoteMeta
     }
 }
 
-/// Section kicker: "Quotes · none saved" or "Quotes · N saved passage(s)".
+/// Section kicker: "No saved passages" or "N saved passage(s)".
 fn passages_kicker(count: usize) -> String {
     if count == 0 {
-        return "Quotes \u{00b7} none saved".to_string();
+        return "No saved passages".to_string();
     }
     let word = if count == 1 { "passage" } else { "passages" };
-    format!("Quotes \u{00b7} {count} saved {word}")
+    format!("{count} saved {word}")
 }
 
 /// One saved passage: the quote, its note, the locator/date meta line, and
