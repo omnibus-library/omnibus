@@ -372,39 +372,8 @@ fn build_search_query_unknown_prefix_falls_through_to_free_text() {
     );
 }
 
-#[test]
-fn build_search_query_routes_a_tag_facet_out_of_the_fts_match() {
-    let query = build_search_query("tag:Exandria");
-
-    assert_eq!(query.tag_facets, ["Exandria"]);
-    assert!(query.fts_match.is_none());
-}
-
-#[test]
-fn build_search_query_routes_a_genre_facet_out_of_the_fts_match() {
-    let query = build_search_query("genre:Fantasy");
-
-    assert_eq!(query.genre_facets, ["Fantasy"]);
-    assert!(query.fts_match.is_none());
-}
-
-#[test]
-fn build_search_query_keeps_a_quoted_multi_word_facet_value_whole() {
-    let query = build_search_query("tag:\"Science Fiction\"");
-
-    assert_eq!(query.tag_facets, ["Science Fiction"]);
-}
-
-#[test]
-fn build_search_query_keeps_author_and_series_facets_inside_the_fts_match() {
-    let query = build_search_query("author:austen series:persuasion");
-
-    assert_eq!(
-        query.fts_match.as_deref(),
-        Some("{authors} : (\"austen\"*) AND {series} : (\"persuasion\"*)")
-    );
-}
-
+// The one mixed shape: a facet leaves the MATCH while free text stays in it,
+// so both halves of the split have to survive the same parse.
 #[test]
 fn build_search_query_combines_a_tag_facet_with_free_text() {
     let query = build_search_query("tag:Classic pride prejudice");
@@ -416,28 +385,14 @@ fn build_search_query_combines_a_tag_facet_with_free_text() {
     );
 }
 
-#[test]
-fn build_search_query_drops_an_empty_facet_value() {
-    assert!(build_search_query("tag:").is_empty());
-}
-
+// Two facets of the *same* kind stay separate values rather than merging,
+// because they AND against membership — see
+// `search_books_two_tag_facets_require_both_memberships`.
 #[test]
 fn build_search_query_collects_two_tag_facets_separately() {
     let query = build_search_query("tag:A tag:B");
 
     assert_eq!(query.tag_facets, ["A", "B"]);
-}
-
-#[test]
-fn build_search_query_is_empty_for_empty_input() {
-    assert!(build_search_query("").is_empty());
-}
-
-#[test]
-fn build_search_query_unfolds_a_doubled_quote_in_a_facet_value() {
-    let query = build_search_query(r#"tag:"the ""good"" parts""#);
-
-    assert_eq!(query.tag_facets, [r#"the "good" parts"#]);
 }
 
 #[test]

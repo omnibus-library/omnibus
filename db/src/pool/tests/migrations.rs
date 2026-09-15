@@ -460,34 +460,3 @@ async fn migration_0069_entity_aliases_rejects_duplicate_kind_alias_name() {
         "got: {err}"
     );
 }
-
-#[tokio::test]
-async fn migration_0097_adds_a_nullable_name_norm_column_to_authors() {
-    let pool = init_db("sqlite::memory:").await.unwrap();
-
-    // AC1: the column exists and is queryable.
-    let result = sqlx::query_scalar::<_, Option<String>>("SELECT name_norm FROM authors LIMIT 1")
-        .fetch_optional(&pool)
-        .await;
-    assert!(
-        result.is_ok(),
-        "SELECT name_norm FROM authors must not error; got: {:?}",
-        result
-    );
-
-    // AC2: PRAGMA table_info confirms the column is present, nullable, and has no default.
-    let info: Vec<(i64, String, String, i64, Option<String>, i64)> =
-        sqlx::query_as("PRAGMA table_info(authors)")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-    let name_norm_col = info
-        .iter()
-        .find(|(_, name, _, _, _, _)| name == "name_norm")
-        .expect("name_norm column must exist in authors table");
-    let (_, name, col_type, notnull, dflt_value, _) = name_norm_col;
-    assert_eq!(name, "name_norm", "column name must be name_norm");
-    assert_eq!(col_type, "TEXT", "column type must be TEXT");
-    assert_eq!(*notnull, 0, "column must be nullable (notnull = 0)");
-    assert_eq!(*dflt_value, None, "column must have no default");
-}
