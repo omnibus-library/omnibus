@@ -8,9 +8,7 @@ use std::sync::OnceLock;
 use omnibus_shared::EbookMetadata;
 use regex::Regex;
 
-use crate::metadata_overrides::sql::{
-    effective_genres_sql, effective_tags_sql, overrides_win_sql,
-};
+use crate::metadata_overrides::sql::{effective_genres_sql, effective_tags_sql, overrides_win_sql};
 
 /// Maximum query length (in chars) accepted by the FTS5 search entrypoints
 /// (`search_books`, `count_search_books`, `search_palette`). Inputs beyond
@@ -411,9 +409,7 @@ pub fn build_search_query(raw: &str) -> SearchQuery {
     for token in split_query_tokens(raw) {
         if let Some((prefix, value)) = token.text.split_once(':') {
             let lower = prefix.to_ascii_lowercase();
-            if value.is_empty()
-                && matches!(lower.as_str(), "author" | "series" | "tag" | "genre")
-            {
+            if value.is_empty() && matches!(lower.as_str(), "author" | "series" | "tag" | "genre") {
                 continue;
             }
             match lower.as_str() {

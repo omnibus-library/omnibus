@@ -318,7 +318,9 @@ fn build_search_query_combines_facet_and_free_text() {
     // Two clauses joined by an explicit `AND` — FTS5's grammar only
     // implicit-ANDs *inside* a column-filter body, not between two
     // top-level column filters.
-    let out = build_search_query("author:austen pride").fts_match.expect("non-empty");
+    let out = build_search_query("author:austen pride")
+        .fts_match
+        .expect("non-empty");
     assert_eq!(
         out,
         "{authors} : (\"austen\"*) AND {title authors series} : (\"pride\"*)"

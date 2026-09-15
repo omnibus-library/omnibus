@@ -140,7 +140,10 @@ fn compute_author_groups_keeps_an_accented_name_in_its_existing_letter_bucket() 
         .letters
         .iter()
         .map(|(letter, authors)| {
-            (*letter, authors.iter().map(|author| author.name.as_str()).collect())
+            (
+                *letter,
+                authors.iter().map(|author| author.name.as_str()).collect(),
+            )
         })
         .collect();
     assert_eq!(

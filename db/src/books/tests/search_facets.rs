@@ -73,8 +73,22 @@ async fn search_books_tag_facet_excludes_a_book_whose_two_tags_concatenate_to_th
         &pool,
         "/lib",
         vec![
-            indexed("c.epub", Some("C"), &["X"], &["Science", "Fiction"], None, None),
-            indexed("d.epub", Some("D"), &["Y"], &["Science Fiction"], None, None),
+            indexed(
+                "c.epub",
+                Some("C"),
+                &["X"],
+                &["Science", "Fiction"],
+                None,
+                None,
+            ),
+            indexed(
+                "d.epub",
+                Some("D"),
+                &["Y"],
+                &["Science Fiction"],
+                None,
+                None,
+            ),
         ],
     )
     .await
@@ -185,7 +199,14 @@ async fn search_books_two_tag_facets_require_both_memberships() {
         &pool,
         "/lib",
         vec![
-            indexed("a.epub", Some("A"), &["X"], &["Dark", "history"], None, None),
+            indexed(
+                "a.epub",
+                Some("A"),
+                &["X"],
+                &["Dark", "history"],
+                None,
+                None,
+            ),
             indexed("b.epub", Some("B"), &["Y"], &["Dark"], None, None),
         ],
     )
