@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
-use omnibus_shared::{AuthorSummary, IndexSort};
+use omnibus_shared::{text_fold::fold_for_match, AuthorSummary, IndexSort};
 
 use super::index_shell::{
     index_card_stats, index_page_early_return, use_index_page_shell, IndexFilterInput,
@@ -170,7 +170,7 @@ fn index_subtitle(total_authors: usize, total_credits: usize) -> String {
 /// `use_memo` above reruns once per authors/filter/sort change rather than
 /// three times (mirrors `landing.rs`'s `visible = use_memo(...)`).
 fn compute_author_groups(all: &[AuthorSummary], query: &str, sort: IndexSort) -> AuthorGroups {
-    let q = query.to_lowercase();
+    let q = fold_for_match(query);
     let mut filtered = filter_authors(all, &q);
     sort_authors(&mut filtered, sort);
     let filtered: Vec<AuthorSummary> = filtered.into_iter().cloned().collect();
@@ -184,7 +184,7 @@ fn filter_authors<'a>(all: &'a [AuthorSummary], query: &str) -> Vec<&'a AuthorSu
         all.iter().collect()
     } else {
         all.iter()
-            .filter(|a| a.name.to_lowercase().contains(query))
+            .filter(|a| fold_for_match(&a.name).contains(query))
             .collect()
     }
 }
