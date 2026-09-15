@@ -69,11 +69,13 @@ enum UploadFlow {
     static let ebookExtensions: Set<String> = ["epub"]
 
     /// Extensions `/api/uploads/audiobooks` accepts, matching `audiobook_ext_of`
-    /// on the server. This is the same narrow set the player and downloader
-    /// already use, so it is shared rather than restated — `Book.audioFormats`
-    /// is the *broad* list of what a library may contain, and routing on that
-    /// transferred whole `.flac`/`.wav` files the server then answered 415.
-    static let audiobookExtensions: Set<String> = Book.selectableAudioFormats
+    /// on the server: the narrow set the player and downloader already use
+    /// (`Book.audioFormats` is the *broad* list of what a library may contain,
+    /// and routing on that transferred whole `.flac`/`.wav` files the server
+    /// then answered 415), plus `mp4`. That one is upload-only — the server
+    /// files an audio-only MP4 as `.m4b`, so no library file ever carries the
+    /// extension and the player never needs to select it.
+    static let audiobookExtensions: Set<String> = Book.selectableAudioFormats.union(["mp4"])
 
     /// Longest title the server will accept, mirroring
     /// `MetadataOverrides::TITLE_MAX_LEN` in `shared/src/ebook/overrides.rs`.
@@ -118,7 +120,7 @@ enum UploadFlow {
         switch fileExtension(of: filename) {
         case "epub": "application/epub+zip"
         case "mp3": "audio/mpeg"
-        case "m4a", "m4b": "audio/mp4"
+        case "m4a", "m4b", "mp4": "audio/mp4"
         default: "application/octet-stream"
         }
     }
@@ -215,8 +217,9 @@ enum UploadFlow {
     /// A `UTType` can carry sibling extensions the server does not take —
     /// `public.mp3` also claims `mpga` — so this narrows the picker rather than
     /// matching it exactly, and [`selection(for:)`] stays the real gate. It is
-    /// still worth deriving: naming `UTType.mpeg4Audio` by hand offered `mp4`
-    /// and `mpg4`, which are not audiobooks at all.
+    /// still worth deriving: naming `UTType.mpeg4Audio` by hand offered `mpg4`
+    /// too, and `public.mpeg-4` (what `mp4` maps to) still carries it as a
+    /// sibling the server does not take.
     static var pickerTypes: [UTType] {
         let extensions = ebookExtensions.sorted() + audiobookExtensions.sorted()
         var types: [UTType] = []

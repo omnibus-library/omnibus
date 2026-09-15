@@ -1,8 +1,8 @@
-//! The audiobook path: inspect and commit for a single MP3 and a
-//! multi-MP3 folder, the supplied series persisted as an override, the
-//! permission and library-path gates, and the 415 / 400 rejections for
-//! non-audio, multiple single containers, a renamed MP3, unparseable tags
-//! and a read-only library.
+//! The audiobook path: inspect and commit for a single MP3, a multi-MP3
+//! folder and an `.mp4` filed as `.m4b`, the supplied series persisted as an
+//! override, the permission and library-path gates, and the 415 / 400
+//! rejections for non-audio, multiple single containers, a renamed MP3,
+//! unparseable tags and a read-only library.
 
 use axum::{body::to_bytes, http::StatusCode};
 use tower::ServiceExt;
@@ -21,6 +21,22 @@ fn fixture_audiobook(rel: &str) -> Vec<u8> {
         .join(rel);
     std::fs::read(&path).unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()))
 }
+
+/// Read a public-domain audiobook fixture — fetched by `just fixtures`, not in
+/// git — with a pointer at that recipe when it is missing.
+fn fixture_public_domain_audiobook(rel: &str) -> Vec<u8> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../test_data/audiobooks/public_domain")
+        .join(rel);
+    assert!(
+        path.exists(),
+        "audiobook fixture {rel} missing — run `just fixtures` from the repo root"
+    );
+    std::fs::read(&path).unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()))
+}
+
+/// The only real M4B in the fixture set (the generated ones are all MP3).
+const PUBLIC_DOMAIN_M4B: &str = "Arthur Conan Doyle/A Womans Love.m4b";
 
 /// Minimal MP4 `ftyp` header — enough to pass the magic-byte gate (not lofty).
 const M4B_MAGIC: &[u8] = b"\x00\x00\x00\x18ftypM4B \x00\x00\x00\x00isom";
@@ -244,6 +260,116 @@ async fn audiobook_commit_requires_configured_library_path() {
         .await
         .expect("request should succeed");
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn audiobook_inspect_accepts_mp4_and_reports_it_as_m4b() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    // A real M4B under an `.mp4` name: the same container, so the extension
+    // gate admits it and the settled format is the one it will be filed as.
+    let (ct, body) = multipart_body(&[(
+        "file",
+        Some("book.mp4"),
+        &fixture_public_domain_audiobook(PUBLIC_DOMAIN_M4B),
+    )]);
+    let res = app
+        .oneshot(post_multipart(
+            "/api/uploads/audiobooks/inspect",
+            &token,
+            &ct,
+            body,
+        ))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let inspection: AudiobookInspection = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(inspection.format, "m4b");
+    assert_eq!(inspection.part_count, 1);
+    assert!(inspection.title.is_some(), "fixture should yield a title");
+}
+
+#[tokio::test]
+async fn audiobook_commit_files_mp4_as_m4b_and_indexes() {
+    let (app, _state, pool) = fixture().await;
+    let _covers = CoversDirGuard::new("upload_audiobook_mp4");
+    let library = tempfile::tempdir().expect("temp library dir");
+    set_audiobook_library(&pool, &library.path().to_string_lossy()).await;
+
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let (ct, body) = multipart_body(&[
+        ("title", None, b"Audio Title MP4"),
+        ("author", None, b"Audio Author"),
+        (
+            "file",
+            Some("book.mp4"),
+            &fixture_public_domain_audiobook(PUBLIC_DOMAIN_M4B),
+        ),
+    ]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/audiobooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let commit: UploadCommitResult = serde_json::from_slice(&bytes).unwrap();
+
+    // Filed under the extension the scanner knows, not the one it arrived with.
+    let placed = library
+        .path()
+        .join("audio-author")
+        .join("audio-title-mp4")
+        .join("audio-title-mp4.m4b");
+    assert!(placed.is_file(), "expected file at {}", placed.display());
+    assert!(!library
+        .path()
+        .join("audio-author")
+        .join("audio-title-mp4")
+        .join("audio-title-mp4.mp4")
+        .exists());
+
+    let book = db::get_book_by_uuid(&pool, &commit.uuid)
+        .await
+        .unwrap()
+        .expect("uploaded audiobook should be indexed");
+    assert!(
+        book.formats.iter().any(|f| f.eq_ignore_ascii_case("m4b")),
+        "expected an M4B format, got {:?}",
+        book.formats
+    );
+    assert_eq!(book.title.as_deref(), Some("Audio Title MP4"));
+}
+
+#[tokio::test]
+async fn audiobook_rejects_mp3_renamed_to_mp4_with_415() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    // The `.mp4` alias only widens the extension gate; the magic-byte family
+    // cross-check still expects an ISO-BMFF container behind it.
+    let (ct, body) = multipart_body(&[(
+        "file",
+        Some("liar.mp4"),
+        &fixture_audiobook("ada_lovelace_solo/the_analytical_audiobook.mp3"),
+    )]);
+    let res = app
+        .oneshot(post_multipart(
+            "/api/uploads/audiobooks/inspect",
+            &token,
+            &ct,
+            body,
+        ))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
 }
 
 #[tokio::test]

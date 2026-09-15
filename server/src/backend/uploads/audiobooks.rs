@@ -1,7 +1,8 @@
 //! Audiobook ingest handlers for the "add your own books" upload flow.
 //! Sibling to the EPUB handlers in [`super`], sharing its error type, gate, and
-//! size cap. Accepts a single `.m4a`/`.m4b` container or a set of `.mp3` parts
-//! filed into one canonical folder, then reindexes so the indexer inserts it.
+//! size cap. Accepts a single `.m4a`/`.m4b` container (an audio-only `.mp4` is
+//! the same container and is filed as `.m4b`) or a set of `.mp3` parts filed
+//! into one canonical folder, then reindexes so the indexer inserts it.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -28,7 +29,8 @@ use crate::backend::AppState;
 
 /// One streamed audiobook file staged in a tempfile, awaiting placement.
 struct AudioUpload {
-    /// Validated lowercase extension (`m4a` / `m4b` / `mp3`).
+    /// Validated lowercase extension the file is filed under (`m4a` / `m4b` /
+    /// `mp3`) — an uploaded `.mp4` has already been folded to `m4b` here.
     ext: String,
     /// The client-supplied filename (used to name `.mp3` parts on disk).
     filename: String,
@@ -62,13 +64,26 @@ struct ConfirmedAudiobookMeta {
     series_index: Option<String>,
 }
 
-/// Map an uploaded filename to a supported audiobook extension, or `None` if
-/// its extension isn't one of [`db::audiobook::AUDIOBOOK_EXTENSIONS`].
+/// The one upload extension that isn't a library extension: accepted by
+/// [`audiobook_ext_of`] and folded to `m4b` on the way in.
+const MP4_UPLOAD_EXT: &str = "mp4";
+
+/// Map an uploaded filename to the extension it will be filed under, or `None`
+/// if the upload endpoint doesn't take it. The result is always one of
+/// [`db::audiobook::AUDIOBOOK_EXTENSIONS`]: an `.mp4` is admitted because an
+/// audio-only MP4 is byte-for-byte an M4B (same ISO-BMFF container, same AAC),
+/// but it is filed as `.m4b` so the scanner and every player treat it as the
+/// audiobook it is rather than the video its extension implies.
 fn audiobook_ext_of(filename: &str) -> Option<String> {
     let ext = Path::new(filename)
         .extension()?
         .to_str()?
         .to_ascii_lowercase();
+    let ext = if ext == MP4_UPLOAD_EXT {
+        "m4b".to_string()
+    } else {
+        ext
+    };
     db::audiobook::AUDIOBOOK_EXTENSIONS
         .contains(&ext.as_str())
         .then_some(ext)
@@ -202,7 +217,7 @@ async fn parse_audiobook_multipart(
     Ok(form)
 }
 
-/// Classify the uploaded file set: a lone `.m4a`/`.m4b` is [`AudioKind::Single`],
+/// Classify the uploaded file set: a lone `.m4a`/`.m4b`/`.mp4` is [`AudioKind::Single`],
 /// one-or-more `.mp3` is [`AudioKind::Mp3Set`]. Multiple single-file containers
 /// or a mix of families are rejected — each `.m4a`/`.m4b` is its own book.
 fn classify_audio_set(files: &[AudioUpload]) -> Result<AudioKind, UploadError> {

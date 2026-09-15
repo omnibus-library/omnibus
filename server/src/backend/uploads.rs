@@ -143,13 +143,13 @@ impl IntoResponse for UploadError {
                 .into_response(),
             UploadError::UnsupportedAudioFormat => (
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "file must be a valid .m4a, .m4b, or .mp3 audiobook",
+                "file must be a valid .m4a, .m4b, .mp4, or .mp3 audiobook",
             )
                 .into_response(),
             UploadError::BadAudio(msg) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg).into_response(),
             UploadError::MixedAudioUpload => (
                 StatusCode::BAD_REQUEST,
-                "upload one .m4a/.m4b audiobook, or a set of .mp3 parts for a single book",
+                "upload one .m4a/.m4b/.mp4 audiobook, or a set of .mp3 parts for a single book",
             )
                 .into_response(),
             UploadError::TooLarge(cap) => (
