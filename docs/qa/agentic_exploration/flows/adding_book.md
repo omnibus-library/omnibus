@@ -23,7 +23,7 @@ whose upload permission has been turned off runs this flow to meet the
 
 - The **pass** is that every route to an upload ends at "You don't have
   permission to add books to this library." — no file input, no drop zone, no
-  upload-type selector, no Add-to-library button.
+  Add-to-library button.
 - The **fail** is a screen that lets you upload anyway.
 - **A hidden entry point is not a failure to reach the refusal.** The desktop
   nav has no Add books item for you at all; the phone-width tab bar still
