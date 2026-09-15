@@ -338,7 +338,7 @@ async fn search_books_finds_by_author_and_scopes_to_library() {
 #[tokio::test]
 async fn search_books_truncates_oversized_query() {
     // Issue #189: a query longer than MAX_QUERY_LEN chars must be capped
-    // before reaching build_fts_match, not panic or pass an unbounded
+    // before reaching build_search_query, not panic or pass an unbounded
     // expression to FTS5. The exact rows don't matter — this documents
     // the contract that oversized input is bounded and returns Ok.
     let _covers = CoversTempDir::new("fts_oversized");

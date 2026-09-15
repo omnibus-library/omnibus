@@ -106,7 +106,7 @@ pub use epub_rewrite::{
     export_epub_dir, rewrite_all_epubs_with_overrides, rewrite_all_epubs_with_progress,
     rewritten_epub_path,
 };
-pub use helpers::{build_fts_match, sanitize_fts_query};
+pub use helpers::sanitize_fts_query;
 pub use kepub::{convert_book, kepub_path, kepubify_available, warn_if_unavailable, KepubError};
 pub use merge::{merge_books, undo_merge, MergeError, MergeOutcome};
 pub use metadata_lookup::{

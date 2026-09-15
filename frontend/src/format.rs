@@ -17,7 +17,7 @@ use omnibus_shared::BookFileInfo;
 /// AND-ed, which is a different question — "Science Fiction & Fantasy"
 /// became four facets including `tag:&`, and the page then returned a count
 /// that disagreed with the row the reader clicked (#2504).
-/// `db::helpers::build_fts_match` keeps a quoted run whole, so the value
+/// `db::helpers::build_search_query` keeps a quoted run whole, so the value
 /// arrives intact and matches as an FTS phrase.
 ///
 /// A single-word value stays unquoted — it needs no quoting, and the shorter
