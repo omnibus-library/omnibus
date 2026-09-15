@@ -66,4 +66,61 @@ macro_rules! effective_text_sql {
     };
 }
 
-pub(crate) use {effective_text_sql, override_join_sql, override_sql, overrides_win_sql};
+/// Gates tag membership so SQL reads mirror metadata precedence and clear-all overrides.
+macro_rules! effective_tags_sql {
+    () => {
+        concat!(
+            "SELECT btl.book AS book_id, btl.tag AS tag_id
+               FROM books_tags_link btl
+               JOIN books b ON b.id = btl.book
+               JOIN scan_roots l ON l.id = b.library_id
+               LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+              WHERE mo.book_uuid IS NULL
+                 OR json_type(CASE WHEN json_valid(mo.overrides)
+                                   THEN mo.overrides ELSE '{}' END, '$.subjects') IS NULL
+                 OR NOT ",
+            overrides_win_sql!(),
+            " UNION
+             SELECT b.id AS book_id, t.id AS tag_id
+               FROM books b
+               JOIN scan_roots l ON l.id = b.library_id
+               JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+               JOIN json_each(CASE WHEN json_valid(mo.overrides)
+                                   THEN mo.overrides ELSE '{}' END, '$.subjects') je
+               JOIN tags t ON t.name = je.value COLLATE NOCASE
+              WHERE ",
+            overrides_win_sql!(),
+            " AND json_type(CASE WHEN json_valid(mo.overrides)
+                                 THEN mo.overrides ELSE '{}' END, '$.subjects') IS NOT NULL
+                AND je.type = 'text'"
+        )
+    };
+}
+
+/// Gates override-only genre membership so SQL reads mirror metadata precedence.
+macro_rules! effective_genres_sql {
+    () => {
+        concat!(
+            "SELECT b.id AS book_id, g.id AS genre_id
+               FROM books b
+               JOIN scan_roots l ON l.id = b.library_id
+               JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+               JOIN json_each(CASE WHEN json_valid(mo.overrides)
+                                   THEN mo.overrides ELSE '{}' END, '$.genres') je
+               JOIN genres g ON g.name = je.value COLLATE NOCASE
+              WHERE ",
+            overrides_win_sql!(),
+            " AND json_type(CASE WHEN json_valid(mo.overrides)
+                                 THEN mo.overrides ELSE '{}' END, '$.genres') IS NOT NULL
+                AND je.type = 'text'"
+        )
+    };
+}
+
+pub(crate) use {
+    effective_genres_sql, effective_tags_sql, effective_text_sql, override_join_sql, override_sql,
+    overrides_win_sql,
+};
+
+#[cfg(test)]
+mod tests;
