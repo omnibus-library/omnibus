@@ -23,7 +23,7 @@ whose upload permission has been turned off runs this flow to meet the
 
 - The **pass** is that every route to an upload ends at "You don't have
   permission to add books to this library." — no file input, no drop zone, no
-  upload-type selector, no Add-to-library button.
+  Add-to-library button.
 - The **fail** is a screen that lets you upload anyway.
 - **A hidden entry point is not a failure to reach the refusal.** The desktop
   nav has no Add books item for you at all; the phone-width tab bar still
@@ -67,13 +67,13 @@ goes in through the front door* in [start.md](../start.md).
 
 1. Click **Add books** in the nav. Do not type a path — there is no `/add`, and
    guessing one lands you on a page that is not part of the app.
-2. Choose the **Upload type**: *Ebook* or *Audiobook*. It matters — an ebook
-   takes a single file, an audiobook takes several at once.
-3. Choose a file from the corpus, by dropping it on the drop zone or through
-   the file chooser. Journal the filename **before** you upload it, as
+2. Choose a file from the corpus, by dropping it on the drop zone or through
+   the file chooser. There is no upload-type choice: the extension decides
+   which ingest a pick goes to, and an audiobook's `.mp3` parts go in
+   together as one pick. Journal the filename **before** you upload it, as
    `book.add` with `outcome: uncertain` and no target — the audit skips a
-   non-`ok` entry, and the `ok` one at step 8 supersedes it.
-4. The app extracts the file's metadata and shows a **review form** under
+   non-`ok` entry, and the `ok` one at step 7 supersedes it.
+3. The app extracts the file's metadata and shows a **review form** under
    "Review the details, then add to your library." Read it against what you know
    the book to be. Real library files frequently carry garbled, swapped, or
    filename-derived metadata, and this form is where a person would fix it
@@ -92,20 +92,20 @@ goes in through the front door* in [start.md](../start.md).
    lists the rest beneath it — they are imported as additional creators, and
    editing Author replaces only the first. Journal every name the form showed,
    then confirm them on the detail page.
-5. Click **Add to library**.
-6. The app lands on the new book's detail page itself once the add finishes.
+4. Click **Add to library**.
+5. The app lands on the new book's detail page itself once the add finishes.
    Go back to the library and confirm the book is there too; indexing is
    asynchronous — give it a moment and re-check rather than reporting it
    missing straight away. The library may be in table view from an earlier
    flow.
-7. Open its detail page from the library. Confirm the cover, title, author,
+6. Open its detail page from the library. Confirm the cover, title, author,
    format and identifiers are plausible for that book. The detail page shows
    no page count, no chapter count, and no publication-date row — do not go
    looking for them. A first open in the reader that fails with "This book
    couldn't be loaded" and then works after a reload is a finding in its own
    right; journal it.
-8. **Journal `book.add` with the resulting uuid.** This is the ownership record.
-9. Once the book can be opened, journal `book.add.verify` with what the detail
+7. **Journal `book.add` with the resulting uuid.** This is the ownership record.
+8. Once the book can be opened, journal `book.add.verify` with what the detail
    page showed. The trailing `.verify` is how you say "I checked it stuck";
    do not invent another name for it.
 
@@ -160,7 +160,7 @@ upload is as interesting as an accepted one.
 
 ## Correction from run r-20260908-02
 
-Step 7 previously said the detail page shows no page count, no chapter count
+Step 6 previously said the detail page shows no page count, no chapter count
 and no publication-date row. It does show `Published`, and a chapter count on
 the progress line once the reader has been opened; only the page count is
 absent.

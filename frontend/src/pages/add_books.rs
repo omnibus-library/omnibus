@@ -1,32 +1,82 @@
 //! Add-books page (`/add-books`) — upload an EPUB or audiobook into the
 //! library, gated on `can_upload` (server's `require_upload` remains the real
-//! boundary). Users pick a file; the server parses it for an editable confirm
-//! step, then files it into the canonical folder and redirects to the new
-//! book. rsx is target-agnostic — file interop runs only in `spawn`.
+//! boundary). One picker for both: the file extensions decide which ingest
+//! the pick goes to, the server parses it for an editable confirm step, then
+//! files it into the canonical folder and redirects to the new book. rsx is
+//! target-agnostic — file interop runs only in `spawn`.
 
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
+use omnibus_shared::{AudiobookInspection, UploadInspection};
 
 use crate::data::{self, AudiobookUploadMeta, EbookUploadMeta};
 use crate::{use_server_url, Route};
 
-/// Which library the upload targets. Drives the file-picker `accept` list, the
-/// confirm form's fields, and which data-layer call the submit handler makes.
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum UploadMode {
+/// Which ingest a pick goes to, decided by [`classify_pick`] from the file
+/// extensions — never chosen by the user. Drives which data-layer call the
+/// inspect and submit handlers make.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum UploadKind {
     Ebook,
     Audiobook,
+}
+
+/// Extensions the ebook ingest takes (`/api/uploads/ebooks`).
+const EBOOK_EXTENSIONS: &[&str] = &["epub"];
+/// Extensions the audiobook ingest takes (`/api/uploads/audiobooks`), matching
+/// the server's `audiobook_ext_of`.
+const AUDIOBOOK_EXTENSIONS: &[&str] = &["m4b", "m4a", "mp4", "mp3"];
+/// The picker's `accept` list: every extension above plus their MIME types,
+/// so a browser filters the dialog without the page having to.
+const ACCEPT: &str = ".epub,.m4b,.m4a,.mp4,.mp3,application/epub+zip,audio/mp4,audio/mpeg";
+
+/// Decide which ingest a set of picked filenames goes to, or say why it can't.
+///
+/// One EPUB is an ebook; any number of audiobook files is an audiobook (the
+/// server still rejects two `.m4b`s or a mixed set of its own — this only
+/// routes). Everything else is refused here so the wrong endpoint is never
+/// asked: a mix of the two, several EPUBs, or an extension neither takes.
+fn classify_pick(names: &[String]) -> Result<UploadKind, String> {
+    let ext_of = |name: &String| {
+        std::path::Path::new(name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_default()
+    };
+    let mut ebooks = 0usize;
+    let mut audio = 0usize;
+    for name in names {
+        let ext = ext_of(name);
+        if EBOOK_EXTENSIONS.contains(&ext.as_str()) {
+            ebooks += 1;
+        } else if AUDIOBOOK_EXTENSIONS.contains(&ext.as_str()) {
+            audio += 1;
+        } else {
+            return Err(format!(
+                "{name} isn't a format Omnibus can add — pick an EPUB, an M4B/M4A/MP4 audiobook, or MP3 parts."
+            ));
+        }
+    }
+    match (ebooks, audio) {
+        (0, 0) => Err("Choose a file first.".into()),
+        (1, 0) => Ok(UploadKind::Ebook),
+        (0, _) => Ok(UploadKind::Audiobook),
+        (_, 0) => Err("Add one EPUB at a time.".into()),
+        _ => Err("Pick either an EPUB or an audiobook's files, not both.".into()),
+    }
 }
 
 /// The editable-metadata + staged-upload signals threaded through the page's
 /// handlers and confirm form. `Copy` so the async handlers can capture them.
 #[derive(Copy, Clone, PartialEq)]
 struct UploadState {
-    mode: Signal<UploadMode>,
+    /// Which ingest the staged pick belongs to; `None` until a pick classifies.
+    kind: Signal<Option<UploadKind>>,
     filename: Signal<String>,
-    /// Staged EPUB bytes (ebook mode).
+    /// Staged EPUB bytes (an ebook pick).
     file_bytes: Signal<Option<Vec<u8>>>,
-    /// Staged audiobook part(s) as `(filename, bytes)` (audiobook mode).
+    /// Staged audiobook part(s) as `(filename, bytes)` (an audiobook pick).
     audio_files: Signal<Vec<(String, Vec<u8>)>>,
     title: Signal<String>,
     author: Signal<String>,
@@ -41,24 +91,6 @@ struct UploadState {
     status_is_error: Signal<bool>,
 }
 
-impl UploadState {
-    /// Clear any staged upload + confirm state. Called when the user switches
-    /// upload type so an ebook body can't be submitted as an audiobook.
-    fn reset_staged(&mut self) {
-        self.filename.set(String::new());
-        self.file_bytes.set(None);
-        self.audio_files.set(Vec::new());
-        self.title.set(String::new());
-        self.author.set(String::new());
-        self.more_creators.set(Vec::new());
-        self.series.set(String::new());
-        self.series_index.set(String::new());
-        self.inspected.set(false);
-        self.status.set(None);
-        self.status_is_error.set(false);
-    }
-}
-
 /// Upload form: pick a file, confirm/correct the auto-extracted metadata, file it.
 #[component]
 pub fn AddBooksPage() -> Element {
@@ -70,7 +102,7 @@ pub fn AddBooksPage() -> Element {
     let nav = use_navigator();
 
     let state = UploadState {
-        mode: use_signal(|| UploadMode::Ebook),
+        kind: use_signal(|| None),
         filename: use_signal(String::new),
         file_bytes: use_signal(|| None),
         audio_files: use_signal(Vec::new),
@@ -94,12 +126,7 @@ pub fn AddBooksPage() -> Element {
 
     rsx! {
         section { class: "card",
-            h1 { "Add books" }
-            p { class: "subtitle",
-                "Upload an EPUB or audiobook and Omnibus will file it into your library."
-            }
-
-            UploadTypeToggle { state }
+            h1 { "Upload a book" }
 
             FileDropZone {
                 state,
@@ -134,7 +161,7 @@ pub fn AddBooksPage() -> Element {
 fn AddBooksForbidden() -> Element {
     rsx! {
         section { class: "card",
-            h1 { "Add books" }
+            h1 { "Upload a book" }
             p { class: "settings-status error", "data-testid": "add-books-forbidden",
                 "You don't have permission to add books to this library."
             }
@@ -142,15 +169,30 @@ fn AddBooksForbidden() -> Element {
     }
 }
 
-/// Build the file-select handler: read bytes → inspect → pre-fill the fields.
-/// Dispatches on the current [`UploadMode`]: one EPUB, or one-or-more audiobook
-/// parts.
+/// Build the file-select handler: classify the pick by extension, then read
+/// bytes → inspect → pre-fill the fields on the ingest it belongs to. A pick
+/// that fits neither is refused here with the reason, and nothing is sent.
 fn make_on_file(server_url: String, state: UploadState) -> impl FnMut(Event<FormData>) {
     move |evt: Event<FormData>| {
-        if (state.mode)() == UploadMode::Audiobook {
-            inspect_audiobook_files(server_url.clone(), state, evt);
-        } else {
-            inspect_ebook_file(server_url.clone(), state, evt);
+        let mut s = state;
+        let names: Vec<String> = evt.files().iter().map(|f| f.name()).collect();
+        if names.is_empty() {
+            return;
+        }
+        match classify_pick(&names) {
+            Ok(UploadKind::Ebook) => {
+                s.kind.set(Some(UploadKind::Ebook));
+                inspect_ebook_file(server_url.clone(), state, evt);
+            }
+            Ok(UploadKind::Audiobook) => {
+                s.kind.set(Some(UploadKind::Audiobook));
+                inspect_audiobook_files(server_url.clone(), state, evt);
+            }
+            Err(reason) => {
+                clear_stage(&mut s);
+                s.status.set(Some(reason));
+                s.status_is_error.set(true);
+            }
         }
     }
 }
@@ -171,12 +213,7 @@ fn inspect_ebook_file(server_url: String, state: UploadState, evt: Event<FormDat
                 let bytes = bytes.to_vec();
                 match data::inspect_ebook(&server_url, name.clone(), &bytes).await {
                     Ok(insp) => {
-                        s.title.set(insp.title.unwrap_or_default());
-                        s.author.set(insp.author.unwrap_or_default());
-                        s.more_creators
-                            .set(insp.creators.iter().skip(1).cloned().collect());
-                        s.series.set(insp.series.unwrap_or_default());
-                        s.series_index.set(insp.series_index.unwrap_or_default());
+                        prefill_from_ebook(&mut s, insp);
                         s.filename.set(name);
                         s.file_bytes.set(Some(bytes));
                         s.inspected.set(true);
@@ -233,10 +270,7 @@ fn inspect_audiobook_files(server_url: String, state: UploadState, evt: Event<Fo
         }
         match data::inspect_audiobook(&server_url, &files).await {
             Ok(insp) => {
-                s.title.set(insp.title.unwrap_or_default());
-                s.author.set(insp.author.unwrap_or_default());
-                s.more_creators
-                    .set(insp.creators.iter().skip(1).cloned().collect());
+                prefill_from_audiobook(&mut s, insp);
                 s.filename.set(audiobook_summary(&files));
                 s.audio_files.set(files);
                 s.inspected.set(true);
@@ -255,6 +289,29 @@ fn inspect_audiobook_files(server_url: String, state: UploadState, evt: Event<Fo
     });
 }
 
+/// Pre-fill every confirm field from an EPUB inspection.
+fn prefill_from_ebook(s: &mut UploadState, insp: UploadInspection) {
+    s.title.set(insp.title.unwrap_or_default());
+    s.author.set(insp.author.unwrap_or_default());
+    s.more_creators
+        .set(insp.creators.iter().skip(1).cloned().collect());
+    s.series.set(insp.series.unwrap_or_default());
+    s.series_index.set(insp.series_index.unwrap_or_default());
+}
+
+/// Pre-fill every confirm field from an audiobook inspection. The parser
+/// reports no series, so the fields are cleared rather than left alone: with
+/// one picker there is no type switch to reset them, and the previous pick's
+/// series would otherwise be committed with this book.
+fn prefill_from_audiobook(s: &mut UploadState, insp: AudiobookInspection) {
+    s.title.set(insp.title.unwrap_or_default());
+    s.author.set(insp.author.unwrap_or_default());
+    s.more_creators
+        .set(insp.creators.iter().skip(1).cloned().collect());
+    s.series.set(String::new());
+    s.series_index.set(String::new());
+}
+
 /// Human-readable label for the staged audiobook part(s) in the drop zone.
 fn audiobook_summary(files: &[(String, Vec<u8>)]) -> String {
     match files {
@@ -266,6 +323,7 @@ fn audiobook_summary(files: &[(String, Vec<u8>)]) -> String {
 /// Clear any previously-staged upload so stale bytes can't be submitted after a
 /// new pick fails inspect.
 fn clear_stage(s: &mut UploadState) {
+    s.kind.set(None);
     s.inspected.set(false);
     s.file_bytes.set(None);
     s.audio_files.set(Vec::new());
@@ -281,10 +339,14 @@ fn make_on_submit(
 ) -> impl FnMut(FormEvent) {
     move |evt: FormEvent| {
         evt.prevent_default();
-        if (state.mode)() == UploadMode::Audiobook {
-            submit_audiobook(server_url.clone(), state, nav);
-        } else {
-            submit_ebook(server_url.clone(), state, nav);
+        match (state.kind)() {
+            Some(UploadKind::Audiobook) => submit_audiobook(server_url.clone(), state, nav),
+            Some(UploadKind::Ebook) => submit_ebook(server_url.clone(), state, nav),
+            None => {
+                let mut s = state;
+                s.status.set(Some("Choose a file first.".into()));
+                s.status_is_error.set(true);
+            }
         }
     }
 }
@@ -367,72 +429,16 @@ fn submit_audiobook(server_url: String, state: UploadState, nav: dioxus_router::
     });
 }
 
-/// Ebook / audiobook type toggle. Switching type clears any staged upload.
-#[component]
-fn UploadTypeToggle(state: UploadState) -> Element {
-    let mut s = state;
-    let mode = (state.mode)();
-    let busy = (state.busy)();
-    rsx! {
-        div {
-            class: "add-books-types",
-            role: "group",
-            aria_label: "Upload type",
-            button {
-                r#type: "button",
-                class: if mode == UploadMode::Ebook { "btn" } else { "btn ghost" },
-                aria_pressed: if mode == UploadMode::Ebook { "true" } else { "false" },
-                disabled: busy,
-                "data-testid": "add-books-type-ebook",
-                onclick: move |_| {
-                    if (s.mode)() != UploadMode::Ebook {
-                        s.mode.set(UploadMode::Ebook);
-                        s.reset_staged();
-                    }
-                },
-                "Ebook"
-            }
-            button {
-                r#type: "button",
-                class: if mode == UploadMode::Audiobook { "btn" } else { "btn ghost" },
-                aria_pressed: if mode == UploadMode::Audiobook { "true" } else { "false" },
-                disabled: busy,
-                "data-testid": "add-books-type-audiobook",
-                onclick: move |_| {
-                    if (s.mode)() != UploadMode::Audiobook {
-                        s.mode.set(UploadMode::Audiobook);
-                        s.reset_staged();
-                    }
-                },
-                "Audiobook"
-            }
-        }
-    }
-}
-
 /// File-picker drop zone: prompt icon when empty, filename + checkmark once
-/// chosen. Accepts a single EPUB or one-or-more audiobook parts per mode.
+/// chosen. One picker for every format — a single EPUB, a single audiobook
+/// container, or the `.mp3` parts of one book — sorted out by extension after
+/// the pick, so it always allows a multi-select.
 #[component]
 fn FileDropZone(state: UploadState, on_file: EventHandler<Event<FormData>>) -> Element {
     let filename = state.filename;
     let busy = state.busy;
-    let audiobook = (state.mode)() == UploadMode::Audiobook;
-    let (label, accept, prompt) = if audiobook {
-        (
-            "Audiobook files",
-            ".m4a,.m4b,.mp4,.mp3,audio/mp4,audio/mpeg",
-            "Drop .m4b/.m4a/.mp4 or .mp3 parts here or ",
-        )
-    } else {
-        (
-            "EPUB file",
-            ".epub,application/epub+zip",
-            "Drop an EPUB here or ",
-        )
-    };
     rsx! {
         div { class: "settings-field",
-            span { class: "settings-label", "{label}" }
             div {
                 class: if filename().is_empty() { "file-drop-zone" } else { "file-drop-zone has-file" },
                 div { class: "file-drop-content",
@@ -451,7 +457,7 @@ fn FileDropZone(state: UploadState, on_file: EventHandler<Event<FormData>>) -> E
                             line { x1: "12", y1: "3", x2: "12", y2: "15" }
                         }
                         span { class: "file-drop-prompt",
-                            "{prompt}"
+                            "Drop an EPUB or audiobook here or "
                             strong { "choose a file" }
                         }
                     } else {
@@ -473,14 +479,19 @@ fn FileDropZone(state: UploadState, on_file: EventHandler<Event<FormData>>) -> E
                 input {
                     id: "add-books-file",
                     r#type: "file",
-                    accept,
-                    multiple: audiobook,
+                    accept: ACCEPT,
+                    multiple: true,
                     "data-testid": "add-books-file-input",
-                    aria_label: "{label}",
+                    aria_label: "Book files",
                     class: "file-drop-input",
                     disabled: busy(),
                     onchange: move |evt| on_file.call(evt),
                 }
+            }
+            p {
+                class: "settings-hint",
+                "data-testid": "add-books-formats",
+                "EPUB, M4B, M4A, MP4, or the MP3 parts of one audiobook."
             }
         }
     }
@@ -566,86 +577,5 @@ fn ConfirmForm(state: UploadState, on_submit: EventHandler<FormEvent>) -> Elemen
     }
 }
 
-#[cfg(all(test, feature = "server"))]
-mod render_tests {
-    use super::*;
-
-    /// Switching the upload type to Audiobook must not take the series fields
-    /// away (#2254): the audiobook parser usually extracts nothing, so the
-    /// confirm form is the only place a series can be supplied.
-    #[test]
-    fn confirm_form_renders_series_fields_for_an_audiobook_upload() {
-        #[component]
-        fn Harness(mode: UploadMode) -> Element {
-            let state = UploadState {
-                mode: use_signal(|| mode),
-                filename: use_signal(String::new),
-                file_bytes: use_signal(|| None),
-                audio_files: use_signal(Vec::new),
-                title: use_signal(String::new),
-                author: use_signal(String::new),
-                more_creators: use_signal(Vec::new),
-                series: use_signal(String::new),
-                series_index: use_signal(String::new),
-                inspected: use_signal(|| true),
-                busy: use_signal(|| false),
-                status: use_signal(|| None),
-                status_is_error: use_signal(|| false),
-            };
-            rsx! { ConfirmForm { state, on_submit: EventHandler::new(|_| {}) } }
-        }
-
-        for mode in [UploadMode::Audiobook, UploadMode::Ebook] {
-            let html = dioxus::ssr::render_element(rsx! { Harness { mode } });
-            assert!(html.contains("id=\"add-books-series\""));
-            assert!(html.contains("id=\"add-books-series-index\""));
-        }
-    }
-
-    /// A file naming several creators must not be shown as one (#2355): the
-    /// creators after the first are listed under the Author field, and the
-    /// line is absent when there are none.
-    #[test]
-    fn confirm_form_lists_the_creators_after_the_first_under_author() {
-        #[component]
-        fn Harness(more: Vec<String>) -> Element {
-            let state = UploadState {
-                mode: use_signal(|| UploadMode::Ebook),
-                filename: use_signal(String::new),
-                file_bytes: use_signal(|| None),
-                audio_files: use_signal(Vec::new),
-                title: use_signal(String::new),
-                author: use_signal(|| "Grace Hopper".to_string()),
-                more_creators: use_signal(move || more.clone()),
-                series: use_signal(String::new),
-                series_index: use_signal(String::new),
-                inspected: use_signal(|| true),
-                busy: use_signal(|| false),
-                status: use_signal(|| None),
-                status_is_error: use_signal(|| false),
-            };
-            rsx! { ConfirmForm { state, on_submit: EventHandler::new(|_| {}) } }
-        }
-
-        let two = dioxus::ssr::render_element(rsx! {
-            Harness { more: vec!["Margaret Hamilton".to_string(), "Joan Clarke".to_string()] }
-        });
-        assert!(two.contains("data-testid=\"add-books-more-creators\""));
-        assert!(two.contains("Also credited: Margaret Hamilton, Joan Clarke."));
-
-        let one = dioxus::ssr::render_element(rsx! { Harness { more: Vec::<String>::new() } });
-        assert!(!one.contains("add-books-more-creators"));
-    }
-
-    /// A user without `can_upload` sees the not-authorized state, not the
-    /// upload form — the markup `AddBooksPage` returns via `AddBooksForbidden`
-    /// when its `use_can_upload` gate is (the SSR/pre-hydration default) false.
-    #[test]
-    fn add_books_forbidden_renders_not_authorized_message_not_the_form() {
-        let html = dioxus::ssr::render_element(rsx! { AddBooksForbidden {} });
-        assert!(html.contains("data-testid=\"add-books-forbidden\""));
-        assert!(html.contains("have permission to add books"));
-        assert!(!html.contains("add-books-file-input"));
-        assert!(!html.contains("add-books-submit"));
-    }
-}
+#[cfg(test)]
+mod tests;
