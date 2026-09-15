@@ -1,11 +1,13 @@
 //! Authors arm of the search palette: substring `LIKE` match scoped to the
-//! visible books, ordered by an override-aware effective book count.
-//! Visibility is the rule `browse::list_authors` uses — membership in that
-//! same effective set — so the palette cannot offer an author the Authors
-//! index rejects.
+//! visible books, ordered by an override-aware effective book count. The
+//! match runs against the diacritic-folded name key, falling back to the raw
+//! name for a row the boot backfill has not reached. Visibility is the rule
+//! `browse::list_authors` uses — membership in that same effective set — so
+//! the palette cannot offer an author the Authors index rejects.
 
 use std::sync::OnceLock;
 
+use omnibus_shared::text_fold::fold_for_match;
 use omnibus_shared::PaletteAuthorHit;
 use sqlx::{Row, SqlitePool};
 
@@ -93,7 +95,7 @@ pub(super) fn search_authors_sql() -> &'static str {
             ORDER BY b3.sort, b3.id LIMIT 1) AS lead_book_title
         FROM authors a
         JOIN counts c ON c.author_id = a.id
-        WHERE a.name LIKE ?2 ESCAPE '\'
+        WHERE COALESCE(a.name_norm, a.name) LIKE ?2 ESCAPE '\'
         ORDER BY book_count DESC, a.name
         LIMIT ?3
         "
@@ -124,7 +126,7 @@ pub async fn search_authors_for_paths(
     }
     let rows = sqlx::query(search_authors_sql())
         .bind(library_paths_json(library_paths))
-        .bind(like_pattern)
+        .bind(fold_for_match(like_pattern))
         .bind(limit)
         .fetch_all(pool)
         .await?;
@@ -185,12 +187,12 @@ pub async fn count_authors_for_paths(
              AND json_type(mo.overrides, '$.creators') IS NOT NULL
         )
         SELECT COUNT(*) FROM authors a
-        WHERE a.name LIKE ?2 ESCAPE '\'
+        WHERE COALESCE(a.name_norm, a.name) LIKE ?2 ESCAPE '\'
           AND EXISTS (SELECT 1 FROM effective e WHERE e.author_id = a.id)
         "
     ))
     .bind(library_paths_json(library_paths))
-    .bind(like_pattern)
+    .bind(fold_for_match(like_pattern))
     .fetch_one(pool)
     .await?)
 }
