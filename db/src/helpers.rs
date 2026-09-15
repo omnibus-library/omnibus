@@ -344,6 +344,93 @@ fn split_query_tokens(raw: &str) -> Vec<QueryToken> {
     out
 }
 
+/// A user query split into the part FTS5 answers and the parts resolved relationally.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchQuery {
+    /// The FTS5 `MATCH` expression for free text, authors, and series.
+    pub fts_match: Option<String>,
+    /// Tag names to match exactly against relational membership.
+    pub tag_facets: Vec<String>,
+    /// Genre names to match exactly against relational membership.
+    pub genre_facets: Vec<String>,
+}
+
+impl SearchQuery {
+    /// True when there is nothing to run — callers short-circuit to empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.fts_match.is_none() && self.tag_facets.is_empty() && self.genre_facets.is_empty()
+    }
+}
+
+/// Split a user query into its FTS5 expression and relational facets.
+pub fn build_search_query(raw: &str) -> SearchQuery {
+    let mut author_tokens: Vec<QueryToken> = Vec::new();
+    let mut series_tokens: Vec<QueryToken> = Vec::new();
+    let mut free_tokens: Vec<QueryToken> = Vec::new();
+    let mut tag_facets: Vec<String> = Vec::new();
+    let mut genre_facets: Vec<String> = Vec::new();
+
+    for token in split_query_tokens(raw) {
+        if let Some((prefix, value)) = token.text.split_once(':') {
+            let lower = prefix.to_ascii_lowercase();
+            if value.is_empty()
+                && matches!(lower.as_str(), "author" | "series" | "tag" | "genre")
+            {
+                continue;
+            }
+            match lower.as_str() {
+                "author" => {
+                    author_tokens.push(QueryToken {
+                        text: value.to_string(),
+                        quoted: token.quoted,
+                    });
+                    continue;
+                }
+                "series" => {
+                    series_tokens.push(QueryToken {
+                        text: value.to_string(),
+                        quoted: token.quoted,
+                    });
+                    continue;
+                }
+                "tag" => {
+                    tag_facets.push(value.to_string());
+                    continue;
+                }
+                "genre" => {
+                    genre_facets.push(value.to_string());
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        free_tokens.push(token);
+    }
+
+    let mut clauses: Vec<String> = Vec::new();
+    if let Some(s) = sanitize_query_tokens(&author_tokens) {
+        clauses.push(format!("{{authors}} : ({s})"));
+    }
+    if let Some(s) = sanitize_query_tokens(&series_tokens) {
+        clauses.push(format!("{{series}} : ({s})"));
+    }
+    if let Some(s) = sanitize_query_tokens(&free_tokens) {
+        clauses.push(format!("{{title authors series}} : ({s})"));
+    }
+
+    let fts_match = if clauses.is_empty() {
+        None
+    } else {
+        Some(clauses.join(" AND "))
+    };
+    SearchQuery {
+        fts_match,
+        tag_facets,
+        genre_facets,
+    }
+}
+
 /// Parse a user-typed query into a single FTS5 MATCH expression.
 ///
 /// Recognises `author:foo`, `series:foo`, `tag:foo`, `genre:foo`
