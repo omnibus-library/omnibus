@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use omnibus_shared::text_fold::fold_for_match;
 use sqlx::{SqlitePool, Transaction};
 
 use crate::settings::upsert_library;
@@ -369,16 +370,20 @@ async fn restore_author_links(
         }
     }
 
-    let author_rows = std::iter::repeat_n("(?, ?)", order.len())
+    let author_rows = std::iter::repeat_n("(?, ?, ?)", order.len())
         .collect::<Vec<_>>()
         .join(", ");
     let upsert_sql = format!(
-        "INSERT INTO authors (name, sort) VALUES {author_rows} \
-         ON CONFLICT(name) DO UPDATE SET sort = COALESCE(authors.sort, excluded.sort)"
+        "INSERT INTO authors (name, sort, name_norm) VALUES {author_rows} \
+         ON CONFLICT(name) DO UPDATE SET sort = COALESCE(authors.sort, excluded.sort), \
+         name_norm = excluded.name_norm"
     );
     let mut q = sqlx::query(&upsert_sql);
     for name in &order {
-        q = q.bind(*name).bind(sort_for[*name]);
+        q = q
+            .bind(*name)
+            .bind(sort_for[*name])
+            .bind(fold_for_match(name));
     }
     q.execute(&mut **tx).await?;
 

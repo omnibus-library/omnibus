@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use omnibus_shared::text_fold::fold_for_match;
 use omnibus_shared::EbookMetadata;
 use sqlx::Transaction;
 
@@ -131,22 +132,27 @@ async fn fetch_blocklisted_names(
 
 /// Upsert every kept author in one statement. On a name collision (NOCASE
 /// unique on `authors.name`) keeps the existing sort if non-null, otherwise
-/// takes the new one.
+/// takes the new one. `name_norm` always takes the incoming value, so a row
+/// stored before the folded key existed heals on the next sync.
 async fn upsert_authors(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     kept: &[&str],
     sort_for: &std::collections::HashMap<&str, Option<&str>>,
 ) -> Result<(), sqlx::Error> {
-    let author_rows = std::iter::repeat_n("(?, ?)", kept.len())
+    let author_rows = std::iter::repeat_n("(?, ?, ?)", kept.len())
         .collect::<Vec<_>>()
         .join(", ");
     let upsert_sql = format!(
-        "INSERT INTO authors (name, sort) VALUES {author_rows} \
-         ON CONFLICT(name) DO UPDATE SET sort = COALESCE(authors.sort, excluded.sort)"
+        "INSERT INTO authors (name, sort, name_norm) VALUES {author_rows} \
+         ON CONFLICT(name) DO UPDATE SET sort = COALESCE(authors.sort, excluded.sort), \
+         name_norm = excluded.name_norm"
     );
     let mut q = sqlx::query(&upsert_sql);
     for name in kept {
-        q = q.bind(*name).bind(sort_for[*name]);
+        q = q
+            .bind(*name)
+            .bind(sort_for[*name])
+            .bind(fold_for_match(name));
     }
     q.execute(&mut **tx).await?;
     Ok(())

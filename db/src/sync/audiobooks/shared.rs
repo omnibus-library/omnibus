@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 
+use omnibus_shared::text_fold::fold_for_match;
 use sqlx::Transaction;
 
 use crate::helpers::{mint_uuid, sanitize_accent_color, stable_uuid};
@@ -431,11 +432,13 @@ async fn insert_audiobook_author_link(
         return Ok(());
     };
     sqlx::query(
-        "INSERT INTO authors (name, sort) VALUES (?, ?) \
-         ON CONFLICT(name) DO UPDATE SET sort = COALESCE(authors.sort, excluded.sort)",
+        "INSERT INTO authors (name, sort, name_norm) VALUES (?, ?, ?) \
+         ON CONFLICT(name) DO UPDATE SET sort = COALESCE(authors.sort, excluded.sort), \
+         name_norm = excluded.name_norm",
     )
     .bind(name)
     .bind(name)
+    .bind(fold_for_match(name))
     .execute(&mut **tx)
     .await?;
 
