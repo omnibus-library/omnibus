@@ -74,6 +74,12 @@ pub(super) enum UploadError {
     UnsupportedAudioFormat,
     /// Audiobook parse yielded no readable tags → 415 (carries the reason).
     BadAudio(String),
+    /// An upload that arrived as `.mp4` declares a `vide` track → 415. Only
+    /// `.mp4` arrivals are held to this: an `.m4a`/`.m4b` may carry chapter
+    /// stills as a video track and still be an audiobook.
+    Mp4CarriesVideo,
+    /// An ISO-BMFF upload declares no `soun` track at all → 415.
+    NoAudioTrack,
     /// Upload mixed formats or sent multiple single-file containers → 400.
     MixedAudioUpload,
     /// File exceeds the configured byte cap → 413.
@@ -143,13 +149,23 @@ impl IntoResponse for UploadError {
                 .into_response(),
             UploadError::UnsupportedAudioFormat => (
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "file must be a valid .m4a, .m4b, or .mp3 audiobook",
+                "file must be a valid .m4a, .m4b, .mp4, or .mp3 audiobook",
             )
                 .into_response(),
             UploadError::BadAudio(msg) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg).into_response(),
+            UploadError::Mp4CarriesVideo => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "file must be an audio-only MP4: it carries a video track",
+            )
+                .into_response(),
+            UploadError::NoAudioTrack => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "file must be an audiobook container: it carries no audio track",
+            )
+                .into_response(),
             UploadError::MixedAudioUpload => (
                 StatusCode::BAD_REQUEST,
-                "upload one .m4a/.m4b audiobook, or a set of .mp3 parts for a single book",
+                "upload one .m4a/.m4b/.mp4 audiobook, or a set of .mp3 parts for a single book",
             )
                 .into_response(),
             UploadError::TooLarge(cap) => (

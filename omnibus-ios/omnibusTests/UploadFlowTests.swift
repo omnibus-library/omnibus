@@ -34,6 +34,7 @@ struct UploadFlowTests {
     @Test func kindRoutesEveryAcceptedAudioContainerToTheAudiobookIngest() {
         #expect(UploadFlow.kind(for: "book.m4b") == .audiobook)
         #expect(UploadFlow.kind(for: "book.m4a") == .audiobook)
+        #expect(UploadFlow.kind(for: "book.mp4") == .audiobook)
         #expect(UploadFlow.kind(for: "part-01.mp3") == .audiobook)
     }
 
@@ -55,10 +56,11 @@ struct UploadFlowTests {
         let accepted = UploadFlow.ebookExtensions.union(UploadFlow.audiobookExtensions)
         #expect(accepted.isSubset(of: extensions), "every accepted format must be pickable")
         // Exclusivity, not just membership — the previous assertion passed with
-        // `mp4`/`mpg4` on the list because it only checked that four names were
-        // present. `mpga` is the one documented residual: `public.mp3` claims it
-        // as a sibling extension and no narrower UTType exists.
-        #expect(extensions.subtracting(accepted) == ["mpga"])
+        // stray names on the list because it only checked that the accepted ones
+        // were present. Two documented residuals: `public.mp3` claims `mpga` as a
+        // sibling extension, and `public.mpeg-4` (what `mp4` maps to) claims
+        // `mpg4`; no narrower UTType exists for either.
+        #expect(extensions.subtracting(accepted) == ["mpga", "mpg4"])
     }
 
     @Test func acceptedAudioSetIsExactlyWhatTheUploadEndpointTakes() {
@@ -66,7 +68,7 @@ struct UploadFlowTests {
         // is defined from — asserting `audiobookExtensions == the set it is
         // assigned from` cannot fail, and the guards it replaced (no flac, no
         // wav) were the only thing catching a widening.
-        #expect(UploadFlow.audiobookExtensions == ["m4b", "m4a", "mp3"])
+        #expect(UploadFlow.audiobookExtensions == ["m4b", "m4a", "mp4", "mp3"])
         #expect(UploadFlow.ebookExtensions == ["epub"])
         for playableButNotUploadable in ["flac", "wav", "ogg", "opus", "aac"] {
             #expect(!UploadFlow.audiobookExtensions.contains(playableButNotUploadable))
@@ -136,6 +138,7 @@ struct UploadFlowTests {
         #expect(UploadFlow.mimeType(for: "a.mp3") == "audio/mpeg")
         #expect(UploadFlow.mimeType(for: "a.m4b") == "audio/mp4")
         #expect(UploadFlow.mimeType(for: "a.m4a") == "audio/mp4")
+        #expect(UploadFlow.mimeType(for: "a.mp4") == "audio/mp4")
     }
 
     // MARK: - Grouping

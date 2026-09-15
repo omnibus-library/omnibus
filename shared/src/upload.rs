@@ -88,8 +88,9 @@ pub const AUDIOBOOK_MAGIC_LEN: usize = 8;
 /// the representative lowercase family (`"mp4"` for `.m4a`/`.m4b`, `"mp3"` for
 /// `.mp3`). The caller keeps the uploaded `.m4a`/`.m4b` distinction from the
 /// filename — both share one ISO-BMFF container, so bytes alone can't tell them
-/// apart. Like [`detect_ebook_format`] this is a cheap first gate; a successful
-/// `lofty` parse in the inspect handler is the second.
+/// apart (nor from an audio-only `.mp4`, which the upload handler files as
+/// `.m4b`). Like [`detect_ebook_format`] this is a cheap first gate; a
+/// successful `lofty` parse in the inspect handler is the second.
 pub fn detect_audiobook_format(bytes: &[u8]) -> Option<&'static str> {
     // ISO Base Media File Format (MP4): a `ftyp` box type at offset 4. Covers
     // `.m4a` and `.m4b` regardless of the specific brand (`M4A `, `M4B `,

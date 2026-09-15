@@ -420,8 +420,8 @@ fn FileDropZone(state: UploadState, on_file: EventHandler<Event<FormData>>) -> E
     let (label, accept, prompt) = if audiobook {
         (
             "Audiobook files",
-            ".m4a,.m4b,.mp3,audio/mp4,audio/mpeg",
-            "Drop .m4b/.m4a or .mp3 parts here or ",
+            ".m4a,.m4b,.mp4,.mp3,audio/mp4,audio/mpeg",
+            "Drop .m4b/.m4a/.mp4 or .mp3 parts here or ",
         )
     } else {
         (

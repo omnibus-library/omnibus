@@ -39,7 +39,7 @@ fn audio_mime(filename: &str) -> &'static str {
     let lower = filename.to_ascii_lowercase();
     if lower.ends_with(".mp3") {
         "audio/mpeg"
-    } else if lower.ends_with(".m4a") || lower.ends_with(".m4b") {
+    } else if lower.ends_with(".m4a") || lower.ends_with(".m4b") || lower.ends_with(".mp4") {
         "audio/mp4"
     } else {
         "application/octet-stream"
