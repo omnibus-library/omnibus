@@ -9,6 +9,9 @@ use omnibus_shared::PaletteTagHit;
 use sqlx::{Row, SqlitePool};
 
 use crate::helpers::{library_paths_json, visible_book_sql};
+// `overrides_win_sql` is expanded *by* `effective_tags_sql!` — a nested
+// `macro_rules!` name resolves at the expansion site, so it must be in scope
+// here even though nothing in this file names it directly.
 use crate::metadata_overrides::sql::{effective_tags_sql, overrides_win_sql};
 
 use super::PaletteError;

@@ -66,7 +66,17 @@ macro_rules! effective_text_sql {
     };
 }
 
-/// Gates tag membership so SQL reads mirror metadata precedence and clear-all overrides.
+/// Effective `(book_id, tag_id)` membership: the canonical link rows for a
+/// book with no subjects override (or whose scan root ranks the override
+/// below the scan), the override's subjects resolved to `tags` rows
+/// otherwise. Mirrors `apply_overrides`: `subjects: Some(_)` replaces the
+/// scanned list wholesale, the empty list included.
+///
+/// An override is *present* exactly when the key holds an array — the one
+/// shape serde will read into `Some(Vec)`. An absent key and an explicit JSON
+/// `null` both deserialize to `None`, so both leave the canonical rows in
+/// place; `IS NOT 'array'` says that in one clause, and is NULL-safe, so an
+/// unreadable blob (coerced to `'{}'`) also keeps the canonical rows.
 macro_rules! effective_tags_sql {
     () => {
         concat!(
@@ -75,9 +85,8 @@ macro_rules! effective_tags_sql {
                JOIN books b ON b.id = btl.book
                JOIN scan_roots l ON l.id = b.library_id
                LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-              WHERE mo.book_uuid IS NULL
-                 OR json_type(CASE WHEN json_valid(mo.overrides)
-                                   THEN mo.overrides ELSE '{}' END, '$.subjects') IS NULL
+              WHERE json_type(CASE WHEN json_valid(mo.overrides)
+                                   THEN mo.overrides ELSE '{}' END, '$.subjects') IS NOT 'array'
                  OR NOT ",
             overrides_win_sql!(),
             " UNION
@@ -91,13 +100,17 @@ macro_rules! effective_tags_sql {
               WHERE ",
             overrides_win_sql!(),
             " AND json_type(CASE WHEN json_valid(mo.overrides)
-                                 THEN mo.overrides ELSE '{}' END, '$.subjects') IS NOT NULL
+                                 THEN mo.overrides ELSE '{}' END, '$.subjects') = 'array'
                 AND je.type = 'text'"
         )
     };
 }
 
-/// Gates override-only genre membership so SQL reads mirror metadata precedence.
+/// Effective `(book_id, genre_id)` membership. Genres have no scanned
+/// counterpart — the override JSON is their only storage — so there is no
+/// canonical arm; the precedence gate still applies because `apply_overrides`
+/// returns early on a root that ranks the scan first, genres included. Same
+/// `'array'` test as [`effective_tags_sql`], for the same reason.
 macro_rules! effective_genres_sql {
     () => {
         concat!(
@@ -111,7 +124,7 @@ macro_rules! effective_genres_sql {
               WHERE ",
             overrides_win_sql!(),
             " AND json_type(CASE WHEN json_valid(mo.overrides)
-                                 THEN mo.overrides ELSE '{}' END, '$.genres') IS NOT NULL
+                                 THEN mo.overrides ELSE '{}' END, '$.genres') = 'array'
                 AND je.type = 'text'"
         )
     };

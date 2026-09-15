@@ -1,3 +1,6 @@
+//! `fold_for_match`: the three things a match key must survive — accents,
+//! case, and the LIKE metacharacters a caller has already escaped.
+
 use super::fold_for_match;
 
 #[test]

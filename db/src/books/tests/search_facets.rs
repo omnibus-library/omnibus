@@ -219,3 +219,37 @@ async fn search_books_two_tag_facets_require_both_memberships() {
         "facets AND together, so carrying one of the two is not a match"
     );
 }
+
+/// The public count runs its own SQL with its own facet-only branch and bind
+/// order, so it has to be pinned against the hit list separately: for a
+/// facet-only query, a mixed query, and the near-miss both must exclude.
+#[tokio::test]
+async fn count_search_books_agrees_with_the_hit_total_for_facet_queries() {
+    let _covers = CoversTempDir::new("facet_count_agreement");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_books(
+        &pool,
+        "/lib",
+        vec![
+            indexed("a.epub", Some("Alpha"), &["X"], &["Dark"], None, None),
+            indexed("b.epub", Some("Beta"), &["Y"], &["Dark"], None, None),
+            indexed(
+                "c.epub",
+                Some("Gamma"),
+                &["Z"],
+                &["Dark academia"],
+                None,
+                None,
+            ),
+        ],
+    )
+    .await
+    .unwrap();
+
+    for (query, expected) in [("tag:Dark", 2), ("tag:Dark alpha", 1), ("tag:Nope", 0)] {
+        let count = count_search_books(&pool, "/lib", query).await.unwrap();
+        let (_, total) = search_books_with_total(&pool, "/lib", query).await.unwrap();
+        assert_eq!(count, expected, "count for {query:?}");
+        assert_eq!(count, total, "count and hit total disagree for {query:?}");
+    }
+}

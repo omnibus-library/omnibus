@@ -8,6 +8,9 @@ use std::sync::OnceLock;
 use omnibus_shared::EbookMetadata;
 use regex::Regex;
 
+// `overrides_win_sql` is expanded *by* the two effective-membership macros —
+// a nested `macro_rules!` name resolves at the expansion site, so it must be
+// in scope here even though nothing in this file names it directly.
 use crate::metadata_overrides::sql::{effective_genres_sql, effective_tags_sql, overrides_win_sql};
 
 /// Maximum query length (in chars) accepted by the FTS5 search entrypoints

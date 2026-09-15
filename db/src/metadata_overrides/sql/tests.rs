@@ -307,3 +307,65 @@ async fn effective_genres_ignores_an_override_on_an_embedded_tags_first_root() {
     // Then.
     assert!(rows.is_empty());
 }
+
+#[tokio::test]
+async fn effective_tags_keeps_the_canonical_links_when_the_subjects_override_is_json_null() {
+    // Given: a blob no Rust writer produces (serde skips a `None`), but one a
+    // hand edit or a foreign client could — `null` deserializes to `None`,
+    // so the read path treats it as no override at all.
+    let _covers = CoversTempDir::new("effective_tags_json_null");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_one_book!(&pool);
+    let (uuid, book_id) = book_identity(&pool).await;
+    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
+        .bind(uuid)
+        .bind(r#"{"subjects": null}"#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let tag_id = sqlx::query_scalar("SELECT id FROM tags WHERE name = 'Canonical Tag'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    // When.
+    let rows = sqlx::query_as::<_, (i64, i64)>(concat!(
+        "SELECT book_id, tag_id FROM (",
+        effective_tags_sql!(),
+        ") ORDER BY book_id, tag_id"
+    ))
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    // Then.
+    assert_eq!(rows, vec![(book_id, tag_id)]);
+}
+
+#[tokio::test]
+async fn effective_genres_returns_nothing_when_the_genres_override_is_json_null() {
+    // Given.
+    let _covers = CoversTempDir::new("effective_genres_json_null");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_one_book!(&pool);
+    let (uuid, _) = book_identity(&pool).await;
+    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
+        .bind(uuid)
+        .bind(r#"{"genres": null}"#)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // When.
+    let rows = sqlx::query_as::<_, (i64, i64)>(concat!(
+        "SELECT book_id, genre_id FROM (",
+        effective_genres_sql!(),
+        ")"
+    ))
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    // Then.
+    assert!(rows.is_empty());
+}

@@ -113,3 +113,37 @@ async fn insert_author_links_resolves_a_merged_away_name_to_its_canonical_id() {
         "AC1: the book must link to the surviving canonical author"
     );
 }
+
+#[tokio::test]
+async fn insert_author_links_upserts_and_links_more_creators_than_one_chunk() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let book_id = seed_book(&pool).await;
+    let total = AUTHOR_UPSERT_CHUNK + 5;
+    let m = EbookMetadata {
+        filename: "anthology.epub".into(),
+        creators: (0..total)
+            .map(|i| Contributor {
+                name: format!("Contributor {i}"),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+
+    let mut tx = pool.begin().await.unwrap();
+    insert_author_links(&mut tx, book_id, &m, &HashMap::new())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(linked_author_ids(&pool, book_id).await.len(), total);
+    let keyed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM authors WHERE name_norm IS NOT NULL")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        usize::try_from(keyed).unwrap(),
+        total,
+        "every row past the first chunk carries its folded key"
+    );
+}

@@ -490,7 +490,7 @@ async fn search_palette_authors_match_a_name_typed_without_its_diacritics() {
 }
 
 #[tokio::test]
-async fn search_palette_authors_still_match_when_name_norm_is_null() {
+async fn search_palette_authors_still_match_an_accented_name_when_name_norm_is_null() {
     let _covers = CoversTempDir::new("palette_authors_null_norm");
     let pool = init_db("sqlite::memory:").await.unwrap();
     replace_books(
@@ -498,8 +498,8 @@ async fn search_palette_authors_still_match_when_name_norm_is_null() {
         "/lib",
         vec![indexed(
             "a.epub",
-            Some("Notes"),
-            &["Ada Lovelace"],
+            Some("Fortunata y Jacinta"),
+            &["Benito Pérez Galdós"],
             &[],
             None,
             None,
@@ -512,19 +512,15 @@ async fn search_palette_authors_still_match_when_name_norm_is_null() {
         .await
         .unwrap();
 
-    let results = search_palette(&pool, "/lib", "lovelace").await.unwrap();
+    // Typed with its accents: the folded pattern would miss the raw name, so
+    // only the raw-pattern fallback can answer this — the pre-fold behaviour.
+    let results = search_palette(&pool, "/lib", "Pérez").await.unwrap();
     assert_eq!(
-        results.authors.len(),
-        1,
-        "a row the backfill has not reached yet falls back to its raw name"
+        results.authors.first().map(|a| a.name.as_str()),
+        Some("Benito Pérez Galdós"),
+        "a row the backfill has not reached yet matches on its raw name"
     );
-    let raw: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM authors WHERE COALESCE(name_norm, name) LIKE '%lovelace%'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(raw, 1);
+    assert_eq!(results.author_total, 1, "the count takes the same fallback");
 }
 
 #[tokio::test]
