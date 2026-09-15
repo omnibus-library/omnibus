@@ -8,6 +8,10 @@ use std::sync::OnceLock;
 use omnibus_shared::EbookMetadata;
 use regex::Regex;
 
+use crate::metadata_overrides::sql::{
+    effective_genres_sql, effective_tags_sql, overrides_win_sql,
+};
+
 /// Maximum query length (in chars) accepted by the FTS5 search entrypoints
 /// (`search_books`, `count_search_books`, `search_palette`). Inputs beyond
 /// this are truncated before reaching [`build_fts_match`] / `LIKE` so the
@@ -363,10 +367,43 @@ impl SearchQuery {
     }
 }
 
+/// One correlated `EXISTS` per facet value, plus the values to bind in the
+/// order the predicates place their placeholders. The caller supplies the
+/// outer `books b` the predicates correlate against.
+///
+/// Per value rather than one `IN` list because facets AND together: a book
+/// must carry every tag named, not any of them. Each predicate wraps the
+/// effective-membership relation in a derived table so its own `books b`
+/// stays scoped to it and `b.id` still resolves to the row being tested.
+pub(crate) fn facet_exists_predicates(query: &SearchQuery) -> (String, Vec<String>) {
+    let mut sql = String::new();
+    let mut binds = Vec::with_capacity(query.tag_facets.len() + query.genre_facets.len());
+    for name in &query.tag_facets {
+        sql.push_str(concat!(
+            " AND EXISTS (SELECT 1 FROM (",
+            effective_tags_sql!(),
+            ") et JOIN tags ft ON ft.id = et.tag_id
+               WHERE et.book_id = b.id AND ft.name = ? COLLATE NOCASE)"
+        ));
+        binds.push(name.clone());
+    }
+    for name in &query.genre_facets {
+        sql.push_str(concat!(
+            " AND EXISTS (SELECT 1 FROM (",
+            effective_genres_sql!(),
+            ") eg JOIN genres fg ON fg.id = eg.genre_id
+               WHERE eg.book_id = b.id AND fg.name = ? COLLATE NOCASE)"
+        ));
+        binds.push(name.clone());
+    }
+    (sql, binds)
+}
+
 /// Split a user query into its FTS5 expression and relational facets.
 pub fn build_search_query(raw: &str) -> SearchQuery {
     let mut author_tokens: Vec<QueryToken> = Vec::new();
     let mut series_tokens: Vec<QueryToken> = Vec::new();
+
     let mut free_tokens: Vec<QueryToken> = Vec::new();
     let mut tag_facets: Vec<String> = Vec::new();
     let mut genre_facets: Vec<String> = Vec::new();

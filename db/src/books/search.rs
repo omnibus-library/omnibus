@@ -9,48 +9,14 @@ use omnibus_shared::EbookMetadata;
 use sqlx::{Row, SqlitePool};
 
 use crate::helpers::{
-    build_search_query, cap_query_len, library_paths_json, visible_book_sql, SearchQuery,
-    FTS_BM25_RANK,
-};
-use crate::metadata_overrides::sql::{
-    effective_genres_sql, effective_tags_sql, overrides_win_sql,
+    build_search_query, cap_query_len, facet_exists_predicates, library_paths_json,
+    visible_book_sql, SearchQuery, FTS_BM25_RANK,
 };
 
 use super::projection::{
     backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
     MAX_BOOKS_RETURNED,
 };
-
-/// One correlated `EXISTS` per facet value, plus the values to bind in the
-/// order the predicates place their placeholders.
-///
-/// Per value rather than one `IN` list because facets AND together: a book
-/// must carry every tag named, not any of them. Each predicate wraps the
-/// effective-membership relation in a derived table so its own `books b`
-/// stays scoped to it and `b.id` still resolves to the row being tested.
-fn facet_predicates(query: &SearchQuery) -> (String, Vec<String>) {
-    let mut sql = String::new();
-    let mut binds = Vec::with_capacity(query.tag_facets.len() + query.genre_facets.len());
-    for name in &query.tag_facets {
-        sql.push_str(concat!(
-            " AND EXISTS (SELECT 1 FROM (",
-            effective_tags_sql!(),
-            ") et JOIN tags ft ON ft.id = et.tag_id
-               WHERE et.book_id = b.id AND ft.name = ? COLLATE NOCASE)"
-        ));
-        binds.push(name.clone());
-    }
-    for name in &query.genre_facets {
-        sql.push_str(concat!(
-            " AND EXISTS (SELECT 1 FROM (",
-            effective_genres_sql!(),
-            ") eg JOIN genres fg ON fg.id = eg.genre_id
-               WHERE eg.book_id = b.id AND fg.name = ? COLLATE NOCASE)"
-        ));
-        binds.push(name.clone());
-    }
-    (sql, binds)
-}
 
 /// Full-text search across `books_fts`. Returns hydrated `EbookMetadata`
 /// ordered by bm25 rank (best first) when the query carries free text, and by
@@ -150,7 +116,7 @@ async fn fetch_search_rows(
     query: &SearchQuery,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     let visible = visible_book_sql("b", "l", "?");
-    let (facets, facet_binds) = facet_predicates(query);
+    let (facets, facet_binds) = facet_exists_predicates(query);
     let sql = if query.fts_match.is_some() {
         format!(
             r"
@@ -229,7 +195,7 @@ pub async fn count_search_books_for_paths(
         return Ok(0);
     }
     let visible = visible_book_sql("b", "l", "?");
-    let (facets, facet_binds) = facet_predicates(&query);
+    let (facets, facet_binds) = facet_exists_predicates(&query);
     let sql = if query.fts_match.is_some() {
         format!(
             r"
