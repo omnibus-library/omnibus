@@ -1,8 +1,9 @@
 //! Audiobook ingest handlers for the "add your own books" upload flow.
 //! Sibling to the EPUB handlers in [`super`], sharing its error type, gate, and
 //! size cap. Accepts a single `.m4a`/`.m4b` container (an audio-only `.mp4` is
-//! the same container and is filed as `.m4b`) or a set of `.mp3` parts filed
-//! into one canonical folder, then reindexes so the indexer inserts it.
+//! the same container and is filed as `.m4b`, once its tracks prove it audio)
+//! or a set of `.mp3` parts filed into one canonical folder, then reindexes so
+//! the indexer inserts it.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -34,6 +35,9 @@ struct AudioUpload {
     ext: String,
     /// The client-supplied filename (used to name `.mp3` parts on disk).
     filename: String,
+    /// Whether the client named it `.mp4` — the one arrival held to the
+    /// no-video-track rule in [`require_audio_only_container`].
+    arrived_as_mp4: bool,
     tmp: tempfile::NamedTempFile,
 }
 
@@ -75,10 +79,7 @@ const MP4_UPLOAD_EXT: &str = "mp4";
 /// but it is filed as `.m4b` so the scanner and every player treat it as the
 /// audiobook it is rather than the video its extension implies.
 fn audiobook_ext_of(filename: &str) -> Option<String> {
-    let ext = Path::new(filename)
-        .extension()?
-        .to_str()?
-        .to_ascii_lowercase();
+    let ext = raw_extension(filename)?;
     let ext = if ext == MP4_UPLOAD_EXT {
         "m4b".to_string()
     } else {
@@ -87,6 +88,16 @@ fn audiobook_ext_of(filename: &str) -> Option<String> {
     db::audiobook::AUDIOBOOK_EXTENSIONS
         .contains(&ext.as_str())
         .then_some(ext)
+}
+
+/// The lowercase extension exactly as the client named the file.
+fn raw_extension(filename: &str) -> Option<String> {
+    Some(
+        Path::new(filename)
+            .extension()?
+            .to_str()?
+            .to_ascii_lowercase(),
+    )
 }
 
 /// Magic-byte container family expected for a given extension: `.m4a`/`.m4b`
@@ -201,7 +212,14 @@ async fn parse_audiobook_multipart(
                         let ext = audiobook_ext_of(&filename)
                             .ok_or(UploadError::UnsupportedAudioFormat)?;
                         let tmp = stream_audio_to_tempfile(field, cap, &ext).await?;
-                        form.files.push(AudioUpload { ext, filename, tmp });
+                        let arrived_as_mp4 =
+                            raw_extension(&filename).as_deref() == Some(MP4_UPLOAD_EXT);
+                        form.files.push(AudioUpload {
+                            ext,
+                            filename,
+                            arrived_as_mp4,
+                            tmp,
+                        });
                     }
                     "title" => form.title = field.text().await.ok(),
                     "author" => form.author = field.text().await.ok(),
@@ -233,6 +251,39 @@ fn classify_audio_set(files: &[AudioUpload]) -> Result<AudioKind, UploadError> {
     Err(UploadError::MixedAudioUpload)
 }
 
+/// Refuse a single ISO-BMFF container whose tracks don't describe an
+/// audiobook, before it is parsed or placed. Two rules, checked on the staged
+/// tempfile: an upload that arrived as `.mp4` may not carry a `vide` track,
+/// and any container must carry at least one `soun` track. The first rule is
+/// deliberately not applied to `.m4a`/`.m4b` arrivals: iTunes/Audible-style
+/// M4Bs sometimes carry chapter-image stills as a video track and are still
+/// audiobooks. A container with no `moov` is unreadable, not a track verdict,
+/// and reports as [`UploadError::BadAudio`]. `.mp3` sets are not containers
+/// and pass through untouched.
+async fn require_audio_only_container(
+    kind: AudioKind,
+    files: &[AudioUpload],
+) -> Result<(), UploadError> {
+    if kind != AudioKind::Single {
+        return Ok(());
+    }
+    let Some(file) = files.first() else {
+        return Ok(());
+    };
+    let path = file.tmp.path().to_path_buf();
+    let tracks = tokio::task::spawn_blocking(move || db::audiobook::inspect_mp4_tracks(&path))
+        .await
+        .map_err(|e| UploadError::internal("spawn_blocking(inspect mp4 tracks)", e))?
+        .map_err(|e| UploadError::BadAudio(format!("could not read audiobook: {e}")))?;
+    if file.arrived_as_mp4 && tracks.video > 0 {
+        return Err(UploadError::Mp4CarriesVideo);
+    }
+    if tracks.audio == 0 {
+        return Err(UploadError::NoAudioTrack);
+    }
+    Ok(())
+}
+
 /// The settled lowercase format for the inspection/commit response: the single
 /// container's own extension, or `"mp3"` for a part set.
 fn audio_format(kind: AudioKind, files: &[AudioUpload]) -> String {
@@ -258,6 +309,7 @@ pub(in crate::backend) async fn post_inspect_audiobook(
     require_upload(&user)?;
     let form = parse_audiobook_multipart(multipart, max_upload_bytes()).await?;
     let kind = classify_audio_set(&form.files)?;
+    require_audio_only_container(kind, &form.files).await?;
     let format = audio_format(kind, &form.files);
     let part_count = form.files.len();
 
@@ -320,6 +372,7 @@ pub(in crate::backend) async fn post_upload_audiobook(
     require_upload(&user)?;
     let form = parse_audiobook_multipart(multipart, max_upload_bytes()).await?;
     let kind = classify_audio_set(&form.files)?;
+    require_audio_only_container(kind, &form.files).await?;
     let (Some(title), Some(author)) = (norm(&form.title), norm(&form.author)) else {
         return Err(UploadError::MissingMetadata);
     };

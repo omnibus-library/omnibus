@@ -1,8 +1,9 @@
 //! The audiobook path: inspect and commit for a single MP3, a multi-MP3
 //! folder and an `.mp4` filed as `.m4b`, the supplied series persisted as an
 //! override, the permission and library-path gates, and the 415 / 400
-//! rejections for non-audio, multiple single containers, a renamed MP3,
-//! unparseable tags and a read-only library.
+//! rejections for non-audio, multiple single containers, a renamed MP3, a
+//! container with a video track or no audio track, unparseable tags and a
+//! read-only library.
 
 use axum::{body::to_bytes, http::StatusCode};
 use tower::ServiceExt;
@@ -40,6 +41,38 @@ const PUBLIC_DOMAIN_M4B: &str = "Arthur Conan Doyle/A Womans Love.m4b";
 
 /// Minimal MP4 `ftyp` header — enough to pass the magic-byte gate (not lofty).
 const M4B_MAGIC: &[u8] = b"\x00\x00\x00\x18ftypM4B \x00\x00\x00\x00isom";
+
+/// Wrap a body in an MP4 box header (`size(4 BE) + type(4) + body`).
+fn mp4_box(box_type: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    let size = u32::try_from(8 + body.len()).expect("box under 4 GiB");
+    let mut out = size.to_be_bytes().to_vec();
+    out.extend_from_slice(box_type);
+    out.extend_from_slice(body);
+    out
+}
+
+/// `ftyp` + a `moov` declaring one `trak > mdia > hdlr` per handler: enough
+/// for the track census, and deliberately nothing lofty could read as tags.
+fn synthetic_mp4_with_tracks(handlers: &[&[u8; 4]]) -> Vec<u8> {
+    let traks: Vec<u8> = handlers
+        .iter()
+        .map(|handler| {
+            let mut hdlr = vec![0u8; 4]; // version + flags
+            hdlr.extend_from_slice(&[0u8; 4]); // pre_defined
+            hdlr.extend_from_slice(*handler);
+            hdlr.extend_from_slice(&[0u8; 12]); // reserved
+            hdlr.push(0); // empty name
+            let mdia = mp4_box(b"mdia", &mp4_box(b"hdlr", &hdlr));
+            mp4_box(b"trak", &mdia)
+        })
+        .collect::<Vec<Vec<u8>>>()
+        .concat();
+    // A correctly sized `ftyp`, unlike `M4B_MAGIC`, whose declared length
+    // overshoots its bytes and would land the box walk inside `moov`.
+    let mut out = mp4_box(b"ftyp", b"M4B \x00\x00\x00\x00isom");
+    out.extend_from_slice(&mp4_box(b"moov", &traks));
+    out
+}
 
 async fn set_audiobook_library(pool: &sqlx::SqlitePool, path: &str) {
     db::set_settings(
@@ -444,9 +477,10 @@ async fn audiobook_inspect_rejects_unparseable_tags_with_415_bad_audio() {
     let token = auth_test_support::bearer_token(&pool, admin.id).await;
 
     // `M4B_MAGIC` passes `detect_audiobook_format`'s magic-byte gate (a valid
-    // `ftyp` box header) but is too short to be a real MP4 container, so
-    // lofty's tag parse fails — the only way to reach `UploadError::BadAudio`
-    // rather than the earlier `UnsupportedAudioFormat` gate.
+    // `ftyp` box header) but is too short to be a real MP4 container: the
+    // track census finds no `moov`, which is the unreadable-container arm of
+    // `UploadError::BadAudio` rather than the earlier `UnsupportedAudioFormat`
+    // gate or a track verdict.
     let (ct, body) = multipart_body(&[("file", Some("stub.m4b"), M4B_MAGIC)]);
     let res = app
         .oneshot(post_multipart(
@@ -464,6 +498,129 @@ async fn audiobook_inspect_rejects_unparseable_tags_with_415_bad_audio() {
     assert!(
         msg.contains("could not read audiobook"),
         "expected the BadAudio message, got: {msg}"
+    );
+}
+
+/// Read the 415 body and assert on which rule produced it.
+async fn assert_415_with(res: axum::response::Response, expected: &str, not: &str) {
+    assert_eq!(res.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let msg = String::from_utf8_lossy(&bytes);
+    assert!(msg.contains(expected), "expected `{expected}`, got: {msg}");
+    assert!(!msg.contains(not), "did not expect `{not}`, got: {msg}");
+}
+
+#[tokio::test]
+async fn audiobook_rejects_mp4_with_video_track_with_415() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    // A video renamed `.mp4` sniffs as ISO-BMFF like any M4B; the track census
+    // is what refuses it, and the video rule speaks before the audio one.
+    let (ct, body) = multipart_body(&[(
+        "file",
+        Some("movie.mp4"),
+        &synthetic_mp4_with_tracks(&[b"vide"]),
+    )]);
+    let res = app
+        .oneshot(post_multipart(
+            "/api/uploads/audiobooks/inspect",
+            &token,
+            &ct,
+            body,
+        ))
+        .await
+        .expect("request should succeed");
+    assert_415_with(res, "carries a video track", "no audio track").await;
+}
+
+#[tokio::test]
+async fn audiobook_rejects_mp4_with_both_tracks_on_the_video_rule() {
+    let (app, _state, pool) = fixture().await;
+    let library = tempfile::tempdir().expect("temp library dir");
+    set_audiobook_library(&pool, &library.path().to_string_lossy()).await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    // The real shape of a renamed video: audio *and* video. Refused on the
+    // commit path too, before anything reaches the library.
+    let (ct, body) = multipart_body(&[
+        ("title", None, b"Some Title"),
+        ("author", None, b"Some Author"),
+        (
+            "file",
+            Some("movie.mp4"),
+            &synthetic_mp4_with_tracks(&[b"soun", b"vide"]),
+        ),
+    ]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/audiobooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    assert_415_with(res, "carries a video track", "no audio track").await;
+    assert!(
+        std::fs::read_dir(library.path()).unwrap().next().is_none(),
+        "nothing should have been filed"
+    );
+}
+
+#[tokio::test]
+async fn audiobook_rejects_m4b_without_audio_track_on_the_no_audio_rule() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    // The same video-only body under `.m4b`: the video rule is reserved for
+    // `.mp4` arrivals, so this is refused for having no audio, not for the
+    // video.
+    let (ct, body) = multipart_body(&[(
+        "file",
+        Some("stills.m4b"),
+        &synthetic_mp4_with_tracks(&[b"vide"]),
+    )]);
+    let res = app
+        .oneshot(post_multipart(
+            "/api/uploads/audiobooks/inspect",
+            &token,
+            &ct,
+            body,
+        ))
+        .await
+        .expect("request should succeed");
+    assert_415_with(res, "no audio track", "video track").await;
+}
+
+#[tokio::test]
+async fn audiobook_admits_m4b_with_chapter_stills_past_the_track_rules() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    // An M4B with a `vide` track beside its audio is an audiobook with chapter
+    // stills. It clears both track rules; whatever lofty then makes of a
+    // tagless synthetic body, the answer is neither a track verdict nor the
+    // unreadable-container arm.
+    let (ct, body) = multipart_body(&[(
+        "file",
+        Some("stills.m4b"),
+        &synthetic_mp4_with_tracks(&[b"soun", b"vide"]),
+    )]);
+    let res = app
+        .oneshot(post_multipart(
+            "/api/uploads/audiobooks/inspect",
+            &token,
+            &ct,
+            body,
+        ))
+        .await
+        .expect("request should succeed");
+    let status = res.status();
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let msg = String::from_utf8_lossy(&bytes);
+    assert!(
+        !msg.contains("track") && !msg.contains("no moov box"),
+        "expected the census to let it by, got {status}: {msg}"
     );
 }
 

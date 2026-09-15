@@ -16,6 +16,7 @@ mod cover;
 mod group;
 mod parse;
 mod stat;
+pub mod tracks;
 
 #[cfg(test)]
 mod tests;
@@ -28,6 +29,7 @@ pub use parse::{
     AudiobookPart, IndexedAudiobook,
 };
 pub use stat::{stat_audiobook_library, AudiobookStatEntry, AudiobookStatScanResult};
+pub use tracks::{inspect_mp4_tracks, Mp4Tracks};
 
 /// Filesystem extensions the audiobook scanner picks up. Mirrors
 /// [`crate::scanner::AUDIOBOOK_EXTENSIONS`] (which is used for the

@@ -1,6 +1,6 @@
 //! Unit tests for chapter extraction, split by source into the sibling
 //! modules below; the MP4 box builders and the chapter-track fixture (also
-//! used by `audiobook::parse`'s tests) live here.
+//! used by `audiobook::parse`'s and `audiobook::tracks`' tests) live here.
 
 mod chapter_track;
 mod hostile_input;
@@ -75,7 +75,7 @@ fn make_id3v2_chap_fixture(
 // scan. These tests never assert a specific parse — only that the parser
 // terminates *gracefully* (returns, no panic, no hang) on hostile bytes.
 /// Write raw bytes to a temp file and return it (kept alive by the caller).
-fn temp_with_bytes(bytes: &[u8]) -> tempfile::NamedTempFile {
+pub(crate) fn temp_with_bytes(bytes: &[u8]) -> tempfile::NamedTempFile {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     file.write_all(bytes).unwrap();
     file.flush().unwrap();
@@ -83,7 +83,7 @@ fn temp_with_bytes(bytes: &[u8]) -> tempfile::NamedTempFile {
 }
 
 /// Wrap a body in an MP4 box header (`size(4 BE) + type(4) + body`).
-fn box_with(box_type: &[u8; 4], body: &[u8]) -> Vec<u8> {
+pub(crate) fn box_with(box_type: &[u8; 4], body: &[u8]) -> Vec<u8> {
     let size = (8 + body.len()) as u32;
     let mut out = Vec::with_capacity(size as usize);
     out.extend_from_slice(&size.to_be_bytes());
@@ -93,7 +93,7 @@ fn box_with(box_type: &[u8; 4], body: &[u8]) -> Vec<u8> {
 }
 
 /// Wrap a body in a full-box header (`size + type + version + flags + body`).
-fn full_box(box_type: &[u8; 4], version: u8, body: &[u8]) -> Vec<u8> {
+pub(crate) fn full_box(box_type: &[u8; 4], version: u8, body: &[u8]) -> Vec<u8> {
     let mut payload = vec![version, 0, 0, 0];
     payload.extend_from_slice(body);
     box_with(box_type, &payload)
@@ -130,7 +130,7 @@ fn mdhd_box(timescale: u32, duration: u32, version: u8) -> Vec<u8> {
     full_box(b"mdhd", version, &body)
 }
 
-fn hdlr_box(handler: &[u8; 4]) -> Vec<u8> {
+pub(crate) fn hdlr_box(handler: &[u8; 4]) -> Vec<u8> {
     let mut body = Vec::new();
     body.extend_from_slice(&0u32.to_be_bytes()); // pre_defined
     body.extend_from_slice(handler);
