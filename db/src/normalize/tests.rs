@@ -352,3 +352,89 @@ async fn backfill_norm_columns_fills_only_null_rows_and_is_idempotent() {
             .unwrap();
     assert_eq!(author_norm.as_deref(), Some("sentinel"));
 }
+
+#[tokio::test]
+async fn backfill_author_name_norm_rewrites_a_stale_value_and_leaves_a_matching_row_alone() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::query(
+        "INSERT INTO authors (name, name_norm) VALUES ('Benito Pérez Galdós', 'wrong'), ('Ada Lovelace', 'ada lovelace')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    backfill_author_name_norm(&pool).await.unwrap();
+
+    let stale: String =
+        sqlx::query_scalar("SELECT name_norm FROM authors WHERE name = 'Benito Pérez Galdós'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stale, "benito perez galdos");
+    let untouched: String =
+        sqlx::query_scalar("SELECT name_norm FROM authors WHERE name = 'Ada Lovelace'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(untouched, "ada lovelace");
+}
+
+#[tokio::test]
+async fn backfill_author_name_norm_fills_a_null_value() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::query("INSERT INTO authors (name) VALUES ('Benito Pérez Galdós')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    backfill_author_name_norm(&pool).await.unwrap();
+
+    let filled: Option<String> = sqlx::query_scalar("SELECT name_norm FROM authors")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(filled.as_deref(), Some("benito perez galdos"));
+}
+
+#[tokio::test]
+async fn backfill_author_name_norm_is_a_no_op_on_a_second_pass() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::query("INSERT INTO authors (name) VALUES ('Sōseki'), ('Ada Lovelace')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    backfill_author_name_norm(&pool).await.unwrap();
+    let first: Vec<String> = sqlx::query_scalar("SELECT name_norm FROM authors ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    backfill_author_name_norm(&pool).await.unwrap();
+    let second: Vec<String> = sqlx::query_scalar("SELECT name_norm FROM authors ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(first, second);
+}
+
+#[tokio::test]
+async fn backfill_author_name_norm_updates_more_rows_than_one_chunk() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let total = AUTHOR_NAME_NORM_CHUNK + 5;
+    for i in 0..total {
+        sqlx::query("INSERT INTO authors (name) VALUES (?)")
+            .bind(format!("Authór {i}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    backfill_author_name_norm(&pool).await.unwrap();
+
+    let unfilled: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM authors WHERE name_norm IS NULL")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(unfilled, 0, "every row past the first chunk must be filled");
+}
