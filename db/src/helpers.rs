@@ -8,16 +8,21 @@ use std::sync::OnceLock;
 use omnibus_shared::EbookMetadata;
 use regex::Regex;
 
+// `overrides_win_sql` is expanded *by* the two effective-membership macros —
+// a nested `macro_rules!` name resolves at the expansion site, so it must be
+// in scope here even though nothing in this file names it directly.
+use crate::metadata_overrides::sql::{effective_genres_sql, effective_tags_sql, overrides_win_sql};
+
 /// Maximum query length (in chars) accepted by the FTS5 search entrypoints
 /// (`search_books`, `count_search_books`, `search_palette`). Inputs beyond
-/// this are truncated before reaching [`build_fts_match`] / `LIKE` so the
+/// this are truncated before reaching [`build_search_query`] / `LIKE` so the
 /// generated MATCH expression and pattern length stay bounded regardless of
 /// caller payload size. Module-wide so the limit is tunable in one place
 /// across every search path.
 pub(crate) const MAX_QUERY_LEN: usize = 256;
 
 /// Trim surrounding whitespace and cap a user query to [`MAX_QUERY_LEN`]
-/// chars before it reaches [`build_fts_match`] / `LIKE`. Collecting chars
+/// chars before it reaches [`build_search_query`] / `LIKE`. Collecting chars
 /// (not bytes) guarantees the truncation never lands mid-codepoint. Shared
 /// by every search entrypoint so the cap is applied identically everywhere.
 pub(crate) fn cap_query_len(q: &str) -> String {
@@ -256,7 +261,7 @@ pub(crate) fn join_names<'a, I: IntoIterator<Item = &'a str>>(iter: I) -> String
 /// `/search` read path (`books::search`) and the palette's books arm. One
 /// weight per `books_fts` column in declaration order (title, authors,
 /// series, tags, description, isbn, genres): title dominates, then authors
-/// and series. The rest stay neutral because [`build_fts_match`]'s column
+/// and series. The rest stay neutral because [`build_search_query`]'s column
 /// filters keep them from contributing to a free-text score.
 ///
 /// Hoisted to one constant because a *short* tuple is silent — fts5 defaults
@@ -344,33 +349,71 @@ fn split_query_tokens(raw: &str) -> Vec<QueryToken> {
     out
 }
 
-/// Parse a user-typed query into a single FTS5 MATCH expression.
+/// A user query split into the part FTS5 answers and the parts resolved relationally.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchQuery {
+    /// The FTS5 `MATCH` expression for free text, authors, and series.
+    pub fts_match: Option<String>,
+    /// Tag names to match exactly against relational membership.
+    pub tag_facets: Vec<String>,
+    /// Genre names to match exactly against relational membership.
+    pub genre_facets: Vec<String>,
+}
+
+impl SearchQuery {
+    /// True when there is nothing to run — callers short-circuit to empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.fts_match.is_none() && self.tag_facets.is_empty() && self.genre_facets.is_empty()
+    }
+}
+
+/// One correlated `EXISTS` per facet value, plus the values to bind in the
+/// order the predicates place their placeholders. The caller supplies the
+/// outer `books b` the predicates correlate against.
 ///
-/// Recognises `author:foo`, `series:foo`, `tag:foo`, `genre:foo`
-/// (case-insensitive on the prefix) and emits column-scoped clauses.
-/// Everything else falls through to the default `{title authors series}`
-/// filter as free-text terms, preserving the existing scope and
-/// prefix-on-last semantics from [`sanitize_fts_query`].
-///
-/// Returns `None` when nothing usable remains (empty input, or only empty
-/// `author:` / `series:` / `tag:` / `genre:` tokens) so callers can
-/// short-circuit instead of submitting an empty `MATCH`.
-pub fn build_fts_match(raw: &str) -> Option<String> {
+/// Per value rather than one `IN` list because facets AND together: a book
+/// must carry every tag named, not any of them. Each predicate wraps the
+/// effective-membership relation in a derived table so its own `books b`
+/// stays scoped to it and `b.id` still resolves to the row being tested.
+pub(crate) fn facet_exists_predicates(query: &SearchQuery) -> (String, Vec<String>) {
+    let mut sql = String::new();
+    let mut binds = Vec::with_capacity(query.tag_facets.len() + query.genre_facets.len());
+    for name in &query.tag_facets {
+        sql.push_str(concat!(
+            " AND EXISTS (SELECT 1 FROM (",
+            effective_tags_sql!(),
+            ") et JOIN tags ft ON ft.id = et.tag_id
+               WHERE et.book_id = b.id AND ft.name = ? COLLATE NOCASE)"
+        ));
+        binds.push(name.clone());
+    }
+    for name in &query.genre_facets {
+        sql.push_str(concat!(
+            " AND EXISTS (SELECT 1 FROM (",
+            effective_genres_sql!(),
+            ") eg JOIN genres fg ON fg.id = eg.genre_id
+               WHERE eg.book_id = b.id AND fg.name = ? COLLATE NOCASE)"
+        ));
+        binds.push(name.clone());
+    }
+    (sql, binds)
+}
+
+/// Split a user query into its FTS5 expression and relational facets.
+pub fn build_search_query(raw: &str) -> SearchQuery {
     let mut author_tokens: Vec<QueryToken> = Vec::new();
     let mut series_tokens: Vec<QueryToken> = Vec::new();
-    let mut tag_tokens: Vec<QueryToken> = Vec::new();
-    let mut genre_tokens: Vec<QueryToken> = Vec::new();
+
     let mut free_tokens: Vec<QueryToken> = Vec::new();
+    let mut tag_facets: Vec<String> = Vec::new();
+    let mut genre_facets: Vec<String> = Vec::new();
 
     for token in split_query_tokens(raw) {
         if let Some((prefix, value)) = token.text.split_once(':') {
             let lower = prefix.to_ascii_lowercase();
-            if value.is_empty() {
-                // `author:` with no value — drop silently rather than
-                // treating it as free-text or erroring.
-                if matches!(lower.as_str(), "author" | "series" | "tag" | "genre") {
-                    continue;
-                }
+            if value.is_empty() && matches!(lower.as_str(), "author" | "series" | "tag" | "genre") {
+                continue;
             }
             match lower.as_str() {
                 "author" => {
@@ -388,17 +431,11 @@ pub fn build_fts_match(raw: &str) -> Option<String> {
                     continue;
                 }
                 "tag" => {
-                    tag_tokens.push(QueryToken {
-                        text: value.to_string(),
-                        quoted: token.quoted,
-                    });
+                    tag_facets.push(value.to_string());
                     continue;
                 }
                 "genre" => {
-                    genre_tokens.push(QueryToken {
-                        text: value.to_string(),
-                        quoted: token.quoted,
-                    });
+                    genre_facets.push(value.to_string());
                     continue;
                 }
                 _ => {}
@@ -414,26 +451,19 @@ pub fn build_fts_match(raw: &str) -> Option<String> {
     if let Some(s) = sanitize_query_tokens(&series_tokens) {
         clauses.push(format!("{{series}} : ({s})"));
     }
-    if let Some(s) = sanitize_query_tokens(&tag_tokens) {
-        clauses.push(format!("{{tags}} : ({s})"));
-    }
-    if let Some(s) = sanitize_query_tokens(&genre_tokens) {
-        clauses.push(format!("{{genres}} : ({s})"));
-    }
     if let Some(s) = sanitize_query_tokens(&free_tokens) {
-        // Default scope: title/authors/series (matches F0.4 design — keeps
-        // short prefix queries from dragging in generic tag/genre/description
-        // values).
         clauses.push(format!("{{title authors series}} : ({s})"));
     }
 
-    if clauses.is_empty() {
+    let fts_match = if clauses.is_empty() {
         None
     } else {
-        // Multiple column-filter clauses must be joined with an explicit
-        // FTS5 boolean operator — implicit AND only works *inside* a
-        // single column filter's `( ... )` body.
         Some(clauses.join(" AND "))
+    };
+    SearchQuery {
+        fts_match,
+        tag_facets,
+        genre_facets,
     }
 }
 
@@ -450,7 +480,7 @@ pub fn sanitize_fts_query(raw: &str) -> Option<String> {
 }
 
 /// Per-token quoting/escaping shared by [`sanitize_fts_query`] and
-/// [`build_fts_match`].
+/// [`build_search_query`].
 ///
 /// A token may carry internal whitespace — [`split_query_tokens`] keeps a
 /// quoted facet value whole — in which case the emitted `"…"` is an FTS5

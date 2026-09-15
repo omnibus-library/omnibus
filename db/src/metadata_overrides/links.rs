@@ -5,8 +5,11 @@
 
 use std::collections::HashSet;
 
+use omnibus_shared::text_fold::fold_for_match;
 use omnibus_shared::MetadataOverrides;
 use sqlx::{QueryBuilder, SqliteConnection};
+
+use crate::sync::AUTHOR_UPSERT_CHUNK;
 
 /// Names bound per batched insert. SQLite's default bound-parameter cap is
 /// 999 (32766 on newer builds) and a subjects/genres list is user-supplied,
@@ -145,11 +148,14 @@ pub(super) async fn materialize_author_rows(
         .filter(|(name, _)| seen.insert(name.to_ascii_lowercase()))
         .collect();
 
-    for chunk in rows.chunks(INSERT_CHUNK) {
-        let mut qb = QueryBuilder::new("INSERT OR IGNORE INTO authors (name, sort) ");
+    // Three binds per row, so the shared one-column chunk would overrun the
+    // parameter cap; the author writers share their own bound.
+    for chunk in rows.chunks(AUTHOR_UPSERT_CHUNK) {
+        let mut qb = QueryBuilder::new("INSERT OR IGNORE INTO authors (name, sort, name_norm) ");
         qb.push_values(chunk, |mut b, (name, sort)| {
             b.push_bind(*name);
             b.push_bind(*sort);
+            b.push_bind(fold_for_match(name));
         });
         qb.build().execute(&mut *conn).await?;
     }

@@ -16,6 +16,7 @@ mod tests;
 
 pub(crate) use audiobooks::insert_chapters;
 pub use audiobooks::{sync_audiobooks, sync_audiobooks_with_progress, AudiobookSyncPlan};
+pub(crate) use authors::AUTHOR_UPSERT_CHUNK;
 pub use books::{replace_books, sync_books, sync_books_with_progress, MovedFile, SyncPlan};
 
 // The single `books_fts` door. `upsert_fts` / `upsert_fts_batch` /

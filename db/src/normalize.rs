@@ -3,6 +3,7 @@
 //! time by the sync writers and backfilled once at boot by
 //! [`backfill_norm_columns`]; consumed by `sync::attach`.
 
+use omnibus_shared::text_fold::fold_for_match;
 use sqlx::SqlitePool;
 
 /// Errors returned by [`backfill_norm_columns`].
@@ -226,6 +227,56 @@ pub async fn backfill_author_sort(pool: &SqlitePool) -> Result<(), NormalizeErro
 /// Rows per chunk for the author-sort backfill UPDATE. Two binds per row keeps
 /// a chunk well under SQLite's 999-parameter cap.
 const AUTHOR_SORT_UPDATE_CHUNK: usize = 400;
+
+/// Recompute `authors.name_norm` for every author and rewrite the rows whose
+/// stored key disagrees. Run at boot from `init_db`.
+///
+/// Compares rather than filtering on `IS NULL`, so this both fills the rows
+/// that predate the column and heals a value left behind by a write path that
+/// missed it — a key an `IS NULL` guard could never correct. The write is
+/// unconditional because the fold is total: every name yields a key, so there
+/// is no "cannot derive" case a plain write would erase.
+pub async fn backfill_author_name_norm(pool: &SqlitePool) -> Result<(), NormalizeError> {
+    let rows: Vec<(i64, String, Option<String>)> =
+        sqlx::query_as("SELECT id, name, name_norm FROM authors")
+            .fetch_all(pool)
+            .await?;
+
+    let stale: Vec<(i64, String)> = rows
+        .into_iter()
+        .filter_map(|(id, name, stored)| {
+            let folded = fold_for_match(&name);
+            (stored.as_deref() != Some(folded.as_str())).then_some((id, folded))
+        })
+        .collect();
+    if stale.is_empty() {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await?;
+    for chunk in stale.chunks(AUTHOR_NAME_NORM_CHUNK) {
+        let values = std::iter::repeat_n("(?, ?)", chunk.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "UPDATE authors
+                SET name_norm = v.column2
+               FROM (VALUES {values}) AS v
+              WHERE authors.id = v.column1"
+        );
+        let mut q = sqlx::query(&sql);
+        for (id, folded) in chunk {
+            q = q.bind(id).bind(folded);
+        }
+        q.execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Rows per chunk for the author name-norm backfill UPDATE. Two binds per row
+/// keeps a chunk well under SQLite's 999-parameter cap.
+const AUTHOR_NAME_NORM_CHUNK: usize = 400;
 
 #[cfg(test)]
 mod tests;

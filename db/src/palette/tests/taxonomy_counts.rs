@@ -155,36 +155,44 @@ async fn search_palette_taxonomy_counts_scoped_per_library() {
 async fn search_palette_taxonomy_query_plans_use_indexes() {
     let pool = init_db("sqlite::memory:").await.unwrap();
 
-    async fn plan_text(pool: &SqlitePool, sql: &str) -> String {
-        let rows = sqlx::query(&format!("EXPLAIN QUERY PLAN {sql}"))
-            .bind("/lib")
-            .bind("%x%")
-            .bind(5_i32)
-            .fetch_all(pool)
-            .await
-            .unwrap();
+    async fn plan_text(pool: &SqlitePool, sql: &str, raw_pattern_fallback: bool) -> String {
+        let explain = format!("EXPLAIN QUERY PLAN {sql}");
+        let mut q = sqlx::query(&explain).bind("/lib").bind("%x%").bind(5_i32);
+        if raw_pattern_fallback {
+            // The authors arm also takes the raw pattern for its NULL-key fallback.
+            q = q.bind("%x%");
+        }
+        let rows = q.fetch_all(pool).await.unwrap();
         rows.iter()
             .map(|r| r.get::<String, _>("detail"))
             .collect::<Vec<_>>()
             .join("\n")
     }
 
-    for (arm, sql, link_table, link_alias) in [
+    for (arm, sql, link_table, link_alias, raw_pattern_fallback) in [
         (
             "authors",
             authors::search_authors_sql(),
             "books_authors_link",
             "bal",
+            true,
         ),
         (
             "series",
             series::search_series_sql(),
             "books_series_link",
             "bsl",
+            false,
         ),
-        ("tags", tags::search_tags_sql(), "books_tags_link", "btl"),
+        (
+            "tags",
+            tags::search_tags_sql(),
+            "books_tags_link",
+            "btl",
+            false,
+        ),
     ] {
-        let plan = plan_text(&pool, sql).await;
+        let plan = plan_text(&pool, sql, raw_pattern_fallback).await;
         let mut scans = 0;
         for line in plan.lines() {
             let mut words = line.split_whitespace();

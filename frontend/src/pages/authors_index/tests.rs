@@ -107,9 +107,9 @@ fn filter_authors_returns_all_when_query_is_empty() {
 
 #[test]
 fn filter_authors_matches_lowercase_query_against_mixed_case_name() {
-    // `filter_authors` lowercases each author's name before comparing, but
+    // `filter_authors` folds each author's name before comparing, but
     // takes `query` as-is — callers (e.g. `AuthorsIndexPage`) are
-    // responsible for lowercasing the query first.
+    // responsible for folding the query first.
     let all = [
         author("Ada Lovelace", None),
         author("Louisa May Alcott", None),
@@ -117,6 +117,42 @@ fn filter_authors_matches_lowercase_query_against_mixed_case_name() {
     let out = filter_authors(&all, "lovelace");
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].name, "Ada Lovelace");
+}
+
+#[test]
+fn filter_authors_matches_a_query_typed_without_the_names_diacritics() {
+    let all = [
+        author("Benito Pérez Galdós", None),
+        author("Ada Lovelace", None),
+    ];
+    assert_eq!(filter_authors(&all, "perez galdos").len(), 1);
+}
+
+#[test]
+fn compute_author_groups_keeps_an_accented_name_in_its_existing_letter_bucket() {
+    let all = [
+        author("Benito Pérez Galdós", None),
+        author("Ada Lovelace", None),
+    ];
+    let groups = compute_author_groups(&all, "", IndexSort::Name);
+
+    let letters: Vec<(char, Vec<&str>)> = groups
+        .letters
+        .iter()
+        .map(|(letter, authors)| {
+            (
+                *letter,
+                authors.iter().map(|author| author.name.as_str()).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        letters,
+        vec![
+            ('G', vec!["Benito Pérez Galdós"]),
+            ('L', vec!["Ada Lovelace"]),
+        ]
+    );
 }
 
 #[test]

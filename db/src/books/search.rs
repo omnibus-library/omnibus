@@ -1,13 +1,16 @@
 //! FTS5-backed search read path. Wraps the `books_fts` virtual table with
 //! the same scalar-subquery projection the other read paths use, so search
 //! results hydrate into the same `EbookMetadata` shape `list_books` /
-//! `get_book` return.
+//! `get_book` return. Free text, `author:` and `series:` go to FTS; `tag:`
+//! and `genre:` are resolved relationally, since exact membership is not a
+//! question the joined name list in `books_fts.tags` can answer.
 
 use omnibus_shared::EbookMetadata;
 use sqlx::{Row, SqlitePool};
 
 use crate::helpers::{
-    build_fts_match, cap_query_len, library_paths_json, visible_book_sql, FTS_BM25_RANK,
+    build_search_query, cap_query_len, facet_exists_predicates, library_paths_json,
+    visible_book_sql, SearchQuery, FTS_BM25_RANK,
 };
 
 use super::projection::{
@@ -16,16 +19,19 @@ use super::projection::{
 };
 
 /// Full-text search across `books_fts`. Returns hydrated `EbookMetadata`
-/// ordered by bm25 rank (best first). Free-text terms are scoped to
-/// `title/authors/series` via a column filter so that short prefix queries
-/// don't surface spurious hits on generic `tags` or `genres` values (e.g.
-/// typing "Dra" matching books tagged — or genred — "Drama"). Ranking weights
-/// favour title matches; see [`FTS_BM25_RANK`].
+/// ordered by bm25 rank (best first) when the query carries free text, and by
+/// the library's own sort order when it is facets alone. Free-text terms are
+/// scoped to `title/authors/series` via a column filter so that short prefix
+/// queries don't surface spurious hits on generic `tags` or `genres` values
+/// (e.g. typing "Dra" matching books tagged — or genred — "Drama"). Ranking
+/// weights favour title matches; see [`FTS_BM25_RANK`].
 ///
-/// `q` is parsed via [`build_fts_match`] (which recognises `author:`,
-/// `series:`, `tag:`, `genre:` facets and sanitises every token) before reaching
-/// `MATCH`, so arbitrary user input is safe to pass through. Returns an
-/// empty vec when the parsed query is empty.
+/// `q` is parsed via [`build_search_query`] (which recognises `author:`,
+/// `series:`, `tag:`, `genre:` facets and sanitises every token) before
+/// reaching `MATCH`, so arbitrary user input is safe to pass through. A
+/// `tag:`/`genre:` facet names its value exactly and is answered from the
+/// link tables and the override layer instead of `MATCH`. Returns an empty
+/// vec when the parsed query is empty.
 pub async fn search_books(
     pool: &SqlitePool,
     library_path: &str,
@@ -72,11 +78,12 @@ pub async fn search_books_for_paths_with_total(
     // matching `search_palette` (issue #189). Normal/short queries are
     // unaffected; see `cap_query_len`.
     let capped = cap_query_len(q);
-    let Some(match_expr) = build_fts_match(&capped) else {
+    let query = build_search_query(&capped);
+    if query.is_empty() {
         return Ok((Vec::new(), 0));
-    };
+    }
 
-    let rows = fetch_search_rows(pool, library_paths, &match_expr).await?;
+    let rows = fetch_search_rows(pool, library_paths, &query).await?;
 
     // `total_count` is the scalar `COUNT(*)` over the materialized matches, so
     // it's identical on every row; read it off the first. An empty result set
@@ -94,19 +101,25 @@ pub async fn search_books_for_paths_with_total(
     Ok((out, total))
 }
 
-/// Run the single-pass FTS5 MATCH + hydrate query: bm25 scan inside a
+/// Run the single-pass match + hydrate query: the scan lives inside a
 /// `MATERIALIZED` CTE, then the outer SELECT joins back to `books` with the
 /// shared `BOOK_COLUMNS` projection plus a scalar `(SELECT COUNT(*))`
 /// `total_count` column. bm25() is only valid in a query that directly
 /// references books_fts, so it must live inside the CTE.
+///
+/// A facets-only query takes a second shape with no `books_fts` join at all:
+/// FTS5 rejects an empty `MATCH`, and there is no rank to order by, so the
+/// library's own sort carries the order instead.
 async fn fetch_search_rows(
     pool: &SqlitePool,
     library_paths: &[&str],
-    match_expr: &str,
+    query: &SearchQuery,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     let visible = visible_book_sql("b", "l", "?");
-    let sql = format!(
-        r"
+    let (facets, facet_binds) = facet_exists_predicates(query);
+    let sql = if query.fts_match.is_some() {
+        format!(
+            r"
         WITH matches AS MATERIALIZED (
             SELECT books_fts.rowid AS bid,
                    {FTS_BM25_RANK} AS rank
@@ -114,7 +127,7 @@ async fn fetch_search_rows(
             JOIN books b ON b.id = books_fts.rowid
             JOIN scan_roots l ON l.id = b.library_id
             WHERE books_fts MATCH ?
-              AND {visible}
+              AND {visible}{facets}
         )
         SELECT {BOOK_COLUMNS},
                (SELECT COUNT(*) FROM matches)               AS total_count
@@ -123,13 +136,34 @@ async fn fetch_search_rows(
         ORDER BY m.rank, b.sort, b.id
         LIMIT ?
         "
-    );
-    sqlx::query(&sql)
-        .bind(match_expr)
-        .bind(library_paths_json(library_paths))
-        .bind(MAX_BOOKS_RETURNED)
-        .fetch_all(pool)
-        .await
+        )
+    } else {
+        format!(
+            r"
+        WITH matches AS MATERIALIZED (
+            SELECT b.id AS bid
+            FROM books b
+            JOIN scan_roots l ON l.id = b.library_id
+            WHERE {visible}{facets}
+        )
+        SELECT {BOOK_COLUMNS},
+               (SELECT COUNT(*) FROM matches)               AS total_count
+        FROM matches m
+        JOIN books b ON b.id = m.bid
+        ORDER BY b.sort, b.id
+        LIMIT ?
+        "
+        )
+    };
+    let mut q = sqlx::query(&sql);
+    if let Some(match_expr) = &query.fts_match {
+        q = q.bind(match_expr);
+    }
+    q = q.bind(library_paths_json(library_paths));
+    for value in &facet_binds {
+        q = q.bind(value);
+    }
+    q.bind(MAX_BOOKS_RETURNED).fetch_all(pool).await
 }
 
 /// Total number of FTS5 hits for `q` under `library_path` (before the
@@ -156,22 +190,40 @@ pub async fn count_search_books_for_paths(
     // `search_palette` (issue #189). Normal/short queries are unaffected;
     // see `cap_query_len`.
     let capped = cap_query_len(q);
-    let Some(match_expr) = build_fts_match(&capped) else {
+    let query = build_search_query(&capped);
+    if query.is_empty() {
         return Ok(0);
-    };
+    }
     let visible = visible_book_sql("b", "l", "?");
-    Ok(sqlx::query_scalar::<_, i64>(&format!(
-        r"
+    let (facets, facet_binds) = facet_exists_predicates(&query);
+    let sql = if query.fts_match.is_some() {
+        format!(
+            r"
         SELECT COUNT(*)
           FROM books_fts
           JOIN books b ON b.id = books_fts.rowid
           JOIN scan_roots l ON l.id = b.library_id
          WHERE books_fts MATCH ?
-           AND {visible}
+           AND {visible}{facets}
         "
-    ))
-    .bind(&match_expr)
-    .bind(library_paths_json(library_paths))
-    .fetch_one(pool)
-    .await?)
+        )
+    } else {
+        format!(
+            r"
+        SELECT COUNT(*)
+          FROM books b
+          JOIN scan_roots l ON l.id = b.library_id
+         WHERE {visible}{facets}
+        "
+        )
+    };
+    let mut scalar = sqlx::query_scalar::<_, i64>(&sql);
+    if let Some(match_expr) = &query.fts_match {
+        scalar = scalar.bind(match_expr.clone());
+    }
+    scalar = scalar.bind(library_paths_json(library_paths));
+    for value in &facet_binds {
+        scalar = scalar.bind(value.clone());
+    }
+    Ok(scalar.fetch_one(pool).await?)
 }

@@ -2,6 +2,7 @@
 //! durable uuid, author links, identifiers, and a cover, but no `book_files`.
 //! Used when a scanned/manually-entered physical book isn't in the library yet.
 
+use omnibus_shared::text_fold::fold_for_match;
 use sqlx::{SqlitePool, Transaction};
 
 use super::{PhysicalError, PHYSICAL_LIBRARY_PATH};
@@ -139,16 +140,17 @@ async fn link_authors(
         return Ok(());
     }
 
-    // 1 bind/row for the author insert, 1 (book_id) + 2/row for the link
+    // 2 binds/row for the author insert, 1 (book_id) + 2/row for the link
     // insert; 400 keeps both comfortably under SQLite's 999-param cap.
     for chunk in entries.chunks(400) {
-        let author_rows = std::iter::repeat_n("(?)", chunk.len())
+        let author_rows = std::iter::repeat_n("(?, ?)", chunk.len())
             .collect::<Vec<_>>()
             .join(", ");
-        let insert_sql = format!("INSERT OR IGNORE INTO authors (name) VALUES {author_rows}");
+        let insert_sql =
+            format!("INSERT OR IGNORE INTO authors (name, name_norm) VALUES {author_rows}");
         let mut insert_q = sqlx::query(&insert_sql);
         for (name, _) in chunk {
-            insert_q = insert_q.bind(*name);
+            insert_q = insert_q.bind(*name).bind(fold_for_match(name));
         }
         insert_q.execute(&mut **tx).await?;
 

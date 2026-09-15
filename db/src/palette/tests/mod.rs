@@ -5,6 +5,7 @@
 
 mod arms;
 mod direct_arms;
+mod facet_agreement;
 mod for_paths;
 mod genres;
 mod overrides;

@@ -36,6 +36,7 @@ pub mod shelves;
 pub mod stats;
 pub mod suggestion;
 pub mod summary;
+pub mod text_fold;
 pub mod timestamp;
 pub mod upload;
 pub mod view_prefs;

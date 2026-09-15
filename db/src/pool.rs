@@ -100,6 +100,9 @@ async fn run_boot_backfills(pool: &SqlitePool) -> Result<(), InitDbError> {
     // Surname-first `author_sort` for rows whose write path stored the
     // given-first display name, so the Author axis keys every row alike (#2342).
     crate::normalize::backfill_author_sort(pool).await?;
+    // Folded author match key for rows written before migration 0097, and a
+    // self-heal for any write path that stored a stale one.
+    crate::normalize::backfill_author_name_norm(pool).await?;
     // Effective (override) match keys for Check-In on rows edited before
     // migration 0048 (and self-heals any drift from the overrides JSON).
     crate::metadata_overrides::backfill_override_norm_columns(pool).await?;

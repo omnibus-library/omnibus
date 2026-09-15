@@ -197,18 +197,18 @@ fn sanitize_fts_query_keeps_hyphenated_isbn_as_single_token() {
 }
 
 #[test]
-fn build_fts_match_returns_none_for_empty_input() {
-    assert!(build_fts_match("").is_none());
-    assert!(build_fts_match("   \t  ").is_none());
+fn build_search_query_is_empty_for_blank_input() {
+    assert!(build_search_query("").is_empty());
+    assert!(build_search_query("   \t  ").is_empty());
 }
 
 #[test]
-fn build_fts_match_returns_none_when_only_empty_facets() {
+fn build_search_query_is_empty_when_only_empty_facets() {
     // `author:` / `series:` / `tag:` / `genre:` with no value are dropped
     // silently.
-    assert!(build_fts_match("author:").is_none());
-    assert!(build_fts_match("series:   tag:").is_none());
-    assert!(build_fts_match("genre:").is_none());
+    assert!(build_search_query("author:").is_empty());
+    assert!(build_search_query("series:   tag:").is_empty());
+    assert!(build_search_query("genre:").is_empty());
 }
 
 // Regression for #2504: a multi-word facet value must survive as one facet.
@@ -216,50 +216,55 @@ fn build_fts_match_returns_none_when_only_empty_facets() {
 // free-text `Fiction"`, which matched books merely *titled* something with
 // "Fiction" in them.
 #[test]
-fn build_fts_match_keeps_a_quoted_facet_value_whole() {
+fn build_search_query_keeps_a_quoted_facet_value_whole() {
+    // The value travels as one name and is matched against membership, so
+    // "Science Fiction" can no longer reach a book tagged "Science Fiction &
+    // Fantasy" the way a prefix-starred index term did.
     assert_eq!(
-        build_fts_match("tag:\"Science Fiction\"").as_deref(),
-        // No trailing `*`: a clicked facet is an exact name, and the prefix
-        // star made this also match a book tagged "Science Fiction & Fantasy".
-        Some("{tags} : (\"Science Fiction\")")
+        build_search_query("tag:\"Science Fiction\"").tag_facets,
+        vec!["Science Fiction".to_string()]
     );
     // Punctuation inside the value is part of the value, not its own facet.
     assert_eq!(
-        build_fts_match("genre:\"Science Fiction & Fantasy\"").as_deref(),
-        Some("{genres} : (\"Science Fiction & Fantasy\")")
+        build_search_query("genre:\"Science Fiction & Fantasy\"").genre_facets,
+        vec!["Science Fiction & Fantasy".to_string()]
     );
 }
 
 // The prefix star is type-ahead, and an unquoted query is someone typing.
 #[test]
-fn build_fts_match_keeps_the_prefix_star_on_unquoted_input() {
+fn build_search_query_keeps_the_prefix_star_on_unquoted_free_text_only() {
+    // Type-ahead still applies to what FTS answers. A facet names a value, so
+    // it is carried verbatim and compared whole.
     assert_eq!(
-        build_fts_match("tag:sci").as_deref(),
-        Some("{tags} : (\"sci\"*)")
+        build_search_query("tag:sci").tag_facets,
+        vec!["sci".to_string()]
     );
     assert_eq!(
-        build_fts_match("harry pott").as_deref(),
+        build_search_query("harry pott").fts_match.as_deref(),
         Some("{title authors series} : (\"harry\" \"pott\"*)")
     );
 }
 
 #[test]
-fn build_fts_match_still_splits_an_unquoted_multi_word_run() {
+fn build_search_query_still_splits_an_unquoted_multi_word_run() {
     // Unquoted input is unchanged: two bare words after a facet are one
-    // facet term plus free text, exactly as before.
+    // facet value plus free text, exactly as before.
+    let q = build_search_query("tag:Science Fiction");
+    assert_eq!(q.tag_facets, vec!["Science".to_string()]);
     assert_eq!(
-        build_fts_match("tag:Science Fiction").as_deref(),
-        Some("{tags} : (\"Science\"*) AND {title authors series} : (\"Fiction\"*)")
+        q.fts_match.as_deref(),
+        Some("{title authors series} : (\"Fiction\"*)")
     );
 }
 
 #[test]
-fn build_fts_match_treats_an_unclosed_quote_as_running_to_the_end() {
+fn build_search_query_treats_an_unclosed_quote_as_running_to_the_end() {
     // A reader mid-type has an unbalanced quote; searching what they have so
     // far beats refusing to search.
     assert_eq!(
-        build_fts_match("tag:\"Dark academia").as_deref(),
-        Some("{tags} : (\"Dark academia\")")
+        build_search_query("tag:\"Dark academia").tag_facets,
+        vec!["Dark academia".to_string()]
     );
 }
 
@@ -268,52 +273,54 @@ fn build_fts_match_treats_an_unclosed_quote_as_running_to_the_end() {
 // quote. Toggling on every `"` swallowed it and searched a different value
 // from the one the heading names.
 #[test]
-fn build_fts_match_folds_a_doubled_quote_back_into_the_value() {
+fn build_search_query_folds_a_doubled_quote_back_into_the_value() {
     assert_eq!(
-        build_fts_match(r#"tag:"the ""good"" parts""#).as_deref(),
-        Some(r#"{tags} : ("the ""good"" parts")"#)
+        build_search_query(r#"tag:"the ""good"" parts""#).tag_facets,
+        vec![r#"the "good" parts"#.to_string()]
     );
 }
 
 #[test]
-fn build_fts_match_drops_an_empty_quoted_facet_value() {
-    assert!(build_fts_match("tag:\"\"").is_none());
+fn build_search_query_drops_an_empty_quoted_facet_value() {
+    assert!(build_search_query("tag:\"\"").is_empty());
 }
 
 #[test]
-fn build_fts_match_reads_a_bare_quoted_phrase_as_one_free_text_phrase() {
+fn build_search_query_reads_a_bare_quoted_phrase_as_one_free_text_phrase() {
     // Not a facet, but the same tokenizer: quoting is how a reader asks for a
     // phrase, and splitting it stranded the quote characters in the terms.
     assert_eq!(
-        build_fts_match("\"the long way\"").as_deref(),
+        build_search_query("\"the long way\"").fts_match.as_deref(),
         Some("{title authors series} : (\"the long way\")")
     );
 }
 
 #[test]
-fn build_fts_match_emits_default_scope_for_free_text() {
+fn build_search_query_emits_default_scope_for_free_text() {
     // Free-text falls into the same `{title authors series}` filter
     // that the F0.4 hardcoded filter used to apply directly.
     assert_eq!(
-        build_fts_match("harry pott").as_deref(),
+        build_search_query("harry pott").fts_match.as_deref(),
         Some("{title authors series} : (\"harry\" \"pott\"*)")
     );
 }
 
 #[test]
-fn build_fts_match_emits_author_facet() {
+fn build_search_query_emits_author_facet() {
     assert_eq!(
-        build_fts_match("author:austen").as_deref(),
+        build_search_query("author:austen").fts_match.as_deref(),
         Some("{authors} : (\"austen\"*)")
     );
 }
 
 #[test]
-fn build_fts_match_combines_facet_and_free_text() {
+fn build_search_query_combines_facet_and_free_text() {
     // Two clauses joined by an explicit `AND` — FTS5's grammar only
     // implicit-ANDs *inside* a column-filter body, not between two
     // top-level column filters.
-    let out = build_fts_match("author:austen pride").expect("non-empty");
+    let out = build_search_query("author:austen pride")
+        .fts_match
+        .expect("non-empty");
     assert_eq!(
         out,
         "{authors} : (\"austen\"*) AND {title authors series} : (\"pride\"*)"
@@ -321,52 +328,71 @@ fn build_fts_match_combines_facet_and_free_text() {
 }
 
 #[test]
-fn build_fts_match_emits_series_and_tag_facets() {
+fn build_search_query_routes_series_to_fts_and_tag_to_a_facet() {
     assert_eq!(
-        build_fts_match("series:dune").as_deref(),
+        build_search_query("series:dune").fts_match.as_deref(),
         Some("{series} : (\"dune\"*)")
     );
-    assert_eq!(
-        build_fts_match("tag:fiction").as_deref(),
-        Some("{tags} : (\"fiction\"*)")
-    );
+    let q = build_search_query("tag:fiction");
+    assert_eq!(q.tag_facets, vec!["fiction".to_string()]);
+    assert!(q.fts_match.is_none());
 }
 
 #[test]
-fn build_fts_match_emits_genre_facet() {
-    assert_eq!(
-        build_fts_match("genre:horror").as_deref(),
-        Some("{genres} : (\"horror\"*)")
-    );
+fn build_search_query_routes_a_genre_to_a_facet() {
+    let q = build_search_query("genre:horror");
+    assert_eq!(q.genre_facets, vec!["horror".to_string()]);
+    assert!(q.fts_match.is_none());
 }
 
 #[test]
-fn build_fts_match_keeps_genre_and_tag_facets_in_separate_clauses() {
-    // The two vocabularies index into different columns, so a query naming
-    // both must not collapse into one filter — a book tagged "horror" but
-    // not genred "horror" has to fall out.
-    assert_eq!(
-        build_fts_match("genre:horror tag:classic").as_deref(),
-        Some("{tags} : (\"classic\"*) AND {genres} : (\"horror\"*)")
-    );
+fn build_search_query_keeps_genre_and_tag_facets_separate() {
+    // The two vocabularies are distinct, so a query naming both must require
+    // both — a book tagged "classic" but not genred "horror" has to fall out.
+    let q = build_search_query("genre:horror tag:classic");
+    assert_eq!(q.tag_facets, vec!["classic".to_string()]);
+    assert_eq!(q.genre_facets, vec!["horror".to_string()]);
 }
 
 #[test]
-fn build_fts_match_facet_prefix_is_case_insensitive() {
+fn build_search_query_facet_prefix_is_case_insensitive() {
     assert_eq!(
-        build_fts_match("Author:Austen").as_deref(),
+        build_search_query("Author:Austen").fts_match.as_deref(),
         Some("{authors} : (\"Austen\"*)")
     );
 }
 
 #[test]
-fn build_fts_match_unknown_prefix_falls_through_to_free_text() {
+fn build_search_query_unknown_prefix_falls_through_to_free_text() {
     // `isbn:` is not a recognised facet — treat the whole token as
     // free-text rather than erroring.
     assert_eq!(
-        build_fts_match("isbn:foo").as_deref(),
+        build_search_query("isbn:foo").fts_match.as_deref(),
         Some("{title authors series} : (\"isbn:foo\"*)")
     );
+}
+
+// The one mixed shape: a facet leaves the MATCH while free text stays in it,
+// so both halves of the split have to survive the same parse.
+#[test]
+fn build_search_query_combines_a_tag_facet_with_free_text() {
+    let query = build_search_query("tag:Classic pride prejudice");
+
+    assert_eq!(query.tag_facets, ["Classic"]);
+    assert_eq!(
+        query.fts_match.as_deref(),
+        Some("{title authors series} : (\"pride\" \"prejudice\"*)")
+    );
+}
+
+// Two facets of the *same* kind stay separate values rather than merging,
+// because they AND against membership — see
+// `search_books_two_tag_facets_require_both_memberships`.
+#[test]
+fn build_search_query_collects_two_tag_facets_separately() {
+    let query = build_search_query("tag:A tag:B");
+
+    assert_eq!(query.tag_facets, ["A", "B"]);
 }
 
 #[test]

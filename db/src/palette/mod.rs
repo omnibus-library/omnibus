@@ -81,7 +81,7 @@ const LIMIT: i32 = 5;
 ///
 /// Returns up to 5 books, authors, series, tags, and genres plus server-side
 /// timing in `duration_ms`.
-/// Books are matched via FTS5 (`build_fts_match`); taxonomy categories use
+/// Books are matched via FTS5 (`build_search_query`); taxonomy categories use
 /// `LIKE '%q%'`. Empty/whitespace queries return `PaletteResults::default()`.
 pub async fn search_palette(
     pool: &SqlitePool,

@@ -3,10 +3,11 @@
 
 use std::collections::HashSet;
 
+use omnibus_shared::text_fold::fold_for_match;
 use sqlx::{SqlitePool, Transaction};
 
 use crate::settings::upsert_library;
-use crate::sync::upsert_fts;
+use crate::sync::{upsert_fts, AUTHOR_UPSERT_CHUNK};
 use crate::taxonomy::{
     resolve_or_insert_language, resolve_or_insert_publisher, resolve_or_insert_series,
     resolve_or_insert_tag,
@@ -369,18 +370,24 @@ async fn restore_author_links(
         }
     }
 
-    let author_rows = std::iter::repeat_n("(?, ?)", order.len())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let upsert_sql = format!(
-        "INSERT INTO authors (name, sort) VALUES {author_rows} \
-         ON CONFLICT(name) DO UPDATE SET sort = COALESCE(authors.sort, excluded.sort)"
-    );
-    let mut q = sqlx::query(&upsert_sql);
-    for name in &order {
-        q = q.bind(*name).bind(sort_for[*name]);
+    for chunk in order.chunks(AUTHOR_UPSERT_CHUNK) {
+        let author_rows = std::iter::repeat_n("(?, ?, ?)", chunk.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let upsert_sql = format!(
+            "INSERT INTO authors (name, sort, name_norm) VALUES {author_rows} \
+             ON CONFLICT(name) DO UPDATE SET sort = COALESCE(authors.sort, excluded.sort), \
+             name_norm = excluded.name_norm"
+        );
+        let mut q = sqlx::query(&upsert_sql);
+        for name in chunk {
+            q = q
+                .bind(*name)
+                .bind(sort_for[*name])
+                .bind(fold_for_match(name));
+        }
+        q.execute(&mut **tx).await?;
     }
-    q.execute(&mut **tx).await?;
 
     // Link rows deduped by name, keeping the first (lowest) position.
     let mut linked: std::collections::HashSet<&str> = std::collections::HashSet::new();
