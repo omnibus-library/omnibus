@@ -29,10 +29,8 @@ pub use parse::{
 };
 pub use stat::{stat_audiobook_library, AudiobookStatEntry, AudiobookStatScanResult};
 
-/// Filesystem extensions the audiobook scanner picks up. The one definition:
-/// [`crate::scanner`] re-exports it for the settings-page path count, which
-/// once kept its own copy and silently omitted `m4a` from the count while the
-/// indexer surfaced it.
+/// Filesystem extensions the audiobook scanner picks up — the single
+/// definition; [`crate::scanner`] re-exports it for the settings-page count.
 pub const AUDIOBOOK_EXTENSIONS: &[&str] = &["m4b", "m4a", "mp3"];
 
 /// `book_files.format` values produced by the audiobook indexer. Used by

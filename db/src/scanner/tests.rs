@@ -26,8 +26,7 @@ fn list_files_counts_every_extension_the_audiobook_indexer_accepts() {
     fs::remove_dir_all(&dir).unwrap();
     assert!(result.error.is_none());
     assert_eq!(result.total_files, 4);
-    // Same list the indexer's stat walk gates on, so a file the count shows is
-    // a file the library will hold — `m4a` was once counted by neither.
+    // The count and the indexer's stat walk gate on the same list.
     assert_eq!(AUDIOBOOK_EXTENSIONS, crate::audiobook::AUDIOBOOK_EXTENSIONS);
     for ext in ["m4b", "m4a", "mp3"] {
         let count = result
