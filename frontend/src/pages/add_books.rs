@@ -125,10 +125,7 @@ pub fn AddBooksPage() -> Element {
 
     rsx! {
         section { class: "card",
-            h1 { "Add books" }
-            p { class: "subtitle",
-                "Upload an EPUB or audiobook and Omnibus will file it into your library."
-            }
+            h1 { "Upload a book" }
 
             FileDropZone {
                 state,
@@ -163,7 +160,7 @@ pub fn AddBooksPage() -> Element {
 fn AddBooksForbidden() -> Element {
     rsx! {
         section { class: "card",
-            h1 { "Add books" }
+            h1 { "Upload a book" }
             p { class: "settings-status error", "data-testid": "add-books-forbidden",
                 "You don't have permission to add books to this library."
             }
@@ -426,7 +423,6 @@ fn FileDropZone(state: UploadState, on_file: EventHandler<Event<FormData>>) -> E
     let busy = state.busy;
     rsx! {
         div { class: "settings-field",
-            span { class: "settings-label", "Book files" }
             div {
                 class: if filename().is_empty() { "file-drop-zone" } else { "file-drop-zone has-file" },
                 div { class: "file-drop-content",
@@ -479,7 +475,7 @@ fn FileDropZone(state: UploadState, on_file: EventHandler<Event<FormData>>) -> E
             p {
                 class: "settings-hint",
                 "data-testid": "add-books-formats",
-                "EPUB, M4B, M4A, MP4, or the MP3 parts of one audiobook — the file type decides where it goes."
+                "EPUB, M4B, M4A, MP4, or the MP3 parts of one audiobook."
             }
         }
     }

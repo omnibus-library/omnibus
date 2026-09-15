@@ -36,7 +36,9 @@ const status = (page: import("@playwright/test").Page) =>
 test("renders the add-books layout", async ({ page }) => {
   await gotoReady(page, "/add-books");
 
-  await expect(page.getByRole("heading", { name: "Add books" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Upload a book" }),
+  ).toBeVisible();
   // One picker for every format — there is no ebook/audiobook toggle to click
   // first; the extension of what you pick decides the ingest.
   await expect(fileInput(page)).toBeVisible();
