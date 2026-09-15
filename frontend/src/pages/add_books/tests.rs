@@ -134,6 +134,48 @@ mod render {
         assert!(!one.contains("add-books-more-creators"));
     }
 
+    /// An audiobook picked after an EPUB must not inherit the EPUB's series:
+    /// the type switch that used to reset the form is gone, so the audiobook
+    /// pre-fill has to clear the fields the parser cannot supply.
+    #[test]
+    fn audiobook_prefill_clears_the_series_a_previous_pick_left_behind() {
+        #[component]
+        fn Harness() -> Element {
+            let mut state = UploadState {
+                kind: use_signal(|| Some(UploadKind::Ebook)),
+                filename: use_signal(String::new),
+                file_bytes: use_signal(|| None),
+                audio_files: use_signal(Vec::new),
+                title: use_signal(|| "Old Title".to_string()),
+                author: use_signal(|| "Old Author".to_string()),
+                more_creators: use_signal(|| vec!["Old Co-author".to_string()]),
+                series: use_signal(|| "Old Series".to_string()),
+                series_index: use_signal(|| "3".to_string()),
+                inspected: use_signal(|| true),
+                busy: use_signal(|| false),
+                status: use_signal(|| None),
+                status_is_error: use_signal(|| false),
+            };
+            prefill_from_audiobook(
+                &mut state,
+                AudiobookInspection {
+                    title: Some("New Title".to_string()),
+                    author: Some("New Author".to_string()),
+                    creators: vec!["New Author".to_string()],
+                    ..Default::default()
+                },
+            );
+            rsx! { ConfirmForm { state, on_submit: EventHandler::new(|_| {}) } }
+        }
+
+        let html = dioxus::ssr::render_element(rsx! { Harness {} });
+        assert!(html.contains("value=\"New Title\""));
+        assert!(html.contains("value=\"New Author\""));
+        assert!(!html.contains("Old Series"), "{html}");
+        assert!(!html.contains("value=\"3\""), "{html}");
+        assert!(!html.contains("Old Co-author"), "{html}");
+    }
+
     /// The single picker takes every format and says so, with no type toggle
     /// to click first — the extension decides.
     #[test]

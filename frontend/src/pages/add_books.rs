@@ -7,6 +7,7 @@
 
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
+use omnibus_shared::{AudiobookInspection, UploadInspection};
 
 use crate::data::{self, AudiobookUploadMeta, EbookUploadMeta};
 use crate::{use_server_url, Route};
@@ -212,12 +213,7 @@ fn inspect_ebook_file(server_url: String, state: UploadState, evt: Event<FormDat
                 let bytes = bytes.to_vec();
                 match data::inspect_ebook(&server_url, name.clone(), &bytes).await {
                     Ok(insp) => {
-                        s.title.set(insp.title.unwrap_or_default());
-                        s.author.set(insp.author.unwrap_or_default());
-                        s.more_creators
-                            .set(insp.creators.iter().skip(1).cloned().collect());
-                        s.series.set(insp.series.unwrap_or_default());
-                        s.series_index.set(insp.series_index.unwrap_or_default());
+                        prefill_from_ebook(&mut s, insp);
                         s.filename.set(name);
                         s.file_bytes.set(Some(bytes));
                         s.inspected.set(true);
@@ -274,10 +270,7 @@ fn inspect_audiobook_files(server_url: String, state: UploadState, evt: Event<Fo
         }
         match data::inspect_audiobook(&server_url, &files).await {
             Ok(insp) => {
-                s.title.set(insp.title.unwrap_or_default());
-                s.author.set(insp.author.unwrap_or_default());
-                s.more_creators
-                    .set(insp.creators.iter().skip(1).cloned().collect());
+                prefill_from_audiobook(&mut s, insp);
                 s.filename.set(audiobook_summary(&files));
                 s.audio_files.set(files);
                 s.inspected.set(true);
@@ -294,6 +287,29 @@ fn inspect_audiobook_files(server_url: String, state: UploadState, evt: Event<Fo
         }
         s.busy.set(false);
     });
+}
+
+/// Pre-fill every confirm field from an EPUB inspection.
+fn prefill_from_ebook(s: &mut UploadState, insp: UploadInspection) {
+    s.title.set(insp.title.unwrap_or_default());
+    s.author.set(insp.author.unwrap_or_default());
+    s.more_creators
+        .set(insp.creators.iter().skip(1).cloned().collect());
+    s.series.set(insp.series.unwrap_or_default());
+    s.series_index.set(insp.series_index.unwrap_or_default());
+}
+
+/// Pre-fill every confirm field from an audiobook inspection. The parser
+/// reports no series, so the fields are cleared rather than left alone: with
+/// one picker there is no type switch to reset them, and the previous pick's
+/// series would otherwise be committed with this book.
+fn prefill_from_audiobook(s: &mut UploadState, insp: AudiobookInspection) {
+    s.title.set(insp.title.unwrap_or_default());
+    s.author.set(insp.author.unwrap_or_default());
+    s.more_creators
+        .set(insp.creators.iter().skip(1).cloned().collect());
+    s.series.set(String::new());
+    s.series_index.set(String::new());
 }
 
 /// Human-readable label for the staged audiobook part(s) in the drop zone.
