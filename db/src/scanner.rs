@@ -6,6 +6,10 @@
 
 pub use omnibus_shared::{LibraryContents, LibrarySection};
 
+/// File extensions the audiobook library walk accepts — the indexer's own list,
+/// re-exported so the settings-page count and what gets indexed cannot drift.
+pub use crate::audiobook::AUDIOBOOK_EXTENSIONS;
+
 /// Recursively walk `path` and return total file count plus per-extension
 /// counts for each extension in `extensions` (compared case-insensitively,
 /// without leading dot — e.g. `&["epub", "pdf"]`).
@@ -75,8 +79,6 @@ pub fn list_files(path: Option<&str>, extensions: &[&str]) -> LibrarySection {
 
 /// File extensions the ebook library walk accepts.
 pub const EBOOK_EXTENSIONS: &[&str] = &["epub", "pdf", "cbz"];
-/// File extensions the audiobook library walk accepts.
-pub const AUDIOBOOK_EXTENSIONS: &[&str] = &["m4b", "mp3"];
 
 /// Scan all configured library directories and return a combined `LibraryContents` with ebook and audiobook stat entries.
 pub fn scan_libraries(ebook_path: Option<&str>, audiobook_path: Option<&str>) -> LibraryContents {

@@ -194,11 +194,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The `omnibus` suite needs the public-domain fixtures for the
+          # audiobook upload tests (the only real M4B in the fixture set) and
+          # the `omnibus-db` suite for the public_domain_epubs regression suite
+          # + audiobook cover tests; no other variant does.
           - name: server
+            fixtures: true
             args: -p omnibus
-          # The `omnibus-db` suite needs the public-domain fixtures (the
-          # public_domain_epubs regression suite + audiobook cover tests); no
-          # other variant does, so only this one fetches them.
           - name: db
             fixtures: true
             args: -p omnibus-db
@@ -220,7 +222,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Public-domain fixtures aren't in git — they're the fixtures-vN release
-      # asset. Only the `db` variant needs them.
+      # asset. Only the `server` and `db` variants need them.
       - name: Cache test fixtures
         if: matrix.fixtures
         uses: actions/cache@v4
