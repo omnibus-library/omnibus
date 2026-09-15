@@ -283,22 +283,31 @@ async fn search_books_tolerates_a_corrupt_overrides_blob() {
 }
 
 #[tokio::test]
-async fn search_books_free_text_does_not_match_a_genre_name() {
+async fn search_books_genre_facet_matches_the_genre_name_exactly() {
     // Same reason `tags` sits outside the default scope: typing "Dra" must
-    // not drag in every book someone genred "Drama".
+    // not drag in every book someone genred "Drama". The facet itself names
+    // one genre, so it is answered from membership rather than the index —
+    // which makes it exact, and a prefix no longer a match.
     let (pool, _user, _covers) = seed_genre_fixture("fts_genre_scope", &["Drama"]).await;
 
     assert!(
         search_books(&pool, "/lib", "Dra").await.unwrap().is_empty(),
         "free text stays scoped to {{title authors series}}"
     );
-    assert_eq!(
+    assert!(
         search_books(&pool, "/lib", "genre:Dra")
+            .await
+            .unwrap()
+            .is_empty(),
+        "a facet names its value whole, so a prefix of it is not that genre"
+    );
+    assert_eq!(
+        search_books(&pool, "/lib", "genre:Drama")
             .await
             .unwrap()
             .len(),
         1,
-        "the same prefix does hit once it is genre:-scoped"
+        "the genre itself still hits"
     );
 }
 

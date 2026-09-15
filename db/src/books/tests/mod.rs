@@ -10,4 +10,5 @@ mod isbn;
 mod list;
 mod overrides;
 mod search;
+mod search_facets;
 mod validators;
