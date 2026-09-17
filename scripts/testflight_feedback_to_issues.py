@@ -4,8 +4,11 @@
 Polls the App Store Connect API `betaFeedbackScreenshotSubmissions` endpoint for
 each TestFlight app, and opens one GitHub issue per new tester submission —
 tester comment, device/OS environment, and the screenshot rendered inline.
-Idempotent: each issue embeds a hidden `asc-feedback-id` marker and the script
-skips a submission whose marker already appears in an existing issue.
+Idempotent: each issue embeds a hidden `asc-feedback-id` marker. One run lists
+every issue carrying the script's own label (open and closed) up front, reads
+the markers out of their bodies, and skips any submission already present.
+That listing is the whole dedupe, so a failure to fetch it aborts the run
+rather than filing a second copy of everything.
 
 Reuses the App Store Connect API key already configured for the build-upload
 workflow (`ASC_API_KEY_BASE64` / `ASC_KEY_ID` / `ASC_ISSUER_ID`).
@@ -25,6 +28,7 @@ Env:
 import base64
 import binascii
 import os
+import re
 import sys
 import time
 
@@ -41,6 +45,9 @@ BUNDLE_IDS = [b.strip() for b in
 ASSET_BRANCH = os.environ.get("ASSET_BRANCH", "testflight-feedback")
 MAX_PAGES = int(os.environ.get("MAX_PAGES", "5"))
 LABELS = ["testflight", "mobile", "bug"]
+# The label the dedupe listing walks — an issue that loses it is refiled.
+DEDUPE_LABEL = LABELS[0]
+MARKER = re.compile(r"asc-feedback-id:\s*(\S+?)\s*-->")
 
 
 def die(msg):
@@ -132,13 +139,30 @@ def repo():
     return r
 
 
-def already_filed(token, sub_id):
-    q = f'repo:{repo()} in:body "asc-feedback-id: {sub_id}"'
-    r = gh("GET", "/search/issues", token, params={"q": q})
-    if r.status_code != 200:
-        print(f"  warn: search failed ({r.status_code}); proceeding", file=sys.stderr)
-        return False
-    return r.json().get("total_count", 0) > 0
+def filed_submission_ids(token):
+    """Every submission id already carried by an issue, from one label listing.
+
+    Not the Search API: that is capped at ~30 requests a minute, and one search
+    per submission tripped it once the backlog passed two dozen — and the
+    fallback then was to *proceed*, which is how the same three submissions
+    were refiled every morning. A plain issues listing is one call per hundred
+    issues and has no index lag on yesterday's creations. Any failure here
+    aborts: nothing filed today beats everything filed twice.
+    """
+    ids = set()
+    page = 1
+    while True:
+        r = gh("GET", f"/repos/{repo()}/issues", token,
+               params={"state": "all", "labels": DEDUPE_LABEL,
+                       "per_page": 100, "page": page})
+        if r.status_code != 200:
+            die(f"listing filed issues failed ({r.status_code}): {r.text[:200]}")
+        batch = r.json()
+        for issue in batch:
+            ids.update(MARKER.findall(issue.get("body") or ""))
+        if len(batch) < 100:
+            return ids
+        page += 1
 
 
 def ensure_asset_branch(token):
@@ -290,14 +314,18 @@ def main():
     if not DRY_RUN:
         ensure_asset_branch(gh_token)
 
+    # Submission ids are unique across apps, so one listing covers both.
+    filed = filed_submission_ids(gh_token)
     created = skipped = 0
     for app in apps:
         for sub, included in fetch_submissions(asc_token, app["id"]):
             sub_id = sub["id"]
-            # Submission ids are unique across apps, so one marker search covers both.
-            if already_filed(gh_token, sub_id):
+            if sub_id in filed:
                 skipped += 1
                 continue
+            # A submission arriving mid-run shifts the newest-first pages, so
+            # a later page can repeat one this run already filed.
+            filed.add(sub_id)
 
             title, body = render(sub, included, app,
                                  collect_images(gh_token, sub_id, sub))
