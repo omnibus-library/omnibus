@@ -12,9 +12,11 @@ use omnibus_shared::{
 
 use crate::{data, media_url, use_server_url, Route};
 
-/// How the page image maps onto the stage viewport.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FitMode {
+/// How the page image maps onto the stage viewport. Shared with the PDF
+/// reader (`pages/pdf_reader`), whose stage wears the same `cr-fit-*`
+/// classes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FitMode {
     /// Page fills the stage width; taller pages scroll vertically.
     Width,
     /// Whole page visible, letterboxed to the stage height.
@@ -22,7 +24,7 @@ enum FitMode {
 }
 
 impl FitMode {
-    fn stage_class(self) -> &'static str {
+    pub(crate) fn stage_class(self) -> &'static str {
         match self {
             FitMode::Width => "cr-stage cr-fit-width",
             FitMode::Height => "cr-stage cr-fit-height",
@@ -378,7 +380,7 @@ pub fn ComicReadPage(uuid: String) -> Element {
 /// One fit-mode toggle button; `aria-pressed` carries the active state so
 /// the pair reads as a proper toggle group.
 #[component]
-fn FitButton(
+pub(crate) fn FitButton(
     fit: Signal<FitMode>,
     mode: FitMode,
     label: &'static str,

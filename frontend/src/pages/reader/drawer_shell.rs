@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 /// panels that don't need [`ReaderDrawerShell`]'s title/close-button chrome
 /// can reuse just the scrim.
 #[component]
-pub(super) fn ReaderScrim(onclick: EventHandler<MouseEvent>) -> Element {
+pub(crate) fn ReaderScrim(onclick: EventHandler<MouseEvent>) -> Element {
     rsx! {
         div { class: "rd-scrim", onclick: move |e| onclick.call(e) }
     }
@@ -26,7 +26,7 @@ pub(super) fn ReaderScrim(onclick: EventHandler<MouseEvent>) -> Element {
 // `on_close`) are slot/handler idioms a struct can't carry without losing the
 // rsx slot syntax, so grouping would only bundle the two chrome strings.
 #[component]
-pub(super) fn ReaderDrawerShell(
+pub(crate) fn ReaderDrawerShell(
     testid: String,
     #[props(default)] extra_class: String,
     on_close: EventHandler<()>,

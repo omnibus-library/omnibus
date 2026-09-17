@@ -19,10 +19,31 @@ pub(super) enum FilePickerKind {
 }
 
 impl FilePickerKind {
-    fn route_prefix(self) -> &'static str {
+    /// The route one row opens: the player for a Listen picker, and for a
+    /// Read picker the reader its *format* wants — `/read` for an EPUB,
+    /// `/pdf` for a PDF (a mixed EPUB+PDF book offers both through this
+    /// menu), `/comic` for a CBZ — carrying `?file_id=` where the reader
+    /// takes one so the row opens that exact file.
+    fn item_href(self, uuid: &str, file: &BookFileInfo) -> String {
         match self {
-            FilePickerKind::Read => "read",
-            FilePickerKind::Listen => "listen",
+            FilePickerKind::Listen => format!("/listen/{uuid}?file_id={}", file.id),
+            FilePickerKind::Read => match read_route_prefix(&file.format) {
+                "comic" => format!("/comic/{uuid}"),
+                prefix => format!("/{prefix}/{uuid}?file_id={}", file.id),
+            },
+        }
+    }
+
+    /// The single-file (plain link) href: the same per-format routing as
+    /// [`Self::item_href`] with no `?file_id=`, since the bare route opens
+    /// the book's only file of that format.
+    fn single_href(self, uuid: &str, file: Option<&BookFileInfo>) -> String {
+        match self {
+            FilePickerKind::Listen => format!("/listen/{uuid}"),
+            FilePickerKind::Read => {
+                let prefix = file.map_or("read", |f| read_route_prefix(&f.format));
+                format!("/{prefix}/{uuid}")
+            }
         }
     }
 
@@ -39,6 +60,28 @@ impl FilePickerKind {
             FilePickerKind::Listen => "Choose which file to listen to",
         }
     }
+}
+
+/// The reader route prefix a readable `book_files.format` opens in — the
+/// per-file form of the EPUB > CBZ > PDF ladder `routes::resume_route`
+/// applies per book. Anything unrecognised goes to the EPUB reader, the
+/// pre-PDF behaviour.
+fn read_route_prefix(format: &str) -> &'static str {
+    if format.eq_ignore_ascii_case("PDF") {
+        "pdf"
+    } else if format.eq_ignore_ascii_case("CBZ") {
+        "comic"
+    } else {
+        "read"
+    }
+}
+
+/// True for the `book_files.format` values the Read picker offers: the
+/// EPUBs and PDFs (each row opens its own reader — see
+/// [`FilePickerKind::item_href`]). A CBZ has its own CTA and takes no file
+/// id, so it stays out of the menu.
+pub(super) fn is_readable_book_file(f: &BookFileInfo) -> bool {
+    f.format.eq_ignore_ascii_case("EPUB") || f.format.eq_ignore_ascii_case("PDF")
 }
 
 /// True for the audio `book_files.format` values the listen path resolves
@@ -98,9 +141,8 @@ pub(super) fn BdFilePickerMenu(
         button_class,
         single_testid,
     } = chrome;
-    let prefix = kind.route_prefix();
     if files.len() < 2 {
-        let href = format!("/{prefix}/{uuid}");
+        let href = kind.single_href(&uuid, files.first());
         return rsx! {
             Link {
                 to: "{href}",
@@ -158,7 +200,6 @@ fn BdFilePickerPanel(
         }
     };
     let testid = kind.testid();
-    let prefix = kind.route_prefix();
     let heading_testid = format!("{testid}-heading");
     rsx! {
         div {
@@ -179,7 +220,7 @@ fn BdFilePickerPanel(
                 {
                     let title = file_picker_item_title(file, kind);
                     let meta = file_picker_item_meta(file, kind);
-                    let href = format!("/{prefix}/{uuid}?file_id={}", file.id);
+                    let href = kind.item_href(&uuid, file);
                     let item_testid = format!("{testid}-item-{}", file.id);
                     rsx! {
                         Link {
@@ -225,6 +266,14 @@ mod tests {
         for fmt in ["M4B", "m4b", "M4A", "m4a", "MP3", "mp3"] {
             assert!(is_audio_book_file(&file(fmt, 1, 0)));
         }
+    }
+
+    #[test]
+    fn is_readable_book_file_admits_epubs_and_pdfs_only() {
+        assert!(is_readable_book_file(&file("EPUB", 1, 0)));
+        assert!(is_readable_book_file(&file("pdf", 1, 0)));
+        assert!(!is_readable_book_file(&file("CBZ", 1, 0)));
+        assert!(!is_readable_book_file(&file("M4B", 1, 0)));
     }
 
     #[test]
@@ -291,14 +340,51 @@ mod tests {
     }
 
     #[test]
-    fn file_picker_kind_read_uses_the_read_route_prefix_and_testid() {
-        assert_eq!(FilePickerKind::Read.route_prefix(), "read");
-        assert_eq!(FilePickerKind::Read.testid(), "read-file-picker");
+    fn read_picker_rows_route_each_file_by_its_format() {
+        // AC4: a mixed EPUB+PDF book keeps the EPUB as its reader and offers
+        // the PDF through the same menu at `/pdf/{uuid}?file_id=`.
+        assert_eq!(
+            FilePickerKind::Read.item_href("book-a", &file("EPUB", 1, 0)),
+            "/read/book-a?file_id=1"
+        );
+        assert_eq!(
+            FilePickerKind::Read.item_href("book-a", &file("pdf", 2, 1)),
+            "/pdf/book-a?file_id=2"
+        );
+        // The comic pager takes no file id.
+        assert_eq!(
+            FilePickerKind::Read.item_href("book-a", &file("CBZ", 3, 2)),
+            "/comic/book-a"
+        );
+        assert_eq!(
+            FilePickerKind::Listen.item_href("book-a", &file("M4B", 4, 0)),
+            "/listen/book-a?file_id=4"
+        );
     }
 
     #[test]
-    fn file_picker_kind_listen_uses_the_listen_route_prefix_and_testid() {
-        assert_eq!(FilePickerKind::Listen.route_prefix(), "listen");
+    fn single_file_links_route_by_format_and_carry_no_file_id() {
+        assert_eq!(
+            FilePickerKind::Read.single_href("book-a", Some(&file("PDF", 9, 0))),
+            "/pdf/book-a"
+        );
+        assert_eq!(
+            FilePickerKind::Read.single_href("book-a", Some(&file("EPUB", 9, 0))),
+            "/read/book-a"
+        );
+        assert_eq!(
+            FilePickerKind::Read.single_href("book-a", None),
+            "/read/book-a"
+        );
+        assert_eq!(
+            FilePickerKind::Listen.single_href("book-a", Some(&file("MP3", 9, 0))),
+            "/listen/book-a"
+        );
+    }
+
+    #[test]
+    fn file_picker_kinds_carry_their_own_testids() {
+        assert_eq!(FilePickerKind::Read.testid(), "read-file-picker");
         assert_eq!(FilePickerKind::Listen.testid(), "listen-file-picker");
     }
 }

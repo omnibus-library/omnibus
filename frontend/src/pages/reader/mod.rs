@@ -9,20 +9,22 @@ mod annotations_sheet;
 mod bootstrap;
 mod chrome;
 mod chrome_handlers;
-mod drawer_shell;
-mod highlights;
-mod highlights_drawer;
+// `pub(crate)`: the PDF reader (`pages/pdf_reader`) reuses the drawers,
+// composer, popover, and highlight-creation action over its own viewer.
+pub(crate) mod drawer_shell;
+pub(crate) mod highlights;
+pub(crate) mod highlights_drawer;
 #[cfg(feature = "web")]
 mod interop;
 #[cfg(feature = "mobile")]
 mod mobile;
-mod note_composer;
+pub(crate) mod note_composer;
 mod overlays;
 mod prefs;
-mod quote_panel;
-mod reader_bookmarks;
+pub(crate) mod quote_panel;
+pub(crate) mod reader_bookmarks;
 mod search_panel;
-mod selection;
+pub(crate) mod selection;
 mod signals;
 mod sync_banner;
 mod toc_drawer;
