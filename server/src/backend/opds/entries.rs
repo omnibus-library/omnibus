@@ -19,17 +19,20 @@ pub(super) const CBZ_MIME: &str = "application/vnd.comicbook+zip";
 pub(super) const PDF_MIME: &str = "application/pdf";
 
 /// Whether a `book_files` format string is one this catalog offers as a
-/// download — EPUB/CBZ, what the `/opds/ebooks/{uuid}/{file,download}`
+/// download — EPUB/CBZ/PDF, what the `/opds/ebooks/{uuid}/{file,download}`
 /// delegates serve. The **single** predicate for both catalogs; the author
-/// and series feeds used to carry local copies of it.
+/// and series feeds used to carry local copies of it. Keep it in step with
+/// [`download_link`]: a format admitted here must have a link arm there.
 pub(super) fn is_ereader_format(format: &str) -> bool {
-    format.eq_ignore_ascii_case("epub") || format.eq_ignore_ascii_case("cbz")
+    format.eq_ignore_ascii_case("epub")
+        || format.eq_ignore_ascii_case("cbz")
+        || format.eq_ignore_ascii_case("pdf")
 }
 
 /// Drop every book without an e-reader-servable file. The shared list
 /// queries surface physical-only books on purpose for the web UI (#1181),
 /// but in a catalog for e-readers a row with no usable acquisition link is
-/// dead weight (#1811). Strictly EPUB/CBZ: audiobook-only books are
+/// dead weight (#1811). Strictly EPUB/CBZ/PDF: audiobook-only books are
 /// excluded too, so [`download_link`]'s audio fallback arms never fire
 /// from a feed — they remain only for defense on unfiltered callers.
 /// Every feed builder calls this right after its fetch, so both catalogs
