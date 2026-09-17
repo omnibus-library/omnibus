@@ -40,7 +40,7 @@ epub = "2"
 # cap in `db::pdf`. Both parse untrusted uploads, so both run under
 # `catch_unwind` there.
 hayro = "0.7"
-pdf-extract = "0.9"
+pdf-extract = "0.12"
 
 # PIN RATIONALE (#1529): frozen at v3 (current stable is several majors
 # ahead) pending a deliberate audit of the v4-v9 changelog against this

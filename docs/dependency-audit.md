@@ -109,9 +109,11 @@ this list.
   mupdf is linked or shelled out to. Pulls the `vello_cpu`/`vello_common`
   renderer family; check `cargo tree -d` on bumps, since `image`/`png` are
   shared with the cover pipeline.
-- `pdf-extract` (MIT, over `lopdf`) — per-page text and the outline. It loads
-  whole documents, which is why `db::pdf::text_max_bytes` caps the file size
-  it sees; its font parsers can panic on real-world embedded fonts, so every
+- `pdf-extract` (MIT, over `lopdf`) — per-page text and the outline. Held at
+  `0.12` or newer: `0.9` rode `lopdf 0.36`, which RUSTSEC-2026-0187 (stack
+  overflow on deeply nested objects — an abort, which no `catch_unwind`
+  catches) fixes only from `0.42`. It loads whole documents, which is why
+  `db::pdf::text_max_bytes` caps the file size it sees; its font parsers can panic on real-world embedded fonts, so every
   page runs under `catch_unwind`. Text quality is advisory (ligatures, CJK).
 - MuPDF (AGPL) and pdfium (prebuilt binary) were ruled out under the MIT
   license allow-list in `deny.toml`.
