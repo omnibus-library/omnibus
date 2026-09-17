@@ -6,6 +6,7 @@ mod candidates;
 mod close_match;
 mod exact_rung;
 mod outcomes;
+mod projection;
 mod writes;
 
 use std::time::Duration;

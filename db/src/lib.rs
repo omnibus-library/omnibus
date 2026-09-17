@@ -54,6 +54,7 @@ pub mod pdf;
 pub mod physical;
 pub mod pool;
 pub mod progress;
+pub mod pubdate;
 pub mod ratings;
 pub mod read_status;
 pub mod scan;

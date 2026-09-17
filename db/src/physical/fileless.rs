@@ -9,6 +9,7 @@ use super::{PhysicalError, PHYSICAL_LIBRARY_PATH};
 use crate::covers::write_cover_file;
 use crate::helpers::mint_uuid;
 use crate::normalize::{author_sort_key, normalize_author, normalize_title};
+use crate::pubdate::normalize_pubdate;
 
 /// A cover image for a fileless book: the source `mime` plus raw bytes.
 pub struct FilelessCover {
@@ -16,9 +17,11 @@ pub struct FilelessCover {
     pub bytes: Vec<u8>,
 }
 
-/// External metadata for a physical-only book. `pubdate` is a free-text year
-/// (matching `books.pubdate`); there is no page-count column yet, so page data
-/// is not persisted here.
+/// External metadata for a physical-only book. `pubdate` is the date as the
+/// provider reported it — [`create_fileless_book`] reduces it to the year or
+/// ISO date `books.pubdate` holds for scanned books, so a locale-formatted
+/// `8/4/2015` never lands in the column. There is no page-count column yet,
+/// so page data is not persisted here.
 pub struct FilelessBook {
     pub title: String,
     pub authors: Vec<String>,
@@ -46,6 +49,7 @@ pub async fn create_fileless_book(
     // Surname-first sort key (#2342), matching the scanned write path.
     let author_sort = book.authors.first().map(|a| author_sort_key(a));
     let author_norm = book.authors.first().and_then(|a| normalize_author(a));
+    let pubdate = book.pubdate.as_deref().and_then(normalize_pubdate);
 
     let book_id = sqlx::query_scalar::<_, i64>(
         // path is NOT NULL but meaningless for a fileless book (empty string);
@@ -61,7 +65,7 @@ pub async fn create_fileless_book(
     .bind(library_id)
     .bind(&book.title)
     .bind(&author_sort)
-    .bind(&book.pubdate)
+    .bind(&pubdate)
     .bind(has_cover)
     .bind(&book.description)
     .bind(normalize_title(&book.title))

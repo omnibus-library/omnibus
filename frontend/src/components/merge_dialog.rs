@@ -270,7 +270,11 @@ fn render_search_pane(
         if result_count > 0 {
             div { class: "mg-results-head",
                 span { class: "label", "Results \u{00b7} {result_count}" }
-                span { class: "mono mg-results-hint", "matched on title, author \u{0026} series" }
+                // Each word of the query matches in *one* of the three fields
+                // (`{title authors series}` in `build_search_query`), with the
+                // last word as a prefix — so a row need not share all three,
+                // and the old "title, author & series" read as if it did.
+                span { class: "mono mg-results-hint", "matching title, author or series" }
             }
             ul { class: "mg-results",
                 for book in results() {

@@ -57,6 +57,11 @@ async function openDialogAndPickSource(page: import("@playwright/test").Page) {
   // The candidate list fills after the debounced search RPC returns —
   // wait for it explicitly so the click can't race the render.
   await expect(page.getByTestId("merge-candidate").first()).toBeVisible();
+  // The results heading says what the search matched on: any one of the
+  // three fields, not all of them (#2525).
+  await expect(
+    page.getByText("matching title, author or series"),
+  ).toBeVisible();
   await page.getByTestId("merge-candidate").first().click();
   await expect(page.getByTestId("merge-confirm")).toBeVisible();
 }

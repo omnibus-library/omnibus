@@ -15,6 +15,7 @@ use crate::helpers::{
     FTS_BM25_RANK,
 };
 use crate::metadata_overrides::load_overrides_bulk;
+use crate::pubdate::year_of;
 
 use super::PaletteError;
 
@@ -22,7 +23,7 @@ use super::PaletteError;
 /// implementation regardless of which shape produced the row.
 const PALETTE_BOOK_COLUMNS: &str = r"
         SELECT b.id, b.uuid, b.title, b.has_cover, b.accent_color,
-               SUBSTR(b.pubdate, 1, 4) AS year,
+               b.pubdate                AS pubdate,
 
                (SELECT GROUP_CONCAT(a.name, ', ')
                   FROM (SELECT a2.name FROM books_authors_link bal
@@ -34,6 +35,9 @@ const PALETTE_BOOK_COLUMNS: &str = r"
                   FROM (SELECT format FROM book_files
                          WHERE book_id = b.id
                          ORDER BY format))                  AS formats_json,
+
+               EXISTS (SELECT 1 FROM physical_copies pc
+                        WHERE pc.book_uuid = b.uuid)        AS has_physical,
 
                (SELECT COUNT(*) FROM matches)               AS total_count
 ";
@@ -187,10 +191,17 @@ pub async fn search_books_for_paths(
             author_display: r
                 .get::<Option<String>, _>("author_display")
                 .unwrap_or_default(),
-            year: r.get("year"),
+            // Not `SUBSTR(pubdate, 1, 4)`: a physical-only row written before
+            // the date was normalized holds `8/4/2015`, and that answered
+            // "8/4/" (#2510).
+            year: r
+                .get::<Option<String>, _>("pubdate")
+                .as_deref()
+                .and_then(year_of),
             formats: parse_json_array(r.get("formats_json"))?,
             cover_url: (has_cover != 0).then(|| format!("/api/covers/{uuid}")),
             accent: r.get("accent_color"),
+            has_physical: r.get::<i64, _>("has_physical") != 0,
         });
     }
 

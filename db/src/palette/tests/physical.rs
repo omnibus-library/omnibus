@@ -106,6 +106,10 @@ async fn search_palette_finds_physical_only_book_when_it_has_a_copy() {
         results.books[0].formats.is_empty(),
         "a physical-only book carries no file formats"
     );
+    assert!(
+        results.books[0].has_physical,
+        "the copy that makes it visible is reported on the hit"
+    );
     assert_eq!(results.book_total, 1);
 
     // AC3: the palette and `/api/search` answer the same question.
@@ -113,6 +117,25 @@ async fn search_palette_finds_physical_only_book_when_it_has_a_copy() {
         .await
         .unwrap();
     assert_eq!(full.len(), 1, "precondition: full search already found it");
+}
+
+#[tokio::test]
+async fn search_palette_reads_a_year_out_of_a_legacy_locale_pubdate() {
+    let _covers = CoversTempDir::new("palette_physical_year");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_physical_only(&pool, "The Fifth Season", "N. K. Jemisin").await;
+    // A row written before provider dates were normalized on the way in:
+    // `SUBSTR(pubdate, 1, 4)` answered "8/4/" for it (#2510).
+    sqlx::query("UPDATE books SET pubdate = '8/4/2015' WHERE uuid = ?1")
+        .bind(&uuid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let results = search_palette(&pool, "/lib", "fifth").await.unwrap();
+
+    assert_eq!(results.books.len(), 1, "got {results:?}");
+    assert_eq!(results.books[0].year.as_deref(), Some("2015"));
 }
 
 #[tokio::test]
