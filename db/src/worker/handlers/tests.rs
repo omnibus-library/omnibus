@@ -55,7 +55,10 @@ fn kindle_outcome_passes_through_the_safe_enumerable_variants() {
             KindleError::NotConfigured,
             "email delivery is not configured on this server",
         ),
-        (KindleError::NoEpub, "this book has no EPUB file to send"),
+        (
+            KindleError::NoEpub,
+            "this book has no EPUB or PDF file to send",
+        ),
     ] {
         let msg = err_text(kindle_outcome(Err(err)));
         assert_eq!(msg, expected);

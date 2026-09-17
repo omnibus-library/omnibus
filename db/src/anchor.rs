@@ -76,11 +76,40 @@ pub struct AnchorPlacement {
     pub percent_through_book: Option<f64>,
 }
 
-/// One book's structure, loaded once and reused across its annotations.
-pub struct AnchorIndex {
+/// One file's stored structure: its spine rows, chapters, and the char
+/// total the percent ruler is drawn over.
+#[derive(Default)]
+struct Structure {
     spine: Vec<SpineStatRow>,
     chapters: Vec<EbookChapterRow>,
     total_chars: i64,
+}
+
+impl Structure {
+    async fn load(pool: &SqlitePool, file_id: i64) -> Result<Self, AnchorError> {
+        let spine = epub_structure::get_spine_stats(pool, file_id).await?;
+        let chapters = epub_structure::get_chapters(pool, file_id).await?;
+        let total_chars = spine
+            .iter()
+            .fold(0i64, |acc, s| acc.saturating_add(s.visible_chars.max(0)));
+        Ok(Self {
+            spine,
+            chapters,
+            total_chars,
+        })
+    }
+}
+
+/// One book's structure, loaded once and reused across its annotations.
+pub struct AnchorIndex {
+    /// The text source's structure (`book_text_source`: the EPUB, else the
+    /// PDF), which CFIs place against.
+    text: Structure,
+    /// The PDF's structure when it is *not* the text source — a book that
+    /// carries an EPUB and a PDF — so a `pdf:` anchor never places against
+    /// the EPUB's spine. `None` when the PDF is the text source already, or
+    /// the book has none.
+    pdf: Option<Structure>,
     /// Whole-book audio runtime, for bookmarks stored as a timestamp.
     audio_seconds: Option<f64>,
 }
@@ -92,9 +121,8 @@ impl AnchorIndex {
     /// The index for a book with no structure to place anything against.
     fn empty() -> Self {
         Self {
-            spine: Vec::new(),
-            chapters: Vec::new(),
-            total_chars: 0,
+            text: Structure::default(),
+            pdf: None,
             audio_seconds: None,
         }
     }
@@ -125,26 +153,34 @@ impl AnchorIndex {
         else {
             return Ok(index);
         };
-        let Some((file_id, _)) = crate::book_file_with_id(pool, book_id, "EPUB")
+        let Some(source) = crate::book_text_source(pool, book_id)
             .await
             .map_err(books_error)?
         else {
             return Ok(index);
         };
-        index.spine = epub_structure::get_spine_stats(pool, file_id).await?;
-        index.chapters = epub_structure::get_chapters(pool, file_id).await?;
-        index.total_chars = index
-            .spine
-            .iter()
-            .fold(0i64, |acc, s| acc.saturating_add(s.visible_chars.max(0)));
+        index.text = Structure::load(pool, source.file_id).await?;
+        if source.format != "PDF" {
+            if let Some((pdf_file_id, _)) = crate::book_file_with_id(pool, book_id, "PDF")
+                .await
+                .map_err(books_error)?
+            {
+                index.pdf = Some(Structure::load(pool, pdf_file_id).await?);
+            }
+        }
         Ok(index)
     }
 
-    /// Place one anchor: an `epubcfi(…)` point or range, or a bare number of
-    /// seconds (an audiobook bookmark).
+    /// Place one anchor: an `epubcfi(…)` point or range, a PDF page or
+    /// highlight anchor (`pdf-page:N` / `pdf:N:…`, whose page is its spine
+    /// step), or a bare number of seconds (an audiobook bookmark).
     pub fn locate(&self, anchor: &str) -> AnchorPlacement {
         if let Some(spine_index) = spine_index_of(anchor) {
-            return self.locate_spine(spine_index);
+            return Self::locate_spine(&self.text, spine_index);
+        }
+        if let Some(page) = omnibus_shared::pdf_anchor_page(anchor) {
+            let structure = self.pdf.as_ref().unwrap_or(&self.text);
+            return Self::locate_spine(structure, page as i64);
         }
         // A bookmark's `position` is an opaque token: seconds for the
         // player, a CFI for the reader. Only a bare number can be the
@@ -160,9 +196,13 @@ impl AnchorIndex {
         AnchorPlacement::default()
     }
 
-    /// Place a spine index against the stored structure.
-    fn locate_spine(&self, spine_index: i64) -> AnchorPlacement {
-        let Some(row) = self.spine.iter().find(|s| s.spine_index == spine_index) else {
+    /// Place a spine index against one file's stored structure.
+    fn locate_spine(structure: &Structure, spine_index: i64) -> AnchorPlacement {
+        let Some(row) = structure
+            .spine
+            .iter()
+            .find(|s| s.spine_index == spine_index)
+        else {
             // The CFI named a spine step, which is worth reporting even when
             // no stats exist to measure it against.
             return AnchorPlacement {
@@ -170,8 +210,9 @@ impl AnchorIndex {
                 ..AnchorPlacement::default()
             };
         };
-        let percent = (self.total_chars > 0).then(|| {
-            (row.chars_before.max(0) as f64 / self.total_chars as f64 * 100.0).clamp(0.0, 100.0)
+        let percent = (structure.total_chars > 0).then(|| {
+            (row.chars_before.max(0) as f64 / structure.total_chars as f64 * 100.0)
+                .clamp(0.0, 100.0)
         });
         AnchorPlacement {
             spine_index: Some(spine_index),
@@ -180,7 +221,7 @@ impl AnchorIndex {
             // document, and only the one it opens with is defensible.
             // Matches `progress::detail::chapter_at` and the content-search
             // citation, so all three name the same chapter.
-            chapter_title: self
+            chapter_title: structure
                 .chapters
                 .iter()
                 .filter(|c| c.spine_index <= spine_index)

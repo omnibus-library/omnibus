@@ -5,43 +5,46 @@ use crate::epub_structure::{EbookChapterRow, SpineStatRow};
 /// TOC entry opening each.
 fn index() -> AnchorIndex {
     AnchorIndex {
-        spine: vec![
-            SpineStatRow {
-                spine_index: 0,
-                href: "a.xhtml".into(),
-                visible_chars: 100,
-                chars_before: 0,
-            },
-            SpineStatRow {
-                spine_index: 1,
-                href: "b.xhtml".into(),
-                visible_chars: 300,
-                chars_before: 100,
-            },
-            SpineStatRow {
-                spine_index: 2,
-                href: "c.xhtml".into(),
-                visible_chars: 100,
-                chars_before: 400,
-            },
-        ],
-        chapters: vec![
-            EbookChapterRow {
-                ordinal: 0,
-                title: "One".into(),
-                href: "a.xhtml".into(),
-                spine_index: 0,
-                start_chars: 0,
-            },
-            EbookChapterRow {
-                ordinal: 1,
-                title: "Two".into(),
-                href: "b.xhtml".into(),
-                spine_index: 1,
-                start_chars: 100,
-            },
-        ],
-        total_chars: 500,
+        text: Structure {
+            spine: vec![
+                SpineStatRow {
+                    spine_index: 0,
+                    href: "a.xhtml".into(),
+                    visible_chars: 100,
+                    chars_before: 0,
+                },
+                SpineStatRow {
+                    spine_index: 1,
+                    href: "b.xhtml".into(),
+                    visible_chars: 300,
+                    chars_before: 100,
+                },
+                SpineStatRow {
+                    spine_index: 2,
+                    href: "c.xhtml".into(),
+                    visible_chars: 100,
+                    chars_before: 400,
+                },
+            ],
+            chapters: vec![
+                EbookChapterRow {
+                    ordinal: 0,
+                    title: "One".into(),
+                    href: "a.xhtml".into(),
+                    spine_index: 0,
+                    start_chars: 0,
+                },
+                EbookChapterRow {
+                    ordinal: 1,
+                    title: "Two".into(),
+                    href: "b.xhtml".into(),
+                    spine_index: 1,
+                    start_chars: 100,
+                },
+            ],
+            total_chars: 500,
+        },
+        pdf: None,
         audio_seconds: Some(1_000.0),
     }
 }
@@ -55,11 +58,67 @@ fn locate_places_a_point_cfi_by_its_spine_step() {
 }
 
 #[test]
+fn locate_places_pdf_anchors_by_their_page() {
+    // Both PDF forms name the page outright, and a PDF's structure rows are
+    // one per page — so the page is the spine step, for a highlight's quads
+    // and a bookmark's position alike.
+    let placed = index().locate("pdf-page:1");
+    assert_eq!(placed.spine_index, Some(1));
+    assert_eq!(placed.chapter_title.as_deref(), Some("Two"));
+    assert_eq!(placed.percent_through_book, Some(20.0));
+
+    let placed = index().locate("pdf:2:0,0,1,0,0,1,1,1");
+    assert_eq!(placed.spine_index, Some(2));
+    assert_eq!(placed.chapter_title.as_deref(), Some("Two"));
+    assert_eq!(placed.percent_through_book, Some(80.0));
+
+    // A comic anchor still places nothing: comics have no structure rows.
+    assert_eq!(index().locate("comic-page:1").spine_index, None);
+}
+
+#[test]
+fn locate_places_pdf_anchors_against_the_pdf_structure_on_a_mixed_book() {
+    // An EPUB+PDF book: CFIs place against the EPUB, PDF anchors against the
+    // PDF's own per-page rows — never against the EPUB's spine.
+    let mut index = index();
+    index.pdf = Some(Structure {
+        spine: (0..4)
+            .map(|page| SpineStatRow {
+                spine_index: page,
+                href: format!("page:{page}"),
+                visible_chars: 50,
+                chars_before: page * 50,
+            })
+            .collect(),
+        chapters: vec![EbookChapterRow {
+            ordinal: 0,
+            title: "Plates".into(),
+            href: "page:2".into(),
+            spine_index: 2,
+            start_chars: 100,
+        }],
+        total_chars: 200,
+    });
+    let placed = index.locate("pdf-page:3");
+    assert_eq!(placed.spine_index, Some(3));
+    assert_eq!(placed.chapter_title.as_deref(), Some("Plates"));
+    assert_eq!(placed.percent_through_book, Some(75.0));
+    // The EPUB's own chapter "Two" at spine step 1 is untouched by that.
+    assert_eq!(
+        index
+            .locate("epubcfi(/6/4!/4/2/1:0)")
+            .chapter_title
+            .as_deref(),
+        Some("Two")
+    );
+}
+
+#[test]
 fn locate_names_the_chapter_a_shared_spine_document_opens_with() {
     // Two TOC entries in one spine document: only the first is defensible,
     // and every surface that places an anchor must agree on which.
     let mut index = index();
-    index.chapters.push(EbookChapterRow {
+    index.text.chapters.push(EbookChapterRow {
         ordinal: 2,
         title: "Two-and-a-half".into(),
         href: "b.xhtml".into(),
@@ -100,9 +159,8 @@ fn locate_places_nothing_for_an_anchor_it_cannot_read() {
 #[test]
 fn locate_reports_the_spine_step_even_with_no_stats_to_measure_it_against() {
     let bare = AnchorIndex {
-        spine: Vec::new(),
-        chapters: Vec::new(),
-        total_chars: 0,
+        text: Structure::default(),
+        pdf: None,
         audio_seconds: None,
     };
     let placed = bare.locate("epubcfi(/6/4!/4/2/1:0)");

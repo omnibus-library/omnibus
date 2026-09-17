@@ -15,19 +15,24 @@ use super::entry_updated;
 /// not reachable from here. `pub(super)` so `opds::json_entries` can build
 /// the same acquisition link without duplicating the mime string.
 pub(super) const CBZ_MIME: &str = "application/vnd.comicbook+zip";
+/// Wire mime for a served PDF — mirrors `ebooks::PDF_MIME` for the same reason.
+pub(super) const PDF_MIME: &str = "application/pdf";
 
 /// Whether a `book_files` format string is one this catalog offers as a
-/// download — EPUB/CBZ, what the `/opds/ebooks/{uuid}/{file,download}`
+/// download — EPUB/CBZ/PDF, what the `/opds/ebooks/{uuid}/{file,download}`
 /// delegates serve. The **single** predicate for both catalogs; the author
-/// and series feeds used to carry local copies of it.
+/// and series feeds used to carry local copies of it. Keep it in step with
+/// [`download_link`]: a format admitted here must have a link arm there.
 pub(super) fn is_ereader_format(format: &str) -> bool {
-    format.eq_ignore_ascii_case("epub") || format.eq_ignore_ascii_case("cbz")
+    format.eq_ignore_ascii_case("epub")
+        || format.eq_ignore_ascii_case("cbz")
+        || format.eq_ignore_ascii_case("pdf")
 }
 
 /// Drop every book without an e-reader-servable file. The shared list
 /// queries surface physical-only books on purpose for the web UI (#1181),
 /// but in a catalog for e-readers a row with no usable acquisition link is
-/// dead weight (#1811). Strictly EPUB/CBZ: audiobook-only books are
+/// dead weight (#1811). Strictly EPUB/CBZ/PDF: audiobook-only books are
 /// excluded too, so [`download_link`]'s audio fallback arms never fire
 /// from a feed — they remain only for defense on unfiltered callers.
 /// Every feed builder calls this right after its fetch, so both catalogs
@@ -100,9 +105,13 @@ pub(super) fn download_link(uuid: &str, book: &EbookMetadata) -> Option<(String,
         ));
     }
     if has("cbz") {
-        // `/download` is EPUB-only (see `ebooks::get_ebook_download`); a
-        // comic-only book's whole-file read lives at `/file` instead.
+        // `/download` serves text formats only (see
+        // `ebooks::get_ebook_download`); a comic-only book's whole-file read
+        // lives at `/file` instead.
         return Some((format!("/opds/ebooks/{uuid}/file"), CBZ_MIME));
+    }
+    if has("pdf") {
+        return Some((format!("/opds/ebooks/{uuid}/download"), PDF_MIME));
     }
     if has("m4b") || has("m4a") {
         return Some((format!("/opds/audiobooks/{uuid}/download"), "audio/mp4"));
@@ -111,4 +120,39 @@ pub(super) fn download_link(uuid: &str, book: &EbookMetadata) -> Option<(String,
         return Some((format!("/opds/audiobooks/{uuid}/download"), "audio/mpeg"));
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn book(formats: &[&str]) -> EbookMetadata {
+        EbookMetadata {
+            formats: formats.iter().map(|f| f.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn download_link_offers_the_pdf_for_a_pdf_only_book() {
+        assert_eq!(
+            download_link("u", &book(&["PDF"])),
+            Some(("/opds/ebooks/u/download".to_string(), PDF_MIME))
+        );
+    }
+
+    #[test]
+    fn download_link_keeps_the_epub_ahead_of_a_pdf_and_the_cbz_ahead_too() {
+        assert_eq!(
+            download_link("u", &book(&["PDF", "EPUB"])),
+            Some((
+                "/opds/ebooks/u/download".to_string(),
+                "application/epub+zip"
+            ))
+        );
+        assert_eq!(
+            download_link("u", &book(&["PDF", "CBZ"])),
+            Some(("/opds/ebooks/u/file".to_string(), CBZ_MIME))
+        );
+    }
 }

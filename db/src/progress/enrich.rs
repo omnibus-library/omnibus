@@ -4,8 +4,8 @@
 //! [`super::resume`] and [`super::state`] so the two cannot drift.
 
 use omnibus_shared::{
-    parse_comic_page_anchor, ChapterInfo, PositionConfidence, ProgressFormat, ProgressRecord,
-    ResolvedPosition,
+    parse_comic_page_anchor, parse_pdf_page_anchor, ChapterInfo, PositionConfidence,
+    ProgressFormat, ProgressRecord, ResolvedPosition,
 };
 use sqlx::SqlitePool;
 
@@ -193,9 +193,16 @@ async fn resolve_epub(
     let Some(book_id) = crate::resolve_book_id_by_uuid(pool, &record.book_uuid).await? else {
         return Ok(None);
     };
-    let Some((file_id, source)) = crate::book_file_with_id(pool, book_id, "EPUB").await? else {
+    // A PDF page anchor names the PDF's own structure — one spine row per
+    // page — never the EPUB's, even on a book that carries both; the page
+    // *is* the spine step, so it places against the outline with no walk.
+    if let Some(page) = record.epub_cfi.as_deref().and_then(parse_pdf_page_anchor) {
+        return resolve_pdf_anchor(pool, record, book_id, page).await;
+    }
+    let Some(text_source) = crate::book_text_source(pool, book_id).await? else {
         return Ok(None);
     };
+    let (file_id, source) = (text_source.file_id, text_source.path);
     let stats = crate::epub_structure::get_spine_stats(pool, file_id)
         .await
         .map_err(structure_err)?;
@@ -285,6 +292,65 @@ async fn resolve_epub(
         percent_through_book,
         confidence,
     }))
+}
+
+/// Resolve a `pdf-page:N` anchor against the book's PDF file. `None` when
+/// the book has no PDF, its structure is not extracted yet, or the page is
+/// past the end of the document — a stale or malformed anchor must place
+/// nothing rather than a confident position past the last page (rule 11).
+async fn resolve_pdf_anchor(
+    pool: &SqlitePool,
+    record: &ProgressRecord,
+    book_id: i64,
+    page: usize,
+) -> Result<Option<ResolvedPosition>, ProgressError> {
+    let Some((file_id, _)) = crate::book_file_with_id(pool, book_id, "PDF").await? else {
+        return Ok(None);
+    };
+    let stats = crate::epub_structure::get_spine_stats(pool, file_id)
+        .await
+        .map_err(structure_err)?;
+    if page >= stats.len() {
+        return Ok(None);
+    }
+    let chapters = crate::epub_structure::get_chapters(pool, file_id)
+        .await
+        .map_err(structure_err)?;
+    Ok(Some(resolve_pdf_page(
+        record,
+        &stats,
+        &chapters,
+        page as i64,
+    )))
+}
+
+/// Place a `pdf-page:N` anchor: chapter from the outline at or before the
+/// page, percent at the *end* of that page on the per-page ruler (floored),
+/// so a boundary derived from it — the spoiler cutoff — shows the page the
+/// reader is on and withholds the next. Always `High`: a page is exactly
+/// where the reader was, and one outline entry per page is the finest thing
+/// a PDF records.
+fn resolve_pdf_page(
+    record: &ProgressRecord,
+    stats: &[SpineStatRow],
+    chapters: &[EbookChapterRow],
+    page: i64,
+) -> ResolvedPosition {
+    let placed = chapter_at_spine(chapters, page);
+    let page_end = if page + 1 >= stats.len() as i64 {
+        Some(100)
+    } else {
+        crate::epub_structure::percent_at(stats, page + 1, 0)
+    };
+    ResolvedPosition {
+        spine_index: Some(page),
+        chapter_title: placed.map(|i| chapters[i].title.clone()),
+        chapter_ordinal: placed.map(|i| i as i64 + 1),
+        chapters_total: (!chapters.is_empty()).then_some(chapters.len() as i64),
+        percent_through_chapter: None,
+        percent_through_book: page_end.or(record.progress_percent),
+        confidence: PositionConfidence::High,
+    }
 }
 
 /// Index of the chapter covering `spine_index`: the last one that starts at
