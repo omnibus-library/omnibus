@@ -45,6 +45,7 @@ body:
       options:
         - label: "`db`"
         - label: "`frontend`"
+        - label: "`mcp`"
         - label: "`mobile`"
         - label: "`server`"
         - label: "`shared`"

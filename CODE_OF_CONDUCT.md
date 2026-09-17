@@ -33,9 +33,12 @@ someone is representing the project in public.
 
 ## Reporting
 
-If you experience or witness unacceptable behaviour, contact a maintainer
-directly: @seamus-sloan or @roberte777 on GitHub. Reports are handled
-confidentially. Maintainers will not name a reporter without their consent.
+If you experience or witness unacceptable behaviour, contact a maintainer:
+@seamus-sloan or @roberte777. GitHub mentions are public, so do not put
+sensitive details in a public thread. Open a minimal issue asking a maintainer
+to get in touch, and they will move the conversation to a private channel.
+Once it is private, the report is handled confidentially and maintainers will
+not name a reporter without their consent.
 
 ## Enforcement
 

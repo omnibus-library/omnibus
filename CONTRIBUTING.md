@@ -54,6 +54,7 @@ just serve          # multiplexed dev stack
 just check          # lint then test across the crate matrix
 just lint-ts        # Playwright TypeScript: biome + tsc
 just ios-test       # native iOS unit suite
+just ios-test-ui    # native iOS UI suite
 ```
 
 Run the full quality gate yourself before marking a pull request ready for
@@ -68,7 +69,7 @@ review. CI runs the same checks and all of them are required to merge:
 | Stylelint | structural CSS lint |
 | TS Lint | biome + `tsc --noEmit` for Playwright |
 | Playwright | end-to-end browser tests |
-| iOS Tests | the `omnibusTests` unit suite |
+| iOS Tests | the `omnibusTests` unit suite and the `omnibusUITests` UI suite |
 
 Some checks path-filter themselves and report as skipped when the diff doesn't
 touch what they cover. That counts as passing.
@@ -90,9 +91,11 @@ in CI, so a dependency with an incompatible license will fail the build.
 - **Fill in the pull request template.** Every section, every time. The
   **Version** section decides whether the merge cuts a minor or patch release;
   pick one, or add the `no release` label.
-- **Add the `run_ui_tests` label** when the diff touches rendered markup:
-  `frontend/src/pages/`, `frontend/src/components/`, or the Playwright suite.
-  Without it the Playwright check is gated out and a green PR is a false pass.
+- **Playwright runs itself when it matters.** The E2E workflow path-filters:
+  it runs whenever the diff touches `frontend/`, `shared/`, `server/`, `db/`,
+  `ui_tests/`, or the build inputs, and reports as skipped otherwise. There is
+  no label to add. To force a run on a PR outside those paths, trigger the
+  workflow manually from the Actions tab.
 - **Open as a draft** if the implementation isn't finished. Ready-for-review
   means the quality gate passes locally.
 
