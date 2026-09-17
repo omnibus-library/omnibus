@@ -74,6 +74,15 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste unmaintained — transitive via Dioxus mobile/desktop crates; awaiting upstream migration" },
     { id = "RUSTSEC-2025-0057", reason = "fxhash unmaintained — transitive via Dioxus mobile/desktop crates; awaiting upstream migration" },
 
+    # ---- Unmaintained notice behind the PDF text extractor (#2568).
+    # `ttf-parser` is `lopdf`'s embedded-font parser, reached only through
+    # `pdf-extract` in `db::pdf`. Not a vulnerability; and `lopdf 0.42` is the
+    # first release past RUSTSEC-2026-0187 (a real stack overflow), so the
+    # alternative — pinning back — trades a notice for an abort. Every page
+    # it touches runs under `catch_unwind`, behind the parse-size caps.
+    # Revisit when lopdf moves to a maintained font parser.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained — transitive via lopdf 0.42 / pdf-extract (db::pdf); lopdf 0.42 is required for RUSTSEC-2026-0187, so a downgrade is worse; awaiting an upstream font-parser migration" },
+
     # ---- Unsound (informational) advisories in the Dioxus desktop/mobile
     # GTK/WebKit tree. Like the unmaintained notices above these are NOT
     # vulnerabilities (cargo-audit's --json gate counts 0 vulnerabilities);

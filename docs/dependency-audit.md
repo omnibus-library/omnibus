@@ -112,7 +112,10 @@ this list.
 - `pdf-extract` (MIT, over `lopdf`) — per-page text and the outline. Held at
   `0.12` or newer: `0.9` rode `lopdf 0.36`, which RUSTSEC-2026-0187 (stack
   overflow on deeply nested objects — an abort, which no `catch_unwind`
-  catches) fixes only from `0.42`. It loads whole documents, which is why
+  catches) fixes only from `0.42`. `lopdf 0.42` in turn pulls `ttf-parser`,
+  which carries an *unmaintained* notice (RUSTSEC-2026-0192) — ignored in
+  `deny.toml` with the reason written beside it, since pinning back would
+  trade a notice for the abort. It loads whole documents, which is why
   `db::pdf::text_max_bytes` caps the file size it sees; its font parsers can panic on real-world embedded fonts, so every
   page runs under `catch_unwind`. Text quality is advisory (ligatures, CJK).
 - MuPDF (AGPL) and pdfium (prebuilt binary) were ruled out under the MIT
