@@ -161,9 +161,13 @@ test.describe("check-in overlay", () => {
     await submitIsbn(page);
     await expect(page.getByTestId("check-in-confirm")).toBeVisible();
 
-    // The submit button that was clicked is gone with the lookup screen; the
-    // new screen takes focus so Escape is not lost to `body` (#2525).
-    await expect(page.getByTestId("check-in-confirm")).toBeFocused();
+    // The submit button that was clicked is gone with the lookup screen;
+    // focus is re-landed on the panel so Escape is not lost to `body`
+    // (#2525) — and again on the way back, when Cancel remounts the lookup.
+    await expect(page.getByTestId("check-in-overlay-panel")).toBeFocused();
+    await page.getByTestId("check-in-cancel").click();
+    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
+    await expect(page.getByTestId("check-in-overlay-panel")).toBeFocused();
     await page.keyboard.press("Escape");
 
     await expectOverlayDismissed(page);

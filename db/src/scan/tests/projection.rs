@@ -213,3 +213,59 @@ async fn resolve_scan_names_a_close_match_by_its_effective_title_and_author() {
         other => panic!("expected CloseMatch, got {other:?}"),
     }
 }
+
+/// Corrupt the seeded book's override blob in place, the way
+/// `search_palette_tags_tolerate_a_corrupt_overrides_blob` does.
+async fn corrupt_overrides(pool: &SqlitePool, uuid: &str) {
+    sqlx::query(
+        "INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?1, '{not json')
+         ON CONFLICT(book_uuid) DO UPDATE SET overrides = '{not json'",
+    )
+    .bind(uuid)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn resolve_scan_falls_back_to_the_scanned_fields_on_a_corrupt_override_blob() {
+    let pool = pool().await;
+    seed_book(&pool, "u1", "Effective Java", "Joshua Bloch", Some(ISBN)).await;
+    corrupt_overrides(&pool, "u1").await;
+    let server = MockServer::start().await; // must not be hit
+
+    let outcome = resolve_scan(&pool, USER_ID, ISBN, &config_for(&server))
+        .await
+        .expect("a corrupt blob must fail the override, not the lookup");
+
+    match outcome {
+        ScanOutcome::InLibraryUnowned { book } => {
+            assert_eq!(book.title, "Effective Java");
+            assert_eq!(book.authors, vec!["Joshua Bloch".to_string()]);
+        }
+        other => panic!("expected InLibraryUnowned, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn resolve_scan_still_offers_a_close_match_whose_override_blob_is_corrupt() {
+    let pool = pool().await;
+    // No ISBN, so the row is found by the norm rung's override arm — the one
+    // that joins the corrupt blob directly.
+    seed_book(&pool, "u1", "Effective Java", "Joshua Bloch", None).await;
+    corrupt_overrides(&pool, "u1").await;
+    let server = MockServer::start().await;
+    mount_ol_hit(&server, "Effective Java", "Joshua Bloch").await;
+
+    let outcome = resolve_scan(&pool, USER_ID, ISBN, &config_for(&server))
+        .await
+        .expect("a corrupt blob must fail the override, not the lookup");
+
+    match outcome {
+        ScanOutcome::CloseMatch { book, .. } => {
+            assert_eq!(book.uuid, "u1");
+            assert_eq!(book.title, "Effective Java");
+        }
+        other => panic!("expected CloseMatch, got {other:?}"),
+    }
+}

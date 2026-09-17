@@ -9823,9 +9823,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   to   { opacity: 1; transform: translateY(0); }
 }
 .check-in-screen { display: flex; flex-direction: column; gap: 14px; }
-/* Focus lands here programmatically when a stage advances (so Escape keeps
-   reaching the panel); it is not a control, so no ring. */
-.check-in-screen:focus { outline: none; }
 .check-in-screen h1 { margin: 0; }
 
 /* Cancel/exit affordance — top-right of the card, above every stage. */

@@ -106,6 +106,10 @@ async fn search_palette_finds_physical_only_book_when_it_has_a_copy() {
         results.books[0].formats.is_empty(),
         "a physical-only book carries no file formats"
     );
+    assert!(
+        results.books[0].has_physical,
+        "the copy that makes it visible is reported on the hit"
+    );
     assert_eq!(results.book_total, 1);
 
     // AC3: the palette and `/api/search` answer the same question.

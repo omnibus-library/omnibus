@@ -407,19 +407,36 @@ fn palette_hit() -> PaletteBookHit {
         formats: vec!["EPUB".into()],
         cover_url: Some("/api/covers/library-uuid".into()),
         accent: None,
+        has_physical: false,
     }
 }
 
 #[test]
-fn scan_book_from_hit_splits_the_pre_joined_author_display() {
+fn scan_book_from_hit_keeps_the_pre_joined_author_display_whole() {
     let book = scan_book_from_hit(&palette_hit());
     assert_eq!(book.uuid, "library-uuid");
     assert_eq!(book.title, "The Robin on the Oak Throne");
+    // Not split on ", " — a sort-form "Weir, Andy" would become two people.
     assert_eq!(
         book.authors,
-        vec!["Rebecca Yarros".to_string(), "Someone Else".to_string()]
+        vec!["Rebecca Yarros, Someone Else".to_string()]
     );
     assert_eq!(book.cover_url.as_deref(), Some("/api/covers/library-uuid"));
+    assert!(book.has_files);
+    assert!(!book.has_physical);
+}
+
+#[test]
+fn scan_book_from_hit_reports_a_paper_only_book_as_a_print_copy() {
+    let hit = PaletteBookHit {
+        formats: Vec::new(),
+        has_physical: true,
+        ..palette_hit()
+    };
+    let book = scan_book_from_hit(&hit);
+    assert!(!book.has_files);
+    assert!(book.has_physical);
+    assert!(confirm_subtitle(&book).contains("print copy of this one"));
 }
 
 #[test]

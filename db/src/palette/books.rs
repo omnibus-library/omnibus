@@ -36,6 +36,9 @@ const PALETTE_BOOK_COLUMNS: &str = r"
                          WHERE book_id = b.id
                          ORDER BY format))                  AS formats_json,
 
+               EXISTS (SELECT 1 FROM physical_copies pc
+                        WHERE pc.book_uuid = b.uuid)        AS has_physical,
+
                (SELECT COUNT(*) FROM matches)               AS total_count
 ";
 
@@ -198,6 +201,7 @@ pub async fn search_books_for_paths(
             formats: parse_json_array(r.get("formats_json"))?,
             cover_url: (has_cover != 0).then(|| format!("/api/covers/{uuid}")),
             accent: r.get("accent_color"),
+            has_physical: r.get::<i64, _>("has_physical") != 0,
         });
     }
 

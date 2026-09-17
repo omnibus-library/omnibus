@@ -244,6 +244,11 @@ pub struct PaletteBookHit {
     pub formats: Vec<String>,
     pub cover_url: Option<String>,
     pub accent: Option<String>,
+    /// Whether a physical copy is checked in. `formats` says only whether a
+    /// file exists, and a paper-only book has none — the check-in picker
+    /// needs both to word its confirm. Defaulted so an older payload decodes.
+    #[serde(default)]
+    pub has_physical: bool,
 }
 
 /// Author hit for the search palette.

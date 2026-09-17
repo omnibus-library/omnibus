@@ -6,8 +6,7 @@
 use omnibus_shared::scan::ScanBook;
 use sqlx::Row;
 
-#[allow(unused_imports)] // `override_sql!` is expanded inside `effective_text_sql!`.
-use crate::metadata_overrides::sql::{effective_text_sql, override_sql, overrides_win_sql};
+use crate::metadata_overrides::sql::overrides_win_sql;
 
 /// A `books` row the rest of the app treats as present: it has a file, a
 /// physical copy, or somebody's wishlist entry.
@@ -43,21 +42,24 @@ const AUTHOR_SEP: char = '\u{1f}';
 /// screen shows beside the scanned ISBN; the exact rung has no reader for it
 /// and skips the cost.
 pub(super) fn scan_book_cols(effective: bool, with_isbn: bool) -> String {
+    // Not `effective_text_sql!`: that reads the blob unguarded, and a corrupt
+    // one must fail the override, not the lookup (#2556).
     let title = if effective {
-        effective_text_sql!("$.title"; "b.title").to_string()
+        format!(
+            "COALESCE(NULLIF(CASE WHEN {win} THEN json_extract({SAFE_OVERRIDES}, '$.title') END, ''),
+                      b.title) COLLATE NOCASE",
+            win = overrides_win_sql!(),
+        )
     } else {
         "b.title".to_string()
     };
     let authors = if effective {
         format!(
-            "CASE WHEN {win} AND json_type({json}, '$.creators') = 'array'
+            "CASE WHEN {win} AND json_type({SAFE_OVERRIDES}, '$.creators') = 'array'
                   THEN (SELECT group_concat(json_extract(je.value, '$.name'), char(31))
-                          FROM json_each({json}, '$.creators') je)
-                  ELSE {linked} END",
+                          FROM json_each({SAFE_OVERRIDES}, '$.creators') je)
+                  ELSE {LINKED_AUTHORS} END",
             win = overrides_win_sql!(),
-            // A corrupt blob must fail the override, not the query (#2556).
-            json = "CASE WHEN json_valid(mo.overrides) THEN mo.overrides ELSE '{}' END",
-            linked = LINKED_AUTHORS,
         )
     } else {
         LINKED_AUTHORS.to_string()
@@ -79,6 +81,10 @@ pub(super) fn scan_book_cols(effective: bool, with_isbn: bool) -> String {
          {isbn} AS isbn"
     )
 }
+
+/// The override blob, coerced to an empty object when it does not parse, so
+/// neither `json_extract` nor `json_each` can abort the query on it.
+const SAFE_OVERRIDES: &str = "CASE WHEN json_valid(mo.overrides) THEN mo.overrides ELSE '{}' END";
 
 /// The scanned author list in link order. Wrapped in a subquery so the
 /// `ORDER BY` governs `group_concat`, which an aggregate over an ordered

@@ -1,3 +1,6 @@
+//! `normalize_pubdate` on every date shape a provider has handed the check-in
+//! flow, and `year_of` on the values `books.pubdate` already holds.
+
 use super::{normalize_pubdate, year_of};
 
 #[test]
