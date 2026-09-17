@@ -508,3 +508,39 @@ fn thumb_error_no_cover_renders_book_id_in_message() {
     let err = ThumbError::NoCover(451);
     assert_eq!(err.to_string(), "no cover available for book 451");
 }
+
+#[test]
+fn encode_cover_preview_returns_a_bounded_lossy_webp_without_touching_disk() {
+    let png = photographic_png(1200, 1800);
+    let tmp = tempfile::tempdir().unwrap();
+    let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
+
+    let webp_bytes = encode_cover_preview(&png).expect("preview should encode");
+
+    assert_eq!(&webp_bytes[0..4], b"RIFF");
+    assert_eq!(&webp_bytes[8..12], b"WEBP");
+    assert_eq!(&webp_bytes[12..16], b"VP8 ", "lossy, like the thumbnails");
+    let decoded = image::load_from_memory(&webp_bytes).unwrap();
+    let (w, h) = ThumbSize::Md.dimensions();
+    assert!(decoded.width() <= w && decoded.height() <= h, "{decoded:?}");
+    // Aspect preserved, not cropped to the 2:3 tile.
+    assert_eq!((decoded.width(), decoded.height()), (w, h));
+    assert_eq!(
+        std::fs::read_dir(tmp.path()).unwrap().count(),
+        0,
+        "a preview is never cached"
+    );
+}
+
+#[test]
+fn encode_cover_preview_rejects_bytes_that_are_not_an_image() {
+    let err = encode_cover_preview(b"not an image").unwrap_err();
+    assert!(matches!(err, ThumbError::Failed(_)), "{err}");
+}
+
+#[test]
+fn cover_preview_data_url_is_an_inline_webp_image() {
+    let url = cover_preview_data_url(&photographic_png(200, 300)).unwrap();
+    assert!(url.starts_with("data:image/webp;base64,"), "{url}");
+    assert!(url.len() > 100, "carries a real payload");
+}

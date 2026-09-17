@@ -14,6 +14,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::{metadata_lookup::ProviderEdition, EbookMetadata};
 
+use super::super::cover_mode::CoverMode;
 use super::super::form_grid::FormFields;
 use super::cover_row::CoverRow;
 use super::field::MetadataField;
@@ -32,7 +33,7 @@ pub(super) fn CompareScreen(
     edition: ProviderEdition,
     fields: FormFields,
     orig: Signal<EbookMetadata>,
-    uuid: String,
+    mode: CoverMode,
     book: EbookMetadata,
     hydrating: bool,
     on_back: EventHandler<()>,
@@ -103,7 +104,7 @@ pub(super) fn CompareScreen(
                 // cover has nothing to offer here, so the row is only noise.
                 if has_source_cover || show_all() {
                     CoverRow {
-                        uuid,
+                        mode,
                         book,
                         edition: edition.clone(),
                         source_name,

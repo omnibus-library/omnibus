@@ -30,7 +30,7 @@ pub use list::{
     list_merged_rows_for_formats, IndexedRow,
 };
 pub use page::{count_books_page, list_books_page, BookPage, CursorError, PageCursor};
-pub use projection::MAX_BOOKS_RETURNED;
+pub use projection::{derive_isbn13, MAX_BOOKS_RETURNED};
 pub use search::{
     count_search_books, count_search_books_for_paths, search_books, search_books_for_paths,
     search_books_for_paths_with_total, search_books_with_total,

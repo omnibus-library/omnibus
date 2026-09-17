@@ -6,6 +6,7 @@
 
 mod audiobook;
 mod ebook;
+mod review;
 
 use axum::{
     body::Body,

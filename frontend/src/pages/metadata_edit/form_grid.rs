@@ -5,6 +5,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::EbookMetadata;
 
+use super::cover_mode::CoverMode;
 use super::fields::{label_to_id, MeArea, MeField, MeLabel};
 use super::metadata_search::MetadataSearchPanel;
 use crate::components::chip_editor::{ChipEditor, ChipEditorOptions, SuggestionItem};
@@ -12,7 +13,7 @@ use crate::components::{SuggestField, SuggestFieldOptions};
 
 /// Per-field editable signals threaded through the form rows from `MetadataEditForm`.
 #[derive(Clone, Copy, PartialEq)]
-pub(super) struct FormFields {
+pub(crate) struct FormFields {
     pub title: Signal<String>,
     pub description: Signal<String>,
     pub publisher: Signal<String>,
@@ -33,7 +34,7 @@ pub(super) struct FormFields {
 /// Suggestion pools backing the author + tag + genre chip-editor dropdowns
 /// and the series autocomplete field.
 #[derive(Clone, Copy, PartialEq)]
-pub(super) struct FormSuggestions {
+pub(crate) struct FormSuggestions {
     pub authors: Signal<Vec<SuggestionItem>>,
     pub tags: Signal<Vec<SuggestionItem>>,
     pub genres: Signal<Vec<SuggestionItem>>,
@@ -43,11 +44,13 @@ pub(super) struct FormSuggestions {
 /// Composed form grid plus the tags, genres, and series sections that live
 /// in the same left-column container on the page.
 #[component]
-pub(super) fn FormGrid(
+pub(crate) fn FormGrid(
     orig: Signal<EbookMetadata>,
     fields: FormFields,
     suggestions: FormSuggestions,
-    uuid: String,
+    /// Where the compare view's cover row writes: the saved book, or the
+    /// upload review's stage.
+    mode: CoverMode,
     /// The book as the server last reported it — the compare view's cover
     /// row needs the current cover to show beside the source's.
     book: EbookMetadata,
@@ -58,7 +61,7 @@ pub(super) fn FormGrid(
 ) -> Element {
     rsx! {
         div { class: "me-form",
-            FieldGrid { orig, fields, suggestions, uuid, book, on_cover_applied }
+            FieldGrid { orig, fields, suggestions, mode, book, on_cover_applied }
             TagsSection { tags: fields.tags, tag_suggestions: suggestions.tags }
             GenresSection { genres: fields.genres, genre_suggestions: suggestions.genres }
             SeriesSection {
@@ -194,7 +197,7 @@ fn field_grid_authors_and_description(
     orig: Signal<EbookMetadata>,
     fields: FormFields,
     author_suggestions: Signal<Vec<SuggestionItem>>,
-    uuid: String,
+    mode: CoverMode,
     book: EbookMetadata,
     on_cover_applied: EventHandler<EbookMetadata>,
 ) -> Element {
@@ -242,7 +245,7 @@ fn field_grid_authors_and_description(
         // it most often fills, and the last thing a reader wants help with
         // before saving.
         div { class: "me-field-full",
-            MetadataSearchPanel { fields, orig, uuid, book, on_cover_applied }
+            MetadataSearchPanel { fields, orig, mode, book, on_cover_applied }
         }
     }
 }
@@ -254,7 +257,7 @@ fn FieldGrid(
     orig: Signal<EbookMetadata>,
     fields: FormFields,
     suggestions: FormSuggestions,
-    uuid: String,
+    mode: CoverMode,
     book: EbookMetadata,
     on_cover_applied: EventHandler<EbookMetadata>,
 ) -> Element {
@@ -265,7 +268,7 @@ fn FieldGrid(
                 orig,
                 fields,
                 suggestions.authors,
-                uuid,
+                mode,
                 book,
                 on_cover_applied,
             )}

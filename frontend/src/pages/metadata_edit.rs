@@ -11,17 +11,19 @@ use crate::components::{PageError, PageLoading, PageNotFound};
 use crate::{data, use_server_url, Route};
 
 mod cover_editor;
+pub(crate) mod cover_mode;
 mod fields;
-mod form_grid;
-mod header;
+pub(crate) mod form_grid;
+pub(crate) mod header;
 mod metadata_search;
-mod save_bar;
-mod sidebar;
-mod state;
+pub(crate) mod save_bar;
+pub(crate) mod sidebar;
+pub(crate) mod state;
 
+use cover_mode::CoverMode;
 use form_grid::FormGrid;
 use header::{Breadcrumb, PageHeader};
-use save_bar::SaveBar;
+use save_bar::{SaveBar, SaveBarMode};
 use sidebar::Sidebar;
 
 /// Top-level metadata edit page component, mounted at `/books/:uuid/edit`.
@@ -111,12 +113,13 @@ fn MetadataEditForm(book: EbookMetadata, uuid: String) -> Element {
                     orig: form.orig,
                     fields: form.fields,
                     suggestions: form.suggestions,
-                    uuid: uuid.clone(),
+                    mode: CoverMode::Live { uuid: uuid.clone() },
                     book: live_book(),
                     on_cover_applied,
                 }
                 Sidebar {
                     book: live_book(),
+                    mode: CoverMode::Live { uuid: uuid.clone() },
                     saving: form.status.saving,
                     on_revert: form.on_revert,
                     on_cover_applied,
@@ -124,7 +127,7 @@ fn MetadataEditForm(book: EbookMetadata, uuid: String) -> Element {
             }
 
             SaveBar {
-                uuid,
+                mode: SaveBarMode::Edit { uuid },
                 dirty: form.dirty,
                 status: form.status,
                 on_save: form.on_save,

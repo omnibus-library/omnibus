@@ -359,6 +359,40 @@ pub fn generate_thumbnail(
     write_thumbnail(book_id, size, &decoded)
 }
 
+/// Encode a cover as a small lossy WebP for inline preview — the upload
+/// review form shows the file's cover before the book exists and there is a
+/// cover route to point at. Bounded by [`ThumbSize::Md`] on either edge,
+/// aspect preserved (no crop: this is the reader checking the art, not a
+/// grid tile). Nothing is written to disk.
+///
+/// Must be called inside `tokio::task::spawn_blocking` — decode + encode are
+/// CPU-bound.
+pub fn encode_cover_preview(cover_bytes: &[u8]) -> Result<Vec<u8>, ThumbError> {
+    use image::imageops::FilterType;
+
+    let decoded = image::load_from_memory(cover_bytes)
+        .map_err(|e| ThumbError::Failed(format!("cover decode failed: {e}")))?;
+    let (w, h) = ThumbSize::Md.dimensions();
+    let resized = decoded.resize(w, h, FilterType::Lanczos3);
+    let rgba = resized.to_rgba8();
+    webp::Encoder::from_rgba(rgba.as_raw(), resized.width(), resized.height())
+        .encode_simple(false, THUMB_QUALITY)
+        .map(|w| w.to_vec())
+        .map_err(|e| ThumbError::Failed(format!("WebP encode failed: {e:?}")))
+}
+
+/// [`encode_cover_preview`] as an inline `data:image/webp;base64,…` URL —
+/// what the upload review form puts straight into an `<img src>`.
+pub fn cover_preview_data_url(cover_bytes: &[u8]) -> Result<String, ThumbError> {
+    use base64::Engine as _;
+
+    let webp = encode_cover_preview(cover_bytes)?;
+    Ok(format!(
+        "data:image/webp;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(webp)
+    ))
+}
+
 /// Ensure all three thumbnail sizes are generated and fresh.
 ///
 /// Decodes `cover_bytes` once and reuses the [`image::DynamicImage`] across

@@ -82,7 +82,7 @@ pub(super) fn use_metadata_edit_form_state(
 /// Per-field editable signals seeded from the loaded book, plus the two
 /// read-only display signals (`sort_by`, `filename`) the form grid renders
 /// alongside them.
-fn use_field_signals(book: &EbookMetadata) -> FormFields {
+pub(crate) fn use_field_signals(book: &EbookMetadata) -> FormFields {
     let title = use_signal(|| book.title.clone().unwrap_or_default());
     let description = use_signal(|| book.description.clone().unwrap_or_default());
     let publisher = use_signal(|| book.publisher.clone().unwrap_or_default());
@@ -141,7 +141,7 @@ fn use_field_signals(book: &EbookMetadata) -> FormFields {
 /// Header display strings derived once from the loaded book: the resolved
 /// title, primary author name + id, and the CSS custom-property style
 /// string for the page's accent color.
-fn header_strings(book: &EbookMetadata) -> (String, String, Option<i64>, String) {
+pub(crate) fn header_strings(book: &EbookMetadata) -> (String, String, Option<i64>, String) {
     let title = book.display_title();
     let (primary_author, primary_author_id) = book
         .creators
@@ -159,7 +159,7 @@ fn header_strings(book: &EbookMetadata) -> (String, String, Option<i64>, String)
 /// Fetches the author/tag/genre/series suggestion pools once on mount for the
 /// `ChipEditor`/`SuggestField` dropdowns; signals stay empty until the
 /// fetches resolve.
-fn use_suggestion_pools(server_url: &str) -> FormSuggestions {
+pub(crate) fn use_suggestion_pools(server_url: &str) -> FormSuggestions {
     let mut author_suggestions: Signal<Vec<SuggestionItem>> = use_signal(Vec::new);
     let mut tag_suggestions: Signal<Vec<SuggestionItem>> = use_signal(Vec::new);
     let mut genre_suggestions: Signal<Vec<SuggestionItem>> = use_signal(Vec::new);
@@ -210,7 +210,10 @@ fn use_suggestion_pools(server_url: &str) -> FormSuggestions {
 
 /// Dirty-field tracking: which display labels differ from `orig`, driving
 /// the save bar's field-count badge.
-fn use_dirty_fields(orig: Signal<EbookMetadata>, fields: FormFields) -> Memo<Vec<&'static str>> {
+pub(crate) fn use_dirty_fields(
+    orig: Signal<EbookMetadata>,
+    fields: FormFields,
+) -> Memo<Vec<&'static str>> {
     let FormFields {
         title,
         description,
@@ -320,22 +323,13 @@ fn parse_print_pages_field(input: &str) -> Result<Option<i64>, String> {
         .map_err(|_| "Print page count must be a whole number.".to_string())
 }
 
-/// Save handler — builds the diff and POSTs to the overrides endpoint,
-/// then navigates back to the book detail page on success.
-///
-/// An empty diff skips the round trip and just leaves: the save bar enables
-/// Save with no dirty field only after a cover write, which has already
-/// landed server-side, so there is nothing left for the POST to carry (#2241).
-fn build_on_save(
-    server_url: &str,
-    uuid: &str,
-    mut saving: Signal<bool>,
-    mut save_error: Signal<Option<String>>,
-    orig: Signal<EbookMetadata>,
+/// The form's diff against `orig`, or the message to show when a field
+/// can't be read back — today only a non-numeric print-page count. Shared
+/// with the upload review form, which sends the same diff on commit.
+pub(crate) fn overrides_from_form(
+    orig: &EbookMetadata,
     fields: FormFields,
-) -> EventHandler<()> {
-    let url = server_url.to_string();
-    let uuid = uuid.to_string();
+) -> Result<MetadataOverrides, String> {
     let FormFields {
         title,
         description,
@@ -353,12 +347,49 @@ fn build_on_save(
         sort_by: _,
         filename: _,
     } = fields;
+    let print_pages_val = parse_print_pages_field(&print_pages())?;
+    Ok(build_overrides(
+        orig,
+        EditedFields {
+            title: &title(),
+            description: &description(),
+            publisher: &publisher(),
+            published: &published(),
+            language: &language(),
+            series: &series(),
+            series_index: &series_index(),
+            isbn13: &isbn13(),
+            isbn10: &isbn10(),
+            print_pages: print_pages_val,
+            authors: &authors(),
+            tags: &tags(),
+            genres: &genres(),
+        },
+    ))
+}
+
+/// Save handler — builds the diff and POSTs to the overrides endpoint,
+/// then navigates back to the book detail page on success.
+///
+/// An empty diff skips the round trip and just leaves: the save bar enables
+/// Save with no dirty field only after a cover write, which has already
+/// landed server-side, so there is nothing left for the POST to carry (#2241).
+fn build_on_save(
+    server_url: &str,
+    uuid: &str,
+    mut saving: Signal<bool>,
+    mut save_error: Signal<Option<String>>,
+    orig: Signal<EbookMetadata>,
+    fields: FormFields,
+) -> EventHandler<()> {
+    let url = server_url.to_string();
+    let uuid = uuid.to_string();
     EventHandler::new(move |()| {
         let url = url.clone();
         let uuid = uuid.clone();
 
-        let print_pages_val = match parse_print_pages_field(&print_pages()) {
-            Ok(v) => v,
+        let overrides = match overrides_from_form(&orig(), fields) {
+            Ok(ov) => ov,
             Err(msg) => {
                 save_error.set(Some(msg));
                 return;
@@ -368,26 +399,6 @@ fn build_on_save(
         spawn(async move {
             saving.set(true);
             save_error.set(None);
-
-            let o = orig();
-            let overrides = build_overrides(
-                &o,
-                EditedFields {
-                    title: &title(),
-                    description: &description(),
-                    publisher: &publisher(),
-                    published: &published(),
-                    language: &language(),
-                    series: &series(),
-                    series_index: &series_index(),
-                    isbn13: &isbn13(),
-                    isbn10: &isbn10(),
-                    print_pages: print_pages_val,
-                    authors: &authors(),
-                    tags: &tags(),
-                    genres: &genres(),
-                },
-            );
 
             if overrides == MetadataOverrides::default() {
                 navigator().push(Route::BookDetail { uuid });

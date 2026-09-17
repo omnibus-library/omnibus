@@ -1,0 +1,305 @@
+//! The review half of a commit, shared by the ebook and audiobook handlers:
+//! the extra multipart fields the review form sends (a JSON overrides diff,
+//! a cover picked from disk, a provider cover URL), the cover resolution
+//! that runs *before* the file is placed so a bad cover never strands one,
+//! and the finish step that layers the confirmed edits and the cover onto
+//! the freshly indexed book.
+
+use axum::{body::Bytes, extract::multipart::Field};
+use omnibus_db as db;
+use omnibus_shared::{
+    commit_fields, detect_image_format, EbookMetadata, ExternalBookMeta, MetadataOverrides,
+};
+
+use super::{edited_creators, norm, read_text_field_capped, UploadError};
+use crate::backend::{image_upload, overrides, AppState};
+
+/// The inspected file's cover as a small inline `data:` URL for the review
+/// form, or `None` when it can't be decoded — the form then shows the plate
+/// and the indexer, which tolerates more, still extracts the real cover on
+/// commit. Runs on the caller's blocking thread alongside the parse.
+pub(super) fn cover_preview_data_url(cover_bytes: &[u8]) -> Option<String> {
+    match db::thumbs::cover_preview_data_url(cover_bytes) {
+        Ok(url) => Some(url),
+        Err(e) => {
+            tracing::debug!(error = %e, "upload inspect: cover preview skipped");
+            None
+        }
+    }
+}
+
+/// Cap for the `overrides` JSON field. A description alone may run to
+/// `MetadataOverrides::DESCRIPTION_MAX_LEN` chars, so the 8 KiB the legacy
+/// text fields get is not enough here.
+pub(super) const MAX_OVERRIDES_FIELD_BYTES: usize = 256 * 1024;
+
+/// What the review form adds to a commit beyond the file and the legacy
+/// text fields. All optional: the iOS client sends none of them.
+#[derive(Default)]
+pub(super) struct CommitExtras {
+    /// The form's diff against the inspection. Layered over the legacy
+    /// fields and pruned back to what differs from the indexed row.
+    pub(super) overrides: Option<MetadataOverrides>,
+    /// An image picked from disk, already sniffed to its real MIME.
+    pub(super) cover: Option<(String, Bytes)>,
+    /// A provider's cover URL from the edition picker.
+    pub(super) cover_url: Option<String>,
+}
+
+/// The four text fields both commit forms have always carried. `title` and
+/// `author` still decide the on-disk folder; the review form sends them
+/// alongside its `overrides` so an older server files the book the same way.
+#[derive(Default)]
+pub(super) struct LegacyFields {
+    pub(super) title: Option<String>,
+    pub(super) author: Option<String>,
+    pub(super) series: Option<String>,
+    pub(super) series_index: Option<String>,
+}
+
+/// Consume `field` when it is one of the review fields. `Ok(false)` when it
+/// isn't, so the caller's own `match` keeps handling the rest.
+pub(super) async fn take_extra_field(
+    extras: &mut CommitExtras,
+    name: &str,
+    field: Field<'_>,
+) -> Result<bool, UploadError> {
+    match name {
+        commit_fields::OVERRIDES => {
+            let raw = read_text_field_capped(field, "overrides", MAX_OVERRIDES_FIELD_BYTES)
+                .await?
+                .ok_or_else(|| UploadError::BadOverrides("overrides must be UTF-8 JSON".into()))?;
+            extras.overrides = Some(
+                serde_json::from_str(&raw).map_err(|e| UploadError::BadOverrides(e.to_string()))?,
+            );
+        }
+        commit_fields::COVER => {
+            extras.cover = Some(image_upload::read_image_field(field).await.map_err(
+                |e| match e {
+                    image_upload::ImageFieldError::Read(detail) => {
+                        UploadError::internal("read cover field", detail)
+                    }
+                    other => UploadError::BadCover(other.message("cover")),
+                },
+            )?);
+        }
+        commit_fields::COVER_URL => {
+            extras.cover_url =
+                read_text_field_capped(field, "cover_url", ExternalBookMeta::COVER_URL_MAX_LEN)
+                    .await?
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+/// Reject a review diff a save would reject, before any file is placed.
+pub(super) fn validate_extras(extras: &CommitExtras) -> Result<(), UploadError> {
+    if let Some(ov) = &extras.overrides {
+        ov.validate().map_err(UploadError::Validation)?;
+    }
+    Ok(())
+}
+
+/// The bytes to write as the new book's cover, settled before the file is
+/// placed: a picked image as-is, or a provider URL fetched under the
+/// cover-from-URL route's terms (HTTPS, catalog hosts, no private
+/// addresses, size cap) and sniffed, because a provider serving an HTML
+/// error page under `image/jpeg` must not become a cover.
+pub(super) async fn resolve_staged_cover(
+    state: &AppState,
+    extras: &mut CommitExtras,
+) -> Result<Option<(String, Bytes)>, UploadError> {
+    if let Some(cover) = extras.cover.take() {
+        return Ok(Some(cover));
+    }
+    let Some(url) = extras.cover_url.take() else {
+        return Ok(None);
+    };
+    let config = overrides::cover_fetch_config(state);
+    let (advertised_mime, bytes) = match db::fetch_provider_cover(&url, &config).await {
+        Ok(pair) => pair,
+        Err(db::author_photos::FetchRemoteImageError::Http(e)) => {
+            tracing::warn!(error = ?e, "staged provider cover fetch failed");
+            return Err(UploadError::CoverFetch);
+        }
+        // A refusal we made: bad scheme, host off the allowlist, blocked
+        // address, non-image content-type, too large.
+        Err(e) => return Err(UploadError::BadCover(e.to_string())),
+    };
+    let Some(mime) = detect_image_format(&bytes) else {
+        tracing::warn!(
+            advertised_mime,
+            "staged cover URL returned image content-type but bytes are not an image"
+        );
+        return Err(UploadError::BadCover(
+            "file at URL does not appear to be a valid image".into(),
+        ));
+    };
+    Ok(Some((mime, Bytes::from(bytes))))
+}
+
+/// Layer what the reader confirmed onto the freshly indexed book: the legacy
+/// fields, the review diff on top of them, pruned back to what actually
+/// differs from the indexed row, then the staged cover. A book accepted
+/// as-is ends up with no override at all, so it keeps following its file.
+pub(super) async fn finish_upload(
+    state: &AppState,
+    uuid: &str,
+    user_id: i64,
+    legacy: &LegacyFields,
+    review: Option<MetadataOverrides>,
+    cover: Option<(String, Bytes)>,
+) -> Result<(), UploadError> {
+    let book = db::get_book_by_uuid(&state.pool, uuid)
+        .await
+        .map_err(|e| UploadError::internal("get_book_by_uuid", e))?
+        .ok_or_else(|| UploadError::internal("get_book_by_uuid after upload", "book vanished"))?;
+
+    let mut overrides = legacy_overrides(&book, legacy);
+    if let Some(review) = review {
+        layer(&mut overrides, review);
+    }
+    prune_unchanged(&mut overrides, &book);
+
+    if overrides != MetadataOverrides::default() {
+        overrides.validate().map_err(UploadError::Validation)?;
+        db::merge_metadata_overrides(&state.pool, uuid, &overrides, user_id)
+            .await
+            .map_err(|e| UploadError::internal("merge_metadata_overrides", e))?;
+    }
+
+    if let Some((mime, bytes)) = cover {
+        overrides::persist_cover(state, uuid, user_id, mime, bytes)
+            .await
+            .map_err(|e| UploadError::Internal {
+                context: e.context,
+                detail: e.detail,
+            })?;
+        let id = book.id;
+        tokio::task::spawn_blocking(move || db::thumbs::invalidate_thumbs(id))
+            .await
+            .map_err(|e| UploadError::internal("spawn_blocking(invalidate_thumbs)", e))?;
+    }
+    Ok(())
+}
+
+/// The legacy four fields as overrides, each only where it differs from the
+/// indexed value. The form edits the first creator's *name* only (#2355):
+/// that creator keeps its role and file-as form, and the others ride along.
+pub(super) fn legacy_overrides(book: &EbookMetadata, legacy: &LegacyFields) -> MetadataOverrides {
+    let mut overrides = MetadataOverrides::default();
+    if let Some(title) = norm(&legacy.title) {
+        if book.title.as_deref() != Some(title.as_str()) {
+            overrides.title = Some(title);
+        }
+    }
+    if let Some(author) = norm(&legacy.author) {
+        let embedded = book.creators.first().map(|c| c.name.as_str());
+        if embedded != Some(author.as_str()) {
+            overrides.creators = Some(edited_creators(author, &book.creators));
+        }
+    }
+    if let Some(series) = norm(&legacy.series) {
+        if book.series.as_deref() != Some(series.as_str()) {
+            overrides.series = Some(series);
+        }
+    }
+    if let Some(series_index) = norm(&legacy.series_index) {
+        if book.series_index.as_deref() != Some(series_index.as_str()) {
+            overrides.series_index = Some(series_index);
+        }
+    }
+    overrides
+}
+
+/// Every field the review diff set wins over the legacy field for it; a
+/// field it left `None` keeps whatever the legacy fields produced.
+fn layer(base: &mut MetadataOverrides, review: MetadataOverrides) {
+    let MetadataOverrides {
+        title,
+        description,
+        publisher,
+        published,
+        language,
+        series,
+        series_index,
+        isbn13,
+        isbn10,
+        creators,
+        subjects,
+        genres,
+        print_pages,
+    } = review;
+    base.title = title.or(base.title.take());
+    base.description = description.or(base.description.take());
+    base.publisher = publisher.or(base.publisher.take());
+    base.published = published.or(base.published.take());
+    base.language = language.or(base.language.take());
+    base.series = series.or(base.series.take());
+    base.series_index = series_index.or(base.series_index.take());
+    base.isbn13 = isbn13.or(base.isbn13.take());
+    base.isbn10 = isbn10.or(base.isbn10.take());
+    base.creators = creators.or(base.creators.take());
+    base.subjects = subjects.or(base.subjects.take());
+    base.genres = genres.or(base.genres.take());
+    base.print_pages = print_pages.or(base.print_pages.take());
+}
+
+/// Drop every override that restates the indexed value. The review form
+/// diffs against the *inspection*, which the same parser produced, so this
+/// is normally a no-op — but it is what makes "an unedited field leaves no
+/// override" a guarantee rather than a property of one client.
+pub(super) fn prune_unchanged(overrides: &mut MetadataOverrides, book: &EbookMetadata) {
+    // An override of `""` clears a scanned value; against a book that has
+    // none it is a no-op and goes.
+    let same = |ov: &Option<String>, scanned: &Option<String>| {
+        ov.as_deref() == Some(scanned.as_deref().unwrap_or(""))
+    };
+    if same(&overrides.title, &book.title) {
+        overrides.title = None;
+    }
+    if same(&overrides.description, &book.description) {
+        overrides.description = None;
+    }
+    if same(&overrides.publisher, &book.publisher) {
+        overrides.publisher = None;
+    }
+    if same(&overrides.published, &book.published) {
+        overrides.published = None;
+    }
+    if same(&overrides.language, &book.language) {
+        overrides.language = None;
+    }
+    if same(&overrides.series, &book.series) {
+        overrides.series = None;
+    }
+    if same(&overrides.series_index, &book.series_index) {
+        overrides.series_index = None;
+    }
+    if same(&overrides.isbn13, &book.isbn13) {
+        overrides.isbn13 = None;
+    }
+    if same(&overrides.isbn10, &book.isbn10) {
+        overrides.isbn10 = None;
+    }
+    let scanned_names: Vec<&str> = book.creators.iter().map(|c| c.name.as_str()).collect();
+    if overrides.creators.as_ref().is_some_and(|c| {
+        c.iter()
+            .map(|c| c.name.as_str())
+            .eq(scanned_names.iter().copied())
+    }) {
+        overrides.creators = None;
+    }
+    if overrides.subjects.as_deref() == Some(book.subjects.as_slice()) {
+        overrides.subjects = None;
+    }
+    if overrides.genres.as_deref() == Some(book.genres.as_slice()) {
+        overrides.genres = None;
+    }
+    if overrides.print_pages.is_some() && overrides.print_pages == book.print_pages {
+        overrides.print_pages = None;
+    }
+}
