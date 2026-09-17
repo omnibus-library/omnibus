@@ -74,6 +74,7 @@ fn library_book() -> ScanBook {
         authors: vec!["Mary Shelley".into()],
         cover_url: None,
         has_physical: false,
+        has_files: true,
         isbn: None,
     }
 }

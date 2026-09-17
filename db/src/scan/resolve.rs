@@ -17,6 +17,8 @@ use crate::physical::{
     FilelessCover, PhysicalError,
 };
 
+use super::projection::{row_to_scan_book, scan_book_cols, LIVE_BOOK};
+
 /// How many library rows one close match may offer the reader to choose from.
 ///
 /// Two rows for a single work — an EPUB and the audiobook the indexer never
@@ -309,34 +311,39 @@ fn canonical_isbn(meta: &ExternalBookMeta) -> Option<String> {
 /// linked one to a library book by hand would otherwise be asked the same
 /// question on every later scan of that same barcode. It ranks *after* the
 /// identifier arm so a book that genuinely publishes the ISBN still wins.
+///
+/// The identifier arm is gated on [`LIVE_BOOK`]: a row that publishes the
+/// ISBN but has no file, copy or wishlist entry is on no reader surface, so
+/// it is not a book the reader "already has". The copies arm needs no gate —
+/// a copy is what makes a row live.
 async fn find_book_by_isbn(
     pool: &SqlitePool,
     isbn13: &str,
 ) -> Result<Option<ScanBook>, sqlx::Error> {
-    let cols = "b.uuid AS uuid, b.title AS title, b.has_cover AS has_cover,
-                (SELECT group_concat(a.name, ', ')
-                   FROM books_authors_link bal JOIN authors a ON a.id = bal.author
-                  WHERE bal.book = b.id ORDER BY bal.position) AS authors,
-                EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid)
-                    AS has_physical";
+    // No caller on this rung reads `isbn`, so skip the correlated subquery.
+    let cols = scan_book_cols(true, false);
     let row = sqlx::query(&format!(
         "SELECT {cols}, 0 AS rung
            FROM books b
            JOIN book_identifiers bi ON bi.book_id = b.id
+           LEFT JOIN scan_roots l ON l.id = b.library_id
+           LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
           WHERE bi.scheme LIKE '%isbn%'
             AND REPLACE(REPLACE(bi.value, '-', ''), ' ', '') = ?1
+            AND {LIVE_BOOK}
          UNION ALL
          SELECT {cols}, 1 AS rung
            FROM books b
            JOIN physical_copies c ON c.book_uuid = b.uuid
+           LEFT JOIN scan_roots l ON l.id = b.library_id
+           LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
           WHERE REPLACE(REPLACE(c.isbn, '-', ''), ' ', '') = ?1
           ORDER BY rung LIMIT 1"
     ))
     .bind(isbn13)
     .fetch_optional(pool)
     .await?;
-    // No caller on this rung reads `isbn`, so skip the correlated subquery.
-    Ok(row.map(|r| row_to_scan_book(r, None)))
+    Ok(row.map(row_to_scan_book))
 }
 
 /// Fuzzy rung: the library books whose normalized (title, author) matches the
@@ -443,21 +450,24 @@ async fn query_loose_candidates(
         "COALESCE(mo.title_norm, b.title_norm)",
         "COALESCE(mo.author_norm, b.author_norm)",
     );
+    let scanned_cols = scan_book_cols(false, true);
+    let effective_cols = scan_book_cols(true, true);
     // The union is wrapped rather than ordered in place: SQLite only accepts a
     // bare result column in a compound SELECT's ORDER BY, never an expression.
     let sql = format!(
         "SELECT * FROM (
-           SELECT {CANDIDATE_COLS}, b.author_norm AS match_author_norm,
+           SELECT {scanned_cols}, b.author_norm AS match_author_norm,
                   {} AS match_title_norm
              FROM books b
-            WHERE {books_pred}
+            WHERE {books_pred} AND {LIVE_BOOK}
               AND NOT EXISTS (SELECT 1 FROM metadata_overrides mo WHERE mo.book_uuid = b.uuid)
            UNION ALL
-           SELECT {CANDIDATE_COLS}, COALESCE(mo.author_norm, b.author_norm) AS match_author_norm,
+           SELECT {effective_cols}, COALESCE(mo.author_norm, b.author_norm) AS match_author_norm,
                   {} AS match_title_norm
              FROM books b
              JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-            WHERE {effective_pred})
+             LEFT JOIN scan_roots l ON l.id = b.library_id
+            WHERE {effective_pred} AND {LIVE_BOOK})
           ORDER BY (match_title_norm <> ?1), uuid LIMIT {LOOSE_FETCH_LIMIT}",
         bare_title_sql("b.title_norm"),
         bare_title_sql("COALESCE(mo.title_norm, b.title_norm)"),
@@ -474,7 +484,7 @@ async fn query_loose_candidates(
             authors_compatible(author_norm, library.as_deref())
         })
         .take(MAX_CLOSE_MATCH_CANDIDATES)
-        .map(row_to_candidate)
+        .map(row_to_scan_book)
         .collect())
 }
 
@@ -601,16 +611,20 @@ async fn query_norm_candidates(
             "COALESCE(mo.title_norm, b.title_norm) = ?1",
         )
     };
+    let scanned_cols = scan_book_cols(false, true);
+    let effective_cols = scan_book_cols(true, true);
     let sql = format!(
-        "SELECT {CANDIDATE_COLS}
+        "SELECT {scanned_cols}
            FROM books b
-          WHERE {title_pred_books} AND b.author_norm = ?2
+          WHERE {title_pred_books} AND b.author_norm = ?2 AND {LIVE_BOOK}
             AND NOT EXISTS (SELECT 1 FROM metadata_overrides mo WHERE mo.book_uuid = b.uuid)
          UNION ALL
-         SELECT {CANDIDATE_COLS}
+         SELECT {effective_cols}
            FROM books b
            JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+           LEFT JOIN scan_roots l ON l.id = b.library_id
           WHERE {title_pred_effective} AND COALESCE(mo.author_norm, b.author_norm) = ?2
+            AND {LIVE_BOOK}
           ORDER BY uuid LIMIT {MAX_CLOSE_MATCH_CANDIDATES}"
     );
     let rows = sqlx::query(&sql)
@@ -618,43 +632,5 @@ async fn query_norm_candidates(
         .bind(author_norm)
         .fetch_all(pool)
         .await?;
-    Ok(rows.into_iter().map(row_to_candidate).collect())
-}
-
-/// The `ScanBook` projection every norm pass selects, plus the 13-digit ISBN
-/// the confirm screen shows beside the scanned one.
-const CANDIDATE_COLS: &str = "b.uuid, b.title, b.has_cover,
-                (SELECT group_concat(a.name, ', ')
-                   FROM books_authors_link bal JOIN authors a ON a.id = bal.author
-                  WHERE bal.book = b.id ORDER BY bal.position) AS authors,
-                EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid) AS has_physical,
-                (SELECT REPLACE(REPLACE(bi2.value, '-', ''), ' ', '')
-                   FROM book_identifiers bi2
-                  WHERE bi2.book_id = b.id AND bi2.scheme LIKE '%isbn%'
-                    AND REPLACE(REPLACE(bi2.value, '-', ''), ' ', '')
-                        GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-                  ORDER BY bi2.rowid LIMIT 1) AS isbn";
-
-/// One [`CANDIDATE_COLS`] row as a [`ScanBook`], dropping an empty ISBN.
-fn row_to_candidate(r: sqlx::sqlite::SqliteRow) -> ScanBook {
-    let isbn = r.get::<Option<String>, _>("isbn").filter(|s| !s.is_empty());
-    row_to_scan_book(r, isbn)
-}
-
-fn row_to_scan_book(r: sqlx::sqlite::SqliteRow, isbn: Option<String>) -> ScanBook {
-    let uuid: String = r.get("uuid");
-    let has_cover: i64 = r.get("has_cover");
-    let authors: Option<String> = r.get("authors");
-    let has_physical: i64 = r.get("has_physical");
-    ScanBook {
-        cover_url: (has_cover != 0).then(|| format!("/api/covers/{uuid}")),
-        isbn,
-        authors: authors
-            .filter(|s| !s.is_empty())
-            .map(|s| s.split(", ").map(str::to_string).collect())
-            .unwrap_or_default(),
-        title: r.get("title"),
-        has_physical: has_physical != 0,
-        uuid,
-    }
+    Ok(rows.into_iter().map(row_to_scan_book).collect())
 }

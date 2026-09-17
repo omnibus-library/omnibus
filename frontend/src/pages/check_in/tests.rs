@@ -5,7 +5,7 @@
 
 use super::entry::apply_key;
 use super::link::{scan_book_from_hit, truncation_note};
-use super::screens::{byline, meta_details, CloseMatchCopy};
+use super::screens::{byline, confirm_subtitle, meta_details, CloseMatchCopy};
 use super::*;
 use omnibus_shared::{MetadataProvider, PaletteBookHit};
 
@@ -16,6 +16,7 @@ fn scan_book() -> ScanBook {
         authors: vec!["Frank Herbert".into()],
         cover_url: None,
         has_physical: false,
+        has_files: true,
         isbn: Some("9780441013593".into()),
     }
 }
@@ -175,6 +176,30 @@ fn stage_for_close_match_flattens_the_wire_head_and_tail_into_one_picker() {
         books.iter().map(|b| b.uuid.as_str()).collect::<Vec<_>>(),
         vec!["book-uuid", "audiobook-uuid"]
     );
+}
+
+#[test]
+fn confirm_subtitle_claims_a_digital_copy_only_for_a_book_with_a_file() {
+    let digital = scan_book();
+    assert!(confirm_subtitle(&digital).contains("digitally"));
+
+    let paper_only = ScanBook {
+        has_files: false,
+        has_physical: true,
+        ..scan_book()
+    };
+    let paper = confirm_subtitle(&paper_only);
+    assert!(!paper.contains("digitally"), "got: {paper}");
+    assert!(paper.contains("print copy"), "got: {paper}");
+
+    let wished = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+    let fileless = confirm_subtitle(&wished);
+    assert!(!fileless.contains("digitally"), "got: {fileless}");
+    assert!(fileless.contains("without a file"), "got: {fileless}");
 }
 
 #[test]

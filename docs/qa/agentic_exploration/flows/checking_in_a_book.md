@@ -35,8 +35,9 @@ here, never against the baseline corpus.
    - **Recognition** — the book already carries your copy. The web says
      nothing and navigates straight to it; there is no "In your physical
      collection" screen on this surface. Journal it and pick another book.
-   - **"Check in this copy"** — the confirm screen for a book that exists
-     digitally, reached from a title match or an exact-edition ISBN. An
+   - **"Check in this copy"** — the confirm screen for a book already in
+     the library (digitally, or as someone's print copy — the subtitle says
+     which), reached from a title match or an exact-edition ISBN. An
      **"Is this the book?"** interstitial comes first only when the ISBN you
      entered is on no book in the library; a matching edition goes straight
      through. This path offers an **Edition note** at file time. A reader

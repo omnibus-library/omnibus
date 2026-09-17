@@ -9,6 +9,7 @@ use dioxus_router::Link;
 use omnibus_shared::{ExternalBookMeta, ScanBook, WishlistAddRequest};
 
 use super::{wishlist_request_for, CheckInOpen, FlowState, FoundVia};
+use crate::focus_after_paint::focus_after_paint;
 use crate::{media_url, use_server_url, Route};
 
 /// Matching spinner shown while the resolve request is in flight.
@@ -37,8 +38,12 @@ pub(super) fn ConfirmScreen(
     let target = book.clone();
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-confirm",
+            // Take focus: the click that got here unmounted its button, and a
+            // focus dropped to `body` takes Escape with it (#2525).
+            tabindex: "-1",
+            onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
             h1 { "Check in this copy" }
-            p { class: "subtitle", "You already have this one digitally \u{2014} this adds your print copy." }
+            p { class: "subtitle", {confirm_subtitle(&book)} }
             LibraryBookCard { book }
             div { class: "settings-field",
                 label { r#for: "check-in-note", "Edition note (optional)" }
@@ -75,6 +80,20 @@ pub(super) fn ConfirmScreen(
     }
 }
 
+/// The confirm screen's one-line framing of what the copy is being added
+/// to, worded from the book's actual holdings: the "already have it
+/// digitally" line was shown for paper-only rows, where it was simply untrue
+/// (#2525).
+pub(super) fn confirm_subtitle(book: &ScanBook) -> &'static str {
+    match (book.has_files, book.has_physical) {
+        (true, _) => "You already have this one digitally \u{2014} this adds your print copy.",
+        (false, true) => "You already have a print copy of this one \u{2014} this adds another.",
+        (false, false) => {
+            "This one is in your library without a file \u{2014} this adds your print copy."
+        }
+    }
+}
+
 /// 2b — the fuzzy (title, author) hits. Never auto-resolved: the reader picks
 /// the book they're holding, seeing both ISBNs, or falls through to the 3c
 /// chooser.
@@ -95,6 +114,10 @@ pub(super) fn CloseMatchScreen(
     let fallthrough = scanned.clone();
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-close-match",
+            // Take focus: the click that got here unmounted its button, and a
+            // focus dropped to `body` takes Escape with it (#2525).
+            tabindex: "-1",
+            onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
             h1 { "{copy.heading}" }
             p { class: "subtitle", "{copy.subtitle}" }
             p { class: "check-in-isbn-line", {found_via.isbn_line(&scanned.isbn13)} }
@@ -215,6 +238,10 @@ pub(super) fn ChooseScreen(
     let wish_meta = online.clone();
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-choose",
+            // Take focus: the click that got here unmounted its button, and a
+            // focus dropped to `body` takes Escape with it (#2525).
+            tabindex: "-1",
+            onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
             h1 { "Not in your library" }
             p { class: "subtitle", "We found it online. What would you like to do?" }
             ExternalBookCard { meta: online }
@@ -271,6 +298,10 @@ pub(super) fn UnresolvedScreen(
 ) -> Element {
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-unresolved",
+            // Take focus: the click that got here unmounted its button, and a
+            // focus dropped to `body` takes Escape with it (#2525).
+            tabindex: "-1",
+            onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
             h1 { "We couldn't find that ISBN" }
             p { class: "subtitle",
                 "Nothing in your library or our metadata providers matches {isbn}."
@@ -320,6 +351,10 @@ pub(super) fn SuccessScreen(
     let mut overlay_open = use_context::<CheckInOpen>().0;
     rsx! {
         div { class: "check-in-screen check-in-success", "data-testid": "check-in-success",
+            // Take focus: the click that got here unmounted its button, and a
+            // focus dropped to `body` takes Escape with it (#2525).
+            tabindex: "-1",
+            onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
             div { class: "check-in-rings",
                 span { class: "check-in-ring" }
                 span { class: "check-in-ring" }

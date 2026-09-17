@@ -9,6 +9,7 @@ use omnibus_shared::{PaletteBookHit, ScanBook};
 
 use super::screens::LibraryPickOption;
 use super::{friendly_error, FlowState};
+use crate::focus_after_paint::focus_after_paint;
 use crate::{data, use_server_url};
 
 /// Split the palette's pre-joined `author_display` back into names, matching
@@ -25,8 +26,9 @@ fn split_authors(display: &str) -> Vec<String> {
 /// Turn a library-search hit into the [`ScanBook`] the confirm screen renders.
 ///
 /// `has_physical` stays `false` because the search projection carries no copy
-/// count — and nothing on this path reads it. The confirm card shows cover,
-/// title, and byline only, and the write resolves ownership server-side.
+/// count — and nothing on this path reads it beyond the confirm subtitle,
+/// which the formats list answers well enough: a hit with no format is a
+/// paper-only book. The write resolves ownership server-side.
 pub(crate) fn scan_book_from_hit(hit: &PaletteBookHit) -> ScanBook {
     ScanBook {
         uuid: hit.uuid.clone(),
@@ -34,6 +36,7 @@ pub(crate) fn scan_book_from_hit(hit: &PaletteBookHit) -> ScanBook {
         authors: split_authors(&hit.author_display),
         cover_url: hit.cover_url.clone(),
         has_physical: false,
+        has_files: !hit.formats.is_empty(),
         isbn: None,
     }
 }
@@ -67,6 +70,10 @@ pub(super) fn LinkExistingScreen(
 
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-link",
+            // Take focus: the click that got here unmounted its button, and a
+            // focus dropped to `body` takes Escape with it (#2525).
+            tabindex: "-1",
+            onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
             h1 { "Which book is this?" }
             p { class: "subtitle",
                 "Find it in your library and we'll file this copy against it \u{2014} no new book, no duplicate to merge later."
