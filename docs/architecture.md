@@ -703,7 +703,14 @@ against the stub while every real dispatch failed short of attaching anything. M
 the builds side (`filter[id]` + `filter[betaGroups]`), and a live dispatch stays
 the only place the contract is genuinely exercised. A daily companion workflow
 (`testflight-feedback.yml`) turns new TestFlight screenshot feedback into
-GitHub issues via `scripts/testflight_feedback_to_issues.py`.
+GitHub issues via `scripts/testflight_feedback_to_issues.py`. Its dedupe is one
+listing of the `testflight`-labelled issues (open and closed) whose bodies carry
+the `asc-feedback-id` marker, not a Search API call per submission: search is
+capped at ~30 requests a minute, and once the backlog passed that the tail of
+every run 403'd and — because the check then *proceeded* — refiled the same
+submissions daily. A listing that fails aborts the run instead. Its suite
+(`scripts/tests/testflight-feedback.test.py`) is gated by the same
+`script-tests.yml`.
 
 **Why the reader is a WebView.** iOS ships no EPUB renderer, and epub.js already
 produces the CFI positions the server's `epub_cfi` / `epub_cfi_range` contract
