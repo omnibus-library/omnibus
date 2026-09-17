@@ -42,7 +42,7 @@ struct AddBooksSheet: View {
                             icon: "arrow.up.doc",
                             title: "Upload a file",
                             subtitle: isOnline
-                                ? "Add an EPUB or audiobook from this device or iCloud Drive."
+                                ? "Add an EPUB, PDF, or audiobook from this device or iCloud Drive."
                                 : "Unavailable offline — uploads go straight to your library."
                         ) { showFileImporter = true }
                         // An upload is library-wide state, not per-user, so
@@ -108,7 +108,7 @@ struct AddBooksSheet: View {
     private var unsupportedNotice: some View {
         Text(
             "Can't add \(manager.unsupported.joined(separator: ", ")) — books must be an "
-                + "EPUB, and audiobooks an M4B, M4A, or MP3. An MP3 saved as .mpga needs "
+                + "EPUB or PDF, and audiobooks an M4B, M4A, or MP3. An MP3 saved as .mpga needs "
                 + "renaming first."
         )
         .font(.ui(12.5))

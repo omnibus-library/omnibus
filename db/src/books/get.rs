@@ -773,7 +773,9 @@ struct ValidatorRow {
 }
 
 /// The `book_files` row a query is about: the explicit `file_id` when given,
-/// else the lowest-ordinal row of a format this download serves.
+/// else the row the download endpoint resolves — the formats walked in the
+/// order [`DownloadFormat::file_formats`] lists them (EPUB > CBZ > PDF for an
+/// ebook), lowest ordinal within the first format that has a row.
 fn pick_validator_row<'a>(
     rows: &'a [ValidatorRow],
     query: &omnibus_shared::DownloadValidatorQuery,
@@ -781,8 +783,9 @@ fn pick_validator_row<'a>(
     if let Some(file_id) = query.file_id {
         return rows.iter().find(|row| row.id == file_id);
     }
-    let formats = query.format.file_formats();
-    rows.iter()
-        .filter(|row| formats.iter().any(|f| f.eq_ignore_ascii_case(&row.format)))
-        .min_by_key(|row| row.ordinal)
+    query.format.file_formats().iter().find_map(|format| {
+        rows.iter()
+            .filter(|row| format.eq_ignore_ascii_case(&row.format))
+            .min_by_key(|row| row.ordinal)
+    })
 }

@@ -351,14 +351,31 @@ final class ReaderController: NSObject {
         // normalizes one away. "No position" has to reach the glue as an absent
         // `cfi` rather than an empty one — today `opts.cfi || null` absorbs it,
         // but that is JS falsiness standing in for a decision this side owes.
-        restoreCFI = startCFI?.nilIfBlank
-        pendingHighlights = highlights
+        // A mixed EPUB+PDF (or +CBZ) book shares one progress row across its
+        // readers, so the slot can hold a `pdf-page:`/`comic-page:` anchor
+        // another reader wrote; only a real CFI may reach epub.js.
+        restoreCFI = startCFI?.nilIfBlank.flatMap { Self.isEpubCFI($0) ? $0 : nil }
+        pendingHighlights = Self.paintable(highlights)
+    }
+
+    /// The rows epub.js can place: a real CFI, not a `pdf:` anchor from the
+    /// same book's PDF reader (a mixed book shares one highlight list).
+    /// Anchorless Kobo rows are kept — they are never drawn, but they still
+    /// list, and the reconcile filters them itself.
+    static func paintable(_ highlights: [Highlight]) -> [Highlight] {
+        highlights.filter { $0.epubCFIRange.map(isEpubCFI) ?? true }
     }
 
     // MARK: - Commands
 
     func next() { run("OmnibusReader.next()") }
     func previous() { run("OmnibusReader.prev()") }
+
+    /// Whether a stored position is an EPUB CFI at all — the mirror of
+    /// `omnibus_shared::is_epub_cfi`.
+    static func isEpubCFI(_ anchor: String) -> Bool {
+        anchor.trimmingCharacters(in: .whitespaces).hasPrefix("epubcfi(")
+    }
 
     func display(_ target: String) {
         run("OmnibusReader.display(\(target.jsQuoted))")
@@ -400,12 +417,13 @@ final class ReaderController: NSObject {
     /// before the reader is ready it just replaces the queue.
     func applyHighlights(_ items: [Highlight]) {
         guard isReady else {
-            pendingHighlights = items
+            pendingHighlights = Self.paintable(items)
             return
         }
-        // Kobo-origin rows have no CFI and are never drawn; only anchored
+        // Kobo-origin rows have no CFI and are never drawn, and a mixed
+        // book's `pdf:` rows belong to its other reader; only CFI-anchored
         // rows participate in the reconcile.
-        let anchored = items.filter { $0.epubCFIRange != nil }
+        let anchored = items.filter { $0.epubCFIRange.map(Self.isEpubCFI) == true }
         let previous = Dictionary(
             drawnHighlights.compactMap { h in h.epubCFIRange.map { ($0, h) } },
             uniquingKeysWith: { _, latest in latest }
