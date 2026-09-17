@@ -22,6 +22,8 @@ SCRIPT = REPO_ROOT / "scripts" / "testflight_feedback_to_issues.py"
 
 APP_ID = "app-1"
 BUNDLE_ID = "com.omnibus.mobile"
+REPO = "owner/repo"
+ASSET_BRANCH = "testflight-feedback"
 
 pass_count = 0
 fail_count = 0
@@ -75,7 +77,9 @@ class FakeGitHub:
         self.created = []  # issue titles POSTed
 
     def __call__(self, method, path, token, **kw):
-        if method == "GET" and path.endswith("/issues"):
+        if "/search/" in path:
+            raise AssertionError(f"the script must never reach for the Search API: {path}")
+        if method == "GET" and path == f"/repos/{REPO}/issues":
             params = kw.get("params", {})
             self.listing_params.append(params)
             if self.listing_status != 200:
@@ -83,10 +87,10 @@ class FakeGitHub:
             page = params.get("page", 1)
             body = self.pages[page - 1] if page <= len(self.pages) else []
             return Resp(payload=body)
-        if method == "POST" and path.endswith("/issues"):
+        if method == "POST" and path == f"/repos/{REPO}/issues":
             self.created.append(kw["json"]["title"])
             return Resp(status_code=201, payload={"number": len(self.created)})
-        if path.endswith(f"/branches/testflight-feedback"):
+        if path == f"/repos/{REPO}/branches/{ASSET_BRANCH}":
             return Resp(payload={})  # asset branch already exists
         raise AssertionError(f"unstubbed request: {method} {path}")
 
@@ -103,9 +107,12 @@ def fake_asc(subs):
 
 def run(fake_gh, subs, **env):
     """Import the script fresh under `env` and run main() against the fakes."""
+    # Every setting the script reads is pinned: a developer's ambient
+    # ASSET_BRANCH or MAX_PAGES must not change what this suite exercises.
     base = {"ASC_ISSUER_ID": "issuer", "ASC_KEY_ID": "key", "ASC_PRIVATE_KEY": "pem",
-            "GITHUB_TOKEN": "ghs", "GITHUB_REPOSITORY": "owner/repo",
-            "BUNDLE_IDS": BUNDLE_ID, "DRY_RUN": "0"}
+            "GITHUB_TOKEN": "ghs", "GITHUB_REPOSITORY": REPO,
+            "BUNDLE_IDS": BUNDLE_ID, "ASSET_BRANCH": ASSET_BRANCH, "MAX_PAGES": "5",
+            "DRY_RUN": "0"}
     base.update(env)
     saved = dict(os.environ)
     os.environ.update(base)
