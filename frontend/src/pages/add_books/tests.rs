@@ -201,7 +201,7 @@ mod render {
         }
 
         let html = dioxus::ssr::render_element(rsx! { Harness {} });
-        assert!(html.contains("accept=\".epub,.m4b,.m4a,.mp4,.mp3,"));
+        assert!(html.contains("accept=\".epub,.pdf,.m4b,.m4a,.mp4,.mp3,"));
         assert!(html.contains("multiple"));
         assert!(html.contains("data-testid=\"add-books-formats\""));
         assert!(!html.contains("add-books-type-"));
