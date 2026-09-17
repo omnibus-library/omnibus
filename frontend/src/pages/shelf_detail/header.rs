@@ -24,6 +24,7 @@ const LOCK_NOTE_ID: &str = "shd-lock-reason";
 pub(super) fn ShelfHero(
     shelf: Shelf,
     access: ShelfAccess,
+    members_ready: bool,
     on_add: EventHandler<()>,
     on_edit: EventHandler<()>,
     on_changed: EventHandler<()>,
@@ -51,6 +52,7 @@ pub(super) fn ShelfHero(
             ShelfActions {
                 shelf: shelf.clone(),
                 access: access.clone(),
+                members_ready,
                 on_add,
                 on_edit,
                 on_changed,
@@ -174,10 +176,17 @@ impl ActionAttrs {
 /// The action bar. Every viewer gets the same controls for the shelf's kind —
 /// Add books (hand-picked only), Edit shelf, the ⋯ menu — and when `access`
 /// can't edit, each is `aria-disabled`, inert, and described by the lock note.
+///
+/// Add books carries one gate the others don't: `members_ready`. The picker
+/// marks the books this shelf already holds, and it reads that from the member
+/// list, which is empty both before the first fetch lands and after one fails.
+/// Offering it then would show a stocked shelf as empty and invite adding a
+/// book that is already on it, so the control waits until membership is known.
 #[component]
 fn ShelfActions(
     shelf: Shelf,
     access: ShelfAccess,
+    members_ready: bool,
     on_add: EventHandler<()>,
     on_edit: EventHandler<()>,
     on_changed: EventHandler<()>,
@@ -194,6 +203,14 @@ fn ShelfActions(
     let can_edit = access.can_edit();
     let attrs = ActionAttrs::for_access(&access);
     let is_manual = shelf.kind == ShelfKind::Manual;
+    let can_add = can_edit && members_ready;
+    // A viewer who may edit but whose member list hasn't landed is told to
+    // wait; one who may not edit keeps the lock reason, which outranks it.
+    let add_tip = if can_edit && !members_ready {
+        Some("Still loading this shelf\u{2019}s books\u{2026}".to_string())
+    } else {
+        attrs.tip.clone()
+    };
     let on_toggle_kobo = build_on_toggle_kobo(
         server_url.clone(),
         shelf.id,
@@ -214,10 +231,10 @@ fn ShelfActions(
                     r#type: "button",
                     class: "btn primary shd-action",
                     "data-testid": "shelf-add-books",
-                    "aria-disabled": attrs.disabled,
+                    "aria-disabled": if can_add { "false" } else { "true" },
                     "aria-describedby": attrs.describedby,
-                    title: attrs.tip.clone(),
-                    onclick: move |_| if can_edit { on_add.call(()) },
+                    title: add_tip,
+                    onclick: move |_| if can_add { on_add.call(()) },
                     {plus_icon()}
                     "Add books"
                 }

@@ -256,6 +256,32 @@ test("marks a book already on the shelf instead of offering it again", async ({
   await expect(modal.getByTestId("add-books-submit")).toBeDisabled();
 });
 
+test("keeps Add books unavailable until the member list has loaded", async ({
+  page,
+  request,
+}) => {
+  const alpha = await fetchBookUuidByTitle(request, "Alpha");
+  const id = await createShelf(request, {
+    kind: "manual",
+    name: `E2E Detail Members Unknown ${Date.now()}`,
+    book_uuids: [alpha],
+  });
+
+  // Fail the member fetch. The page clears `books` on that path, so an
+  // ungated picker would mark nothing as "On this shelf" and offer a book the
+  // shelf already holds as though it were addable.
+  await page.route("**/api/rpc/shelves/page", (route) =>
+    route.fulfill({ status: 500, body: "boom" }),
+  );
+  await openShelfFromIndex(page, id);
+
+  await expect(addButton(page)).toBeDisabled();
+  // Inert, not merely styled — membership is unknown, so there is nothing
+  // honest for the picker to show.
+  await addButton(page).click({ force: true });
+  await expect(page.getByTestId("add-books-modal")).toHaveCount(0);
+});
+
 test("takes a book off a hand-picked shelf", async ({ page, request }) => {
   const alpha = await fetchBookUuidByTitle(request, "Alpha");
   const id = await createShelf(request, {

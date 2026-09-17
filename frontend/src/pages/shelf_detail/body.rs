@@ -32,6 +32,7 @@ pub(super) fn WebShelfBody(
     shelf: Shelf,
     books: Vec<EbookMetadata>,
     errored: bool,
+    members_ready: bool,
     server_url: String,
     signals: ShelfBodySignals,
 ) -> Element {
@@ -111,6 +112,7 @@ pub(super) fn WebShelfBody(
             ShelfHero {
                 shelf: shelf.clone(),
                 access,
+                members_ready,
                 on_add: move |_| show_add.set(true),
                 on_edit: move |_| edit_shelf.set(true),
                 on_changed: move |_| reload.with_mut(|n| *n += 1),

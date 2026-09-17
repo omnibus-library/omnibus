@@ -41,6 +41,8 @@ pub fn ShelfDetailPage(id: i64) -> Element {
     // renders distinctly from a shelf that is genuinely empty (mirrors
     // `search_mobile.rs`'s `errored` signal for the same failure class).
     let errored = use_signal(|| false);
+    // Distinguishes "this shelf holds nothing" from "we don't know yet".
+    let members_ready = use_signal(|| false);
 
     use_shelf_effects(
         id,
@@ -53,6 +55,7 @@ pub fn ShelfDetailPage(id: i64) -> Element {
             error,
             books,
             errored,
+            members_ready,
         },
     );
 
@@ -73,6 +76,7 @@ pub fn ShelfDetailPage(id: i64) -> Element {
         &current,
         &books.read(),
         errored(),
+        members_ready(),
         &server_url,
         ShelfUi {
             sort_key,
@@ -115,11 +119,16 @@ fn shelf_detail_body(
     current: &Shelf,
     books: &[EbookMetadata],
     errored: bool,
+    members_ready: bool,
     server_url: &str,
     ui: ShelfUi,
 ) -> Element {
     #[cfg(feature = "mobile")]
     {
+        // The mobile surface doesn't gate its add affordance on this yet — it
+        // has the same unknown-versus-empty membership weakness the web action
+        // bar now guards against.
+        let _ = members_ready;
         let ShelfUi {
             mut show_add,
             mut edit_shelf,
@@ -149,6 +158,7 @@ fn shelf_detail_body(
                 shelf: current.clone(),
                 books: books.to_vec(),
                 errored,
+                members_ready,
                 server_url: server_url.to_string(),
                 signals: ShelfBodySignals {
                     sort_key,
@@ -209,6 +219,11 @@ struct ShelfFetchSignals {
     error: Signal<Option<String>>,
     books: Signal<Vec<EbookMetadata>>,
     errored: Signal<bool>,
+    /// `true` only once a member fetch has succeeded for the shelf on screen.
+    /// An empty `books` means "none yet" before the first fetch lands and
+    /// after one fails, and the add-books picker reads membership from it —
+    /// so it must be able to tell an empty shelf from an unknown one.
+    members_ready: Signal<bool>,
 }
 
 /// Wires the two data-fetch effects backing [`ShelfDetailPage`]: the shelf
@@ -228,6 +243,7 @@ fn use_shelf_effects(
         mut error,
         mut books,
         mut errored,
+        mut members_ready,
     } = sig;
 
     // Fetch the shelf detail whenever the id changes. `id` is a plain prop
@@ -270,11 +286,16 @@ fn use_shelf_effects(
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
         spawn(async move {
+            // Membership is unknown until this fetch lands — including when
+            // the shelf on screen has just changed, where `books` still holds
+            // the previous shelf's members.
+            members_ready.set(false);
             let dir = default_dir_for(key);
             match data::shelf_page(&url, id, key, dir).await {
                 Ok(page) => {
                     books.set(page.books);
                     errored.set(false);
+                    members_ready.set(true);
                 }
                 Err(_) => {
                     // `tracing` isn't linked under the `web` (WASM) feature,
@@ -284,6 +305,7 @@ fn use_shelf_effects(
                     // books on screen under the error banner.
                     books.set(Vec::new());
                     errored.set(true);
+                    members_ready.set(false);
                 }
             }
         });
