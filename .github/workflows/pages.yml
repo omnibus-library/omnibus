@@ -1,7 +1,7 @@
 name: Pages
 
 # Publishes the marketing site (site/src/) to the `gh-pages` branch, which
-# GitHub Pages serves at https://seamus-sloan.github.io/omnibus/.
+# GitHub Pages serves at https://omnibus-library.github.io/omnibus/.
 #
 # The branch previously held the Playwright HTML report tree — one folder per
 # branch per sha, ~17k files, with the site root a redirect into the newest
@@ -57,4 +57,4 @@ jobs:
             gh-pages
 
           echo "published $(find . -type f -not -path './.git/*' | wc -l | tr -d ' ') files" >>"$GITHUB_STEP_SUMMARY"
-          echo "https://seamus-sloan.github.io/omnibus/" >>"$GITHUB_STEP_SUMMARY"
+          echo "https://omnibus-library.github.io/omnibus/" >>"$GITHUB_STEP_SUMMARY"

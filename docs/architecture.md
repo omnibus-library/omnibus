@@ -850,7 +850,7 @@ xcodebuild test -project omnibus-ios/omnibus.xcodeproj -scheme omnibus \
 ```
 ## site/
 
-The marketing site at <https://seamus-sloan.github.io/omnibus/>. Not a crate and
+The marketing site at <https://omnibus-library.github.io/omnibus/>. Not a crate and
 not part of any build — `site/src/` is plain HTML/CSS/JS copied verbatim to the
 `gh-pages` branch by [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)
 on every push to `main` that touches it.
@@ -864,7 +864,7 @@ on every push to `main` that touches it.
 
 Because the shots are stills, they are a picture of the *design*, not of what the
 server currently renders — they need re-exporting as redesigned surfaces ship
-under [#2132](https://github.com/seamus-sloan/omnibus/issues/2132). The markup
+under [#2132](https://github.com/omnibus-library/omnibus/issues/2132). The markup
 references the dark set; the direction toggle swaps each `img.shot`'s `src` to
 `shots/sepia/` for the names listed in `SEPIA_SHOTS` in `app.js` — a shot absent
 from that set (no sepia export yet) keeps its dark render in both directions.

@@ -105,7 +105,7 @@ You need:
 > It is highly recommended to back up your device before attempting a sync with
 > one of these tools:
 >
-> - [seamus-sloan/kobo-backup](https://github.com/seamus-sloan/kobo-backup#kobo-backup)
+> - [omnibus-library/kobo-backup](https://github.com/omnibus-library/kobo-backup#kobo-backup)
 > - [karlicoss/kobuddy](https://github.com/karlicoss/kobuddy#usage)
 >
 > At minimum, copy `.kobo/KoboReader.sqlite` off the device over USB.
@@ -187,7 +187,7 @@ wrong.
 > `Bookmark.Color = 0` (yellow) regardless of the colour sent, while
 > highlights created directly on the device use the full `Color` range
 > normally (the original report, with the device's `KoboReader.sqlite` data:
-> [#1629](https://github.com/seamus-sloan/omnibus/issues/1629)).
+> [#1629](https://github.com/omnibus-library/omnibus/issues/1629)).
 >
 > This repo still carries no captured device PATCH for the Reading Services
 > protocol, but a follow-up investigation found a genuine shape difference
