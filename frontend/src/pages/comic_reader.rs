@@ -15,7 +15,7 @@ use crate::{data, media_url, use_server_url, Route};
 /// How the page image maps onto the stage viewport. Shared with the PDF
 /// reader (`pages/pdf_reader`), whose stage wears the same `cr-fit-*`
 /// classes.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FitMode {
     /// Page fills the stage width; taller pages scroll vertically.
     Width,

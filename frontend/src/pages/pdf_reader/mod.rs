@@ -127,11 +127,22 @@ fn progress_update_for_page(uuid: &str, page: usize, count: usize) -> ProgressUp
 /// one `book_files` row when the file picker named it (a mixed EPUB+PDF book
 /// serves its EPUB from the bare route).
 fn file_url(server_url: &str, uuid: &str, file_id: Option<i64>) -> String {
-    let path = match file_id {
-        Some(id) => format!("/api/ebooks/{uuid}/file?file_id={id}"),
-        None => format!("/api/ebooks/{uuid}/file"),
-    };
-    media_url(server_url, &path)
+    let base = media_url(server_url, &format!("/api/ebooks/{uuid}/file"));
+    with_file_id(&base, file_id)
+}
+
+/// Append `?file_id=` / `&file_id=` to an already-built media URL. The
+/// mobile [`media_url`] carries the bearer token as its own `?token=` query,
+/// so the file id has to join that query rather than open a second one —
+/// `/file?file_id=N?token=…` is a token the server can't parse (a 401).
+fn with_file_id(base: &str, file_id: Option<i64>) -> String {
+    match file_id {
+        Some(id) => {
+            let sep = if base.contains('?') { '&' } else { '?' };
+            format!("{base}{sep}file_id={id}")
+        }
+        None => base.to_string(),
+    }
 }
 
 /// The glue's name for a [`FitMode`].
@@ -165,6 +176,11 @@ struct PdfSignals {
     /// The glue's reason for a `Failed` status, shown under the retry
     /// action so a load failure is diagnosable from the page.
     error: Signal<Option<String>>,
+    /// Bumped by the error overlay's Retry: the bootstrap effect reads it,
+    /// so a retry re-runs the whole path — the metadata/position fetch, the
+    /// glue load, and the mount — not just the glue's own re-init, which
+    /// can't recover a fetch failure or a glue that never loaded.
+    retry: Signal<u32>,
 }
 
 /// Resolve a PDF's metadata and saved position for the bootstrap:
@@ -278,15 +294,17 @@ fn apply_event(event: interop::PdfEvent, uuid: &str, server_url: &str, sigs: Pdf
 
 /// Metadata + saved-position bootstrap, the glue mount, the highlight load,
 /// and the event drain — post-mount only (rule 07: SSR and the first WASM
-/// paint both render the loading state). Declared as unconditional hooks on
-/// every target; the body is what's gated.
+/// paint both render the loading state). Every hook is declared on every
+/// target so the hook order never diverges between SSR and the client; only
+/// the effect body that talks to the WebView is gated.
 ///
 /// `use_reactive!` re-runs this whenever the route params change on an
 /// already-mounted instance — the router reuses the page across a same-route
-/// param swap rather than remounting it (#1612) — and the retained task is
-/// cancelled first so the previous document's drain can't land events on the
-/// new one.
-#[allow(unused_variables)]
+/// param swap rather than remounting it (#1612) — and again on Retry (the
+/// `retry` signal read inside). The retained task is cancelled first so the
+/// previous document's drain can't land events on the new one, and every
+/// per-document signal is reset so the previous title, annotations, and open
+/// drawers never show over the next document.
 fn use_pdf_bootstrap(
     uuid: String,
     file_id: Option<i64>,
@@ -294,73 +312,116 @@ fn use_pdf_bootstrap(
     server_url: String,
     sigs: PdfSignals,
 ) {
-    #[cfg(any(feature = "web", feature = "mobile"))]
-    {
-        use dioxus::core::Task;
+    use dioxus::core::Task;
 
-        let mut task = use_signal(|| None::<Task>);
-        use_effect(use_reactive!(|uuid, file_id, deep_link| {
-            if let Some(prev) = task.write().take() {
-                prev.cancel();
-            }
-            let PdfSignals {
-                mut meta,
-                mut status,
-                mut selection,
-                mut highlights,
-                mut count,
-                mut last_saved,
-                mut error,
-                ..
-            } = sigs;
-            status.set(PdfStatus::Loading);
-            error.set(None);
-            selection.set(None);
-            count.set(0);
-            last_saved.set(None);
+    let mut task = use_signal(|| None::<Task>);
+    use_effect(use_reactive!(|uuid, file_id, deep_link| {
+        // Subscribes this effect to Retry.
+        let _attempt = *sigs.retry.read();
+        if let Some(prev) = task.write().take() {
+            prev.cancel();
+        }
+        reset_document_state(sigs);
+        #[cfg(any(feature = "web", feature = "mobile"))]
+        {
             let server_url = server_url.clone();
             let uuid = uuid.clone();
-            task.set(Some(spawn(async move {
-                let Some((book, start)) = fetch_bootstrap(&server_url, &uuid, deep_link).await
-                else {
-                    status.set(PdfStatus::Failed);
-                    return;
-                };
-                // The restore lands in `page` before the glue paints so the
-                // slider and label never flash page 1.
-                let mut page = sigs.page;
-                page.set(start);
-                meta.set(Some(book));
-                let eval = interop::install_pdf_surface(
-                    HOST_ID,
-                    &interop::MountOptions {
-                        url: file_url(&server_url, &uuid, file_id),
-                        start_page: start,
-                        fit: fit_name(*sigs.fit.peek()),
-                    },
-                    &interop::PdfScripts {
-                        glue: PDF_GLUE_JS.to_string(),
-                        pdfjs: PDFJS_MJS.to_string(),
-                        worker: PDFJS_WORKER_MJS.to_string(),
-                    },
-                );
-                if let Ok(list) = data::list_highlights(&server_url, &uuid).await {
-                    highlights.set(list);
-                }
-                crate::js_interop::drain_events(eval, move |event: interop::PdfEvent| {
-                    apply_event(event, &uuid, &server_url, sigs);
-                })
-                .await;
-            })));
-        }));
+            task.set(Some(spawn(bootstrap_and_drain(
+                uuid, file_id, deep_link, server_url, sigs,
+            ))));
+        }
+        #[cfg(not(any(feature = "web", feature = "mobile")))]
+        let _ = (&uuid, &file_id, &deep_link, &server_url);
+    }));
 
-        use_drop(move || {
-            if let Some(prev) = task.write().take() {
-                prev.cancel();
-            }
-            interop::pdf_call("destroy", "");
-        });
+    use_drop(move || {
+        if let Some(prev) = task.write().take() {
+            prev.cancel();
+        }
+        interop::pdf_call("destroy", "");
+    });
+}
+
+/// Put every per-document signal back to its first-paint value before a
+/// (re)load: status, error, position, the highlight list, the selection, and
+/// every overlay. `fit` and `retry` survive — one is a preference, the other
+/// is what triggered the reload.
+fn reset_document_state(sigs: PdfSignals) {
+    let PdfSignals {
+        mut meta,
+        mut status,
+        mut page,
+        mut count,
+        mut highlights,
+        mut selection,
+        mut note_target,
+        mut quote_target,
+        mut show_highlights,
+        mut show_bookmarks,
+        mut last_saved,
+        mut error,
+        ..
+    } = sigs;
+    status.set(PdfStatus::Loading);
+    error.set(None);
+    meta.set(None);
+    page.set(0);
+    count.set(0);
+    highlights.set(Vec::new());
+    selection.set(None);
+    note_target.set(None);
+    quote_target.set(None);
+    show_highlights.set(false);
+    show_bookmarks.set(false);
+    last_saved.set(None);
+}
+
+/// The interactive-target body of [`use_pdf_bootstrap`]: fetch metadata +
+/// position, mount the glue, load the highlights, then drain glue events
+/// until the task is cancelled.
+#[cfg(any(feature = "web", feature = "mobile"))]
+async fn bootstrap_and_drain(
+    uuid: String,
+    file_id: Option<i64>,
+    deep_link: Option<usize>,
+    server_url: String,
+    sigs: PdfSignals,
+) {
+    let PdfSignals {
+        mut meta,
+        mut status,
+        mut page,
+        mut highlights,
+        ..
+    } = sigs;
+    let Some((book, start)) = fetch_bootstrap(&server_url, &uuid, deep_link).await else {
+        status.set(PdfStatus::Failed);
+        return;
+    };
+    // The restore lands in `page` before the glue paints so the slider and
+    // label never flash page 1.
+    page.set(start);
+    meta.set(Some(book));
+    let eval = interop::install_pdf_surface(
+        HOST_ID,
+        &interop::MountOptions {
+            url: file_url(&server_url, &uuid, file_id),
+            start_page: start,
+            fit: fit_name(*sigs.fit.peek()),
+        },
+        &interop::PdfScripts {
+            glue: PDF_GLUE_JS.to_string(),
+            pdfjs: PDFJS_MJS.to_string(),
+            worker: PDFJS_WORKER_MJS.to_string(),
+        },
+    );
+    if let Ok(list) = data::list_highlights(&server_url, &uuid).await {
+        highlights.set(list);
     }
+    crate::js_interop::drain_events(eval, move |event: interop::PdfEvent| {
+        apply_event(event, &uuid, &server_url, sigs);
+    })
+    .await;
 }
 
 /// Pre-derived chrome values for one paint (the `PagerDisplay` pattern in
@@ -410,6 +471,7 @@ pub fn PdfReadPage(uuid: String, file_id: Option<i64>, page: Option<i64>) -> Ele
         show_bookmarks: use_signal(|| false),
         last_saved: use_signal(|| None),
         error: use_signal(|| None),
+        retry: use_signal(|| 0),
     };
     let PdfSignals {
         meta,
@@ -581,12 +643,12 @@ pub fn PdfReadPage(uuid: String, file_id: Option<i64>, page: Option<i64>) -> Ele
                                 r#type: "button",
                                 class: "btn sm",
                                 "data-testid": "pdf-retry",
+                                // Bumping `retry` re-runs the whole bootstrap
+                                // (fetch, glue load, mount) — see
+                                // `use_pdf_bootstrap`.
                                 onclick: move |_| {
-                                    let mut status = status;
-                                    status.set(PdfStatus::Loading);
-                                    let mut error = sigs.error;
-                                    error.set(None);
-                                    interop::pdf_call("retry", "");
+                                    let mut retry = sigs.retry;
+                                    retry += 1;
                                 },
                                 "Retry"
                             }
@@ -982,6 +1044,24 @@ mod unit_tests {
         assert_eq!(
             file_url("", "book-a", Some(917)),
             "/api/ebooks/book-a/file?file_id=917"
+        );
+    }
+
+    #[test]
+    fn with_file_id_joins_an_existing_query_rather_than_opening_a_second_one() {
+        // The mobile media URL already carries `?token=`; a second `?` would
+        // hand the server an unparseable token.
+        assert_eq!(
+            with_file_id("https://h/api/ebooks/b/file?token=abc", Some(3)),
+            "https://h/api/ebooks/b/file?token=abc&file_id=3"
+        );
+        assert_eq!(
+            with_file_id("/api/ebooks/b/file", Some(3)),
+            "/api/ebooks/b/file?file_id=3"
+        );
+        assert_eq!(
+            with_file_id("https://h/api/ebooks/b/file?token=abc", None),
+            "https://h/api/ebooks/b/file?token=abc"
         );
     }
 

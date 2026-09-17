@@ -302,6 +302,7 @@ fn MultiFileRow(
                                     {send_to_kindle_action(&uuid, Some(file_id), file_size)}
                                 },
                                 FormatKind::Pdf => rsx! {
+                                    {read_pdf_file_action(&uuid, file_id)}
                                     {send_to_kindle_action(&uuid, Some(file_id), file_size)}
                                 },
                                 FormatKind::M4b | FormatKind::Mp3 => rsx! {
@@ -430,6 +431,32 @@ fn read_file_action(_uuid: &str, _file_id: i64) -> Element {
             class: "btn",
             disabled: true,
             "data-testid": "action-read",
+            "Read"
+        }
+    }
+}
+
+/// Per-file "Read" CTA for a PDF sub-row inside a `MultiFileRow`: the PDF
+/// reader carrying `?file_id=` so the row opens that exact edition.
+#[cfg(not(feature = "mobile"))]
+fn read_pdf_file_action(uuid: &str, file_id: i64) -> Element {
+    rsx! {
+        Link {
+            to: link_target(Route::PdfRead { uuid: uuid.to_string(), file_id: Some(file_id), page: None }),
+            class: "btn",
+            "data-testid": "action-read-pdf",
+            "Read"
+        }
+    }
+}
+
+#[cfg(feature = "mobile")]
+fn read_pdf_file_action(_uuid: &str, _file_id: i64) -> Element {
+    rsx! {
+        button {
+            class: "btn",
+            disabled: true,
+            "data-testid": "action-read-pdf",
             "Read"
         }
     }
@@ -607,6 +634,46 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].label(), "CbZ");
         assert!(matches!(rows[0], FormatKind::Other(_)));
+    }
+
+    // The PDF read actions render router `Link`s, so they mount behind a
+    // one-route test router (the highlights-card pattern).
+    #[cfg(feature = "server")]
+    mod render_tests {
+        use dioxus_router::{Routable, Router};
+
+        use super::super::*;
+        use crate::test_support::render_in_vdom;
+
+        #[derive(Clone, Debug, PartialEq, Routable)]
+        enum PdfActionsRoute {
+            #[route("/")]
+            PdfActionsHost {},
+        }
+
+        #[component]
+        fn PdfActionsHost() -> Element {
+            rsx! {
+                {read_pdf_action("book-a")}
+                {read_pdf_file_action("book-a", 41)}
+                {read_pdf_file_action("book-a", 42)}
+            }
+        }
+
+        #[test]
+        fn pdf_read_actions_route_the_book_and_each_edition_into_the_pdf_reader() {
+            let html = render_in_vdom(|| {
+                rsx! {
+                    Router::<PdfActionsRoute> {}
+                }
+            });
+            // The book-level row opens the bare route; each multi-file
+            // sub-row carries its own file id.
+            assert!(html.contains("href=\"/pdf/book-a\""), "{html}");
+            assert!(html.contains("href=\"/pdf/book-a?file_id=41\""), "{html}");
+            assert!(html.contains("href=\"/pdf/book-a?file_id=42\""), "{html}");
+            assert_eq!(html.matches("data-testid=\"action-read-pdf\"").count(), 3);
+        }
     }
 
     #[test]

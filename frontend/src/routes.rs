@@ -547,10 +547,19 @@ pub fn NotFound(segments: Vec<String>) -> Element {
 /// missing query and an empty one identically. Use this anywhere such a
 /// route becomes a `Link`'s `to` or a `Navigator::push`.
 pub fn link_target(route: Route) -> NavigationTarget {
-    let url = route.to_string();
-    match url.strip_suffix('?') {
-        Some(trimmed) => NavigationTarget::Internal(trimmed.to_string()),
-        None => NavigationTarget::Internal(url),
+    NavigationTarget::Internal(trim_query_separators(&route.to_string()))
+}
+
+/// The dangling separators the router macro writes for absent optional
+/// query arguments: a trailing `?` when none is set, a trailing `&` when
+/// only the first of two is (`/pdf/<uuid>?file_id=917&`), and a leading `?&`
+/// when only the second is. Routing reads all three forms identically; a
+/// copied or bookmarked URL should not carry them.
+fn trim_query_separators(url: &str) -> String {
+    let trimmed = url.trim_end_matches(['?', '&']);
+    match trimmed.split_once("?&") {
+        Some((path, query)) => format!("{path}?{query}"),
+        None => trimmed.to_string(),
     }
 }
 
@@ -714,6 +723,31 @@ mod tests {
                 uuid: "book-a".into()
             }
         );
+    }
+
+    #[test]
+    fn link_target_trims_the_separators_left_by_one_absent_query_argument() {
+        // Two optional query args: setting only the first leaves a trailing
+        // `&`, only the second a leading `?&`. Neither belongs in an href.
+        assert_eq!(
+            link_target(Route::PdfRead {
+                uuid: "book-a".into(),
+                file_id: Some(917),
+                page: None,
+            }),
+            NavigationTarget::Internal("/pdf/book-a?file_id=917".into())
+        );
+        assert_eq!(
+            link_target(Route::PdfRead {
+                uuid: "book-a".into(),
+                file_id: None,
+                page: Some(4),
+            }),
+            NavigationTarget::Internal("/pdf/book-a?page=4".into())
+        );
+        assert_eq!(trim_query_separators("/x?a=1&"), "/x?a=1");
+        assert_eq!(trim_query_separators("/x?&b=2"), "/x?b=2");
+        assert_eq!(trim_query_separators("/x?&"), "/x");
     }
 
     #[test]

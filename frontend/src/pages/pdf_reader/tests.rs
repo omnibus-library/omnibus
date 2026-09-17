@@ -78,7 +78,46 @@ fn signals() -> PdfSignals {
         show_bookmarks: Signal::new(false),
         last_saved: Signal::new(None),
         error: Signal::new(None),
+        retry: Signal::new(0),
     }
+}
+
+#[test]
+fn reset_document_state_clears_every_per_document_signal_but_keeps_fit_and_retry() {
+    #[component]
+    fn AssertReset() -> Element {
+        let sigs = signals();
+        let mut fit = sigs.fit;
+        fit.set(FitMode::Width);
+        let mut retry = sigs.retry;
+        retry.set(2);
+        apply_event(
+            PdfEvent::Ready {
+                json: r#"{"page":4,"pageCount":30}"#.into(),
+            },
+            "book-a",
+            "",
+            sigs,
+        );
+        let mut show_highlights = sigs.show_highlights;
+        show_highlights.set(true);
+        let mut error = sigs.error;
+        error.set(Some("boom".into()));
+
+        reset_document_state(sigs);
+
+        assert_eq!(*sigs.status.read(), PdfStatus::Loading);
+        assert_eq!(*sigs.page.read(), 0);
+        assert_eq!(*sigs.count.read(), 0);
+        assert!(sigs.last_saved.read().is_none());
+        assert!(sigs.error.read().is_none());
+        assert!(!*sigs.show_highlights.read());
+        // A preference and the reload trigger itself survive the reset.
+        assert_eq!(*sigs.fit.read(), FitMode::Width);
+        assert_eq!(*sigs.retry.read(), 2);
+        rsx! {}
+    }
+    VirtualDom::new(AssertReset).rebuild_in_place();
 }
 
 #[test]
