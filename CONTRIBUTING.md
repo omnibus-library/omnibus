@@ -31,8 +31,8 @@ pull requests, and every other project space.
    - a maintainer assigning the issue to you.
 
    A thumbs-up reaction or silence is not approval. If nobody responds within
-   seven days, leave one polite follow-up and mention `@seamus-sloan` or
-   `@roberte777`.
+   seven days, leave one polite follow-up and mention @seamus-sloan or
+   @roberte777.
 3. **Build it.** See the development section below.
 4. **Open the pull request.** Link the issue with `Closes #<n>` in the body.
 
