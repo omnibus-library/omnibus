@@ -10305,6 +10305,36 @@ html {
 .cr-ribbon { position: absolute; left: 0; top: -1px; height: 2px; width: 100%; }
 .cr-ribbon i { display: block; height: 100%; background: var(--accent, var(--ink)); }
 
+/* ============================= PDF reader ============================== */
+/* /pdf/:uuid — the PDF.js single-page reader (frontend/src/pages/pdf_reader/).
+   Wears the comic pager's cr- chrome above; pr- covers what PDF.js adds:
+   the page host (canvas + highlight layer + text layer) and its overlays.
+   The reader's rd- drawers, popover, and composer position against
+   .pr-root the way they do against .rd-surface. */
+.pr-root { position: relative; }
+.pr-stage { position: relative; }
+.pr-host { position: relative; flex: 0 0 auto; margin: 0 auto; background: #fff;
+  box-shadow: 0 2px 14px rgba(0,0,0,.28); }
+.pr-canvas { display: block; }
+.pr-hl-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.pr-hl { position: absolute; opacity: .35; mix-blend-mode: multiply; border-radius: 2px; }
+/* PDF.js's text layer: transparent glyph boxes over the raster so native
+   selection tracks the printed text. The span geometry is the library's
+   own (it sizes from --total-scale-factor, set by the glue per render). */
+.pr-textlayer { position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1;
+  text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; z-index: 2;
+  caret-color: CanvasText; text-align: initial; }
+.pr-textlayer :is(span, br) { color: transparent; position: absolute; white-space: pre;
+  cursor: text; transform-origin: 0% 0%; }
+.pr-textlayer ::selection { background: rgba(59, 130, 246, .35); }
+.pr-textlayer .endOfContent { display: block; position: absolute; inset: 100% 0 0;
+  z-index: -1; cursor: default; user-select: none; }
+.pr-overlay { position: absolute; inset: 0; z-index: 3; flex-direction: column; gap: 12px;
+  background: var(--bg-2); }
+.pr-error-detail { max-width: 60ch; text-align: center; opacity: .7; }
+.pr-tool { position: relative; gap: 6px; }
+.pr-tool svg { flex: 0 0 auto; }
+
 /* ── User avatars ───────────────────────────────────────────────── */
 /* `UserAvatar` keeps one stable span per site and puts the photo *inside*
    it, so the image just fills the circle the site already defined. */

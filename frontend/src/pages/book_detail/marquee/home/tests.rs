@@ -1,4 +1,4 @@
-use omnibus_shared::EbookMetadata;
+use omnibus_shared::{BookFileInfo, EbookMetadata};
 
 use super::*;
 
@@ -142,6 +142,104 @@ fn epub_primary_wins_over_the_comic_cta_when_both_formats_exist() {
         !html.contains("data-testid=\"start-reading-comic\""),
         "{html}"
     );
+}
+
+#[derive(Clone, Debug, PartialEq, dioxus_router::Routable)]
+enum PdfOnlyRoute {
+    #[route("/")]
+    PdfOnlyHost {},
+}
+
+#[component]
+fn PdfOnlyHost() -> Element {
+    rsx! {
+        MarqueeCtaRow {
+            b: book(),
+            view: MarqueeViewFacts { has_pdf: true, ..facts(false, false, false) },
+            progress: no_progress(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, dioxus_router::Routable)]
+enum EpubAndPdfRoute {
+    #[route("/")]
+    EpubAndPdfHost {},
+}
+
+#[component]
+fn EpubAndPdfHost() -> Element {
+    let b = EbookMetadata {
+        book_files: vec![
+            BookFileInfo {
+                id: 11,
+                format: "EPUB".into(),
+                filename: "book.epub".into(),
+                ordinal: 0,
+                label: None,
+                size_bytes: 0,
+                path: None,
+                etag: None,
+                duration_seconds: None,
+            },
+            BookFileInfo {
+                id: 12,
+                format: "PDF".into(),
+                filename: "book.pdf".into(),
+                ordinal: 1,
+                label: None,
+                size_bytes: 0,
+                path: None,
+                etag: None,
+                duration_seconds: None,
+            },
+        ],
+        ..book()
+    };
+    rsx! {
+        MarqueeCtaRow {
+            b,
+            view: MarqueeViewFacts { has_pdf: true, ..facts(true, false, false) },
+            progress: no_progress(),
+        }
+    }
+}
+
+#[test]
+fn pdf_only_book_shows_the_pdf_reader_cta_instead_of_the_disclaimer() {
+    let html = crate::test_support::render_in_vdom(|| {
+        rsx! {
+            dioxus_router::Router::<PdfOnlyRoute> {}
+        }
+    });
+    assert!(html.contains("data-testid=\"start-reading-pdf\""), "{html}");
+    assert!(html.contains("href=\"/pdf/book-uuid\""), "{html}");
+    assert!(!html.contains("data-testid=\"start-reading\""), "{html}");
+    assert!(
+        !html.contains("data-testid=\"no-files-disclaimer\""),
+        "{html}"
+    );
+}
+
+#[test]
+fn epub_primary_offers_the_pdf_through_the_file_picker_when_both_formats_exist() {
+    // AC4: the EPUB stays the Read CTA; the PDF is reachable through the
+    // picker at `/pdf/{uuid}?file_id=`, never as a competing primary.
+    let html = crate::test_support::render_in_vdom(|| {
+        rsx! {
+            dioxus_router::Router::<EpubAndPdfRoute> {}
+        }
+    });
+    assert!(
+        html.contains("data-testid=\"read-file-picker-trigger\""),
+        "{html}"
+    );
+    assert!(
+        !html.contains("data-testid=\"start-reading-pdf\""),
+        "{html}"
+    );
+    // The panel is closed until the trigger is clicked, so the row hrefs
+    // are asserted on `FilePickerKind::item_href` in file_picker's tests.
 }
 
 // The single-file picker renders a `Link`, so the resume-verb variant mounts

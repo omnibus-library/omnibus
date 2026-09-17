@@ -206,10 +206,11 @@ fn FormatRow(
                         {send_to_kobo_action(&uuid, &book_author, &book_title)}
                     },
                     FormatKind::Pdf => rsx! {
-                        // A PDF ships to a Kindle as-is; the size gate reads
-                        // the same field, which falls back to the PDF's size
-                        // when the book has no EPUB. Reading it in the browser
-                        // is the web-reader follow-up.
+                        // Web opens the PDF.js reader; mobile stays disabled
+                        // like the EPUB row. A PDF ships to a Kindle as-is;
+                        // the size gate reads the same field, which falls
+                        // back to the PDF's size when the book has no EPUB.
+                        {read_pdf_action(&uuid)}
                         {send_to_kindle_action(&uuid, None, epub_size_bytes.unwrap_or_default())}
                     },
                     FormatKind::M4b | FormatKind::Mp3 => rsx! {
@@ -349,6 +350,33 @@ fn read_book_action(_uuid: &str) -> Element {
             disabled: true,
             title: "Reading on mobile coming soon",
             "data-testid": "action-read",
+            "Read"
+        }
+    }
+}
+
+/// "Read" CTA for a PDF row. Web/SSR routes into the PDF.js reader; mobile
+/// renders a disabled placeholder, as the EPUB row does.
+#[cfg(not(feature = "mobile"))]
+fn read_pdf_action(uuid: &str) -> Element {
+    rsx! {
+        Link {
+            to: link_target(Route::PdfRead { uuid: uuid.to_string(), file_id: None, page: None }),
+            class: "btn",
+            "data-testid": "action-read-pdf",
+            "Read"
+        }
+    }
+}
+
+#[cfg(feature = "mobile")]
+fn read_pdf_action(_uuid: &str) -> Element {
+    rsx! {
+        button {
+            class: "btn",
+            disabled: true,
+            title: "Reading on mobile coming soon",
+            "data-testid": "action-read-pdf",
             "Read"
         }
     }

@@ -99,3 +99,24 @@ one is asserting a control that no longer exists. Three consequences:
   `stats-daily-{kind}-today` — so a spec asserting "no goal" must look for
   those, not for an invite. `*-invite` now renders only when the server sent no
   figure at all.
+
+**The PDF reader has no ready testid; the text layer is not an element you
+click.** `/pdf/:uuid` renders its chrome on SSR (`pdf-back`, `pdf-fit-*`,
+`pdf-highlights`, `pdf-bookmarks`, `pdf-stage`, `pdf-page-host`, `pdf-prev`,
+`pdf-next`, `pdf-slider`, `pdf-footer`, `pdf-page-label`) with a `pdf-loading`
+overlay; "ready" is that overlay leaving and `pdf-page-label` reading
+`Page N of M` — the count is PDF.js's, not the indexed one, so parse it from
+the label rather than hard-coding it. PDF.js fills `pdf-page-host` with
+`.pr-canvas`, `.pr-hl-layer` (one `.pr-hl[data-color]` div per painted quad),
+and `.pr-textlayer` (one absolutely positioned, transparent `span` per text
+run). To highlight, drag with `page.mouse` from the left edge of a
+`.pr-textlayer span` to its right edge — `click()` on a span selects nothing —
+then the epub reader's `.rd-selection-popover` and its `Highlight <color>`
+swatches appear. The drawers, note composer and quote panel are the epub
+reader's (`reader-highlights-drawer`, `reader-bookmarks-drawer`,
+`reader-highlight-row`, `reader-bookmark-row`, `reader-bookmark-add`,
+`reader-note-composer`); `Escape` on the reader root closes them. Every turn
+POSTs `/api/rpc/progress` with `epub_cfi: "pdf-page:N"`; opening the reader
+POSTs nothing for position (the ready report is treated as already saved) but
+does write read status `reading` on an unread book — pre-set `flatland` to
+`reading` in `beforeAll` (the comic spec's pattern) or assert that write.

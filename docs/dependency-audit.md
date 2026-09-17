@@ -120,6 +120,19 @@ this list.
   page runs under `catch_unwind`. Text quality is advisory (ligatures, CJK).
 - MuPDF (AGPL) and pdfium (prebuilt binary) were ruled out under the MIT
   license allow-list in `deny.toml`.
+- **PDF.js (Apache-2.0), vendored, not a crate** — `pdfjs-dist@6.3.289`'s
+  `build/pdf.min.mjs` + `build/pdf.worker.min.mjs` sit in
+  `frontend/assets/vendor/` beside `epub.min.js` (issue #2569, the web PDF
+  reader). Both are the upstream minified ES modules verbatim, loaded by
+  `pdf-reader-glue.js` through a dynamic `import()` with the worker URL
+  handed over as `GlobalWorkerOptions.workerSrc`; the license text is the
+  `@licstart` banner at the top of each file. Apache-2.0 is on the
+  `deny.toml` allow-list already (via `hayro`), and nothing about it
+  conflicts with the MIT project license. Bumping: fetch the same two files
+  for the new version from the npm registry, keep the pin here and in the
+  glue's header comment in step, and re-run `pdf_reader.spec.ts` — the text
+  layer's CSS contract (`--total-scale-factor`, `--scale-round-x/y`,
+  `.textLayer span` geometry) has moved between majors before.
 
 ## Policy
 

@@ -8,7 +8,9 @@ use dioxus::prelude::*;
 use omnibus_shared::{Highlight, HighlightColor};
 
 use super::annotations_sheet::AnnotationsSheet;
-use super::highlights::{spawn_create_highlight, HighlightTargets, NewHighlight, PostCreate};
+use super::highlights::{
+    spawn_create_highlight, AnnotationBridge, HighlightTargets, NewHighlight, PostCreate,
+};
 use super::highlights_drawer::HighlightsDrawer;
 use super::note_composer::NoteComposer;
 use super::quote_panel::QuotePanel;
@@ -60,8 +62,9 @@ pub(super) fn ReaderSelectionPopover(
                         spawn_create_highlight(
                             server_url.clone(),
                             uuid.clone(),
-                            NewHighlight { cfi, color, text, post: PostCreate::None },
+                            NewHighlight { anchor: cfi, color, text, post: PostCreate::None },
                             targets,
+                            AnnotationBridge::epub(),
                         );
                     }
                 }),
@@ -74,8 +77,9 @@ pub(super) fn ReaderSelectionPopover(
                         spawn_create_highlight(
                             server_url.clone(),
                             uuid.clone(),
-                            NewHighlight { cfi, color: HighlightColor::Amber, text, post: PostCreate::Note },
+                            NewHighlight { anchor: cfi, color: HighlightColor::Amber, text, post: PostCreate::Note },
                             targets,
+                            AnnotationBridge::epub(),
                         );
                     }
                 }),
@@ -88,8 +92,9 @@ pub(super) fn ReaderSelectionPopover(
                         spawn_create_highlight(
                             server_url.clone(),
                             uuid.clone(),
-                            NewHighlight { cfi, color: HighlightColor::Amber, text, post: PostCreate::Quote },
+                            NewHighlight { anchor: cfi, color: HighlightColor::Amber, text, post: PostCreate::Quote },
                             targets,
+                            AnnotationBridge::epub(),
                         );
                     }
                 }),

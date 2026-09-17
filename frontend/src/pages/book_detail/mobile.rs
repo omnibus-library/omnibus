@@ -20,7 +20,9 @@ use super::discovery::{
     cover_src, list_count_label, same_hand_author_label, same_hand_title, same_hand_year,
     suggestion_cover_book, SuggestionsSpinner,
 };
-use super::file_picker::{is_audio_book_file, BdFilePickerMenu, FilePickerChrome, FilePickerKind};
+use super::file_picker::{
+    is_audio_book_file, is_readable_book_file, BdFilePickerMenu, FilePickerChrome, FilePickerKind,
+};
 use super::identifiers::bd_identifier_rows;
 use super::immersive::BdImmersiveButton;
 use super::journal::BdJournalSection;
@@ -185,10 +187,13 @@ fn split_meta_and_files(
         (true, false) => year,
         (true, true) => String::new(),
     };
+    // The Read picker's rows: EPUBs plus any PDF, each routed by its own
+    // format (a mixed EPUB+PDF book keeps the EPUB primary and offers the
+    // PDF through the menu — the same ladder as the web marquee).
     let epub_files = b
         .book_files
         .iter()
-        .filter(|f| f.format.eq_ignore_ascii_case("EPUB"))
+        .filter(|f| is_readable_book_file(f))
         .cloned()
         .collect();
     let audio_files = b
@@ -254,9 +259,6 @@ struct FormatAvailability {
     has_ebook: bool,
     has_comic: bool,
     has_audio: bool,
-    /// Read for the export menu's sake; the PDF reader is the web-reader
-    /// follow-up, so it opens nothing here yet.
-    #[allow(dead_code)]
     has_pdf: bool,
 }
 
@@ -275,7 +277,7 @@ fn title_and_cta_section(
         has_ebook,
         has_comic,
         has_audio,
-        ..
+        has_pdf,
     } = availability;
     rsx! {
         div { class: "m-bd-titlecol",
@@ -310,6 +312,17 @@ fn title_and_cta_section(
                     to: crate::Route::ComicRead { uuid: uuid.to_string() },
                     class: "btn primary lg",
                     "data-testid": "start-reading-comic",
+                    "Read"
+                }
+            } else if has_pdf {
+                Link {
+                    to: crate::routes::link_target(crate::Route::PdfRead {
+                        uuid: uuid.to_string(),
+                        file_id: None,
+                        page: None,
+                    }),
+                    class: "btn primary lg",
+                    "data-testid": "start-reading-pdf",
                     "Read"
                 }
             }

@@ -8,7 +8,7 @@ use omnibus_shared::Highlight;
 use super::drawer_shell::ReaderScrim;
 
 #[component]
-pub(super) fn NoteComposer(
+pub(crate) fn NoteComposer(
     highlight: Highlight,
     on_saved: EventHandler<(i64, Option<String>)>,
     on_close: EventHandler<()>,

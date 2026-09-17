@@ -10,7 +10,7 @@ use crate::components::QuoteCardPanel;
 use super::drawer_shell::ReaderScrim;
 
 #[component]
-pub(super) fn QuotePanel(
+pub(crate) fn QuotePanel(
     quote_text: String,
     author: String,
     subtitle: String,

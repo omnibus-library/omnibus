@@ -273,14 +273,18 @@ fn BdHighlightCard(
     }
 }
 
-/// Reader URL that opens `book_uuid` at `cfi`. The reader prefers a `?cfi=`
-/// deep link over saved progress, so the link lands on the passage rather than
-/// wherever this book was last left off.
-fn reader_deep_link(book_uuid: &str, cfi: &str) -> String {
+/// Reader URL that opens `book_uuid` at `anchor`. Each reader prefers its
+/// deep link over saved progress, so the link lands on the passage rather
+/// than wherever this book was last left off: the epub reader takes `?cfi=`,
+/// the PDF reader a 1-based `?page=` for a `pdf:` anchor.
+fn reader_deep_link(book_uuid: &str, anchor: &str) -> String {
+    if let Some(page) = omnibus_shared::pdf_anchor_page(anchor) {
+        return format!("/pdf/{}?page={}", percent_encode(book_uuid), page + 1);
+    }
     format!(
         "/read/{}?cfi={}",
         percent_encode(book_uuid),
-        percent_encode(cfi)
+        percent_encode(anchor)
     )
 }
 
