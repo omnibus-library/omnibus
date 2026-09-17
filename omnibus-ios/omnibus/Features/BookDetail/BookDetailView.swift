@@ -880,7 +880,7 @@ struct BookDetailView: View {
                 // wishlist entry or a paper-only book. There is no file to
                 // export, so the row is absent rather than offering a share
                 // sheet that can only fail (#2471). Send to Kindle already
-                // drops itself the same way, via its own `hasEpub` gate.
+                // drops itself the same way, via its own sendable-file gate.
                 if app.user?.canDownload == true, !book.formats.isEmpty {
                     Button {
                         Task { await shareBook(book) }
@@ -902,9 +902,10 @@ struct BookDetailView: View {
     }
 
     /// The Send-to-Kindle row, beside Export file — both put the book
-    /// somewhere off the phone. Absent for a book with no EPUB, since that is
-    /// all the endpoint knows how to send; every other case renders, so a
-    /// reader who can't send learns why instead of finding nothing there.
+    /// somewhere off the phone. Absent for a book with neither an EPUB nor a
+    /// PDF, since those are all the endpoint knows how to send; every other
+    /// case renders, so a reader who can't send learns why instead of
+    /// finding nothing there.
     ///
     /// Two blocked cases keep their tap. Oversize spends it on Amazon's
     /// uploader, which takes files the email path can't — the same answer
@@ -916,7 +917,7 @@ struct BookDetailView: View {
     @ViewBuilder
     private func kindleRow(_ book: Book) -> some View {
         let gate = KindleService.gate(
-            hasEpub: book.hasEpub,
+            hasSendableFile: book.hasEpub || book.hasPDF,
             epubSizeBytes: book.epubSizeBytes,
             kindleEmail: app.user?.kindleEmail,
             isOnline: connectivity.isOnline

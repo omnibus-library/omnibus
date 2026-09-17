@@ -62,6 +62,9 @@ and how well is **format-dependent** — say which when you touch it:
   catches truncation, garbage, and a splice that changes a box size — but a
   same-length splice *inside* `mdat` leaves every header untouched and is
   undetectable. The format carries no checksum to catch it with.
+- **PDF** is structural only (`PDFIntegrity` on iOS): `%PDF-` header, `%%EOF`
+  in the last KiB, a parse that yields pages. Truncation and a non-PDF body
+  are caught; a same-length splice is not, and no checksum exists to catch it.
 - **MP3** has no container and reports `Unverifiable`.
 
 Do not describe this as "verifying the file parses". It is a CRC check for

@@ -922,8 +922,9 @@ struct DownloadTargetFileTests {
 
     @Test("a book with no servable file of that kind has nothing to compare")
     func unservableKindsAreUnanswerable() {
-        // Every ebook-ish format except the ones the endpoint serves.
-        let noServable = book([file(1, format: "PDF", ordinal: 0, etag: "\"pdf\"")])
+        // Every ebook-ish format except the ones the endpoint serves — EPUB,
+        // CBZ and (since the PDF reader) PDF.
+        let noServable = book([file(1, format: "MOBI", ordinal: 0, etag: "\"mobi\"")])
         #expect(DownloadManager.targetFile(noServable, kind: .ebook) == nil)
         #expect(
             DownloadManager.staleness(snapshot: "\"old\"", against: noServable, kind: .ebook) == nil

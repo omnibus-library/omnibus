@@ -351,7 +351,10 @@ final class ReaderController: NSObject {
         // normalizes one away. "No position" has to reach the glue as an absent
         // `cfi` rather than an empty one — today `opts.cfi || null` absorbs it,
         // but that is JS falsiness standing in for a decision this side owes.
-        restoreCFI = startCFI?.nilIfBlank
+        // A mixed EPUB+PDF (or +CBZ) book shares one progress row across its
+        // readers, so the slot can hold a `pdf-page:`/`comic-page:` anchor
+        // another reader wrote; only a real CFI may reach epub.js.
+        restoreCFI = startCFI?.nilIfBlank.flatMap { Self.isEpubCFI($0) ? $0 : nil }
         pendingHighlights = highlights
     }
 
@@ -359,6 +362,12 @@ final class ReaderController: NSObject {
 
     func next() { run("OmnibusReader.next()") }
     func previous() { run("OmnibusReader.prev()") }
+
+    /// Whether a stored position is an EPUB CFI at all — the mirror of
+    /// `omnibus_shared::is_epub_cfi`.
+    static func isEpubCFI(_ anchor: String) -> Bool {
+        anchor.trimmingCharacters(in: .whitespaces).hasPrefix("epubcfi(")
+    }
 
     func display(_ target: String) {
         run("OmnibusReader.display(\(target.jsQuoted))")

@@ -26,9 +26,11 @@ private func url(_ name: String, in folder: String = "picked") -> URL {
 struct UploadFlowTests {
     // MARK: - Format routing
 
-    @Test func kindRoutesEpubToTheEbookIngest() {
+    @Test func kindRoutesEpubAndPdfToTheEbookIngest() {
         #expect(UploadFlow.kind(for: "Dune.epub") == .ebook)
         #expect(UploadFlow.kind(for: "DUNE.EPUB") == .ebook)
+        #expect(UploadFlow.kind(for: "notes.pdf") == .ebook)
+        #expect(UploadFlow.kind(for: "NOTES.PDF") == .ebook)
     }
 
     @Test func kindRoutesEveryAcceptedAudioContainerToTheAudiobookIngest() {
@@ -44,8 +46,9 @@ struct UploadFlowTests {
         for name in ["song.flac", "song.wav", "song.ogg", "song.opus", "song.aac"] {
             #expect(UploadFlow.kind(for: name) == nil)
         }
+        // A CBZ is indexed from a library folder but not accepted by the
+        // upload endpoint, which sniffs for an EPUB zip or a `%PDF-` header.
         #expect(UploadFlow.kind(for: "comic.cbz") == nil)
-        #expect(UploadFlow.kind(for: "notes.pdf") == nil)
         #expect(UploadFlow.kind(for: "noextension") == nil)
     }
 
@@ -69,7 +72,7 @@ struct UploadFlowTests {
         // assigned from` cannot fail, and the guards it replaced (no flac, no
         // wav) were the only thing catching a widening.
         #expect(UploadFlow.audiobookExtensions == ["m4b", "m4a", "mp4", "mp3"])
-        #expect(UploadFlow.ebookExtensions == ["epub"])
+        #expect(UploadFlow.ebookExtensions == ["epub", "pdf"])
         for playableButNotUploadable in ["flac", "wav", "ogg", "opus", "aac"] {
             #expect(!UploadFlow.audiobookExtensions.contains(playableButNotUploadable))
         }
@@ -135,6 +138,7 @@ struct UploadFlowTests {
 
     @Test func mimeTypeMatchesTheContainerRatherThanGuessingMp4() {
         #expect(UploadFlow.mimeType(for: "a.epub") == "application/epub+zip")
+        #expect(UploadFlow.mimeType(for: "a.pdf") == "application/pdf")
         #expect(UploadFlow.mimeType(for: "a.mp3") == "audio/mpeg")
         #expect(UploadFlow.mimeType(for: "a.m4b") == "audio/mp4")
         #expect(UploadFlow.mimeType(for: "a.m4a") == "audio/mp4")
@@ -144,8 +148,8 @@ struct UploadFlowTests {
     // MARK: - Grouping
 
     @Test func selectionGivesEachEpubItsOwnCommit() {
-        let selection = UploadFlow.selection(for: [url("a.epub"), url("b.epub")])
-        #expect(selection.batches.count == 2)
+        let selection = UploadFlow.selection(for: [url("a.epub"), url("b.epub"), url("c.pdf")])
+        #expect(selection.batches.count == 3)
         #expect(selection.batches.allSatisfy { $0.kind == .ebook })
         #expect(selection.batches.allSatisfy { $0.urls.count == 1 })
         #expect(selection.unsupported.isEmpty)

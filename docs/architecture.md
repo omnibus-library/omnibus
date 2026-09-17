@@ -566,6 +566,19 @@ Comic/              — the native CBZ pager: ComicReaderView (paged TabView +
                       reads online, ZIPFoundation over the downloaded archive
                       offline), ComicPosition (the `comic-page:N` anchor ↔
                       progress-record mapping shared with the web pager)
+Reader/PDF/         — the native PDF reader over PDFKit: PDFReaderView (the
+                      comic pager's lifecycle — progress, ReadStatusAuto,
+                      sessions, LifecycleSync — plus the passage menu),
+                      PDFStage (the PDFView host: single-page page-view
+                      controller, tap zones, settled-selection and
+                      highlight-tap reporting, system edit menu suppressed),
+                      PDFPosition / PDFAnchor (mirrors of `shared::pdf_anchor`:
+                      the `pdf-page:N` position and the `pdf:{page}:{quads}`
+                      highlight anchor), PDFHighlightPainter (selection →
+                      quads, stored highlight → PDFAnnotation, tap → row,
+                      outline flattening), PDFDocumentSource (download, else
+                      validator-keyed cache, else fetch; PDFIntegrity, the
+                      structural post-download check), PDFContentsSheet
 Services/           — AuthService, LibraryService, UserDataService,
                       UploadService (the two-step book ingest: inspect a
                       picked file, then commit it under the confirmed
@@ -731,6 +744,20 @@ package dependency, pinned in the project's `Package.resolved`. Positions ride
 the same Epub-format progress row as every reader, as a `comic-page:N` anchor
 plus the cross-surface percent (`omnibus_shared::comic_page_anchor`), and a
 downloaded archive is CRC-verified before it replaces anything on disk.
+
+**PDFs are native too, on PDFKit.** A PDF-only book (the last rung of the
+shared EPUB > CBZ > PDF ladder, `Book.opensAsPDF`) opens in `Reader/PDF/`: a
+`PDFView` in single-page mode behind a page view controller, so the platform
+does paging, zoom and text selection. Positions ride the Epub-format progress
+row as a `pdf-page:N` anchor plus the cross-surface percent, exactly as comics
+do. Highlights are the web reader's `pdf:{page}:{quads}` anchors — quads in PDF
+user space on the *unrotated* page, the frame `PDFSelection.bounds(for:)` and
+PDF.js's rotation-0 viewport share — painted as `PDFAnnotation` highlights
+whose `userName` carries the row's handle so a tap finds it again; bookmarks
+are `pdf-page:N`. Offline, `/file` serves the PDF for a PDF-only book and the
+download is checked structurally (header, `%%EOF`, a parse with pages) before
+install — no CRC exists to check, per rule 09. Streaming opens fetch the whole
+file into a validator-keyed cache and open it by URL, never from a `Data`.
 
 **Selection is drawn by the app, not by WebKit.** The iOS glue disables
 WebKit's own touch selection inside each section (`user-select: none` in the
