@@ -189,16 +189,20 @@ mod tests {
     }
 
     #[test]
-    fn pdf_bridge_paint_hooks_are_inert_and_navigate_reads_both_anchor_forms() {
+    fn pdf_bridge_paint_hooks_are_inert_and_navigate_ignores_foreign_anchors() {
         // Painting is list-driven, so the per-anchor hooks must be no-ops the
         // shared code can call freely; `navigate` on a foreign anchor is a
-        // no-op too rather than a jump to page 0.
+        // no-op too rather than a jump to page 0. A PDF anchor would reach
+        // `document::eval`, which needs a live runtime on the interactive
+        // targets, so the page it resolves to is asserted on the parser
+        // instead.
         let bridge = pdf_bridge();
+        assert_eq!(bridge.viewer, AnnotationViewer::Pdf);
         (bridge.paint)("pdf:1", HighlightColor::Amber);
         (bridge.unpaint)("pdf:1");
         (bridge.navigate)("epubcfi(/6/4!/4/2)");
-        (bridge.navigate)("pdf:4");
-        (bridge.navigate)("pdf-page:4");
+        (bridge.navigate)("comic-page:4");
         assert_eq!(pdf_anchor_page("pdf:4"), Some(4));
+        assert_eq!(pdf_anchor_page("pdf-page:4"), Some(4));
     }
 }
