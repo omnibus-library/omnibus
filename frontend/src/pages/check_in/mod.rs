@@ -353,6 +353,18 @@ pub fn CheckInPage() -> Element {
         found_via: use_signal(|| FoundVia::from_stage(&front_door())),
     };
 
+    // Every stage change unmounts the control that triggered it, and a focus
+    // dropped to `body` takes Escape with it. Re-land focus on the overlay
+    // panel after each change — the transient resolving screen and a restart
+    // included — so its key handler keeps hearing Escape (#2525). Effects
+    // never run during SSR (rule 07); the full-page route has no panel, and
+    // the query is a no-op there.
+    let stage = state.stage;
+    use_effect(move || {
+        let _ = stage.read();
+        focus_overlay_panel();
+    });
+
     let on_resolve = make_on_resolve(server_url.clone(), state, nav, overlay_open);
     let on_check_in = make_on_check_in(server_url.clone(), state);
     let on_own_it = make_on_own_it(server_url.clone(), state);
@@ -388,6 +400,13 @@ pub fn CheckInPage() -> Element {
             }
         }
     }
+}
+
+/// Focus the overlay panel when one is mounted. Goes through the DOM rather
+/// than a mounted-element handle because the panel is [`CheckInModal`]'s and
+/// the stage lives two components down in [`CheckInPage`].
+fn focus_overlay_panel() {
+    let _ = dioxus::document::eval("document.querySelector('.check-in-overlay-panel')?.focus();");
 }
 
 /// Render whichever screen the current [`Stage`] calls for. Split out of

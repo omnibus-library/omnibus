@@ -151,8 +151,20 @@ struct Book: Codable, Hashable, Sendable, Identifiable {
     }
 
     var year: String? {
-        guard let published, published.count >= 4 else { return nil }
-        return String(published.prefix(4))
+        published.flatMap(Book.year(in:))
+    }
+
+    /// The four-digit year in a `published` value, wherever the writer put
+    /// it. `books.pubdate` normally holds an ISO date, but a physical-only
+    /// row written before the server normalized provider dates can hold
+    /// `8/4/2015`, and `prefix(4)` rendered that as `8/4/` — month, day, and
+    /// no year. The first run of exactly four ASCII digits is the year in
+    /// both shapes; a value with no such run degrades to no year at all.
+    static func year(in published: String) -> String? {
+        published
+            .split { !($0.isASCII && $0.isNumber) }
+            .first { $0.count == 4 }
+            .map(String.init)
     }
 
     var hasEbook: Bool {

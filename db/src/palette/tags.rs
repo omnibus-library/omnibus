@@ -1,7 +1,7 @@
 //! Tags arm of the search palette: substring `LIKE` match scoped to the
-//! visible books, ordered by an override-aware effective book count.
-//! Visibility still requires at least one canonical link so override-only
-//! tags (no navigable id) don't appear.
+//! visible books, ordered by an override-aware effective book count. A tag is
+//! listed when it has at least one effective member on a visible book, so a
+//! tag a reader added through the app counts the same as a scanned one.
 
 use std::sync::OnceLock;
 
@@ -9,65 +9,47 @@ use omnibus_shared::PaletteTagHit;
 use sqlx::{Row, SqlitePool};
 
 use crate::helpers::{library_paths_json, visible_book_sql};
+// `overrides_win_sql` is expanded *by* `effective_tags_sql!` — a nested
+// `macro_rules!` name resolves at the expansion site, so it must be in scope
+// here even though nothing in this file names it directly.
+use crate::metadata_overrides::sql::{effective_tags_sql, overrides_win_sql};
 
 use super::PaletteError;
 
 /// Tags-arm palette query, bound `?1 = library_paths JSON array`, `?2 = like_pattern`,
 /// `?3 = limit`.
 ///
-/// The count uses the effective (override-aware) subject set, not the raw
-/// `books_tags_link` rows. `MetadataOverrides.subjects` (Option<Vec<String>>)
-/// replaces the canonical tag list wholesale when Some — including the empty
-/// array, which clears all tags. Visibility still requires at least one
-/// canonical link on a visible book so we don't list tags that exist only
-/// inside override JSON (no navigable id). `effective` is scoped once up
-/// front, but `book_count` is still a per-tag correlated `COUNT(*)` over it.
-/// The `e.tag_name = t.name` override-arm match stays BINARY even though
-/// `tags.name` is `COLLATE NOCASE`: `tag_name` is a CTE column with no
-/// explicit collation, and SQLite's column-collation precedence favors the
-/// left operand, so BINARY wins. The empty-array clear-all case falls out
-/// naturally since a `Some([])` override drops the book from the canonical
-/// arm and yields no `json_each` rows either.
+/// Both the count and the visibility gate read the shared effective-membership
+/// relation, so an override that replaces a book's subjects wholesale — the
+/// empty array included, which clears them — moves the listing and the count
+/// together. Requiring a canonical `books_tags_link` row instead would hide a
+/// tag that exists only in override JSON, which is a tag the reader just added.
 pub(super) fn search_tags_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {
-        let vis = visible_book_sql("b", "l2", "?1");
-        let vis_exists = visible_book_sql("b", "l", "?1");
+        let vis = visible_book_sql("b", "l", "?1");
         format!(
             r"
-        WITH effective AS (
-          SELECT btl.tag AS tag_id, NULL AS tag_name, btl.book AS book_id
-            FROM books_tags_link btl
-            JOIN books b ON b.id = btl.book
-            JOIN scan_roots l2 ON l2.id = b.library_id
-            LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-           WHERE {vis}
-             AND (mo.book_uuid IS NULL
-                  OR json_type(mo.overrides, '$.subjects') IS NULL)
-          UNION
-          SELECT NULL AS tag_id, je.value AS tag_name, b.id AS book_id
+        WITH visible_books AS (
+          SELECT b.id AS book_id
             FROM books b
-            JOIN scan_roots l2 ON l2.id = b.library_id
-            JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-            JOIN json_each(mo.overrides, '$.subjects') je
+            JOIN scan_roots l ON l.id = b.library_id
            WHERE {vis}
-             AND json_type(mo.overrides, '$.subjects') IS NOT NULL
+        ),
+        effective AS MATERIALIZED (
+          SELECT et.book_id, et.tag_id
+            FROM ({effective}) et
+            JOIN visible_books vb ON vb.book_id = et.book_id
         )
         SELECT t.id, t.name,
-          (SELECT COUNT(*) FROM effective e
-            WHERE e.tag_id = t.id OR e.tag_name = t.name) AS book_count
+          (SELECT COUNT(*) FROM effective e WHERE e.tag_id = t.id) AS book_count
         FROM tags t
         WHERE t.name LIKE ?2 ESCAPE '\'
-          AND EXISTS (
-            SELECT 1 FROM books_tags_link btl
-              JOIN books b ON b.id = btl.book
-              JOIN scan_roots l ON l.id = b.library_id
-             WHERE btl.tag = t.id
-               AND {vis_exists}
-          )
+          AND EXISTS (SELECT 1 FROM effective e WHERE e.tag_id = t.id)
         ORDER BY book_count DESC, t.name
         LIMIT ?3
-        "
+        ",
+            effective = effective_tags_sql!()
         )
     })
 }
@@ -112,7 +94,7 @@ pub async fn search_tags_for_paths(
 
 /// Count visible tags matching `like_pattern` in `library_path` — the
 /// uncapped total behind the palette's 5-hit tag cap. Visibility mirrors
-/// [`search_tags`]: at least one canonical link on a visible book.
+/// [`search_tags`]: at least one effective member on a visible book.
 pub async fn count_tags(
     pool: &SqlitePool,
     library_path: &str,
@@ -133,16 +115,22 @@ pub async fn count_tags_for_paths(
     let visible = visible_book_sql("b", "l", "?1");
     Ok(sqlx::query_scalar::<_, i64>(&format!(
         r"
+        WITH visible_books AS (
+          SELECT b.id AS book_id
+            FROM books b
+            JOIN scan_roots l ON l.id = b.library_id
+           WHERE {visible}
+        ),
+        effective AS MATERIALIZED (
+          SELECT et.book_id, et.tag_id
+            FROM ({effective}) et
+            JOIN visible_books vb ON vb.book_id = et.book_id
+        )
         SELECT COUNT(*) FROM tags t
         WHERE t.name LIKE ?2 ESCAPE '\'
-          AND EXISTS (
-            SELECT 1 FROM books_tags_link btl
-              JOIN books b ON b.id = btl.book
-              JOIN scan_roots l ON l.id = b.library_id
-             WHERE btl.tag = t.id
-               AND {visible}
-          )
-        "
+          AND EXISTS (SELECT 1 FROM effective e WHERE e.tag_id = t.id)
+        ",
+        effective = effective_tags_sql!()
     ))
     .bind(library_paths_json(library_paths))
     .bind(like_pattern)

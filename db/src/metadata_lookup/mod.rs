@@ -47,8 +47,10 @@ pub enum MetadataLookupError {
     /// provider's own wording: "google books returned an error status" reads as
     /// an Omnibus bug, when in practice it is usually Google Books' anonymous
     /// daily quota (HTTP 429 — we send no API key). The provider's error stays
-    /// on the source chain for the log.
-    #[error("metadata lookup is temporarily unavailable — try again later, or enter the details manually")]
+    /// on the source chain for the log. It names no way forward on purpose:
+    /// the web dialog has no manual-entry route, so a sentence that offered
+    /// one sent readers looking for a screen that does not exist (#2459).
+    #[error("metadata lookup is temporarily unavailable — try again later")]
     Provider(#[from] anyhow::Error),
 }
 

@@ -11,7 +11,7 @@
 #                (back this up)
 #   /cache       regenerable — WebP thumbnails + HLS transcode segments
 #   /books       your ebook library      (read-write for uploads)
-#   /audiobooks  your audiobook library  (read-only)
+#   /audiobooks  your audiobook library  (read-write for uploads)
 
 services:
   omnibus:
@@ -32,7 +32,7 @@ services:
       - ./cache:/cache
       # Your media. Edit the left side.
       - /path/to/your/ebooks:/books
-      - /path/to/your/audiobooks:/audiobooks:ro
+      - /path/to/your/audiobooks:/audiobooks
 
     environment:
       # Run the server as this host user/group so it can write ./config and

@@ -31,6 +31,7 @@ function scanBook(
     authors: TARGET.authors,
     cover_url: null,
     has_physical: false,
+    has_files: true,
     isbn: ISBN,
     ...over,
   };
@@ -71,10 +72,14 @@ async function mockJsonPost(
   );
 }
 
-async function reachConfirm(page: Page, uuid: string): Promise<void> {
+async function reachConfirm(
+  page: Page,
+  uuid: string,
+  over: Record<string, unknown> = {},
+): Promise<void> {
   await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
     kind: "in_library_unowned",
-    book: scanBook(uuid),
+    book: scanBook(uuid, over),
   });
   await gotoReady(page, "/check-in");
   await page.getByTestId("check-in-isbn").fill(ISBN);
@@ -91,6 +96,19 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.describe("check-in confirm and close-match", () => {
+  test("words the confirm from the book's holdings, not as a digital copy", async ({
+    page,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    // A paper-only row: no file, a copy already filed (#2525).
+    await reachConfirm(page, uuid, { has_files: false, has_physical: true });
+
+    const confirm = page.getByTestId("check-in-confirm");
+    await expect(confirm).not.toContainText("digitally");
+    await expect(confirm).toContainText("print copy");
+  });
+
   test("checks in a copy of a seeded digital book after an exact ISBN match", async ({
     page,
     request,
@@ -99,6 +117,10 @@ test.describe("check-in confirm and close-match", () => {
     await reachConfirm(page, uuid);
 
     await expect(page.getByTestId("check-in-book")).toContainText(TARGET.title);
+    // A file-backed book is the one case the "digitally" line is true for.
+    await expect(page.getByTestId("check-in-confirm")).toContainText(
+      "You already have this one digitally",
+    );
     // Typed at the lookup field, so the line must not call it a scan (#2247).
     await expect(page.getByText(`Entered ISBN ${ISBN}`)).toBeVisible();
 

@@ -208,3 +208,49 @@ async fn undo_merge_returns_snapshot_error_when_source_metadata_is_corrupt() {
         "got {err}"
     );
 }
+
+#[tokio::test]
+async fn undo_merge_restores_more_author_links_than_one_chunk() {
+    let _covers = crate::test_support::CoversTempDir::new("undo_author_chunks");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let total = crate::sync::AUTHOR_UPSERT_CHUNK + 5;
+    let names: Vec<String> = (0..total).map(|i| format!("Contributor {i}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    crate::sync::replace_books(
+        &pool,
+        "/lib",
+        vec![
+            crate::test_support::indexed(
+                "anthology.epub",
+                Some("Anthology"),
+                &names,
+                &[],
+                None,
+                None,
+            ),
+            crate::test_support::indexed("target.epub", Some("Target"), &["Solo"], &[], None, None),
+        ],
+    )
+    .await
+    .unwrap();
+    let books = crate::books::list_books(&pool, "/lib").await.unwrap();
+    let uuid_of = |title: &str| {
+        books
+            .iter()
+            .find(|b| b.title.as_deref() == Some(title))
+            .and_then(|b| b.unique_identifier.clone())
+            .expect("seeded book")
+    };
+    let (source, target) = (uuid_of("Anthology"), uuid_of("Target"));
+    let out = merge_books(&pool, &source, &target, None).await.unwrap();
+
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    let restored = book_id_by_uuid(&pool, &source).await;
+    let linked: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books_authors_link WHERE book = ?")
+        .bind(restored)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(usize::try_from(linked).unwrap(), total);
+}

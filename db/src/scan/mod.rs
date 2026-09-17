@@ -4,6 +4,7 @@
 //! primitives live in [`crate::physical`]; this module is the resolution brain
 //! plus the fileless-from-external-metadata composition.
 
+mod projection;
 mod resolve;
 
 #[cfg(test)]

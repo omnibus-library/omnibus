@@ -16,6 +16,30 @@ fn list_files_with_no_path_returns_empty() {
 }
 
 #[test]
+fn list_files_counts_every_extension_the_audiobook_indexer_accepts() {
+    let dir = make_test_dir("audiobook_counts");
+    fs::write(dir.join("a.m4b"), b"").unwrap();
+    fs::write(dir.join("b.m4a"), b"").unwrap();
+    fs::write(dir.join("c.mp3"), b"").unwrap();
+    fs::write(dir.join("d.flac"), b"").unwrap();
+    let result = list_files(Some(dir.to_str().unwrap()), AUDIOBOOK_EXTENSIONS);
+    fs::remove_dir_all(&dir).unwrap();
+    assert!(result.error.is_none());
+    assert_eq!(result.total_files, 4);
+    // The count and the indexer's stat walk gate on the same list.
+    assert_eq!(AUDIOBOOK_EXTENSIONS, crate::audiobook::AUDIOBOOK_EXTENSIONS);
+    for ext in ["m4b", "m4a", "mp3"] {
+        let count = result
+            .counts_by_ext
+            .iter()
+            .find(|(e, _)| e == ext)
+            .map(|(_, n)| *n);
+        assert_eq!(count, Some(1), "expected one {ext}");
+    }
+    assert!(!result.counts_by_ext.iter().any(|(e, _)| e == "flac"));
+}
+
+#[test]
 fn list_files_with_nonexistent_path_returns_error() {
     let result = list_files(
         Some("/definitely/does/not/exist/omnibus_test"),
@@ -191,8 +215,13 @@ fn scan_libraries_uses_audiobook_extensions() {
     fs::remove_dir_all(&dir).unwrap();
     assert!(result.ebooks.path.is_none());
     assert_eq!(result.audiobooks.total_files, 3);
+    // Every indexer extension gets a slot, present on disk or not.
     assert_eq!(
         result.audiobooks.counts_by_ext,
-        vec![("m4b".to_string(), 1), ("mp3".to_string(), 2)]
+        vec![
+            ("m4b".to_string(), 1),
+            ("m4a".to_string(), 0),
+            ("mp3".to_string(), 2)
+        ]
     );
 }

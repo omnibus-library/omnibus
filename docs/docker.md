@@ -2,7 +2,7 @@
 
 Omnibus ships a multi-stage [`Dockerfile`](../Dockerfile) and a
 [`docker-compose.yml`](../docker-compose.yml) modelled on the Jellyfin
-convention: bind-mount your media read-only, keep durable state in `/config`
+convention: bind-mount your media read-write, keep durable state in `/config`
 and a regenerable cache in `/cache`, and configure everything through env.
 
 > The Nix dev shell (see [local-development.md](local-development.md)) is
@@ -28,8 +28,8 @@ docker compose up -d --build
 |---|---|---|---|
 | `/config` | SQLite DB (`omnibus.db`) + cover images + journal images | **Yes** | `./config` |
 | `/cache` | WebP thumbnails + HLS transcode segments | No (regenerated) | `./cache` |
-| `/books` | Ebook library | n/a (your data) | edit the `:ro` mount |
-| `/audiobooks` | Audiobook library | n/a (your data) | edit the `:ro` mount |
+| `/books` | Ebook library | n/a (your data) | edit the bind mount |
+| `/audiobooks` | Audiobook library | n/a (your data) | edit the bind mount |
 
 Covers live under `/config` because they aren't reconstructible from the library
 files, and images a reader attaches to a journal entry sit beside them for the
@@ -79,10 +79,11 @@ environment:
 
 The container starts as root only long enough for the entrypoint to apply these
 IDs and fix ownership of the two volume roots, then drops to the unprivileged
-`omnibus` user before running the server. The read-only library mounts just need
-to be readable by that user. Migrating data that's currently owned by a
-different UID? `chown` it once on the host — the entrypoint only adjusts the
-mount roots, not their existing contents.
+`omnibus` user before running the server. The library mounts need to be
+readable by that user, and writable if you want in-app uploads to land there.
+Migrating data that's currently owned by a different UID? `chown` it once on
+the host — the entrypoint only adjusts the mount roots, not their existing
+contents.
 
 ## Behind a reverse proxy (HTTPS)
 
@@ -109,6 +110,6 @@ every boot while set.
   the host port mapping isn't already taken.
 - **No audiobook playback** — ffmpeg is bundled in the image; check the
   container logs for transcode errors and that the audiobook mount is populated.
-- **Empty library** — verify the `:ro` mounts resolve to real directories on the
+- **Empty library** — verify the library mounts resolve to real directories on the
   host and that `EBOOK_LIBRARY_PATH` / `AUDIOBOOK_LIBRARY_PATH` match the mount
   targets.

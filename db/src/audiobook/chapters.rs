@@ -52,20 +52,24 @@ const MAX_CHAPTERS: usize = 10_000;
 /// trailing atoms we ignore.
 const MAX_SAMPLE_BYTES: u64 = 64 * 1024;
 
-type BoxType = [u8; 4];
+pub(super) type BoxType = [u8; 4];
 
-struct BoxInfo {
-    data_offset: u64,
-    data_size: u64,
+pub(super) struct BoxInfo {
+    pub(super) data_offset: u64,
+    pub(super) data_size: u64,
 }
 
 /// Find a box at the current level starting from offset 0.
-fn find_box(file: &mut std::fs::File, file_len: u64, target: &BoxType) -> Option<BoxInfo> {
+pub(super) fn find_box(
+    file: &mut std::fs::File,
+    file_len: u64,
+    target: &BoxType,
+) -> Option<BoxInfo> {
     find_child_box(file, 0, file_len, target)
 }
 
 /// Find a child box within a parent box's data region.
-fn find_child_box(
+pub(super) fn find_child_box(
     file: &mut std::fs::File,
     parent_offset: u64,
     parent_size: u64,
@@ -95,7 +99,7 @@ fn advance(pos: u64, box_size: u64) -> Option<u64> {
 /// List every child box within a parent box's data region, in file order.
 /// Stops at the first structurally invalid box and returns what it gathered,
 /// so a malformed trailing sibling can't hide the boxes ahead of it.
-fn list_child_boxes(
+pub(super) fn list_child_boxes(
     file: &mut std::fs::File,
     parent_offset: u64,
     parent_size: u64,
@@ -333,7 +337,7 @@ fn read_chapter_track(file: &mut std::fs::File, trak: &BoxInfo) -> Option<Vec<Ra
 }
 
 /// The four-character handler type from `mdia/hdlr`.
-fn media_handler(file: &mut std::fs::File, mdia: &BoxInfo) -> Option<BoxType> {
+pub(super) fn media_handler(file: &mut std::fs::File, mdia: &BoxInfo) -> Option<BoxType> {
     let hdlr = find_child_box(file, mdia.data_offset, mdia.data_size, b"hdlr")?;
     // version+flags, then a pre-defined word, then the handler type.
     read_u32_in_box(file, &hdlr, 8).map(u32::to_be_bytes)

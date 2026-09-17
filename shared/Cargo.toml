@@ -7,6 +7,12 @@ license.workspace = true
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
+# Accent folding for match keys, shared by the db predicate and the WASM
+# authors filter. Pure Rust, so this crate stays WASM-safe, and already in
+# Cargo.lock transitively — a direct edge, not a new download. Chosen over
+# `deunicode` (a dependency of `db/`) because that romanizes rather than
+# folds: it would key a Japanese title as "Dong Jing".
+unicode-normalization = "0.1"
 # JSON Schema derivation for the wire types, consumed by `omnibus-mcp` to
 # publish MCP tool schemas that track what the server actually serializes.
 # Optional so the web/mobile/server builds never compile it.

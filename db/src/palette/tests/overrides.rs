@@ -527,3 +527,138 @@ async fn count_authors_agrees_with_the_rows_the_authors_arm_returns() {
     assert_eq!(hits.len(), 1);
     assert_eq!(i64::try_from(hits.len()).unwrap(), total);
 }
+
+/// Seed one book and replace its subject list through the override door,
+/// which is the path the detail page's tag editor takes.
+async fn seed_book_with_override_subjects(
+    tag: &str,
+    subjects: &[&str],
+) -> (sqlx::SqlitePool, i64, CoversTempDir) {
+    let covers = CoversTempDir::new(tag);
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user_id = crate::auth::create_user(&pool, "admin", "securepassword1")
+        .await
+        .unwrap()
+        .id;
+    replace_books(
+        &pool,
+        "/lib",
+        vec![indexed(
+            "a.epub",
+            Some("A"),
+            &["X"],
+            &["Canonical"],
+            None,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    let books = list_books(&pool, "/lib").await.unwrap();
+    let uuid = books[0].unique_identifier.clone().unwrap();
+    let ov = MetadataOverrides {
+        subjects: Some(subjects.iter().map(|s| (*s).to_string()).collect()),
+        ..Default::default()
+    };
+    upsert_metadata_overrides(&pool, &uuid, &ov, false, user_id)
+        .await
+        .unwrap();
+    (pool, user_id, covers)
+}
+
+#[tokio::test]
+async fn search_palette_tags_include_a_tag_that_exists_only_in_an_override() {
+    let (pool, _user, _covers) =
+        seed_book_with_override_subjects("palette_tag_override_only", &["Exandria"]).await;
+
+    let results = search_palette(&pool, "/lib", "Exandria").await.unwrap();
+    let hit = results
+        .tags
+        .iter()
+        .find(|t| t.name == "Exandria")
+        .expect("a tag added in the app must be findable");
+    assert_eq!(hit.book_count, 1);
+    assert!(hit.id > 0, "the row is navigable");
+    assert_eq!(results.tag_total, 1, "the total must agree with the rows");
+}
+
+#[tokio::test]
+async fn search_palette_tags_drop_an_override_only_tag_after_the_override_is_deleted() {
+    let (pool, user_id, _covers) =
+        seed_book_with_override_subjects("palette_tag_override_cleared", &["Exandria"]).await;
+
+    let books = list_books(&pool, "/lib").await.unwrap();
+    let uuid = books[0].unique_identifier.clone().unwrap();
+    upsert_metadata_overrides(
+        &pool,
+        &uuid,
+        &MetadataOverrides {
+            subjects: Some(vec![]),
+            ..Default::default()
+        },
+        false,
+        user_id,
+    )
+    .await
+    .unwrap();
+
+    let results = search_palette(&pool, "/lib", "Exandria").await.unwrap();
+    assert!(
+        !results.tags.iter().any(|t| t.name == "Exandria"),
+        "clearing the override clears the membership it created"
+    );
+    assert_eq!(results.tag_total, 0);
+}
+
+#[tokio::test]
+async fn search_palette_tags_ignore_an_override_subject_on_an_embedded_tags_first_root() {
+    let (pool, _user, _covers) =
+        seed_book_with_override_subjects("palette_tag_precedence", &["Exandria"]).await;
+    sqlx::query(
+        "UPDATE scan_roots SET metadata_precedence = '[\"omnibus_overrides\",\"embedded_tags\"]'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let results = search_palette(&pool, "/lib", "Exandria").await.unwrap();
+    assert!(
+        !results.tags.iter().any(|t| t.name == "Exandria"),
+        "a root that ranks the scan first does not take the override's subjects"
+    );
+}
+
+#[tokio::test]
+async fn search_palette_tags_tolerate_a_corrupt_overrides_blob() {
+    let (pool, _user, _covers) =
+        seed_book_with_override_subjects("palette_tag_corrupt", &["Exandria"]).await;
+    sqlx::query("UPDATE metadata_overrides SET overrides = '{not json'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // The tags arm directly: the author and series arms read override JSON
+    // without a validity guard of their own, so a whole-palette call would
+    // report their failure rather than this arm's success.
+    let rows = search_tags(&pool, "/lib", "%Canonical%", 5)
+        .await
+        .expect("a corrupt blob must not fail the tags arm");
+    assert!(
+        rows.iter().any(|t| t.name == "Canonical"),
+        "the canonical tag survives an unreadable override"
+    );
+}
+
+#[tokio::test]
+async fn count_tags_matches_the_rows_search_tags_returns_for_an_override_only_tag() {
+    let (pool, _user, _covers) =
+        seed_book_with_override_subjects("palette_tag_count_agree", &["Exandria"]).await;
+
+    let rows = search_tags(&pool, "/lib", "%Exandria%", 5).await.unwrap();
+    let total = count_tags(&pool, "/lib", "%Exandria%").await.unwrap();
+    assert_eq!(
+        i64::try_from(rows.len()).unwrap(),
+        total,
+        "the header count and the row set must come from the same rule"
+    );
+}

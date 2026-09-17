@@ -31,6 +31,7 @@ function scanBook(
     authors: TARGET.authors,
     cover_url: null,
     has_physical: false,
+    has_files: true,
     isbn: ISBN,
     ...over,
   };
@@ -145,6 +146,32 @@ test.describe("check-in overlay", () => {
     await page.keyboard.press("Escape");
 
     await expect(page.getByTestId("check-in-overlay-scrim")).toHaveCount(0);
+  });
+
+  test("Escape still dismisses the overlay after the flow advances a stage", async ({
+    page,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
+      kind: "in_library_unowned",
+      book: scanBook(uuid),
+    });
+    await openOverlay(page);
+    await submitIsbn(page);
+    await expect(page.getByTestId("check-in-confirm")).toBeVisible();
+
+    // The submit button that was clicked is gone with the lookup screen;
+    // focus is re-landed on the panel so Escape is not lost to `body`
+    // (#2525) — and again on the way back, when Cancel remounts the lookup.
+    await expect(page.getByTestId("check-in-overlay-panel")).toBeFocused();
+    await page.getByTestId("check-in-cancel").click();
+    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
+    await expect(page.getByTestId("check-in-overlay-panel")).toBeFocused();
+    await page.keyboard.press("Escape");
+
+    await expectOverlayDismissed(page);
+    await expect(page).toHaveURL(/\/$/);
   });
 
   // Every route wraps its own `ScreenLayout`, so a navigation rebuilds the

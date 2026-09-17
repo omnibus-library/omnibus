@@ -120,6 +120,35 @@ async fn create_fileless_book_reuses_one_physical_scan_root() {
 }
 
 #[tokio::test]
+async fn create_fileless_book_reduces_a_locale_formatted_provider_date_to_its_year() {
+    let _covers = CoversTempDir::new("fileless_pubdate");
+    let pool = pool().await;
+
+    let uuid = create_fileless_book(
+        &pool,
+        FilelessBook {
+            title: "The Fifth Season".into(),
+            authors: vec!["N. K. Jemisin".into()],
+            isbn: None,
+            // Google Books' shape for a US edition; every scanned book holds
+            // an ISO date here, and iOS rendered this one as "8/4/" (#2510).
+            pubdate: Some("8/4/2015".into()),
+            description: None,
+            cover: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let pubdate: Option<String> = sqlx::query_scalar("SELECT pubdate FROM books WHERE uuid = ?1")
+        .bind(&uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(pubdate.as_deref(), Some("2015"));
+}
+
+#[tokio::test]
 async fn create_fileless_book_links_multiple_authors_in_order_with_no_duplicates() {
     let _covers = CoversTempDir::new("fileless_multi_author");
     let pool = pool().await;

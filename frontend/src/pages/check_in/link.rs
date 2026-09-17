@@ -11,29 +11,28 @@ use super::screens::LibraryPickOption;
 use super::{friendly_error, FlowState};
 use crate::{data, use_server_url};
 
-/// Split the palette's pre-joined `author_display` back into names, matching
-/// how `db::scan` splits its own `group_concat`ed author list.
-fn split_authors(display: &str) -> Vec<String> {
-    display
-        .split(", ")
-        .map(str::trim)
-        .filter(|a| !a.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
 /// Turn a library-search hit into the [`ScanBook`] the confirm screen renders.
 ///
-/// `has_physical` stays `false` because the search projection carries no copy
-/// count — and nothing on this path reads it. The confirm card shows cover,
-/// title, and byline only, and the write resolves ownership server-side.
+/// The palette's `author_display` is kept as one entry rather than split on
+/// `", "`: a sort-form name (`Weir, Andy`) carries that separator itself, and
+/// splitting it turned one author into two (#2460). The byline renders a
+/// single entry verbatim, so the card reads exactly as the search row did.
+/// The two holdings flags come off the hit — `formats` says whether a file
+/// exists, `has_physical` whether a copy is filed — because the confirm
+/// subtitle is worded from both.
 pub(crate) fn scan_book_from_hit(hit: &PaletteBookHit) -> ScanBook {
+    let display = hit.author_display.trim();
     ScanBook {
         uuid: hit.uuid.clone(),
         title: hit.title.clone(),
-        authors: split_authors(&hit.author_display),
+        authors: if display.is_empty() {
+            Vec::new()
+        } else {
+            vec![display.to_string()]
+        },
         cover_url: hit.cover_url.clone(),
-        has_physical: false,
+        has_physical: hit.has_physical,
+        has_files: !hit.formats.is_empty(),
         isbn: None,
     }
 }

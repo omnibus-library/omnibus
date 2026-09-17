@@ -144,7 +144,7 @@ async fn search_palette_tags_match() {
     assert_eq!(results.tags[0].book_count, 1);
 }
 
-// #128: lock the wiring between the palette and `build_fts_match`'s
+// #128: lock the wiring between the palette and `build_search_query`'s
 // facet prefixes. A regression in the facet parser could otherwise
 // silently break palette tag:/author:/series: queries without any
 // palette test failing.

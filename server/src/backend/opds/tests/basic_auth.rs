@@ -250,6 +250,42 @@ async fn acquisition_delegates_403_without_the_download_permission() {
 }
 
 #[tokio::test]
+async fn pdf_only_books_appear_in_every_feed_with_a_pdf_acquisition_link() {
+    // The catalog predicate and `download_link` move together: a PDF-only
+    // book is servable (the `/download` delegate streams the PDF), so every
+    // feed must list it, each entry carrying the PDF acquisition link — not
+    // just the link builder in isolation.
+    let (app, pool, token) = fixture().await;
+    let uuid = seed_synced_ebook(&pool, "flatland.pdf", "Flatland", "Edwin Abbott Abbott").await;
+    let author_id = author_id_by_name(&pool, "Edwin Abbott Abbott").await;
+    let download = format!("/opds/ebooks/{uuid}/download");
+    for uri in [
+        "/opds/new".to_string(),
+        "/opds/search?q=flatland".to_string(),
+        "/opds/v2/new".to_string(),
+        "/opds/v2/search?q=flatland".to_string(),
+        format!("/opds/author/{author_id}"),
+        format!("/opds/v2/author/{author_id}"),
+    ] {
+        let res = app
+            .clone()
+            .oneshot(get_with_bearer(&uri, &token))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "uri={uri}");
+        let body = body_string(res).await;
+        assert!(
+            body.contains("Flatland"),
+            "uri={uri} must list the PDF-only book"
+        );
+        assert!(
+            body.contains(&download) && body.contains("application/pdf"),
+            "uri={uri} must carry the PDF acquisition link: {body}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn physical_only_books_are_excluded_from_new_and_search_feeds() {
     // #1811: the shared list/search queries surface physical-only books on
     // purpose for the web UI (#1181), but a catalog entry with no

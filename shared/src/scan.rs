@@ -18,6 +18,12 @@ pub struct ScanBook {
     pub cover_url: Option<String>,
     /// Whether the book already has ≥1 physical copy checked in.
     pub has_physical: bool,
+    /// Whether the book has a digital file. `false` for a paper-only or
+    /// wishlist-only book, whose confirm screen must not claim the reader
+    /// "already has this one digitally". Defaulted so a payload from before
+    /// the field decodes; nothing before it emitted the flag.
+    #[serde(default)]
+    pub has_files: bool,
     /// The book's own ISBN identifier, separator-stripped. Lets the close-match
     /// confirm show the library edition's ISBN beside the scanned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

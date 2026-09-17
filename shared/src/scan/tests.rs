@@ -267,8 +267,24 @@ fn scan_book(uuid: &str) -> ScanBook {
         authors: vec!["Jane Austen".into()],
         cover_url: None,
         has_physical: false,
+        has_files: true,
         isbn: None,
     }
+}
+
+#[test]
+fn scan_book_decodes_a_payload_without_has_files_as_fileless() {
+    // The flag is newer than the wire shape; a server that predates it sends
+    // nothing, and the conservative reading is "no file".
+    let json = serde_json::json!({
+        "uuid": "u1",
+        "title": "Pride and Prejudice",
+        "authors": ["Jane Austen"],
+        "cover_url": null,
+        "has_physical": false,
+    });
+    let book: ScanBook = serde_json::from_value(json).unwrap();
+    assert!(!book.has_files);
 }
 
 #[test]

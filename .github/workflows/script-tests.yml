@@ -1,10 +1,11 @@
-# Runs the TestFlight distribution script's test suite.
+# Runs the TestFlight scripts' test suites.
 #
-# That script only ever executes during a release dispatch, against Apple's live
-# API — so a regression in it is invisible until the one moment it matters, and
-# the failure mode it guards (a build that uploads but reaches no tester) looks
-# exactly like success. The suite stubs HTTP and needs no App Store Connect
-# credentials, so it can gate every change to the script here instead.
+# Those scripts only ever execute against Apple's live API — one during a
+# release dispatch, one on a daily schedule — so a regression is invisible
+# until the moment it matters, and the failure modes they guard (a build that
+# uploads but reaches no tester; feedback filed twice) look exactly like
+# success. The suites stub HTTP and need no App Store Connect credentials, so
+# they can gate every change to the scripts here instead.
 #
 # Deliberately scoped to this one suite rather than all of scripts/tests/: the
 # sibling bash tests expect a Nix dev shell and a worktree layout that this
@@ -18,12 +19,16 @@ on:
     branches: [main]
     paths:
       - "scripts/testflight_distribute.py"
+      - "scripts/testflight_feedback_to_issues.py"
       - "scripts/tests/testflight-distribute.test.py"
+      - "scripts/tests/testflight-feedback.test.py"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
       - "scripts/testflight_distribute.py"
+      - "scripts/testflight_feedback_to_issues.py"
       - "scripts/tests/testflight-distribute.test.py"
+      - "scripts/tests/testflight-feedback.test.py"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -47,3 +52,19 @@ jobs:
 
       - name: Run suite
         run: python scripts/tests/testflight-distribute.test.py
+
+  testflight-feedback:
+    name: testflight_feedback_to_issues.py
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: python -m pip install --quiet "pyjwt[crypto]" requests
+
+      - name: Run suite
+        run: python scripts/tests/testflight-feedback.test.py

@@ -9,16 +9,18 @@
 
 use omnibus_shared::BookFileInfo;
 
-/// Build a `<prefix>:`-scoped FTS query from a taxonomy name, so clicking a
-/// tag or genre narrows the search to the books carrying it.
+/// Build a `<prefix>:`-scoped search query from a taxonomy name, so clicking
+/// a tag or genre narrows the search to the books carrying it.
 ///
 /// **A multi-word name is quoted, not split.** `tag:"Dark academia"` is one
 /// facet; the previous `tag:Dark tag:academia` was one facet *per word*,
 /// AND-ed, which is a different question — "Science Fiction & Fantasy"
 /// became four facets including `tag:&`, and the page then returned a count
 /// that disagreed with the row the reader clicked (#2504).
-/// `db::helpers::build_fts_match` keeps a quoted run whole, so the value
-/// arrives intact and matches as an FTS phrase.
+/// `db::helpers::build_search_query` keeps a quoted run whole, so the value
+/// arrives intact and is matched as one exact tag or genre name against
+/// membership — never as an FTS phrase, which lost the name's boundaries
+/// (#2533). Only free text, `author:` and `series:` reach FTS.
 ///
 /// A single-word value stays unquoted — it needs no quoting, and the shorter
 /// URL is the one a reader sees and might edit.

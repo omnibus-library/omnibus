@@ -645,3 +645,28 @@ async fn merge_metadata_overrides_reaps_an_author_dropped_by_the_replacing_creat
         "a creators replacement drops the previous override-only author"
     );
 }
+
+#[tokio::test]
+async fn upsert_metadata_overrides_materializes_more_creators_than_one_chunk() {
+    let _covers = CoversTempDir::new("materialize_author_chunks");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user_id = crate::auth::create_user(&pool, "admin", "securepassword1")
+        .await
+        .unwrap()
+        .id;
+    let (uuid, _) = seed_one_book_by(&pool, "Scanned Author").await;
+    let total = crate::sync::AUTHOR_UPSERT_CHUNK + 5;
+    let names: Vec<String> = (0..total).map(|i| format!("Contributor {i}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+
+    upsert_metadata_overrides(&pool, &uuid, &with_creators(&names), false, user_id)
+        .await
+        .unwrap();
+
+    let materialized: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM authors WHERE name LIKE 'Contributor %'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(usize::try_from(materialized).unwrap(), total);
+}

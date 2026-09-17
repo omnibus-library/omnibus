@@ -457,3 +457,97 @@ async fn count_tags_for_paths_counts_across_given_library_paths() {
         .unwrap();
     assert_eq!(total, 2, "should count /lib-a and /lib-b but not /lib-c");
 }
+
+#[tokio::test]
+async fn search_palette_authors_match_a_name_typed_without_its_diacritics() {
+    let _covers = CoversTempDir::new("palette_authors_folded");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_books(
+        &pool,
+        "/lib",
+        vec![indexed(
+            "a.epub",
+            Some("Fortunata y Jacinta"),
+            &["Benito Pérez Galdós"],
+            &[],
+            None,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+
+    let results = search_palette(&pool, "/lib", "Perez Galdos").await.unwrap();
+    assert_eq!(
+        results.authors.first().map(|a| a.name.as_str()),
+        Some("Benito Pérez Galdós"),
+        "a reader who omits the accents must still reach the author"
+    );
+    assert_eq!(
+        results.author_total, 1,
+        "the total must agree with the row it counted"
+    );
+}
+
+#[tokio::test]
+async fn search_palette_authors_still_match_an_accented_name_when_name_norm_is_null() {
+    let _covers = CoversTempDir::new("palette_authors_null_norm");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_books(
+        &pool,
+        "/lib",
+        vec![indexed(
+            "a.epub",
+            Some("Fortunata y Jacinta"),
+            &["Benito Pérez Galdós"],
+            &[],
+            None,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE authors SET name_norm = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Typed with its accents: the folded pattern would miss the raw name, so
+    // only the raw-pattern fallback can answer this — the pre-fold behaviour.
+    let results = search_palette(&pool, "/lib", "Pérez").await.unwrap();
+    assert_eq!(
+        results.authors.first().map(|a| a.name.as_str()),
+        Some("Benito Pérez Galdós"),
+        "a row the backfill has not reached yet matches on its raw name"
+    );
+    assert_eq!(results.author_total, 1, "the count takes the same fallback");
+}
+
+#[tokio::test]
+async fn search_palette_series_still_matches_an_accented_name_typed_with_its_accents() {
+    let _covers = CoversTempDir::new("palette_series_accented");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_books(
+        &pool,
+        "/lib",
+        vec![indexed(
+            "a.epub",
+            Some("First"),
+            &["Author"],
+            &[],
+            Some(("Éclair", "1")),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+
+    // The LIKE pattern is built once in `palette::search_palette_for_paths`
+    // and shared by every arm, so folding it there would break the four arms
+    // that still match raw names.
+    let results = search_palette(&pool, "/lib", "Éclair").await.unwrap();
+    assert_eq!(
+        results.series.first().map(|s| s.name.as_str()),
+        Some("Éclair")
+    );
+}

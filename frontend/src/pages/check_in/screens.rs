@@ -38,7 +38,7 @@ pub(super) fn ConfirmScreen(
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-confirm",
             h1 { "Check in this copy" }
-            p { class: "subtitle", "You already have this one digitally \u{2014} this adds your print copy." }
+            p { class: "subtitle", {confirm_subtitle(&book)} }
             LibraryBookCard { book }
             div { class: "settings-field",
                 label { r#for: "check-in-note", "Edition note (optional)" }
@@ -71,6 +71,20 @@ pub(super) fn ConfirmScreen(
                     "Cancel"
                 }
             }
+        }
+    }
+}
+
+/// The confirm screen's one-line framing of what the copy is being added
+/// to, worded from the book's actual holdings: the "already have it
+/// digitally" line was shown for paper-only rows, where it was simply untrue
+/// (#2525).
+pub(super) fn confirm_subtitle(book: &ScanBook) -> &'static str {
+    match (book.has_files, book.has_physical) {
+        (true, _) => "You already have this one digitally \u{2014} this adds your print copy.",
+        (false, true) => "You already have a print copy of this one \u{2014} this adds another.",
+        (false, false) => {
+            "This one is in your library without a file \u{2014} this adds your print copy."
         }
     }
 }

@@ -39,11 +39,18 @@ fn map_scan_err(e: db::ScanError) -> ServerFnError {
         }
         db::ScanError::MissingWishlistTarget => ServerFnError::new(e.to_string()),
         // A provider outage is not an Omnibus bug — surface the "try again
-        // later" sentence rather than the generic internal-error text, but
-        // still log the provider's own message.
+        // later" sentence rather than the generic internal-error text, log
+        // the provider's own message, and answer 503 rather than the 500 a
+        // bare `ServerFnError::new` carries, so a monitor reading the status
+        // sees an upstream outage rather than a server fault (#2459). The
+        // REST twin in `server::backend::scan` already answers 503.
         db::ScanError::Lookup(inner @ db::MetadataLookupError::Provider(_)) => {
             tracing::warn!(error = ?inner, "metadata provider unavailable");
-            ServerFnError::new(inner.to_string())
+            ServerFnError::ServerError {
+                message: inner.to_string(),
+                code: 503,
+                details: None,
+            }
         }
         _ => internal_rpc_error("scan", e),
     }
@@ -202,17 +209,27 @@ mod tests {
     }
 
     #[test]
-    fn map_scan_err_surfaces_the_provider_outage_message_and_logs_a_warning() {
+    fn map_scan_err_surfaces_the_provider_outage_message_as_a_503() {
+        use dioxus::prelude::ServerFnError;
+
         // `.into()` targets `anyhow::Error` via `MetadataLookupError::Provider`'s
         // field type without this crate needing a direct `anyhow` dependency.
         let io_err = std::io::Error::other("provider timed out");
         let e = db::ScanError::Lookup(db::MetadataLookupError::Provider(io_err.into()));
         let err = map_scan_err(e);
         // The caller-facing sentence is deliberately generic, not the raw
-        // provider error — see `MetadataLookupError::Provider`'s doc comment.
-        // The `tracing::warn!` side effect on this branch has no return
-        // value to assert on; the message mapping is what a client observes.
-        assert!(err.to_string().contains("try again later"));
+        // provider error — see `MetadataLookupError::Provider`'s doc comment —
+        // and it must not promise a manual-entry route the web lacks. The
+        // `tracing::warn!` side effect on this branch has no return value to
+        // assert on; the message and status are what a client observes.
+        match err {
+            ServerFnError::ServerError { message, code, .. } => {
+                assert!(message.contains("try again later"), "got: {message}");
+                assert!(!message.contains("manually"), "got: {message}");
+                assert_eq!(code, 503);
+            }
+            other => panic!("expected ServerError, got {other:?}"),
+        }
     }
 
     #[test]
