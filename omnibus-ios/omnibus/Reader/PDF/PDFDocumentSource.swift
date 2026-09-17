@@ -26,7 +26,9 @@ enum PDFDocumentSource {
     /// Decide the backing from what is known. `localURL` is the download
     /// manager's answer for the ebook kind; only a `.pdf` counts, because a
     /// mixed book's download is its EPUB, which is not what this reader
-    /// opens.
+    /// opens. The cache is a refetch saver, not an offline surface: the
+    /// download is the offline contract, and `Presentation.canOpen` stops an
+    /// undownloaded book before this runs when the server is gone.
     static func backing(uuid: String, localURL: URL?, cachedURL: URL?, isOnline: Bool) -> PDFBacking {
         if let localURL, localURL.pathExtension.lowercased() == "pdf" {
             return .local(localURL)
@@ -42,6 +44,16 @@ enum PDFDocumentSource {
         guard let etag, !etag.isEmpty else { return nil }
         let safe = etag.map { $0.isLetter || $0.isNumber ? String($0) : "-" }.joined()
         return cacheDirectory.appendingPathComponent("\(uuid)-\(safe).pdf")
+    }
+
+    /// Where a fetch lands: the cache entry when the validator is known,
+    /// else one fixed per-book file that the next open overwrites — never
+    /// a fresh temporary per open, which left a whole PDF behind each time
+    /// a validator-less book was read. Only [`cacheURL`] is ever read back,
+    /// so the untracked file is never mistaken for a current copy.
+    static func fetchDestination(uuid: String, etag: String?) -> URL {
+        cacheURL(uuid: uuid, etag: etag)
+            ?? cacheDirectory.appendingPathComponent("\(uuid)-untracked.pdf")
     }
 
     static var cacheDirectory: URL {
@@ -95,9 +107,7 @@ enum PDFDocumentSource {
         for (header, value) in await APIClient.shared.authHeaders() {
             request.setValue(value, forHTTPHeaderField: header)
         }
-        let destination = cacheURL(uuid: uuid, etag: etag)
-            ?? FileManager.default.temporaryDirectory
-                .appendingPathComponent("omnibus-pdf-\(uuid)-\(UUID().uuidString).pdf")
+        let destination = fetchDestination(uuid: uuid, etag: etag)
         do {
             let (staged, response) = try await URLSession.shared.download(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0

@@ -1129,8 +1129,12 @@ struct BookDetailView: View {
         if url == nil {
             guard let data = try? await APIClient.shared.data(for: "/api/ebooks/\(book.uuid)/download")
             else { return }
+            // `/download` serves the EPUB > CBZ > PDF ladder; the share item
+            // has to carry the extension of the file that actually came back.
+            let ext = DownloadManager.targetFile(book, kind: .ebook)?.format.lowercased()
+                ?? DownloadManager.fallbackEbookExtension(book)
             let temp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(book.displayTitle).epub")
+                .appendingPathComponent("\(book.displayTitle).\(ext)")
             try? data.write(to: temp)
             url = temp
         }

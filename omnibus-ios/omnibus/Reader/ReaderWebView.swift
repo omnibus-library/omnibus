@@ -355,7 +355,15 @@ final class ReaderController: NSObject {
         // readers, so the slot can hold a `pdf-page:`/`comic-page:` anchor
         // another reader wrote; only a real CFI may reach epub.js.
         restoreCFI = startCFI?.nilIfBlank.flatMap { Self.isEpubCFI($0) ? $0 : nil }
-        pendingHighlights = highlights
+        pendingHighlights = Self.paintable(highlights)
+    }
+
+    /// The rows epub.js can place: a real CFI, not a `pdf:` anchor from the
+    /// same book's PDF reader (a mixed book shares one highlight list).
+    /// Anchorless Kobo rows are kept — they are never drawn, but they still
+    /// list, and the reconcile filters them itself.
+    static func paintable(_ highlights: [Highlight]) -> [Highlight] {
+        highlights.filter { $0.epubCFIRange.map(isEpubCFI) ?? true }
     }
 
     // MARK: - Commands
@@ -409,12 +417,13 @@ final class ReaderController: NSObject {
     /// before the reader is ready it just replaces the queue.
     func applyHighlights(_ items: [Highlight]) {
         guard isReady else {
-            pendingHighlights = items
+            pendingHighlights = Self.paintable(items)
             return
         }
-        // Kobo-origin rows have no CFI and are never drawn; only anchored
+        // Kobo-origin rows have no CFI and are never drawn, and a mixed
+        // book's `pdf:` rows belong to its other reader; only CFI-anchored
         // rows participate in the reconcile.
-        let anchored = items.filter { $0.epubCFIRange != nil }
+        let anchored = items.filter { $0.epubCFIRange.map(Self.isEpubCFI) == true }
         let previous = Dictionary(
             drawnHighlights.compactMap { h in h.epubCFIRange.map { ($0, h) } },
             uniquingKeysWith: { _, latest in latest }

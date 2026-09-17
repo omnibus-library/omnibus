@@ -42,6 +42,18 @@ struct PDFBackingTests {
         #expect(PDFDocumentSource.cacheURL(uuid: "u", etag: "") == nil)
     }
 
+    @Test("a fetch without a validator lands on one fixed file per book, never a fresh temporary")
+    func untrackedFetchIsBounded() {
+        let first = PDFDocumentSource.fetchDestination(uuid: "u", etag: nil)
+        let second = PDFDocumentSource.fetchDestination(uuid: "u", etag: nil)
+        #expect(first == second)
+        #expect(first.lastPathComponent == "u-untracked.pdf")
+        #expect(first.deletingLastPathComponent() == PDFDocumentSource.cacheDirectory)
+        // …and it is never read back as a current copy.
+        #expect(PDFDocumentSource.cacheURL(uuid: "u", etag: nil) == nil)
+        #expect(PDFDocumentSource.fetchDestination(uuid: "u", etag: "t") == PDFDocumentSource.cacheURL(uuid: "u", etag: "t"))
+    }
+
     @Test("every failure has a sentence the reader can act on")
     func failuresHaveMessages() {
         for failure in [PDFOpenFailure.offline, .damaged, .server(503), .network("timed out")] {

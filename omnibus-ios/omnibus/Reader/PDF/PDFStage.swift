@@ -175,8 +175,11 @@ struct PDFStage: UIViewRepresentable {
             guard let view, let document = view.document, let current = view.currentPage else { return }
             let index = document.index(for: current)
             if controller.page != index { controller.page = index }
-            // A turn leaves any selection behind on the old page.
+            // A turn leaves any selection, and any tapped highlight, behind
+            // on the old page — a menu anchored to the old rects would
+            // otherwise sit over the new one.
             if controller.selection != nil { controller.selection = nil }
+            if controller.tappedHighlight != nil { controller.tappedHighlight = nil }
         }
 
         /// Settled selections only: PDFKit reports every handle movement, so

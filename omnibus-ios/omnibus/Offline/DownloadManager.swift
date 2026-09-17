@@ -57,6 +57,12 @@ final class DownloadManager: NSObject {
     /// and write a second failure over the copy a `restoreReplaced` had just
     /// put back. Cleared when the record is started again.
     private var abandoned: Set<String> = []
+    /// One token per download attempt, minted when a record is created and
+    /// dropped with it. A completion that suspended — the integrity check
+    /// runs detached — compares the token on either side of the wait, so
+    /// bytes from a transfer that was cancelled and restarted meanwhile are
+    /// never installed under the replacement record.
+    private var attempts: [String: UUID] = [:]
 
     /// Records currently being moved into place. The last two parts of a book
     /// can land close enough together that both completions see every file
@@ -616,6 +622,7 @@ final class DownloadManager: NSObject {
             task.cancel()
         }
         abandoned.remove(key)
+        attempts[key] = UUID()
 
         let record = DownloadRecord(
             bookUUID: uuid, kind: kind, format: Self.formatLabel(book, kind: kind, plan: plan),
@@ -659,6 +666,17 @@ final class DownloadManager: NSObject {
             }
             await UserDataService.prefetchForOffline(uuid: uuid)
         }
+    }
+
+    /// Whether a completion that suspended still describes the record under
+    /// its key: the same attempt token on both sides of the wait, the key not
+    /// abandoned meanwhile, and a record still there to install into. Two
+    /// `nil` tokens are the relaunch case — a record adopted from disk with no
+    /// attempt minted this process — and match.
+    nonisolated static func completionIsCurrent(
+        attemptBefore: UUID?, attemptNow: UUID?, abandoned: Bool, hasRecord: Bool
+    ) -> Bool {
+        !abandoned && hasRecord && attemptBefore == attemptNow
     }
 
     /// The extension a plan falls back to when the book carries no file
@@ -746,6 +764,7 @@ final class DownloadManager: NSObject {
         await OfflineStore.shared.deleteDownload(uuid, kind: kind)
         records[key] = nil
         replacing[key] = nil
+        attempts[key] = nil
     }
 
     /// Drop registry keys already removed from the store, so the in-memory
@@ -852,9 +871,22 @@ final class DownloadManager: NSObject {
         // client yet.
         let format = record.format.lowercased()
         if format == "cbz" || format == "pdf" {
+            let attempt = attempts[key]
             let intact = await Task.detached(priority: .utility) {
                 format == "cbz" ? ComicArchive.verify(url: staged) : PDFIntegrity.verify(url: staged)
             }.value
+            // The wait above is where a cancel-and-retry can slip in: the
+            // record under this key is then a different attempt, and these
+            // bytes belong to the transfer it cancelled — installing them
+            // would mark the new attempt complete and discard its real
+            // completion when it lands.
+            guard Self.completionIsCurrent(
+                attemptBefore: attempt, attemptNow: attempts[key],
+                abandoned: abandoned.contains(key), hasRecord: records[key] != nil
+            ) else {
+                Self.discard(staged)
+                return
+            }
             guard intact else {
                 Self.discard(staged)
                 await abandon(key: key, message: "The download failed its integrity check.")
