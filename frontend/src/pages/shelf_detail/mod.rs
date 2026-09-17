@@ -1,16 +1,14 @@
-//! Shelf detail page (`/shelves/:id`). Renders the shelf rail alongside a main
-//! column showing one shelf's header (title and edit pencil, kind/visibility
-//! facets with rule chips, actions) and its member books. Smart shelves show an
-//! auto-sorted grid; manual shelves show a position-ordered grid with an
-//! "Add books" affordance.
+//! Shelf detail page (`/shelves/:id`). Resolves the shelf and its member
+//! books, then hands both to the target's surface — on web the hero, action
+//! bar, and member grid in [`body`] / [`header`]; in the native shell the
+//! home-style screen in [`mobile`] — and mounts the add-books and edit-shelf
+//! modals both share.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{EbookMetadata, Shelf, SortDir, SortKey};
 
-use crate::components::EditShelfModal;
-#[cfg(not(feature = "mobile"))]
-use crate::components::{RailActive, ShelvesRail};
+use crate::components::{EditShelfModal, PageLoading};
 use crate::{data, use_server_url, Route};
 
 mod add_books_modal;
@@ -23,9 +21,9 @@ mod mobile;
 
 use add_books_modal::AddBooksModal;
 #[cfg(not(feature = "mobile"))]
-use body::{web_shelf_body, ShelfBodySignals};
+use body::{back_crumb, ShelfBodySignals, WebShelfBody};
 
-/// Shelf detail page — see the module doc for the smart/manual split.
+/// Shelf detail page — see the module doc.
 #[component]
 pub fn ShelfDetailPage(id: i64) -> Element {
     let server_url = use_server_url();
@@ -43,6 +41,8 @@ pub fn ShelfDetailPage(id: i64) -> Element {
     // renders distinctly from a shelf that is genuinely empty (mirrors
     // `search_mobile.rs`'s `errored` signal for the same failure class).
     let errored = use_signal(|| false);
+    // Distinguishes "this shelf holds nothing" from "we don't know yet".
+    let members_ready = use_signal(|| false);
 
     use_shelf_effects(
         id,
@@ -55,63 +55,85 @@ pub fn ShelfDetailPage(id: i64) -> Element {
             error,
             books,
             errored,
+            members_ready,
         },
     );
 
     if loading() && shelf.read().is_none() {
-        return render_page_state(id, rsx! { p { class: "subtitle", "Loading\u{2026}" } });
+        return render_page_state(rsx! { PageLoading {} });
     }
 
     let Some(current) = shelf.read().clone() else {
-        return render_page_state(
-            id,
-            rsx! {
-                p { role: "alert", class: "subtitle",
-                    {error().unwrap_or_else(|| "Shelf not found.".into())}
-                }
-                Link { to: Route::Landing {}, class: "btn", "Back to All books" }
-            },
-        );
+        return render_page_state(rsx! {
+            p { role: "alert", class: "subtitle",
+                {error().unwrap_or_else(|| "Shelf not found.".into())}
+            }
+            Link { to: Route::Shelves {}, class: "btn", "Back to shelves" }
+        });
     };
 
-    let books_snapshot = books.read();
     let body = shelf_detail_body(
         &current,
-        &books_snapshot,
+        &books.read(),
         errored(),
+        members_ready(),
         &server_url,
-        sort_key,
-        show_add,
-        edit_shelf,
-        reload,
+        ShelfUi {
+            sort_key,
+            show_add,
+            edit_shelf,
+            reload,
+        },
     );
-    drop(books_snapshot);
+
+    // The add-books picker marks what the shelf already holds, so it needs the
+    // current membership rather than discovering it by a failed add.
+    let members: Vec<String> = books
+        .read()
+        .iter()
+        .filter_map(|b| b.unique_identifier.clone())
+        .collect();
 
     rsx! {
         {body}
-        {shelf_detail_modals(id, current, show_add, edit_shelf, reload)}
+        {shelf_detail_modals(current, members, show_add, edit_shelf, reload)}
     }
 }
 
-/// Web keeps the rail + toolbar layout; mobile renders the home-style
+/// The page's UI-state signals, handed to whichever surface renders it.
+/// `Copy` (Dioxus signals). Mobile drives only the two modal toggles.
+#[derive(Clone, Copy)]
+#[cfg_attr(feature = "mobile", allow(dead_code))]
+struct ShelfUi {
+    sort_key: Signal<SortKey>,
+    show_add: Signal<bool>,
+    edit_shelf: Signal<bool>,
+    reload: Signal<u32>,
+}
+
+/// Web renders the hero + member grid; mobile renders the home-style
 /// full-screen surface. Both consume the shared fetch pipeline in
 /// [`use_shelf_effects`]. (Mobile is a separate build — rule 07 hydration
 /// parity is unaffected.)
-#[allow(clippy::too_many_arguments)] // one bundle per pipeline; splitting further hides the wiring
 fn shelf_detail_body(
     current: &Shelf,
     books: &[EbookMetadata],
     errored: bool,
+    members_ready: bool,
     server_url: &str,
-    #[cfg_attr(feature = "mobile", allow(unused_variables))] sort_key: Signal<SortKey>,
-    show_add: Signal<bool>,
-    edit_shelf: Signal<bool>,
-    #[cfg_attr(feature = "mobile", allow(unused_variables))] reload: Signal<u32>,
+    ui: ShelfUi,
 ) -> Element {
     #[cfg(feature = "mobile")]
     {
-        let mut show_add = show_add;
-        let mut edit_shelf = edit_shelf;
+        // The mobile surface doesn't gate its add affordance on this yet — it
+        // has the same unknown-versus-empty membership weakness the web action
+        // bar now guards against.
+        let _ = members_ready;
+        let ShelfUi {
+            mut show_add,
+            mut edit_shelf,
+            ..
+        } = ui;
         rsx! {
             mobile::MobileShelfDetail {
                 shelf: current.clone(),
@@ -125,34 +147,47 @@ fn shelf_detail_body(
     }
     #[cfg(not(feature = "mobile"))]
     {
-        web_shelf_body(
-            current,
-            books,
-            errored,
-            server_url,
-            ShelfBodySignals {
-                sort_key,
-                show_add,
-                edit_shelf,
-                reload,
-            },
-        )
+        let ShelfUi {
+            sort_key,
+            show_add,
+            edit_shelf,
+            reload,
+        } = ui;
+        rsx! {
+            WebShelfBody {
+                shelf: current.clone(),
+                books: books.to_vec(),
+                errored,
+                members_ready,
+                server_url: server_url.to_string(),
+                signals: ShelfBodySignals {
+                    sort_key,
+                    show_add,
+                    edit_shelf,
+                    reload,
+                },
+            }
+        }
     }
 }
 
 /// The "Add books" and "Edit shelf" modals, shown when their respective
 /// signals flip true; both bump `reload` on success so the parent refetches.
 fn shelf_detail_modals(
-    shelf_id: i64,
     current: Shelf,
+    members: Vec<String>,
     mut show_add: Signal<bool>,
     mut edit_shelf: Signal<bool>,
     mut reload: Signal<u32>,
 ) -> Element {
+    let shelf_id = current.id;
+    let shelf_name = current.name.clone();
     rsx! {
         if show_add() {
             AddBooksModal {
                 shelf_id,
+                shelf_name,
+                members,
                 on_close: move |_| show_add.set(false),
                 on_added: move |_| {
                     show_add.set(false);
@@ -184,6 +219,11 @@ struct ShelfFetchSignals {
     error: Signal<Option<String>>,
     books: Signal<Vec<EbookMetadata>>,
     errored: Signal<bool>,
+    /// `true` only once a member fetch has succeeded for the shelf on screen.
+    /// An empty `books` means "none yet" before the first fetch lands and
+    /// after one fails, and the add-books picker reads membership from it —
+    /// so it must be able to tell an empty shelf from an unknown one.
+    members_ready: Signal<bool>,
 }
 
 /// Wires the two data-fetch effects backing [`ShelfDetailPage`]: the shelf
@@ -203,6 +243,7 @@ fn use_shelf_effects(
         mut error,
         mut books,
         mut errored,
+        mut members_ready,
     } = sig;
 
     // Fetch the shelf detail whenever the id changes. `id` is a plain prop
@@ -245,11 +286,16 @@ fn use_shelf_effects(
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
         spawn(async move {
+            // Membership is unknown until this fetch lands — including when
+            // the shelf on screen has just changed, where `books` still holds
+            // the previous shelf's members.
+            members_ready.set(false);
             let dir = default_dir_for(key);
             match data::shelf_page(&url, id, key, dir).await {
                 Ok(page) => {
                     books.set(page.books);
                     errored.set(false);
+                    members_ready.set(true);
                 }
                 Err(_) => {
                     // `tracing` isn't linked under the `web` (WASM) feature,
@@ -259,27 +305,27 @@ fn use_shelf_effects(
                     // books on screen under the error banner.
                     books.set(Vec::new());
                     errored.set(true);
+                    members_ready.set(false);
                 }
             }
         });
     }));
 }
 
-/// Loading / not-found chrome. Web wraps in the rail layout; mobile renders
-/// the bare screen surface.
-fn render_page_state(id: i64, inner: Element) -> Element {
+/// Loading / not-found chrome. Web keeps the way back to the index above it;
+/// mobile renders the bare screen surface.
+fn render_page_state(inner: Element) -> Element {
     #[cfg(not(feature = "mobile"))]
     {
         rsx! {
-            div { class: "shelf-layout",
-                ShelvesRail { active: RailActive::Shelf(id) }
-                div { class: "shelf-main", {inner} }
+            div { class: "shd-page",
+                {back_crumb()}
+                div { class: "shd-state", {inner} }
             }
         }
     }
     #[cfg(feature = "mobile")]
     {
-        let _ = id;
         rsx! {
             div { class: "m-shelves", {inner} }
         }
