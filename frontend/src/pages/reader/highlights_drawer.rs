@@ -1,17 +1,20 @@
 //! Highlights & notes drawer for the reader. Lists every highlight for the
 //! open book, filterable by palette color. Clicking a row navigates to the
-//! highlight's CFI; rows expose a recolor swatch strip plus note, quote,
-//! copy, and delete actions.
+//! highlight's anchor; rows expose a recolor swatch strip plus note, quote,
+//! copy, and delete actions. The viewer the rows jump into and repaint is
+//! the [`AnnotationBridge`] prop — epub.js by default, PDF.js for the PDF
+//! reader — so one drawer serves both.
 
 use dioxus::prelude::*;
 use omnibus_shared::{Highlight, HighlightColor};
 
 use super::drawer_shell::ReaderDrawerShell;
+use super::highlights::AnnotationBridge;
 
 #[cfg(test)]
 mod tests;
 
-pub(super) const PALETTE: [(HighlightColor, &str); 5] = [
+pub(crate) const PALETTE: [(HighlightColor, &str); 5] = [
     (HighlightColor::Amber, "amber"),
     (HighlightColor::Green, "green"),
     (HighlightColor::Blue, "blue"),
@@ -19,30 +22,12 @@ pub(super) const PALETTE: [(HighlightColor, &str); 5] = [
     (HighlightColor::Violet, "violet"),
 ];
 
-/// Navigate the rendition to a CFI (via the glue; SSR no-op).
-#[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(unused_variables))]
-fn navigate_to(cfi: &str) {
-    #[cfg(any(feature = "web", feature = "mobile"))]
-    super::reader_call_json("display", cfi);
-}
-
-/// Copy text to the clipboard via the glue (SSR no-op).
-#[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(unused_variables))]
-fn copy_text(text: &str) {
-    #[cfg(any(feature = "web", feature = "mobile"))]
-    super::reader_call_json("copyText", text);
-}
-
 /// Repaint a highlight's annotation in place: drop the old swatch and re-add
-/// it at the same CFI in `color` (via the glue; SSR no-op). Used when
-/// recoloring so the viewer reflects the new color without a full reload.
-#[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(unused_variables))]
-fn reannotate(cfi: &str, color: HighlightColor) {
-    #[cfg(any(feature = "web", feature = "mobile"))]
-    {
-        super::reader_call_json("removeAnnotation", cfi);
-        super::reader_call_json2("addAnnotation", cfi, color.as_str());
-    }
+/// it at the same anchor in `color`. Used when recoloring so the viewer
+/// reflects the new color without a full reload.
+fn reannotate(bridge: AnnotationBridge, anchor: &str, color: HighlightColor) {
+    (bridge.unpaint)(anchor);
+    (bridge.paint)(anchor, color);
 }
 
 /// Recolor a highlight to `next`: optimistically repaint the viewer + the row
@@ -59,6 +44,7 @@ fn spawn_recolor(
     cfi: Option<String>,
     next: HighlightColor,
     prev: HighlightColor,
+    bridge: AnnotationBridge,
 ) {
     if next == prev {
         return;
@@ -66,7 +52,7 @@ fn spawn_recolor(
     // A Kobo-origin highlight has no CFI, so there is nothing painted in the
     // viewer to repaint — the row color and the persisted value still change.
     if let Some(cfi) = &cfi {
-        reannotate(cfi, next);
+        reannotate(bridge, cfi, next);
     }
     // Bind the index first so the read guard drops before `write()` — a live
     // `read()` temporary across `write()` is a runtime borrow panic.
@@ -87,7 +73,7 @@ fn spawn_recolor(
                 .any(|h| h.id == id && h.color == next);
             if still_ours {
                 if let Some(cfi) = &cfi {
-                    reannotate(cfi, prev);
+                    reannotate(bridge, cfi, prev);
                 }
                 let idx = highlights.read().iter().position(|h| h.id == id);
                 if let Some(i) = idx {
@@ -99,11 +85,15 @@ fn spawn_recolor(
 }
 
 #[component]
-pub(super) fn HighlightsDrawer(
+pub(crate) fn HighlightsDrawer(
     highlights: Signal<Vec<Highlight>>,
     on_quote: EventHandler<Highlight>,
     on_edit_note: EventHandler<Highlight>,
     on_close: EventHandler<()>,
+    /// The viewer the rows jump into and repaint; epub.js unless a reader
+    /// says otherwise.
+    #[props(default)]
+    bridge: AnnotationBridge,
 ) -> Element {
     let mut filter = use_signal(|| None::<HighlightColor>);
 
@@ -154,6 +144,7 @@ pub(super) fn HighlightsDrawer(
                             highlights,
                             on_quote,
                             on_edit_note,
+                            bridge,
                         }
                     }
                 }
@@ -169,6 +160,7 @@ fn build_delete_handler(
     mut highlights: Signal<Vec<Highlight>>,
     id: i64,
     cfi: Option<String>,
+    bridge: AnnotationBridge,
 ) -> impl FnMut(MouseEvent) + 'static {
     move |_| {
         let cfi = cfi.clone();
@@ -178,9 +170,7 @@ fn build_delete_handler(
                 // Anchorless (Kobo-origin) rows have no painted swatch to
                 // remove from the rendition.
                 if let Some(cfi) = &cfi {
-                    #[cfg(any(feature = "web", feature = "mobile"))]
-                    super::reader_call_json("removeAnnotation", cfi);
-                    let _ = cfi;
+                    (bridge.unpaint)(cfi);
                 }
                 highlights.write().retain(|h| h.id != id);
                 // Deleting removes the focused button, dropping focus to
@@ -205,6 +195,7 @@ fn hl_swatch_strip(
     server_url: String,
     highlights: Signal<Vec<Highlight>>,
     id: i64,
+    bridge: AnnotationBridge,
 ) -> Element {
     rsx! {
         div { class: "rd-hl-swatches", "data-testid": "reader-highlight-swatches",
@@ -220,7 +211,7 @@ fn hl_swatch_strip(
                     onclick: {
                         let recolor_cfi = recolor_cfi.clone();
                         let server_url = server_url.clone();
-                        move |_| spawn_recolor(server_url.clone(), highlights, id, recolor_cfi.clone(), swatch_color, cur_color)
+                        move |_| spawn_recolor(server_url.clone(), highlights, id, recolor_cfi.clone(), swatch_color, cur_color, bridge)
                     },
                 }
             }
@@ -231,13 +222,22 @@ fn hl_swatch_strip(
 /// Note/quote/copy/delete action row.
 fn hl_actions_row(
     highlight: &Highlight,
-    note_label: &str,
-    has_text: bool,
-    copy_src: String,
     on_quote: EventHandler<Highlight>,
     on_edit_note: EventHandler<Highlight>,
     on_delete: impl FnMut(MouseEvent) + 'static,
+    bridge: AnnotationBridge,
 ) -> Element {
+    // Legacy highlights created before the text column have nothing to copy;
+    // disable the action rather than offer a silent no-op.
+    let has_text = highlight.text.is_some();
+    let copy_src = highlight.text.clone().unwrap_or_default();
+    // The note button both adds a first note and edits an existing one; its
+    // label reflects which so the affordance reads correctly either way.
+    let note_label = if highlight.note.is_some() {
+        "Edit note"
+    } else {
+        "Add note"
+    };
     rsx! {
         div { class: "rd-hl-actions",
             button {
@@ -264,7 +264,7 @@ fn hl_actions_row(
                 class: "rd-act sm",
                 r#type: "button",
                 disabled: !has_text,
-                onclick: move |_| copy_text(&copy_src),
+                onclick: move |_| (bridge.copy)(&copy_src),
                 "Copy"
             }
             button {
@@ -279,11 +279,12 @@ fn hl_actions_row(
 }
 
 #[component]
-pub(super) fn HighlightRow(
+pub(crate) fn HighlightRow(
     highlight: Highlight,
     highlights: Signal<Vec<Highlight>>,
     on_quote: EventHandler<Highlight>,
     on_edit_note: EventHandler<Highlight>,
+    #[props(default)] bridge: AnnotationBridge,
 ) -> Element {
     let server_url = crate::contexts::use_server_url();
     let color = highlight.color.as_str();
@@ -293,19 +294,8 @@ pub(super) fn HighlightRow(
         .unwrap_or_else(|| "(highlighted passage)".to_string());
     let note = highlight.note.clone();
     let cfi = highlight.epub_cfi_range.clone();
-    let copy_src = highlight.text.clone().unwrap_or_default();
-    // Legacy highlights created before the text column have nothing to copy;
-    // disable the action rather than offer a silent no-op.
-    let has_text = highlight.text.is_some();
-    // The note button both adds a first note and edits an existing one; its
-    // label reflects which so the affordance reads correctly either way.
-    let note_label = if highlight.note.is_some() {
-        "Edit note"
-    } else {
-        "Add note"
-    };
     let id = highlight.id;
-    let on_delete = build_delete_handler(server_url.clone(), highlights, id, cfi);
+    let on_delete = build_delete_handler(server_url.clone(), highlights, id, cfi, bridge);
 
     let cur_color = highlight.color;
     let recolor_cfi = highlight.epub_cfi_range.clone();
@@ -321,7 +311,7 @@ pub(super) fn HighlightRow(
                 disabled: nav_cfi.is_none(),
                 onclick: move |_| {
                     if let Some(cfi) = &nav_cfi {
-                        navigate_to(cfi);
+                        (bridge.navigate)(cfi);
                     }
                 },
                 "\u{201c}{quote}\u{201d}"
@@ -329,8 +319,8 @@ pub(super) fn HighlightRow(
             if let Some(n) = note {
                 div { class: "rd-hl-note", "{n}" }
             }
-            {hl_swatch_strip(cur_color, recolor_cfi, server_url, highlights, id)}
-            {hl_actions_row(&highlight, note_label, has_text, copy_src, on_quote, on_edit_note, on_delete)}
+            {hl_swatch_strip(cur_color, recolor_cfi, server_url, highlights, id, bridge)}
+            {hl_actions_row(&highlight, on_quote, on_edit_note, on_delete, bridge)}
         }
     }
 }

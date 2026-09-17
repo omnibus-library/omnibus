@@ -27,6 +27,7 @@ mod listen;
 mod logs;
 mod metadata_edit;
 mod not_found;
+mod pdf_reader;
 mod reader;
 mod search;
 #[cfg(feature = "mobile")]
@@ -67,6 +68,7 @@ pub(crate) use listen::{mobile_dock_is_active, MobileAudioHost, MobileMiniPlayer
 pub use logs::LogsPage;
 pub use metadata_edit::MetadataEditPage;
 pub use not_found::NotFoundPage;
+pub use pdf_reader::PdfReadPage;
 pub use reader::BookReadPage;
 pub use search::SearchPage;
 #[cfg(feature = "mobile")]

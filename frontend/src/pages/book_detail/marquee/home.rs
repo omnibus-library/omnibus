@@ -19,13 +19,14 @@ use crate::pages::book_detail::chips::{BdChipKind, BdChipListEditor};
 use crate::pages::book_detail::dates::{fmt_long_date, local_date_offset, use_local_dates_ready};
 use crate::pages::book_detail::export_menu::{BdExportContext, BdExportMenu};
 use crate::pages::book_detail::file_picker::{
-    is_audio_book_file, BdFilePickerMenu, FilePickerChrome, FilePickerKind,
+    is_audio_book_file, is_readable_book_file, BdFilePickerMenu, FilePickerChrome, FilePickerKind,
 };
 use crate::pages::book_detail::immersive::BdImmersiveButton;
 use crate::pages::book_detail::physical::{find_a_copy_url, remove_from_wishlist};
 use crate::pages::book_detail::read_status::BdReadStatusControl;
 use crate::pages::book_detail::sync_link::BdSyncPanel;
 use crate::pages::book_detail::PhysSignals;
+use crate::routes::link_target;
 use crate::{data, use_server_url, Route};
 
 use super::{MarqueeProgress, MarqueeViewFacts};
@@ -389,10 +390,13 @@ fn MarqueeCtaRow(
         .map(|c| c.name.clone())
         .unwrap_or_default();
     let title = view.title.clone();
-    let epub_files: Vec<BookFileInfo> = b
+    // Every file the Read picker can open: the EPUBs plus any PDF, so a
+    // mixed EPUB+PDF book keeps the EPUB as its Read CTA and still offers
+    // the PDF through the menu (each row routes by its own format).
+    let read_files: Vec<BookFileInfo> = b
         .book_files
         .iter()
-        .filter(|f| f.format.eq_ignore_ascii_case("EPUB"))
+        .filter(|f| is_readable_book_file(f))
         .cloned()
         .collect();
     let audio_files: Vec<BookFileInfo> = b
@@ -437,11 +441,13 @@ fn MarqueeCtaRow(
                     "No ebook or audiobook files in your library yet \u{2014} this title is tracked from your physical collection or wishlist."
                 }
             } else {
+                // The reader ladder is EPUB > CBZ > PDF, the same order
+                // `routes::resume_route` applies to a Continue point.
                 if view.has_ebook {
                     BdFilePickerMenu {
                         uuid: uuid.clone(),
                         kind: FilePickerKind::Read,
-                        files: epub_files.clone(),
+                        files: read_files.clone(),
                         chrome: FilePickerChrome {
                             label: read_verb.clone(),
                             button_class: "btn primary lg".to_string(),
@@ -453,6 +459,13 @@ fn MarqueeCtaRow(
                         to: Route::ComicRead { uuid: uuid.clone() },
                         class: "btn primary lg",
                         "data-testid": "start-reading-comic",
+                        "{read_verb}"
+                    }
+                } else if view.has_pdf {
+                    Link {
+                        to: link_target(Route::PdfRead { uuid: uuid.clone(), file_id: None, page: None }),
+                        class: "btn primary lg",
+                        "data-testid": "start-reading-pdf",
                         "{read_verb}"
                     }
                 } else if view.has_audio {
@@ -467,7 +480,7 @@ fn MarqueeCtaRow(
                         },
                     }
                 }
-                if view.has_audio && (view.has_ebook || view.has_comic) {
+                if view.has_audio && (view.has_ebook || view.has_comic || view.has_pdf) {
                     BdFilePickerMenu {
                         uuid: uuid.clone(),
                         kind: FilePickerKind::Listen,

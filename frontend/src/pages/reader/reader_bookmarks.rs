@@ -10,7 +10,7 @@ use omnibus_shared::CreateBookmark;
 use super::drawer_shell::ReaderDrawerShell;
 
 #[component]
-pub(super) fn ReaderBookmarksDrawer(
+pub(crate) fn ReaderBookmarksDrawer(
     uuid: String,
     current_cfi: String,
     current_label: String,

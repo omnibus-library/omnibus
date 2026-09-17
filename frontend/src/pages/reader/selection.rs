@@ -15,7 +15,7 @@ pub(crate) struct SelectionData {
 }
 
 /// Bounding rect of a live selection in viewport coordinates.
-#[derive(Clone, Default, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize)]
 pub(crate) struct SelectionRect {
     pub(crate) x: f64,
     pub(crate) y: f64,

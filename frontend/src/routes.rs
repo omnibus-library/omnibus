@@ -38,6 +38,12 @@ pub enum Route {
     BookRead { uuid: String },
     #[route("/comic/:uuid")]
     ComicRead { uuid: String },
+    #[route("/pdf/:uuid?:file_id&:page")]
+    PdfRead {
+        uuid: String,
+        file_id: Option<i64>,
+        page: Option<i64>,
+    },
     #[route("/listen/:uuid?:file_id")]
     BookListen { uuid: String, file_id: Option<i64> },
     #[route("/authors")]
@@ -327,6 +333,42 @@ pub fn ComicRead(uuid: String) -> Element {
     }
 }
 
+/// Route target for `/pdf/:uuid` — the immersive PDF reader (PDF.js).
+/// Same no-chrome + docked-audio contract as [`ComicRead`]. `file_id` picks
+/// one `book_files` row on a mixed-format book (the file picker's
+/// `?file_id=`), and `page` is a 1-based deep link — the book-detail
+/// saved-passages "open in book" for a PDF highlight — that wins over the
+/// saved position.
+#[cfg(not(feature = "mobile"))]
+#[component]
+pub fn PdfRead(uuid: String, file_id: Option<i64>, page: Option<i64>) -> Element {
+    use_page_title(|| Some("PDF".into()));
+    let playback = crate::use_playback();
+    let docked = dock_is_active(&playback.book.read(), &playback.uuid.read());
+    rsx! {
+        div { class: if docked { "rd-host rd-dock-full rd-immersive" } else { "rd-host rd-dock-full" },
+            PdfReadPage { uuid, file_id, page }
+            MiniDock {}
+        }
+    }
+}
+
+/// Mobile variant of [`PdfRead`] — same [`crate::pages::MobileMiniPlayer`]
+/// docking contract as the mobile [`ComicRead`].
+#[cfg(feature = "mobile")]
+#[component]
+pub fn PdfRead(uuid: String, file_id: Option<i64>, page: Option<i64>) -> Element {
+    use_page_title(|| Some("PDF".into()));
+    let ctx = use_context::<MobilePlayback>();
+    let docked = mobile_dock_is_active(&ctx.view.read(), (ctx.unsupported)());
+    rsx! {
+        div { class: if docked { "rd-host rd-immersive" } else { "rd-host" },
+            PdfReadPage { uuid, file_id, page }
+            MobileMiniPlayer {}
+        }
+    }
+}
+
 /// Route target for `/listen/:uuid` — the immersive audiobook player.
 /// Same uuid-keyed stability + no-chrome rationale as [`BookRead`]; the
 /// player owns its own slim top bar.
@@ -505,10 +547,19 @@ pub fn NotFound(segments: Vec<String>) -> Element {
 /// missing query and an empty one identically. Use this anywhere such a
 /// route becomes a `Link`'s `to` or a `Navigator::push`.
 pub fn link_target(route: Route) -> NavigationTarget {
-    let url = route.to_string();
-    match url.strip_suffix('?') {
-        Some(trimmed) => NavigationTarget::Internal(trimmed.to_string()),
-        None => NavigationTarget::Internal(url),
+    NavigationTarget::Internal(trim_query_separators(&route.to_string()))
+}
+
+/// The dangling separators the router macro writes for absent optional
+/// query arguments: a trailing `?` when none is set, a trailing `&` when
+/// only the first of two is (`/pdf/<uuid>?file_id=917&`), and a leading `?&`
+/// when only the second is. Routing reads all three forms identically; a
+/// copied or bookmarked URL should not carry them.
+fn trim_query_separators(url: &str) -> String {
+    let trimmed = url.trim_end_matches(['?', '&']);
+    match trimmed.split_once("?&") {
+        Some((path, query)) => format!("{path}?{query}"),
+        None => trimmed.to_string(),
     }
 }
 
@@ -524,10 +575,10 @@ pub fn resume_route(point: &omnibus_shared::ResumePoint) -> Route {
         },
         // Comics and PDFs reuse the Epub-format progress record (see
         // `omnibus_shared::comic_page_anchor` / `pdf_page_anchor`), so the
-        // format alone can't pick the reader — a CBZ-only book resumes into
-        // the pager, anything with a real EPUB keeps the epub.js reader, and
-        // a PDF-only book lands on its detail page until the PDF reader
-        // exists (a `pdf-page:` anchor must never reach epub.js).
+        // format alone can't pick the reader — the precedence ladder is
+        // EPUB > CBZ > PDF: anything with a real EPUB keeps the epub.js
+        // reader (a `pdf-page:` anchor must never reach it), a CBZ-only book
+        // resumes into the pager, and a PDF-only book into the PDF reader.
         omnibus_shared::ProgressFormat::Epub => {
             let formats = &point.book.formats;
             let has = |ext: &str| formats.iter().any(|f| f.eq_ignore_ascii_case(ext));
@@ -536,7 +587,11 @@ pub fn resume_route(point: &omnibus_shared::ResumePoint) -> Route {
             } else if has("cbz") {
                 Route::ComicRead { uuid }
             } else if has("pdf") {
-                Route::BookDetail { uuid }
+                Route::PdfRead {
+                    uuid,
+                    file_id: None,
+                    page: None,
+                }
             } else {
                 Route::BookRead { uuid }
             }
@@ -630,14 +685,88 @@ mod tests {
     }
 
     #[test]
-    fn resume_route_sends_a_pdf_only_book_to_its_detail_page() {
+    fn resume_route_sends_a_pdf_only_book_to_the_pdf_reader() {
         let mut p = point(ProgressFormat::Epub, None);
         p.book.formats = vec!["PDF".into()];
         assert_eq!(
             resume_route(&p),
-            Route::BookDetail {
+            Route::PdfRead {
+                uuid: "book-a".into(),
+                file_id: None,
+                page: None,
+            }
+        );
+    }
+
+    #[test]
+    fn resume_route_prefers_the_epub_reader_over_a_pdf_on_a_mixed_book() {
+        // The `pdf-page:` anchor on the shared record must never reach
+        // epub.js, but the EPUB is still the book's reader: the PDF is only
+        // reachable through the file picker.
+        let mut p = point(ProgressFormat::Epub, None);
+        p.book.formats = vec!["PDF".into(), "EPUB".into()];
+        assert_eq!(
+            resume_route(&p),
+            Route::BookRead {
                 uuid: "book-a".into()
             }
+        );
+    }
+
+    #[test]
+    fn resume_route_prefers_the_comic_pager_over_a_pdf() {
+        let mut p = point(ProgressFormat::Epub, None);
+        p.book.formats = vec!["pdf".into(), "cbz".into()];
+        assert_eq!(
+            resume_route(&p),
+            Route::ComicRead {
+                uuid: "book-a".into()
+            }
+        );
+    }
+
+    #[test]
+    fn link_target_trims_the_separators_left_by_one_absent_query_argument() {
+        // Two optional query args: setting only the first leaves a trailing
+        // `&`, only the second a leading `?&`. Neither belongs in an href.
+        assert_eq!(
+            link_target(Route::PdfRead {
+                uuid: "book-a".into(),
+                file_id: Some(917),
+                page: None,
+            }),
+            NavigationTarget::Internal("/pdf/book-a?file_id=917".into())
+        );
+        assert_eq!(
+            link_target(Route::PdfRead {
+                uuid: "book-a".into(),
+                file_id: None,
+                page: Some(4),
+            }),
+            NavigationTarget::Internal("/pdf/book-a?page=4".into())
+        );
+        assert_eq!(trim_query_separators("/x?a=1&"), "/x?a=1");
+        assert_eq!(trim_query_separators("/x?&b=2"), "/x?b=2");
+        assert_eq!(trim_query_separators("/x?&"), "/x");
+    }
+
+    #[test]
+    fn link_target_trims_the_pdf_route_with_no_query_arguments() {
+        assert_eq!(
+            link_target(Route::PdfRead {
+                uuid: "book-a".into(),
+                file_id: None,
+                page: None,
+            }),
+            NavigationTarget::Internal("/pdf/book-a".into())
+        );
+        assert_eq!(
+            link_target(Route::PdfRead {
+                uuid: "book-a".into(),
+                file_id: Some(917),
+                page: Some(4),
+            }),
+            NavigationTarget::Internal("/pdf/book-a?file_id=917&page=4".into())
         );
     }
 

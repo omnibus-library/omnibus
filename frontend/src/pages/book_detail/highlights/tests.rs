@@ -157,6 +157,56 @@ fn reader_deep_link_encodes_the_cfi_into_the_query() {
     );
 }
 
+#[test]
+fn reader_deep_link_routes_a_pdf_anchor_to_the_pdf_reader_by_page() {
+    // A PDF passage opens `/pdf/{uuid}?page=N` — 1-based, what a reader
+    // sees in the footer — never the epub reader with a `pdf:` in `?cfi=`.
+    assert_eq!(
+        reader_deep_link(
+            "book-uuid",
+            "pdf:3:72.0,710.2,172.0,710.2,72.0,700.0,172.0,700.0"
+        ),
+        "/pdf/book-uuid?page=4"
+    );
+    assert_eq!(
+        reader_deep_link("book-uuid", "pdf:0"),
+        "/pdf/book-uuid?page=1"
+    );
+}
+
+#[test]
+fn highlight_locator_names_a_pdf_page_when_the_outline_has_no_entry() {
+    assert_eq!(
+        highlight_locator("pdf:6:0,0,1,0,0,1,1,1", &[]),
+        Some("Page 7".to_string())
+    );
+    // Outline entries all past the page: still the page.
+    assert_eq!(
+        highlight_locator("pdf:2", &toc(&[("Chapter I", 5), ("Chapter II", 9)])),
+        Some("Page 3".to_string())
+    );
+}
+
+#[test]
+fn highlight_locator_names_the_pdf_outline_entry_covering_the_page() {
+    // A PDF's structure rows are one spine entry per page, so an outline
+    // entry's spine index is the page it opens on.
+    let outline = toc(&[("Cover", 0), ("Chapter I", 5), ("Chapter II", 9)]);
+    assert_eq!(
+        highlight_locator("pdf:7", &outline),
+        Some("Chapter I".to_string())
+    );
+    assert_eq!(
+        highlight_locator("pdf:9", &outline),
+        Some("Chapter II".to_string())
+    );
+    // An untitled entry has no name to print: the page stays.
+    assert_eq!(
+        highlight_locator("pdf:1", &toc(&[("   ", 0)])),
+        Some("Page 2".to_string())
+    );
+}
+
 // SSR render-smoke coverage. These need the `server` feature (`dioxus::ssr`).
 #[cfg(feature = "server")]
 mod render_tests {
