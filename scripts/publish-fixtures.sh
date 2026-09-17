@@ -86,7 +86,7 @@ gh release create "$version" "$tmp/$asset" \
   --latest=false
 
 echo "Verifying published asset hash..." >&2
-url="https://github.com/seamus-sloan/omnibus/releases/download/$version/$asset"
+url="https://github.com/omnibus-library/omnibus/releases/download/$version/$asset"
 curl -fsSL --retry 3 -o "$tmp/published.tar.gz" "$url"
 published_sha="$(sha256_of "$tmp/published.tar.gz")"
 if [ "$published_sha" != "$local_sha" ]; then

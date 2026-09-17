@@ -16,7 +16,7 @@
 set -euo pipefail
 
 FIXTURES_VERSION="fixtures-v2"
-FIXTURES_URL="https://github.com/seamus-sloan/omnibus/releases/download/${FIXTURES_VERSION}/omnibus-fixtures-v2.tar.gz"
+FIXTURES_URL="https://github.com/omnibus-library/omnibus/releases/download/${FIXTURES_VERSION}/omnibus-fixtures-v2.tar.gz"
 FIXTURES_SHA256="f2c95dafccdc553f34706372a5eb24f83888516d5b7b01dbc33a45916165bf50"
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
