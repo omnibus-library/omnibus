@@ -130,7 +130,10 @@ before the write, refusing one whose generation moved (#2547); a 304 vouching
 for bytes already gone does not stamp the window either. Revalidation also
 *returns* its replacement rather than only writing it — a cache corrected behind
 a view holding its decoded copy heals one render late, which reads as never
-healing to anyone checking once per launch.
+healing to anyone checking once per launch. **An invalidation is announced, not
+just applied**: a view fetches once per path and a cover write never changes
+the path, so a mounted `RemoteImage` re-asks when `ImageInvalidations` says its
+key's generation moved — the detail hero kept the old art otherwise (#2490).
 
 **A missing validator is not a fourth skip.** It once was, on both clients, and
 the reasoning looked sound: with nothing to offer as `If-None-Match` the check

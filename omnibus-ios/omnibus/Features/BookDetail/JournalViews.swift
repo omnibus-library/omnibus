@@ -67,13 +67,21 @@ struct JournalComposer: View {
 
     /// Set in the reading face the entry will be rendered in, so what you type
     /// is what you get rather than sans in, serif out.
+    ///
+    /// No `.lineSpacing` here, although the rendered entry has some: on the
+    /// editor it is applied as a paragraph style the caret rect does not
+    /// include, so every scroll-to-caret lands a little short and the text
+    /// view corrects it a frame later — a bounce that grows by one line's
+    /// spacing per line of text, until a long entry jitters on every few
+    /// letters. The bottom margin is what keeps the caret line clear of the
+    /// options docked under the editor.
     private var editor: some View {
         TextEditor(text: $body_)
             .font(.display(19))
-            .lineSpacing(5)
             .foregroundStyle(palette.ink0Color)
             .tint(palette.accentColor)
             .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, Spacing.lg, for: .scrollContent)
             .padding(.horizontal, Spacing.screen - 5)
             .padding(.top, Spacing.sm)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

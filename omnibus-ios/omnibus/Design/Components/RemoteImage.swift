@@ -275,20 +275,23 @@ actor ImageCache {
     /// seconds: after *this* device replaces its own avatar, the new picture
     /// would otherwise not appear for up to five minutes. Other devices still
     /// wait for the normal window, same as covers.
-    func invalidate(_ key: String) {
+    func invalidate(_ key: String) async {
         // Before the removals, so a fetch that resolves between them and the
         // next `store` is already refused.
         generations[key, default: 0] += 1
         memory.removeObject(forKey: key as NSString)
         try? FileManager.default.removeItem(at: diskURL(for: key))
         try? FileManager.default.removeItem(at: etagURL(for: key))
+        // Last, so a view that re-asks on the announcement finds the key gone.
+        await ImageInvalidations.shared.bump()
     }
 
-    func clearDisk() {
+    func clearDisk() async {
         globalGeneration += 1
         try? FileManager.default.removeItem(at: directory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         memory.removeAllObjects()
+        await ImageInvalidations.shared.bump()
     }
 
     func diskBytes() -> Int64 {
@@ -330,6 +333,25 @@ struct ExternalImage<Placeholder: View>: View {
     }
 }
 
+/// Announces cache invalidations to the views already showing an image.
+///
+/// `RemoteImage` fetches once per path, and a path never changes when the
+/// bytes behind it do — so a detail hero on screen while its cover was
+/// replaced kept the image it held, however thoroughly the cache had been
+/// emptied underneath it. This is the signal it re-asks on. One counter for
+/// every key rather than one per key: a view compares its own key's
+/// generation before refetching, so an unrelated write costs it one cache
+/// read, and cover writes are rare.
+@MainActor @Observable
+final class ImageInvalidations {
+    static let shared = ImageInvalidations()
+
+    /// Bumped on every `invalidate` and `clearDisk`.
+    private(set) var count = 0
+
+    func bump() { count += 1 }
+}
+
 /// Loads an authenticated image, showing `placeholder` until it lands.
 struct RemoteImage<Placeholder: View>: View {
     let path: String?
@@ -346,6 +368,9 @@ struct RemoteImage<Placeholder: View>: View {
 
     @State private var image: UIImage?
     @State private var isLoading = false
+    /// The cache generation `image` was loaded under — what an invalidation
+    /// announcement is compared against to tell "my cover" from "some cover".
+    @State private var loadedGeneration: Int?
 
     var body: some View {
         Group {
@@ -359,6 +384,12 @@ struct RemoteImage<Placeholder: View>: View {
             }
         }
         .task(id: path) { await load() }
+        // A cover write drops this key from the cache, but nothing above
+        // changes: the path is the same, so `task(id:)` never re-runs. Re-ask
+        // when the key this view loaded under has moved.
+        .onChange(of: ImageInvalidations.shared.count) { _, _ in
+            Task { await reloadIfInvalidated() }
+        }
         // A cover the client skipped while the server was unreachable would
         // otherwise stay a blank plate until something rebuilt the view. Read
         // inline rather than stored — a stored property would land in the
@@ -369,11 +400,18 @@ struct RemoteImage<Placeholder: View>: View {
         }
     }
 
+    private func reloadIfInvalidated() async {
+        guard let path, !path.isEmpty else { return }
+        guard await ImageCache.shared.generation(for: path) != loadedGeneration else { return }
+        await load()
+    }
+
     private func load() async {
         guard let path, !path.isEmpty else {
             image = nil
             return
         }
+        loadedGeneration = await ImageCache.shared.generation(for: path)
         if let cached = await ImageCache.shared.image(for: path) {
             image = cached
             // Draw first, ask after: the cached art is already on screen, so
