@@ -39,6 +39,33 @@ struct ImageCacheInvalidationTests {
 
     private let key = "/api/thumbs/book-uuid/md"
 
+    /// `RemoteImage` only ever re-runs its load when `task(id:)`'s path
+    /// changes, and a cover write never changes the path — so a hero on
+    /// screen when the cover was replaced kept the old art after every cache
+    /// key had been dropped. The announcement is what it re-asks on; the
+    /// shared counter is compared with `>` because sibling tests bump it too.
+    @Test("an invalidation is announced to the views already showing the key")
+    func invalidationIsAnnounced() async {
+        let cache = makeCache()
+        let before = await ImageInvalidations.shared.count
+        await cache.invalidate(key)
+        #expect(await ImageInvalidations.shared.count > before)
+
+        let mid = await ImageInvalidations.shared.count
+        await cache.clearDisk()
+        #expect(await ImageInvalidations.shared.count > mid)
+    }
+
+    @Test("an invalidation moves the key's generation past what a view loaded under")
+    func generationMovesOnInvalidation() async {
+        let cache = makeCache()
+        let (cover, bytes) = cover(red: 0, green: 1, blue: 0)
+        await cache.store(cover, data: bytes, for: key, etag: "\"g\"")
+        let loadedUnder = await cache.generation(for: key)
+        await cache.invalidate(key)
+        #expect(await cache.generation(for: key) != loadedUnder)
+    }
+
     @Test("a fetch in flight when the key is invalidated does not put the old cover back")
     func aLateStoreIsRefused() async {
         let cache = makeCache()
