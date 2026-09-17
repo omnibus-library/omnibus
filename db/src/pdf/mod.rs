@@ -34,6 +34,32 @@ pub fn is_pdf_path(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
 }
 
+/// Default for [`parse_max_bytes`]: 512 MiB. Both parsers need the whole
+/// file in memory, so this bounds what a scan or an upload allocates for
+/// one PDF; a file past it still indexes, from its filename alone.
+const DEFAULT_PARSE_MAX_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Largest file either parser will load at all, from
+/// `OMNIBUS_PDF_PARSE_MAX_BYTES` (bytes) else [`DEFAULT_PARSE_MAX_BYTES`].
+pub fn parse_max_bytes() -> u64 {
+    std::env::var("OMNIBUS_PDF_PARSE_MAX_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_PARSE_MAX_BYTES)
+}
+
+/// Read the file for the lazy parser, refusing one past [`parse_max_bytes`]
+/// before allocating for it.
+pub(super) fn read_within_parse_cap(path: &Path) -> anyhow::Result<Vec<u8>> {
+    let size = std::fs::metadata(path)?.len();
+    let cap = parse_max_bytes();
+    if size > cap {
+        anyhow::bail!("{size} bytes exceeds the {cap}-byte PDF parse cap");
+    }
+    Ok(std::fs::read(path)?)
+}
+
 /// Default for [`text_max_bytes`]: 128 MiB. The text extractor loads the
 /// whole document (several times the file's size in memory), so a scanned
 /// multi-hundred-MB PDF is skipped for text and outline; the lazy `hayro`
@@ -55,7 +81,13 @@ pub fn text_max_bytes() -> u64 {
 /// per-book error row — never a panic or an aborted scan. The parsers run
 /// under `catch_unwind` because the scan's blocking phase has no other
 /// guard, and a malformed font table must not take a library down with it.
+/// A file past [`parse_max_bytes`] is not an error: it indexes from its
+/// filename, with no cover, page count, or text, rather than being loaded.
 pub fn extract_pdf(path: &Path, filename: String, opts: &ScanOptions) -> IndexedBook {
+    if std::fs::metadata(path).is_ok_and(|m| m.len() > parse_max_bytes()) {
+        tracing::info!(file = %path.display(), "PDF past the parse cap; indexing from its filename");
+        return indexed_book_from(ParsedPdf::default(), path, filename, opts);
+    }
     match read_pdf(path) {
         Ok(parsed) => indexed_book_from(parsed, path, filename, opts),
         Err(e) => {
@@ -76,16 +108,19 @@ pub fn extract_pdf(path: &Path, filename: String, opts: &ScanOptions) -> Indexed
 }
 
 /// Everything one pass over the file yields: the page count, the Info dict,
-/// the rendered first page (the cover candidate), and the word count.
+/// the rendered first page (the cover candidate), and the word count. The
+/// `Default` is what a file past the parse cap yields — nothing but the
+/// filename to go on.
+#[derive(Default)]
 struct ParsedPdf {
-    page_count: usize,
+    page_count: Option<usize>,
     info: PdfInfo,
     first_page: Option<(String, Vec<u8>)>,
     word_count: Option<i64>,
 }
 
 fn read_pdf(path: &Path) -> anyhow::Result<ParsedPdf> {
-    let bytes = std::fs::read(path)?;
+    let bytes = read_within_parse_cap(path)?;
     let pdf = catch_unwind(AssertUnwindSafe(|| Pdf::new(bytes)))
         .map_err(|_| anyhow::anyhow!("pdf parser panicked"))?
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
@@ -98,7 +133,7 @@ fn read_pdf(path: &Path) -> anyhow::Result<ParsedPdf> {
     drop(pdf);
     let word_count = text::word_count(path);
     Ok(ParsedPdf {
-        page_count,
+        page_count: Some(page_count),
         info,
         first_page,
         word_count,
@@ -137,7 +172,7 @@ fn indexed_book_from(
             description: parsed.info.subject,
             subjects: parsed.info.keywords,
             accent,
-            page_count: Some(parsed.page_count as i64),
+            page_count: parsed.page_count.map(|n| n as i64),
             ..Default::default()
         },
         cover,

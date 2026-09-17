@@ -73,7 +73,7 @@ fn render_page(page: &Page<'_>) -> Option<(String, Vec<u8>)> {
 /// writing a sidecar into the library.
 pub fn extract_cover(path: &Path) -> Option<(String, Vec<u8>)> {
     resolve_cover_with(path, &ScanOptions::default(), || {
-        let bytes = std::fs::read(path).ok()?;
+        let bytes = super::read_within_parse_cap(path).ok()?;
         let pdf = catch_unwind(AssertUnwindSafe(|| Pdf::new(bytes)))
             .ok()?
             .ok()?;

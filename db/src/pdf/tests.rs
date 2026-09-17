@@ -4,6 +4,15 @@ use super::*;
 use crate::ebook::{parse_ebook_targets, ParseTarget, ScanOptions};
 use crate::test_support::{build_test_pdf, make_test_dir, solid_color_png, EnvVarGuard, TestPdf};
 
+/// The caps are process-wide env vars, and the cap tests below set them
+/// low — so every test that reads a document pins both to their defaults
+/// for its lifetime (rule 03: no ambient environment). One guard: the
+/// guard holds the process-wide env lock, so a second one would deadlock.
+fn default_caps() -> EnvVarGuard {
+    EnvVarGuard::set("OMNIBUS_PDF_TEXT_MAX_BYTES", None)
+        .also_set("OMNIBUS_PDF_PARSE_MAX_BYTES", None)
+}
+
 fn write_pdf(dir: &Path, name: &str, spec: &TestPdf<'_>) -> PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, build_test_pdf(spec)).unwrap();
@@ -22,6 +31,7 @@ fn three_page_spec<'a>() -> TestPdf<'a> {
 
 #[test]
 fn extract_pdf_reads_info_dict_page_count_and_renders_a_cover() {
+    let _caps = default_caps();
     let dir = make_test_dir("pdf_extract_happy");
     let path = write_pdf(&dir, "book.pdf", &three_page_spec());
 
@@ -46,6 +56,7 @@ fn extract_pdf_reads_info_dict_page_count_and_renders_a_cover() {
 
 #[test]
 fn extract_pdf_falls_back_to_the_filename_stem_without_a_title() {
+    let _caps = default_caps();
     let dir = make_test_dir("pdf_extract_stem");
     let spec = TestPdf {
         pages: &["Some text"],
@@ -66,6 +77,7 @@ fn extract_pdf_falls_back_to_the_filename_stem_without_a_title() {
 
 #[test]
 fn extract_pdf_surfaces_a_non_pdf_as_an_error_row() {
+    let _caps = default_caps();
     let dir = make_test_dir("pdf_extract_garbage");
     let path = dir.join("bad.pdf");
     std::fs::write(&path, b"%PDF-1.4\nthis is not a real document").unwrap();
@@ -81,6 +93,7 @@ fn extract_pdf_surfaces_a_non_pdf_as_an_error_row() {
 
 #[test]
 fn extract_pdf_prefers_a_sidecar_cover_over_the_render() {
+    let _caps = default_caps();
     let dir = make_test_dir("pdf_extract_sidecar");
     let path = write_pdf(&dir, "book.pdf", &three_page_spec());
     let sidecar = solid_color_png(10, 20, 30, 4, 4);
@@ -96,7 +109,8 @@ fn extract_pdf_prefers_a_sidecar_cover_over_the_render() {
 
 #[test]
 fn extract_pdf_skips_text_past_the_size_cap_but_keeps_metadata() {
-    let _cap = EnvVarGuard::set("OMNIBUS_PDF_TEXT_MAX_BYTES", Some("16"));
+    let _caps = EnvVarGuard::set("OMNIBUS_PDF_PARSE_MAX_BYTES", None)
+        .also_set("OMNIBUS_PDF_TEXT_MAX_BYTES", Some("16"));
     let dir = make_test_dir("pdf_extract_cap");
     let path = write_pdf(&dir, "book.pdf", &three_page_spec());
 
@@ -118,7 +132,27 @@ fn extract_pdf_skips_text_past_the_size_cap_but_keeps_metadata() {
 }
 
 #[test]
+fn extract_pdf_indexes_a_file_past_the_parse_cap_from_its_filename() {
+    let _caps = EnvVarGuard::set("OMNIBUS_PDF_TEXT_MAX_BYTES", None)
+        .also_set("OMNIBUS_PDF_PARSE_MAX_BYTES", Some("16"));
+    let dir = make_test_dir("pdf_extract_parse_cap");
+    let path = write_pdf(&dir, "Oversized Scan.pdf", &three_page_spec());
+
+    let book = extract_pdf(&path, "Oversized Scan.pdf".into(), &ScanOptions::default());
+
+    assert_eq!(book.metadata.error, None, "past the cap is not an error");
+    assert_eq!(book.metadata.title.as_deref(), Some("Oversized Scan"));
+    assert_eq!(book.metadata.page_count, None);
+    assert_eq!(book.cover, None);
+    assert_eq!(book.word_count, None);
+    assert!(page_count(&path).is_err(), "the page tree is never loaded");
+    assert_eq!(extract_cover(&path), None);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn parse_ebook_targets_routes_pdf_targets_to_the_pdf_parser() {
+    let _caps = default_caps();
     let dir = make_test_dir("pdf_dispatch");
     let path = write_pdf(&dir, "routed.pdf", &three_page_spec());
     let targets = vec![ParseTarget {
@@ -138,6 +172,7 @@ fn parse_ebook_targets_routes_pdf_targets_to_the_pdf_parser() {
 
 #[test]
 fn page_texts_returns_one_entry_per_page_with_empty_pages_kept() {
+    let _caps = default_caps();
     let dir = make_test_dir("pdf_page_texts");
     let spec = TestPdf {
         pages: &["Alpha line one\nAlpha line two", "", "Gamma"],
@@ -161,6 +196,7 @@ fn page_texts_returns_one_entry_per_page_with_empty_pages_kept() {
 
 #[test]
 fn page_text_returns_none_out_of_range() {
+    let _caps = default_caps();
     let dir = make_test_dir("pdf_page_text");
     let spec = TestPdf {
         pages: &["Only page"],
@@ -175,6 +211,7 @@ fn page_text_returns_none_out_of_range() {
 
 #[test]
 fn extract_structure_weighs_pages_by_text_and_maps_the_outline() {
+    let _caps = default_caps();
     let dir = make_test_dir("pdf_structure");
     let spec = TestPdf {
         pages: &["Intro text here", "", "Chapter two body"],

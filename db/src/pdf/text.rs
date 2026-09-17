@@ -13,10 +13,11 @@ use pdf_extract::{output_doc_page, Document, PlainTextOutput};
 
 /// Open the document for text/outline work, refusing files past
 /// [`super::text_max_bytes`] — the extractor loads the whole file into
-/// memory several times over.
+/// memory several times over. (That cap sits inside the parse cap, so a
+/// file past the latter is refused here too.)
 pub(super) fn load_document(path: &Path) -> anyhow::Result<Document> {
     let size = std::fs::metadata(path)?.len();
-    let cap = super::text_max_bytes();
+    let cap = super::text_max_bytes().min(super::parse_max_bytes());
     if size > cap {
         anyhow::bail!("{size} bytes exceeds the {cap}-byte text extraction cap");
     }
@@ -28,7 +29,7 @@ pub(super) fn load_document(path: &Path) -> anyhow::Result<Document> {
 /// The document's page count, from the lazy parser (no size cap: it reads
 /// the page tree, not the page contents).
 pub fn page_count(path: &Path) -> anyhow::Result<usize> {
-    let bytes = std::fs::read(path)?;
+    let bytes = super::read_within_parse_cap(path)?;
     let pdf = catch_unwind(AssertUnwindSafe(|| Pdf::new(bytes)))
         .map_err(|_| anyhow::anyhow!("pdf parser panicked"))?
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;

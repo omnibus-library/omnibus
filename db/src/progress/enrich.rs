@@ -193,6 +193,12 @@ async fn resolve_epub(
     let Some(book_id) = crate::resolve_book_id_by_uuid(pool, &record.book_uuid).await? else {
         return Ok(None);
     };
+    // A PDF page anchor names the PDF's own structure — one spine row per
+    // page — never the EPUB's, even on a book that carries both; the page
+    // *is* the spine step, so it places against the outline with no walk.
+    if let Some(page) = record.epub_cfi.as_deref().and_then(parse_pdf_page_anchor) {
+        return resolve_pdf_anchor(pool, record, book_id, page).await;
+    }
     let Some(text_source) = crate::book_text_source(pool, book_id).await? else {
         return Ok(None);
     };
@@ -206,17 +212,6 @@ async fn resolve_epub(
     let chapters = crate::epub_structure::get_chapters(pool, file_id)
         .await
         .map_err(structure_err)?;
-
-    // A PDF page anchor: the page *is* the spine step, so it places exactly
-    // — against the outline and the per-page ruler — with no walk.
-    if let Some(page) = record.epub_cfi.as_deref().and_then(parse_pdf_page_anchor) {
-        return Ok(Some(resolve_pdf_page(
-            record,
-            &stats,
-            &chapters,
-            page as i64,
-        )));
-    }
 
     // Fast: the spine step is right there in the CFI string, so the chapter
     // costs nothing. Full: the offset *within* that document needs the same
@@ -297,6 +292,36 @@ async fn resolve_epub(
         percent_through_book,
         confidence,
     }))
+}
+
+/// Resolve a `pdf-page:N` anchor against the book's PDF file. `None` when
+/// the book has no PDF, its structure is not extracted yet, or the page is
+/// past the end of the document — a stale or malformed anchor must place
+/// nothing rather than a confident position past the last page (rule 11).
+async fn resolve_pdf_anchor(
+    pool: &SqlitePool,
+    record: &ProgressRecord,
+    book_id: i64,
+    page: usize,
+) -> Result<Option<ResolvedPosition>, ProgressError> {
+    let Some((file_id, _)) = crate::book_file_with_id(pool, book_id, "PDF").await? else {
+        return Ok(None);
+    };
+    let stats = crate::epub_structure::get_spine_stats(pool, file_id)
+        .await
+        .map_err(structure_err)?;
+    if page >= stats.len() {
+        return Ok(None);
+    }
+    let chapters = crate::epub_structure::get_chapters(pool, file_id)
+        .await
+        .map_err(structure_err)?;
+    Ok(Some(resolve_pdf_page(
+        record,
+        &stats,
+        &chapters,
+        page as i64,
+    )))
 }
 
 /// Place a `pdf-page:N` anchor: chapter from the outline at or before the
