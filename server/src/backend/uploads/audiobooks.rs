@@ -380,7 +380,7 @@ pub(in crate::backend) async fn post_upload_audiobook(
     let (Some(title), Some(author)) = (norm(&form.legacy.title), norm(&form.legacy.author)) else {
         return Err(UploadError::MissingMetadata);
     };
-    review::validate_extras(&form.extras)?;
+    review::validate_review(&form.legacy, &form.extras)?;
     let cover = review::resolve_staged_cover(&state, &mut form.extras).await?;
     let AudiobookCommitForm {
         files,
@@ -436,7 +436,7 @@ pub(in crate::backend) async fn post_upload_audiobook(
     )
     .await;
     if let Err(e) = finished {
-        review::rollback_new_book(&state, &uuid).await;
+        review::rollback_uploaded_file(&state, &uuid, &placed.scan_key).await;
         placed.cleanup().await;
         return Err(e);
     }

@@ -94,8 +94,16 @@ pub(super) async fn take_extra_field(
     Ok(true)
 }
 
-/// Reject a review diff a save would reject, before any file is placed.
-pub(super) fn validate_extras(extras: &CommitExtras) -> Result<(), UploadError> {
+/// Reject anything a save would reject, before any file is placed: the
+/// review diff, and the legacy text fields measured as the overrides they
+/// become — a 501-character title must fail here, not after the reindex.
+pub(super) fn validate_review(
+    legacy: &LegacyFields,
+    extras: &CommitExtras,
+) -> Result<(), UploadError> {
+    legacy_overrides(&EbookMetadata::default(), legacy)
+        .validate()
+        .map_err(UploadError::Validation)?;
     if let Some(ov) = &extras.overrides {
         ov.validate().map_err(UploadError::Validation)?;
     }
@@ -186,15 +194,22 @@ pub(super) async fn finish_upload(
     Ok(())
 }
 
-/// Undo a commit whose finish step failed after the reindex: delete the new
-/// book's row, every file the scan recorded for it, and its covers, so a
-/// request the client saw fail did not quietly add a book. Best-effort — the
-/// original error is what the client gets, and a rollback failure is logged
-/// beside it rather than replacing it.
-pub(super) async fn rollback_new_book(state: &AppState, uuid: &str) {
+/// Undo a commit whose finish step failed after the reindex: delete the
+/// file row the scan recorded under `scan_key` — and, when that was the
+/// book's only file, the book itself with its covers — so a request the
+/// client saw fail did not quietly add a book. Keyed on the uploaded file
+/// rather than the uuid because the indexer may have *attached* the upload
+/// to an existing book in another format; that book keeps everything it
+/// had. Best-effort: the original error is what the client gets, and a
+/// rollback failure is logged beside it rather than replacing it.
+pub(super) async fn rollback_uploaded_file(state: &AppState, uuid: &str, scan_key: &str) {
     let file_ids: Vec<i64> = match db::resolve_book_id_by_uuid(&state.pool, uuid).await {
         Ok(Some(id)) => match db::get_book_files(&state.pool, id).await {
-            Ok(files) => files.into_iter().map(|f| f.id).collect(),
+            Ok(files) => files
+                .into_iter()
+                .filter(|f| f.path.as_deref() == Some(scan_key))
+                .map(|f| f.id)
+                .collect(),
             Err(e) => {
                 tracing::error!(uuid, error = %e, "upload rollback: could not list the book's files");
                 return;
@@ -206,6 +221,14 @@ pub(super) async fn rollback_new_book(state: &AppState, uuid: &str) {
             return;
         }
     };
+    if file_ids.is_empty() {
+        tracing::error!(
+            uuid,
+            scan_key,
+            "upload rollback: the scan recorded no file under this key"
+        );
+        return;
+    }
     match db::delete_book_items(&state.pool, uuid, &file_ids, &[]).await {
         Ok(outcome) if outcome.book_deleted => {
             tracing::warn!(
@@ -213,7 +236,11 @@ pub(super) async fn rollback_new_book(state: &AppState, uuid: &str) {
                 "upload rollback: removed the book the failed commit created"
             )
         }
-        Ok(_) => tracing::error!(uuid, "upload rollback: book row survived the delete"),
+        Ok(_) => tracing::warn!(
+            uuid,
+            scan_key,
+            "upload rollback: removed the uploaded file from a book it was attached to"
+        ),
         Err(e) => tracing::error!(uuid, error = %e, "upload rollback failed"),
     }
 }

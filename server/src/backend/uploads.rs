@@ -520,7 +520,7 @@ pub(super) async fn post_upload_ebook(
     let (Some(title), Some(author)) = (norm(&form.legacy.title), norm(&form.legacy.author)) else {
         return Err(UploadError::MissingMetadata);
     };
-    review::validate_extras(&form.extras)?;
+    review::validate_review(&form.legacy, &form.extras)?;
     let cover = review::resolve_staged_cover(&state, &mut form.extras).await?;
 
     // Library root must be configured before any file can be placed.
@@ -559,7 +559,7 @@ pub(super) async fn post_upload_ebook(
     )
     .await;
     if let Err(e) = finished {
-        review::rollback_new_book(&state, &uuid).await;
+        review::rollback_uploaded_file(&state, &uuid, &scan_key_of(&root_path, &dest)).await;
         let _ = tokio::fs::remove_file(&dest).await;
         return Err(e);
     }
@@ -610,10 +610,7 @@ async fn reindex_and_resolve_uploaded_uuid(
         return Err(UploadError::internal("reindex after upload", e));
     }
 
-    let scan_key = dest
-        .strip_prefix(root_path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let scan_key = scan_key_of(root_path, dest);
     db::get_book_uuid_by_scan_key(&state.pool, root, &scan_key)
         .await
         .map_err(|e| UploadError::internal("get_book_uuid_by_scan_key", e))?
@@ -623,6 +620,14 @@ async fn reindex_and_resolve_uploaded_uuid(
                 "reindex did not surface the uploaded file",
             )
         })
+}
+
+/// Library-relative path of `dest` under `root_path` — the durable scan_key
+/// the reindex records for the placed file.
+fn scan_key_of(root_path: &Path, dest: &Path) -> String {
+    dest.strip_prefix(root_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 /// Collect the user's text fields, the review fields, and stream the file

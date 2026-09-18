@@ -628,7 +628,7 @@ fn legacy_overrides_only_carry_the_fields_that_differ() {
 // ── A failed finish undoes the book ──────────────────────────────
 
 #[tokio::test]
-async fn rollback_new_book_removes_the_row_the_files_and_the_cover() {
+async fn rollback_uploaded_file_removes_the_row_the_files_and_the_cover() {
     let (app, state, pool) = fixture().await;
     let _covers = CoversDirGuard::new("review_rollback");
     let library = ebook_library(&pool).await;
@@ -649,7 +649,12 @@ async fn rollback_new_book_removes_the_row_the_files_and_the_cover() {
     let uuid = book.unique_identifier.clone().unwrap();
     assert!(files_under(library.path()) >= 1);
 
-    super::super::review::rollback_new_book(&state, &uuid).await;
+    super::super::review::rollback_uploaded_file(
+        &state,
+        &uuid,
+        "grace-hopper/beta-in-the-series/beta-in-the-series.epub",
+    )
+    .await;
 
     assert!(db::get_book_by_uuid(&pool, &uuid).await.unwrap().is_none());
     assert!(
@@ -681,4 +686,89 @@ fn trim_scalars_strips_the_whitespace_the_legacy_fields_already_lost() {
     assert_eq!(ov.title.as_deref(), Some("Dune"));
     assert_eq!(ov.series.as_deref(), Some("Dune"));
     assert_eq!(ov.creators.unwrap()[0].name, "Frank Herbert");
+}
+
+/// The indexer may attach an upload to an existing book in another format;
+/// a rollback then removes only the uploaded file, never the book it joined.
+#[tokio::test]
+async fn rollback_uploaded_file_leaves_a_book_the_upload_was_attached_to() {
+    let (app, state, pool) = fixture().await;
+    let _covers = CoversDirGuard::new("review_rollback_attached");
+    let library = ebook_library(&pool).await;
+    let token = admin_token(&pool).await;
+
+    let epub = beta_epub();
+    let (ct, body) = multipart_typed(&[
+        Part::text("title", "Beta in the Series"),
+        Part::text("author", "Grace Hopper"),
+        Part::file("file", "beta.epub", "application/epub+zip", &epub),
+    ]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/ebooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    let book = committed_book(&pool, res).await;
+    let uuid = book.unique_identifier.clone().unwrap();
+
+    // A PDF twin with the same title and author, scanned in: the indexer
+    // attaches it to the EPUB's book rather than minting a second one.
+    let pdf_dir = library
+        .path()
+        .join("grace-hopper")
+        .join("beta-in-the-series");
+    let pdf_path = pdf_dir.join("beta-twin.pdf");
+    std::fs::write(
+        &pdf_path,
+        db::test_support::build_test_pdf(&db::test_support::TestPdf {
+            pages: &["Twin"],
+            title: Some("Beta in the Series"),
+            author: Some("Grace Hopper"),
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    let scan = state.worker.post(db::worker::Task::Scan {
+        library_path: library.path().to_string_lossy().to_string(),
+    });
+    assert!(matches!(
+        state.worker.await_completion(scan).await,
+        db::worker::TaskOutcome::Ok(_)
+    ));
+    let attached = db::get_book_by_uuid(&pool, &uuid).await.unwrap().unwrap();
+    assert_eq!(attached.formats.len(), 2, "{:?}", attached.formats);
+
+    super::super::review::rollback_uploaded_file(
+        &state,
+        &uuid,
+        "grace-hopper/beta-in-the-series/beta-twin.pdf",
+    )
+    .await;
+
+    let survivor = db::get_book_by_uuid(&pool, &uuid)
+        .await
+        .unwrap()
+        .expect("the book the upload attached to survives");
+    assert_eq!(survivor.formats, vec!["EPUB".to_string()]);
+    assert!(!pdf_path.exists(), "only the uploaded file is gone");
+}
+
+#[tokio::test]
+async fn commit_rejects_an_overlong_legacy_title_before_filing() {
+    let (app, _state, pool) = fixture().await;
+    let library = ebook_library(&pool).await;
+    let token = admin_token(&pool).await;
+
+    let title = "x".repeat(MetadataOverrides::TITLE_MAX_LEN + 1);
+    let epub = beta_epub();
+    let (ct, body) = multipart_typed(&[
+        Part::text("title", &title),
+        Part::text("author", "Grace Hopper"),
+        Part::file("file", "beta.epub", "application/epub+zip", &epub),
+    ]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/ebooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(files_under(library.path()), 0);
 }
