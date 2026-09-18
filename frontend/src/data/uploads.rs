@@ -127,6 +127,21 @@ pub fn image_preview_url(bytes: &[u8], mime: &str) -> Option<String> {
     web_sys::Url::create_object_url_with_blob(&blob).ok()
 }
 
+/// Release a URL [`image_preview_url`] minted, once nothing shows it. Only
+/// an object URL holds anything: a `data:` or provider URL passes through
+/// untouched. Without this every pick pins its image bytes until the page
+/// unloads.
+#[cfg(feature = "web")]
+pub fn revoke_preview_url(url: &str) {
+    if url.starts_with("blob:") {
+        let _ = web_sys::Url::revoke_object_url(url);
+    }
+}
+
+/// Mobile and SSR previews hold nothing to release.
+#[cfg(not(feature = "web"))]
+pub fn revoke_preview_url(_url: &str) {}
+
 /// Mobile: an inline `data:` URL — the WebView has no object-URL handle the
 /// Rust side could mint.
 #[cfg(all(feature = "mobile", not(feature = "web")))]

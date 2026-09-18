@@ -424,7 +424,9 @@ pub(in crate::backend) async fn post_upload_audiobook(
         }
     };
 
-    review::finish_upload(
+    // A failure here undoes the book: the client sees an error, so nothing
+    // may stay — neither the row the scan inserted nor the parts on disk.
+    let finished = review::finish_upload(
         &state,
         &uuid,
         user.id,
@@ -432,7 +434,12 @@ pub(in crate::backend) async fn post_upload_audiobook(
         extras.overrides.take(),
         cover,
     )
-    .await?;
+    .await;
+    if let Err(e) = finished {
+        review::rollback_new_book(&state, &uuid).await;
+        placed.cleanup().await;
+        return Err(e);
+    }
 
     Ok((StatusCode::CREATED, Json(UploadCommitResult { uuid })).into_response())
 }

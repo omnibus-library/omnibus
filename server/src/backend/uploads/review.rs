@@ -1,9 +1,8 @@
 //! The review half of a commit, shared by the ebook and audiobook handlers:
-//! the extra multipart fields the review form sends (a JSON overrides diff,
-//! a cover picked from disk, a provider cover URL), the cover resolution
-//! that runs *before* the file is placed so a bad cover never strands one,
-//! and the finish step that layers the confirmed edits and the cover onto
-//! the freshly indexed book.
+//! the review form's extra multipart fields (overrides diff, picked cover,
+//! provider cover URL), the cover resolution that runs before the file is
+//! placed, the finish step that layers edits and cover onto the indexed
+//! book, and the rollback that undoes the book when that step fails.
 
 use axum::{body::Bytes, extract::multipart::Field};
 use omnibus_db as db;
@@ -162,6 +161,7 @@ pub(super) async fn finish_upload(
     if let Some(review) = review {
         layer(&mut overrides, review);
     }
+    trim_scalars(&mut overrides);
     prune_unchanged(&mut overrides, &book);
 
     if overrides != MetadataOverrides::default() {
@@ -184,6 +184,67 @@ pub(super) async fn finish_upload(
             .map_err(|e| UploadError::internal("spawn_blocking(invalidate_thumbs)", e))?;
     }
     Ok(())
+}
+
+/// Undo a commit whose finish step failed after the reindex: delete the new
+/// book's row, every file the scan recorded for it, and its covers, so a
+/// request the client saw fail did not quietly add a book. Best-effort — the
+/// original error is what the client gets, and a rollback failure is logged
+/// beside it rather than replacing it.
+pub(super) async fn rollback_new_book(state: &AppState, uuid: &str) {
+    let file_ids: Vec<i64> = match db::resolve_book_id_by_uuid(&state.pool, uuid).await {
+        Ok(Some(id)) => match db::get_book_files(&state.pool, id).await {
+            Ok(files) => files.into_iter().map(|f| f.id).collect(),
+            Err(e) => {
+                tracing::error!(uuid, error = %e, "upload rollback: could not list the book's files");
+                return;
+            }
+        },
+        Ok(None) => return,
+        Err(e) => {
+            tracing::error!(uuid, error = %e, "upload rollback: could not resolve the book");
+            return;
+        }
+    };
+    match db::delete_book_items(&state.pool, uuid, &file_ids, &[]).await {
+        Ok(outcome) if outcome.book_deleted => {
+            tracing::warn!(
+                uuid,
+                "upload rollback: removed the book the failed commit created"
+            )
+        }
+        Ok(_) => tracing::error!(uuid, "upload rollback: book row survived the delete"),
+        Err(e) => tracing::error!(uuid, error = %e, "upload rollback failed"),
+    }
+}
+
+/// Trim every scalar the diff carries. The legacy title/author are trimmed
+/// before they decide the folder; the review diff must not then store the
+/// untrimmed spelling of the same field as the effective value.
+pub(super) fn trim_scalars(overrides: &mut MetadataOverrides) {
+    let scalars = [
+        &mut overrides.title,
+        &mut overrides.description,
+        &mut overrides.publisher,
+        &mut overrides.published,
+        &mut overrides.language,
+        &mut overrides.series,
+        &mut overrides.series_index,
+        &mut overrides.isbn13,
+        &mut overrides.isbn10,
+    ];
+    for v in scalars.into_iter().flatten() {
+        let trimmed = v.trim();
+        if trimmed.len() != v.len() {
+            *v = trimmed.to_string();
+        }
+    }
+    for c in overrides.creators.iter_mut().flatten() {
+        let trimmed = c.name.trim();
+        if trimmed.len() != c.name.len() {
+            c.name = trimmed.to_string();
+        }
+    }
 }
 
 /// The legacy four fields as overrides, each only where it differs from the

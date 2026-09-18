@@ -1,9 +1,8 @@
-//! Wire types for the "add your own books" upload flow. The web client uploads
-//! a file, the server parses it and returns an [`UploadInspection`] the review
-//! form is built from, then the client commits — file, edits, and any staged
-//! cover in one request — and gets back an [`UploadCommitResult`]. Shared so
-//! the REST handler (`server::backend::uploads`) and the frontend data layer
-//! agree on the shape.
+//! Wire types for the "add your own books" upload flow: the client uploads a
+//! file, the server returns an [`UploadInspection`] the review form is built
+//! from, then the client commits file, edits and any staged cover in one
+//! request and gets back an [`UploadCommitResult`]. Shared so the REST
+//! handler (`server::backend::uploads`) and the frontend data layer agree.
 
 use serde::{Deserialize, Serialize};
 

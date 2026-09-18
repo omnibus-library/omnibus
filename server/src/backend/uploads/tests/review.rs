@@ -624,3 +624,61 @@ fn legacy_overrides_only_carry_the_fields_that_differ() {
     );
     assert_eq!(creators[0].id, None);
 }
+
+// ── A failed finish undoes the book ──────────────────────────────
+
+#[tokio::test]
+async fn rollback_new_book_removes_the_row_the_files_and_the_cover() {
+    let (app, state, pool) = fixture().await;
+    let _covers = CoversDirGuard::new("review_rollback");
+    let library = ebook_library(&pool).await;
+    let token = admin_token(&pool).await;
+
+    let epub = beta_epub();
+    let (ct, body) = multipart_typed(&[
+        Part::text("title", "Beta in the Series"),
+        Part::text("author", "Grace Hopper"),
+        Part::file("cover", "cover.png", "image/png", TINY_PNG),
+        Part::file("file", "beta.epub", "application/epub+zip", &epub),
+    ]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/ebooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    let book = committed_book(&pool, res).await;
+    let uuid = book.unique_identifier.clone().unwrap();
+    assert!(files_under(library.path()) >= 1);
+
+    super::super::review::rollback_new_book(&state, &uuid).await;
+
+    assert!(db::get_book_by_uuid(&pool, &uuid).await.unwrap().is_none());
+    assert!(
+        db::get_metadata_overrides(&pool, &uuid)
+            .await
+            .unwrap()
+            .is_none(),
+        "the cover override row goes with the book"
+    );
+    assert_eq!(
+        files_under(library.path()),
+        0,
+        "the filed epub and its sidecar cover are gone"
+    );
+}
+
+#[test]
+fn trim_scalars_strips_the_whitespace_the_legacy_fields_already_lost() {
+    let mut ov = MetadataOverrides {
+        title: Some("  Dune ".into()),
+        series: Some("Dune\n".into()),
+        creators: Some(vec![Contributor {
+            name: " Frank Herbert ".into(),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    super::super::review::trim_scalars(&mut ov);
+    assert_eq!(ov.title.as_deref(), Some("Dune"));
+    assert_eq!(ov.series.as_deref(), Some("Dune"));
+    assert_eq!(ov.creators.unwrap()[0].name, "Frank Herbert");
+}

@@ -61,7 +61,7 @@ pub(crate) fn SaveBar(
         count: dirty_count,
         cover_replaced,
     } = dirty;
-    let creating = matches!(mode, SaveBarMode::Create);
+    let creating = mode == SaveBarMode::Create;
     // Save is an exit, not only a write: once the cover has been replaced the
     // editor holds a change the reader can't take back here, so the button
     // has to let them leave through it rather than sitting greyed out. Under

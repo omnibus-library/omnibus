@@ -1,9 +1,8 @@
 //! "Add your own books" upload handlers (web-facing REST). Two-step ingest
-//! shared by ebooks and audiobooks: `inspect` parses the upload and returns
-//! everything the review form edits, plus a cover preview, without creating
-//! anything; commit files the bytes into the canonical library folder,
-//! reindexes so the indexer owns the insert, then layers the reader's edits
-//! and any staged cover onto the new book in the same request (`review`).
+//! shared by ebooks and audiobooks: `inspect` parses the upload into what
+//! the review form edits without creating anything; commit files the bytes
+//! into the canonical library folder, reindexes so the indexer owns the
+//! insert, then layers the edits and any staged cover on (`review`).
 
 use std::path::{Path, PathBuf};
 
@@ -523,8 +522,9 @@ pub(super) async fn post_upload_ebook(
         }
     };
 
-    // Make the displayed metadata match what the user confirmed.
-    review::finish_upload(
+    // Make the displayed metadata match what the user confirmed. A failure
+    // here undoes the book: the client sees an error, so nothing may stay.
+    let finished = review::finish_upload(
         &state,
         &uuid,
         user.id,
@@ -532,7 +532,12 @@ pub(super) async fn post_upload_ebook(
         form.extras.overrides.take(),
         cover,
     )
-    .await?;
+    .await;
+    if let Err(e) = finished {
+        review::rollback_new_book(&state, &uuid).await;
+        let _ = tokio::fs::remove_file(&dest).await;
+        return Err(e);
+    }
 
     Ok((StatusCode::CREATED, Json(UploadCommitResult { uuid })).into_response())
 }

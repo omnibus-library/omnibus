@@ -6,7 +6,7 @@
 
 use dioxus::prelude::*;
 
-use crate::data::UploadCover;
+use crate::data::{self, UploadCover};
 
 /// A cover chosen during review, not yet written anywhere.
 #[derive(Clone, Default, PartialEq)]
@@ -33,14 +33,26 @@ impl StagedCover {
 
     /// Replace the staged cover and what the surfaces show for it.
     pub(crate) fn stage(&mut self, source: UploadCover, preview: Option<String>) {
+        self.release_preview();
         self.source = source;
         self.preview = preview;
     }
 
     /// Back to the file's own cover.
     pub(crate) fn reset(&mut self) {
+        self.release_preview();
         self.source = UploadCover::Keep;
         self.preview = self.original_preview.clone();
+    }
+
+    /// Let go of a picked image's object URL before it is replaced — the
+    /// file's own preview is a `data:` URL, which this leaves alone.
+    fn release_preview(&self) {
+        if let Some(url) = &self.preview {
+            if self.original_preview.as_deref() != Some(url.as_str()) {
+                data::revoke_preview_url(url);
+            }
+        }
     }
 
     /// Whether the commit will carry a cover of its own.

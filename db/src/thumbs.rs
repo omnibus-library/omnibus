@@ -359,6 +359,15 @@ pub fn generate_thumbnail(
     write_thumbnail(book_id, size, &decoded)
 }
 
+/// Largest edge [`encode_cover_preview`] will decode. Print-resolution cover
+/// art tops out around 3000px; 8192 leaves headroom without admitting a
+/// header that claims a billion pixels.
+const PREVIEW_MAX_EDGE: u32 = 8192;
+
+/// Decoder allocation ceiling for [`encode_cover_preview`]: an 8192² RGBA
+/// frame is 256 MiB, so this is the edge cap restated in bytes.
+const PREVIEW_MAX_ALLOC: u64 = 256 * 1024 * 1024;
+
 /// Encode a cover as a small lossy WebP for inline preview — the upload
 /// review form shows the file's cover before the book exists and there is a
 /// cover route to point at. Bounded by [`ThumbSize::Md`] on either edge,
@@ -370,7 +379,27 @@ pub fn generate_thumbnail(
 pub fn encode_cover_preview(cover_bytes: &[u8]) -> Result<Vec<u8>, ThumbError> {
     use image::imageops::FilterType;
 
-    let decoded = image::load_from_memory(cover_bytes)
+    // The same byte cap the accent extractor holds embedded covers to, plus
+    // a strict dimension ceiling the decoder checks before allocating: this
+    // runs on anything an uploader hands `inspect`, repeatedly, so a crafted
+    // file must not turn into a multi-gigabyte decode on the blocking pool.
+    if cover_bytes.len() > crate::ebook::accent::MAX_EMBEDDED_COVER_BYTES {
+        return Err(ThumbError::Failed(format!(
+            "cover is {} bytes, over the {} byte preview cap",
+            cover_bytes.len(),
+            crate::ebook::accent::MAX_EMBEDDED_COVER_BYTES
+        )));
+    }
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(cover_bytes))
+        .with_guessed_format()
+        .map_err(|e| ThumbError::Failed(format!("cover format sniff failed: {e}")))?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(PREVIEW_MAX_EDGE);
+    limits.max_image_height = Some(PREVIEW_MAX_EDGE);
+    limits.max_alloc = Some(PREVIEW_MAX_ALLOC);
+    reader.limits(limits);
+    let decoded = reader
+        .decode()
         .map_err(|e| ThumbError::Failed(format!("cover decode failed: {e}")))?;
     let (w, h) = ThumbSize::Md.dimensions();
     let resized = decoded.resize(w, h, FilterType::Lanczos3);

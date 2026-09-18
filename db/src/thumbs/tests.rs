@@ -637,3 +637,23 @@ mod cover_moved {
         }
     }
 }
+
+#[test]
+fn encode_cover_preview_refuses_bytes_over_the_embedded_cover_cap() {
+    let mut big = photographic_png(64, 96);
+    big.resize(crate::ebook::accent::MAX_EMBEDDED_COVER_BYTES + 1, 0);
+    let err = encode_cover_preview(&big).unwrap_err();
+    assert!(err.to_string().contains("preview cap"), "{err}");
+}
+
+#[test]
+fn encode_cover_preview_refuses_a_header_claiming_enormous_dimensions() {
+    // A PNG whose IHDR declares 100000×100000: the decoder must reject it on
+    // the dimension limit before allocating anything for the frame.
+    let mut png = photographic_png(8, 8);
+    let ihdr = png.windows(4).position(|w| w == b"IHDR").unwrap();
+    png[ihdr + 4..ihdr + 8].copy_from_slice(&100_000u32.to_be_bytes());
+    png[ihdr + 8..ihdr + 12].copy_from_slice(&100_000u32.to_be_bytes());
+    let err = encode_cover_preview(&png).unwrap_err();
+    assert!(matches!(err, ThumbError::Failed(_)), "{err}");
+}
