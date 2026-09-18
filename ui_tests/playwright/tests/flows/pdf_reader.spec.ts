@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
+import { buildJpxPdf, JPX_FILL } from "../fixtures/jpx_pdf";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
@@ -144,6 +145,61 @@ test("renders the PDF reader layout and opens a pristine book on page 1", async 
   const count = await pageCount(page);
   expect(count).toBeGreaterThan(1);
   await expect(pageLabel(page)).toHaveText(`Page 1 of ${count}`);
+});
+
+test("decodes a JPEG 2000 image through the bundled OpenJPEG module", async ({
+  page,
+  request,
+}) => {
+  // PDF.js 6 decodes JPXDecode in a WASM module it fetches from `wasmUrl`;
+  // when that is unset (or the folder asset, filename, or MIME type is
+  // wrong) it drops the image *silently* and the page paints blank. Serve
+  // the pristine book's `/file` route from an in-memory JPX-only PDF so the
+  // decoder is exercised — nothing in the seeded library carries JPX.
+  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+  await page.route(`**/api/ebooks/${uuid}/file**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/pdf",
+      body: buildJpxPdf(),
+    }),
+  );
+  const decoder = page.waitForResponse((res) =>
+    res.url().includes("/pdfjs-wasm/openjpeg.wasm"),
+  );
+
+  await openPdf(page, `/pdf/${uuid}`);
+  await expect(pageLabel(page)).toHaveText("Page 1 of 2");
+
+  // The worker asked for the decoder at the bundled directory and the
+  // server answered with a WASM body, not a 404 page.
+  const res = await decoder;
+  expect(res.status()).toBe(200);
+  expect(res.headers()["content-type"]).toContain("application/wasm");
+
+  // And it decoded: the page is the image, so the canvas centre carries the
+  // image's fill rather than the white a dropped image leaves behind.
+  const canvas = page.locator(".pr-canvas");
+  const centrePixel = () =>
+    canvas.evaluate((el) => {
+      const c = el as HTMLCanvasElement;
+      const px = c
+        .getContext("2d")!
+        .getImageData(
+          Math.floor(c.width / 2),
+          Math.floor(c.height / 2),
+          1,
+          1,
+        ).data;
+      return [px[0]!, px[1]!, px[2]!];
+    });
+  // A small tolerance: the codestream is lossless, but the canvas is
+  // colour-managed on the way to the backing store.
+  await expect
+    .poll(async () =>
+      (await centrePixel()).every((v, i) => Math.abs(v - JPX_FILL[i]!) <= 8),
+    )
+    .toBe(true);
 });
 
 test("fit modes toggle the stage layout class", async ({ page, request }) => {

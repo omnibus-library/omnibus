@@ -5,7 +5,12 @@
  * `./pdf.worker.min.mjs`) through a dynamic `import()` — the classic-script
  * loader every Omnibus surface uses can't `<script type="module">`, so the
  * URLs of both files arrive in `init()`'s options bag (hashed by the asset
- * bundler) rather than being resolved relative to this file.
+ * bundler) rather than being resolved relative to this file. So does
+ * `wasmUrl`, the directory of the worker's WASM image decoders
+ * (`./pdfjs-wasm/`: OpenJPEG for JPXDecode, JBIG2 + CCITTFax, qcms for ICC
+ * colour spaces). PDF.js fetches `${wasmUrl}openjpeg.wasm` itself; left
+ * unset it silently drops every image those filters encode, which is how an
+ * illustrated or scanned PDF opens as blank pages.
  *
  * Renders ONE page at a time onto a canvas bounded by `maxCanvasPixels`
  * (the Android WebView OOM mitigation — spreads and continuous scroll are out
@@ -13,8 +18,8 @@
  * paints stored highlights as positioned divs under the text layer.
  *
  * Public surface: window.OmnibusPdfReader
- *   init(hostId, opts)   opts = { url, pdfjs, worker, startPage?, fit?,
- *                                 maxCanvasPixels? }
+ *   init(hostId, opts)   opts = { url, pdfjs, worker, wasmUrl, startPage?,
+ *                                 fit?, maxCanvasPixels? }
  *                        `url` is range-fetched (`/api/ebooks/{uuid}/file`,
  *                        which answers `Range`), `startPage` is 0-based and
  *                        clamped, `fit` is "width" | "height".
@@ -178,6 +183,9 @@
         }
         loadingTask = mod.getDocument({
           url: opts.url,
+          // Where the worker fetches its image decoders from; a prefix, so
+          // it must end in "/".
+          wasmUrl: opts.wasmUrl || undefined,
           // Same-origin session cookie — the file route is authenticated.
           withCredentials: true,
           // Range-fetch pages on demand rather than pulling the whole file

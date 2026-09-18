@@ -16,12 +16,26 @@ use dioxus::document::Eval;
 use crate::js_interop::json_literal;
 
 /// Absolute URLs of the vendored PDF runtime, resolved from the `asset!`
-/// bundle: the glue (a classic script) and the two ES modules it imports on
-/// demand — the library and its worker.
+/// bundle: the glue (a classic script), the two ES modules it imports on
+/// demand — the library and its worker — and the directory holding the
+/// worker's WASM image decoders (JPEG 2000, JBIG2/CCITT, ICC). Without that
+/// directory PDF.js silently drops every image those codecs encode, and a
+/// scanned or illustrated book opens as blank pages.
 pub(super) struct PdfScripts {
     pub glue: String,
     pub pdfjs: String,
     pub worker: String,
+    pub wasm_dir: String,
+}
+
+/// PDF.js's `wasmUrl` is a prefix it concatenates a filename onto, so the
+/// bundled directory URL needs its trailing slash back.
+fn wasm_url(dir: &str) -> String {
+    if dir.ends_with('/') {
+        dir.to_string()
+    } else {
+        format!("{dir}/")
+    }
 }
 
 /// What `init()` needs to open a document: the file URL PDF.js range-fetches,
@@ -71,6 +85,7 @@ pub(super) fn install_pdf_js(host_id: &str, opts: &MountOptions, scripts: &PdfSc
         "url": opts.url,
         "pdfjs": scripts.pdfjs,
         "worker": scripts.worker,
+        "wasmUrl": wasm_url(&scripts.wasm_dir),
         "startPage": opts.start_page,
         "fit": opts.fit,
     }));
@@ -143,6 +158,7 @@ mod tests {
             glue: "/assets/pdf-reader-glue.js".into(),
             pdfjs: "/assets/pdf.min.mjs".into(),
             worker: "/assets/pdf.worker.min.mjs".into(),
+            wasm_dir: "/assets/pdfjs-wasm-a1b2c3".into(),
         }
     }
 
@@ -176,6 +192,33 @@ mod tests {
         assert!(js.contains(r#""pdfjs":"/assets/pdf.min.mjs""#));
         assert!(js.contains(r#""worker":"/assets/pdf.worker.min.mjs""#));
         assert!(js.contains(r#"glue failed to load"#));
+    }
+
+    #[test]
+    fn install_pdf_js_passes_the_wasm_directory_as_a_slash_terminated_prefix() {
+        let js = install_pdf_js(
+            "omnibus-pdf-page",
+            &MountOptions {
+                url: "/api/ebooks/book-a/file".into(),
+                start_page: 0,
+                fit: "height",
+            },
+            &scripts(),
+        );
+        // The worker appends `openjpeg.wasm` etc. to this verbatim.
+        assert!(js.contains(r#""wasmUrl":"/assets/pdfjs-wasm-a1b2c3/""#));
+    }
+
+    #[test]
+    fn wasm_url_adds_exactly_one_trailing_slash() {
+        assert_eq!(
+            wasm_url("/assets/pdfjs-wasm-a1b2c3"),
+            "/assets/pdfjs-wasm-a1b2c3/"
+        );
+        assert_eq!(
+            wasm_url("/assets/pdfjs-wasm-a1b2c3/"),
+            "/assets/pdfjs-wasm-a1b2c3/"
+        );
     }
 
     #[test]

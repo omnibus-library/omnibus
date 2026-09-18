@@ -44,6 +44,9 @@ use highlights::{paint_all, pdf_bridge, PdfSelection};
 const PDFJS_MJS: Asset = asset!("/assets/vendor/pdf.min.mjs");
 const PDFJS_WORKER_MJS: Asset = asset!("/assets/vendor/pdf.worker.min.mjs");
 const PDF_GLUE_JS: Asset = asset!("/assets/vendor/pdf-reader-glue.js");
+// A folder, not per-file assets: the worker builds `${wasmUrl}openjpeg.wasm`
+// itself, so the decoders must keep their names under one bundled directory.
+const PDFJS_WASM_DIR: Asset = asset!("/assets/vendor/pdfjs-wasm", AssetOptions::folder());
 
 /// The element the glue renders the canvas + text layer into.
 const HOST_ID: &str = "omnibus-pdf-page";
@@ -413,6 +416,7 @@ async fn bootstrap_and_drain(
             glue: PDF_GLUE_JS.to_string(),
             pdfjs: PDFJS_MJS.to_string(),
             worker: PDFJS_WORKER_MJS.to_string(),
+            wasm_dir: PDFJS_WASM_DIR.to_string(),
         },
     );
     if let Ok(list) = data::list_highlights(&server_url, &uuid).await {
