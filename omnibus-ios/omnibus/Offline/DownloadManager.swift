@@ -57,6 +57,12 @@ final class DownloadManager: NSObject {
     /// and write a second failure over the copy a `restoreReplaced` had just
     /// put back. Cleared when the record is started again.
     private var abandoned: Set<String> = []
+    /// One token per download attempt, minted when a record is created and
+    /// dropped with it. A completion that suspended — the integrity check
+    /// runs detached — compares the token on either side of the wait, so
+    /// bytes from a transfer that was cancelled and restarted meanwhile are
+    /// never installed under the replacement record.
+    private var attempts: [String: UUID] = [:]
 
     /// Records currently being moved into place. The last two parts of a book
     /// can land close enough together that both completions see every file
@@ -382,7 +388,7 @@ final class DownloadManager: NSObject {
     ///
     /// The narrow format sets matter. `Book.ebookFormats` and
     /// `Book.audioFormats` describe what a library can *contain*; the
-    /// endpoints serve EPUB (else CBZ for a comic-only book), and
+    /// endpoints serve EPUB (else CBZ, else PDF — the shared ladder), and
     /// M4B/M4A/MP3. Matching on the broad sets lets a mixed book — a PDF at
     /// ordinal 0, the EPUB at ordinal 1 — snapshot the PDF's validator while
     /// downloading the EPUB, which then reports a stale download whenever
@@ -394,16 +400,16 @@ final class DownloadManager: NSObject {
                 .filter { Book.selectableAudioFormats.contains($0.format.lowercased()) }
                 .min { $0.ordinal < $1.ordinal }
         }
-        // Mirror `/file`'s two-step resolution exactly: the EPUB wins when
-        // the book has one, and the CBZ answers only after that — not the
-        // lowest ordinal across both, which would snapshot the CBZ's
+        // Mirror `/file`'s ladder exactly: the EPUB wins when the book has
+        // one, the CBZ answers only after that, and the PDF last — not the
+        // lowest ordinal across all three, which would snapshot the CBZ's
         // validator on a dual-format book whose EPUB is what downloads.
         func lowest(_ format: String) -> BookFileInfo? {
             book.bookFiles
                 .filter { $0.format.lowercased() == format }
                 .min { $0.ordinal < $1.ordinal }
         }
-        return lowest("epub") ?? lowest("cbz")
+        return lowest("epub") ?? lowest("cbz") ?? lowest("pdf")
     }
 
     /// Whether the library file has moved under a downloaded copy — the
@@ -503,7 +509,7 @@ final class DownloadManager: NSObject {
         let uuid = book.uuid
         guard kind == .audio else {
             let format = targetFile(book, kind: .ebook)?.format.lowercased()
-                ?? (book.opensAsComic ? "cbz" : "epub")
+                ?? Self.fallbackEbookExtension(book)
             return [
                 DownloadFile(
                     ordinal: 0,
@@ -616,6 +622,7 @@ final class DownloadManager: NSObject {
             task.cancel()
         }
         abandoned.remove(key)
+        attempts[key] = UUID()
 
         let record = DownloadRecord(
             bookUUID: uuid, kind: kind, format: Self.formatLabel(book, kind: kind, plan: plan),
@@ -661,6 +668,25 @@ final class DownloadManager: NSObject {
         }
     }
 
+    /// Whether a completion that suspended still describes the record under
+    /// its key: the same attempt token on both sides of the wait, the key not
+    /// abandoned meanwhile, and a record still there to install into. Two
+    /// `nil` tokens are the relaunch case — a record adopted from disk with no
+    /// attempt minted this process — and match.
+    nonisolated static func completionIsCurrent(
+        attemptBefore: UUID?, attemptNow: UUID?, abandoned: Bool, hasRecord: Bool
+    ) -> Bool {
+        !abandoned && hasRecord && attemptBefore == attemptNow
+    }
+
+    /// The extension a plan falls back to when the book carries no file
+    /// rows (a rail card's projection) — the same ladder `targetFile` walks.
+    nonisolated static func fallbackEbookExtension(_ book: Book) -> String {
+        if book.opensAsComic { return "cbz" }
+        if book.opensAsPDF { return "pdf" }
+        return "epub"
+    }
+
     /// The manifest a plan needs, or `nil` for an ebook.
     ///
     /// Fetched with no `file_id`, which is the file `/download` resolves on
@@ -685,7 +711,7 @@ final class DownloadManager: NSObject {
     private static func formatLabel(_ book: Book, kind: DownloadKind, plan: [DownloadFile]) -> String {
         guard kind == .audio else {
             return targetFile(book, kind: .ebook)?.format.lowercased()
-                ?? (book.opensAsComic ? "cbz" : "epub")
+                ?? Self.fallbackEbookExtension(book)
         }
         return (plan.first?.name as NSString?)?.pathExtension
             ?? book.formats.first { Book.audioFormats.contains($0.lowercased()) }
@@ -738,6 +764,7 @@ final class DownloadManager: NSObject {
         await OfflineStore.shared.deleteDownload(uuid, kind: kind)
         records[key] = nil
         replacing[key] = nil
+        attempts[key] = nil
     }
 
     /// Drop registry keys already removed from the store, so the in-memory
@@ -834,16 +861,32 @@ final class DownloadManager: NSObject {
             return
         }
 
-        // CBZ integrity check *before* anything is installed, so a damaged
-        // transfer never replaces a readable copy: every zip entry carries a
-        // recorded CRC-32, and reading each to EOF verifies it — the
-        // CRC-backed tier of rule 09's post-download backstop. Only comics get
-        // this today; the EPUB/audio formats have no verifier on this client
-        // yet.
-        if record.format.lowercased() == "cbz" {
+        // Integrity check *before* anything is installed, so a damaged
+        // transfer never replaces a readable copy — rule 09's post-download
+        // backstop, at the tier each format allows. A CBZ is CRC-backed:
+        // every zip entry carries a recorded CRC-32, and reading each to EOF
+        // verifies it. A PDF is structural only — the header, the `%%EOF`
+        // marker in the tail, and a parse that yields pages — because the
+        // format carries no checksum. EPUB/audio have no verifier on this
+        // client yet.
+        let format = record.format.lowercased()
+        if format == "cbz" || format == "pdf" {
+            let attempt = attempts[key]
             let intact = await Task.detached(priority: .utility) {
-                ComicArchive.verify(url: staged)
+                format == "cbz" ? ComicArchive.verify(url: staged) : PDFIntegrity.verify(url: staged)
             }.value
+            // The wait above is where a cancel-and-retry can slip in: the
+            // record under this key is then a different attempt, and these
+            // bytes belong to the transfer it cancelled — installing them
+            // would mark the new attempt complete and discard its real
+            // completion when it lands.
+            guard Self.completionIsCurrent(
+                attemptBefore: attempt, attemptNow: attempts[key],
+                abandoned: abandoned.contains(key), hasRecord: records[key] != nil
+            ) else {
+                Self.discard(staged)
+                return
+            }
             guard intact else {
                 Self.discard(staged)
                 await abandon(key: key, message: "The download failed its integrity check.")

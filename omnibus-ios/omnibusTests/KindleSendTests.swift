@@ -16,13 +16,13 @@ import Testing
 struct KindleSendTests {
     /// The state a book that can actually be sent arrives in.
     private func gate(
-        hasEpub: Bool = true,
+        hasSendableFile: Bool = true,
         size: Int64? = 1_000_000,
         email: String? = "reader@kindle.com",
         online: Bool = true
     ) -> KindleGate {
         KindleService.gate(
-            hasEpub: hasEpub, epubSizeBytes: size, kindleEmail: email, isOnline: online
+            hasSendableFile: hasSendableFile, epubSizeBytes: size, kindleEmail: email, isOnline: online
         )
     }
 
@@ -33,10 +33,10 @@ struct KindleSendTests {
         #expect(gate() == .ready)
     }
 
-    @Test("hides the action for a book with no EPUB — there is nothing to convert")
+    @Test("hides the action for a book with neither an EPUB nor a PDF — there is nothing to send")
     func hiddenWithoutAnEpub() {
-        let g = gate(hasEpub: false)
-        #expect(g == .noEpub)
+        let g = gate(hasSendableFile: false)
+        #expect(g == .nothingToSend)
         #expect(g.isHidden)
         // Never drawn, so never pressable — the two have to agree, or the
         // tappable-rows invariant below would be vacuously true for it.
@@ -109,7 +109,7 @@ struct KindleSendTests {
     @Test("gives every blocked case a subtitle, and a sendable one none")
     func onlyBlockedCasesExplainThemselves() {
         #expect(KindleGate.ready.reason == nil)
-        #expect(KindleGate.noEpub.reason == nil)
+        #expect(KindleGate.nothingToSend.reason == nil)
         for blocked in [KindleGate.oversize, .noAddress, .offline] {
             #expect(blocked.reason?.isEmpty == false)
         }
@@ -120,7 +120,7 @@ struct KindleSendTests {
         // A row the reader can press must either send, go somewhere, or say
         // why not. `.ready` sends and `.oversize` opens the web uploader, so
         // every *other* tappable case owes a report.
-        for g in [KindleGate.ready, .noEpub, .oversize, .noAddress, .offline]
+        for g in [KindleGate.ready, .nothingToSend, .oversize, .noAddress, .offline]
         where g.isTappable && g != .ready && g != .oversize {
             #expect(g.blockedReport != nil)
         }

@@ -214,3 +214,40 @@ struct DownloadPolicyTests {
         #expect(DownloadActivity.failed("Part 3: gone").label == "Part 3: gone")
     }
 }
+
+// MARK: - A suspended completion checks it still describes the record
+
+struct DownloadCompletionGuardTests {
+    @Test("the same attempt on both sides of the wait may install")
+    func sameAttemptInstalls() {
+        let attempt = UUID()
+        #expect(DownloadManager.completionIsCurrent(
+            attemptBefore: attempt, attemptNow: attempt, abandoned: false, hasRecord: true
+        ))
+        // The relaunch case: a record adopted from disk with no attempt
+        // minted this process is still the same record.
+        #expect(DownloadManager.completionIsCurrent(
+            attemptBefore: nil, attemptNow: nil, abandoned: false, hasRecord: true
+        ))
+    }
+
+    @Test("a cancel-and-retry during the integrity check discards the old bytes")
+    func replacedAttemptIsDiscarded() {
+        // The retry minted a new attempt while the cancelled transfer's
+        // completion was verifying its file; installing those bytes would
+        // complete the new record and orphan its real completion.
+        #expect(!DownloadManager.completionIsCurrent(
+            attemptBefore: UUID(), attemptNow: UUID(), abandoned: false, hasRecord: true
+        ))
+        #expect(!DownloadManager.completionIsCurrent(
+            attemptBefore: nil, attemptNow: UUID(), abandoned: false, hasRecord: true
+        ))
+        // A plain cancel with nothing started again.
+        #expect(!DownloadManager.completionIsCurrent(
+            attemptBefore: UUID(), attemptNow: nil, abandoned: true, hasRecord: false
+        ))
+        #expect(!DownloadManager.completionIsCurrent(
+            attemptBefore: nil, attemptNow: nil, abandoned: false, hasRecord: false
+        ))
+    }
+}

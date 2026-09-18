@@ -43,12 +43,15 @@ pub enum DownloadFormat {
 }
 
 impl DownloadFormat {
-    /// `book_files.format` values this download format is served from, in no
-    /// particular order — the lowest-ordinal matching row is the one the
-    /// server resolves when no `file_id` is given.
+    /// `book_files.format` values this download format is served from, in
+    /// the order the server tries them — `/file` walks EPUB > CBZ > PDF, so a
+    /// validator answer has to walk the same ladder: the first format with a
+    /// row wins, lowest ordinal within it. A flat "lowest ordinal of any"
+    /// would snapshot the CBZ of a dual-format book whose EPUB is what
+    /// downloads.
     pub fn file_formats(self) -> &'static [&'static str] {
         match self {
-            DownloadFormat::Epub => &["EPUB"],
+            DownloadFormat::Epub => &["EPUB", "CBZ", "PDF"],
             DownloadFormat::Audio => &["M4B", "M4A", "MP3"],
         }
     }

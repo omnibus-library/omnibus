@@ -87,7 +87,7 @@ jobs:
       # If we used `actions/cache@v4` (combined), its post-step would run
       # AFTER rust-cache's cleanup — GHA runs post-steps in reverse
       # declaration order — and find an empty path. (We learned that the
-      # hard way; see https://github.com/seamus-sloan/omnibus/pull/319.)
+      # hard way; see https://github.com/omnibus-library/omnibus/pull/319.)
       - name: Restore dx bundle cache
         id: bundle-cache
         uses: actions/cache/restore@v4

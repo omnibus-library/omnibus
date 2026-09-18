@@ -764,9 +764,12 @@ struct ReaderView: View {
     /// device opened on. Runs to completion whether or not anyone is still
     /// waiting on it.
     private func newerRemotePosition() async -> String? {
-        await PositionSync.newerRemote(
+        let remote = await PositionSync.newerRemote(
             uuid: book.uuid, format: .epub, than: openedProgress
         )?.epubCFI?.nilIfBlank
+        // A further position written by the PDF or comic reader of a mixed
+        // book is not somewhere epub.js can display.
+        return remote.flatMap { ReaderController.isEpubCFI($0) ? $0 : nil }
     }
 
     /// Fold in whatever the server has that this device doesn't.

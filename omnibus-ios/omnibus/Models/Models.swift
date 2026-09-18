@@ -183,10 +183,19 @@ struct Book: Codable, Hashable, Sendable, Identifiable {
         formats.contains { $0.caseInsensitiveCompare("cbz") == .orderedSame }
     }
 
+    var hasPDF: Bool {
+        formats.contains { $0.caseInsensitiveCompare("pdf") == .orderedSame }
+    }
+
     /// Whether "Read" opens the native comic pager rather than the EPUB
     /// reader. A book carrying both keeps the EPUB as its primary read —
     /// the same rule the web pager and the server's `/file` resolution use.
     var opensAsComic: Bool { hasComic && !hasEpub }
+
+    /// Whether "Read" opens the PDFKit reader: the last rung of the shared
+    /// EPUB > CBZ > PDF ladder, so a PDF is what opens only when it is the
+    /// only readable file the book has.
+    var opensAsPDF: Bool { hasPDF && !hasEpub && !hasComic }
 
     static let ebookFormats: Set<String> = ["epub", "kepub", "pdf", "mobi", "azw3", "cbz", "cbr"]
     static let audioFormats: Set<String> = ["m4b", "m4a", "mp3", "aac", "flac", "ogg", "opus", "wav"]

@@ -63,6 +63,7 @@ to scope an exception to.
 | `omnibus/Features/` | One folder per screen |
 | `omnibus/Reader/` | EPUB reader: native chrome over the vendored epub.js engine |
 | `omnibus/Comic/` | CBZ comic pager: paged `TabView` + `UIScrollView` zoom, no WebView |
+| `omnibus/Reader/PDF/` | PDF reader on PDFKit: single-page `PDFView`, the shared `pdf-page:N` / `pdf:{page}:{quads}` anchors, structural download check |
 | `omnibus/Widgets/` | Builds the App Group snapshot the Home Screen renders from |
 | `OmnibusShared/` | Compiled into **both** targets: the snapshot, the App Group layout, the deep-link URLs, OKLCH |
 | `OmnibusWidgets/` | The WidgetKit extension — a separate target, a separate process, and a separate bundle id (`com.omnibus.mobile.widgets`) |
@@ -270,6 +271,23 @@ per entry. A saved position is the shared `comic-page:N` anchor in the
 Epub-format progress row plus a whole-book percent, so comics resume across
 devices and surface on Continue Reading with a real progress bar, with no
 comic-specific server state.
+
+**PDFs are native on PDFKit.** A PDF-only book — the last rung of the shared
+EPUB > CBZ > PDF ladder (`Book.opensAsPDF`) — opens in `Reader/PDF/PDFReaderView`:
+a `PDFView` in `.singlePage` mode with `usePageViewController(true)` and
+`autoScales`, so paging, zoom and text selection are the platform's. The
+lifecycle is the comic pager's (a `pdf-page:N` anchor plus percent on the
+Epub-format progress row, `ReadStatusAuto`, session checkpoints, `LifecycleSync`).
+Selecting text raises the EPUB reader's `AnnotationMenu`; the highlight stores
+the web reader's `pdf:{page}:{quads}` anchor, quads in PDF user space on the
+unrotated page (`PDFSelection.bounds(for:)`), and paints as a `PDFAnnotation`
+highlight named for the row so a tap finds it again. Offline the download is the
+PDF itself (`/file` serves it for a PDF-only book), verified structurally before
+install — `%PDF-` header, `%%EOF` in the tail, a parse with pages; the format has
+no checksum. Online the file is fetched whole into a validator-keyed cache and
+opened by URL, never from a `Data`. PDFKit's own edit menu is suppressed so the
+app's menu is the only one over a passage. `PDFContentsSheet` lists the
+document's outline, bookmarks and notes.
 
 **The glue owns gestures, not SwiftUI.** `epub-reader-glue.js` already
 implements swipe-to-turn (the page tracks your finger, with velocity and

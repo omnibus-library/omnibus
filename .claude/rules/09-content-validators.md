@@ -62,6 +62,9 @@ and how well is **format-dependent** — say which when you touch it:
   catches truncation, garbage, and a splice that changes a box size — but a
   same-length splice *inside* `mdat` leaves every header untouched and is
   undetectable. The format carries no checksum to catch it with.
+- **PDF** is structural only (`PDFIntegrity` on iOS): `%PDF-` header, `%%EOF`
+  in the last KiB, a parse that yields pages. Truncation and a non-PDF body
+  are caught; a same-length splice is not, and no checksum exists to catch it.
 - **MP3** has no container and reports `Unverifiable`.
 
 Do not describe this as "verifying the file parses". It is a CRC check for
@@ -111,8 +114,8 @@ compare it against a later metadata refresh — `PlannedFile.source_etag` in
   `ORDER BY bf.ordinal LIMIT 1`. Two ways to get this wrong, and both have
   happened: comparing against the wrong row of a two-edition book, and
   matching on the formats a library can *contain* rather than the narrow set
-  a download pulls — `/api/ebooks/{uuid}/file` serves the EPUB, else the CBZ
-  for a comic-only book; the audiobook routes M4B/M4A/MP3 alone. A mixed
+  a download pulls — `/api/ebooks/{uuid}/file` walks EPUB > CBZ > PDF, and
+  `download_validators` walks the same ladder; audio is M4B/M4A/MP3. A mixed
   PDF/EPUB book that snapshots the PDF reports staleness about a file the
   device doesn't hold and misses every change to the one it does.
 

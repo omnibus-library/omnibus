@@ -5,13 +5,13 @@ description: Recipe for filing GitHub issues in the omnibus house style — brac
 
 # Create a GitHub issue (omnibus house style)
 
-Recipe for filing issues in `seamus-sloan/omnibus` so they share a consistent
+Recipe for filing issues in `omnibus-library/omnibus` so they share a consistent
 shape: a bracketed title prefix, a standard body template, consistent labels,
 and — when a feature is large — native sub-issue linking.
 
 ## Prerequisites
 
-- An authenticated `gh` CLI with write access to `seamus-sloan/omnibus`.
+- An authenticated `gh` CLI with write access to `omnibus-library/omnibus`.
 
 ## Issue shape
 
@@ -83,7 +83,7 @@ Every issue body uses this structure:
 ## Creating an issue
 
 ```bash
-gh issue create -R seamus-sloan/omnibus \
+gh issue create -R omnibus-library/omnibus \
   --title "[Metadata Edit] Per-Library Metadata Precedence Setting" \
   --label enhancement \
   --body "$BODY"
@@ -96,8 +96,8 @@ normal issues, then link each child to the parent. The API wants the child's
 **internal id** (`.id`), not its number:
 
 ```bash
-child_id=$(gh api repos/seamus-sloan/omnibus/issues/909 --jq '.id')
-gh api --method POST repos/seamus-sloan/omnibus/issues/908/sub_issues \
+child_id=$(gh api repos/omnibus-library/omnibus/issues/909 --jq '.id')
+gh api --method POST repos/omnibus-library/omnibus/issues/908/sub_issues \
   -F sub_issue_id=$child_id
 ```
 
@@ -105,7 +105,7 @@ Verify the parent's progress rollup:
 
 ```bash
 gh api graphql -f query='
-query { repository(owner:"seamus-sloan", name:"omnibus") {
+query { repository(owner:"omnibus-library", name:"omnibus") {
   issue(number:908) { subIssuesSummary { total completed percentCompleted } } } }'
 ```
 

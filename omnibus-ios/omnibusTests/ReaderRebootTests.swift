@@ -320,3 +320,46 @@ struct ReaderRebootTests {
         }
     }
 }
+
+// MARK: - A mixed book's PDF rows stay out of epub.js
+
+@Suite("Mixed-book anchors")
+@MainActor
+struct MixedBookAnchorTests {
+    private let pdfMark = Highlight(
+        id: 2, bookUUID: "book-uuid", epubCFIRange: "pdf:3:72,730,172,730,72,720,172,720",
+        color: .green, note: nil, text: "from the PDF", clientID: nil, createdAt: 0
+    )
+    private let koboMark = Highlight(
+        id: 3, bookUUID: "book-uuid", epubCFIRange: nil,
+        color: .blue, note: nil, text: "from a Kobo", clientID: nil, createdAt: 0
+    )
+
+    @Test("a PDF highlight on an EPUB+PDF book is never queued for epub.js")
+    func pdfHighlightsAreFilteredAtConfigure() {
+        let controller = ReaderController(settings: ReaderSettings())
+        controller.webView = WKWebView()
+        controller.configure(
+            book: Book(id: 1, filename: "hound.epub", title: "Hound", uniqueIdentifier: "book-uuid"),
+            startCFI: openedAt,
+            highlights: [mark(readTo), pdfMark, koboMark]
+        )
+        // The CFI row and the anchorless Kobo row (listed, never drawn)
+        // stay; the PDF reader's row does not.
+        #expect(controller.pendingHighlights.map(\.id) == [1, 3])
+
+        // A server refresh that lands before the page is ready is filtered
+        // the same way.
+        controller.applyHighlights([pdfMark, mark(readTo)])
+        #expect(controller.pendingHighlights.map(\.id) == [1])
+    }
+
+    @Test("a PDF or comic position on the shared row is not a restore point")
+    func foreignPositionsAreNotRestored() {
+        #expect(openReader(at: "pdf-page:3").restoreCFI == nil)
+        #expect(openReader(at: "comic-page:3").restoreCFI == nil)
+        #expect(openReader(at: openedAt).restoreCFI == openedAt)
+        #expect(ReaderController.isEpubCFI("  epubcfi(/6/4)"))
+        #expect(!ReaderController.isEpubCFI("pdf:3"))
+    }
+}

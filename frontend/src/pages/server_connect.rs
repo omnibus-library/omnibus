@@ -136,7 +136,7 @@ fn server_connect_form(
                 // TODO(#1118): point at dedicated hosting docs once they exist.
                 a {
                     class: "auth-field-action-link",
-                    href: "https://github.com/seamus-sloan/omnibus",
+                    href: "https://github.com/omnibus-library/omnibus",
                     target: "_blank",
                     rel: "noreferrer",
                     "Learn how to host one"

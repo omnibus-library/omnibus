@@ -266,6 +266,42 @@ async fn download_validators_answers_each_query_about_the_file_the_server_would_
 }
 
 #[tokio::test]
+async fn download_validators_walks_the_ebook_ladder_epub_then_cbz_then_pdf() {
+    use omnibus_shared::DownloadFormat;
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    // The PDF sits at ordinal 0 and the EPUB behind it; `/file` still serves
+    // the EPUB, so the validator must be the EPUB's — a flat lowest-ordinal
+    // pick would report the download stale whenever the PDF changed.
+    seed_book_with_files(
+        &pool,
+        "mixed",
+        &[("PDF", 0, 1024, 15), ("EPUB", 1, 4096, 255)],
+    )
+    .await;
+    seed_book_with_files(&pool, "comic", &[("CBZ", 0, 2048, 31)]).await;
+    seed_book_with_files(&pool, "paper", &[("PDF", 0, 8192, 511)]).await;
+
+    let answers = download_validators(
+        &pool,
+        &[
+            validator_query("mixed", DownloadFormat::Epub, None),
+            validator_query("comic", DownloadFormat::Epub, None),
+            validator_query("paper", DownloadFormat::Epub, None),
+        ],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(answers[0].etag.as_deref(), Some("\"ff-1000\""));
+    assert_eq!(answers[1].etag.as_deref(), Some("\"1f-800\""));
+    assert_eq!(
+        answers[2].etag.as_deref(),
+        Some("\"1ff-2000\""),
+        "a PDF-only book's download is its PDF, so the sweep must be able to compare it"
+    );
+}
+
+#[tokio::test]
 async fn download_validators_honours_an_explicitly_chosen_file() {
     use omnibus_shared::DownloadFormat;
     let pool = init_db("sqlite::memory:").await.unwrap();

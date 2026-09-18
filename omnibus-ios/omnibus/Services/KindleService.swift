@@ -46,13 +46,14 @@ enum KindleSendStatus: Decodable, Equatable, Sendable {
 
 /// Whether the Send-to-Kindle action can run, and why not when it can't.
 ///
-/// Everything but `.ready` and `.noEpub` still renders a row: a reader who
+/// Everything but `.ready` and `.nothingToSend` still renders a row: a reader who
 /// finds nothing in the menu learns nothing, where a disabled row carrying its
 /// own reason says what to fix.
 enum KindleGate: Equatable {
     case ready
-    /// Nothing to convert — the endpoint sends the EPUB or errors `NoEpub`.
-    case noEpub
+    /// Nothing to send — the endpoint mails the EPUB, else the PDF, and
+    /// errors `NoEpub` on a book with neither.
+    case nothingToSend
     /// Over Kindle's email cap. Still actionable: Amazon's own uploader takes
     /// it, so the row opens that rather than being a dead end.
     case oversize
@@ -60,7 +61,7 @@ enum KindleGate: Equatable {
     case offline
 
     /// Whether the action is absent from the menu entirely.
-    var isHidden: Bool { self == .noEpub }
+    var isHidden: Bool { self == .nothingToSend }
 
     /// Whether tapping the row does something.
     ///
@@ -68,12 +69,12 @@ enum KindleGate: Equatable {
     /// answer when the reader can already tell why. `.oversize` has somewhere
     /// else to send them, and `.noAddress` has something to say. `.offline` is
     /// the one that doesn't need either: the app says so globally, and every
-    /// other network-only control here greys out the same way. `.noEpub` is
+    /// other network-only control here greys out the same way. `.nothingToSend` is
     /// never drawn at all, so it is not tappable in any sense.
     var isTappable: Bool {
         switch self {
         case .ready, .oversize, .noAddress: true
-        case .offline, .noEpub: false
+        case .offline, .nothingToSend: false
         }
     }
 
@@ -81,7 +82,7 @@ enum KindleGate: Equatable {
     /// the only explanation: [`blockedReport`] is what a tap actually shows.
     var reason: String? {
         switch self {
-        case .ready, .noEpub: nil
+        case .ready, .nothingToSend: nil
         case .oversize: "Too large to email"
         case .noAddress: "No Kindle address yet"
         case .offline: "You're offline"
@@ -152,8 +153,9 @@ enum KindleService {
     )
 
     /// Decide whether the action can run, from state the caller already holds:
-    /// the book's formats and EPUB size, the cached `UserSummary`'s Kindle
-    /// address, and reachability.
+    /// whether the book has a file the endpoint mails (an EPUB, else a PDF)
+    /// and its EPUB size, the cached `UserSummary`'s Kindle address, and
+    /// reachability.
     ///
     /// Deliberately *not* a check that the server has SMTP configured — that
     /// status is admin-only (`GET /api/smtp`), so no reader's client can
@@ -166,12 +168,12 @@ enum KindleService {
     /// own. So the reason shown is the one that would still be true once the
     /// reader reconnects.
     static func gate(
-        hasEpub: Bool,
+        hasSendableFile: Bool,
         epubSizeBytes: Int64?,
         kindleEmail: String?,
         isOnline: Bool
     ) -> KindleGate {
-        guard hasEpub else { return .noEpub }
+        guard hasSendableFile else { return .nothingToSend }
         // Signed comparison, so a negative size (a corrupt row, a sentinel)
         // reads as "not oversize" and falls through to the normal path — the
         // server re-checks the real size before it reads the file in.
