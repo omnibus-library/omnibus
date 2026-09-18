@@ -2876,8 +2876,8 @@ a.idx-letter-on:focus-visible {
 }
 
 /* The shared modal scrim. Blurred to the same depth as `.users-modal-overlay`
-   — it was the one overlay in the app with no blur at all, so a dialog opened
-   over the library grid competed with every cover behind it. */
+   — unblurred, a dialog opened over the library grid competed with every
+   cover behind it. */
 .author-photo-modal-backdrop {
   position: fixed;
   inset: 0;

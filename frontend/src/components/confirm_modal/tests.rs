@@ -68,11 +68,32 @@ fn confirm_modal_shell_is_focusable_so_escape_can_reach_its_key_handler() {
 
 // Regression for the delete-shelf modal, which shipped with its copy flush
 // against the card edge: the padded pane is the body helper's own wrapper,
-// not something each caller has to remember.
+// not something each caller has to remember. Asserting the *nesting* rather
+// than the class's presence is the point — an empty wrapper rendered beside
+// the content is exactly the shape that shipped.
 #[test]
-fn confirm_modal_body_wraps_its_content_in_the_padded_pane() {
+fn confirm_modal_body_nests_its_content_inside_the_padded_pane() {
     let html = render(rsx! { Harness {} });
-    assert!(html.contains("del-body"), "{html}");
+    let pane = html
+        .find(r#"class="del-body""#)
+        .unwrap_or_else(|| panic!("padded pane missing from {html}"));
+    let actions = html
+        .find("del-actions")
+        .unwrap_or_else(|| panic!("action row missing from {html}"));
+    assert!(
+        pane < actions,
+        "the pane must open before the buttons: {html}"
+    );
+    let inside = &html[pane..actions];
+    assert!(
+        !inside.contains("</div>"),
+        "the pane closes before its own action row: {html}"
+    );
+    assert!(
+        inside.contains("del-title"),
+        "title outside the pane: {html}"
+    );
+    assert!(inside.contains("del-copy"), "copy outside the pane: {html}");
 }
 
 #[component]
