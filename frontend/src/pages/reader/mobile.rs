@@ -188,7 +188,11 @@ fn init_opts(uuid: &str, prefs: ReaderPrefs, cfi: Option<String>) -> serde_json:
         "cfi": cfi,
         "fontSize": *prefs.font_size.peek(),
         "theme": prefs.theme.peek().as_attr(),
+        // `null` under Original — the glue reads that as "no override".
         "fontFamily": prefs.typeface.peek().to_css(),
+        // The reader's self-hosted faces, resolved through the same asset
+        // protocol the scripts come over.
+        "fontsHref": super::reader_fonts_css_href(),
         "lineHeight": prefs.line_spacing.peek().to_css(),
         "maxWidth": prefs.margins.peek().to_css(),
         "justify": *prefs.justify.peek(),

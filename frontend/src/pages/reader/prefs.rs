@@ -76,12 +76,14 @@ impl ReaderPrefs {
     }
 
     /// Apply a typeface, push to JS, persist to localStorage (web) /
-    /// WebView localStorage (mobile).
+    /// WebView localStorage (mobile). Original has no stack, so it reaches the
+    /// glue as `setFont(null)` — which clears the override rather than setting
+    /// one.
     pub(crate) fn set_typeface(self, t: Typeface) {
         let mut typeface = self.typeface;
         typeface.set(t);
         #[cfg(any(feature = "web", feature = "mobile"))]
-        reader_call_json("setFont", t.to_css());
+        reader_call_json("setFont", &t.to_css());
         #[cfg(feature = "web")]
         save_reader_pref("omn.typeface", t.to_storage());
         #[cfg(feature = "mobile")]
@@ -230,8 +232,9 @@ fn load_persisted_font_size() -> Option<i32> {
     None
 }
 
+/// Apple Books' default: the publisher's own faces, with no reader override.
 fn default_typeface() -> Typeface {
-    Typeface::Modern
+    Typeface::Original
 }
 
 #[cfg(feature = "web")]

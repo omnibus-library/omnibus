@@ -46,13 +46,17 @@ use tower_http::set_header::SetResponseHeaderLayer;
 ///   forward page-turn is blocked as a CSP violation (#2213) — the same
 ///   reason `img-src` already lists `blob:`; the Google Fonts host because
 ///   `atrium.css` `@import`s the Cormorant Garamond / Instrument Sans / Space
-///   Mono stylesheet from it. (The reader glue loads a second one for the
-///   in-iframe reading faces.) Self-hosting the fonts (a follow-up tracked in
-///   `atrium.css`) would let both the CDN host here and in `font-src` drop
-///   back to `'self'`.
+///   Mono stylesheet from it. The CDN hosts are there for *that* import alone:
+///   the reader's own faces are self-hosted under `/assets/reader-fonts/` and
+///   loaded by the same-origin section iframe under `'self'`. Self-hosting the
+///   app-chrome faces too (a follow-up tracked in `atrium.css`) is what would
+///   let both this host and the one in `font-src` drop back to `'self'`.
 /// - `font-src 'self' data: https://fonts.gstatic.com` — Google serves the
 ///   actual WOFF2 files from `fonts.gstatic.com`; without it the `@import`ed
-///   stylesheet resolves but the glyphs fall back to system fonts.
+///   stylesheet resolves but the glyphs fall back to system fonts. `'self'`
+///   covers the reader's self-hosted faces, and `data:` the faces a book
+///   embeds, which the reader glue inlines as `data:` URIs rather than leaving
+///   on the `blob:` rewrite epub.js gives them (`font-src` lists no `blob:`).
 /// - `img-src 'self' data: blob:` plus every host in
 ///   [`db::all_cover_hosts`] — `data:` / `blob:` cover thumbnails and
 ///   base64-embedded images, plus each metadata provider's cover CDN so the

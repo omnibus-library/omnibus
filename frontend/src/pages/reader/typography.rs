@@ -4,43 +4,80 @@
 //! line spacing, margins); the reader page reads them on mount and writes
 //! them on every change.
 
-/// Reader body typeface choice.
+/// Reader body typeface choice. Mirrors `ReaderTypeface` in
+/// `omnibus-ios/omnibus/Reader/ReaderWebView.swift` — keep the stacks
+/// identical.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Typeface {
+    Original,
     Editorial,
     Classic,
     Modern,
+    Sans,
+    Mono,
 }
 
 // Unused only in plain SSR builds (no web, no mobile) — both interactive targets convert.
 #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]
 impl Typeface {
-    /// The `font-family` stack applied to the section iframe.
-    pub(crate) fn to_css(self) -> &'static str {
+    /// Every variant, in the order the AA panel lays the chips out.
+    pub(crate) const ALL: [Typeface; 6] = [
+        Self::Original,
+        Self::Editorial,
+        Self::Classic,
+        Self::Modern,
+        Self::Sans,
+        Self::Mono,
+    ];
+
+    /// The reader-owned `font-family` stack, or `None` for Original — no
+    /// override at all, so the publisher's faces win.
+    pub(crate) fn to_css(self) -> Option<&'static str> {
         // Georgia sits ahead of the generic `serif` so a webfont that fails to
         // load in the section iframe degrades to a real book serif, not Times.
         match self {
-            Self::Editorial => "'Instrument Serif',Georgia,serif",
-            Self::Classic => "'EB Garamond',Georgia,serif",
-            Self::Modern => "Georgia,serif",
+            Self::Original => None,
+            Self::Editorial => Some("'Instrument Serif',Georgia,serif"),
+            Self::Classic => Some("'EB Garamond',Georgia,serif"),
+            Self::Modern => Some("Georgia,serif"),
+            Self::Sans => Some("system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif"),
+            Self::Mono => Some("ui-monospace,'SF Mono',Menlo,Consolas,monospace"),
+        }
+    }
+
+    /// The AA-panel chip label for this value.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Original => "Original",
+            Self::Editorial => "Editorial",
+            Self::Classic => "Classic",
+            Self::Modern => "Modern",
+            Self::Sans => "Sans",
+            Self::Mono => "Mono",
         }
     }
 
     /// The localStorage token for this value.
     pub(crate) fn to_storage(self) -> &'static str {
         match self {
+            Self::Original => "original",
             Self::Editorial => "editorial",
             Self::Classic => "classic",
             Self::Modern => "modern",
+            Self::Sans => "sans",
+            Self::Mono => "mono",
         }
     }
 
     /// Parse a stored token; `None` for anything unrecognized.
     pub(crate) fn from_storage(s: &str) -> Option<Self> {
         match s {
+            "original" => Some(Self::Original),
             "editorial" => Some(Self::Editorial),
             "classic" => Some(Self::Classic),
             "modern" => Some(Self::Modern),
+            "sans" => Some(Self::Sans),
+            "mono" => Some(Self::Mono),
             _ => None,
         }
     }
@@ -193,8 +230,33 @@ mod tests {
 
     #[test]
     fn typeface_round_trips_through_storage_for_every_variant() {
-        for variant in [Typeface::Editorial, Typeface::Classic, Typeface::Modern] {
+        for variant in Typeface::ALL {
             assert_eq!(Typeface::from_storage(variant.to_storage()), Some(variant));
+        }
+    }
+
+    #[test]
+    fn typeface_to_css_is_none_only_for_original() {
+        // Original is the *absence* of an override — a stack here (even an
+        // empty string) would flatten the publisher's faces, which is the one
+        // thing this variant exists to avoid.
+        assert_eq!(Typeface::Original.to_css(), None);
+        for variant in Typeface::ALL
+            .into_iter()
+            .filter(|t| *t != Typeface::Original)
+        {
+            let stack = variant
+                .to_css()
+                .unwrap_or_else(|| panic!("{variant:?} must name a stack"));
+            assert!(!stack.is_empty(), "{variant:?} stack is empty");
+            // Every named stack ends in a generic family, so a face that fails
+            // to load still lands on something readable.
+            assert!(
+                stack.ends_with("serif")
+                    || stack.ends_with("sans-serif")
+                    || stack.ends_with("monospace"),
+                "{variant:?} stack has no generic fallback: {stack}"
+            );
         }
     }
 

@@ -39,6 +39,15 @@ Picks are uuids, so they survive a query change even though the cards don't;
 `picker-review-picked` toggles a view of just them. `picker-error` is the
 failed-fetch state and is distinct from `picker-empty`.
 
+**Original is an absence, not a face.** The typeface chips are
+`reader-typeface-<token>` (`original`, `editorial`, `classic`, `modern`,
+`sans`, `mono`), and under the default, Original, the section's
+`#__omnibus_font` style element is present but **empty** and
+`body.style.fontFamily` is `""` — the reader declares no `font-family` at all
+so the publisher's own faces win. So assert on a `p`'s computed `font-family`
+inside `#omnibus-viewer iframe` (same-origin, `contentDocument` is reachable),
+never on a named face being set somewhere.
+
 **The book detail panel reads two ways.** `book_detail_scroll_stops` (off by
 default) chooses between the flow — one continuous scroller, `#bdmq-flow`,
 sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book

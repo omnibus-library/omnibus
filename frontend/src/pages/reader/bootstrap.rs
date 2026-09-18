@@ -13,6 +13,8 @@ pub(crate) struct BootstrapArgs<'a> {
     pub font_size: i32,
     pub theme_lit: &'a str,
     pub font_family_lit: &'a str,
+    /// The reader's self-hosted `@font-face` sheet, linked inside every section.
+    pub fonts_href_lit: &'a str,
     pub line_height_lit: &'a str,
     pub max_width_lit: &'a str,
     pub justify_val: bool,
@@ -32,6 +34,7 @@ pub(crate) fn reader_bootstrap_js(args: &BootstrapArgs<'_>) -> String {
         font_size,
         theme_lit,
         font_family_lit,
+        fonts_href_lit,
         line_height_lit,
         max_width_lit,
         justify_val,
@@ -39,7 +42,7 @@ pub(crate) fn reader_bootstrap_js(args: &BootstrapArgs<'_>) -> String {
         locations_key_lit,
     } = *args;
     format!(
-        r#"(function(){{ var n=0; (function go(){{ if (window.OmnibusReader && window.ePub) {{ window.OmnibusReader.init("omnibus-viewer", {url_lit}, {{ cfi: {cfi_arg}, fontSize: {font_size}, theme: {theme_lit}, fontFamily: {font_family_lit}, lineHeight: {line_height_lit}, maxWidth: {max_width_lit}, justify: {justify_val}, spread: {spread_lit}, locationsKey: {locations_key_lit} }}); }} else if (n++ < 200) {{ setTimeout(go, 50); }} else if (typeof window.__omnibusOnStatus === "function") {{ window.__omnibusOnStatus("error"); }} }})(); }})();"#
+        r#"(function(){{ var n=0; (function go(){{ if (window.OmnibusReader && window.ePub) {{ window.OmnibusReader.init("omnibus-viewer", {url_lit}, {{ cfi: {cfi_arg}, fontSize: {font_size}, theme: {theme_lit}, fontFamily: {font_family_lit}, fontsHref: {fonts_href_lit}, lineHeight: {line_height_lit}, maxWidth: {max_width_lit}, justify: {justify_val}, spread: {spread_lit}, locationsKey: {locations_key_lit} }}); }} else if (n++ < 200) {{ setTimeout(go, 50); }} else if (typeof window.__omnibusOnStatus === "function") {{ window.__omnibusOnStatus("error"); }} }})(); }})();"#
     )
 }
 
@@ -55,6 +58,7 @@ mod tests {
             font_size: 18,
             theme_lit: "\"dark\"",
             font_family_lit: "null",
+            fonts_href_lit: "\"/assets/reader-fonts/reader-fonts.css\"",
             line_height_lit: "null",
             max_width_lit: "null",
             justify_val: false,
@@ -79,6 +83,7 @@ mod tests {
             font_size: 22,
             theme_lit: "\"sepia\"",
             font_family_lit: "\"Georgia, serif\"",
+            fonts_href_lit: "\"/assets/reader-fonts/reader-fonts.css\"",
             line_height_lit: "\"1.5\"",
             max_width_lit: "\"42rem\"",
             justify_val: true,
@@ -88,6 +93,7 @@ mod tests {
         assert!(js.contains("spread: \"none\""));
         assert!(js.contains("cfi: \"epubcfi(/6/2)\""));
         assert!(js.contains("fontFamily: \"Georgia, serif\""));
+        assert!(js.contains("fontsHref: \"/assets/reader-fonts/reader-fonts.css\""));
         assert!(js.contains("lineHeight: \"1.5\""));
         assert!(js.contains("maxWidth: \"42rem\""));
         assert!(js.contains("justify: true"));

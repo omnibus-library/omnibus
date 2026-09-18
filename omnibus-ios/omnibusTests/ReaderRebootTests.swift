@@ -78,6 +78,11 @@ private let readTo = "epubcfi(/6/14[chap07]!/4/2/58,/1:0,/1:1)"
 /// The call a page has to receive for a size change to have actually landed.
 private let setFontSize26 = "OmnibusReader.setFontSize(26)"
 
+/// Original is the *absence* of a face, so it travels as a literal `null` —
+/// a quoted "original" would be read as a font-family name.
+private let setFontOriginal = "OmnibusReader.setFont(null)"
+private let setFontClassic = "OmnibusReader.setFont(\"'EB Garamond',Georgia,serif\")"
+
 @Suite("Reader page reboot")
 @MainActor
 struct ReaderRebootTests {
@@ -285,6 +290,44 @@ struct ReaderRebootTests {
                 == [setFontSize26]
         )
         #expect(ReaderController.settingsScripts(from: wanted, to: wanted).isEmpty)
+    }
+
+    @Test("a sync sends a named face as its stack and Original as null")
+    func syncCarriesTheStackOrClearsIt() {
+        var editorial = ReaderSettings()
+        editorial.typeface = .editorial
+        var classic = ReaderSettings()
+        classic.typeface = .classic
+
+        #expect(
+            ReaderController.settingsScripts(from: editorial, to: ReaderSettings())
+                == [setFontOriginal]
+        )
+        #expect(
+            ReaderController.settingsScripts(from: ReaderSettings(), to: classic)
+                == [setFontClassic]
+        )
+    }
+
+    @Test("a boot omits fontFamily under Original and carries the bundled fonts sheet")
+    func bootOmitsTheFaceUnderOriginal() throws {
+        try withCleanReaderSettings {
+            let controller = openReader(at: openedAt)
+
+            let original = try bootOptions(controller)
+            // Present-but-null would be a face named "null"; the option has to
+            // be absent for the glue to read it as no override at all.
+            #expect(original["fontFamily"] == nil)
+            // The sheet the named faces come from — bundled, so they resolve
+            // with no network.
+            #expect(original["fontsHref"] as? String == ReaderWebView.fontsHref)
+
+            controller.settings.typeface = .editorial
+            controller.webContentProcessDidTerminate(state: .active)
+
+            let named = try bootOptions(controller)
+            #expect(named["fontFamily"] as? String == "'Instrument Serif',Georgia,serif")
+        }
     }
 
     @Test("a torn-down page stops being a diff base")

@@ -17,15 +17,16 @@ import Testing
 
 /// A reader who has changed every setting.
 private let stored = ReaderSettings(
-    fontSize: 24, fontFamily: "sans-serif", lineHeight: 1.9,
+    fontSize: 24, typeface: .sans, lineHeight: 1.9,
     margins: .wide, justify: false, theme: "sepia", spread: .single
 )
 
-/// `stored` on the wire.
+/// `stored` on the wire. The typeface still travels under the `fontFamily`
+/// key — the name is the persistence contract, not the value's shape.
 private func fullPayload() -> [String: Any] {
     [
         "fontSize": 24,
-        "fontFamily": "sans-serif",
+        "fontFamily": "sans",
         "lineHeight": 1.9,
         "margins": "wide",
         "justify": false,
@@ -74,7 +75,7 @@ struct ReaderSettingsTests {
         var expected = stored
         switch dropped {
         case "fontSize": expected.fontSize = defaults.fontSize
-        case "fontFamily": expected.fontFamily = defaults.fontFamily
+        case "fontFamily": expected.typeface = defaults.typeface
         case "lineHeight": expected.lineHeight = defaults.lineHeight
         case "margins": expected.margins = defaults.margins
         case "justify": expected.justify = defaults.justify
@@ -153,5 +154,41 @@ struct ReaderSettingsTests {
         withCleanReaderSettings {
             #expect(ReaderSettings.load() == ReaderSettings())
         }
+    }
+
+    /// The typeface used to be stored as the raw CSS stack it produced. Those
+    /// three tokens are what any pre-enum blob can hold, and each has to land
+    /// on the union-list face it meant — `serif` on Original, because it was
+    /// both that build's default and what an explicit "Serif" pick wrote.
+    @Test(
+        "a token from before the typeface enum maps onto the union list",
+        arguments: [
+            ("serif", ReaderTypeface.original),
+            ("sans-serif", ReaderTypeface.sans),
+            ("monospace", ReaderTypeface.mono),
+        ]
+    )
+    func legacyTypefaceTokenMigrates(token: String, expected: ReaderTypeface) throws {
+        var payload = fullPayload()
+        payload["fontFamily"] = token
+
+        let decoded = try decode(payload)
+
+        #expect(decoded.typeface == expected)
+        // The migration is a read of one key; nothing else may move with it.
+        var rest = stored
+        rest.typeface = expected
+        #expect(decoded == rest)
+    }
+
+    @Test("an unknown typeface token costs only its own setting")
+    func unknownTypefaceTokenFallsBackAlone() throws {
+        var payload = fullPayload()
+        payload["fontFamily"] = "colossal"
+
+        let decoded = try decode(payload)
+
+        #expect(decoded.typeface == ReaderSettings().typeface)
+        #expect(decoded.theme == "sepia")
     }
 }

@@ -18,9 +18,6 @@ struct ReaderSettingsSheet: View {
     private let themes: [(token: String, label: String)] = [
         ("light", "Light"), ("sepia", "Sepia"), ("dark", "Dark"), ("black", "Black"),
     ]
-    private let fonts: [(token: String, label: String)] = [
-        ("serif", "Serif"), ("sans-serif", "Sans"), ("monospace", "Mono"),
-    ]
 
     var body: some View {
         NavigationStack {
@@ -45,13 +42,7 @@ struct ReaderSettingsSheet: View {
                     }
 
                     group("Type") {
-                        PillSelector(
-                            options: fonts.map(\.token),
-                            label: { token in
-                                fonts.first { $0.token == token }?.label ?? token
-                            },
-                            selection: $controller.settings.fontFamily
-                        )
+                        TypefaceGrid(selection: $controller.settings.typeface)
 
                         Plate {
                             sizeRow
@@ -203,6 +194,51 @@ struct ReaderSettingsSheet: View {
             SectionLabel(title)
             content()
         }
+    }
+}
+
+/// The six faces, as a 3×2 grid of capsules.
+///
+/// A `PillSelector` row, which every other control here uses, only holds three
+/// at phone widths — six truncate ("Editorial" first), and a control whose
+/// labels are unreadable is not a control. The capsules are styled like its
+/// segments so the grid still reads as one family with the rows around it.
+private struct TypefaceGrid: View {
+    @Binding var selection: ReaderTypeface
+
+    @Environment(\.palette) private var palette
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 6) {
+            ForEach(ReaderTypeface.allCases, id: \.self) { face in
+                capsule(face)
+            }
+        }
+    }
+
+    private func capsule(_ face: ReaderTypeface) -> some View {
+        let isOn = selection == face
+
+        return Button {
+            guard selection != face else { return }
+            Haptics.select()
+            withAnimation(Motion.snap) { selection = face }
+        } label: {
+            Text(face.label)
+                .font(.ui(13, weight: isOn ? .semibold : .medium))
+                .foregroundStyle(isOn ? palette.accentInk.color : palette.ink2Color)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule().fill(isOn ? palette.accentColor : palette.bg2Color.opacity(0.7))
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
     }
 }
 

@@ -543,6 +543,28 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     hasCover: true,
   },
 
+  // Reserved for the typeface specs in reader.spec.ts, which drive typography
+  // and seed highlights on it. Its publisher CSS embeds a font (a `../`
+  // relative url() from a subdirectory) and sets an element-level
+  // `font-family` from it — the shape that makes "Original keeps the
+  // publisher's face, a named face beats it" assertable at all. No other spec
+  // may open it in the reader. Those typeface tests only *read* it and assert
+  // nothing server-side (no read status, saved position, or highlight-list
+  // counts), so sharing it between themselves is safe. "Evelyn Boyd Granville"
+  // is unique across ALL fixtures (ebook + audiobook) — shelves.spec.ts asserts
+  // exact author-scoped counts.
+  {
+    slug: "standalone-lagoon",
+    filename: "standalone-lagoon.epub",
+    title: "Lagoon of Ligatures",
+    authors: ["Evelyn Boyd Granville"],
+    publisher: "Omnibus Test Press",
+    published: "1956-06-01",
+    tags: [],
+    language: "en",
+    hasCover: true,
+  },
+
   // The two CBZ fixtures (tools/make_cbz.ts) are reserved for the
   // comic-pager spec (comic_reader.spec.ts): `aurora-station-01` receives
   // that spec's progress and read-status writes (the pager auto-marks
