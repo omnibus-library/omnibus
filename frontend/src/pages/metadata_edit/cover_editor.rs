@@ -1,30 +1,35 @@
 //! Cover upload/replace/revert control for the metadata edit sidebar.
-//! Upload posts a multipart body directly to the REST
+//! Against a saved book, upload posts a multipart body directly to the REST
 //! `/api/ebooks/:uuid/cover` route (binary can't ride the server-function
-//! transport); revert goes through the analogous `DELETE`. Both update the
-//! local preview and bump the app-wide `CoverCacheBust` registry.
+//! transport) and revert goes through the analogous `DELETE`; both update
+//! the local preview and bump the app-wide `CoverCacheBust` registry. Under
+//! review ([`CoverMode::Staged`]) the same controls stage the pick for the
+//! upload commit and write nothing.
 
 use dioxus::prelude::*;
 use omnibus_shared::EbookMetadata;
 
 use super::bust_query;
+use super::cover_mode::{CoverMode, StagedCover};
 use crate::components::atrium::Cover;
 use crate::contexts::{bump_cover_cache_bust, use_cover_cache_bust};
+use crate::data::UploadCover;
 use crate::{data, media_url, use_server_url};
 
 /// Cover preview card: image/plate + upload + revert-override controls.
 /// `on_change` fires with the server's merged `EbookMetadata` after a
 /// successful upload or revert, so the parent sidebar's "Override active"
-/// card can stay in sync without re-fetching the whole book.
+/// card can stay in sync without re-fetching the whole book. Under review
+/// it never fires — nothing is written.
 #[component]
-pub(super) fn CoverEditor(
+pub(crate) fn CoverEditor(
     book: EbookMetadata,
-    uuid: String,
+    mode: CoverMode,
     on_change: EventHandler<EbookMetadata>,
 ) -> Element {
     let server_url = use_server_url();
     let global_bust = use_cover_cache_bust().0;
-    let bust_key = uuid.clone();
+    let bust_key = mode.uuid().unwrap_or_default().to_string();
     let mut state = CoverState {
         busy: use_signal(|| false),
         status: use_signal(|| None),
@@ -57,17 +62,28 @@ pub(super) fn CoverEditor(
             div { class: "me-sidebar-head",
                 div { class: "label", "Cover" }
             }
-            {cover_preview(&book, &server_url, state)}
-            div { class: "mono me-cover-hint", "data-testid": "cover-hint",
-                if (state.cover_url)().is_none() {
-                    "no cover available"
-                } else if (state.has_cover_override)() {
-                    "custom upload"
-                } else {
-                    "extracted from file"
-                }
-            }
-            {cover_controls(uuid, server_url, state, on_change)}
+            {match &mode {
+                CoverMode::Live { uuid } => rsx! {
+                    {cover_preview(&book, &server_url, state)}
+                    div { class: "mono me-cover-hint", "data-testid": "cover-hint",
+                        if (state.cover_url)().is_none() {
+                            "no cover available"
+                        } else if (state.has_cover_override)() {
+                            "custom upload"
+                        } else {
+                            "extracted from file"
+                        }
+                    }
+                    {cover_controls(uuid.clone(), server_url.clone(), state, on_change)}
+                },
+                CoverMode::Staged(staged) => rsx! {
+                    {staged_preview(&book, *staged)}
+                    div { class: "mono me-cover-hint", "data-testid": "cover-hint",
+                        {staged_hint(&staged.read())}
+                    }
+                    {staged_controls(*staged, state)}
+                },
+            }}
             if let Some(msg) = (state.status)() {
                 p {
                     class: "mono me-cover-hint",
@@ -150,6 +166,27 @@ fn cover_preview(book: &EbookMetadata, server_url: &str, state: CoverState) -> E
         div { class: "me-cover-preview",
             Cover { book: display_book, src_override }
         }
+    }
+}
+
+/// The review preview: whatever the stage holds, straight into `src_override`
+/// — there is no cover route to fall back to, so a `None` is the plate.
+fn staged_preview(book: &EbookMetadata, staged: Signal<StagedCover>) -> Element {
+    let src_override = staged.read().preview.clone();
+    rsx! {
+        div { class: "me-cover-preview", "data-testid": "cover-staged-preview",
+            Cover { book: book.clone(), src_override }
+        }
+    }
+}
+
+/// The hint line under a review preview: which cover the commit will carry.
+fn staged_hint(staged: &StagedCover) -> &'static str {
+    match &staged.source {
+        UploadCover::Bytes { .. } => "your image \u{b7} saved with the book",
+        UploadCover::Url(_) => "from the edition picker \u{b7} saved with the book",
+        UploadCover::Keep if staged.preview.is_some() => "extracted from file",
+        UploadCover::Keep => "no cover available",
     }
 }
 
@@ -238,6 +275,73 @@ fn cover_controls(
                     disabled: (state.busy)(),
                     onclick: on_revert_cover,
                     "Revert to scanned cover"
+                }
+            }
+        }
+    }
+}
+
+/// The same two controls under review: the picker stages the image and
+/// previews it, and the revert puts the file's own cover back. Same test ids
+/// as the live controls, so the one spec shape drives both.
+fn staged_controls(mut staged: Signal<StagedCover>, mut state: CoverState) -> Element {
+    let on_pick = move |evt: Event<FormData>| {
+        let Some(file) = evt.files().into_iter().next() else {
+            return;
+        };
+        let filename = file.name();
+        let mime = file
+            .content_type()
+            .unwrap_or_else(|| "application/octet-stream".into());
+        state.start(&format!("Reading {filename}\u{2026}"));
+        spawn(async move {
+            match file.read_bytes().await {
+                Ok(bytes) => {
+                    let bytes = bytes.to_vec();
+                    let preview = data::image_preview_url(&bytes, &mime);
+                    staged.write().stage(
+                        UploadCover::Bytes {
+                            filename,
+                            mime,
+                            bytes,
+                        },
+                        preview,
+                    );
+                    state.status.set(Some("Cover staged.".into()));
+                }
+                Err(e) => state.fail(format!("Read file failed: {e}")),
+            }
+            state.busy.set(false);
+        });
+    };
+
+    let on_revert = move |_| {
+        staged.write().reset();
+        state.status.set(Some("Using the file's cover.".into()));
+    };
+
+    let is_staged = staged.read().is_staged();
+    rsx! {
+        div { class: "me-cover-actions",
+            label { class: "label", r#for: "cover-file-input", "Replace cover" }
+            input {
+                id: "cover-file-input",
+                class: "me-cover-file",
+                r#type: "file",
+                accept: "image/jpeg,image/png,image/webp,image/gif",
+                "data-testid": "cover-upload-input",
+                disabled: (state.busy)(),
+                onchange: on_pick,
+            }
+            if is_staged {
+                button {
+                    r#type: "button",
+                    class: "btn ghost sm",
+                    style: "margin-top: 8px; width: 100%; justify-content: center;",
+                    "data-testid": "cover-remove-override",
+                    disabled: (state.busy)(),
+                    onclick: on_revert,
+                    "Use the file\u{2019}s cover"
                 }
             }
         }

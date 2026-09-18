@@ -2,22 +2,24 @@
 //! upload/revert (delegated to `cover_editor::CoverEditor`), identifiers,
 //! and the override-active card. Full-override revert bubbles to the parent
 //! `MetadataEditForm`; cover-only revert stays local, updating `live_book` so
-//! the "Override active" card tracks it.
+//! the "Override active" card tracks it. Under review the card never shows
+//! — a book that doesn't exist yet has no overrides to revert.
 
 use dioxus::prelude::*;
 use omnibus_shared::EbookMetadata;
 
 use super::cover_editor::CoverEditor;
+use super::cover_mode::CoverMode;
 
 /// Cover preview + identifiers + override-status sidebar.
 #[component]
-pub(super) fn Sidebar(
+pub(crate) fn Sidebar(
     book: EbookMetadata,
+    mode: CoverMode,
     saving: Signal<bool>,
     on_revert: EventHandler<()>,
     on_cover_applied: EventHandler<EbookMetadata>,
 ) -> Element {
-    let uuid = book.unique_identifier.clone().unwrap_or_default();
     let identifiers = book.identifiers.clone();
     // Tracks the merged book returned by a cover write, so the "Override
     // active" card reflects a cover-only change immediately.
@@ -36,7 +38,7 @@ pub(super) fn Sidebar(
 
             CoverEditor {
                 book: book.clone(),
-                uuid,
+                mode,
                 on_change: move |updated: EbookMetadata| {
                     live_book.set(updated.clone());
                     on_cover_applied.call(updated);

@@ -508,3 +508,146 @@ fn thumb_error_no_cover_renders_book_id_in_message() {
     let err = ThumbError::NoCover(451);
     assert_eq!(err.to_string(), "no cover available for book 451");
 }
+
+#[test]
+fn encode_cover_preview_returns_a_bounded_lossy_webp_without_touching_disk() {
+    let png = photographic_png(1200, 1800);
+    let tmp = tempfile::tempdir().unwrap();
+    let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
+
+    let webp_bytes = encode_cover_preview(&png).expect("preview should encode");
+
+    assert_eq!(&webp_bytes[0..4], b"RIFF");
+    assert_eq!(&webp_bytes[8..12], b"WEBP");
+    assert_eq!(&webp_bytes[12..16], b"VP8 ", "lossy, like the thumbnails");
+    let decoded = image::load_from_memory(&webp_bytes).unwrap();
+    let (w, h) = ThumbSize::Md.dimensions();
+    assert!(decoded.width() <= w && decoded.height() <= h, "{decoded:?}");
+    // Aspect preserved, not cropped to the 2:3 tile.
+    assert_eq!((decoded.width(), decoded.height()), (w, h));
+    assert_eq!(
+        std::fs::read_dir(tmp.path()).unwrap().count(),
+        0,
+        "a preview is never cached"
+    );
+}
+
+#[test]
+fn encode_cover_preview_rejects_bytes_that_are_not_an_image() {
+    let err = encode_cover_preview(b"not an image").unwrap_err();
+    assert!(matches!(err, ThumbError::Failed(_)), "{err}");
+}
+
+#[test]
+fn cover_preview_data_url_is_an_inline_webp_image() {
+    let url = cover_preview_data_url(&photographic_png(200, 300)).unwrap();
+    assert!(url.starts_with("data:image/webp;base64,"), "{url}");
+    assert!(url.len() > 100, "carries a real payload");
+}
+
+/// The guard behind the upload commit's race: a thumbnail pass that read the
+/// scanned cover, then had an override land while it encoded, must be able to
+/// tell that what it encoded is no longer the cover.
+mod cover_moved {
+    use omnibus_shared::MetadataOverrides;
+
+    use super::*;
+    use crate::books::list_books;
+    use crate::metadata_overrides::{upsert_metadata_overrides, write_override_cover};
+    use crate::pool::init_db;
+    use crate::sync::replace_books;
+    use crate::test_support::{indexed, CoversTempDir};
+
+    async fn covered_book(pool: &sqlx::SqlitePool) -> (i64, String) {
+        replace_books(
+            pool,
+            "/lib",
+            vec![indexed(
+                "a.epub",
+                Some("A"),
+                &["A"],
+                &[],
+                None,
+                Some(("image/jpeg", b"SCANNED")),
+            )],
+        )
+        .await
+        .unwrap();
+        let books = list_books(pool, "/lib").await.unwrap();
+        (books[0].id, books[0].unique_identifier.clone().unwrap())
+    }
+
+    #[tokio::test]
+    async fn cover_still_current_is_true_while_the_encoded_bytes_are_the_cover() {
+        let _covers = CoversTempDir::new("thumbs_cover_current");
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let (id, _) = covered_book(&pool).await;
+        assert!(cover_still_current(&pool, id, b"SCANNED").await);
+    }
+
+    #[tokio::test]
+    async fn cover_still_current_is_false_once_an_override_replaced_the_cover() {
+        let _covers = CoversTempDir::new("thumbs_cover_moved");
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let (id, uuid) = covered_book(&pool).await;
+        let user_id = crate::test_support::seed_user(&pool, "admin").await;
+
+        write_override_cover(&uuid, "image/png", b"OVERRIDE").unwrap();
+        upsert_metadata_overrides(&pool, &uuid, &MetadataOverrides::default(), true, user_id)
+            .await
+            .unwrap();
+
+        assert!(!cover_still_current(&pool, id, b"SCANNED").await);
+        assert!(cover_still_current(&pool, id, b"OVERRIDE").await);
+    }
+
+    #[tokio::test]
+    async fn discard_thumbs_if_cover_moved_drops_thumbnails_encoded_from_the_old_cover() {
+        // One guard for both vars: `CoversTempDir` and `EnvVarGuard` share
+        // the process-wide env lock, so holding both would deadlock.
+        let thumbs = tempfile::tempdir().unwrap();
+        let covers = tempfile::tempdir().unwrap();
+        let _env = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(thumbs.path().as_os_str()))
+            .also_set_os("OMNIBUS_COVERS_DIR", Some(covers.path().as_os_str()));
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let (id, uuid) = covered_book(&pool).await;
+        let user_id = crate::test_support::seed_user(&pool, "admin").await;
+        for size in ThumbSize::all() {
+            std::fs::write(thumb_path_for(id, size), b"old art").unwrap();
+        }
+
+        // Nothing moved: the thumbnails stay.
+        discard_thumbs_if_cover_moved(&pool, id, b"SCANNED").await;
+        assert!(thumb_path_for(id, ThumbSize::Lg).exists());
+
+        write_override_cover(&uuid, "image/png", b"OVERRIDE").unwrap();
+        upsert_metadata_overrides(&pool, &uuid, &MetadataOverrides::default(), true, user_id)
+            .await
+            .unwrap();
+
+        discard_thumbs_if_cover_moved(&pool, id, b"SCANNED").await;
+        for size in ThumbSize::all() {
+            assert!(!thumb_path_for(id, size).exists(), "{size} should be gone");
+        }
+    }
+}
+
+#[test]
+fn encode_cover_preview_refuses_bytes_over_the_embedded_cover_cap() {
+    let mut big = photographic_png(64, 96);
+    big.resize(crate::ebook::accent::MAX_EMBEDDED_COVER_BYTES + 1, 0);
+    let err = encode_cover_preview(&big).unwrap_err();
+    assert!(err.to_string().contains("preview cap"), "{err}");
+}
+
+#[test]
+fn encode_cover_preview_refuses_a_header_claiming_enormous_dimensions() {
+    // A PNG whose IHDR declares 100000×100000: the decoder must reject it on
+    // the dimension limit before allocating anything for the frame.
+    let mut png = photographic_png(8, 8);
+    let ihdr = png.windows(4).position(|w| w == b"IHDR").unwrap();
+    png[ihdr + 4..ihdr + 8].copy_from_slice(&100_000u32.to_be_bytes());
+    png[ihdr + 8..ihdr + 12].copy_from_slice(&100_000u32.to_be_bytes());
+    let err = encode_cover_preview(&png).unwrap_err();
+    assert!(matches!(err, ThumbError::Failed(_)), "{err}");
+}

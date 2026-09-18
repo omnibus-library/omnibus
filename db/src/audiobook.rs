@@ -106,6 +106,10 @@ pub struct InspectedAudiobook {
     pub title: Option<String>,
     pub author: Option<String>,
     pub has_cover: bool,
+    /// The first embedded picture across the parts, as `(mime, bytes)` — what
+    /// the review form previews before the book exists. `has_cover` is
+    /// derived from it.
+    pub cover: Option<(String, Vec<u8>)>,
     /// Combined runtime across every readable part, when tags supplied it.
     pub duration_seconds: Option<f64>,
 }
@@ -122,7 +126,7 @@ pub fn inspect_audiobook_files(paths: &[PathBuf]) -> anyhow::Result<InspectedAud
     let mut album_title: Option<String> = None;
     let mut first_title: Option<String> = None;
     let mut author: Option<String> = None;
-    let mut has_cover = false;
+    let mut cover: Option<(String, Vec<u8>)> = None;
     let mut total_secs = 0.0f64;
     let mut any_readable = false;
 
@@ -146,8 +150,8 @@ pub fn inspect_audiobook_files(paths: &[PathBuf]) -> anyhow::Result<InspectedAud
                 if let Some(d) = meta.duration_seconds {
                     total_secs += d;
                 }
-                if !has_cover && cover::cover_from_tagged(&tagged).is_some() {
-                    has_cover = true;
+                if cover.is_none() {
+                    cover = cover::cover_from_tagged(&tagged);
                 }
             }
             Err(e) => {
@@ -171,7 +175,8 @@ pub fn inspect_audiobook_files(paths: &[PathBuf]) -> anyhow::Result<InspectedAud
     Ok(InspectedAudiobook {
         title,
         author,
-        has_cover,
+        has_cover: cover.is_some(),
+        cover,
         duration_seconds: (total_secs > 0.0).then_some(total_secs),
     })
 }

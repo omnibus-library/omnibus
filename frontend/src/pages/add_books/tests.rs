@@ -1,5 +1,6 @@
 //! Tests for the add-books page: the extension routing every pick goes
-//! through, and the SSR-rendered confirm form and not-authorized state.
+//! through, the identity check the commit refuses on, the review baseline a
+//! pick is staged with, and the SSR-rendered picker and not-authorized state.
 
 use super::*;
 
@@ -63,117 +64,85 @@ fn classify_pick_refuses_an_empty_pick() {
     assert!(classify_pick(&[]).is_err());
 }
 
+#[test]
+fn confirm_identity_trims_and_takes_the_first_author() {
+    let (title, author) =
+        confirm_identity("  Dune ", &names(&[" Frank Herbert ", "Brian Herbert"])).unwrap();
+    assert_eq!(title, "Dune");
+    assert_eq!(author, "Frank Herbert");
+}
+
+#[test]
+fn confirm_identity_refuses_a_blank_title_or_an_empty_author_list() {
+    assert!(confirm_identity("  ", &names(&["Frank Herbert"])).is_err());
+    assert!(confirm_identity("Dune", &[]).is_err());
+    assert!(confirm_identity("Dune", &names(&["   "])).is_err());
+}
+
+/// An audiobook picked after an EPUB must not inherit the EPUB's series
+/// (#2254): the baseline is built from *this* inspection alone, and the
+/// tags carry no series, so the fields start empty and the form is the only
+/// place a series can be supplied.
+#[test]
+fn book_from_audiobook_starts_the_series_fields_empty() {
+    let (book, preview) = book_from_audiobook(
+        AudiobookInspection {
+            title: Some("New Title".to_string()),
+            author: Some("New Author".to_string()),
+            creators: vec!["New Author".to_string()],
+            cover_preview: Some("data:image/webp;base64,AA==".to_string()),
+            ..Default::default()
+        },
+        "2 parts selected",
+    );
+    assert_eq!(book.title.as_deref(), Some("New Title"));
+    assert_eq!(book.filename, "2 parts selected");
+    assert!(book.series.is_none());
+    assert!(book.series_index.is_none());
+    assert_eq!(preview.as_deref(), Some("data:image/webp;base64,AA=="));
+    assert!(
+        book.cover_url.is_none(),
+        "the preview travels apart from the book"
+    );
+}
+
+/// A file naming several creators must not be shown as one (#2355): every
+/// creator becomes an author chip, in file order.
+#[test]
+fn book_from_ebook_keeps_every_creator_as_an_author() {
+    let (book, _) = book_from_ebook(
+        UploadInspection {
+            title: Some("Beta".to_string()),
+            author: Some("Grace Hopper".to_string()),
+            creators: vec![
+                "Grace Hopper".to_string(),
+                "Margaret Hamilton".to_string(),
+                "Joan Clarke".to_string(),
+            ],
+            ..Default::default()
+        },
+        "beta.epub",
+    );
+    let authors: Vec<&str> = book.creators.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(
+        authors,
+        ["Grace Hopper", "Margaret Hamilton", "Joan Clarke"]
+    );
+    assert_eq!(book.filename, "beta.epub");
+}
+
 #[cfg(feature = "server")]
 mod render {
     use super::*;
 
-    /// An audiobook pick must not take the series fields away (#2254): the
-    /// audiobook parser usually extracts nothing, so the confirm form is the
-    /// only place a series can be supplied.
-    #[test]
-    fn confirm_form_renders_series_fields_for_an_audiobook_upload() {
-        #[component]
-        fn Harness(kind: UploadKind) -> Element {
-            let state = UploadState {
-                kind: use_signal(move || Some(kind)),
-                filename: use_signal(String::new),
-                file_bytes: use_signal(|| None),
-                audio_files: use_signal(Vec::new),
-                title: use_signal(String::new),
-                author: use_signal(String::new),
-                more_creators: use_signal(Vec::new),
-                series: use_signal(String::new),
-                series_index: use_signal(String::new),
-                inspected: use_signal(|| true),
-                busy: use_signal(|| false),
-                status: use_signal(|| None),
-                status_is_error: use_signal(|| false),
-            };
-            rsx! { ConfirmForm { state, on_submit: EventHandler::new(|_| {}) } }
+    fn empty_state() -> UploadState {
+        UploadState {
+            pick: use_signal(|| None),
+            busy: use_signal(|| false),
+            status: use_signal(|| None),
+            status_is_error: use_signal(|| false),
+            picks: use_signal(|| 0),
         }
-
-        for kind in [UploadKind::Audiobook, UploadKind::Ebook] {
-            let html = dioxus::ssr::render_element(rsx! { Harness { kind } });
-            assert!(html.contains("id=\"add-books-series\""));
-            assert!(html.contains("id=\"add-books-series-index\""));
-        }
-    }
-
-    /// A file naming several creators must not be shown as one (#2355): the
-    /// creators after the first are listed under the Author field, and the
-    /// line is absent when there are none.
-    #[test]
-    fn confirm_form_lists_the_creators_after_the_first_under_author() {
-        #[component]
-        fn Harness(more: Vec<String>) -> Element {
-            let state = UploadState {
-                kind: use_signal(|| Some(UploadKind::Ebook)),
-                filename: use_signal(String::new),
-                file_bytes: use_signal(|| None),
-                audio_files: use_signal(Vec::new),
-                title: use_signal(String::new),
-                author: use_signal(|| "Grace Hopper".to_string()),
-                more_creators: use_signal(move || more.clone()),
-                series: use_signal(String::new),
-                series_index: use_signal(String::new),
-                inspected: use_signal(|| true),
-                busy: use_signal(|| false),
-                status: use_signal(|| None),
-                status_is_error: use_signal(|| false),
-            };
-            rsx! { ConfirmForm { state, on_submit: EventHandler::new(|_| {}) } }
-        }
-
-        let two = dioxus::ssr::render_element(rsx! {
-            Harness { more: vec!["Margaret Hamilton".to_string(), "Joan Clarke".to_string()] }
-        });
-        assert!(two.contains("data-testid=\"add-books-more-creators\""));
-        assert!(two.contains("Also credited: Margaret Hamilton, Joan Clarke."));
-
-        let one = dioxus::ssr::render_element(rsx! { Harness { more: Vec::<String>::new() } });
-        assert!(!one.contains("add-books-more-creators"));
-    }
-
-    /// An audiobook picked after an EPUB must not inherit the EPUB's series:
-    /// the type switch that used to reset the form is gone, so the audiobook
-    /// pre-fill has to clear the fields the parser cannot supply.
-    #[test]
-    fn audiobook_prefill_clears_the_series_a_previous_pick_left_behind() {
-        #[component]
-        fn Harness() -> Element {
-            let mut state = UploadState {
-                kind: use_signal(|| Some(UploadKind::Ebook)),
-                filename: use_signal(String::new),
-                file_bytes: use_signal(|| None),
-                audio_files: use_signal(Vec::new),
-                title: use_signal(|| "Old Title".to_string()),
-                author: use_signal(|| "Old Author".to_string()),
-                more_creators: use_signal(|| vec!["Old Co-author".to_string()]),
-                series: use_signal(|| "Old Series".to_string()),
-                series_index: use_signal(|| "3".to_string()),
-                inspected: use_signal(|| true),
-                busy: use_signal(|| false),
-                status: use_signal(|| None),
-                status_is_error: use_signal(|| false),
-            };
-            prefill_from_audiobook(
-                &mut state,
-                AudiobookInspection {
-                    title: Some("New Title".to_string()),
-                    author: Some("New Author".to_string()),
-                    creators: vec!["New Author".to_string()],
-                    ..Default::default()
-                },
-            );
-            rsx! { ConfirmForm { state, on_submit: EventHandler::new(|_| {}) } }
-        }
-
-        let html = dioxus::ssr::render_element(rsx! { Harness {} });
-        assert!(html.contains("value=\"New Title\""));
-        assert!(html.contains("value=\"New Author\""));
-        assert!(!html.contains("Old Series"), "{html}");
-        assert!(!html.contains("value=\"3\""), "{html}");
-        assert!(!html.contains("Old Co-author"), "{html}");
     }
 
     /// The single picker takes every format and says so, with no type toggle
@@ -182,21 +151,7 @@ mod render {
     fn file_drop_zone_offers_every_format_in_one_multi_select_picker() {
         #[component]
         fn Harness() -> Element {
-            let state = UploadState {
-                kind: use_signal(|| None),
-                filename: use_signal(String::new),
-                file_bytes: use_signal(|| None),
-                audio_files: use_signal(Vec::new),
-                title: use_signal(String::new),
-                author: use_signal(String::new),
-                more_creators: use_signal(Vec::new),
-                series: use_signal(String::new),
-                series_index: use_signal(String::new),
-                inspected: use_signal(|| false),
-                busy: use_signal(|| false),
-                status: use_signal(|| None),
-                status_is_error: use_signal(|| false),
-            };
+            let state = empty_state();
             rsx! { FileDropZone { state, on_file: EventHandler::new(|_| {}) } }
         }
 
@@ -205,6 +160,33 @@ mod render {
         assert!(html.contains("multiple"));
         assert!(html.contains("data-testid=\"add-books-formats\""));
         assert!(!html.contains("add-books-type-"));
+    }
+
+    /// Once a pick is staged the drop zone names it and offers to change it.
+    #[test]
+    fn file_drop_zone_names_the_staged_pick() {
+        #[component]
+        fn Harness() -> Element {
+            let state = UploadState {
+                pick: use_signal(|| {
+                    Some(StagedPick {
+                        kind: UploadKind::Ebook,
+                        label: "dune.epub".to_string(),
+                        files: Vec::new(),
+                        book: EbookMetadata::default(),
+                        cover_preview: None,
+                        generation: 1,
+                    })
+                }),
+                ..empty_state()
+            };
+            rsx! { FileDropZone { state, on_file: EventHandler::new(|_| {}) } }
+        }
+
+        let html = dioxus::ssr::render_element(rsx! { Harness {} });
+        assert!(html.contains("dune.epub"), "{html}");
+        assert!(html.contains("Click to change"));
+        assert!(html.contains("has-file"));
     }
 
     /// A user without `can_upload` sees the not-authorized state, not the
@@ -216,6 +198,6 @@ mod render {
         assert!(html.contains("data-testid=\"add-books-forbidden\""));
         assert!(html.contains("have permission to add books"));
         assert!(!html.contains("add-books-file-input"));
-        assert!(!html.contains("add-books-submit"));
+        assert!(!html.contains("me-save"));
     }
 }
