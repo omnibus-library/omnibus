@@ -98,6 +98,7 @@ test("renders the /search results page layout", async ({ page }) => {
 
   // Shared nav is the way back to the library now that the page has no breadcrumb.
   await expectNavVisible(page);
+  await expect(page.locator("nav.breadcrumb")).toHaveCount(0);
 
   // Heading echoes the query, and the summary stat line shows the engine +
   // timing once the RPC settles.
