@@ -15,7 +15,7 @@ pub(crate) fn build_client(user_agent: &str) -> reqwest::Result<reqwest::Client>
 /// outbound HTTP integration.
 pub(crate) fn default_user_agent() -> String {
     format!(
-        "omnibus/{} (https://github.com/seamus-sloan/omnibus)",
+        "omnibus/{} (https://github.com/omnibus-library/omnibus)",
         env!("CARGO_PKG_VERSION")
     )
 }
@@ -34,6 +34,6 @@ mod tests {
     fn default_user_agent_names_the_crate_and_repo() {
         let ua = default_user_agent();
         assert!(ua.starts_with("omnibus/"));
-        assert!(ua.contains("github.com/seamus-sloan/omnibus"));
+        assert!(ua.contains("github.com/omnibus-library/omnibus"));
     }
 }

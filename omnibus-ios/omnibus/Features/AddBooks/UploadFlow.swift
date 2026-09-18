@@ -32,8 +32,8 @@ enum UploadKind: Equatable, Sendable {
     var acceptsSeries: Bool { self == .ebook }
 }
 
-/// One commit's worth of picked files: a single EPUB, a single `.m4a`/`.m4b`,
-/// or the `.mp3` parts of one multi-part audiobook.
+/// One commit's worth of picked files: a single EPUB or PDF, a single
+/// `.m4a`/`.m4b`, or the `.mp3` parts of one multi-part audiobook.
 struct UploadBatch: Equatable, Sendable {
     var kind: UploadKind
     var urls: [URL]
@@ -64,9 +64,10 @@ struct UploadSelection: Equatable, Sendable {
 }
 
 enum UploadFlow {
-    /// Extensions `/api/uploads/ebooks` accepts. EPUB only — the magic-byte
-    /// gate in `shared::detect_ebook_format` recognizes nothing else.
-    static let ebookExtensions: Set<String> = ["epub"]
+    /// Extensions `/api/uploads/ebooks` accepts: what the magic-byte gate in
+    /// `shared::detect_ebook_format` recognizes — a zip that is an EPUB, and
+    /// a `%PDF-` header.
+    static let ebookExtensions: Set<String> = ["epub", "pdf"]
 
     /// Extensions `/api/uploads/audiobooks` accepts, matching `audiobook_ext_of`
     /// on the server: the narrow set the player and downloader already use
@@ -119,6 +120,7 @@ enum UploadFlow {
     static func mimeType(for filename: String) -> String {
         switch fileExtension(of: filename) {
         case "epub": "application/epub+zip"
+        case "pdf": "application/pdf"
         case "mp3": "audio/mpeg"
         case "m4a", "m4b", "mp4": "audio/mp4"
         default: "application/octet-stream"
@@ -127,7 +129,7 @@ enum UploadFlow {
 
     /// Split a picked selection into one batch per book the server would file.
     ///
-    /// Each EPUB and each `.m4a`/`.m4b` container is its own book, so they get a
+    /// Each EPUB, PDF and `.m4a`/`.m4b` container is its own book, so they get a
     /// batch apiece rather than the 400 that sending two containers in one
     /// request earns. `.mp3` files are grouped **by their containing folder**:
     /// `classify_audio_set` files a set of MP3s as one book, and a folder is the

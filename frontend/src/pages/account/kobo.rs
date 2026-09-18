@@ -66,10 +66,10 @@ fn render_kobo_warning() -> Element {
             ul { class: "kobo-warning-tools",
                 li {
                     a {
-                        href: "https://github.com/seamus-sloan/kobo-backup#kobo-backup",
+                        href: "https://github.com/omnibus-library/kobo-backup#kobo-backup",
                         target: "_blank",
                         rel: "noopener noreferrer",
-                        "seamus-sloan/kobo-backup"
+                        "omnibus-library/kobo-backup"
                     }
                 }
                 li {

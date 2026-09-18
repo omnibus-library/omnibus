@@ -1,0 +1,57 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+title: "[Scope] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Replace `[Scope]` in the title with the feature area, for example `[Reader]` or `[Kobo Sync]`.
+        Security issues go through [private vulnerability reporting](https://github.com/omnibus-library/omnibus/security/advisories/new), not here.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Omnibus version
+      description: The release tag or commit you're running.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: How Omnibus is deployed and which client hit the bug (browser + OS, iOS version, etc.).
+  - type: checkboxes
+    id: crates
+    attributes:
+      label: Affected crates
+      description: Tick any you know are involved. Leave blank if unsure.
+      options:
+        - label: "`db`"
+        - label: "`frontend`"
+        - label: "`mcp`"
+        - label: "`mobile`"
+        - label: "`server`"
+        - label: "`shared`"
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Logs and attachments
+      description: Server logs, browser console output, screenshots. Redact anything private.
+      render: shell

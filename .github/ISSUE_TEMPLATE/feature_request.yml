@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose a new capability or a change to existing behaviour.
+title: "[Scope] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Replace `[Scope]` in the title with the feature area, for example `[Metadata Edit]` or `[Admin Panel]`.
+        Features need maintainer approval before a pull request is opened. See [CONTRIBUTING.md](https://github.com/omnibus-library/omnibus/blob/main/CONTRIBUTING.md).
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Two to four sentences on what you want and why.
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation
+      description: A short sketch of what the work involves. Name modules, endpoints, or tables if you know them.
+  - type: checkboxes
+    id: crates
+    attributes:
+      label: Affected crates
+      options:
+        - label: "`db`"
+        - label: "`frontend`"
+        - label: "`mcp`"
+        - label: "`mobile`"
+        - label: "`server`"
+        - label: "`shared`"
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Verifiable done-conditions, one per line.
+      placeholder: |
+        - AC1: ...
+        - AC2: ...
+    validations:
+      required: true
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Attachments
+      description: Mockups, links, or "Part of #<epic>" if this is a sub-task.
