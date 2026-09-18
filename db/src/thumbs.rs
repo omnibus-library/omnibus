@@ -359,6 +359,69 @@ pub fn generate_thumbnail(
     write_thumbnail(book_id, size, &decoded)
 }
 
+/// Largest edge [`encode_cover_preview`] will decode. Print-resolution cover
+/// art tops out around 3000px; 8192 leaves headroom without admitting a
+/// header that claims a billion pixels.
+const PREVIEW_MAX_EDGE: u32 = 8192;
+
+/// Decoder allocation ceiling for [`encode_cover_preview`]: an 8192² RGBA
+/// frame is 256 MiB, so this is the edge cap restated in bytes.
+const PREVIEW_MAX_ALLOC: u64 = 256 * 1024 * 1024;
+
+/// Encode a cover as a small lossy WebP for inline preview — the upload
+/// review form shows the file's cover before the book exists and there is a
+/// cover route to point at. Bounded by [`ThumbSize::Md`] on either edge,
+/// aspect preserved (no crop: this is the reader checking the art, not a
+/// grid tile). Nothing is written to disk.
+///
+/// Must be called inside `tokio::task::spawn_blocking` — decode + encode are
+/// CPU-bound.
+pub fn encode_cover_preview(cover_bytes: &[u8]) -> Result<Vec<u8>, ThumbError> {
+    use image::imageops::FilterType;
+
+    // The same byte cap the accent extractor holds embedded covers to, plus
+    // a strict dimension ceiling the decoder checks before allocating: this
+    // runs on anything an uploader hands `inspect`, repeatedly, so a crafted
+    // file must not turn into a multi-gigabyte decode on the blocking pool.
+    if cover_bytes.len() > crate::ebook::accent::MAX_EMBEDDED_COVER_BYTES {
+        return Err(ThumbError::Failed(format!(
+            "cover is {} bytes, over the {} byte preview cap",
+            cover_bytes.len(),
+            crate::ebook::accent::MAX_EMBEDDED_COVER_BYTES
+        )));
+    }
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(cover_bytes))
+        .with_guessed_format()
+        .map_err(|e| ThumbError::Failed(format!("cover format sniff failed: {e}")))?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(PREVIEW_MAX_EDGE);
+    limits.max_image_height = Some(PREVIEW_MAX_EDGE);
+    limits.max_alloc = Some(PREVIEW_MAX_ALLOC);
+    reader.limits(limits);
+    let decoded = reader
+        .decode()
+        .map_err(|e| ThumbError::Failed(format!("cover decode failed: {e}")))?;
+    let (w, h) = ThumbSize::Md.dimensions();
+    let resized = decoded.resize(w, h, FilterType::Lanczos3);
+    let rgba = resized.to_rgba8();
+    webp::Encoder::from_rgba(rgba.as_raw(), resized.width(), resized.height())
+        .encode_simple(false, THUMB_QUALITY)
+        .map(|w| w.to_vec())
+        .map_err(|e| ThumbError::Failed(format!("WebP encode failed: {e:?}")))
+}
+
+/// [`encode_cover_preview`] as an inline `data:image/webp;base64,…` URL —
+/// what the upload review form puts straight into an `<img src>`.
+pub fn cover_preview_data_url(cover_bytes: &[u8]) -> Result<String, ThumbError> {
+    use base64::Engine as _;
+
+    let webp = encode_cover_preview(cover_bytes)?;
+    Ok(format!(
+        "data:image/webp;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(webp)
+    ))
+}
+
 /// Ensure all three thumbnail sizes are generated and fresh.
 ///
 /// Decodes `cover_bytes` once and reuses the [`image::DynamicImage`] across
@@ -385,6 +448,37 @@ pub fn ensure_thumbnails_sync(
         write_thumbnail(book_id, size, img)?;
     }
     Ok(())
+}
+
+/// Whether `encoded` is still the cover `book_id` serves. A generation pass
+/// reads the cover, then encodes three sizes off the async runtime; a cover
+/// replaced *during* that encode — the upload commit writes its override
+/// right behind the reindex whose backfill is thumbnailing the scanned one —
+/// leaves thumbnails of the old art with an mtime that outranks
+/// `books.last_modified`, so [`is_stale`] would call them fresh for good.
+/// Callers compare after encoding and [`invalidate_thumbs`] on a mismatch.
+pub async fn cover_still_current(pool: &sqlx::SqlitePool, book_id: i64, encoded: &[u8]) -> bool {
+    match crate::covers::get_cover(pool, book_id).await {
+        Ok(Some((_, current))) => current == encoded,
+        // No cover now, or a read failure: nothing to trust the thumbnails
+        // against, so treat them as built from something that is gone.
+        Ok(None) | Err(_) => false,
+    }
+}
+
+/// [`cover_still_current`] plus the discard: drops the thumbnails a
+/// generation pass just wrote when the cover moved underneath it.
+pub async fn discard_thumbs_if_cover_moved(pool: &sqlx::SqlitePool, book_id: i64, encoded: &[u8]) {
+    if cover_still_current(pool, book_id, encoded).await {
+        return;
+    }
+    tracing::info!(
+        book_id,
+        "thumbs: cover changed during generation; discarding the thumbnails"
+    );
+    if let Err(e) = tokio::task::spawn_blocking(move || invalidate_thumbs(book_id)).await {
+        tracing::warn!(book_id, error = %e, "thumbs: discard after cover change failed");
+    }
 }
 
 /// Delete all cached thumbnails for a book so the next request regenerates

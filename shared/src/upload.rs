@@ -1,15 +1,38 @@
-//! Wire types for the "add your own books" upload flow. The web client uploads
-//! a file, the server parses it and returns an [`UploadInspection`] for an
-//! editable confirm step, then the client commits and gets back an
-//! [`UploadCommitResult`]. Shared so the REST handler
-//! (`server::backend::uploads`) and the frontend data layer agree on the shape.
+//! Wire types for the "add your own books" upload flow: the client uploads a
+//! file, the server returns an [`UploadInspection`] the review form is built
+//! from, then the client commits file, edits and any staged cover in one
+//! request and gets back an [`UploadCommitResult`]. Shared so the REST
+//! handler (`server::backend::uploads`) and the frontend data layer agree.
 
 use serde::{Deserialize, Serialize};
 
+use crate::ebook::{Contributor, EbookMetadata, Identifier};
+
+/// The commit multipart's field names, beyond `file` and the legacy
+/// `title`/`author`/`series`/`series_index` text fields. One owner so the
+/// client and the handler cannot drift onto different names.
+pub mod commit_fields {
+    /// A JSON [`crate::MetadataOverrides`]: every field the reader changed on
+    /// the review form, diffed against the inspection the way the edit page
+    /// diffs against the loaded book.
+    pub const OVERRIDES: &str = "overrides";
+    /// An image the reader picked from disk during review, applied as the new
+    /// book's cover override.
+    pub const COVER: &str = "cover";
+    /// A provider's cover URL the reader chose from the edition picker; the
+    /// server fetches it under the same terms as the cover-from-URL route.
+    pub const COVER_URL: &str = "cover_url";
+}
+
 /// Auto-extracted metadata returned by the inspect step. Each field mirrors
-/// what the indexer would read from the file's embedded metadata, so the UI
-/// can pre-fill the editable confirm form. The user can correct any field
-/// before committing; the corrected `title`/`author` drive the on-disk folder.
+/// what the indexer would read from the file's embedded metadata, so the
+/// review form starts from exactly what the library would show. The reader
+/// can correct any field before committing; the corrected `title`/`author`
+/// drive the on-disk folder.
+///
+/// The original four fields keep their place at the top level so the iOS
+/// client's decoder is untouched; everything the full edit form needs is
+/// `#[serde(default)]`, so an older server's reply still decodes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UploadInspection {
     pub title: Option<String>,
@@ -27,6 +50,55 @@ pub struct UploadInspection {
     pub has_cover: bool,
     /// Lowercased file extension the server settled on (e.g. `"epub"`).
     pub ext: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub publisher: Option<String>,
+    #[serde(default)]
+    pub published: Option<String>,
+    /// The file's `<dc:subject>` entries — the review form's Tags.
+    #[serde(default)]
+    pub subjects: Vec<String>,
+    /// The ISBN-13 the indexer would derive from the file's identifiers.
+    #[serde(default)]
+    pub isbn13: Option<String>,
+    /// Every typed identifier the file declares, for the sidebar.
+    #[serde(default)]
+    pub identifiers: Vec<Identifier>,
+    /// A small `data:` URL of the file's cover, so the review form can show it
+    /// before the book exists and there is a cover route to point at. `None`
+    /// when the file has no cover or it could not be decoded.
+    #[serde(default)]
+    pub cover_preview: Option<String>,
+}
+
+impl UploadInspection {
+    /// The review form's baseline: the book as the library would index it,
+    /// with `filename` set to what the reader picked so the form's read-only
+    /// filename row has something honest to show. No uuid, no cover URL —
+    /// neither exists yet.
+    pub fn into_metadata(self, filename: &str) -> EbookMetadata {
+        let creators = names_to_contributors(&self.creators);
+        EbookMetadata {
+            filename: filename.to_string(),
+            title: self.title,
+            description: self.description,
+            publisher: self.publisher,
+            published: self.published,
+            language: self.language,
+            creators,
+            subjects: self.subjects,
+            identifiers: self.identifiers,
+            isbn13: self.isbn13,
+            series: self.series,
+            series_index: self.series_index,
+            formats: vec![self.ext.to_ascii_uppercase()],
+            // No cover route exists yet; the preview image travels separately
+            // and the review form shows it in place of a fetched cover.
+            cover_url: None,
+            ..EbookMetadata::default()
+        }
+    }
 }
 
 /// Tag-derived metadata returned by the audiobook inspect step — the audiobook sibling of [`UploadInspection`].
@@ -49,6 +121,42 @@ pub struct AudiobookInspection {
     pub part_count: usize,
     /// Combined runtime across every part, when tags supplied durations.
     pub duration_seconds: Option<f64>,
+    /// A small `data:` URL of the first part's embedded art — see
+    /// [`UploadInspection::cover_preview`].
+    #[serde(default)]
+    pub cover_preview: Option<String>,
+}
+
+impl AudiobookInspection {
+    /// The review form's baseline for an audiobook — see
+    /// [`UploadInspection::into_metadata`]. Tags carry no series, description
+    /// or identifiers, so those start empty and the form is the only place
+    /// they can be supplied.
+    pub fn into_metadata(self, filename: &str) -> EbookMetadata {
+        let creators = names_to_contributors(&self.creators);
+        EbookMetadata {
+            filename: filename.to_string(),
+            title: self.title,
+            creators,
+            formats: vec![self.format.to_ascii_uppercase()],
+            ..EbookMetadata::default()
+        }
+    }
+}
+
+/// Creator names as the `Contributor`s the form's author chips read, all
+/// authors: the inspections carry names only, and `aut` is what the edit
+/// page writes for a chip it cannot tell more about either.
+fn names_to_contributors(names: &[String]) -> Vec<Contributor> {
+    names
+        .iter()
+        .map(|name| Contributor {
+            name: name.clone(),
+            role: Some("aut".to_string()),
+            file_as: None,
+            id: None,
+        })
+        .collect()
 }
 
 /// Result of a successful commit: the durable uuid of the newly-filed book,
@@ -172,5 +280,78 @@ mod tests {
         assert_eq!(detect_audiobook_format(b"PK\x03\x04\x14\x00\x00\x00"), None);
         assert_eq!(detect_audiobook_format(b"%PDF-1.7"), None);
         assert_eq!(detect_audiobook_format(b"ID"), None);
+    }
+
+    #[test]
+    fn upload_inspection_decodes_an_older_servers_reply_without_the_review_fields() {
+        let json = r#"{"title":"Dune","author":"Frank Herbert","series":null,
+            "series_index":null,"language":"en","has_cover":true,"ext":"epub"}"#;
+        let insp: UploadInspection = serde_json::from_str(json).unwrap();
+        assert_eq!(insp.title.as_deref(), Some("Dune"));
+        assert!(insp.subjects.is_empty());
+        assert!(insp.cover_preview.is_none());
+    }
+
+    #[test]
+    fn upload_inspection_into_metadata_carries_every_field_the_form_edits() {
+        let insp = UploadInspection {
+            title: Some("Dune".into()),
+            author: Some("Frank Herbert".into()),
+            creators: vec!["Frank Herbert".into(), "Brian Herbert".into()],
+            series: Some("Dune".into()),
+            series_index: Some("1".into()),
+            language: Some("en".into()),
+            has_cover: true,
+            ext: "epub".into(),
+            description: Some("Sand.".into()),
+            publisher: Some("Chilton".into()),
+            published: Some("1965".into()),
+            subjects: vec!["scifi".into()],
+            isbn13: Some("9780441013593".into()),
+            identifiers: vec![Identifier {
+                value: "9780441013593".into(),
+                scheme: Some("ISBN".into()),
+            }],
+            cover_preview: Some("data:image/webp;base64,AA==".into()),
+        };
+        let book = insp.into_metadata("dune.epub");
+        assert_eq!(book.filename, "dune.epub");
+        assert_eq!(book.title.as_deref(), Some("Dune"));
+        assert_eq!(book.description.as_deref(), Some("Sand."));
+        assert_eq!(book.publisher.as_deref(), Some("Chilton"));
+        assert_eq!(book.published.as_deref(), Some("1965"));
+        assert_eq!(book.language.as_deref(), Some("en"));
+        assert_eq!(book.series.as_deref(), Some("Dune"));
+        assert_eq!(book.series_index.as_deref(), Some("1"));
+        assert_eq!(book.isbn13.as_deref(), Some("9780441013593"));
+        assert_eq!(book.subjects, vec!["scifi".to_string()]);
+        assert_eq!(book.identifiers.len(), 1);
+        let names: Vec<&str> = book.creators.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["Frank Herbert", "Brian Herbert"]);
+        assert_eq!(book.formats, vec!["EPUB".to_string()]);
+        assert!(book.cover_url.is_none(), "no cover route before commit");
+        assert!(book.unique_identifier.is_none(), "no uuid before commit");
+        assert!(!book.has_override);
+    }
+
+    #[test]
+    fn audiobook_inspection_into_metadata_leaves_the_untagged_fields_empty() {
+        let insp = AudiobookInspection {
+            title: Some("The Compiled Tales".into()),
+            author: Some("Grace Hopper".into()),
+            creators: vec!["Grace Hopper".into()],
+            has_cover: false,
+            format: "mp3".into(),
+            part_count: 2,
+            duration_seconds: Some(120.0),
+            cover_preview: None,
+        };
+        let book = insp.into_metadata("2 parts selected");
+        assert_eq!(book.title.as_deref(), Some("The Compiled Tales"));
+        assert_eq!(book.creators.len(), 1);
+        assert!(book.series.is_none());
+        assert!(book.description.is_none());
+        assert!(book.cover_url.is_none());
+        assert_eq!(book.formats, vec!["MP3".to_string()]);
     }
 }

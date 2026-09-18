@@ -8,7 +8,7 @@ use std::path::Path;
 
 use omnibus_shared::EbookMetadata;
 
-mod accent;
+pub(crate) mod accent;
 mod cover;
 mod parse;
 mod stat;

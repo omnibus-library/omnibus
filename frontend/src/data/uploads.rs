@@ -2,34 +2,62 @@
 //! bypass the server-function transport (which can't carry binary payloads) and
 //! post multipart bodies straight to the REST endpoints: `gloo-net` +
 //! `FormData` on web, `reqwest::multipart` on mobile. The two-step shape —
-//! `inspect_ebook` then `upload_ebook` — lets the UI show a confirm step.
+//! `inspect_ebook` then `upload_ebook` — lets the UI review the whole record
+//! before anything is created; the commit carries the file, the review diff,
+//! and any staged cover in one request.
 
-use omnibus_shared::{AudiobookInspection, UploadCommitResult, UploadInspection};
+#[cfg(any(feature = "web", feature = "mobile"))]
+use omnibus_shared::commit_fields;
+use omnibus_shared::{
+    AudiobookInspection, MetadataOverrides, UploadCommitResult, UploadInspection,
+};
 
 use super::DataError;
 #[cfg(feature = "mobile")]
 use super::{drain_error, http_client, note_status, with_bearer};
 
-/// The user's confirmed metadata for the commit step. `title`/`author` are
-/// required (they drive the on-disk folder); `series` fields are optional.
+/// The cover a commit should give the new book.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum UploadCover {
+    /// Whatever the indexer extracts from the file — no override written.
+    #[default]
+    Keep,
+    /// An image the reader picked from disk during review.
+    Bytes {
+        filename: String,
+        mime: String,
+        bytes: Vec<u8>,
+    },
+    /// A provider's cover URL from the edition picker; the server fetches it.
+    Url(String),
+}
+
+/// The user's confirmed metadata for the commit step. `title`/`author` are
+/// required (they drive the on-disk folder); `series` fields are optional and
+/// kept for an older server. `overrides` is the review form's diff against
+/// the inspection — the server layers it over the four text fields and
+/// prunes anything that restates the indexed value.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct EbookUploadMeta {
     pub title: String,
     pub author: String,
     pub series: String,
     pub series_index: String,
+    pub overrides: Option<MetadataOverrides>,
+    pub cover: UploadCover,
 }
 
-/// The user's confirmed metadata for an audiobook commit. `title`/`author`
-/// drive the on-disk folder; the `series` fields are optional. Audiobook
-/// containers rarely carry a series statement of their own, so these are
-/// usually the only place it can be supplied.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// The user's confirmed metadata for an audiobook commit — the same shape as
+/// [`EbookUploadMeta`]. Audiobook containers rarely carry a series statement
+/// of their own, so the review form is usually the only place it is supplied.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct AudiobookUploadMeta {
     pub title: String,
     pub author: String,
     pub series: String,
     pub series_index: String,
+    pub overrides: Option<MetadataOverrides>,
+    pub cover: UploadCover,
 }
 
 /// Multipart content-type for an ebook upload, keyed off its extension. The
@@ -57,18 +85,109 @@ fn audio_mime(filename: &str) -> &'static str {
     }
 }
 
+/// The review diff as the JSON the commit carries, or `None` when there is
+/// nothing to send — an empty diff is left off the wire entirely.
+#[cfg(any(feature = "web", feature = "mobile"))]
+fn overrides_json(overrides: &Option<MetadataOverrides>) -> Result<Option<String>, DataError> {
+    match overrides {
+        Some(ov) if *ov != MetadataOverrides::default() => serde_json::to_string(ov)
+            .map(Some)
+            .map_err(|e| DataError::Other(format!("encode overrides: {e}"))),
+        _ => Ok(None),
+    }
+}
+
 // Web (gloo-net + FormData).
 
-/// Build a one-shot `Blob` from raw bytes, typed by the file's extension.
+/// Build a one-shot `Blob` from raw bytes with the given MIME type.
 #[cfg(feature = "web")]
-fn ebook_blob(bytes: &[u8], filename: &str) -> Result<web_sys::Blob, DataError> {
+fn typed_blob(bytes: &[u8], mime: &str) -> Result<web_sys::Blob, DataError> {
     let u8 = js_sys::Uint8Array::from(bytes);
     let parts = js_sys::Array::new();
     parts.push(&u8);
     let opts = web_sys::BlobPropertyBag::new();
-    opts.set_type(ebook_mime(filename));
+    opts.set_type(mime);
     web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &opts)
         .map_err(|e| DataError::Other(format!("Blob::new: {e:?}")))
+}
+
+/// Build a one-shot `Blob` from raw bytes, typed by the file's extension.
+#[cfg(feature = "web")]
+fn ebook_blob(bytes: &[u8], filename: &str) -> Result<web_sys::Blob, DataError> {
+    typed_blob(bytes, ebook_mime(filename))
+}
+
+/// A URL the page can put in an `<img src>` for image bytes the reader just
+/// picked, before they go anywhere: an object URL on web, an inline `data:`
+/// URL on mobile. `None` where neither is available (SSR), which only means
+/// the preview is skipped.
+#[cfg(feature = "web")]
+pub fn image_preview_url(bytes: &[u8], mime: &str) -> Option<String> {
+    let blob = typed_blob(bytes, mime).ok()?;
+    web_sys::Url::create_object_url_with_blob(&blob).ok()
+}
+
+/// Release a URL [`image_preview_url`] minted, once nothing shows it. Only
+/// an object URL holds anything: a `data:` or provider URL passes through
+/// untouched. Without this every pick pins its image bytes until the page
+/// unloads.
+#[cfg(feature = "web")]
+pub fn revoke_preview_url(url: &str) {
+    if url.starts_with("blob:") {
+        let _ = web_sys::Url::revoke_object_url(url);
+    }
+}
+
+/// Mobile and SSR previews hold nothing to release.
+#[cfg(not(feature = "web"))]
+pub fn revoke_preview_url(_url: &str) {}
+
+/// Mobile: an inline `data:` URL — the WebView has no object-URL handle the
+/// Rust side could mint.
+#[cfg(all(feature = "mobile", not(feature = "web")))]
+pub fn image_preview_url(bytes: &[u8], mime: &str) -> Option<String> {
+    use base64::Engine as _;
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+/// SSR: no preview.
+#[cfg(not(any(feature = "web", feature = "mobile")))]
+pub fn image_preview_url(_bytes: &[u8], _mime: &str) -> Option<String> {
+    None
+}
+
+/// Append the review fields — the diff and the staged cover — to a commit
+/// body. Shared by the ebook and audiobook commits.
+#[cfg(feature = "web")]
+fn append_review_fields(
+    form: &web_sys::FormData,
+    overrides: &Option<MetadataOverrides>,
+    cover: &UploadCover,
+) -> Result<(), DataError> {
+    if let Some(json) = overrides_json(overrides)? {
+        form.append_with_str(commit_fields::OVERRIDES, &json)
+            .map_err(|e| DataError::Other(format!("FormData::append overrides: {e:?}")))?;
+    }
+    match cover {
+        UploadCover::Keep => {}
+        UploadCover::Bytes {
+            filename,
+            mime,
+            bytes,
+        } => {
+            let blob = typed_blob(bytes, mime)?;
+            form.append_with_blob_and_filename(commit_fields::COVER, &blob, filename)
+                .map_err(|e| DataError::Other(format!("FormData::append cover: {e:?}")))?;
+        }
+        UploadCover::Url(url) => {
+            form.append_with_str(commit_fields::COVER_URL, url)
+                .map_err(|e| DataError::Other(format!("FormData::append cover_url: {e:?}")))?;
+        }
+    }
+    Ok(())
 }
 
 /// Map a non-2xx web response to a `DataError`, surfacing 401 to the auth
@@ -84,7 +203,7 @@ async fn web_error(res: gloo_net::http::Response) -> DataError {
     DataError::Http { status, body }
 }
 
-/// Upload the file for server-side inspection ahead of the confirm step.
+/// Upload the file for server-side inspection ahead of the review step.
 #[cfg(feature = "web")]
 pub async fn inspect_ebook(
     _server_url: &str,
@@ -114,7 +233,8 @@ pub async fn inspect_ebook(
         .map_err(|e| DataError::Other(e.to_string()))
 }
 
-/// Commit a previously-inspected ebook to the library with the confirmed metadata.
+/// Commit a previously-inspected ebook to the library with the reviewed
+/// metadata and any staged cover.
 #[cfg(feature = "web")]
 pub async fn upload_ebook(
     _server_url: &str,
@@ -139,6 +259,7 @@ pub async fn upload_ebook(
     if !meta.series_index.trim().is_empty() {
         append_str("series_index", &meta.series_index)?;
     }
+    append_review_fields(&form, &meta.overrides, &meta.cover)?;
     let blob = ebook_blob(&bytes, &filename)?;
     form.append_with_blob_and_filename("file", &blob, &filename)
         .map_err(|e| DataError::Other(format!("FormData::append: {e:?}")))?;
@@ -176,20 +297,14 @@ fn append_audio_parts(
     files: &[(String, Vec<u8>)],
 ) -> Result<(), DataError> {
     for (name, bytes) in files {
-        let u8 = js_sys::Uint8Array::from(bytes.as_slice());
-        let parts = js_sys::Array::new();
-        parts.push(&u8);
-        let opts = web_sys::BlobPropertyBag::new();
-        opts.set_type(audio_mime(name));
-        let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &opts)
-            .map_err(|e| DataError::Other(format!("Blob::new: {e:?}")))?;
+        let blob = typed_blob(bytes, audio_mime(name))?;
         form.append_with_blob_and_filename("file", &blob, name)
             .map_err(|e| DataError::Other(format!("FormData::append: {e:?}")))?;
     }
     Ok(())
 }
 
-/// Upload the audiobook part(s) for server-side inspection ahead of the confirm
+/// Upload the audiobook part(s) for server-side inspection ahead of the review
 /// step. `files` is one `.m4a`/`.m4b` container or the ordered `.mp3` parts.
 #[cfg(feature = "web")]
 pub async fn inspect_audiobook(
@@ -217,8 +332,8 @@ pub async fn inspect_audiobook(
         .map_err(|e| DataError::Other(e.to_string()))
 }
 
-/// Commit a previously-inspected audiobook to the library with the confirmed
-/// metadata.
+/// Commit a previously-inspected audiobook to the library with the reviewed
+/// metadata and any staged cover.
 #[cfg(feature = "web")]
 pub async fn upload_audiobook(
     _server_url: &str,
@@ -236,6 +351,7 @@ pub async fn upload_audiobook(
         .map_err(|e| DataError::Other(format!("FormData::append author: {e:?}")))?;
     append_optional_str(&form, "series", &meta.series)?;
     append_optional_str(&form, "series_index", &meta.series_index)?;
+    append_review_fields(&form, &meta.overrides, &meta.cover)?;
     append_audio_parts(&form, &files)?;
 
     let res = Request::post("/api/uploads/audiobooks")
@@ -254,7 +370,37 @@ pub async fn upload_audiobook(
 
 // Mobile (reqwest multipart).
 
-/// Upload the file for server-side inspection ahead of the confirm step.
+/// Append the review fields to a mobile commit body — see the web
+/// `append_review_fields`.
+#[cfg(feature = "mobile")]
+fn with_review_fields(
+    mut form: reqwest::multipart::Form,
+    overrides: &Option<MetadataOverrides>,
+    cover: UploadCover,
+) -> Result<reqwest::multipart::Form, DataError> {
+    if let Some(json) = overrides_json(overrides)? {
+        form = form.text(commit_fields::OVERRIDES, json);
+    }
+    match cover {
+        UploadCover::Keep => {}
+        UploadCover::Bytes {
+            filename,
+            mime,
+            bytes,
+        } => {
+            let part = reqwest::multipart::Part::bytes(bytes)
+                .file_name(filename)
+                .mime_str(&mime)?;
+            form = form.part(commit_fields::COVER, part);
+        }
+        UploadCover::Url(url) => {
+            form = form.text(commit_fields::COVER_URL, url);
+        }
+    }
+    Ok(form)
+}
+
+/// Upload the file for server-side inspection ahead of the review step.
 #[cfg(feature = "mobile")]
 pub async fn inspect_ebook(
     server_url: &str,
@@ -278,7 +424,8 @@ pub async fn inspect_ebook(
     Ok(response.json::<UploadInspection>().await?)
 }
 
-/// Commit a previously-inspected ebook to the library with the confirmed metadata.
+/// Commit a previously-inspected ebook to the library with the reviewed
+/// metadata and any staged cover.
 #[cfg(feature = "mobile")]
 pub async fn upload_ebook(
     server_url: &str,
@@ -301,6 +448,7 @@ pub async fn upload_ebook(
     if !meta.series_index.trim().is_empty() {
         form = form.text("series_index", meta.series_index);
     }
+    let form = with_review_fields(form, &meta.overrides, meta.cover)?;
     let response = with_bearer(http_client().post(&endpoint))
         .multipart(form)
         .send()
@@ -312,7 +460,7 @@ pub async fn upload_ebook(
     Ok(response.json::<UploadCommitResult>().await?)
 }
 
-/// Upload the audiobook part(s) for server-side inspection ahead of the confirm
+/// Upload the audiobook part(s) for server-side inspection ahead of the review
 /// step.
 #[cfg(feature = "mobile")]
 pub async fn inspect_audiobook(
@@ -339,8 +487,8 @@ pub async fn inspect_audiobook(
     Ok(response.json::<AudiobookInspection>().await?)
 }
 
-/// Commit a previously-inspected audiobook to the library with the confirmed
-/// metadata.
+/// Commit a previously-inspected audiobook to the library with the reviewed
+/// metadata and any staged cover.
 #[cfg(feature = "mobile")]
 pub async fn upload_audiobook(
     server_url: &str,
@@ -358,6 +506,7 @@ pub async fn upload_audiobook(
     if !meta.series_index.trim().is_empty() {
         form = form.text("series_index", meta.series_index);
     }
+    form = with_review_fields(form, &meta.overrides, meta.cover)?;
     for (name, bytes) in files {
         let mime = audio_mime(&name);
         let part = reqwest::multipart::Part::bytes(bytes)

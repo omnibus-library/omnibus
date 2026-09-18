@@ -17,6 +17,7 @@ use omnibus_shared::metadata_lookup::{
 };
 use omnibus_shared::EbookMetadata;
 
+use super::cover_mode::CoverMode;
 use super::form_grid::FormFields;
 use crate::components::glyphs::sparkle_glyph;
 use crate::{data, use_server_url};
@@ -126,7 +127,8 @@ pub(super) fn MetadataSearchPanel(
     /// The book as loaded — the baseline the save bar counts against, and so
     /// the only honest answer to "is this field carrying a change?".
     orig: Signal<EbookMetadata>,
-    uuid: String,
+    /// Where a cover apply goes — the saved book, or the upload review's stage.
+    mode: CoverMode,
     book: EbookMetadata,
     on_cover_applied: EventHandler<EbookMetadata>,
 ) -> Element {
@@ -165,7 +167,7 @@ pub(super) fn MetadataSearchPanel(
             SearchOverlay {
                 fields,
                 orig,
-                uuid,
+                mode,
                 book,
                 on_cover_applied,
                 on_close: move |()| open.set(false),
@@ -180,7 +182,7 @@ pub(super) fn MetadataSearchPanel(
 fn SearchOverlay(
     fields: FormFields,
     orig: Signal<EbookMetadata>,
-    uuid: String,
+    mode: CoverMode,
     book: EbookMetadata,
     on_cover_applied: EventHandler<EbookMetadata>,
     on_close: EventHandler<()>,
@@ -236,7 +238,7 @@ fn SearchOverlay(
                             edition: *edition,
                             fields,
                             orig,
-                            uuid,
+                            mode,
                             book,
                             hydrating: (state.hydrating)(),
                             on_back: move |()| state.stage.clone().set(Stage::Results),

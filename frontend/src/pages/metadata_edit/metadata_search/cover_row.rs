@@ -4,23 +4,27 @@
 //! into the form: `write_override_cover` takes bytes, and the browser cannot
 //! fetch a provider's image cross-origin to supply them. So applying a cover
 //! means the server fetching the provider URL on the reader's behalf — which
-//! makes this the one row that **writes immediately**, and the row has to say
-//! so rather than implying it will be saved with the rest.
+//! makes this the one row that **writes immediately** against a saved book,
+//! and the row has to say so rather than implying it will be saved with the
+//! rest. Under review there is no book to write to yet, so the URL stages
+//! into the commit instead, and the row says that.
 
 use dioxus::prelude::*;
 use omnibus_shared::{metadata_lookup::ProviderEdition, EbookMetadata};
 
 use super::super::bust_query;
+use super::super::cover_mode::{CoverMode, StagedCover};
 use super::EMPTY;
 use crate::components::atrium::Cover;
 use crate::contexts::{bump_cover_cache_bust, use_cover_cache_bust};
+use crate::data::UploadCover;
 use crate::{data, media_url, use_server_url};
 
 /// Yours-vs-theirs for the cover, with the same arrow affordance as every
-/// other row and a status line that says the change is immediate.
+/// other row and a status line that says when the change lands.
 #[component]
 pub(super) fn CoverRow(
-    uuid: String,
+    mode: CoverMode,
     book: EbookMetadata,
     edition: ProviderEdition,
     source_name: &'static str,
@@ -41,34 +45,56 @@ pub(super) fn CoverRow(
     let available = source_url.is_some();
 
     let on_apply = {
-        let uuid = uuid.clone();
+        let mode = mode.clone();
         let source_url = source_url.clone();
         move |_| {
             let (Some(url), false) = (source_url.clone(), busy()) else {
                 return;
             };
-            let uuid = uuid.clone();
-            let server_url = server_url.clone();
-            busy.set(true);
-            status.set(Some("Applying cover\u{2026}".to_string()));
-            spawn(async move {
-                match data::apply_cover_from_url(&server_url, &uuid, &url).await {
-                    Ok(Some(updated)) => {
-                        // The cover route caches for a day on an unchanged
-                        // URL (`Cache-Control: private, max-age=86400`), so
-                        // without this every other view of the book — the
-                        // sidebar preview, the grid, the detail page — keeps
-                        // serving the old image from the browser's cache.
-                        bump_cover_cache_bust(global_bust, &uuid);
-                        status.set(Some("Cover updated.".to_string()));
-                        on_applied.call(updated);
-                    }
-                    Ok(None) => status.set(Some("Book not found.".to_string())),
-                    Err(e) => status.set(Some(format!("Couldn't apply that cover: {e}"))),
+            match &mode {
+                CoverMode::Staged(staged) => {
+                    let mut staged = *staged;
+                    staged
+                        .write()
+                        .stage(UploadCover::Url(url.clone()), Some(url));
+                    status.set(Some("Cover staged.".to_string()));
                 }
-                busy.set(false);
-            });
+                CoverMode::Live { uuid } => {
+                    let uuid = uuid.clone();
+                    let server_url = server_url.clone();
+                    busy.set(true);
+                    status.set(Some("Applying cover\u{2026}".to_string()));
+                    spawn(async move {
+                        match data::apply_cover_from_url(&server_url, &uuid, &url).await {
+                            Ok(Some(updated)) => {
+                                // The cover route caches for a day on an unchanged
+                                // URL (`Cache-Control: private, max-age=86400`), so
+                                // without this every other view of the book — the
+                                // sidebar preview, the grid, the detail page — keeps
+                                // serving the old image from the browser's cache.
+                                bump_cover_cache_bust(global_bust, &uuid);
+                                status.set(Some("Cover updated.".to_string()));
+                                on_applied.call(updated);
+                            }
+                            Ok(None) => status.set(Some("Book not found.".to_string())),
+                            Err(e) => status.set(Some(format!("Couldn't apply that cover: {e}"))),
+                        }
+                        busy.set(false);
+                    });
+                }
+            }
         }
+    };
+
+    let (apply_label, idle_note) = match &mode {
+        CoverMode::Live { .. } => (
+            format!("Use the cover from {source_name} \u{2014} saves immediately"),
+            "The cover applies immediately \u{b7} it isn\u{2019}t staged with the fields",
+        ),
+        CoverMode::Staged(_) => (
+            format!("Use the cover from {source_name}"),
+            "The cover is saved with the book when you add it",
+        ),
     };
 
     rsx! {
@@ -76,16 +102,13 @@ pub(super) fn CoverRow(
             span { class: "mes-field-label", "Cover" }
             span { class: "mes-cover-pair",
                 span { class: "mes-cover-cell", "data-testid": "mes-row-cover-current",
-                    CoverThumb {
-                        book: book.clone(),
-                        bust: (global_bust.read().get(&uuid).copied()).unwrap_or(0),
-                    }
+                    {current_cover(&mode, &book, global_bust)}
                 }
                 button {
                     r#type: "button",
                     class: "mes-apply",
                     "data-testid": "mes-row-cover-apply",
-                    aria_label: "Use the cover from {source_name} \u{2014} saves immediately",
+                    aria_label: "{apply_label}",
                     disabled: !available || hydrating || busy(),
                     onclick: on_apply,
                     "\u{2192}"
@@ -98,21 +121,41 @@ pub(super) fn CoverRow(
                     }
                 }
             }
-            // The wording is the contract: this is the one row that doesn't
-            // wait for Save.
+            // The wording is the contract: against a saved book this is the
+            // one row that doesn't wait for Save.
             span { class: "mono mes-cover-note", role: "status", "data-testid": "mes-row-cover-note",
                 if let Some(msg) = status() {
                     "{msg}"
                 } else {
-                    "The cover applies immediately \u{b7} it isn\u{2019}t staged with the fields"
+                    "{idle_note}"
                 }
             }
         }
     }
 }
 
-/// The book's current cover, cache-busted off the app-wide registry so an
-/// apply from this row (or from the sidebar) is visible without a reload.
+/// The "yours" cell: the saved book's cover, cache-busted off the app-wide
+/// registry so an apply from this row (or from the sidebar) is visible
+/// without a reload — or, under review, whatever the stage holds.
+fn current_cover(
+    mode: &CoverMode,
+    book: &EbookMetadata,
+    global_bust: Signal<std::collections::HashMap<String, u32>>,
+) -> Element {
+    match mode {
+        CoverMode::Live { uuid } => rsx! {
+            CoverThumb {
+                book: book.clone(),
+                bust: (global_bust.read().get(uuid).copied()).unwrap_or(0),
+            }
+        },
+        CoverMode::Staged(staged) => rsx! {
+            StagedThumb { book: book.clone(), staged: *staged }
+        },
+    }
+}
+
+/// The book's current cover, cache-busted off the app-wide registry.
 ///
 /// `src_override` stays `None` until the registry has actually moved, so the
 /// SSR render and the first WASM paint are byte-identical — the same rule
@@ -127,6 +170,17 @@ fn CoverThumb(book: EbookMetadata, bust: u32) -> Element {
                 .map(|path| bust_query(&media_url(&server_url, path), bust))
         })
         .flatten();
+    rsx! {
+        div { class: "mes-cover-thumb",
+            Cover { book, src_override }
+        }
+    }
+}
+
+/// The staged cover under review — the stage's preview, straight in.
+#[component]
+fn StagedThumb(book: EbookMetadata, staged: Signal<StagedCover>) -> Element {
+    let src_override = staged.read().preview.clone();
     rsx! {
         div { class: "mes-cover-thumb",
             Cover { book, src_override }

@@ -6,7 +6,7 @@
 /// Higher than the 10 MiB HTTP cap in `author_photos` because these are
 /// trusted local files; 20 MiB still covers uncompressed print-resolution
 /// covers while bounding the decode allocation against a crafted EPUB.
-const MAX_EMBEDDED_COVER_BYTES: usize = 20 * 1024 * 1024;
+pub(crate) const MAX_EMBEDDED_COVER_BYTES: usize = 20 * 1024 * 1024;
 
 /// Extract a representative accent color from cover bytes. Returns an
 /// `oklch(L C H)` string clamped to a readable band, or `None` when decoding

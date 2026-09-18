@@ -46,14 +46,23 @@ pub(super) fn Breadcrumb(
 
 /// Page header block with "Edit metadata" label, h2 title, and hint.
 #[component]
-pub(super) fn PageHeader(display_title: String, primary_author: String) -> Element {
+pub(crate) fn PageHeader(
+    display_title: String,
+    primary_author: String,
+    /// The small label above the title — "Edit metadata" on the edit page.
+    #[props(default = String::from("Edit metadata"))]
+    kicker: String,
+    /// The hint under the title.
+    #[props(default = String::from("changes apply on save"))]
+    hint: String,
+) -> Element {
     rsx! {
         div { class: "me-page-header",
             div {
                 div {
                     class: "label",
                     "data-testid": "me-page-title-label",
-                    "Edit metadata"
+                    "{kicker}"
                 }
                 h2 { class: "me-page-title",
                     span { class: "me-page-title-book", "{display_title}" }
@@ -62,7 +71,7 @@ pub(super) fn PageHeader(display_title: String, primary_author: String) -> Eleme
                     }
                 }
                 div { class: "mono me-page-hint",
-                    "changes apply on save"
+                    "{hint}"
                 }
             }
         }

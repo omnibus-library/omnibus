@@ -129,8 +129,8 @@ pub(super) async fn post_ebook_cover(
         Err(response) => return response,
     };
 
-    if let Err(response) = persist_cover(&state, &uuid, user.id, mime, bytes).await {
-        return response;
+    if let Err(e) = persist_cover(&state, &uuid, user.id, mime, bytes).await {
+        return internal(e.context, e.detail);
     }
 
     // Invalidate thumb cache so next request regenerates from new cover.
@@ -256,8 +256,8 @@ pub(super) async fn post_ebook_cover_from_url(
         }
     };
 
-    if let Err(response) = persist_cover(&state, &uuid, user.id, mime, Bytes::from(bytes)).await {
-        return response;
+    if let Err(e) = persist_cover(&state, &uuid, user.id, mime, Bytes::from(bytes)).await {
+        return internal(e.context, e.detail);
     }
     if let Err(e) = tokio::task::spawn_blocking(move || db::thumbs::invalidate_thumbs(id)).await {
         return internal("spawn_blocking(invalidate_thumbs)", e);
@@ -283,7 +283,10 @@ pub(super) async fn post_ebook_cover_from_url(
 /// trip independently. A production `AppState` is built with `Default`, whose
 /// flag is `false`, so none of it applies; `cover_fetch_config_is_strict_by_default`
 /// is what holds that true.
-fn cover_fetch_config(state: &AppState) -> db::author_photos::RemoteImageConfig {
+///
+/// Shared with the upload commit (`uploads`), which fetches a cover the
+/// reader staged from the edition picker under exactly these terms.
+pub(super) fn cover_fetch_config(state: &AppState) -> db::author_photos::RemoteImageConfig {
     let loopback_testing = state.remote_image_config().allow_private_addresses;
     let mut config = db::provider_cover_image_config(loopback_testing);
     if loopback_testing {
@@ -337,9 +340,27 @@ pub(super) async fn delete_ebook_cover(
     }
 }
 
+/// A cover persist that failed: which step, and its detail. Every failure
+/// here is a 500 — the bytes were validated before this ran — so the cover
+/// routes render it with [`internal`] and the upload commit carries it in
+/// its own error type.
+#[derive(Debug)]
+pub(super) struct CoverPersistError {
+    pub(super) context: &'static str,
+    pub(super) detail: String,
+}
+
+impl CoverPersistError {
+    fn new(context: &'static str, e: impl std::fmt::Display) -> Self {
+        Self {
+            context,
+            detail: e.to_string(),
+        }
+    }
+}
+
 /// Write the new override cover to disk and mark `has_cover_override = 1`,
-/// preserving any existing field overrides. Returns the error `Response`
-/// already formed on failure so the caller can early-return.
+/// preserving any existing field overrides.
 ///
 /// The prior overrides row is read BEFORE touching disk: `write_override_cover`
 /// deletes any existing `override-<uuid>.*` before writing, so fetching first
@@ -347,18 +368,18 @@ pub(super) async fn delete_ebook_cover(
 /// the just-written file is cleaned up ONLY when no prior override cover existed
 /// — otherwise the write step already replaced the user's previous valid cover
 /// and cleanup would compound the loss.
-async fn persist_cover(
+pub(super) async fn persist_cover(
     state: &AppState,
     uuid: &str,
     user_id: i64,
     mime: String,
     bytes: Bytes,
-) -> Result<(), Response> {
+) -> Result<(), CoverPersistError> {
     let (existing_overrides, had_prior_cover_override) =
         match db::get_metadata_overrides(&state.pool, uuid).await {
             Ok(Some((ov, has_cover))) => (ov, has_cover),
             Ok(None) => (MetadataOverrides::default(), false),
-            Err(e) => return Err(internal("get_metadata_overrides", e)),
+            Err(e) => return Err(CoverPersistError::new("get_metadata_overrides", e)),
         };
 
     // `write_override_cover` is a sync `std::fs` call — run it on the blocking
@@ -370,8 +391,13 @@ async fn persist_cover(
     .await;
     match write_result {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => return Err(internal("write_override_cover", e)),
-        Err(e) => return Err(internal("spawn_blocking(write_override_cover)", e)),
+        Ok(Err(e)) => return Err(CoverPersistError::new("write_override_cover", e)),
+        Err(e) => {
+            return Err(CoverPersistError::new(
+                "spawn_blocking(write_override_cover)",
+                e,
+            ))
+        }
     }
 
     if let Err(e) =
@@ -380,7 +406,7 @@ async fn persist_cover(
         if !had_prior_cover_override {
             cleanup_orphan_cover(uuid).await;
         }
-        return Err(internal("upsert_metadata_overrides", e));
+        return Err(CoverPersistError::new("upsert_metadata_overrides", e));
     }
     Ok(())
 }

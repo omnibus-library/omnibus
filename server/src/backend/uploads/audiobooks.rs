@@ -19,11 +19,11 @@ use omnibus_db::{
     worker::{Task, TaskOutcome},
 };
 use omnibus_shared::{
-    detect_audiobook_format, AudiobookInspection, MetadataOverrides, UploadCommitResult,
-    AUDIOBOOK_MAGIC_LEN,
+    detect_audiobook_format, AudiobookInspection, UploadCommitResult, AUDIOBOOK_MAGIC_LEN,
 };
 use tokio::io::AsyncWriteExt as _;
 
+use super::review::{self, CommitExtras, LegacyFields};
 use super::{max_upload_bytes, norm, require_upload, UploadError};
 use crate::auth::AuthUser;
 use crate::backend::AppState;
@@ -53,19 +53,8 @@ enum AudioKind {
 #[derive(Default)]
 struct AudiobookCommitForm {
     files: Vec<AudioUpload>,
-    title: Option<String>,
-    author: Option<String>,
-    series: Option<String>,
-    series_index: Option<String>,
-}
-
-/// The confirmed metadata, normalized and detached from the streamed files so
-/// it survives `place_audiobook` consuming `AudiobookCommitForm::files`.
-struct ConfirmedAudiobookMeta {
-    title: String,
-    author: String,
-    series: Option<String>,
-    series_index: Option<String>,
+    legacy: LegacyFields,
+    extras: CommitExtras,
 }
 
 /// The one upload extension that isn't a library extension: accepted by
@@ -221,11 +210,13 @@ async fn parse_audiobook_multipart(
                             tmp,
                         });
                     }
-                    "title" => form.title = field.text().await.ok(),
-                    "author" => form.author = field.text().await.ok(),
-                    "series" => form.series = field.text().await.ok(),
-                    "series_index" => form.series_index = field.text().await.ok(),
-                    _ => continue,
+                    "title" => form.legacy.title = field.text().await.ok(),
+                    "author" => form.legacy.author = field.text().await.ok(),
+                    "series" => form.legacy.series = field.text().await.ok(),
+                    "series_index" => form.legacy.series_index = field.text().await.ok(),
+                    other => {
+                        review::take_extra_field(&mut form.extras, other, field).await?;
+                    }
                 }
             }
             Ok(None) => break,
@@ -327,6 +318,17 @@ pub(in crate::backend) async fn post_inspect_audiobook(
             .map_err(|e| UploadError::BadAudio(format!("could not read audiobook: {e}")))?;
     drop(form);
 
+    // Encoded off the runtime like the tag read: a decode + WebP encode is
+    // CPU-bound, and covers embedded in audio are often full-size.
+    let cover_preview = match inspected.cover {
+        Some((_, bytes)) => {
+            tokio::task::spawn_blocking(move || review::cover_preview_data_url(&bytes))
+                .await
+                .map_err(|e| UploadError::internal("spawn_blocking(cover preview)", e))?
+        }
+        None => None,
+    };
+
     Ok(Json(AudiobookInspection {
         title: inspected.title,
         creators: inspected.author.iter().cloned().collect(),
@@ -335,6 +337,7 @@ pub(in crate::backend) async fn post_inspect_audiobook(
         format,
         part_count,
         duration_seconds: inspected.duration_seconds,
+        cover_preview,
     })
     .into_response())
 }
@@ -362,26 +365,28 @@ impl PlacedAudiobook {
 }
 
 /// File the uploaded audiobook into the canonical audiobook library, reindex so
-/// the indexer inserts the book, then layer the confirmed metadata as
-/// overrides. Returns 201 with the new book's uuid.
+/// the indexer inserts the book, then layer the review edits and any staged
+/// cover onto it. Returns 201 with the new book's uuid. As with the ebook
+/// commit, everything refusable is settled before the files are placed.
 pub(in crate::backend) async fn post_upload_audiobook(
     user: AuthUser,
     State(state): State<AppState>,
     multipart: Multipart,
 ) -> Result<Response, UploadError> {
     require_upload(&user)?;
-    let form = parse_audiobook_multipart(multipart, max_upload_bytes()).await?;
+    let mut form = parse_audiobook_multipart(multipart, max_upload_bytes()).await?;
     let kind = classify_audio_set(&form.files)?;
     require_audio_only_container(kind, &form.files).await?;
-    let (Some(title), Some(author)) = (norm(&form.title), norm(&form.author)) else {
+    let (Some(title), Some(author)) = (norm(&form.legacy.title), norm(&form.legacy.author)) else {
         return Err(UploadError::MissingMetadata);
     };
-    let confirmed = ConfirmedAudiobookMeta {
-        title: title.clone(),
-        author: author.clone(),
-        series: norm(&form.series),
-        series_index: norm(&form.series_index),
-    };
+    review::validate_review(&form.legacy, &form.extras)?;
+    let cover = review::resolve_staged_cover(&state, &mut form.extras).await?;
+    let AudiobookCommitForm {
+        files,
+        legacy,
+        mut extras,
+    } = form;
 
     let settings = db::get_settings(&state.pool)
         .await
@@ -392,7 +397,7 @@ pub(in crate::backend) async fn post_upload_audiobook(
         .ok_or(UploadError::AudiobookNotConfigured)?;
     let root_path = PathBuf::from(&root);
 
-    let placed = place_audiobook(&root_path, &author, &title, kind, form.files).await?;
+    let placed = place_audiobook(&root_path, &author, &title, kind, files).await?;
 
     // Reindex so the indexer mints the uuid, extracts the cover + chapters, and
     // writes `book_file_parts` — the single source of truth for inserting books.
@@ -419,7 +424,23 @@ pub(in crate::backend) async fn post_upload_audiobook(
         }
     };
 
-    apply_audiobook_edits(&state, &uuid, &confirmed, user.id).await?;
+    // A failure here undoes the book: the client sees an error, so nothing
+    // may stay — neither the row the scan inserted nor the parts on disk.
+    let finished = review::finish_upload(
+        &state,
+        &uuid,
+        &placed.scan_key,
+        user.id,
+        &legacy,
+        extras.overrides.take(),
+        cover,
+    )
+    .await;
+    if let Err(e) = finished {
+        review::rollback_uploaded_file(&state, &uuid, &placed.scan_key).await;
+        placed.cleanup().await;
+        return Err(e);
+    }
 
     Ok((StatusCode::CREATED, Json(UploadCommitResult { uuid })).into_response())
 }
@@ -530,57 +551,4 @@ fn dedupe_part_name(name: String, used: &mut HashSet<String>) -> String {
         }
     }
     name
-}
-
-/// Diff the user's confirmed metadata against the indexer's embedded values
-/// and persist a metadata override for each field they changed.
-async fn apply_audiobook_edits(
-    state: &AppState,
-    uuid: &str,
-    confirmed: &ConfirmedAudiobookMeta,
-    user_id: i64,
-) -> Result<(), UploadError> {
-    let book = db::get_book_by_uuid(&state.pool, uuid)
-        .await
-        .map_err(|e| UploadError::internal("get_book_by_uuid", e))?
-        .ok_or_else(|| UploadError::internal("get_book_by_uuid after upload", "book vanished"))?;
-
-    let ConfirmedAudiobookMeta {
-        title,
-        author,
-        series,
-        series_index,
-    } = confirmed;
-    let mut overrides = MetadataOverrides::default();
-    let mut changed = false;
-    if book.title.as_deref() != Some(title.as_str()) {
-        overrides.title = Some(title.clone());
-        changed = true;
-    }
-    let embedded = book.creators.first().map(|c| c.name.as_str());
-    if embedded != Some(author.as_str()) {
-        overrides.creators = Some(super::edited_creators(author.clone(), &book.creators));
-        changed = true;
-    }
-    if let Some(series) = series {
-        if book.series.as_deref() != Some(series.as_str()) {
-            overrides.series = Some(series.clone());
-            changed = true;
-        }
-    }
-    if let Some(series_index) = series_index {
-        if book.series_index.as_deref() != Some(series_index.as_str()) {
-            overrides.series_index = Some(series_index.clone());
-            changed = true;
-        }
-    }
-
-    if !changed {
-        return Ok(());
-    }
-    overrides.validate().map_err(UploadError::Validation)?;
-    db::merge_metadata_overrides(&state.pool, uuid, &overrides, user_id)
-        .await
-        .map_err(|e| UploadError::internal("merge_metadata_overrides", e))?;
-    Ok(())
 }
