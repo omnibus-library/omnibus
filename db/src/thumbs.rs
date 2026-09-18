@@ -421,6 +421,37 @@ pub fn ensure_thumbnails_sync(
     Ok(())
 }
 
+/// Whether `encoded` is still the cover `book_id` serves. A generation pass
+/// reads the cover, then encodes three sizes off the async runtime; a cover
+/// replaced *during* that encode — the upload commit writes its override
+/// right behind the reindex whose backfill is thumbnailing the scanned one —
+/// leaves thumbnails of the old art with an mtime that outranks
+/// `books.last_modified`, so [`is_stale`] would call them fresh for good.
+/// Callers compare after encoding and [`invalidate_thumbs`] on a mismatch.
+pub async fn cover_still_current(pool: &sqlx::SqlitePool, book_id: i64, encoded: &[u8]) -> bool {
+    match crate::covers::get_cover(pool, book_id).await {
+        Ok(Some((_, current))) => current == encoded,
+        // No cover now, or a read failure: nothing to trust the thumbnails
+        // against, so treat them as built from something that is gone.
+        Ok(None) | Err(_) => false,
+    }
+}
+
+/// [`cover_still_current`] plus the discard: drops the thumbnails a
+/// generation pass just wrote when the cover moved underneath it.
+pub async fn discard_thumbs_if_cover_moved(pool: &sqlx::SqlitePool, book_id: i64, encoded: &[u8]) {
+    if cover_still_current(pool, book_id, encoded).await {
+        return;
+    }
+    tracing::info!(
+        book_id,
+        "thumbs: cover changed during generation; discarding the thumbnails"
+    );
+    if let Err(e) = tokio::task::spawn_blocking(move || invalidate_thumbs(book_id)).await {
+        tracing::warn!(book_id, error = %e, "thumbs: discard after cover change failed");
+    }
+}
+
 /// Delete all cached thumbnails for a book so the next request regenerates
 /// them. Called after a cover override upload so stale thumbs don't linger.
 pub fn invalidate_thumbs(book_id: i64) {

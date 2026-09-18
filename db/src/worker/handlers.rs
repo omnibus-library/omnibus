@@ -718,6 +718,7 @@ impl Worker {
             Err(e) => return sanitized_err("thumbnail generation", e),
         };
         let cap = crate::thumbs::cap_bytes();
+        let encoded = cover.clone();
         match tokio::task::spawn_blocking(move || {
             crate::thumbs::ensure_thumbnails_sync(book_id, last_modified_epoch, cover)?;
             crate::thumbs::evict_if_over_cap(cap)
@@ -725,7 +726,12 @@ impl Worker {
         })
         .await
         {
-            Ok(Ok(())) => TaskOutcome::Ok(None),
+            Ok(Ok(())) => {
+                // Same guard as the backfill: a cover replaced mid-encode
+                // must not leave "fresh" thumbnails of the old art.
+                crate::thumbs::discard_thumbs_if_cover_moved(&pool, book_id, &encoded).await;
+                TaskOutcome::Ok(None)
+            }
             Ok(Err(crate::thumbs::ThumbError::NoCover(id))) => {
                 TaskOutcome::Err(format!("no cover for book {id}"))
             }
