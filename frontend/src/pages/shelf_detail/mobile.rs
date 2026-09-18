@@ -289,7 +289,7 @@ fn render_delete_shelf_modal(
         ConfirmModal {
             testid: "shelf-delete-modal".to_string(),
             aria_label: "Delete shelf?".to_string(),
-            dialog_class: "mg-modal del-modal".to_string(),
+            dialog_class: "mg-modal confirm-modal".to_string(),
             busy: is_busy,
             on_dismiss: move |_| show_delete_confirm.set(false),
             {confirm_modal_body(
@@ -297,6 +297,7 @@ fn render_delete_shelf_modal(
                 &format!(
                     "Deleting \u{201c}{shelf_name}\u{201d} removes it and its rules. This can\u{2019}t be undone."
                 ),
+                None,
                 vec![
                     ConfirmModalAction {
                         testid: "shelf-delete-cancel".to_string(),

@@ -637,12 +637,15 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
             ConfirmModal {
                 testid: "last-copy-modal".to_string(),
                 aria_label: title.to_string(),
+                // Wider card than its two-button siblings: three actions, one
+                // of them "Remove from library", do not fit 440px.
                 dialog_class: "mg-modal del-modal".to_string(),
                 busy: is_busy,
                 on_dismiss: move |_| delete_target.set(None),
                 {confirm_modal_body(
                     title,
                     "This is the only copy of a book with no files in your library. Remove it entirely, or keep tracking it on your wishlist?",
+                    None,
                     vec![
                         ConfirmModalAction {
                             testid: "last-copy-cancel".to_string(),
@@ -679,12 +682,13 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
             ConfirmModal {
                 testid: "copy-delete-modal".to_string(),
                 aria_label: title.to_string(),
-                dialog_class: "mg-modal del-modal".to_string(),
+                dialog_class: "mg-modal confirm-modal".to_string(),
                 busy: is_busy,
                 on_dismiss: move |_| delete_target.set(None),
                 {confirm_modal_body(
                     title,
                     "This removes the physical copy from your collection.",
+                    None,
                     vec![
                         ConfirmModalAction {
                             testid: "copy-delete-cancel".to_string(),

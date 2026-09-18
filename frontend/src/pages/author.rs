@@ -490,6 +490,7 @@ fn AuthorDeleteModal(
             {confirm_modal_body(
                 &title,
                 &body,
+                None,
                 vec![
                     ConfirmModalAction {
                         testid: "author-delete-cancel".to_string(),

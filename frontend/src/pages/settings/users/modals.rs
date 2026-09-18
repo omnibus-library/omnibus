@@ -278,6 +278,7 @@ pub(super) fn DeleteUserModal(
             {confirm_modal_body(
                 &title,
                 &body,
+                None,
                 vec![
                     ConfirmModalAction {
                         testid: "delete-user-cancel".to_string(),
