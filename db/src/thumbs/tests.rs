@@ -590,10 +590,7 @@ mod cover_moved {
         let _covers = CoversTempDir::new("thumbs_cover_moved");
         let pool = init_db("sqlite::memory:").await.unwrap();
         let (id, uuid) = covered_book(&pool).await;
-        let user_id = crate::auth::create_user(&pool, "admin", "securepassword1")
-            .await
-            .unwrap()
-            .id;
+        let user_id = crate::test_support::seed_user(&pool, "admin").await;
 
         write_override_cover(&uuid, "image/png", b"OVERRIDE").unwrap();
         upsert_metadata_overrides(&pool, &uuid, &MetadataOverrides::default(), true, user_id)
@@ -614,10 +611,7 @@ mod cover_moved {
             .also_set_os("OMNIBUS_COVERS_DIR", Some(covers.path().as_os_str()));
         let pool = init_db("sqlite::memory:").await.unwrap();
         let (id, uuid) = covered_book(&pool).await;
-        let user_id = crate::auth::create_user(&pool, "admin", "securepassword1")
-            .await
-            .unwrap()
-            .id;
+        let user_id = crate::test_support::seed_user(&pool, "admin").await;
         for size in ThumbSize::all() {
             std::fs::write(thumb_path_for(id, size), b"old art").unwrap();
         }
