@@ -894,3 +894,67 @@ async fn restore_overrides_puts_the_row_back_or_removes_one_that_did_not_exist()
     assert_eq!(restored.description.as_deref(), Some("before"));
     assert!(!has_cover);
 }
+
+/// The attach can cross libraries: an audiobook uploaded under the audiobook
+/// root joins the EPUB's book under the ebook root, so the commit must
+/// resolve the uuid through the file's own root, not the book's.
+#[tokio::test]
+async fn commit_resolves_an_audiobook_attached_across_libraries() {
+    let (app, _state, pool) = fixture().await;
+    let _covers = CoversDirGuard::new("review_commit_cross_library");
+    let ebooks = tempfile::tempdir().expect("temp ebook library");
+    let audiobooks = tempfile::tempdir().expect("temp audiobook library");
+    db::set_settings(
+        &pool,
+        &Settings {
+            ebook_library_path: Some(ebooks.path().to_string_lossy().to_string()),
+            audiobook_library_path: Some(audiobooks.path().to_string_lossy().to_string()),
+            scan_interval_hours: None,
+        },
+    )
+    .await
+    .expect("set both library paths");
+    let token = admin_token(&pool).await;
+
+    let epub = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../test_data/epubs/generated/immersive-voyage.epub"),
+    )
+    .unwrap();
+    let (ct, body) = multipart_typed(&[
+        Part::text("title", "Immersive Voyage"),
+        Part::text("author", "Alan Turing"),
+        Part::file(
+            "file",
+            "immersive-voyage.epub",
+            "application/epub+zip",
+            &epub,
+        ),
+    ]);
+    let res = app
+        .clone()
+        .oneshot(post_multipart("/api/uploads/ebooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    let first = committed_book(&pool, res).await;
+    let uuid = first.unique_identifier.clone().unwrap();
+
+    let mp3 = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../test_data/audiobooks/generated/alan_turing_solo/immersive_voyage.mp3"),
+    )
+    .unwrap();
+    let (ct, body) = multipart_typed(&[
+        Part::text("title", "Immersive Voyage"),
+        Part::text("author", "Alan Turing"),
+        Part::file("file", "immersive_voyage.mp3", "audio/mpeg", &mp3),
+    ]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/audiobooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    let joined = committed_book(&pool, res).await;
+
+    assert_eq!(joined.unique_identifier.as_deref(), Some(uuid.as_str()));
+    assert_eq!(joined.formats.len(), 2, "{:?}", joined.formats.len());
+}
