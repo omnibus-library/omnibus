@@ -735,7 +735,7 @@ async fn rollback_uploaded_file_leaves_a_book_the_upload_was_attached_to() {
         db::worker::TaskOutcome::Ok(_)
     ));
     let attached = db::get_book_by_uuid(&pool, &uuid).await.unwrap().unwrap();
-    assert_eq!(attached.formats.len(), 2, "{:?}", attached.formats);
+    assert_eq!(attached.formats.len(), 2, "the PDF twin was attached");
 
     super::super::review::rollback_uploaded_file(
         &state,
