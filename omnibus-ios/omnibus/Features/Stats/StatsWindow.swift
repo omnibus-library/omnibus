@@ -233,17 +233,33 @@ struct SplitBar: View {
 
 /// One windowed figure: its symbol and name above, its value and the change
 /// against the previous window below.
+///
+/// With an `action` the whole card is a button that opens the figure's
+/// drill-in, and says so with a chevron — the tile face carries the
+/// comparison, the drill-in carries the trend and the caveats the face has
+/// no room for. Without one it is a plain card.
 struct WindowTile: View {
     let label: String
     let value: String
     let icon: String
     var delta: String?
+    var action: (() -> Void)?
 
     @Environment(\.palette) private var palette
 
     private var isEmpty: Bool { value == "\u{2014}" }
 
     var body: some View {
+        if let action {
+            Button(action: action) { card }
+                .buttonStyle(PressableStyle())
+                .accessibilityHint("Shows the detail behind this figure")
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
         StatsCard(padding: 0) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 7) {
@@ -255,6 +271,13 @@ struct WindowTile: View {
                         .foregroundStyle(palette.ink2Color)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
+                    if action != nil {
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(palette.ink3Color)
+                            .accessibilityHidden(true)
+                    }
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: 7) {

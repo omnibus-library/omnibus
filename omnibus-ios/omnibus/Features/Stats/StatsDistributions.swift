@@ -1,97 +1,49 @@
 //  StatsDistributions.swift
-//  The windowed drill-ins the redesign's tiles summarise: how the window's
-//  books were rated, how long they were, who and what carried the hours, and
-//  the covers themselves.
+//  The windowed lists beside the tiles: who and what carried the hours, the
+//  covers finished, and the length chart the Finished drill-in draws.
 //
 //  All of them are scoped by `StatsRange`, which is why they live inside the
-//  "In this window" band rather than under the standing rule.
+//  "In this window" band rather than under the standing rule. The rating
+//  histogram and the length chart used to sit inline here too; they now open
+//  from their tiles (`StatsDrillIn.swift`), as they do on web.
 
 import Charts
 import SwiftUI
 
-/// How the window's ratings fell across the ten half-star buckets — the shape
-/// the Avg rating tile flattens into one number.
+/// Books finished in the window by length, as horizontal bars.
 ///
-/// Only when something was actually rated: ten flat bars describe an empty
-/// window less honestly than no chart does.
-struct RatingDistribution: View {
-    let buckets: [RatingBucket]
-
-    @Environment(\.palette) private var palette
-
-    var body: some View {
-        if buckets.contains(where: { $0.books > 0 }) {
-            StatsSection("How you rated them") {
-                Chart(buckets) { bucket in
-                    BarMark(
-                        x: .value("Rating", bucket.starLabel),
-                        y: .value("Books", bucket.books)
-                    )
-                    .foregroundStyle(palette.accentColor)
-                    .cornerRadius(3)
-                }
-                .chartXAxis {
-                    AxisMarks { value in
-                        AxisValueLabel {
-                            // Whole stars only: ten labels crowd illegibly at
-                            // a phone's width, and the half-star bars sit
-                            // between the ones kept.
-                            if let label = value.as(String.self), !label.contains(".") {
-                                Text(label).font(.monoUI(9))
-                            }
-                        }
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading) { _ in
-                        AxisGridLine().foregroundStyle(palette.line2.color)
-                        AxisValueLabel().font(.monoUI(9))
-                    }
-                }
-                .frame(height: 132)
-            }
-        }
-    }
-}
-
-/// Books finished in the window by length.
-///
-/// Same rule as the rating chart: nothing finished in the window is an absent
-/// chart, not a row of flat bars. The Unknown bucket is rendered whenever it
-/// has books in it — an audiobook has no page count, and hiding that would
-/// report the distribution over fewer books than were finished.
-struct LengthDistribution: View {
+/// The Unknown bucket is rendered whenever it has books in it — an audiobook
+/// has no page count, and hiding that would report the distribution over
+/// fewer books than were finished. The caller gates on whether any bucket has
+/// books: nothing finished is an absent chart, not a row of flat bars.
+struct LengthBucketsChart: View {
     let buckets: [LengthBucket]
 
     @Environment(\.palette) private var palette
 
     var body: some View {
-        if buckets.contains(where: { $0.books > 0 }) {
-            StatsSection("How long they were") {
-                Chart(buckets) { bucket in
-                    BarMark(
-                        x: .value("Books", bucket.books),
-                        y: .value("Length", bucket.label)
-                    )
-                    .foregroundStyle(palette.accentColor)
-                    .cornerRadius(3)
-                }
-                // Horizontal: the labels are page ranges, which don't fit
-                // under a column but read fine beside a bar.
-                .chartXAxis {
-                    AxisMarks { _ in
-                        AxisGridLine().foregroundStyle(palette.line2.color)
-                        AxisValueLabel().font(.monoUI(9))
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading) { _ in
-                        AxisValueLabel().font(.monoUI(9))
-                    }
-                }
-                .frame(height: 132)
+        Chart(buckets) { bucket in
+            BarMark(
+                x: .value("Books", bucket.books),
+                y: .value("Length", bucket.label)
+            )
+            .foregroundStyle(palette.accentColor)
+            .cornerRadius(3)
+        }
+        // Horizontal: the labels are page ranges, which don't fit under a
+        // column but read fine beside a bar.
+        .chartXAxis {
+            AxisMarks { _ in
+                AxisGridLine().foregroundStyle(palette.line2.color)
+                AxisValueLabel().font(.monoUI(9))
             }
         }
+        .chartYAxis {
+            AxisMarks(position: .leading) { _ in
+                AxisValueLabel().font(.monoUI(9))
+            }
+        }
+        .frame(height: 132)
     }
 }
 

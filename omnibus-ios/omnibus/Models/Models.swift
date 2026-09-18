@@ -1788,6 +1788,13 @@ struct StatsSummary: Codable, Sendable {
     var genreTaggedBooks: Int64 = 0
     var finishedBooks: [FinishedBook] = []
     var booksPerMonth: [MonthCount] = []
+    /// Daily listening seconds inside the window — the Listening drill-in's
+    /// trend. Windowed, unlike `booksPerMonth`.
+    var listeningDaily: [DayActivity] = []
+    /// Mean star rating per month over the trailing twelve — the Avg rating
+    /// drill-in's trend. Same trailing-window convention as `booksPerMonth`,
+    /// so it is not tied to the range either.
+    var ratingMonthly: [TrendPoint] = []
     /// The window's ratings by half-star bucket — the shape `avgStars`
     /// flattens away. All ten buckets arrive, zeros included.
     var ratingHistogram: [RatingBucket] = []
@@ -1856,6 +1863,8 @@ struct StatsSummary: Codable, Sendable {
         case dailyGoals = "daily_goals"
         case finishedBooks = "finished_books"
         case booksPerMonth = "books_per_month"
+        case listeningDaily = "listening_daily"
+        case ratingMonthly = "rating_monthly"
         case ratingHistogram = "rating_histogram"
         case pagesRead = "pages_read"
         case pagesPerHour = "pages_per_hour"
@@ -1902,6 +1911,9 @@ struct StatsSummary: Codable, Sendable {
         genreTaggedBooks = try c.decodeIfPresent(Int64.self, forKey: .genreTaggedBooks) ?? 0
         finishedBooks = try c.decodeIfPresent([FinishedBook].self, forKey: .finishedBooks) ?? []
         booksPerMonth = try c.decodeIfPresent([MonthCount].self, forKey: .booksPerMonth) ?? []
+        listeningDaily =
+            try c.decodeIfPresent([DayActivity].self, forKey: .listeningDaily) ?? []
+        ratingMonthly = try c.decodeIfPresent([TrendPoint].self, forKey: .ratingMonthly) ?? []
         ratingHistogram =
             try c.decodeIfPresent([RatingBucket].self, forKey: .ratingHistogram) ?? []
         pagesRead = try c.decodeIfPresent(Int64.self, forKey: .pagesRead)

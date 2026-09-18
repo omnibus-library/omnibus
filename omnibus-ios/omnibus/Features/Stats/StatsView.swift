@@ -49,6 +49,8 @@ struct StatsView: View {
     @State private var standingSummary: StatsSummary?
     @State private var isLoading = true
     @State private var error: String?
+    /// Which tile's drill-in is open, if any.
+    @State private var drill: DrillMetric?
     /// Whether the tab has been on screen once. `onAppear` and `task` both
     /// fire on the first appearance, so without this the reload below doubles
     /// the opening fetch on every launch.
@@ -81,6 +83,13 @@ struct StatsView: View {
             await loadResumePoints()
         }
         .onChange(of: range) { _, _ in Task { await load() } }
+        .sheet(item: $drill) { metric in
+            if let summary {
+                StatsDrillInSheet(metric: metric, summary: summary) { uuid in
+                    path.append(.book(uuid: uuid))
+                }
+            }
+        }
         // Popping back from the goals screen. The write already dropped every
         // cached summary, so a plain read is a fetch — and without this the
         // rings would keep drawing the target the reader just changed.
@@ -192,12 +201,6 @@ struct StatsView: View {
             }
         }
 
-        // Kept from the previous tab and left inside this band because every
-        // one of them is windowed: they are the drill-in the redesign's tiles
-        // summarise, not standing figures.
-        RatingDistribution(buckets: summary.ratingHistogram)
-        LengthDistribution(buckets: summary.lengthBuckets)
-
         if !summary.topAuthors.isEmpty {
             StatsSection("Top authors") {
                 RankedList(entries: summary.topAuthors) { .searchResults(query: $0.name) }
@@ -242,6 +245,11 @@ struct StatsView: View {
         }
     }
 
+    /// The four web tiles first, each opening its drill-in, then the two
+    /// figures this surface carries on its own. Pages an hour is not a tile
+    /// of its own any more: it is the Pages drill-in's reading-speed line,
+    /// where the web keeps it, and a tile that restated one line of the sheet
+    /// under it left the grid a cell short.
     private func tiles(_ summary: StatsSummary) -> some View {
         // Deltas are suppressed on Lifetime: there is no window before all of
         // them, and `previous` is zeroed there rather than absent.
@@ -256,12 +264,8 @@ struct StatsView: View {
                 icon: "checkmark.circle",
                 delta: comparable
                     ? StatsFormat.delta(summary.booksFinished, summary.previous.booksFinished)
-                    : nil
-            )
-            WindowTile(
-                label: "Days active",
-                value: summary.activeDays > 0 ? "\(summary.activeDays)" : "\u{2014}",
-                icon: "calendar"
+                    : nil,
+                action: { drill = .finished }
             )
             WindowTile(
                 label: "Pages read",
@@ -269,20 +273,30 @@ struct StatsView: View {
                 icon: "doc.text",
                 delta: comparable
                     ? StatsFormat.percentDelta(summary.pagesRead ?? 0, summary.previous.pagesRead)
-                    : nil
+                    : nil,
+                action: { drill = .pages }
             )
-            // Directly after Pages so the two share a row: the total says how
-            // much, this says how fast, and the pair is the reader's own speed
-            // to compare against.
             WindowTile(
-                label: "Pages an hour",
-                value: summary.pagesPerHour.map(Self.rateValue) ?? "\u{2014}",
-                icon: "speedometer"
+                label: "Listening",
+                value: summary.listeningSeconds > 0
+                    ? Format.humanDuration(summary.listeningSeconds) : "\u{2014}",
+                icon: "headphones",
+                delta: comparable
+                    ? StatsFormat.percentDelta(
+                        summary.listeningSeconds, summary.previous.listeningSeconds)
+                    : nil,
+                action: { drill = .listening }
             )
             WindowTile(
                 label: "Avg rating",
                 value: summary.avgStars.map { String(format: "%.1f", $0) } ?? "\u{2014}",
-                icon: "star"
+                icon: "star",
+                action: { drill = .avgRating }
+            )
+            WindowTile(
+                label: "Days active",
+                value: summary.activeDays > 0 ? "\(summary.activeDays)" : "\u{2014}",
+                icon: "calendar"
             )
             WindowTile(
                 label: "Books open",

@@ -60,6 +60,26 @@ struct StatsSummaryCodecTests {
         #expect(summary.ratingHistogram.last?.books == 2)
     }
 
+    @Test("the two drill-in trends decode: daily listening and the monthly rating mean")
+    func decodesDrillInTrends() throws {
+        let json = summaryJSON(
+            extra: #","listening_daily":[{"day":"2026-07-11","seconds":900}],"#
+                + #""rating_monthly":[{"label":"2026-06","value":4.25}]"#
+        )
+        let summary = try decodeSummary(json)
+        #expect(summary.listeningDaily.map(\.day) == ["2026-07-11"])
+        #expect(summary.listeningDaily.first?.seconds == 900)
+        #expect(summary.ratingMonthly.map(\.label) == ["2026-06"])
+        #expect(summary.ratingMonthly.first?.value == 4.25)
+    }
+
+    @Test("a server that predates the drill-in trends still decodes")
+    func decodesWithoutDrillInTrends() throws {
+        let summary = try decodeSummary(summaryJSON())
+        #expect(summary.listeningDaily.isEmpty)
+        #expect(summary.ratingMonthly.isEmpty)
+    }
+
     @Test("a server that predates the rating histogram still decodes")
     func decodesWithoutRatingHistogram() throws {
         let summary = try decodeSummary(summaryJSON())
