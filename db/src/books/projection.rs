@@ -175,7 +175,7 @@ pub(crate) fn parse_json_array<T: serde::de::DeserializeOwned>(
 /// insensitive — OPF scheme text is free-form) and whose value strips down
 /// to exactly 13 ASCII digits. `None` when no identifier matches; the
 /// metadata-edit override (`apply_overrides`) is then the only source.
-pub(crate) fn derive_isbn13(identifiers: &[Identifier]) -> Option<String> {
+pub fn derive_isbn13(identifiers: &[Identifier]) -> Option<String> {
     identifiers.iter().find_map(|ident| {
         let is_isbn_scheme = ident
             .scheme

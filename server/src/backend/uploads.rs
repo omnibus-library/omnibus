@@ -1,8 +1,8 @@
 //! "Add your own books" upload handlers (web-facing REST). Two-step ingest
-//! shared by ebooks and audiobooks: `inspect` parses the upload and returns its
-//! embedded metadata for an editable confirm step; commit files the bytes into
-//! the canonical library folder, reindexes so the indexer owns the insert, then
-//! layers the user's edits as metadata overrides.
+//! shared by ebooks and audiobooks: `inspect` parses the upload into what
+//! the review form edits without creating anything; commit files the bytes
+//! into the canonical library folder, reindexes so the indexer owns the
+//! insert, then layers the edits and any staged cover on (`review`).
 
 use std::path::{Path, PathBuf};
 
@@ -17,11 +17,11 @@ use omnibus_db::{
     worker::{Task, TaskOutcome},
 };
 use omnibus_shared::{
-    detect_ebook_format, Contributor, MetadataOverrides, UploadCommitResult, UploadInspection,
-    EBOOK_MAGIC_LEN,
+    detect_ebook_format, Contributor, UploadCommitResult, UploadInspection, EBOOK_MAGIC_LEN,
 };
 use tokio::io::AsyncWriteExt as _;
 
+use self::review::{CommitExtras, LegacyFields};
 use super::AppState;
 use crate::auth::AuthUser;
 
@@ -90,6 +90,14 @@ pub(super) enum UploadError {
     FieldTooLarge { field: &'static str, cap: usize },
     /// Override validation failed (a field too long) → 400.
     Validation(String),
+    /// The `overrides` field isn't a JSON `MetadataOverrides` → 400.
+    BadOverrides(String),
+    /// A staged cover was refused: not an image, over the image cap, or a
+    /// provider URL off the allowlist / not serving an image → 400.
+    BadCover(String),
+    /// The provider serving a staged cover URL failed → 502, so the reader
+    /// knows whose fault it was.
+    CoverFetch,
     /// Unexpected internal failure → 500 (logged; detail not leaked to the wire).
     Internal {
         context: &'static str,
@@ -180,6 +188,17 @@ impl IntoResponse for UploadError {
             )
                 .into_response(),
             UploadError::Validation(msg) => (StatusCode::BAD_REQUEST, msg).into_response(),
+            UploadError::BadOverrides(msg) => (
+                StatusCode::BAD_REQUEST,
+                format!("overrides must be a JSON metadata diff: {msg}"),
+            )
+                .into_response(),
+            UploadError::BadCover(msg) => (StatusCode::BAD_REQUEST, msg).into_response(),
+            UploadError::CoverFetch => (
+                StatusCode::BAD_GATEWAY,
+                "could not fetch the cover from that source",
+            )
+                .into_response(),
             UploadError::Internal { context, detail } => {
                 tracing::error!(error = %detail, context = context, "internal server error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response()
@@ -358,9 +377,9 @@ async fn read_text_field_capped(
 
 // --- Inspect ---------------------------------------------------------------
 
-/// Parse an uploaded EPUB and return its embedded metadata for the editable
-/// confirm step. Stateless: the field is streamed to a tempfile, parsed, then
-/// discarded.
+/// Parse an uploaded EPUB or PDF and return its embedded metadata for the
+/// review form. Stateless: the field is streamed to a tempfile, parsed, then
+/// discarded — nothing is filed or inserted until commit.
 pub(super) async fn post_inspect_ebook(
     user: AuthUser,
     State(_state): State<AppState>,
@@ -431,20 +450,28 @@ fn inspect_ebook_tempfile(
             "could not parse {label}: {err}"
         )));
     }
+    let meta = book.metadata;
     Ok(UploadInspection {
-        title: book.metadata.title,
-        author: book.metadata.creators.first().map(|c| c.name.clone()),
-        creators: book
-            .metadata
-            .creators
-            .iter()
-            .map(|c| c.name.clone())
-            .collect(),
-        series: book.metadata.series,
-        series_index: book.metadata.series_index,
-        language: book.metadata.language,
+        title: meta.title,
+        author: meta.creators.first().map(|c| c.name.clone()),
+        creators: meta.creators.iter().map(|c| c.name.clone()).collect(),
+        series: meta.series,
+        series_index: meta.series_index,
+        language: meta.language,
         has_cover: book.cover.is_some(),
         ext: staged.ext.to_string(),
+        description: meta.description,
+        publisher: meta.publisher,
+        published: meta.published,
+        subjects: meta.subjects,
+        // The parser leaves this for the read-time projection; the form
+        // needs it now, derived the same way.
+        isbn13: db::derive_isbn13(&meta.identifiers),
+        identifiers: meta.identifiers,
+        cover_preview: book
+            .cover
+            .as_ref()
+            .and_then(|(_, bytes)| review::cover_preview_data_url(bytes)),
     })
 }
 
@@ -455,10 +482,8 @@ fn inspect_ebook_tempfile(
 #[derive(Default)]
 struct CommitForm {
     tmp_file: Option<StagedUpload>,
-    title: Option<String>,
-    author: Option<String>,
-    series: Option<String>,
-    series_index: Option<String>,
+    legacy: LegacyFields,
+    extras: CommitExtras,
 }
 
 /// The creators to save when the review form's Author differs from the file's
@@ -478,8 +503,12 @@ pub(super) fn edited_creators(first: String, embedded: &[Contributor]) -> Vec<Co
 
 /// File the uploaded EPUB or PDF into the canonical library folder using the
 /// user's confirmed title/author, reindex so the indexer inserts the book,
-/// then layer any edits as metadata overrides. Returns 201 with the new
-/// book's uuid.
+/// then layer the review edits and any staged cover onto it. Returns 201
+/// with the new book's uuid.
+///
+/// Everything that can be refused — the overrides diff, a staged cover's
+/// bytes or its provider fetch — is settled *before* the file is placed, so
+/// a rejected review never leaves a file in the library.
 pub(super) async fn post_upload_ebook(
     user: AuthUser,
     State(state): State<AppState>,
@@ -488,9 +517,11 @@ pub(super) async fn post_upload_ebook(
     require_upload(&user)?;
     let mut form = parse_commit_multipart(multipart, max_upload_bytes()).await?;
     let StagedUpload { tmp, ext } = form.tmp_file.take().ok_or(UploadError::MissingFile)?;
-    let (Some(title), Some(author)) = (norm(&form.title), norm(&form.author)) else {
+    let (Some(title), Some(author)) = (norm(&form.legacy.title), norm(&form.legacy.author)) else {
         return Err(UploadError::MissingMetadata);
     };
+    review::validate_review(&form.legacy, &form.extras)?;
+    let cover = review::resolve_staged_cover(&state, &mut form.extras).await?;
 
     // Library root must be configured before any file can be placed.
     let settings = db::get_settings(&state.pool)
@@ -516,8 +547,24 @@ pub(super) async fn post_upload_ebook(
         }
     };
 
-    // Make the displayed metadata match what the user confirmed.
-    apply_user_edits(&state, &uuid, &form, user.id).await?;
+    // Make the displayed metadata match what the user confirmed. A failure
+    // here undoes the book: the client sees an error, so nothing may stay.
+    let scan_key = scan_key_of(&root_path, &dest);
+    let finished = review::finish_upload(
+        &state,
+        &uuid,
+        &scan_key,
+        user.id,
+        &form.legacy,
+        form.extras.overrides.take(),
+        cover,
+    )
+    .await;
+    if let Err(e) = finished {
+        review::rollback_uploaded_file(&state, &uuid, &scan_key).await;
+        let _ = tokio::fs::remove_file(&dest).await;
+        return Err(e);
+    }
 
     Ok((StatusCode::CREATED, Json(UploadCommitResult { uuid })).into_response())
 }
@@ -565,10 +612,7 @@ async fn reindex_and_resolve_uploaded_uuid(
         return Err(UploadError::internal("reindex after upload", e));
     }
 
-    let scan_key = dest
-        .strip_prefix(root_path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let scan_key = scan_key_of(root_path, dest);
     db::get_book_uuid_by_scan_key(&state.pool, root, &scan_key)
         .await
         .map_err(|e| UploadError::internal("get_book_uuid_by_scan_key", e))?
@@ -580,7 +624,16 @@ async fn reindex_and_resolve_uploaded_uuid(
         })
 }
 
-/// Collect the user's text fields and stream the file field to a tempfile.
+/// Library-relative path of `dest` under `root_path` — the durable scan_key
+/// the reindex records for the placed file.
+fn scan_key_of(root_path: &Path, dest: &Path) -> String {
+    dest.strip_prefix(root_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+/// Collect the user's text fields, the review fields, and stream the file
+/// field to a tempfile.
 async fn parse_commit_multipart(
     mut multipart: Multipart,
     cap: usize,
@@ -595,23 +648,25 @@ async fn parse_commit_multipart(
                         form.tmp_file = Some(stream_upload_to_tempfile(field, cap).await?);
                     }
                     "title" => {
-                        form.title =
+                        form.legacy.title =
                             read_text_field_capped(field, "title", MAX_TEXT_FIELD_BYTES).await?
                     }
                     "author" => {
-                        form.author =
+                        form.legacy.author =
                             read_text_field_capped(field, "author", MAX_TEXT_FIELD_BYTES).await?
                     }
                     "series" => {
-                        form.series =
+                        form.legacy.series =
                             read_text_field_capped(field, "series", MAX_TEXT_FIELD_BYTES).await?
                     }
                     "series_index" => {
-                        form.series_index =
+                        form.legacy.series_index =
                             read_text_field_capped(field, "series_index", MAX_TEXT_FIELD_BYTES)
                                 .await?
                     }
-                    _ => continue,
+                    other => {
+                        review::take_extra_field(&mut form.extras, other, field).await?;
+                    }
                 }
             }
             Ok(None) => break,
@@ -621,58 +676,8 @@ async fn parse_commit_multipart(
     Ok(form)
 }
 
-/// Diff the user's confirmed fields against the indexer's embedded values and
-/// persist a metadata override for each field they changed.
-async fn apply_user_edits(
-    state: &AppState,
-    uuid: &str,
-    form: &CommitForm,
-    user_id: i64,
-) -> Result<(), UploadError> {
-    let book = db::get_book_by_uuid(&state.pool, uuid)
-        .await
-        .map_err(|e| UploadError::internal("get_book_by_uuid", e))?
-        .ok_or_else(|| UploadError::internal("get_book_by_uuid after upload", "book vanished"))?;
-
-    let mut overrides = MetadataOverrides::default();
-    let mut changed = false;
-    if let Some(title) = norm(&form.title) {
-        if book.title.as_deref() != Some(title.as_str()) {
-            overrides.title = Some(title);
-            changed = true;
-        }
-    }
-    if let Some(author) = norm(&form.author) {
-        let embedded = book.creators.first().map(|c| c.name.as_str());
-        if embedded != Some(author.as_str()) {
-            overrides.creators = Some(edited_creators(author, &book.creators));
-            changed = true;
-        }
-    }
-    if let Some(series) = norm(&form.series) {
-        if book.series.as_deref() != Some(series.as_str()) {
-            overrides.series = Some(series);
-            changed = true;
-        }
-    }
-    if let Some(series_index) = norm(&form.series_index) {
-        if book.series_index.as_deref() != Some(series_index.as_str()) {
-            overrides.series_index = Some(series_index);
-            changed = true;
-        }
-    }
-
-    if !changed {
-        return Ok(());
-    }
-    overrides.validate().map_err(UploadError::Validation)?;
-    db::merge_metadata_overrides(&state.pool, uuid, &overrides, user_id)
-        .await
-        .map_err(|e| UploadError::internal("merge_metadata_overrides", e))?;
-    Ok(())
-}
-
 mod audiobooks;
+mod review;
 pub(super) use audiobooks::{post_inspect_audiobook, post_upload_audiobook};
 
 #[cfg(test)]

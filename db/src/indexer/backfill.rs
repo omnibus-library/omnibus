@@ -547,12 +547,16 @@ async fn regenerate_thumbs(pool: &SqlitePool, book_id: i64, last_modified_epoch:
         }
     };
 
+    let encoded = cover.clone();
     match tokio::task::spawn_blocking(move || {
         thumbs::ensure_thumbnails_sync(book_id, last_modified_epoch, cover)
     })
     .await
     {
-        Ok(Ok(())) => {}
+        // A cover replaced while the encode ran (an upload commit landing
+        // its staged cover behind the reindex) must not leave these behind
+        // as "fresh" thumbnails of the old art.
+        Ok(Ok(())) => thumbs::discard_thumbs_if_cover_moved(pool, book_id, &encoded).await,
         Ok(Err(e)) => {
             tracing::warn!(
                 book_id,
