@@ -40,22 +40,9 @@ pub fn SearchPage(query: String) -> Element {
         });
     }));
 
-    let header = rsx! {
-        nav { class: "breadcrumb",
-            Link {
-                to: Route::Landing {},
-                "data-testid": "search-back",
-                "Library"
-            }
-            span { class: "breadcrumb-sep", "\u{203a}" }
-            span { "Search" }
-        }
-    };
-
     if loading() {
         return rsx! {
             section { class: "search-page",
-                {header}
                 p { class: "subtitle", "Searching\u{2026}" }
             }
         };
@@ -63,7 +50,6 @@ pub fn SearchPage(query: String) -> Element {
     if let Some(msg) = error() {
         return rsx! {
             section { class: "search-page",
-                {header}
                 p { role: "alert", class: "subtitle", "{msg}" }
             }
         };
@@ -71,7 +57,6 @@ pub fn SearchPage(query: String) -> Element {
     let Some(r) = results() else {
         return rsx! {
             section { class: "search-page",
-                {header}
                 p { class: "subtitle", "No results for \u{201c}{query}\u{201d}." }
             }
         };
@@ -79,7 +64,6 @@ pub fn SearchPage(query: String) -> Element {
 
     rsx! {
         section { class: "search-page",
-            {header}
             SearchResults { results: r, query: query.clone() }
         }
     }
