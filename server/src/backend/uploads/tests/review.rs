@@ -772,3 +772,125 @@ async fn commit_rejects_an_overlong_legacy_title_before_filing() {
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     assert_eq!(files_under(library.path()), 0);
 }
+
+// ── A second format attaches; the existing book keeps its record ──
+
+/// A PDF twin of a book already in the library: the indexer attaches it as
+/// a second format, the commit resolves the same uuid (through the file's
+/// own scan key), the legacy title that named the folder does not rewrite
+/// the book, and the edit the reader made on the form still lands.
+#[tokio::test]
+async fn commit_attaches_a_second_format_without_rewriting_the_existing_book() {
+    let (app, _state, pool) = fixture().await;
+    let _covers = CoversDirGuard::new("review_commit_attach");
+    let library = ebook_library(&pool).await;
+    let token = admin_token(&pool).await;
+
+    let epub = beta_epub();
+    let (ct, body) = multipart_typed(&[
+        Part::text("title", "Beta in the Series"),
+        Part::text("author", "Grace Hopper"),
+        Part::file("file", "beta.epub", "application/epub+zip", &epub),
+    ]);
+    let res = app
+        .clone()
+        .oneshot(post_multipart("/api/uploads/ebooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    let first = committed_book(&pool, res).await;
+    let uuid = first.unique_identifier.clone().unwrap();
+
+    let pdf = db::test_support::build_test_pdf(&db::test_support::TestPdf {
+        pages: &["Twin"],
+        title: Some("Beta in the Series"),
+        author: Some("Grace Hopper"),
+        ..Default::default()
+    });
+    let overrides = serde_json::json!({ "description": "From the PDF review" }).to_string();
+    let (ct, body) = multipart_typed(&[
+        // The reader retitled the *folder*; the book it joins is not renamed.
+        Part::text("title", "Beta Twin"),
+        Part::text("author", "Grace Hopper"),
+        Part::text("overrides", &overrides),
+        Part::file("file", "beta.pdf", "application/pdf", &pdf),
+    ]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/ebooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    let joined = committed_book(&pool, res).await;
+
+    assert_eq!(joined.unique_identifier.as_deref(), Some(uuid.as_str()));
+    assert_eq!(
+        joined.formats.len(),
+        2,
+        "the PDF attached as a second format"
+    );
+    assert_eq!(joined.title.as_deref(), Some("Beta in the Series"));
+    assert_eq!(joined.description.as_deref(), Some("From the PDF review"));
+    assert!(library
+        .path()
+        .join("grace-hopper")
+        .join("beta-twin")
+        .join("beta-twin.pdf")
+        .is_file());
+}
+
+#[tokio::test]
+async fn restore_overrides_puts_the_row_back_or_removes_one_that_did_not_exist() {
+    let (app, state, pool) = fixture().await;
+    let _covers = CoversDirGuard::new("review_restore");
+    let _library = ebook_library(&pool).await;
+    let token = admin_token(&pool).await;
+
+    let epub = beta_epub();
+    let (ct, body) = multipart_typed(&[
+        Part::text("title", "Beta in the Series"),
+        Part::text("author", "Grace Hopper"),
+        Part::file("file", "beta.epub", "application/epub+zip", &epub),
+    ]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/ebooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    let book = committed_book(&pool, res).await;
+    let uuid = book.unique_identifier.clone().unwrap();
+    let admin = db::auth::get_user_by_username(&pool, "admin")
+        .await
+        .unwrap()
+        .expect("admin exists");
+
+    // No row before: a write, then a restore to `None`, leaves no row.
+    let later = MetadataOverrides {
+        description: Some("mid-commit".into()),
+        ..Default::default()
+    };
+    db::merge_metadata_overrides(&pool, &uuid, &later, admin.id)
+        .await
+        .unwrap();
+    super::super::review::restore_overrides(&state, &uuid, admin.id, None).await;
+    assert!(db::get_metadata_overrides(&pool, &uuid)
+        .await
+        .unwrap()
+        .is_none());
+
+    // A row before: the restore puts its exact contents back.
+    let prior = MetadataOverrides {
+        description: Some("before".into()),
+        ..Default::default()
+    };
+    db::merge_metadata_overrides(&pool, &uuid, &prior, admin.id)
+        .await
+        .unwrap();
+    let snapshot = db::get_metadata_overrides(&pool, &uuid).await.unwrap();
+    db::merge_metadata_overrides(&pool, &uuid, &later, admin.id)
+        .await
+        .unwrap();
+    super::super::review::restore_overrides(&state, &uuid, admin.id, snapshot).await;
+    let (restored, has_cover) = db::get_metadata_overrides(&pool, &uuid)
+        .await
+        .unwrap()
+        .expect("the prior row is back");
+    assert_eq!(restored.description.as_deref(), Some("before"));
+    assert!(!has_cover);
+}

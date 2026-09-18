@@ -152,9 +152,19 @@ pub(super) async fn resolve_staged_cover(
 /// fields, the review diff on top of them, pruned back to what actually
 /// differs from the indexed row, then the staged cover. A book accepted
 /// as-is ends up with no override at all, so it keeps following its file.
+///
+/// The indexer may have *attached* the upload to an existing book in
+/// another format rather than minting one (`scan_key` is then not the
+/// book's own). That book's record is not the upload's: the legacy
+/// title/author only ever named the folder, so they are not applied to it —
+/// only the edits the reader made on the form are. And whatever this writes,
+/// a failure part-way puts the book's override row back as it was, so a
+/// request the client saw fail changes nothing on a book that already
+/// existed (the handler then removes the file itself).
 pub(super) async fn finish_upload(
     state: &AppState,
     uuid: &str,
+    scan_key: &str,
     user_id: i64,
     legacy: &LegacyFields,
     review: Option<MetadataOverrides>,
@@ -164,13 +174,43 @@ pub(super) async fn finish_upload(
         .await
         .map_err(|e| UploadError::internal("get_book_by_uuid", e))?
         .ok_or_else(|| UploadError::internal("get_book_by_uuid after upload", "book vanished"))?;
+    let files = db::get_book_files(&state.pool, book.id)
+        .await
+        .map_err(|e| UploadError::internal("get_book_files", e))?;
+    let attached = files.iter().any(|f| f.path.as_deref() != Some(scan_key));
+    let prior = db::get_metadata_overrides(&state.pool, uuid)
+        .await
+        .map_err(|e| UploadError::internal("get_metadata_overrides", e))?;
 
-    let mut overrides = legacy_overrides(&book, legacy);
+    let written = apply_review(state, &book, user_id, legacy, review, cover, attached).await;
+    if let Err(e) = written {
+        restore_overrides(state, uuid, user_id, prior).await;
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// The writes [`finish_upload`] snapshots around.
+async fn apply_review(
+    state: &AppState,
+    book: &EbookMetadata,
+    user_id: i64,
+    legacy: &LegacyFields,
+    review: Option<MetadataOverrides>,
+    cover: Option<(String, Bytes)>,
+    attached: bool,
+) -> Result<(), UploadError> {
+    let uuid = book.unique_identifier.as_deref().unwrap_or_default();
+    let mut overrides = if attached {
+        MetadataOverrides::default()
+    } else {
+        legacy_overrides(book, legacy)
+    };
     if let Some(review) = review {
         layer(&mut overrides, review);
     }
     trim_scalars(&mut overrides);
-    prune_unchanged(&mut overrides, &book);
+    prune_unchanged(&mut overrides, book);
 
     if overrides != MetadataOverrides::default() {
         overrides.validate().map_err(UploadError::Validation)?;
@@ -192,6 +232,37 @@ pub(super) async fn finish_upload(
             .map_err(|e| UploadError::internal("spawn_blocking(invalidate_thumbs)", e))?;
     }
     Ok(())
+}
+
+/// Put a book's override row back to `prior` — what [`finish_upload`] read
+/// before it wrote anything — after a failed finish. A row that did not
+/// exist is deleted again; a cover override this request wrote over a book
+/// that had none is removed with it. Best-effort, like the file rollback:
+/// the original error is what the client gets. (A previous override cover
+/// *file* that `persist_cover` already replaced is not recoverable here;
+/// the row's flag is.)
+pub(super) async fn restore_overrides(
+    state: &AppState,
+    uuid: &str,
+    user_id: i64,
+    prior: Option<(MetadataOverrides, bool)>,
+) {
+    let result = match &prior {
+        Some((ov, had_cover)) => {
+            db::upsert_metadata_overrides(&state.pool, uuid, ov, *had_cover, user_id).await
+        }
+        None => db::delete_metadata_overrides(&state.pool, uuid).await,
+    };
+    if let Err(e) = result {
+        tracing::error!(uuid, error = %e, "upload rollback: could not restore the override row");
+    }
+    if !prior.is_some_and(|(_, had_cover)| had_cover) {
+        let uuid = uuid.to_string();
+        if let Err(e) = tokio::task::spawn_blocking(move || db::delete_override_cover(&uuid)).await
+        {
+            tracing::warn!(error = %e, "upload rollback: override cover cleanup join failed");
+        }
+    }
 }
 
 /// Undo a commit whose finish step failed after the reindex: delete the

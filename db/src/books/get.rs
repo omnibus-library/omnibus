@@ -674,10 +674,16 @@ pub async fn get_book_uuid_by_scan_key(
     library_path: &str,
     scan_key: &str,
 ) -> Result<Option<String>, super::BooksError> {
+    // A file the sync *attached* to an existing book in another format keeps
+    // that book's `books.scan_key`; its own key lives on its `book_files`
+    // row, so the upload commit resolves through either.
     Ok(sqlx::query_scalar::<_, String>(
         "SELECT b.uuid FROM books b
          JOIN scan_roots sr ON sr.id = b.library_id
-         WHERE sr.path = ?1 AND b.scan_key = ?2
+         WHERE sr.path = ?1
+           AND (b.scan_key = ?2
+                OR EXISTS (SELECT 1 FROM book_files bf
+                            WHERE bf.book_id = b.id AND bf.scan_key = ?2))
          LIMIT 1",
     )
     .bind(library_path)

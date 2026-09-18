@@ -429,6 +429,7 @@ pub(in crate::backend) async fn post_upload_audiobook(
     let finished = review::finish_upload(
         &state,
         &uuid,
+        &placed.scan_key,
         user.id,
         &legacy,
         extras.overrides.take(),

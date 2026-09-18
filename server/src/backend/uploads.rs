@@ -549,9 +549,11 @@ pub(super) async fn post_upload_ebook(
 
     // Make the displayed metadata match what the user confirmed. A failure
     // here undoes the book: the client sees an error, so nothing may stay.
+    let scan_key = scan_key_of(&root_path, &dest);
     let finished = review::finish_upload(
         &state,
         &uuid,
+        &scan_key,
         user.id,
         &form.legacy,
         form.extras.overrides.take(),
@@ -559,7 +561,7 @@ pub(super) async fn post_upload_ebook(
     )
     .await;
     if let Err(e) = finished {
-        review::rollback_uploaded_file(&state, &uuid, &scan_key_of(&root_path, &dest)).await;
+        review::rollback_uploaded_file(&state, &uuid, &scan_key).await;
         let _ = tokio::fs::remove_file(&dest).await;
         return Err(e);
     }
