@@ -1,6 +1,6 @@
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
-import { gotoReady } from "../utils/nav";
+import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 test.beforeAll(async ({ request }) => {
@@ -95,6 +95,9 @@ test("tag substring shows tag or book results", async ({ page }) => {
 
 test("renders the /search results page layout", async ({ page }) => {
   await gotoReady(page, "/search/dracula");
+
+  // Shared nav is the way back to the library now that the page has no breadcrumb.
+  await expectNavVisible(page);
 
   // Heading echoes the query, and the summary stat line shows the engine +
   // timing once the RPC settles.
