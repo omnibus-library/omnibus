@@ -375,24 +375,49 @@ pub(super) async fn post_inspect_ebook(
             Err(e) => return Err(UploadError::internal("parse multipart", e)),
         }
     };
+    let original_name = field.file_name().map(str::to_owned);
     let staged = stream_upload_to_tempfile(field, max_upload_bytes()).await?;
+    let filename = upload_filename(original_name.as_deref(), staged.ext);
     // Parsing opens the archive / page tree — run it off the async runtime.
-    let inspection = tokio::task::spawn_blocking(move || inspect_ebook_tempfile(&staged))
+    let inspection = tokio::task::spawn_blocking(move || inspect_ebook_tempfile(&staged, filename))
         .await
         .map_err(|e| UploadError::internal("spawn_blocking(inspect ebook)", e))??;
     Ok(Json(inspection).into_response())
 }
 
+/// The name the parser sees for an inspected upload: the client's own file
+/// name, reduced to its stem, under the sniffed extension. The parsers fall
+/// back to that stem for a title when the file embeds none — a PDF with no
+/// Info dict, a CBZ without `ComicInfo.xml` — so a synthetic name here
+/// would surface as the book's title in the review form. Only the last
+/// path component is kept: the name is never used to place the file, but
+/// a stem is what the reader will see.
+fn upload_filename(original: Option<&str>, ext: &str) -> String {
+    let base = original
+        .map(|name| name.rsplit(['/', '\\']).next().unwrap_or(name))
+        .map(str::trim)
+        .unwrap_or("");
+    // Not `Path::file_stem`: it reads a bare `.pdf` as a dotfile with no
+    // extension and would hand that back as the stem.
+    let stem = base.rsplit_once('.').map_or(base, |(stem, _)| stem).trim();
+    let stem = if stem.is_empty() { "upload" } else { stem };
+    format!("{stem}.{ext}")
+}
+
 /// Parse the already-written upload with the indexer's own parser for its
 /// sniffed format and project the result into an [`UploadInspection`]. Parse
-/// failures map to 415; staging IO failures to 500.
-fn inspect_ebook_tempfile(staged: &StagedUpload) -> Result<UploadInspection, UploadError> {
+/// failures map to 415; staging IO failures to 500. `filename` is the name
+/// from [`upload_filename`], which the parser reads for its title fallback.
+fn inspect_ebook_tempfile(
+    staged: &StagedUpload,
+    filename: String,
+) -> Result<UploadInspection, UploadError> {
     let size_bytes = std::fs::metadata(staged.tmp.path())
         .map_err(|e| UploadError::internal("stat upload tempfile", e))?
         .len() as i64;
     let label = staged.ext.to_ascii_uppercase();
     let targets = vec![db::ebook::ParseTarget {
-        filename: format!("upload.{}", staged.ext),
+        filename,
         absolute: staged.tmp.path().to_path_buf(),
         mtime_epoch: 0,
         size_bytes,
