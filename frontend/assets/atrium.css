@@ -10,20 +10,17 @@
  * set inline as `--accent` on the cover element.
  *
  * Fonts: one editorial voice app-wide — Cormorant Garamond (display /
- * serif), Instrument Sans (UI), Space Mono (labels, numerics). Pulled from
- * Google Fonts; self-hosting (`@font-face` under `frontend/assets/fonts/`)
- * is tracked as a follow-up for offline / airgapped installs.
+ * serif), Instrument Sans (UI), Space Mono (labels, numerics). These
+ * app-chrome faces still come from Google Fonts; self-hosting them
+ * (`@font-face` under `frontend/assets/fonts/`) is tracked as a follow-up for
+ * offline / airgapped installs, and is what would let the CDN hosts drop out
+ * of `style-src`/`font-src`. The *reader* faces (Instrument Serif, EB
+ * Garamond) are already self-hosted under `frontend/assets/reader-fonts/`,
+ * linked by the reader page and injected into each section iframe by
+ * epub-reader-glue.js — nothing here carries them.
  */
 
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400..700;1,400..700&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
-/* Reader Aa-panel typeface chips preview their prose faces (Editorial =
-   Instrument Serif, Classic = EB Garamond), which the app-wide import above no
-   longer carries after the #2162 type slimming — so both chips fell back to a
-   generic serif and looked identical (#2163). Loaded here for the parent
-   document only, subset to the chips' "Aa" specimen glyphs so the cost is two
-   glyphs, not two families. The reader body itself gets these faces from
-   epub-reader-glue.js's own iframe import, which this does not touch. */
-@import url('https://fonts.googleapis.com/css2?family=EB+Garamond&family=Instrument+Serif&text=Aa&display=swap');
 
 /* ── Tokens · dark (default) ─────────────────────────────────────── */
 :root {
@@ -6518,7 +6515,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   font-family: var(--sans); font-size: 12.5px; background: transparent; color: var(--ink-2); }
 .rd-seg > button.on { background: var(--bg-0); color: var(--ink-0);
   box-shadow: 0 1px 3px rgba(0,0,0,.25); }
-.rd-typeface-chip { flex: 1; display: flex; flex-direction: column; align-items: center;
+/* Six faces wrap to two rows of three; the phone-width full-width panel keeps
+   three per row rather than squeezing six into one. */
+.rd-typeface-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.rd-typeface-chip { flex: 1 1 calc(33.333% - 4px); display: flex; flex-direction: column; align-items: center;
   gap: 2px; padding: 8px 4px; border-radius: 9px; cursor: pointer;
   border: 1px solid var(--line-2); background: transparent; color: var(--ink-2);
   transition: .14s; }

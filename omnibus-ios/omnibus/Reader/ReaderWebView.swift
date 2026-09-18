@@ -70,9 +70,54 @@ enum ReaderSpread: String, Codable, CaseIterable {
     }
 }
 
+/// The reader's typeface choice. `original` is the absence of an override —
+/// the publisher's embedded faces and the book's own CSS win — and the
+/// default, as in Apple Books. Mirrors `Typeface` in
+/// `frontend/src/pages/reader/typography.rs`; keep the stacks identical.
+enum ReaderTypeface: String, Codable, CaseIterable {
+    case original, editorial, classic, modern, sans, mono
+
+    /// The `font-family` stack the glue applies, `nil` for no override.
+    var css: String? {
+        switch self {
+        case .original: nil
+        // Georgia sits ahead of the generic `serif` so a webfont that fails to
+        // load in the section degrades to a real book serif, not Times.
+        case .editorial: "'Instrument Serif',Georgia,serif"
+        case .classic: "'EB Garamond',Georgia,serif"
+        case .modern: "Georgia,serif"
+        case .sans: "system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif"
+        case .mono: "ui-monospace,'SF Mono',Menlo,Consolas,monospace"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .original: "Original"
+        case .editorial: "Editorial"
+        case .classic: "Classic"
+        case .modern: "Modern"
+        case .sans: "Sans"
+        case .mono: "Mono"
+        }
+    }
+
+    /// A build before this enum stored the raw CSS value. `serif` was both that
+    /// build's default and what an explicit "Serif" pick wrote — indistinguishable,
+    /// so it maps to the new default rather than to a face nobody may have chosen.
+    init?(legacy token: String) {
+        switch token {
+        case "serif": self = .original
+        case "sans-serif": self = .sans
+        case "monospace": self = .mono
+        default: return nil
+        }
+    }
+}
+
 struct ReaderSettings: Codable, Equatable {
     var fontSize: Int = 19
-    var fontFamily: String = "serif"
+    var typeface: ReaderTypeface = .original
     var lineHeight: Double = 1.6
     var margins: ReaderMargins = .normal
     var justify: Bool = true
@@ -85,7 +130,10 @@ struct ReaderSettings: Codable, Equatable {
     static let storageKey = "omnibus.readerSettings"
 
     enum CodingKeys: String, CodingKey {
-        case fontSize, fontFamily, lineHeight, margins, justify, theme, spread
+        case fontSize, lineHeight, margins, justify, theme, spread
+        /// The JSON key is unchanged so an upgraded blob keeps its value; only
+        /// what it holds changed, from a raw CSS stack to a token.
+        case typeface = "fontFamily"
     }
 
     static func load() -> ReaderSettings {
@@ -117,7 +165,12 @@ extension ReaderSettings {
         // Each `or:` reads what `self.init()` just seeded, so the property
         // defaults above stay the one place a default is written down.
         fontSize = container.value(.fontSize, or: fontSize)
-        fontFamily = container.value(.fontFamily, or: fontFamily)
+        // Read by hand rather than through `value(_:or:)`: a blob written
+        // before the enum existed holds a raw CSS stack, which decodes as
+        // neither the token nor a miss.
+        let rawTypeface = try? container.decode(String.self, forKey: .typeface)
+        typeface = rawTypeface.flatMap { ReaderTypeface(rawValue: $0) ?? ReaderTypeface(legacy: $0) }
+            ?? typeface
         lineHeight = container.value(.lineHeight, or: lineHeight)
         margins = container.value(.margins, or: margins)
         justify = container.value(.justify, or: justify)
@@ -566,8 +619,10 @@ final class ReaderController: NSObject {
         if wanted.theme != shown.theme {
             scripts.append("OmnibusReader.setTheme(\(wanted.theme.jsQuoted))")
         }
-        if wanted.fontFamily != shown.fontFamily {
-            scripts.append("OmnibusReader.setFont(\(wanted.fontFamily.jsQuoted))")
+        if wanted.typeface != shown.typeface {
+            // Original goes over as `null`, which clears the override rather
+            // than setting one.
+            scripts.append("OmnibusReader.setFont(\(wanted.typeface.css?.jsQuoted ?? "null"))")
         }
         if wanted.lineHeight != shown.lineHeight {
             scripts.append("OmnibusReader.setLineHeight(\(wanted.lineHeight))")
@@ -624,7 +679,7 @@ final class ReaderController: NSObject {
         var options: [String: Any] = [
             "theme": settings.theme,
             "fontSize": settings.fontSize,
-            "fontFamily": settings.fontFamily,
+            "fontsHref": ReaderWebView.fontsHref,
             "lineHeight": settings.lineHeight,
             "maxWidth": settings.margins.css,
             "justify": settings.justify,
@@ -635,6 +690,9 @@ final class ReaderController: NSObject {
             "locationsKey": book.uuid,
         ]
         if let restoreCFI { options["cfi"] = restoreCFI }
+        // Omitted under Original, like `cfi`: the glue reads an absent
+        // `fontFamily` as "no override".
+        if let css = settings.typeface.css { options["fontFamily"] = css }
 
         let json = (try? JSONSerialization.data(withJSONObject: options))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
@@ -808,6 +866,12 @@ struct ReaderWebView: UIViewRepresentable {
     /// web-content process WebKit reclaimed.
     static let entryURL = URL(string: "\(scheme)://app/reader.html")
 
+    /// The bundled `@font-face` sheet for the reader's named faces. Its
+    /// relative `url()`s resolve to the sibling woff2s the scheme handler
+    /// serves flat out of the bundle root — which is what makes Editorial and
+    /// Classic render with no network at all.
+    static let fontsHref = "\(scheme)://app/reader-fonts.css"
+
     /// Serves the bundled reader assets and the book bytes. Using a custom
     /// scheme (rather than `file://` plus a private preference) keeps
     /// everything on public API and gives epub.js one same-origin space.
@@ -910,6 +974,9 @@ struct ReaderWebView: UIViewRepresentable {
             if name.hasSuffix(".js") { return "text/javascript; charset=utf-8" }
             if name.hasSuffix(".css") { return "text/css; charset=utf-8" }
             if name.hasSuffix(".html") { return "text/html; charset=utf-8" }
+            if name.hasSuffix(".woff2") { return "font/woff2" }
+            if name.hasSuffix(".woff") { return "font/woff" }
+            if name.hasSuffix(".ttf") { return "font/ttf" }
             return "application/octet-stream"
         }
     }

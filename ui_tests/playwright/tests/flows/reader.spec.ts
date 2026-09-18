@@ -61,6 +61,12 @@ const FRONTMATTER_BOOK = FIXTURE_BOOKS.find(
 // mints a blob: stylesheet on render — the one fixture that exercises the
 // `style-src blob:` CSP path. No other spec may open it in the reader.
 const BLOB_CSS_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-reef")!;
+// Reserved for the typeface tests below: the one fixture whose publisher CSS
+// embeds a font and applies it at element level, so "Original keeps the
+// publisher's face / a named face beats it" is assertable at all. No other
+// spec may open it in the reader. The three tests here share it safely —
+// they only read it and assert nothing server-side.
+const FONT_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-lagoon")!;
 
 // The epub.js progress POST fires on the reader's relocate events; pin the
 // exact pathname so the sibling `/api/rpc/progress/get` reads never match.
@@ -80,6 +86,134 @@ async function footerPageLabel(page: Page): Promise<string> {
   const text = (await page.getByTestId("reader-footer").textContent()) ?? "";
   const m = text.match(PAGE_LABEL);
   return m ? m[0] : "";
+}
+
+// Intentional exception to the "never assert on rendered EPUB text" rule (same
+// rationale as the black-theme regression below): the defect these guard is
+// epub.js painting the highlight SVG at a stale layout's pixel rects, so the
+// assertion has to compare the painted overlay against the rendered prose
+// itself. Returns the worst axis drift between the SVG union box and the live
+// range's union box; Infinity while unmeasurable. Shared by the font-size and
+// typeface tests, which seed the same mid-paragraph range on their own books.
+const overlayDrift = (page: Page): Promise<number> =>
+  page.evaluate(() => {
+    const view = document.querySelector("#omnibus-viewer .epub-view");
+    const iframe = view?.querySelector("iframe");
+    const rects = view
+      ? Array.from(view.querySelectorAll(":scope > svg rect"))
+      : [];
+    const doc = iframe?.contentDocument;
+    // The seeded CFI targets the <p> after the <h1> — mirror it exactly.
+    const text = doc?.body?.querySelector("p")?.firstChild;
+    if (
+      !iframe ||
+      !doc ||
+      rects.length === 0 ||
+      !text ||
+      text.nodeType !== Node.TEXT_NODE
+    ) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const range = doc.createRange();
+    const len = (text as Text).data.length;
+    range.setStart(text, Math.min(10, len));
+    range.setEnd(text, Math.min(24, len));
+    const t = range.getBoundingClientRect();
+    const ifr = iframe.getBoundingClientRect();
+    const union = rects
+      .map((r) => r.getBoundingClientRect())
+      .reduce(
+        (a, b) => ({
+          left: Math.min(a.left, b.left),
+          top: Math.min(a.top, b.top),
+        }),
+        { left: Number.POSITIVE_INFINITY, top: Number.POSITIVE_INFINITY },
+      );
+    return Math.max(
+      Math.abs(union.left - (t.left + ifr.left)),
+      Math.abs(union.top - (t.top + ifr.top)),
+    );
+  });
+
+// The family the embedded-font fixture declares (tools/make_epub.ts).
+const EMBEDDED_FAMILY = "Fixture Serif";
+
+// The typeface contract lives inside the section iframe (same-origin, so
+// contentDocument is reachable). `override` is the reader's own font layer:
+// "" under Original — the absence of a declaration is the contract.
+//
+// Two of these fields exist because a rendered glyph proves nothing on its own:
+// both Blink and WebKit fall through from an `@font-face` whose fetch was
+// refused to the next declared copy, so the publisher's face still paints even
+// when a `blob:` copy was requested and refused first.
+//
+//   `embeddedSrcs` is the structural assertion — every `src` declared for the
+//   embedded family, across every sheet the section holds (the blob-linked one
+//   included; it is same-origin and readable). A `blob:` among them means a
+//   copy exists that CSP will refuse, whatever renders.
+//   `faces` carries every face's *status*, so a refused copy shows as `error`.
+const sectionFontState = (page: Page) =>
+  page.evaluate((family: string) => {
+    const iframe = document.querySelector(
+      "#omnibus-viewer iframe",
+    ) as HTMLIFrameElement | null;
+    const doc = iframe?.contentDocument;
+    const p = doc?.body?.querySelector("p");
+    if (!doc || !p) return null;
+
+    const embeddedSrcs: string[] = [];
+    for (const sheet of Array.from(doc.styleSheets)) {
+      let rules: CSSRuleList | undefined;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue; // a sheet this document may not read
+      }
+      for (const rule of Array.from(rules ?? [])) {
+        // Numeric type, not `instanceof CSSFontFaceRule`: the constructor in
+        // this realm is not the one the iframe's rules were built with.
+        if (rule.type !== CSSRule.FONT_FACE_RULE) continue;
+        const style = (rule as CSSFontFaceRule).style;
+        const declared = style
+          .getPropertyValue("font-family")
+          .replace(/["']/g, "")
+          .trim();
+        if (declared !== family) continue;
+        embeddedSrcs.push(style.getPropertyValue("src"));
+      }
+    }
+
+    return {
+      override: doc.getElementById("__omnibus_font")?.textContent ?? null,
+      bodyInline: doc.body.style.fontFamily,
+      paragraphFamily: getComputedStyle(p).fontFamily,
+      embeddedSrcs,
+      // The reader's own sheet, as the section actually received it.
+      fontsHref:
+        doc.getElementById("__omnibus_fonts")?.getAttribute("href") ?? null,
+      faces: Array.from(doc.fonts).map((f) => ({
+        family: f.family.replace(/["']/g, ""),
+        status: f.status,
+      })),
+    };
+  }, EMBEDDED_FAMILY);
+
+// A CSP refusal to load a font, as the browser reports it on the console. The
+// blob-stylesheet spec's collector matches `style-src|stylesheet` only, so a
+// `font-src` refusal — the symptom of a wrongly ordered @font-face cascade —
+// is invisible to it.
+function collectFontCspViolations(page: Page): string[] {
+  const violations: string[] = [];
+  page.on("console", (msg) => {
+    const text = msg.text();
+    if (
+      /content security policy/i.test(text) &&
+      /font-src|load the font/i.test(text)
+    ) {
+      violations.push(text);
+    }
+  });
+  return violations;
 }
 
 test("renders the reader layout", async ({ page, request }) => {
@@ -120,6 +254,22 @@ test("renders the reader layout", async ({ page, request }) => {
   await expect(page.getByTestId("reader-font-increase")).toBeVisible();
   await expect(page.getByTestId("reader-spread-single")).toBeVisible();
   await expect(page.getByTestId("reader-spread-double")).toBeVisible();
+
+  // Six typefaces, Original selected — the publisher's own faces, which is
+  // what a reader who has never touched the picker gets.
+  for (const token of [
+    "original",
+    "editorial",
+    "classic",
+    "modern",
+    "sans",
+    "mono",
+  ]) {
+    await expect(page.getByTestId(`reader-typeface-${token}`)).toBeVisible();
+  }
+  await expect(page.getByTestId("reader-typeface-original")).toHaveClass(
+    /\bon\b/,
+  );
 });
 
 // Regression for issue #2252: the Aa panel drops a full-surface `rd-scrim`
@@ -474,55 +624,11 @@ test("keeps a seeded highlight glued to its text across font-size changes", asyn
   await gotoReady(page, `/read/${uuid}`);
   await expect(page.getByTestId("reader-viewer")).toBeVisible();
 
-  // Intentional exception to the "never assert on rendered EPUB text" rule
-  // (same rationale as the black-theme regression above): the defect under
-  // test is epub.js painting the highlight SVG at a stale layout's pixel
-  // rects, so the assertion must compare the painted overlay against the
-  // rendered prose itself. Returns the worst axis drift between the SVG
-  // union box and the live range's union box; Infinity while unmeasurable.
-  const overlayDrift = (): Promise<number> =>
-    page.evaluate(() => {
-      const view = document.querySelector("#omnibus-viewer .epub-view");
-      const iframe = view?.querySelector("iframe");
-      const rects = view
-        ? Array.from(view.querySelectorAll(":scope > svg rect"))
-        : [];
-      const doc = iframe?.contentDocument;
-      // The seeded CFI targets the <p> after the <h1> — mirror it exactly.
-      const text = doc?.body?.querySelector("p")?.firstChild;
-      if (
-        !iframe ||
-        !doc ||
-        rects.length === 0 ||
-        !text ||
-        text.nodeType !== Node.TEXT_NODE
-      ) {
-        return Number.POSITIVE_INFINITY;
-      }
-      const range = doc.createRange();
-      const len = (text as Text).data.length;
-      range.setStart(text, Math.min(10, len));
-      range.setEnd(text, Math.min(24, len));
-      const t = range.getBoundingClientRect();
-      const ifr = iframe.getBoundingClientRect();
-      const union = rects
-        .map((r) => r.getBoundingClientRect())
-        .reduce(
-          (a, b) => ({
-            left: Math.min(a.left, b.left),
-            top: Math.min(a.top, b.top),
-          }),
-          { left: Number.POSITIVE_INFINITY, top: Number.POSITIVE_INFINITY },
-        );
-      return Math.max(
-        Math.abs(union.left - (t.left + ifr.left)),
-        Math.abs(union.top - (t.top + ifr.top)),
-      );
-    });
-
   // Painted over the prose on first open, with no font-size nudge — the add
   // used to be dropped entirely when it raced the epub.js bootstrap.
-  await expect.poll(overlayDrift, { timeout: 20_000 }).toBeLessThan(3);
+  await expect
+    .poll(() => overlayDrift(page), { timeout: 20_000 })
+    .toBeLessThan(3);
 
   // Grow the text twice (18 → 20px). Each step reflows the prose without
   // changing the section's one-spread width — exactly the case where
@@ -532,7 +638,204 @@ test("keeps a seeded highlight glued to its text across font-size changes", asyn
   await page.getByTestId("reader-font-increase").click();
   await page.getByTestId("reader-font-increase").click();
 
-  await expect.poll(overlayDrift, { timeout: 10_000 }).toBeLessThan(3);
+  await expect
+    .poll(() => overlayDrift(page), { timeout: 10_000 })
+    .toBeLessThan(3);
+});
+
+// The default is Original: no reader override at all, so a book's own faces
+// render exactly as the publisher set them (Apple Books parity). The embedded
+// face arrives because the glue re-points epub.js's resource table at `data:`
+// URIs *before the first section is serialized* — a section's fonts are
+// requested during its first layout, well before any content hook could run, so
+// nothing added afterwards can stop a `blob:` request the CSP then refuses.
+test("opens a book in its own embedded font with no reader override (Original)", async ({
+  page,
+  request,
+}) => {
+  const fontCspViolations = collectFontCspViolations(page);
+
+  const uuid = await fetchBookUuidByTitle(request, FONT_BOOK.title);
+  await gotoReady(page, `/read/${uuid}`);
+  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+
+  await expect
+    .poll(async () => await sectionFontState(page), { timeout: 20_000 })
+    .toMatchObject({
+      faces: expect.arrayContaining([
+        { family: EMBEDDED_FAMILY, status: "loaded" },
+      ]),
+    });
+
+  const state = await sectionFontState(page);
+  // Present but EMPTY: any declaration on `body *`, `inherit` included, would
+  // flatten the publisher's faces.
+  expect(state?.override).toBe("");
+  // epub.js's own `themes.font` wrote the stack inline on <body>; nothing may
+  // put it back.
+  expect(state?.bodyInline).toBe("");
+  expect(state?.paragraphFamily).toMatch(/^"?Fixture Serif"?/);
+
+  // The structural guard. A rendered "Fixture Serif" proves nothing by itself —
+  // the browser falls through from a refused @font-face to the next declared
+  // copy, so the page looks identical whether or not a blob: copy was requested
+  // and refused. These three assert on what is *declared* and what the faces
+  // did, not on what happened to paint:
+  //   - the archive's bytes reached the section as a data: URI;
+  //   - no blob: copy exists at all, so there is nothing for CSP to refuse;
+  //   - and nothing errored.
+  expect(
+    state?.embeddedSrcs.some((s) => s.includes("data:font/woff2;base64,")),
+    `the embedded face must be declared as data:\n${state?.embeddedSrcs.join("\n")}`,
+  ).toBe(true);
+  expect(
+    state?.embeddedSrcs.filter((s) => s.includes("blob:")),
+    "no blob: copy of the embedded face may be declared — font-src would refuse it",
+  ).toEqual([]);
+  expect(
+    state?.faces.filter(
+      (f) => f.family === EMBEDDED_FAMILY && f.status === "error",
+    ),
+    "an errored face means a copy was requested and refused",
+  ).toEqual([]);
+  // Asserted last: the awaits above outlast the browser's console delivery.
+  expect(
+    fontCspViolations,
+    `no font may be refused by font-src:\n${fontCspViolations.join("\n")}`,
+  ).toEqual([]);
+});
+
+test("a named typeface is self-hosted and overrides the publisher's element-level font", async ({
+  page,
+  request,
+}) => {
+  // Every reader face must come from this origin. The app chrome still
+  // `@import`s Cormorant Garamond / Instrument Sans / Space Mono from Google,
+  // so the guard is per-family rather than per-host: no Google request may
+  // name either *reading* family.
+  const fontRequests: string[] = [];
+  page.on("request", (r) => {
+    const url = r.url();
+    if (/reader-fonts|fonts\.g(static|oogleapis)/.test(url)) {
+      fontRequests.push(url);
+    }
+  });
+  const fontCspViolations = collectFontCspViolations(page);
+
+  const uuid = await fetchBookUuidByTitle(request, FONT_BOOK.title);
+  await gotoReady(page, `/read/${uuid}`);
+  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+
+  await page.getByTestId("reader-aa").click();
+  await page.getByTestId("reader-typeface-editorial").click();
+
+  await expect
+    .poll(async () => await sectionFontState(page), { timeout: 20_000 })
+    .toMatchObject({
+      paragraphFamily: expect.stringMatching(/^"?Instrument Serif"?/),
+      faces: expect.arrayContaining([
+        { family: "Instrument Serif", status: "loaded" },
+      ]),
+    });
+  const named = await sectionFontState(page);
+  // `body,body *` is what beats the publisher's element-level `p` rule.
+  expect(named?.override).toContain(
+    "body,body *{font-family:'Instrument Serif'",
+  );
+  // The section itself got the sheet — the request log alone would also be
+  // satisfied by the parent document's AA-panel chip preview, which loads the
+  // same file and proves nothing about the iframe.
+  expect(named?.fontsHref).toMatch(
+    /\/assets\/reader-fonts\/reader-fonts\.css$/,
+  );
+
+  expect(
+    fontRequests.some((u) =>
+      u.includes("/assets/reader-fonts/InstrumentSerif-Regular.woff2"),
+    ),
+    `reader face must be served from this origin:\n${fontRequests.join("\n")}`,
+  ).toBe(true);
+  expect(
+    fontRequests.filter((u) =>
+      /fonts\.g(static|oogleapis)\.com.*(instrument.?serif|eb.?garamond)/i.test(
+        u,
+      ),
+    ),
+    "no reading face may come from Google",
+  ).toEqual([]);
+
+  // The boot path (and `omn.typeface`) must land on the same face the runtime
+  // call did — a reload is the only thing that exercises it.
+  await page.reload();
+  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+  await expect
+    .poll(async () => await sectionFontState(page), { timeout: 20_000 })
+    .toMatchObject({
+      paragraphFamily: expect.stringMatching(/^"?Instrument Serif"?/),
+    });
+  await page.getByTestId("reader-aa").click();
+  await expect(page.getByTestId("reader-typeface-editorial")).toHaveClass(
+    /\bon\b/,
+  );
+
+  // Back to Original at runtime: the override is removed outright, and the
+  // publisher's embedded face takes the page back.
+  await page.getByTestId("reader-typeface-original").click();
+  await expect
+    .poll(async () => await sectionFontState(page), { timeout: 20_000 })
+    .toMatchObject({
+      override: "",
+      paragraphFamily: expect.stringMatching(/^"?Fixture Serif"?/),
+      faces: expect.arrayContaining([
+        { family: EMBEDDED_FAMILY, status: "loaded" },
+      ]),
+    });
+
+  // Neither the reader's own faces nor the book's were refused, across both
+  // page loads and both directions of the switch.
+  expect(
+    fontCspViolations,
+    `no font may be refused by font-src:\n${fontCspViolations.join("\n")}`,
+  ).toEqual([]);
+});
+
+test("keeps a seeded highlight glued to its text across typeface changes", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, FONT_BOOK.title);
+
+  // Same mid-paragraph range as the font-size test: chars 10–24 of the `<p>`
+  // (`/4/4`, after the `<h1>` at `/4/2`) in the single-item spine (`/6/2`).
+  const quote = `typeface passage ${Date.now()}`;
+  const created = await request.post("/api/highlights", {
+    data: {
+      book_uuid: uuid,
+      epub_cfi_range: "epubcfi(/6/2!/4/4,/1:10,/1:24)",
+      color: "amber",
+      text: quote,
+    },
+  });
+  expect(created.status(), "seed highlight").toBe(200);
+
+  await gotoReady(page, `/read/${uuid}`);
+  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+  await expect
+    .poll(() => overlayDrift(page), { timeout: 20_000 })
+    .toBeLessThan(3);
+
+  // A real reflow: monospace metrics are nothing like the embedded serif's.
+  await page.getByTestId("reader-aa").click();
+  await page.getByTestId("reader-typeface-mono").click();
+  await expect
+    .poll(() => overlayDrift(page), { timeout: 20_000 })
+    .toBeLessThan(3);
+
+  // And back — the embedded face has to reload and reflow under the marks.
+  await page.getByTestId("reader-typeface-original").click();
+  await expect
+    .poll(() => overlayDrift(page), { timeout: 20_000 })
+    .toBeLessThan(3);
 });
 
 test("opens the reader from the book detail Read action", async ({

@@ -5,19 +5,36 @@
  * spec can assert against known values. Intentionally tiny: a single chapter,
  * a nav doc, and an optional 1×1 PNG cover.
  *
- * Output is deterministic — given the same inputs, the resulting bytes are
- * identical run-to-run. Generated files are committed under
- * `test_data/epubs/generated/` so CI does not need to run this tool.
+ * Generated files are committed under `test_data/epubs/generated/` so CI does
+ * not need to run this tool.
+ *
+ * Output is deterministic per *file* entry — every one is written with
+ * `FIXED_DATE` — but NOT per archive: JSZip auto-creates the directory entries
+ * (`META-INF/`, `OEBPS/`, …) and stamps those with `new Date()`. So a run
+ * rewrites the bytes of every EPUB here even when no input changed. After
+ * adding a fixture, keep only the new file:
+ *   git checkout -- test_data/epubs/generated
+ * (the new one is untracked, so it survives). Making the folder entries stable
+ * (`createFolders: false`, or setting each folder's `date`) would rewrite all
+ * of the committed binaries once, so it is a follow-up rather than something to
+ * slip into an unrelated change.
  *
  * Usage (from the pnpm project dir):
  *   cd ui_tests/playwright && pnpm exec tsx tools/make_epub.ts
  *
  * To add a new fixture, edit FIXTURES below and re-run.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
+
+const REPO_ROOT = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+);
 
 /**
  * A full-page image front-matter section — the markup shape real publisher
@@ -71,6 +88,17 @@ interface EpubInput {
    * `publisherBodyColor`: both own `OEBPS/publisher.css`.
    */
   blobStylesheet?: boolean;
+  /**
+   * When true, ship an embedded font (`fonts/FixtureSerif.woff2` — the EB
+   * Garamond Regular bytes from frontend/assets/reader-fonts/, under a
+   * fixture-only family name) declared by `styles/publisher.css` via a `../`
+   * relative url(), plus a `p { font-family }` rule using it. The reader's
+   * typeface specs need exactly this shape: the stylesheet sits in a
+   * subdirectory (url() resolves against the sheet, not the section), and the
+   * rule is element-level (a named face must beat it; Original must keep it).
+   * Mutually exclusive with `publisherBodyColor` / `blobStylesheet`.
+   */
+  embeddedFont?: boolean;
   /**
    * When true, fill the chapter with ~32KB of deterministic prose (~32
    * epub.js 1024-char locations) instead of one short paragraph. The
@@ -564,7 +592,43 @@ const FIXTURES: EpubInput[] = [
     withCover: true,
     blobStylesheet: true,
   },
+
+  // Reserved for the typeface specs in reader.spec.ts, which drive typography
+  // and seed highlights on it — the only fixture whose publisher CSS embeds a
+  // font and sets an element-level `font-family` from it, which is what makes
+  // "Original keeps the publisher's face / a named face beats it" assertable.
+  // No other spec may open it in the reader. "Evelyn Boyd Granville" is unique
+  // across ALL fixtures (ebook + audiobook) — shelves.spec.ts asserts exact
+  // author-scoped match counts.
+  {
+    filename: "standalone-lagoon.epub",
+    id: "urn:omnibus-test:standalone-lagoon",
+    title: "Lagoon of Ligatures",
+    authors: ["Evelyn Boyd Granville"],
+    publisher: "Omnibus Test Press",
+    published: "1956-06-01",
+    language: "en",
+    withCover: true,
+    longBody: true,
+    embeddedFont: true,
+  },
 ];
+
+/**
+ * The bytes the embedded-font fixture ships, borrowed from the reader's own
+ * self-hosted faces so nothing new has to be vendored. Renamed to a
+ * fixture-only family in the CSS, so a spec asserting on it can never be
+ * satisfied by the reader's own EB Garamond.
+ */
+const FIXTURE_FONT = readFileSync(
+  resolve(
+    REPO_ROOT,
+    "frontend",
+    "assets",
+    "reader-fonts",
+    "EBGaramond-Regular.woff2",
+  ),
+);
 
 /**
  * Slug derivation for fixture filenames. Matches the slug helper used on the
@@ -628,6 +692,13 @@ function buildOpf(input: EpubInput): string {
   const blobAssetManifestItem = input.blobStylesheet
     ? `\n    <item id="publisher-bg" href="bg.png" media-type="image/png"/>`
     : "";
+  // The embedded-font fixture keeps its sheet in a subdirectory so the font's
+  // `../fonts/…` url() resolves against the SHEET, not the section — the
+  // resolution the reader's inliner has to get right.
+  const embeddedFontManifestItems = input.embeddedFont
+    ? `\n    <item id="publisher-style" href="styles/publisher.css" media-type="text/css"/>` +
+      `\n    <item id="fixture-font" href="fonts/FixtureSerif.woff2" media-type="font/woff2"/>`
+    : "";
   const sections = input.sections ?? [];
   // Each front-matter section contributes an XHTML manifest item (and, for
   // an image section, a second item for its embedded PNG) plus a matching
@@ -657,7 +728,7 @@ ${creators}${series}
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-    <item id="chap1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>${coverManifestItem}${styleManifestItem}${blobAssetManifestItem}${sectionManifestItems}
+    <item id="chap1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>${coverManifestItem}${styleManifestItem}${blobAssetManifestItem}${embeddedFontManifestItems}${sectionManifestItems}
   </manifest>
   <spine>${sectionSpineItems}
     <itemref idref="chap1"/>
@@ -695,10 +766,12 @@ function buildNav(input: EpubInput): string {
 }
 
 function buildChapter(input: EpubInput): string {
-  const stylesheet =
-    input.publisherBodyColor || input.blobStylesheet
-      ? `<link href="publisher.css" rel="stylesheet" type="text/css"/>`
-      : "";
+  let stylesheet = "";
+  if (input.publisherBodyColor || input.blobStylesheet) {
+    stylesheet = `<link href="publisher.css" rel="stylesheet" type="text/css"/>`;
+  } else if (input.embeddedFont) {
+    stylesheet = `<link href="styles/publisher.css" rel="stylesheet" type="text/css"/>`;
+  }
   const bodyClass = input.publisherBodyColor ? ` class="calibre"` : "";
   // Deterministic (no randomness) so the generated zip stays byte-stable.
   const prose = input.longBody
@@ -754,19 +827,25 @@ function buildSection(s: BookSection): string {
 `;
 }
 
-// Fixed timestamp so generated zip headers are byte-stable across runs.
+// Fixed timestamp so each file entry's zip header is byte-stable across runs.
+// It cannot be passed to the directory entries JSZip creates on its own — see
+// the determinism note in the module header.
 const FIXED_DATE = new Date("2024-01-01T00:00:00Z");
 
 async function buildEpub(input: EpubInput): Promise<Buffer> {
-  // publisher.css has a single owner: publisherBodyColor writes a colour rule,
-  // blobStylesheet writes a url()-bearing rule referencing bg.png. Setting both
-  // would emit the bg.png manifest item (buildOpf keys it on blobStylesheet)
-  // without ever writing the file (buildEpub's css branch prefers
-  // publisherBodyColor) — a manifest that references a missing asset. Fail fast
-  // rather than generate a broken EPUB.
-  if (input.publisherBodyColor && input.blobStylesheet) {
+  // The publisher stylesheet has a single owner: publisherBodyColor writes a
+  // colour rule, blobStylesheet a url()-bearing rule referencing bg.png,
+  // embeddedFont an @font-face plus the rule that uses it (and it is the only
+  // one that puts the sheet in a subdirectory). Setting two would emit one's
+  // manifest item without ever writing its file — a manifest that references a
+  // missing asset. Fail fast rather than generate a broken EPUB.
+  if (
+    [input.publisherBodyColor, input.blobStylesheet, input.embeddedFont].filter(
+      Boolean,
+    ).length > 1
+  ) {
     throw new Error(
-      `${input.filename}: publisherBodyColor and blobStylesheet are mutually exclusive`,
+      `${input.filename}: publisherBodyColor, blobStylesheet and embeddedFont are mutually exclusive`,
     );
   }
   const zip = new JSZip();
@@ -804,6 +883,16 @@ async function buildEpub(input: EpubInput): Promise<Buffer> {
       { date: FIXED_DATE },
     );
     zip.file("OEBPS/bg.png", TINY_PNG, { date: FIXED_DATE });
+  } else if (input.embeddedFont) {
+    zip.file(
+      "OEBPS/styles/publisher.css",
+      `@font-face { font-family: "Fixture Serif"; font-style: normal; font-weight: normal; src: url("../fonts/FixtureSerif.woff2") format("woff2"); }\n` +
+        `p { font-family: "Fixture Serif", serif; }\n`,
+      { date: FIXED_DATE },
+    );
+    zip.file("OEBPS/fonts/FixtureSerif.woff2", FIXTURE_FONT, {
+      date: FIXED_DATE,
+    });
   }
   if (input.withCover) {
     zip.file("OEBPS/cover.png", TINY_PNG, { date: FIXED_DATE });
@@ -816,9 +905,7 @@ async function buildEpub(input: EpubInput): Promise<Buffer> {
 }
 
 async function main() {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const repoRoot = resolve(here, "..", "..", "..");
-  const outDir = resolve(repoRoot, "test_data", "epubs", "generated");
+  const outDir = resolve(REPO_ROOT, "test_data", "epubs", "generated");
   mkdirSync(outDir, { recursive: true });
 
   for (const fx of FIXTURES) {

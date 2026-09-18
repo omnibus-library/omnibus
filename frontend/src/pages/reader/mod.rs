@@ -53,6 +53,16 @@ const JSZIP_JS: Asset = asset!("/assets/vendor/jszip.min.js");
 const EPUBJS_JS: Asset = asset!("/assets/vendor/epub.min.js");
 const READER_GLUE_JS: Asset = asset!("/assets/vendor/epub-reader-glue.js");
 
+/// Self-hosted reader faces (Instrument Serif, EB Garamond) as a folder asset:
+/// unhashed, so `reader-fonts.css`'s relative `url()`s resolve to its siblings.
+const READER_FONTS_DIR: Asset = asset!("/assets/reader-fonts", AssetOptions::folder());
+
+/// URL of the reader faces' `@font-face` sheet — linked by this page and handed
+/// to the glue as `fontsHref` so every section iframe can load the faces too.
+pub(super) fn reader_fonts_css_href() -> String {
+    format!("{READER_FONTS_DIR}/reader-fonts.css")
+}
+
 // The `reader_call*` helpers drive the same `window.OmnibusReader` glue on both
 // interactive targets: web (WASM) and mobile (wry WebView). Only SSR compiles
 // them out. `dioxus::document::eval` is the shared seam.
@@ -572,6 +582,11 @@ fn ReaderLayout(
 
     rsx! {
         {reader_scripts}
+
+        // The reader's own faces, for the AA-panel chip previews. Emitted on
+        // every target (rule 07) — the section iframes get the same sheet from
+        // the glue's `fontsHref`, which this page also hands over.
+        document::Stylesheet { href: reader_fonts_css_href() }
 
         div {
             class: if chrome_hidden() { "rd-surface rd-chrome-hidden" } else { "rd-surface" },

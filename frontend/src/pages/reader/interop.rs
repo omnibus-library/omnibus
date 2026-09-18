@@ -71,7 +71,10 @@ pub(crate) fn install_reader_web_interop(uuid: String, prefs: ReaderPrefs, sigs:
         };
         let url_lit = json_literal(&file_url);
         let theme_lit = json_literal(theme_name);
-        let font_family_lit = json_literal(prefs.typeface.read().to_css());
+        // `Option<&str>` → `null` for Original, which the glue reads as "no
+        // override" rather than as a stack to apply.
+        let font_family_lit = json_literal(&prefs.typeface.read().to_css());
+        let fonts_href_lit = json_literal(&super::reader_fonts_css_href());
         let line_height_lit = json_literal(prefs.line_spacing.read().to_css());
         let max_width_lit = json_literal(prefs.margins.read().to_css());
         let justify_val = *prefs.justify.read();
@@ -85,6 +88,7 @@ pub(crate) fn install_reader_web_interop(uuid: String, prefs: ReaderPrefs, sigs:
             url_lit,
             theme_lit,
             font_family_lit,
+            fonts_href_lit,
             line_height_lit,
             max_width_lit,
             spread_lit,
@@ -296,6 +300,7 @@ struct BootstrapLiterals {
     url_lit: String,
     theme_lit: String,
     font_family_lit: String,
+    fonts_href_lit: String,
     line_height_lit: String,
     max_width_lit: String,
     spread_lit: String,
@@ -368,6 +373,7 @@ async fn spawn_bootstrap_and_highlights(
         font_size: lits.font_size,
         theme_lit: &lits.theme_lit,
         font_family_lit: &lits.font_family_lit,
+        fonts_href_lit: &lits.fonts_href_lit,
         line_height_lit: &lits.line_height_lit,
         max_width_lit: &lits.max_width_lit,
         justify_val: lits.justify_val,

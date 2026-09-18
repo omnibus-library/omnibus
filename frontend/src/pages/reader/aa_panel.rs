@@ -73,7 +73,7 @@ fn ThemeRow() -> Element {
     }
 }
 
-/// Typeface chip row (Editorial / Classic / Modern).
+/// Typeface chip row (Original / Editorial / Classic / Modern / Sans / Mono).
 #[component]
 fn TypefaceRow() -> Element {
     let prefs = use_context::<ReaderPrefs>();
@@ -81,32 +81,27 @@ fn TypefaceRow() -> Element {
     rsx! {
         div { class: "rd-aa-row",
             div { class: "rd-aa-label", "Typeface" }
-            div {
-                style: "display:flex; gap:6px;",
-                button {
-                    class: if typeface == Typeface::Editorial { "rd-typeface-chip on" } else { "rd-typeface-chip" },
-                    r#type: "button",
-                    onclick: move |_| prefs.set_typeface(Typeface::Editorial),
-                    span { class: "preview", style: "font-family:'Instrument Serif',serif;", "Aa" }
-                    span { class: "name", "Editorial" }
-                }
-                button {
-                    class: if typeface == Typeface::Classic { "rd-typeface-chip on" } else { "rd-typeface-chip" },
-                    r#type: "button",
-                    onclick: move |_| prefs.set_typeface(Typeface::Classic),
-                    span { class: "preview", style: "font-family:'EB Garamond',serif;", "Aa" }
-                    span { class: "name", "Classic" }
-                }
-                button {
-                    class: if typeface == Typeface::Modern { "rd-typeface-chip on" } else { "rd-typeface-chip" },
-                    r#type: "button",
-                    onclick: move |_| prefs.set_typeface(Typeface::Modern),
-                    span { class: "preview", style: "font-family:Georgia,serif;", "Aa" }
-                    span { class: "name", "Modern" }
+            div { class: "rd-typeface-row",
+                for t in Typeface::ALL {
+                    button {
+                        class: if typeface == t { "rd-typeface-chip on" } else { "rd-typeface-chip" },
+                        r#type: "button",
+                        "data-testid": "reader-typeface-{t.to_storage()}",
+                        onclick: move |_| prefs.set_typeface(t),
+                        span { class: "preview", style: chip_preview_style(t), "Aa" }
+                        span { class: "name", "{t.label()}" }
+                    }
                 }
             }
         }
     }
+}
+
+/// Inline `font-family` for a chip's "Aa" specimen. Original has no face to
+/// preview, so its chip inherits the panel's own.
+fn chip_preview_style(t: Typeface) -> String {
+    t.to_css()
+        .map_or_else(String::new, |stack| format!("font-family:{stack};"))
 }
 
 /// Text-size stepper with a fill track showing the current font percentage.

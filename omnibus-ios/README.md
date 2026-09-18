@@ -253,10 +253,19 @@ for `String`/`Int` — defaulting those would hide a real contract break.
 **The EPUB reader reuses epub.js.** iOS ships no EPUB renderer, and the
 vendored glue already implements CFI positions, pagination, and annotations
 against exactly the contract the server expects. `Reader/Web/` is a copy of
-`frontend/assets/vendor/`; everything around it — chrome, tap zones, sheets,
-gestures, persistence — is native. Assets and the book are served over a custom
-`omnibus-reader://` scheme so epub.js sees one same-origin space and needs no
-cookie.
+`frontend/assets/vendor/` **plus** `frontend/assets/reader-fonts/` (four woff2s
+— two static Instrument Serif cuts and two variable EB Garamond ones, each
+covering weights 400–500 — and `reader-fonts.css`); everything around it —
+chrome, tap zones,
+sheets, gestures, persistence — is native. Assets and the book are served over a
+custom `omnibus-reader://` scheme so epub.js sees one same-origin space and
+needs no cookie. The synchronized group copies `Reader/Web/` flat into the
+bundle root, and the scheme handler resolves `omnibus-reader://app/<name>` by
+last path component, so the sheet's relative `url()`s find their woff2
+siblings — which is what makes the Editorial and Classic faces render with no
+network at all. (The two families' OFL texts live in `Design/Fonts/` with every
+other licence: a second `OFL-InstrumentSerif.txt` under `Reader/Web/` would
+collide in that flat bundle root.)
 
 **Comics are native, and the WebView host stays EPUB-only.** A CBZ is a zip of
 images, so `Comic/ComicReaderView` pages them in a `TabView` with a

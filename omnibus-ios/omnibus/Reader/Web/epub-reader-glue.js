@@ -17,15 +17,20 @@
  *
  * Public surface: window.OmnibusReader
  *   init(elementId, fileUrl, opts)  opts = { cfi?, fontSize?, theme?,
- *                                           fontFamily?, lineHeight?,
+ *                                           fontFamily?, fontsHref?,
+ *                                           lineHeight?,
  *                                           maxWidth?, justify?, spread?,
  *                                           allowScriptedContent?,
  *                                           locationsKey? }
+ *                                   fontsHref is the reader's self-hosted
+ *                                   @font-face sheet, linked inside every
+ *                                   section; fontFamily absent/null means
+ *                                   Original — no override at all.
  *   next()
  *   prev()
  *   setFontSize(px)
  *   setTheme(name)
- *   setFont(family)
+ *   setFont(family|null)            null clears the override (Original)
  *   setLineHeight(value)
  *   setMargins(maxWidth)
  *   setJustify(on)
@@ -333,6 +338,20 @@
 
     try {
       book = ePub(fileUrl, { openAs: "epub" });
+
+      // Font assets become data: in epub.js's replacement table before the
+      // first section renders — see inlineFontReplacements. Guarded on
+      // identity: a teardown+init for another book may supersede this one
+      // while `opened` is pending.
+      var patchedBook = book;
+      var fontsPatched = book.opened.then(
+        function () {
+          return patchedBook === book ? inlineFontReplacements(patchedBook) : 0;
+        },
+        function () { return 0; }
+      );
+      installFontSerializeHook(patchedBook, fontsPatched);
+
       rendition = book.renderTo(elementId, {
         width: "100%",
         height: "100%",
@@ -362,12 +381,14 @@
       // selection — Light ink on a black page.
       currentTheme = opts.theme || "dark";
       applyHostGround(currentTheme);
+      currentFontsHref = opts.fontsHref || null;
+      // Nothing has rendered yet, so the content hook applies both on first paint.
+      currentFontFamily = opts.fontFamily || null;
 
       if (opts.fontSize) {
         rendition.themes.fontSize(opts.fontSize + "px");
         currentFontSize = opts.fontSize;
       }
-      if (opts.fontFamily) setFont(opts.fontFamily);
       if (opts.lineHeight) currentLineHeight = Number(opts.lineHeight) || currentLineHeight;
       if (opts.lineHeight) rendition.themes.override("line-height", opts.lineHeight);
       if (opts.maxWidth) setMargins(opts.maxWidth);
@@ -751,13 +772,49 @@
     return true;
   }
 
-  // Google Fonts stylesheet for the app's reading typefaces. The parent
-  // document loads these via atrium.css, but webfonts don't cascade into the
-  // section iframe — so `themes.font("'Instrument Serif'…")` renders as the
-  // Times fallback unless the face is also declared inside the iframe.
-  var READER_FONTS_HREF =
-    "https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&" +
-    "family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&display=swap";
+  // The self-hosted @font-face sheet for the reader's named faces, handed in as
+  // `opts.fontsHref` — iOS passes its bundled `omnibus-reader://app/reader-fonts.css`,
+  // web the equivalent `/assets/reader-fonts/reader-fonts.css`. Webfonts don't
+  // cascade into the section iframe, so the sheet is linked inside every
+  // section. Absent → nothing is linked and the named stacks degrade to Georgia.
+  var currentFontsHref = null;
+
+  // Reader-owned `font-family` stack, or null for Original (no override — the
+  // publisher's faces win). Applied per section by applyFontFamily.
+  var currentFontFamily = null;
+
+  // Upsert the per-section font override. The rule is `body,body *` so a named
+  // face beats element-level publisher rules (Apple Books parity), and under
+  // Original the element is left EMPTY rather than given `inherit` or a var()
+  // fallback: any declaration on `body *`, even `inherit`, flattens publisher
+  // fonts, and an unset custom property computes to `unset` = `inherit`.
+  function applyFontFamily(doc) {
+    if (!doc || !doc.head) return;
+    var style = doc.getElementById("__omnibus_font");
+    if (!style) {
+      style = doc.createElement("style");
+      style.id = "__omnibus_font";
+      doc.head.appendChild(style);
+    }
+    style.textContent = currentFontFamily
+      ? "body,body *{font-family:" + currentFontFamily + "!important;}"
+      : "";
+  }
+
+  // Repaint the marks once a face change has actually reflowed the section.
+  // Force style+layout first so faces declared a moment ago start loading —
+  // read earlier, `fonts.ready` is the already-settled promise and the repaint
+  // lands on the fallback-font layout.
+  function armFontRepaint(doc) {
+    try {
+      void doc.documentElement.offsetHeight;
+      if (doc.fonts && doc.fonts.ready && doc.fonts.ready.then) {
+        doc.fonts.ready.then(scheduleAnnotationRepaint, function () {});
+      }
+    } catch (e) {
+      /* detached section */
+    }
+  }
 
   // Inject the book's own stylesheets as inline <style>. epub.js rewrites each
   // section `<link>` to a `blob:` URL, but the sandboxed iframe's opaque origin
@@ -803,6 +860,108 @@
     } catch (e) {
       /* never let styling break rendering */
     }
+  }
+
+  var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;
+  var FONT_MIME = {
+    woff2: "font/woff2",
+    woff: "font/woff",
+    ttf: "font/ttf",
+    otf: "font/otf",
+    ttc: "font/collection",
+  };
+
+  // Whether an asset is a font: the manifest type when the publisher got it
+  // right, the extension when it did not (media types for fonts are all over
+  // the map in real books).
+  function isFontAsset(item) {
+    var href = String((item && item.href) || "").split(/[?#]/)[0];
+    var type = String((item && item.type) || "");
+    return (
+      FONT_EXT_RE.test(href) ||
+      /^(font\/|application\/(x-)?font|application\/vnd\.ms-opentype)/i.test(type)
+    );
+  }
+
+  function fontMimeFor(href) {
+    var m = /\.([a-z0-9]+)$/i.exec(String(href).split(/[?#]/)[0]);
+    return (m && FONT_MIME[m[1].toLowerCase()]) || null;
+  }
+
+  // Re-point every font asset in epub.js's replacement table from the blob:
+  // it minted to a data: URI, then regenerate the CSS blobs from the patched
+  // table. The section's own <link> stylesheet then carries data: @font-face
+  // sources from birth. This has to happen BEFORE the section is serialized:
+  // the browser requests a section's fonts during epub.js's first layout of
+  // it, before any content hook runs, so a copy added later — however it is
+  // ordered — cannot stop the blob: request the web CSP's `font-src` refuses
+  // (no `blob:`; `data:` is allowed). Resolves to the number of assets
+  // re-pointed and never rejects.
+  function inlineFontReplacements(b) {
+    try {
+      var res = b && b.resources;
+      if (!res || !b.archive || !res.assets || !res.urls || !res.replacementUrls) {
+        return Promise.resolve(0);
+      }
+      // epub.js drops failed entries from replacementUrls, so the parallel
+      // arrays can fall out of step; a book already in that state is left to it.
+      if (res.replacementUrls.length !== res.urls.length) return Promise.resolve(0);
+      var jobs = [];
+      res.assets.forEach(function (item, i) {
+        if (!isFontAsset(item)) return;
+        var mime = fontMimeFor(item.href);
+        var read;
+        try {
+          read = b.archive.getBase64(b.resolve(item.href)); // undefined when missing
+        } catch (e) {
+          read = null;
+        }
+        if (!read || !read.then) return;
+        jobs.push(
+          read.then(
+            function (dataUri) {
+              if (!dataUri) return 0;
+              // epub.js's mime table predates woff2; stamp the real type.
+              res.replacementUrls[i] = mime
+                ? dataUri.replace(/^data:[^;,]*/, "data:" + mime)
+                : dataUri;
+              return 1;
+            },
+            function () {
+              return 0; /* unreadable entry — leave the blob: alone */
+            }
+          )
+        );
+      });
+      if (!jobs.length) return Promise.resolve(0);
+      return Promise.all(jobs).then(function (counts) {
+        var n = counts.reduce(function (a, c) { return a + c; }, 0);
+        if (!n) return 0;
+        return res.replaceCss().then(
+          function () { return n; },
+          function () { return n; }
+        );
+      });
+    } catch (e) {
+      return Promise.resolve(0);
+    }
+  }
+
+  // Every section waits for the font table, then is re-substituted from the
+  // ORIGINAL serialized markup — the `output` epub.js's own serialize hook
+  // received and wrote `section.output` from synchronously; ours resolves
+  // later and so wins. Section.render awaits hook promises, which is what
+  // makes the first section deterministic rather than a race with the
+  // rendition's display queue.
+  function installFontSerializeHook(b, patched) {
+    if (!b.spine || !b.spine.hooks || !b.spine.hooks.serialize) return;
+    b.spine.hooks.serialize.register(function (output, section) {
+      return patched.then(function (n) {
+        if (n && b.resources && typeof output === "string") {
+          section.output = b.resources.substitute(output, section.url);
+        }
+      });
+    });
   }
 
   // Reader-owned hyperlink colour. Apple/Kindle paint links with their own
@@ -875,10 +1034,14 @@
   }
 
   // Per-section content enhancement, registered on epub.js's content hook so it
-  // runs for every rendered spine item. Three Apple/Kindle-parity fixes the
-  // sandboxed iframe would otherwise drop: the book's own stylesheet, then
-  // hyphenation for justified prose (off by CSS default), and the app typeface
-  // loaded *inside* the iframe.
+  // runs for every rendered spine item. The Apple/Kindle-parity fixes the
+  // sandboxed iframe would otherwise drop: the book's own stylesheet,
+  // hyphenation for justified prose (off by CSS default), the reader's own
+  // faces loaded *inside* the iframe, and the reader's `font-family` override
+  // layer — empty under Original, so the publisher's faces win. A book's
+  // *embedded* faces are not handled here and cannot be: they are requested
+  // during the section's first layout, before this hook ever runs (see
+  // inlineFontReplacements).
   function installContentEnhancements() {
     if (!rendition || !rendition.hooks || !rendition.hooks.content) return;
     rendition.hooks.content.register(function (contents) {
@@ -895,23 +1058,15 @@
         doc.documentElement.setAttribute("lang", lang);
       }
 
-      if (!doc.getElementById("__omnibus_fonts")) {
+      if (currentFontsHref && !doc.getElementById("__omnibus_fonts")) {
         var link = doc.createElement("link");
         link.id = "__omnibus_fonts";
         link.rel = "stylesheet";
-        link.href = READER_FONTS_HREF;
+        link.href = currentFontsHref;
         doc.head.appendChild(link);
       }
 
       applyThemeColors(doc);
-
-      // Webfont activation reflows the prose without changing the section's
-      // quantized width, so epub.js never reframes — repaint the marks once
-      // the section's fonts settle or highlights sit where the fallback-font
-      // text used to be.
-      if (doc.fonts && doc.fonts.ready && doc.fonts.ready.then) {
-        doc.fonts.ready.then(scheduleAnnotationRepaint, function () {});
-      }
 
       // Reader baseline / override layer. The split mirrors Apple Books and
       // Kindle: the reading system owns colour (and font, size, spacing,
@@ -947,6 +1102,9 @@
           "user-select:none!important;-webkit-touch-callout:none!important;}";
         doc.head.appendChild(style);
       }
+
+      applyFontFamily(doc);
+      armFontRepaint(doc);
     });
   }
 
@@ -1940,9 +2098,18 @@
     }
   }
 
+  // A named stack, or null/"" for Original — which removes the override.
   function setFont(family) {
     if (!rendition) return;
-    rendition.themes.font(family);
+    currentFontFamily = family || null;
+    try {
+      rendition.getContents().forEach(function (c) {
+        applyFontFamily(c.document);
+        armFontRepaint(c.document);
+      });
+    } catch (e) {
+      /* no rendered sections yet */
+    }
     scheduleAnnotationRepaint();
   }
 
