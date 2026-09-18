@@ -181,10 +181,18 @@ pub(super) async fn finish_upload(
     let prior = db::get_metadata_overrides(&state.pool, uuid)
         .await
         .map_err(|e| UploadError::internal("get_metadata_overrides", e))?;
+    // `persist_cover` replaces the override file before its row write can
+    // fail, so a book that already had one is snapshotted byte-for-byte.
+    let prior_cover = match (&prior, &cover) {
+        (Some((_, true)), Some(_)) => db::get_cover(&state.pool, book.id)
+            .await
+            .map_err(|e| UploadError::internal("get_cover", e))?,
+        _ => None,
+    };
 
     let written = apply_review(state, &book, user_id, legacy, review, cover, attached).await;
     if let Err(e) = written {
-        restore_overrides(state, uuid, user_id, prior).await;
+        restore_overrides(state, uuid, user_id, prior, prior_cover).await;
         return Err(e);
     }
     Ok(())
@@ -234,18 +242,19 @@ async fn apply_review(
     Ok(())
 }
 
-/// Put a book's override row back to `prior` — what [`finish_upload`] read
-/// before it wrote anything — after a failed finish. A row that did not
-/// exist is deleted again; a cover override this request wrote over a book
-/// that had none is removed with it. Best-effort, like the file rollback:
-/// the original error is what the client gets. (A previous override cover
-/// *file* that `persist_cover` already replaced is not recoverable here;
-/// the row's flag is.)
+/// Put a book's override row — and its override cover file — back to what
+/// [`finish_upload`] read before it wrote anything, after a failed finish.
+/// A row that did not exist is deleted again; a cover override this request
+/// wrote over a book that had none is removed, and one it wrote over a
+/// book that had its own is overwritten with the snapshotted bytes.
+/// Best-effort, like the file rollback: the original error is what the
+/// client gets.
 pub(super) async fn restore_overrides(
     state: &AppState,
     uuid: &str,
     user_id: i64,
     prior: Option<(MetadataOverrides, bool)>,
+    prior_cover: Option<(String, Vec<u8>)>,
 ) {
     let result = match &prior {
         Some((ov, had_cover)) => {
@@ -256,12 +265,25 @@ pub(super) async fn restore_overrides(
     if let Err(e) = result {
         tracing::error!(uuid, error = %e, "upload rollback: could not restore the override row");
     }
-    if !prior.is_some_and(|(_, had_cover)| had_cover) {
-        let uuid = uuid.to_string();
-        if let Err(e) = tokio::task::spawn_blocking(move || db::delete_override_cover(&uuid)).await
-        {
-            tracing::warn!(error = %e, "upload rollback: override cover cleanup join failed");
+    let had_cover = prior.is_some_and(|(_, had_cover)| had_cover);
+    let uuid = uuid.to_string();
+    let cover_restore = tokio::task::spawn_blocking(move || match (had_cover, prior_cover) {
+        (true, Some((mime, bytes))) => {
+            db::write_override_cover(&uuid, &mime, &bytes).map_err(|e| e.to_string())
         }
+        (true, None) => Ok(()),
+        (false, _) => {
+            db::delete_override_cover(&uuid);
+            Ok(())
+        }
+    })
+    .await;
+    match cover_restore {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            tracing::error!(error = %e, "upload rollback: could not restore the override cover")
+        }
+        Err(e) => tracing::warn!(error = %e, "upload rollback: override cover restore join failed"),
     }
 }
 

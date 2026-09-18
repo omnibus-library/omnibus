@@ -868,7 +868,7 @@ async fn restore_overrides_puts_the_row_back_or_removes_one_that_did_not_exist()
     db::merge_metadata_overrides(&pool, &uuid, &later, admin.id)
         .await
         .unwrap();
-    super::super::review::restore_overrides(&state, &uuid, admin.id, None).await;
+    super::super::review::restore_overrides(&state, &uuid, admin.id, None, None).await;
     assert!(db::get_metadata_overrides(&pool, &uuid)
         .await
         .unwrap()
@@ -886,13 +886,36 @@ async fn restore_overrides_puts_the_row_back_or_removes_one_that_did_not_exist()
     db::merge_metadata_overrides(&pool, &uuid, &later, admin.id)
         .await
         .unwrap();
-    super::super::review::restore_overrides(&state, &uuid, admin.id, snapshot).await;
+    super::super::review::restore_overrides(&state, &uuid, admin.id, snapshot, None).await;
     let (restored, has_cover) = db::get_metadata_overrides(&pool, &uuid)
         .await
         .unwrap()
         .expect("the prior row is back");
     assert_eq!(restored.description.as_deref(), Some("before"));
     assert!(!has_cover);
+
+    // A prior override cover: the replacement file is overwritten with the
+    // snapshotted bytes, not merely left flagged.
+    db::write_override_cover(&uuid, "image/png", TINY_PNG).unwrap();
+    db::upsert_metadata_overrides(&pool, &uuid, &prior, true, admin.id)
+        .await
+        .unwrap();
+    let snapshot = db::get_metadata_overrides(&pool, &uuid).await.unwrap();
+    let prior_cover = db::get_cover(&pool, book.id).await.unwrap();
+    let prior_bytes = prior_cover.clone().expect("a prior override cover").1;
+    let mut replacement = TINY_PNG.to_vec();
+    replacement.extend_from_slice(b"\0tail");
+    db::write_override_cover(&uuid, "image/png", &replacement).unwrap();
+    assert_ne!(
+        db::get_cover(&pool, book.id).await.unwrap().unwrap().1,
+        prior_bytes
+    );
+    super::super::review::restore_overrides(&state, &uuid, admin.id, snapshot, prior_cover).await;
+    assert_eq!(
+        db::get_cover(&pool, book.id).await.unwrap().unwrap().1,
+        prior_bytes,
+        "the snapshotted cover bytes are back"
+    );
 }
 
 /// The attach can cross libraries: an audiobook uploaded under the audiobook
@@ -956,5 +979,9 @@ async fn commit_resolves_an_audiobook_attached_across_libraries() {
     let joined = committed_book(&pool, res).await;
 
     assert_eq!(joined.unique_identifier.as_deref(), Some(uuid.as_str()));
-    assert_eq!(joined.formats.len(), 2, "{:?}", joined.formats.len());
+    assert_eq!(
+        joined.formats.len(),
+        2,
+        "the audiobook attached as a second format"
+    );
 }
