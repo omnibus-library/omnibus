@@ -135,33 +135,59 @@ const overlayDrift = (page: Page): Promise<number> =>
     );
   });
 
+// The family the embedded-font fixture declares (tools/make_epub.ts).
+const EMBEDDED_FAMILY = "Fixture Serif";
+
 // The typeface contract lives inside the section iframe (same-origin, so
 // contentDocument is reachable). `override` is the reader's own font layer:
 // "" under Original — the absence of a declaration is the contract.
 //
-// `faces` carries every face's *status*, not just the loaded ones, because a
-// rendered glyph cannot tell a right cascade from a wrong one: both Blink and
-// WebKit fall through from an `@font-face` whose fetch was refused to the next
-// declared copy, so an inverted order (epub.js's `blob:` copy last, refused by
-// `font-src`) still paints the publisher's face. The refused copy's `error`
-// status is the only in-page evidence, and a `font-src` console refusal the
-// only other.
+// Two of these fields exist because a rendered glyph proves nothing on its own:
+// both Blink and WebKit fall through from an `@font-face` whose fetch was
+// refused to the next declared copy, so the publisher's face still paints even
+// when a `blob:` copy was requested and refused first.
+//
+//   `embeddedSrcs` is the structural assertion — every `src` declared for the
+//   embedded family, across every sheet the section holds (the blob-linked one
+//   included; it is same-origin and readable). A `blob:` among them means a
+//   copy exists that CSP will refuse, whatever renders.
+//   `faces` carries every face's *status*, so a refused copy shows as `error`.
 const sectionFontState = (page: Page) =>
-  page.evaluate(() => {
+  page.evaluate((family: string) => {
     const iframe = document.querySelector(
       "#omnibus-viewer iframe",
     ) as HTMLIFrameElement | null;
     const doc = iframe?.contentDocument;
     const p = doc?.body?.querySelector("p");
     if (!doc || !p) return null;
+
+    const embeddedSrcs: string[] = [];
+    for (const sheet of Array.from(doc.styleSheets)) {
+      let rules: CSSRuleList | undefined;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue; // a sheet this document may not read
+      }
+      for (const rule of Array.from(rules ?? [])) {
+        // Numeric type, not `instanceof CSSFontFaceRule`: the constructor in
+        // this realm is not the one the iframe's rules were built with.
+        if (rule.type !== CSSRule.FONT_FACE_RULE) continue;
+        const style = (rule as CSSFontFaceRule).style;
+        const declared = style
+          .getPropertyValue("font-family")
+          .replace(/["']/g, "")
+          .trim();
+        if (declared !== family) continue;
+        embeddedSrcs.push(style.getPropertyValue("src"));
+      }
+    }
+
     return {
       override: doc.getElementById("__omnibus_font")?.textContent ?? null,
       bodyInline: doc.body.style.fontFamily,
       paragraphFamily: getComputedStyle(p).fontFamily,
-      bookFontsInlined:
-        doc
-          .querySelector("style[data-omnibus-book-fonts]")
-          ?.textContent?.includes("data:font/woff2;base64,") ?? false,
+      embeddedSrcs,
       // The reader's own sheet, as the section actually received it.
       fontsHref:
         doc.getElementById("__omnibus_fonts")?.getAttribute("href") ?? null,
@@ -170,7 +196,7 @@ const sectionFontState = (page: Page) =>
         status: f.status,
       })),
     };
-  });
+  }, EMBEDDED_FAMILY);
 
 // A CSP refusal to load a font, as the browser reports it on the console. The
 // blob-stylesheet spec's collector matches `style-src|stylesheet` only, so a
@@ -618,10 +644,11 @@ test("keeps a seeded highlight glued to its text across font-size changes", asyn
 });
 
 // The default is Original: no reader override at all, so a book's own faces
-// render exactly as the publisher set them (Apple Books parity). The proof
-// that the embedded face actually arrives is `bookFontsInlined` — the glue
-// re-points the @font-face url() at a data: URI read out of the archive,
-// because the blob: rewrite epub.js gives it is refused by `font-src`.
+// render exactly as the publisher set them (Apple Books parity). The embedded
+// face arrives because the glue re-points epub.js's resource table at `data:`
+// URIs *before the first section is serialized* — a section's fonts are
+// requested during its first layout, well before any content hook could run, so
+// nothing added afterwards can stop a `blob:` request the CSP then refuses.
 test("opens a book in its own embedded font with no reader override (Original)", async ({
   page,
   request,
@@ -635,9 +662,8 @@ test("opens a book in its own embedded font with no reader override (Original)",
   await expect
     .poll(async () => await sectionFontState(page), { timeout: 20_000 })
     .toMatchObject({
-      bookFontsInlined: true,
       faces: expect.arrayContaining([
-        { family: "Fixture Serif", status: "loaded" },
+        { family: EMBEDDED_FAMILY, status: "loaded" },
       ]),
     });
 
@@ -650,16 +676,27 @@ test("opens a book in its own embedded font with no reader override (Original)",
   expect(state?.bodyInline).toBe("");
   expect(state?.paragraphFamily).toMatch(/^"?Fixture Serif"?/);
 
-  // The ordering guard, and the only thing that can catch an inverted cascade:
-  // a rendered "Fixture Serif" proves nothing on its own, because the browser
-  // falls through from a refused @font-face to the next declared copy. An
-  // errored face means a copy declared AFTER the data: one was tried first —
-  // i.e. epub.js's blob: rewrite won the cascade and `font-src` refused it.
+  // The structural guard. A rendered "Fixture Serif" proves nothing by itself —
+  // the browser falls through from a refused @font-face to the next declared
+  // copy, so the page looks identical whether or not a blob: copy was requested
+  // and refused. These three assert on what is *declared* and what the faces
+  // did, not on what happened to paint:
+  //   - the archive's bytes reached the section as a data: URI;
+  //   - no blob: copy exists at all, so there is nothing for CSP to refuse;
+  //   - and nothing errored.
+  expect(
+    state?.embeddedSrcs.some((s) => s.includes("data:font/woff2;base64,")),
+    `the embedded face must be declared as data:\n${state?.embeddedSrcs.join("\n")}`,
+  ).toBe(true);
+  expect(
+    state?.embeddedSrcs.filter((s) => s.includes("blob:")),
+    "no blob: copy of the embedded face may be declared — font-src would refuse it",
+  ).toEqual([]);
   expect(
     state?.faces.filter(
-      (f) => f.family === "Fixture Serif" && f.status === "error",
+      (f) => f.family === EMBEDDED_FAMILY && f.status === "error",
     ),
-    "the data: @font-face copy must be the last declared, so nothing is ever refused",
+    "an errored face means a copy was requested and refused",
   ).toEqual([]);
   // Asserted last: the awaits above outlast the browser's console delivery.
   expect(
@@ -750,7 +787,7 @@ test("a named typeface is self-hosted and overrides the publisher's element-leve
       override: "",
       paragraphFamily: expect.stringMatching(/^"?Fixture Serif"?/),
       faces: expect.arrayContaining([
-        { family: "Fixture Serif", status: "loaded" },
+        { family: EMBEDDED_FAMILY, status: "loaded" },
       ]),
     });
 

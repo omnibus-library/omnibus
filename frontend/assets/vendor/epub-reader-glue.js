@@ -374,6 +374,20 @@
 
     try {
       book = ePub(fileUrl, { openAs: "epub" });
+
+      // Font assets become data: in epub.js's replacement table before the
+      // first section renders — see inlineFontReplacements. Guarded on
+      // identity: a teardown+init for another book may supersede this one
+      // while `opened` is pending.
+      var patchedBook = book;
+      var fontsPatched = book.opened.then(
+        function () {
+          return patchedBook === book ? inlineFontReplacements(patchedBook) : 0;
+        },
+        function () { return 0; }
+      );
+      installFontSerializeHook(patchedBook, fontsPatched);
+
       rendition = book.renderTo(elementId, {
         width: "100%",
         height: "100%",
@@ -1081,7 +1095,6 @@
             // Prepend so book CSS sits ahead of the reader baseline, which
             // only touches html/body and should win any tie (e.g. hyphens).
             doc.head.insertBefore(style, doc.head.firstChild);
-            inlineBookFonts(doc, css, path);
           })
           .catch(function () {
             /* unreadable asset — leave prose on UA defaults */
@@ -1101,83 +1114,97 @@
     ttc: "font/collection",
   };
 
-  // Resolve a stylesheet-relative reference against the sheet's archive
-  // directory (`/OEBPS/styles/`), collapsing `.` and `..`; null if it escapes
-  // the archive root. Output keeps the leading slash `archive.getBase64` strips.
-  function resolveArchivePath(baseDir, ref) {
-    var parts = (baseDir + ref).split("/");
-    var out = [];
-    for (var i = 0; i < parts.length; i++) {
-      var p = parts[i];
-      if (p === "" || p === ".") continue;
-      if (p === "..") {
-        if (!out.length) return null;
-        out.pop();
-        continue;
-      }
-      out.push(p);
-    }
-    return "/" + out.join("/");
+  // Whether an asset is a font: the manifest type when the publisher got it
+  // right, the extension when it did not (media types for fonts are all over
+  // the map in real books).
+  function isFontAsset(item) {
+    var href = String((item && item.href) || "").split(/[?#]/)[0];
+    var type = String((item && item.type) || "");
+    return (
+      FONT_EXT_RE.test(href) ||
+      /^(font\/|application\/(x-)?font|application\/vnd\.ms-opentype)/i.test(type)
+    );
   }
 
-  // Re-point every font url() inside the sheet's @font-face blocks at a data:
-  // URI read out of the archive, and append the rewritten blocks as their own
-  // <style>. Appended LAST on purpose: for identical descriptors the last
-  // @font-face declared wins, so this copy beats both the raw relative-url copy
-  // in the inlined sheet and epub.js's blob:-rewritten copy in the section's
-  // own <link> — which the web CSP's `font-src` (no `blob:`) refuses, while
-  // `data:` is allowed. Only @font-face urls with a font extension are touched,
-  // so background art is never inlined. Fire-and-forget and fully guarded.
-  function inlineBookFonts(doc, css, cssPath) {
+  function fontMimeFor(href) {
+    var m = /\.([a-z0-9]+)$/i.exec(String(href).split(/[?#]/)[0]);
+    return (m && FONT_MIME[m[1].toLowerCase()]) || null;
+  }
+
+  // Re-point every font asset in epub.js's replacement table from the blob:
+  // it minted to a data: URI, then regenerate the CSS blobs from the patched
+  // table. The section's own <link> stylesheet then carries data: @font-face
+  // sources from birth. This has to happen BEFORE the section is serialized:
+  // the browser requests a section's fonts during epub.js's first layout of
+  // it, before any content hook runs, so a copy added later — however it is
+  // ordered — cannot stop the blob: request the web CSP's `font-src` refuses
+  // (no `blob:`; `data:` is allowed). Resolves to the number of assets
+  // re-pointed and never rejects.
+  function inlineFontReplacements(b) {
     try {
-      if (!book || !book.archive || !doc.head || !css) return;
-      var blocks = css.match(/@font-face\s*\{[^}]*\}/gi);
-      if (!blocks) return;
-      var baseDir = cssPath.slice(0, cssPath.lastIndexOf("/") + 1);
-      var text = blocks.join("\n");
+      var res = b && b.resources;
+      if (!res || !b.archive || !res.assets || !res.urls || !res.replacementUrls) {
+        return Promise.resolve(0);
+      }
+      // epub.js drops failed entries from replacementUrls, so the parallel
+      // arrays can fall out of step; a book already in that state is left to it.
+      if (res.replacementUrls.length !== res.urls.length) return Promise.resolve(0);
       var jobs = [];
-      text.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, function (whole, quote, ref) {
-        var clean = ref.split(/[?#]/)[0];
-        if (/^(data:|blob:|[a-z][a-z0-9+.-]*:|\/\/)/i.test(ref) || !FONT_EXT_RE.test(clean)) {
-          return whole;
-        }
-        var path = resolveArchivePath(baseDir, clean);
-        if (!path) return whole;
-        var ext = clean.slice(clean.lastIndexOf(".") + 1).toLowerCase();
+      res.assets.forEach(function (item, i) {
+        if (!isFontAsset(item)) return;
+        var mime = fontMimeFor(item.href);
         var read;
         try {
-          read = book.archive.getBase64(path); // undefined when the entry is missing
+          read = b.archive.getBase64(b.resolve(item.href)); // undefined when missing
         } catch (e) {
           read = null;
         }
-        if (!read || !read.then) return whole;
+        if (!read || !read.then) return;
         jobs.push(
           read.then(
             function (dataUri) {
-              if (!dataUri) return;
+              if (!dataUri) return 0;
               // epub.js's mime table predates woff2; stamp the real type.
-              var fixed = dataUri.replace(/^data:[^;,]*/, "data:" + FONT_MIME[ext]);
-              text = text.split(whole).join("url(" + fixed + ")");
+              res.replacementUrls[i] = mime
+                ? dataUri.replace(/^data:[^;,]*/, "data:" + mime)
+                : dataUri;
+              return 1;
             },
             function () {
-              /* unreadable entry — leave the reference alone */
+              return 0; /* unreadable entry — leave the blob: alone */
             }
           )
         );
-        return whole;
       });
-      if (!jobs.length) return;
-      Promise.all(jobs).then(function () {
-        if (!doc.head) return;
-        var style = doc.createElement("style");
-        style.setAttribute("data-omnibus-book-fonts", "");
-        style.textContent = text;
-        doc.head.appendChild(style);
-        armFontRepaint(doc);
+      if (!jobs.length) return Promise.resolve(0);
+      return Promise.all(jobs).then(function (counts) {
+        var n = counts.reduce(function (a, c) { return a + c; }, 0);
+        if (!n) return 0;
+        return res.replaceCss().then(
+          function () { return n; },
+          function () { return n; }
+        );
       });
     } catch (e) {
-      /* never let font inlining break rendering */
+      return Promise.resolve(0);
     }
+  }
+
+  // Every section waits for the font table, then is re-substituted from the
+  // ORIGINAL serialized markup — the `output` epub.js's own serialize hook
+  // received and wrote `section.output` from synchronously; ours resolves
+  // later and so wins. Section.render awaits hook promises, which is what
+  // makes the first section deterministic rather than a race with the
+  // rendition's display queue.
+  function installFontSerializeHook(b, patched) {
+    if (!b.spine || !b.spine.hooks || !b.spine.hooks.serialize) return;
+    b.spine.hooks.serialize.register(function (output, section) {
+      return patched.then(function (n) {
+        if (n && b.resources && typeof output === "string") {
+          section.output = b.resources.substitute(output, section.url);
+        }
+      });
+    });
   }
 
   // Proactively re-point every `<img src>` / SVG `<image href|xlink:href>`
@@ -1300,11 +1327,13 @@
 
   // Per-section content enhancement, registered on epub.js's content hook so it
   // runs for every rendered spine item. The Apple/Kindle-parity fixes the
-  // sandboxed iframe would otherwise drop: the book's own stylesheet (and its
-  // embedded faces), hyphenation for justified prose (off by CSS default), the
-  // reader's own faces loaded *inside* the iframe, and the reader's
-  // `font-family` override layer — empty under Original, so the publisher's
-  // faces win.
+  // sandboxed iframe would otherwise drop: the book's own stylesheet,
+  // hyphenation for justified prose (off by CSS default), the reader's own
+  // faces loaded *inside* the iframe, and the reader's `font-family` override
+  // layer — empty under Original, so the publisher's faces win. A book's
+  // *embedded* faces are not handled here and cannot be: they are requested
+  // during the section's first layout, before this hook ever runs (see
+  // inlineFontReplacements).
   function installContentEnhancements() {
     if (!rendition || !rendition.hooks || !rendition.hooks.content) return;
     rendition.hooks.content.register(function (contents) {
