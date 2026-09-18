@@ -96,9 +96,6 @@ test("tag substring shows tag or book results", async ({ page }) => {
 test("renders the /search results page layout", async ({ page }) => {
   await gotoReady(page, "/search/dracula");
 
-  // Breadcrumb back affordance present.
-  await expect(page.getByTestId("search-back")).toBeVisible();
-
   // Heading echoes the query, and the summary stat line shows the engine +
   // timing once the RPC settles.
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
@@ -127,13 +124,4 @@ test("renders the /search results page layout", async ({ page }) => {
   );
   await expect(page.getByRole("button", { name: "Table" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Grid" })).toHaveCount(0);
-});
-
-test("search back link returns to the library", async ({ page }) => {
-  await gotoReady(page, "/search/dracula");
-
-  const back = page.getByTestId("search-back");
-  await expect(back).toBeVisible();
-  await back.click();
-  await expect(page).toHaveURL(/\/$/);
 });

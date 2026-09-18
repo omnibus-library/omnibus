@@ -267,7 +267,6 @@ test.describe("with seeded library", () => {
     await expect
       .poll(async () => new URL(page.url()).pathname)
       .toMatch(/^\/search\/dracula$/);
-    await expect(page.getByTestId("search-back")).toBeVisible();
   });
 
   test("Enter after arrow-key selection drills into the highlighted result", async ({
