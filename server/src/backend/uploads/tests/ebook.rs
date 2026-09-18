@@ -172,6 +172,71 @@ async fn inspect_accepts_a_pdf_and_reports_its_info_dict() {
     assert!(inspection.has_cover, "page 1 renders as the cover");
 }
 
+/// A PDF with no Info dict at all — a scanner's or a print-to-PDF export —
+/// so the only title on offer is the file's own name.
+fn untitled_fixture_pdf() -> Vec<u8> {
+    db::test_support::build_test_pdf(&db::test_support::TestPdf {
+        pages: &["Opening remarks"],
+        ..Default::default()
+    })
+}
+
+#[tokio::test]
+async fn inspect_titles_an_untitled_pdf_from_the_uploaded_file_name() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let (ct, body) = multipart_body(&[(
+        "file",
+        Some("The Left Hand of Darkness.pdf"),
+        &untitled_fixture_pdf(),
+    )]);
+    let res = app
+        .oneshot(post_multipart(
+            "/api/uploads/ebooks/inspect",
+            &token,
+            &ct,
+            body,
+        ))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let inspection: UploadInspection = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        inspection.title.as_deref(),
+        Some("The Left Hand of Darkness"),
+        "the stem of the client's file name, not a synthetic upload name"
+    );
+    assert_eq!(inspection.author, None);
+}
+
+#[test]
+fn upload_filename_keeps_the_stem_under_the_sniffed_extension() {
+    assert_eq!(
+        upload_filename(Some("The Left Hand of Darkness.PDF"), "pdf"),
+        "The Left Hand of Darkness.pdf"
+    );
+    // A mislabelled file is renamed to what its bytes say it is.
+    assert_eq!(upload_filename(Some("scan.epub"), "pdf"), "scan.pdf");
+    // Only the last path component survives, whichever separator sent it.
+    assert_eq!(
+        upload_filename(Some("C:\\Books\\dune.pdf"), "pdf"),
+        "dune.pdf"
+    );
+    assert_eq!(upload_filename(Some("../../dune.pdf"), "pdf"), "dune.pdf");
+}
+
+#[test]
+fn upload_filename_falls_back_to_upload_when_no_usable_name_arrives() {
+    assert_eq!(upload_filename(None, "pdf"), "upload.pdf");
+    assert_eq!(upload_filename(Some(""), "epub"), "upload.epub");
+    assert_eq!(upload_filename(Some("   "), "cbz"), "upload.cbz");
+    assert_eq!(upload_filename(Some(".pdf"), "pdf"), "upload.pdf");
+}
+
 #[tokio::test]
 async fn inspect_rejects_a_truncated_pdf_with_415() {
     let (app, _state, pool) = fixture().await;
