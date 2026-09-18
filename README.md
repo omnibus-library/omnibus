@@ -45,6 +45,8 @@ the [Docker guide](docs/docker.md).
 | [**Architecture**](docs/architecture.md) | Crate and module maps, request flows, mobile auth |
 | [**Configuration reference**](.env.example) | Every supported environment variable, annotated |
 | [**Roadmap**](https://github.com/users/seamus-sloan/projects/2/views/9) | What's shipped and what's next |
+| [**Contributing**](CONTRIBUTING.md) | Issue-first workflow, quality gate, PR conventions |
+| [**Security policy**](.github/SECURITY.md) | How to report a vulnerability privately |
 
 ## License
 
