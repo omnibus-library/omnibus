@@ -32,6 +32,8 @@ found=0
 for f in "$SRC"/omnibus-*.png; do
   found=1
   b="$(basename "$f" .png)"; b="${b%@2x}"
+  # Live captures are not design exports; never regenerate them from one.
+  case "$b" in omnibus-reader-quote-card) echo "skip $b (live capture)"; continue ;; esac
   # Desktop screens display at most ~1440 CSS px, so 1920 stays crisp on a 2x
   # display without shipping the full 2884px export. Phone frames cap at 820.
   case "$b" in
