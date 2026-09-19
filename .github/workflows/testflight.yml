@@ -403,6 +403,6 @@ jobs:
           # group over there has to be mirrored here. A name matching nothing
           # fails the job, deliberately: distributing to no one and exiting 0 is
           # the failure this whole job exists to prevent.
-          BETA_GROUPS: "First 20 Testers"
+          BETA_GROUPS: "First 20 Testers, External Testers"
           WHATS_NEW: ${{ inputs.whats_new }}
         run: python scripts/testflight_distribute.py
