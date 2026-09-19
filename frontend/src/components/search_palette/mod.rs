@@ -56,10 +56,10 @@ pub fn SearchPaletteTrigger() -> Element {
 // Component tree:
 //   SearchPaletteOverlay        — mounted in ScreenLayout
 //   └─ (open) SpOverlay         — scrim + panel
-//              ├─ SpInput       — autofocused serif italic input
-//              ├─ SpMeta        — "5 results · 18ms"
-//              ├─ SpResultsList — scrollable grouped results
-//              └─ SpFooter      — keyboard hints + "fts5 · ranked"
+//              ├─ SpInputRow          — autofocused serif italic input
+//              ├─ sp_meta_and_error   — "5 results · 18ms", or the fetch-error alert
+//              ├─ SpResultsList       — scrollable grouped results
+//              └─ SpFooter            — keyboard hints + "fts5 · ranked"
 #[component]
 pub fn SearchPaletteOverlay() -> Element {
     let open = use_context::<PaletteOpen>();

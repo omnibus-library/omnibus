@@ -161,6 +161,21 @@ test.describe("with seeded library", () => {
       .toBe(1);
     await expect(page.getByTestId("sp-result-count")).toContainText(/result/);
     await expect(page.getByTestId("sp-result-count")).toContainText(/ms/);
+
+    // The meta line is a sibling of the results list, not a child, so it
+    // only lines up with the group heads if it carries the panel gutter
+    // itself. A boundingBox x comparison would not catch a regression here
+    // since both are full-width block children of .sp-panel — compare
+    // computed padding-left instead.
+    const metaPad = await page
+      .getByTestId("sp-result-count")
+      .evaluate((el) => getComputedStyle(el).paddingLeft);
+    const headPad = await page
+      .locator(".sp-group-head")
+      .first()
+      .evaluate((el) => getComputedStyle(el).paddingLeft);
+    expect(metaPad).toBe(headPad);
+    expect(metaPad).not.toBe("0px");
   });
 
   test("clicking book result navigates to detail", async ({ page }) => {

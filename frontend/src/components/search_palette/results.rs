@@ -111,7 +111,6 @@ pub(super) fn SpResultsList(
                         }
                     }
                 }
-
             }
         }
     }
