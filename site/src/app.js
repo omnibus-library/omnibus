@@ -98,13 +98,7 @@
     b.setAttribute('aria-label', label);
     b.innerHTML = '<em></em><i></i>';
     b.querySelector('em').textContent = label;
-    b.addEventListener('click', function () {
-      if (deck) { go(k); return; }
-      // the CSS drops every transition under reduced motion; a smooth scroll
-      // here would reintroduce exactly the motion that opts out
-      var still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      panes[k].scrollIntoView({ behavior: still ? 'auto' : 'smooth' });
-    });
+    b.addEventListener('click', function () { jumpTo(k); });
     rail.appendChild(b);
   });
   var railBtns = Array.prototype.slice.call(rail.children);
@@ -133,6 +127,16 @@
     railBtns.forEach(function (b, k) { b.classList.toggle('on', k === i); });
     cue.classList.toggle('hide', i !== 0);
     stamp(panes[i].id);
+  }
+
+  /* Jump to panel k — shared by the rail buttons and any in-page a[data-jump]
+     link. The deck moves via go(); flow mode scrolls, honouring reduced
+     motion since the CSS drops every transition under that preference and a
+     smooth scroll here would reintroduce exactly the motion that opts out. */
+  function jumpTo(k) {
+    if (deck) { go(k); return; }
+    var still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    panes[k].scrollIntoView({ behavior: still ? 'auto' : 'smooth' });
   }
 
   function gate(d) {
@@ -181,6 +185,19 @@
     var found = panes.findIndex(function (p) { return p.id === hash; });
     if (found > 0) i = found;
   }
+
+  /* In-page jumps (`a[data-jump]`) — the deck translates the track, so the
+     browser's native anchor scroll would fight it and push a history entry;
+     route them through the same path the rail uses. With JS off the href
+     scrolls natively in flow mode. */
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest ? e.target.closest('a[data-jump]') : null;
+    if (!a) return;
+    var k = panes.findIndex(function (p) { return p.id === a.getAttribute('data-jump'); });
+    if (k < 0) return;
+    e.preventDefault();
+    jumpTo(k);
+  });
 
   /* ── flow mode: keep the hash on the section being read ─────────
      The deck stamps the hash from render(); flow mode never calls it, so on a
