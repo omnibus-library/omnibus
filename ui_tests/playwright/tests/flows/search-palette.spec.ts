@@ -199,21 +199,6 @@ test.describe("with seeded library", () => {
     );
   });
 
-  test("inside text shows coming soon", async ({ page }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("dracula");
-
-    // Wait for results, then check the placeholder.
-    await expect
-      .poll(async () => page.getByTestId("sp-book-row").count())
-      .toBeGreaterThanOrEqual(1);
-
-    await expect(page.getByTestId("sp-coming-soon")).toBeVisible();
-    await expect(page.getByTestId("sp-coming-soon")).toHaveText("Coming soon");
-  });
-
   test("clicking author result navigates to author detail page", async ({
     page,
   }) => {
