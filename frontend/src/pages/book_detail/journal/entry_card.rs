@@ -278,7 +278,7 @@ fn render_delete_confirm_modal(
         ConfirmModal {
             testid: "journal-delete-modal".to_string(),
             aria_label: "Delete entry?".to_string(),
-            dialog_class: "mg-modal del-modal".to_string(),
+            dialog_class: "mg-modal confirm-modal".to_string(),
             busy: is_busy,
             on_dismiss: move |_| {
                 // Mirrors the double-click guard on `do_delete`: `is_busy` is
@@ -291,6 +291,7 @@ fn render_delete_confirm_modal(
             {confirm_modal_body(
                 "Delete entry?",
                 "Deleting this journal entry removes it for good. This can\u{2019}t be undone.",
+                None,
                 vec![
                     ConfirmModalAction {
                         testid: "journal-delete-cancel".to_string(),

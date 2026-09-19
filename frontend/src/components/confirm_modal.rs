@@ -100,21 +100,40 @@ pub fn ConfirmModal(
     }
 }
 
-/// Title + body copy + action-button row — the "confirm one thing" body
-/// shape shared by the physical-copy delete modals.
-pub fn confirm_modal_body(title: &str, body: &str, actions: Vec<ConfirmModalAction>) -> Element {
+/// Title + body copy + optional note + action-button row — the "confirm one
+/// thing" body shape shared by the shelf, journal and physical-copy delete
+/// modals.
+///
+/// The `.del-body` wrapper is what carries the pane's padding, so it is
+/// emitted here rather than left to each caller: a caller that forgot it got
+/// a panel whose text ran flush into the card edge, which is how the
+/// delete-shelf modal shipped. A card that pads itself
+/// (`.author-delete-modal`, `.users-modal-card`) zeroes it back out in CSS.
+///
+/// `note` renders *above* the action row — a failure message belongs inside
+/// the padded stack and in front of the buttons that caused it, not trailing
+/// off the bottom edge of the card.
+pub fn confirm_modal_body(
+    title: &str,
+    body: &str,
+    note: Option<Element>,
+    actions: Vec<ConfirmModalAction>,
+) -> Element {
     rsx! {
-        h3 { class: "del-title", "{title}" }
-        p { class: "del-copy", "{body}" }
-        div { class: "del-actions",
-            for action in actions {
-                button {
-                    key: "{action.testid}",
-                    class: if action.tone == ConfirmModalTone::Danger { "del-btn-danger" } else { "del-btn-ghost" },
-                    "data-testid": "{action.testid}",
-                    disabled: action.disabled,
-                    onclick: move |_| action.on_click.call(()),
-                    "{action.label}"
+        div { class: "del-body",
+            h3 { class: "del-title", "{title}" }
+            p { class: "del-copy", "{body}" }
+            if let Some(note) = note { {note} }
+            div { class: "del-actions",
+                for action in actions {
+                    button {
+                        key: "{action.testid}",
+                        class: if action.tone == ConfirmModalTone::Danger { "del-btn-danger" } else { "del-btn-ghost" },
+                        "data-testid": "{action.testid}",
+                        disabled: action.disabled,
+                        onclick: move |_| action.on_click.call(()),
+                        "{action.label}"
+                    }
                 }
             }
         }

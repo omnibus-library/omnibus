@@ -2875,10 +2875,15 @@ a.idx-letter-on:focus-visible {
   }
 }
 
+/* The shared modal scrim. Blurred to the same depth as `.users-modal-overlay`
+   — unblurred, a dialog opened over the library grid competed with every
+   cover behind it. */
 .author-photo-modal-backdrop {
   position: fixed;
   inset: 0;
   background: color-mix(in oklch, #000 55%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: grid;
   place-items: center;
   z-index: 100;
@@ -3248,22 +3253,6 @@ a.idx-letter-on:focus-visible {
 @media (hover: hover) {
   .um-nr-play:hover { opacity: 0.9; }
 }
-
-/* Stat grid: Shelves links out (#1913); the rest are non-interactive
-   stats (`.um-stat-static`) until they have an aggregate web page. */
-.um-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.um-stat {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 10px; border-radius: 10px;
-  background: var(--bg-2); border: 1px solid var(--line-2);
-  text-decoration: none; color: inherit;
-}
-@media (hover: hover) {
-  a.um-stat:hover { border-color: var(--line-1); }
-}
-.um-stat-static { cursor: default; opacity: .85; }
-.um-stat-label { color: var(--ink-0); font-size: 12px; font-weight: 500; }
-.um-stat-detail { color: var(--ink-3); font-family: var(--mono); font-size: 10px; }
 
 /* Linear rows */
 .um-rows { display: flex; flex-direction: column; }
@@ -6952,7 +6941,16 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
  * to sit in one scroll region. Destructive actions carry `--bad`; the
  * selected-row highlight is the accent, matching the design's checkbox. */
 .del-modal { width: min(560px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; }
+/* Narrower sibling for the shared "confirm one thing" body: two lines of
+   copy and a button row, not a file list. Must sit after `.mg-modal`, whose
+   720px would otherwise win on source order. */
+.confirm-modal { width: min(440px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; }
+/* The padded pane. `confirm_modal_body` emits this wrapper itself so a
+   caller cannot forget it; the two cards that pad themselves zero it back
+   out rather than nesting one inset inside another. */
 .del-body { display: flex; flex-direction: column; gap: 14px; padding: 26px 28px 24px; }
+.author-delete-modal > .del-body,
+.users-modal-card > .del-body { padding: 0; }
 .del-title { margin: 0; font-family: var(--serif); font-weight: 600; font-size: 23px; --lh: 1.2; line-height: var(--lh);
   color: var(--ink-0); }
 .del-copy { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
@@ -6998,7 +6996,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .del-note { margin: 0; font-size: 11px; color: var(--ink-3); }
 
 /* Actions, right-aligned at the foot of the pane. */
-.del-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+.del-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 .del-btn-ghost, .del-btn-danger { height: 36px; padding: 0 18px; border-radius: 10px;
   font-family: var(--sans); font-size: 13px; cursor: pointer; }
 .del-btn-ghost { background: var(--bg-2); border: 1px solid var(--line);

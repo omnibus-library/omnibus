@@ -357,7 +357,7 @@ fn render_delete_modal(
         ConfirmModal {
             testid: "shelf-delete-modal".to_string(),
             aria_label: "Delete shelf?".to_string(),
-            dialog_class: "mg-modal del-modal".to_string(),
+            dialog_class: "mg-modal confirm-modal".to_string(),
             busy: is_busy,
             on_dismiss: move |_| open.set(false),
             {confirm_modal_body(
@@ -365,6 +365,11 @@ fn render_delete_modal(
                 &format!(
                     "Deleting \u{201c}{shelf_name}\u{201d} removes the shelf. Its books stay in your library. This can\u{2019}t be undone."
                 ),
+                error().map(|msg| rsx! {
+                    p { role: "alert", class: "shelf-modal-error", "data-testid": "shelf-delete-error",
+                        "Couldn\u{2019}t delete this shelf: {msg}"
+                    }
+                }),
                 vec![
                     ConfirmModalAction {
                         testid: "shelf-delete-cancel".to_string(),
@@ -382,11 +387,6 @@ fn render_delete_modal(
                     },
                 ],
             )}
-            if let Some(msg) = error() {
-                p { role: "alert", class: "shelf-modal-error", "data-testid": "shelf-delete-error",
-                    "Couldn\u{2019}t delete this shelf: {msg}"
-                }
-            }
         }
     }
 }
