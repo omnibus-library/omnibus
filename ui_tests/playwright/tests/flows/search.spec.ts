@@ -1,6 +1,6 @@
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
-import { gotoReady } from "../utils/nav";
+import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 test.beforeAll(async ({ request }) => {
@@ -96,8 +96,9 @@ test("tag substring shows tag or book results", async ({ page }) => {
 test("renders the /search results page layout", async ({ page }) => {
   await gotoReady(page, "/search/dracula");
 
-  // Breadcrumb back affordance present.
-  await expect(page.getByTestId("search-back")).toBeVisible();
+  // Shared nav is the way back to the library now that the page has no breadcrumb.
+  await expectNavVisible(page);
+  await expect(page.locator("nav.breadcrumb")).toHaveCount(0);
 
   // Heading echoes the query, and the summary stat line shows the engine +
   // timing once the RPC settles.
@@ -127,13 +128,4 @@ test("renders the /search results page layout", async ({ page }) => {
   );
   await expect(page.getByRole("button", { name: "Table" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Grid" })).toHaveCount(0);
-});
-
-test("search back link returns to the library", async ({ page }) => {
-  await gotoReady(page, "/search/dracula");
-
-  const back = page.getByTestId("search-back");
-  await expect(back).toBeVisible();
-  await back.click();
-  await expect(page).toHaveURL(/\/$/);
 });
