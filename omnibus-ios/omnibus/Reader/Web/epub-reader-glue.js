@@ -55,7 +55,12 @@
  *
  * Selection API (host-drawn selection; see the engine below):
  *   beginSelectionAt(x, y)          long-press: select the token at a point
- *   extendSelectionTo(x, y)         drag from the anchor token
+ *   extendSelectionTo(x, y, fx?)    drag from the anchor — by the word from
+ *                                   a long press, by the character from a
+ *                                   handle; resting the finger (`fx`, the
+ *                                   touch itself when it is not the caret)
+ *                                   at the page's edge turns it and runs the
+ *                                   range on
  *   beginEdgeDrag(edge)             pin the opposite edge for a handle drag
  *   endSelectionDrag()              settle and re-emit with `existing`
  *   clearSelection()
@@ -63,10 +68,12 @@
  * Selection callbacks:
  *   - `__omnibusOnSelection(json)` — the live range, as
  *     { cfiRange, text, rects: [{x,y,width,height}], start, end, existing,
- *       dragging } in HOST-WINDOW coordinates. One rect per visual line;
- *     `start`/`end` are the caret boxes the host hangs its handles off.
+ *       dragging } in HOST-WINDOW coordinates. One rect per visual line, of
+ *     the text on the page in front of the reader only; `start`/`end` are
+ *     the caret boxes the host hangs its handles off, each null while that
+ *     end of the range is on another page.
  *   - `__omnibusOnSelectionCleared(_)` — the range collapsed (tap-away,
- *     page turn), so the host can drop its selection UI.
+ *     the page turned away from it), so the host can drop its selection UI.
  * Table-of-contents callback:
  *   - `__omnibusOnToc(json)` — invoked once the book is ready (and on
  *     requestToc()), with a flat [{ label, href, level }] array.
@@ -542,14 +549,23 @@
     });
 
     // A new section means new text nodes, so every block flattened off the
-    // old ones is dead weight.
-    rendition.on("rendered", dropFlatCache);
+    // old ones is dead weight. Its stored highlights are attached by now,
+    // and the first of them anywhere is what carries the mark patch in.
+    rendition.on("rendered", function () {
+      dropFlatCache();
+      if (patchMarkRects()) repaintAnnotations();
+    });
 
     rendition.on("relocated", function (location) {
-      // A selection belongs to the page it was made on: once the page turns,
-      // its geometry is stale and the passage is no longer in front of the
-      // reader. Books drops it at the same moment.
-      clearSelection();
+      // A selection belongs to the passage, not to the page it was made on.
+      // A drag turning the page under it carries its own geometry; otherwise
+      // it stays while any of it is still in front of the reader — a
+      // rotation re-paginated — and goes once the page has turned away from
+      // it, which is the moment Books drops one too.
+      if (sel && !sel.inDrag) {
+        if (lineRects(sel.range, sel.win).length) emitSelection(false);
+        else clearSelection();
+      }
       try {
         currentSectionBase = String(location.start.cfi).split("!")[0];
       } catch (e) {
@@ -1119,6 +1135,12 @@
   // Everything crossing the bridge is in HOST-WINDOW coordinates: the host
   // has no notion of the section iframe, which in paginated flow is as wide
   // as the whole chapter and slides under the viewport as pages turn.
+  //
+  // Two granularities, the way the system text view has two. The long press
+  // and the drag that follows it move by the *word*, so the finger aims at a
+  // phrase; the handles that come up afterwards move by the *character*, so
+  // a comma can be left out and a word can be split. And a range may run
+  // across pages: hold a handle at the edge and the page turns under it.
 
   // A selection boundary lands between tokens, and a token is a run of
   // non-space characters — punctuation included.
@@ -1210,11 +1232,12 @@
 
   // The whole token under a caret, as a Range.
   //
-  // Snapping to tokens is what makes a drag feel deliberate: the selection
-  // never stops mid-word, so it always reads as a phrase, and the reader can
-  // aim at a word rather than at a character. Apple Books and Kindle both
-  // select at this granularity for exactly that reason — and both carry the
-  // punctuation, which is what lets a drag reach the end of a sentence.
+  // Snapping to tokens is what makes the first drag feel deliberate: the
+  // selection never stops mid-word, so it always reads as a phrase, and the
+  // reader can aim at a word rather than at a character. Apple Books and
+  // Kindle both select at this granularity for exactly that reason — and both
+  // carry the punctuation, which is what lets a drag reach the end of a
+  // sentence. Trimming it back is what the handles are for.
   function tokenRangeAt(doc, node, offset) {
     var root = blockRootOf(node);
     if (!root) return null;
@@ -1247,6 +1270,18 @@
       var range = doc.createRange();
       range.setStart(from.node, from.offset);
       range.setEnd(to.node, to.offset);
+      return range;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // The caret itself, as a collapsed Range — the character-granularity target.
+  function collapsedRangeAt(doc, node, offset) {
+    try {
+      var range = doc.createRange();
+      range.setStart(node, offset);
+      range.collapse(true);
       return range;
     } catch (e) {
       return null;
@@ -1304,6 +1339,36 @@
     return null;
   }
 
+  // Where a caret sits, in its document's viewport coordinates. Measured off
+  // the character beside it rather than off a collapsed range, whose box some
+  // engines report empty.
+  function caretRect(doc, node, offset) {
+    var probe = doc.createRange();
+    var len = node.length || 0;
+    var rects;
+    if (offset < len) {
+      probe.setStart(node, offset);
+      probe.setEnd(node, offset + 1);
+      rects = probe.getClientRects();
+      if (rects.length) {
+        return { left: rects[0].left, top: rects[0].top, height: rects[0].height };
+      }
+    }
+    if (offset > 0) {
+      probe.setStart(node, offset - 1);
+      probe.setEnd(node, offset);
+      rects = probe.getClientRects();
+      if (rects.length) {
+        var last = rects[rects.length - 1];
+        return { left: last.right, top: last.top, height: last.height };
+      }
+    }
+    probe.setStart(node, offset);
+    probe.collapse(true);
+    var box = probe.getBoundingClientRect();
+    return { left: box.left, top: box.top, height: box.height };
+  }
+
   // The range spanning two ranges, whichever order they were made in.
   function spanning(doc, a, b) {
     var aFirst = a.compareBoundaryPoints(Range.START_TO_START, b) <= 0;
@@ -1315,20 +1380,96 @@
     return range;
   }
 
-  // One rounded bar per visual line, in host-window coordinates.
+  // The boxes of the *text* a range covers: one per text-node fragment per
+  // line, in the range's own document coordinates.
+  //
+  // `range.getClientRects()` is not that. It also returns the border box of
+  // every element the range wholly contains — a middle paragraph, an image
+  // between two — so a selection run across three paragraphs came back as a
+  // block over the second one, indent and ragged last line included. Walking
+  // the text nodes yields nothing but glyphs.
+  function textRects(range) {
+    var out = [];
+    if (!range) return out;
+    var doc = range.startContainer.ownerDocument;
+    if (!doc) return out;
+    var root = range.commonAncestorContainer;
+    if (root.nodeType === 3) {
+      pushRects(out, range.getClientRects());
+      return out;
+    }
+    var walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var node = range.startContainer;
+    walker.currentNode = node;
+    // Only text nodes are walked, so an element start container (which the
+    // engine never produces, but a stored CFI could) advances to the first
+    // text under it.
+    if (node.nodeType !== 3) node = walker.nextNode();
+    while (node) {
+      // Past the end: everything after is outside the range.
+      if (range.comparePoint(node, 0) > 0) break;
+      if (range.intersectsNode(node)) {
+        var piece = doc.createRange();
+        piece.selectNodeContents(node);
+        if (node === range.startContainer) piece.setStart(node, range.startOffset);
+        if (node === range.endContainer) piece.setEnd(node, range.endOffset);
+        pushRects(out, piece.getClientRects());
+      }
+      node = walker.nextNode();
+    }
+    return out;
+  }
+
+  function pushRects(out, list) {
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      if (r && r.width > 0 && r.height > 0) out.push(r);
+    }
+  }
+
+  // The page in front of the reader, in host-window coordinates.
+  function pageBox() {
+    var c = pageContainer();
+    return c ? c.getBoundingClientRect() : null;
+  }
+
+  // How many columns share the page: two in a spread, else one.
+  function pageColumns() {
+    var m = rendition && rendition.manager;
+    return (m && m.layout && m.layout.divisor) || 1;
+  }
+
+  // Which column of the section a host-window x falls in, counted from the
+  // left of the page on screen: 0 (and 1 in a spread) is in front of the
+  // reader, negative is behind them, anything larger is still to come.
+  function columnAt(x, box) {
+    var d = pageDelta();
+    if (!d) return 0;
+    return Math.floor((x - box.left) / (d / pageColumns()));
+  }
+
+  function columnOnPage(col) {
+    return col >= 0 && col < pageColumns();
+  }
+
+  // One row per visual line, in reading order, in host-window coordinates.
   //
   // `getClientRects` fragments a line at every inline element boundary, so a
   // sentence crossing an <em> comes back as three abutting boxes — drawn as
-  // given, they show seams and doubled corners where they meet.
-  function lineRects(range, win) {
+  // given, they show seams and doubled corners where they meet. Rows are
+  // merged per column: a range that runs across the page break has a line at
+  // the same height in both columns, and those are two rows, not one.
+  function lineRows(range, win) {
     var off = frameOffset(win);
-    var raw = (range.getClientRects && range.getClientRects()) || [];
+    var box = pageBox();
+    var raw = textRects(range);
     var rows = [];
     for (var i = 0; i < raw.length; i++) {
       var r = raw[i];
-      if (!r || r.width <= 0 || r.height <= 0) continue;
+      var col = box ? columnAt((r.left + r.right) / 2 + off.x, box) : 0;
       var row = null;
       for (var k = 0; k < rows.length; k++) {
+        if (rows[k].col !== col) continue;
         // Same line iff the boxes share most of their height. Superscripts
         // and inline images sit on the line without matching its box.
         var overlap = Math.min(rows[k].bottom, r.bottom) - Math.max(rows[k].top, r.top);
@@ -1344,13 +1485,14 @@
         row.top = Math.min(row.top, r.top);
         row.bottom = Math.max(row.bottom, r.bottom);
       } else {
-        rows.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+        rows.push({ col: col, left: r.left, right: r.right, top: r.top, bottom: r.bottom });
       }
     }
 
-    // Reading order, so the host's handles hang off the true ends.
+    // Reading order — column first, so the host's handles hang off the true
+    // ends of a range that crosses the page break.
     rows.sort(function (a, b) {
-      return a.top - b.top || a.left - b.left;
+      return a.col - b.col || a.top - b.top || a.left - b.left;
     });
 
     // `getClientRects` measures the *font* box, not the line box, so on
@@ -1360,6 +1502,7 @@
     // own is — without needing to know the line height.
     var gap = Infinity;
     for (var g = 1; g < rows.length; g++) {
+      if (rows[g].col !== rows[g - 1].col) continue;
       var between = rows[g].top - rows[g - 1].bottom;
       if (between > 0 && between < gap) gap = between;
     }
@@ -1371,24 +1514,78 @@
       }
     }
 
-    // Only what is on the page in front of the reader: a selection near a
-    // column edge also has rects in the next column, which is off-screen but
-    // still inside the (chapter-wide) iframe.
-    var container = pageContainer();
-    var box = container ? container.getBoundingClientRect() : null;
     var out = [];
     for (var j = 0; j < rows.length; j++) {
-      var x = rows[j].left + off.x;
-      var width = rows[j].right - rows[j].left;
-      if (box && (x + width / 2 < box.left - 1 || x + width / 2 > box.right + 1)) continue;
       out.push({
-        x: x,
+        col: rows[j].col,
+        x: rows[j].left + off.x,
         y: rows[j].top + off.y,
-        width: width,
+        width: rows[j].right - rows[j].left,
         height: rows[j].bottom - rows[j].top,
       });
     }
     return out;
+  }
+
+  // What the host draws: only the rows on the page in front of the reader —
+  // a range may run onto the next page, which is off-screen but still inside
+  // the chapter-wide iframe — plus whether each end of the range is among
+  // them, so a handle is only hung off an edge that is actually there.
+  function selectionGeometry(range, win) {
+    var rows = lineRows(range, win);
+    var rects = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (!columnOnPage(rows[i].col)) continue;
+      rects.push({
+        x: rows[i].x, y: rows[i].y, width: rows[i].width, height: rows[i].height,
+      });
+    }
+    return {
+      rects: rects,
+      startOnPage: rows.length > 0 && columnOnPage(rows[0].col),
+      endOnPage: rows.length > 0 && columnOnPage(rows[rows.length - 1].col),
+    };
+  }
+
+  function lineRects(range, win) {
+    return selectionGeometry(range, win).rects;
+  }
+
+  // Whether a drag target is on the page in front of the reader. A point in
+  // the margin beside the text resolves to the nearest caret, which at the
+  // edge of a column can be the first word of the *next* page — extending to
+  // it would grow the range into text the reader cannot see.
+  function targetOnPage(target, win) {
+    var box = pageBox();
+    if (!box) return true;
+    var off = frameOffset(win);
+    var left;
+    if (target.collapsed) {
+      var doc = target.startContainer.ownerDocument;
+      left = caretRect(doc, target.startContainer, target.startOffset).left;
+    } else {
+      var rects = textRects(target);
+      if (!rects.length) return false;
+      left = (rects[0].left + rects[0].right) / 2;
+    }
+    return columnOnPage(columnAt(left + off.x, box));
+  }
+
+  // Whether a token actually sits under a press. `caretRangeFromPoint`
+  // answers with the *nearest* text for any point, so without this a long
+  // press on an image, or on the empty page below a chapter's last line,
+  // selected the word closest to it.
+  function tokenUnderPoint(token, win, x, y) {
+    var off = frameOffset(win);
+    var rects = textRects(token);
+    for (var i = 0; i < rects.length; i++) {
+      var r = rects[i];
+      if (x >= r.left + off.x - 12 && x <= r.right + off.x + 12 &&
+          y >= r.top + off.y - 8 && y <= r.bottom + off.y + 8) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function hasSelection() {
@@ -1400,8 +1597,16 @@
   // only needs geometry and text until the drag settles.
   function emitSelection(dragging) {
     if (!sel || typeof window.__omnibusOnSelection !== "function") return;
-    var rects = lineRects(sel.range, sel.win);
-    if (!rects.length) return;
+    var geo = selectionGeometry(sel.range, sel.win);
+    var rects = geo.rects;
+    // Settled with none of it in front of the reader — the finger lifted
+    // while a turn was still landing — is no selection at all. Mid-drag the
+    // empty frame is reported as such, so the tint clears as the page slides
+    // out rather than lingering over the one sliding in.
+    if (!rects.length && !dragging) {
+      clearSelection();
+      return;
+    }
     var first = rects[0];
     var last = rects[rects.length - 1];
     var cfi = sel.cfiRange;
@@ -1425,8 +1630,12 @@
         // quote card, a paste.
         text: sel.range.toString().replace(/\s+/g, " ").trim(),
         rects: rects,
-        start: { x: first.x, y: first.y, height: first.height },
-        end: { x: last.x + last.width, y: last.y, height: last.height },
+        start: geo.startOnPage && first
+          ? { x: first.x, y: first.y, height: first.height }
+          : null,
+        end: geo.endOnPage && last
+          ? { x: last.x + last.width, y: last.y, height: last.height }
+          : null,
         existing: existing,
         dragging: !!dragging,
       }));
@@ -1449,7 +1658,7 @@
     var caret = caretAtHostPoint(x, y);
     if (!caret) return false;
     var token = tokenRangeAt(caret.doc, caret.node, caret.offset);
-    if (!token) return false;
+    if (!token || !tokenUnderPoint(token, caret.win, x, y)) return false;
     sel = {
       doc: caret.doc,
       win: caret.win,
@@ -1458,22 +1667,36 @@
       range: token,
       cfiRange: null,
       existing: null,
+      // The long press is a *word* gesture; see `beginEdgeDrag` for the other.
+      granularity: "word",
+      // A finger is on it: the drag's own emits carry the geometry, and a
+      // page turning underneath is the drag's doing, not a reason to drop it.
+      inDrag: true,
     };
+    selLastPoint = { x: x, y: y };
     // Reported as a drag: the finger is still down, and the host holds its
     // menu back until the range settles rather than opening one under it.
     emitSelection(true);
     return hasSelection();
   }
 
-  function extendSelectionTo(x, y) {
-    if (!sel) return;
-    var caret = caretAtHostPoint(x, y);
-    // A point outside the section (the margins, the next column) leaves the
-    // range where it was rather than collapsing it out from under the finger.
-    if (!caret || caret.doc !== sel.doc) return;
-    var token = tokenRangeAt(caret.doc, caret.node, caret.offset);
-    if (!token) return;
-    sel.range = spanning(sel.doc, sel.anchor, token);
+  // `fx` is where the finger actually is. A handle drag reports the caret
+  // the finger is carrying — the touch's own travel added to where the caret
+  // was grabbed, which keeps the range from jumping on the grab — and that
+  // point trails the finger by the grab offset, so it is the finger, not the
+  // caret, that has to reach the edge to turn the page.
+  function extendSelectionTo(x, y, fx) {
+    if (!sel || !sel.inDrag) return;
+    var finger = typeof fx === "number" && isFinite(fx) ? fx : x;
+    selLastPoint = { x: x, y: y, fx: finger };
+    trackEdge(finger);
+    var target = dragTargetAt(x, y, finger);
+    if (!target) return;
+    var next = spanning(sel.doc, sel.anchor, target);
+    // A handle pulled onto the other end stops one character short of it — a
+    // selection never collapses under a drag, the way a text field's doesn't.
+    if (next.collapsed) return;
+    sel.range = next;
     scheduleSelectionEmit();
   }
 
@@ -1490,17 +1713,26 @@
     }
     anchor.collapse(true);
     sel.anchor = anchor;
+    // The press chose a word; the handles are for its edges. By the
+    // character, as Books, Notes and the system text view all move theirs —
+    // snapped to the word they could never leave out a comma or split one.
+    sel.granularity = "character";
+    sel.inDrag = true;
   }
 
   function endSelectionDrag() {
+    cancelEdgeTurn();
     if (selEmitRaf) {
       cancelAnimationFrame(selEmitRaf);
       selEmitRaf = 0;
     }
+    if (sel) sel.inDrag = false;
     emitSelection(false);
   }
 
   function clearSelection() {
+    cancelEdgeTurn();
+    selLastPoint = null;
     if (selEmitRaf) {
       cancelAnimationFrame(selEmitRaf);
       selEmitRaf = 0;
@@ -1514,6 +1746,145 @@
         /* ignore handler errors */
       }
     }
+  }
+
+  // ── Turning the page under a selection ─────────────────────────────
+  // Books and Kindle both do this: hold the finger, or a handle, at the edge
+  // of the page and after a beat the page turns and the selection runs on
+  // across it — for as long as the finger stays there. A range is one
+  // document, so the turn stops at the chapter's edge: a CFI range cannot
+  // span two sections, and neither can a highlight.
+  //
+  // The zone is the outer sliver of the stage past the text, never the text
+  // itself: a handle parked on the last word of a justified line sits a
+  // pixel from the column's edge, and a zone that reached it would turn the
+  // page on any reader who paused to aim.
+  var SELECT_EDGE_PX = 10;
+  var SELECT_EDGE_DWELL_MS = 600;
+  var SELECT_EDGE_REPEAT_MS = 650;
+  var SELECT_TURN_MS = 260;
+  var selEdgeTimer = null;
+  var selEdgeDir = 0;
+  var selLastPoint = null;
+
+  function bookIsRTL() {
+    try {
+      return String(book.packaging.metadata.direction || "").toLowerCase() === "rtl";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Which edge zone a host-window x is in: right (1), left (-1), or neither.
+  function edgeSideAt(x) {
+    var box = pageBox();
+    if (!box) return 0;
+    if (x >= box.right - SELECT_EDGE_PX) return 1;
+    if (x <= box.left + SELECT_EDGE_PX) return -1;
+    return 0;
+  }
+
+  // Forward (1), back (-1), or neither, for a host-window x.
+  function edgeDirectionAt(x) {
+    var side = edgeSideAt(x);
+    return bookIsRTL() ? -side : side;
+  }
+
+  // The range's new end for a drag point, at the selection's granularity, or
+  // null when there is nothing on this page to extend to.
+  //
+  // A finger in the margin, or off the stage altogether, means the end of
+  // the line at that height — on *this* page. Left raw, the point falls in
+  // the column gap, where a hit test can answer with text from the column
+  // on either side, so it is pulled back inside the text first; and should
+  // the engine still answer with another page's text, once more, further in.
+  function dragTargetAt(x, y, finger) {
+    // A finger at the edge means the end of the line, even while the caret
+    // it carries is still a grab-offset short of it.
+    var side = edgeSideAt(finger) || edgeSideAt(x);
+    var probe = side ? textEdge(side) : x;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      var caret = caretAtHostPoint(probe - side * 24 * attempt, y);
+      // A point outside the section (the chrome, the next section) leaves
+      // the range where it was rather than collapsing it under the finger.
+      if (!caret || caret.doc !== sel.doc) return null;
+      var target = sel.granularity === "character"
+        ? collapsedRangeAt(caret.doc, caret.node, caret.offset)
+        : tokenRangeAt(caret.doc, caret.node, caret.offset);
+      if (!target) return null;
+      if (targetOnPage(target, caret.win)) return target;
+      if (!side) return null;
+    }
+    return null;
+  }
+
+  // The host-window x just inside the page's own text column on one side,
+  // past the padding epub.js keeps as half the column gap.
+  function textEdge(side) {
+    var box = pageBox();
+    var m = rendition && rendition.manager;
+    var gap = (m && m.layout && m.layout.gap) || Math.floor(box.width / 12);
+    var inset = gap / 2 + 1;
+    return side > 0 ? box.right - inset : box.left + inset;
+  }
+
+  function cancelEdgeTurn() {
+    if (selEdgeTimer) {
+      clearTimeout(selEdgeTimer);
+      selEdgeTimer = null;
+    }
+    selEdgeDir = 0;
+  }
+
+  // Fed every point of a drag. Entering a zone starts the dwell clock,
+  // staying in it leaves the clock alone, leaving it stops the clock — so the
+  // finger has to *rest* at the edge, and a drag that merely crosses it
+  // turns nothing.
+  function trackEdge(x) {
+    var dir = edgeDirectionAt(x);
+    if (dir === selEdgeDir) return;
+    cancelEdgeTurn();
+    if (!dir) return;
+    selEdgeDir = dir;
+    selEdgeTimer = setTimeout(fireEdgeTurn, SELECT_EDGE_DWELL_MS);
+  }
+
+  function fireEdgeTurn() {
+    selEdgeTimer = null;
+    if (!sel || !sel.inDrag || !selLastPoint) return;
+    var dir = selEdgeDir;
+    if (!dir || edgeDirectionAt(selLastPoint.fx) !== dir) {
+      selEdgeDir = 0;
+      return;
+    }
+    // At the chapter's edge the zone is left armed so nothing fires again
+    // until the finger leaves it and comes back.
+    if (!turnWithinSection(dir)) return;
+    // Once the page has landed, run the range on to the finger — the caret
+    // under it is on the new page now — then keep turning while it stays.
+    selEdgeTimer = setTimeout(function () {
+      selEdgeTimer = null;
+      if (!sel || !sel.inDrag || !selLastPoint) return;
+      extendSelectionTo(selLastPoint.x, selLastPoint.y, selLastPoint.fx);
+      if (selEdgeDir === dir && !selEdgeTimer) {
+        selEdgeTimer = setTimeout(fireEdgeTurn, SELECT_EDGE_REPEAT_MS);
+      }
+    }, SELECT_TURN_MS + 40);
+  }
+
+  // One page forward or back, only if the neighbouring page is in this
+  // section. RTL books scroll negative in some engines (see the gesture
+  // handler's fallback), so they keep the selection to one page.
+  function turnWithinSection(dir) {
+    var c = pageContainer();
+    var d = pageDelta();
+    if (!c || !d || bookIsRTL()) return false;
+    finishTurnAnim();
+    var base = c.scrollLeft;
+    var target = base + dir * d;
+    if (target < -0.5 || target > maxScroll(c) + 0.5) return false;
+    animateOffsetTo(c, base, 0, -dir * d, SELECT_TURN_MS);
+    return true;
   }
 
   // ── Books-style page-turn (touch) ──────────────────────────────────
@@ -1578,6 +1949,7 @@
     setViewOffset(c, 0);
     armViews(c, false);
     reportTurnCommitted();
+    if (sel && sel.inDrag) scheduleSelectionEmit();
   }
 
   // The page counter is a readout of the page in front of the reader, so it
@@ -1666,6 +2038,10 @@
       var t = Math.min(1, (ts - start) / ms);
       if (t < 1) {
         setViewOffset(c, fromPx + (toPx - fromPx) * easeOutCubic(t));
+        // The tint is host-drawn, so it does not ride the transform the way
+        // a mark does: re-measure it each frame of a turn under a drag, and
+        // it slides out with the page instead of hanging over the next one.
+        if (sel && sel.inDrag) scheduleSelectionEmit();
         a.raf = requestAnimationFrame(step);
       } else {
         turnAnim = null;
@@ -2146,6 +2522,41 @@
     scheduleAnnotationRepaint();
   }
 
+  // marks-pane draws a highlight from `range.getClientRects()`, which also
+  // returns the border box of any element the range wholly contains — a
+  // middle paragraph, an image between two — and then *keeps* that box,
+  // discarding the text boxes inside it as duplicates. So a highlight run
+  // across three paragraphs was painted as a block over the second. Swap in
+  // the text-only walk the selection tint uses. The class is not exported,
+  // so it is patched through the first mark that exists, once — the method
+  // lives on the base Mark, so Highlight and Underline both pick it up.
+  // Answers true the one time it patched, and the caller repaints: the mark
+  // that carried the patch in was drawn the old way.
+  var markRectsPatched = false;
+
+  function patchMarkRects() {
+    if (markRectsPatched || !rendition || !rendition.manager || !rendition.manager.views) {
+      return false;
+    }
+    var views = rendition.manager.views;
+    var all = typeof views.all === "function" ? views.all() : [];
+    for (var i = 0; i < all.length; i++) {
+      var marks = all[i] && all[i].pane && all[i].pane.marks;
+      if (!marks || !marks.length) continue;
+      var proto = Object.getPrototypeOf(marks[0]);
+      while (proto && !Object.prototype.hasOwnProperty.call(proto, "filteredRanges")) {
+        proto = Object.getPrototypeOf(proto);
+      }
+      if (!proto) continue;
+      proto.filteredRanges = function () {
+        return textRects(this.range);
+      };
+      markRectsPatched = true;
+      return true;
+    }
+    return false;
+  }
+
   // Re-render every attached view's marks pane from live range rects.
   // epub.js only repaints marks inside a view reframe, and expand() skips
   // the reframe whenever a reflow lands on the same quantized column count —
@@ -2378,6 +2789,7 @@
     rendition.annotations.add(
       "highlight", cfiRange, {}, onTap, "hl-" + color, { fill: fill }
     );
+    if (patchMarkRects()) repaintAnnotations();
     // A note is otherwise invisible on the page: without a cue, the only way
     // to find your own annotation is to remember where you left it.
     if (hasNote) {
