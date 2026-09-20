@@ -21,18 +21,17 @@ The image is published to
 [Docker Hub as `sesloan/omnibus`](https://hub.docker.com/r/sesloan/omnibus/tags),
 and the repo ships a Jellyfin-style [`docker-compose.yml`](docker-compose.yml).
 
+No checkout needed. Save the [`docker-compose.yml`](docker-compose.yml) into a
+folder of your own, edit the lines marked `EDIT` (your two library folders and
+the address you will open it at), then:
+
 ```bash
-# 1. Point the library mounts at your books and set your access URL.
-$EDITOR docker-compose.yml
-
-# 2. Build the bundle and start it (first build compiles the workspace + WASM).
-docker compose up -d --build
-
-# 3. Open http://localhost:3000 and register — the first account is the admin.
+docker compose up -d
 ```
 
-Volumes, env vars, reverse-proxy/TLS, PUID/PGID, and admin recovery are all in
-the [Docker guide](docs/docker.md).
+Open http://localhost:3000 and register — the first account is the admin.
+Adding it to an existing compose file, reverse-proxy/TLS, PUID/PGID, updating,
+and admin recovery are all in the [Docker guide](docs/docker.md).
 
 ## Documentation
 
