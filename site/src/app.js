@@ -55,7 +55,7 @@
     'omnibus-checkin-scan': 1,
     'omnibus-checkin-success': 1, 'omnibus-ios-book-detail': 1,
     'omnibus-library-home': 1, 'omnibus-metadata-edit': 1,
-    'omnibus-player': 1,
+    'omnibus-player': 1, 'omnibus-reader-quote-card': 1,
     'omnibus-settings-library': 1, 'omnibus-shelf-kobo': 1,
     'omnibus-sync-alignment': 1, 'omnibus-sync-continue-hero': 1,
     'omnibus-themes-strip': 1, 'omnibus-wishlist-ios': 1

@@ -868,15 +868,14 @@ on every push to `main` that touches it.
 | `src/index.html` | Thirteen panels. All copy is real markup, never baked into an image. |
 | `src/site.css` | `--pg-*` chrome tokens, dark + sepia directions, and the `body.flow` fallback used below 861x560 and whenever JS is off. |
 | `src/app.js` | The panel deck — wheel/key/touch behind one gate, direction toggle, section rail. Progressive: the deck is opt-in, the page reads without it. |
-| `src/shots/{dark,sepia}/` | App screenshots, WebP, one directory per colour direction. Stills exported at 2x from the Claude Design "Omnibus" project and re-encoded by [`scripts/site-shots.sh`](../scripts/site-shots.sh) (`… <dir> sepia` writes the sibling set); the PNGs are not committed. `omnibus-reader-quote-card` is the exception: a capture of the live reader (dark only), not a design still. |
+| `src/shots/{dark,sepia}/` | App screenshots, WebP, one directory per colour direction. Stills exported at 2x from the Claude Design "Omnibus" project and re-encoded by [`scripts/site-shots.sh`](../scripts/site-shots.sh) (`… <dir> sepia` writes the sibling set); the PNGs are not committed. `omnibus-reader-quote-card` is the exception: both directions are captures of the live reader, not design stills. |
 
 The design stills are a picture of the *design*, not of what the server
 currently renders — they need re-exporting as redesigned surfaces ship under
 [#2132](https://github.com/omnibus-library/omnibus/issues/2132). The markup
 references the dark set; the direction toggle swaps each `img.shot`'s `src` to
 `shots/sepia/` for the names listed in `SEPIA_SHOTS` in `app.js` — a shot absent
-from that set keeps its dark render in both directions, which is also how the
-single live capture behaves.
+from that set keeps its dark render in both directions.
 The phone renders carry their device bezel with alpha corners in the image
 itself, so `.phone .shot` strips the CSS frame chrome the desktop shots get.
 
