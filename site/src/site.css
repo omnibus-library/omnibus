@@ -40,6 +40,7 @@ body.flow{overflow:auto}
 .site p{margin:0}
 .site button{font:inherit;cursor:pointer}
 .site :focus-visible{outline:2px solid var(--pg-accent);outline-offset:3px;border-radius:4px}
+.pane:focus{outline:none}
 
 .track{position:absolute;left:0;right:0;top:0;will-change:transform;transition:transform .95s cubic-bezier(.72,0,.16,1)}
 .pane{position:relative;height:100vh;width:100%;overflow:hidden;padding:0 var(--pad)}
@@ -116,6 +117,8 @@ body.flow{overflow:auto}
 
 /* hero — the one screen shown in perspective, bleeding off the right edge */
 .hero{display:grid;grid-template-columns:minmax(360px,42%) 1fr;align-items:center;gap:clamp(24px,4vw,72px)}
+/* A third CTA wraps at the deck's 861x560 floor and the centred copy rides under the fixed header. */
+@media (max-height:620px){body:not(.flow) .hero{padding-top:70px}}
 .hero-copy{display:grid;gap:clamp(14px,2.2vh,28px);align-content:center;position:relative;z-index:2}
 /* The slot spans the pane and centres the frame with grid — NOT with a
    translate. It carries [data-anim], and `.pane.on [data-anim]` sets
@@ -180,7 +183,7 @@ body.flow{overflow:auto}
 .pane.on [data-anim]{opacity:1;transform:none}
 
 /* ── flow mode: narrow viewports, and any no-JS visit ─────────────
-   The deck is a desktop conceit — twelve locked 100vh panels on a phone is a
+   The deck is a desktop conceit — thirteen locked 100vh panels on a phone is a
    trap. Below the breakpoint (and with JS off) the panels become ordinary
    stacked sections that scroll, and every [data-anim] is shown outright. */
 body.flow .site{position:static;overflow:visible;height:auto}
