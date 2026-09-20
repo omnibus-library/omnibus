@@ -284,7 +284,7 @@ struct SelectionData: Codable, Equatable {
     /// character and changes the text on every move, but only takes in or
     /// lets go of a word now and then, and that is what a finger can feel.
     static func crossesWordBoundary(from previous: String, to next: String) -> Bool {
-        previous != next && wordCount(previous) != wordCount(next)
+        wordCount(previous) != wordCount(next)
     }
 
     private static func wordCount(_ text: String) -> Int {

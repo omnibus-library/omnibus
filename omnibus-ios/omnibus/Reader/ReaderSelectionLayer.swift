@@ -252,8 +252,12 @@ struct PanelTail: Equatable {
 
     /// The tail's tip, as the unit point a menu should grow out of — so it
     /// appears to come from the passage it speaks for.
+    ///
+    /// Centre when there is no tail: that panel fell back to the bottom bar
+    /// and points at nothing, so growing it from an edge it never drew is an
+    /// entrance from a place the reader can't see.
     var anchorPoint: UnitPoint {
-        UnitPoint(x: offset, y: pointsDown ? 1 : 0)
+        isPresent ? UnitPoint(x: offset, y: pointsDown ? 1 : 0) : .center
     }
 }
 

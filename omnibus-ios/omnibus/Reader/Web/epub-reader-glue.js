@@ -88,6 +88,8 @@
 
   var book = null;
   var rendition = null;
+  // Memoized once the package metadata is loaded; see `bookIsRTL`.
+  var bookIsRTLMemo = null;
   var relocateTimer = null;
   var locationsReady = false;
   // False while an initial CFI restore is still settling — mutes emitRelocate
@@ -209,6 +211,7 @@
       }
       book = null;
     }
+    bookIsRTLMemo = null;
   }
 
   function flattenToc(items, out) {
@@ -562,10 +565,9 @@
       // it stays while any of it is still in front of the reader — a
       // rotation re-paginated — and goes once the page has turned away from
       // it, which is the moment Books drops one too.
-      if (sel && !sel.inDrag) {
-        if (lineRects(sel.range, sel.win).length) emitSelection(false);
-        else clearSelection();
-      }
+      // `emitSelection` clears on its own once a settled range has nothing
+      // left in front of the reader, so this is one geometry walk, not two.
+      if (sel && !sel.inDrag) emitSelection(false);
       try {
         currentSectionBase = String(location.start.cfi).split("!")[0];
       } catch (e) {
@@ -1339,30 +1341,26 @@
     return null;
   }
 
+  // The box of one character of a text node, in the section's viewport
+  // coordinates, or null when there is no character at that index.
+  function charBox(doc, node, index) {
+    if (index < 0 || index >= (node.length || 0)) return null;
+    var probe = doc.createRange();
+    probe.setStart(node, index);
+    probe.setEnd(node, index + 1);
+    var rects = probe.getClientRects();
+    return rects.length ? rects[rects.length - 1] : null;
+  }
+
   // Where a caret sits, in its document's viewport coordinates. Measured off
   // the character beside it rather than off a collapsed range, whose box some
   // engines report empty.
   function caretRect(doc, node, offset) {
+    var ahead = charBox(doc, node, offset);
+    if (ahead) return { left: ahead.left, top: ahead.top, height: ahead.height };
+    var behind = charBox(doc, node, offset - 1);
+    if (behind) return { left: behind.right, top: behind.top, height: behind.height };
     var probe = doc.createRange();
-    var len = node.length || 0;
-    var rects;
-    if (offset < len) {
-      probe.setStart(node, offset);
-      probe.setEnd(node, offset + 1);
-      rects = probe.getClientRects();
-      if (rects.length) {
-        return { left: rects[0].left, top: rects[0].top, height: rects[0].height };
-      }
-    }
-    if (offset > 0) {
-      probe.setStart(node, offset - 1);
-      probe.setEnd(node, offset);
-      rects = probe.getClientRects();
-      if (rects.length) {
-        var last = rects[rects.length - 1];
-        return { left: last.right, top: last.top, height: last.height };
-      }
-    }
     probe.setStart(node, offset);
     probe.collapse(true);
     var box = probe.getBoundingClientRect();
@@ -1405,17 +1403,22 @@
     // engine never produces, but a stored CFI could) advances to the first
     // text under it.
     if (node.nodeType !== 3) node = walker.nextNode();
+    // Every text node between the two containers is inside the range, so the
+    // walk stops *on* the end container rather than asking the range about
+    // each node. This runs per highlight on every tap and once a frame while
+    // a page turns under a drag, where two range ops per node is real cost.
+    var endIsText = range.endContainer.nodeType === 3;
     while (node) {
-      // Past the end: everything after is outside the range.
-      if (range.comparePoint(node, 0) > 0) break;
-      if (range.intersectsNode(node)) {
-        var piece = doc.createRange();
-        piece.selectNodeContents(node);
-        if (node === range.startContainer) piece.setStart(node, range.startOffset);
-        if (node === range.endContainer) piece.setEnd(node, range.endOffset);
-        pushRects(out, piece.getClientRects());
-      }
+      var piece = doc.createRange();
+      piece.selectNodeContents(node);
+      if (node === range.startContainer) piece.setStart(node, range.startOffset);
+      if (node === range.endContainer) piece.setEnd(node, range.endOffset);
+      pushRects(out, piece.getClientRects());
+      if (endIsText && node === range.endContainer) break;
       node = walker.nextNode();
+      // An element end container — which a stored CFI can produce — has no
+      // text node to stop on, so that case still asks the range.
+      if (!endIsText && node && range.comparePoint(node, 0) > 0) break;
     }
     return out;
   }
@@ -1445,7 +1448,15 @@
   function columnAt(x, box) {
     var d = pageDelta();
     if (!d) return 0;
-    return Math.floor((x - box.left) / (d / pageColumns()));
+    var step = d / pageColumns();
+    var from = x - box.left;
+    var col = Math.floor(from / step);
+    // A point exactly on a boundary belongs to the column it closes, not the
+    // one it opens: the last character of a spread's right-hand column sits
+    // on `box.right`, which would otherwise floor past the last column and
+    // read as off-page, putting it out of a handle's reach.
+    if (col > 0 && from - col * step < 0.5) col -= 1;
+    return col;
   }
 
   function columnOnPage(col) {
@@ -1571,21 +1582,23 @@
     return columnOnPage(columnAt(left + off.x, box));
   }
 
-  // Whether a token actually sits under a press. `caretRangeFromPoint`
-  // answers with the *nearest* text for any point, so without this a long
-  // press on an image, or on the empty page below a chapter's last line,
-  // selected the word closest to it.
-  function tokenUnderPoint(token, win, x, y) {
-    var off = frameOffset(win);
-    var rects = textRects(token);
-    for (var i = 0; i < rects.length; i++) {
-      var r = rects[i];
-      if (x >= r.left + off.x - 12 && x <= r.right + off.x + 12 &&
-          y >= r.top + off.y - 8 && y <= r.bottom + off.y + 8) {
-        return true;
-      }
-    }
-    return false;
+  // Whether a press actually landed on text. `caretRangeFromPoint` answers
+  // with the *nearest* text for any point, so without this a long press on an
+  // image, or on the empty page below a chapter's last line, selected the
+  // word closest to it.
+  //
+  // Measured against the character beside the caret rather than against the
+  // token it resolved to: in justified prose an inter-word space is a box of
+  // its own and can run to tens of pixels, and a press landing in one is
+  // still a press on the line — held to the token's own edge it would select
+  // nothing at all.
+  function pressOnText(caret, x, y) {
+    var box = charBox(caret.doc, caret.node, caret.offset) ||
+      charBox(caret.doc, caret.node, caret.offset - 1);
+    if (!box) return false;
+    var off = frameOffset(caret.win);
+    return x >= box.left + off.x - 10 && x <= box.right + off.x + 10 &&
+      y >= box.top + off.y - 8 && y <= box.bottom + off.y + 8;
   }
 
   function hasSelection() {
@@ -1612,10 +1625,16 @@
     var cfi = sel.cfiRange;
     var existing = sel.existing || null;
     if (!dragging) {
+      // Keep the CFI this range already settled on when it can't be
+      // recomputed. A re-emit after a relocate runs against a re-created
+      // `Contents`, and storing the null back would leave the menu on screen
+      // with its Highlight silently doing nothing — the host needs a CFI to
+      // anchor one.
       try {
-        cfi = sel.contents ? sel.contents.cfiFromRange(sel.range) : null;
+        var recomputed = sel.contents ? sel.contents.cfiFromRange(sel.range) : null;
+        if (recomputed) cfi = recomputed;
       } catch (e) {
-        cfi = null;
+        /* keep the settled one */
       }
       existing = overlappingAnnotation(sel.range);
       sel.cfiRange = cfi;
@@ -1657,8 +1676,9 @@
   function beginSelectionAt(x, y) {
     var caret = caretAtHostPoint(x, y);
     if (!caret) return false;
+    if (!pressOnText(caret, x, y)) return false;
     var token = tokenRangeAt(caret.doc, caret.node, caret.offset);
-    if (!token || !tokenUnderPoint(token, caret.win, x, y)) return false;
+    if (!token) return false;
     sel = {
       doc: caret.doc,
       win: caret.win,
@@ -1669,11 +1689,17 @@
       existing: null,
       // The long press is a *word* gesture; see `beginEdgeDrag` for the other.
       granularity: "word",
+      // Where this drag began, and whether it has gone anywhere — see
+      // `noteDragTravel`.
+      dragFrom: null,
+      dragMoved: false,
       // A finger is on it: the drag's own emits carry the geometry, and a
       // page turning underneath is the drag's doing, not a reason to drop it.
       inDrag: true,
     };
-    selLastPoint = { x: x, y: y };
+    // Same shape `extendSelectionTo` writes: `fireEdgeTurn` reads `fx`, and a
+    // point missing it would abort the turn on an `undefined` comparison.
+    selLastPoint = { x: x, y: y, fx: x };
     // Reported as a drag: the finger is still down, and the host holds its
     // menu back until the range settles rather than opening one under it.
     emitSelection(true);
@@ -1689,6 +1715,7 @@
     if (!sel || !sel.inDrag) return;
     var finger = typeof fx === "number" && isFinite(fx) ? fx : x;
     selLastPoint = { x: x, y: y, fx: finger };
+    noteDragTravel(finger);
     trackEdge(finger);
     var target = dragTargetAt(x, y, finger);
     if (!target) return;
@@ -1718,6 +1745,8 @@
     // snapped to the word they could never leave out a comma or split one.
     sel.granularity = "character";
     sel.inDrag = true;
+    sel.dragFrom = null;
+    sel.dragMoved = false;
   }
 
   function endSelectionDrag() {
@@ -1760,6 +1789,8 @@
   // pixel from the column's edge, and a zone that reached it would turn the
   // page on any reader who paused to aim.
   var SELECT_EDGE_PX = 10;
+  // How far the finger must travel before the zone will arm at all.
+  var SELECT_EDGE_TRAVEL_PX = 16;
   var SELECT_EDGE_DWELL_MS = 600;
   var SELECT_EDGE_REPEAT_MS = 650;
   var SELECT_TURN_MS = 260;
@@ -1767,12 +1798,15 @@
   var selEdgeDir = 0;
   var selLastPoint = null;
 
+  // Answered without caching until the package metadata is actually loaded:
+  // the gesture handlers are installed before `book.opened` resolves, so a
+  // memo taken then would pin every RTL book as LTR for the session.
   function bookIsRTL() {
-    try {
-      return String(book.packaging.metadata.direction || "").toLowerCase() === "rtl";
-    } catch (e) {
-      return false;
-    }
+    if (bookIsRTLMemo !== null) return bookIsRTLMemo;
+    var meta = book && book.packaging && book.packaging.metadata;
+    if (!meta) return false;
+    bookIsRTLMemo = String(meta.direction || "").toLowerCase() === "rtl";
+    return bookIsRTLMemo;
   }
 
   // Which edge zone a host-window x is in: right (1), left (-1), or neither.
@@ -1785,9 +1819,27 @@
   }
 
   // Forward (1), back (-1), or neither, for a host-window x.
+  //
+  // Always neither for an RTL book. Those engines scroll negative, which is
+  // why the swipe handler keeps them on the classic at-release turn and
+  // `turnWithinSection` refuses them outright — so arming the dwell there
+  // would run a timer whose turn can never fire, and leave the zone latched
+  // behind it. One policy: RTL books select within the page.
   function edgeDirectionAt(x) {
-    var side = edgeSideAt(x);
-    return bookIsRTL() ? -side : side;
+    return bookIsRTL() ? 0 : edgeSideAt(x);
+  }
+
+  // Whether the finger has gone anywhere since the drag began.
+  //
+  // The zone may only arm after it has. A selection ending on the last word
+  // of a justified line puts its end handle inside the zone already — and the
+  // handle's touch box is biased further outward still — so a reader who
+  // merely grabs it would have the page turn out from under them after the
+  // dwell, without having moved at all. Latched rather than compared each
+  // time, so a drag that leaves the edge and returns to it still turns.
+  function noteDragTravel(finger) {
+    if (typeof sel.dragFrom !== "number") sel.dragFrom = finger;
+    if (Math.abs(finger - sel.dragFrom) >= SELECT_EDGE_TRAVEL_PX) sel.dragMoved = true;
   }
 
   // The range's new end for a drag point, at the selection's granularity, or
@@ -1802,7 +1854,7 @@
     // A finger at the edge means the end of the line, even while the caret
     // it carries is still a grab-offset short of it.
     var side = edgeSideAt(finger) || edgeSideAt(x);
-    var probe = side ? textEdge(side) : x;
+    var probe = side ? textEdge(side, x) : x;
     for (var attempt = 0; attempt < 2; attempt++) {
       var caret = caretAtHostPoint(probe - side * 24 * attempt, y);
       // A point outside the section (the chrome, the next section) leaves
@@ -1820,8 +1872,9 @@
 
   // The host-window x just inside the page's own text column on one side,
   // past the padding epub.js keeps as half the column gap.
-  function textEdge(side) {
+  function textEdge(side, x) {
     var box = pageBox();
+    if (!box) return x;
     var m = rendition && rendition.manager;
     var gap = (m && m.layout && m.layout.gap) || Math.floor(box.width / 12);
     var inset = gap / 2 + 1;
@@ -1841,7 +1894,7 @@
   // finger has to *rest* at the edge, and a drag that merely crosses it
   // turns nothing.
   function trackEdge(x) {
-    var dir = edgeDirectionAt(x);
+    var dir = sel && sel.dragMoved ? edgeDirectionAt(x) : 0;
     if (dir === selEdgeDir) return;
     cancelEdgeTurn();
     if (!dir) return;
@@ -2189,10 +2242,6 @@
       dragAxis = null;
     }
 
-    // RTL books page with negative scroll offsets in some engines; keep
-    // the classic instant swipe there rather than mis-dragging.
-    var rtl = !!(book && book.packaging && book.packaging.metadata &&
-      String(book.packaging.metadata.direction || "").toLowerCase() === "rtl");
     var skipTap = false;
 
     doc.addEventListener("touchstart", function (e) {
@@ -2255,12 +2304,17 @@
       pressAt = hostPoint(t);
       pressTimer = setTimeout(function () {
         pressTimer = null;
-        if (dragAxis !== null || !beginSelectionAt(pressAt.x, pressAt.y)) return;
+        if (dragAxis !== null) return;
+        // Held this long, the touch is not a tap whatever it found. Without
+        // this a press that selects nothing — on an illustration, or on the
+        // empty page below a chapter's last line — falls through to the tap
+        // handler on lift and turns the page or toggles the chrome.
+        skipTap = true;
+        if (!beginSelectionAt(pressAt.x, pressAt.y)) return;
         selecting = true;
         // The finger is now drawing a selection, so this touch can no longer
-        // become a page drag or a tap.
+        // become a page drag either.
         dragAxis = "none";
-        skipTap = true;
       }, 420);
     }, { passive: true });
 
@@ -2282,7 +2336,7 @@
           cancelPress();
         }
       }
-      if (rtl || dismissing || dragAxis === "none") return;
+      if (bookIsRTL() || dismissing || dragAxis === "none") return;
       if (e.touches.length !== 1) { springBack(); return; }
       var t = e.touches[0];
       var x = stableX(t);
@@ -2402,7 +2456,7 @@
       }
 
       // RTL fallback: the classic swipe-at-release turn.
-      if (rtl && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (bookIsRTL() && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) {
         if (dx < 0) next(); else prev();
         return;
       }

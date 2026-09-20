@@ -108,6 +108,14 @@ struct PanelPlacementTests {
         #expect(below.anchorPoint == UnitPoint(x: 0.3, y: 1))
         #expect(above.anchorPoint == UnitPoint(x: 0.8, y: 0))
     }
+
+    @Test("anchorPoint centres a panel that has no tail to grow from")
+    func anchorPointCentresWithoutATail() {
+        // The bottom-bar fallback points at nothing, so it must not appear to
+        // come from an edge `PanelShape` never drew.
+        #expect(PanelTail.none.anchorPoint == .center)
+        #expect(PanelPlacement.resolve(rects: [], panel: panel, in: page).tail.anchorPoint == .center)
+    }
 }
 
 @Suite("Selection payload")
