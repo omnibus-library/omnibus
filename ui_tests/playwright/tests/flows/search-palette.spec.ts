@@ -161,6 +161,55 @@ test.describe("with seeded library", () => {
       .toBe(1);
     await expect(page.getByTestId("sp-result-count")).toContainText(/result/);
     await expect(page.getByTestId("sp-result-count")).toContainText(/ms/);
+
+    // The meta line is a sibling of the results list, not a child, so it
+    // only lines up with the group heads if it carries the panel gutter
+    // itself. A boundingBox x comparison would not catch a regression here
+    // since both are full-width block children of .sp-panel — compare
+    // computed padding-left instead.
+    const metaPad = await page
+      .getByTestId("sp-result-count")
+      .evaluate((el) => getComputedStyle(el).paddingLeft);
+    const headPad = await page
+      .getByText(/^Books · \d+$/)
+      .evaluate((el) => getComputedStyle(el).paddingLeft);
+    expect(metaPad).toBe(headPad);
+    expect(metaPad).not.toBe("0px");
+  });
+
+  test("a failed search reports the error on the panel gutter", async ({
+    page,
+  }) => {
+    await gotoReady(page, "/");
+    await page.getByTestId("search-trigger").click();
+    const input = page.getByTestId("sp-input");
+
+    // A successful search first, so the error notice can be compared with
+    // the meta line that renders in the same slot on the happy path.
+    await input.fill("dracula");
+    await expect(page.getByTestId("sp-result-count")).toHaveCount(1);
+    const metaPad = await page
+      .getByTestId("sp-result-count")
+      .evaluate((el) => getComputedStyle(el).paddingLeft);
+
+    await page.route("**/api/rpc/search-palette", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "search unavailable",
+      }),
+    );
+    await input.fill("stoker");
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText(/Couldn.t run that search/);
+    await expect(page.getByTestId("sp-result-count")).toHaveCount(0);
+    const alertPad = await alert.evaluate(
+      (el) => getComputedStyle(el).paddingLeft,
+    );
+    expect(alertPad).toBe(metaPad);
+    expect(alertPad).not.toBe("0px");
   });
 
   test("clicking book result navigates to detail", async ({ page }) => {
@@ -197,21 +246,6 @@ test.describe("with seeded library", () => {
     await expect(page.getByTestId("sp-book-row").first()).toHaveClass(
       /selected/,
     );
-  });
-
-  test("inside text shows coming soon", async ({ page }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("dracula");
-
-    // Wait for results, then check the placeholder.
-    await expect
-      .poll(async () => page.getByTestId("sp-book-row").count())
-      .toBeGreaterThanOrEqual(1);
-
-    await expect(page.getByTestId("sp-coming-soon")).toBeVisible();
-    await expect(page.getByTestId("sp-coming-soon")).toHaveText("Coming soon");
   });
 
   test("clicking author result navigates to author detail page", async ({

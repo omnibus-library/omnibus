@@ -419,6 +419,12 @@ html, body { overscroll-behavior: none; }
   color: var(--ink-0); letter-spacing: -0.02em;
 }
 .sp-input::placeholder { color: var(--ink-3); font-style: italic; }
+/* Siblings of the results list, not children of it, so they need the
+   panel's own 22px gutter to line up with `.sp-group-head` / `.sp-row`. */
+.sp-meta,
+.sp-error {
+  padding: 10px 22px 0;
+}
 .sp-meta {
   font-family: var(--mono); font-size: 11px; color: var(--ink-3);
   white-space: nowrap; flex-shrink: 0;
@@ -470,10 +476,6 @@ html, body { overscroll-behavior: none; }
   padding: 4px 10px; border-radius: 999px; font-size: 12px;
   background: var(--bg-2); color: var(--ink-1);
   border: 1px solid var(--line-2);
-}
-.sp-coming-soon {
-  padding: 10px 22px; font-size: 12px; color: var(--ink-3);
-  font-style: italic;
 }
 .sp-footer {
   padding: 10px 22px;

@@ -1,7 +1,7 @@
 //! Grouped results list rendered inside the palette panel — books,
-//! authors, series, tags, genres, and the "Inside text" placeholder. Each
-//! row component owns its click handler that closes the palette and routes
-//! into the matching detail page (or `/search` for tag and genre facets).
+//! authors, series, tags, and genres. Each row component owns its click
+//! handler that closes the palette and routes into the matching detail
+//! page (or `/search` for tag and genre facets).
 
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
@@ -111,12 +111,6 @@ pub(super) fn SpResultsList(
                         }
                     }
                 }
-
-                // Inside text — placeholder
-                SpGroupHead { label: "Inside text", count: 0 }
-                div { class: "sp-coming-soon", "data-testid": "sp-coming-soon",
-                    "Coming soon"
-                }
             }
         }
     }
@@ -124,16 +118,12 @@ pub(super) fn SpResultsList(
 
 // ── Result rows ──────────────────────────────────────────────────
 
+/// Uppercase group heading — every call site renders inside an `is_empty`
+/// guard, so `count` is never zero.
 #[component]
 fn SpGroupHead(label: &'static str, count: usize) -> Element {
     rsx! {
-        div { class: "sp-group-head label",
-            if count > 0 {
-                "{label} · {count}"
-            } else {
-                "{label}"
-            }
-        }
+        div { class: "sp-group-head label", "{label} · {count}" }
     }
 }
 
