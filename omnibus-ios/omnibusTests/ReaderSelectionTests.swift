@@ -112,9 +112,9 @@ struct PanelPlacementTests {
     @Test("anchorPoint centres a panel that has no tail to grow from")
     func anchorPointCentresWithoutATail() {
         // The bottom-bar fallback points at nothing, so it must not appear to
-        // come from an edge `PanelShape` never drew.
+        // come from an edge `PanelShape` never drew. `resolveFallsBackWithoutRects`
+        // pins that a geometry-less passage lands on this tail.
         #expect(PanelTail.none.anchorPoint == .center)
-        #expect(PanelPlacement.resolve(rects: [], panel: panel, in: page).tail.anchorPoint == .center)
     }
 }
 

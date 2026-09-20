@@ -1593,10 +1593,18 @@
   // still a press on the line — held to the token's own edge it would select
   // nothing at all.
   function pressOnText(caret, x, y) {
-    var box = charBox(caret.doc, caret.node, caret.offset) ||
-      charBox(caret.doc, caret.node, caret.offset - 1);
-    if (!box) return false;
     var off = frameOffset(caret.win);
+    // Both neighbours, not the first one that exists. A caret rounds to the
+    // nearer character boundary, so a press in the far half of a stretched
+    // space resolves to the *following* word — and measured against that
+    // word's first glyph alone, a press still inside the space reads as off
+    // the text. The two halves of one gap have to behave alike.
+    return inCharBox(charBox(caret.doc, caret.node, caret.offset), off, x, y) ||
+      inCharBox(charBox(caret.doc, caret.node, caret.offset - 1), off, x, y);
+  }
+
+  function inCharBox(box, off, x, y) {
+    if (!box) return false;
     return x >= box.left + off.x - 10 && x <= box.right + off.x + 10 &&
       y >= box.top + off.y - 8 && y <= box.bottom + off.y + 8;
   }
@@ -1715,7 +1723,7 @@
     if (!sel || !sel.inDrag) return;
     var finger = typeof fx === "number" && isFinite(fx) ? fx : x;
     selLastPoint = { x: x, y: y, fx: finger };
-    noteDragTravel(finger);
+    noteDragTravel(finger, y);
     trackEdge(finger);
     var target = dragTargetAt(x, y, finger);
     if (!target) return;
@@ -1837,9 +1845,15 @@
   // merely grabs it would have the page turn out from under them after the
   // dwell, without having moved at all. Latched rather than compared each
   // time, so a drag that leaves the edge and returns to it still turns.
-  function noteDragTravel(finger) {
-    if (typeof sel.dragFrom !== "number") sel.dragFrom = finger;
-    if (Math.abs(finger - sel.dragFrom) >= SELECT_EDGE_TRAVEL_PX) sel.dragMoved = true;
+  function noteDragTravel(finger, y) {
+    if (!sel.dragFrom) sel.dragFrom = { x: finger, y: y };
+    // Both axes: a handle that already sits in the edge zone — the end of a
+    // selection that runs to the margin — is dragged straight *down* to take
+    // in the lines below it, and a horizontal-only measure would never call
+    // that travel, leaving the zone disarmed for the whole drag.
+    var dx = finger - sel.dragFrom.x;
+    var dy = y - sel.dragFrom.y;
+    if (Math.sqrt(dx * dx + dy * dy) >= SELECT_EDGE_TRAVEL_PX) sel.dragMoved = true;
   }
 
   // The range's new end for a drag point, at the selection's granularity, or
@@ -2417,7 +2431,14 @@
         }
         return;
       }
-      if (skipTap) { skipTap = false; return; }
+      // A touch whose outcome is already decided yields no *tap*. It is not
+      // read before the drag block below, though: a long press that selected
+      // nothing leaves the touch free to become a swipe, and returning here
+      // with `axis === "x"` would strand the page at its dragged offset —
+      // `stopDragRaf(true)` has just flushed that offset to the DOM and only
+      // the drag block brings it back.
+      var tapSuppressed = skipTap;
+      skipTap = false;
       if (!e.changedTouches || !e.changedTouches.length) return;
       var t = e.changedTouches[0];
       var endX = stableX(t);
@@ -2454,6 +2475,10 @@
         animateOffsetTo(c, dragBase, dragPx, -dir * d, 150 + remaining * 120);
         return;
       }
+
+      // Past the drag block, so a touch that began on a control still ends
+      // here rather than reaching the turns below.
+      if (tapSuppressed) return;
 
       // RTL fallback: the classic swipe-at-release turn.
       if (bookIsRTL() && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) {
