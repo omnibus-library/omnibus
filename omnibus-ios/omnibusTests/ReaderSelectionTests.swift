@@ -9,6 +9,7 @@
 
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import omnibus
@@ -98,6 +99,23 @@ struct PanelPlacementTests {
         #expect(placement.center.y == page.height - panel.height / 2 - PanelPlacement.chromeBand)
         #expect(placement.tail == .none)
     }
+
+    @Test("anchorPoint puts the menu's origin at the tail's tip")
+    func anchorPointSitsOnTheTailTip() {
+        let below = PanelTail(pointsDown: true, offset: 0.3)
+        let above = PanelTail(pointsDown: false, offset: 0.8)
+
+        #expect(below.anchorPoint == UnitPoint(x: 0.3, y: 1))
+        #expect(above.anchorPoint == UnitPoint(x: 0.8, y: 0))
+    }
+
+    @Test("anchorPoint centres a panel that has no tail to grow from")
+    func anchorPointCentresWithoutATail() {
+        // The bottom-bar fallback points at nothing, so it must not appear to
+        // come from an edge `PanelShape` never drew. `resolveFallsBackWithoutRects`
+        // pins that a geometry-less passage lands on this tail.
+        #expect(PanelTail.none.anchorPoint == .center)
+    }
 }
 
 @Suite("Selection payload")
@@ -149,6 +167,26 @@ struct SelectionPayloadTests {
         #expect(decoded.dragging)
     }
 
+    @Test("selection decodes a settled range whose far end is on another page")
+    func selectionDecodesRangeAcrossThePageBreak() throws {
+        // The glue reports only the page in front of the reader: the start
+        // caret is null because that end of the range is on the previous page.
+        let acrossPages = """
+        { "cfiRange": "epubcfi(/6/14!/4/2,/1:0,/5:12)", "text": "at all. She promised us",
+          "rects": [{ "x": 20, "y": 90, "width": 200, "height": 24 }],
+          "start": null, "end": { "x": 220, "y": 90, "height": 24 },
+          "existing": null, "dragging": false }
+        """
+        let decoded = try JSONDecoder().decode(
+            SelectionData.self, from: Data(acrossPages.utf8)
+        )
+
+        #expect(decoded.start == nil)
+        #expect(decoded.end?.x == 220)
+        #expect(decoded.rects.count == 1)
+        #expect(!decoded.dragging)
+    }
+
     @Test("annotationTap decodes the per-line rects of a tapped highlight")
     func annotationTapDecodesRects() throws {
         let tap = """
@@ -161,6 +199,25 @@ struct SelectionPayloadTests {
 
         #expect(decoded.rects.count == 1)
         #expect(decoded.rects[0].width == 280)
+    }
+}
+
+@Suite("Drag haptics")
+struct DragHapticTests {
+    @Test("crossesWordBoundary ticks when a drag takes in another word")
+    func crossesWordBoundaryWhenAWordIsTakenIn() {
+        #expect(SelectionData.crossesWordBoundary(from: "the Signora", to: "the Signora had"))
+        #expect(SelectionData.crossesWordBoundary(from: "the Signora had", to: "the Signora"))
+        // A character drag reaches the next word one letter at a time; the
+        // tick lands on the first letter, not on the space before it.
+        #expect(SelectionData.crossesWordBoundary(from: "the Signora ", to: "the Signora h"))
+    }
+
+    @Test("crossesWordBoundary stays quiet while a drag moves inside a word")
+    func crossesWordBoundaryIsQuietInsideAWord() {
+        #expect(!SelectionData.crossesWordBoundary(from: "the Sig", to: "the Sign"))
+        #expect(!SelectionData.crossesWordBoundary(from: "the Signora", to: "the Signora "))
+        #expect(!SelectionData.crossesWordBoundary(from: "the Signora", to: "the Signora"))
     }
 }
 

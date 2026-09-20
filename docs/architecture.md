@@ -766,16 +766,37 @@ file into a validator-keyed cache and open it by URL, never from a `Data`.
 **Selection is drawn by the app, not by WebKit.** The iOS glue disables
 WebKit's own touch selection inside each section (`user-select: none` in the
 per-section baseline stylesheet) and runs its own engine instead:
-`beginSelectionAt` / `extendSelectionTo` / `beginEdgeDrag` snap a range to word
-boundaries and report per-line rects in web-view coordinates, and
+`beginSelectionAt` / `extendSelectionTo` / `beginEdgeDrag` own the range and
+report per-line rects in web-view coordinates, and
 `Reader/ReaderSelectionLayer.swift` draws the tint, the handles, and the
 `PassageAnchor` the menu hangs off. WebKit's selection is unusable here for two
 reasons: its handles and loupe are laid out against a section iframe as wide as
 the whole chapter, so in a paginated book they land in the wrong column, and its
 long-press recogniser fights the glue's drag-to-turn handler for the same touch.
-Highlights stay epub.js marks (they ride the page-turn transform, which a native
-overlay would not); their look is one host-document rule, `markStyleCss`, which
-switches blend mode with the reading theme.
+Three contracts follow the system text view's. The long press and the drag
+that continues it move by the *word*; the handles that come up afterwards move
+by the *character* (`sel.granularity`), so a comma can be left out and a word
+split. A range may cross the page break: resting a finger or a handle in the
+outer sliver of the stage past the text (`trackEdge` / `turnWithinSection`)
+turns the page after a beat and runs the range on, and keeps turning while it
+stays — within the section only, since a CFI range cannot span two documents,
+and never for an RTL book, whose engines page with negative scroll offsets and
+which the swipe handler likewise keeps on the classic at-release turn. The zone
+arms only once the finger has travelled (`noteDragTravel`), because a selection
+ending at the right margin puts its handle inside the zone already and a reader
+who merely grabbed it would have the page turn out from under them.
+The glue then reports only the rows on the page in front of the reader, with
+each of `start` / `end` null while that end is on another page, and the held
+handle stays in the SwiftUI tree offstage so its gesture survives the frame
+its caret is gone. And every rect is measured off the *text* (`textRects`),
+never `Range.getClientRects()`, which also returns the border box of any
+element the range wholly contains — a middle paragraph, an image — and painted
+a three-paragraph selection as a block over the second. The same walk is
+patched into epub.js's marks (`patchMarkRects`), whose own filter kept that
+block and dropped the text boxes inside it. Highlights stay epub.js marks (they
+ride the page-turn transform, which a native overlay would not); their look is
+one host-document rule, `markStyleCss`, which switches blend mode with the
+reading theme.
 
 **The glue is forked.** `omnibus-ios/omnibus/Reader/Web/epub-reader-glue.js` is a
 copy of `frontend/assets/vendor/epub-reader-glue.js`, and the two have diverged:

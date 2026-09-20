@@ -159,11 +159,14 @@ struct ReaderView: View {
 
             chrome
 
-            selectionLayer
-
-            passageMenu
+            // Scoped to the passage surfaces: the chrome and the banners have
+            // motion of their own, and a menu arriving must not spring them.
+            ZStack {
+                selectionLayer
+                passageMenu
+            }
+            .animation(Motion.snap, value: passage?.id)
         }
-        .animation(Motion.snap, value: passage?.id)
         // The audio dock: the tab shell's mini bar, kept on screen while
         // reading so a running audiobook stays controllable — the immersive
         // read the web reader ships as its docked bar (#1133).
@@ -345,9 +348,13 @@ struct ReaderView: View {
 
     /// The tint and the grabbers. Drawn by the app rather than by WebKit —
     /// see `ReaderSelectionLayer` for why.
+    ///
+    /// Kept up through a handle drag even with nothing to draw: a page turning
+    /// under the drag can leave the range off the page for a frame, and the
+    /// handle under the finger has to stay in the tree to keep its gesture.
     @ViewBuilder
     private var selectionLayer: some View {
-        if let selection = controller.selection, !selection.rects.isEmpty {
+        if let selection = controller.selection, !selection.rects.isEmpty || adjustingSelection {
             ReaderSelectionLayer(
                 selection: selection,
                 theme: controller.settings.theme,
@@ -355,7 +362,9 @@ struct ReaderView: View {
                     adjustingSelection = true
                     controller.beginEdgeDrag(edge)
                 },
-                onEdgeDragChanged: { point in controller.dragEdge(to: point) },
+                onEdgeDragChanged: { point, finger in
+                    controller.dragEdge(to: point, finger: finger)
+                },
                 onEdgeDragEnded: {
                     adjustingSelection = false
                     controller.endEdgeDrag()
@@ -395,9 +404,16 @@ struct ReaderView: View {
                     canRemove: stored != nil,
                     tail: tail
                 )
+                // Grows out of its own tail — the point on the passage it
+                // speaks for. On the anchor, which fills the screen, the same
+                // scale ran about the screen's centre, so the menu arrived
+                // sliding in from the middle of the page and settling with a
+                // lurch that read as a glitch rather than as an entrance.
+                .transition(
+                    .opacity.combined(with: .scale(scale: 0.9, anchor: tail.anchorPoint))
+                )
             }
             .id(passage.id)
-            .transition(.opacity.combined(with: .scale(scale: 0.94)))
         }
     }
 

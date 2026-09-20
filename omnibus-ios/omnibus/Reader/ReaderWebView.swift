@@ -261,13 +261,16 @@ struct SelectionCaret: Codable, Equatable, Hashable {
     var height: Double
 }
 
-/// The live selection, as the glue reports it. One rect per visual line.
+/// The live selection, as the glue reports it. One rect per visual line, of
+/// whatever part of the range is on the page in front of the reader — a range
+/// may run across the page break.
 struct SelectionData: Codable, Equatable {
     /// Absent while a drag is in flight — deriving it costs a CFI walk the
     /// glue skips until the range settles.
     var cfiRange: String?
     var text: String
     var rects: [PageRect] = []
+    /// Absent while that end of the range is on another page, or mid-drag.
     var start: SelectionCaret?
     var end: SelectionCaret?
     /// A highlight this selection runs through, if any.
@@ -275,6 +278,18 @@ struct SelectionData: Codable, Equatable {
     /// True while the finger is still moving, so the host can hold the menu
     /// back until the range settles.
     var dragging: Bool = false
+
+    /// Whether a change of text crossed a word boundary — the moment a drag
+    /// deserves a tick. Counted rather than compared: a handle drags by the
+    /// character and changes the text on every move, but only takes in or
+    /// lets go of a word now and then, and that is what a finger can feel.
+    static func crossesWordBoundary(from previous: String, to next: String) -> Bool {
+        wordCount(previous) != wordCount(next)
+    }
+
+    private static func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
+    }
 }
 
 /// A tap on a highlight already on the page.
@@ -510,10 +525,13 @@ final class ReaderController: NSObject {
         run("OmnibusReader.beginEdgeDrag(\(edge.rawValue.jsQuoted))")
     }
 
-    /// Extend the selection to a point in web-view coordinates. Called on
-    /// every handle-drag change; the glue coalesces to one layout read a frame.
-    func dragEdge(to point: CGPoint) {
-        run("OmnibusReader.extendSelectionTo(\(point.x), \(point.y))")
+    /// Extend the selection to a point in web-view coordinates, with the
+    /// finger's own position alongside — the point is the caret the finger
+    /// carries, and it trails the finger by the grab offset, so the glue
+    /// turns the page on where the finger is. Called on every handle-drag
+    /// change; the glue coalesces to one layout read a frame.
+    func dragEdge(to point: CGPoint, finger: CGPoint) {
+        run("OmnibusReader.extendSelectionTo(\(point.x), \(point.y), \(finger.x))")
     }
 
     /// Settle a handle drag. This is the emit that carries the CFI and the
@@ -778,13 +796,17 @@ final class ReaderController: NSObject {
             tappedAnnotation = nil
             let previous = selection
             selection = decoded
-            // The whole point of word snapping is that you can feel it: a tick
-            // per word crossed is what tells a finger it landed on a boundary
-            // without having to look at what is under it.
-            if previous == nil {
+            // A tick per word crossed is what tells a finger it landed on a
+            // boundary without having to look at what is under it. Per word
+            // whichever way the range is moving: the long press drags by the
+            // word, but a handle drags by the character, and a tick per
+            // character is a buzz.
+            if let previous {
+                if SelectionData.crossesWordBoundary(from: previous.text, to: decoded.text) {
+                    Haptics.select()
+                }
+            } else {
                 Haptics.tap()
-            } else if previous?.text != decoded.text {
-                Haptics.select()
             }
 
         case "selectionCleared":

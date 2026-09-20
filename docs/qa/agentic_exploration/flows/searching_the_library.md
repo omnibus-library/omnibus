@@ -52,9 +52,9 @@ three or four, journal that and end the flow `uncertain`.
     it: a new book should be findable within a couple of minutes, and a
     renamed one under its **current** title only.
 
-**Do not search for book text.** The palette's full-text section is marked
-"Coming soon", and journal entries are not indexed either. A passage from
-inside a book returning nothing is not a finding.
+**Do not search for book text.** The palette does not search inside books,
+and journal entries are not indexed either. A passage from inside a book
+returning nothing is not a finding.
 
 ## Journal
 

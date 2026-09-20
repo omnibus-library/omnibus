@@ -26,9 +26,9 @@ your own entry appearing without the "you" marker.
    time**. Work in a **phrase you will recognise again** and journal it, so the
    audit can match the entry later; a memorable phrase, never a generated token
    (see *What you type into the app* in [start.md](../start.md)). Do **not**
-   expect to find it via search: the command palette's full-text section is
-   marked "Coming soon" and journal text is not indexed, so a search returning
-   nothing is not a finding.
+   expect to find it via search: the command palette does not search inside
+   books and journal text is not indexed, so a search returning nothing is
+   not a finding.
 3. Use formatting, and **rotate which kind across runs** — the editor offers far
    more than bold. Pick two or three from the table below rather than reaching
    for bold every time.

@@ -63,16 +63,24 @@ struct ReaderSelectionLayer: View {
     let selection: SelectionData
     let theme: String
     var onEdgeDragBegan: (SelectionEdge) -> Void
-    var onEdgeDragChanged: (CGPoint) -> Void
+    /// The caret the finger is carrying, and the finger itself — both in
+    /// window coordinates, which the web view fills.
+    var onEdgeDragChanged: (_ caret: CGPoint, _ finger: CGPoint) -> Void
     var onEdgeDragEnded: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Where the dragged edge's caret was when the finger went down. Every
-    /// target is that point plus the gesture's own translation, so the caret
-    /// tracks the finger one-to-one with no jump at grab time — and the maths
-    /// never depends on which coordinate space the gesture reports in.
-    @State private var grabOrigin: CGPoint?
+    /// A handle under a finger: which edge, and where its caret was when the
+    /// finger went down. Every target is that point plus the gesture's own
+    /// translation, so the caret tracks the finger one-to-one with no jump at
+    /// grab time — and the maths never depends on which coordinate space the
+    /// gesture reports in.
+    private struct Grab: Equatable {
+        let edge: SelectionEdge
+        let origin: CGPoint
+    }
+
+    @State private var grab: Grab?
 
     private static let knobRadius: CGFloat = 5.5
     private static let barWidth: CGFloat = 2
@@ -81,15 +89,20 @@ struct ReaderSelectionLayer: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             wash
-            if let start = selection.start {
-                handle(.start, at: start)
-            }
-            if let end = selection.end {
-                handle(.end, at: end)
-            }
+            handle(.start)
+            handle(.end)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
+        // The layer can leave mid-drag — the selection cleared under it — and
+        // a handle removed mid-gesture never gets `onEnded`. Close the drag
+        // here, so the glue stops turning pages for a finger it can no longer
+        // see and the passage menu is not pinned shut.
+        .onDisappear {
+            guard grab != nil else { return }
+            grab = nil
+            onEdgeDragEnded()
+        }
     }
 
     /// Drawn in one pass rather than as a stack of shapes: the rects are
@@ -110,14 +123,32 @@ struct ReaderSelectionLayer: View {
         .accessibilityHidden(true)
     }
 
+    /// The handle for one edge, if that edge is on the page.
+    ///
+    /// The handle under the finger outlives its caret. A page turning under
+    /// the drag puts the dragged edge off the page for a frame or two, and a
+    /// view removed mid-gesture takes the gesture with it — no `onEnded`, the
+    /// menu pinned shut, the glue still turning pages. So while it is held
+    /// the handle stays in the tree, parked offstage and invisible, with only
+    /// its gesture left to do.
+    @ViewBuilder
+    private func handle(_ edge: SelectionEdge) -> some View {
+        let live = edge == .start ? selection.start : selection.end
+        if let caret = live ?? (grab?.edge == edge ? SelectionCaret.offstage : nil) {
+            grabber(edge, at: caret, present: live != nil)
+        }
+    }
+
     /// One grabber: a bar the height of the line with a knob at the outer end
     /// — above the first line, below the last — so the knob is never over the
     /// word it marks and the two are told apart at a glance.
     ///
     /// Everything is placed relative to the caret's mid-point, which is where
     /// the whole handle is positioned.
-    private func handle(_ edge: SelectionEdge, at caret: SelectionCaret) -> some View {
-        let dragging = grabOrigin != nil
+    private func grabber(
+        _ edge: SelectionEdge, at caret: SelectionCaret, present: Bool
+    ) -> some View {
+        let dragging = grab?.edge == edge
         let height = max(12, CGFloat(caret.height))
         let knobY = edge == .start
             ? -(height / 2 + Self.knobRadius + 1)
@@ -146,6 +177,7 @@ struct ReaderSelectionLayer: View {
             height: max(Self.touchSize, height + Self.knobRadius * 4)
         )
         .contentShape(Rectangle())
+        .opacity(present ? 1 : 0)
         .animation(reduceMotion ? nil : Motion.snap, value: dragging)
         .position(
             x: CGFloat(caret.x) + Self.touchBias(edge),
@@ -163,20 +195,22 @@ struct ReaderSelectionLayer: View {
     private func dragGesture(
         _ edge: SelectionEdge, caret: SelectionCaret, height: CGFloat
     ) -> some Gesture {
-        DragGesture(minimumDistance: 0)
+        // Global, so the finger's location can be handed over as-is: the
+        // caret is derived from the translation alone, but the page's edge is
+        // a place on screen, and the finger has to be the thing that reaches
+        // it — the caret it carries trails behind by the grab offset.
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 let origin: CGPoint
-                if let grabOrigin {
-                    origin = grabOrigin
+                if let grab {
+                    origin = grab.origin
                 } else {
-                    // Aim a couple of points *inside* the range rather than at
-                    // its outer edge, so the first hit-test resolves to the
-                    // word already selected instead of its neighbour.
-                    origin = CGPoint(
-                        x: CGFloat(caret.x) + (edge == .start ? 2 : -2),
-                        y: CGFloat(caret.y) + height / 2
-                    )
-                    grabOrigin = origin
+                    // The caret itself. A handle moves by the character, and
+                    // the glue resolves the boundary nearest the point — which
+                    // at the caret is the boundary the handle already marks,
+                    // so the range does not move until the finger does.
+                    origin = CGPoint(x: CGFloat(caret.x), y: CGFloat(caret.y) + height / 2)
+                    grab = Grab(edge: edge, origin: origin)
                     onEdgeDragBegan(edge)
                     Haptics.tap()
                 }
@@ -184,14 +218,21 @@ struct ReaderSelectionLayer: View {
                     CGPoint(
                         x: origin.x + value.translation.width,
                         y: origin.y + value.translation.height
-                    )
+                    ),
+                    value.location
                 )
             }
             .onEnded { _ in
-                grabOrigin = nil
+                grab = nil
                 onEdgeDragEnded()
             }
     }
+}
+
+private extension SelectionCaret {
+    /// Where a held handle waits while its edge is off the page: out of sight,
+    /// and out of reach of any other touch.
+    static let offstage = SelectionCaret(x: -1000, y: -1000, height: 24)
 }
 
 // MARK: - Anchoring
@@ -208,6 +249,16 @@ struct PanelTail: Equatable {
     var isPresent = true
 
     static let none = PanelTail(pointsDown: true, offset: 0.5, isPresent: false)
+
+    /// The tail's tip, as the unit point a menu should grow out of — so it
+    /// appears to come from the passage it speaks for.
+    ///
+    /// Centre when there is no tail: that panel fell back to the bottom bar
+    /// and points at nothing, so growing it from an edge it never drew is an
+    /// entrance from a place the reader can't see.
+    var anchorPoint: UnitPoint {
+        isPresent ? UnitPoint(x: offset, y: pointsDown ? 1 : 0) : .center
+    }
 }
 
 /// Where a floating panel goes, relative to the passage it acts on.

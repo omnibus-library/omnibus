@@ -88,7 +88,7 @@ fn sp_meta_and_error(has_results: bool, total: usize, duration: u64, is_errored:
             }
         }
         if is_errored {
-            p { role: "alert", class: "error", "data-testid": "sp-error",
+            p { role: "alert", class: "sp-error error", "data-testid": "sp-error",
                 "Couldn\u{2019}t run that search. Check your connection and try again."
             }
         }
