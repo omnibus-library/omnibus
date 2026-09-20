@@ -98,7 +98,13 @@
     b.setAttribute('aria-label', label);
     b.innerHTML = '<em></em><i></i>';
     b.querySelector('em').textContent = label;
-    b.addEventListener('click', function () { jumpTo(k); });
+    b.addEventListener('click', function () {
+      if (deck) { go(k); return; }
+      // the CSS drops every transition under reduced motion; a smooth scroll
+      // here would reintroduce exactly the motion that opts out
+      var still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      panes[k].scrollIntoView({ behavior: still ? 'auto' : 'smooth' });
+    });
     rail.appendChild(b);
   });
   var railBtns = Array.prototype.slice.call(rail.children);
@@ -127,19 +133,6 @@
     railBtns.forEach(function (b, k) { b.classList.toggle('on', k === i); });
     cue.classList.toggle('hide', i !== 0);
     stamp(panes[i].id);
-  }
-
-  /* The CSS drops every transition under reduced motion; a smooth scroll
-     here would reintroduce exactly the motion that opts out. */
-  function jumpTo(k) {
-    if (deck) {
-      go(k);
-    } else {
-      var still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      panes[k].scrollIntoView({ behavior: still ? 'auto' : 'smooth' });
-    }
-    panes[k].setAttribute('tabindex', '-1');
-    panes[k].focus({ preventScroll: true });
   }
 
   function gate(d) {
@@ -188,19 +181,6 @@
     var found = panes.findIndex(function (p) { return p.id === hash; });
     if (found > 0) i = found;
   }
-
-  /* In-page links: the deck translates the track, so a native anchor scroll
-     would fight it and push a history entry. A modified click is left to the
-     browser so cmd/ctrl-click still opens #id in a new tab. */
-  Array.prototype.forEach.call(document.querySelectorAll('a[href^="#"]'), function (a) {
-    var k = panes.findIndex(function (p) { return p.id === a.getAttribute('href').slice(1); });
-    if (k < 0) return;
-    a.addEventListener('click', function (e) {
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      e.preventDefault();
-      jumpTo(k);
-    });
-  });
 
   /* ── flow mode: keep the hash on the section being read ─────────
      The deck stamps the hash from render(); flow mode never calls it, so on a
