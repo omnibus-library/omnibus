@@ -779,7 +779,12 @@ by the *character* (`sel.granularity`), so a comma can be left out and a word
 split. A range may cross the page break: resting a finger or a handle in the
 outer sliver of the stage past the text (`trackEdge` / `turnWithinSection`)
 turns the page after a beat and runs the range on, and keeps turning while it
-stays — within the section only, since a CFI range cannot span two documents.
+stays — within the section only, since a CFI range cannot span two documents,
+and never for an RTL book, whose engines page with negative scroll offsets and
+which the swipe handler likewise keeps on the classic at-release turn. The zone
+arms only once the finger has travelled (`noteDragTravel`), because a selection
+ending at the right margin puts its handle inside the zone already and a reader
+who merely grabbed it would have the page turn out from under them.
 The glue then reports only the rows on the page in front of the reader, with
 each of `start` / `end` null while that end is on another page, and the held
 handle stays in the SwiftUI tree offstage so its gesture survives the frame
