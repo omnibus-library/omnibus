@@ -19,7 +19,7 @@ use tracing::Span;
 use crate::rate_limit;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// The fully-typed layer [`layer`] returns. Plain `fn` items stand in for
 /// closures so the type can be named here and the callbacks unit-tested.

@@ -3,9 +3,6 @@
 //! id-bearing paths by matched route, the single collapsed label every
 //! unmatched path shares, and the constant-time token compare.
 
-use std::io;
-use std::sync::{Arc, Mutex};
-
 use super::*;
 use axum::{
     body::{to_bytes, Body},
@@ -14,7 +11,9 @@ use axum::{
 };
 use omnibus_db::test_support::EnvVarGuard;
 use tower::ServiceExt;
-use tracing_subscriber::{fmt::MakeWriter, prelude::*};
+use tracing_subscriber::prelude::*;
+
+use crate::request_log::tests::Sink;
 
 const TOKEN: &str = "scrape-token-for-tests";
 
@@ -203,36 +202,6 @@ fn constant_time_eq_matches_only_identical_bytes() {
     assert!(!constant_time_eq(b"abc", b"abcd"));
     assert!(!constant_time_eq(b"", b"a"));
     assert!(constant_time_eq(b"", b""));
-}
-
-/// Shared in-memory sink for a scoped `fmt` layer, mirroring the pattern in
-/// `request_log/tests.rs`.
-#[derive(Clone, Default)]
-struct Sink(Arc<Mutex<Vec<u8>>>);
-
-impl Sink {
-    fn text(&self) -> String {
-        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
-    }
-}
-
-impl io::Write for Sink {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> MakeWriter<'a> for Sink {
-    type Writer = Sink;
-
-    fn make_writer(&'a self) -> Sink {
-        self.clone()
-    }
 }
 
 #[test]
