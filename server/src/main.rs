@@ -30,7 +30,6 @@ fn main() {
 /// browser bundle.
 #[cfg(feature = "server")]
 mod server {
-    use std::net::SocketAddr;
     use std::sync::Arc;
 
     use anyhow::Context;
@@ -45,19 +44,15 @@ mod server {
 
     use crate::App;
 
-    /// Bind the configured address and serve, owning the `axum::serve` call
-    /// rather than handing the router to `dioxus::serve`.
+    /// Bind the configured address and serve, owning the serve call rather
+    /// than handing the router to `dioxus::serve`.
     ///
-    /// Dioxus 0.7.9 serves through a bare `axum::serve` in release and
-    /// `Router::into_make_service` in debug, neither of which inserts
-    /// `ConnectInfo<SocketAddr>` — so every request reached the per-IP rate
-    /// limiter and the request log as `0.0.0.0`, one bucket for the whole
-    /// internet. `into_make_service_with_connect_info` is the only way to get
-    /// the peer address and dioxus exposes no hook for it. The address still
-    /// comes from `dioxus::cli_config`, so `dx serve --addr` and the Docker
-    /// image's `IP`/`PORT` behave exactly as before; what is given up is the
-    /// debug-only subsecond hot-patch loop, which `dx serve` leaves off
-    /// unless `--hot-patch` is passed.
+    /// The address comes from `dioxus::cli_config`, so `dx serve --addr` and
+    /// the Docker image's `IP`/`PORT` behave exactly as before; what is given
+    /// up versus `dioxus::serve` is the debug-only subsecond hot-patch loop,
+    /// which `dx serve` leaves off unless `--hot-patch` is passed. See
+    /// [`omnibus::serve::serve_with_peer_addresses`] for why the serve step
+    /// itself is hand-rolled.
     pub(crate) fn serve() -> anyhow::Result<()> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -70,12 +65,9 @@ mod server {
                 .await
                 .with_context(|| format!("bind {addr}"))?;
             tracing::info!(%addr, "omnibus listening");
-            axum::serve(
-                listener,
-                router.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            .context("axum serve")
+            omnibus::serve::serve_with_peer_addresses(listener, router)
+                .await
+                .context("axum serve")
         })
     }
 
