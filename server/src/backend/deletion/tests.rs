@@ -299,6 +299,30 @@ async fn api_delete_book_files_422s_when_an_item_belongs_to_another_book() {
 }
 
 #[tokio::test]
+async fn api_delete_book_files_422s_when_a_copy_belongs_to_another_book() {
+    let (app, _state, pool) = fixture().await;
+    let token = admin_token(&pool).await;
+    let (uuid, _, copy_id) = seed_book_with_file_and_copy(&pool).await;
+    let (_, other_uuid) = seed_book_with_uuid(&pool, "/lib-b", "Other Book").await;
+    let res = app
+        .oneshot(post_json(
+            &format!("/api/books/{other_uuid}/delete-files"),
+            &token,
+            serde_json::json!({ "copy_ids": [copy_id] }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert_eq!(body, db::DeleteError::CopyNotFound(copy_id).to_string());
+    // Nothing moved: the copy's own book still lists it.
+    let copies = db::list_physical_copies(&pool, &uuid).await.unwrap();
+    assert_eq!(copies.len(), 1);
+    assert_eq!(copies[0].id, copy_id);
+}
+
+#[tokio::test]
 async fn api_delete_book_files_500s_when_the_db_is_gone() {
     let (app, _state, pool) = fixture().await;
     let token = admin_token(&pool).await;

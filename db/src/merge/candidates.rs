@@ -8,6 +8,8 @@ use std::collections::HashSet;
 use omnibus_shared::EbookMetadata;
 use sqlx::SqlitePool;
 
+use super::MergeError;
+
 /// Rows the dialog shows — it lists a handful, so the search is capped here
 /// rather than paged.
 pub const MERGE_CANDIDATE_CAP: usize = 20;
@@ -17,7 +19,10 @@ pub const MERGE_CANDIDATE_CAP: usize = 20;
 /// otherwise return every hit twice) and truncated to
 /// [`MERGE_CANDIDATE_CAP`]. Callers enforce the query-length cap; this is
 /// the search itself.
-pub async fn merge_candidates(pool: &SqlitePool, q: &str) -> anyhow::Result<Vec<EbookMetadata>> {
+pub async fn merge_candidates(
+    pool: &SqlitePool,
+    q: &str,
+) -> Result<Vec<EbookMetadata>, MergeError> {
     let settings = crate::get_settings(pool).await?;
     let mut out: Vec<EbookMetadata> = Vec::new();
     for path in [settings.ebook_library_path, settings.audiobook_library_path]
