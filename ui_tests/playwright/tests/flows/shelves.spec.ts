@@ -384,6 +384,9 @@ test("locks the sort controls inside a hand-picked shelf and restores them for a
   await expect(
     page.getByRole("columnheader", { name: /Title/ }).getByRole("button"),
   ).toBeDisabled();
+  await expect(
+    page.getByRole("columnheader", { name: /Title/ }),
+  ).toHaveAttribute("aria-sort", "none");
   await page.getByTestId("view-toggle-grid").click();
 
   await selectShelfInGallery(page, smartId, smartName);

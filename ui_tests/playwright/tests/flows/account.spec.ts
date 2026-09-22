@@ -114,22 +114,24 @@ test("adds a Kobo device with an absolute endpoint URL, then removes it", async 
   );
   const created = await response.json();
 
-  // The endpoint must be a full URL a Kobo on its own Wi-Fi can resolve, not
-  // a bare path relative to the web app's own origin.
-  await expect(page.getByTestId("kobo-endpoint-url").last()).toHaveValue(
-    /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
-  );
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/kobo/devices/revoke",
-      expectedBody: { id: created.id },
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("kobo-device-remove").last().click(),
-  );
+  try {
+    // The endpoint must be a full URL a Kobo on its own Wi-Fi can resolve,
+    // not a bare path relative to the web app's own origin.
+    await expect(page.getByTestId("kobo-endpoint-url").last()).toHaveValue(
+      /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
+    );
+  } finally {
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/kobo/devices/revoke",
+        expectedBody: { id: created.id },
+        expectedStatus: 200,
+      },
+      async () => page.getByTestId("kobo-device-remove").last().click(),
+    );
+  }
 });
 
 test("the legacy /account route redirects into the Account section", async ({

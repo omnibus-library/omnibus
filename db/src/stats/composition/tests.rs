@@ -689,12 +689,18 @@ async fn two_publisher_rows_on_one_book_are_one_placement_in_each_publisher() {
 }
 
 #[tokio::test]
-async fn every_dimensions_slices_sum_to_its_coverage_total_and_no_slice_exceeds_its_books() {
+async fn every_unfolded_dimensions_slices_sum_to_its_coverage_total_and_no_slice_exceeds_its_books()
+{
     // The cheap invariant #2498 broke: a bucket may hold at most every
     // covered book once, and the slices must account for exactly the
     // placements the coverage pair claims. The seeded library carries the
     // exact shapes that broke it — one book spelling English twice, one book
     // under two publishers, one dual-format book.
+    //
+    // "No slice exceeds its books" holds per real bucket, not per `Other`:
+    // `fold_tail` sums the tail's placements into `Other`, so on a library
+    // with more than `SLICE_LIMIT` buckets in a dimension `Other` can exceed
+    // `coverage.books` — pre-existing, and not this test's bound to enforce.
     let pool = init_db("sqlite::memory:").await.unwrap();
     let lib = seed_lib(&pool).await;
     let a = seed_book(&pool, lib, "u-a", "EPUB").await;
