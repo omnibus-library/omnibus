@@ -6,6 +6,7 @@
 //! per-reader state whose collision the merge resolves destructively,
 //! *both* books (see `curation`).
 
+mod candidates;
 mod curation;
 mod snapshot;
 mod transaction;
@@ -14,6 +15,7 @@ mod undo;
 #[cfg(test)]
 mod tests;
 
+pub use candidates::{merge_candidates, MERGE_CANDIDATE_CAP};
 pub use transaction::merge_books;
 pub use undo::undo_merge;
 

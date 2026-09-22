@@ -1,13 +1,16 @@
-//! Admin book-merge REST endpoints: absorb one book into another and
-//! reverse a recorded merge. Thin HTTP shells over `db::merge_books` /
-//! `db::undo_merge` — the same helpers the web-facing
-//! `/api/rpc/merge-books*` server functions call.
+//! Admin book-merge REST endpoints: find a merge partner, absorb one book
+//! into another, and reverse a recorded merge. Thin HTTP shells over
+//! `db::merge_candidates` / `db::merge_books` / `db::undo_merge` — the same
+//! helpers the web-facing `/api/rpc/merge-books*` server functions call.
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use omnibus_shared::{MergeBooksRequest, MergeBooksResult, UndoMergeRequest, UndoMergeResult};
+use omnibus_shared::{
+    search_query_too_long, MergeBooksRequest, MergeBooksResult, UndoMergeRequest, UndoMergeResult,
+};
+use serde::Deserialize;
 
 use omnibus_db as db;
 
@@ -16,6 +19,30 @@ use crate::auth::AdminUser;
 
 #[cfg(test)]
 mod tests;
+
+/// `GET /api/books/merge/candidates` params.
+#[derive(Deserialize)]
+pub(super) struct CandidatesQuery {
+    q: String,
+}
+
+/// `GET /api/books/merge/candidates?q=` — the merge dialog's partner
+/// search: FTS across both configured libraries, deduped and capped by
+/// `db::merge_candidates`. Mirrors `rpc_merge_candidates`, including its
+/// query-length rejection (400 here, where the RPC returns an error string).
+pub(super) async fn get_merge_candidates(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+    Query(params): Query<CandidatesQuery>,
+) -> Response {
+    if search_query_too_long(&params.q) {
+        return (StatusCode::BAD_REQUEST, "query too long").into_response();
+    }
+    match db::merge_candidates(&state.pool, &params.q).await {
+        Ok(books) => Json(books).into_response(),
+        Err(e) => internal("merge candidates", e),
+    }
+}
 
 /// `POST /api/books/merge` — merge `source_uuid` into `target_uuid`: the
 /// target absorbs the source's files, links, identifiers, and per-reader

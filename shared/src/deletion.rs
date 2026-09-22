@@ -64,6 +64,18 @@ impl BookDeletionImpact {
     }
 }
 
+/// Request body for `POST /api/books/{uuid}/delete-files`: the `book_files`
+/// ids and physical-copy ids to remove. Either list may be empty; both empty
+/// on a book with no items at all deletes the record.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct DeleteBookFilesRequest {
+    #[serde(default)]
+    pub file_ids: Vec<i64>,
+    #[serde(default)]
+    pub copy_ids: Vec<i64>,
+}
+
 /// What a delete actually removed.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeleteBookFilesResult {

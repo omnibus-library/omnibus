@@ -307,9 +307,9 @@ pub async fn rpc_merge_candidates(q: String) -> Result<Vec<EbookMetadata>> {
     Ok(merge_candidates(&pool.0, &q).await?)
 }
 
-/// Server-side body of [`rpc_merge_candidates`], extracted so the
-/// cross-library dedup and the 20-row cap can be unit-tested without the
-/// server-fn transport.
+/// Server-side body of [`rpc_merge_candidates`]: the length cap, then the
+/// shared `db::merge_candidates` search (also behind the REST
+/// `GET /api/books/merge/candidates`), so the two surfaces list the same rows.
 #[cfg(feature = "server")]
 async fn merge_candidates(
     pool: &sqlx::SqlitePool,
@@ -318,24 +318,9 @@ async fn merge_candidates(
     if omnibus_shared::search_query_too_long(q) {
         return Err(ServerFnError::new("query too long"));
     }
-    let settings = db::get_settings(pool)
+    db::merge_candidates(pool, q)
         .await
-        .map_err(|e| internal_rpc_error("get settings", e))?;
-    let mut out: Vec<EbookMetadata> = Vec::new();
-    for path in [settings.ebook_library_path, settings.audiobook_library_path]
-        .into_iter()
-        .flatten()
-    {
-        out.extend(
-            db::search_books(pool, &path, q)
-                .await
-                .map_err(|e| internal_rpc_error("search books", e))?,
-        );
-    }
-    let mut seen = std::collections::HashSet::new();
-    out.retain(|b| seen.insert(b.unique_identifier.clone()));
-    out.truncate(20);
-    Ok(out)
+        .map_err(|e| internal_rpc_error("merge candidates", e))
 }
 
 /// FTS5-backed search across the configured ebook and audiobook libraries.
