@@ -27,6 +27,7 @@ const SELECT_COLS: &str = "b.id AS id,
                     ORDER BY bal.position ASC, a.name ASC
                     LIMIT 1
                 ), '') AS author,
+                b.description AS description,
                 CAST(COALESCE(b.last_modified, 0) AS INTEGER) AS last_modified_epoch,
                 COALESCE((
                     SELECT bf.size_bytes
@@ -80,6 +81,10 @@ pub struct KoboBookRow {
     pub uuid: String,
     pub title: String,
     pub author: String,
+    /// The blurb the device shows, `metadata_overrides` applied and HTML
+    /// sanitized the same way `db::get_book` sanitizes it. Empty when the
+    /// book has none — Kobo tolerates a blank description (#2512).
+    pub description: String,
     pub last_modified_epoch: i64,
     /// Size of the file the download route would serve: the lowest-ordinal
     /// EPUB, else CBZ, else PDF, `0` when the book has none. Advertised on
@@ -225,7 +230,7 @@ pub async fn sync_books(pool: &SqlitePool, user_id: i64) -> Result<Vec<KoboBookR
     // chunks; sorting here keeps newest-modified-first over the whole set
     // rather than within each chunk.
     rows.sort_by_key(|r| std::cmp::Reverse(r.last_modified_epoch));
-    apply_title_author_overrides(pool, &mut rows).await?;
+    apply_row_overrides(pool, &mut rows).await?;
     Ok(rows)
 }
 
@@ -247,19 +252,16 @@ pub async fn book_for_sync(
     let Some(mut book) = row.as_ref().map(row_to_book) else {
         return Ok(None);
     };
-    apply_title_author_overrides(pool, std::slice::from_mut(&mut book)).await?;
+    apply_row_overrides(pool, std::slice::from_mut(&mut book)).await?;
     Ok(Some(book))
 }
 
-/// Overlay each row's title/author with its saved `metadata_overrides` (the
-/// same [`crate::metadata_overrides::apply_overrides`] merge `db::get_book`
-/// runs for every other book-detail surface), gated by the owning scan
-/// root's configured source precedence (#972). A no-op for rows whose uuid
-/// has no override row.
-async fn apply_title_author_overrides(
-    pool: &SqlitePool,
-    rows: &mut [KoboBookRow],
-) -> Result<(), KoboError> {
+/// Overlay each row's title/author/description with its saved
+/// `metadata_overrides` (the same [`crate::metadata_overrides::apply_overrides`]
+/// merge `db::get_book` runs for every other book-detail surface), gated by
+/// the owning scan root's configured source precedence (#972). A no-op for
+/// rows whose uuid has no override row.
+async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Result<(), KoboError> {
     let uuids: Vec<String> = rows.iter().map(|r| r.uuid.clone()).collect();
     let overrides = crate::metadata_overrides::load_overrides_bulk(pool, &uuids).await?;
     if overrides.is_empty() {
@@ -281,6 +283,7 @@ async fn apply_title_author_overrides(
         // re-deriving those rules here.
         let mut book = omnibus_shared::EbookMetadata {
             title: Some(row.title.clone()),
+            description: (!row.description.is_empty()).then(|| row.description.clone()),
             creators: if row.author.is_empty() {
                 Vec::new()
             } else {
@@ -306,6 +309,7 @@ async fn apply_title_author_overrides(
             .first()
             .map(|c| c.name.clone())
             .unwrap_or_default();
+        row.description = book.description.unwrap_or_default();
     }
     Ok(())
 }
@@ -316,6 +320,7 @@ fn row_to_book(row: &sqlx::sqlite::SqliteRow) -> KoboBookRow {
         uuid: row.get("uuid"),
         title: row.get("title"),
         author: row.get("author"),
+        description: crate::books::sanitize_description(row.get("description")).unwrap_or_default(),
         last_modified_epoch: row.get("last_modified_epoch"),
         download_size_bytes: row.get("download_size_bytes"),
         has_epub: row.get("has_epub"),

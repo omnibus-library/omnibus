@@ -667,3 +667,29 @@ async fn library_sync_returns_500_on_db_failure() {
 
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
+
+#[tokio::test]
+async fn library_sync_carries_the_books_description_on_the_entitlement() {
+    // #2512: every entitlement shipped `Description: ""`, so a Kobo showed no
+    // blurb for any synced book even though the library held one.
+    let (app, pool, token, uid) = fixture().await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    sqlx::query("UPDATE books SET description = 'Arrakis, desert planet.' WHERE uuid = ?")
+        .bind(&uuid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    opt_in(&pool, uid, &[uuid]).await;
+
+    let res = app
+        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
+        .await
+        .unwrap();
+
+    let items = body_json(res).await;
+    let entitlement = &items.as_array().unwrap()[0]["NewEntitlement"];
+    assert_eq!(
+        entitlement["BookMetadata"]["Description"],
+        "Arrakis, desert planet."
+    );
+}

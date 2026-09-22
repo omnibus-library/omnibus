@@ -361,6 +361,7 @@ fn synthetic_book(n: usize, last_modified_epoch: i64) -> KoboBookRow {
         uuid: format!("synthetic-{n:05}"),
         title: format!("Book {n}"),
         author: "Author".into(),
+        description: String::new(),
         last_modified_epoch,
         download_size_bytes: 0,
         has_epub: true,
