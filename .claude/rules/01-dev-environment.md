@@ -87,6 +87,17 @@ Override `PORT` before `nix develop` to pick a different window base. Playwright
 
 Two related knobs (both in [.env.example](../../.env.example)): `OMNIBUS_DEV_BUILD_TIMEOUT_SECS` (default 900) is how long `dev-up` waits for a new server to answer `/api/_health` — generous because a fresh worktree compiles the whole workspace into an empty `CARGO_TARGET_DIR`, and safe because a compile error is caught when `dx` exits rather than by waiting the clock out. `OMNIBUS_DEV_ADDR` (default `0.0.0.0`) is the bind address for the `serve` panes.
 
+## Stale agent refs bloating `.git`
+
+Agent tooling leaves checkpoint refs behind (`refs/copilot/*`, `refs/codex/*`; the retired jj setup left `refs/jj/keep/*`). They pin old working-copy snapshots — including trees no branch reaches — so `.git` can grow to gigabytes while the tracked tree stays tens of MB. Diagnose with `git for-each-ref --format='%(refname)' | cut -d/ -f2-3 | sort | uniq -c` and `git count-objects -vH`; if a family is large and nothing you need points at it, drop it and repack:
+
+```bash
+git for-each-ref --format='%(refname)' refs/copilot refs/codex | xargs -n1 git update-ref -d
+git gc --prune=now
+```
+
+Only the main checkout's `.git` holds objects — worktrees share it — so run this there, and never delete a ref another worktree's branch is based on.
+
 ## `.env` for secret-bearing values
 
 Non-secret defaults stay in the shellHook above. Anything with a secret — passwords, tokens, per-developer overrides — lives in a gitignored `.env` at the repo root. The shellHook sources `.env` **after** its own exports, so `.env` always wins on conflict.

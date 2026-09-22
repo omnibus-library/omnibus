@@ -18,7 +18,7 @@ Use for issues that **must** be fixed before merge. Reserve for real problems �
 - Panics in production paths (`unwrap()`, `expect()`, `panic!`, array indexing without bounds checks, integer overflow in release mode)
 - Broken invariants in the unified Dioxus fullstack model — component bodies feature-gated on `web`/`server` cause SSR ≠ WASM hydration mismatches. Feature-gate transports (`data.rs`) and imports, not component output.
 - Missing auth/authorization on a route that handles user data
-- Force-push, history-rewriting, or destructive jj/git operations on shared bookmarks
+- Force-push, history-rewriting, or destructive git operations on shared branches
 
 ### ⚠️ WARNING ⚠️
 Use for issues that **should** be fixed but won't block merge on their own. Code smells, performance traps, fragile patterns, missing tests.
