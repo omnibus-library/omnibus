@@ -393,7 +393,12 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       sheet where every add/remove saves at once as a
                       `genres` / `subjects` override — never queued (rule 08)
                       — and `ChipEditKind` holds the per-kind list/payload
-                      split. `DetailRead.homeLifted` keeps the flow layout's
+                      split. `ChipEditCommitter` is the save policy behind it,
+                      shared across sheet presentations and keyed by (book,
+                      kind): requests leave in tap order, only the newest
+                      answer paints, a refused save resyncs before it
+                      reverts; its save/resync/persist legs are injected, so
+                      `ChipEditCommitterTests` drives it without a server. `DetailRead.homeLifted` keeps the flow layout's
                       Home whole at every scroll position; only the marquee
                       trims at rest. `JournalMarkdown` is the journal body's
                       renderer — the web sets the server's `body_html` with

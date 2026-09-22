@@ -122,8 +122,9 @@ enum BookChipEdits {
 }
 
 /// The editor sheet. Each add or remove is applied to the list at once and
-/// saved behind it; a refused save resyncs the list from the server, so a
-/// phantom chip never outlives the request that failed to file it.
+/// saved behind it through `ChipEditCommitter`; a refused save resyncs the
+/// list from the server, so a phantom chip never outlives the request that
+/// failed to file it.
 struct ChipEditSheet: View {
     let book: Book
     let kind: ChipEditKind
@@ -136,14 +137,6 @@ struct ChipEditSheet: View {
     @State private var entry = ""
     @State private var pool: [SuggestionItem] = []
     @State private var error: String?
-    /// Bumped per change; a response that lands for an older change is
-    /// dropped, so two quick taps can't settle on the earlier list.
-    @State private var generation = 0
-    /// The in-flight save, if any. Each new commit awaits it before issuing
-    /// its own request, so two full-list POSTs always leave in tap order —
-    /// otherwise a later edit's request could land at the server before an
-    /// earlier one's, and the server would settle on the wrong list.
-    @State private var saveTask: Task<Void, Never>?
 
     init(book: Book, kind: ChipEditKind, onSaved: @escaping (Book) -> Void) {
         self.book = book
@@ -173,8 +166,11 @@ struct ChipEditSheet: View {
                             .foregroundStyle(palette.ink3Color)
                     } else {
                         FlowLayout(spacing: 7, lineSpacing: 7) {
-                            ForEach(values, id: \.self) { value in
-                                removableChip(value)
+                            // Index-identified: scanned subjects can repeat,
+                            // and a tap must remove that one chip, not every
+                            // copy of its text.
+                            ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                                removableChip(value, at: index)
                             }
                         }
                         .accessibilityIdentifier("chip-edit-list")
@@ -223,15 +219,18 @@ struct ChipEditSheet: View {
         }
     }
 
-    private func removableChip(_ value: String) -> some View {
+    private func removableChip(_ value: String, at index: Int) -> some View {
         HStack(spacing: 6) {
             switch kind {
             case .genres: GenreChip(label: value)
             case .tags: TagChip(label: value)
             }
             Button {
+                guard values.indices.contains(index) else { return }
                 Haptics.tap()
-                commit(values.filter { $0 != value })
+                var next = values
+                next.remove(at: index)
+                commit(next)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
@@ -255,36 +254,28 @@ struct ChipEditSheet: View {
         commit(values + [chip])
     }
 
-    /// Apply the new list and save it. On a refusal the list is resynced
-    /// from the server; if even that fails, the change is simply undone.
+    /// Apply the new list and save it through the shared committer, which
+    /// keeps this book's saves in order across sheet presentations.
     private func commit(_ next: [String]) {
         let previous = values
         values = next
-        generation += 1
-        let mine = generation
-        let waitFor = saveTask
-        saveTask = Task {
-            await waitFor?.value
-            do {
-                guard mine == generation else { return }
-                let merged = try await BookChipEdits.save(uuid: book.uuid, kind: kind, values: next)
-                await Cache.write(CacheKey.book(book.uuid), merged)
-                guard mine == generation else { return }
+        Task {
+            switch await ChipEditCommitter.shared.commit(uuid: book.uuid, kind: kind, values: next) {
+            case .saved(let merged):
                 values = kind.values(in: merged)
                 error = nil
                 onSaved(merged)
-            } catch {
-                guard mine == generation else { return }
-                self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            case .superseded:
+                break
+            case .resynced(let current, let message):
+                values = kind.values(in: current)
+                error = message
                 Haptics.warning()
-                if let current = try? await LibraryService.settledBook(uuid: book.uuid),
-                    mine == generation
-                {
-                    values = kind.values(in: current)
-                    onSaved(current)
-                } else if mine == generation {
-                    values = previous
-                }
+                onSaved(current)
+            case .reverted(let message):
+                values = previous
+                error = message
+                Haptics.warning()
             }
         }
     }
