@@ -35,7 +35,7 @@ async fn api_health_returns_200_unauth_with_app_and_build_id() {
     );
     // `repo_root` is the workspace-identity field scripts/dev-server-up.sh
     // parses to distinguish this workspace's server from a sibling
-    // jj workspace's server bound to the same port. Must be a string.
+    // worktree's server bound to the same port. Must be a string.
     assert!(
         body["repo_root"].is_string(),
         "repo_root must be a string, got {:?}",

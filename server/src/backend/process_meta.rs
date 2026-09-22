@@ -35,7 +35,7 @@ fn now_millis() -> u128 {
 /// Absolute path of the workspace root the server was launched from —
 /// captured once at process start. Surfaced via `/api/_health` so
 /// `scripts/dev-server-up.sh` can tell *its own workspace's* server apart
-/// from a sibling `jj` workspace's server that happens to be bound to the
+/// from a sibling worktree's server that happens to be bound to the
 /// port it's probing. Without this, port-walking would silently reuse a
 /// sibling workspace's server (different code, different DB) and the
 /// agent would validate against the wrong build.

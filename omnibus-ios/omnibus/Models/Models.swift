@@ -1336,6 +1336,22 @@ struct CreateShelfRequest: Codable, Sendable {
     }
 }
 
+/// Partial update (`PATCH /api/shelves/{id}`). `nil` fields are left as they
+/// are; `rules` replaces the whole rule set. Mirrors `UpdateShelfRequest` in
+/// `shared/src/shelves.rs` — the kind is fixed at creation and has no field.
+struct UpdateShelfRequest: Codable, Sendable {
+    var name: String?
+    var description: String?
+    var visibility: ShelfVisibility?
+    var matchMode: MatchMode?
+    var rules: [ShelfRule]?
+
+    enum CodingKeys: String, CodingKey {
+        case name, description, visibility, rules
+        case matchMode = "match_mode"
+    }
+}
+
 struct RulePreview: Codable, Sendable {
     var matched: Int64
     var total: Int64

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stop THIS workspace's dev server. Identity-checked: refuses to kill a
 # PID whose /api/_health reports a different repo_root (i.e. a sibling
-# `jj` workspace's server bound to a port we wrote to our PID file by
+# worktree's server bound to a port we wrote to our PID file by
 # accident, or anything else not ours).
 #
 # Exits:
