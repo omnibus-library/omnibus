@@ -13,6 +13,9 @@ struct ShelvesRail: View {
     /// the identity is still confirming, which withholds attribution rather
     /// than guessing it.
     var viewerId: Int64?
+    /// Runs after a card's long-press menu edits or deletes a shelf, so the
+    /// rail redraws without the whole landing screen reloading.
+    var onChanged: () -> Void = {}
     var onSeeAll: () -> Void
 
     @Environment(\.palette) private var palette
@@ -50,6 +53,7 @@ struct ShelvesRail: View {
                         }
                         .buttonStyle(BookPressStyle())
                         .cascadeIn(index: index)
+                        .shelfContextMenu(preview.shelf, onChanged: onChanged)
                         // Cards ease off as they leave, so the rail reads as a
                         // shelf continuing past the edge rather than a list
                         // that stops being drawn.

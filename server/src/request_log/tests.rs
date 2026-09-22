@@ -72,9 +72,9 @@ fn redact_path_leaves_non_kobo_paths_unchanged() {
 
 /// Shared in-memory sink for a scoped JSON `fmt` layer — the same encoder
 /// `logging::init_tracing` uses for the on-disk file, so what these tests
-/// parse is what the admin log viewer would.
+/// parse is what the admin log viewer would. Reused by `metrics/tests.rs`.
 #[derive(Clone, Default)]
-struct Sink(Arc<Mutex<Vec<u8>>>);
+pub(crate) struct Sink(Arc<Mutex<Vec<u8>>>);
 
 impl Sink {
     fn lines(&self) -> Vec<serde_json::Value> {
@@ -87,7 +87,7 @@ impl Sink {
             .collect()
     }
 
-    fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
     }
 }

@@ -190,6 +190,9 @@ where
                 Ok(Self(basic_auth_user(user)))
             }
             Err(auth_db::AuthError::InvalidCredentials) => Err(unauthorized_with_challenge()),
+            // Same reasoning as the login handler's 429: a wrong password on
+            // a locked row comes back `InvalidCredentials`, so only the
+            // password holder ever reaches this 403.
             Err(auth_db::AuthError::AccountLocked { .. }) => {
                 Err((StatusCode::FORBIDDEN, "account temporarily locked").into_response())
             }

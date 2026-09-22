@@ -415,3 +415,62 @@ async fn logout_revokes_session_and_next_me_is_401() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
+
+/// AC1: an unknown username and a locked existing account given a wrong
+/// password must be indistinguishable on the wire — same status, same body,
+/// and in particular no `Retry-After` on either, which is what turned login
+/// into a username oracle.
+#[tokio::test]
+async fn login_hides_a_lockout_from_a_caller_without_the_password() {
+    let (app, pool) = app().await;
+    let user = db::auth::create_user(&pool, "alice", "correct horse battery staple")
+        .await
+        .unwrap();
+    db::test_support::lock_account(&pool, user.id).await;
+
+    let locked_wrong = app
+        .clone()
+        .oneshot(json_req(
+            "/api/auth/login",
+            "POST",
+            json!({"username": "alice", "password": "nope"}),
+        ))
+        .await
+        .unwrap();
+    let unknown = app
+        .clone()
+        .oneshot(json_req(
+            "/api/auth/login",
+            "POST",
+            json!({"username": "ghost", "password": "nope"}),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(locked_wrong.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(unknown.status(), locked_wrong.status());
+    assert!(
+        !locked_wrong.headers().contains_key(header::RETRY_AFTER),
+        "a Retry-After here confirms the username exists"
+    );
+    assert!(!unknown.headers().contains_key(header::RETRY_AFTER));
+    let locked_body = axum::body::to_bytes(locked_wrong.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let unknown_body = axum::body::to_bytes(unknown.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(locked_body, unknown_body);
+
+    // The lockout is still enforced for whoever does hold the password.
+    let holder = app
+        .oneshot(json_req(
+            "/api/auth/login",
+            "POST",
+            json!({"username": "alice", "password": "correct horse battery staple"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(holder.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(holder.headers().contains_key(header::RETRY_AFTER));
+}

@@ -15,7 +15,7 @@ use super::{app_version, build_id, repo_root};
 /// `scripts/dev-server-up.sh` distinguish an omnibus instance from some
 /// other process that happens to bind the same port. The `repo_root`
 /// field lets it distinguish *this* workspace's server from a sibling
-/// `jj` workspace's server bound to the same port. The `version` field
+/// worktree's server bound to the same port. The `version` field
 /// (from `OMNIBUS_VERSION`, `"dev"` when unset) lets the mobile "You"
 /// screen show the running server's release alongside its own app version.
 /// The `time` field (unix seconds) lets a client measure its own clock

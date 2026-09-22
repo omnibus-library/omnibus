@@ -725,6 +725,38 @@ async fn api_get_thumb_stand_in_validator_never_matches_the_generated_thumbnail(
     assert_eq!(&bytes[..], b"real-webp-bytes");
 }
 
+/// A `.svg` written into a cache before SVG was refused at ingest is a
+/// pre-refusal artifact, not a cover — it must never be served.
+#[tokio::test]
+async fn api_get_cover_refuses_a_legacy_svg() {
+    let (app, _, pool) = fixture().await;
+    let (id, uuid) = seed_book_with_uuid(&pool, "/lib", "Svg Cover Book").await;
+    sqlx::query("UPDATE books SET has_cover = 1 WHERE id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let _covers_guard = CoversDirGuard::new("get_cover_legacy_svg");
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>"#;
+    std::fs::write(db::covers_dir().join(format!("{uuid}.svg")), svg).expect("write svg cover");
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer(&format!("/api/covers/{uuid}"), &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_ne!(
+        res.headers()
+            .get(header::CONTENT_TYPE)
+            .map(|v| v.to_str().unwrap()),
+        Some("image/svg+xml"),
+        "a cover route must never answer image/svg+xml"
+    );
+}
+
 #[tokio::test]
 async fn api_get_thumb_returns_500_when_books_table_is_missing_during_uuid_resolution() {
     let (app, _, pool) = fixture().await;

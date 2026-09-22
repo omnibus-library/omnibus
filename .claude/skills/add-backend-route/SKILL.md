@@ -105,7 +105,7 @@ See [add-playwright-flow](../add-playwright-flow/SKILL.md). Use the `/api/rpc/*`
 
 ## 9. Verify in the browser (when the route surfaces in the UI)
 
-If this route is hit by a UI page, drive that page via [`ui-validate`](../ui-validate/SKILL.md) — it brings up the dev server (idempotent, identity-checked across `jj` workspaces), logs in as the seeded admin, and uses Claude Preview (`mcp__Claude_Preview__preview_*`) to snapshot the new behavior.
+If this route is hit by a UI page, drive that page via [`ui-validate`](../ui-validate/SKILL.md) — it brings up the dev server (idempotent, identity-checked across worktrees), logs in as the seeded admin, and uses Claude Preview (`mcp__Claude_Preview__preview_*`) to snapshot the new behavior.
 
 ## 10. End-of-session
 

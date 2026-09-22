@@ -41,17 +41,8 @@ struct ShelvesView: View {
                             }
                             .buttonStyle(BookPressStyle())
                             .cascadeIn(index: index)
-                            .contextMenu {
-                                if !preview.shelf.kind.isSystem {
-                                    Button(role: .destructive) {
-                                        Task {
-                                            await UserDataService.deleteShelf(id: preview.shelf.id)
-                                            await load()
-                                        }
-                                    } label: {
-                                        Label("Delete shelf", systemImage: "trash")
-                                    }
-                                }
+                            .shelfContextMenu(preview.shelf) {
+                                Task { await load(force: true) }
                             }
                         }
                     }
@@ -125,7 +116,9 @@ struct ShelfDetailView: View {
     @State private var booksSettled = false
     @State private var isLoading = true
     @State private var showAddBooks = false
+    @State private var showEdit = false
     @State private var scrollY: CGFloat = 0
+    @Environment(AppState.self) private var app
 
     // `.top` keeps `BookGridCell`s aligned by their cover art when captions
     // in the same row wrap to different line counts — see LibraryView.swift.
@@ -145,6 +138,18 @@ struct ShelfDetailView: View {
     /// Only a manual shelf can be filled by hand — a smart shelf's membership
     /// is whatever its rules match, and the wishlist's is what you check in.
     private var canAddBooks: Bool { identity?.kind == .manual }
+
+    /// Whether the pencil is offered: the same rule the long-press menu uses,
+    /// so the two ways to reach the editor never disagree about who may.
+    private var canEdit: Bool {
+        guard let identity else { return false }
+        return ShelfActions.canEdit(
+            viewerId: app.user?.id,
+            isAdmin: app.user?.isAdmin == true,
+            ownerUserId: identity.ownerUserId,
+            kind: identity.kind
+        )
+    }
 
     var body: some View {
         Group {
@@ -209,6 +214,17 @@ struct ShelfDetailView: View {
             FadingBarTitle(title: identity?.name ?? "", scrollY: scrollY, appearsAfter: 76)
         }
         .toolbar {
+            if canEdit {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Haptics.tap()
+                        showEdit = true
+                    } label: {
+                        Image(systemName: ShelfMenuGlyph.edit)
+                    }
+                    .accessibilityLabel("Edit this shelf")
+                }
+            }
             if canAddBooks {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -218,6 +234,13 @@ struct ShelfDetailView: View {
                         Image(systemName: "plus")
                     }
                     .accessibilityLabel("Add books to this shelf")
+                }
+            }
+        }
+        .sheet(isPresented: $showEdit) {
+            if let identity {
+                EditShelfSheet(shelf: identity) {
+                    Task { await load(force: true) }
                 }
             }
         }
