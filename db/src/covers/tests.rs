@@ -290,9 +290,35 @@ async fn find_cover_file_ignores_a_legacy_svg() {
     assert!(find_cover_file("legacy").is_none());
 }
 
-/// A legacy `.svg` must also be swept when its book is deleted or merged —
-/// `PROBE_ORDER` no longer names that extension, so the delete path carries it
-/// explicitly.
+/// A book that also holds a real cover beside a stale pre-refusal `.svg`
+/// (`write_cover_file` never unlinks the sibling) must still serve the real
+/// cover rather than the `.svg` fast-negative shadowing it.
+#[tokio::test]
+async fn find_cover_file_prefers_a_real_cover_over_a_stale_legacy_svg() {
+    let _covers = CoversTempDir::new("svg_legacy_and_real");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    std::fs::write(cover_path_for("mixed", "svg"), b"<svg/>").unwrap();
+    std::fs::write(cover_path_for("mixed", "jpg"), b"not a real jpeg").unwrap();
+
+    let (mime, bytes) = find_cover_file("mixed").expect("real cover should be served");
+    assert_eq!(mime, "image/jpeg");
+    assert_eq!(bytes, b"not a real jpeg");
+}
+
+/// Same defect, independently reported: a real cover beside a legacy `.svg`
+/// must not disappear behind the fast-negative check.
+#[tokio::test]
+async fn find_cover_file_still_serves_a_real_cover_beside_a_legacy_svg() {
+    let _covers = CoversTempDir::new("svg_legacy_beside_real");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    std::fs::write(cover_path_for("paired", "svg"), b"<svg/>").unwrap();
+    std::fs::write(cover_path_for("paired", "jpg"), b"jpeg bytes").unwrap();
+
+    let (mime, bytes) = find_cover_file("paired").expect("real cover should be served");
+    assert_eq!(mime, "image/jpeg");
+    assert_eq!(bytes, b"jpeg bytes");
+}
+
 /// Same pre-refusal sweep as `delete_cover_files_for`, on the override side.
 #[tokio::test]
 async fn delete_override_cover_removes_a_legacy_svg_too() {

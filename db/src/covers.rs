@@ -112,6 +112,13 @@ impl ImageFormat {
         ImageFormat::Gif,
         ImageFormat::Bin,
     ];
+
+    /// Extensions to sweep when removing every file for a uuid. Chains `.svg`
+    /// onto `PROBE_ORDER` because a pre-refusal cache still holds `.svg`
+    /// files even though `PROBE_ORDER` no longer names that extension.
+    pub(crate) fn sweep_exts() -> impl Iterator<Item = &'static str> {
+        Self::PROBE_ORDER.iter().map(|f| f.to_ext()).chain(["svg"])
+    }
 }
 
 /// Where a book's cover with extension `ext` lives under the covers dir.
@@ -265,11 +272,6 @@ pub(crate) fn normalize_override_cover(mime: &str, bytes: &[u8]) -> (String, Vec
 /// Read a book's cover, returning `(mime, bytes)`. Probes the common
 /// extensions first, then falls back to scanning for `<uuid>.*`.
 pub(crate) fn find_cover_file(uuid: &str) -> Option<(String, Vec<u8>)> {
-    // SVG was refused at ingest, so a pre-refusal `.svg` is not a cover and
-    // must not cost a directory scan per request.
-    if cover_path_for(uuid, "svg").is_file() {
-        return None;
-    }
     // Try common extensions in the order covers are most likely to be
     // written. Fall back to a directory scan for `<uuid>.*` if none match,
     // so migrations that introduce new extensions don't require a code
@@ -279,6 +281,11 @@ pub(crate) fn find_cover_file(uuid: &str) -> Option<(String, Vec<u8>)> {
         if let Ok(bytes) = std::fs::read(&p) {
             return Some((fmt.to_mime().to_string(), bytes));
         }
+    }
+    // SVG was refused at ingest, so a pre-refusal `.svg` is not a cover and
+    // must not cost a directory scan per request.
+    if cover_path_for(uuid, "svg").is_file() {
+        return None;
     }
     // Fallback scan.
     let dir = covers_dir();
@@ -306,11 +313,9 @@ pub(crate) fn find_cover_file(uuid: &str) -> Option<(String, Vec<u8>)> {
 /// Best-effort removal of every cover file belonging to these uuids.
 pub(crate) fn delete_cover_files_for(uuids: &[String]) {
     for uuid in uuids {
-        for fmt in ImageFormat::PROBE_ORDER {
-            let _ = std::fs::remove_file(cover_path_for(uuid, fmt.to_ext()));
+        for ext in ImageFormat::sweep_exts() {
+            let _ = std::fs::remove_file(cover_path_for(uuid, ext));
         }
-        // PROBE_ORDER no longer names .svg, but a pre-refusal cache still holds them.
-        let _ = std::fs::remove_file(cover_path_for(uuid, "svg"));
     }
 }
 
