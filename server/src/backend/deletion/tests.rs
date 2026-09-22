@@ -90,8 +90,31 @@ async fn api_deletion_manifest_rejects_a_non_admin_user() {
 #[tokio::test]
 async fn api_deletion_manifest_lists_the_books_files_and_copies() {
     let (app, _state, pool) = fixture().await;
-    let token = admin_token(&pool).await;
+    let admin = auth_test_support::create_admin(&pool, "root").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
     let (uuid, file_id, copy_id) = seed_book_with_file_and_copy(&pool).await;
+    // One highlight and one rating, so the manifest's hand-mapped impact
+    // counters are pinned against the tables that actually back them
+    // (annotations -> highlights, user_ratings -> ratings) rather than just
+    // asserted zero.
+    sqlx::query(
+        "INSERT INTO annotations (user_id, book_uuid, epub_cfi_range, created_at)
+         VALUES (?1, ?2, 'x', 1)",
+    )
+    .bind(admin.id)
+    .bind(&uuid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO user_ratings (user_id, book_uuid, half_stars, updated_at)
+         VALUES (?1, ?2, 8, 1)",
+    )
+    .bind(admin.id)
+    .bind(&uuid)
+    .execute(&pool)
+    .await
+    .unwrap();
     let res = app
         .oneshot(get_with_bearer(
             &format!("/api/books/{uuid}/deletion-manifest"),
@@ -110,6 +133,13 @@ async fn api_deletion_manifest_lists_the_books_files_and_copies() {
         vec![copy_id]
     );
     assert_eq!(manifest.item_count(), 2);
+    assert_eq!(manifest.impact.highlights, 1);
+    assert_eq!(manifest.impact.ratings, 1);
+    assert_eq!(manifest.impact.journal_entries, 0);
+    assert_eq!(manifest.impact.bookmarks, 0);
+    assert_eq!(manifest.impact.reading_sessions, 0);
+    assert_eq!(manifest.impact.listening_sessions, 0);
+    assert_eq!(manifest.impact.shelves, 0);
 }
 
 #[tokio::test]
