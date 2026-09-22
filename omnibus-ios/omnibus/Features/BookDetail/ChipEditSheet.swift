@@ -186,9 +186,9 @@ struct ChipEditSheet: View {
                         current: values,
                         pool: pool,
                         autofocus: true,
-                        isEnabled: connectivity.isOnline,
-                        entryIdentifier: "chip-edit-entry"
+                        isEnabled: connectivity.isOnline
                     ) { pick($0) }
+                    .accessibilityIdentifier("chip-edit-entry")
 
                     if let error {
                         Text(error)
@@ -247,9 +247,7 @@ struct ChipEditSheet: View {
     }
 
     /// Commit `name` as a chip — from the entry field, a suggestion row, or
-    /// the "+ Create" row. `ChipEntryField` clears its own entry and closes
-    /// its dropdown regardless of the outcome here, so a refused duplicate
-    /// still reads as understood.
+    /// the "+ Create" row.
     private func pick(_ name: String) {
         guard let chip = ChipEntry.committed(from: name, existing: values, deduplicating: true)
         else { return }
@@ -266,16 +264,14 @@ struct ChipEditSheet: View {
         let mine = generation
         let waitFor = saveTask
         saveTask = Task {
-            // Chained onto the previous commit's task, not spawned
-            // independently — that's what keeps this tap's request from
-            // reaching the server ahead of one the reader made earlier.
             await waitFor?.value
             do {
+                guard mine == generation else { return }
                 let merged = try await BookChipEdits.save(uuid: book.uuid, kind: kind, values: next)
+                await Cache.write(CacheKey.book(book.uuid), merged)
                 guard mine == generation else { return }
                 values = kind.values(in: merged)
                 error = nil
-                await Cache.write(CacheKey.book(book.uuid), merged)
                 onSaved(merged)
             } catch {
                 guard mine == generation else { return }

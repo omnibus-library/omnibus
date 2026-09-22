@@ -724,10 +724,7 @@ private struct ChipListField: View {
             .animation(Motion.snap, value: isEdited)
             .animation(Motion.snap, value: values)
 
-            // Outside the padded block above, same as `PlateField`: the
-            // field row carries its own horizontal inset, and the dropdown
-            // below it insets itself, so the two line up without living
-            // inside a shared padding box.
+            // `ChipEntryField` insets itself, so it sits outside the padded block above.
             ChipEntryField(
                 placeholder: placeholder, entry: $entry, current: values, pool: suggestions
             ) { pick($0) }
@@ -761,9 +758,7 @@ private struct ChipListField: View {
     }
 
     /// Commit `name` as a chip — from the entry field, a suggestion row, or
-    /// the "+ Create" row. `ChipEntryField` clears its own entry and closes
-    /// its dropdown regardless of the outcome here, so a refused duplicate
-    /// still reads as understood.
+    /// the "+ Create" row.
     private func pick(_ name: String) {
         guard let chip = ChipEntry.committed(
             from: name, existing: values, deduplicating: deduplicates

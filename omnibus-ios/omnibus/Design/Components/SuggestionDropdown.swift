@@ -154,7 +154,6 @@ struct ChipEntryField: View {
     let pool: [SuggestionItem]
     var autofocus = false
     var isEnabled = true
-    var entryIdentifier: String?
     /// Called for a submit, the Add button, a suggestion row, or the create
     /// row. The field clears its own entry and closes its dropdown after,
     /// whether or not this accepts the name — a refused duplicate was still
@@ -188,7 +187,6 @@ struct ChipEntryField: View {
                     .tint(palette.accentColor)
                     .focused($entryFocused)
                     .onSubmit { pick(entry) }
-                    .accessibilityIdentifier(entryIdentifier ?? "")
 
                 if !entry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Button("Add") { pick(entry) }
@@ -200,7 +198,7 @@ struct ChipEntryField: View {
             .disabled(!isEnabled)
             .opacity(isEnabled ? 1 : 0.4)
 
-            if open {
+            if open, isEnabled {
                 let rows = SuggestionPool.filtered(pool: pool, current: current, query: entry)
                 let trimmed = entry.trimmingCharacters(in: .whitespacesAndNewlines)
                 let create = SuggestionPool.showsCreateRow(

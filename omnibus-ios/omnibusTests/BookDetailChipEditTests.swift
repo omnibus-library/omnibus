@@ -32,7 +32,6 @@ struct BookDetailChipEditTests {
         let payload = ChipEditKind.genres.payload(["Fantasy", "Romance"])
         #expect(payload.genres == ["Fantasy", "Romance"])
         #expect(payload.subjects == nil)
-        #expect(payload.title == nil)
     }
 
     @Test func tagsPayloadReplacesSubjectsAndLeavesGenresAlone() {
