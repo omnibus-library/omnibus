@@ -723,3 +723,67 @@ async fn sync_books_includes_a_cbz_only_book() {
         "a CBZ-only book advertises the CBZ download format"
     );
 }
+
+/// Set the scanned blurb on an already-seeded book. `seed_synced_ebook` has
+/// no description parameter, and the Kobo read is what is under test — not
+/// how the indexer got the value there.
+async fn set_description(pool: &SqlitePool, uuid: &str, description: &str) {
+    sqlx::query("UPDATE books SET description = ? WHERE uuid = ?")
+        .bind(description)
+        .bind(uuid)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn sync_books_carries_the_books_scanned_description() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Frank Herbert").await;
+    set_description(&pool, &uuid, "<p>Arrakis, <b>desert</b> planet.</p>").await;
+    synced_manual_shelf(&pool, user, "Kobo", std::slice::from_ref(&uuid)).await;
+
+    let rows = sync_books(&pool, user).await.unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].description, "<p>Arrakis, <b>desert</b> planet.</p>");
+}
+
+#[tokio::test]
+async fn sync_books_carries_an_empty_description_when_the_book_has_none() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Frank Herbert").await;
+    synced_manual_shelf(&pool, user, "Kobo", std::slice::from_ref(&uuid)).await;
+
+    let rows = sync_books(&pool, user).await.unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].description, "");
+}
+
+#[tokio::test]
+async fn sync_books_prefers_a_description_override_over_the_scanned_blurb() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Frank Herbert").await;
+    set_description(&pool, &uuid, "Scanned blurb.").await;
+    upsert_metadata_overrides(
+        &pool,
+        &uuid,
+        &MetadataOverrides {
+            description: Some("Corrected blurb.".into()),
+            ..Default::default()
+        },
+        false,
+        user,
+    )
+    .await
+    .unwrap();
+    synced_manual_shelf(&pool, user, "Kobo", std::slice::from_ref(&uuid)).await;
+
+    let rows = sync_books(&pool, user).await.unwrap();
+
+    assert_eq!(rows[0].description, "Corrected blurb.");
+}

@@ -403,7 +403,7 @@ pub fn book_metadata(base: &str, token: &str, book: &KoboBookRow) -> BookMetadat
         cross_revision_id: uuid.clone(),
         revision_id: uuid.clone(),
         title: book.title.clone(),
-        description: String::new(),
+        description: book.description.clone(),
         language: "en".to_owned(),
         cover_image_id: uuid.clone(),
         slug: uuid.clone(),

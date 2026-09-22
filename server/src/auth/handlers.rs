@@ -73,9 +73,10 @@ fn auth_error_to_response(e: AuthError) -> Response {
         AuthError::InvalidCredentials => {
             (StatusCode::UNAUTHORIZED, "invalid credentials").into_response()
         }
-        // Don't confirm the username exists: return the same generic
-        // "invalid credentials" body as a wrong password, but with 429 and
-        // a `Retry-After` header so a well-behaved client can back off.
+        // Reachable only for a caller that presented the correct password —
+        // `verify_login` answers `InvalidCredentials` for a wrong one on a
+        // locked row, so this 429 confirms nothing about whether a username
+        // exists. The generic body is kept anyway.
         AuthError::AccountLocked { until_unix } => {
             // Fall open at `until_unix` if SystemTime is unreadable or
             // doesn't fit i64 — that makes `retry_after = 0` rather than
@@ -98,6 +99,9 @@ fn auth_error_to_response(e: AuthError) -> Response {
             )
                 .into_response()
         }
+        // The one credential oracle left standing, deliberately: a sign-up
+        // form cannot work without telling the caller the name is taken.
+        // Self-registration is off by default once the first user exists.
         AuthError::UsernameTaken => (StatusCode::CONFLICT, "username taken").into_response(),
         // Not reachable from login/register, but the match is exhaustive: the
         // admin user-management surface (`backend::users`) owns these.

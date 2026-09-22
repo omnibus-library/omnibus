@@ -30,6 +30,9 @@ pub(super) struct LandingHeaderView {
     /// Full detail for the gallery pick (`None` on All Books / while it
     /// loads) — drives the edit pencil and the facet row.
     pub selected_shelf: Option<Shelf>,
+    /// Why the sort controls are inert for this pick — see
+    /// [`super::sorting::sort_lock_reason`]. `None` leaves them live.
+    pub sort_lock: Option<&'static str>,
 }
 
 /// Sticky `data-testid="lib-header"` header; also renders page-level +
@@ -52,6 +55,7 @@ pub(super) fn LandingHeader(
         lib_err,
         section_title,
         selected_shelf,
+        sort_lock,
     } = view;
     // The shelf page's rule (`shelf_access`): `None` viewer until the boot
     // effect resolves, so the pencil stays hidden on SSR + first paint
@@ -78,6 +82,7 @@ pub(super) fn LandingHeader(
                 }
                 Toolbar {
                     prefs: prefs,
+                    sort_lock,
                     on_change: move |next: ViewPrefs| on_prefs_change.call(next),
                 }
             }
@@ -204,6 +209,9 @@ pub(super) struct LandingContentProps {
     /// Remount key for the book area — a changed key mounts a fresh subtree,
     /// which is what replays the sweep-in CSS cascade on a gallery pick.
     pub sweep_key: String,
+    /// Why the table's column headers are inert for this pick; see
+    /// [`LandingHeaderView::sort_lock`].
+    pub sort_lock: Option<&'static str>,
 }
 
 /// Sidebar + grid/table column with load-more sentinel; stateless, mutations route through parent handlers.
@@ -215,6 +223,7 @@ pub(super) fn LandingContent(props: LandingContentProps) -> Element {
         ctx,
         handlers,
         sweep_key,
+        sort_lock,
     } = props;
     let LandingContentHandlers {
         on_prefs_change,
@@ -230,6 +239,7 @@ pub(super) fn LandingContent(props: LandingContentProps) -> Element {
                     books,
                     prefs,
                     ctx,
+                    sort_lock,
                     handlers: LandingBooksHandlers {
                         on_sort: EventHandler::new(on_sort),
                         on_load_more,
@@ -275,6 +285,7 @@ fn LandingBooksArea(
     books: BooksView,
     prefs: ViewPrefs,
     ctx: BookTableContext,
+    sort_lock: Option<&'static str>,
     handlers: LandingBooksHandlers,
 ) -> Element {
     let LandingBooksHandlers {
@@ -304,6 +315,7 @@ fn LandingBooksArea(
                     BookTable {
                         books: visible_books.clone(),
                         prefs: prefs.clone(),
+                        sort_lock,
                         on_sort,
                         ctx: ctx.clone(),
                     }

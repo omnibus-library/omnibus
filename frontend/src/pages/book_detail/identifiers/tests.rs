@@ -5,12 +5,37 @@
 //! under several schemes into a single row.
 
 use super::*;
+use omnibus_shared::EbookMetadata;
 
 fn ident(scheme: Option<&str>, value: &str) -> Identifier {
     Identifier {
         scheme: scheme.map(str::to_string),
         value: value.to_string(),
     }
+}
+
+/// `bd_identifier_rows` over a book carrying only scanned identifiers — the
+/// shape every pre-override test asserts.
+fn rows(identifiers: &[Identifier]) -> Vec<BdIdentifierRow> {
+    bd_identifier_rows(&EbookMetadata {
+        identifiers: identifiers.to_vec(),
+        ..Default::default()
+    })
+}
+
+/// `bd_identifier_rows` over a book with scanned identifiers *and* saved ISBN
+/// overrides.
+fn rows_with_isbns(
+    identifiers: &[Identifier],
+    isbn13: Option<&str>,
+    isbn10: Option<&str>,
+) -> Vec<BdIdentifierRow> {
+    bd_identifier_rows(&EbookMetadata {
+        identifiers: identifiers.to_vec(),
+        isbn13: isbn13.map(str::to_string),
+        isbn10: isbn10.map(str::to_string),
+        ..Default::default()
+    })
 }
 
 /// The label half of [`bd_identifier_label_ranked`] — the rank is asserted
@@ -131,7 +156,7 @@ fn bd_identifier_label_passes_an_unrecognized_named_scheme_through() {
 fn bd_identifier_rows_collapse_one_value_listed_under_several_schemes() {
     // An EPUB 3 package writes its ISBN as a `<dc:identifier>` and again as
     // an ONIX refinement; both reached the table as separate rows.
-    let rows = bd_identifier_rows(&[
+    let rows = rows(&[
         ident(Some("15"), "9780316769488"),
         ident(Some("ISBN"), "9780316769488"),
     ]);
@@ -144,7 +169,7 @@ fn bd_identifier_rows_collapse_one_value_listed_under_several_schemes() {
 
 #[test]
 fn bd_identifier_rows_prefer_a_known_label_over_an_inferred_one() {
-    let rows = bd_identifier_rows(&[
+    let rows = rows(&[
         ident(Some("unknown"), "9780316769488"),
         ident(Some("15"), "9780316769488"),
     ]);
@@ -154,7 +179,7 @@ fn bd_identifier_rows_prefer_a_known_label_over_an_inferred_one() {
 
 #[test]
 fn bd_identifier_rows_keep_the_first_occurrence_on_a_tie() {
-    let rows = bd_identifier_rows(&[
+    let rows = rows(&[
         ident(Some("ISBN"), "9780316769488"),
         ident(Some("isbn"), "9780316769488"),
     ]);
@@ -164,7 +189,7 @@ fn bd_identifier_rows_keep_the_first_occurrence_on_a_tie() {
 
 #[test]
 fn bd_identifier_rows_keep_distinct_values_in_source_order() {
-    let rows = bd_identifier_rows(&[
+    let rows = rows(&[
         ident(Some("15"), "9780316769488"),
         ident(Some("calibre"), "412"),
         ident(Some("uuid"), "c0e51a66-085f-4805-b116-a0d451d281bd"),
@@ -178,13 +203,13 @@ fn bd_identifier_rows_keep_distinct_values_in_source_order() {
 
 #[test]
 fn bd_identifier_rows_drop_a_blank_value() {
-    let rows = bd_identifier_rows(&[ident(Some("ISBN"), "   "), ident(None, "")]);
+    let rows = rows(&[ident(Some("ISBN"), "   "), ident(None, "")]);
     assert!(rows.is_empty());
 }
 
 #[test]
 fn bd_identifier_rows_give_every_row_a_distinct_key() {
-    let rows = bd_identifier_rows(&[
+    let rows = rows(&[
         ident(Some("ISBN"), "111"),
         ident(Some("ISBN"), "222"),
         ident(None, "333"),
@@ -194,4 +219,149 @@ fn bd_identifier_rows_give_every_row_a_distinct_key() {
     let before = keys.len();
     keys.dedup();
     assert_eq!(keys.len(), before);
+}
+
+#[test]
+fn bd_identifier_rows_render_an_isbn13_override_the_file_never_carried() {
+    // #2496 AC1: the editor saved it, the API returns it, the table dropped it.
+    let out = rows_with_isbns(&[], Some("9780316769488"), None);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].label, "ISBN-13");
+    assert_eq!(out[0].value, "9780316769488");
+}
+
+#[test]
+fn bd_identifier_rows_replace_a_scanned_row_the_isbn10_override_corrects() {
+    // The reported book: the file files a 13-digit value under OPF scheme
+    // `02`, so the table labelled it ISBN-10. The overrides name the real
+    // ISBN-13 (same value) and the real ISBN-10 (a different one). AC2: the
+    // correction replaces the row rather than sitting beside it.
+    let out = rows_with_isbns(
+        &[ident(Some("02"), "9780316259088")],
+        Some("9780316259088"),
+        Some("031625908X"),
+    );
+    assert_eq!(out.len(), 2);
+    assert_eq!(out[0].label, "ISBN-13");
+    assert_eq!(out[0].value, "9780316259088");
+    assert_eq!(out[1].label, "ISBN-10");
+    assert_eq!(out[1].value, "031625908X");
+}
+
+#[test]
+fn bd_identifier_rows_do_not_duplicate_an_override_the_file_already_carries() {
+    let out = rows_with_isbns(
+        &[ident(Some("ISBN-13"), "9780316769488")],
+        Some("9780316769488"),
+        None,
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].value, "9780316769488");
+}
+
+#[test]
+fn bd_identifier_rows_restore_the_scanned_value_once_the_override_is_cleared() {
+    // AC3: with no override the fields are `None` (or re-derived from the
+    // file), so the scanned row is what renders — unchanged.
+    let out = rows_with_isbns(&[ident(Some("15"), "9780316769488")], None, None);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].label, "ISBN-13");
+    assert_eq!(out[0].value, "9780316769488");
+}
+
+#[test]
+fn bd_identifier_rows_do_not_duplicate_a_hyphenated_scanned_isbn_with_its_derived_isbn13() {
+    let out = rows_with_isbns(
+        &[ident(Some("ISBN"), "978-0-13-468599-1")],
+        Some("9780134685991"),
+        None,
+    );
+    assert_eq!(out.len(), 1);
+}
+
+#[test]
+fn bd_identifier_rows_keep_two_distinct_scanned_isbns_when_one_is_the_derived_isbn13() {
+    let out = rows_with_isbns(
+        &[
+            ident(Some("ISBN"), "9780000000000"),
+            ident(Some("15"), "9781111111112"),
+        ],
+        Some("9780000000000"),
+        None,
+    );
+    assert_eq!(out.len(), 2);
+    assert!(out.iter().any(|r| r.value == "9781111111112"));
+}
+
+#[test]
+fn bd_identifier_rows_collapse_a_urn_isbn_twin_onto_the_override_row() {
+    let out = rows_with_isbns(
+        &[
+            ident(Some("ISBN"), "urn:isbn:9780134685991"),
+            ident(Some("15"), "978-0-13-468599-1"),
+        ],
+        Some("9780134685991"),
+        None,
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].label, "ISBN-13");
+    assert_eq!(out[0].value, "9780134685991");
+}
+
+#[test]
+fn bd_identifier_rows_relabel_the_matching_row_and_keep_every_other_scanned_row() {
+    // The override's value is in the file under a worse label; the file's own
+    // (wrong) ISBN-13 stays visible rather than being silently dropped.
+    let out = rows_with_isbns(
+        &[
+            ident(Some("15"), "9780000000000"),
+            ident(Some("02"), "9780316259088"),
+        ],
+        Some("9780316259088"),
+        None,
+    );
+    assert_eq!(out.len(), 2);
+    assert!(out
+        .iter()
+        .any(|r| r.label == "ISBN-13" && r.value == "9780316259088"));
+    assert!(out.iter().any(|r| r.value == "9780000000000"));
+}
+
+#[test]
+fn bd_identifier_rows_keep_two_non_isbn_values_that_differ_only_by_a_hyphen() {
+    let out = rows(&[
+        ident(Some("calibre"), "foo-123"),
+        ident(Some("calibre"), "foo123"),
+    ]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn bd_identifier_rows_never_treat_a_url_carrying_the_isbn_digits_as_the_isbn() {
+    let out = rows_with_isbns(
+        &[ident(Some("url"), "https://example.com/book/9780134685991")],
+        Some("9780134685991"),
+        None,
+    );
+    assert_eq!(out.len(), 2);
+    assert!(out
+        .iter()
+        .any(|r| r.value == "https://example.com/book/9780134685991"));
+    assert!(out
+        .iter()
+        .any(|r| r.label == "ISBN-13" && r.value == "9780134685991"));
+}
+
+#[test]
+fn an_isbn13_override_replaces_a_scanned_isbn13_row_with_a_different_value() {
+    // The label-match branch on its own: the file's ISBN-13 is wrong, the
+    // override corrects it.
+    let out = rows_with_isbns(
+        &[ident(Some("15"), "9780000000000")],
+        Some("9780316259088"),
+        None,
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].label, "ISBN-13");
+    assert_eq!(out[0].value, "9780316259088");
 }

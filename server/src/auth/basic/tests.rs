@@ -358,6 +358,57 @@ async fn opds_auth_user_returns_500_when_the_basic_auth_state_extension_is_missi
 
 // ------------------------------------------------------------ Projection
 
+/// AC2: the OPDS Basic surface is louder than login was — a locked account
+/// answered `403 account temporarily locked` where bad credentials get a 401
+/// challenge. A caller without the password must now get the ordinary
+/// challenge; only the password holder sees the 403.
+#[tokio::test]
+async fn opds_auth_user_hides_a_lockout_from_a_caller_without_the_password() {
+    let (app, pool, _basic) = fixture().await;
+    let user = auth_test_support::create_user_with_password(&pool, "basic-reader", PASSWORD).await;
+    db::test_support::lock_account(&pool, user.id).await;
+
+    let locked_wrong = app
+        .clone()
+        .oneshot(get_with_headers(
+            "/whoami",
+            &[(
+                header::AUTHORIZATION,
+                basic_header("basic-reader", "wrong-password"),
+            )],
+        ))
+        .await
+        .unwrap();
+    let unknown = app
+        .clone()
+        .oneshot(get_with_headers(
+            "/whoami",
+            &[(
+                header::AUTHORIZATION,
+                basic_header("ghost", "wrong-password"),
+            )],
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(locked_wrong.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(unknown.status(), locked_wrong.status());
+    assert_eq!(challenge_of(&locked_wrong), challenge_of(&unknown));
+
+    // The password holder still learns why they are being refused.
+    let holder = app
+        .oneshot(get_with_headers(
+            "/whoami",
+            &[(
+                header::AUTHORIZATION,
+                basic_header("basic-reader", PASSWORD),
+            )],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(holder.status(), StatusCode::FORBIDDEN);
+}
+
 #[tokio::test]
 async fn basic_auth_user_carries_the_sentinel_session_and_the_basic_kind() {
     let pool = db::init_db("sqlite::memory:").await.unwrap();

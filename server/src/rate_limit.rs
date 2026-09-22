@@ -1,8 +1,8 @@
 //! Reusable in-memory per-IP rate limiter and axum middleware.
 //!
-//! Fixed-window counter keyed on the request's peer IP (optionally
-//! `X-Forwarded-For` via `OMNIBUS_TRUST_FORWARDED_FOR=1`). Mounted
-//! per-router in `server/src/main.rs`.
+//! Fixed-window counter keyed on the request's peer IP — or, with
+//! `OMNIBUS_TRUST_FORWARDED_FOR=1`, on the rightmost `X-Forwarded-For` hop.
+//! Mounted per-router in `server/src/main.rs`.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -110,36 +110,69 @@ impl Default for RateLimiter {
     }
 }
 
-/// Resolve the request principal IP. Prefers `ConnectInfo<SocketAddr>` (wired
-/// by the server's make-service). Only consults `X-Forwarded-For` when the
-/// operator has opted in via `OMNIBUS_TRUST_FORWARDED_FOR=1` — otherwise a
-/// client on a directly-reachable deployment could spoof the header to
-/// bypass the limiter and grow the bucket map without bound. When neither
-/// source yields an IP, falls back to `0.0.0.0` so the limiter still applies
-/// process-wide.
+/// Resolve the request principal IP — see [`client_ip`] for the actual policy.
 fn resolve_ip(req: &Request) -> IpAddr {
     client_ip(req.extensions(), req.headers())
 }
 
-/// Same resolution as [`resolve_ip`], but over the pieces a
-/// `FromRequestParts` extractor holds — used by the OPDS Basic-auth
-/// extractor, which meters credential verification per IP.
+/// Resolve the request principal IP.
+///
+/// With `OMNIBUS_TRUST_FORWARDED_FOR=1` the **rightmost** `X-Forwarded-For`
+/// hop wins: that is the one the trusted proxy appended, and everything to
+/// its left is whatever the client chose to send. It has to outrank the TCP
+/// peer too — behind a proxy that peer *is* the proxy, so preferring it
+/// would hand the whole internet one bucket. Without the opt-in the header
+/// is never consulted, because on a directly-reachable deployment a client
+/// could rotate it per request to bypass the limiter and grow the bucket map
+/// without bound.
+///
+/// Used by the OPDS Basic-auth extractor (which meters credential
+/// verification per IP) and by `request_log`'s span, so the log and the
+/// limiter can never disagree about who a request came from.
 pub(crate) fn client_ip(extensions: &http::Extensions, headers: &http::HeaderMap) -> IpAddr {
-    let direct = extensions
+    if trust_forwarded_for() {
+        if let Some(ip) = trusted_forwarded_hop(headers) {
+            return ip;
+        }
+    }
+    extensions
         .get::<ConnectInfo<SocketAddr>>()
-        .map(|ConnectInfo(a)| a.ip());
-    direct
-        .or_else(|| {
-            if !trust_forwarded_for() {
-                return None;
-            }
-            headers
-                .get("x-forwarded-for")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.split(',').next())
-                .and_then(|s| s.trim().parse().ok())
+        .map(|ConnectInfo(a)| a.ip())
+        .unwrap_or_else(|| {
+            warn_missing_connect_info();
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED)
         })
-        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+}
+
+/// The last hop of the last `X-Forwarded-For` header line — the only element
+/// the nearest proxy vouches for. `get_all`, not `get`: a proxy may append
+/// its own line rather than extend the existing one.
+fn trusted_forwarded_hop(headers: &http::HeaderMap) -> Option<IpAddr> {
+    let line = headers
+        .get_all("x-forwarded-for")
+        .iter()
+        .next_back()?
+        .to_str()
+        .ok()?;
+    line.rsplit_once(',')
+        .map_or(line, |(_, last)| last)
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// One WARN, ever, when no peer address reached the limiter: every request
+/// then shares one bucket, which is how the per-IP throttle silently became
+/// process-wide. A dioxus bump that stops handing the server a make-service
+/// with connect info has to be loud rather than invisible.
+fn warn_missing_connect_info() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        tracing::warn!(
+            target: "omnibus::startup",
+            "no ConnectInfo<SocketAddr> on the request \u{2014} every client shares one rate-limit bucket"
+        );
+    });
 }
 
 /// Generic per-IP rate-limit middleware. Apply to whichever sub-router needs

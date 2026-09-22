@@ -1,9 +1,10 @@
 //! Tests for the per-IP rate limiter: window/max enforcement, per-IP bucket
 //! isolation, window reset, prefix-scoped middleware pass-through, the
 //! shared-budget wiring between REST and RPC search, the auth-router
-//! allow-list, and bucket pruning at capacity.
+//! allow-list, bucket pruning at capacity, and `client_ip` resolution.
 
 use super::*;
+use omnibus_db::test_support::EnvVarGuard;
 
 #[tokio::test]
 async fn rate_limiter_allow_up_to_max_then_blocks() {
@@ -293,4 +294,135 @@ async fn registration_status_bypasses_the_auth_limiter() {
             "/api/auth/registration must bypass the auth limiter (request #{i})"
         );
     }
+}
+
+// ------------------------------------------------- client_ip resolution
+
+/// Build a request extension set carrying `ip` as the TCP peer.
+fn peer(ip: &str) -> http::Extensions {
+    let mut ext = http::Extensions::new();
+    ext.insert(ConnectInfo(SocketAddr::new(ip.parse().unwrap(), 51234)));
+    ext
+}
+
+fn forwarded(value: &str) -> http::HeaderMap {
+    let mut headers = http::HeaderMap::new();
+    headers.insert("x-forwarded-for", value.parse().unwrap());
+    headers
+}
+
+fn ip(s: &str) -> IpAddr {
+    s.parse().unwrap()
+}
+
+#[tokio::test]
+async fn client_ip_uses_the_peer_and_ignores_forwarding_when_not_trusted() {
+    let _env = EnvVarGuard::set("OMNIBUS_TRUST_FORWARDED_FOR", None);
+    assert_eq!(
+        client_ip(&peer("198.51.100.7"), &forwarded("203.0.113.9")),
+        ip("198.51.100.7")
+    );
+}
+
+/// AC3: with the opt-in on, the *rightmost* hop wins — the one the trusted
+/// proxy appended. Everything to its left is whatever the client chose to
+/// send, so a prepended hop must not select a bucket. This also covers the
+/// forwarded hop outranking the TCP peer: behind a proxy that peer *is* the
+/// proxy (`10.0.0.1` here), so the forwarded hop has to win or the whole
+/// internet would share one bucket even with the opt-in on.
+#[tokio::test]
+async fn client_ip_ignores_a_client_supplied_leading_forwarded_hop() {
+    let _env = EnvVarGuard::set("OMNIBUS_TRUST_FORWARDED_FOR", Some("1"));
+    assert_eq!(
+        client_ip(&peer("10.0.0.1"), &forwarded("1.2.3.4, 203.0.113.9")),
+        ip("203.0.113.9"),
+        "the leftmost hop is attacker-controlled and must not pick the bucket"
+    );
+}
+
+/// A proxy that appends its own header line rather than extending the
+/// existing one still only vouches for the last hop of the last line.
+#[tokio::test]
+async fn client_ip_reads_the_last_forwarded_header_line() {
+    let _env = EnvVarGuard::set("OMNIBUS_TRUST_FORWARDED_FOR", Some("1"));
+    let mut headers = http::HeaderMap::new();
+    headers.append("x-forwarded-for", "1.2.3.4".parse().unwrap());
+    headers.append("x-forwarded-for", "203.0.113.9".parse().unwrap());
+    assert_eq!(client_ip(&peer("10.0.0.1"), &headers), ip("203.0.113.9"));
+}
+
+/// Trust on but no header (a direct hit that bypassed the proxy, or a
+/// health check) still resolves to the peer rather than the sentinel.
+#[tokio::test]
+async fn client_ip_falls_back_to_the_peer_when_no_forwarded_header_is_present() {
+    let _env = EnvVarGuard::set("OMNIBUS_TRUST_FORWARDED_FOR", Some("1"));
+    assert_eq!(
+        client_ip(&peer("198.51.100.7"), &http::HeaderMap::new()),
+        ip("198.51.100.7")
+    );
+    // An unparsable hop is no hop at all.
+    assert_eq!(
+        client_ip(&peer("198.51.100.7"), &forwarded("not-an-ip")),
+        ip("198.51.100.7")
+    );
+}
+
+/// No peer at all (a `oneshot`, or a dioxus bump that stops handing us a
+/// make-service with connect info) falls back to the process-wide sentinel.
+#[tokio::test]
+async fn client_ip_falls_back_to_the_sentinel_when_no_peer_is_available() {
+    let _env = EnvVarGuard::set("OMNIBUS_TRUST_FORWARDED_FOR", None);
+    assert_eq!(
+        client_ip(&http::Extensions::new(), &http::HeaderMap::new()),
+        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+    );
+}
+
+/// AC1/AC2: two requests carrying different `ConnectInfo` addresses get
+/// different buckets, and exhausting one leaves the other's budget intact.
+#[tokio::test]
+async fn rate_limit_by_ip_gives_each_connect_info_address_its_own_bucket() {
+    use axum::middleware::from_fn_with_state;
+    use axum::{body::Body, routing::post, Router};
+    use tower::ServiceExt;
+
+    let _env = EnvVarGuard::set("OMNIBUS_TRUST_FORWARDED_FOR", None);
+    let max = 2u32;
+    let limiter = Arc::new(RateLimiter::with_policy(Duration::from_secs(60), max));
+    let app = Router::new()
+        .route("/api/auth/login", post(|| async { "ok" }))
+        .layer(from_fn_with_state(limiter, rate_limit_by_ip));
+
+    let login_from = |addr: &str| {
+        let mut req = Request::builder()
+            .uri("/api/auth/login")
+            .method("POST")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::new(addr.parse().unwrap(), 51234)));
+        req
+    };
+
+    for i in 0..max {
+        let res = app
+            .clone()
+            .oneshot(login_from("198.51.100.7"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "request #{i} within budget");
+    }
+    let over = app
+        .clone()
+        .oneshot(login_from("198.51.100.7"))
+        .await
+        .unwrap();
+    assert_eq!(over.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let other = app.oneshot(login_from("198.51.100.8")).await.unwrap();
+    assert_eq!(
+        other.status(),
+        StatusCode::OK,
+        "one address exhausting its budget must not lock out another"
+    );
 }

@@ -11,14 +11,28 @@ use super::sorting::{
 };
 
 #[component]
-pub(super) fn Toolbar(prefs: ViewPrefs, on_change: EventHandler<ViewPrefs>) -> Element {
+pub(super) fn Toolbar(
+    prefs: ViewPrefs,
+    sort_lock: Option<&'static str>,
+    on_change: EventHandler<ViewPrefs>,
+) -> Element {
     let view_mode = prefs.view_mode;
 
     rsx! {
         div { class: "lib-toolbar", role: "toolbar", "data-testid": "lib-toolbar",
             ViewModeToggle { view_mode, prefs: prefs.clone(), on_change }
             if view_mode == ViewMode::Grid {
-                SortControls { prefs, on_change }
+                SortControls { prefs, locked: sort_lock.is_some(), on_change }
+            }
+            // Outside the grid-only block on purpose: in table mode the
+            // dropdown is gone but the column headers are the inert control,
+            // and the reader still has to be told why (#2507).
+            if let Some(reason) = sort_lock {
+                span {
+                    class: "label lib-sort-locked",
+                    "data-testid": "lib-sort-locked",
+                    "{reason}"
+                }
             }
         }
     }
@@ -61,9 +75,11 @@ fn ViewModeToggle(
     }
 }
 
-/// Grid-only sort-axis dropdown and direction toggle.
+/// Grid-only sort-axis dropdown and direction toggle. `locked` is set for a
+/// gallery pick whose member order the server settles itself — the controls
+/// stay visible (so the axis still reads back) but cannot be used.
 #[component]
-fn SortControls(prefs: ViewPrefs, on_change: EventHandler<ViewPrefs>) -> Element {
+fn SortControls(prefs: ViewPrefs, locked: bool, on_change: EventHandler<ViewPrefs>) -> Element {
     let sort_key = prefs.sort_key;
     let sort_dir = prefs.sort_dir;
     let set_sort_key = {
@@ -94,6 +110,7 @@ fn SortControls(prefs: ViewPrefs, on_change: EventHandler<ViewPrefs>) -> Element
                 select {
                     class: "lib-sort-select",
                     "data-testid": "lib-sort-select",
+                    disabled: locked,
                     onchange: move |evt: Event<FormData>| {
                         if let Some(key) = sort_key_from_value(&evt.value()) {
                             set_sort_key(key);
@@ -113,6 +130,7 @@ fn SortControls(prefs: ViewPrefs, on_change: EventHandler<ViewPrefs>) -> Element
                 class: "lib-sort-dir",
                 "data-testid": "lib-sort-dir",
                 aria_label: "Toggle sort direction",
+                disabled: locked,
                 onclick: toggle_sort_dir,
                 if sort_dir == SortDir::Asc { "↑" } else { "↓" }
             }
@@ -129,15 +147,19 @@ mod tests {
     use crate::test_support::render;
 
     #[component]
-    fn ToolbarHarness(prefs: ViewPrefs) -> Element {
+    fn ToolbarHarness(prefs: ViewPrefs, sort_lock: Option<&'static str>) -> Element {
         rsx! {
-            Toolbar { prefs, on_change: move |_| {} }
+            Toolbar { prefs, sort_lock, on_change: move |_| {} }
         }
     }
 
     fn render_toolbar(prefs: ViewPrefs) -> String {
+        render_toolbar_locked(prefs, None)
+    }
+
+    fn render_toolbar_locked(prefs: ViewPrefs, sort_lock: Option<&'static str>) -> String {
         render(rsx! {
-            ToolbarHarness { prefs }
+            ToolbarHarness { prefs, sort_lock }
         })
     }
 
@@ -171,5 +193,39 @@ mod tests {
         // dropdown stays out of the markup.
         assert!(!html.contains("data-testid=\"lib-sort-select\""));
         assert!(!html.contains("data-testid=\"lib-sort-dir\""));
+    }
+
+    #[test]
+    fn toolbar_disables_the_sort_controls_and_says_why_inside_a_locked_shelf() {
+        let html = render_toolbar_locked(ViewPrefs::default(), Some("shelf order"));
+
+        assert!(html.contains("data-testid=\"lib-sort-select\""));
+        assert!(html.contains("disabled"));
+        assert!(html.contains("data-testid=\"lib-sort-locked\""));
+        assert!(html.contains("shelf order"));
+    }
+
+    #[test]
+    fn toolbar_states_the_locked_order_in_table_mode_where_the_controls_are_hidden() {
+        // Table mode sorts via its column headers, so the grid dropdown is
+        // absent — but the reader still has to be told why the headers are
+        // inert (#2507 AC2).
+        let prefs = ViewPrefs {
+            view_mode: ViewMode::Table,
+            ..ViewPrefs::default()
+        };
+        let html = render_toolbar_locked(prefs, Some("shelf order"));
+
+        assert!(!html.contains("data-testid=\"lib-sort-select\""));
+        assert!(html.contains("data-testid=\"lib-sort-locked\""));
+    }
+
+    #[test]
+    fn toolbar_leaves_the_sort_controls_live_with_no_lock() {
+        let html = render_toolbar(ViewPrefs::default());
+
+        assert!(html.contains("data-testid=\"lib-sort-select\""));
+        assert!(!html.contains("data-testid=\"lib-sort-locked\""));
+        assert!(!html.contains("disabled"));
     }
 }

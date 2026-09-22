@@ -216,6 +216,14 @@ fn collect_contributors<R: std::io::Read + std::io::Seek>(
             {
                 return None;
             }
+            // The same stamp with **no** role attribute at all, which is what
+            // most Calibre exports actually write — #2072's role filter never
+            // sees it, so it became an author link on every such upload
+            // (#2501). Only role-less entries are judged by shape: a named
+            // role is the file telling us what this is, and we believe it.
+            if role.is_none() && looks_like_generator_stamp(&name) {
+                return None;
+            }
             let file_as = m
                 .refinement("file-as")
                 .map(|r| r.value.clone())
@@ -234,6 +242,54 @@ fn lookup_refinement(refs: &[epub::doc::MetadataRefinement], key: &str) -> Optio
     refs.iter()
         .find(|r| r.property == key)
         .map(|r| r.value.clone())
+}
+
+/// Whether `name` is a conversion tool's generator stamp rather than a person.
+///
+/// Two shapes, both written by the tools that produce these entries:
+/// a bracketed URL anywhere in the name (`calibre (3.48.0)
+/// [https://calibre-ebook.com]`), or a leading tool name followed by a
+/// parenthesised dotted version (`Sigil (1.9.10)`). Deliberately narrow — the
+/// blocklist this replaces was per-version whack-a-mole, but a filter that
+/// swallowed a real credited name would be worse than the stamp it removes.
+fn looks_like_generator_stamp(name: &str) -> bool {
+    has_bracketed_url(name) || has_parenthesised_version(name)
+}
+
+/// A `[...]` group containing a URL scheme.
+fn has_bracketed_url(name: &str) -> bool {
+    let Some(open) = name.find('[') else {
+        return false;
+    };
+    let rest = &name[open + 1..];
+    let Some(close) = rest.find(']') else {
+        return false;
+    };
+    rest[..close].contains("://")
+}
+
+/// A single-token leading name followed by a `(...)` group holding nothing
+/// but digits and dots, with at least one of each — a version, never a
+/// lifespan (`1907-1988` carries a hyphen) or a nickname. The leading name
+/// must carry no internal whitespace: a tool stamps itself as one word
+/// (`calibre`, `Sigil`, `pandoc`), while a credited person's name does not,
+/// so `Author Name (1965.07.31)` is a role-less human, not a stamp.
+fn has_parenthesised_version(name: &str) -> bool {
+    let Some(open) = name.find('(') else {
+        return false;
+    };
+    let leading = name[..open].trim();
+    if leading.is_empty() || leading.split_whitespace().count() > 1 {
+        return false;
+    }
+    let rest = &name[open + 1..];
+    let Some(close) = rest.find(')') else {
+        return false;
+    };
+    let inner = rest[..close].trim();
+    inner.contains('.')
+        && inner.chars().all(|c| c.is_ascii_digit() || c == '.')
+        && inner.chars().any(|c| c.is_ascii_digit())
 }
 
 /// Resolve (series, series_index) from the OPF.

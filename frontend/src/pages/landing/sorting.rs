@@ -9,7 +9,7 @@
 
 use std::cmp::Ordering;
 
-use omnibus_shared::{Contributor, EbookMetadata, SortDir, SortKey};
+use omnibus_shared::{Contributor, EbookMetadata, ShelfKind, SortDir, SortKey};
 
 /// Join contributor names into one comma-separated display string.
 pub(crate) fn contributor_names(list: &[Contributor]) -> String {
@@ -151,6 +151,22 @@ pub(crate) fn toggle_dir(d: SortDir) -> SortDir {
     match d {
         SortDir::Asc => SortDir::Desc,
         SortDir::Desc => SortDir::Asc,
+    }
+}
+
+/// Why the landing's sort controls are inert for the current gallery pick, or
+/// `None` when they act.
+///
+/// A hand-picked shelf's member order is the reader's own
+/// (`ORDER BY sb.position, sb.added_at`) and the wishlist's is when they
+/// wished for it (`ORDER BY we.added_at DESC`) — both settled server-side in
+/// `db::shelves::read::detail`, where neither the axis nor the direction is
+/// consulted. The queries are deliberate and unchanged; what was wrong is a
+/// control that stayed live and pretended to act (#2507).
+pub(crate) fn sort_lock_reason(kind: Option<ShelfKind>) -> Option<&'static str> {
+    match kind? {
+        ShelfKind::Manual | ShelfKind::Wishlist => Some("shelf order"),
+        ShelfKind::Smart => None,
     }
 }
 

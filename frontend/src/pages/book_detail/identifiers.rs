@@ -2,7 +2,7 @@
 //! them: a human label for each scheme (an ONIX codelist-5 code is not one),
 //! and one row per distinct value. Shared by the marquee and mobile tables.
 
-use omnibus_shared::Identifier;
+use omnibus_shared::{EbookMetadata, Identifier};
 
 /// Collision-free list key for an identifier row. A book can carry several
 /// identifiers sharing one `scheme` (the projection keeps every distinct
@@ -102,7 +102,8 @@ pub(super) struct BdIdentifierRow {
     pub value: String,
 }
 
-/// The identifier rows to render, deduplicated by value.
+/// The identifier rows to render, deduplicated by value, with the book's
+/// saved ISBN overrides folded in.
 ///
 /// A book routinely carries one identifier under several schemes — an EPUB 3
 /// package repeats its ISBN as an ONIX refinement, and a merge folds two
@@ -111,9 +112,17 @@ pub(super) struct BdIdentifierRow {
 /// identifier, so the rows collapse to one, keeping the best-named label
 /// (which also subsumes the `(scheme, value)` dedup the DB's primary key
 /// already gives us) and the first occurrence's position.
-pub(super) fn bd_identifier_rows(identifiers: &[Identifier]) -> Vec<BdIdentifierRow> {
+///
+/// `isbn13` / `isbn10` are the fields the metadata editor writes and
+/// `apply_overrides` merges; rendering only `identifiers` meant a saved ISBN
+/// appeared nowhere and a correction read as silently ignored (#2496). They
+/// are folded in last, so an override replaces the row it corrects — by value
+/// when the file already holds it, else by label — rather than sitting beside
+/// it. With no override the fields are absent (or re-derived from the file),
+/// so the scanned row is what renders.
+pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
     let mut rows: Vec<(BdIdentifierRow, LabelRank)> = Vec::new();
-    for ident in identifiers {
+    for ident in &book.identifiers {
         let value = ident.value.trim();
         if value.is_empty() {
             continue;
@@ -126,7 +135,7 @@ pub(super) fn bd_identifier_rows(identifiers: &[Identifier]) -> Vec<BdIdentifier
         };
         match rows
             .iter_mut()
-            .find(|(existing, _)| existing.value.eq_ignore_ascii_case(value))
+            .find(|(existing, _)| same_identifier(&existing.value, value))
         {
             // Strictly better only: ties keep the first occurrence, so the
             // order the projection emits stays the order a reader sees.
@@ -135,7 +144,99 @@ pub(super) fn bd_identifier_rows(identifiers: &[Identifier]) -> Vec<BdIdentifier
             None => rows.push((row, rank)),
         }
     }
+    apply_isbn_override(&mut rows, "isbn-13", book.isbn13.as_deref());
+    apply_isbn_override(&mut rows, "isbn-10", book.isbn10.as_deref());
     rows.into_iter().map(|(row, _)| row).collect()
+}
+
+/// Fold one saved ISBN override into `rows` under `scheme`.
+///
+/// **Never drop a row by label alone** — a book can genuinely carry two
+/// distinct ISBNs (a second edition's identifier set copied in by a merge,
+/// or a book indexed under both), and `isbn13`/`isbn10` are derived from the
+/// scanned rows whenever no override exists, so this runs on every book
+/// (#2496). Placement, in order: (a) a row that is the *same ISBN* as the
+/// override (per [`same_identifier`]) is relabelled and revalued in place —
+/// this is a rename, not a new identifier, and is what lets `urn:isbn:…`,
+/// hyphenated, and bare-digit forms of one ISBN collapse onto the override
+/// row; (b) failing that, a row sharing the override's label is replaced —
+/// the correction case, where the file's value under that label was simply
+/// wrong (a derived value's own source row always matches in (a), so it can
+/// never reach this branch); (c) failing both, the override is a value the
+/// file never carried and is appended. Only *other* rows that are the same
+/// ISBN as what was just placed are then dropped — a `urn:isbn:` twin
+/// beside its hyphenated twin, never a genuinely different ISBN.
+fn apply_isbn_override(
+    rows: &mut Vec<(BdIdentifierRow, LabelRank)>,
+    scheme: &str,
+    value: Option<&str>,
+) {
+    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return;
+    };
+    let ident = Identifier {
+        scheme: Some(scheme.to_string()),
+        value: value.to_string(),
+    };
+    let (label, rank) = bd_identifier_label_ranked(&ident);
+    let row = BdIdentifierRow {
+        key: bd_identifier_key(&ident),
+        label: label.clone(),
+        value: value.to_string(),
+    };
+    let slot_index = rows
+        .iter()
+        .position(|(existing, _)| same_identifier(&existing.value, value))
+        .or_else(|| {
+            rows.iter()
+                .position(|(existing, _)| existing.label == label)
+        });
+    match slot_index {
+        Some(i) => rows[i] = (row, rank),
+        None => rows.push((row, rank)),
+    }
+    rows.retain(|(existing, _)| {
+        existing.value == value || !same_identifier(&existing.value, value)
+    });
+}
+
+/// The value's derived ISBN, if — once lowercased, a leading `urn:isbn:` /
+/// `isbn:` / `isbn ` prefix stripped, and hyphens and whitespace removed —
+/// the remainder is exactly 13 ASCII digits (ISBN-13), or 9 ASCII digits
+/// followed by a digit or `X` (ISBN-10). No checksum: a mistyped scanned
+/// ISBN must still collapse onto its derived digits. Deliberately narrow —
+/// a URL, a calibre id, or a uuid never reduces to this shape, so they
+/// return `None` rather than being coerced into a false match on whatever
+/// digits they happen to contain.
+fn isbn_value(v: &str) -> Option<String> {
+    let lower = v.trim().to_ascii_lowercase();
+    let rest = lower
+        .strip_prefix("urn:isbn:")
+        .or_else(|| lower.strip_prefix("isbn:"))
+        .or_else(|| lower.strip_prefix("isbn "))
+        .unwrap_or(lower.as_str());
+    let cleaned: String = rest
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .collect();
+    let chars: Vec<char> = cleaned.chars().collect();
+    let is_isbn13 = chars.len() == 13 && chars.iter().all(|c| c.is_ascii_digit());
+    let is_isbn10 = chars.len() == 10
+        && chars[..9].iter().all(|c| c.is_ascii_digit())
+        && (chars[9].is_ascii_digit() || chars[9].eq_ignore_ascii_case(&'x'));
+    (is_isbn13 || is_isbn10).then(|| cleaned.to_ascii_uppercase())
+}
+
+/// True when two identifier values are the same identifier: an exact,
+/// case-insensitive match, or both reduce to the same [`isbn_value`]. The
+/// ISBN comparison is deliberately narrower than a plain hyphen/whitespace
+/// fold — that fold alone would collapse two distinct non-ISBN values that
+/// merely share punctuation (`foo-123` / `foo123`), and stripping every
+/// non-digit would let a URL ending in an ISBN's digits be mistaken for the
+/// ISBN itself.
+fn same_identifier(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b)
+        || matches!((isbn_value(a), isbn_value(b)), (Some(x), Some(y)) if x == y)
 }
 
 /// True when `value`, with hyphens and whitespace stripped, is a valid ISBN —

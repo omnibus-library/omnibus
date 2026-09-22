@@ -649,3 +649,93 @@ async fn library_composition_propagates_sqlx_error_when_the_books_table_is_missi
 
     assert!(matches!(err, StatsError::Sqlx(_)));
 }
+
+// Regression for #2498: two books each carried `en` *and* `en-US`, and the
+// #2491 fold summed both placements into the English bucket — reporting
+// `English 30` against 29 books that have a language at all.
+#[tokio::test]
+async fn two_spellings_of_one_language_on_one_book_are_a_single_placement() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = seed_lib(&pool).await;
+    let a = seed_book(&pool, lib, "u-a", "EPUB").await;
+    link_language(&pool, a, "en").await;
+    link_language(&pool, a, "en-US").await;
+
+    let c = composed(&pool).await;
+
+    assert_eq!(by_label(&c.languages).get("English"), Some(&1));
+    assert_eq!(c.languages.coverage.total, 1);
+    assert_eq!(c.languages.coverage.books, 1);
+    assert_eq!(c.languages.overlap(), 0);
+}
+
+#[tokio::test]
+async fn two_publisher_rows_on_one_book_are_one_placement_in_each_publisher() {
+    // `publishers.name` is UNIQUE, so two rows are two real publishers. Each
+    // gets the book once — what must never happen is one bucket counting it
+    // twice.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = seed_lib(&pool).await;
+    let a = seed_book(&pool, lib, "u-a", "EPUB").await;
+    link_publisher(&pool, a, "Tor").await;
+    link_publisher(&pool, a, "Gollancz").await;
+
+    let c = composed(&pool).await;
+
+    let labels = by_label(&c.publishers);
+    assert_eq!(labels.get("Tor"), Some(&1));
+    assert_eq!(labels.get("Gollancz"), Some(&1));
+    assert_eq!(c.publishers.coverage.books, 1);
+}
+
+#[tokio::test]
+async fn every_unfolded_dimensions_slices_sum_to_its_coverage_total_and_no_slice_exceeds_its_books()
+{
+    // The cheap invariant #2498 broke: a bucket may hold at most every
+    // covered book once, and the slices must account for exactly the
+    // placements the coverage pair claims. The seeded library carries the
+    // exact shapes that broke it — one book spelling English twice, one book
+    // under two publishers, one dual-format book.
+    //
+    // "No slice exceeds its books" holds per real bucket, not per `Other`:
+    // `fold_tail` sums the tail's placements into `Other`, so on a library
+    // with more than `SLICE_LIMIT` buckets in a dimension `Other` can exceed
+    // `coverage.books` — pre-existing, and not this test's bound to enforce.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = seed_lib(&pool).await;
+    let a = seed_book(&pool, lib, "u-a", "EPUB").await;
+    add_file(&pool, a, "M4B", 1).await;
+    link_language(&pool, a, "en").await;
+    link_language(&pool, a, "en-US").await;
+    link_publisher(&pool, a, "Tor").await;
+    link_publisher(&pool, a, "Gollancz").await;
+    let b = seed_row(&pool, lib, "u-b", Some("1994-01-01")).await;
+    add_file(&pool, b, "EPUB", 0).await;
+    link_language(&pool, b, "fra").await;
+    set_genres(&pool, "u-b", &["Sci-Fi", "Horror"]).await;
+
+    let c = composed(&pool).await;
+
+    for (name, dim) in [
+        ("formats", &c.formats),
+        ("languages", &c.languages),
+        ("publishers", &c.publishers),
+        ("decades", &c.decades),
+        ("genres", &c.genres),
+    ] {
+        let summed: i64 = dim.slices.iter().map(|s| s.books).sum();
+        assert_eq!(
+            summed, dim.coverage.total,
+            "{name}: slices must sum to total"
+        );
+        for slice in &dim.slices {
+            assert!(
+                slice.books <= dim.coverage.books,
+                "{name}: slice {:?} counts {} of {} covered books",
+                slice.label,
+                slice.books,
+                dim.coverage.books
+            );
+        }
+    }
+}

@@ -113,7 +113,8 @@ Key vars (see `.env.example` for the full annotated list):
 **Security-sensitive (never set casually in production):**
 
 - `OMNIBUS_INITIAL_ADMIN=username` — promotes the named user to admin on **every** boot while set. One-time account recovery only — UNSET IMMEDIATELY AFTER USE.
-- `OMNIBUS_TRUST_FORWARDED_FOR=1` — trust the client `X-Forwarded-For` as the per-IP rate-limit key. MUST NOT be set unless a trusted reverse proxy strips inbound `X-Forwarded-For`; on a directly-exposed deployment it lets any client spoof a fresh bucket and bypass the login throttle (credential stuffing).
+- `OMNIBUS_TRUST_FORWARDED_FOR=1` — trust the client `X-Forwarded-For` as the per-IP rate-limit key, keyed on the RIGHTMOST hop (the one the nearest proxy appended). This assumes exactly ONE trusted proxy in front of Axum — there is no hop-count knob — so behind a chain (CDN → nginx → omnibus) the rightmost hop is the inner proxy and every client shares its bucket. MUST NOT be set unless a trusted reverse proxy strips inbound `X-Forwarded-For`; on a directly-exposed deployment it lets any client spoof a fresh bucket and bypass the login throttle (credential stuffing).
+- `OMNIBUS_METRICS_TOKEN=<random>` — bearer token a Prometheus scraper must present to read `GET /metrics`. That route sits outside `/api/*`, so `require_auth` never gates it and this token is the only thing in front of ~76 KB of endpoint topology. Unset or blank (the default) means `/metrics` answers **404** and `metrics::warn_if_disabled` logs one startup WARN; a wrong or missing bearer is 401.
 
 Optional storage overrides:
 - `OMNIBUS_COVERS_DIR` — where cover image files are stored (default `./covers`). Set to an absolute path on real deployments so covers don't land next to the binary and disappear on redeploy.

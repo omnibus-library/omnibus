@@ -206,6 +206,73 @@ fn collect_contributors_drops_bkp_role_from_epub3_refinement() {
     assert_eq!(creators[0].name, "Cixin Liu");
 }
 
+#[test]
+fn collect_contributors_drops_a_role_less_generator_stamp() {
+    // #2501: Calibre writes this shape with no `opf:role` at all, so the
+    // #2072 `bkp` filter never sees it and `calibre (3.48.0) [https://…]`
+    // became an author link on every upload.
+    let doc = doc_from_opf(&opf_package(
+        "2.0",
+        r#"    <dc:creator>M.L. Wang</dc:creator>
+<dc:contributor>calibre (3.48.0) [https://calibre-ebook.com]</dc:contributor>"#,
+    ));
+    assert!(collect_contributors(&doc, "contributor").is_empty());
+    let creators = collect_contributors(&doc, "creator");
+    assert_eq!(creators.len(), 1);
+    assert_eq!(creators[0].name, "M.L. Wang");
+}
+
+#[test]
+fn collect_contributors_drops_a_role_less_tool_name_and_version() {
+    // The other generator shape in the wild: a tool name and a parenthesised
+    // dotted version, with no URL to give it away.
+    let doc = doc_from_opf(&opf_package(
+        "3.0",
+        r"    <dc:contributor>Sigil (1.9.10)</dc:contributor>",
+    ));
+    assert!(collect_contributors(&doc, "contributor").is_empty());
+}
+
+#[test]
+fn collect_contributors_keeps_a_role_less_person() {
+    // The filter must not reach a genuine contributor that happens to carry
+    // no role, including one with a parenthetical that is not a version.
+    let doc = doc_from_opf(&opf_package(
+        "3.0",
+        r"    <dc:contributor>Jane Editor</dc:contributor>
+<dc:contributor>Jean (Jack) Kerouac</dc:contributor>
+<dc:contributor>Robert A. Heinlein (1907-1988)</dc:contributor>",
+    ));
+    let names: Vec<String> = collect_contributors(&doc, "contributor")
+        .into_iter()
+        .map(|c| c.name)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "Jane Editor",
+            "Jean (Jack) Kerouac",
+            "Robert A. Heinlein (1907-1988)"
+        ]
+    );
+}
+
+#[test]
+fn collect_contributors_keeps_a_role_less_person_with_a_dotted_date() {
+    // A credited person's leading name carries a space; only a tool stamps
+    // itself as a single word (`calibre`, `Sigil`, `pandoc`), so a dotted
+    // date must not be mistaken for a version.
+    let doc = doc_from_opf(&opf_package(
+        "3.0",
+        r"    <dc:contributor>Author Name (1965.07.31)</dc:contributor>",
+    ));
+    let names: Vec<String> = collect_contributors(&doc, "contributor")
+        .into_iter()
+        .map(|c| c.name)
+        .collect();
+    assert_eq!(names, ["Author Name (1965.07.31)"]);
+}
+
 // --- collect_series ----------------------------------------------------
 
 #[test]

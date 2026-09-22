@@ -7,6 +7,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::KoboDeviceView;
 
+use crate::pages::settings::use_instance_origin;
 use crate::{data, use_server_url};
 
 /// The `api_endpoint` a Kobo is pointed at: `{origin}/kobo/{token}`. The reader
@@ -15,7 +16,9 @@ fn endpoint_url(server_url: &str, token: &str) -> String {
     format!("{}/kobo/{token}", server_url.trim_end_matches('/'))
 }
 
-/// The numbered "how to connect" list at the top of the card.
+/// The "how to connect" procedure, plus the standing shelf rule beneath it.
+/// The rule is deliberately **not** a numbered item: a reader working the
+/// list has nothing to do at that number (#2511).
 fn render_kobo_setup_steps() -> Element {
     rsx! {
         ol { class: "subtitle kobo-setup-steps", "data-testid": "kobo-setup-steps",
@@ -24,9 +27,9 @@ fn render_kobo_setup_steps() -> Element {
                 b { "Add a Kobo" }
             }
             li {
-                "Copy the device's wireless sync endpoint URL below. ("
-                code { "/kobo/<token>" }
-                ") It must be reachable from the Kobo's own Wi-Fi."
+                "Copy the whole "
+                b { "Wireless sync endpoint" }
+                " URL shown for it below. It must be reachable from the Kobo's own Wi-Fi."
             }
             li { "Connect the Kobo over USB and tap Connect on the device." }
             li {
@@ -36,16 +39,14 @@ fn render_kobo_setup_steps() -> Element {
                 code { "api_endpoint=" }
                 " under "
                 code { "[OneStoreServices]" }
-                " to "
-                code { "<your_omnibus_server_url>/kobo/<token>" }
-                "."
+                " to the URL you copied."
             }
             li { "Eject safely. Your next sync on the device talks to Omnibus." }
-            li {
-                "Only shelves marked "
-                b { "Sync to Kobo" }
-                " are synced — set that on a shelf before the first sync."
-            }
+        }
+        p { class: "subtitle kobo-shelf-rule", "data-testid": "kobo-shelf-rule",
+            "Only shelves marked "
+            b { "Sync to Kobo" }
+            " are synced — set that on a shelf before the first sync."
         }
     }
 }
@@ -166,6 +167,10 @@ fn render_kobo_add_form(
 #[component]
 pub fn KoboDevicesCard() -> Element {
     let server_url = use_server_url();
+    // This card only mounts on web (`mod kobo` is `not(feature = "mobile")`),
+    // which co-locates with the server, so the page's own origin is the
+    // endpoint's origin.
+    let endpoint_origin = use_instance_origin();
     let mut devices = use_signal(Vec::<KoboDeviceView>::new);
     let mut name_input = use_signal(String::new);
     let mut msg = use_signal(|| None::<String>);
@@ -198,9 +203,7 @@ pub fn KoboDevicesCard() -> Element {
                 Ok(dev) => {
                     name_input.set(String::new());
                     devices.write().push(dev);
-                    msg.set(Some(
-                        "Kobo added. Paste its endpoint URL below.".to_string(),
-                    ));
+                    msg.set(Some("Kobo added. Copy its endpoint URL below.".to_string()));
                     msg_is_error.set(false);
                 }
                 Err(e) => {
@@ -266,7 +269,7 @@ pub fn KoboDevicesCard() -> Element {
             {render_kobo_setup_steps()}
             // Unconditional: the hazard applies the moment a URL is copied.
             {render_kobo_warning()}
-            {render_kobo_device_list(&device_list, &server_url, in_flight(), on_regenerate, on_remove)}
+            {render_kobo_device_list(&device_list, &endpoint_origin(), in_flight(), on_regenerate, on_remove)}
             {render_kobo_add_form(name_input, in_flight(), on_add)}
 
             if let Some(m) = msg() {
@@ -422,5 +425,34 @@ mod render_tests {
     fn kobo_device_row_renders_the_endpoint_url() {
         let html = render_in_vdom(device_row);
         assert!(html.contains("https://omni.example.com/kobo/tok123"));
+    }
+
+    /// The standing "only flagged shelves sync" rule is a constraint, not a
+    /// step — a reader working the numbered list has nothing to *do* at that
+    /// number (#2511 AC2).
+    #[test]
+    fn kobo_card_states_the_shelf_rule_outside_the_numbered_steps() {
+        let html = render_in_vdom(card);
+        let ol_end = html.find("</ol>").expect("the setup list closes");
+        let rule_at = html
+            .find("data-testid=\"kobo-shelf-rule\"")
+            .expect("the standing shelf rule renders");
+        assert!(
+            rule_at > ol_end,
+            "the shelf rule must sit after the procedure list, not inside it"
+        );
+        assert!(html.contains("Sync to Kobo"));
+    }
+
+    /// Step 2 and step 4 must name the same thing: the whole URL the field
+    /// below shows. The old copy pointed step 2 at a bare path and step 4 at a
+    /// placeholder origin, so a reader could follow both and still write an
+    /// unresolvable `api_endpoint=` (#2511 AC1).
+    #[test]
+    fn kobo_card_steps_name_the_endpoint_the_field_shows() {
+        let html = render_in_vdom(card);
+        assert!(html.contains("api_endpoint="));
+        assert!(!html.contains("your_omnibus_server_url"));
+        assert!(!html.contains("/kobo/&lt;token&gt;"));
     }
 }

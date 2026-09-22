@@ -89,7 +89,7 @@ pub(super) fn MarqueeFilesStop(
                 if let Some(p) = b.publisher.clone() { BdMetaRow { k: "Publisher".to_string(), v: p } }
                 if let Some(d) = published_display.clone() { BdMetaRow { k: "Published".to_string(), v: d } }
                 if let Some(l) = b.language.clone() { BdMetaRow { k: "Language".to_string(), v: l } }
-                for row in bd_identifier_rows(&b.identifiers) {
+                for row in bd_identifier_rows(&b) {
                     BdMetaRow { key: "{row.key}", k: row.label, v: row.value }
                 }
                 if let Some(added) = added_display.clone() {

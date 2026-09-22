@@ -203,8 +203,8 @@ pub fn write_override_cover(
     // must propagate — silently leaving a stale file behind would let the
     // extension probe in `find_override_cover_file` keep serving it instead
     // of the cover just written below.
-    for fmt in crate::covers::ImageFormat::PROBE_ORDER {
-        let old = dir.join(format!("override-{uuid}.{}", fmt.to_ext()));
+    for old_ext in crate::covers::ImageFormat::sweep_exts() {
+        let old = dir.join(format!("override-{uuid}.{old_ext}"));
         match std::fs::remove_file(old) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -219,7 +219,7 @@ pub fn write_override_cover(
 /// Delete override cover files for a UUID.
 pub fn delete_override_cover(uuid: &str) {
     let dir = crate::covers::covers_dir();
-    for fmt in crate::covers::ImageFormat::PROBE_ORDER {
-        let _ = std::fs::remove_file(dir.join(format!("override-{uuid}.{}", fmt.to_ext())));
+    for ext in crate::covers::ImageFormat::sweep_exts() {
+        let _ = std::fs::remove_file(dir.join(format!("override-{uuid}.{ext}")));
     }
 }
