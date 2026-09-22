@@ -156,18 +156,10 @@ async fn login_stops_disclosing_a_lockout_after_the_disclosure_cap() {
     let p = pool().await;
     let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
 
-    // Before the cap: a fresh lock's first attempt still discloses.
-    lock_account(&p, u.id).await;
-    let err = verify_login(&p, "alice", "hunter2-real-long")
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(err, AuthError::AccountLocked { .. }),
-        "got {err:?}"
-    );
-
-    // Reset to a fresh lock, spend the whole disclosure budget on wrong
-    // guesses, then even the correct password answers generically.
+    // Spend the whole disclosure budget on wrong guesses against a fresh
+    // lock, then even the correct password answers generically. The
+    // pre-cap disclosure itself is covered by
+    // `login_on_a_locked_account_returns_account_locked_only_for_the_correct_password`.
     lock_account(&p, u.id).await;
     for _ in 0..LOCKOUT_DISCLOSURE_ATTEMPTS {
         let _ = verify_login(&p, "alice", "still-wrong").await;
