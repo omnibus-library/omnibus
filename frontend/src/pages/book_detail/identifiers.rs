@@ -155,7 +155,7 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
 /// distinct ISBNs (a second edition's identifier set copied in by a merge,
 /// or a book indexed under both), and `isbn13`/`isbn10` are derived from the
 /// scanned rows whenever no override exists, so this runs on every book
-/// (#2511). Placement, in order: (a) a row that is the *same ISBN* as the
+/// (#2496). Placement, in order: (a) a row that is the *same ISBN* as the
 /// override (per [`isbn_form`]) is relabelled and revalued in place — this
 /// is a rename, not a new identifier, and is what lets `urn:isbn:…`,
 /// hyphenated, and bare-digit forms of one ISBN collapse onto the override
