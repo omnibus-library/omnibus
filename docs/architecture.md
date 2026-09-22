@@ -392,12 +392,11 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       sheet where every add/remove saves at once as a
                       `genres` / `subjects` override — never queued (rule 08)
                       — and `ChipEditKind` holds the per-kind list/payload
-                      split. `DetailRead.homeLifted` is why the flow layout's
-                      Home is always whole: trimming it at rest, as the
-                      marquee does, made the tag row and blurb jump as the
-                      list rose. `JournalMarkdown` is the
-                      journal body's renderer — the web sets the server's
-                      `body_html` with `dangerous_inner_html`, which SwiftUI
+                      split. `DetailRead.homeLifted` keeps the flow layout's
+                      Home whole at every scroll position; only the marquee
+                      trims at rest. `JournalMarkdown` is the journal body's
+                      renderer — the web sets the server's `body_html` with
+                      `dangerous_inner_html`, which SwiftUI
                       has no equivalent of, so the native app renders from the
                       `body_md` riding alongside it and carries its own
                       line-based splitter (paragraphs,
