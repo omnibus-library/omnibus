@@ -167,16 +167,10 @@ fn render_kobo_add_form(
 #[component]
 pub fn KoboDevicesCard() -> Element {
     let server_url = use_server_url();
-    // Mobile injects an absolute server URL, so that wins outright. Web
-    // co-locates with the server and gets `""` from `use_server_url`, which
-    // would leave the field holding a bare path a reader cannot paste into
-    // `api_endpoint` — fall back to the page's own origin instead.
-    let origin = use_instance_origin();
-    let endpoint_origin = if server_url.is_empty() {
-        origin()
-    } else {
-        server_url.clone()
-    };
+    // This card only mounts on web (`mod kobo` is `not(feature = "mobile")`),
+    // which co-locates with the server, so the page's own origin is the
+    // endpoint's origin.
+    let endpoint_origin = use_instance_origin();
     let mut devices = use_signal(Vec::<KoboDeviceView>::new);
     let mut name_input = use_signal(String::new);
     let mut msg = use_signal(|| None::<String>);
@@ -209,8 +203,6 @@ pub fn KoboDevicesCard() -> Element {
                 Ok(dev) => {
                     name_input.set(String::new());
                     devices.write().push(dev);
-                    // The reader copies *from* the card; nothing is ever
-                    // pasted into it (#2511).
                     msg.set(Some("Kobo added. Copy its endpoint URL below.".to_string()));
                     msg_is_error.set(false);
                 }
@@ -277,7 +269,7 @@ pub fn KoboDevicesCard() -> Element {
             {render_kobo_setup_steps()}
             // Unconditional: the hazard applies the moment a URL is copied.
             {render_kobo_warning()}
-            {render_kobo_device_list(&device_list, &endpoint_origin, in_flight(), on_regenerate, on_remove)}
+            {render_kobo_device_list(&device_list, &endpoint_origin(), in_flight(), on_regenerate, on_remove)}
             {render_kobo_add_form(name_input, in_flight(), on_add)}
 
             if let Some(m) = msg() {
