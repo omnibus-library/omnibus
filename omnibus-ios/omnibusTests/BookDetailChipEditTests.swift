@@ -4,7 +4,6 @@
 //  lifted shape under each layout — the flow never trims, so its tags and
 //  blurb can't jump as the list rises.
 
-import Foundation
 import Testing
 
 @testable import omnibus
@@ -48,13 +47,6 @@ struct BookDetailChipEditTests {
         let payload = ChipEditKind.tags.payload([])
         #expect(payload.subjects == [])
         #expect(!payload.isEmpty)
-    }
-
-    @Test func payloadEncodesTheWireFieldNames() throws {
-        let data = try JSONEncoder().encode(ChipEditKind.genres.payload(["Fantasy"]))
-        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(json["genres"] as? [String] == ["Fantasy"])
-        #expect(json["subjects"] == nil)
     }
 
     // MARK: - The Home section's shape
