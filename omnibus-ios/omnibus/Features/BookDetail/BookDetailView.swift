@@ -351,6 +351,12 @@ struct BookDetailView: View {
     @State private var kindleSending = false
     /// The finished send's outcome — the alert's payload, success or failure.
     @State private var kindleReport: KindleReport?
+    /// Admin: the merge and delete sheets, and the receipt a landed merge
+    /// leaves behind — held until dismissed or undone, since the undo handle
+    /// it carries is only good while something keeps it.
+    @State private var showMerge = false
+    @State private var showDelete = false
+    @State private var mergeResult: MergeBooksResult?
 
     private var downloads = DownloadManager.shared
     private var presentation = Presentation.shared
@@ -438,6 +444,28 @@ struct BookDetailView: View {
             }
         }
         .sheet(isPresented: $showCheckIn) { CheckInView() }
+        .sheet(isPresented: $showMerge) {
+            if let book = model.book {
+                MergeBookSheet(target: book) { result in
+                    mergeResult = result
+                    Task { await model.load(uuid: uuid) }
+                }
+            }
+        }
+        .sheet(isPresented: $showDelete) {
+            if let book = model.book {
+                DeleteBookSheet(book: book) { result in
+                    // A total delete leaves this screen about a book that is
+                    // gone; a partial one just changed the files stop.
+                    if result.bookDeleted {
+                        dismiss()
+                    } else {
+                        Task { await model.load(uuid: uuid) }
+                    }
+                }
+            }
+        }
+        .overlay(alignment: .bottom) { mergeToast }
         .sheet(isPresented: $showDescription) {
             if let book = model.book {
                 DescriptionDrawer(book: book)
@@ -501,6 +529,23 @@ struct BookDetailView: View {
         // inherit the book-toned accent.
         .environment(\.palette, bookPalette)
         .tint(bookPalette.accentColor)
+    }
+
+    /// The post-merge receipt, parked above the action bar so the undo stays
+    /// in reach while the merged page reloads underneath it.
+    @ViewBuilder
+    private var mergeToast: some View {
+        if let result = mergeResult {
+            MergeUndoToast(result: result, target: uuid) { _ in
+                mergeResult = nil
+                Task { await model.load(uuid: uuid) }
+            } onDismiss: {
+                mergeResult = nil
+            }
+            .screenPadding()
+            .padding(.bottom, Self.barClearance)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     /// The screen's palette: the theme re-keyed to this book's tone, resolved
@@ -889,6 +934,7 @@ struct BookDetailView: View {
                     }
                 }
                 kindleRow(book)
+                adminRows(book)
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
@@ -945,6 +991,38 @@ struct BookDetailView: View {
                 Image(systemName: "paperplane")
             }
             .disabled(kindleSending || !gate.isTappable)
+        }
+    }
+
+    /// The two admin rows, Merge with… and Delete files…. Absent entirely for
+    /// a reader who isn't an admin; greyed offline, since both are library-
+    /// wide writes that are never queued (rule 08 test 1) — the same answer
+    /// the web page gives, where the buttons exist only for admins.
+    @ViewBuilder
+    private func adminRows(_ book: Book) -> some View {
+        let gate = AdminBookGate.resolve(
+            isAdmin: app.user?.isAdmin == true,
+            isOnline: connectivity.isOnline
+        )
+        if !gate.isHidden {
+            Divider()
+            Button {
+                showMerge = true
+            } label: {
+                Label("Merge with\u{2026}", systemImage: "arrow.triangle.merge")
+            }
+            .disabled(!gate.isEnabled)
+            .accessibilityIdentifier("merge-open")
+            Button(role: .destructive) {
+                showDelete = true
+            } label: {
+                Label(
+                    DeleteSelectionCopy.menuLabel(hasFiles: !book.formats.isEmpty),
+                    systemImage: "trash"
+                )
+            }
+            .disabled(!gate.isEnabled)
+            .accessibilityIdentifier("delete-open")
         }
     }
 
