@@ -55,6 +55,7 @@ pub(super) struct BookTableContext {
 pub(super) fn BookTable(
     books: Vec<EbookMetadata>,
     prefs: ViewPrefs,
+    sort_lock: Option<&'static str>,
     on_sort: EventHandler<SortKey>,
     ctx: BookTableContext,
 ) -> Element {
@@ -103,6 +104,7 @@ pub(super) fn BookTable(
                             label: "Title".to_string(),
                             sort_key: SortKey::Title,
                             prefs: prefs.clone(),
+                            locked: sort_lock.is_some(),
                             on_sort: on_sort,
                         }
                         SortableHeader {
@@ -110,6 +112,7 @@ pub(super) fn BookTable(
                             label: "Author".to_string(),
                             sort_key: SortKey::Author,
                             prefs: prefs.clone(),
+                            locked: sort_lock.is_some(),
                             on_sort: on_sort,
                         }
                         SortableHeader {
@@ -117,6 +120,7 @@ pub(super) fn BookTable(
                             label: "Series".to_string(),
                             sort_key: SortKey::Series,
                             prefs: prefs.clone(),
+                            locked: sort_lock.is_some(),
                             on_sort: on_sort,
                         }
                         th { class: "ebook-col-tags", "Tags" }
@@ -128,6 +132,7 @@ pub(super) fn BookTable(
                             label: "Last Updated".to_string(),
                             sort_key: SortKey::LastUpdated,
                             prefs: prefs.clone(),
+                            locked: sort_lock.is_some(),
                             on_sort: on_sort,
                         }
                         SortableHeader {
@@ -135,6 +140,7 @@ pub(super) fn BookTable(
                             label: "Added".to_string(),
                             sort_key: SortKey::NewestAdded,
                             prefs: prefs.clone(),
+                            locked: sort_lock.is_some(),
                             on_sort: on_sort,
                         }
                         th { class: "ebook-col-language", "Language" }
@@ -160,15 +166,20 @@ fn SortableHeader(
     label: String,
     sort_key: SortKey,
     prefs: ViewPrefs,
+    locked: bool,
     on_sort: EventHandler<SortKey>,
 ) -> Element {
     let active = prefs.sort_key == sort_key;
-    let aria_sort = match (active, prefs.sort_dir) {
-        (true, SortDir::Asc) => "ascending",
-        (true, SortDir::Desc) => "descending",
+    // A locked pick is ordered server-side, so the stored axis describes
+    // nothing about these rows — claiming `aria-sort="ascending"` there would
+    // tell a screen reader the table is sorted a way it is not (#2507).
+    let aria_sort = match (locked, active, prefs.sort_dir) {
+        (true, _, _) => "none",
+        (false, true, SortDir::Asc) => "ascending",
+        (false, true, SortDir::Desc) => "descending",
         _ => "none",
     };
-    let arrow = if !active {
+    let arrow = if locked || !active {
         ""
     } else if prefs.sort_dir == SortDir::Asc {
         " ↑"
@@ -179,6 +190,7 @@ fn SortableHeader(
         th { class: "{class} sort-th", aria_sort: "{aria_sort}",
             button {
                 class: "sort-th-btn",
+                disabled: locked,
                 onclick: move |_| on_sort.call(sort_key),
                 "{label}{arrow}"
             }

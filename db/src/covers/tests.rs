@@ -5,7 +5,9 @@ use omnibus_shared::MetadataOverrides;
 
 use super::*;
 use crate::books::list_books;
-use crate::metadata_overrides::{upsert_metadata_overrides, write_override_cover};
+use crate::metadata_overrides::{
+    delete_override_cover, upsert_metadata_overrides, write_override_cover,
+};
 use crate::pool::init_db;
 use crate::sync::replace_books;
 use crate::test_support::{indexed, CoversTempDir};
@@ -253,6 +255,107 @@ fn gif_cover_bytes_decode_via_load_from_memory() {
     let img =
         image::load_from_memory(GIF_1X1).expect("GIF must decode once the gif codec is enabled");
     assert_eq!((img.width(), img.height()), (1, 1));
+}
+
+/// An SVG-declared EPUB cover must never land as `<uuid>.svg`. `resolve_cover`
+/// returns the OPF manifest's `media-type` verbatim and `image::guess_format`
+/// cannot sniff SVG, so this mime classification *is* the storage decision.
+#[tokio::test]
+async fn write_cover_file_stores_an_svg_declared_cover_as_opaque_bytes() {
+    let _covers = CoversTempDir::new("svg_refused");
+    let uuid = "svg-book";
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>"#;
+
+    write_cover_file(uuid, "image/svg+xml", svg).unwrap();
+
+    assert!(
+        std::fs::read(cover_path_for(uuid, "svg")).is_err(),
+        "no .svg may be written into the cover cache"
+    );
+    assert_eq!(std::fs::read(cover_path_for(uuid, "bin")).unwrap(), svg);
+    assert_eq!(ImageFormat::from_mime("image/svg+xml"), ImageFormat::Bin);
+    assert_eq!(ImageFormat::from_ext("svg"), ImageFormat::Bin);
+    assert_eq!(ImageFormat::Bin.to_mime(), "application/octet-stream");
+}
+
+/// SVG was refused at ingest, so a `.svg` sitting in a deployed cache is a
+/// pre-refusal artifact, not a cover — it must never be served.
+#[tokio::test]
+async fn find_cover_file_ignores_a_legacy_svg() {
+    let _covers = CoversTempDir::new("svg_legacy");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#;
+    std::fs::write(cover_path_for("legacy", "svg"), svg).unwrap();
+
+    assert!(find_cover_file("legacy").is_none());
+}
+
+/// A sibling the probe list never names (`.jpeg`, reachable only through the
+/// fallback scan) must still be served beside a stale pre-refusal `.svg`: the
+/// scan skips the `.svg` rather than letting it shadow a real cover.
+#[tokio::test]
+async fn find_cover_file_serves_a_scan_only_sibling_beside_a_legacy_svg() {
+    let _covers = CoversTempDir::new("svg_beside_jpeg_ext");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    std::fs::write(cover_path_for("both", "svg"), b"<svg/>").unwrap();
+    std::fs::write(cover_path_for("both", "jpeg"), b"jpeg-bytes").unwrap();
+
+    let (mime, bytes) = find_cover_file("both").expect("the scan-only sibling is a real cover");
+    assert_eq!(mime, "image/jpeg");
+    assert_eq!(bytes, b"jpeg-bytes");
+}
+
+/// A book that also holds a real cover beside a stale pre-refusal `.svg`
+/// (`write_cover_file` never unlinks the sibling) must still serve the real
+/// cover rather than the `.svg` fast-negative shadowing it.
+#[tokio::test]
+async fn find_cover_file_prefers_a_real_cover_over_a_stale_legacy_svg() {
+    let _covers = CoversTempDir::new("svg_legacy_and_real");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    std::fs::write(cover_path_for("mixed", "svg"), b"<svg/>").unwrap();
+    std::fs::write(cover_path_for("mixed", "jpg"), b"not a real jpeg").unwrap();
+
+    let (mime, bytes) = find_cover_file("mixed").expect("real cover should be served");
+    assert_eq!(mime, "image/jpeg");
+    assert_eq!(bytes, b"not a real jpeg");
+}
+
+/// Same defect, independently reported: a real cover beside a legacy `.svg`
+/// must not disappear behind the fast-negative check.
+#[tokio::test]
+async fn find_cover_file_still_serves_a_real_cover_beside_a_legacy_svg() {
+    let _covers = CoversTempDir::new("svg_legacy_beside_real");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    std::fs::write(cover_path_for("paired", "svg"), b"<svg/>").unwrap();
+    std::fs::write(cover_path_for("paired", "jpg"), b"jpeg bytes").unwrap();
+
+    let (mime, bytes) = find_cover_file("paired").expect("real cover should be served");
+    assert_eq!(mime, "image/jpeg");
+    assert_eq!(bytes, b"jpeg bytes");
+}
+
+/// Same pre-refusal sweep as `delete_cover_files_for`, on the override side.
+#[tokio::test]
+async fn delete_override_cover_removes_a_legacy_svg_too() {
+    let _covers = CoversTempDir::new("override_svg_delete");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    let path = covers_dir().join("override-doomed.svg");
+    std::fs::write(&path, b"<svg/>").unwrap();
+
+    delete_override_cover("doomed");
+
+    assert!(std::fs::read(&path).is_err());
+}
+
+#[tokio::test]
+async fn delete_cover_files_for_removes_a_legacy_svg_too() {
+    let _covers = CoversTempDir::new("svg_delete");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    std::fs::write(cover_path_for("doomed", "svg"), b"<svg/>").unwrap();
+
+    delete_cover_files_for(&["doomed".to_string()]);
+
+    assert!(std::fs::read(cover_path_for("doomed", "svg")).is_err());
 }
 
 #[tokio::test]

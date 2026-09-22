@@ -405,7 +405,7 @@ fn info_sections(uuid: &str, b: &EbookMetadata, series: &Option<String>) -> Elem
                     if let Some(l) = b.language.clone() { BdMetaRow { k: "Language".to_string(), v: l } }
                     if let Some(a) = b.added_at.as_deref().and_then(crate::format::format_date_short_opt) { BdMetaRow { k: "Added".to_string(), v: a } }
                     if let Some(s) = series.clone() { BdMetaRow { k: "Series".to_string(), v: s } }
-                    for row in bd_identifier_rows(&b.identifiers) {
+                    for row in bd_identifier_rows(b) {
                         BdMetaRow { key: "{row.key}", k: row.label, v: row.value }
                     }
                 }

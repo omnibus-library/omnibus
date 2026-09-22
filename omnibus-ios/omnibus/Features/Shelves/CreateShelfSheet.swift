@@ -201,8 +201,9 @@ struct CreateShelfSheet: View {
     }
 }
 
-/// One smart-shelf condition: field, operator, value.
-private struct RuleEditorRow: View {
+/// One smart-shelf condition: field, operator, value. Shared with the edit
+/// sheet, so a rule reads and edits the same way whether the shelf exists yet.
+struct RuleEditorRow: View {
     @Binding var rule: ShelfRule
     var onDelete: () -> Void
 

@@ -355,11 +355,7 @@ async fn post_unlock_clears_lockout() {
     let (app, _, pool) = fixture().await;
     let token = admin_token(&pool, "alice").await;
     let bob = auth_test_support::create_user(&pool, "bob").await;
-    sqlx::query("UPDATE users SET failed_login_count = 5, locked_until = strftime('%s','now') + 3600 WHERE id = ?")
-        .bind(bob.id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    omnibus_db::test_support::lock_account(&pool, bob.id).await;
 
     let res = app
         .clone()

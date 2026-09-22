@@ -1054,3 +1054,17 @@ pub async fn seed_user(pool: &SqlitePool, username: &str) -> i64 {
     .await
     .unwrap()
 }
+
+/// Put `user_id` into a live lockout window, written directly rather than
+/// through failed logins, returning the `locked_until` it wrote.
+pub async fn lock_account(pool: &SqlitePool, user_id: i64) -> i64 {
+    let until = crate::auth::now_unix() + crate::auth::login::LOCKOUT_DURATION_SECS;
+    sqlx::query("UPDATE users SET failed_login_count = ?, locked_until = ? WHERE id = ?")
+        .bind(crate::auth::login::LOCKOUT_MIN_AFTER)
+        .bind(until)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    until
+}

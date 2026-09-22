@@ -1,7 +1,7 @@
 //! Unified Dioxus fullstack entrypoint. Built for WASM, `main` calls
 //! `dioxus::launch` to hydrate the client; built natively (`server`
-//! feature), it calls `dioxus::serve` to run an Axum backend serving SSR'd
-//! HTML, the WASM bundle, [`omnibus_frontend::rpc`] server functions, and
+//! feature), it binds and serves its own Axum backend serving SSR'd HTML,
+//! the WASM bundle, [`omnibus_frontend::rpc`] server functions, and
 //! [`omnibus::backend`]'s mobile-facing REST routes.
 
 use omnibus_frontend::App;
@@ -15,10 +15,17 @@ fn main() {
     #[cfg(feature = "server")]
     {
         // Bind the appender guard for the whole process: dropping it flushes
-        // the non-blocking file writer's buffer. `dioxus::serve` blocks until
+        // the non-blocking file writer's buffer. `server::serve` blocks until
         // shutdown, so the guard lives exactly as long as the server does.
-        let _log_guard = omnibus::logging::init_tracing();
-        dioxus::serve(server::launch);
+        let log_guard = omnibus::logging::init_tracing();
+        if let Err(error) = server::serve() {
+            tracing::error!(%error, "omnibus server exited");
+            // Flush the buffered log writer before exiting — `process::exit`
+            // skips destructors, so an un-dropped guard would lose this
+            // error line.
+            drop(log_guard);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -29,6 +36,7 @@ fn main() {
 mod server {
     use std::sync::Arc;
 
+    use anyhow::Context;
     use axum::Router;
     use dioxus::server::axum::Extension;
     use omnibus::{auth, backend, metrics, rate_limit, request_log, security_headers};
@@ -40,7 +48,34 @@ mod server {
 
     use crate::App;
 
-    /// Entry point handed to `dioxus::serve`: boots the stack and returns the wired Axum `Router`.
+    /// Bind the configured address and serve, owning the serve call rather
+    /// than handing the router to `dioxus::serve`.
+    ///
+    /// The address comes from `dioxus::cli_config`, so `dx serve --addr` and
+    /// the Docker image's `IP`/`PORT` behave exactly as before; what is given
+    /// up versus `dioxus::serve` is the debug-only subsecond hot-patch loop,
+    /// which `dx serve` leaves off unless `--hot-patch` is passed. See
+    /// [`omnibus::serve::serve_with_peer_addresses`] for why the serve step
+    /// itself is hand-rolled.
+    pub(crate) fn serve() -> anyhow::Result<()> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .context("build the tokio runtime")?;
+        runtime.block_on(async {
+            let addr = dioxus::cli_config::fullstack_address_or_localhost();
+            let router = launch().await?;
+            let listener = tokio::net::TcpListener::bind(addr)
+                .await
+                .with_context(|| format!("bind {addr}"))?;
+            tracing::info!(%addr, "omnibus listening");
+            omnibus::serve::serve_with_peer_addresses(listener, router)
+                .await
+                .context("axum serve")
+        })
+    }
+
+    /// Entry point handed to [`serve`]: boots the stack and returns the wired Axum `Router`.
     pub(crate) async fn launch() -> anyhow::Result<Router> {
         init_boot_metadata();
         log_startup_warnings();
@@ -87,9 +122,10 @@ mod server {
 
     /// Log a WARN if `OMNIBUS_TRUST_FORWARDED_FOR` is enabled — required only
     /// behind a trusted reverse proxy, dangerous otherwise — and a one-time
-    /// WARN each if kepubify is missing (Kobo downloads then fall back to
-    /// plain EPUB) or Calibre's `ebook-convert` is missing (format conversion
-    /// stays disabled). Both are optional, so neither blocks the boot.
+    /// WARN each if no Prometheus scrape token is configured (`/metrics` then
+    /// 404s), if kepubify is missing (Kobo downloads fall back to plain EPUB),
+    /// or if Calibre's `ebook-convert` is missing (format conversion stays
+    /// disabled). All are optional, so none blocks the boot.
     fn log_startup_warnings() {
         if rate_limit::trust_forwarded_for() {
             tracing::warn!(
@@ -97,6 +133,7 @@ mod server {
                 "OMNIBUS_TRUST_FORWARDED_FOR is enabled \u{2014} ensure a trusted reverse proxy is in front."
             );
         }
+        metrics::warn_if_disabled();
         omnibus_db::kepub::warn_if_unavailable();
         omnibus_db::convert::warn_if_unavailable();
     }
