@@ -282,11 +282,6 @@ pub(crate) fn find_cover_file(uuid: &str) -> Option<(String, Vec<u8>)> {
             return Some((fmt.to_mime().to_string(), bytes));
         }
     }
-    // SVG was refused at ingest, so a pre-refusal `.svg` is not a cover and
-    // must not cost a directory scan per request.
-    if cover_path_for(uuid, "svg").is_file() {
-        return None;
-    }
     // Fallback scan.
     let dir = covers_dir();
     if let Ok(entries) = std::fs::read_dir(&dir) {

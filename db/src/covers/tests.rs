@@ -290,6 +290,21 @@ async fn find_cover_file_ignores_a_legacy_svg() {
     assert!(find_cover_file("legacy").is_none());
 }
 
+/// A sibling the probe list never names (`.jpeg`, reachable only through the
+/// fallback scan) must still be served beside a stale pre-refusal `.svg`: the
+/// scan skips the `.svg` rather than letting it shadow a real cover.
+#[tokio::test]
+async fn find_cover_file_serves_a_scan_only_sibling_beside_a_legacy_svg() {
+    let _covers = CoversTempDir::new("svg_beside_jpeg_ext");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    std::fs::write(cover_path_for("both", "svg"), b"<svg/>").unwrap();
+    std::fs::write(cover_path_for("both", "jpeg"), b"jpeg-bytes").unwrap();
+
+    let (mime, bytes) = find_cover_file("both").expect("the scan-only sibling is a real cover");
+    assert_eq!(mime, "image/jpeg");
+    assert_eq!(bytes, b"jpeg-bytes");
+}
+
 /// A book that also holds a real cover beside a stale pre-refusal `.svg`
 /// (`write_cover_file` never unlinks the sibling) must still serve the real
 /// cover rather than the `.svg` fast-negative shadowing it.
