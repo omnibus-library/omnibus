@@ -208,11 +208,7 @@ async fn unlock_user_clears_lockout() {
         .unwrap();
 
     // Force a live lockout far into the future.
-    sqlx::query("UPDATE users SET failed_login_count = 5, locked_until = strftime('%s','now') + 3600 WHERE id = ?")
-        .bind(bob.id)
-        .execute(&p)
-        .await
-        .unwrap();
+    crate::test_support::lock_account(&p, bob.id).await;
     assert!(
         list_users(&p)
             .await

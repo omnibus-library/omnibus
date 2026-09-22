@@ -7,6 +7,7 @@
 use super::*;
 use crate::auth::test_support::pool;
 use crate::auth::users::create_user;
+use crate::test_support::lock_account;
 
 #[tokio::test]
 async fn login_success_clears_failures() {
@@ -168,21 +169,6 @@ async fn login_stops_disclosing_a_lockout_after_the_disclosure_cap() {
         .await
         .unwrap_err();
     assert!(matches!(err, AuthError::InvalidCredentials), "got {err:?}");
-}
-
-/// Put `user_id` into a live lockout window and return its `locked_until`.
-/// Written directly rather than through five failed logins so the tests above
-/// pay one Argon2 verify instead of six.
-async fn lock_account(pool: &sqlx::SqlitePool, user_id: i64) -> i64 {
-    let until = now_unix() + LOCKOUT_DURATION_SECS;
-    sqlx::query("UPDATE users SET failed_login_count = ?, locked_until = ? WHERE id = ?")
-        .bind(LOCKOUT_MIN_AFTER)
-        .bind(until)
-        .bind(user_id)
-        .execute(pool)
-        .await
-        .unwrap();
-    until
 }
 
 #[tokio::test]

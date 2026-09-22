@@ -8,8 +8,8 @@ use super::{now_unix, row_to_user, AuthError, AuthResult, User};
 /// Lockout schedule (minutes), keyed on the number of prior lockouts. After
 /// 5 failed attempts in any window we consult this table for the next
 /// `locked_until`.
-const LOCKOUT_MIN_AFTER: i64 = 5;
-const LOCKOUT_DURATION_SECS: i64 = 15 * 60;
+pub(crate) const LOCKOUT_MIN_AFTER: i64 = 5;
+pub(crate) const LOCKOUT_DURATION_SECS: i64 = 15 * 60;
 /// How many attempts inside a lock window may still learn the lock exists.
 pub const LOCKOUT_DISCLOSURE_ATTEMPTS: i64 = 3;
 

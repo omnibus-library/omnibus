@@ -426,7 +426,7 @@ async fn login_hides_a_lockout_from_a_caller_without_the_password() {
     let user = db::auth::create_user(&pool, "alice", "correct horse battery staple")
         .await
         .unwrap();
-    crate::auth::test_support::lock_account(&pool, user.id).await;
+    db::test_support::lock_account(&pool, user.id).await;
 
     let locked_wrong = app
         .clone()

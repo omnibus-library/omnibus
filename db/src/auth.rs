@@ -7,7 +7,7 @@
 mod api_token;
 mod avatars;
 mod device;
-mod login;
+pub(crate) mod login;
 mod password;
 mod session;
 mod session_key;
