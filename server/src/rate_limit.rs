@@ -145,22 +145,20 @@ pub(crate) fn client_ip(extensions: &http::Extensions, headers: &http::HeaderMap
 }
 
 /// The last hop of the last `X-Forwarded-For` header line — the only element
-/// the nearest proxy actually vouches for. `get_all` rather than `get`
-/// because a proxy may append its own header line instead of extending the
-/// existing one, and `HeaderMap::get` would then return the client's.
+/// the nearest proxy vouches for. `get_all`, not `get`: a proxy may append
+/// its own line rather than extend the existing one.
 fn trusted_forwarded_hop(headers: &http::HeaderMap) -> Option<IpAddr> {
-    let mut last_line: Option<&str> = None;
-    for value in headers.get_all("x-forwarded-for").iter() {
-        if let Ok(s) = value.to_str() {
-            last_line = Some(s);
-        }
-    }
-    let line = last_line?;
-    let hop = match line.rsplit_once(',') {
-        Some((_, last)) => last,
-        None => line,
-    };
-    hop.trim().parse().ok()
+    let line = headers
+        .get_all("x-forwarded-for")
+        .iter()
+        .next_back()?
+        .to_str()
+        .ok()?;
+    line.rsplit_once(',')
+        .map_or(line, |(_, last)| last)
+        .trim()
+        .parse()
+        .ok()
 }
 
 /// One WARN, ever, when no peer address reached the limiter: every request
