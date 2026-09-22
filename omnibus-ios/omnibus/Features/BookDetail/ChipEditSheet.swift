@@ -10,7 +10,7 @@ import SwiftUI
 /// Which override-backed chip list the sheet edits. Carries the per-kind
 /// copy and dispatches the pool fetch and the payload — the web's
 /// `BdChipKind` split.
-enum ChipEditKind: String, Identifiable, CaseIterable, Sendable {
+enum ChipEditKind: String, Identifiable, Sendable {
     case genres
     case tags
 
@@ -62,30 +62,44 @@ enum ChipEditKind: String, Identifiable, CaseIterable, Sendable {
         case .tags: MetadataOverridesPayload(subjects: values)
         }
     }
+}
 
-    /// The library-wide suggestion pool, replica first and the server's
-    /// answer after it, each already collected into dropdown order.
-    func pool() -> AsyncStream<[SuggestionItem]> {
-        AsyncStream { continuation in
-            let task = Task {
-                switch self {
-                case .genres:
-                    for await genres in LibraryService.genres().values() {
-                        continuation.yield(SuggestionPool.collect(
-                            genres.map { SuggestionItem(name: $0.name, count: $0.count) }
-                        ))
-                    }
-                case .tags:
-                    for await tags in LibraryService.tags().values() {
-                        continuation.yield(SuggestionPool.collect(
-                            tags.map { SuggestionItem(name: $0.name, count: $0.count) }
-                        ))
-                    }
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in task.cancel() }
+/// The "+" that opens a chip row for a reader who may edit metadata — the
+/// web hero's "+ genres" / "+ tags" pill. It leads the row rather than
+/// trailing it as the web's does: the strip scrolls sideways instead of
+/// wrapping, so a trailing "+" on a well-tagged book sits screens away.
+/// Greyed rather than gone while offline: the save it opens onto is never
+/// queued (rule 08).
+struct AddChip: View {
+    let kind: ChipEditKind
+    var enabled = true
+    var action: () -> Void
+
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.accentColor)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .overlay(
+                    Capsule().strokeBorder(
+                        palette.accentColor.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                    )
+                )
+                .contentShape(Capsule())
         }
+        .buttonStyle(PressableStyle())
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityLabel(kind.addLabel)
+        .accessibilityIdentifier(kind.addIdentifier)
     }
 }
 
@@ -93,24 +107,17 @@ enum ChipEditKind: String, Identifiable, CaseIterable, Sendable {
 /// override is library-wide state every reader sees (rule 08, test 1).
 enum BookChipEdits {
     /// Replace `kind`'s list on the book and return the merged record the
-    /// server answers with. The replica's copy is refreshed from it, and the
-    /// two vocabulary clouds dropped: a chip the library has never seen is a
-    /// new row in one of them.
+    /// server answers with. The two vocabulary clouds are dropped: a chip
+    /// the library has never seen is a new row in one of them. The caller
+    /// owns writing the merged record into the replica, once it knows this
+    /// answer is still the newest one in flight.
     static func save(uuid: String, kind: ChipEditKind, values: [String]) async throws -> Book {
         let merged: Book = try await APIClient.shared.post(
             "/api/ebooks/\(uuid)/overrides", body: kind.payload(values)
         )
-        await Cache.write(CacheKey.book(uuid), merged)
         await OfflineStore.shared.cacheDelete(CacheKey.genres)
         await OfflineStore.shared.cacheDelete(CacheKey.tags)
         return merged
-    }
-
-    /// The server's current record, for resyncing after a refused save.
-    static func current(uuid: String) async throws -> Book {
-        let book: Book = try await APIClient.shared.get("/api/ebooks/\(uuid)")
-        await Cache.write(CacheKey.book(uuid), book)
-        return book
     }
 }
 
@@ -124,6 +131,7 @@ struct ChipEditSheet: View {
     var onSaved: (Book) -> Void
 
     @Environment(\.palette) private var palette
+    private var connectivity = Connectivity.shared
     @State private var values: [String]
     @State private var entry = ""
     @State private var pool: [SuggestionItem] = []
@@ -131,10 +139,11 @@ struct ChipEditSheet: View {
     /// Bumped per change; a response that lands for an older change is
     /// dropped, so two quick taps can't settle on the earlier list.
     @State private var generation = 0
-    @FocusState private var entryFocused: Bool
-    /// Whether the dropdown may show — closed after a commit until the next
-    /// keystroke or refocus, as the metadata editor's chip fields do.
-    @State private var open = false
+    /// The in-flight save, if any. Each new commit awaits it before issuing
+    /// its own request, so two full-list POSTs always leave in tap order —
+    /// otherwise a later edit's request could land at the server before an
+    /// earlier one's, and the server would settle on the wrong list.
+    @State private var saveTask: Task<Void, Never>?
 
     init(book: Book, kind: ChipEditKind, onSaved: @escaping (Book) -> Void) {
         self.book = book
@@ -171,24 +180,15 @@ struct ChipEditSheet: View {
                         .accessibilityIdentifier("chip-edit-list")
                     }
 
-                    entryField
-
-                    if open {
-                        let rows = SuggestionPool.filtered(
-                            pool: pool, current: values, query: entry
-                        )
-                        let trimmed = entry.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let create = SuggestionPool.showsCreateRow(
-                            pool: pool, current: values, typed: entry
-                        ) ? trimmed : nil
-                        if !rows.isEmpty || create != nil {
-                            SuggestionList(items: rows, createText: create) { pick($0) }
-                                .background(
-                                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                        .fill(palette.bg2Color.opacity(0.6))
-                                )
-                        }
-                    }
+                    ChipEntryField(
+                        placeholder: kind.placeholder,
+                        entry: $entry,
+                        current: values,
+                        pool: pool,
+                        autofocus: true,
+                        isEnabled: connectivity.isOnline,
+                        entryIdentifier: "chip-edit-entry"
+                    ) { pick($0) }
 
                     if let error {
                         Text(error)
@@ -206,46 +206,21 @@ struct ChipEditSheet: View {
         .presentationDragIndicator(.visible)
         .presentationBackground(palette.bg1Color)
         .task {
-            for await items in kind.pool() { pool = items }
-        }
-        .onAppear { entryFocused = true }
-        .onChange(of: entryFocused) { _, focused in open = focused }
-        .onChange(of: entry) { _, newValue in
-            // Only a keystroke reopens: the commit path clears the entry
-            // programmatically, and that clear must not resurface the pool.
-            if !newValue.isEmpty { open = true }
-        }
-    }
-
-    private var entryField: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "plus.circle")
-                .font(.system(size: 14))
-                .foregroundStyle(palette.ink3Color)
-
-            TextField(kind.placeholder, text: $entry)
-                .font(.ui(15))
-                .foregroundStyle(palette.ink0Color)
-                .textInputAutocapitalization(.words)
-                .autocorrectionDisabled()
-                .submitLabel(.done)
-                .tint(palette.accentColor)
-                .focused($entryFocused)
-                .onSubmit { pick(entry) }
-                .accessibilityIdentifier("chip-edit-entry")
-
-            if !entry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button("Add") { pick(entry) }
-                    .font(.ui(13, weight: .semibold))
-                    .foregroundStyle(palette.accentColor)
+            switch kind {
+            case .genres:
+                for await genres in LibraryService.genres().values() {
+                    pool = SuggestionPool.collect(
+                        genres.map { SuggestionItem(name: $0.name, count: $0.count) }
+                    )
+                }
+            case .tags:
+                for await tags in LibraryService.tags().values() {
+                    pool = SuggestionPool.collect(
+                        tags.map { SuggestionItem(name: $0.name, count: $0.count) }
+                    )
+                }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bg2Color.opacity(0.7))
-        )
     }
 
     private func removableChip(_ value: String) -> some View {
@@ -265,18 +240,17 @@ struct ChipEditSheet: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .disabled(!connectivity.isOnline)
+            .opacity(connectivity.isOnline ? 1 : 0.4)
             .accessibilityLabel("Remove \(value)")
         }
     }
 
     /// Commit `name` as a chip — from the entry field, a suggestion row, or
-    /// the "+ Create" row. The entry always clears and the dropdown closes:
-    /// a refused duplicate was still understood.
+    /// the "+ Create" row. `ChipEntryField` clears its own entry and closes
+    /// its dropdown regardless of the outcome here, so a refused duplicate
+    /// still reads as understood.
     private func pick(_ name: String) {
-        defer {
-            entry = ""
-            open = false
-        }
         guard let chip = ChipEntry.committed(from: name, existing: values, deduplicating: true)
         else { return }
         Haptics.select()
@@ -290,18 +264,24 @@ struct ChipEditSheet: View {
         values = next
         generation += 1
         let mine = generation
-        Task {
+        let waitFor = saveTask
+        saveTask = Task {
+            // Chained onto the previous commit's task, not spawned
+            // independently — that's what keeps this tap's request from
+            // reaching the server ahead of one the reader made earlier.
+            await waitFor?.value
             do {
                 let merged = try await BookChipEdits.save(uuid: book.uuid, kind: kind, values: next)
                 guard mine == generation else { return }
                 values = kind.values(in: merged)
                 error = nil
+                await Cache.write(CacheKey.book(book.uuid), merged)
                 onSaved(merged)
             } catch {
                 guard mine == generation else { return }
                 self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
                 Haptics.warning()
-                if let current = try? await BookChipEdits.current(uuid: book.uuid),
+                if let current = try? await LibraryService.settledBook(uuid: book.uuid),
                     mine == generation
                 {
                     values = kind.values(in: current)

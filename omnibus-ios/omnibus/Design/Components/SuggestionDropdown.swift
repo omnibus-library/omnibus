@@ -140,3 +140,92 @@ struct SuggestionList: View {
         .overlay(alignment: .top) { Hairline().padding(.horizontal, 14) }
     }
 }
+
+/// The add-a-chip row — a "+" icon, a text field, an "Add" button, and the
+/// autocomplete dropdown beneath it — shared by every chip-valued field: the
+/// metadata editor's authors/tags/genres fields and the book detail's quick
+/// chip editor.
+struct ChipEntryField: View {
+    let placeholder: String
+    @Binding var entry: String
+    /// The list a pick is checked against, so an already-present value never
+    /// shows twice — as a suggestion row or as the "+ Create" row.
+    let current: [String]
+    let pool: [SuggestionItem]
+    var autofocus = false
+    var isEnabled = true
+    var entryIdentifier: String?
+    /// Called for a submit, the Add button, a suggestion row, or the create
+    /// row. The field clears its own entry and closes its dropdown after,
+    /// whether or not this accepts the name — a refused duplicate was still
+    /// understood.
+    let onPick: (String) -> Void
+
+    @Environment(\.palette) private var palette
+    @FocusState private var entryFocused: Bool
+    /// Whether the dropdown may show. Tracks focus, but stays closed after a
+    /// commit until the next keystroke or refocus — the just-emptied entry
+    /// must not instantly resurface the pool.
+    @State private var open = false
+
+    var body: some View {
+        // The field row carries its own horizontal inset so a caller can
+        // place this flush against its own edge, the way `SuggestionList`
+        // already insets its own rows — the two then line up without the
+        // caller having to coordinate padding between them.
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(palette.ink3Color)
+
+                TextField(placeholder, text: $entry)
+                    .font(.ui(15))
+                    .foregroundStyle(palette.ink0Color)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .tint(palette.accentColor)
+                    .focused($entryFocused)
+                    .onSubmit { pick(entry) }
+                    .accessibilityIdentifier(entryIdentifier ?? "")
+
+                if !entry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button("Add") { pick(entry) }
+                        .font(.ui(13, weight: .semibold))
+                        .foregroundStyle(palette.accentColor)
+                }
+            }
+            .padding(.horizontal, 14)
+            .disabled(!isEnabled)
+            .opacity(isEnabled ? 1 : 0.4)
+
+            if open {
+                let rows = SuggestionPool.filtered(pool: pool, current: current, query: entry)
+                let trimmed = entry.trimmingCharacters(in: .whitespacesAndNewlines)
+                let create = SuggestionPool.showsCreateRow(
+                    pool: pool, current: current, typed: entry
+                ) ? trimmed : nil
+                if !rows.isEmpty || create != nil {
+                    SuggestionList(items: rows, createText: create) { pick($0) }
+                        .padding(.top, 9)
+                }
+            }
+        }
+        .onAppear { if autofocus { entryFocused = true } }
+        .onChange(of: entryFocused) { _, focused in open = focused }
+        .onChange(of: entry) { _, newValue in
+            // Only a keystroke reopens: the commit path clears the entry
+            // programmatically, and that clear must not resurface the pool.
+            if !newValue.isEmpty { open = true }
+        }
+    }
+
+    private func pick(_ name: String) {
+        defer {
+            entry = ""
+            open = false
+        }
+        onPick(name)
+    }
+}

@@ -683,12 +683,6 @@ private struct ChipListField: View {
     var suggestions: [SuggestionItem] = []
 
     @Environment(\.palette) private var palette
-    @FocusState private var entryFocused: Bool
-    /// Whether the dropdown may show. Tracks focus, but stays closed after a
-    /// commit until the next keystroke or refocus — mirroring the web
-    /// editor's `suppress_open`, so the just-emptied entry doesn't instantly
-    /// re-surface the pool.
-    @State private var open = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -724,55 +718,21 @@ private struct ChipListField: View {
                         }
                     }
                 }
-
-                HStack(spacing: 7) {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 14))
-                        .foregroundStyle(palette.ink3Color)
-
-                    TextField(placeholder, text: $entry)
-                        .font(.ui(15))
-                        .foregroundStyle(palette.ink0Color)
-                        .textInputAutocapitalization(.words)
-                        .autocorrectionDisabled()
-                        .submitLabel(.done)
-                        .tint(palette.accentColor)
-                        .focused($entryFocused)
-                        .onSubmit(commit)
-
-                    if !entry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button("Add", action: commit)
-                            .font(.ui(13, weight: .semibold))
-                            .foregroundStyle(palette.accentColor)
-                    }
-                }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
             .animation(Motion.snap, value: isEdited)
             .animation(Motion.snap, value: values)
 
-            if open {
-                let rows = SuggestionPool.filtered(
-                    pool: suggestions, current: values, query: entry
-                )
-                let trimmed = entry.trimmingCharacters(in: .whitespacesAndNewlines)
-                let create = SuggestionPool.showsCreateRow(
-                    pool: suggestions, current: values, typed: entry
-                ) ? trimmed : nil
-                if !rows.isEmpty || create != nil {
-                    SuggestionList(items: rows, createText: create) { pick($0) }
-                        .padding(.bottom, 6)
-                }
-            }
-        }
-        .onChange(of: entryFocused) { _, focused in
-            open = focused
-        }
-        .onChange(of: entry) { _, newValue in
-            // Only a keystroke reopens: the commit path clears the entry
-            // programmatically, and that clear must not resurface the pool.
-            if !newValue.isEmpty { open = true }
+            // Outside the padded block above, same as `PlateField`: the
+            // field row carries its own horizontal inset, and the dropdown
+            // below it insets itself, so the two line up without living
+            // inside a shared padding box.
+            ChipEntryField(
+                placeholder: placeholder, entry: $entry, current: values, pool: suggestions
+            ) { pick($0) }
+            .padding(.top, 9)
+            .padding(.bottom, 12)
         }
     }
 
@@ -800,19 +760,11 @@ private struct ChipListField: View {
         .overlay(Capsule().strokeBorder(palette.line2.color, lineWidth: 0.5))
     }
 
-    private func commit() {
-        pick(entry)
-    }
-
     /// Commit `name` as a chip — from the entry field, a suggestion row, or
-    /// the "+ Create" row. The entry always clears and the dropdown closes:
-    /// a refused duplicate was still understood, and leaving the text (or
-    /// the pool) sitting there reads as a failure.
+    /// the "+ Create" row. `ChipEntryField` clears its own entry and closes
+    /// its dropdown regardless of the outcome here, so a refused duplicate
+    /// still reads as understood.
     private func pick(_ name: String) {
-        defer {
-            entry = ""
-            open = false
-        }
         guard let chip = ChipEntry.committed(
             from: name, existing: values, deduplicating: deduplicates
         ) else { return }

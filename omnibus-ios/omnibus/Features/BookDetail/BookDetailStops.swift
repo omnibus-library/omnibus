@@ -523,45 +523,6 @@ struct TagChip: View {
     }
 }
 
-/// The "+" that opens a chip row for a reader who may edit metadata — the
-/// web hero's "+ genres" / "+ tags" pill. It leads the row rather than
-/// trailing it as the web's does: the strip scrolls sideways instead of
-/// wrapping, so a trailing "+" on a well-tagged book sits screens away.
-/// Greyed rather than gone while offline: the save it opens onto is never
-/// queued (rule 08).
-struct AddChip: View {
-    let kind: ChipEditKind
-    var enabled = true
-    var action: () -> Void
-
-    @Environment(\.palette) private var palette
-
-    var body: some View {
-        Button {
-            Haptics.tap()
-            action()
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(palette.accentColor)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .overlay(
-                    Capsule().strokeBorder(
-                        palette.accentColor.opacity(0.55),
-                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
-                    )
-                )
-                .contentShape(Capsule())
-        }
-        .buttonStyle(PressableStyle())
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.4)
-        .accessibilityLabel(kind.addLabel)
-        .accessibilityIdentifier(kind.addIdentifier)
-    }
-}
-
 /// The reading-status control, styled as the system segmented control: a
 /// translucent track with a raised selected segment.
 struct DetailSegmented: View {
