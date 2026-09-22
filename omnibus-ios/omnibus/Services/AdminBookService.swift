@@ -34,15 +34,14 @@ enum AdminBookService {
         return result
     }
 
-    /// Reverse a merge by its log id. Returns the restored (source) uuid.
-    static func undoMerge(id: Int64, target: String) async throws -> String {
-        let result: UndoMergeResult = try await APIClient.shared.post(
+    /// Reverse a merge by its log id.
+    static func undoMerge(id: Int64, target: String) async throws {
+        let _: UndoMergeResult = try await APIClient.shared.post(
             "/api/books/merge/undo",
             body: UndoMergeRequest(mergeLogId: id)
         )
         await OfflineStore.shared.cacheDelete(CacheKey.book(target))
         await UploadService.invalidateLibrary()
-        return result.restoredUuid
     }
 
     // MARK: - Delete

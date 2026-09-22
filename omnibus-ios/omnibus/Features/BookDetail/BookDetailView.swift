@@ -536,7 +536,7 @@ struct BookDetailView: View {
     @ViewBuilder
     private var mergeToast: some View {
         if let result = mergeResult {
-            MergeUndoToast(result: result, target: uuid) { _ in
+            MergeUndoToast(result: result, target: uuid) {
                 mergeResult = nil
                 Task { await model.load(uuid: uuid) }
             } onDismiss: {

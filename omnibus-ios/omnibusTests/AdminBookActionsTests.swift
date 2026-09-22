@@ -61,10 +61,9 @@ struct AdminBookActionsTests {
             title: "Piranesi", manifest: m, pickedFiles: [1], pickedCopies: []
         )
         #expect(copy.heading == "Delete 1 file?")
-        #expect(copy.body.hasPrefix("The EPUB will be deleted from disk"))
+        #expect(copy.body.hasPrefix("\u{201c}book.epub\u{201d} will be deleted from disk"))
         #expect(copy.body.hasSuffix("Piranesi stays in your library with its 1 remaining file."))
         #expect(copy.action == "Delete file")
-        #expect(!copy.isTotal)
         // Nothing keyed on the book goes with one file.
         #expect(copy.losses.isEmpty)
     }
@@ -79,7 +78,6 @@ struct AdminBookActionsTests {
         #expect(copy.heading == "Delete all 2 files?")
         #expect(copy.body.contains("removed from your library entirely"))
         #expect(copy.action == "Delete book")
-        #expect(copy.isTotal)
         #expect(copy.losses == ["3 highlights", "1 rating"])
     }
 
@@ -90,7 +88,6 @@ struct AdminBookActionsTests {
             title: "Piranesi", manifest: m, pickedFiles: [1], pickedCopies: []
         )
         #expect(copy.heading == "Delete \u{201c}Piranesi\u{201d}?")
-        #expect(copy.isTotal)
     }
 
     @Test("a book with nothing on disk offers the record delete and promises the filesystem is untouched")
@@ -101,7 +98,6 @@ struct AdminBookActionsTests {
         #expect(copy.heading == "Delete \u{201c}Wanted\u{201d}?")
         #expect(copy.body.contains("nothing is deleted from your filesystem"))
         #expect(copy.action == "Delete record")
-        #expect(copy.isTotal)
     }
 
     @Test("physical copies turn files into items, and a copy left behind keeps the record")
@@ -112,13 +108,11 @@ struct AdminBookActionsTests {
         )
         #expect(partial.heading == "Delete 1 item?")
         #expect(partial.body.hasSuffix("with its 1 remaining item."))
-        #expect(!partial.isTotal)
 
         let total = DeleteSelectionCopy.resolve(
             title: "Piranesi", manifest: m, pickedFiles: [1], pickedCopies: [7]
         )
         #expect(total.heading == "Delete all 2 items?")
-        #expect(total.isTotal)
     }
 
     @Test("the menu promises files only when there are files")

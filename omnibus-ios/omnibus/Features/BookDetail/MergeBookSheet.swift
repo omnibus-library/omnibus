@@ -234,7 +234,7 @@ struct MergeUndoToast: View {
     let result: MergeBooksResult
     /// The surviving book, whose cached detail an undo has to drop.
     let target: String
-    var onUndone: (String) -> Void
+    var onUndone: () -> Void
     var onDismiss: () -> Void
 
     @Environment(\.palette) private var palette
@@ -289,8 +289,8 @@ struct MergeUndoToast: View {
         error = nil
         Task {
             do {
-                let restored = try await AdminBookService.undoMerge(id: result.mergeLogId, target: target)
-                onUndone(restored)
+                try await AdminBookService.undoMerge(id: result.mergeLogId, target: target)
+                onUndone()
             } catch {
                 busy = false
                 self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription

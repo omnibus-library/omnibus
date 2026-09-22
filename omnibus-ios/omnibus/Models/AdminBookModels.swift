@@ -181,9 +181,6 @@ struct DeleteSelectionCopy: Equatable {
     /// What a total delete also takes — `impact.losses` — and empty when the
     /// delete is partial, since nothing keyed on the book goes with a file.
     var losses: [String]
-    /// True when the book record itself goes: every item is picked, or there
-    /// was nothing to pick.
-    var isTotal: Bool
 
     /// The confirm step's copy for one selection. Mirrors `confirm_labels` in
     /// the web dialog, branch for branch.
@@ -234,8 +231,7 @@ struct DeleteSelectionCopy: Equatable {
             heading: heading,
             body: body,
             action: action,
-            losses: total ? manifest.impact.losses : [],
-            isTotal: total
+            losses: total ? manifest.impact.losses : []
         )
     }
 
@@ -263,7 +259,7 @@ struct DeleteSelectionCopy: Equatable {
         let files = manifest.files.filter { pickedFiles.contains($0.id) }
         let copies = pickedCopies.count
         if copies == 0, files.count == 1, let only = files.first {
-            return "The \(only.format.uppercased())"
+            return "\u{201c}\(only.label?.nilIfBlank ?? only.filename)\u{201d}"
         }
         var parts: [String] = []
         if !files.isEmpty { parts.append("\(files.count) \(files.count == 1 ? "file" : "files")") }
