@@ -154,4 +154,21 @@ The iOS surface is the native SwiftUI app (`omnibus-ios/`); its UI coverage is t
 
 That suite is **hermetic and offline** — it never talks to a server, so a test must reach its screen through one of two DEBUG-only launch arguments handled in `AppState.init` / `bootstrap`. `--uitest-reset` clears the stored server and token so the app boots to the connect phase. `--uitest-shell` does the opposite: it seeds a server (a closed port), a token, and a cached identity, so `MainTabView` — otherwise unreachable without a live server, which would leave the shell's own chrome untestable — renders with nothing behind it. Pass both to be independent of whatever the simulator already held. Only shell-local chrome is assertable that way; library content needs a server and belongs in the Rust tests instead. The `mobile/` crate is the Android **hybrid app** — a thin native shell (`mobile/src/main.rs`) hosting the system WebView rendering the shared `omnibus-frontend` markup with `features = ["mobile"]` — and currently has no E2E lane (Playwright can reach the Android WebView over CDP, but none is wired up).
 
+**A UI test on a simulator clone starts cold, and the launch timeout is
+fixed.** `omnibusUITests` is `parallelizable = "NO"` in the shared scheme, and
+`scripts/ios-test.sh` runs the suites on a dedicated `omnibus-tests` device it
+creates once and pre-boots with `simctl bootstatus -b`. Keep all three. A
+parallelizable testable runs on a *clone* of the destination, cold-booted for
+that run, and `XCUIApplication.launch()` has a 60s timeout no test-side
+setting extends: on GitHub's macOS runner the first launch on a fresh clone
+took 77s on a green run and timed out on a red one (`Timed out while launching
+application via Xcode`; `Failed to get background assertion for target app` is
+the milder form). `-retry-tests-on-failure` does not help, because the retry
+launches on the same cold clone. The dedicated device is what the clone used
+to provide: `--uitest-reset` wipes the server and token of whatever device the
+suite runs on, so it must never be a developer's signed-in simulator. It is
+also not a full reset — a device-level default for the bundle (`xcrun simctl
+spawn <udid> defaults write com.omnibus.mobile omnibus.serverURL …`) shows
+through the app's own clear and lands the suite on the login screen instead.
+
 **Never drive the on-screen keyboard through XCUITest.** `ConnectSmokeTests` is the whole suite today: the `ShellChromeTests` file that asserted the keyboard-versus-tab-bar contract was deleted as flaky, and the shell's chrome now has no UI coverage. With the keyboard up, the accessibility hierarchy gains a button per key, and evaluating any query against it blows XCUITest's *internal* snapshot budget — `Failed to get matching snapshots: Timed out while evaluating UI query`, raised inside the framework, which no test-side timeout can extend. `firstMatch` on every query plus a 120s render timeout did not fix it; the suite still failed the required `🔒 iOS Tests Required` gate ~60% of the time, through `-retry-tests-on-failure`. A replacement must assert that layout invariant without a live keyboard in the tree — a layout-level test in `omnibusTests`, not a simulator drive. `--uitest-shell` is kept for it and currently has no consumer.

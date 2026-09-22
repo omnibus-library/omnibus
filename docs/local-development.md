@@ -151,7 +151,14 @@ just ios-test-ui  # omnibusUITests
 
 The app has no baked-in server URL — `just ios-sim` prints this workspace's dev
 server URL to enter on the Connect screen. Pin a specific simulator with
-`OMNIBUS_IOS_SIM_UDID` if you don't want the newest iPhone runtime.
+`OMNIBUS_IOS_SIM_UDID` if you don't want the newest iPhone runtime. The two
+test recipes never touch that simulator: `scripts/ios-test.sh` creates its own
+`omnibus-tests` device on the newest iPhone runtime (name it with
+`OMNIBUS_IOS_SIM_NAME`, pin one with `OMNIBUS_IOS_TEST_SIM_UDID`) and reuses
+it, because the UI suite's `--uitest-reset` wipes the stored server and token
+on whatever device it runs against. That pin overrides the dedicated device
+and so takes the reset itself — point it at a disposable simulator, never at
+the one above.
 
 ### Android — Dioxus shell (`mobile/` crate)
 
