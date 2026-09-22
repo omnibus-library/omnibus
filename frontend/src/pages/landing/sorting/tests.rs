@@ -366,3 +366,31 @@ fn series_index_to_sort_key_clamps_extreme_finite_values_in_range() {
     assert!(huge > 0);
     assert!(tiny < 0);
 }
+
+#[test]
+fn sort_lock_reason_names_shelf_order_for_a_hand_picked_shelf() {
+    // A manual shelf is ordered `sb.position, sb.added_at` server-side, so
+    // the axis and direction reach nothing (#2507).
+    assert_eq!(
+        sort_lock_reason(Some(omnibus_shared::ShelfKind::Manual)),
+        Some("shelf order")
+    );
+}
+
+#[test]
+fn sort_lock_reason_locks_the_wishlist_too() {
+    // The wishlist is ordered `we.added_at DESC` on the same grounds.
+    assert_eq!(
+        sort_lock_reason(Some(omnibus_shared::ShelfKind::Wishlist)),
+        Some("shelf order")
+    );
+}
+
+#[test]
+fn sort_lock_reason_leaves_a_smart_shelf_and_the_whole_library_sortable() {
+    assert_eq!(
+        sort_lock_reason(Some(omnibus_shared::ShelfKind::Smart)),
+        None
+    );
+    assert_eq!(sort_lock_reason(None), None);
+}

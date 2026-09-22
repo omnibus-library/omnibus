@@ -163,6 +163,7 @@ fn render_header_and_content(
     content_handlers: LandingContentHandlers,
     on_prefs_change_header: EventHandler<omnibus_shared::ViewPrefs>,
 ) -> Element {
+    let sort_lock = super::sorting::sort_lock_reason(selected_shelf.as_ref().map(|s| s.kind));
     rsx! {
         LandingHeader {
             view: LandingHeaderView {
@@ -174,6 +175,7 @@ fn render_header_and_content(
                 lib_err: view.lib_err.clone(),
                 section_title: view.section_title,
                 selected_shelf,
+                sort_lock,
             },
             prefs: prefs.clone(),
             on_prefs_change: on_prefs_change_header,
@@ -204,6 +206,7 @@ fn render_header_and_content(
                 },
                 handlers: content_handlers,
                 sweep_key: view.sweep_key,
+                sort_lock,
             }
         }
     }

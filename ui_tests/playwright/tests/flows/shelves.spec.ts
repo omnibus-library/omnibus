@@ -349,3 +349,39 @@ test("surfaces an error when the shelf edit save fails", async ({
   // The header keeps the saved name — the failed edit must not leak in.
   await expect(page.getByTestId("lib-section-title")).toContainText(name);
 });
+
+test("locks the sort controls inside a hand-picked shelf and restores them for a smart one", async ({
+  page,
+  request,
+}) => {
+  // A manual shelf is ordered by the reader's own `shelf_books.position`
+  // server-side, so the axis and direction reach nothing — the control used to
+  // stay live and do nothing (#2507). A smart shelf is genuinely sortable.
+  const alphaUuid = await fetchBookUuidByTitle(request, "Alpha");
+  const manualName = `E2E Sort Lock ${Date.now()}`;
+  const smartName = `E2E Sort Live ${Date.now()}`;
+  const manualId = await createShelf(request, {
+    kind: "manual",
+    name: manualName,
+    book_uuids: [alphaUuid],
+  });
+  const smartId = await createShelf(request, {
+    kind: "smart",
+    name: smartName,
+    match_mode: "any",
+    rules: [{ field: "author", op: "is", value: "Ada Lovelace" }],
+  });
+
+  await gotoReady(page, "/");
+  await selectShelfInGallery(page, manualId, manualName);
+
+  await expect(page.getByTestId("lib-sort-select")).toBeDisabled();
+  await expect(page.getByTestId("lib-sort-dir")).toBeDisabled();
+  await expect(page.getByTestId("lib-sort-locked")).toHaveText("shelf order");
+
+  await selectShelfInGallery(page, smartId, smartName);
+
+  await expect(page.getByTestId("lib-sort-select")).toBeEnabled();
+  await expect(page.getByTestId("lib-sort-dir")).toBeEnabled();
+  await expect(page.getByTestId("lib-sort-locked")).toHaveCount(0);
+});
