@@ -19,7 +19,9 @@ use axum_prometheus::{
 /// Env var holding the bearer token a Prometheus scraper must present.
 const METRICS_TOKEN_ENV: &str = "OMNIBUS_METRICS_TOKEN";
 
-/// The one label every request that matched no route is reported under.
+/// The one label every request that matched no route is reported under —
+/// the SSR fallback, a probe, a traversal attempt — so an invented URL
+/// cannot mint a Prometheus series per path an attacker cares to type.
 pub(crate) const UNMATCHED_ENDPOINT: &str = "/<unmatched>";
 
 /// Build (once) the Prometheus metrics middleware and its `/metrics` scrape
@@ -37,7 +39,9 @@ pub fn layer_and_route() -> (PrometheusMetricLayer<'static>, Router) {
     static CELL: OnceLock<(PrometheusMetricLayer<'static>, Router)> = OnceLock::new();
     CELL.get_or_init(|| {
         let (layer, handle) = PrometheusMetricLayerBuilder::new()
-            .with_endpoint_label_type(EndpointLabel::MatchedPathWithFallbackFn(collapse_unmatched))
+            .with_endpoint_label_type(EndpointLabel::MatchedPathWithFallbackFn(|_| {
+                UNMATCHED_ENDPOINT.to_string()
+            }))
             .with_default_metrics()
             .build_pair();
         let route = Router::new().route(
@@ -50,13 +54,6 @@ pub fn layer_and_route() -> (PrometheusMetricLayer<'static>, Router) {
         (layer, route)
     })
     .clone()
-}
-
-/// Label for a request no route matched — the SSR fallback, a probe, a
-/// traversal attempt. One constant, because the alternative is one Prometheus
-/// series per URL an attacker cares to type.
-fn collapse_unmatched(_path: &str) -> String {
-    UNMATCHED_ENDPOINT.to_string()
 }
 
 /// One startup WARN when no scrape token is configured, so an operator who
