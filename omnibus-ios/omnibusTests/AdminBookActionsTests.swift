@@ -115,6 +115,43 @@ struct AdminBookActionsTests {
         #expect(total.heading == "Delete all 2 items?")
     }
 
+    @Test("a copy-only partial delete says the copy is un-recorded, not deleted from disk")
+    func copyOnlyPartialDelete() {
+        let m = manifest(files: [file(1, "epub")], copies: [copy(7), copy(8)])
+        let partial = DeleteSelectionCopy.resolve(
+            title: "Piranesi", manifest: m, pickedFiles: [], pickedCopies: [7]
+        )
+        #expect(partial.body.contains("will be un-recorded \u{2014} nothing is deleted from disk"))
+    }
+
+    @Test("a mixed partial delete separates the file and copy consequences")
+    func mixedPartialDelete() {
+        let m = manifest(files: [file(1, "epub"), file(2, "m4b")], copies: [copy(7)])
+        let partial = DeleteSelectionCopy.resolve(
+            title: "Piranesi", manifest: m, pickedFiles: [1], pickedCopies: [7]
+        )
+        #expect(partial.body.contains("files deleted from disk, physical copies only un-recorded"))
+    }
+
+    @Test("a total delete with files and copies says the copies are un-recorded, not deleted")
+    func totalDeleteWithCopies() {
+        let m = manifest(files: [file(1, "epub")], copies: [copy(7)])
+        let total = DeleteSelectionCopy.resolve(
+            title: "Piranesi", manifest: m, pickedFiles: [1], pickedCopies: [7]
+        )
+        #expect(total.body.contains("its physical copies un-recorded"))
+    }
+
+    @Test("a paper-only total delete says nothing is deleted from disk")
+    func paperOnlyTotalDelete() {
+        let m = manifest(files: [], copies: [copy(7)])
+        let total = DeleteSelectionCopy.resolve(
+            title: "Wanted", manifest: m, pickedFiles: [], pickedCopies: [7]
+        )
+        #expect(total.body.hasPrefix("\u{201c}Wanted\u{201d} has no files on disk."))
+        #expect(total.body.contains("nothing is deleted from your filesystem"))
+    }
+
     @Test("the menu promises files only when there are files")
     func menuLabel() {
         #expect(DeleteSelectionCopy.menuLabel(hasFiles: true) == "Delete files\u{2026}")

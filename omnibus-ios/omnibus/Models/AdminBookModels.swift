@@ -183,7 +183,9 @@ struct DeleteSelectionCopy: Equatable {
     var losses: [String]
 
     /// The confirm step's copy for one selection. Mirrors `confirm_labels` in
-    /// the web dialog, branch for branch.
+    /// the web dialog, except physical copies are described as un-recorded
+    /// rather than deleted — `db::delete_book_items` deletes files from disk
+    /// but only un-records a copy, it never touches the filesystem for one.
     static func resolve(
         title: String,
         manifest: BookDeletionManifest,
@@ -212,10 +214,24 @@ struct DeleteSelectionCopy: Equatable {
         if empty {
             body = "This book has no files on disk. Deleting removes the library record only \u{2014} nothing is deleted from your filesystem."
         } else if total {
-            body = "Every file for \(quoted) will be deleted from disk, and the book will be removed from your library entirely."
+            if manifest.files.isEmpty {
+                // Paper-only: nothing on disk, so nothing to delete there.
+                body = "\(quoted) has no files on disk. Its physical copies will be un-recorded and the book removed from your library entirely \u{2014} nothing is deleted from your filesystem."
+            } else if !manifest.copies.isEmpty {
+                body = "Every file for \(quoted) will be deleted from disk, its physical copies un-recorded, and the book will be removed from your library entirely."
+            } else {
+                body = "Every file for \(quoted) will be deleted from disk, and the book will be removed from your library entirely."
+            }
         } else {
             let left = Self.noun(count: remaining, hasCopies: !manifest.copies.isEmpty)
-            body = "\(pickedLabel(manifest: manifest, pickedFiles: pickedFiles, pickedCopies: pickedCopies)) will be deleted from disk and removed from this book. \(title) stays in your library with its \(remaining) remaining \(left)."
+            let label = pickedLabel(manifest: manifest, pickedFiles: pickedFiles, pickedCopies: pickedCopies)
+            if pickedFiles.isEmpty {
+                body = "\(label) will be un-recorded \u{2014} nothing is deleted from disk. \(title) stays in your library with its \(remaining) remaining \(left)."
+            } else if !pickedCopies.isEmpty {
+                body = "\(label) will be removed from this book \u{2014} files deleted from disk, physical copies only un-recorded. \(title) stays in your library with its \(remaining) remaining \(left)."
+            } else {
+                body = "\(label) will be deleted from disk and removed from this book. \(title) stays in your library with its \(remaining) remaining \(left)."
+            }
         }
 
         let action: String
