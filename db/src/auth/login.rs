@@ -10,6 +10,8 @@ use super::{now_unix, row_to_user, AuthError, AuthResult, User};
 /// `locked_until`.
 const LOCKOUT_MIN_AFTER: i64 = 5;
 const LOCKOUT_DURATION_SECS: i64 = 15 * 60;
+/// How many attempts inside a lock window may still learn the lock exists.
+pub const LOCKOUT_DISCLOSURE_ATTEMPTS: i64 = 3;
 
 /// Sentinel PHC string used when the username is unknown, so we still
 /// spend ~250ms in argon2 verify and don't leak username existence via
@@ -36,9 +38,11 @@ fn sentinel_hash() -> AuthResult<&'static str> {
 ///
 /// Per-account lockout is enforced for everyone but *disclosed* only to a
 /// caller that presented the correct password, via
-/// `AuthError::AccountLocked`. A locked account that answered differently
-/// from an unknown username would be a username oracle, which is the whole
-/// reason the unknown-username path burns a sentinel verify.
+/// `AuthError::AccountLocked` — and only for the first
+/// `LOCKOUT_DISCLOSURE_ATTEMPTS` attempts made inside the window. A locked
+/// account that answered differently from an unknown username would be a
+/// username oracle, which is the whole reason the unknown-username path
+/// burns a sentinel verify.
 ///
 /// Registration's `UsernameTaken` is an accepted, deliberate oracle: there
 /// is no way to run a sign-up form without it, and self-registration is off
@@ -77,14 +81,17 @@ pub async fn verify_login(pool: &SqlitePool, username: &str, password: &str) -> 
     // effective failure count as zero from this point.
     let effective_failed = match locked_until {
         Some(until) if until > now => {
-            // A locked row still pays the real verify, and a wrong password
-            // still answers `InvalidCredentials` — byte-identical to an
-            // unknown username, so the status code is not a username oracle.
-            // Only a caller that already holds the password is told the
-            // account is locked. The attempt deliberately touches neither the
-            // counter nor the window: an attacker must not be able to keep
-            // someone locked out by guessing.
-            if verify_password(password, &phc)? {
+            // A wrong password answers `InvalidCredentials` — no username
+            // oracle. Attempts are counted but the window never moves, so an
+            // attacker can't extend someone else's lockout. Past the
+            // disclosure cap even the right password answers generically, so
+            // the window itself can't be brute-forced.
+            let ok = verify_password(password, &phc)?;
+            sqlx::query("UPDATE users SET failed_login_count = failed_login_count + 1 WHERE id = ?")
+                .bind(user_id)
+                .execute(pool)
+                .await?;
+            if ok && failed < LOCKOUT_MIN_AFTER + LOCKOUT_DISCLOSURE_ATTEMPTS {
                 return Err(AuthError::AccountLocked { until_unix: until });
             }
             return Err(AuthError::InvalidCredentials);

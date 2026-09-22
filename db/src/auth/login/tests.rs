@@ -123,10 +123,11 @@ async fn login_on_a_locked_account_returns_account_locked_only_for_the_correct_p
     );
 }
 
-/// A guess against a locked account must not push the window out — otherwise
-/// an attacker can keep a victim locked out indefinitely.
+/// A guess against a locked account is counted (so the disclosure cap can be
+/// reached) but must not push the window out — otherwise an attacker can keep
+/// a victim locked out indefinitely.
 #[tokio::test]
-async fn login_on_a_locked_account_does_not_extend_the_lock_window() {
+async fn login_on_a_locked_account_counts_the_attempt_but_never_moves_the_window() {
     let p = pool().await;
     let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
     let until = lock_account(&p, u.id).await;
@@ -140,7 +141,41 @@ async fn login_on_a_locked_account_does_not_extend_the_lock_window() {
             .await
             .unwrap();
     assert_eq!(locked, Some(until), "the window must not move");
-    assert_eq!(failed, LOCKOUT_MIN_AFTER, "the counter must not move");
+    assert_eq!(
+        failed,
+        LOCKOUT_MIN_AFTER + 1,
+        "the attempt must still be counted"
+    );
+}
+
+/// Past the disclosure cap, even the correct password answers generically —
+/// otherwise the window itself becomes brute-forceable by exhausting the
+/// disclosure budget with wrong guesses first.
+#[tokio::test]
+async fn login_stops_disclosing_a_lockout_after_the_disclosure_cap() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+
+    // Before the cap: a fresh lock's first attempt still discloses.
+    lock_account(&p, u.id).await;
+    let err = verify_login(&p, "alice", "hunter2-real-long")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, AuthError::AccountLocked { .. }),
+        "got {err:?}"
+    );
+
+    // Reset to a fresh lock, spend the whole disclosure budget on wrong
+    // guesses, then even the correct password answers generically.
+    lock_account(&p, u.id).await;
+    for _ in 0..LOCKOUT_DISCLOSURE_ATTEMPTS {
+        let _ = verify_login(&p, "alice", "still-wrong").await;
+    }
+    let err = verify_login(&p, "alice", "hunter2-real-long")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, AuthError::InvalidCredentials), "got {err:?}");
 }
 
 /// Put `user_id` into a live lockout window and return its `locked_until`.
