@@ -30,15 +30,16 @@ pub fn covers_dir() -> PathBuf {
 }
 
 /// Image formats we know how to round-trip through the on-disk cover cache.
-/// `Svg` sticks around because some EPUB covers ship as SVG; `Bin` is the
-/// fallback extension for unknown bytes.
+/// SVG is deliberately absent: it is a script-bearing document, the CSP that
+/// hydration needs allows inline script, and a cover URL is same-origin — so
+/// an EPUB that declares one is stored and served as `Bin`, the opaque
+/// fallback for bytes we cannot classify.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ImageFormat {
     Jpeg,
     Png,
     Gif,
     Webp,
-    Svg,
     Bin,
 }
 
@@ -50,7 +51,6 @@ impl ImageFormat {
             ImageFormat::Png => "image/png",
             ImageFormat::Gif => "image/gif",
             ImageFormat::Webp => "image/webp",
-            ImageFormat::Svg => "image/svg+xml",
             ImageFormat::Bin => "application/octet-stream",
         }
     }
@@ -62,7 +62,6 @@ impl ImageFormat {
             ImageFormat::Png => "png",
             ImageFormat::Gif => "gif",
             ImageFormat::Webp => "webp",
-            ImageFormat::Svg => "svg",
             ImageFormat::Bin => "bin",
         }
     }
@@ -74,7 +73,6 @@ impl ImageFormat {
             "image/png" => ImageFormat::Png,
             "image/gif" => ImageFormat::Gif,
             "image/webp" => ImageFormat::Webp,
-            "image/svg+xml" => ImageFormat::Svg,
             _ => ImageFormat::Bin,
         }
     }
@@ -100,7 +98,6 @@ impl ImageFormat {
             "png" => ImageFormat::Png,
             "gif" => ImageFormat::Gif,
             "webp" => ImageFormat::Webp,
-            "svg" => ImageFormat::Svg,
             _ => ImageFormat::Bin,
         }
     }
@@ -108,12 +105,11 @@ impl ImageFormat {
     /// Extensions probed in `find_cover_file`, ordered by how likely each is
     /// to be the on-disk format. Keeping it on the type means adding a new
     /// variant only requires updating the match arms above plus this list.
-    pub(crate) const PROBE_ORDER: [ImageFormat; 6] = [
+    pub(crate) const PROBE_ORDER: [ImageFormat; 5] = [
         ImageFormat::Jpeg,
         ImageFormat::Png,
         ImageFormat::Webp,
         ImageFormat::Gif,
-        ImageFormat::Svg,
         ImageFormat::Bin,
     ];
 }
@@ -305,6 +301,10 @@ pub(crate) fn delete_cover_files_for(uuids: &[String]) {
         for fmt in ImageFormat::PROBE_ORDER {
             let _ = std::fs::remove_file(cover_path_for(uuid, fmt.to_ext()));
         }
+        // `.svg` is no longer a format we write, so `PROBE_ORDER` does not name
+        // it — but a cache written before it was refused still holds them, and
+        // an unswept one would outlive its book.
+        let _ = std::fs::remove_file(cover_path_for(uuid, "svg"));
     }
 }
 

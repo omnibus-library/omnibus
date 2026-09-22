@@ -255,6 +255,57 @@ fn gif_cover_bytes_decode_via_load_from_memory() {
     assert_eq!((img.width(), img.height()), (1, 1));
 }
 
+/// An SVG-declared EPUB cover must never land as `<uuid>.svg`. `resolve_cover`
+/// returns the OPF manifest's `media-type` verbatim and `image::guess_format`
+/// cannot sniff SVG, so this mime classification *is* the storage decision.
+#[tokio::test]
+async fn write_cover_file_stores_an_svg_declared_cover_as_opaque_bytes() {
+    let _covers = CoversTempDir::new("svg_refused");
+    let uuid = "svg-book";
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>"#;
+
+    write_cover_file(uuid, "image/svg+xml", svg).unwrap();
+
+    assert!(
+        std::fs::read(cover_path_for(uuid, "svg")).is_err(),
+        "no .svg may be written into the cover cache"
+    );
+    assert_eq!(std::fs::read(cover_path_for(uuid, "bin")).unwrap(), svg);
+    assert_eq!(ImageFormat::from_mime("image/svg+xml"), ImageFormat::Bin);
+    assert_eq!(ImageFormat::from_ext("svg"), ImageFormat::Bin);
+    assert_eq!(ImageFormat::Bin.to_mime(), "application/octet-stream");
+}
+
+/// A `.svg` already sitting in a deployed cache is still readable — the
+/// fallback `<uuid>.*` scan finds it — but comes back as opaque bytes, so no
+/// route can hand a browser something it would render.
+#[tokio::test]
+async fn find_cover_file_serves_a_legacy_svg_as_opaque_bytes() {
+    let _covers = CoversTempDir::new("svg_legacy");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#;
+    std::fs::write(cover_path_for("legacy", "svg"), svg).unwrap();
+
+    let (mime, bytes) = find_cover_file("legacy").expect("the fallback scan finds <uuid>.*");
+
+    assert_eq!(mime, "application/octet-stream");
+    assert_eq!(bytes, svg);
+}
+
+/// A legacy `.svg` must also be swept when its book is deleted or merged —
+/// `PROBE_ORDER` no longer names that extension, so the delete path carries it
+/// explicitly.
+#[tokio::test]
+async fn delete_cover_files_for_removes_a_legacy_svg_too() {
+    let _covers = CoversTempDir::new("svg_delete");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    std::fs::write(cover_path_for("doomed", "svg"), b"<svg/>").unwrap();
+
+    delete_cover_files_for(&["doomed".to_string()]);
+
+    assert!(std::fs::read(cover_path_for("doomed", "svg")).is_err());
+}
+
 #[tokio::test]
 async fn get_last_modified_epoch_propagates_db_error_when_pool_is_closed() {
     let pool = init_db("sqlite::memory:").await.unwrap();
