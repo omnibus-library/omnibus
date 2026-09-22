@@ -280,7 +280,38 @@ fn bd_identifier_rows_do_not_duplicate_a_hyphenated_scanned_isbn_with_its_derive
 }
 
 #[test]
-fn an_isbn13_override_that_lands_by_value_leaves_only_one_isbn13_row() {
+fn bd_identifier_rows_keep_two_distinct_scanned_isbns_when_one_is_the_derived_isbn13() {
+    let out = rows_with_isbns(
+        &[
+            ident(Some("ISBN"), "9780000000000"),
+            ident(Some("15"), "9781111111112"),
+        ],
+        Some("9780000000000"),
+        None,
+    );
+    assert_eq!(out.len(), 2);
+    assert!(out.iter().any(|r| r.value == "9781111111112"));
+}
+
+#[test]
+fn bd_identifier_rows_collapse_a_urn_isbn_twin_onto_the_override_row() {
+    let out = rows_with_isbns(
+        &[
+            ident(Some("ISBN"), "urn:isbn:9780134685991"),
+            ident(Some("15"), "978-0-13-468599-1"),
+        ],
+        Some("9780134685991"),
+        None,
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].label, "ISBN-13");
+    assert_eq!(out[0].value, "9780134685991");
+}
+
+#[test]
+fn bd_identifier_rows_relabel_the_matching_row_and_keep_every_other_scanned_row() {
+    // The override's value is in the file under a worse label; the file's own
+    // (wrong) ISBN-13 stays visible rather than being silently dropped.
     let out = rows_with_isbns(
         &[
             ident(Some("15"), "9780000000000"),
@@ -289,8 +320,11 @@ fn an_isbn13_override_that_lands_by_value_leaves_only_one_isbn13_row() {
         Some("9780316259088"),
         None,
     );
-    assert_eq!(out.iter().filter(|r| r.label == "ISBN-13").count(), 1);
-    assert!(out.iter().any(|r| r.value == "9780316259088"));
+    assert_eq!(out.len(), 2);
+    assert!(out
+        .iter()
+        .any(|r| r.label == "ISBN-13" && r.value == "9780316259088"));
+    assert!(out.iter().any(|r| r.value == "9780000000000"));
 }
 
 #[test]

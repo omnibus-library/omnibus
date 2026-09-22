@@ -151,15 +151,21 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
 
 /// Fold one saved ISBN override into `rows` under `scheme`.
 ///
-/// Matched by value first: the file commonly holds the same digits under a
-/// worse-named scheme, and that row should simply be renamed rather than
-/// duplicated. Failing that, by label: an override that *corrects* a scanned
-/// value must take over the row it corrects — a book showing both the wrong
-/// ISBN-10 and the right one is what the editor was used to fix. Otherwise it
-/// is a value the file never carried, and a new row is appended. Once placed,
-/// any *other* row still carrying the override's label is dropped — a value
-/// match must not leave a stale label-matched row sitting beside the
-/// correction it was meant to replace (#2496 AC2).
+/// **Never drop a row by label alone** — a book can genuinely carry two
+/// distinct ISBNs (a second edition's identifier set copied in by a merge,
+/// or a book indexed under both), and `isbn13`/`isbn10` are derived from the
+/// scanned rows whenever no override exists, so this runs on every book
+/// (#2511). Placement, in order: (a) a row that is the *same ISBN* as the
+/// override (per [`isbn_form`]) is relabelled and revalued in place — this
+/// is a rename, not a new identifier, and is what lets `urn:isbn:…`,
+/// hyphenated, and bare-digit forms of one ISBN collapse onto the override
+/// row; (b) failing that, a row sharing the override's label is replaced —
+/// the correction case, where the file's value under that label was simply
+/// wrong (a derived value's own source row always matches in (a), so it can
+/// never reach this branch); (c) failing both, the override is a value the
+/// file never carried and is appended. Only *other* rows that are the same
+/// ISBN as what was just placed are then dropped — a `urn:isbn:` twin
+/// beside its hyphenated twin, never a genuinely different ISBN.
 fn apply_isbn_override(
     rows: &mut Vec<(BdIdentifierRow, LabelRank)>,
     scheme: &str,
@@ -180,32 +186,36 @@ fn apply_isbn_override(
     };
     let slot_index = rows
         .iter()
-        .position(|(existing, _)| identifier_values_match(&existing.value, value))
+        .position(|(existing, _)| same_isbn(&existing.value, value))
         .or_else(|| {
             rows.iter()
                 .position(|(existing, _)| existing.label == label)
         });
-    let mut placed_index = match slot_index {
-        Some(i) => {
-            rows[i] = (row, rank);
-            i
-        }
-        None => {
-            rows.push((row, rank));
-            rows.len() - 1
-        }
-    };
-    let mut i = 0;
-    while i < rows.len() {
-        if i != placed_index && rows[i].0.label == label {
-            rows.remove(i);
-            if i < placed_index {
-                placed_index -= 1;
-            }
-        } else {
-            i += 1;
-        }
+    match slot_index {
+        Some(i) => rows[i] = (row, rank),
+        None => rows.push((row, rank)),
     }
+    rows.retain(|(existing, _)| existing.value == value || !same_isbn(&existing.value, value));
+}
+
+/// True when `a` and `b` are the same ISBN once both are reduced to
+/// [`isbn_form`] — and that form is non-empty, so two values with no digits
+/// in common don't spuriously match on an empty string.
+fn same_isbn(a: &str, b: &str) -> bool {
+    let (fa, fb) = (isbn_form(a), isbn_form(b));
+    !fa.is_empty() && fa == fb
+}
+
+/// An identifier's digits and any trailing ISBN-10 check-digit `X`,
+/// uppercased — everything else (hyphens, whitespace, a `urn:isbn:` prefix)
+/// stripped. This is what lets `urn:isbn:9780134685991`,
+/// `978-0-13-468599-1`, and `9780134685991` all compare as one ISBN.
+fn isbn_form(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| c.is_ascii_digit() || c.eq_ignore_ascii_case(&'x'))
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
 }
 
 /// True when two identifier values are the same, ignoring hyphens,
