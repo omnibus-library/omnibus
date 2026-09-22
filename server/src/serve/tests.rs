@@ -1,3 +1,6 @@
+//! Loopback proof that `serve_with_peer_addresses` hands each request its
+//! real peer address.
+
 use std::io::{Read, Write};
 use std::net::TcpStream as StdTcpStream;
 
