@@ -257,6 +257,22 @@ fn collect_contributors_keeps_a_role_less_person() {
     );
 }
 
+#[test]
+fn collect_contributors_keeps_a_role_less_person_with_a_dotted_date() {
+    // A credited person's leading name carries a space; only a tool stamps
+    // itself as a single word (`calibre`, `Sigil`, `pandoc`), so a dotted
+    // date must not be mistaken for a version.
+    let doc = doc_from_opf(&opf_package(
+        "3.0",
+        r"    <dc:contributor>Author Name (1965.07.31)</dc:contributor>",
+    ));
+    let names: Vec<String> = collect_contributors(&doc, "contributor")
+        .into_iter()
+        .map(|c| c.name)
+        .collect();
+    assert_eq!(names, ["Author Name (1965.07.31)"]);
+}
+
 // --- collect_series ----------------------------------------------------
 
 #[test]

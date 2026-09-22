@@ -135,7 +135,7 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
         };
         match rows
             .iter_mut()
-            .find(|(existing, _)| identifier_values_match(&existing.value, value))
+            .find(|(existing, _)| same_identifier(&existing.value, value))
         {
             // Strictly better only: ties keep the first occurrence, so the
             // order the projection emits stays the order a reader sees.
@@ -156,8 +156,8 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
 /// or a book indexed under both), and `isbn13`/`isbn10` are derived from the
 /// scanned rows whenever no override exists, so this runs on every book
 /// (#2496). Placement, in order: (a) a row that is the *same ISBN* as the
-/// override (per [`isbn_form`]) is relabelled and revalued in place — this
-/// is a rename, not a new identifier, and is what lets `urn:isbn:…`,
+/// override (per [`same_identifier`]) is relabelled and revalued in place —
+/// this is a rename, not a new identifier, and is what lets `urn:isbn:…`,
 /// hyphenated, and bare-digit forms of one ISBN collapse onto the override
 /// row; (b) failing that, a row sharing the override's label is replaced —
 /// the correction case, where the file's value under that label was simply
@@ -186,7 +186,7 @@ fn apply_isbn_override(
     };
     let slot_index = rows
         .iter()
-        .position(|(existing, _)| same_isbn(&existing.value, value))
+        .position(|(existing, _)| same_identifier(&existing.value, value))
         .or_else(|| {
             rows.iter()
                 .position(|(existing, _)| existing.label == label)
@@ -195,41 +195,48 @@ fn apply_isbn_override(
         Some(i) => rows[i] = (row, rank),
         None => rows.push((row, rank)),
     }
-    rows.retain(|(existing, _)| existing.value == value || !same_isbn(&existing.value, value));
+    rows.retain(|(existing, _)| {
+        existing.value == value || !same_identifier(&existing.value, value)
+    });
 }
 
-/// True when `a` and `b` are the same ISBN once both are reduced to
-/// [`isbn_form`] — and that form is non-empty, so two values with no digits
-/// in common don't spuriously match on an empty string.
-fn same_isbn(a: &str, b: &str) -> bool {
-    let (fa, fb) = (isbn_form(a), isbn_form(b));
-    !fa.is_empty() && fa == fb
-}
-
-/// An identifier's digits and any trailing ISBN-10 check-digit `X`,
-/// uppercased — everything else (hyphens, whitespace, a `urn:isbn:` prefix)
-/// stripped. This is what lets `urn:isbn:9780134685991`,
-/// `978-0-13-468599-1`, and `9780134685991` all compare as one ISBN.
-fn isbn_form(value: &str) -> String {
-    value
+/// The value's derived ISBN, if — once lowercased, a leading `urn:isbn:` /
+/// `isbn:` / `isbn ` prefix stripped, and hyphens and whitespace removed —
+/// the remainder is exactly 13 ASCII digits (ISBN-13), or 9 ASCII digits
+/// followed by a digit or `X` (ISBN-10). No checksum: a mistyped scanned
+/// ISBN must still collapse onto its derived digits. Deliberately narrow —
+/// a URL, a calibre id, or a uuid never reduces to this shape, so they
+/// return `None` rather than being coerced into a false match on whatever
+/// digits they happen to contain.
+fn isbn_value(v: &str) -> Option<String> {
+    let lower = v.trim().to_ascii_lowercase();
+    let rest = lower
+        .strip_prefix("urn:isbn:")
+        .or_else(|| lower.strip_prefix("isbn:"))
+        .or_else(|| lower.strip_prefix("isbn "))
+        .unwrap_or(lower.as_str());
+    let cleaned: String = rest
         .chars()
-        .filter(|c| c.is_ascii_digit() || c.eq_ignore_ascii_case(&'x'))
-        .map(|c| c.to_ascii_uppercase())
-        .collect()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .collect();
+    let chars: Vec<char> = cleaned.chars().collect();
+    let is_isbn13 = chars.len() == 13 && chars.iter().all(|c| c.is_ascii_digit());
+    let is_isbn10 = chars.len() == 10
+        && chars[..9].iter().all(|c| c.is_ascii_digit())
+        && (chars[9].is_ascii_digit() || chars[9].eq_ignore_ascii_case(&'x'));
+    (is_isbn13 || is_isbn10).then(|| cleaned.to_ascii_uppercase())
 }
 
-/// True when two identifier values are the same, ignoring hyphens,
-/// whitespace, and case — a hyphenated scanned ISBN
-/// (`978-0-13-468599-1`) and its hyphen-free derived form
-/// (`9780134685991`) are the same identifier and must collapse to one row.
-fn identifier_values_match(a: &str, b: &str) -> bool {
-    fn normalize(v: &str) -> String {
-        v.chars()
-            .filter(|c| !c.is_whitespace() && *c != '-')
-            .collect::<String>()
-            .to_ascii_lowercase()
-    }
-    normalize(a) == normalize(b)
+/// True when two identifier values are the same identifier: an exact,
+/// case-insensitive match, or both reduce to the same [`isbn_value`]. The
+/// ISBN comparison is deliberately narrower than a plain hyphen/whitespace
+/// fold — that fold alone would collapse two distinct non-ISBN values that
+/// merely share punctuation (`foo-123` / `foo123`), and stripping every
+/// non-digit would let a URL ending in an ISBN's digits be mistaken for the
+/// ISBN itself.
+fn same_identifier(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b)
+        || matches!((isbn_value(a), isbn_value(b)), (Some(x), Some(y)) if x == y)
 }
 
 /// True when `value`, with hyphens and whitespace stripped, is a valid ISBN —

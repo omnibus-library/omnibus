@@ -328,6 +328,31 @@ fn bd_identifier_rows_relabel_the_matching_row_and_keep_every_other_scanned_row(
 }
 
 #[test]
+fn bd_identifier_rows_keep_two_non_isbn_values_that_differ_only_by_a_hyphen() {
+    let out = rows(&[
+        ident(Some("calibre"), "foo-123"),
+        ident(Some("calibre"), "foo123"),
+    ]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn bd_identifier_rows_never_treat_a_url_carrying_the_isbn_digits_as_the_isbn() {
+    let out = rows_with_isbns(
+        &[ident(Some("url"), "https://example.com/book/9780134685991")],
+        Some("9780134685991"),
+        None,
+    );
+    assert_eq!(out.len(), 2);
+    assert!(out
+        .iter()
+        .any(|r| r.value == "https://example.com/book/9780134685991"));
+    assert!(out
+        .iter()
+        .any(|r| r.label == "ISBN-13" && r.value == "9780134685991"));
+}
+
+#[test]
 fn an_isbn13_override_replaces_a_scanned_isbn13_row_with_a_different_value() {
     // The label-match branch on its own: the file's ISBN-13 is wrong, the
     // override corrects it.

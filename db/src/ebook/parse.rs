@@ -268,14 +268,18 @@ fn has_bracketed_url(name: &str) -> bool {
     rest[..close].contains("://")
 }
 
-/// A non-empty leading name followed by a `(...)` group holding nothing but
-/// digits and dots, with at least one of each — a version, never a lifespan
-/// (`1907-1988` carries a hyphen) or a nickname.
+/// A single-token leading name followed by a `(...)` group holding nothing
+/// but digits and dots, with at least one of each — a version, never a
+/// lifespan (`1907-1988` carries a hyphen) or a nickname. The leading name
+/// must carry no internal whitespace: a tool stamps itself as one word
+/// (`calibre`, `Sigil`, `pandoc`), while a credited person's name does not,
+/// so `Author Name (1965.07.31)` is a role-less human, not a stamp.
 fn has_parenthesised_version(name: &str) -> bool {
     let Some(open) = name.find('(') else {
         return false;
     };
-    if name[..open].trim().is_empty() {
+    let leading = name[..open].trim();
+    if leading.is_empty() || leading.split_whitespace().count() > 1 {
         return false;
     }
     let rest = &name[open + 1..];
