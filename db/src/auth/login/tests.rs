@@ -85,6 +85,79 @@ async fn login_unknown_user_returns_invalid_credentials() {
     assert!(matches!(err, AuthError::InvalidCredentials));
 }
 
+/// #2596: a wrong password against a *locked* account must be
+/// indistinguishable from an unknown username — same variant, so the same
+/// status downstream. Otherwise five guesses reveal that the username exists.
+#[tokio::test]
+async fn login_on_a_locked_account_returns_invalid_credentials_for_a_wrong_password() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    lock_account(&p, u.id).await;
+
+    let locked_wrong = verify_login(&p, "alice", "not-the-password")
+        .await
+        .unwrap_err();
+    let unknown_user = verify_login(&p, "nobody", "not-the-password")
+        .await
+        .unwrap_err();
+
+    assert!(matches!(locked_wrong, AuthError::InvalidCredentials));
+    assert!(matches!(unknown_user, AuthError::InvalidCredentials));
+}
+
+/// The lockout is still enforced — it is just only *disclosed* to a caller
+/// that already proved it holds the password.
+#[tokio::test]
+async fn login_on_a_locked_account_returns_account_locked_only_for_the_correct_password() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let until = lock_account(&p, u.id).await;
+
+    let err = verify_login(&p, "alice", "hunter2-real-long")
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, AuthError::AccountLocked { until_unix } if until_unix == until),
+        "got {err:?}"
+    );
+}
+
+/// A guess against a locked account must not push the window out — otherwise
+/// an attacker can keep a victim locked out indefinitely.
+#[tokio::test]
+async fn login_on_a_locked_account_does_not_extend_the_lock_window() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let until = lock_account(&p, u.id).await;
+
+    let _ = verify_login(&p, "alice", "not-the-password").await;
+
+    let (failed, locked): (i64, Option<i64>) =
+        sqlx::query_as("SELECT failed_login_count, locked_until FROM users WHERE id = ?")
+            .bind(u.id)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    assert_eq!(locked, Some(until), "the window must not move");
+    assert_eq!(failed, LOCKOUT_MIN_AFTER, "the counter must not move");
+}
+
+/// Put `user_id` into a live lockout window and return its `locked_until`.
+/// Written directly rather than through five failed logins so the tests above
+/// pay one Argon2 verify instead of six.
+async fn lock_account(pool: &sqlx::SqlitePool, user_id: i64) -> i64 {
+    let until = now_unix() + LOCKOUT_DURATION_SECS;
+    sqlx::query("UPDATE users SET failed_login_count = ?, locked_until = ? WHERE id = ?")
+        .bind(LOCKOUT_MIN_AFTER)
+        .bind(until)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    until
+}
+
 #[tokio::test]
 async fn login_corrupted_password_hash_returns_crypto_error() {
     // Regression: a corrupted `password_hash` column (e.g. disk

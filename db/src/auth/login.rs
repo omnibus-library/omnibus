@@ -29,9 +29,20 @@ fn sentinel_hash() -> AuthResult<&'static str> {
     Ok(HASH.get_or_init(|| hashed).as_str())
 }
 
-/// Verify a login attempt. On success returns the user; on failure returns
-/// a generic `InvalidCredentials` (same error for unknown username and
-/// wrong password). Enforces per-account lockout.
+/// Verify a login attempt. On success returns the user; on failure returns a
+/// generic `InvalidCredentials` — the same error for an unknown username, a
+/// wrong password, and a wrong password against a locked account, so no
+/// status code distinguishes them.
+///
+/// Per-account lockout is enforced for everyone but *disclosed* only to a
+/// caller that presented the correct password, via
+/// `AuthError::AccountLocked`. A locked account that answered differently
+/// from an unknown username would be a username oracle, which is the whole
+/// reason the unknown-username path burns a sentinel verify.
+///
+/// Registration's `UsernameTaken` is an accepted, deliberate oracle: there
+/// is no way to run a sign-up form without it, and self-registration is off
+/// by default once the first user exists.
 pub async fn verify_login(pool: &SqlitePool, username: &str, password: &str) -> AuthResult<User> {
     let row = sqlx::query(
         "SELECT u.id, u.username, u.password_hash, u.is_admin, u.can_upload, u.can_edit,
@@ -66,8 +77,17 @@ pub async fn verify_login(pool: &SqlitePool, username: &str, password: &str) -> 
     // effective failure count as zero from this point.
     let effective_failed = match locked_until {
         Some(until) if until > now => {
-            let _ = verify_password(password, &phc); // equalize timing
-            return Err(AuthError::AccountLocked { until_unix: until });
+            // A locked row still pays the real verify, and a wrong password
+            // still answers `InvalidCredentials` — byte-identical to an
+            // unknown username, so the status code is not a username oracle.
+            // Only a caller that already holds the password is told the
+            // account is locked. The attempt deliberately touches neither the
+            // counter nor the window: an attacker must not be able to keep
+            // someone locked out by guessing.
+            if verify_password(password, &phc)? {
+                return Err(AuthError::AccountLocked { until_unix: until });
+            }
+            return Err(AuthError::InvalidCredentials);
         }
         Some(_) => 0,
         None => failed,
