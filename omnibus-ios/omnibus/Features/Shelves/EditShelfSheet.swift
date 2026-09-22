@@ -20,9 +20,10 @@ struct EditShelfSheet: View {
     @State private var visibility: ShelfVisibility
     @State private var matchMode: MatchMode = .all
     @State private var rules: [ShelfRule] = []
-    /// Whether the detail read has landed. A smart shelf's rules are only
-    /// known then, and saving before that would replace them with nothing —
-    /// which the server refuses, but only after a round trip.
+    /// Whether the *server's* detail has landed, not the replica's. The
+    /// description and rules are shown and sent only once it has: the cached
+    /// copy can predate an edit made on another device, and submitting it
+    /// would put that edit back.
     @State private var isLoaded = false
     @State private var isSaving = false
     @State private var error: String?
@@ -43,8 +44,8 @@ struct EditShelfSheet: View {
         rules.filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
-    /// The detail read can arrive after the reader started typing; a save is
-    /// gated on it only where it matters, which is a smart shelf's rule set.
+    /// A rename needs nothing but the summary the card already had; a rule
+    /// edit needs the fresh rule set, or it would replace rules it never saw.
     private var canSave: Bool {
         !isSaving
             && isOnline
@@ -58,12 +59,14 @@ struct EditShelfSheet: View {
                 VStack(alignment: .leading, spacing: 28) {
                     Plate {
                         PlateField(label: "Name", text: $name, isFirst: true)
-                        PlateField(
-                            label: "Description",
-                            text: $description,
-                            hint: "Optional",
-                            multiline: true
-                        )
+                        if isLoaded {
+                            PlateField(
+                                label: "Description",
+                                text: $description,
+                                hint: "Optional",
+                                multiline: true
+                            )
+                        }
                     }
 
                     group("Visibility") {
@@ -194,19 +197,23 @@ struct EditShelfSheet: View {
     // MARK: - Data
 
     /// Fill in the fields the summary doesn't carry. The name and visibility
-    /// are left alone: the reader may already be typing into them.
+    /// are left alone: the reader may already be typing into them. The
+    /// replica's answer seeds the fields but does not unlock them; only the
+    /// server's does, so a stale description or rule set is never what gets
+    /// saved. Offline the stream ends without one, and the sheet stays a
+    /// rename-and-visibility form — which `canSave` already refuses offline.
     private func load() async {
-        for await detail in UserDataService.shelf(id: shelf.id).values() {
-            guard !isLoaded else { break }
-            description = detail.description ?? ""
-            matchMode = detail.matchMode ?? .all
-            rules = detail.rules
-            isLoaded = true
-        }
-        // Offline with nothing cached, the stream ends without a value. A
-        // manual shelf can still be renamed from the summary alone; a smart
-        // one can't be saved without its rules, and `canSave` says so.
-        if !isLoaded, !isSmart { isLoaded = true }
+        do {
+            for try await read in UserDataService.shelf(id: shelf.id) {
+                description = read.value.description ?? ""
+                matchMode = read.value.matchMode ?? .all
+                rules = read.value.rules
+                if read.isFresh {
+                    isLoaded = true
+                    break
+                }
+            }
+        } catch {}
     }
 
     private func refreshPreview() async {
@@ -226,11 +233,13 @@ struct EditShelfSheet: View {
         error = nil
         defer { isSaving = false }
 
-        // `description` is sent even when blank: `nil` would mean "leave it",
-        // and clearing a description is a change the reader can make here.
+        // `description` is sent even when blank — `nil` means "leave it", and
+        // clearing one is a change the reader can make here — but only once
+        // the server's copy was shown, so the field is never sent unseen.
         let request = UpdateShelfRequest(
             name: name,
-            description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+            description: isLoaded
+                ? description.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
             visibility: visibility,
             matchMode: isSmart ? matchMode : nil,
             rules: isSmart ? validRules : nil

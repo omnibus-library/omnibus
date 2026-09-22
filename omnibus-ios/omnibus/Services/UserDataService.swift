@@ -631,8 +631,11 @@ enum UserDataService {
     /// Rule 08 keeps configuration out of the outbox for exactly that reason.
     @discardableResult
     static func updateShelf(id: Int64, _ payload: UpdateShelfRequest) async throws -> Shelf {
-        let shelf: Shelf = try await APIClient.shared.put("/api/shelves/\(id)", body: payload)
+        let shelf: Shelf = try await APIClient.shared.patch("/api/shelves/\(id)", body: payload)
         await OfflineStore.shared.cacheDelete(CacheKey.shelf(id))
+        // A rule change recomputes membership on the server, and the cached
+        // page is the only copy an offline open would show.
+        await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(id))
         await invalidateShelves()
         return shelf
     }

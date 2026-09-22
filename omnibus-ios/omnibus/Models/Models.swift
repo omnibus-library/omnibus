@@ -1336,7 +1336,7 @@ struct CreateShelfRequest: Codable, Sendable {
     }
 }
 
-/// Partial update (`PUT /api/shelves/{id}`). `nil` fields are left as they
+/// Partial update (`PATCH /api/shelves/{id}`). `nil` fields are left as they
 /// are; `rules` replaces the whole rule set. Mirrors `UpdateShelfRequest` in
 /// `shared/src/shelves.rs` — the kind is fixed at creation and has no field.
 struct UpdateShelfRequest: Codable, Sendable {
