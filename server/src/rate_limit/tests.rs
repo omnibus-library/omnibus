@@ -326,7 +326,10 @@ async fn client_ip_uses_the_peer_and_ignores_forwarding_when_not_trusted() {
 
 /// AC3: with the opt-in on, the *rightmost* hop wins — the one the trusted
 /// proxy appended. Everything to its left is whatever the client chose to
-/// send, so a prepended hop must not select a bucket.
+/// send, so a prepended hop must not select a bucket. This also covers the
+/// forwarded hop outranking the TCP peer: behind a proxy that peer *is* the
+/// proxy (`10.0.0.1` here), so the forwarded hop has to win or the whole
+/// internet would share one bucket even with the opt-in on.
 #[tokio::test]
 async fn client_ip_ignores_a_client_supplied_leading_forwarded_hop() {
     let _env = EnvVarGuard::set("OMNIBUS_TRUST_FORWARDED_FOR", Some("1"));
@@ -334,18 +337,6 @@ async fn client_ip_ignores_a_client_supplied_leading_forwarded_hop() {
         client_ip(&peer("10.0.0.1"), &forwarded("1.2.3.4, 203.0.113.9")),
         ip("203.0.113.9"),
         "the leftmost hop is attacker-controlled and must not pick the bucket"
-    );
-}
-
-/// Behind a trusted proxy the TCP peer *is* the proxy, so the forwarded hop
-/// has to outrank it — otherwise the whole internet shares one bucket even
-/// with the opt-in on.
-#[tokio::test]
-async fn client_ip_prefers_a_trusted_forwarded_hop_over_the_proxy_peer() {
-    let _env = EnvVarGuard::set("OMNIBUS_TRUST_FORWARDED_FOR", Some("1"));
-    assert_eq!(
-        client_ip(&peer("10.0.0.1"), &forwarded("203.0.113.9")),
-        ip("203.0.113.9")
     );
 }
 
