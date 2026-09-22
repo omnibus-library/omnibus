@@ -85,15 +85,18 @@ pub async fn verify_login(pool: &SqlitePool, username: &str, password: &str) -> 
             // oracle. Attempts are counted but the window never moves, so an
             // attacker can't extend someone else's lockout. Past the
             // disclosure cap even the right password answers generically, so
-            // the window itself can't be brute-forced.
+            // the window itself can't be brute-forced. The attempt is reserved
+            // atomically (`RETURNING` the post-increment count) so a batch of
+            // concurrent guesses cannot all read the same pre-cap value.
             let ok = verify_password(password, &phc)?;
-            sqlx::query(
-                "UPDATE users SET failed_login_count = failed_login_count + 1 WHERE id = ?",
+            let attempts: i64 = sqlx::query_scalar(
+                "UPDATE users SET failed_login_count = failed_login_count + 1 \
+                 WHERE id = ? RETURNING failed_login_count",
             )
             .bind(user_id)
-            .execute(pool)
+            .fetch_one(pool)
             .await?;
-            if ok && failed < LOCKOUT_MIN_AFTER + LOCKOUT_DISCLOSURE_ATTEMPTS {
+            if ok && attempts <= LOCKOUT_MIN_AFTER + LOCKOUT_DISCLOSURE_ATTEMPTS {
                 return Err(AuthError::AccountLocked { until_unix: until });
             }
             return Err(AuthError::InvalidCredentials);

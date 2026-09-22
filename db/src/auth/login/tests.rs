@@ -189,3 +189,28 @@ async fn login_corrupted_password_hash_returns_crypto_error() {
         .unwrap_err();
     assert!(matches!(err, AuthError::Crypto(_)));
 }
+
+/// The disclosure cap is reserved atomically, so a batch of concurrent
+/// correct-password attempts against a fresh lock learns of it exactly
+/// `LOCKOUT_DISCLOSURE_ATTEMPTS` times, whatever the interleaving.
+#[tokio::test]
+async fn login_disclosure_cap_holds_under_concurrent_attempts() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    lock_account(&p, u.id).await;
+
+    let attempts = (LOCKOUT_DISCLOSURE_ATTEMPTS + 5) as usize;
+    let handles: Vec<_> = (0..attempts)
+        .map(|_| {
+            let p = p.clone();
+            tokio::spawn(async move { verify_login(&p, "alice", "hunter2-real-long").await })
+        })
+        .collect();
+    let mut disclosed = 0;
+    for h in handles {
+        if matches!(h.await.unwrap(), Err(AuthError::AccountLocked { .. })) {
+            disclosed += 1;
+        }
+    }
+    assert_eq!(disclosed as i64, LOCKOUT_DISCLOSURE_ATTEMPTS);
+}
