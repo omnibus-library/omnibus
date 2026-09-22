@@ -624,6 +624,19 @@ enum UserDataService {
         return shelf
     }
 
+    /// Rename a shelf, change its visibility or description, or replace a
+    /// smart shelf's rules. Direct, like the create: a second reader — or an
+    /// admin — can change the same shelf while this device is away, and a
+    /// week-old rename replayed over theirs is a surprise nobody asked for.
+    /// Rule 08 keeps configuration out of the outbox for exactly that reason.
+    @discardableResult
+    static func updateShelf(id: Int64, _ payload: UpdateShelfRequest) async throws -> Shelf {
+        let shelf: Shelf = try await APIClient.shared.put("/api/shelves/\(id)", body: payload)
+        await OfflineStore.shared.cacheDelete(CacheKey.shelf(id))
+        await invalidateShelves()
+        return shelf
+    }
+
     /// Delete a shelf. Unlike a create this has a real server id to name, so it
     /// queues like any other write and applies on reconnect.
     static func deleteShelf(id: Int64) async {

@@ -25,6 +25,12 @@ struct SymbolNameTests {
         #expect(UIImage(systemName: BookMenuGlyph.edit) != nil)
     }
 
+    @Test("the shelf long-press menu's glyphs resolve")
+    func shelfMenuGlyphsResolve() {
+        #expect(UIImage(systemName: ShelfMenuGlyph.edit) != nil)
+        #expect(UIImage(systemName: ShelfMenuGlyph.delete) != nil)
+    }
+
     @Test("the shelf's off-the-network glyph resolves")
     func shelfUnreachableGlyphResolves() {
         // A long `arrow.trianglehead.…` name, and the only mark that state

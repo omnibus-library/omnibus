@@ -154,6 +154,17 @@ final class LibraryModel {
         } catch {}
     }
 
+    /// Shelves only, for the rail after one of its cards is edited or deleted.
+    /// Same shape as `refreshResume`: the grid is left where the reader
+    /// scrolled it.
+    func refreshShelves() async {
+        do {
+            for try await read in UserDataService.shelfPreviews() {
+                shelves = read.value
+            }
+        } catch {}
+    }
+
     /// One background poll tick: pick up server-side changes (a finished
     /// import, progress from another device) without requiring a pull.
     /// Mirrors the web client's sync tick — the mirror sync self-throttles to
@@ -408,7 +419,11 @@ struct LibraryView: View {
                 // one reader who has never made a shelf.
                 ShelvesRail(
                     previews: Array(railShelves.prefix(8)),
-                    viewerId: app.user?.id
+                    viewerId: app.user?.id,
+                    // Only the rail is re-read: a rename can't change which
+                    // books are on the grid, and a full reload would truncate
+                    // it back to its first page.
+                    onChanged: { Task { await model.refreshShelves() } }
                 ) {
                     path.append(Destination.shelves)
                 }
