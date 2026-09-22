@@ -87,9 +87,10 @@ mod server {
 
     /// Log a WARN if `OMNIBUS_TRUST_FORWARDED_FOR` is enabled — required only
     /// behind a trusted reverse proxy, dangerous otherwise — and a one-time
-    /// WARN each if kepubify is missing (Kobo downloads then fall back to
-    /// plain EPUB) or Calibre's `ebook-convert` is missing (format conversion
-    /// stays disabled). Both are optional, so neither blocks the boot.
+    /// WARN each if no Prometheus scrape token is configured (`/metrics` then
+    /// 404s), if kepubify is missing (Kobo downloads fall back to plain EPUB),
+    /// or if Calibre's `ebook-convert` is missing (format conversion stays
+    /// disabled). All are optional, so none blocks the boot.
     fn log_startup_warnings() {
         if rate_limit::trust_forwarded_for() {
             tracing::warn!(
@@ -97,6 +98,7 @@ mod server {
                 "OMNIBUS_TRUST_FORWARDED_FOR is enabled \u{2014} ensure a trusted reverse proxy is in front."
             );
         }
+        metrics::warn_if_disabled();
         omnibus_db::kepub::warn_if_unavailable();
         omnibus_db::convert::warn_if_unavailable();
     }
