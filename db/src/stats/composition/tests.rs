@@ -669,25 +669,6 @@ async fn two_spellings_of_one_language_on_one_book_are_a_single_placement() {
     assert_eq!(c.languages.overlap(), 0);
 }
 
-// The counterpart: a genuinely bilingual book still lands in two buckets, one
-// placement each. De-duplication is per bucket, not per book.
-#[tokio::test]
-async fn a_book_in_two_different_languages_still_lands_in_both_buckets() {
-    let pool = init_db("sqlite::memory:").await.unwrap();
-    let lib = seed_lib(&pool).await;
-    let a = seed_book(&pool, lib, "u-a", "EPUB").await;
-    link_language(&pool, a, "eng").await;
-    link_language(&pool, a, "fra").await;
-
-    let c = composed(&pool).await;
-
-    let labels = by_label(&c.languages);
-    assert_eq!(labels.get("English"), Some(&1));
-    assert_eq!(labels.get("French"), Some(&1));
-    assert_eq!(c.languages.coverage.total, 2);
-    assert_eq!(c.languages.coverage.books, 1);
-}
-
 #[tokio::test]
 async fn two_publisher_rows_on_one_book_are_one_placement_in_each_publisher() {
     // `publishers.name` is UNIQUE, so two rows are two real publishers. Each

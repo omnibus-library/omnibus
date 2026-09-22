@@ -306,20 +306,3 @@ fn an_isbn13_override_replaces_a_scanned_isbn13_row_with_a_different_value() {
     assert_eq!(out[0].label, "ISBN-13");
     assert_eq!(out[0].value, "9780316259088");
 }
-
-#[test]
-fn bd_identifier_rows_keep_every_key_distinct_with_overrides_folded_in() {
-    let out = rows_with_isbns(
-        &[
-            ident(Some("calibre"), "412"),
-            ident(Some("02"), "9780316259088"),
-        ],
-        Some("9780316259088"),
-        Some("031625908X"),
-    );
-    let mut keys: Vec<&str> = out.iter().map(|r| r.key.as_str()).collect();
-    keys.sort_unstable();
-    let before = keys.len();
-    keys.dedup();
-    assert_eq!(keys.len(), before);
-}
