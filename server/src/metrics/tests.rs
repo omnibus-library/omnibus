@@ -193,15 +193,6 @@ async fn metrics_endpoint_401s_without_the_configured_bearer_token() {
 }
 
 #[test]
-fn bearer_value_accepts_any_scheme_casing_and_rejects_other_schemes() {
-    assert_eq!(bearer_value("Bearer abc"), Some("abc"));
-    assert_eq!(bearer_value("bearer abc"), Some("abc"));
-    assert_eq!(bearer_value("BEARER  abc "), Some("abc"));
-    assert_eq!(bearer_value("Basic abc"), None);
-    assert_eq!(bearer_value("abc"), None);
-}
-
-#[test]
 fn constant_time_eq_matches_only_identical_bytes() {
     assert!(constant_time_eq(b"abc", b"abc"));
     assert!(!constant_time_eq(b"abc", b"abd"));

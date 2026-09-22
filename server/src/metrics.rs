@@ -87,17 +87,6 @@ fn scrape_token() -> Option<String> {
         .filter(|t| !t.is_empty())
 }
 
-/// The token from an `Authorization: Bearer <token>` header. The scheme is
-/// case-insensitive per RFC 9110 §11.1.
-fn bearer_value(raw: &str) -> Option<&str> {
-    let (scheme, token) = raw.split_once(' ')?;
-    if scheme.eq_ignore_ascii_case("bearer") {
-        Some(token.trim())
-    } else {
-        None
-    }
-}
-
 /// Byte comparison that does not short-circuit, so a wrong token cannot be
 /// extended one byte at a time from response latency. Length is compared up
 /// front and is not secret — a token's length is not the token.
@@ -118,7 +107,7 @@ fn render(handle: &PrometheusHandle, headers: &HeaderMap) -> Response {
     let presented = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(bearer_value);
+        .and_then(|v| v.strip_prefix("Bearer "));
     match presented {
         Some(p) if constant_time_eq(p.as_bytes(), token.as_bytes()) => {
             handle.render().into_response()
