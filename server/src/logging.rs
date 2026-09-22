@@ -1,7 +1,8 @@
 //! Tracing subscriber setup: a compact human-readable stderr layer, a
 //! non-blocking daily-rolling JSON file sink, and the in-memory error ring
 //! buffer layer ([`error_ring_layer`]), all gated by one `RUST_LOG`
-//! env-filter. Called by `main` before `dioxus::serve`; the JSON file is the
+//! env-filter. `init_tracing` installs the process's only subscriber and
+//! runs first in `main`, before `server::serve`; the JSON file is the
 //! durable log source read back through `omnibus_db::logs`.
 
 mod error_ring_layer;
@@ -11,10 +12,10 @@ mod tests;
 
 use error_ring_layer::ErrorRingLayer;
 
-/// Install the global tracing subscriber. Must run before `dioxus::serve`,
-/// which otherwise installs dioxus-logger's default subscriber with a fixed
-/// filter that ignores `RUST_LOG`. `RUST_LOG` wins when set; the fallback keeps
-/// omnibus events visible without dependency noise.
+/// Install the global tracing subscriber. Runs first in `main`, before
+/// `server::serve`, so it is the process's only subscriber. `RUST_LOG` wins
+/// when set; the fallback keeps omnibus events visible without dependency
+/// noise.
 ///
 /// Two sinks share one env-filter: a compact human-readable layer to stderr for
 /// local dev, and a non-blocking rolling-file layer emitting one JSON record per
