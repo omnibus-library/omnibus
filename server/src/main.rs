@@ -17,9 +17,13 @@ fn main() {
         // Bind the appender guard for the whole process: dropping it flushes
         // the non-blocking file writer's buffer. `server::serve` blocks until
         // shutdown, so the guard lives exactly as long as the server does.
-        let _log_guard = omnibus::logging::init_tracing();
+        let log_guard = omnibus::logging::init_tracing();
         if let Err(error) = server::serve() {
             tracing::error!(%error, "omnibus server exited");
+            // Flush the buffered log writer before exiting — `process::exit`
+            // skips destructors, so an un-dropped guard would lose this
+            // error line.
+            drop(log_guard);
             std::process::exit(1);
         }
     }
