@@ -304,6 +304,8 @@ struct BookDetailView: View {
     @State private var showAudioFilePicker = false
     @State private var showCheckIn = false
     @State private var showDescription = false
+    /// The chip row whose quick editor is up, when one is.
+    @State private var chipEditing: ChipEditKind?
     @State private var showAllHighlights = false
     @State private var showAllJournals = false
     /// The entry open in the journal drawer.
@@ -443,6 +445,13 @@ struct BookDetailView: View {
                 DescriptionDrawer(book: book)
             }
         }
+        .sheet(item: $chipEditing) { kind in
+            if let book = model.book {
+                ChipEditSheet(book: book, kind: kind) { merged in
+                    model.book = merged
+                }
+            }
+        }
         .sheet(isPresented: $showAllHighlights, onDismiss: {
             guard let pending = pendingQuote else { return }
             pendingQuote = nil
@@ -531,6 +540,13 @@ struct BookDetailView: View {
     /// whole), then every section in a single continuous list.
     private var usesScrollStops: Bool {
         app.user?.bookDetailScrollStops ?? false
+    }
+
+    /// Whether this reader may write metadata overrides — the server's own
+    /// gate on the save (`can_edit` or admin), so the "+" chips never open
+    /// onto a request that can only be refused.
+    private var canEditMetadata: Bool {
+        app.user?.canEdit == true || app.user?.isAdmin == true
     }
 
     private func content(_ book: Book) -> some View {
@@ -783,7 +799,9 @@ struct BookDetailView: View {
             StopHome(
                 book: book,
                 model: model,
-                lifted: lifted,
+                lifted: DetailRead.homeLifted(scrollStops: usesScrollStops, lifted: lifted),
+                onEditChips: canEditMetadata ? { chipEditing = $0 } : nil,
+                chipEditsOnline: connectivity.isOnline,
                 onMore: { showDescription = true },
                 onAlignment: { showAlignment = true },
                 onRemovedWishlist: { bookDeleted in

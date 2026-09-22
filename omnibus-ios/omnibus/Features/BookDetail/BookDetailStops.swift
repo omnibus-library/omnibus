@@ -151,6 +151,15 @@ enum DetailRead {
         )
     }
 
+    /// Whether the Home section renders its lifted shape — the tag row and
+    /// the six-line blurb. The marquee's Home is one screenful that lifts
+    /// from a strip, so it trims at rest; the flow is a continuous list under
+    /// the cover, and a section that changed shape as the list rose made the
+    /// tags and blurb jump mid-scroll, so there it is always whole.
+    static func homeLifted(scrollStops: Bool, lifted: Bool) -> Bool {
+        scrollStops ? lifted : true
+    }
+
     /// What the Home sync row states per link state, and the action word its
     /// trailing affordance promises. Every action opens the alignment sheet —
     /// link, re-confirm, and unlink all live there.
@@ -509,6 +518,45 @@ struct TagChip: View {
     }
 }
 
+/// The "+" that opens a chip row for a reader who may edit metadata — the
+/// web hero's "+ genres" / "+ tags" pill. It leads the row rather than
+/// trailing it as the web's does: the strip scrolls sideways instead of
+/// wrapping, so a trailing "+" on a well-tagged book sits screens away.
+/// Greyed rather than gone while offline: the save it opens onto is never
+/// queued (rule 08).
+struct AddChip: View {
+    let kind: ChipEditKind
+    var enabled = true
+    var action: () -> Void
+
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.accentColor)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .overlay(
+                    Capsule().strokeBorder(
+                        palette.accentColor.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                    )
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityLabel(kind.addLabel)
+        .accessibilityIdentifier(kind.addIdentifier)
+    }
+}
+
 /// The reading-status control, styled as the system segmented control: a
 /// translucent track with a raised selected segment.
 struct DetailSegmented: View {
@@ -841,11 +889,27 @@ struct StopHome: View {
     /// strip under the artwork, so the compact state trims what the fold
     /// would cut anyway.
     var lifted = true
+    /// Opens the quick editor for a chip row. `nil` for a reader who can't
+    /// edit metadata, which also keeps the "+" chips off the rows.
+    var onEditChips: ((ChipEditKind) -> Void)?
+    /// Whether the "+" chips are live — off while offline.
+    var chipEditsOnline = true
     var onMore: () -> Void
     var onAlignment: () -> Void
     var onRemovedWishlist: (Bool) -> Void
 
     @Environment(\.palette) private var palette
+
+    /// A row shows for its chips, or for the "+" that would add the first.
+    private var showsGenres: Bool { !book.genres.isEmpty || onEditChips != nil }
+    private var showsTags: Bool { !book.subjects.isEmpty || onEditChips != nil }
+
+    @ViewBuilder
+    private func addChip(_ kind: ChipEditKind) -> some View {
+        if let onEditChips {
+            AddChip(kind: kind, enabled: chipEditsOnline) { onEditChips(kind) }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -871,16 +935,18 @@ struct StopHome: View {
                 .lineLimit(1)
                 .padding(.top, 7)
 
-            if !book.genres.isEmpty {
+            if showsGenres {
                 ChipStrip {
+                    addChip(.genres)
                     ForEach(book.genres, id: \.self) { GenreChip(label: $0) }
                 }
                 .padding(.top, 11)
                 .accessibilityIdentifier("book-detail-genres")
             }
 
-            if !book.subjects.isEmpty, lifted {
+            if showsTags, lifted {
                 ChipStrip {
+                    addChip(.tags)
                     ForEach(book.subjects, id: \.self) { subject in
                         NavigationLink(value: Destination.tag(name: subject)) {
                             TagChip(label: subject)
@@ -888,7 +954,7 @@ struct StopHome: View {
                         .buttonStyle(PressableStyle())
                     }
                 }
-                .padding(.top, book.genres.isEmpty ? 11 : 7)
+                .padding(.top, showsGenres ? 7 : 11)
                 .accessibilityIdentifier("book-detail-tags")
             }
 
