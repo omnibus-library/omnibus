@@ -99,6 +99,20 @@ More optional settings: [`.env.example`](../.env.example).
 - Set `OMNIBUS_PUBLIC_ORIGIN` to your `https://` address.
 - Set `OMNIBUS_SECURE_COOKIES` to `1`, or remove it.
 - Optional: `OMNIBUS_TRUST_FORWARDED_FOR: "1"` so rate limiting sees real client IPs. Only if your proxy strips incoming `X-Forwarded-For`.
+- Optional: `OMNIBUS_METRICS_TOKEN: "<random>"` to open the Prometheus scrape
+  endpoint. Without it `GET /metrics` answers 404. Generate one with
+  `openssl rand -hex 32` and hand the same value to your scraper:
+
+  ```yaml
+  scrape_configs:
+    - job_name: omnibus
+      bearer_token: "<the same value as OMNIBUS_METRICS_TOKEN>"
+      static_configs:
+        - targets: ["omnibus:3000"]
+  ```
+
+  Keep `/metrics` off the public internet regardless — the token protects the
+  payload, not the port.
 
 ## Updating
 
