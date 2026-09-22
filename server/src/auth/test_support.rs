@@ -121,3 +121,15 @@ pub async fn cookie_value(pool: &SqlitePool, user_id: i64) -> String {
     .expect("create_session should succeed");
     format!("{}={}", SESSION_COOKIE, issued.raw_token)
 }
+
+/// Put `user_id` into a live lockout window, written directly rather than
+/// through five failed logins.
+pub async fn lock_account(pool: &SqlitePool, user_id: i64) {
+    sqlx::query(
+        "UPDATE users SET failed_login_count = 5, locked_until = strftime('%s','now') + 3600 WHERE id = ?",
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .expect("lock account");
+}

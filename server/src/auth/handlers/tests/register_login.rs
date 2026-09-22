@@ -426,17 +426,7 @@ async fn login_hides_a_lockout_from_a_caller_without_the_password() {
     let user = db::auth::create_user(&pool, "alice", "correct horse battery staple")
         .await
         .unwrap();
-    let until = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-        + 900;
-    sqlx::query("UPDATE users SET failed_login_count = 5, locked_until = ? WHERE id = ?")
-        .bind(until)
-        .bind(user.id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::auth::test_support::lock_account(&pool, user.id).await;
 
     let locked_wrong = app
         .clone()

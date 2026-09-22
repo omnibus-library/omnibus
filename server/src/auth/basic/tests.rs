@@ -366,17 +366,7 @@ async fn opds_auth_user_returns_500_when_the_basic_auth_state_extension_is_missi
 async fn opds_auth_user_hides_a_lockout_from_a_caller_without_the_password() {
     let (app, pool, _basic) = fixture().await;
     let user = auth_test_support::create_user_with_password(&pool, "basic-reader", PASSWORD).await;
-    let until = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-        + 900;
-    sqlx::query("UPDATE users SET failed_login_count = 5, locked_until = ? WHERE id = ?")
-        .bind(until)
-        .bind(user.id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    auth_test_support::lock_account(&pool, user.id).await;
 
     let locked_wrong = app
         .clone()
