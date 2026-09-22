@@ -160,6 +160,11 @@ enum DetailRead {
         scrollStops ? lifted : true
     }
 
+    /// A row shows for its chips, or for the "+" that would add the first.
+    static func showsChipRow(values: [String], canEdit: Bool) -> Bool {
+        !values.isEmpty || canEdit
+    }
+
     /// What the Home sync row states per link state, and the action word its
     /// trailing affordance promises. Every action opens the alignment sheet —
     /// link, re-confirm, and unlink all live there.
@@ -900,9 +905,13 @@ struct StopHome: View {
 
     @Environment(\.palette) private var palette
 
-    /// A row shows for its chips, or for the "+" that would add the first.
-    private var showsGenres: Bool { !book.genres.isEmpty || onEditChips != nil }
-    private var showsTags: Bool { !book.subjects.isEmpty || onEditChips != nil }
+    private var showsGenres: Bool {
+        DetailRead.showsChipRow(values: book.genres, canEdit: onEditChips != nil)
+    }
+
+    private var showsTags: Bool {
+        DetailRead.showsChipRow(values: book.subjects, canEdit: onEditChips != nil)
+    }
 
     @ViewBuilder
     private func addChip(_ kind: ChipEditKind) -> some View {

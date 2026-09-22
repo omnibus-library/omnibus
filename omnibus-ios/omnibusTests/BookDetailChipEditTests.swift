@@ -60,4 +60,14 @@ struct BookDetailChipEditTests {
         #expect(DetailRead.homeLifted(scrollStops: false, lifted: false))
         #expect(DetailRead.homeLifted(scrollStops: false, lifted: true))
     }
+
+    // MARK: - Chip rows
+
+    @Test func anEmptyRowStillShowsForAnEditorSoTheFirstChipCanBeAdded() {
+        #expect(DetailRead.showsChipRow(values: [], canEdit: true))
+    }
+
+    @Test func anEmptyRowIsHiddenFromAReaderWhoCannotEdit() {
+        #expect(!DetailRead.showsChipRow(values: [], canEdit: false))
+    }
 }
