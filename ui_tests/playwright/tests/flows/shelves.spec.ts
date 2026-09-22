@@ -379,6 +379,13 @@ test("locks the sort controls inside a hand-picked shelf and restores them for a
   await expect(page.getByTestId("lib-sort-dir")).toBeDisabled();
   await expect(page.getByTestId("lib-sort-locked")).toHaveText("shelf order");
 
+  // The table view's own sortable column headers must respect the same lock.
+  await page.getByTestId("view-toggle-table").click();
+  await expect(
+    page.getByRole("columnheader", { name: /Title/ }).getByRole("button"),
+  ).toBeDisabled();
+  await page.getByTestId("view-toggle-grid").click();
+
   await selectShelfInGallery(page, smartId, smartName);
 
   await expect(page.getByTestId("lib-sort-select")).toBeEnabled();
