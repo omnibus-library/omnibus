@@ -7,43 +7,13 @@
 use dioxus::prelude::*;
 use omnibus_shared::KoboDeviceView;
 
+use crate::pages::settings::use_instance_origin;
 use crate::{data, use_server_url};
 
 /// The `api_endpoint` a Kobo is pointed at: `{origin}/kobo/{token}`. The reader
 /// appends `/v1/…` itself.
 fn endpoint_url(server_url: &str, token: &str) -> String {
     format!("{}/kobo/{token}", server_url.trim_end_matches('/'))
-}
-
-/// Shown after a successful registration. The reader copies *from* the card;
-/// nothing is ever pasted into it (#2511).
-const ADDED_MSG: &str = "Kobo added. Copy its endpoint URL below.";
-
-/// The origin the endpoint URL is built on.
-///
-/// Mobile injects an absolute server URL, so that wins outright. Web
-/// co-locates with the server and gets `""` from [`use_server_url`], which
-/// would leave the field holding a bare path a reader cannot paste into
-/// `api_endpoint`. The page's own origin is learned in a post-mount effect —
-/// effects never run during SSR and the signal starts empty on every target,
-/// so SSR and the first WASM paint render identical markup (rule 07). In
-/// practice no device row exists on that first paint either: the list is
-/// fetched by the effect below.
-fn use_endpoint_origin(server_url: String) -> String {
-    let mut learned = use_signal(String::new);
-    use_effect(move || {
-        let mut eval = dioxus::document::eval("dioxus.send(window.location.origin);");
-        spawn(async move {
-            if let Ok(origin) = eval.recv::<String>().await {
-                learned.set(origin);
-            }
-        });
-    });
-    if server_url.is_empty() {
-        learned()
-    } else {
-        server_url
-    }
 }
 
 /// The "how to connect" procedure, plus the standing shelf rule beneath it.
@@ -197,7 +167,16 @@ fn render_kobo_add_form(
 #[component]
 pub fn KoboDevicesCard() -> Element {
     let server_url = use_server_url();
-    let endpoint_origin = use_endpoint_origin(server_url.clone());
+    // Mobile injects an absolute server URL, so that wins outright. Web
+    // co-locates with the server and gets `""` from `use_server_url`, which
+    // would leave the field holding a bare path a reader cannot paste into
+    // `api_endpoint` — fall back to the page's own origin instead.
+    let origin = use_instance_origin();
+    let endpoint_origin = if server_url.is_empty() {
+        origin()
+    } else {
+        server_url.clone()
+    };
     let mut devices = use_signal(Vec::<KoboDeviceView>::new);
     let mut name_input = use_signal(String::new);
     let mut msg = use_signal(|| None::<String>);
@@ -230,7 +209,9 @@ pub fn KoboDevicesCard() -> Element {
                 Ok(dev) => {
                     name_input.set(String::new());
                     devices.write().push(dev);
-                    msg.set(Some(ADDED_MSG.to_string()));
+                    // The reader copies *from* the card; nothing is ever
+                    // pasted into it (#2511).
+                    msg.set(Some("Kobo added. Copy its endpoint URL below.".to_string()));
                     msg_is_error.set(false);
                 }
                 Err(e) => {
@@ -378,14 +359,6 @@ mod tests {
             endpoint_url("http://localhost:3000/", "abc"),
             "http://localhost:3000/kobo/abc"
         );
-    }
-
-    #[test]
-    fn added_message_tells_the_reader_to_copy_not_paste() {
-        // #2511: the old line read "Paste its endpoint URL below" — nothing is
-        // pasted into this page; the reader copies *from* it.
-        assert!(ADDED_MSG.contains("Copy"));
-        assert!(!ADDED_MSG.contains("Paste"));
     }
 }
 

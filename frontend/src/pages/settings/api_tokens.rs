@@ -25,7 +25,7 @@ const CREATE_HINT: &str = "Name it after the machine or client that will hold it
 /// SSR and the first WASM paint so hydration parity holds (rule 07); a
 /// post-mount effect fills it from `window.location.origin` on web, and the
 /// rendered URLs re-render from relative to absolute.
-pub(super) fn use_instance_origin() -> Signal<String> {
+pub(crate) fn use_instance_origin() -> Signal<String> {
     let origin = use_signal(String::new);
     #[cfg(feature = "web")]
     {

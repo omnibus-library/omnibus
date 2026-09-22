@@ -45,6 +45,8 @@ mod users;
 use dioxus::prelude::*;
 
 #[cfg(not(feature = "mobile"))]
+pub(crate) use api_tokens::use_instance_origin;
+#[cfg(not(feature = "mobile"))]
 use api_tokens::ApiTokensSection;
 #[cfg(not(feature = "mobile"))]
 use background_tasks::BackgroundTasksSection;
