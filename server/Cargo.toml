@@ -28,7 +28,7 @@ serde_json = { workspace = true, optional = true }
 # SqlSafeStr migration rationale; keep all three crates (`server/`, `db/`,
 # `frontend/`) on 0.8 in lockstep, lifted only when that migration lands.
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros"], optional = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"], optional = true }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync"], optional = true }
 tracing = { workspace = true, optional = true }
 # Owns the global subscriber (RUST_LOG-driven console logs); installed before
 # `dioxus::serve` so dioxus-logger's default subscriber never takes over. The

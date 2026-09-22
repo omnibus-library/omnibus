@@ -1,7 +1,7 @@
 //! Unified Dioxus fullstack entrypoint. Built for WASM, `main` calls
 //! `dioxus::launch` to hydrate the client; built natively (`server`
-//! feature), it calls `dioxus::serve` to run an Axum backend serving SSR'd
-//! HTML, the WASM bundle, [`omnibus_frontend::rpc`] server functions, and
+//! feature), it binds and serves its own Axum backend serving SSR'd HTML,
+//! the WASM bundle, [`omnibus_frontend::rpc`] server functions, and
 //! [`omnibus::backend`]'s mobile-facing REST routes.
 
 use omnibus_frontend::App;
@@ -15,10 +15,13 @@ fn main() {
     #[cfg(feature = "server")]
     {
         // Bind the appender guard for the whole process: dropping it flushes
-        // the non-blocking file writer's buffer. `dioxus::serve` blocks until
+        // the non-blocking file writer's buffer. `server::serve` blocks until
         // shutdown, so the guard lives exactly as long as the server does.
         let _log_guard = omnibus::logging::init_tracing();
-        dioxus::serve(server::launch);
+        if let Err(error) = server::serve() {
+            tracing::error!(%error, "omnibus server exited");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -27,8 +30,10 @@ fn main() {
 /// browser bundle.
 #[cfg(feature = "server")]
 mod server {
+    use std::net::SocketAddr;
     use std::sync::Arc;
 
+    use anyhow::Context;
     use axum::Router;
     use dioxus::server::axum::Extension;
     use omnibus::{auth, backend, metrics, rate_limit, request_log, security_headers};
@@ -40,7 +45,41 @@ mod server {
 
     use crate::App;
 
-    /// Entry point handed to `dioxus::serve`: boots the stack and returns the wired Axum `Router`.
+    /// Bind the configured address and serve, owning the `axum::serve` call
+    /// rather than handing the router to `dioxus::serve`.
+    ///
+    /// Dioxus 0.7.9 serves through a bare `axum::serve` in release and
+    /// `Router::into_make_service` in debug, neither of which inserts
+    /// `ConnectInfo<SocketAddr>` — so every request reached the per-IP rate
+    /// limiter and the request log as `0.0.0.0`, one bucket for the whole
+    /// internet. `into_make_service_with_connect_info` is the only way to get
+    /// the peer address and dioxus exposes no hook for it. The address still
+    /// comes from `dioxus::cli_config`, so `dx serve --addr` and the Docker
+    /// image's `IP`/`PORT` behave exactly as before; what is given up is the
+    /// debug-only subsecond hot-patch loop, which `dx serve` leaves off
+    /// unless `--hot-patch` is passed.
+    pub(crate) fn serve() -> anyhow::Result<()> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .context("build the tokio runtime")?;
+        runtime.block_on(async {
+            let addr = dioxus::cli_config::fullstack_address_or_localhost();
+            let router = launch().await?;
+            let listener = tokio::net::TcpListener::bind(addr)
+                .await
+                .with_context(|| format!("bind {addr}"))?;
+            tracing::info!(%addr, "omnibus listening");
+            axum::serve(
+                listener,
+                router.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .context("axum serve")
+        })
+    }
+
+    /// Entry point handed to [`serve`]: boots the stack and returns the wired Axum `Router`.
     pub(crate) async fn launch() -> anyhow::Result<Router> {
         init_boot_metadata();
         log_startup_warnings();
