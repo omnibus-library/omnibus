@@ -6,6 +6,7 @@
 //! per-reader state whose collision the merge resolves destructively,
 //! *both* books (see `curation`).
 
+mod candidates;
 mod curation;
 mod snapshot;
 mod transaction;
@@ -14,6 +15,7 @@ mod undo;
 #[cfg(test)]
 mod tests;
 
+pub use candidates::{merge_candidates, MERGE_CANDIDATE_CAP};
 pub use transaction::merge_books;
 pub use undo::undo_merge;
 
@@ -40,6 +42,13 @@ pub enum MergeError {
     Snapshot(#[from] serde_json::Error),
     #[error(transparent)]
     Physical(#[from] crate::physical::PhysicalError),
+    // Surfaced from `merge_candidates`'s search over the configured
+    // libraries: reading settings or querying FTS can each fail on their
+    // own terms.
+    #[error(transparent)]
+    Settings(#[from] crate::settings::SettingsError),
+    #[error(transparent)]
+    Books(#[from] crate::books::BooksError),
     /// A non-database failure surfaced from a dependency of the merge/undo
     /// path. Coarse and message-carrying: the UI treats it as an opaque
     /// internal failure, so no caller branches on the source.

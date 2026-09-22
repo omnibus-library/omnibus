@@ -112,6 +112,8 @@ Not queued, by test:
 | `PUT /api/stats/goal/daily` (daily pages / minutes goals) | 1 — account configuration |
 | Metadata overrides | 1 — library-wide, every user sees it |
 | Book uploads | 1 — library-wide (and a GB-scale body has no business in `ops`) |
+| `POST /api/books/merge`, `/merge/undo` (admin merge) | 1 — library-wide, every user sees it |
+| `POST /api/books/{uuid}/delete-files` (admin delete) | 1 — library-wide, and irreversible once the last item goes |
 | Reindex, scan, FTS rebuild | 2 — commands |
 | Send to Kindle / Kobo | 2 — commands |
 | Shelf create (iOS) | 3 — no client-minted handle |

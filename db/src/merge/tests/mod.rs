@@ -2,6 +2,7 @@
 //! the sibling modules below; the user and uuid-lookup fixtures they share
 //! live here.
 
+mod candidates;
 mod forward_progress;
 mod library_rows;
 mod migration_0079;

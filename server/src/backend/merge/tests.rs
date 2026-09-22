@@ -344,3 +344,101 @@ async fn api_undo_merge_409s_when_the_survivor_was_recurated_after_the_merge() {
     .unwrap();
     assert!(msg.contains("read status"), "got {msg}");
 }
+
+// --- candidates -------------------------------------------------------------
+
+#[tokio::test]
+async fn api_merge_candidates_requires_auth() {
+    let (app, _state, _pool) = fixture().await;
+    let res = app
+        .oneshot(get_anon("/api/books/merge/candidates?q=book"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_merge_candidates_rejects_a_non_admin_user() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let res = app
+        .oneshot(get_with_bearer(
+            "/api/books/merge/candidates?q=book",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_merge_candidates_lists_matching_books_across_both_libraries() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "root").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    db::set_settings(
+        &pool,
+        &omnibus_shared::Settings {
+            ebook_library_path: Some("/lib-a".into()),
+            audiobook_library_path: Some("/lib-b".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let (_, source_uuid) = seed_book_with_uuid(&pool, "/lib-a", "Source Book").await;
+    let (_, target_uuid) = seed_book_with_uuid(&pool, "/lib-b", "Target Book").await;
+    let res = app
+        .oneshot(get_with_bearer(
+            "/api/books/merge/candidates?q=Book",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let out: Vec<omnibus_shared::EbookMetadata> = body_json(res).await;
+    let mut uuids: Vec<String> = out
+        .into_iter()
+        .filter_map(|b| b.unique_identifier)
+        .collect();
+    uuids.sort();
+    let mut expected = vec![source_uuid, target_uuid];
+    expected.sort();
+    assert_eq!(uuids, expected);
+}
+
+#[tokio::test]
+async fn api_merge_candidates_400s_when_the_query_is_too_long() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "root").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    let oversized = "a".repeat(omnibus_shared::SEARCH_QUERY_MAX_LEN + 1);
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/books/merge/candidates?q={oversized}"),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn api_merge_candidates_500s_when_the_db_is_gone() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "root").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    sqlx::query("DROP TABLE settings")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let res = app
+        .oneshot(get_with_bearer(
+            "/api/books/merge/candidates?q=book",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}

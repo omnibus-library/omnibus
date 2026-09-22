@@ -14,9 +14,9 @@ use crate::rate_limit::{rate_limit_by_ip, RateLimiter};
 
 use super::{
     account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, covers,
-    cross_format, ebooks, genres, highlights, journals, kindle, merge, metadata, overrides,
-    physical, profile, progress, ratings, read_status, scan, search, series, settings, shelves,
-    stats, suggestions, summary, tags, uploads, users, AppState,
+    cross_format, deletion, ebooks, genres, highlights, journals, kindle, merge, metadata,
+    overrides, physical, profile, progress, ratings, read_status, scan, search, series, settings,
+    shelves, stats, suggestions, summary, tags, uploads, users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -132,6 +132,7 @@ pub(super) fn data_routes(search_limiter: Arc<RateLimiter>) -> Router<AppState> 
         .merge(metadata_override_routes())
         .merge(progress_routes())
         .merge(merge_routes())
+        .merge(deletion_routes())
         .merge(highlight_routes())
         .merge(bookmark_routes())
         .merge(engagement_routes())
@@ -212,6 +213,26 @@ fn merge_routes() -> Router<AppState> {
     Router::new()
         .route("/api/books/merge", post(merge::post_merge_books))
         .route("/api/books/merge/undo", post(merge::post_undo_merge))
+        .route(
+            "/api/books/merge/candidates",
+            get(merge::get_merge_candidates),
+        )
+}
+
+/// Admin book deletion — mobile-facing REST. Web hits the analogous
+/// `/api/rpc/books/deletion-manifest` and `/api/rpc/books/delete-files`
+/// server fns in `omnibus_frontend::rpc::books`; same gate-parity note as
+/// [`merge_routes`].
+fn deletion_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/books/{uuid}/deletion-manifest",
+            get(deletion::get_deletion_manifest),
+        )
+        .route(
+            "/api/books/{uuid}/delete-files",
+            post(deletion::post_delete_book_files),
+        )
 }
 
 /// F2.4b highlight annotations — mobile-facing REST. Web hits the analogous

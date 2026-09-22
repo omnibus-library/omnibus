@@ -30,6 +30,7 @@ mod bookmarks;
 mod conditional;
 mod covers;
 mod cross_format;
+mod deletion;
 mod ebooks;
 mod genres;
 mod health;
