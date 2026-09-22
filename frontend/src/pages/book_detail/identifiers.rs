@@ -2,7 +2,7 @@
 //! them: a human label for each scheme (an ONIX codelist-5 code is not one),
 //! and one row per distinct value. Shared by the marquee and mobile tables.
 
-use omnibus_shared::Identifier;
+use omnibus_shared::{EbookMetadata, Identifier};
 
 /// Collision-free list key for an identifier row. A book can carry several
 /// identifiers sharing one `scheme` (the projection keeps every distinct
@@ -102,7 +102,8 @@ pub(super) struct BdIdentifierRow {
     pub value: String,
 }
 
-/// The identifier rows to render, deduplicated by value.
+/// The identifier rows to render, deduplicated by value, with the book's
+/// saved ISBN overrides folded in.
 ///
 /// A book routinely carries one identifier under several schemes — an EPUB 3
 /// package repeats its ISBN as an ONIX refinement, and a merge folds two
@@ -111,9 +112,17 @@ pub(super) struct BdIdentifierRow {
 /// identifier, so the rows collapse to one, keeping the best-named label
 /// (which also subsumes the `(scheme, value)` dedup the DB's primary key
 /// already gives us) and the first occurrence's position.
-pub(super) fn bd_identifier_rows(identifiers: &[Identifier]) -> Vec<BdIdentifierRow> {
+///
+/// `isbn13` / `isbn10` are the fields the metadata editor writes and
+/// `apply_overrides` merges; rendering only `identifiers` meant a saved ISBN
+/// appeared nowhere and a correction read as silently ignored (#2496). They
+/// are folded in last, so an override replaces the row it corrects — by value
+/// when the file already holds it, else by label — rather than sitting beside
+/// it. With no override the fields are absent (or re-derived from the file),
+/// so the scanned row is what renders.
+pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
     let mut rows: Vec<(BdIdentifierRow, LabelRank)> = Vec::new();
-    for ident in identifiers {
+    for ident in &book.identifiers {
         let value = ident.value.trim();
         if value.is_empty() {
             continue;
@@ -135,7 +144,48 @@ pub(super) fn bd_identifier_rows(identifiers: &[Identifier]) -> Vec<BdIdentifier
             None => rows.push((row, rank)),
         }
     }
+    apply_isbn_override(&mut rows, "isbn-13", book.isbn13.as_deref());
+    apply_isbn_override(&mut rows, "isbn-10", book.isbn10.as_deref());
     rows.into_iter().map(|(row, _)| row).collect()
+}
+
+/// Fold one saved ISBN override into `rows` under `scheme`.
+///
+/// Matched by value first: the file commonly holds the same digits under a
+/// worse-named scheme, and that row should simply be renamed rather than
+/// duplicated. Failing that, by label: an override that *corrects* a scanned
+/// value must take over the row it corrects — a book showing both the wrong
+/// ISBN-10 and the right one is what the editor was used to fix. Otherwise it
+/// is a value the file never carried, and a new row is appended.
+fn apply_isbn_override(
+    rows: &mut Vec<(BdIdentifierRow, LabelRank)>,
+    scheme: &str,
+    value: Option<&str>,
+) {
+    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return;
+    };
+    let ident = Identifier {
+        scheme: Some(scheme.to_string()),
+        value: value.to_string(),
+    };
+    let (label, rank) = bd_identifier_label_ranked(&ident);
+    let row = BdIdentifierRow {
+        key: bd_identifier_key(&ident),
+        label: label.clone(),
+        value: value.to_string(),
+    };
+    let slot_index = rows
+        .iter()
+        .position(|(existing, _)| existing.value.eq_ignore_ascii_case(value))
+        .or_else(|| {
+            rows.iter()
+                .position(|(existing, _)| existing.label == label)
+        });
+    match slot_index {
+        Some(i) => rows[i] = (row, rank),
+        None => rows.push((row, rank)),
+    }
 }
 
 /// True when `value`, with hyphens and whitespace stripped, is a valid ISBN —
