@@ -270,6 +270,44 @@ fn bd_identifier_rows_restore_the_scanned_value_once_the_override_is_cleared() {
 }
 
 #[test]
+fn bd_identifier_rows_do_not_duplicate_a_hyphenated_scanned_isbn_with_its_derived_isbn13() {
+    let out = rows_with_isbns(
+        &[ident(Some("ISBN"), "978-0-13-468599-1")],
+        Some("9780134685991"),
+        None,
+    );
+    assert_eq!(out.len(), 1);
+}
+
+#[test]
+fn an_isbn13_override_that_lands_by_value_leaves_only_one_isbn13_row() {
+    let out = rows_with_isbns(
+        &[
+            ident(Some("15"), "9780000000000"),
+            ident(Some("02"), "9780316259088"),
+        ],
+        Some("9780316259088"),
+        None,
+    );
+    assert_eq!(out.iter().filter(|r| r.label == "ISBN-13").count(), 1);
+    assert!(out.iter().any(|r| r.value == "9780316259088"));
+}
+
+#[test]
+fn an_isbn13_override_replaces_a_scanned_isbn13_row_with_a_different_value() {
+    // The label-match branch on its own: the file's ISBN-13 is wrong, the
+    // override corrects it.
+    let out = rows_with_isbns(
+        &[ident(Some("15"), "9780000000000")],
+        Some("9780316259088"),
+        None,
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].label, "ISBN-13");
+    assert_eq!(out[0].value, "9780316259088");
+}
+
+#[test]
 fn bd_identifier_rows_keep_every_key_distinct_with_overrides_folded_in() {
     let out = rows_with_isbns(
         &[

@@ -135,7 +135,7 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
         };
         match rows
             .iter_mut()
-            .find(|(existing, _)| existing.value.eq_ignore_ascii_case(value))
+            .find(|(existing, _)| identifier_values_match(&existing.value, value))
         {
             // Strictly better only: ties keep the first occurrence, so the
             // order the projection emits stays the order a reader sees.
@@ -156,7 +156,10 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
 /// duplicated. Failing that, by label: an override that *corrects* a scanned
 /// value must take over the row it corrects — a book showing both the wrong
 /// ISBN-10 and the right one is what the editor was used to fix. Otherwise it
-/// is a value the file never carried, and a new row is appended.
+/// is a value the file never carried, and a new row is appended. Once placed,
+/// any *other* row still carrying the override's label is dropped — a value
+/// match must not leave a stale label-matched row sitting beside the
+/// correction it was meant to replace (#2496 AC2).
 fn apply_isbn_override(
     rows: &mut Vec<(BdIdentifierRow, LabelRank)>,
     scheme: &str,
@@ -177,15 +180,46 @@ fn apply_isbn_override(
     };
     let slot_index = rows
         .iter()
-        .position(|(existing, _)| existing.value.eq_ignore_ascii_case(value))
+        .position(|(existing, _)| identifier_values_match(&existing.value, value))
         .or_else(|| {
             rows.iter()
                 .position(|(existing, _)| existing.label == label)
         });
-    match slot_index {
-        Some(i) => rows[i] = (row, rank),
-        None => rows.push((row, rank)),
+    let mut placed_index = match slot_index {
+        Some(i) => {
+            rows[i] = (row, rank);
+            i
+        }
+        None => {
+            rows.push((row, rank));
+            rows.len() - 1
+        }
+    };
+    let mut i = 0;
+    while i < rows.len() {
+        if i != placed_index && rows[i].0.label == label {
+            rows.remove(i);
+            if i < placed_index {
+                placed_index -= 1;
+            }
+        } else {
+            i += 1;
+        }
     }
+}
+
+/// True when two identifier values are the same, ignoring hyphens,
+/// whitespace, and case — a hyphenated scanned ISBN
+/// (`978-0-13-468599-1`) and its hyphen-free derived form
+/// (`9780134685991`) are the same identifier and must collapse to one row.
+fn identifier_values_match(a: &str, b: &str) -> bool {
+    fn normalize(v: &str) -> String {
+        v.chars()
+            .filter(|c| !c.is_whitespace() && *c != '-')
+            .collect::<String>()
+            .to_ascii_lowercase()
+    }
+    normalize(a) == normalize(b)
 }
 
 /// True when `value`, with hyphens and whitespace stripped, is a valid ISBN —
