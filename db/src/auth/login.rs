@@ -87,10 +87,12 @@ pub async fn verify_login(pool: &SqlitePool, username: &str, password: &str) -> 
             // disclosure cap even the right password answers generically, so
             // the window itself can't be brute-forced.
             let ok = verify_password(password, &phc)?;
-            sqlx::query("UPDATE users SET failed_login_count = failed_login_count + 1 WHERE id = ?")
-                .bind(user_id)
-                .execute(pool)
-                .await?;
+            sqlx::query(
+                "UPDATE users SET failed_login_count = failed_login_count + 1 WHERE id = ?",
+            )
+            .bind(user_id)
+            .execute(pool)
+            .await?;
             if ok && failed < LOCKOUT_MIN_AFTER + LOCKOUT_DISCLOSURE_ATTEMPTS {
                 return Err(AuthError::AccountLocked { until_unix: until });
             }
