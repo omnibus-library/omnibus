@@ -101,6 +101,12 @@ private let readerBootBudget: Duration = .seconds(60)
 /// declared in the section by then, so this is a fetch inside the page.
 private let fontLoadBudget: Duration = .seconds(30)
 
+/// How long the failure path may spend asking the page what it sees. Covers
+/// the slowest answer observed on a failing CI run (~23 s) with headroom, and
+/// exists at all because a failure path that can hang is the bug this file is
+/// fixing, not a diagnostic.
+private let diagnosticsBudget: Duration = .seconds(30)
+
 /// Where a boot spent its time, so a failure names the phase that ran out
 /// rather than just the line that noticed.
 @MainActor
@@ -207,28 +213,58 @@ private final class BootedReader {
         window.windowScene = nil
     }
 
+    /// The page's own answer, landed by the probe below.
+    private var probedPage: String?
+
+    /// Ask the page what it sees, and give up if it does not answer.
+    ///
+    /// `callAsyncJavaScript` is answered by the web-content process and has no
+    /// timeout of its own, so awaiting it bare on a failure path would hang
+    /// the test instead of failing it — the same unbounded wait the budgets
+    /// above exist to remove, in the one place nothing would catch it. The
+    /// probe is unstructured and simply abandoned at the deadline: a wedged
+    /// process then holds a task, not the suite.
+    private func askPage() async -> String {
+        probedPage = nil
+        let probe = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let answer: Any? = try? await self.webView.callAsyncJavaScript(
+                """
+                const stage = document.querySelector("#stage");
+                const rect = stage ? stage.getBoundingClientRect() : null;
+                return {
+                  href: location.href,
+                  readyState: document.readyState,
+                  glue: typeof window.OmnibusReader,
+                  epubjs: typeof window.ePub,
+                  jszip: typeof window.JSZip,
+                  stageBox: rect ? Math.round(rect.width) + "x" + Math.round(rect.height) : "none",
+                  sections: document.querySelectorAll("#stage iframe").length,
+                  errors: window.__omnibusTestErrors || [],
+                };
+                """,
+                arguments: [:], contentWorld: .page
+            )
+            self.probedPage = answer.map { String(describing: $0) } ?? "<page refused the query>"
+        }
+        guard await waitUntil(timeout: diagnosticsBudget, { self.probedPage != nil }) else {
+            probe.cancel()
+            return "<page did not answer within \(diagnosticsBudget)>"
+        }
+        return probedPage ?? "<page did not answer>"
+    }
+
     /// Everything worth knowing when a boot does not finish. A bare "never
     /// became ready" says which line failed and nothing about why, and this
     /// runs on a simulator in CI where there is nothing to poke at by hand.
     func diagnostics() async -> String {
-        let answer: Any? = try? await webView.callAsyncJavaScript(
-            """
-            const stage = document.querySelector("#stage");
-            const rect = stage ? stage.getBoundingClientRect() : null;
-            return {
-              href: location.href,
-              readyState: document.readyState,
-              glue: typeof window.OmnibusReader,
-              epubjs: typeof window.ePub,
-              jszip: typeof window.JSZip,
-              stageBox: rect ? Math.round(rect.width) + "x" + Math.round(rect.height) : "none",
-              sections: document.querySelectorAll("#stage iframe").length,
-              errors: window.__omnibusTestErrors || [],
-            };
-            """,
-            arguments: [:], contentWorld: .page
-        )
-        let page = answer.map { String(describing: $0) } ?? "<page did not answer>"
+        // Asked only once WebKit has asked us for something first. An empty
+        // served list is the launch having failed, so there is provably no
+        // document — and the query would be put to the very process whose
+        // absence is the thing being reported.
+        let page = handler.served.isEmpty
+            ? "<no request ever arrived, so there is no document to ask>"
+            : await askPage()
         return """
         controller: ready=\(controller.isReady) failed=\(controller.failed) \
         message=\(controller.failureMessage ?? "nil") \
