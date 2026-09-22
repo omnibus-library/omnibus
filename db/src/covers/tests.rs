@@ -5,7 +5,9 @@ use omnibus_shared::MetadataOverrides;
 
 use super::*;
 use crate::books::list_books;
-use crate::metadata_overrides::{upsert_metadata_overrides, write_override_cover};
+use crate::metadata_overrides::{
+    delete_override_cover, upsert_metadata_overrides, write_override_cover,
+};
 use crate::pool::init_db;
 use crate::sync::replace_books;
 use crate::test_support::{indexed, CoversTempDir};
@@ -276,25 +278,34 @@ async fn write_cover_file_stores_an_svg_declared_cover_as_opaque_bytes() {
     assert_eq!(ImageFormat::Bin.to_mime(), "application/octet-stream");
 }
 
-/// A `.svg` already sitting in a deployed cache is still readable — the
-/// fallback `<uuid>.*` scan finds it — but comes back as opaque bytes, so no
-/// route can hand a browser something it would render.
+/// SVG was refused at ingest, so a `.svg` sitting in a deployed cache is a
+/// pre-refusal artifact, not a cover — it must never be served.
 #[tokio::test]
-async fn find_cover_file_serves_a_legacy_svg_as_opaque_bytes() {
+async fn find_cover_file_ignores_a_legacy_svg() {
     let _covers = CoversTempDir::new("svg_legacy");
     std::fs::create_dir_all(covers_dir()).unwrap();
     let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#;
     std::fs::write(cover_path_for("legacy", "svg"), svg).unwrap();
 
-    let (mime, bytes) = find_cover_file("legacy").expect("the fallback scan finds <uuid>.*");
-
-    assert_eq!(mime, "application/octet-stream");
-    assert_eq!(bytes, svg);
+    assert!(find_cover_file("legacy").is_none());
 }
 
 /// A legacy `.svg` must also be swept when its book is deleted or merged —
 /// `PROBE_ORDER` no longer names that extension, so the delete path carries it
 /// explicitly.
+/// Same pre-refusal sweep as `delete_cover_files_for`, on the override side.
+#[tokio::test]
+async fn delete_override_cover_removes_a_legacy_svg_too() {
+    let _covers = CoversTempDir::new("override_svg_delete");
+    std::fs::create_dir_all(covers_dir()).unwrap();
+    let path = covers_dir().join("override-doomed.svg");
+    std::fs::write(&path, b"<svg/>").unwrap();
+
+    delete_override_cover("doomed");
+
+    assert!(std::fs::read(&path).is_err());
+}
+
 #[tokio::test]
 async fn delete_cover_files_for_removes_a_legacy_svg_too() {
     let _covers = CoversTempDir::new("svg_delete");

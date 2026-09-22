@@ -211,6 +211,12 @@ pub fn write_override_cover(
             Err(e) => return Err(e.into()),
         }
     }
+    // PROBE_ORDER no longer names .svg, but a pre-refusal cache still holds them.
+    match std::fs::remove_file(dir.join(format!("override-{uuid}.svg"))) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
 
     std::fs::write(dir.join(format!("override-{uuid}.{ext}")), bytes)?;
     Ok(())
@@ -222,4 +228,6 @@ pub fn delete_override_cover(uuid: &str) {
     for fmt in crate::covers::ImageFormat::PROBE_ORDER {
         let _ = std::fs::remove_file(dir.join(format!("override-{uuid}.{}", fmt.to_ext())));
     }
+    // PROBE_ORDER no longer names .svg, but a pre-refusal cache still holds them.
+    let _ = std::fs::remove_file(dir.join(format!("override-{uuid}.svg")));
 }

@@ -725,11 +725,10 @@ async fn api_get_thumb_stand_in_validator_never_matches_the_generated_thumbnail(
     assert_eq!(&bytes[..], b"real-webp-bytes");
 }
 
-/// A `.svg` written into a cache before SVG was refused at ingest must come
-/// back opaque and as an attachment — never as something a browser renders
-/// same-origin under the hydration CSP.
+/// A `.svg` written into a cache before SVG was refused at ingest is a
+/// pre-refusal artifact, not a cover — it must never be served.
 #[tokio::test]
-async fn api_get_cover_serves_a_legacy_svg_as_an_opaque_attachment() {
+async fn api_get_cover_refuses_a_legacy_svg() {
     let (app, _, pool) = fixture().await;
     let (id, uuid) = seed_book_with_uuid(&pool, "/lib", "Svg Cover Book").await;
     sqlx::query("UPDATE books SET has_cover = 1 WHERE id = ?")
@@ -748,19 +747,13 @@ async fn api_get_cover_serves_a_legacy_svg_as_an_opaque_attachment() {
         .await
         .unwrap();
 
-    assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(
-        res.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/octet-stream",
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_ne!(
+        res.headers()
+            .get(header::CONTENT_TYPE)
+            .map(|v| v.to_str().unwrap()),
+        Some("image/svg+xml"),
         "a cover route must never answer image/svg+xml"
-    );
-    assert_eq!(
-        res.headers().get(header::CONTENT_DISPOSITION).unwrap(),
-        "attachment"
-    );
-    assert_eq!(
-        res.headers().get(header::X_CONTENT_TYPE_OPTIONS).unwrap(),
-        "nosniff"
     );
 }
 

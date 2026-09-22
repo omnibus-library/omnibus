@@ -265,6 +265,11 @@ pub(crate) fn normalize_override_cover(mime: &str, bytes: &[u8]) -> (String, Vec
 /// Read a book's cover, returning `(mime, bytes)`. Probes the common
 /// extensions first, then falls back to scanning for `<uuid>.*`.
 pub(crate) fn find_cover_file(uuid: &str) -> Option<(String, Vec<u8>)> {
+    // SVG was refused at ingest, so a pre-refusal `.svg` is not a cover and
+    // must not cost a directory scan per request.
+    if cover_path_for(uuid, "svg").is_file() {
+        return None;
+    }
     // Try common extensions in the order covers are most likely to be
     // written. Fall back to a directory scan for `<uuid>.*` if none match,
     // so migrations that introduce new extensions don't require a code
@@ -284,6 +289,9 @@ pub(crate) fn find_cover_file(uuid: &str) -> Option<(String, Vec<u8>)> {
             if let Some(dot) = name_str.rfind('.') {
                 let (stem, ext) = name_str.split_at(dot);
                 if stem == uuid {
+                    if ext[1..].eq_ignore_ascii_case("svg") {
+                        continue;
+                    }
                     if let Ok(bytes) = std::fs::read(entry.path()) {
                         let mime = ImageFormat::from_ext(&ext[1..]).to_mime();
                         return Some((mime.to_string(), bytes));
@@ -301,9 +309,7 @@ pub(crate) fn delete_cover_files_for(uuids: &[String]) {
         for fmt in ImageFormat::PROBE_ORDER {
             let _ = std::fs::remove_file(cover_path_for(uuid, fmt.to_ext()));
         }
-        // `.svg` is no longer a format we write, so `PROBE_ORDER` does not name
-        // it — but a cache written before it was refused still holds them, and
-        // an unswept one would outlive its book.
+        // PROBE_ORDER no longer names .svg, but a pre-refusal cache still holds them.
         let _ = std::fs::remove_file(cover_path_for(uuid, "svg"));
     }
 }

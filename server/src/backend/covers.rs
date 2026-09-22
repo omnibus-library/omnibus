@@ -6,7 +6,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, HeaderMap, HeaderValue},
+    http::{header, HeaderMap},
     response::{IntoResponse, Response},
 };
 use omnibus_db::{self as db};
@@ -14,41 +14,6 @@ use omnibus_db::{self as db};
 use super::conditional::{content_etag, namespaced_content_etag, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 use super::{internal, AppState};
 use crate::auth::MediaAuthUser;
-
-/// The mime `db::covers` uses for bytes it could not classify as an image.
-const OPAQUE_MIME: &str = "application/octet-stream";
-
-/// Response headers for cover bytes: the media cache policy, the validator,
-/// `nosniff`, and — for bytes we could not classify — `Content-Disposition:
-/// attachment`, so navigating to the URL downloads the file instead of
-/// letting the renderer decide what it is. A `.svg` left in a cache from
-/// before SVG was refused at ingest arrives here as [`OPAQUE_MIME`], and
-/// this is what keeps it from executing under the hydration CSP.
-fn media_headers(mime: &str, etag: &str, cache_control: &'static str) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    if let Ok(v) = HeaderValue::from_str(mime) {
-        headers.insert(header::CONTENT_TYPE, v);
-    }
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static(cache_control),
-    );
-    if let Ok(v) = HeaderValue::from_str(etag) {
-        headers.insert(header::ETAG, v);
-    }
-    headers.insert(header::VARY, HeaderValue::from_static(MEDIA_VARY));
-    headers.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
-    );
-    if mime == OPAQUE_MIME {
-        headers.insert(
-            header::CONTENT_DISPOSITION,
-            HeaderValue::from_static("attachment"),
-        );
-    }
-    headers
-}
 
 pub(super) async fn get_cover(
     _user: MediaAuthUser,
@@ -84,7 +49,19 @@ pub(super) async fn get_cover(
                 bytes = bytes.len(),
                 "cover: serving"
             );
-            (media_headers(&mime, &etag, MEDIA_CACHE_CONTROL), bytes).into_response()
+            (
+                [
+                    (header::CONTENT_TYPE, mime.as_str()),
+                    (header::CACHE_CONTROL, MEDIA_CACHE_CONTROL),
+                    (header::ETAG, etag.as_str()),
+                    (header::VARY, MEDIA_VARY),
+                    // Prevent browsers from MIME-sniffing a cover into an
+                    // executable type (e.g. an SVG disguised as JPEG).
+                    (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                ],
+                bytes,
+            )
+                .into_response()
         }
         Ok(None) => {
             tracing::warn!(uuid, book_id = id, "cover: no cover image on record (404)");
@@ -314,7 +291,13 @@ async fn thumb_cache_miss_response(
                 "thumb: cache miss — queuing generation, serving original cover"
             );
             (
-                media_headers(&mime, &etag, THUMB_PENDING_CACHE_CONTROL),
+                [
+                    (header::CONTENT_TYPE, mime.as_str()),
+                    (header::CACHE_CONTROL, THUMB_PENDING_CACHE_CONTROL),
+                    (header::ETAG, etag.as_str()),
+                    (header::VARY, MEDIA_VARY),
+                    (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                ],
                 bytes,
             )
                 .into_response()
