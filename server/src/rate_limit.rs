@@ -110,13 +110,7 @@ impl Default for RateLimiter {
     }
 }
 
-/// Resolve the request principal IP. Prefers `ConnectInfo<SocketAddr>` (wired
-/// by the server's make-service). Only consults `X-Forwarded-For` when the
-/// operator has opted in via `OMNIBUS_TRUST_FORWARDED_FOR=1` — otherwise a
-/// client on a directly-reachable deployment could spoof the header to
-/// bypass the limiter and grow the bucket map without bound. When neither
-/// source yields an IP, falls back to `0.0.0.0` so the limiter still applies
-/// process-wide.
+/// Resolve the request principal IP — see [`client_ip`] for the actual policy.
 fn resolve_ip(req: &Request) -> IpAddr {
     client_ip(req.extensions(), req.headers())
 }
