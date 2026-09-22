@@ -3,6 +3,9 @@
 //! id-bearing paths by matched route, the single collapsed label every
 //! unmatched path shares, and the constant-time token compare.
 
+use std::io;
+use std::sync::{Arc, Mutex};
+
 use super::*;
 use axum::{
     body::{to_bytes, Body},
@@ -11,6 +14,7 @@ use axum::{
 };
 use omnibus_db::test_support::EnvVarGuard;
 use tower::ServiceExt;
+use tracing_subscriber::{fmt::MakeWriter, prelude::*};
 
 const TOKEN: &str = "scrape-token-for-tests";
 
@@ -201,12 +205,56 @@ fn constant_time_eq_matches_only_identical_bytes() {
     assert!(constant_time_eq(b"", b""));
 }
 
-#[tokio::test]
-async fn warn_if_disabled_is_a_no_op_once_a_token_is_configured() {
-    let _env = EnvVarGuard::set("OMNIBUS_METRICS_TOKEN", Some(TOKEN));
-    assert!(scrape_token().is_some());
-    // No panic and no second WARN: the guard fires at most once per process
-    // and only when the token is absent.
+/// Shared in-memory sink for a scoped `fmt` layer, mirroring the pattern in
+/// `request_log/tests.rs`.
+#[derive(Clone, Default)]
+struct Sink(Arc<Mutex<Vec<u8>>>);
+
+impl Sink {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl io::Write for Sink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for Sink {
+    type Writer = Sink;
+
+    fn make_writer(&'a self) -> Sink {
+        self.clone()
+    }
+}
+
+#[test]
+fn warn_if_disabled_logs_once_when_no_token_is_configured() {
+    let _env = EnvVarGuard::set("OMNIBUS_METRICS_TOKEN", None);
+    assert!(scrape_token().is_none());
+
+    let sink = Sink::default();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_writer(sink.clone()));
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    // Each nextest test is its own process, so the `Once` inside
+    // `warn_if_disabled` is fresh here; calling it twice proves the second
+    // call is the no-op.
     warn_if_disabled();
     warn_if_disabled();
+
+    let text = sink.text();
+    assert_eq!(
+        text.matches("OMNIBUS_METRICS_TOKEN is unset").count(),
+        1,
+        "got: {text}"
+    );
 }
