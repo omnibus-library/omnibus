@@ -584,8 +584,10 @@ Offline/            — Cache (read-through policies), OfflineStore (SQLite
                       DictionaryOrder (the server's `sort_order` mirrored in
                       Swift: the query-only `dictionary` collation the
                       library mirror's text sorts use, and the surname-first
-                      author key each mirror row stores, so offline paging
-                      files books where the server's axes do),
+                      author key each mirror row stores beside its raw title
+                      and series; `OfflineStore.connect` refuses a connection
+                      the collation failed to register on, so offline paging
+                      files books where the server's axes do or not at all),
                       PositionPushThrottle (shared by the reader, the comic
                       pager, and the audio player: every relocate writes the
                       replica and the outbox unconditionally, this throttle

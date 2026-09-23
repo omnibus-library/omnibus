@@ -63,37 +63,55 @@ struct AuthorSortKeyTests {
         book.creators = [Contributor(name: "Andy Weir", fileAs: "Andy Weir")]
         #expect(LibraryIndex.row(for: book, payload: Data()).authorSort == "Weir, Andy")
     }
+
+    @Test func mirrorRowKeepsTheUnloweredTitleAndSeriesForSorting() {
+        var book = Book(id: 1, filename: "a.epub", title: "Apple", uniqueIdentifier: "u1")
+        book.series = "Dune"
+        let row = LibraryIndex.row(for: book, payload: Data())
+        #expect(row.title == "apple")
+        #expect(row.titleSort == "Apple")
+        #expect(row.series == "dune")
+        #expect(row.seriesSort == "Dune")
+    }
 }
 
 // MARK: - Ordering, run against a scratch SQLite table
 
-/// Order `(uuid, author, authorSort, title)` rows through the exact fragment
-/// `LibraryIndex.order` generates for the Author axis, with the collation the
-/// store registers, returning the uuids in result order.
-private func orderedByAuthor(
-    _ rows: [(uuid: String, author: String, authorSort: String, title: String)]
-) -> [String] {
+/// One mirror row's sort-relevant columns; unset ones take the empty default
+/// a mirror written before them carries.
+private struct SortRow {
+    var uuid: String
+    var title = ""
+    var titleSort = ""
+    var author = ""
+    var authorSort = ""
+    var series = ""
+    var seriesSort = ""
+}
+
+/// Order `rows` through the exact fragment `LibraryIndex.order` generates for
+/// `sort`, on a connection opened the way the store opens its own, returning
+/// the uuids in result order.
+private func ordered(_ rows: [SortRow], by sort: SortKey, _ direction: SortDirection = .asc)
+    -> [String]
+{
     // Every SQLite step is guarded rather than `#expect`ed: a nil handle after
     // a failed step would take the whole test process down with it.
-    var db: OpaquePointer?
-    guard sqlite3_open(":memory:", &db) == SQLITE_OK, db != nil else {
-        Issue.record("could not open an in-memory database")
+    guard let db = OfflineStore.connect(path: ":memory:") else {
+        Issue.record("could not open an in-memory database with the collation")
         return []
     }
     defer { sqlite3_close(db) }
-    guard DictionaryOrder.register(on: db) else {
-        Issue.record("could not register the dictionary collation")
-        return []
-    }
     guard
         sqlite3_exec(
             db,
             """
             CREATE TABLE books (
                 uuid TEXT NOT NULL,
-                author TEXT NOT NULL DEFAULT '',
-                author_sort TEXT NOT NULL DEFAULT '',
-                title TEXT NOT NULL DEFAULT ''
+                title TEXT NOT NULL, title_sort TEXT NOT NULL,
+                author TEXT NOT NULL, author_sort TEXT NOT NULL,
+                series TEXT NOT NULL, series_sort TEXT NOT NULL,
+                series_index REAL NOT NULL DEFAULT 0
             )
             """,
             nil, nil, nil
@@ -108,7 +126,11 @@ private func orderedByAuthor(
         var insert: OpaquePointer?
         guard
             sqlite3_prepare_v2(
-                db, "INSERT INTO books (uuid, author, author_sort, title) VALUES (?, ?, ?, ?)",
+                db,
+                """
+                INSERT INTO books (uuid, title, title_sort, author, author_sort, series, series_sort)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
                 -1, &insert, nil
             ) == SQLITE_OK
         else {
@@ -116,17 +138,20 @@ private func orderedByAuthor(
             return []
         }
         defer { sqlite3_finalize(insert) }
-        sqlite3_bind_text(insert, 1, row.uuid, -1, transient)
-        sqlite3_bind_text(insert, 2, row.author, -1, transient)
-        sqlite3_bind_text(insert, 3, row.authorSort, -1, transient)
-        sqlite3_bind_text(insert, 4, row.title, -1, transient)
+        let values = [
+            row.uuid, row.title, row.titleSort, row.author, row.authorSort, row.series,
+            row.seriesSort,
+        ]
+        for (index, value) in values.enumerated() {
+            sqlite3_bind_text(insert, Int32(index + 1), value, -1, transient)
+        }
         guard sqlite3_step(insert) == SQLITE_DONE else {
             Issue.record("could not insert \(row.uuid)")
             return []
         }
     }
 
-    let clause = LibraryIndex.order(sort: .author, direction: .asc)
+    let clause = LibraryIndex.order(sort: sort, direction: direction)
     var stmt: OpaquePointer?
     guard
         sqlite3_prepare_v2(db, "SELECT uuid FROM books ORDER BY \(clause)", -1, &stmt, nil)
@@ -143,23 +168,154 @@ private func orderedByAuthor(
     return out
 }
 
-struct MirrorAuthorOrderTests {
+struct MirrorOrderTests {
     @Test func filesEveryAuthorSurnameFirstInDictionaryOrder() {
-        let rows: [(uuid: String, author: String, authorSort: String, title: String)] = [
-            ("weir", "andy weir", "Weir, Andy", "project hail mary"),
-            ("polk", "sarah polk", "Polk, Sarah", "a"),
-            ("galdos", "benito pérez galdós", "Pérez Galdós, Benito", "b"),
-            ("perry", "anne perry", "Perry, Anne", "c"),
-            ("perez", "ana perez", "Perez, Ana", "d"),
+        let rows = [
+            SortRow(uuid: "weir", author: "andy weir", authorSort: "Weir, Andy"),
+            SortRow(uuid: "polk", author: "sarah polk", authorSort: "Polk, Sarah"),
+            SortRow(uuid: "galdos", author: "benito pérez galdós", authorSort: "Pérez Galdós, Benito"),
+            SortRow(uuid: "perry", author: "anne perry", authorSort: "Perry, Anne"),
+            SortRow(uuid: "perez", author: "ana perez", authorSort: "Perez, Ana"),
         ]
-        #expect(orderedByAuthor(rows) == ["perez", "galdos", "perry", "polk", "weir"])
+        #expect(ordered(rows, by: .author) == ["perez", "galdos", "perry", "polk", "weir"])
     }
 
-    @Test func aMirrorWrittenBeforeTheKeyExistedKeepsItsDisplayNameOrder() {
-        let rows: [(uuid: String, author: String, authorSort: String, title: String)] = [
-            ("zed", "zed adams", "", "a"),
-            ("amy", "amy zola", "", "b"),
+    @Test func aMirrorWrittenBeforeTheSortColumnsKeepsItsSearchColumnOrder() {
+        let rows = [
+            SortRow(uuid: "zed", title: "b", author: "zed adams"),
+            SortRow(uuid: "amy", title: "a", author: "amy zola"),
         ]
-        #expect(orderedByAuthor(rows) == ["amy", "zed"])
+        #expect(ordered(rows, by: .author) == ["amy", "zed"])
+        #expect(ordered(rows, by: .title) == ["amy", "zed"])
+    }
+
+    /// The server folds case, then breaks the tie on the original bytes, so
+    /// `Apple` files before `apple` — which the lowercased column alone could
+    /// not tell apart.
+    @Test func breaksACaseOnlyTieTheWayTheServerDoes() {
+        let rows = [
+            SortRow(uuid: "lower", title: "apple", titleSort: "apple", series: "dune", seriesSort: "dune"),
+            SortRow(uuid: "upper", title: "apple", titleSort: "Apple", series: "dune", seriesSort: "Dune"),
+        ]
+        #expect(DictionaryOrder.compare("Apple", "apple") < 0)
+        #expect(ordered(rows, by: .title) == ["upper", "lower"])
+        #expect(ordered(rows, by: .title, .desc) == ["lower", "upper"])
+        #expect(ordered(rows, by: .series) == ["upper", "lower"])
+    }
+}
+
+// MARK: - Connection
+
+struct OfflineStoreConnectTests {
+    @Test func connectsWithTheDictionaryCollationRegistered() {
+        guard let db = OfflineStore.connect(path: ":memory:") else {
+            Issue.record("could not open an in-memory database")
+            return
+        }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        #expect(
+            sqlite3_prepare_v2(db, "SELECT 'a' ORDER BY 1 COLLATE dictionary", -1, &stmt, nil)
+                == SQLITE_OK
+        )
+    }
+
+    /// A connection that cannot sort is refused outright, like a failed open,
+    /// rather than handed out to fail every text-sorted page at prepare.
+    @Test func refusesAConnectionWhoseCollationFailedToRegister() {
+        #expect(OfflineStore.connect(path: ":memory:", register: { _ in false }) == nil)
+    }
+}
+
+// MARK: - Schema upgrade
+
+/// The mirror tables as the build before the sort columns shipped wrote them.
+private let preUpgradeMirrorSchema = ["books", "books_staging"].map { table in
+    """
+    CREATE TABLE \(table) (
+        uuid         TEXT PRIMARY KEY,
+        title        TEXT NOT NULL DEFAULT '',
+        author       TEXT NOT NULL DEFAULT '',
+        series       TEXT NOT NULL DEFAULT '',
+        series_index REAL NOT NULL DEFAULT 0,
+        added_at     TEXT NOT NULL DEFAULT '',
+        modified     TEXT NOT NULL DEFAULT '',
+        last_interacted TEXT NOT NULL DEFAULT '',
+        formats      TEXT NOT NULL DEFAULT '',
+        search_text  TEXT NOT NULL DEFAULT '',
+        payload      BLOB NOT NULL
+    );
+    """
+}.joined(separator: "\n")
+
+/// The column names of `table` in `db`, in declaration order.
+private func columns(_ db: OpaquePointer?, _ table: String) -> [String] {
+    var stmt: OpaquePointer?
+    defer { sqlite3_finalize(stmt) }
+    guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK
+    else { return [] }
+    var out: [String] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+        out.append(String(cString: sqlite3_column_text(stmt, 1)))
+    }
+    return out
+}
+
+struct MirrorSchemaUpgradeTests {
+    @Test func upgradeAddsTheSortColumnsToBothTablesAndPromotionStaysAligned() async throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mirror-upgrade-\(UUID().uuidString).sqlite").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        var seed: OpaquePointer?
+        guard sqlite3_open(path, &seed) == SQLITE_OK else {
+            Issue.record("could not create the pre-upgrade database")
+            return
+        }
+        let created = sqlite3_exec(seed, preUpgradeMirrorSchema, nil, nil, nil)
+        sqlite3_close(seed)
+        guard created == SQLITE_OK else {
+            Issue.record("could not create the pre-upgrade mirror tables")
+            return
+        }
+
+        let store = OfflineStore(path: path)
+        await store.open()
+        #expect(await store.isOpen)
+
+        var book = Book(id: 1, filename: "a.epub", title: "Apple", uniqueIdentifier: "u1")
+        book.series = "Dune"
+        book.creators = [Contributor(name: "Andy Weir", fileAs: "Andy Weir")]
+        await store.appendStagedBooks([LibraryIndex.row(for: book, payload: Data("{}".utf8))])
+        await store.promoteCompletedStaging()
+        #expect(await store.bookCount() == 1)
+
+        var db: OpaquePointer?
+        guard sqlite3_open(path, &db) == SQLITE_OK else {
+            Issue.record("could not reopen the upgraded database")
+            return
+        }
+        defer { sqlite3_close(db) }
+        for table in ["books", "books_staging"] {
+            let names = columns(db, table)
+            for column in ["author_sort", "title_sort", "series_sort"] {
+                #expect(names.contains(column), "\(table) lacks \(column)")
+            }
+            #expect(names == columns(db, "books"), "\(table) out of step with books")
+        }
+
+        // The positional swap must land each value in its own column.
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard
+            sqlite3_prepare_v2(
+                db, "SELECT title, title_sort, author_sort, series_sort FROM books", -1, &stmt, nil
+            ) == SQLITE_OK, sqlite3_step(stmt) == SQLITE_ROW
+        else {
+            Issue.record("could not read the promoted row")
+            return
+        }
+        let promoted = (0..<4).map { String(cString: sqlite3_column_text(stmt, $0)) }
+        #expect(promoted == ["apple", "Apple", "Weir, Andy", "Dune"])
     }
 }

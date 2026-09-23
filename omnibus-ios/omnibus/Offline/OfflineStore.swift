@@ -248,6 +248,12 @@ actor OfflineStore {
 
     private var db: OpaquePointer?
     private(set) var isOpen = false
+    /// The database file; `nil` is the app's own under `dataDirectory`.
+    private let path: String?
+
+    init(path: String? = nil) {
+        self.path = path
+    }
 
     /// Files live beside the DB under Application Support, which iOS excludes
     /// from iCloud backup only if we ask — downloads are re-fetchable, so we
@@ -276,18 +282,31 @@ actor OfflineStore {
 
     func open() {
         guard !isOpen else { return }
-        let path = Self.dataDirectory.appendingPathComponent("offline.sqlite").path
-        guard sqlite3_open(path, &db) == SQLITE_OK else {
-            db = nil
-            return
-        }
-        // The mirror's text sorts name it; a connection without it fails them.
-        DictionaryOrder.register(on: db)
+        let path = self.path ?? Self.dataDirectory.appendingPathComponent("offline.sqlite").path
+        guard let handle = Self.connect(path: path) else { return }
+        db = handle
         exec("PRAGMA journal_mode=WAL")
         exec("PRAGMA synchronous=NORMAL")
         exec("PRAGMA foreign_keys=ON")
         migrate()
         isOpen = true
+    }
+
+    /// Open `path` with the mirror's `dictionary` collation registered, or
+    /// `nil` — the handle closed — when either step fails. A connection
+    /// without the collation would fail every text-sorted page at prepare and
+    /// read as an empty library; no connection is the state the app already
+    /// handles, by staying online-only.
+    static func connect(
+        path: String,
+        register: (OpaquePointer?) -> Bool = DictionaryOrder.register(on:)
+    ) -> OpaquePointer? {
+        var handle: OpaquePointer?
+        guard sqlite3_open(path, &handle) == SQLITE_OK, register(handle) else {
+            sqlite3_close(handle)
+            return nil
+        }
+        return handle
     }
 
     private func migrate() {
@@ -412,13 +431,17 @@ actor OfflineStore {
         for table in ["books", "books_staging"] where !hasColumn(table, "last_interacted") {
             exec("ALTER TABLE \(table) ADD COLUMN last_interacted TEXT NOT NULL DEFAULT ''")
         }
-        // The first creator's surname-first key, the one the server's Author
-        // axis files under. Same lockstep as above; a mirror written before
-        // the column existed carries the empty default, which the Author
-        // order reads as "fall back to the display name" until the next pass
-        // rewrites it.
-        for table in ["books", "books_staging"] where !hasColumn(table, "author_sort") {
-            exec("ALTER TABLE \(table) ADD COLUMN author_sort TEXT NOT NULL DEFAULT ''")
+        // The text axes' sort values, kept apart from the lowercased search
+        // columns so a case-only tie breaks the way the server's does:
+        // `author_sort` is the first creator's surname-first key, the other
+        // two the raw title and series. Same lockstep as above; a mirror
+        // written before they existed carries the empty default, which the
+        // order reads as "fall back to the search column" until the next pass
+        // rewrites the row.
+        for column in ["author_sort", "title_sort", "series_sort"] {
+            for table in ["books", "books_staging"] where !hasColumn(table, column) {
+                exec("ALTER TABLE \(table) ADD COLUMN \(column) TEXT NOT NULL DEFAULT ''")
+            }
         }
     }
 
@@ -821,7 +844,9 @@ actor OfflineStore {
         var title: String
         var author: String
         var authorSort: String
+        var titleSort: String
         var series: String
+        var seriesSort: String
         var seriesIndex: Double
         var addedAt: String
         var modified: String
@@ -861,15 +886,17 @@ actor OfflineStore {
         let sql = """
             INSERT INTO books_staging
               (uuid, title, author, series, series_index, added_at, modified,
-               last_interacted, formats, search_text, payload, author_sort)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               last_interacted, formats, search_text, payload, author_sort,
+               title_sort, series_sort)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(uuid) DO UPDATE SET
               title = excluded.title, author = excluded.author,
               series = excluded.series, series_index = excluded.series_index,
               added_at = excluded.added_at, modified = excluded.modified,
               last_interacted = excluded.last_interacted,
               formats = excluded.formats, search_text = excluded.search_text,
-              payload = excluded.payload, author_sort = excluded.author_sort
+              payload = excluded.payload, author_sort = excluded.author_sort,
+              title_sort = excluded.title_sort, series_sort = excluded.series_sort
             """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
             exec("ROLLBACK")
@@ -888,6 +915,8 @@ actor OfflineStore {
             bind(stmt, 10, row.searchText)
             bind(stmt, 11, row.payload)
             bind(stmt, 12, row.authorSort)
+            bind(stmt, 13, row.titleSort)
+            bind(stmt, 14, row.seriesSort)
             sqlite3_step(stmt)
             sqlite3_reset(stmt)
         }
