@@ -31,7 +31,7 @@ pub fn convert_dir() -> PathBuf {
 ///
 /// `Task::ConvertFormat`'s `source_format`/`target_format` fields are plain
 /// caller-supplied strings with no format allowlist upstream (there is no
-/// wire route yet — see #948's PR notes — but the worker task itself must
+/// wire route yet — but the worker task itself must
 /// not assume one ever validates its input before posting). A token that
 /// isn't a bare extension — `../../etc/passwd`, `a/b`, an absolute path —
 /// must never reach a `PathBuf::join`/`format!` that builds a filesystem

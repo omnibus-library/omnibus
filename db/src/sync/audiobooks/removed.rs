@@ -9,7 +9,7 @@ use sqlx::Transaction;
 use super::super::attach;
 use super::super::books::SyncError;
 
-/// Apply the Removed bucket (F2): resolve affected ids and, via
+/// Apply the Removed bucket: resolve affected ids and, via
 /// `mark_book_files_missing_batch`, drop the `book_files` rows (parts/chapters
 /// cascade) and flag each book missing — but **retain** the `books` row, its
 /// links, FTS, and soft-ref user data, so the book stays in browse/search (the
@@ -65,7 +65,7 @@ pub(super) async fn sync_audiobooks_removed(
 
 /// Batched form of `books::mark_book_files_missing` for the Removed bucket: one
 /// IN-list DELETE of the `book_files` rows (parts/chapters cascade) and one
-/// guarded UPDATE flagging the now-fileless `books` rows missing (F2), instead
+/// guarded UPDATE flagging the now-fileless `books` rows missing, instead
 /// of two statements per book. The UPDATE keeps `mark_book_files_missing`'s
 /// guards — `is_missing_files = 0` preserves the original `missing_files_since`
 /// on a re-run, and `is_missing_files_override = 0` leaves intentionally-fileless

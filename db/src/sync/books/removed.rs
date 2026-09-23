@@ -111,7 +111,7 @@ async fn delete_removed_book_files(
 /// trusts the flag and probes a path that is gone, `maybe_adopt_cover` returns
 /// early on `has_cover != 0` so a returning file never re-adopts, and
 /// `backfill_covers` selects on `has_cover = 0` so the re-extraction pass never
-/// sees it (#2321). Clearing it hands the book back to that pass, which
+/// sees it. Clearing it hands the book back to that pass, which
 /// re-extracts under the correct `books.uuid` once a file is present again.
 ///
 /// The uploaded cover override is `metadata_overrides.has_cover_override`, a
@@ -131,7 +131,7 @@ async fn clear_has_cover(
     Ok(())
 }
 
-/// One UPDATE per chunk: set the F10 missing flag + start the retention
+/// One UPDATE per chunk: set the missing-files flag + start the retention
 /// clock. The `is_missing_files = 0` guard preserves the original
 /// `missing_files_since` on a re-run; the `is_missing_files_override = 0`
 /// guard leaves intentionally-fileless rows (wishlist) unflagged so reads

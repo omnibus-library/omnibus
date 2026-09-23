@@ -57,7 +57,7 @@ pub async fn backfill_scan_keys(pool: &SqlitePool) -> Result<(), IdentityError> 
 /// falls back to the book's own `path` for those rows. Without the JOIN a
 /// native row at `A/one.epub` would backfill to the bare leaf `one.epub`,
 /// losing the directory — which broke the per-file `bf.scan_key = b.scan_key`
-/// anchor match `list_indexed_rows_for_formats` relies on (#1537).
+/// anchor match `list_indexed_rows_for_formats` relies on.
 /// Idempotent — `scan_key IS NULL` only.
 async fn backfill_book_files_scan_keys(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let rows: Vec<(i64, String, String, String, i64)> = sqlx::query_as(

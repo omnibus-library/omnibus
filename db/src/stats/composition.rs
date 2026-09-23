@@ -192,8 +192,8 @@ async fn formats(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> 
 /// Reads `(book, code)` pairs rather than per-code counts, because the fold
 /// is per **book**: a file spells one language several ways (`en`, `en-US`,
 /// `eng`), and counting the spellings reported a 28-book library as holding
-/// three Englishes (#2466) — while summing them after the fold credited one
-/// book to English twice (#2498). The fold happens in Rust rather than SQL
+/// three Englishes — while summing them after the fold credited one
+/// book to English twice. The fold happens in Rust rather than SQL
 /// because the alias table is a Rust table.
 ///
 /// Books with no language link are **uncovered**, not bucketed as unknown: an
@@ -226,8 +226,8 @@ async fn languages(pool: &SqlitePool) -> Result<CompositionDimension, StatsError
 /// reporting the coverage pair over those same de-duplicated placements so
 /// the slices sum to `coverage.total` by construction.
 ///
-/// Placements are de-duplicated, not summed. Summing them was #2498: two
-/// books carrying both `en` and `en-US` credited English with two books more
+/// Placements are de-duplicated, not summed. If they were summed, two books
+/// carrying both `en` and `en-US` would credit English with two books more
 /// than exist. A book in two *different* languages is still two placements —
 /// that is the overlap `CompositionDimension::overlap` discloses, not a
 /// double count.

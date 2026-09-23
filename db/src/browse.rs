@@ -35,7 +35,7 @@ fn placeholders(n: usize) -> String {
 }
 
 /// "In the library" for the browse indexes: under a configured scan root, or
-/// holding at least one physical copy (#1181).
+/// holding at least one physical copy.
 ///
 /// Deliberately *not* the landing read path's rule, which also demands a
 /// `book_files` row. Browse counts a ghosted (fileless) book so its author

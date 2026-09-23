@@ -27,7 +27,7 @@ use super::{EntityAliasMaps, SyncError};
 /// rather than failing the whole sync over a TOCTOU.
 ///
 /// `alias_maps` is the whole New+Changed batch's reindex-resurrection guard
-/// lookup (#1985), pre-resolved by `super::collect_entity_alias_maps`.
+/// lookup, pre-resolved by `super::collect_entity_alias_maps`.
 pub(super) async fn sync_changed(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,

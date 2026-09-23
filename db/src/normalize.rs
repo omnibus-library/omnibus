@@ -40,7 +40,7 @@ pub fn normalize_author(s: &str) -> Option<String> {
 /// `author_sort` fallback when a book carries no OPF `file_as`. Without it the
 /// Author axis mixes two key formats — `"Surname, Given"` for file-as rows and
 /// `"Given Surname"` for the rest — so the same author's books scatter to
-/// opposite ends of the list (#2342).
+/// opposite ends of the list.
 ///
 /// Mirrors the frontend authors-index `sort_key` so the library table and the
 /// authors index agree on order:
@@ -178,7 +178,7 @@ const NORM_UPDATE_CHUNK: usize = 300;
 /// `"Given Surname"` order into the surname-first sort key, so the Author axis
 /// orders every existing row on one key format instead of the mix the old
 /// write path left — `"Surname, Given"` for file-as rows and `"Given Surname"`
-/// for the rest (#2342). New rows are written surname-first by the sync
+/// for the rest. New rows are written surname-first by the sync
 /// writers; this heals rows indexed before that change.
 ///
 /// Idempotent by construction: it only touches a value that has a space but no

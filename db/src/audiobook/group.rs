@@ -19,7 +19,7 @@ pub struct AudiobookGroup {
     /// (e.g. `Author/Series/Title`); for single-file m4b/m4a/mp3 groups
     /// this is the file's own relative path including extension.
     pub group_path: String,
-    /// The Phase-A diff key (F2): the group's library-relative path (same
+    /// The Phase-A diff key: the group's library-relative path (same
     /// value as `group_path`). Empty for synthetic placeholder rows. Same
     /// role as [`crate::ebook::stat::StatEntry::scan_key`].
     pub scan_key: String,

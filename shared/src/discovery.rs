@@ -49,7 +49,7 @@ pub struct FacetCounts {
     pub genres: Vec<FacetCount>,
 }
 
-/// Response payload for the F5b keyset-paginated **web** landing read
+/// Response payload for the keyset-paginated **web** landing read
 /// (`rpc_get_ebooks_page`). One page of books plus the opaque cursor to fetch
 /// the next page (`None` at end of stream).
 ///

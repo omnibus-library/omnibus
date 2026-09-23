@@ -273,7 +273,7 @@ impl KoboStatistics {
     }
 }
 
-/// Mirror a device's `Statistics` block onto its epub position row (#1653);
+/// Mirror a device's `Statistics` block onto its epub position row;
 /// returns whether a row was updated.
 ///
 /// UPDATE, not upsert: statistics annotate a position, they don't create one.

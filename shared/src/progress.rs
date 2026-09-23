@@ -88,7 +88,7 @@ pub struct ProgressUpdate {
     pub book_file_id: Option<i64>,
     /// Unix seconds when the client observed this position — used to
     /// resolve most-recent-wins by **event** time rather than server
-    /// receipt time (issue #1362). `#[serde(default)]` so an older client
+    /// receipt time. `#[serde(default)]` so an older client
     /// that never sends this field still parses; `upsert_progress` treats a
     /// missing value as "use server now", preserving prior last-write-wins
     /// behaviour.

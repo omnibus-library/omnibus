@@ -20,7 +20,7 @@ pub struct StatEntry {
     /// Path relative to the library root — same shape used everywhere else
     /// as the per-book "filename" string.
     pub filename: String,
-    /// The Phase-A diff key (F2): the book's path *relative to the scan
+    /// The Phase-A diff key: the book's path *relative to the scan
     /// root*. Stored verbatim in `books.scan_key` so a library-root repoint
     /// — which leaves relative paths unchanged — preserves every
     /// `books.uuid`. Empty string for placeholder rows (see struct doc).
@@ -62,7 +62,7 @@ pub struct StatScanResult {
 /// the legacy `scan_ebook_library_with` shape surfaces these as error rows.
 ///
 /// `library_path_key` is retained for signature compatibility with the
-/// audiobook walker; the diff key is now the library-relative path (F2), so
+/// audiobook walker; the diff key is now the library-relative path, so
 /// it no longer participates in identity. Empty-`scan_key` placeholder rows
 /// mark unreadable subdirs for the legacy wrapper.
 pub fn stat_ebook_library(path: Option<&str>, library_path_key: &str) -> StatScanResult {

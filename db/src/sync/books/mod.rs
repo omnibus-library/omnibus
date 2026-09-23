@@ -86,13 +86,13 @@ pub struct MovedFile {
     pub filename: String,
 }
 
-/// Pre-resolved reindex-resurrection guard (#964) lookups for one whole
+/// Pre-resolved reindex-resurrection guard lookups for one whole
 /// sync batch: the canonical id every distinct author/series/tag name
 /// across the batch resolves to, if a prior library-cleanup merge absorbed
 /// it. Built once per [`CleanupKind`] by [`collect_entity_alias_maps`]
 /// before the per-book write loop starts, then threaded down through
 /// `insert_metadata_links` — replacing what used to be a
-/// `resolve_entity_aliases` call issued once per book (#1985).
+/// `resolve_entity_aliases` call issued once per book.
 #[derive(Debug, Default)]
 pub(super) struct EntityAliasMaps {
     pub(super) authors: HashMap<String, i64>,
@@ -167,7 +167,7 @@ pub struct SyncPlan {
 ///
 /// Inside a single transaction, in this order:
 /// 1. Upsert the `scan_roots` row.
-/// 2. Mark Removed files missing (F2): drop each removed book's
+/// 2. Mark Removed files missing: drop each removed book's
 ///    `book_files` row but retain the `books` row, its links, FTS, and
 ///    soft-ref user data so the book stays in browse/search (the grid
 ///    hides it via `EXISTS book_files`) and the uuid survives.

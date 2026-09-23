@@ -90,7 +90,7 @@ async fn fetch_list_rows(
 /// incremental reindex diff needs to classify a filesystem stat against
 /// the existing index.
 ///
-/// `scan_key` is the durable diff key (the library-relative path, F2): the
+/// `scan_key` is the durable diff key (the library-relative path): the
 /// diff matches disk-vs-DB on it. `uuid` is the book's durable identity
 /// (carried for the Removed/Backfill buckets, which act by uuid).
 /// `has_file` is false for a **fileless book** — a book whose file was

@@ -235,7 +235,7 @@ fn build_page_sql(
 ///
 /// The three metadata axes key on the *effective* value — a book renamed or
 /// re-attributed through `metadata_overrides` sorts where the page shows it,
-/// not where the scanned file put it (#2258). The two time axes read INTEGER
+/// not where the scanned file put it. The two time axes read INTEGER
 /// unix-seconds (migration 0038) but format them to fixed-width ISO here, for
 /// the same reason the projection does: the cursor round-trips the primary
 /// value as `Option<String>` and compares it lexicographically, which stays

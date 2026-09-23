@@ -165,7 +165,7 @@ async fn rebuild_target_fts_best_effort(
 
 /// Fold a `settings::SettingsError` from [`upsert_library`] into `MergeError`.
 /// `upsert_library` only ever emits `Db`; `Validation`/`Json` exist on
-/// `SettingsError` for `set_hardcover_api_key` / the F5.1 metadata-precedence
+/// `SettingsError` for `set_hardcover_api_key` / the metadata-precedence
 /// JSON column, so they collapse defensively onto `Other`.
 pub(super) fn map_settings_error(e: crate::settings::SettingsError) -> MergeError {
     match e {

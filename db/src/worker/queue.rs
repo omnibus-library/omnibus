@@ -98,7 +98,7 @@ fn seed_progress_entry(
 }
 
 /// Insert the durable `background_tasks` "running" row for a task that just
-/// started (issue #941), returning its row id for the matching
+/// started, returning its row id for the matching
 /// [`persist_task_finish`] call. Best-effort: a DB hiccup here is logged and
 /// returns `None` rather than failing the task itself.
 async fn persist_task_start(pool: &SqlitePool, persistence_kind: &'static str) -> Option<i64> {
@@ -115,8 +115,8 @@ async fn persist_task_start(pool: &SqlitePool, persistence_kind: &'static str) -
     }
 }
 
-/// Update the durable `background_tasks` row `row_id` to its terminal state
-/// (issue #941), matching the row [`persist_task_start`] inserted.
+/// Update the durable `background_tasks` row `row_id` to its terminal state,
+/// matching the row [`persist_task_start`] inserted.
 /// Best-effort: a DB hiccup here is logged rather than propagated, since this
 /// row is observability, not a write the worker's own success depends on.
 async fn persist_task_finish(

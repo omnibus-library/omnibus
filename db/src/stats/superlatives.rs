@@ -32,7 +32,7 @@ const AUTHOR_JOIN: &str = concat!(
 /// Both text columns read the **effective** value — the override where the
 /// reader set one, the scanned column otherwise — because a standout that
 /// named a book "Hyperion Cantos 01 - Hyperion" while every other surface
-/// called it "Hyperion" is the same book by two names (#2455). Overrides are
+/// called it "Hyperion" is the same book by two names. Overrides are
 /// the authority. `COALESCE` on the title mirrors `compute::finished_books`:
 /// an untitled row still has to name itself.
 const BOOK_COLUMNS: &str = concat!(

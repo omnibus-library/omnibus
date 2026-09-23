@@ -160,7 +160,7 @@ pub(super) fn invalidate_composition_cache() {
 /// live book row to resolve). Runs on the blocking pool since
 /// `invalidate_export_epub_cache` is a sync `std::fs` call; a join failure
 /// is logged and swallowed — a stray cache file is a disk-space nuisance,
-/// not a correctness problem (#1395).
+/// not a correctness problem.
 pub(super) async fn invalidate_export_epub_cache_for(book_id: Option<i64>) {
     let Some(book_id) = book_id else { return };
     if let Err(e) = tokio::task::spawn_blocking(move || {

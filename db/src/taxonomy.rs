@@ -47,7 +47,7 @@ resolve_or_insert_simple!(resolve_or_insert_publisher, "publishers", "name");
 resolve_or_insert_simple!(resolve_or_insert_language, "languages", "code");
 
 /// Resolve `value` to a `series.id`, consulting the reindex-resurrection
-/// guard first (#964): if `value` was absorbed into another series by a
+/// guard first: if `value` was absorbed into another series by a
 /// completed library-cleanup merge, return the surviving canonical id
 /// instead of minting a fresh row for the merged-away name. On a miss,
 /// falls through to the same `INSERT OR IGNORE` / `SELECT` shape the other
@@ -58,7 +58,7 @@ resolve_or_insert_simple!(resolve_or_insert_language, "languages", "code");
 /// rare admin restore), each resolving a handful of names outside the
 /// reindex hot path. The reindex write loop instead calls
 /// [`resolve_or_insert_series_with_aliases`] with a lookup pre-resolved once
-/// for the whole batch (#1985).
+/// for the whole batch.
 pub(crate) async fn resolve_or_insert_series(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     value: &str,
@@ -75,8 +75,8 @@ pub(crate) async fn resolve_or_insert_series(
 /// Batch-aware sibling of [`resolve_or_insert_series`] for the reindex write
 /// loop: consults `aliases`, a lookup resolved once for the whole sync batch
 /// (`sync::books::collect_entity_alias_maps`), instead of issuing its own
-/// per-call `resolve_entity_aliases` query — the per-book fan-out #1985
-/// eliminates.
+/// per-call `resolve_entity_aliases` query — the per-book fan-out
+/// this avoids.
 pub(crate) async fn resolve_or_insert_series_with_aliases(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     value: &str,
@@ -140,7 +140,7 @@ pub(crate) async fn delete_orphan_taxonomy(
 /// book. The second clause is the authors twin of [`delete_orphan_tags`]'s:
 /// `materialize_author_rows` creates rows-only for override creators, so a
 /// link-only check would reap the row every read resolves those creators by
-/// name (#2235). Called from [`delete_orphan_taxonomy`] and directly from the
+/// name. Called from [`delete_orphan_taxonomy`] and directly from the
 /// override write paths, which can orphan an override-only author without
 /// touching a link row (a creators replacement, or an override delete).
 pub(crate) async fn delete_orphan_authors(

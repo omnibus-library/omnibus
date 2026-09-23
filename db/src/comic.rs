@@ -50,7 +50,7 @@ pub fn list_pages_from_file(file: File) -> anyhow::Result<(File, Vec<String>)> {
 /// count" rather than propagating.
 ///
 /// `books.page_count` is populated once at index time
-/// ([`indexed_book_from`]) and served straight off that column (#1593), so
+/// ([`indexed_book_from`]) and served straight off that column, so
 /// this single-book lookup is no longer on the request path; it remains a
 /// small, independently-testable building block a future ad-hoc "recount
 /// this one book" tool can reach for without duplicating the archive-open
@@ -156,7 +156,7 @@ pub fn extract_comic(path: &Path, filename: String, opts: &ScanOptions) -> Index
 }
 
 /// Everything a single pass over the archive yields: the first page's
-/// bytes + mime (the cover candidate), the page count (#1593 — computed
+/// bytes + mime (the cover candidate), the page count (computed
 /// once here so `books.page_count` never needs a second archive pass to
 /// answer a detail read), and the parsed `ComicInfo.xml` fields when the
 /// entry exists.

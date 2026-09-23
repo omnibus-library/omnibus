@@ -38,7 +38,7 @@ pub(super) struct SourceSnapshot {
     /// The source book's `scan_roots.path` (re-resolved or recreated on
     /// undo) — also the `merged_uuids.library_path` for the guard row.
     pub library_path: String,
-    /// `books.scan_key` — the library-relative path the reindex diff (F2)
+    /// `books.scan_key` — the library-relative path the reindex diff
     /// matches disk against. Undo must restore it, or the next reindex
     /// can't match the on-disk file/folder to the recreated row and
     /// inserts a duplicate. `#[serde(default)]` keeps pre-fix `merge_log`

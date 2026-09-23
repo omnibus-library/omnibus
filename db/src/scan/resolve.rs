@@ -576,7 +576,7 @@ fn split_name(author_norm: &str) -> (Option<&str>, &str) {
 /// exact equality to word-boundary prefix in either direction; author stays an
 /// exact effective-norm match in both modes.
 ///
-/// Two-step lookup (#1343): every book falls into exactly one of two disjoint
+/// Two-step lookup: every book falls into exactly one of two disjoint
 /// arms, so their `UNION ALL` is exact.
 ///
 /// 1. **No override row** — the common case. The effective norm *is* the

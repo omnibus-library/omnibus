@@ -91,7 +91,7 @@ async fn read_progress_row(
 /// stale-clock rejection, the re-read returns the surviving row. Audio
 /// seconds are only meaningful within one file, so accepting such a write
 /// would turn the row into "N seconds within an unknown file" and destroy a
-/// position another client (e.g. iOS) recorded correctly (#1888). On a
+/// position another client (e.g. iOS) recorded correctly. On a
 /// single-file book a fileless write still applies — the server resolves
 /// the same default file the manifest serves, so nothing is ambiguous.
 pub async fn upsert_progress(
@@ -166,7 +166,7 @@ pub async fn upsert_progress_tx(
     Ok(record)
 }
 
-/// Teardown signature, last line of defense (#1954): a dying page's media
+/// Teardown signature, last line of defense: a dying page's media
 /// element flushes its reset clock — audio position ~0 — with a perfectly
 /// fresh event time, and the client-side gates cannot cover every event
 /// ordering every browser invents. Scoped to the SAME file as the stored
@@ -290,7 +290,7 @@ async fn existing_progress_snapshot(
     ))
 }
 
-/// AC1 (#1861): a write is about to lose to the timestamp guard when the
+/// Warn when a write is about to lose to the timestamp guard, i.e. when the
 /// offered stamp — clamped forward to server-now, same as the SQL — is
 /// older than the stamp already on the row. Predicted here in Rust rather
 /// than read back from the upsert's own `WHERE`, purely for logging; a
@@ -316,7 +316,7 @@ fn warn_if_rejected_by_timestamp_guard(
     }
 }
 
-/// AC2 (#1861): an *accepted* audio write whose new position lands more
+/// Warn on an *accepted* audio write whose new position lands more
 /// than [`AUDIO_BACKWARD_JUMP_THRESHOLD_SECONDS`] behind the old one — a
 /// rejected write leaves `record.audio_position_seconds` equal to the old
 /// value, so this can only fire for a write that actually landed.

@@ -65,7 +65,7 @@ pub(crate) fn ids_json(ids: &[i64]) -> String {
 /// path. A fileless book with *no* copy (a wishlist entry) matches neither arm
 /// and stays hidden. Every search path shares this one definition rather than
 /// spelling it out: the palette arms and `books::search` had already drifted
-/// apart once (#1788), leaving physical books that `/api/search` returned
+/// apart once, leaving physical books that `/api/search` returned
 /// invisible to the palette.
 ///
 /// `book` / `root` name the `books` / `scan_roots` aliases in the enclosing
@@ -95,7 +95,7 @@ pub(crate) fn stable_uuid(library_path: &str, filename: &str) -> String {
 }
 
 /// Mint a fresh, durable book identity — a random UUIDv4 assigned once at
-/// insert and **never recomputed** (F2). Unlike the retired path-derived
+/// insert and **never recomputed**. Unlike the retired path-derived
 /// `stable_uuid`, this cannot move when a library root is repointed and
 /// cannot collide for two distinct books that share a title/author or even
 /// identical bytes. The diff no longer reconstructs this value from disk; the
@@ -116,7 +116,7 @@ pub(crate) fn scan_key_for(relative_path: &str) -> String {
 
 /// Dot-directories and Synology's `@eaDir` — never library content, and
 /// routinely unreadable, which would flag the walk `incomplete` and suppress
-/// the removal pass on every scan (issue #819).
+/// the removal pass on every scan.
 pub(crate) fn is_skipped_scan_dir(name: &str) -> bool {
     name.starts_with('.') || name.eq_ignore_ascii_case("@eaDir")
 }
@@ -158,7 +158,7 @@ pub(crate) fn parse_series_index(s: &str) -> Option<f64> {
 /// Shared by the sync writers (fresh scans, via [`cleaned_series_name`] /
 /// [`resolved_series_index`]) and `series_normalize`'s boot backfill
 /// (existing rows) so a library tagged "Name #1"/"Name #2"/"Name #3"
-/// converges on one series row with per-book indexes either way (#1912).
+/// converges on one series row with per-book indexes either way.
 pub(crate) fn split_embedded_series_index(name: &str) -> Option<(String, String)> {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     let re = PATTERN.get_or_init(|| {
@@ -280,7 +280,7 @@ struct QueryToken {
     /// the app already knows in full, and prefix-matching it silently widens
     /// the click — `tag:"Science fiction"` also matched a book tagged
     /// "Science Fiction & Fantasy", so the page returned two books for a row
-    /// that said one (#2504). Quoting is what tells the two apart.
+    /// that said one. Quoting is what tells the two apart.
     quoted: bool,
 }
 
@@ -290,7 +290,7 @@ struct QueryToken {
 /// is one token whose value carries the space, where a plain
 /// `split_whitespace` made it `tag:"Science` plus a stray `Fiction"`. That is
 /// what turned one multi-word tag into one facet per word, AND-ed, and
-/// answered a question the reader never asked (#2504).
+/// answered a question the reader never asked.
 ///
 /// Quotes are structural and dropped from the text — the value reaches
 /// [`sanitize_fts_tokens`], which does its own quoting and escaping, as the
@@ -492,7 +492,7 @@ fn sanitize_fts_tokens<S: AsRef<str>>(tokens: &[S]) -> Option<String> {
 /// [`sanitize_fts_tokens`] for parsed [`QueryToken`]s: identical, except the
 /// trailing prefix `*` is dropped when the last token was quoted, so a
 /// clicked facet matches the name exactly instead of everything starting
-/// with it (#2504).
+/// with it.
 fn sanitize_query_tokens(tokens: &[QueryToken]) -> Option<String> {
     let prefix_last = !tokens.last().is_some_and(|t| t.quoted);
     quote_tokens(tokens.iter().map(|t| t.text.as_str()), prefix_last)

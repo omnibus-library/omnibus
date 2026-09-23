@@ -32,6 +32,7 @@ pub use mapping::{
 pub use order::set_audio_order;
 pub use resume::resume_candidate;
 
+/// Failures from the cross-format link, alignment and position-mapping calls.
 #[derive(Debug, thiserror::Error)]
 pub enum CrossFormatError {
     #[error("book not found")]

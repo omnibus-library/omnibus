@@ -106,7 +106,7 @@ pub enum Task {
     /// same pass. Keyed on `library_path`; does not consume the scan
     /// semaphore. Exists because the reindex diff skips unchanged files, so
     /// a scanner fix would otherwise never reach a book already in the
-    /// library (#2240).
+    /// library.
     BackfillCovers { library_path: String },
     /// Pre-generate WebP thumbnails (all three sizes) for every covered book
     /// under `library_path`. Posted by the [`Task::Scan`] handler on

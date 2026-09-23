@@ -17,7 +17,7 @@ use super::{now_unix, AuthResult};
 ///
 /// The largest avatar circle in either client is 80px (`.disc-avatar`), so 160
 /// covers it at 2x device pixel ratio with nothing to spare — a 28px nav square
-/// was previously being filled with a 1446x2200 original (#2245).
+/// was previously being filled with a 1446x2200 original.
 const THUMB_MAX_EDGE: u32 = 160;
 
 /// Lossy WebP quality on libwebp's 0-100 scale, matching `thumbs::THUMB_QUALITY`.

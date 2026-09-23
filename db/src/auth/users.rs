@@ -343,7 +343,7 @@ pub async fn get_book_detail_scroll_stops(pool: &SqlitePool, user_id: i64) -> Au
 /// re-hashes with Argon2id and stamps `password_changed_at` — all in one
 /// transaction so an interrupted call never leaves a half-applied state.
 /// Also revokes every other active session for the user in the same
-/// transaction (#1402), except `except_session_id` — the caller's own
+/// transaction, except `except_session_id` — the caller's own
 /// session, which stays live so a self-service change doesn't immediately
 /// log the caller out.
 ///
@@ -484,7 +484,7 @@ pub async fn list_users(pool: &SqlitePool) -> AuthResult<Vec<AdminUserRow>> {
 /// (self-registration), this bypasses the `registration_enabled` gate and the
 /// first-user-admin logic — an admin is always the caller — and sets the four
 /// permission flags directly. Validates username/password, provisions the
-/// built-in Wishlist shelf (like `create_user`, #1187), and returns the new
+/// built-in Wishlist shelf (like `create_user`), and returns the new
 /// row. Errors with [`AuthError::UsernameTaken`] on a case-insensitive
 /// collision.
 pub async fn admin_create_user(
@@ -581,7 +581,7 @@ pub async fn update_user_permissions(
 
 /// Admin-reset a user's password: validate + re-hash + stamp
 /// `password_changed_at`, then revoke every active session for the target
-/// user in the same transaction (#1402) — unlike the self-service
+/// user in the same transaction — unlike the self-service
 /// [`change_password`], there is no caller session to exclude, since the
 /// admin isn't the affected account. No current-password check — this is
 /// the admin override path.

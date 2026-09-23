@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq)]
 pub struct AudiobookStatEntry {
     pub filename: String,
-    /// The Phase-A diff key (F2): the file's path relative to the scan
+    /// The Phase-A diff key: the file's path relative to the scan
     /// root. Empty for unreadable-subdir placeholder rows. Grouped into an
     /// [`super::AudiobookGroup`] scan_key downstream.
     pub scan_key: String,

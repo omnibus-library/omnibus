@@ -83,7 +83,7 @@ pub struct KoboBookRow {
     pub author: String,
     /// The blurb the device shows, `metadata_overrides` applied and HTML
     /// sanitized the same way `db::get_book` sanitizes it. Empty when the
-    /// book has none — Kobo tolerates a blank description (#2512).
+    /// book has none — Kobo tolerates a blank description.
     pub description: String,
     pub last_modified_epoch: i64,
     /// Size of the file the download route would serve: the lowest-ordinal
@@ -181,7 +181,7 @@ impl From<crate::metadata_overrides::MetadataOverridesError> for KoboError {
 /// The books `user_id`'s Kobo devices may sync, newest-modified first: the
 /// union of membership across that user's shelves flagged `sync_to_kobo`.
 ///
-/// Sync is **never whole-library** (#924) — a user with no opted-in shelf gets
+/// Sync is **never whole-library** — a user with no opted-in shelf gets
 /// an empty set, which is the correct answer, not a degenerate one. The author
 /// is the lowest-`position` entry in `books_authors_link` (empty when a book
 /// has none — Kobo tolerates a blank author).
@@ -259,7 +259,7 @@ pub async fn book_for_sync(
 /// Overlay each row's title/author/description with its saved
 /// `metadata_overrides` (the same [`crate::metadata_overrides::apply_overrides`]
 /// merge `db::get_book` runs for every other book-detail surface), gated by
-/// the owning scan root's configured source precedence (#972). A no-op for
+/// the owning scan root's configured source precedence. A no-op for
 /// rows whose uuid has no override row.
 async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Result<(), KoboError> {
     let uuids: Vec<String> = rows.iter().map(|r| r.uuid.clone()).collect();
@@ -356,8 +356,8 @@ pub struct KoboBookState {
     /// each against its own clock — the MAXed value would claim the status
     /// moved every time only the position did.
     pub status_updated_at: i64,
-    /// The device's last-reported `Statistics`, echoed back untouched
-    /// (#1653). Absent from [`Self::state_updated_at`] on purpose: a
+    /// The device's last-reported `Statistics`, echoed back untouched.
+    /// Absent from [`Self::state_updated_at`] on purpose: a
     /// stats-only change is no reason to re-push a book the device agrees
     /// with, and the block carries its own clock regardless.
     pub statistics: Option<crate::progress::KoboStatistics>,

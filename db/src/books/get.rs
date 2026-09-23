@@ -287,7 +287,7 @@ pub(crate) async fn get_books_by_ids(
 /// Resolve any book reference (its own durable `books.uuid` or a
 /// `merged_uuids` ledger key for a format-merged/attached file) to the
 /// **canonical** `books.uuid` of the surviving book. `None` when the uuid
-/// matches neither. Used by the F1 user-data write paths so a row always
+/// matches neither. Used by the user-data write paths so a row always
 /// stores the durable identity (and a merged uuid collapses onto its target)
 /// — keeping `(user_id, book_uuid, format)` uniqueness correct.
 pub async fn resolve_canonical_book_uuid_exec<'e, E>(

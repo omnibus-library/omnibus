@@ -49,7 +49,7 @@ pub enum MetadataLookupError {
     /// daily quota (HTTP 429 — we send no API key). The provider's error stays
     /// on the source chain for the log. It names no way forward on purpose:
     /// the web dialog has no manual-entry route, so a sentence that offered
-    /// one sent readers looking for a screen that does not exist (#2459).
+    /// one sent readers looking for a screen that does not exist.
     #[error("metadata lookup is temporarily unavailable — try again later")]
     Provider(#[from] anyhow::Error),
 }
