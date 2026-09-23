@@ -30,7 +30,7 @@ const RETRY_BACKOFF: [Duration; 2] = [Duration::from_millis(200), Duration::from
 /// header, so a key that is never in a URL cannot reach a log — from any
 /// fallible step, including ones added later. `strip_url` had to be remembered
 /// at each call site to hold the same line, and was missed on all three
-/// `json()` sites until #2129; this removes the leak class rather than
+/// `json()` sites; this removes the leak class rather than
 /// patching its instances.
 const API_KEY_HEADER: &str = "X-goog-api-key";
 

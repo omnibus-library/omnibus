@@ -51,7 +51,7 @@ impl UserSummary {
 /// The four permission booleans that define what a user can do. `is_admin`
 /// is presented in the UI as an "Administrator" permission that implies the
 /// other three; the storage layer keeps them as independent flags (there is
-/// no role enum). Used by the admin create/edit endpoints (F5.4).
+/// no role enum). Used by the admin create/edit endpoints.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UserPermissions {
     pub is_admin: bool,
@@ -60,7 +60,7 @@ pub struct UserPermissions {
     pub can_download: bool,
 }
 
-/// Admin Users-table projection of a `users` row (F5.4). Extends
+/// Admin Users-table projection of a `users` row. Extends
 /// [`UserSummary`] with the created timestamp and locked state the admin
 /// table renders, without bloating the login-path summary. No password
 /// fields ever cross the wire.
@@ -115,7 +115,7 @@ fn unknown_client() -> String {
 }
 
 /// A session row as shown to its owner or an admin (device & session
-/// management, F5.4). Never exposes the token hash — only enough to
+/// management). Never exposes the token hash — only enough to
 /// identify and revoke the row. Shared by the self-service
 /// `GET /api/auth/sessions` and the admin `GET /api/admin/users/{id}/sessions`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

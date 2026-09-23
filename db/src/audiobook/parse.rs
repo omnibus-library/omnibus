@@ -87,7 +87,7 @@ pub struct AudiobookPart {
 /// One fully-parsed audiobook group, ready for [`crate::sync::sync_audiobooks`].
 #[derive(Debug)]
 pub struct IndexedAudiobook {
-    /// The Phase-A diff key (F2): the group's library-relative path. Stored
+    /// The Phase-A diff key: the group's library-relative path. Stored
     /// in `books.scan_key`; identity (`books.uuid`) is minted fresh at
     /// insert and never derived from this.
     pub scan_key: String,
@@ -403,7 +403,7 @@ fn offset_chapters(
 /// leaf = title and parent = creator. A single-file group's `group_path` is
 /// the file itself, one level deeper — under the standard
 /// `<Author>/<Title>/<file>` layout the title is the parent directory and
-/// the creator its grandparent (#2073). Shallower single-file layouts
+/// the creator its grandparent. Shallower single-file layouts
 /// degrade: `<Author>/<file>` takes parent as creator and the file stem
 /// (minus any duplicated `<creator> - ` prefix) as title; a bare `<file>`
 /// keeps the stem with no creator.

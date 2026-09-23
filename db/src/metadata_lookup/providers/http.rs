@@ -35,7 +35,7 @@ pub(super) fn client() -> reqwest::Result<reqwest::Client> {
 /// It is no longer what keeps a credential out of a log, and must not be
 /// relied on for that again. It was, back when Google's key rode in `?key=`,
 /// and being opt-in per call site is exactly how it came to be missing from
-/// all three `json()` sites in `googlebooks` (#2129). The key now travels on
+/// all three `json()` sites in `googlebooks`. The key now travels on
 /// `googlebooks::API_KEY_HEADER`, which a `reqwest::Error` never renders, so no
 /// provider here puts a secret in a URL for this to strip. Anything that adds
 /// one must make the same move rather than adding a call here.

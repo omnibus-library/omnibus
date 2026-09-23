@@ -67,9 +67,9 @@ pub enum ThumbError {
     Db(#[from] sqlx::Error),
 }
 
-/// Default eviction cap (1 GiB). Sized for the lossy encoder (#1750): the
+/// Default eviction cap (1 GiB). Sized for the lossy encoder: the
 /// 1,635-book dev library holds ~50 MB of thumbnails across all three sizes,
-/// so a gigabyte is still ~20× headroom. The pre-#1750 default was 5 GiB
+/// so a gigabyte is still ~20× headroom. The earlier default was 5 GiB
 /// because lossless WebP needed it.
 const DEFAULT_CAP_BYTES: u64 = 1024 * 1024 * 1024;
 
@@ -135,7 +135,7 @@ pub async fn is_stale_async(book_id: i64, size: ThumbSize, last_modified_epoch: 
 /// detect the encoder version dynamically, so a hand-bumped constant is
 /// enough.
 ///
-/// v2 (#1750): lossless `image` WebP → lossy libwebp at
+/// v2: lossless `image` WebP → lossy libwebp at
 /// [`THUMB_QUALITY`]. A bump also purges the on-disk cache once at boot —
 /// see [`purge_stale_scheme_thumbs_once`], which is the other half of this
 /// constant's contract: the ETag alone would re-validate a client while the

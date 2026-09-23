@@ -118,7 +118,7 @@ pub(super) async fn materialize_genre_rows(
 /// every name in it. Every read resolves override creators **by name** —
 /// `backfill_creator_ids`, `list_authors`' override arm, the effective-author
 /// CTE — so a name that lived only in override JSON had no id, no author page
-/// and no `/api/authors` entry: an inert, link-coloured byline (#2235, #2343).
+/// and no `/api/authors` entry: an inert, link-coloured byline.
 ///
 /// Rows-only, like [`materialize_tag_rows`] and for the same reason: the
 /// `books_authors_link` table is the sole record of a book's *scanned*

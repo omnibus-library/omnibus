@@ -17,7 +17,7 @@ use crate::metadata_overrides::sql::overrides_win_sql;
 /// none of the three — a ghosted book whose file went away, or an orphan left
 /// by an older write path — appears on no reader surface, so offering it as
 /// "this one's already in your library" files a copy against a book nothing
-/// else can reach (#2497).
+/// else can reach.
 ///
 /// Interpolated into a query that aliases `books` as `b`.
 pub(super) const LIVE_BOOK: &str = "(EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)
@@ -26,7 +26,7 @@ pub(super) const LIVE_BOOK: &str = "(EXISTS (SELECT 1 FROM book_files bf WHERE b
 
 /// The separator the author subqueries join names on — a control character
 /// rather than `", "`, because a stored sort-form name carries the comma
-/// itself: split on `", "`, `Weir, Andy` became two people (#2460).
+/// itself: split on `", "`, `Weir, Andy` became two people.
 const AUTHOR_SEP: char = '\u{1f}';
 
 /// The `SELECT` list producing one [`ScanBook`] per `books b` row.

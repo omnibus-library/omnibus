@@ -336,7 +336,7 @@ pub(super) async fn busiest_week(
 /// Grouped on the **effective** position-0 creator name rather than
 /// `authors.id`, so a book re-attributed through `metadata_overrides` is
 /// credited to the author the reader sees on it, and a scanned author slug
-/// (`stephen-fry`) that has been renamed stops headlining the tile (#2455).
+/// (`stephen-fry`) that has been renamed stops headlining the tile.
 /// The name is the group key because an overridden creator has no
 /// `authors` row to key on; `COLLATE NOCASE` on the expression folds case
 /// drift into one row, as the id used to.
@@ -470,7 +470,7 @@ pub(super) async fn finished_count(
 /// the count. Capped at [`FINISHED_BOOKS_LIMIT`] newest completions.
 ///
 /// Titles and authors read the effective (override-aware) value, so a renamed
-/// book is named here the way its own page names it (#2455).
+/// book is named here the way its own page names it.
 pub(super) async fn finished_books(
     pool: &SqlitePool,
     user_id: i64,

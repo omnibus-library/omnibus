@@ -67,7 +67,7 @@ pub async fn manual_shelves_containing(
 /// in the result — so this only ever *narrows* an already-visible set.
 ///
 /// This is the predicate the OPDS catalogs layer on top of their normal
-/// library reads (#932): a book that's reachable only by hand-picking it
+/// library reads: a book that's reachable only by hand-picking it
 /// onto a private shelf must not surface in a browse/search/new/nav feed —
 /// or a direct cover/file link — for a viewer who can't see that shelf,
 /// even though the file itself is otherwise an ordinary, generally-served
@@ -172,8 +172,8 @@ pub async fn get_shelf(pool: &SqlitePool, id: i64) -> Result<Option<Shelf>, Shel
 /// across `user_id`'s shelves flagged `sync_to_kobo`.
 ///
 /// Deliberately **uncapped** — the Kobo sync response streams and must not
-/// inherit a page limit (the whole point of #922's no-`SYNC_ITEM_LIMIT` rule),
-/// so this does not go through `shelf_page`/`MAX_BOOKS_RETURNED`. Scoped to
+/// inherit a page limit, so this does not go through
+/// `shelf_page`/`MAX_BOOKS_RETURNED`. Scoped to
 /// shelves the user owns, so one user's opt-in can never expose books through
 /// another user's device token.
 ///
@@ -313,7 +313,7 @@ async fn count_wishlist(pool: &SqlitePool, owner_id: i64) -> Result<i64, ShelfEr
 /// One page of the owner's wishlist, newest-added first. Deliberately **omits**
 /// the visibility gate the smart reads apply: a wishlist-only
 /// (fileless) book is hidden from All Books but must appear inside its own
-/// wishlist shelf (#1187, AC4).
+/// wishlist shelf.
 async fn fetch_wishlist(
     pool: &SqlitePool,
     owner_id: i64,

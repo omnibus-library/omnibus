@@ -170,7 +170,7 @@ const OVERRIDE_COVER_JPEG_QUALITY: u8 = 85;
 /// through is the status quo before this existed.
 ///
 /// The source format is sniffed from the bytes rather than taken from
-/// `mime`, for the same reason [`write_cover_file`] does it (#828): a WebP
+/// `mime`, for the same reason [`write_cover_file`] does it: a WebP
 /// mislabelled `image/jpeg` is exactly the case this needs to catch. That
 /// also covers the cover-from-URL route, which funnels through the same
 /// write — a provider CDN serving WebP is the likelier source of one than a

@@ -275,7 +275,7 @@ pub struct Shelf {
     pub rules: Vec<ShelfRule>,
     pub book_count: i64,
     /// Whether this shelf's books are exposed to the owner's Kobo devices over
-    /// wireless sync. Off by default — sync is never whole-library (#924).
+    /// wireless sync. Off by default — sync is never whole-library.
     #[serde(default)]
     pub sync_to_kobo: bool,
 }
@@ -350,7 +350,7 @@ pub struct UpdateShelfRequest {
     pub match_mode: Option<MatchMode>,
     #[serde(default)]
     pub rules: Option<Vec<ShelfRule>>,
-    /// Toggle the shelf's Kobo wireless-sync opt-in (#924).
+    /// Toggle the shelf's Kobo wireless-sync opt-in.
     #[serde(default)]
     pub sync_to_kobo: Option<bool>,
 }

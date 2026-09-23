@@ -15,7 +15,7 @@ pub enum SortKeysError {
 }
 
 /// The `series_sort` value to store for a book: its primary series name
-/// (trimmed, with any embedded `#N` / ", Book N" index stripped — #1912),
+/// (trimmed, with any embedded `#N` / ", Book N" index stripped),
 /// or `None` when the book has no (non-empty) series. Delegates to
 /// [`crate::helpers::cleaned_series_name`] so this column and the
 /// `books_series_link` write it sits alongside always agree on the same

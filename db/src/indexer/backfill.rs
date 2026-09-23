@@ -451,14 +451,14 @@ async fn fetch_page_count_candidates(
 }
 
 /// Pre-generate all three WebP thumbnail sizes for every book under
-/// `library_path` that has a cover (#1752), so the landing grid's first
+/// `library_path` that has a cover, so the landing grid's first
 /// post-scan load serves cached thumbnails instead of falling through the
 /// lazy generation path in `server::backend::covers::thumb_cache_miss_response`.
 ///
 /// Posted as a separate worker task after each ebook library scan (mirroring
 /// [`backfill_word_counts`]). Cheap when caught up: candidates are first
 /// partitioned by [`thumbs::is_stale_async`] into the subset actually needing
-/// a re-encode (#1817) — a book with all three sizes already fresh never
+/// a re-encode — a book with all three sizes already fresh never
 /// touches its cover bytes, is never logged, and never advances the reported
 /// `total`, so a re-scan of an unchanged library posts no visible progress
 /// task at all.
@@ -734,7 +734,7 @@ async fn fetch_cover_candidates(
 /// The reindex diff only re-parses a file whose stat moved, so a scanner fix
 /// that teaches the extractor a new cover declaration would otherwise reach
 /// only books touched afterwards — every book already in the library would
-/// stay blank forever (#2240). This runs after each ebook scan and is a
+/// stay blank forever. This runs after each ebook scan and is a
 /// no-op once every book either has a cover or has been shown not to have
 /// one: a book that still comes back empty is simply re-tried next scan,
 /// which costs one zip open for a library's genuinely coverless books.

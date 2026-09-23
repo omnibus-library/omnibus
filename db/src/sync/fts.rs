@@ -23,7 +23,7 @@ const UPSERT_BATCH_CHUNK: usize = 450;
 /// 0005_fts5.sql so the inline upsert and the triggers agree on the same
 /// text. `isbn` takes the first ISBN-scheme identifier (case-insensitive)
 /// straight from `book_identifiers` — the canonical source now that the
-/// denormalized `books.isbn` column is gone (F8). `genres` is the one column
+/// denormalized `books.isbn` column is gone. `genres` is the one column
 /// with no canonical table behind it: nothing Omnibus parses carries a genre,
 /// so migration `0066` gives them no link table and the override JSON is
 /// their only storage — see [`GENRES_FROM_OVERRIDES`].

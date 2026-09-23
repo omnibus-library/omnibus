@@ -18,8 +18,7 @@ use super::{PhysicalError, PHYSICAL_LIBRARY_PATH};
 /// the file remains tracked through its `merged_uuids` ledger row
 /// (`list_merged_rows_for_formats`), and stamping `books.scan_key` with the
 /// file's key would additionally surface it via the native-file join in
-/// `list_indexed_rows_for_formats` — the same file diffed twice (#1537's
-/// failure shape).
+/// `list_indexed_rows_for_formats` — the same file diffed twice.
 fn promote_sql(single_book: bool) -> String {
     let id_filter = if single_book {
         " AND books.id = ?2"

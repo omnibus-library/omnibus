@@ -22,7 +22,7 @@ const HARDCOVER_API_KEY_KEY: &str = "hardcover_api_key";
 /// reconciliation `set_settings` runs.
 const GOOGLE_BOOKS_API_KEY_KEY: &str = "google_books_api_key";
 
-/// The server-wide Hardcover API token, as a [`SecretKeySpec`]. Powers F3.3
+/// The server-wide Hardcover API token, as a [`SecretKeySpec`]. Powers the
 /// "Readers also enjoyed" suggestions.
 const HARDCOVER_KEY: SecretKeySpec = SecretKeySpec {
     kv_key: HARDCOVER_API_KEY_KEY,

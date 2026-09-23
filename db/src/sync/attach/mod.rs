@@ -10,7 +10,7 @@ use sqlx::Transaction;
 /// been merged into / attached to a book? Returns the recorded
 /// `(uuid, book_id, format)` when so, so the caller re-attaches against the
 /// **stored** ledger uuid rather than a freshly-recomputed path-derived one.
-/// Keying on the relative `scan_key` (F2) — not on `stable_uuid` — is what
+/// Keying on the relative `scan_key` — not on `stable_uuid` — is what
 /// lets an attachment survive a repoint of its scan root. Covers both
 /// index-time auto-attach and manual merges, even when the titles no longer
 /// match.
@@ -134,7 +134,7 @@ pub(super) async fn find_attach_target(
 /// `merged_uuids` records attached files but never a book's own native file,
 /// so asking it alone let a second on-disk copy of one book evict the native
 /// file's `book_files` row and then trade the slot back on the following scan,
-/// restamping `books.last_modified` forever (#2320).
+/// restamping `books.last_modified` forever.
 pub(super) async fn slot_held_by_other(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -182,7 +182,7 @@ pub(super) async fn forget_attachment(
 /// Record (or refresh) the `merged_uuids` row for an attached file.
 /// `library_path` is the scanned root of the *file*, not the target
 /// book's library — the reindex diff filters on it. `scan_key` is the
-/// attached file's relative path: the F2 diff key the reindex matches on,
+/// attached file's relative path: the diff key the reindex matches on,
 /// so the attachment survives a repoint of the file's scan root.
 pub(super) async fn record_attachment(
     tx: &mut Transaction<'_, sqlx::Sqlite>,

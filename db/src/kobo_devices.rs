@@ -190,7 +190,7 @@ pub async fn resolve_device_by_token(
 }
 
 /// Bind the `x-kobo-deviceid` hardware id to this device row, so token-less
-/// Reading Services calls (#1278) can map back to it. Steal-on-learn: the id
+/// Reading Services calls can map back to it. Steal-on-learn: the id
 /// is cleared from any other row first (0060 enforces uniqueness), so the
 /// hardware id always follows the device row whose *token* it most recently
 /// presented — a factory-reset or re-pointed Kobo re-binds correctly, and no
@@ -243,7 +243,7 @@ pub async fn resolve_device_by_hardware_id(
     }))
 }
 
-/// Store the opaque per-device delta cursor (#926). Kept independent of the
+/// Store the opaque per-device delta cursor. Kept independent of the
 /// auth token so a regenerate never resets sync state (AC3).
 pub async fn set_sync_cursor(
     pool: &SqlitePool,

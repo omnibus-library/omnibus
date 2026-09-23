@@ -49,7 +49,7 @@ const SMTP_PASSWORD_KEY: &str = "smtp_password";
 const SMTP_FROM_EMAIL_KEY: &str = "smtp_from_email";
 const SMTP_SECURITY_KEY: &str = "smtp_security";
 
-/// `settings` KV key for the hosted `/mcp` endpoint toggle (#2314). A
+/// `settings` KV key for the hosted `/mcp` endpoint toggle. A
 /// missing row reads as disabled, so a fresh install exposes no MCP surface.
 const MCP_ENABLED_KEY: &str = "mcp_enabled";
 

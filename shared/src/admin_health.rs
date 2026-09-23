@@ -60,7 +60,7 @@ pub struct StorageStats {
 /// Full report backing `/admin/health`'s five sections, returned in one
 /// request by `GET /api/admin/health` (REST) / `rpc_get_admin_health`
 /// (web). The web page re-fetches this on a 5-second live-update poll
-/// (#955) in addition to its initial page-load fetch.
+/// in addition to its initial page-load fetch.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AdminHealthReport {
     pub index: IndexStatus,

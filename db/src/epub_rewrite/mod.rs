@@ -89,7 +89,7 @@ pub fn used_bytes() -> u64 {
 /// [`crate::metadata_overrides::delete_metadata_overrides`] and
 /// [`crate::metadata_overrides::clear_cover_override`] — and when the book
 /// itself is deleted (`deletion::fs`), so the cache doesn't linger
-/// unreferenced (#1395). A missing file is a no-op; any other failure is
+/// unreferenced. A missing file is a no-op; any other failure is
 /// logged and swallowed — the caller has already decided the cache shouldn't
 /// exist, and a stray file is a disk-space nuisance, not a correctness
 /// problem.
@@ -190,7 +190,7 @@ pub async fn rewritten_epub_path(
 /// pool — every DB read it would otherwise need is already resolved by the
 /// caller, which is what lets [`rewrite_all_epubs_with_overrides`] bulk-fetch
 /// these three inputs for the whole fleet-wide pass instead of paying a
-/// `get_book` + `get_last_modified_epoch` round trip per book (#1718).
+/// `get_book` + `get_last_modified_epoch` round trip per book.
 async fn rewrite_or_reuse_cache(
     book_id: i64,
     source: &Path,
@@ -314,7 +314,7 @@ fn rewrite_blocking(src: &Path, dst: &Path, book: &EbookMetadata) -> anyhow::Res
 /// — each a handful of chunked `IN (...)` queries — plus one bulk
 /// [`crate::books::get_books_by_ids`] for the merged metadata every rewrite
 /// needs. This replaces what used to be up to four sequential DB round trips
-/// *per book* (#1718); the only work left inside the per-book loop is the
+/// *per book*; the only work left inside the per-book loop is the
 /// filesystem-bound rewrite itself.
 pub async fn rewrite_all_epubs_with_overrides(
     pool: &SqlitePool,

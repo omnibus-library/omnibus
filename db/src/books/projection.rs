@@ -353,7 +353,7 @@ pub(crate) async fn backfill_creator_ids(
 
 /// Bulk-merge user-supplied `metadata_overrides` into every book in `books`
 /// in place, gated per-book by its scan root's configured metadata-source
-/// precedence (F5.1, #972).
+/// precedence.
 pub(crate) async fn merge_overrides_into_books(
     pool: &SqlitePool,
     books: &mut [EbookMetadata],

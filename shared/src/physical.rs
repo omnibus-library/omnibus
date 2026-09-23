@@ -43,7 +43,7 @@ impl PhysicalCopy {
 /// The check-in flow has three front doors and they are not interchangeable
 /// to a reader: a barcode read off the cover, an ISBN typed at the keypad,
 /// and a title search whose ISBN came from the *provider* rather than from
-/// the reader at all (#2247).
+/// the reader at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]

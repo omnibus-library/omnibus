@@ -21,9 +21,9 @@ mod tests;
 /// to the previous per-author loop, but resolved in a constant handful of
 /// statements instead of ~4 per author.
 ///
-/// `author_aliases` is the whole-batch reindex-resurrection guard (#964)
+/// `author_aliases` is the whole-batch reindex-resurrection guard
 /// lookup built once by `super::books::collect_entity_alias_maps` before the
-/// per-book write loop starts, not re-resolved here (#1985).
+/// per-book write loop starts, not re-resolved here.
 pub(super) async fn insert_author_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -171,7 +171,7 @@ async fn upsert_authors(
 /// Insert the per-book link rows. Dedupes by name, keeping the first
 /// (lowest) position so a name repeated in the merged creators+contributors
 /// list keeps its first position — matching the old `INSERT OR IGNORE`
-/// loop. Splits on whether `aliased` already knows the target id (#964: a
+/// loop. Splits on whether `aliased` already knows the target id (a
 /// merged-away name) or needs the usual NOCASE join against `authors`.
 async fn insert_books_authors_link(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
@@ -233,7 +233,7 @@ async fn insert_direct_author_links(
 }
 
 /// Link rows resolved by name via the NOCASE join against `authors`, for
-/// the (common) case of a name with no alias — unchanged from before #964.
+/// the (common) case of a name with no alias.
 async fn insert_named_author_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,

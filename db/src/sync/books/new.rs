@@ -22,7 +22,7 @@ use super::{EntityAliasMaps, SyncError};
 /// to the attach heuristic so it can tell a relocation (the matched target's
 /// own file just vanished this scan) from a genuine cross-format attachment.
 /// `alias_maps` is the whole New+Changed batch's reindex-resurrection guard
-/// lookup (#1985), pre-resolved by `super::collect_entity_alias_maps`.
+/// lookup, pre-resolved by `super::collect_entity_alias_maps`.
 pub(super) async fn sync_new(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,

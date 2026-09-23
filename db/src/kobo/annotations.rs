@@ -60,7 +60,7 @@ pub async fn mark_adopted(
 }
 
 /// Record that this device has fetched the book's file over the wireless
-/// `download` route (#1647). This is the fact [`ack_served`] gates on —
+/// `download` route. This is the fact [`ack_served`] gates on —
 /// serving annotation bytes is not, by itself, proof a device adopted them —
 /// and it also makes a downloaded-but-not-yet-adopted book a
 /// [`changed_book_uuids`] candidate on its own, without waiting for a PATCH.
@@ -86,7 +86,7 @@ pub async fn mark_downloaded(
 
 /// Record the fingerprint of the annotation set this device fully downloaded
 /// — but only for a book this device is on record as holding
-/// ([`mark_downloaded`], #1647). A GET served for a book the device never
+/// ([`mark_downloaded`]). A GET served for a book the device never
 /// fetched is a no-op here rather than an ack: without this gate, delivery of
 /// the response body was treated as proof of adoption, and a device that
 /// never actually saved the file still watermarked past it, stranding the

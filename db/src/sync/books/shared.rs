@@ -216,7 +216,7 @@ async fn insert_book_file_row(
     Ok(())
 }
 
-/// Clear the F10 missing-files flag for a book that just (re)gained a file —
+/// Clear the missing-files flag for a book that just (re)gained a file —
 /// the Changed/New file-write chokepoint. Guarded on `is_missing_files = 1` so
 /// it's a no-op for the common already-attached insert.
 pub(in crate::sync) async fn clear_missing_files_flag(
@@ -394,9 +394,9 @@ pub(super) async fn insert_book_row(
 /// held for the whole of a bulk import. Series / publisher / language are
 /// single-valued per book, so they keep the simple resolve-then-link path.
 ///
-/// `alias_maps` is the whole-batch reindex-resurrection guard (#964) lookup
+/// `alias_maps` is the whole-batch reindex-resurrection guard lookup
 /// built once by `super::collect_entity_alias_maps` before the per-book
-/// write loop starts — not re-resolved here (#1985).
+/// write loop starts — not re-resolved here.
 pub(super) async fn insert_metadata_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -448,11 +448,11 @@ pub(super) async fn insert_metadata_links(
 /// Batch-insert the book's tag (subject) join rows: one `INSERT OR IGNORE`
 /// into `tags` for all distinct non-empty subjects, then one link insert that
 /// resolves ids via a NOCASE join. A subject a completed library-cleanup
-/// merge already absorbed (#964) skips the `tags` insert and links straight
+/// merge already absorbed skips the `tags` insert and links straight
 /// to its `entity_aliases` canonical id instead, so reindexing a file that
 /// still names the merged-away tag can't resurrect it.
 ///
-/// `tag_aliases` is the whole-batch alias map (#1985) — filtered down here to
+/// `tag_aliases` is the whole-batch alias map — filtered down here to
 /// just this book's own tags before being handed to [`link_aliased_tags`],
 /// which links straight to every id it's given; a batch-wide map would wrongly
 /// link this book to another book's aliased tags too.
