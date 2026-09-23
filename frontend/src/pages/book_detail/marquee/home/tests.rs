@@ -266,6 +266,7 @@ fn ResumeHost() -> Element {
             client_updated_at: 0,
             total_duration_seconds: None,
             resolved: None,
+            derived_epub_cfi: None,
         }),
         listening: None,
     };
@@ -337,6 +338,7 @@ fn chapter_now_prefers_the_cfi_spine_over_the_rounded_percent() {
         client_updated_at: 0,
         total_duration_seconds: None,
         resolved: None,
+        derived_epub_cfi: None,
     };
 
     // CFI in spine item 4 (package step 10 → ordinal 5 → 0-based 4) → Chapter One.

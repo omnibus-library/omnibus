@@ -476,6 +476,7 @@ mod tests {
                 client_updated_at: 0,
                 total_duration_seconds: None,
                 resolved: None,
+                derived_epub_cfi: None,
             }),
             listening: None,
         }

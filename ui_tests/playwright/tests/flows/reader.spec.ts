@@ -46,6 +46,13 @@ const PROGRESS_ERR_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "great-gatsby")!;
 const DEEP_LINK_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "romeo-and-juliet",
 )!;
+// Reserved for the percent-only restore test (#2446): it stores a position
+// with a percent and no CFI — a Kobo's shape — and asserts the open leaves it
+// untouched, so no other spec may open it in the reader or write its
+// position. A small multi-page book, for the same cold-open reason as above.
+const PERCENT_ONLY_BOOK = FIXTURE_BOOKS.find(
+  (b) => b.slug === "picture-of-dorian-gray",
+)!;
 // Reserved for the TOC-jump loading-state regression (see the reservation
 // comment on this fixture in fixtures/epubs.ts) — a real multi-chapter book,
 // so the contents drawer lists more than one row to jump between.
@@ -946,6 +953,66 @@ test("restores the exact reading position when the reader is reopened", async ({
     .toBe(turnedAt);
   await expect.poll(storedCfi, { timeout: 10_000 }).toBe(turnedCfi);
   expect(progressPosts, "a reopen must not write progress").toEqual([]);
+});
+
+test("opens a percent-only position where it is and never writes over it", async ({
+  page,
+  request,
+}) => {
+  // The structure wait below can outlast the 60s default on a cold shard.
+  test.setTimeout(180_000);
+  const uuid = await fetchBookUuidByTitle(request, PERCENT_ONLY_BOOK.title);
+
+  // What a Kobo sends: a whole-book percent and no CFI.
+  const seeded = await request.post("/api/progress", {
+    data: { book_uuid: uuid, format: "epub", progress_percent: 40 },
+  });
+  expect(seeded.status(), "seed a percent-only position").toBe(200);
+  // The server places it once the book's structure is extracted — a worker
+  // task queued behind the seed scan's word-count and page-count passes over
+  // the whole public-domain set, so a cold server takes a while to get here.
+  await expect
+    .poll(async () => (await storedProgress(request, uuid))?.derived_epub_cfi, {
+      timeout: 120_000,
+      intervals: [2_000],
+    })
+    .toMatch(/^epubcfi\(/);
+
+  const progressPosts: string[] = [];
+  page.on("request", (req) => {
+    if (
+      req.method() === "POST" &&
+      /\/api\/rpc\/progress(?:\?|$)/.test(req.url())
+    ) {
+      progressPosts.push(req.postData() ?? "");
+    }
+  });
+  await gotoReady(page, `/read/${uuid}`);
+  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+
+  // Lands at the stored place, read off the reader's own ruler once
+  // whole-book pagination resolves (no "~") — not at the cover, which reads
+  // 0%. The two rulers differ by a little, never by a tenth of the book.
+  const settledPercent = async () => {
+    const text = (await page.getByTestId("reader-footer").textContent()) ?? "";
+    const m = text.match(/\u00b7\u00a0(\d+)%/);
+    return m ? Number(m[1]) : -1;
+  };
+  await expect.poll(settledPercent, { timeout: 45_000 }).toBeGreaterThan(30);
+  expect(await settledPercent()).toBeLessThan(46);
+
+  // Asserted after the slow poll above, which outlasts the relocate
+  // debounce: the open wrote nothing, so the Kobo's row stands as it was.
+  expect(progressPosts, "opening must not write progress").toEqual([]);
+  const stored = await storedProgress(request, uuid);
+  expect(stored?.epub_cfi ?? null).toBeNull();
+  expect(stored?.progress_percent).toBe(40);
+
+  // Moving off the landing is the reader's own position, and it saves.
+  const turned = await expectMutation(page, PROGRESS_POST, async () =>
+    page.getByTestId("reader-next").click(),
+  );
+  expect(turned.request.postDataJSON().update.epub_cfi).toMatch(/^epubcfi\(/);
 });
 
 test("a ?cfi= deep link opens the reader at that passage, not the resume point", async ({

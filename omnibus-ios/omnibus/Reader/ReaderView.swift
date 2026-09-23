@@ -725,7 +725,10 @@ struct ReaderView: View {
         // place.
         let local = await UserDataService.localProgress(uuid: book.uuid, format: .epub)
         openedProgress = local
-        startCFI = local?.epubCFI
+        startCFI = ReaderController.openingCFI(for: local)
+        // The newest row either side holds — what a close must not overwrite
+        // with a landing the reader never moved from.
+        var opening = local
         highlights = await UserDataService.localHighlights(uuid: book.uuid)
         bookmarkCount = await UserDataService.localBookmarks(uuid: book.uuid).count
 
@@ -741,12 +744,17 @@ struct ReaderView: View {
         // all: cancelling that read unwinds through the outbox drain it
         // triggers, and joining a drain is not cancellable.
         let remote = Task { @MainActor in await newerRemotePosition() }
-        if let settled = await firstResult(of: remote, within: PositionSync.openDeadline),
-           settled != startCFI {
-            startCFI = settled
+        if let settled = await firstResult(of: remote, within: PositionSync.openDeadline) {
+            opening = settled
+            if let cfi = ReaderController.openingCFI(for: settled) { startCFI = cfi }
         }
 
-        controller.configure(book: book, startCFI: startCFI, highlights: highlights)
+        controller.configure(
+            book: book,
+            startCFI: startCFI,
+            holdStoredPosition: ReaderController.storesPositionWithoutCFI(opening),
+            highlights: highlights
+        )
         didConfigure = true
         sessionStart = Date()
 
@@ -778,14 +786,10 @@ struct ReaderView: View {
 
     /// The server's position for this book, when it is newer than the one this
     /// device opened on. Runs to completion whether or not anyone is still
-    /// waiting on it.
-    private func newerRemotePosition() async -> String? {
-        let remote = await PositionSync.newerRemote(
-            uuid: book.uuid, format: .epub, than: openedProgress
-        )?.epubCFI?.nilIfBlank
-        // A further position written by the PDF or comic reader of a mixed
-        // book is not somewhere epub.js can display.
-        return remote.flatMap { ReaderController.isEpubCFI($0) ? $0 : nil }
+    /// waiting on it. The whole row, not a CFI: a percent-only one still has to
+    /// hold the close's write back even when there is nowhere to open it.
+    private func newerRemotePosition() async -> ProgressRecord? {
+        await PositionSync.newerRemote(uuid: book.uuid, format: .epub, than: openedProgress)
     }
 
     /// Fold in whatever the server has that this device doesn't.
@@ -795,7 +799,7 @@ struct ReaderView: View {
     /// the reader: if another device left off somewhere else *after* our last
     /// local write, we offer the jump and let the reader decide. Moving the
     /// page out from under someone mid-sentence is worse than being behind.
-    private func reconcileWithServer(remote: Task<String?, Never>) async {
+    private func reconcileWithServer(remote: Task<ProgressRecord?, Never>) async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { @MainActor in
                 for await items in UserDataService.highlights(uuid: book.uuid).values() {
@@ -811,8 +815,10 @@ struct ReaderView: View {
             group.addTask { @MainActor in
                 // Beat the deadline and it is already the opening position, so
                 // this is a no-op; landed after it and it becomes an offer.
-                guard let settled = await remote.value, settled != startCFI else { return }
-                withAnimation(Motion.settle) { syncOffer = settled }
+                let settled = await remote.value
+                guard let cfi = ReaderController.openingCFI(for: settled), cfi != startCFI
+                else { return }
+                withAnimation(Motion.settle) { syncOffer = cfi }
             }
             group.addTask { @MainActor in
                 // Cross-format: reading resumes where listening got to.
@@ -864,7 +870,7 @@ struct ReaderView: View {
     /// backgrounding — as opposed to the steady trickle of page turns, which
     /// still queue immediately but push at most once every four seconds.
     private func persist(force: Bool) async {
-        guard let cfi = controller.location?.cfi else { return }
+        guard !controller.holdsStoredPosition, let cfi = controller.location?.cfi else { return }
         await UserDataService.saveProgress(
             ProgressUpdate(bookUUID: book.uuid, format: .epub, epubCFI: cfi, audioPositionSeconds: nil),
             push: pushThrottle.shouldPush(force: force)

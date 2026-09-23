@@ -678,6 +678,9 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     language: "en",
     hasCover: true,
   },
+  // `picture-of-dorian-gray` is reserved for reader.spec.ts's percent-only
+  // restore test (#2446): it stores a position with no CFI and asserts the
+  // open leaves it untouched — no other spec may open it in the reader.
   {
     slug: "picture-of-dorian-gray",
     filename: "public_domain/picture_of_dorian_gray.epub",

@@ -133,7 +133,7 @@ async fn mount_and_drain(
             });
         }
     }
-    let cfi = record.and_then(|r| r.epub_cfi).or(local_saved);
+    let start = super::start::reader_start(None, record.as_ref(), local_saved);
 
     // Backstop for the route-level offline bounce (`BookReadPage`'s guard):
     // at cold start the app may still believe it's online, and the progress
@@ -167,7 +167,7 @@ async fn mount_and_drain(
     };
     let eval = interop::install_reader_surface(
         &file_url,
-        &init_opts(&uuid, prefs, cfi),
+        &init_opts(&uuid, prefs, start.cfi),
         &scripts,
         crate::native_share::supported(),
     );
@@ -178,7 +178,7 @@ async fn mount_and_drain(
         .await
         .unwrap_or_default();
 
-    drain_reader_events(eval, uuid, server_url, sigs, saved).await;
+    drain_reader_events(eval, uuid, server_url, sigs, saved, start.hold_first_write).await;
 }
 
 /// Build the glue `init` options bag from the current reader prefs and the
@@ -213,13 +213,15 @@ fn init_opts(uuid: &str, prefs: ReaderPrefs, cfi: Option<String>) -> serde_json:
 /// and persisting position on relocate. Returns when the channel closes
 /// (surface torn down / navigation). The drain loop itself is
 /// [`crate::js_interop::drain_events`], shared with the barcode scanner and
-/// mobile audio interop.
+/// mobile audio interop. `hold_first_write` is
+/// [`super::start::ReaderStart::hold_first_write`].
 async fn drain_reader_events(
     eval: dioxus::document::Eval,
     uuid: String,
     server_url: String,
     sigs: InteropSignals,
     saved_highlights: Vec<Highlight>,
+    hold_first_write: bool,
 ) {
     let InteropSignals {
         mut status,
@@ -230,7 +232,10 @@ async fn drain_reader_events(
         mut search_results,
         mut chrome_hidden,
     } = sigs;
-    let mut last_cfi: Option<String> = None;
+    let mut gate = WriteGate {
+        last_cfi: None,
+        hold_first_write,
+    };
     crate::js_interop::drain_events(eval, move |event: ReaderEvent| match event {
         ReaderEvent::Relocate { json } => handle_relocate(
             &json,
@@ -239,7 +244,7 @@ async fn drain_reader_events(
             &mut status,
             &mut loc,
             toc,
-            &mut last_cfi,
+            &mut gate,
         ),
         ReaderEvent::Status { state } => {
             handle_status(&state, &mut status, &mut highlights, &saved_highlights)
@@ -280,9 +285,16 @@ async fn drain_reader_events(
     .await;
 }
 
+/// What decides whether a relocate is written: the last CFI seen, and the
+/// opening landing [`super::start::ReaderStart::hold_first_write`] holds back.
+struct WriteGate {
+    last_cfi: Option<String>,
+    hold_first_write: bool,
+}
+
 /// Handle a [`ReaderEvent::Relocate`]: re-derive chapter/total from the TOC,
-/// persist a genuinely-moved non-echo position, and clear a TOC-jump
-/// `Loading` overlay.
+/// persist a genuinely-moved non-echo position the gate lets through, and
+/// clear a TOC-jump `Loading` overlay.
 fn handle_relocate(
     json: &str,
     uuid: &str,
@@ -290,7 +302,7 @@ fn handle_relocate(
     status: &mut Signal<ReaderStatus>,
     loc: &mut Signal<RelocateData>,
     toc: Signal<Vec<TocEntry>>,
-    last_cfi: &mut Option<String>,
+    gate: &mut WriteGate,
 ) {
     let Ok(mut data) = serde_json::from_str::<RelocateData>(json) else {
         return;
@@ -313,9 +325,9 @@ fn handle_relocate(
     // a later non-echo re-emit of the same CFI (a re-render) stays deduped
     // rather than re-posting the unmoved position.
     if let Some(cfi) = data.cfi.clone() {
-        let moved = last_cfi.as_deref() != Some(cfi.as_str());
-        *last_cfi = Some(cfi.clone());
-        if !data.echo && moved {
+        let moved = gate.last_cfi.as_deref() != Some(cfi.as_str());
+        gate.last_cfi = Some(cfi.clone());
+        if !data.echo && moved && !std::mem::take(&mut gate.hold_first_write) {
             crate::reader_progress::save(uuid, &cfi);
             persist_progress(uuid, server_url, cfi, data.pct);
         }

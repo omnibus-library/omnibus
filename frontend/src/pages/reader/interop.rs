@@ -80,8 +80,12 @@ pub(crate) fn install_reader_web_interop(uuid: String, prefs: ReaderPrefs, sigs:
         let justify_val = *prefs.justify.read();
         let spread_lit = json_literal(prefs.spread.read().to_css());
 
+        // Per mount: set by the bootstrap once it knows where the book opens,
+        // read by the relocate callback registered just below.
+        let hold_first_write = std::rc::Rc::new(std::cell::Cell::new(false));
         if let Some(window) = web_sys::window() {
-            *cb_holder.borrow_mut() = register_window_callbacks(&window, uuid_cb.clone(), sigs);
+            *cb_holder.borrow_mut() =
+                register_window_callbacks(&window, uuid_cb.clone(), sigs, hold_first_write.clone());
         }
 
         let bootstrap = BootstrapLiterals {
@@ -102,6 +106,7 @@ pub(crate) fn install_reader_web_interop(uuid: String, prefs: ReaderPrefs, sigs:
             bootstrap,
             highlights,
             sigs.loc,
+            hold_first_write,
         ));
     }));
 
@@ -148,12 +153,15 @@ async fn post_epub_progress(uuid: String, cfi: String, percent_for_post: i64) {
 /// the TOC's own order (`resolve_chapter_position`, issue #1909 AC1),
 /// persists + POSTs a real (non-echo, moved) position, and clears a
 /// TOC-jump `Loading` back to `Ready` once a position lands (AC3).
+/// `hold_first_write` swallows the first such write — see
+/// [`super::start::ReaderStart::hold_first_write`].
 #[cfg(feature = "web")]
 fn build_relocate_callback(
     uuid_for_save: String,
     mut status: Signal<ReaderStatus>,
     mut loc: Signal<super::RelocateData>,
     toc: Signal<Vec<TocEntry>>,
+    hold_first_write: std::rc::Rc<std::cell::Cell<bool>>,
 ) -> wasm_bindgen::prelude::Closure<dyn FnMut(String)> {
     use wasm_bindgen::prelude::*;
 
@@ -175,17 +183,21 @@ fn build_relocate_callback(
             let moved = relocate_moved(&data.cfi, &last_posted_cfi);
             if let Some(cfi) = data.cfi.clone().filter(|_| !data.echo && moved) {
                 last_posted_cfi = Some(cfi.clone());
-                crate::reader_progress::save(&uuid_for_save, &cfi);
-                // `progress_percent` is the same whole-book figure the
-                // footer/ribbon render (`data.pct`) — sending it keeps the
-                // landing hero's stored percent in step with what the
-                // reader itself is showing (issue #1909, AC2).
-                let percent_for_post = i64::from(data.pct.min(100));
-                wasm_bindgen_futures::spawn_local(post_epub_progress(
-                    uuid_for_save.clone(),
-                    cfi,
-                    percent_for_post,
-                ));
+                // A held landing counts as posted, so only movement off it
+                // writes.
+                if !hold_first_write.replace(false) {
+                    crate::reader_progress::save(&uuid_for_save, &cfi);
+                    // `progress_percent` is the same whole-book figure the
+                    // footer/ribbon render (`data.pct`) — sending it keeps the
+                    // landing hero's stored percent in step with what the
+                    // reader itself is showing (issue #1909, AC2).
+                    let percent_for_post = i64::from(data.pct.min(100));
+                    wasm_bindgen_futures::spawn_local(post_epub_progress(
+                        uuid_for_save.clone(),
+                        cfi,
+                        percent_for_post,
+                    ));
+                }
             }
             if *status.peek() == ReaderStatus::Loading {
                 status.set(ReaderStatus::Ready);
@@ -269,10 +281,12 @@ fn register_window_callbacks(
     window: &web_sys::Window,
     uuid_cb: String,
     sigs: InteropSignals,
+    hold_first_write: std::rc::Rc<std::cell::Cell<bool>>,
 ) -> Vec<wasm_bindgen::prelude::Closure<dyn FnMut(String)>> {
     use wasm_bindgen::prelude::*;
 
-    let relocate = build_relocate_callback(uuid_cb, sigs.status, sigs.loc, sigs.toc);
+    let relocate =
+        build_relocate_callback(uuid_cb, sigs.status, sigs.loc, sigs.toc, hold_first_write);
     let simple = build_simple_callbacks(sigs);
 
     let _ = js_sys::Reflect::set(
@@ -308,10 +322,9 @@ struct BootstrapLiterals {
     justify_val: bool,
 }
 
-/// Resolve the starting CFI (a `?cfi=` deep link, else server progress, else
-/// the local save), run the epub.js bootstrap IIFE, then seed the annotation
-/// layer from the saved highlights and publish them into the `highlights`
-/// signal.
+/// Resolve the starting CFI ([`super::start::reader_start`]), run the epub.js
+/// bootstrap IIFE, then seed the annotation layer from the saved highlights
+/// and publish them into the `highlights` signal.
 ///
 /// `deep_link_cfi` wins outright: the reader was opened *at* a passage (from
 /// the book-detail saved-passages list), so resuming where this book was last
@@ -331,6 +344,7 @@ async fn spawn_bootstrap_and_highlights(
     lits: BootstrapLiterals,
     mut highlights: Signal<Vec<Highlight>>,
     mut loc: Signal<super::RelocateData>,
+    hold_first_write: std::rc::Rc<std::cell::Cell<bool>>,
 ) {
     use super::bootstrap::{reader_bootstrap_js, BootstrapArgs};
     use super::reader_call_json2;
@@ -338,8 +352,8 @@ async fn spawn_bootstrap_and_highlights(
     use crate::js_interop::json_literal;
 
     // Only pay for the progress round trip when nothing already decided.
-    let chosen = match deep_link_cfi {
-        Some(cfi) => Some(cfi),
+    let record = match &deep_link_cfi {
+        Some(_) => None,
         None => {
             let record = crate::data::get_progress("", &uuid, omnibus_shared::ProgressFormat::Epub)
                 .await
@@ -357,15 +371,13 @@ async fn spawn_bootstrap_and_highlights(
                     });
                 }
             }
-            // A page anchor (a PDF's `pdf-page:N`) on a book that also has
-            // an EPUB is not a CFI and must never reach epub.js.
             record
-                .and_then(|r| r.epub_cfi)
-                .filter(|cfi| omnibus_shared::is_epub_cfi(cfi))
-                .or(local_saved)
         }
     };
-    let cfi_arg = json_literal(&chosen);
+    let start = super::start::reader_start(deep_link_cfi, record.as_ref(), local_saved);
+    // Set before the glue boots, so it is in place for the first relocate.
+    hold_first_write.set(start.hold_first_write);
+    let cfi_arg = json_literal(&start.cfi);
     let locations_key_lit = json_literal(&uuid);
     let js = reader_bootstrap_js(&BootstrapArgs {
         url_lit: &lits.url_lit,

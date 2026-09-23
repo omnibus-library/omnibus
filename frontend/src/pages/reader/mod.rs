@@ -26,6 +26,9 @@ pub(crate) mod reader_bookmarks;
 mod search_panel;
 pub(crate) mod selection;
 mod signals;
+// Only the two interops consume it; SSR compiles it for the tests alone.
+#[cfg(any(feature = "web", feature = "mobile", test))]
+mod start;
 mod sync_banner;
 mod toc_drawer;
 mod typography;

@@ -6,6 +6,8 @@ export interface ProgressRecord {
   epub_cfi: string | null;
   audio_position_seconds: number | null;
   progress_percent: number | null;
+  /** Where a percent-only epub row opens — read paths only, never stored. */
+  derived_epub_cfi?: string;
   total_duration_seconds?: number;
   resolved?: {
     spine_index?: number;

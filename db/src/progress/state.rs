@@ -371,6 +371,7 @@ fn row_to_record(
         client_updated_at: row.try_get::<i64, _>("client_updated_at")?,
         total_duration_seconds: None,
         resolved: None,
+        derived_epub_cfi: None,
     })
 }
 
