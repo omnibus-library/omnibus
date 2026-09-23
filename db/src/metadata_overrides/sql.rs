@@ -91,18 +91,29 @@ macro_rules! creator_sort_sql {
     };
 }
 
-/// The Author sort axis: the author a book is *displayed* under — the
-/// override's first creator where one exists, the scanned `author_sort`
-/// otherwise — in `author_dictionary` order, so an edited book whose name was
-/// typed as `Andy Weir` files beside the scanned `Weir, Andy`.
+/// The Author sort axis: the author a book is *displayed* under, in
+/// `author_dictionary` order, so an edited book whose name was typed as
+/// `Andy Weir` files beside the scanned `Weir, Andy`.
+///
+/// A creators override replaces the list wholesale, the empty list included,
+/// so while one is present (the key holds an array, the shape serde reads as
+/// `Some`) the axis is its first creator — NULL for an emptied list, filed
+/// with the other authorless books — and the scanned `author_sort` only when
+/// there is none. `effective_tags_sql!`'s presence test, for the same reason.
 macro_rules! effective_author_sql {
-    ($file_as:literal, $name:literal ; $scanned:literal) => {
+    ($scanned:literal) => {
         concat!(
-            "COALESCE(",
-            creator_sort_sql!(override_sql!($file_as), override_sql!($name)),
-            ", ",
+            "(CASE WHEN ",
+            overrides_win_sql!(),
+            " AND json_type(CASE WHEN json_valid(mo.overrides) THEN mo.overrides ELSE '{}' END,",
+            " '$.creators') = 'array' THEN ",
+            creator_sort_sql!(
+                override_sql!("$.creators[0].file_as"),
+                override_sql!("$.creators[0].name")
+            ),
+            " ELSE ",
             $scanned,
-            ") COLLATE author_dictionary"
+            " END) COLLATE author_dictionary"
         )
     };
 }
