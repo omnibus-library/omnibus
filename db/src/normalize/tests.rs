@@ -231,10 +231,8 @@ async fn backfill_author_sort_reshapes_given_first_rows_only_and_is_idempotent()
     assert_eq!(read("u1").await, "Weir, Andy sentinel");
 }
 
-/// #2451: a comma-less OPF `file_as` was stored verbatim, so a book whose
-/// file carried `Andy Weir` (or a word-order key with no comma) filed apart
-/// from its author's other books. The backfill re-keys it from the linked
-/// author's display name, the same way the sync writers now do.
+/// A comma-less stored key is re-derived from the linked author's display
+/// name, as the sync writers derive it.
 #[tokio::test]
 async fn backfill_author_sort_rekeys_a_commaless_file_as_from_the_linked_author() {
     let pool = init_db("sqlite::memory:").await.unwrap();

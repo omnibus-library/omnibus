@@ -79,8 +79,7 @@ async fn walk(pool: &SqlitePool, sort: SortKey, dir: SortDir) -> Vec<i64> {
     }
 }
 
-/// The #2451 library: five surnames around `Pérez`, plus the tie the plain
-/// spelling must win. `Perry` was re-attributed in the editor as a display
+/// Five surnames around `Pérez`, plus the tie the plain spelling must win. `Perry` was re-attributed in the editor as a display
 /// name, and `Pettichord` as a display name over a scan that keyed it under B.
 async fn seed_p_group(pool: &SqlitePool) -> Vec<i64> {
     let lib = insert_lib(pool, "/lib").await;

@@ -44,8 +44,6 @@ async fn list_authors_returns_all_with_counts_and_alpha_order() {
     // IDs are populated so cards can route to /authors/:id.
     assert!(authors.iter().all(|a| a.id > 0));
 }
-/// #2451: the index files every author on one key shape, whatever form the
-/// file's `file-as` took, and orders accented surnames in dictionary order.
 #[tokio::test]
 async fn list_authors_orders_by_surname_key_in_dictionary_order() {
     let _guard = CoversTempDir::new("authors_dictionary_order");
