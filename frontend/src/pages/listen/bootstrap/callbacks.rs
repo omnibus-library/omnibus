@@ -17,7 +17,7 @@ use super::{JsCallbackHolder, NEXT_SEQUENCE_FILE};
 /// `loaded_file_id` is the shared signal `run_manifest_init` fills once the
 /// manifest names the file it resolved; every position POST reads it live,
 /// so writes name the file playback is actually in even though these
-/// closures are registered before the manifest lands (#1888). A file switch
+/// closures are registered before the manifest lands. A file switch
 /// always re-boots (see [`super::needs_reload`]), which resets the signal
 /// before the next manifest fills it again.
 #[expect(clippy::too_many_arguments, reason = "one closure per JS callback")]
@@ -211,7 +211,7 @@ fn ended_callback(
 /// The playing flag flips on every pause (src swaps and teardown fire
 /// them too), but only a session the user actually drove persists its
 /// position — a programmatic pause on an untouched boot re-states the
-/// seeded spot with a fresh clock (#1972).
+/// seeded spot with a fresh clock.
 fn pause_callback(
     uuid_for_pause: String,
     loaded_file_id: Signal<Option<i64>>,

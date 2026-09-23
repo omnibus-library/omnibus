@@ -325,7 +325,7 @@ fn SpGenreRow(
 /// The year shown in a palette book row, gated through the shared sentinel
 /// rule so Calibre's `0101-01-01` placeholder (which `PaletteBookHit.year`
 /// carries verbatim as `"0101"`) renders nothing — matching the library table
-/// and the detail page, which already suppress it (#2348).
+/// and the detail page, which already suppress it.
 fn palette_row_year(year: Option<&str>) -> String {
     year.and_then(crate::format::format_year)
         .unwrap_or_default()

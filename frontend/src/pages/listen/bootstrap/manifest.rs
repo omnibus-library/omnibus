@@ -12,7 +12,7 @@ use crate::data;
 /// Fetch `/api/audiobooks/{uuid}/manifest` — targeting the picker's
 /// `file_id` when one was selected, else the progress row's stored
 /// `book_file_id` so multi-file books resume in the file the seconds were
-/// recorded in (#1888) — then either:
+/// recorded in — then either:
 /// * **Direct mode** — call `initDirect` with the parts list (instant
 ///   playback for m4b/m4a/mp3/aac). `hls_ready` flips once the JS side
 ///   confirms via `__omnibusOnAudioBooted` that a source is actually
@@ -135,7 +135,7 @@ fn boot_is_current(
 /// instead of the stored row — a post-boot corrective seek would race
 /// `initDirect`'s one-shot restore seek and lose. Fetched even for an
 /// explicit `?file_id=` — every Continue card carries the row's file id,
-/// and skipping follow there reopened books at the stale spot (#1972);
+/// and skipping follow there reopened books at the stale spot;
 /// `resolve_follow_boot` still stands aside when the pick names a
 /// *different* file than the candidate maps to. `None` when a newer book
 /// was selected mid-fetch.

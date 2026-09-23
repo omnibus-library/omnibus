@@ -45,7 +45,7 @@ pub(super) fn bad_cursor_response() -> Response {
 
 /// Fetch one page of the ebook-scoped library for the All Books feeds:
 /// title order, e-reader formats only, narrowed to books `user` may see
-/// (#932 — drops a book confined to a manual shelf `user` cannot see).
+/// (dropping a book confined to a manual shelf `user` cannot see).
 /// `pub(super)` — the single read both catalogs' All Books pages come from.
 pub(super) async fn load_page(
     state: &AppState,

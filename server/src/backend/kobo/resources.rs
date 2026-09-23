@@ -22,8 +22,8 @@ use crate::http_errors::internal;
 /// falling back to plain EPUB. Mirrors the USB sideload path's budget.
 const KEPUB_CONVERT_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
 
-/// `GET library/tags` — device-side collections. Slice A returns an empty set;
-/// shelves-as-collections is #924.
+/// `GET library/tags` — device-side collections. Always an empty set:
+/// shelves are not surfaced as device collections.
 pub async fn library_tags(_auth: KoboAuthUser) -> Response {
     Json(serde_json::json!([])).into_response()
 }
@@ -94,7 +94,7 @@ pub async fn download(
     response
 }
 
-/// Record that `auth`'s device now holds this book (#1647) — the gate
+/// Record that `auth`'s device now holds this book — the gate
 /// `ack_served` checks before letting a later `GET .../annotations` advance
 /// its watermark — and give any web-origin annotation still waiting on a
 /// KEPUB cache one more chance to downsync. Only called once the caller has

@@ -300,7 +300,7 @@ pub(super) fn DeleteUserModal(
     }
 }
 
-/// Device & session management modal (F5.4, #910): lists a target user's
+/// Device & session management modal: lists a target user's
 /// live sessions and registered devices, each with a Revoke action. Both
 /// lists reload after any revoke so the rendered state always matches the
 /// server. Devices are listed separately from sessions — revoking a device

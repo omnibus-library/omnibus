@@ -59,7 +59,7 @@ pub(super) struct RowContext {
 /// the established clear sentinel — the same one the full metadata-edit
 /// page's `build_overrides` already emits (see
 /// `frontend::pages::metadata_edit::build_overrides`) — and the merge +
-/// `apply_overrides` read path already understands it (#1085).
+/// `apply_overrides` read path already understands it.
 pub(super) fn field_override(field: EditField, value: &str) -> MetadataOverrides {
     let mut overrides = MetadataOverrides::default();
     let value = Some(value.trim().to_string());
@@ -441,7 +441,7 @@ fn build_cell_keydown_handler(
 /// changed from `initial`. Clicking into a cell and back out without typing
 /// must not POST an override equal to the scanned value (which would leak
 /// `metadata_overrides` rows that match the underlying scan, defeating the
-/// F5.1 merge semantics).
+/// override merge semantics).
 fn build_cell_blur_handler(
     draft: Signal<String>,
     mut editing: Signal<Option<EditField>>,

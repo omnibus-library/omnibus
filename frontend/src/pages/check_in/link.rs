@@ -15,7 +15,7 @@ use crate::{data, use_server_url};
 ///
 /// The palette's `author_display` is kept as one entry rather than split on
 /// `", "`: a sort-form name (`Weir, Andy`) carries that separator itself, and
-/// splitting it turned one author into two (#2460). The byline renders a
+/// splitting it turned one author into two. The byline renders a
 /// single entry verbatim, so the card reads exactly as the search row did.
 /// The two holdings flags come off the hit — `formats` says whether a file
 /// exists, `has_physical` whether a copy is filed — because the confirm

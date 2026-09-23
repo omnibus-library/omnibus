@@ -15,7 +15,7 @@ use super::panel_shell::ListenDrawerShell;
 /// One chapter row: ordinal/checkmark/play glyph, title, and
 /// duration-or-remaining label. `i` is the chapter's index in the list.
 /// The duration shows real book-time — matching bookmark stamps and the
-/// book detail page (#2344) — while the current row's "remaining" is a
+/// book detail page — while the current row's "remaining" is a
 /// rate-adjusted estimate of the listening time left.
 fn chapter_row(
     i: usize,
@@ -98,7 +98,7 @@ pub(super) fn ChaptersDrawer(
     current_chapter_index: usize,
     elapsed: f64,
     /// Current playback rate — only the current chapter's "remaining" label
-    /// divides by it; chapter durations show real book-time (#2344).
+    /// divides by it; chapter durations show real book-time.
     rate: f64,
     on_seek: EventHandler<f64>,
     on_close: EventHandler<()>,

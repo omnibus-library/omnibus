@@ -393,7 +393,7 @@ fn render_delete_modal(
 
 /// Builds the Kobo sync-opt-in handler: flips `sync_to_kobo` and refetches on
 /// success. Toggling immediately changes what the next device sync returns —
-/// there is no separate publish step (#924 AC2).
+/// there is no separate publish step.
 fn build_on_toggle_kobo(
     server_url: String,
     id: i64,

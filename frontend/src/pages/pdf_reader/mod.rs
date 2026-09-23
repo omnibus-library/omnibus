@@ -303,7 +303,7 @@ fn apply_event(event: interop::PdfEvent, uuid: &str, server_url: &str, sigs: Pdf
 ///
 /// `use_reactive!` re-runs this whenever the route params change on an
 /// already-mounted instance — the router reuses the page across a same-route
-/// param swap rather than remounting it (#1612) — and again on Retry (the
+/// param swap rather than remounting it — and again on Retry (the
 /// `retry` signal read inside). The retained task is cancelled first so the
 /// previous document's drain can't land events on the new one, and every
 /// per-document signal is reset so the previous title, annotations, and open

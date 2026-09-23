@@ -131,7 +131,7 @@ mod server_auth {
         pub can_edit: bool,
         /// The live session this request authenticated with. Threaded into
         /// `db::auth::change_password` so a self-service password change can
-        /// exclude the caller's own session from its revocation sweep (#1402).
+        /// exclude the caller's own session from its revocation sweep.
         pub session_id: i64,
     }
 

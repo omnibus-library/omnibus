@@ -16,11 +16,11 @@ use omnibus_shared::BookFileInfo;
 /// facet; the previous `tag:Dark tag:academia` was one facet *per word*,
 /// AND-ed, which is a different question — "Science Fiction & Fantasy"
 /// became four facets including `tag:&`, and the page then returned a count
-/// that disagreed with the row the reader clicked (#2504).
+/// that disagreed with the row the reader clicked.
 /// `db::helpers::build_search_query` keeps a quoted run whole, so the value
 /// arrives intact and is matched as one exact tag or genre name against
-/// membership — never as an FTS phrase, which lost the name's boundaries
-/// (#2533). Only free text, `author:` and `series:` reach FTS.
+/// membership — never as an FTS phrase, which lost the name's boundaries.
+/// Only free text, `author:` and `series:` reach FTS.
 ///
 /// A single-word value stays unquoted — it needs no quoting, and the shorter
 /// URL is the one a reader sees and might edit.
@@ -45,8 +45,8 @@ pub fn facet_query(prefix: &str, value: &str) -> String {
 /// e.g. `tag:"Science Fiction"` → `Science Fiction`.
 ///
 /// The inverse of [`facet_query`], and the reason the results heading can
-/// name what was clicked instead of echoing the constructed query string
-/// (#2504). `None` for anything else — free text, several facets, a facet
+/// name what was clicked instead of echoing the constructed query string.
+/// `None` for anything else — free text, several facets, a facet
 /// plus text — where the raw query *is* what the reader asked and rewriting
 /// it would hide the query from them.
 pub fn single_facet_value(query: &str) -> Option<String> {
@@ -130,8 +130,7 @@ pub fn plural_noun(n: i64, singular: &str) -> String {
 
 /// `"1 session"` / `"4 sessions"` — a count and its noun in one string,
 /// pluralized on the count. Reach for this instead of `format!("{n} nouns")`:
-/// a hand-written plural noun renders "1 days in" the moment the count is one
-/// (#2250).
+/// a hand-written plural noun renders "1 days in" the moment the count is one.
 pub fn count_label(n: i64, singular: &str) -> String {
     format!("{n} {}", plural_noun(n, singular))
 }
@@ -243,7 +242,7 @@ pub fn format_date_short_opt(raw: &str) -> Option<String> {
 /// on the one above. `added_at` is a moment in time (`2026-09-08T03:36:00Z`),
 /// so which day it fell on depends on where the reader is: 03:36 UTC is the
 /// previous evening in Detroit, and dating it in UTC put "Added Sep 8th" on a
-/// page whose every other stamp read Sep 7 (#2464). A *publication* date
+/// page whose every other stamp read Sep 7. A *publication* date
 /// carries no time of day and belongs to no zone — shifting it would move a
 /// book's publication a day earlier for half the world — so `published` keeps
 /// [`format_date_short_opt`].
@@ -315,8 +314,7 @@ pub fn format_date_month_year(raw: &str) -> String {
 /// em dash — for the series card eyebrow, which drops the whole date slot
 /// (its `·` separator included) rather than trailing a bare dash. Mirrors
 /// [`format_date_short_opt`]; without it a sentinel/absent date renders `· —`
-/// beside a `None` date's nothing, so two equally-dateless books disagree
-/// (#2294, #2360).
+/// beside a `None` date's nothing, so two equally-dateless books disagree.
 pub fn format_date_month_year_opt(raw: &str) -> Option<String> {
     render_date(raw, |d| match d.month.and_then(month_name) {
         Some(month) => format!("{month} {}", d.year),

@@ -27,7 +27,7 @@ pub fn duration_label(secs: i64) -> String {
 /// `"Nov 14, 2023 · 22:13"` from unix seconds, shifted by `offset_secs`.
 ///
 /// Both halves move together: a sitting at 23:36 local on the 7th is not
-/// "Sep 8 · 03:36" (#2464). Pass [`crate::time::local_date_offset`]'s result
+/// "Sep 8 · 03:36". Pass [`crate::time::local_date_offset`]'s result
 /// — `0` until the client is past hydration, so SSR and the first WASM paint
 /// agree (rule 07). This is the client rendering a stored instant in the
 /// viewer's zone, which rule 10 puts outside its server-side day-boundary

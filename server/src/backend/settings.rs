@@ -83,7 +83,7 @@ pub(super) async fn post_registration(
 }
 
 /// `GET /api/settings/mcp` — admin-only read of the hosted `/mcp` endpoint
-/// toggle (#2314). Admin-gated like every other instance setting; the `/mcp`
+/// toggle. Admin-gated like every other instance setting; the `/mcp`
 /// route itself re-reads the flag per request.
 pub(super) async fn get_mcp(_admin: AdminUser, State(state): State<AppState>) -> Response {
     match db::mcp_enabled(&state.pool).await {

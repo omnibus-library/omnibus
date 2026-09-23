@@ -18,7 +18,7 @@ use crate::Route;
 /// write lands on the server the moment it is picked, so it can never be part
 /// of what Save sends. It is tracked here anyway because the bar's job is to
 /// describe the state of the editor, and "No changes" over a book whose
-/// cover just changed is a lie the reader acts on (#2241). Under review the
+/// cover just changed is a lie the reader acts on. Under review the
 /// same flag means "a cover is staged", and Add does carry it.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct DirtyState {

@@ -410,7 +410,7 @@ struct ReaderDisplay {
 /// `status` gates the top-bar chapter readout: while a TOC/bookmark/search
 /// jump is in flight (`ReaderStatus::Loading`), the header blanks the
 /// previous chapter's title/sub-line rather than showing it alongside the
-/// loading affordance — see [`ReaderStatus`] and issue #1909 (AC3). The
+/// loading affordance — see [`ReaderStatus`]. The
 /// footer/ribbon strings are left alone; they settle the moment the new
 /// relocate lands, same as `status` itself.
 fn derive_reader_display(
@@ -525,7 +525,7 @@ pub(super) struct ReaderNavHandlers {
     pub on_back: EventHandler<MouseEvent>,
     pub on_prev: EventHandler<MouseEvent>,
     pub on_next: EventHandler<MouseEvent>,
-    /// The error overlay's "Retry" action (issue #1895, AC3).
+    /// The error overlay's "Retry" action.
     pub on_retry: EventHandler<MouseEvent>,
 }
 

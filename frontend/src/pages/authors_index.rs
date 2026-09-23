@@ -20,7 +20,7 @@ struct AuthorIndexCounts {
     /// Σ of each author's `book_count` — author–book *credits*, not distinct
     /// titles: a two-creator book contributes one credit per creator. Named
     /// and labelled for what it holds so the header can't misreport it as a
-    /// book count (#2292). A true distinct-book total isn't derivable here —
+    /// book count. A true distinct-book total isn't derivable here —
     /// the `AuthorSummary` list carries no per-book identity.
     total_credits: usize,
 }
@@ -159,7 +159,7 @@ fn build_filter_state(
 /// Header subtitle. The second figure counts author–book *credits* (Σ of each
 /// author's book count), not distinct titles — a multi-creator book adds one
 /// credit per creator — so it is labelled "credits" rather than "books" to
-/// avoid a count that inflates past the real title total (#2292).
+/// avoid a count that inflates past the real title total.
 fn index_subtitle(total_authors: usize, total_credits: usize) -> String {
     format!(
         "{total_authors} authors \u{b7} {total_credits} author credits \u{b7} the people in your shelves."

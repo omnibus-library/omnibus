@@ -281,7 +281,7 @@ fn ReaderTopChrome(state: ReaderChromeState, handlers: ReaderChromeHandlers) -> 
 
 /// epub.js mount target plus loading/error/ready overlay. `on_retry` is the
 /// `Failed` overlay's recovery action — never a silent black screen for a
-/// load failure or a wedged page turn (issue #1895, AC3).
+/// load failure or a wedged page turn.
 #[component]
 pub(super) fn ReaderViewerStage(
     status: ReaderStatus,

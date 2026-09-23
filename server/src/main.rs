@@ -308,10 +308,10 @@ mod server {
         auth_prefixes: Arc<Vec<&'static str>>,
         /// One per-IP budget shared by the REST `/api/search/*` and RPC
         /// `/api/rpc/search-*` layers (same `Arc`), so neither reaches 2×
-        /// the intended budget (#249).
+        /// the intended budget.
         search: Arc<rate_limit::RateLimiter>,
         /// `starts_with` prefix covers both `/api/rpc/search` and
-        /// `/api/rpc/search-palette` so neither bypasses the budget (#249).
+        /// `/api/rpc/search-palette` so neither bypasses the budget.
         search_prefixes: Arc<Vec<&'static str>>,
     }
 

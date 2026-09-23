@@ -250,7 +250,7 @@ fn cover_plate_labels(book: &EbookMetadata) -> (String, String) {
 /// through `media_url` (origin + mobile token, no-op on web) and this book's
 /// cache-bust counter — `/api/covers/*` is cached `private, max-age=86400`,
 /// so without the bust a book detail revisited after a cover edit would keep
-/// showing the pre-edit image until the cache expires (issue #1087).
+/// showing the pre-edit image until the cache expires.
 fn resolve_cover_image_src(
     book: &EbookMetadata,
     src_override: Option<String>,

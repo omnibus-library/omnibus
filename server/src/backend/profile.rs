@@ -85,7 +85,7 @@ pub(super) struct AvatarQuery {
 /// Serves the stored thumbnail by default; `?size=full` serves the original
 /// upload. Every avatar drawn today is a circle of at most 80px, and this
 /// route runs on every page that renders the nav, so the default has to be
-/// the small one (#2245). The validator is derived from whichever bytes are
+/// the small one. The validator is derived from whichever bytes are
 /// actually served, so the two renderings can't be confused for each other by
 /// a cache — the query string keeps them on separate URLs regardless.
 pub(super) async fn get_user_avatar(

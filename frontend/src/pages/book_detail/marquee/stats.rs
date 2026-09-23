@@ -123,7 +123,7 @@ fn render_stats(
 /// The "Started" tile's sub-label: how long the book has been in progress,
 /// counting *elapsed* days. A book started within the last day reads "today"
 /// rather than "1 day in" — the old inclusive `+ 1` count printed "1 day in"
-/// the moment a book was opened, which reads as an off-by-one (#2357). A full
+/// the moment a book was opened, which reads as an off-by-one. A full
 /// day or more elapsed reads "N day(s) in". `now` is injected so the label is
 /// testable on a fixed clock.
 fn days_in_label(now: i64, started_at: i64) -> String {
@@ -183,7 +183,7 @@ fn time_left_note(i: &BookInsights, progress: &MarqueeProgress) -> Option<String
 /// **Pass an offset only for a real instant.** A raw `started_at` is one, and
 /// dating it in UTC put a 23:36 sitting on the following day while the spark
 /// beside it — bucketed on the reader's own calendar by the server — drew it
-/// on the right one (#2464). A value already derived from a *local day
+/// on the right one. A value already derived from a *local day
 /// number* (`day * 86_400`) is midnight of a day that has been placed
 /// already; shifting it again moves it off that day.
 pub(super) fn short_date(unix_secs: i64, offset_secs: i64) -> String {

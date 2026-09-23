@@ -173,7 +173,7 @@ fn metadata_override_routes() -> Router<AppState> {
         )
 }
 
-/// F2.1 progress sync — mobile-facing REST. Web hits the analogous
+/// Progress sync — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/progress*` server functions defined in `omnibus_frontend::rpc`.
 fn progress_routes() -> Router<AppState> {
     Router::new()
@@ -236,7 +236,7 @@ fn deletion_routes() -> Router<AppState> {
         )
 }
 
-/// F2.4b highlight annotations — mobile-facing REST. Web hits the analogous
+/// Highlight annotations — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/highlights/*` server functions.
 fn highlight_routes() -> Router<AppState> {
     Router::new()
@@ -272,7 +272,7 @@ fn bookmark_routes() -> Router<AppState> {
         )
 }
 
-/// Reading stats, F3.2 star ratings, and F3.4 read/unread state —
+/// Reading stats, star ratings, and read/unread state —
 /// mobile-facing REST. Web hits the analogous `/api/rpc/stats`,
 /// `/api/rpc/ratings/*`, and `/api/rpc/read-status/*` server functions.
 fn engagement_routes() -> Router<AppState> {
@@ -347,7 +347,7 @@ fn physical_collection_routes() -> Router<AppState> {
         .route("/api/physical/{uuid}", delete(physical::delete_book))
 }
 
-/// F3.1 shelves — mobile-facing REST. Web hits the analogous
+/// Shelves — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/shelves*` server functions. `/preview` and `/containing/{uuid}`
 /// are registered before the `{id}` param route so it can't shadow them.
 fn shelf_routes() -> Router<AppState> {
@@ -375,7 +375,7 @@ fn shelf_routes() -> Router<AppState> {
         )
 }
 
-/// F3.2 public journal entries — mobile-facing REST. Web hits the analogous
+/// Public journal entries — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/journals/*` server functions. Embedded-image reads are
 /// media-gated like covers/thumbs; the matching upload POST lives in
 /// `upload_router` (rate-limited, image body cap).
@@ -405,7 +405,7 @@ fn journal_routes() -> Router<AppState> {
 /// but cheaply — it clears photo state, it doesn't ingest one), so they stay
 /// outside the rate-limited `upload_router`. Only the binary uploads (cover
 /// POST, photo PUT, photo-url PUT) carry the per-IP frequency cap — see
-/// `upload_router` (#168).
+/// `upload_router`.
 fn discovery_routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -430,7 +430,7 @@ fn discovery_routes() -> Router<AppState> {
         .route("/api/genres", get(genres::get_genres))
 }
 
-/// F3.3 suggestions — mobile-facing REST. Web hits the analogous
+/// Suggestions — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/ebook-suggestions` + `/api/rpc/hardcover-key` server fns.
 fn suggestion_routes() -> Router<AppState> {
     Router::new()
@@ -479,7 +479,7 @@ fn metadata_routes() -> Router<AppState> {
         )
 }
 
-/// F4.3 Send-to-Kindle plus the per-user account preferences that grew up
+/// Send-to-Kindle plus the per-user account preferences that grew up
 /// beside it (hidden formats, the book-detail scroll-stops switch, the
 /// profile and its avatar) — all mobile-facing REST. Web hits the analogous
 /// `/api/rpc/kindle/send`, `/api/rpc/account/*`, and `/api/rpc/smtp*` server

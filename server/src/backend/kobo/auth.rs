@@ -22,7 +22,7 @@ const KOBO_API_TOKEN: &str = "e30=";
 ///
 /// `reading_services_host` points the device's annotation channel here too —
 /// answered by [`super::reading_services::reading_services_router`] at the
-/// bare origin (#1278), since the device calls it without the path token.
+/// bare origin, since the device calls it without the path token.
 pub async fn initialization(auth: KoboAuthUser, headers: HeaderMap) -> Response {
     let base = origin_from_headers(&headers);
     let resources = store_resources::resources_for(&base, &auth.token);

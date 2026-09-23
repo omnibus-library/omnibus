@@ -121,7 +121,7 @@ impl CoverState {
     /// Fold a successful server response into the local preview state,
     /// bump the app-wide cache-bust counter for `uuid` — which this
     /// component's own preview reads back, alongside every other view of the
-    /// book (issue #1087) — and bubble the merged book up to the parent
+    /// book — and bubble the merged book up to the parent
     /// sidebar.
     fn apply(
         &mut self,

@@ -51,7 +51,7 @@ pub(super) fn section_title(selection: ShelfSelection, shelves: &[ShelfSummary])
 /// two sources — it refetches with the pick, while the gallery's summary
 /// carries a server-side aggregate that goes stale the moment membership
 /// changes elsewhere — so it wins once it has loaded, and the summary only
-/// stands in while that fetch is still out (#2255).
+/// stands in while that fetch is still out.
 pub(super) fn shelf_book_count(
     selection: ShelfSelection,
     shelves: &[ShelfSummary],

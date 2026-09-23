@@ -38,7 +38,7 @@ pub(super) enum Fetched {
 /// those made "we cannot ask cheaply" mean "we never ask", and nothing ever
 /// restored the validator — so the entry stayed pinned to those bytes until
 /// the cache was pruned, which is how a stale thumbnail outlived the cover it
-/// was made from (#2539). The refetch costs one full body, once, and stores
+/// was made from. The refetch costs one full body, once, and stores
 /// the validator that makes every later check a 304.
 pub(super) fn revalidate_in_background(img_dir: PathBuf, path: String, cached: &CachedImage) {
     // Cheap pre-check so an in-window render doesn't spawn a task at all.

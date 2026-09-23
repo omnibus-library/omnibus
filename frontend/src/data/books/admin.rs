@@ -86,7 +86,7 @@ pub async fn get_library(_server_url: &str) -> Result<LibraryContents, DataError
 }
 
 /// Web/SSR: fetch the metadata-source precedence for `library` (`"ebook"` or
-/// `"audiobook"`, F5.1 #972) — server-function wrapper that proxies to
+/// `"audiobook"`) — server-function wrapper that proxies to
 /// `rpc_get_metadata_precedence`. Web-only for now (no mobile REST route);
 /// mobile keeps the today's-effective-order behavior until a mobile editing
 /// surface is built.
@@ -195,7 +195,7 @@ pub async fn backfill_chapters(server_url: &str) -> Result<(), DataError> {
 }
 
 /// Admin: manually trigger a fleet-wide bake of every book's active
-/// metadata/cover overrides into its EPUB container (#959, #1718). Queues
+/// metadata/cover overrides into its EPUB container. Queues
 /// the run on the shared worker and returns as soon as it's queued;
 /// completion surfaces via `worker_status` (the `WorkerStatusIndicator`).
 #[cfg(not(feature = "mobile"))]

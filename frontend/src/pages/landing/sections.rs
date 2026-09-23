@@ -181,7 +181,7 @@ pub(super) struct BooksView {
 
 /// What an empty book area says. A shelf with no members is empty, not a
 /// failed search — and shelves hold audiobooks too, so its wording names no
-/// format (#2253). "No ebooks found." is kept for the case it describes: the
+/// format. "No ebooks found." is kept for the case it describes: the
 /// library or search that turned nothing up.
 pub(super) fn empty_books_message(is_shelf: bool) -> &'static str {
     if is_shelf {

@@ -77,7 +77,7 @@ pub fn kobo_router(state: AppState) -> Router {
 /// resources map that points them at Kobo. A 404 on any of them makes the
 /// device abort the whole sync before `library/sync`, so every one of them
 /// answers with an empty object. The log line doubles as capture data for
-/// the #928 golden fixture.
+/// the contract test's golden fixture.
 async fn store_stub(auth: KoboAuthUser, Path((_token, rest)): Path<(String, String)>) -> Response {
     // `?rest` (Debug) escapes control chars the router percent-decodes into
     // the path; device_id makes multi-device captures attributable.

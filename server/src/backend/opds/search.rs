@@ -25,7 +25,7 @@ pub(super) struct SearchQuery {
 }
 
 /// Run the FTS match: e-reader formats only, narrowed to books `user` may
-/// see (#932). `pub(super)` — the single read both catalogs' search feeds
+/// see. `pub(super)` — the single read both catalogs' search feeds
 /// come from. `Ok(None)` means the query itself was rejected (too long);
 /// callers map it to the 400 both catalogs share.
 pub(super) async fn load_matches(

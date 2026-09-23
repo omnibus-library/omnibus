@@ -36,8 +36,7 @@ pub(crate) async fn get_ebooks_online(server_url: &str) -> Result<EbookLibrary, 
     Ok(response.json::<EbookLibrary>().await?)
 }
 
-/// GET `/api/ebooks?sort=&dir=&cursor=&limit=&formats=` — one keyset page
-/// (F5b).
+/// GET `/api/ebooks?sort=&dir=&cursor=&limit=&formats=` — one keyset page.
 ///
 /// Of the sidebar facets only `filters.formats` rides the REST query (the
 /// mobile Sort & filter sheet's chips); the rest are ignored and `facets`
@@ -447,7 +446,7 @@ pub async fn get_ebooks(_server_url: &str) -> Result<EbookLibrary, DataError> {
         .map_err(note_server_fn_err)
 }
 
-/// Web/SSR `get_ebooks_page` — one keyset page (F5b) via `rpc_get_ebooks_page`.
+/// Web/SSR `get_ebooks_page` — one keyset page via `rpc_get_ebooks_page`.
 /// `server_url` is unused (server functions resolve against the page origin).
 #[cfg(not(feature = "mobile"))]
 pub async fn get_ebooks_page(

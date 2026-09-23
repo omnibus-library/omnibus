@@ -155,7 +155,7 @@ struct PlayerProps {
 /// (fire-and-forget). `file_id` is the `book_files` row the manifest
 /// actually loaded — not the raw `?file_id=` the player was entered with —
 /// so a book carrying several audiobooks resumes in the one being listened
-/// to (#1888, #1923); `None` only when the server predates file identity.
+/// to; `None` only when the server predates file identity.
 fn persist_position(uuid: &str, file_id: Option<i64>, server_url: &str, seconds: f64) {
     crate::audiobook_progress::save(uuid, seconds);
     let uuid = uuid.to_string();
@@ -251,7 +251,7 @@ fn render_unsupported(
 /// Derived display state for one player render: effective scrub position,
 /// chapter math, accent style, and formatted labels. Computed once ahead of
 /// the transport handlers and markup so [`render_player`] stays readable —
-/// kept as a distinct step per #852 rather than inlined into the component
+/// kept as a distinct step rather than inlined into the component
 /// body.
 struct PlayerDerived {
     effective: f64,
@@ -340,8 +340,7 @@ fn derive_player_state(
 
 /// Build the prev/next/bookmark chapter-nav handlers, sharing one `Rc` clone
 /// of the chapter list across all three — `render_player` reruns on every
-/// position tick, so per-closure deep clones of the chapters vec add up
-/// (issue #1143).
+/// position tick, so per-closure deep clones of the chapters vec add up.
 fn build_chapter_nav_handlers(
     chapters: std::rc::Rc<Vec<omnibus_shared::ChapterInfo>>,
     elapsed: f64,

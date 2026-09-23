@@ -46,7 +46,7 @@ pub(super) struct FetchSignals {
     /// False until the post-mount effect has had its chance to hydrate `prefs`
     /// from the last-browsed library. [`spawn_page_fetch_effect`] holds page 1
     /// until it flips, so the first request carries the viewer's own sort
-    /// instead of [`omnibus_shared::ViewPrefs::default`] (#1818).
+    /// instead of [`omnibus_shared::ViewPrefs::default`].
     pub(super) prefs_ready: Signal<bool>,
 }
 

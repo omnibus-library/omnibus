@@ -90,7 +90,7 @@ pub(super) async fn acquisition_feed(
 }
 
 /// Load one series with its books narrowed to e-reader formats and to
-/// books `user` may see (#932) — an audiobook/physical-only book, or one
+/// books `user` may see — an audiobook/physical-only book, or one
 /// confined to a manual shelf `user` cannot see, would otherwise surface
 /// as an entry with no working acquisition link. `Ok(None)` is an unknown
 /// series id; `Err` is a ready-to-return failure response. `pub(super)` —

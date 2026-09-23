@@ -162,7 +162,7 @@ pub(crate) fn toggle_dir(d: SortDir) -> SortDir {
 /// wished for it (`ORDER BY we.added_at DESC`) — both settled server-side in
 /// `db::shelves::read::detail`, where neither the axis nor the direction is
 /// consulted. The queries are deliberate and unchanged; what was wrong is a
-/// control that stayed live and pretended to act (#2507).
+/// control that stayed live and pretended to act.
 pub(crate) fn sort_lock_reason(kind: Option<ShelfKind>) -> Option<&'static str> {
     match kind? {
         ShelfKind::Manual | ShelfKind::Wishlist => Some("shelf order"),

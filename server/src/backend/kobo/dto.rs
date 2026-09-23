@@ -200,7 +200,7 @@ pub struct CurrentBookmark {
     /// `KoboSpan` position anchor (`kobo.N.M`). Stored verbatim and echoed
     /// back for exact device resume; sync-in also derives an `epub_cfi`
     /// from it via `db::kobo_position` so the web/iOS readers resume at the
-    /// same sentence (#925).
+    /// same sentence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<serde_json::Value>,
     /// The bookmark's own event time — the field the device arbitrates
@@ -427,8 +427,8 @@ pub fn book_metadata(base: &str, token: &str, book: &KoboBookRow) -> BookMetadat
     }
 }
 
-/// Cumulative per-book stats, echoed and never invented (#1653): the device
-/// arbitrates this block newest-wins like every other sub-object (#1652), so
+/// Cumulative per-book stats, echoed and never invented: the device
+/// arbitrates this block newest-wins like every other sub-object, so
 /// zeroes stamped `now` would overwrite its real totals.
 ///
 /// Feeds nothing else — these are running totals, while `reading_sessions`

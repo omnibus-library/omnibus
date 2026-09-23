@@ -18,7 +18,7 @@ fn endpoint_url(server_url: &str, token: &str) -> String {
 
 /// The "how to connect" procedure, plus the standing shelf rule beneath it.
 /// The rule is deliberately **not** a numbered item: a reader working the
-/// list has nothing to do at that number (#2511).
+/// list has nothing to do at that number.
 fn render_kobo_setup_steps() -> Element {
     rsx! {
         ol { class: "subtitle kobo-setup-steps", "data-testid": "kobo-setup-steps",

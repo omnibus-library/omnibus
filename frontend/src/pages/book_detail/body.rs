@@ -28,7 +28,7 @@ pub(super) struct BdPageCtx {
 /// list. The distinction is the whole point: an empty list is the claim "this
 /// is the only book by them in your library", and asserting that before
 /// asking made a three-book author read as a one-book author for the first
-/// second of every page load (#2478).
+/// second of every page load.
 #[derive(Clone, PartialEq, Props)]
 pub(super) struct BdAuthorCluster {
     pub primary_author: String,

@@ -373,7 +373,7 @@ fn handle_status(
 /// save already happened on the calling side. `pct` is the same whole-book
 /// figure the footer/ribbon render — carrying it into `progress_percent`
 /// keeps the landing hero's stored percent in step with what the reader
-/// itself is showing (issue #1909, AC2).
+/// itself is showing.
 fn persist_progress(uuid: &str, server_url: &str, cfi: String, pct: u32) {
     let uuid = uuid.to_string();
     let server_url = server_url.to_string();

@@ -177,7 +177,7 @@ pub(crate) async fn get_playback_rate_online(
 }
 
 /// POST `/api/progress/sessions` — batched session-report ingest.
-/// Queued offline so reading/listening time survives reconnect (F6.1 AC3).
+/// Queued offline so reading/listening time survives reconnect.
 #[cfg(feature = "mobile")]
 pub async fn record_sessions(
     server_url: &str,
