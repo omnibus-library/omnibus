@@ -1,8 +1,8 @@
 //! Unit tests for the cross-format wire-type validators: the per-format
 //! position boundaries `DeclareSyncPoint::validate` enforces, and the
 //! primary-narration and duplicate-ordinal rules in
-//! `ConfirmCrossFormatLink::validate`, plus the status codes
-//! `CrossFormatErrorCode` travels as.
+//! `ConfirmCrossFormatLink::validate`, plus the mapping between each
+//! `CrossFormatErrorCode` and the status code it is sent as.
 
 use super::*;
 

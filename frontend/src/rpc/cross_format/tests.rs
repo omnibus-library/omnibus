@@ -87,3 +87,27 @@ fn rpc_error_sanitizes_database_failures_without_a_refusal_code() {
         code: 500, details: None, message,
     } if message == "internal server error"));
 }
+
+#[tokio::test]
+async fn confirm_error_audio_set_mismatch_reaches_the_client_as_412_with_its_retry_hint() {
+    let message = format!(
+        "{} — reopen and retry",
+        db::cross_format::CrossFormatError::AudioSetMismatch
+    );
+    let error = confirm_error(db::cross_format::CrossFormatError::AudioSetMismatch);
+    let decoded = round_trip(error).await;
+    assert!(matches!(
+        decoded.downcast_ref::<ServerFnError>(),
+        Some(ServerFnError::ServerError { code: 412, message: m, .. }) if *m == message
+    ));
+}
+
+#[tokio::test]
+async fn follow_link_required_reaches_the_client_as_428_with_its_message() {
+    let decoded = round_trip(follow_link_required()).await;
+    assert!(matches!(
+        decoded.downcast_ref::<ServerFnError>(),
+        Some(ServerFnError::ServerError { code: 428, message, .. })
+            if message == "confirm the alignment first"
+    ));
+}

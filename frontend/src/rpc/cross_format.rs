@@ -43,6 +43,27 @@ fn refusal_error(code: CrossFormatErrorCode, message: impl Into<String>) -> Serv
     }
 }
 
+/// Confirm's mapping: a stale audio set tells the modal to reopen, not just retry.
+#[cfg(feature = "server")]
+fn confirm_error(e: db::cross_format::CrossFormatError) -> ServerFnError {
+    match &e {
+        db::cross_format::CrossFormatError::AudioSetMismatch => refusal_error(
+            CrossFormatErrorCode::AudioSetMismatch,
+            format!("{e} — reopen and retry"),
+        ),
+        _ => rpc_error("confirm cross-format link", e),
+    }
+}
+
+/// The follow toggle's refusal when there is no link to flip.
+#[cfg(feature = "server")]
+fn follow_link_required() -> ServerFnError {
+    refusal_error(
+        CrossFormatErrorCode::LinkRequired,
+        "confirm the alignment first",
+    )
+}
+
 /// Alignment payload for one book: link state + staleness, both lanes'
 /// raw material, and both current positions.
 #[post("/api/rpc/cross-format/alignment", pool: PoolExt, user: AuthUser)]
@@ -75,14 +96,7 @@ pub async fn rpc_confirm_cross_format_link(update: ConfirmCrossFormatLink) -> Re
     )
     .await
     .map(|_| ())
-    .map_err(|e| match &e {
-        db::cross_format::CrossFormatError::AudioSetMismatch => refusal_error(
-            CrossFormatErrorCode::AudioSetMismatch,
-            format!("{e} — reopen and retry"),
-        )
-        .into(),
-        _ => rpc_error("confirm cross-format link", e).into(),
-    })
+    .map_err(|e| confirm_error(e).into())
 }
 
 /// Turn sync off for one book; returns whether a link existed.
@@ -114,11 +128,7 @@ pub async fn rpc_declare_sync_point(decl: DeclareSyncPoint) -> Result<()> {
 pub async fn rpc_set_follow_mode(uuid: String, body: SetFollowMode) -> Result<()> {
     match db::cross_format::set_follow(&pool.0, user.id, &uuid, body.enabled).await {
         Ok(true) => Ok(()),
-        Ok(false) => Err(refusal_error(
-            CrossFormatErrorCode::LinkRequired,
-            "confirm the alignment first",
-        )
-        .into()),
+        Ok(false) => Err(follow_link_required().into()),
         Err(e) => Err(rpc_error("set follow mode", e).into()),
     }
 }
