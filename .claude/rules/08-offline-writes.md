@@ -114,12 +114,19 @@ Not queued, by test:
 | Book uploads | 1 — library-wide (and a GB-scale body has no business in `ops`) |
 | `POST /api/books/merge`, `/merge/undo` (admin merge) | 1 — library-wide, every user sees it |
 | `POST /api/books/{uuid}/delete-files` (admin delete) | 1 — library-wide, and irreversible once the last item goes |
+| `POST /api/books/{uuid}/cross-format-link` | 1 — sync configuration and optional library-wide audio order; 3 — requires the current audio set |
+| `DELETE /api/books/{uuid}/cross-format-link` | 1 — sync configuration |
+| `POST /api/books/{uuid}/sync-point` | 3 — pairs with the counterpart position currently stored on the server |
+| `POST /api/books/{uuid}/cross-format-follow` | 1 — sync configuration |
 | Reindex, scan, FTS rebuild | 2 — commands |
 | Send to Kindle / Kobo | 2 — commands |
 | Shelf create (iOS) | 3 — no client-minted handle |
 | Check-in, physical-only, wishlist **add** | 3 — payload comes from the server's lookup |
 | Wishlist **remove** | none, on its own — held back to match its add (below) |
 | `POST /api/shelves/preview` | not a mutation; a read wearing POST |
+
+The `/api/rpc/cross-format/{link,unlink,sync-point,follow}` counterparts follow
+the same exclusions. These writes go directly to the server and surface failures.
 
 The wishlist remove is the one entry here that passes all four tests: it names
 its target with a uuid the device already holds and carries no payload. It

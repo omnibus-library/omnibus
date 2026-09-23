@@ -11,6 +11,18 @@ use crate::progress::ProgressFormat;
 #[cfg(test)]
 mod tests;
 
+/// Stable refusal codes carried in RPC error details, independent of display text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CrossFormatErrorCode {
+    /// The user must confirm an alignment before syncing these formats.
+    LinkRequired,
+    /// The linked audio set changed and must be confirmed again.
+    AudioSetMismatch,
+    /// The other format has no stored position to pair with.
+    CounterpartMissing,
+}
+
 /// How a book's multiple audio files relate — declared by the user when
 /// confirming a link, never guessed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

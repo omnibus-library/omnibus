@@ -10,21 +10,35 @@ use omnibus_shared::{AlignmentView, ConfirmCrossFormatLink};
 
 #[cfg(feature = "server")]
 use omnibus_db as db;
+#[cfg(feature = "server")]
+use omnibus_shared::CrossFormatErrorCode;
 
 #[cfg(feature = "server")]
 use super::{internal_rpc_error, AuthUser, PoolExt};
 
 /// One error mapping for every RPC in this module; the refusal variants
-/// carry user-renderable messages.
+/// carry stable codes alongside user-renderable messages.
 #[cfg(feature = "server")]
 fn rpc_error(op: &'static str, e: db::cross_format::CrossFormatError) -> ServerFnError {
     use db::cross_format::CrossFormatError as E;
-    match e {
-        E::BookNotFound => ServerFnError::new("book not found"),
-        e @ (E::AudioSetMismatch | E::LinkRequired | E::CounterpartMissing) => {
-            ServerFnError::new(e.to_string())
-        }
-        E::Sqlx(e) => internal_rpc_error(op, e),
+    use omnibus_shared::CrossFormatErrorCode as Code;
+    let code = match e {
+        E::BookNotFound => return ServerFnError::new("book not found"),
+        E::LinkRequired => Code::LinkRequired,
+        E::AudioSetMismatch => Code::AudioSetMismatch,
+        E::CounterpartMissing => Code::CounterpartMissing,
+        E::Sqlx(e) => return internal_rpc_error(op, e),
+    };
+    refusal_error(code, e.to_string())
+}
+
+/// A 409 whose `details` carry the code the client branches on; the message is display-only.
+#[cfg(feature = "server")]
+fn refusal_error(code: CrossFormatErrorCode, message: impl Into<String>) -> ServerFnError {
+    ServerFnError::ServerError {
+        message: message.into(),
+        code: 409,
+        details: Some(serde_json::json!(code)),
     }
 }
 
@@ -61,9 +75,11 @@ pub async fn rpc_confirm_cross_format_link(update: ConfirmCrossFormatLink) -> Re
     .await
     .map(|_| ())
     .map_err(|e| match &e {
-        db::cross_format::CrossFormatError::AudioSetMismatch => {
-            ServerFnError::new(format!("{e} — reopen and retry")).into()
-        }
+        db::cross_format::CrossFormatError::AudioSetMismatch => refusal_error(
+            CrossFormatErrorCode::AudioSetMismatch,
+            format!("{e} — reopen and retry"),
+        )
+        .into(),
         _ => rpc_error("confirm cross-format link", e).into(),
     })
 }
@@ -97,7 +113,14 @@ pub async fn rpc_declare_sync_point(decl: DeclareSyncPoint) -> Result<()> {
 pub async fn rpc_set_follow_mode(uuid: String, body: SetFollowMode) -> Result<()> {
     match db::cross_format::set_follow(&pool.0, user.id, &uuid, body.enabled).await {
         Ok(true) => Ok(()),
-        Ok(false) => Err(ServerFnError::new("confirm the alignment first").into()),
+        Ok(false) => Err(refusal_error(
+            CrossFormatErrorCode::LinkRequired,
+            "confirm the alignment first",
+        )
+        .into()),
         Err(e) => Err(rpc_error("set follow mode", e).into()),
     }
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests;
