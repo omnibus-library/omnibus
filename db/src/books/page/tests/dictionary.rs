@@ -24,12 +24,18 @@ async fn insert_by(pool: &SqlitePool, lib: i64, title: &str, author_sort: &str) 
 
 /// Re-attribute `book_id` through the editor, as a display name only.
 async fn override_author(pool: &SqlitePool, book_id: i64, name: &str) {
+    let json = serde_json::json!({ "creators": [{ "name": name }] });
+    set_overrides(pool, book_id, json).await;
+}
+
+/// Write `json` as `book_id`'s override row.
+async fn set_overrides(pool: &SqlitePool, book_id: i64, json: serde_json::Value) {
     let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
         .bind(book_id)
         .fetch_one(pool)
         .await
         .unwrap();
-    let json = serde_json::json!({ "creators": [{ "name": name }] }).to_string();
+    let json = json.to_string();
     sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
         .bind(uuid)
         .bind(json)
@@ -150,4 +156,25 @@ async fn list_books_page_orders_titles_in_dictionary_order() {
 
     let got = ids(&page(&pool, SortKey::Title, SortDir::Asc, None, 50).await);
     assert_eq!(got, vec![espresso, ete, ezra]);
+}
+
+/// A creators override that empties the list shows the book with no author,
+/// so it files with the authorless books (NULLs first ascending, last
+/// descending) — not under the scanned author it hides. An override without a
+/// `creators` key still sorts by the scan.
+#[tokio::test]
+async fn list_books_page_files_an_emptied_creators_override_as_authorless() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = insert_lib(&pool, "/lib").await;
+    let emptied = insert_by(&pool, lib, "emptied", "Zulu, Zed").await;
+    set_overrides(&pool, emptied, serde_json::json!({ "creators": [] })).await;
+    let mango = insert_by(&pool, lib, "mango", "Mango, Mia").await;
+    let retitled = insert_by(&pool, lib, "retitled", "Oak, Olive").await;
+    set_overrides(&pool, retitled, serde_json::json!({ "title": "Renamed" })).await;
+    let authorless = insert_book(&pool, lib, "authorless", Some("authorless"), None, None).await;
+
+    let asc = vec![emptied, authorless, mango, retitled];
+    assert_eq!(walk(&pool, SortKey::Author, SortDir::Asc).await, asc);
+    let desc = vec![retitled, mango, authorless, emptied];
+    assert_eq!(walk(&pool, SortKey::Author, SortDir::Desc).await, desc);
 }

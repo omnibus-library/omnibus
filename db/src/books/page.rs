@@ -254,7 +254,7 @@ pub(crate) fn axis_sort_columns(sort: SortKey) -> (&'static str, Option<&'static
             // A creators override replaces the whole list, so the displayed
             // primary author is its first entry, keyed the way the scanner
             // keys `author_sort`.
-            effective_author_sql!("$.creators[0].file_as", "$.creators[0].name"; "b.author_sort"),
+            effective_author_sql!("b.author_sort"),
             None,
         ),
         SortKey::LastUpdated => (
