@@ -1,5 +1,6 @@
 //! Tests for the authors-index sort/grouping helpers: `sort_key` prefers
-//! the explicit sort field, and `first_letter` groups by that same key.
+//! the explicit sort field, `first_letter` groups by that same key, and
+//! names sort in the library's dictionary order.
 
 use super::*;
 
@@ -162,6 +163,42 @@ fn sort_authors_by_name_orders_alpha_before_non_alpha_bucket() {
     sort_authors(&mut filtered, IndexSort::Name);
     assert_eq!(filtered[0].name, "Ada Lovelace");
     assert_eq!(filtered[1].name, "1984");
+}
+
+/// A given-name-form `sort` keys from the display name, as the library does.
+#[test]
+fn sort_authors_by_name_orders_accented_surnames_in_dictionary_order() {
+    let all = [
+        author("Sarah Polk", Some("Polk, Sarah")),
+        author("Benito Pérez Galdós", Some("Pérez Galdós, Benito")),
+        author("Anne Perry", None),
+        author("Bret Pettichord", Some("Bret Pettichord")),
+        author("Ana Pérez", Some("Pérez, Ana")),
+        author("Ana Perez", Some("Perez, Ana")),
+    ];
+    let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
+    sort_authors(&mut filtered, IndexSort::Name);
+    let names: Vec<&str> = filtered.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "Ana Perez",
+            "Ana Pérez",
+            "Benito Pérez Galdós",
+            "Anne Perry",
+            "Bret Pettichord",
+            "Sarah Polk",
+        ]
+    );
+    assert!(filtered.iter().all(|a| first_letter(a) == 'P'));
+}
+
+#[test]
+fn first_letter_files_an_accented_initial_under_its_letter() {
+    let a = author("Paul Éluard", None);
+    assert_eq!(sort_key(&a), "Éluard, Paul");
+    assert_eq!(first_letter(&a), 'E');
+    assert!(!is_non_alpha_key(&sort_key(&a)));
 }
 
 #[test]

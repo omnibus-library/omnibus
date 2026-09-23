@@ -193,8 +193,6 @@ async fn page_count_persists_on_insert_and_refreshes_on_change() {
     assert_eq!(refreshed, Some(20), "the update refreshes page_count");
 }
 
-/// #2451, update path: a rescan that finds a given-name `file_as` re-keys the
-/// row surname-first rather than storing the file's value verbatim.
 #[tokio::test]
 async fn sync_changed_keys_a_given_name_file_as_surname_first() {
     let _covers = CoversTempDir::new("sync_changed_file_as");

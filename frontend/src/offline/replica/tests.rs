@@ -87,6 +87,28 @@ fn page_from_replica_sorts_by_author_with_title_tiebreak() {
 }
 
 #[test]
+fn page_from_replica_sorts_authors_surname_first_in_dictionary_order() {
+    let mut given_file_as = book("Project Hail Mary", "Andy Weir", &["EPUB"]);
+    given_file_as.creators[0].file_as = Some("Andy Weir".into());
+    let books = vec![
+        given_file_as,
+        book("Cat's Cradle", "Kurt Vonnegut", &["EPUB"]),
+        book("Fortunata y Jacinta", "Benito Pérez", &["EPUB"]),
+        book("The Face of a Stranger", "Anne Perry", &["EPUB"]),
+    ];
+    let page = page_from_replica(books, SortKey::Author, SortDir::Asc, &[], &[], None, 10);
+    assert_eq!(
+        titles(&page),
+        vec![
+            "Fortunata y Jacinta",    // Pérez
+            "The Face of a Stranger", // Perry
+            "Cat's Cradle",           // Vonnegut
+            "Project Hail Mary",      // Weir
+        ]
+    );
+}
+
+#[test]
 fn page_from_replica_filters_by_format_any_match() {
     let page = page_from_replica(
         fixture(),
@@ -235,29 +257,35 @@ fn sort_books_orders_recently_interacted_on_its_own_key_not_the_date_fallback() 
 }
 
 #[test]
-fn series_key_truncates_the_float_cast_toward_zero_at_the_millesimal_boundary() {
+fn series_index_key_truncates_the_float_cast_toward_zero_at_the_millesimal_boundary() {
     let just_under_two = book_with_series("A", Some("S"), Some("1.9999"));
     let exactly_two = book_with_series("B", Some("S"), Some("2.0"));
     // `1.9999 * 1000.0 == 1999.9`, cast to i64 truncates to 1999 — not 2000 —
     // so it must still sort strictly before the exact "2.0" (2000) index.
-    assert_eq!(series_key(&just_under_two), (false, "s".to_string(), 1999));
-    assert_eq!(series_key(&exactly_two), (false, "s".to_string(), 2000));
+    assert_eq!(series_index_key(&just_under_two), 1999);
+    assert_eq!(series_index_key(&exactly_two), 2000);
+    assert_eq!(
+        series_cmp(&just_under_two, &exactly_two),
+        std::cmp::Ordering::Less
+    );
 }
 
 #[test]
-fn series_key_falls_back_to_zero_for_missing_or_unparsable_index() {
+fn series_index_key_falls_back_to_zero_for_missing_or_unparsable_index() {
     let no_index = book_with_series("A", Some("S"), None);
     let bad_index = book_with_series("B", Some("S"), Some("not-a-number"));
-    assert_eq!(series_key(&no_index).2, 0);
-    assert_eq!(series_key(&bad_index).2, 0);
+    assert_eq!(series_index_key(&no_index), 0);
+    assert_eq!(series_index_key(&bad_index), 0);
 }
 
 #[test]
-fn series_key_marks_books_without_a_series_to_sort_after_every_series() {
-    let with_series = book_with_series("A", Some("S"), Some("1"));
+fn series_cmp_sorts_books_without_a_series_after_every_series() {
+    let with_series = book_with_series("A", Some("Zzz"), Some("1"));
     let without_series = book_with_series("B", None, None);
-    assert!(!series_key(&with_series).0);
-    assert!(series_key(&without_series).0);
+    assert_eq!(
+        series_cmp(&with_series, &without_series),
+        std::cmp::Ordering::Less
+    );
 }
 
 #[test]

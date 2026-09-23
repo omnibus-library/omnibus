@@ -9,6 +9,7 @@
 
 use std::cmp::Ordering;
 
+use omnibus_shared::sort_order::{creator_sort_key, dictionary_key};
 use omnibus_shared::{Contributor, EbookMetadata, ShelfKind, SortDir, SortKey};
 
 /// Join contributor names into one comma-separated display string.
@@ -23,17 +24,28 @@ pub(crate) fn contributor_names(list: &[Contributor]) -> String {
     out
 }
 
+/// The first creator's surname-first key — the one the server's Author axis
+/// files the book under.
 fn primary_author_key(book: &EbookMetadata) -> String {
-    let c = book.creators.first();
-    let name = c
-        .map(|c| c.file_as.as_deref().unwrap_or(&c.name).to_string())
-        .unwrap_or_default();
-    name.to_ascii_lowercase()
+    book.creators
+        .first()
+        .map(|c| creator_sort_key(c.file_as.as_deref(), &c.name))
+        .unwrap_or_default()
 }
 
 fn title_key(book: &EbookMetadata) -> String {
-    let t = book.title.as_deref().unwrap_or(&book.filename);
-    t.to_ascii_lowercase()
+    book.title.as_deref().unwrap_or(&book.filename).to_string()
+}
+
+/// `s` as a dictionary-order key: `(dictionary_key(s), s)` orders exactly as
+/// the server's `dictionary` collation does.
+fn dictionary(s: String) -> (String, String) {
+    (dictionary_key(&s), s)
+}
+
+/// A key compared as-is (the fixed-width ISO timestamps).
+fn verbatim(s: String) -> (String, String) {
+    (s, String::new())
 }
 
 /// Cached per-row sort key. We compute exactly one of these (matching the
@@ -43,21 +55,23 @@ fn title_key(book: &EbookMetadata) -> String {
 /// the whole struct is `Ord`-derivable (no f64 NaN issues).
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct RowKey {
-    /// Plain string axes (Title / Author / LastUpdated / NewestAdded).
-    /// `None` only for genuinely missing values; see [`cmp_with_missing_last`].
-    plain: Option<String>,
-    /// Series tuple: lowercased name + `series_index * 1000` rounded to i64.
-    series: Option<(String, i64)>,
+    /// Plain string axes (Title / Author / LastUpdated / NewestAdded), as a
+    /// `(key, tiebreak)` pair. `None` only for genuinely missing values; see
+    /// [`cmp_with_missing_last`].
+    plain: Option<(String, String)>,
+    /// Series tuple: the name's dictionary key and tiebreak, then
+    /// `series_index * 1000` rounded to i64.
+    series: Option<(String, String, i64)>,
 }
 
 fn row_key(book: &EbookMetadata, key: SortKey) -> RowKey {
     match key {
         SortKey::Title => RowKey {
-            plain: Some(title_key(book)),
+            plain: Some(dictionary(title_key(book))),
             series: None,
         },
         SortKey::Author => RowKey {
-            plain: Some(primary_author_key(book)),
+            plain: Some(dictionary(primary_author_key(book))),
             series: None,
         },
         SortKey::Series => RowKey {
@@ -69,19 +83,20 @@ fn row_key(book: &EbookMetadata, key: SortKey) -> RowKey {
                     .and_then(|raw| raw.parse::<f64>().ok())
                     .map(series_index_to_sort_key)
                     .unwrap_or(0);
-                (s.to_ascii_lowercase(), idx)
+                let (key, tiebreak) = dictionary(s.to_string());
+                (key, tiebreak, idx)
             }),
         },
         SortKey::LastUpdated => RowKey {
-            plain: book.modified.clone(),
+            plain: book.modified.clone().map(verbatim),
             series: None,
         },
         SortKey::NewestAdded => RowKey {
-            plain: book.added_at.clone(),
+            plain: book.added_at.clone().map(verbatim),
             series: None,
         },
         SortKey::RecentlyInteracted => RowKey {
-            plain: book.last_interacted_at.clone(),
+            plain: book.last_interacted_at.clone().map(verbatim),
             series: None,
         },
     }

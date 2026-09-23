@@ -73,8 +73,6 @@ async fn insert_book_row_keys_author_sort_surname_first_with_and_without_file_as
     );
 }
 
-/// #2451: a file whose OPF `file_as` is the display name itself (`Andy Weir`)
-/// must key surname-first like its author's other books, not under A.
 #[tokio::test]
 async fn insert_book_row_keys_a_given_name_file_as_surname_first() {
     let pool = init_db("sqlite::memory:").await.unwrap();

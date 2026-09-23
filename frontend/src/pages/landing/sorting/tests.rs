@@ -207,6 +207,86 @@ fn sort_books_by_author_asc() {
 }
 
 #[test]
+fn sort_books_by_author_keys_every_form_surname_first_in_dictionary_order() {
+    let by = |id: i64, authors: &[(&str, Option<&str>)]| {
+        book(BookSpec {
+            id,
+            filename: "x.epub",
+            title: Some("X"),
+            authors,
+            series: None,
+            modified: None,
+            added_at: None,
+            subjects: &[],
+        })
+    };
+    let books = vec![
+        by(1, &[("Andy Weir", Some("Andy Weir"))]),
+        by(2, &[("Andy Weir", Some("Weir, Andy"))]),
+        by(3, &[("Kurt Vonnegut", None)]),
+        by(4, &[("Anne Perry", None)]),
+        by(5, &[("Benito Pérez Galdós", Some("Pérez Galdós, Benito"))]),
+    ];
+    let asc = sort_books(books, SortKey::Author, SortDir::Asc);
+    assert_eq!(ids(&asc), vec![5, 4, 3, 1, 2]);
+}
+
+/// The server's `dictionary` order: accents and case folded, a comma below a
+/// space, then the raw spelling breaking a tie (plain before accented).
+#[test]
+fn sort_books_by_title_uses_the_servers_dictionary_order() {
+    let titled = |id: i64, title: &'static str| {
+        book(BookSpec {
+            id,
+            filename: "x.epub",
+            title: Some(title),
+            authors: &[],
+            series: None,
+            modified: None,
+            added_at: None,
+            subjects: &[],
+        })
+    };
+    let books = vec![
+        titled(1, "Ezra"),
+        titled(2, "Été Indien"),
+        titled(3, "Eternity"),
+        titled(4, "Ete, a Novel"),
+        titled(5, "etc"),
+        titled(6, "Été"),
+        titled(7, "Ete"),
+    ];
+    let asc = sort_books(books, SortKey::Title, SortDir::Asc);
+    assert_eq!(ids(&asc), vec![5, 7, 6, 4, 2, 3, 1]);
+}
+
+#[test]
+fn sort_books_by_series_uses_the_servers_dictionary_order() {
+    let in_series = |id: i64, series: Option<(&'static str, &'static str)>| {
+        book(BookSpec {
+            id,
+            filename: "x.epub",
+            title: Some("X"),
+            authors: &[],
+            series,
+            modified: None,
+            added_at: None,
+            subjects: &[],
+        })
+    };
+    let books = vec![
+        in_series(1, Some(("Perry", "1"))),
+        in_series(2, Some(("Pérez Galdós", "1"))),
+        in_series(3, Some(("Perez, Ana", "2"))),
+        in_series(4, None),
+        in_series(5, Some(("Perez, Ana", "1"))),
+        in_series(6, Some(("Été", "1"))),
+    ];
+    let asc = sort_books(books, SortKey::Series, SortDir::Asc);
+    assert_eq!(ids(&asc), vec![6, 5, 3, 2, 1, 4]);
+}
+
+#[test]
 fn sort_books_by_series_grouping_with_index_then_pushes_seriesless_last() {
     let s = sample();
     let asc = sort_books(s, SortKey::Series, SortDir::Asc);
