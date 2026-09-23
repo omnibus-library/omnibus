@@ -1,0 +1,77 @@
+name: CodeQL
+
+# Committed ("advanced setup") CodeQL, replacing the repo-settings default setup.
+# Default setup never runs on pull requests from forks, so a fork PR never got
+# the results the `main` ruleset's code-scanning rule waits for and could not
+# merge. This workflow does run there on plain `pull_request`: the fork's token
+# is read-only, and codeql-action's upload accepts that for fork PRs, so no
+# `pull_request_target` (and no write token beside untrusted code) is needed.
+#
+# Default setup must stay disabled (Settings → Code security → CodeQL analysis)
+# while this file exists — code scanning rejects advanced-setup uploads when it
+# is on.
+
+on:
+  # No `paths:` filter and no `changes` job, unlike the other workflows: the
+  # code-scanning rule waits for CodeQL results on every PR, so a skipped
+  # analysis would block the merge exactly as the fork PRs were blocked.
+  pull_request:
+  push:
+    branches: [main]
+  # Weekly rescan so new CodeQL queries reach code no PR touches, as default
+  # setup's weekly schedule did.
+  schedule:
+    - cron: "17 6 * * 1"
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Upload results to code scanning.
+      security-events: write
+      # Query packs download from GHCR.
+      packages: read
+      # init reads this run's workflow metadata.
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Default setup's languages. Swift is not here: it needs a macOS runner
+        # and an xcodebuild, which default setup never did either.
+        language: [actions, javascript-typescript, python, rust]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          # All four extract straight from source; there is no build step.
+          build-mode: none
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          # Default setup's category, so the alerts already on main match these
+          # analyses instead of reappearing as new ones.
+          category: /language:${{ matrix.language }}
+
+  # The required status check for this workflow. Require ONLY `🔒 CodeQL
+  # Required` in the ruleset, not the `Analyze (…)` matrix jobs, so the language
+  # list can change without editing branch protection.
+  codeql-required:
+    name: 🔒 CodeQL Required
+    needs: [analyze]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: seamus-sloan/gh-actions/ci-gate@ci-gate-v1
+        with:
+          needs: ${{ toJSON(needs) }}

@@ -70,6 +70,7 @@ review. CI runs the same checks and all of them are required to merge:
 | TS Lint | biome + `tsc --noEmit` for Playwright |
 | Playwright | end-to-end browser tests |
 | iOS Tests | the `omnibusTests` unit suite and the `omnibusUITests` UI suite |
+| CodeQL | static security analysis of the Rust, TypeScript, Python, and workflow code |
 
 Some checks path-filter themselves and report as skipped when the diff doesn't
 touch what they cover. That counts as passing.
