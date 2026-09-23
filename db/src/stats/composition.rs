@@ -226,8 +226,8 @@ async fn languages(pool: &SqlitePool) -> Result<CompositionDimension, StatsError
 /// reporting the coverage pair over those same de-duplicated placements so
 /// the slices sum to `coverage.total` by construction.
 ///
-/// Placements are de-duplicated, not summed. Summed, two
-/// books carrying both `en` and `en-US` credited English with two books more
+/// Placements are de-duplicated, not summed. If they were summed, two books
+/// carrying both `en` and `en-US` would credit English with two books more
 /// than exist. A book in two *different* languages is still two placements —
 /// that is the overlap `CompositionDimension::overlap` discloses, not a
 /// double count.
