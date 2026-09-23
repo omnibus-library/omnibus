@@ -4,10 +4,16 @@
 //! into the canonical library folder, reindexes so the indexer owns the
 //! insert, then layers the edits and any staged cover on (`review`).
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use axum::{
-    extract::{multipart::Field, Multipart, State},
+    extract::{
+        multipart::{Field, MultipartError},
+        Multipart, State,
+    },
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -28,6 +34,11 @@ use crate::auth::AuthUser;
 /// Default upload size cap (1 GiB) when `OMNIBUS_MAX_UPLOAD_BYTES` is unset or
 /// unparseable. Generous so it survives the future large-audiobook case.
 pub const DEFAULT_MAX_UPLOAD_BYTES: usize = 1024 * 1024 * 1024;
+
+/// Longest an upload's body may go without delivering a byte. These routes
+/// are exempt from [`super::REQUEST_TIMEOUT`], so this is what cuts off a
+/// client that has stopped sending.
+pub const UPLOAD_BODY_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Per-field byte cap for the commit multipart's text fields
 /// (title/author/series/series_index), enforced incrementally while
@@ -88,6 +99,8 @@ pub(super) enum UploadError {
     /// A multipart text field (title/author/series/series_index) exceeds its
     /// per-field byte cap, rejected before it's fully buffered → 413.
     FieldTooLarge { field: &'static str, cap: usize },
+    /// The body went [`UPLOAD_BODY_IDLE_TIMEOUT`] without a byte → 408.
+    Stalled,
     /// Override validation failed (a field too long) → 400.
     Validation(String),
     /// The `overrides` field isn't a JSON `MetadataOverrides` → 400.
@@ -110,6 +123,21 @@ impl UploadError {
         UploadError::Internal {
             context,
             detail: e.to_string(),
+        }
+    }
+
+    /// A failed multipart read: [`UploadError::Stalled`] when the idle body
+    /// timeout cut the client off — its connection, not our fault — and an
+    /// internal error under `context` otherwise.
+    fn multipart(context: &'static str, e: MultipartError) -> Self {
+        let stalled = std::iter::successors(Some(&e as &(dyn std::error::Error + 'static)), |e| {
+            e.source()
+        })
+        .any(|e| e.is::<tower_http::timeout::TimeoutError>());
+        if stalled {
+            UploadError::Stalled
+        } else {
+            Self::internal(context, e)
         }
     }
 }
@@ -185,6 +213,11 @@ impl IntoResponse for UploadError {
             UploadError::FieldTooLarge { field, cap } => (
                 StatusCode::PAYLOAD_TOO_LARGE,
                 format!("{field} exceeds the {cap}-byte limit"),
+            )
+                .into_response(),
+            UploadError::Stalled => (
+                StatusCode::REQUEST_TIMEOUT,
+                "upload stalled: the connection stopped sending data",
             )
                 .into_response(),
             UploadError::Validation(msg) => (StatusCode::BAD_REQUEST, msg).into_response(),
@@ -290,7 +323,7 @@ async fn stream_upload_to_tempfile(
         let chunk = field
             .chunk()
             .await
-            .map_err(|e| UploadError::internal("read upload chunk", e))?;
+            .map_err(|e| UploadError::multipart("read upload chunk", e))?;
         let Some(chunk) = chunk else { break };
         total += chunk.len();
         if total > cap {
@@ -362,7 +395,7 @@ async fn read_text_field_capped(
         let chunk = field
             .chunk()
             .await
-            .map_err(|e| UploadError::internal("read multipart text chunk", e))?;
+            .map_err(|e| UploadError::multipart("read multipart text chunk", e))?;
         let Some(chunk) = chunk else { break };
         if buf.len() + chunk.len() > cap {
             return Err(UploadError::FieldTooLarge {
@@ -391,7 +424,7 @@ pub(super) async fn post_inspect_ebook(
             Ok(Some(f)) if f.name().unwrap_or("") == "file" => break f,
             Ok(Some(_)) => continue,
             Ok(None) => return Err(UploadError::MissingFile),
-            Err(e) => return Err(UploadError::internal("parse multipart", e)),
+            Err(e) => return Err(UploadError::multipart("parse multipart", e)),
         }
     };
     let original_name = field.file_name().map(str::to_owned);
@@ -670,7 +703,7 @@ async fn parse_commit_multipart(
                 }
             }
             Ok(None) => break,
-            Err(e) => return Err(UploadError::internal("parse multipart", e)),
+            Err(e) => return Err(UploadError::multipart("parse multipart", e)),
         }
     }
     Ok(form)
