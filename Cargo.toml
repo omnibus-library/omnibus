@@ -23,7 +23,9 @@ license = "MIT"
 # when they need extra features beyond the workspace baseline). Only deps
 # that appear in 2+ crates at the same version are centralized here — single-
 # crate deps stay in their own Cargo.toml, and framework-specific deps with
-# divergent features (dioxus, sqlx, axum) are intentionally left per-crate.
+# divergent features (sqlx, axum) are intentionally left per-crate. Dioxus is
+# the exception: its version must move in lockstep with the `dx` CLI, so it
+# lives here and each crate adds its own features on top.
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -37,61 +39,10 @@ tracing = "0.1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tempfile = "3"
 
-# Pin every dioxus-* crate to the v0.7.9 monorepo tag. The `dx` CLI we ship via
-# nixpkgs-unstable (see flake.nix) ships 0.7.6–0.7.9 point releases without
-# matching crates.io publishes for the libraries (last published lib version is
-# 0.7.5), so `dx serve` refuses to start with an "incompatible versions" banner.
-# Patching to the matching git tag keeps the lib + CLI in lockstep until the
-# next coordinated crates.io release.
-#
-# SECURITY NOTE — `cargo audit` blind spot: `cargo audit` keys RUSTSEC advisory
-# lookups on crates.io package name + version. These crates resolve by git SHA,
-# not a crates.io version, so any advisory filed against a patched Dioxus crate
-# will NOT surface in `cargo audit` (and therefore not in CI). Severity is low —
-# Dioxus is a UI framework, not a network/crypto dep — but the gap is silent.
-# Mitigation: on every Dioxus bump, manually review the DioxusLabs changelog and
-# GitHub security advisories (https://github.com/DioxusLabs/dioxus/security/advisories)
-# for the new tag. `cargo deny` (issue #214, now in CI via `.github/workflows/rust.yml`)
-# covers git-sourced crates and detects advisories that `cargo audit` misses here —
-# that gap is closed as of the CI audit job added alongside this note.
-# Exit condition: once Dioxus publishes the matching version to crates.io, replace
-# these git patches with plain `version = "..."` entries and delete this whole
-# note (the audited path is then restored automatically).
-#
-# DUPLICATE DEPS: this pin (plus Axum's newer transitive graph) forces several
-# duplicate dependency families in Cargo.lock (websocket stack, thiserror 1/2,
-# getrandom/rand, hashbrown, and the desktop/mobile native-shell tail). They are
-# triaged and accepted in the `[bans]` section of deny.toml and inventoried in
-# docs/dependency-audit.md — re-run `cargo tree -d` and refresh both on any bump.
-[patch.crates-io]
-dioxus = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-asset-resolver = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-cli-config = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-config-macro = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-config-macros = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-core = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-core-macro = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-core-types = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-desktop = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-devtools = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-devtools-types = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-document = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-fullstack = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-fullstack-core = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-fullstack-macro = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-history = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-hooks = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-html = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-html-internal-macro = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-interpreter-js = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-liveview = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-logger = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-router = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-router-macro = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-rsx = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-server = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-signals = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-ssr = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-stores = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-stores-macro = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
-dioxus-web = { git = "https://github.com/DioxusLabs/dioxus", tag = "v0.7.9" }
+# Exact (`=`) pins, not `0.7`: `dx` flags any `dioxus` version other than its
+# own as incompatible, and the CLI comes from flake.nix (and the Dockerfile's
+# `cargo binstall`), so bump these with it. Only Cargo.lock holds the rest of
+# the dioxus-* family at the same version — a bare `cargo update` moves them on.
+dioxus = "=0.7.9"
+dioxus-html = "=0.7.9"
+dioxus-router = "=0.7.9"

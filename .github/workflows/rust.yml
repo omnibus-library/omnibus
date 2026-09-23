@@ -433,17 +433,17 @@ jobs:
             exit "$code"
           fi
 
-      # cargo deny adds coverage cargo-audit lacks: advisories against the ~31
-      # git-pinned Dioxus crates, source allow-listing, duplicate-version bans,
+      # cargo deny adds coverage cargo-audit lacks: source allow-listing
+      # (crates.io only — any git dependency fails), duplicate-version bans,
       # and license-allowlist enforcement. deny.toml in the repo root is the
       # config.
       #
       # All four checks are hard gates: a violation in advisories, sources,
-      # bans, or licenses fails the job. If a policy needs to relax (e.g. a new
-      # git-pinned source appears for a Dioxus crate, or a transitive dep
-      # introduces a license not yet on the allowlist), update deny.toml's
-      # `[sources.allow-git]`, `[licenses].allow`, or the relevant
-      # `ignore`/`skip` list rather than re-introducing `continue-on-error: true`.
+      # bans, or licenses fails the job. If a policy needs to relax (e.g. a git
+      # dependency is genuinely unavoidable, or a transitive dep introduces a
+      # license not yet on the allowlist), update deny.toml's `[sources]`,
+      # `[licenses].allow`, or the relevant `ignore`/`skip` list rather than
+      # re-introducing `continue-on-error: true`.
       - name: cargo deny check
         run: nix develop .#audit --command cargo deny check advisories sources bans licenses
 
