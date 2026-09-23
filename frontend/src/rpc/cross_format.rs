@@ -32,13 +32,14 @@ fn rpc_error(op: &'static str, e: db::cross_format::CrossFormatError) -> ServerF
     refusal_error(code, e.to_string())
 }
 
-/// A 409 whose `details` carry the code the client branches on; the message is display-only.
+/// The refusal rides in the status code; `details` must stay empty, or the
+/// client decodes it as the whole error and loses both status and message.
 #[cfg(feature = "server")]
 fn refusal_error(code: CrossFormatErrorCode, message: impl Into<String>) -> ServerFnError {
     ServerFnError::ServerError {
         message: message.into(),
-        code: 409,
-        details: Some(serde_json::json!(code)),
+        code: code.status(),
+        details: None,
     }
 }
 

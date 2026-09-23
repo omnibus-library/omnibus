@@ -2,10 +2,20 @@
 
 use super::*;
 use dioxus::fullstack::ServerFnError;
+use omnibus_shared::CrossFormatErrorCode;
+
+fn server_error(code: u16, message: &str) -> dioxus::CapturedError {
+    ServerFnError::ServerError {
+        message: message.into(),
+        code,
+        details: None,
+    }
+    .into()
+}
 
 #[test]
 fn classify_sync_point_err_does_not_infer_a_refusal_from_prose() {
-    let e = ServerFnError::new("confirm the alignment first — unrelated failure").into();
+    let e = server_error(500, "confirm the alignment first — unrelated failure");
     assert!(matches!(
         classify_sync_point_err(e),
         SyncPointError::Other(_)
@@ -14,16 +24,29 @@ fn classify_sync_point_err_does_not_infer_a_refusal_from_prose() {
 
 #[test]
 fn classify_sync_point_err_maps_link_refusal_to_link_required() {
-    let e = ServerFnError::ServerError {
-        message: "This message can be rewritten freely".into(),
-        code: 409,
-        details: Some(serde_json::json!("link_required")),
-    }
-    .into();
+    let e = server_error(
+        CrossFormatErrorCode::LinkRequired.status(),
+        "This message can be rewritten freely",
+    );
     assert!(matches!(
         classify_sync_point_err(e),
         SyncPointError::LinkRequired
     ));
+}
+
+#[test]
+fn classify_sync_point_err_keeps_the_message_of_other_refusals() {
+    for code in [
+        CrossFormatErrorCode::AudioSetMismatch,
+        CrossFormatErrorCode::CounterpartMissing,
+    ] {
+        match classify_sync_point_err(server_error(code.status(), "shown to the reader")) {
+            SyncPointError::Other(DataError::Other(msg)) => {
+                assert_eq!(msg, "shown to the reader")
+            }
+            other => panic!("{code:?} classified as {other:?}"),
+        }
+    }
 }
 
 #[test]
@@ -32,6 +55,14 @@ fn classify_sync_point_err_passes_other_failures_through() {
     assert!(matches!(
         classify_sync_point_err(e),
         SyncPointError::Other(_)
+    ));
+}
+
+#[test]
+fn classify_sync_point_err_preserves_unauthorized() {
+    assert!(matches!(
+        classify_sync_point_err(server_error(401, "session expired")),
+        SyncPointError::Other(DataError::Unauthorized)
     ));
 }
 
@@ -56,38 +87,4 @@ fn sync_point_label_reports_failure_for_other_errors() {
         )))),
         "Sync failed"
     );
-}
-
-#[test]
-fn classify_sync_point_err_preserves_unknown_and_other_refusals() {
-    for details in [
-        None,
-        Some(serde_json::json!("audio_set_mismatch")),
-        Some(serde_json::json!("counterpart_missing")),
-        Some(serde_json::json!("future_refusal")),
-        Some(serde_json::json!({"unexpected": true})),
-    ] {
-        let error = ServerFnError::ServerError {
-            message: "confirm the alignment first — not a link-required code".into(),
-            code: 409,
-            details,
-        };
-        assert!(matches!(
-            classify_sync_point_err(error.into()),
-            SyncPointError::Other(DataError::Other(_))
-        ));
-    }
-}
-
-#[test]
-fn classify_sync_point_err_preserves_unauthorized_even_with_refusal_details() {
-    let error = ServerFnError::ServerError {
-        message: "session expired".into(),
-        code: 401,
-        details: Some(serde_json::json!("link_required")),
-    };
-    assert!(matches!(
-        classify_sync_point_err(error.into()),
-        SyncPointError::Other(DataError::Unauthorized)
-    ));
 }

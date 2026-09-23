@@ -312,14 +312,16 @@ test("declaring a sync point anchors the mapping and the reader auto-applies", a
 test("sync-point refusal offers linking even when the server message changes", async ({
   page,
 }) => {
+  // Dioxus's real wire shape for a LinkRequired refusal: HTTP 500, the
+  // refusal in the payload's `code` (428), no `data`. Only the message is
+  // rewritten, so the label must come from the code alone.
   await page.route("**/api/rpc/cross-format/sync-point", (route) =>
     route.fulfill({
       status: 500,
       contentType: "application/json",
       body: JSON.stringify({
         message: "Choose the matching formats before syncing.",
-        code: 409,
-        data: "link_required",
+        code: 428,
       }),
     }),
   );

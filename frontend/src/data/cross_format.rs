@@ -73,21 +73,15 @@ pub enum SyncPointError {
     Other(DataError),
 }
 
-/// Inspect the typed refusal before the general transport mapper flattens it.
+/// Read the refusal's status code before the general transport mapper
+/// flattens the error to its message.
 #[cfg(not(feature = "mobile"))]
-fn classify_sync_point_err(e: dioxus::CapturedError) -> SyncPointError {
+pub fn classify_sync_point_err(e: dioxus::CapturedError) -> SyncPointError {
     use dioxus::fullstack::ServerFnError;
     use omnibus_shared::CrossFormatErrorCode;
 
-    if let Some(ServerFnError::ServerError {
-        code: 409,
-        details: Some(details),
-        ..
-    }) = e.0.downcast_ref::<ServerFnError>()
-    {
-        if serde_json::from_value::<CrossFormatErrorCode>(details.clone()).ok()
-            == Some(CrossFormatErrorCode::LinkRequired)
-        {
+    if let Some(ServerFnError::ServerError { code, .. }) = e.0.downcast_ref::<ServerFnError>() {
+        if CrossFormatErrorCode::from_status(*code) == Some(CrossFormatErrorCode::LinkRequired) {
             return SyncPointError::LinkRequired;
         }
     }

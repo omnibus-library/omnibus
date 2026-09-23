@@ -11,16 +11,39 @@ use crate::progress::ProgressFormat;
 #[cfg(test)]
 mod tests;
 
-/// Stable refusal codes carried in RPC error details, independent of display text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+/// A refusal a client can act on, carried as the RPC error's status code so
+/// no client has to read the display text. Not in `details`: Dioxus decodes
+/// that *as* the `CapturedError`, dropping the status and message with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CrossFormatErrorCode {
-    /// The user must confirm an alignment before syncing these formats.
+    /// 428: the user must confirm an alignment before syncing these formats.
     LinkRequired,
-    /// The linked audio set changed and must be confirmed again.
+    /// 412: the linked audio set changed and must be confirmed again.
     AudioSetMismatch,
-    /// The other format has no stored position to pair with.
+    /// 409: the other format has no stored position to pair with.
     CounterpartMissing,
+}
+
+impl CrossFormatErrorCode {
+    const ALL: [Self; 3] = [
+        Self::LinkRequired,
+        Self::AudioSetMismatch,
+        Self::CounterpartMissing,
+    ];
+
+    /// The status code this refusal travels as.
+    pub fn status(self) -> u16 {
+        match self {
+            Self::LinkRequired => 428,
+            Self::AudioSetMismatch => 412,
+            Self::CounterpartMissing => 409,
+        }
+    }
+
+    /// The refusal a status code names, or `None` for any other failure.
+    pub fn from_status(status: u16) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.status() == status)
+    }
 }
 
 /// How a book's multiple audio files relate — declared by the user when
