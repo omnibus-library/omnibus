@@ -28,6 +28,7 @@ pub async fn create_highlight(
     Ok(highlight)
 }
 
+/// Native HTTP transport for [`create_highlight`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn create_highlight_online(
     server_url: &str,
@@ -59,6 +60,7 @@ pub async fn list_highlights(
     .await
 }
 
+/// Native HTTP transport for [`list_highlights`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn list_highlights_online(
     server_url: &str,
@@ -103,6 +105,7 @@ pub async fn update_highlight_color(
     Ok(())
 }
 
+/// Native HTTP transport for [`update_highlight_color`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn update_highlight_color_online(
     server_url: &str,
@@ -149,6 +152,7 @@ pub async fn update_highlight_note(
     Ok(())
 }
 
+/// Native HTTP transport for [`update_highlight_note`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn update_highlight_note_online(
     server_url: &str,
@@ -191,6 +195,7 @@ pub async fn delete_highlight(server_url: &str, id: i64) -> Result<(), DataError
     Ok(())
 }
 
+/// Native HTTP transport for [`delete_highlight`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn delete_highlight_online(server_url: &str, id: i64) -> Result<(), DataError> {
     let url = format!("{server_url}/api/highlights/{id}");

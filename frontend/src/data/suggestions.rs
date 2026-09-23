@@ -38,6 +38,7 @@ pub async fn get_suggestions(
     .await
 }
 
+/// Native HTTP transport for [`get_suggestions`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_suggestions_online(
     server_url: &str,

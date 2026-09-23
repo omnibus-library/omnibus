@@ -22,6 +22,7 @@ pub async fn get_author(server_url: &str, id: i64) -> Result<Option<AuthorDetail
     .await
 }
 
+/// Native HTTP transport for [`get_author`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_author_online(
     server_url: &str,
@@ -119,6 +120,7 @@ pub async fn list_authors(server_url: &str) -> Result<Vec<AuthorSummary>, DataEr
     .await
 }
 
+/// Native HTTP transport for [`list_authors`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn list_authors_online(server_url: &str) -> Result<Vec<AuthorSummary>, DataError> {
     let url = format!("{server_url}/api/authors");

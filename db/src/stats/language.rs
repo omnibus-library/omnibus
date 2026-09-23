@@ -3,7 +3,7 @@
 //! `languages.code` is whatever the file declared, and files disagree: an
 //! EPUB may say `en`, a Calibre export `eng`, a US publisher `en-US`. Left
 //! alone those are three slices of a 28-book library that reads as three
-//! languages (#2466). This folds every spelling of one language onto its
+//! languages. This folds every spelling of one language onto its
 //! English name, so the breakdown counts languages rather than spellings.
 
 /// The primary language subtag of a BCP-47 tag, lowercased: everything before

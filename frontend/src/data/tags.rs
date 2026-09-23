@@ -19,6 +19,7 @@ pub async fn get_tag_cloud(server_url: &str) -> Result<Vec<TagWeight>, DataError
     .await
 }
 
+/// Native HTTP transport for [`get_tag_cloud`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_tag_cloud_online(server_url: &str) -> Result<Vec<TagWeight>, DataError> {
     let url = format!("{server_url}/api/tags");

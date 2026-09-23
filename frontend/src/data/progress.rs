@@ -33,6 +33,7 @@ pub async fn save_progress(
     Ok(record)
 }
 
+/// Native HTTP transport for [`save_progress`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn save_progress_online(
     server_url: &str,
@@ -72,6 +73,7 @@ pub async fn get_progress(
     .await
 }
 
+/// Native HTTP transport for [`get_progress`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_progress_online(
     server_url: &str,
@@ -123,6 +125,7 @@ pub async fn set_playback_rate(
     Ok(record)
 }
 
+/// Native HTTP transport for [`set_playback_rate`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn set_playback_rate_online(
     server_url: &str,
@@ -156,6 +159,7 @@ pub async fn get_playback_rate(
     .await
 }
 
+/// Native HTTP transport for [`get_playback_rate`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_playback_rate_online(
     server_url: &str,
@@ -186,6 +190,7 @@ pub async fn record_sessions(
     .await
 }
 
+/// Native HTTP transport for [`record_sessions`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn record_sessions_online(
     server_url: &str,
@@ -215,6 +220,7 @@ pub async fn recent_progress(server_url: &str, limit: i64) -> Result<Vec<ResumeP
     .await
 }
 
+/// Native HTTP transport for [`recent_progress`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn recent_progress_online(
     server_url: &str,

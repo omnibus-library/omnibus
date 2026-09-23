@@ -1,6 +1,6 @@
 //! Write-path validation for [`upsert_progress`]: most-recent-wins conflict
 //! resolution by client event time, the audio multi-file guard, and the two
-//! WARN-only checks (#1861) that flag a rejected write or a large backward
+//! WARN-only checks that flag a rejected write or a large backward
 //! jump without changing what gets stored.
 
 use omnibus_shared::{ProgressFormat, ProgressRecord, ProgressUpdate};

@@ -24,6 +24,7 @@ pub async fn get_ebooks(server_url: &str) -> Result<EbookLibrary, DataError> {
     .await
 }
 
+/// Native HTTP transport for [`get_ebooks`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_ebooks_online(server_url: &str) -> Result<EbookLibrary, DataError> {
     let url = format!("{server_url}/api/ebooks");
@@ -222,6 +223,7 @@ pub async fn refresh_ebooks_first_page(
     .await;
 }
 
+/// Native HTTP transport for [`get_ebooks_page`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_ebooks_page_online(
     server_url: &str,
@@ -317,6 +319,7 @@ pub async fn search_ebooks(server_url: &str, q: &str) -> Result<EbookLibrary, Da
     }
 }
 
+/// Native HTTP transport for [`search_ebooks`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn search_ebooks_online(
     server_url: &str,
@@ -367,6 +370,7 @@ pub async fn get_ebook(server_url: &str, uuid: &str) -> Result<Option<EbookMetad
     Ok(book)
 }
 
+/// Native HTTP transport for [`get_ebook`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_ebook_online(
     server_url: &str,
@@ -402,6 +406,7 @@ pub async fn get_manifest(
     .await
 }
 
+/// Native HTTP transport for [`get_manifest`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_manifest_online(
     server_url: &str,

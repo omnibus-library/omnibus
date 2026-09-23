@@ -28,6 +28,7 @@ pub async fn create_bookmark(
     Ok(bookmark)
 }
 
+/// Native HTTP transport for [`create_bookmark`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn create_bookmark_online(
     server_url: &str,
@@ -56,6 +57,7 @@ pub async fn list_bookmarks(server_url: &str, book_uuid: &str) -> Result<Vec<Boo
     .await
 }
 
+/// Native HTTP transport for [`list_bookmarks`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn list_bookmarks_online(
     server_url: &str,
@@ -98,6 +100,7 @@ pub async fn update_bookmark(
     Ok(())
 }
 
+/// Native HTTP transport for [`update_bookmark`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn update_bookmark_online(
     server_url: &str,
@@ -140,6 +143,7 @@ pub async fn delete_bookmark(server_url: &str, id: i64) -> Result<(), DataError>
     Ok(())
 }
 
+/// Native HTTP transport for [`delete_bookmark`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn delete_bookmark_online(server_url: &str, id: i64) -> Result<(), DataError> {
     let url = format!("{server_url}/api/bookmarks/{id}");

@@ -1,7 +1,7 @@
 //! Read-only half-star rating display. One renderer for every surface that
 //! *shows* a rating without editing it, so a 4.5 draws as four and a half
 //! stars wherever it appears rather than rounding to five on one page and not
-//! another (#2467). The interactive widget in `pages::book_detail::rating`
+//! another. The interactive widget in `pages::book_detail::rating`
 //! keeps its own markup — it carries per-half click targets this has no use
 //! for — but fills its stars by the same 0/50/100 rule.
 

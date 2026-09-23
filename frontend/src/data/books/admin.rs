@@ -49,6 +49,7 @@ pub async fn get_library(server_url: &str) -> Result<LibraryContents, DataError>
     .await
 }
 
+/// Native HTTP transport for [`get_library`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_library_online(server_url: &str) -> Result<LibraryContents, DataError> {
     let url = format!("{server_url}/api/library");

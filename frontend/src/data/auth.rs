@@ -101,6 +101,7 @@ pub async fn get_me(server_url: &str) -> Result<UserSummary, DataError> {
     Ok(me)
 }
 
+/// Native HTTP transport for [`get_me`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_me_online(server_url: &str) -> Result<UserSummary, DataError> {
     let url = format!("{server_url}/api/auth/me");
@@ -180,6 +181,7 @@ pub async fn get_server_version(server_url: &str) -> Result<String, DataError> {
     .await
 }
 
+/// Native HTTP transport for [`get_server_version`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_server_version_online(server_url: &str) -> Result<String, DataError> {
     #[derive(serde::Deserialize)]
