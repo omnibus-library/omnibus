@@ -73,6 +73,37 @@ async fn insert_book_row_keys_author_sort_surname_first_with_and_without_file_as
     );
 }
 
+/// #2451: a file whose OPF `file_as` is the display name itself (`Andy Weir`)
+/// must key surname-first like its author's other books, not under A.
+#[tokio::test]
+async fn insert_book_row_keys_a_given_name_file_as_surname_first() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let library_id = seed_scan_root(&pool).await;
+    let mut book = indexed(
+        "phm.epub",
+        Some("Project Hail Mary"),
+        &["Andy Weir"],
+        &[],
+        None,
+        None,
+    );
+    book.metadata.creators[0].file_as = Some("Andy Weir".into());
+
+    let mut tx = pool.begin().await.unwrap();
+    let id = insert_book_row(&mut tx, library_id, "/lib", &book)
+        .await
+        .unwrap()
+        .book_id;
+    tx.commit().await.unwrap();
+
+    let author_sort: String = sqlx::query_scalar("SELECT author_sort FROM books WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(author_sort, "Weir, Andy");
+}
+
 /// `sync_new` inserts a brand-new book: a canonical `books` row, its
 /// `book_files` row, and every per-book link row.
 #[tokio::test]
