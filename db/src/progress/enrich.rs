@@ -83,7 +83,29 @@ pub(super) async fn enrich_record(
         }
     }
     record.resolved = resolve_position(pool, record, audio.as_ref(), detail).await?;
+    if detail == PositionDetail::Full {
+        fill_derived_epub_cfi(pool, record).await;
+    }
     Ok(audio)
+}
+
+/// Fill [`ProgressRecord::derived_epub_cfi`] for an epub row that stores a
+/// percent but no CFI, so a reader opens it where it is. Without one the
+/// reader lands on the cover and writes that back over the percent.
+///
+/// Placed by the same spine-stats mapping the cross-format jump uses, which
+/// floors — the landing never sits past what the reader reached. A no-op for
+/// every other row, and `None` for a book with no measured structure.
+pub async fn fill_derived_epub_cfi(pool: &SqlitePool, record: &mut ProgressRecord) {
+    if record.format != ProgressFormat::Epub || record.epub_cfi.is_some() {
+        return;
+    }
+    let Some(percent) = record.progress_percent.filter(|p| (1..=100).contains(p)) else {
+        return;
+    };
+    record.derived_epub_cfi =
+        crate::cross_format::derive_candidate_cfi(pool, &record.book_uuid, percent as f64 / 100.0)
+            .await;
 }
 
 /// Whole-book percent for an audio position, floor semantics and clamping

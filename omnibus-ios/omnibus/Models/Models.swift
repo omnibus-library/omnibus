@@ -596,6 +596,11 @@ struct ProgressRecord: Codable, Sendable {
     /// Where this position sits in the book, resolved server-side. `nil` on
     /// the same terms as ``totalDurationSeconds``.
     var resolved: ResolvedPosition?
+    /// A CFI the server placed for a row that stores a percent but no CFI of
+    /// its own — a Kobo's percent-only write — floored so it never sits past
+    /// that percent. Where the reader opens such a row. Read paths only;
+    /// `nil` whenever ``epubCFI`` is set.
+    var derivedEpubCFI: String?
 
     /// The clock two positions may be compared on.
     ///
@@ -620,6 +625,7 @@ struct ProgressRecord: Codable, Sendable {
         case bookFileID = "book_file_id"
         case totalDurationSeconds = "total_duration_seconds"
         case resolved
+        case derivedEpubCFI = "derived_epub_cfi"
     }
 }
 

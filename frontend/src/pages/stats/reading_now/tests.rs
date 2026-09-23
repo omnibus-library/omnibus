@@ -35,6 +35,7 @@ fn point(percent: Option<i64>, part: Option<(i64, i64)>) -> ResumePoint {
             client_updated_at: 0,
             total_duration_seconds: None,
             resolved: None,
+            derived_epub_cfi: None,
         },
         book: EbookMetadata::default(),
         linked: false,

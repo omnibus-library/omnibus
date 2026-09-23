@@ -67,6 +67,7 @@ pub async fn recent_progress(
                 // callers that serve them.
                 total_duration_seconds: None,
                 resolved: None,
+                derived_epub_cfi: None,
             })
         })
         .collect()
