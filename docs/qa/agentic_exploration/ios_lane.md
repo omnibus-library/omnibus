@@ -190,11 +190,11 @@ must be journalled exactly as their flow documents say.
 note, a journal body, a shelf name — and write it the way `start.md`'s *What
 you type into the app* says: a memorable phrase, never the run id, your actor
 id or your `seq`. That rule holds on this surface exactly as on the web. An
-earlier version of this file asked for the run id in shelf names, and the two
-shelves it produced are still in the shared library for every reader to see
-(#2364); do not add to them. A phrase you would recognise on sight is unique
-enough: the audit tells "landed once" from "landed twice" by matching that
-content, and a duplicate is two server rows carrying it.
+earlier version of this file asked for the run id in shelf names, and two
+shelves named that way sat in the shared library until they were deleted by
+hand (#2364). A phrase you would recognise on sight is unique enough: the
+audit tells "landed once" from "landed twice" by matching that content, and a
+duplicate is two server rows carrying it.
 
 ### Pass
 
