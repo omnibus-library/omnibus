@@ -56,6 +56,15 @@ jobs:
           languages: ${{ matrix.language }}
           # All four extract straight from source; there is no build step.
           build-mode: none
+          # Test code only: literal test passwords otherwise trip the ruleset's
+          # code-scanning gate on every PR that adds one. Inline `#[cfg(test)]`
+          # modules live in production files and can't be excluded by path.
+          config: |
+            paths-ignore:
+              - "**/tests/**"
+              - "**/tests.rs"
+              - "**/test_support.rs"
+              - "ui_tests/**"
 
       - uses: github/codeql-action/analyze@v4
         with:
