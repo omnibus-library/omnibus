@@ -281,6 +281,8 @@ actor OfflineStore {
             db = nil
             return
         }
+        // The mirror's text sorts name it; a connection without it fails them.
+        DictionaryOrder.register(on: db)
         exec("PRAGMA journal_mode=WAL")
         exec("PRAGMA synchronous=NORMAL")
         exec("PRAGMA foreign_keys=ON")
@@ -355,7 +357,9 @@ actor OfflineStore {
         // `payload` is the encoded `Book` and is what callers actually get
         // back; every column beside it exists so a sort, a format filter, or a
         // search can run without decoding thousands of rows. They are lowercased
-        // at write time so the query side needs no collation of its own.
+        // at write time so a `LIKE` match needs no collation; the text sorts
+        // compare through the `dictionary` collation `open()` registers, which
+        // is query-only — never named here, so the file opens without it.
         //
         // This is a best-effort mirror, not a byte-identical replica of the
         // server's ordering — it backs offline paging and local search, and the
@@ -407,6 +411,14 @@ actor OfflineStore {
         // — the same place the server's NULL puts a book nobody has touched.
         for table in ["books", "books_staging"] where !hasColumn(table, "last_interacted") {
             exec("ALTER TABLE \(table) ADD COLUMN last_interacted TEXT NOT NULL DEFAULT ''")
+        }
+        // The first creator's surname-first key, the one the server's Author
+        // axis files under. Same lockstep as above; a mirror written before
+        // the column existed carries the empty default, which the Author
+        // order reads as "fall back to the display name" until the next pass
+        // rewrites it.
+        for table in ["books", "books_staging"] where !hasColumn(table, "author_sort") {
+            exec("ALTER TABLE \(table) ADD COLUMN author_sort TEXT NOT NULL DEFAULT ''")
         }
     }
 
@@ -808,6 +820,7 @@ actor OfflineStore {
         var uuid: String
         var title: String
         var author: String
+        var authorSort: String
         var series: String
         var seriesIndex: Double
         var addedAt: String
@@ -848,15 +861,15 @@ actor OfflineStore {
         let sql = """
             INSERT INTO books_staging
               (uuid, title, author, series, series_index, added_at, modified,
-               last_interacted, formats, search_text, payload)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               last_interacted, formats, search_text, payload, author_sort)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(uuid) DO UPDATE SET
               title = excluded.title, author = excluded.author,
               series = excluded.series, series_index = excluded.series_index,
               added_at = excluded.added_at, modified = excluded.modified,
               last_interacted = excluded.last_interacted,
               formats = excluded.formats, search_text = excluded.search_text,
-              payload = excluded.payload
+              payload = excluded.payload, author_sort = excluded.author_sort
             """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
             exec("ROLLBACK")
@@ -874,6 +887,7 @@ actor OfflineStore {
             bind(stmt, 9, row.formats)
             bind(stmt, 10, row.searchText)
             bind(stmt, 11, row.payload)
+            bind(stmt, 12, row.authorSort)
             sqlite3_step(stmt)
             sqlite3_reset(stmt)
         }

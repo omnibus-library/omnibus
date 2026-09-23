@@ -253,6 +253,9 @@ actor LibraryIndex {
             uuid: book.uuid,
             title: book.displayTitle.lowercased(),
             author: author.lowercased(),
+            authorSort: book.creators.first.map {
+                DictionaryOrder.creatorSortKey(fileAs: $0.fileAs, name: $0.name)
+            } ?? "",
             series: (book.series ?? "").lowercased(),
             seriesIndex: Double(book.seriesIndex ?? "") ?? 0,
             addedAt: book.addedAt ?? "",
@@ -422,12 +425,21 @@ actor LibraryIndex {
     /// `ORDER BY` fragment for one sort axis. `internal` (not private) on the
     /// same grounds as `predicate`: the ordering each axis produces is
     /// testable as a pure function against a scratch table.
+    ///
+    /// The three text axes compare in the server's dictionary order, and the
+    /// Author axis on the surname-first key the server files under — or, for
+    /// a row mirrored before that key was stored, on the display name.
     static func order(sort: SortKey, direction: SortDirection) -> String {
         let dir = direction == .asc ? "ASC" : "DESC"
+        let collate = "COLLATE \(DictionaryOrder.collation)"
         switch sort {
-        case .title: return "title \(dir)"
-        case .author: return "author \(dir), title ASC"
-        case .series: return "series \(dir), series_index ASC, title ASC"
+        case .title: return "title \(collate) \(dir)"
+        case .author:
+            return """
+                CASE author_sort WHEN '' THEN author ELSE author_sort END \(collate) \(dir), \
+                title \(collate) ASC
+                """
+        case .series: return "series \(collate) \(dir), series_index ASC, title \(collate) ASC"
         case .recentlyInteracted: return "last_interacted \(dir), title ASC"
         case .lastUpdated: return "modified \(dir), title ASC"
         case .newestAdded: return "added_at \(dir), title ASC"
