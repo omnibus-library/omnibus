@@ -64,11 +64,11 @@
         ] ++ rustMobileTargets);
 
         # `dioxus-cli` from nixpkgs-unstable bundles its own `wasm-bindgen-cli`
-        # (appended to PATH via `--suffix`), but the `dioxus` git pin in
-        # Cargo.toml (v0.7.9 monorepo tag) pulls in `wasm-bindgen 0.2.122`
-        # transitively, and nixpkgs-unstable only ships 0.2.121. `dx` requires
-        # the CLI version to match the locked crate, so we supply 0.2.122 and
-        # put it earlier in PATH.
+        # (appended to PATH via `--suffix`), but Cargo.lock resolves the
+        # `wasm-bindgen` crate to 0.2.122 (dioxus-web and omnibus-frontend both
+        # accept any 0.2.x), and nixpkgs-unstable only ships 0.2.121. `dx`
+        # requires the CLI version to match the locked crate, so we supply
+        # 0.2.122 and put it earlier in PATH.
         #
         # We install the upstream *prebuilt* CLI binary from the GitHub release
         # rather than building it from source. Building from source (via

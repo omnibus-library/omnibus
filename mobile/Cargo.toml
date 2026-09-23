@@ -5,8 +5,8 @@ edition = "2021"
 license.workspace = true
 
 [dependencies]
-dioxus = { version = "0.7", features = ["mobile"] }
-dioxus-router = "0.7"
+dioxus = { workspace = true, features = ["mobile"] }
+dioxus-router.workspace = true
 omnibus-shared = { path = "../shared" }
 omnibus-frontend = { path = "../frontend", features = ["mobile"] }
 reqwest.workspace = true

@@ -9,8 +9,8 @@
 # This deliberately does NOT use the Nix dev shell — a plain Rust toolchain
 # keeps the image conventional and light. `dx` downloads the matching
 # wasm-bindgen + wasm-opt itself, so the wasm-bindgen pin in flake.nix is not
-# needed here. The Dioxus libraries are patched to the v0.7.9 git tag (see
-# [patch.crates-io] in Cargo.toml), so the CLI is pinned to the same 0.7.9.
+# needed here. The Dioxus libraries are `=`-pinned to crates.io 0.7.9 in the
+# root Cargo.toml, so the CLI is pinned to the same 0.7.9.
 ###############################################################################
 # Debian 13 (trixie) for glibc >= 2.39: the prebuilt `dx` release binary is
 # linked against GLIBC_2.39, which bookworm (2.36) doesn't provide. The runtime
@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup target add wasm32-unknown-unknown
 
 # Pull the prebuilt Dioxus CLI release binary (compiling it from source would
-# add many minutes). Pinned to v0.7.9 to match the patched Dioxus libraries.
+# add many minutes). Pinned to v0.7.9 to match the pinned Dioxus libraries.
 RUN curl -L --proto '=https' --tlsv1.2 -sSf \
         https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
     && cargo binstall -y dioxus-cli@0.7.9
