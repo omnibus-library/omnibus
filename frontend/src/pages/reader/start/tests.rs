@@ -1,3 +1,6 @@
+//! `reader_start`: which saved position the reader opens at, and when its
+//! first landing is held back from being written over the stored percent.
+
 use omnibus_shared::ProgressFormat;
 
 use super::*;
@@ -77,6 +80,17 @@ fn reader_start_holds_the_first_write_when_a_percent_only_row_cannot_be_placed()
             cfi: None,
             hold_first_write: true,
         }
+    );
+}
+
+#[test]
+fn reader_start_restores_the_local_save_without_a_hold_when_a_percent_only_row_cannot_be_placed() {
+    // The local save is a CFI restore, so its landing is echo-tagged and never
+    // written; a hold on top would swallow the reader's first real page turn.
+    let kobo = row(None, Some(42), None);
+    assert_eq!(
+        reader_start(None, Some(&kobo), Some(LOCAL.to_string())),
+        start_at(LOCAL)
     );
 }
 
