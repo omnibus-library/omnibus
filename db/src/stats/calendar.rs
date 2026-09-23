@@ -105,29 +105,46 @@ pub(super) fn local_month(col: &str, offset_minutes: i64) -> String {
     )
 }
 
+/// Datetime modifiers that move a day back to the Monday of its week.
+///
+/// `weekday 0` advances to the coming Sunday (staying put on one), so backing
+/// up six days lands on that week's Monday. The Week window and the chart
+/// builder's Week bucket both use this, so the week a window opens on is the
+/// week its buckets are keyed on.
+pub(super) const TO_MONDAY: &str = "'weekday 0', '-6 days'";
+
+/// The live clock, as the SQLite time-value the window builders read.
+const NOW: &str = "'now'";
+
 /// Unix seconds (UTC) of the instant a range's window opens, on the reader's
 /// calendar.
 ///
-/// Reads `now` on the reader's clock, snaps it to the start of their day, month,
-/// or year, then converts that wall-clock moment back to the UTC instant it
-/// actually was — the `- shift` at the end. Without that last step the bound
+/// Reads `now` on the reader's clock, snaps it to the start of their week,
+/// month, or year, then converts that wall-clock moment back to the UTC instant
+/// it actually was — the `- shift` at the end. Without that last step the bound
 /// would be a local datetime compared against UTC `started_at` columns, which is
 /// wrong by the offset in the opposite direction.
+///
+/// Every range is period-to-date: a Week opens on the reader's Monday, so on a
+/// Monday it holds one day.
 ///
 /// Calendar arithmetic stays in SQLite rather than Rust; each arm is a fixed
 /// literal built from a bounds-checked integer, never user input.
 pub(super) fn window_start_expr(range: StatsRange, offset_minutes: i64) -> String {
+    window_start_at(range, offset_minutes, NOW)
+}
+
+/// [`window_start_expr`] against an injected clock — `now` is any SQLite
+/// time-value expression — so a test can pin the weekday it runs on.
+fn window_start_at(range: StatsRange, offset_minutes: i64, now: &str) -> String {
     let (m, s) = (modifier(offset_minutes), shift(offset_minutes));
+    let local = format!("datetime({now}, {m})");
     match range {
-        // Rolling 7 calendar days ending today — deliberately not aligned to a
-        // weekday, per the converged stats design.
         StatsRange::Week => {
-            format!("strftime('%s', datetime('now', {m}), 'start of day', '-6 days') - {s}")
+            format!("strftime('%s', {local}, 'start of day', {TO_MONDAY}) - {s}")
         }
-        StatsRange::Month => {
-            format!("strftime('%s', datetime('now', {m}), 'start of month') - {s}")
-        }
-        StatsRange::Year => format!("strftime('%s', datetime('now', {m}), 'start of year') - {s}"),
+        StatsRange::Month => format!("strftime('%s', {local}, 'start of month') - {s}"),
+        StatsRange::Year => format!("strftime('%s', {local}, 'start of year') - {s}"),
         StatsRange::AllTime => "0".to_string(),
     }
 }
@@ -139,20 +156,25 @@ pub(super) fn window_start_expr(range: StatsRange, offset_minutes: i64) -> Strin
 /// it is compared against cannot drift onto different definitions of where a
 /// period begins.
 pub(super) fn prev_window_start_expr(range: StatsRange, offset_minutes: i64) -> Option<String> {
+    prev_window_start_at(range, offset_minutes, NOW)
+}
+
+/// [`prev_window_start_expr`] against an injected clock, as
+/// [`window_start_at`].
+fn prev_window_start_at(range: StatsRange, offset_minutes: i64, now: &str) -> Option<String> {
     let (m, s) = (modifier(offset_minutes), shift(offset_minutes));
+    let local = format!("datetime({now}, {m})");
     Some(match range {
         StatsRange::Week => {
-            format!("strftime('%s', datetime('now', {m}), 'start of day', '-13 days') - {s}")
+            format!("strftime('%s', {local}, 'start of day', {TO_MONDAY}, '-7 days') - {s}")
         }
         // Month arithmetic runs on a month-start anchor: applying '-1 month' to
         // a month-end 'now' (e.g. July 31) normalizes to day 1 of the *current*
         // month and collapses the window.
         StatsRange::Month => {
-            format!("strftime('%s', datetime('now', {m}), 'start of month', '-1 month') - {s}")
+            format!("strftime('%s', {local}, 'start of month', '-1 month') - {s}")
         }
-        StatsRange::Year => {
-            format!("strftime('%s', datetime('now', {m}), 'start of year', '-1 year') - {s}")
-        }
+        StatsRange::Year => format!("strftime('%s', {local}, 'start of year', '-1 year') - {s}"),
         StatsRange::AllTime => return None,
     })
 }

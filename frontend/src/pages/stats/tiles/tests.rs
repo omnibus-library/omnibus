@@ -168,3 +168,16 @@ fn build_tiles_compares_every_metric_on_a_bounded_window() {
     assert_eq!(label(2), "\u{2212}6%");
     assert_eq!(label(3), "flat");
 }
+
+#[test]
+fn comparison_reads_an_unmeasured_pages_window_as_a_drop_to_zero() {
+    // `None` is "nothing measurable happened", which against a real baseline
+    // is a fall to zero — not an absent comparison.
+    let mut month = summary(StatsRange::Month);
+    month.previous.pages_read = 200;
+
+    let c = comparison(Metric::Pages, &month).expect("a bounded window compares");
+
+    assert_eq!(c.label, "\u{2212}100%");
+    assert_eq!(c.css_class, "down");
+}

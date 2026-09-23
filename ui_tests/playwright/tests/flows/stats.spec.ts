@@ -487,6 +487,58 @@ test("the Finished drill-in lists the books completed in the window", async ({
   await expect(page.getByTestId("stats-drill-in")).toHaveCount(0);
 });
 
+// Regression for #2454: the Finished tile read "−2" while its sheet read
+// "▼100%", and a "flat" tile opened onto "Not enough data yet to compare".
+test("a tile's delta and its drill-in state the same comparison", async ({
+  page,
+}) => {
+  // Route-mocked so both sides of each comparison are pinned. Every key
+  // without `#[serde(default)]` on the Rust struct has to be here.
+  await page.route("**/api/rpc/stats", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        range: "week",
+        reading_seconds: 600,
+        listening_seconds: 0,
+        sessions: 1,
+        active_days: 1,
+        longest_streak_days: 1,
+        busiest_week_start: null,
+        busiest_week_seconds: 600,
+        books_finished: 0,
+        heatmap: [],
+        top_authors: [],
+        top_tags: [],
+        finished_books: [],
+        previous: {
+          books_finished: 2,
+          avg_stars: null,
+          listening_seconds: 0,
+          pages_read: 0,
+        },
+      }),
+    }),
+  );
+  await gotoReady(page, "/stats");
+
+  for (const [tile, label] of [
+    ["finished", "\u{2212}2"],
+    ["listening", "flat"],
+  ] as const) {
+    await expect(page.getByTestId(`stats-tile-${tile}-delta`)).toHaveText(
+      label,
+    );
+    await page.getByTestId(`stats-tile-${tile}`).click();
+    const delta = page.getByTestId("stats-drill-delta");
+    await expect(delta).toContainText(label);
+    await expect(delta).toContainText("vs last week");
+    await page.getByTestId("stats-drill-close").click();
+    await expect(page.getByTestId("stats-drill-in")).toHaveCount(0);
+  }
+});
+
 // Regression for #2465: the sheet is a modal scrim over the page, and Escape
 // did nothing — the Close button was the only way out.
 test("Escape closes an open drill sheet", async ({ page }) => {

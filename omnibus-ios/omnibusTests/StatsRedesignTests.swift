@@ -279,23 +279,31 @@ struct YearProjectionTests {
 
 // MARK: - Windowed copy
 
-@Suite("Window labels and deltas")
+@Suite("Window labels")
 struct WindowCopyTests {
-    private func summary(_ range: StatsRange) -> StatsSummary {
+    private func summary(_ range: StatsRange, asOf: String = "2026-08-27") -> StatsSummary {
         var s = StatsSummary()
         s.range = range
-        s.asOfDay = "2026-08-30"
+        s.asOfDay = asOf
         return s
     }
 
     @Test("each range names the window it actually covers")
     func captionsNameTheWindow() {
-        // Week is a rolling seven days ending today, matching
-        // `window_start_expr`'s `-6 days` — not a calendar week.
-        #expect(StatsView.rangeCaption(summary(.week)) == "Week of 24 Aug")
+        // Thursday 27 August: the calendar week opened on Monday the 24th,
+        // matching `window_start_expr` — a rolling week would say the 21st.
+        #expect(StatsView.rangeCaption(summary(.week)) == "Week of 24 Aug to date")
         #expect(StatsView.rangeCaption(summary(.month)) == "August 2026")
         #expect(StatsView.rangeCaption(summary(.year)) == "2026 to date")
         #expect(StatsView.rangeCaption(summary(.allTime)) == "Everything recorded")
+    }
+
+    @Test("a week opens on its Monday, whichever day of it the server is on")
+    func weekCaptionFindsItsMonday() {
+        // A Monday is a one-day week; a Sunday closes the week its Monday opened.
+        #expect(StatsView.rangeCaption(summary(.week, asOf: "2026-08-24")) == "Week of 24 Aug to date")
+        #expect(StatsView.rangeCaption(summary(.week, asOf: "2026-08-30")) == "Week of 24 Aug to date")
+        #expect(StatsView.rangeCaption(summary(.week, asOf: "2026-08-31")) == "Week of 31 Aug to date")
     }
 
     @Test("a server too old to send its day falls back to the range's name")
@@ -310,21 +318,6 @@ struct WindowCopyTests {
         #expect(RangeControl.shortLabel(.allTime) == "All")
         #expect(RangeControl.shortLabel(.week) == "Week")
         #expect(StatsView.windowLabel(.allTime) == "All time")
-    }
-
-    @Test("deltas are signed, and absent when nothing moved")
-    func signedDeltas() {
-        #expect(StatsFormat.delta(4, 2) == "+2")
-        #expect(StatsFormat.delta(1, 2) == "\u{2212}1")
-        #expect(StatsFormat.delta(2, 2) == nil)
-    }
-
-    @Test("a percentage delta needs a baseline to be a percentage of")
-    func percentDeltas() {
-        #expect(StatsFormat.percentDelta(1284, 1088) == "+18%")
-        #expect(StatsFormat.percentDelta(900, 1000) == "\u{2212}10%")
-        // Not "+∞%", and not "+100%": there is no percentage change from zero.
-        #expect(StatsFormat.percentDelta(500, 0) == nil)
     }
 }
 

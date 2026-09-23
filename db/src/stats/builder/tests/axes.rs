@@ -8,6 +8,7 @@ use omnibus_shared::StatsRange;
 
 use super::super::*;
 use super::{at, fixture, ledger_day, set_pages, spec};
+use crate::stats::now_secs;
 use crate::stats::tests::{
     finish_journal, listening_session, months_ago_secs, reading_session, DAY,
 };
@@ -364,4 +365,77 @@ async fn chart_series_clips_a_long_axis_to_the_most_recent_buckets_and_says_so()
         .await
         .unwrap();
     assert_eq!(r.buckets.last().unwrap(), &today);
+}
+
+#[tokio::test]
+async fn chart_series_week_axis_runs_from_the_readers_monday_to_today() {
+    let (pool, user) = fixture(1).await;
+    let monday = window_start(&pool, StatsRange::Week, 0).await.unwrap();
+    // The week's only activity is today, so Monday up to yesterday are elapsed
+    // days with nothing in them — and last Sunday belongs to last week.
+    reading_session(&pool, user, "uuid-1", monday - 1, 1_200).await;
+    reading_session(&pool, user, "uuid-1", now_secs(), 600).await;
+
+    let r = chart_series(
+        &pool,
+        user,
+        &spec(
+            vec![ChartMeasure::ReadingMinutes],
+            ChartBucket::Day,
+            StatsRange::Week,
+        ),
+        Some(0),
+    )
+    .await
+    .unwrap();
+
+    let (first, today, days): (String, String, i64) = sqlx::query_as(
+        "SELECT date(?1, 'unixepoch'), date('now'), \
+                CAST(julianday(date('now')) - julianday(date(?1, 'unixepoch')) AS INTEGER) + 1",
+    )
+    .bind(monday)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // Opens on Monday whatever day the reading started, and ends today: the
+    // days still to come are not on the axis, so a count can't plot a zero for
+    // a day nobody has lived yet.
+    assert_eq!(r.buckets.first(), Some(&first));
+    assert_eq!(r.buckets.last(), Some(&today));
+    assert_eq!(r.buckets.len() as i64, days);
+    let mut expected = vec![Some(0.0); r.buckets.len() - 1];
+    expected.push(Some(10.0));
+    assert_eq!(r.series[0].values, expected);
+}
+
+#[tokio::test]
+async fn chart_series_opens_a_bounded_axis_at_the_window_start_not_the_first_activity() {
+    let (pool, user) = fixture(1).await;
+    reading_session(&pool, user, "uuid-1", now_secs(), 600).await;
+
+    for (range, bucket) in [
+        (StatsRange::Month, ChartBucket::Day),
+        (StatsRange::Year, ChartBucket::Month),
+    ] {
+        let start = window_start(&pool, range, 0).await.unwrap();
+        let r = chart_series(
+            &pool,
+            user,
+            &spec(vec![ChartMeasure::ReadingMinutes], bucket, range),
+            Some(0),
+        )
+        .await
+        .unwrap();
+
+        let opening: String = sqlx::query_scalar(&format!(
+            "SELECT {}",
+            bucket_expr(bucket, "date(?, 'unixepoch')")
+        ))
+        .bind(start)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(r.buckets.first(), Some(&opening), "{range:?}");
+        assert_eq!(r.series[0].values.last(), Some(&Some(10.0)), "{range:?}");
+    }
 }

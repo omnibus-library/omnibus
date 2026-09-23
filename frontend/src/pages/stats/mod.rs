@@ -171,7 +171,7 @@ pub fn StatsPage() -> Element {
                 StatsFreshnessNote {}
             }
             if let (Some(metric), Some(summary)) = (expanded(), period.read().clone()) {
-                DrillIn { metric, summary, range: range(), expanded }
+                DrillIn { metric, summary, expanded }
             }
         }
     }
