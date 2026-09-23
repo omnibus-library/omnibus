@@ -192,7 +192,7 @@ pub(super) fn lead_accent_style(entries: &[StackEntry], lead: usize) -> String {
 }
 
 /// The kicker above the front book. A fan of one has nothing behind it, so it
-/// names what the reader is looking at instead of counting a stack (#2259).
+/// names what the reader is looking at instead of counting a stack.
 pub(super) fn stack_kicker(count: usize) -> String {
     if count <= 1 {
         "your in-progress book".to_string()

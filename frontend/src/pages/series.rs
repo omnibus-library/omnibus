@@ -118,7 +118,7 @@ fn series_header(s: &SeriesDetail) -> Element {
 /// The series card's eyebrow — `"Book #1 · May 2016"`, dropping either half
 /// when it's absent. Only a real date carries the `·` separator: a sentinel or
 /// truly-absent date drops the whole date slot rather than trailing a bare
-/// `· —`, so two equally-dateless books read the same (#2294, #2360).
+/// `· —`, so two equally-dateless books read the same.
 fn series_card_eyebrow(book: &EbookMetadata) -> String {
     let idx = book
         .series_index

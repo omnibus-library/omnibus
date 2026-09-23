@@ -358,13 +358,13 @@ fn backfill_chapters_handler(
     }
 }
 
-/// Returns the "Bake Overrides Into EPUBs" button's `onclick` handler
-/// (#959, #1718), mirroring [`refetch_author_photos_handler`]'s
+/// Returns the "Bake Overrides Into EPUBs" button's `onclick` handler,
+/// mirroring [`refetch_author_photos_handler`]'s
 /// immediate-disable-then-report shape: the run is queued on the shared
 /// worker and this only reports whether *queuing* succeeded — completion
 /// surfaces via the `WorkerStatusIndicator`'s poll rather than this
 /// response, including any per-book failures (always logged server-side,
-/// and named in the poll's warning row per #1739).
+/// and named in the poll's warning row).
 fn rewrite_all_epubs_handler(
     url: String,
     mut status: Signal<Option<String>>,

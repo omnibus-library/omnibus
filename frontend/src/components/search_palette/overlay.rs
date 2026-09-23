@@ -23,7 +23,7 @@ use crate::{data, use_server_url};
 /// Build the debounced search dispatcher. Each keystroke cancels the prior
 /// in-flight task (debounce sleep + RPC) before spawning a new one — only
 /// one task is in flight at a time, so stale requests don't race past the
-/// debounce or hit SQLite (#126). Uses gloo_timers on web, tokio::time on
+/// debounce or hit SQLite. Uses gloo_timers on web, tokio::time on
 /// server.
 fn build_search_dispatcher(
     server_url: String,
@@ -258,7 +258,7 @@ pub(super) fn SpOverlay(open: PaletteOpen) -> Element {
 ///
 /// Real DOM focus lands a frame after mount (see [`focus_after_paint`]), so
 /// a click-then-immediately-type user's first keystrokes would otherwise
-/// land on whatever had focus before the overlay opened and vanish (#1908).
+/// land on whatever had focus before the overlay opened and vanish.
 /// `install_prefocus_key_buffer` closes that window: a temporary
 /// `document`-level `keydown` listener folds keystrokes into `query` until
 /// real focus lands, at which point `remove_prefocus_key_buffer` detaches

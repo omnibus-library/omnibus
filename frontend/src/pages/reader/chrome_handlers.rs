@@ -96,7 +96,7 @@ fn advance_page(_: Signal<Option<SelectionData>>, _: Direction) {}
 
 /// Recover from a load failure or a wedged page turn: flip the overlay back
 /// to `Loading` immediately (rather than waiting on the glue round trip) and
-/// ask it to replay the last `init()` verbatim (issue #1895, AC3) — the
+/// ask it to replay the last `init()` verbatim — the
 /// error overlay's "Retry" affordance.
 #[cfg(any(feature = "web", feature = "mobile"))]
 fn retry_reader(mut status: Signal<ReaderStatus>) {

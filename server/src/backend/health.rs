@@ -20,7 +20,7 @@ use super::{app_version, build_id, repo_root};
 /// screen show the running server's release alongside its own app version.
 /// The `time` field (unix seconds) lets a client measure its own clock
 /// offset from the server, so it can stamp progress writes with a
-/// server-corrected event time (issue #1362). Whitelisted in
+/// server-corrected event time. Whitelisted in
 /// `auth::gate::require_auth` so it remains reachable without a session.
 pub(super) async fn get_health() -> Response {
     Json(serde_json::json!({

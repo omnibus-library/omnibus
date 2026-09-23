@@ -216,8 +216,8 @@ async fn retain_shelf_visible(
 /// be shown this book — the delegate routes 404 rather than 403, matching
 /// [`shelves::load_visible_shelf`]'s no-existence-leak rule.
 ///
-/// Canonicalizes `uuid` through [`db::resolve_canonical_book_uuid`] first
-/// (#932 follow-up): the media handlers this gate sits in front of resolve
+/// Canonicalizes `uuid` through [`db::resolve_canonical_book_uuid`] first:
+/// the media handlers this gate sits in front of resolve
 /// a path uuid via `resolve_book_id_by_uuid`, which falls back to
 /// `merged_uuids` — a book merged away from an old uuid still serves under
 /// it. `shelf_books` only ever names the *canonical* uuid, so checking the

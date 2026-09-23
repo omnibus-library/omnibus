@@ -159,7 +159,7 @@ pub async fn rpc_delete_ebook_cover(uuid: String) -> Result<Option<EbookMetadata
 }
 
 /// Admin-only: queues a fleet-wide bake of every book's active
-/// metadata/cover overrides into its EPUB container (#959, #1718). Posts a
+/// metadata/cover overrides into its EPUB container. Posts a
 /// single `Task::RewriteAllEpubs` to the background worker and returns
 /// immediately; completion surfaces via the existing `rpc_worker_status`
 /// polling loop (`WorkerStatusIndicator`). Mobile's analogous route is

@@ -20,7 +20,7 @@ use crate::http_errors::internal;
 /// path prefix).
 pub struct KoboAuthUser {
     pub user_id: i64,
-    /// The resolved device row id — keys the per-device sync snapshot (#922).
+    /// The resolved device row id — keys the per-device sync snapshot.
     pub device_id: i64,
     pub token: String,
 }
@@ -72,7 +72,7 @@ where
 }
 
 /// Authenticated principal for the token-less Reading Services routes
-/// (`/api/v3/...`, #1278): the device speaks at the bare origin, identified
+/// (`/api/v3/...`): the device speaks at the bare origin, identified
 /// only by its `x-kobo-deviceid` header, which a prior tokened
 /// `/kobo/<TOKEN>/v1` call bound to a device row. The hardware id is not a
 /// secret the way the path token is — it only ever unlocks the annotation

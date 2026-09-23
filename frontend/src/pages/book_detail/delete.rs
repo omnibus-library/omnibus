@@ -17,8 +17,7 @@ use crate::Route;
 /// The rail button's label. "Delete files…" is a promise about the
 /// filesystem, and a wishlist entry or paper-only book has no files to make it
 /// about — the dialog behind it says so outright ("This book has no files on
-/// disk"), which is the tell that the *label* was wrong, not the control
-/// (#2471).
+/// disk"), which is the tell that the *label* was wrong, not the control.
 ///
 /// The control itself stays on a fileless record, because it is that record's
 /// only removal: the dialog's PHYSICAL COPIES section is how a paper-only book

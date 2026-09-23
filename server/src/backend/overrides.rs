@@ -412,7 +412,7 @@ pub(super) async fn persist_cover(
 }
 
 /// Admin-only: queue a fleet-wide bake of every book's active metadata/cover
-/// overrides into its EPUB container (#959, #1718) — the bulk sibling of the
+/// overrides into its EPUB container — the bulk sibling of the
 /// per-book export bake `get_ebook_download` already performs on demand.
 /// Dispatches `Task::RewriteAllEpubs` to the shared worker and returns as
 /// soon as it's queued, mirroring `post_scan_library`, instead of awaiting

@@ -132,7 +132,7 @@ fn relocate_moved(new: &Option<String>, last_posted: &Option<String>) -> bool {
 
 /// POST one epub reading position to the server. `client_updated_at` is
 /// the event time the server's conditional upsert arbitrates on; without
-/// it a write degrades to receipt-time last-write-wins (#1864).
+/// it a write degrades to receipt-time last-write-wins.
 #[cfg(feature = "web")]
 async fn post_epub_progress(uuid: String, cfi: String, percent_for_post: i64) {
     let body = serde_json::json!({
@@ -150,9 +150,9 @@ async fn post_epub_progress(uuid: String, cfi: String, percent_for_post: i64) {
 }
 
 /// Build the `__omnibusOnRelocate` closure: re-derives chapter/total from
-/// the TOC's own order (`resolve_chapter_position`, issue #1909 AC1),
+/// the TOC's own order (`resolve_chapter_position`),
 /// persists + POSTs a real (non-echo, moved) position, and clears a
-/// TOC-jump `Loading` back to `Ready` once a position lands (AC3).
+/// TOC-jump `Loading` back to `Ready` once a position lands.
 /// `hold_first_write` swallows the first such write — see
 /// [`super::start::ReaderStart::hold_first_write`].
 #[cfg(feature = "web")]
@@ -334,7 +334,7 @@ struct BootstrapLiterals {
 /// The same progress fetch also seeds `loc` with the server's stored
 /// whole-book percent (flagged approximate) so the footer/ribbon show the
 /// last-known position immediately — not a blank (or a frozen 0%) while
-/// epub.js fetches, parses, and paginates the book (issue #1896, AC2). The
+/// epub.js fetches, parses, and paginates the book. The
 /// first real relocate overwrites the seed wholesale.
 #[cfg(feature = "web")]
 async fn spawn_bootstrap_and_highlights(

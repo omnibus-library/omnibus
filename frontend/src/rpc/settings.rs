@@ -63,7 +63,7 @@ pub async fn rpc_save_settings(settings: Settings) -> Result<Settings> {
 /// Resolve the `library` discriminator (`"ebook"` or `"audiobook"`) used by
 /// the metadata-precedence RPCs below to the corresponding configured path.
 /// A separate get/set pair per concern (mirroring the Hardcover-key / SMTP
-/// RPCs) keeps this F5.1 (#972) setting out of the `Settings` struct, whose
+/// RPCs) keeps this setting out of the `Settings` struct, whose
 /// exhaustive field literals are used across dozens of call sites.
 #[cfg(feature = "server")]
 fn precedence_library_path(

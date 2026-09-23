@@ -368,7 +368,7 @@ pub(super) fn trim_scalars(overrides: &mut MetadataOverrides) {
 }
 
 /// The legacy four fields as overrides, each only where it differs from the
-/// indexed value. The form edits the first creator's *name* only (#2355):
+/// indexed value. The form edits the first creator's *name* only:
 /// that creator keeps its role and file-as form, and the others ride along.
 pub(super) fn legacy_overrides(book: &EbookMetadata, legacy: &LegacyFields) -> MetadataOverrides {
     let mut overrides = MetadataOverrides::default();

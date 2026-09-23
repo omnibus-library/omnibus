@@ -16,8 +16,7 @@ use crate::Route;
 /// [`crate::contexts::CoverCacheBust`] counter (0 = unchanged this
 /// session) — `/api/thumbs/*` is cached `private, max-age=86400`, so
 /// without it the grid/table would keep showing a pre-edit thumbnail for
-/// the otherwise-unchanged URL after navigating back from a cover edit
-/// (issue #1087).
+/// the otherwise-unchanged URL after navigating back from a cover edit.
 pub fn thumb_srcs(
     book: &EbookMetadata,
     uuid: &str,

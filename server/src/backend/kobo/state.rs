@@ -27,10 +27,10 @@ fn reject_oversized_state_request(body: &dto::StateRequest) -> Option<Response> 
 /// `PUT library/<uuid>/state` — persist the device's reading state.
 /// `StatusInfo` routes into `book_read_status`; the `CurrentBookmark`
 /// position lands in `reading_progress` as percent + verbatim `KoboSpan`
-/// plus a server-derived `epub_cfi` when the cached KEPUB allows it
-/// (#925), stamped with the device's own event time when it sends one. A
+/// plus a server-derived `epub_cfi` when the cached KEPUB allows it,
+/// stamped with the device's own event time when it sends one. A
 /// `Statistics` block is mirrored onto the same row so sync-out can echo it
-/// back unchanged (#1653) — it is never aggregated into `db::stats`.
+/// back unchanged — it is never aggregated into `db::stats`.
 ///
 /// The whole batch's read-status and bookmark writes share one transaction
 /// (begun before the loop, committed after it), so a mid-batch DB failure
@@ -188,7 +188,7 @@ async fn apply_statistics(
     }
 }
 
-/// Persist a device's `CurrentBookmark` as an epub position (#925).
+/// Persist a device's `CurrentBookmark` as an epub position.
 ///
 /// The `KoboSpan` location rides verbatim in its own column, and — when the
 /// cached KEPUB allows — a CFI derived from it lands in `epub_cfi`, so the
@@ -254,7 +254,7 @@ async fn persist_bookmark(
 }
 
 /// Mirror a device's `Statistics` block so sync-out can hand the same numbers
-/// back with the device's own clock (#1653).
+/// back with the device's own clock.
 ///
 /// A negative counter is dropped, not clamped, like an out-of-range percent:
 /// echoed-only values have nothing safe to clamp toward, and the row CHECK

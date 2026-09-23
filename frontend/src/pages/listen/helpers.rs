@@ -121,7 +121,7 @@ pub(super) fn on_skip_forward_30() -> impl FnMut(MouseEvent) + 'static {
 /// chapter jumps; no-op off web (SSR has no audio element to poke). The JS
 /// `seek` shim pushes the target time to the transport display immediately
 /// — playing or paused — rather than waiting on the element's own
-/// `timeupdate` (#1897).
+/// `timeupdate`.
 #[cfg(not(feature = "mobile"))]
 pub(super) fn seek_to(secs: f64) {
     #[cfg(feature = "web")]
@@ -144,7 +144,7 @@ fn resolve_resume_pos(server_pos: Option<f64>, local_pos: f64) -> f64 {
 
 /// The file to request the manifest with: an explicit picker selection wins;
 /// otherwise the progress row's stored `book_file_id`, so resume lands in
-/// the file the seconds were recorded in (#1888); `None` (the server's
+/// the file the seconds were recorded in; `None` (the server's
 /// lowest-ordinal default) only when neither names one.
 #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]
 pub(super) fn resolve_boot_file(requested: Option<i64>, row_file: Option<i64>) -> Option<i64> {
@@ -158,7 +158,7 @@ pub(super) fn resolve_boot_file(requested: Option<i64>, row_file: Option<i64>) -
 /// an offset is applied only when the progress row names the loaded file:
 /// seconds recorded in another file, or in no named file at all (the local
 /// cache never names one), start playback at zero rather than splicing one
-/// file's offset into another (#1888).
+/// file's offset into another.
 #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]
 pub(super) fn resolve_boot_position(
     row: Option<(Option<i64>, Option<f64>)>,
@@ -190,8 +190,7 @@ pub(super) fn resolve_boot_position(
 /// when it names a *different* file than the candidate maps to: picking
 /// the file the mapping already lands in (which every Continue card does
 /// — it always carries the row's file id) is a resume, not a divergent
-/// navigation, and skipping follow there reopened books at the stale spot
-/// (issue #1972).
+/// navigation, and skipping follow there reopened books at the stale spot.
 #[cfg(not(feature = "mobile"))]
 #[cfg_attr(not(feature = "web"), allow(dead_code))]
 pub(super) fn resolve_follow_boot(
@@ -355,13 +354,12 @@ pub(super) fn format_hms(seconds: f64) -> String {
 /// duration; falls back to `seconds` unscaled when `rate` is non-finite or
 /// non-positive.
 ///
-/// **Only figures that say "left" or "remaining" go through this.** #2246
-/// once sent every span through it, so a speed change moved the elapsed
-/// readout and the totals too; #2344 repealed that, because a rescaled
-/// *position* disagrees with the bookmark stamps and the detail page that
-/// name the same spot. What survives of #2246 is the labelling rule it was
-/// reaching for: a wall-clock figure never sits unmarked beside a book-time
-/// one (#2108, and #2521 for the chapter panel and the iOS transport).
+/// **Only figures that say "left" or "remaining" go through this.** Sending
+/// every span through it made a speed change move the elapsed readout and the
+/// totals too, and a rescaled *position* disagrees with the bookmark stamps
+/// and the detail page that name the same spot. The labelling rule still
+/// holds: a wall-clock figure never sits unmarked beside a book-time one —
+/// the chapter panel and the iOS transport included.
 ///
 /// So: durations and positions are book time — the transport's elapsed and
 /// total, every chapter row's length, bookmark stamps, chapter starts. Wall
@@ -382,7 +380,7 @@ pub(crate) fn remaining_at_rate(seconds: f64, rate: f64) -> f64 {
 /// audiobook rather than the first one by ordinal. `None` (no manifest
 /// resolved yet, or a server predating the identity fields) omits the field;
 /// the server-side guard then refuses to blank a named file on a multi-file
-/// row (#1888).
+/// row.
 #[cfg(feature = "web")]
 pub(super) fn post_audio_progress(uuid: String, file_id: Option<i64>, seconds: f64) {
     wasm_bindgen_futures::spawn_local(async move {

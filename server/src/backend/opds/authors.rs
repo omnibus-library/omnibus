@@ -165,7 +165,7 @@ pub(super) async fn acquisition_feed(
 /// serve: the configured ebook library only (see the `opds` module doc),
 /// then to the formats an acquisition link can point at — an audiobook-only
 /// or physical-only row would otherwise surface as an entry with no
-/// download — and finally to books `user` may see (#932). `Ok(None)` is an
+/// download — and finally to books `user` may see. `Ok(None)` is an
 /// unknown author id; `Err` is a ready-to-return failure response.
 /// `pub(super)` — reused by `opds::json_authors` so both catalogs' author
 /// feeds carry the same entries.

@@ -15,7 +15,7 @@ use crate::{data, use_server_url};
 /// can capture it.
 #[derive(Clone, Copy, PartialEq)]
 pub enum SecretKeyKind {
-    /// The Hardcover token behind F3.3 "Readers also enjoyed" suggestions.
+    /// The Hardcover token behind the "Readers also enjoyed" suggestions.
     Hardcover,
     /// The Google Books key that keeps ISBN check-ins resolving past the shared
     /// anonymous quota.

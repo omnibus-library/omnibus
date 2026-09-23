@@ -232,7 +232,7 @@ fn short_chapter_title(title: &str) -> String {
 /// back to the rounded whole-book percent only when no CFI is stored. The old
 /// percent-only path picked the last chapter starting at or below the
 /// *rounded* integer percent, landing one chapter ahead whenever a boundary
-/// fell inside the rounding window (#2345).
+/// fell inside the rounding window.
 fn chapter_now(
     chapters: &[AlignmentEbookChapter],
     reading: Option<&ProgressRecord>,

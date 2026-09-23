@@ -32,7 +32,7 @@ const SPAN_DERIVATIONS_PER_SYNC: usize = 8;
 /// First sync emits the whole opted-in set as
 /// `NewEntitlement`s; later syncs emit only `ChangedProductMetadata` +
 /// `ChangedReadingState` for modified books and `ChangedEntitlement
-/// {IsRemoved:true}` for books that left the opted-in set (#922).
+/// {IsRemoved:true}` for books that left the opted-in set.
 ///
 /// The device's snapshot advances in the stream's final poll — the same one
 /// that emits the closing `]`, so commit and completion are a single step the

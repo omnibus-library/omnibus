@@ -85,7 +85,7 @@ pub(super) fn end_of_chapter_anchor(chapters: &[ChapterInfo], elapsed: f64) -> O
 /// Display only. The timer fires on the playhead reaching `anchor`, never on
 /// this reaching zero: a countdown cannot tell "the boundary arrived" from
 /// "the listener jumped", and guessing between them is what re-armed an
-/// armed timer at every seam and let the book play on for hours (#2494).
+/// armed timer at every seam and let the book play on for hours.
 pub(super) fn seconds_until_anchor(anchor: f64, elapsed: f64, rate: f64) -> i32 {
     let rem = super::helpers::remaining_at_rate((anchor - elapsed).max(0.0), rate)
         .min(f64::from(i32::MAX));
@@ -145,7 +145,7 @@ impl SleepController {
     /// Cancel any armed timer — reset to Off and restore the target volume.
     /// The countdown is app-scoped so it outlives `/listen`; without this a
     /// timer armed before "Stop and close player" keeps counting with no
-    /// player open (#2353). Equivalent to selecting the "Off" preset.
+    /// player open. Equivalent to selecting the "Off" preset.
     pub fn cancel(&self) {
         self.select_seconds(0);
     }
@@ -180,7 +180,7 @@ impl SleepController {
 
     /// Pause playback, restore the listener's volume, and disarm. The one
     /// place the timer fires, so the fade can never complete without the
-    /// stop it was ramping toward (#2494).
+    /// stop it was ramping toward.
     fn expire(&self) {
         let restore_to = *self.volume.peek();
         #[cfg(feature = "web")]

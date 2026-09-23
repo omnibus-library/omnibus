@@ -338,7 +338,7 @@ fn um_now_reading_row(point: ResumePoint) -> Element {
 /// Account-scoped linear rows. Everything an account needs now lives under
 /// Settings (Account, server config, and Logs are all sections there), so this
 /// is a single Settings row that closes the menu on click. Admins also get a
-/// "Server health" row to `/admin/health` (#952) — hidden for everyone else,
+/// "Server health" row to `/admin/health` — hidden for everyone else,
 /// mirroring how the Settings sidebar hides its own admin-only sections.
 #[cfg(any(feature = "web", feature = "server"))]
 #[component]
@@ -371,7 +371,7 @@ fn UmAccountRows(open: Signal<bool>, is_admin: bool) -> Element {
 /// real Sign-out button. "Switch user" has no destination yet (there is
 /// no multi-account switcher on web), so it renders as a plain,
 /// non-interactive `div` rather than a link that swallows the click
-/// (#1913) — never an `href="#"` that a reader can tab to and press.
+/// — never an `href="#"` that a reader can tab to and press.
 #[cfg(any(feature = "web", feature = "server"))]
 #[component]
 fn UmSessionRows(on_signout: EventHandler<()>) -> Element {

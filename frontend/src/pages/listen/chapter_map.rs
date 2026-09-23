@@ -123,7 +123,7 @@ pub(super) struct ChapterMapProps {
     /// Seconds remaining in the whole book.
     pub remaining: f64,
     /// Current playback rate — only the "remaining" estimate divides by it;
-    /// elapsed and total are real book-time (#2344).
+    /// elapsed and total are real book-time.
     pub rate: f64,
     /// Index of the currently-playing chapter.
     pub current_chapter_index: usize,

@@ -252,7 +252,7 @@ pub(crate) fn friendly_error(raw: &str) -> String {
 ///
 /// The three front doors are not interchangeable in the copy: after a title
 /// search the ISBN on screen came from the *provider*, so describing it as
-/// one the reader entered or scanned is simply false (#2247). Carried through
+/// one the reader entered or scanned is simply false. Carried through
 /// to the match screens and to the provenance a wishlist entry records.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum FoundVia {

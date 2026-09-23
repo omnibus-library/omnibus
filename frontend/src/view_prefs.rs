@@ -12,7 +12,7 @@ const STORAGE_PREFIX: &str = "omnibus.view_prefs::";
 /// The landing page learns its own library path only from a page-1 *response*,
 /// so without this pointer its first fetch is forced to go out on
 /// [`ViewPrefs::default`] and the grid paints in the wrong order until a second
-/// fetch corrects it (#1818). Reading the pointer on mount breaks that cycle.
+/// fetch corrects it. Reading the pointer on mount breaks that cycle.
 const LAST_LIBRARY_KEY: &str = "omnibus.view_prefs.last_library";
 
 fn storage_key(library_path: &str) -> String {

@@ -301,7 +301,7 @@ pub struct PlaybackState {
     /// The `book_files` row the manifest actually resolved for the current
     /// boot — `file_id` is the *request* (picker selection, often `None`),
     /// this is the answer. Progress posts read it so a multi-file book's
-    /// writes always name the file playback is really in (#1888). `None`
+    /// writes always name the file playback is really in. `None`
     /// until a manifest lands, and reset on every book swap.
     pub loaded_file_id: Signal<Option<i64>>,
     pub book: Signal<Option<omnibus_shared::EbookMetadata>>,
@@ -330,7 +330,7 @@ pub struct PlaybackState {
     /// The Immersive Read CTA uses this for the same-book idle case: the
     /// old `uuid` None→Some nudge unmounted the dock for a frame and raced
     /// the reader's own mount — losing the race left the player closed or
-    /// the reader stuck loading (#1972 follow-up).
+    /// the reader stuck loading.
     pub reload_epoch: Signal<u32>,
     /// Bumped once per *user* seek — the scrubber, a chapter row, the ±30s
     /// buttons — all of which funnel through the shim's `seek()` and its
@@ -339,7 +339,7 @@ pub struct PlaybackState {
     /// listener asking. The end-of-chapter sleep timer re-anchors on this
     /// and nothing else: it is the only signal that separates "the playhead
     /// jumped" from "the playhead is playing", and inferring one from the
-    /// other is what made an armed timer re-arm at every seam (#2494).
+    /// other is what made an armed timer re-arm at every seam.
     pub seek_epoch: Signal<u32>,
 }
 

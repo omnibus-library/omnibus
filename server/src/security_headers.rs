@@ -43,7 +43,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 ///   `'unsafe-inline'` because Dioxus emits inline `style=""` attributes;
 ///   `blob:` because epub.js (`assets/vendor/epub.min.js`) renders a book's
 ///   own stylesheets through `URL.createObjectURL`, and without it every
-///   forward page-turn is blocked as a CSP violation (#2213) — the same
+///   forward page-turn is blocked as a CSP violation — the same
 ///   reason `img-src` already lists `blob:`; the Google Fonts host because
 ///   `atrium.css` `@import`s the Cormorant Garamond / Instrument Sans / Space
 ///   Mono stylesheet from it. The CDN hosts are there for *that* import alone:

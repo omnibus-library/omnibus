@@ -25,7 +25,7 @@ struct JournalEntryEditState {
     reload: Signal<u32>,
     /// Whether the delete confirm modal is open. Set by the Delete button,
     /// cleared by Cancel or a successful delete — the RPC itself only fires
-    /// from the modal's own confirm button (issue #1907).
+    /// from the modal's own confirm button.
     delete_confirm: Signal<bool>,
 }
 

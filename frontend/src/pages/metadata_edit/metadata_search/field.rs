@@ -46,7 +46,7 @@ impl MetadataField {
     /// running order so the two read as the same book.
     ///
     /// **Tags are deliberately absent.** A provider's subject list lands on
-    /// `genres` in this codebase (#1659); `subjects` is whatever the EPUB's
+    /// `genres` in this codebase; `subjects` is whatever the EPUB's
     /// own `<dc:subject>` entries were, and overwriting that with a provider's
     /// vocabulary would destroy the one field that describes *this file*.
     /// Series position *is* here, but only Hardcover ever fills it — the

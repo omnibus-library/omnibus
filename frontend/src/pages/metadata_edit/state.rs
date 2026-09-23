@@ -373,7 +373,7 @@ pub(crate) fn overrides_from_form(
 ///
 /// An empty diff skips the round trip and just leaves: the save bar enables
 /// Save with no dirty field only after a cover write, which has already
-/// landed server-side, so there is nothing left for the POST to carry (#2241).
+/// landed server-side, so there is nothing left for the POST to carry.
 fn build_on_save(
     server_url: &str,
     uuid: &str,

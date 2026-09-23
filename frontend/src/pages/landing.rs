@@ -55,7 +55,7 @@ use body::web_landing_body;
 use signals::setup_landing_signals;
 use view::derive_view_state;
 
-/// Keyset page size for the browse path (F5b open question #1). A grid renders
+/// Keyset page size for the browse path. A grid renders
 /// ~30–60 cards above the fold and the table more; 100 covers both without an
 /// oversized first paint.
 pub(super) const PAGE_SIZE: i64 = 100;

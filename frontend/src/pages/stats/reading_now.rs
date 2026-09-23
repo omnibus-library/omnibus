@@ -213,7 +213,7 @@ fn finished_row(book: &FinishedBook, server_url: &str) -> Element {
 /// hollow stars it would have to explain.
 ///
 /// Halves are preserved: the server sends `half_stars / 2`, so a 4.5 arrives
-/// as 4.5 and must be drawn as four and a half (#2467), not rounded to the
+/// as 4.5 and must be drawn as four and a half, not rounded to the
 /// nearer whole star the way this card once did.
 fn clamped_stars(rating: Option<f64>) -> Option<f32> {
     // Ratings are 0.0..=5.0 by construction; the cast is exact over that range.

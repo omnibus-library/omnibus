@@ -46,7 +46,7 @@ pub(super) fn ListenDrawerShell(
 ///
 /// The panel takes focus once painted so Escape dismisses it without a prior
 /// click — it has no close button of its own, and before this the only way
-/// out was an unhinted click on empty space (#2242).
+/// out was an unhinted click on empty space.
 #[component]
 pub(super) fn ListenPanelShell(
     extra_class: String,

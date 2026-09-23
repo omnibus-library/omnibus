@@ -245,7 +245,7 @@ fn spawn_touch_thumb(id: i64, size: db::ThumbSize) {
 /// one is a dead end for a client that revalidates, because there is nothing
 /// to revalidate *with*. Both offline clients cache what this returns, so a
 /// validator-less answer here left a grid tile pinned to whatever cover was
-/// current at the moment of the miss, indefinitely (#2539).
+/// current at the moment of the miss, indefinitely.
 async fn thumb_cache_miss_response(
     state: &AppState,
     uuid: &str,

@@ -18,7 +18,7 @@ use crate::backend::AppState;
 pub(super) const NEW_LIMIT: i64 = 50;
 
 /// Fetch the recently-added page: e-reader formats only, narrowed to books
-/// `user` may see (#932). `pub(super)` — the single read both catalogs'
+/// `user` may see. `pub(super)` — the single read both catalogs'
 /// Recently Added feeds come from.
 pub(super) async fn load_new_arrivals(
     state: &AppState,

@@ -520,7 +520,7 @@ struct CommitForm {
 }
 
 /// The creators to save when the review form's Author differs from the file's
-/// first creator. The form edits the first *name* only (#2355): that creator
+/// first creator. The form edits the first *name* only: that creator
 /// keeps its role and file-as form, and the others the file declared ride
 /// along unchanged, so correcting a garbled lead author never drops a
 /// co-author or a refinement. The `id` is cleared because the renamed

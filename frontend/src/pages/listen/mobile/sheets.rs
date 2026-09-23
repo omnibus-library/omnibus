@@ -70,7 +70,7 @@ pub(super) struct ChaptersListView {
     /// Current playback rate.
     pub rate: f64,
     /// Formatted total-duration label shown in the sheet header, in real
-    /// book-time to match the row durations (#2344).
+    /// book-time to match the row durations.
     pub total_label: String,
 }
 

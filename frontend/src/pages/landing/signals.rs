@@ -324,7 +324,7 @@ fn wire_bulk_selection_clear(
 }
 
 /// Two-stage view-prefs hydration: the last-browsed library on mount (so the
-/// grid's first paint is already sorted, #1818), then the authoritative path
+/// grid's first paint is already sorted), then the authoritative path
 /// once a fetch reveals it (covering the pointer having guessed wrong).
 fn wire_prefs_hydration(mut prefs: Signal<ViewPrefs>, fetch_sigs: FetchSignals) {
     // Reads nothing reactively, so it runs exactly once after mount — and

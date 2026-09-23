@@ -115,7 +115,7 @@ pub(super) struct BdIdentifierRow {
 ///
 /// `isbn13` / `isbn10` are the fields the metadata editor writes and
 /// `apply_overrides` merges; rendering only `identifiers` meant a saved ISBN
-/// appeared nowhere and a correction read as silently ignored (#2496). They
+/// appeared nowhere and a correction read as silently ignored. They
 /// are folded in last, so an override replaces the row it corrects — by value
 /// when the file already holds it, else by label — rather than sitting beside
 /// it. With no override the fields are absent (or re-derived from the file),
@@ -154,8 +154,8 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
 /// **Never drop a row by label alone** — a book can genuinely carry two
 /// distinct ISBNs (a second edition's identifier set copied in by a merge,
 /// or a book indexed under both), and `isbn13`/`isbn10` are derived from the
-/// scanned rows whenever no override exists, so this runs on every book
-/// (#2496). Placement, in order: (a) a row that is the *same ISBN* as the
+/// scanned rows whenever no override exists, so this runs on every book.
+/// Placement, in order: (a) a row that is the *same ISBN* as the
 /// override (per [`same_identifier`]) is relabelled and revalued in place —
 /// this is a rename, not a new identifier, and is what lets `urn:isbn:…`,
 /// hyphenated, and bare-digit forms of one ISBN collapse onto the override
@@ -245,7 +245,7 @@ fn same_identifier(a: &str, b: &str) -> bool {
 /// The check digit is the point: a shape-only test (right length, digits with
 /// an optional trailing `X`) labelled a checksum-failing `unknown`-scheme
 /// value like `2100906924` as an ISBN, presenting bad file metadata as
-/// verified data (#2359). Only used to *infer* a label when the scheme said
+/// verified data. Only used to *infer* a label when the scheme said
 /// nothing, so a false positive here is a mislabel.
 fn bd_looks_like_isbn(value: &str) -> bool {
     let cleaned: Vec<char> = value

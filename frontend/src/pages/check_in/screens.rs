@@ -77,8 +77,7 @@ pub(super) fn ConfirmScreen(
 
 /// The confirm screen's one-line framing of what the copy is being added
 /// to, worded from the book's actual holdings: the "already have it
-/// digitally" line was shown for paper-only rows, where it was simply untrue
-/// (#2525).
+/// digitally" line was shown for paper-only rows, where it was simply untrue.
 pub(super) fn confirm_subtitle(book: &ScanBook) -> &'static str {
     match (book.has_files, book.has_physical) {
         (true, _) => "You already have this one digitally \u{2014} this adds your print copy.",

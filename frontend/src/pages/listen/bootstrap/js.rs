@@ -49,7 +49,7 @@ pub(super) fn control_surface_js(rate_lit: &str, vol_lit: &str, uuid_lit: &str) 
 /// transport-control methods (play/pause/toggle/setRate/stop/seek/skip).
 /// `seek` pushes the target time to the transport display synchronously
 /// (not just via the element's `timeupdate`), so a paused seek shows
-/// immediate feedback (#1897). Pure JS with no Rust interpolation, so it
+/// immediate feedback. Pure JS with no Rust interpolation, so it
 /// lives as a raw `&'static str` with literal braces.
 fn transport_controls_js() -> &'static str {
     r#"      // Playback mode. Set by initDirect / initHls; null before either fires.

@@ -48,7 +48,7 @@ fn dismiss_unless_busy(busy: bool, on_dismiss: EventHandler<()>) {
 ///
 /// Escape dismisses on the same gate as a backdrop click. `focus_on_open`
 /// is what makes that reachable without a prior click — the panel takes focus
-/// once painted, as the listen page's overlay panels do (#2242) — and it is
+/// once painted, as the listen page's overlay panels do — and it is
 /// opt-in rather than the default because a modal that autofocuses a field of
 /// its own (the merge dialog's search box) must keep that focus.
 ///

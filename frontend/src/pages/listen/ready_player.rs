@@ -441,7 +441,7 @@ pub(super) struct ChapterNavData {
     pub elapsed: f64,
     /// Current playback rate, threaded to the chapters drawer for the
     /// playing row's "time left" alone — the row durations beside it stay
-    /// book time (#2344, #2521).
+    /// book time.
     pub rate: f64,
     pub on_seek: EventHandler<f64>,
 }

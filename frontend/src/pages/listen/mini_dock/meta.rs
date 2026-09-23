@@ -78,7 +78,7 @@ pub(super) fn time_left_text(elapsed: f64, duration: f64, rate: f64) -> Option<S
 /// `elapsed / total` clock, and the speed-adjusted time left. The single-row
 /// bar has no separate time track, so the clock lives here. The clock shows
 /// real book-time — matching the bookmark stamps and the book detail page
-/// (#2344) — while only the trailing "left" is a rate-adjusted estimate.
+/// — while only the trailing "left" is a rate-adjusted estimate.
 pub(super) fn dock_sub_text(
     chapter_sub: Option<String>,
     elapsed: f64,

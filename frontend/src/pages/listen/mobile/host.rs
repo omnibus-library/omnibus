@@ -28,7 +28,7 @@ fn first_audio_file_id(files: &[omnibus_shared::BookFileInfo]) -> Option<i64> {
 /// The `book_files` id a manifest's `file_identity()` names, or `None` for
 /// a server predating file-identity fields (`file_identity() == (0, 0)`).
 /// Position writes must carry this — the file the manifest actually
-/// resolved — rather than the raw requested id (#1888, #1923).
+/// resolved — rather than the raw requested id.
 fn resolved_file_id(loaded_file: i64) -> Option<i64> {
     (loaded_file > 0).then_some(loaded_file)
 }
@@ -52,7 +52,7 @@ fn should_retry_manifest_with_default(
 /// (an explicit picker selection, else the progress row's stored
 /// `book_file_id`, else the server's lowest-ordinal default), not the raw
 /// `?file_id=` the route was entered with. Mirrors web's
-/// `PlaybackState::loaded_file_id` (#1888, #1923). `None` only when the
+/// `PlaybackState::loaded_file_id`. `None` only when the
 /// server predates file-identity fields (`audio_file_count == 0`).
 struct LoadTarget {
     uuid: String,
@@ -210,7 +210,7 @@ async fn load_book_metadata(
 /// Resolve the boot file the same way the web bootstrap's
 /// `resolve_boot_file` does — an explicit picker selection wins, otherwise
 /// the progress row's stored `book_file_id`, so resume lands in the file
-/// the seconds were recorded in (#1888) — then fetch its manifest,
+/// the seconds were recorded in — then fetch its manifest,
 /// surfacing transport errors on `error`/`loading`. If neither names one,
 /// falls back to the first audio file (mirrors the server's own
 /// lowest-ordinal default).

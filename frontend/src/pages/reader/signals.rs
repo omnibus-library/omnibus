@@ -75,7 +75,7 @@ pub(crate) struct RelocateData {
 
 /// The percent readout: "N%" once the whole-book locations map has
 /// resolved, "~N%" while `pct` is still the coarse spine approximation —
-/// honest instead of falsely precise (issue #1896).
+/// honest instead of falsely precise.
 fn pct_label(loc: &RelocateData) -> String {
     if loc.pct_approx {
         format!("~{}%", loc.pct)
@@ -118,7 +118,7 @@ pub(crate) fn format_progress_labels(loc: &RelocateData) -> (String, String) {
 /// opens on `Ch 1 of N` and ends on `Ch N of N`. The glue reports 0 for a
 /// spine item with no TOC entry (front matter) and the first relocate has no
 /// previous chapter to carry forward, so both would otherwise render
-/// `Ch 0 of N` — a counter that can never reach its own total (#2249).
+/// `Ch 0 of N` — a counter that can never reach its own total.
 /// A total of 0 means "no TOC at all" and stays `(0, 0)` so the readout
 /// renders empty rather than inventing a chapter.
 #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]

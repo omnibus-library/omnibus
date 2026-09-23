@@ -332,7 +332,7 @@ fn rate_label(value: f32) -> String {
 /// Accessible label + tooltip for a half-star click target. When this half
 /// *is* the current rating, re-clicking it clears the rating — so it announces
 /// the clear (and the tooltip makes it discoverable) rather than the
-/// misleading "Rate N stars" it otherwise keeps (#2352).
+/// misleading "Rate N stars" it otherwise keeps.
 fn half_star_label(value: f32, current: Option<f32>) -> String {
     if current == Some(value) {
         format!("Clear your {}-star rating", fmt_stars(value))

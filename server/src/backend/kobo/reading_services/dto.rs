@@ -206,7 +206,7 @@ fn parse_delete(entry: &Value) -> Option<String> {
 /// firmware hex swatch first (what [`color_to_kobo`] now emits and, per the
 /// cross-referenced reference client, what a real device sends — see
 /// `docs/kobo.md`), then falls back to the CSS-style names this endpoint
-/// accepted before that finding (#1629) — kept so an already-synced device
+/// accepted before that finding — kept so an already-synced device
 /// echoing an older-shaped value, or one from an unverified firmware
 /// revision, still parses. Unknown names, unrecognized hex, and a missing
 /// field all land on amber — the palette default.
@@ -236,9 +236,9 @@ pub fn color_from_kobo(raw: Option<&str>) -> HighlightColor {
 /// The four fixed hex swatches Kobo firmware's own highlight menu renders —
 /// not CSS-style names. This repo has no captured device PATCH confirming the
 /// wire shape directly, so the hex form is inferred from the observed
-/// symptom rather than proven; see the `docs/kobo.md` note on #1629 for the
-/// caveat. Firmware has no fifth swatch for violet, so it snaps to pink —
-/// the nearest of the four by RGB distance, same as rose.
+/// symptom rather than proven; see the highlight-colour note in
+/// `docs/kobo.md` for the caveat. Firmware has no fifth swatch for violet, so
+/// it snaps to pink — the nearest of the four by RGB distance, same as rose.
 fn color_from_kobo_hex(raw: &str) -> Option<HighlightColor> {
     if raw.eq_ignore_ascii_case("#F6F3B3") {
         Some(HighlightColor::Amber)
