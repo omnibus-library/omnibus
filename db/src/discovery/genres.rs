@@ -17,9 +17,6 @@ const GENRE_CLOUD_LIMIT: i64 = 500;
 /// Return up to [`GENRE_CLOUD_LIMIT`] genres with their book counts, ordered
 /// by count descending then name ascending. Backs `/api/genres` and the
 /// genre chip-editor's autocomplete pool.
-///
-/// Currently returns results across all users (single-tenant); scoping to a
-/// per-user `user_id` is a future extension, not yet needed.
 pub async fn get_genre_cloud(pool: &SqlitePool) -> Result<Vec<GenreWeight>, DiscoveryError> {
     // The join to `genres` — rather than grouping `je.value` directly — is
     // what makes the *display* name canonical: `materialize_genre_rows`
