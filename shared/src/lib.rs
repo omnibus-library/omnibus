@@ -34,6 +34,7 @@ pub mod read_status;
 pub mod scan;
 pub mod settings;
 pub mod shelves;
+pub mod sort_order;
 pub mod stats;
 pub mod suggestion;
 pub mod summary;

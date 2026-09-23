@@ -192,3 +192,42 @@ async fn page_count_persists_on_insert_and_refreshes_on_change() {
         .unwrap();
     assert_eq!(refreshed, Some(20), "the update refreshes page_count");
 }
+
+/// #2451, update path: a rescan that finds a given-name `file_as` re-keys the
+/// row surname-first rather than storing the file's value verbatim.
+#[tokio::test]
+async fn sync_changed_keys_a_given_name_file_as_surname_first() {
+    let _covers = CoversTempDir::new("sync_changed_file_as");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let library_id = seed_scan_root(&pool).await;
+    seed_book_with_file(&pool, library_id, "a.epub").await;
+
+    let mut book = indexed(
+        "a.epub",
+        Some("Project Hail Mary"),
+        &["Andy Weir"],
+        &[],
+        None,
+        None,
+    );
+    book.metadata.creators[0].file_as = Some("Andy Weir".into());
+    let mut tx = pool.begin().await.unwrap();
+    sync_changed(
+        &mut tx,
+        library_id,
+        "/lib",
+        &[book],
+        &EntityAliasMaps::default(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    let author_sort: String =
+        sqlx::query_scalar("SELECT author_sort FROM books WHERE scan_key = 'a.epub'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(author_sort, "Weir, Andy");
+}

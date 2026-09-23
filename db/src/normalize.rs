@@ -3,6 +3,9 @@
 //! time by the sync writers and backfilled once at boot by
 //! [`backfill_norm_columns`]; consumed by `sync::attach`.
 
+// The author sort keys live in `omnibus_shared` so the sync writers here and
+// the browser's client-side sorts derive one key.
+pub use omnibus_shared::sort_order::{author_sort_key, creator_sort_key};
 use omnibus_shared::text_fold::fold_for_match;
 use sqlx::SqlitePool;
 
@@ -34,30 +37,6 @@ pub fn normalize_author(s: &str) -> Option<String> {
         return normalize(&format!("{} {}", parts[1], parts[0]));
     }
     normalize(s)
-}
-
-/// Surname-first sort key for an author *display name*, used as the
-/// `author_sort` fallback when a book carries no OPF `file_as`. Without it the
-/// Author axis mixes two key formats — `"Surname, Given"` for file-as rows and
-/// `"Given Surname"` for the rest — so the same author's books scatter to
-/// opposite ends of the list.
-///
-/// Mirrors the frontend authors-index `sort_key` so the library table and the
-/// authors index agree on order:
-/// - a name already in `"Surname, Given"` form (it carries a comma) is kept
-///   verbatim — some Calibre dumps store the display name that way;
-/// - a mononym (no whitespace) is kept verbatim;
-/// - otherwise the last whitespace-separated token becomes the surname:
-///   `"Andy Weir"` → `"Weir, Andy"`.
-pub fn author_sort_key(name: &str) -> String {
-    let name = name.trim();
-    if name.contains(',') {
-        return name.to_string();
-    }
-    match name.rsplit_once(' ') {
-        Some((rest, last)) => format!("{last}, {rest}"),
-        None => name.to_string(),
-    }
 }
 
 /// Fold `s` to `[a-z0-9 ]`, expanding `&` and collapsing everything else
@@ -174,37 +153,45 @@ pub async fn backfill_norm_columns(pool: &SqlitePool) -> Result<(), NormalizeErr
 /// keeps a chunk under SQLite's 999-parameter cap.
 const NORM_UPDATE_CHUNK: usize = 300;
 
-/// Boot backfill: reshape any `books.author_sort` still stored in display
-/// `"Given Surname"` order into the surname-first sort key, so the Author axis
-/// orders every existing row on one key format instead of the mix the old
-/// write path left — `"Surname, Given"` for file-as rows and `"Given Surname"`
-/// for the rest. New rows are written surname-first by the sync
-/// writers; this heals rows indexed before that change.
+/// Boot backfill: rewrite any `books.author_sort` the sync writers would now
+/// key differently, so the Author axis orders every existing row on one key
+/// format. Heals the two shapes older write paths stored verbatim: a
+/// given-first display name and a comma-less OPF `file_as` such as
+/// `"Andy Weir"`. New rows are keyed by [`creator_sort_key`] already.
 ///
-/// Idempotent by construction: it only touches a value that has a space but no
-/// comma (an untransformed display name), and [`author_sort_key`]'s output
-/// always carries a comma — so the second pass skips every row it already
-/// fixed and the pass is a near-no-op once caught up. Runs on every boot from
-/// `init_db` alongside [`backfill_norm_columns`].
+/// Recomputes from the book's position-0 linked author, the name the scanner
+/// derived from, and only for a stored value with no comma — a comma-form key
+/// is one [`creator_sort_key`] keeps verbatim. Its output for a multi-word
+/// name always carries a comma, so a fixed row leaves the candidate set and a
+/// mononym that is already its own key is read but never rewritten. Runs on
+/// every boot from `init_db` alongside [`backfill_norm_columns`].
 pub async fn backfill_author_sort(pool: &SqlitePool) -> Result<(), NormalizeError> {
-    // Only the rows that actually change: `instr(_, ',') = 0` excludes values
-    // already in "Surname, Given" form, and `instr(_, ' ') > 0` excludes
-    // mononyms (which `author_sort_key` returns verbatim anyway).
-    let rows: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT id, author_sort FROM books
-          WHERE author_sort IS NOT NULL
-            AND author_sort <> ''
-            AND instr(author_sort, ',') = 0
-            AND instr(author_sort, ' ') > 0",
+    let rows: Vec<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT b.id, b.author_sort, a.name
+           FROM books b
+           LEFT JOIN books_authors_link l ON l.book = b.id AND l.position = 0
+           LEFT JOIN authors a ON a.id = l.author
+          WHERE b.author_sort IS NOT NULL
+            AND b.author_sort <> ''
+            AND instr(b.author_sort, ',') = 0",
     )
     .fetch_all(pool)
     .await?;
-    if rows.is_empty() {
+    // No linked author (a blocklisted first creator leaves a positional gap)
+    // passes a blank name, which keys the stored value itself.
+    let updates: Vec<(i64, String)> = rows
+        .into_iter()
+        .filter_map(|(id, stored, name)| {
+            let key = creator_sort_key(Some(&stored), name.as_deref().unwrap_or_default());
+            (key != stored).then_some((id, key))
+        })
+        .collect();
+    if updates.is_empty() {
         return Ok(());
     }
 
     let mut tx = pool.begin().await?;
-    for chunk in rows.chunks(AUTHOR_SORT_UPDATE_CHUNK) {
+    for chunk in updates.chunks(AUTHOR_SORT_UPDATE_CHUNK) {
         let values = std::iter::repeat_n("(?, ?)", chunk.len())
             .collect::<Vec<_>>()
             .join(", ");
@@ -215,8 +202,8 @@ pub async fn backfill_author_sort(pool: &SqlitePool) -> Result<(), NormalizeErro
               WHERE books.id = v.column1"
         );
         let mut q = sqlx::query(&sql);
-        for (id, sort) in chunk {
-            q = q.bind(id).bind(author_sort_key(sort));
+        for (id, key) in chunk {
+            q = q.bind(id).bind(key);
         }
         q.execute(&mut *tx).await?;
     }

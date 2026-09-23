@@ -185,29 +185,6 @@ fn normalize_never_panics_over_varied_unicode() {
     }
 }
 
-#[test]
-fn author_sort_key_reshapes_given_surname_to_surname_first() {
-    assert_eq!(author_sort_key("Andy Weir"), "Weir, Andy");
-    // Last whitespace token becomes the surname — same rule the frontend
-    // authors-index sort_key uses, so multi-word surnames split identically.
-    assert_eq!(author_sort_key("Ursula K. Le Guin"), "Guin, Ursula K. Le");
-}
-
-#[test]
-fn author_sort_key_keeps_comma_and_mononym_forms_verbatim() {
-    assert_eq!(author_sort_key("Weir, Andy"), "Weir, Andy");
-    assert_eq!(author_sort_key("Plato"), "Plato");
-    assert_eq!(author_sort_key("  Madonna  "), "Madonna");
-}
-
-#[test]
-fn author_sort_key_is_idempotent() {
-    for name in ["Andy Weir", "Weir, Andy", "Plato", "Ursula K. Le Guin"] {
-        let once = author_sort_key(name);
-        assert_eq!(author_sort_key(&once), once, "not idempotent for {name:?}");
-    }
-}
-
 #[tokio::test]
 async fn backfill_author_sort_reshapes_given_first_rows_only_and_is_idempotent() {
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -252,6 +229,54 @@ async fn backfill_author_sort_reshapes_given_first_rows_only_and_is_idempotent()
         .unwrap();
     backfill_author_sort(&pool).await.unwrap();
     assert_eq!(read("u1").await, "Weir, Andy sentinel");
+}
+
+/// #2451: a comma-less OPF `file_as` was stored verbatim, so a book whose
+/// file carried `Andy Weir` (or a word-order key with no comma) filed apart
+/// from its author's other books. The backfill re-keys it from the linked
+/// author's display name, the same way the sync writers now do.
+#[tokio::test]
+async fn backfill_author_sort_rekeys_a_commaless_file_as_from_the_linked_author() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES ('/lib', 'lib')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (uuid, stored, name) in [
+        ("u1", "Tolkien J.R.R.", "J.R.R. Tolkien"),
+        ("u2", "Underwood", "Erin A. Craig"),
+        ("u3", "Plato", "Plato"),
+    ] {
+        let book_id: i64 = sqlx::query_scalar(
+            "INSERT INTO books (uuid, library_id, path, title, author_sort) \
+             VALUES (?, 1, '', 't', ?) RETURNING id",
+        )
+        .bind(uuid)
+        .bind(stored)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let author_id: i64 =
+            sqlx::query_scalar("INSERT INTO authors (name) VALUES (?) RETURNING id")
+                .bind(name)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO books_authors_link (book, author, position) VALUES (?, ?, 0)")
+            .bind(book_id)
+            .bind(author_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    backfill_author_sort(&pool).await.unwrap();
+
+    let keys: Vec<String> = sqlx::query_scalar("SELECT author_sort FROM books ORDER BY uuid")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(keys, ["Tolkien, J.R.R.", "Craig, Erin A.", "Plato"]);
 }
 
 #[tokio::test]
