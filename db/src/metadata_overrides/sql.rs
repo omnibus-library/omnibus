@@ -57,12 +57,64 @@ macro_rules! override_sql {
 }
 
 /// An axis keyed on the *displayed* value: the override where one exists, the
-/// scanned column otherwise. `COLLATE NOCASE` is restated because a `COALESCE`
-/// expression carries no implicit collation — without it the text axes would
+/// scanned column otherwise. A collation is always stated because a `COALESCE`
+/// expression carries no implicit one — without it the text axes would
 /// silently become case-sensitive, unlike the NOCASE columns they wrap.
+/// `NOCASE` unless named; a sort axis names `dictionary` (see `pool.rs`).
 macro_rules! effective_text_sql {
     ($($path:literal),+ ; $scanned:literal) => {
-        concat!("COALESCE(", $(override_sql!($path), ", ",)+ $scanned, ") COLLATE NOCASE")
+        effective_text_sql!($($path),+ ; $scanned ; "NOCASE")
+    };
+    ($($path:literal),+ ; $scanned:literal ; $collation:literal) => {
+        concat!("COALESCE(", $(override_sql!($path), ", ",)+ $scanned, ") COLLATE ", $collation)
+    };
+}
+
+/// SQL mirror of `creator_sort_key`'s choice of *which* string keys an author:
+/// `file_as` only in comma form, else the display name, else `file_as`. The
+/// surname-first reshape itself is left to the `author_dictionary` collation,
+/// which runs the Rust `author_sort_key` — so the SQL and Rust keys cannot
+/// drift. Both arguments are SQL expressions; NULL reads as absent.
+macro_rules! creator_sort_sql {
+    ($file_as:expr, $name:expr) => {
+        concat!(
+            "CASE WHEN instr(",
+            $file_as,
+            ", ',') > 0 THEN ",
+            $file_as,
+            " ELSE COALESCE(NULLIF(trim(",
+            $name,
+            "), ''), ",
+            $file_as,
+            ") END"
+        )
+    };
+}
+
+/// The Author sort axis: the author a book is *displayed* under, in
+/// `author_dictionary` order, so an edited book whose name was typed as
+/// `Andy Weir` files beside the scanned `Weir, Andy`.
+///
+/// A creators override replaces the list wholesale, the empty list included,
+/// so while one is present (the key holds an array, the shape serde reads as
+/// `Some`) the axis is its first creator — NULL for an emptied list, filed
+/// with the other authorless books — and the scanned `author_sort` only when
+/// there is none. `effective_tags_sql!`'s presence test, for the same reason.
+macro_rules! effective_author_sql {
+    ($scanned:literal) => {
+        concat!(
+            "(CASE WHEN ",
+            overrides_win_sql!(),
+            " AND json_type(CASE WHEN json_valid(mo.overrides) THEN mo.overrides ELSE '{}' END,",
+            " '$.creators') = 'array' THEN ",
+            creator_sort_sql!(
+                override_sql!("$.creators[0].file_as"),
+                override_sql!("$.creators[0].name")
+            ),
+            " ELSE ",
+            $scanned,
+            " END) COLLATE author_dictionary"
+        )
     };
 }
 
@@ -131,8 +183,8 @@ macro_rules! effective_genres_sql {
 }
 
 pub(crate) use {
-    effective_genres_sql, effective_tags_sql, effective_text_sql, override_join_sql, override_sql,
-    overrides_win_sql,
+    creator_sort_sql, effective_author_sql, effective_genres_sql, effective_tags_sql,
+    effective_text_sql, override_join_sql, override_sql, overrides_win_sql,
 };
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! `list_visible_shelves` and the shelf page: owner/public/admin scoping,
 //! the viewer's own shelves first, the hard cap, batched per-shelf counts,
-//! the mosaic cover uuids, owner attribution by display name, and the
-//! recently-interacted ordering.
+//! the mosaic cover uuids, owner attribution by display name, the
+//! recently-interacted ordering, and the Author axis over edited books.
 
 use omnibus_shared::{MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, Visibility};
 
@@ -467,5 +467,108 @@ async fn shelf_page_recently_interacted_orders_the_latest_signal_first() {
         page.books.first().unwrap().unique_identifier.as_deref(),
         Some(last_by_title.as_str()),
         "the freshly rated book must lead the shelf on this axis"
+    );
+}
+
+/// A smart shelf files an edited book under the author its page shows,
+/// keyed surname-first like the library does — not under the scanned author.
+#[tokio::test]
+async fn shelf_page_sorts_a_smart_shelf_by_the_edited_author() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+    // Both members are scanned under Lovelace; re-attributing Book Two to a
+    // display name that keys under B must move it first.
+    let book_two = uuid_by_title(&pool, "Saga: Book Two").await;
+    let overrides = omnibus_shared::MetadataOverrides {
+        creators: Some(vec![omnibus_shared::Contributor {
+            name: "Charles Babbage".into(),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    crate::upsert_metadata_overrides(&pool, &book_two, &overrides, false, owner)
+        .await
+        .unwrap();
+
+    let page = shelf_page(&pool, &shelf, SortKey::Author, SortDir::Asc)
+        .await
+        .unwrap();
+    let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
+    assert_eq!(titles, ["Saga: Book Two", "Saga: Book One"]);
+}
+
+/// The shelf's Author sort shares the library's axis, so emptying a member's
+/// creators files it with the authorless books rather than under the author
+/// the page no longer shows.
+#[tokio::test]
+async fn shelf_page_files_an_emptied_creators_override_as_authorless() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+    // Both members are scanned under Lovelace, so without the fix they tie
+    // and Book One leads on id.
+    let book_two = uuid_by_title(&pool, "Saga: Book Two").await;
+    let overrides = omnibus_shared::MetadataOverrides {
+        creators: Some(vec![]),
+        ..Default::default()
+    };
+    crate::upsert_metadata_overrides(&pool, &book_two, &overrides, false, owner)
+        .await
+        .unwrap();
+
+    let page = shelf_page(&pool, &shelf, SortKey::Author, SortDir::Asc)
+        .await
+        .unwrap();
+    let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
+    assert_eq!(titles, ["Saga: Book Two", "Saga: Book One"]);
+}
+
+/// A smart shelf's mosaic takes its first four cover-bearing members in the
+/// library's title order, which reads the title override — so retitling a
+/// member changes which four covers the gallery shows.
+#[tokio::test]
+async fn list_visible_shelves_picks_smart_mosaic_covers_by_the_edited_title() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let owner = make_user(&pool, "owner", false).await;
+    seed_minimal_books(&pool, 6).await;
+    sqlx::query("UPDATE books SET has_cover = 1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Scanned, uuid-6 is last by title; retitled, it files first.
+    sqlx::query(
+        "INSERT INTO metadata_overrides (book_uuid, overrides)
+         VALUES ('uuid-6', '{\"title\":\"Aardvark\"}')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let epub = ShelfRule {
+        field: RuleField::Format,
+        op: RuleOp::Includes,
+        value: "EPUB".into(),
+    };
+    let shelf = create_shelf(&pool, owner, &smart_req("Epub", MatchMode::Any, vec![epub]))
+        .await
+        .unwrap();
+
+    let shelves = list_visible_shelves(&pool, owner, false).await.unwrap();
+    let summary = shelves.iter().find(|s| s.id == shelf.id).unwrap();
+    assert_eq!(
+        summary.cover_uuids,
+        vec!["uuid-6", "uuid-1", "uuid-2", "uuid-3"]
     );
 }

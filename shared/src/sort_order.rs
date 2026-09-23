@@ -1,9 +1,48 @@
-//! The author key every sort surface files a book under: the `db` sync
-//! writers store it in `books.author_sort`, and the browser's client-side
-//! sorts derive the same one. Keeping the rule here is what stops the server
-//! and the page from disagreeing about which letter an author files under.
+//! The one dictionary order every sort surface shares: the SQLite collations
+//! `db` registers on each pooled connection, and the browser's client-side
+//! sorts (the Authors index, the search result set, the offline replica).
+//! Keeping the comparator here is what stops the server and the page from
+//! disagreeing about where `Pérez` files.
 
 use std::borrow::Cow;
+use std::cmp::Ordering;
+
+use unicode_normalization::char::is_combining_mark;
+use unicode_normalization::UnicodeNormalization;
+
+/// Dictionary order: accents and case are ignored, and the plain spelling
+/// files first only when two strings are otherwise identical (`Perez` before
+/// `Pérez`). A comma files before a space, so a surname ends at its comma and
+/// every `Perez, …` lands ahead of `Pérez Galdós, …`.
+///
+/// Total and antisymmetric — two strings compare `Equal` only when they are
+/// byte-identical — which is what SQLite requires of a collation and what
+/// keeps a keyset cursor's `=` consistent with its `>`.
+pub fn dictionary_cmp(a: &str, b: &str) -> Ordering {
+    let folded = if a.is_ascii() && b.is_ascii() {
+        // Same result as `fold`, minus the decomposition machinery: this is
+        // the comparison a whole-library sort spends its time in.
+        a.bytes().map(fold_ascii).cmp(b.bytes().map(fold_ascii))
+    } else {
+        fold(a).cmp(fold(b))
+    };
+    folded.then_with(|| a.cmp(b))
+}
+
+/// [`dictionary_cmp`] as a precomputed key: `(dictionary_key(a), a)` orders
+/// exactly as `dictionary_cmp(a, _)` does, for sorts that build one key per
+/// row instead of folding on every comparison.
+pub fn dictionary_key(s: &str) -> String {
+    fold(s).collect()
+}
+
+/// Dictionary order over two author names, each reshaped by
+/// [`author_sort_key`] first — so a display name typed into the editor
+/// (`Andy Weir`) files beside a stored surname-first key (`Weir, Andy`).
+/// Two names with the same key compare `Equal`.
+pub fn author_dictionary_cmp(a: &str, b: &str) -> Ordering {
+    dictionary_cmp(&author_key(a), &author_key(b))
+}
 
 /// Surname-first sort key for an author *display name*:
 /// - a name already in `"Surname, Given"` form (it carries a comma) is kept
@@ -39,6 +78,30 @@ fn author_key(name: &str) -> Cow<'_, str> {
         None => Cow::Borrowed(name),
     }
 }
+
+/// The folded character stream [`dictionary_cmp`] compares: compatibility
+/// decomposition with combining marks dropped and case folded (the same fold
+/// as `text_fold::fold_for_match`), with the comma lowered below every
+/// printable character.
+fn fold(s: &str) -> impl Iterator<Item = char> + '_ {
+    s.nfkd()
+        .filter(|c| !is_combining_mark(*c))
+        .flat_map(char::to_lowercase)
+        .map(|c| if c == ',' { COMMA } else { c })
+}
+
+/// [`fold`] for one ASCII byte, where decomposition is the identity.
+fn fold_ascii(b: u8) -> u8 {
+    if b == b',' {
+        0
+    } else {
+        b.to_ascii_lowercase()
+    }
+}
+
+/// What a comma folds to: below the space, so `"Perez, Ana"` files ahead of
+/// `"Perez Galdos, Benito"`.
+const COMMA: char = '\0';
 
 #[cfg(test)]
 mod tests;

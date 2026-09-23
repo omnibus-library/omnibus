@@ -20,16 +20,16 @@ async fn list_authors_returns_all_with_counts_and_alpha_order() {
     let (pool, _guard) = seed_discovery_fixture().await;
     let authors = list_authors(&pool, &["/lib"]).await.unwrap();
 
-    // Three distinct authors: Ada Lovelace, Grace Hopper, Niklaus Wirth.
+    // Three distinct authors, filed by surname: Hopper, Lovelace, Wirth.
     let names: Vec<_> = authors.iter().map(|a| a.name.clone()).collect();
     assert_eq!(
         names,
         vec![
-            "Ada Lovelace".to_string(),
             "Grace Hopper".to_string(),
+            "Ada Lovelace".to_string(),
             "Niklaus Wirth".to_string(),
         ],
-        "expected NOCASE alphabetical order by sort/name"
+        "expected surname-first dictionary order"
     );
 
     // Book counts: Ada=3, Grace=1, Niklaus=1.
@@ -44,6 +44,58 @@ async fn list_authors_returns_all_with_counts_and_alpha_order() {
     // IDs are populated so cards can route to /authors/:id.
     assert!(authors.iter().all(|a| a.id > 0));
 }
+/// #2451: the index files every author on one key shape, whatever form the
+/// file's `file-as` took, and orders accented surnames in dictionary order.
+#[tokio::test]
+async fn list_authors_orders_by_surname_key_in_dictionary_order() {
+    let _guard = CoversTempDir::new("authors_dictionary_order");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let book = |file: &str, name: &str, file_as: Option<&str>| {
+        let mut b = indexed(file, Some(file), &[name], &[], None, None);
+        b.metadata.creators[0].file_as = file_as.map(Into::into);
+        b
+    };
+    crate::sync::replace_books(
+        &pool,
+        "/lib",
+        vec![
+            book("polk.epub", "Sarah Polk", Some("Polk, Sarah")),
+            book(
+                "galdos.epub",
+                "Benito Pérez Galdós",
+                Some("Pérez Galdós, Benito"),
+            ),
+            book("perry.epub", "Anne Perry", None),
+            // A given-name-form file-as keys from the display name.
+            book(
+                "pettichord.epub",
+                "Bret Pettichord",
+                Some("Bret Pettichord"),
+            ),
+            book("perez.epub", "Ana Perez", Some("Perez, Ana")),
+        ],
+    )
+    .await
+    .unwrap();
+
+    let names: Vec<String> = list_authors(&pool, &["/lib"])
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|a| a.name)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "Ana Perez",
+            "Benito Pérez Galdós",
+            "Anne Perry",
+            "Bret Pettichord",
+            "Sarah Polk",
+        ]
+    );
+}
+
 #[tokio::test]
 async fn list_authors_scopes_to_library_path() {
     let (pool, _guard) = seed_discovery_fixture().await;

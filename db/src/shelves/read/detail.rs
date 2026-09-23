@@ -17,6 +17,7 @@ use crate::books::{
     backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
     MAX_BOOKS_RETURNED,
 };
+use crate::metadata_overrides::sql::override_join_sql;
 use crate::shelves::rules::{membership_predicate, Bind};
 
 /// Ids of the hand-picked shelves `viewer_id` can see that hold `uuid`.
@@ -341,10 +342,14 @@ async fn fetch_smart(
     limit: i64,
 ) -> Result<Vec<EbookMetadata>, ShelfError> {
     let pred = membership_predicate(rules, match_mode, owner_id)?;
+    // The override join is what the metadata sort axes read.
     let sql = format!(
-        "SELECT {BOOK_COLUMNS} FROM books b \
-         WHERE {SMART_VISIBLE} AND {} ORDER BY {order_by} LIMIT ?",
-        pred.sql
+        concat!(
+            "SELECT {} FROM books b ",
+            override_join_sql!(),
+            "WHERE {} AND {} ORDER BY {} LIMIT ?"
+        ),
+        BOOK_COLUMNS, SMART_VISIBLE, pred.sql, order_by
     );
     let mut q = sqlx::query(&sql);
     for b in &pred.binds {

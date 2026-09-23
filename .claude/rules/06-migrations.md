@@ -44,6 +44,11 @@ works in production.
      column so one key's staleness can't destroy another's, and have the
      backfill `COALESCE` a non-derivable recompute over the stored value
      so "can't tell" never overwrites a real key.
+6. **Never name an app-registered collation in schema.** `dictionary` and
+   `author_dictionary` exist only on connections `db/src/pool.rs` opens.
+   A column, index or view declaring one makes the file unreadable to
+   every other tool ("no such collation sequence"), so they appear in
+   queries alone.
 
 ## Book-identity tables
 

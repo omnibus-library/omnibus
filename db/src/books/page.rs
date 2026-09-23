@@ -9,7 +9,9 @@ use omnibus_shared::{EbookMetadata, SortDir, SortKey, ViewFilters};
 use sqlx::{Row, SqlitePool};
 
 use crate::interaction::INTERACTED_AT_ISO;
-use crate::metadata_overrides::sql::{effective_text_sql, override_sql, overrides_win_sql};
+use crate::metadata_overrides::sql::{
+    creator_sort_sql, effective_author_sql, effective_text_sql, override_sql, overrides_win_sql,
+};
 
 use super::projection::{
     backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
@@ -235,21 +237,24 @@ fn build_page_sql(
 ///
 /// The three metadata axes key on the *effective* value — a book renamed or
 /// re-attributed through `metadata_overrides` sorts where the page shows it,
-/// not where the scanned file put it. The two time axes read INTEGER
+/// not where the scanned file put it — and compare in dictionary order
+/// through the collations `pool.rs` registers. The collation rides inside the
+/// expression, so the `ORDER BY` and the keyset predicate cannot compare
+/// differently. Shelf member sorts reuse these. The two time axes read INTEGER
 /// unix-seconds (migration 0038) but format them to fixed-width ISO here, for
 /// the same reason the projection does: the cursor round-trips the primary
 /// value as `Option<String>` and compares it lexicographically, which stays
 /// chronologically correct on ISO text. (The trade-off, shared by every
 /// expression axis here, is that ordering by an expression can't use the
 /// raw-column keyset index — acceptable at a self-hosted library's scale.)
-fn axis_sort_columns(sort: SortKey) -> (&'static str, Option<&'static str>) {
+pub(crate) fn axis_sort_columns(sort: SortKey) -> (&'static str, Option<&'static str>) {
     match sort {
-        SortKey::Title => (effective_text_sql!("$.title"; "b.sort"), None),
+        SortKey::Title => (effective_text_sql!("$.title"; "b.sort"; "dictionary"), None),
         SortKey::Author => (
             // A creators override replaces the whole list, so the displayed
-            // primary author is its first entry — file-as if it carries one,
-            // matching how the scanner fills `author_sort`.
-            effective_text_sql!("$.creators[0].file_as", "$.creators[0].name"; "b.author_sort"),
+            // primary author is its first entry, keyed the way the scanner
+            // keys `author_sort`.
+            effective_author_sql!("b.author_sort"),
             None,
         ),
         SortKey::LastUpdated => (
@@ -261,7 +266,7 @@ fn axis_sort_columns(sort: SortKey) -> (&'static str, Option<&'static str>) {
             None,
         ),
         SortKey::Series => (
-            effective_text_sql!("$.series"; "b.series_sort"),
+            effective_text_sql!("$.series"; "b.series_sort"; "dictionary"),
             Some(concat!(
                 "COALESCE(CAST(",
                 override_sql!("$.series_index"),
