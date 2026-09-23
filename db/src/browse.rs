@@ -1,8 +1,8 @@
 //! Browse-all index pages for `/authors` and `/series`: every row (capped at
 //! `INDEX_LIMIT`) so the UI's client-side sort/filter has the full list, with
 //! override-aware per-row counts computed in a single reverse-index-driven
-//! `GROUP BY` pass rather than a correlated subquery per row. Single-tenant
-//! today — no per-user ACL filtering.
+//! `GROUP BY` pass rather than a correlated subquery per row. The library is
+//! shared, so every reader gets the same rows.
 
 use omnibus_shared::{AuthorSummary, SeriesSummary};
 use sqlx::{Row, SqlitePool};
@@ -63,10 +63,6 @@ fn visible(book: &str, root: &str) -> String {
 /// `effective` (override-aware) set, so an author whose last book was
 /// reassigned through the edit form drops out rather than rendering a
 /// 0-book card off a canonical link the file still carries.
-///
-/// Currently returns results across all users (single-tenant). When F4.x
-/// per-user ACL lands, add a `user_id: i64` parameter and scope the query
-/// to books accessible to that user.
 pub async fn list_authors(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -173,10 +169,6 @@ fn map_author_row(r: &sqlx::sqlite::SqliteRow) -> AuthorSummary {
 /// `book_count > 0` is an invariant of the result, same as [`list_authors`]:
 /// a series emptied by an edit-form reassignment drops out instead of
 /// rendering a 0-book card.
-///
-/// Currently returns results across all users (single-tenant). When F4.x
-/// per-user ACL lands, add a `user_id: i64` parameter and scope the query
-/// to books accessible to that user.
 pub async fn list_series(
     pool: &SqlitePool,
     library_paths: &[&str],

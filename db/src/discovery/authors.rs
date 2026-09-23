@@ -21,10 +21,6 @@ pub const MAX_DISCOVERY_BOOKS: i64 = 1_000;
 /// Fetch an author by ID with their books across every library. Returns
 /// `None` if the author ID doesn't exist. The nested `books` vec is
 /// capped at [`MAX_DISCOVERY_BOOKS`]; `book_count` is uncapped.
-///
-/// Currently returns results across all users (single-tenant). When
-/// per-user ACL lands, add a `user_id: i64` parameter and scope the query
-/// to books accessible to that user.
 pub async fn get_author(
     pool: &SqlitePool,
     author_id: i64,
@@ -52,7 +48,6 @@ async fn load_author(
     author_id: i64,
     library_paths: Option<&[&str]>,
 ) -> Result<Option<AuthorDetail>, DiscoveryError> {
-    // TODO: scope by `user_id` once per-user ACLs land (single-tenant today).
     let author_row = sqlx::query("SELECT id, name, sort FROM authors WHERE id = ?")
         .bind(author_id)
         .fetch_optional(pool)
