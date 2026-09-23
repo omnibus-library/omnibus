@@ -406,17 +406,21 @@ struct ConfirmLabels {
     empty: bool,
 }
 
-/// Compute [`ConfirmLabels`] from the manifest, current selection, and
-/// pick counts.
+/// Compute [`ConfirmLabels`] from the manifest and the picked file and copy
+/// ids. Files are deleted from disk; a physical copy is only un-recorded,
+/// and the copy says which is happening — the iOS `DeleteSelectionCopy`
+/// mirrors these branches.
 fn confirm_labels(
     title: &str,
     manifest: &BookDeletionManifest,
-    signals: DeleteDialogSignals,
-    picked: usize,
+    files: &BTreeSet<i64>,
+    copies: &BTreeSet<i64>,
 ) -> ConfirmLabels {
+    let picked = files.len() + copies.len();
     let empty = manifest.item_count() == 0;
     let total = empty || picked == manifest.item_count();
     let remaining = manifest.item_count().saturating_sub(picked);
+    let has_copies = !manifest.copies.is_empty();
 
     // "items" once a physical copy is in the mix — not every row is a file.
     let noun = match (manifest.copies.is_empty(), picked) {
@@ -435,16 +439,28 @@ fn confirm_labels(
     };
     let copy = if empty {
         "This book has no files on disk. Deleting removes the library record only \u{2014} nothing is deleted from your filesystem.".to_string()
+    } else if total && manifest.files.is_empty() {
+        format!("\u{201c}{title}\u{201d} has no files on disk. Its physical copies will be un-recorded and the book removed from your library entirely \u{2014} nothing is deleted from your filesystem.")
+    } else if total && has_copies {
+        format!("Every file for \u{201c}{title}\u{201d} will be deleted from disk, its physical copies un-recorded, and the book will be removed from your library entirely.")
     } else if total {
         format!("Every file for \u{201c}{title}\u{201d} will be deleted from disk, and the book will be removed from your library entirely.")
     } else {
-        let left = match (manifest.copies.is_empty(), remaining) {
-            (true, 1) => "file",
-            (true, _) => "files",
-            (false, 1) => "item",
-            (false, _) => "items",
+        let left = match (has_copies, remaining) {
+            (false, 1) => "file",
+            (false, _) => "files",
+            (true, 1) => "item",
+            (true, _) => "items",
         };
-        format!("{} will be deleted from disk and removed from this book. {title} stays in your library with its {remaining} remaining {left}.", picked_label(manifest, signals))
+        let label = picked_label(manifest, files, copies);
+        let stays = format!("{title} stays in your library with its {remaining} remaining {left}.");
+        if files.is_empty() {
+            format!("{label} will be un-recorded \u{2014} nothing is deleted from disk. {stays}")
+        } else if copies.is_empty() {
+            format!("{label} will be deleted from disk and removed from this book. {stays}")
+        } else {
+            format!("{label} will be removed from this book \u{2014} files deleted from disk, physical copies only un-recorded. {stays}")
+        }
     };
     let action = match (empty, total, noun) {
         (true, _, _) => "Delete record".to_string(),
@@ -480,8 +496,7 @@ fn render_confirm(
         ..
     } = signals;
     let mut on_confirm = on_confirm;
-    let picked = files.read().len() + copies.read().len();
-    let labels = confirm_labels(&title, &manifest, signals, picked);
+    let labels = confirm_labels(&title, &manifest, &files.read(), &copies.read());
 
     rsx! {
         div { class: "del-body",
@@ -519,23 +534,37 @@ fn render_confirm(
     }
 }
 
-/// Quoted label of the single picked file, for the partial-delete copy;
-/// falls back to a plain count when several are picked.
-fn picked_label(manifest: &BookDeletionManifest, signals: DeleteDialogSignals) -> String {
-    let ids = signals.files.read();
-    let single = (ids.len() == 1 && signals.copies.read().is_empty())
-        .then(|| manifest.files.iter().find(|f| ids.contains(&f.id)))
+/// What a partial delete names: the single picked file quoted by its label,
+/// else the counts by kind ("2 files", "1 file and 1 copy").
+fn picked_label(
+    manifest: &BookDeletionManifest,
+    files: &BTreeSet<i64>,
+    copies: &BTreeSet<i64>,
+) -> String {
+    let single = (files.len() == 1 && copies.is_empty())
+        .then(|| manifest.files.iter().find(|f| files.contains(&f.id)))
         .flatten();
-    match single {
-        Some(file) => format!(
+    if let Some(file) = single {
+        return format!(
             "\u{201c}{}\u{201d}",
             file.label
                 .clone()
                 .filter(|l| !l.trim().is_empty())
                 .unwrap_or_else(|| file.filename.clone())
-        ),
-        None => format!("{} selected items", ids.len() + signals.copies.read().len()),
+        );
     }
+    let mut parts = Vec::new();
+    match files.len() {
+        0 => {}
+        1 => parts.push("1 file".to_string()),
+        n => parts.push(format!("{n} files")),
+    }
+    match copies.len() {
+        0 => {}
+        1 => parts.push("1 copy".to_string()),
+        n => parts.push(format!("{n} copies")),
+    }
+    parts.join(" and ")
 }
 
 /// The pinned action row: Cancel plus whatever the pane's own buttons are.
