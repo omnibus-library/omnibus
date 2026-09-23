@@ -195,9 +195,12 @@ test("the stack shows one synced card with the counterpart affordance", async ({
   // The cross-format affordances describe the book that is out front, so
   // bring this one forward if a parallel spec stamped a newer position while
   // the poll above was converging. Clicking the front card would navigate, so
-  // only a card that is behind gets clicked.
+  // only a card that is behind gets clicked — and a card behind sits ~74px
+  // under its neighbour at rest, so spread the fan first and click the left
+  // sliver that is always its own.
   if (!(await cards.getAttribute("class"))?.includes("lead")) {
-    await cards.click();
+    await page.getByTestId("continue-stack").locator(".lmq-fan").hover();
+    await cards.click({ position: { x: 12, y: 60 } });
   }
   await expect(cards).toHaveClass(/\blead\b/);
 
