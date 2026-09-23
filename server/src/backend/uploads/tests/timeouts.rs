@@ -17,8 +17,11 @@ use axum::{
 use futures_util::{stream, StreamExt};
 use tower::ServiceExt;
 
+use omnibus_shared::Settings;
+
 use super::{fixture_audiobook, fixture_epub, multipart_body, post_multipart};
 use crate::auth::test_support as auth_test_support;
+use crate::backend::test_support::CoversDirGuard;
 use crate::backend::{
     rest_router_with_timeouts, AppState, SEARCH_RATE_LIMIT_MAX, SEARCH_RATE_LIMIT_WINDOW,
 };
@@ -34,11 +37,27 @@ const GAP: Duration = Duration::from_millis(100);
 /// Pieces in a trickled body — their gaps add up to twice [`REQUEST_TIMEOUT`].
 const PIECES: usize = 5;
 
-/// A router carrying the test-scale time limits, plus an admin's token.
-async fn timed_app(request_timeout: Duration) -> (Router, String) {
+/// A router carrying the test-scale time limits, an admin's token, and the
+/// ebook and audiobook libraries the commit routes file into.
+async fn timed_app(request_timeout: Duration) -> (Router, String, [tempfile::TempDir; 2]) {
     let pool = omnibus_db::init_db("sqlite::memory:")
         .await
         .expect("db should initialize");
+    let libraries = [
+        tempfile::tempdir().expect("temp ebook library"),
+        tempfile::tempdir().expect("temp audiobook library"),
+    ];
+    let [ebooks, audiobooks] = &libraries;
+    omnibus_db::set_settings(
+        &pool,
+        &Settings {
+            ebook_library_path: Some(ebooks.path().to_string_lossy().to_string()),
+            audiobook_library_path: Some(audiobooks.path().to_string_lossy().to_string()),
+            scan_interval_hours: None,
+        },
+    )
+    .await
+    .expect("set library paths");
     let admin = auth_test_support::create_admin(&pool, "admin").await;
     let token = auth_test_support::bearer_token(&pool, admin.id).await;
     let search_limiter = Arc::new(RateLimiter::with_policy(
@@ -51,7 +70,7 @@ async fn timed_app(request_timeout: Duration) -> (Router, String) {
         request_timeout,
         UPLOAD_IDLE_TIMEOUT,
     );
-    (app, token)
+    (app, token, libraries)
 }
 
 /// `bytes` in [`PIECES`] pieces, each after [`GAP`] of silence: a slow link
@@ -74,27 +93,64 @@ fn stalled(bytes: Vec<u8>) -> Body {
     Body::from_stream(stream::iter([Ok::<_, Infallible>(head)]).chain(stream::pending()))
 }
 
-/// Both inspect routes, each with a file its parser accepts.
-fn inspect_uploads() -> [(&'static str, &'static str, Vec<u8>); 2] {
+/// One book upload request, and the status its handler answers on success.
+struct Upload {
+    uri: &'static str,
+    content_type: String,
+    body: Vec<u8>,
+    accepted: StatusCode,
+}
+
+/// A body `uri` accepts: the file alone for an inspect, plus the title and
+/// author a commit files it under.
+fn upload(uri: &'static str, filename: &str, file: &[u8], commit: bool) -> Upload {
+    let mut parts: Vec<(&str, Option<&str>, &[u8])> = Vec::new();
+    if commit {
+        parts.push(("title", None, b"Slow Upload"));
+        parts.push(("author", None, b"Patient Author"));
+    }
+    parts.push(("file", Some(filename), file));
+    let (content_type, body) = multipart_body(&parts);
+    let accepted = if commit {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Upload {
+        uri,
+        content_type,
+        body,
+        accepted,
+    }
+}
+
+/// Every book upload route: inspect and commit, ebook and audiobook.
+fn book_uploads() -> [Upload; 4] {
+    let epub = fixture_epub();
+    let mp3 = fixture_audiobook("ada_lovelace_solo/the_analytical_audiobook.mp3");
     [
-        ("/api/uploads/ebooks/inspect", "book.epub", fixture_epub()),
-        (
-            "/api/uploads/audiobooks/inspect",
-            "book.mp3",
-            fixture_audiobook("ada_lovelace_solo/the_analytical_audiobook.mp3"),
-        ),
+        upload("/api/uploads/ebooks/inspect", "book.epub", &epub, false),
+        upload("/api/uploads/ebooks", "book.epub", &epub, true),
+        upload("/api/uploads/audiobooks/inspect", "book.mp3", &mp3, false),
+        upload("/api/uploads/audiobooks", "book.mp3", &mp3, true),
     ]
 }
 
 #[tokio::test]
-async fn upload_inspect_outlasts_the_request_timeout_while_its_body_keeps_arriving() {
-    for (uri, filename, file) in inspect_uploads() {
-        let (app, token) = timed_app(REQUEST_TIMEOUT).await;
-        let (ct, body) = multipart_body(&[("file", Some(filename), &file)]);
+async fn book_upload_outlasts_the_request_timeout_while_its_body_keeps_arriving() {
+    let _covers = CoversDirGuard::new("upload_outlasts_request_timeout");
+    for upload in book_uploads() {
+        let (app, token, _libraries) = timed_app(REQUEST_TIMEOUT).await;
+        let uri = upload.uri;
 
         let started = Instant::now();
         let res = app
-            .oneshot(post_multipart(uri, &token, &ct, trickled(body)))
+            .oneshot(post_multipart(
+                uri,
+                &token,
+                &upload.content_type,
+                trickled(upload.body),
+            ))
             .await
             .expect("request should succeed");
 
@@ -102,7 +158,7 @@ async fn upload_inspect_outlasts_the_request_timeout_while_its_body_keeps_arrivi
             started.elapsed() > REQUEST_TIMEOUT,
             "{uri}: the body must take longer than the request timeout to arrive"
         );
-        assert_eq!(res.status(), StatusCode::OK, "{uri}");
+        assert_eq!(res.status(), upload.accepted, "{uri}");
     }
 }
 
@@ -120,25 +176,31 @@ async fn non_upload_route_answers_408_once_the_same_body_outlasts_the_request_ti
 
     // With a budget the body fits in, the same request succeeds — so the 408
     // below is the timeout, not the trickled body.
-    let (app, token) = timed_app(Duration::from_secs(10)).await;
+    let (app, token, _libraries) = timed_app(Duration::from_secs(10)).await;
     let res = app.oneshot(validators(&token)).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let (app, token) = timed_app(REQUEST_TIMEOUT).await;
+    let (app, token, _libraries) = timed_app(REQUEST_TIMEOUT).await;
     let res = app.oneshot(validators(&token)).await.unwrap();
     assert_eq!(res.status(), StatusCode::REQUEST_TIMEOUT);
 }
 
 #[tokio::test]
-async fn upload_inspect_answers_408_stalled_once_its_body_stops_arriving() {
-    for (uri, filename, file) in inspect_uploads() {
-        let (app, token) = timed_app(REQUEST_TIMEOUT).await;
-        let (ct, body) = multipart_body(&[("file", Some(filename), &file)]);
+async fn book_upload_answers_408_stalled_once_its_body_stops_arriving() {
+    let _covers = CoversDirGuard::new("upload_stalled");
+    for upload in book_uploads() {
+        let (app, token, _libraries) = timed_app(REQUEST_TIMEOUT).await;
+        let uri = upload.uri;
 
         // Bounded, so a missing idle timeout fails here instead of hanging.
         let res = tokio::time::timeout(
             UPLOAD_IDLE_TIMEOUT * 10,
-            app.oneshot(post_multipart(uri, &token, &ct, stalled(body))),
+            app.oneshot(post_multipart(
+                uri,
+                &token,
+                &upload.content_type,
+                stalled(upload.body),
+            )),
         )
         .await
         .unwrap_or_else(|_| panic!("{uri}: nothing cut the stalled body off"))
