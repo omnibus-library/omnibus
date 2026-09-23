@@ -14,8 +14,7 @@ import UIKit
 struct PDFStageZoomTests {
     /// A stage wired the way `makeUIView` wires one — same configuration,
     /// same coordinator — standing in a real window, on scratch defaults so
-    /// nothing touches the reader's real store. (#2617 later unifies the
-    /// configuration through `PDFStage.configure`; this branch predates it.)
+    /// nothing touches the reader's real store.
     private func makeStage(
         initialZoom: Double? = nil,
         pageSize: CGSize = CGSize(width: 612, height: 792),
@@ -35,14 +34,8 @@ struct PDFStageZoomTests {
                 ])
             }
         let document = try #require(PDFDocument(data: data))
-        let view = PDFView(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
-        view.document = document
-        view.displayMode = .singlePage
-        view.displayDirection = .horizontal
-        view.autoScales = false
-        view.usePageViewController(true, withViewOptions: [
-            UIPageViewController.OptionsKey.interPageSpacing: 0,
-        ])
+        let view = QuietPDFView(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        PDFStage.configure(view, document: document)
         let controller = PDFStageController()
         let book = "test-zoom-\(UUID().uuidString)"
         let scratch = try #require(

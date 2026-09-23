@@ -610,9 +610,10 @@ Reader/PDF/         — the native PDF reader over PDFKit: PDFReaderView (the
                       controller, tap zones, settled-selection and
                       highlight-tap reporting, system edit menu suppressed,
                       the page-frame / scale / luminance probes the chrome's
-                      ink asks about, and the scale ownership itself — the
-                      stage, not `autoScales`, keeps the reader's zoom
-                      across page turns and restores it per book),
+                      ink asks about, the scale ownership itself — the stage,
+                      not `autoScales`, keeps the reader's zoom across page
+                      turns and restores it per book — and the gesture model:
+                      one finger pages, two fingers pan),
                       PDFZoomStore (the per-book zoom multiple, one JSON
                       blob under `omnibus.pdfZoom`),
                       PDFPosition / PDFAnchor (mirrors of `shared::pdf_anchor`:

@@ -137,18 +137,7 @@ struct PDFStage: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PDFView {
         let view = QuietPDFView()
-        view.document = document
-        view.displayMode = .singlePage
-        view.displayDirection = .horizontal
-        // Fit is managed by the coordinator, not PDFKit: `autoScales`
-        // re-fits on every page change, which is exactly the zoom loss the
-        // reader is not supposed to have. The stage owns the scale.
-        view.autoScales = false
-        view.backgroundColor = .black
-        view.pageShadowsEnabled = false
-        view.usePageViewController(true, withViewOptions: [
-            UIPageViewController.OptionsKey.interPageSpacing: 0,
-        ])
+        PDFStage.configure(view, document: document)
         if let page = document.page(at: min(max(startPage, 0), max(document.pageCount - 1, 0))) {
             view.go(to: page)
         }
@@ -161,6 +150,24 @@ struct PDFStage: UIViewRepresentable {
         return view
     }
 
+    /// The one place the stage's `PDFView` is configured. The gesture tests
+    /// stand up the same view through this, so the walk's predicate cannot
+    /// drift from what the app ships.
+    static func configure(_ view: PDFView, document: PDFDocument) {
+        view.document = document
+        view.displayMode = .singlePage
+        view.displayDirection = .horizontal
+        // Fit is managed by the coordinator, not PDFKit: `autoScales`
+        // re-fits on every page change, which is exactly the zoom loss the
+        // reader is not supposed to have. The stage owns the scale.
+        view.autoScales = false
+        view.backgroundColor = .black
+        view.pageShadowsEnabled = false
+        view.usePageViewController(true, withViewOptions: [
+            UIPageViewController.OptionsKey.interPageSpacing: 0,
+        ])
+    }
+
     func updateUIView(_ uiView: PDFView, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
@@ -170,6 +177,38 @@ struct PDFStage: UIViewRepresentable {
             initialZoom: initialZoom,
             onTap: onTap
         )
+    }
+
+    /// The gesture model, and the pinch wiring the zoom capture attributes
+    /// by, in one pass over PDFKit's scroll views: the per-page scrollers —
+    /// the zoomable ones, the only scroll views carrying a pinch — pan on
+    /// two fingers only, and the page view controller's pager is capped to
+    /// one, so a two-finger drag cannot chain to it at the page's content
+    /// edge. Every one-finger drag then falls back to the pager, which
+    /// turns pages at any zoom. Selection handles keep their own
+    /// recognisers and never needed the scrollers' pan, so they are
+    /// untouched.
+    ///
+    /// Returns the pinch recognisers it saw, so the caller can wire the
+    /// zoom capture's attribution in the same pass.
+    @discardableResult
+    static func applyTwoFingerPanning(in view: UIView) -> [UIPinchGestureRecognizer] {
+        var pinches: [UIPinchGestureRecognizer] = []
+        var queue: [UIView] = [view]
+        while let next = queue.popLast() {
+            if let scroll = next as? UIScrollView {
+                if let pinch = scroll.pinchGestureRecognizer {
+                    pinches.append(pinch)
+                    scroll.panGestureRecognizer.minimumNumberOfTouches = 2
+                } else {
+                    // The pager: one finger only, so a two-finger drag
+                    // cannot chain to it at the page's content edge.
+                    scroll.panGestureRecognizer.maximumNumberOfTouches = 1
+                }
+            }
+            queue.append(contentsOf: next.subviews)
+        }
+        return pinches
     }
 
     @MainActor
@@ -268,7 +307,7 @@ struct PDFStage: UIViewRepresentable {
             singleTap = single
             doubleTap = double
 
-            wirePinches()
+            reconfigureScrollers()
         }
 
         /// The painted highlight under a point in the view, if any.
@@ -293,8 +332,9 @@ struct PDFStage: UIViewRepresentable {
             // scale while laying the new page out, so the stage's zoom is
             // re-asserted whenever the two disagree.
             if abs(view.scaleFactor - targetScale()) > 0.01 { applyScale() }
-            // The pager recycles its page views; their pinches need wiring.
-            wirePinches()
+            // The pager recycles its page views; their pinches need wiring
+            // and the new ones need the gesture model too.
+            reconfigureScrollers()
         }
 
         /// The stage reports every scale change mid-pinch: the chrome
@@ -308,18 +348,16 @@ struct PDFStage: UIViewRepresentable {
             scheduleZoomCapture()
         }
 
-        /// Wire every pinch under the stage — PDFKit builds page views as
-        /// they recycle, so this runs wherever the page views can change.
-        private func wirePinches() {
+        /// One pass for everything the stage needs from PDFKit's scroll
+        /// views: the gesture model, and the pinch wiring the zoom capture
+        /// attributes by. PDFKit builds and recycles page views as it goes,
+        /// so this runs wherever they can change.
+        private func reconfigureScrollers() {
             guard let view else { return }
-            var queue: [UIView] = [view]
-            while let next = queue.popLast() {
-                if let scroll = next as? UIScrollView, let pinch = scroll.pinchGestureRecognizer,
-                   !wiredPinches.contains(pinch) {
-                    wiredPinches.add(pinch)
-                    pinch.addTarget(self, action: #selector(pinchChanged(_:)))
-                }
-                queue.append(contentsOf: next.subviews)
+            let pinches = PDFStage.applyTwoFingerPanning(in: view)
+            for pinch in pinches where !wiredPinches.contains(pinch) {
+                wiredPinches.add(pinch)
+                pinch.addTarget(self, action: #selector(pinchChanged(_:)))
             }
         }
 
@@ -410,7 +448,7 @@ struct PDFStage: UIViewRepresentable {
         /// the kind of thing an OS point release moves.
         func stageDidLayout(_ bounds: CGRect) {
             guard bounds.width > 1, bounds.height > 1 else { return }
-            wirePinches()
+            reconfigureScrollers()
             pendingLayoutSize = bounds.size
             guard !layoutApplyPending else { return }
             layoutApplyPending = true
@@ -572,9 +610,10 @@ struct PDFStage: UIViewRepresentable {
 /// The edit menu is a `UIEditMenuInteraction` built through the responder
 /// chain's menu builder, so it is emptied there — `canPerformAction` alone
 /// no longer reaches it.
-private final class QuietPDFView: PDFView {
-    /// Called after every layout pass — the stage fits its scale once it has
-    /// a size, and re-fits after a rotation.
+final class QuietPDFView: PDFView {
+    /// Called after every layout pass — the stage fits its scale once it
+    /// has a size, re-fits after a rotation, and re-applies its gesture
+    /// model once PDFKit's page views exist.
     var onLayout: ((CGRect) -> Void)?
 
     override func layoutSubviews() {
