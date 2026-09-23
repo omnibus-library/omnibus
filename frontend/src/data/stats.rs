@@ -49,6 +49,7 @@ pub async fn fetch_stats(server_url: &str, range: StatsRange) -> Result<StatsSum
     .await
 }
 
+/// Native HTTP transport for [`fetch_stats`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn fetch_stats_online(
     server_url: &str,

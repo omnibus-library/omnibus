@@ -30,6 +30,7 @@ pub async fn create_journal_entry(
     Ok(entry)
 }
 
+/// Native HTTP transport for [`create_journal_entry`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn create_journal_entry_online(
     server_url: &str,
@@ -61,6 +62,7 @@ pub async fn list_journal_entries(
     .await
 }
 
+/// Native HTTP transport for [`list_journal_entries`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn list_journal_entries_online(
     server_url: &str,
@@ -92,6 +94,7 @@ pub async fn update_journal_entry(
     Ok(entry)
 }
 
+/// Native HTTP transport for [`update_journal_entry`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn update_journal_entry_online(
     server_url: &str,
@@ -133,6 +136,7 @@ pub async fn delete_journal_entry(server_url: &str, id: i64) -> Result<(), DataE
     Ok(())
 }
 
+/// Native HTTP transport for [`delete_journal_entry`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn delete_journal_entry_online(
     server_url: &str,

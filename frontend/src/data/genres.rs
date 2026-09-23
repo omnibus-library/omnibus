@@ -19,6 +19,7 @@ pub async fn get_genre_cloud(server_url: &str) -> Result<Vec<GenreWeight>, DataE
     .await
 }
 
+/// Native HTTP transport for [`get_genre_cloud`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_genre_cloud_online(
     server_url: &str,

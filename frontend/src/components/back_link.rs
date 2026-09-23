@@ -4,7 +4,7 @@
 //!
 //! Emitted on the mobile shell alone. The web shell reaches its indexes
 //! through the top nav, and a link the CSS hides at every viewport is an
-//! affordance the markup advertises but the page does not have (#2291). The
+//! affordance the markup advertises but the page does not have. The
 //! gate is `mobile` rather than `web`, so both halves of the web build — SSR
 //! and the WASM client — render the same nothing (rule 07).
 

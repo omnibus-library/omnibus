@@ -3,7 +3,7 @@
 //! reader opens, so they derive it the same way — from the CFI's spine item
 //! against the chapters' spine indices — rather than the rounded whole-book
 //! percent that lands one chapter ahead when a boundary falls inside the
-//! rounding window (#2345, #2356).
+//! rounding window.
 
 /// 1-based spine index encoded in a CFI's pre-`!` package step.
 ///

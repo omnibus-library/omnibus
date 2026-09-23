@@ -27,6 +27,7 @@ pub async fn set_rating(server_url: &str, update: RatingUpdate) -> Result<Rating
     Ok(record)
 }
 
+/// Native HTTP transport for [`set_rating`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn set_rating_online(
     server_url: &str,
@@ -54,6 +55,7 @@ pub async fn get_rating(server_url: &str, uuid: &str) -> Result<Option<RatingRec
     .await
 }
 
+/// Native HTTP transport for [`get_rating`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_rating_online(
     server_url: &str,
@@ -83,6 +85,7 @@ pub async fn list_other_ratings(
     .await
 }
 
+/// Native HTTP transport for [`list_other_ratings`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn list_other_ratings_online(
     server_url: &str,
@@ -116,6 +119,7 @@ pub async fn clear_rating(server_url: &str, uuid: &str) -> Result<(), DataError>
     Ok(())
 }
 
+/// Native HTTP transport for [`clear_rating`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn clear_rating_online(server_url: &str, uuid: &str) -> Result<(), DataError> {
     let url = format!("{server_url}/api/ratings/{uuid}");

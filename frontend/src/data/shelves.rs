@@ -26,6 +26,7 @@ pub async fn list_shelves(server_url: &str) -> Result<Vec<ShelfSummary>, DataErr
     .await
 }
 
+/// Native HTTP transport for [`list_shelves`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn list_shelves_online(server_url: &str) -> Result<Vec<ShelfSummary>, DataError> {
     let response = with_bearer(http_client().get(format!("{server_url}/api/shelves")))
@@ -48,6 +49,7 @@ pub async fn get_shelf(server_url: &str, id: i64) -> Result<Shelf, DataError> {
     .await
 }
 
+/// Native HTTP transport for [`get_shelf`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_shelf_online(server_url: &str, id: i64) -> Result<Shelf, DataError> {
     let response = with_bearer(http_client().get(format!("{server_url}/api/shelves/{id}")))
@@ -73,6 +75,7 @@ pub async fn create_shelf(server_url: &str, req: CreateShelfRequest) -> Result<S
     Ok(shelf)
 }
 
+/// Native HTTP transport for [`create_shelf`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn create_shelf_online(
     server_url: &str,
@@ -109,6 +112,7 @@ pub async fn update_shelf(
     Ok(shelf)
 }
 
+/// Native HTTP transport for [`update_shelf`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn update_shelf_online(
     server_url: &str,
@@ -150,6 +154,7 @@ pub async fn delete_shelf(server_url: &str, id: i64) -> Result<(), DataError> {
     Ok(())
 }
 
+/// Native HTTP transport for [`delete_shelf`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn delete_shelf_online(server_url: &str, id: i64) -> Result<(), DataError> {
     let response = with_bearer(http_client().delete(format!("{server_url}/api/shelves/{id}")))
@@ -178,6 +183,7 @@ pub async fn shelf_page(
     .await
 }
 
+/// Native HTTP transport for [`shelf_page`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn shelf_page_online(
     server_url: &str,
@@ -219,6 +225,7 @@ pub async fn add_shelf_books(
     Ok(())
 }
 
+/// Native HTTP transport for [`add_shelf_books`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn add_shelf_books_online(
     server_url: &str,
@@ -261,6 +268,7 @@ pub async fn remove_shelf_book(
     Ok(())
 }
 
+/// Native HTTP transport for [`remove_shelf_book`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn remove_shelf_book_online(
     server_url: &str,

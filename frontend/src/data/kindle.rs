@@ -114,6 +114,7 @@ pub async fn set_kindle_email(server_url: &str, email: Option<String>) -> Result
     Ok(())
 }
 
+/// Native HTTP transport for [`set_kindle_email`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn set_kindle_email_online(
     server_url: &str,

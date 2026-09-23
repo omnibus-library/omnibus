@@ -22,6 +22,7 @@ pub async fn get_series(server_url: &str, id: i64) -> Result<Option<SeriesDetail
     .await
 }
 
+/// Native HTTP transport for [`get_series`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn get_series_online(
     server_url: &str,
@@ -49,6 +50,7 @@ pub async fn list_series(server_url: &str) -> Result<Vec<SeriesSummary>, DataErr
     .await
 }
 
+/// Native HTTP transport for [`list_series`].
 #[cfg(feature = "mobile")]
 pub(crate) async fn list_series_online(server_url: &str) -> Result<Vec<SeriesSummary>, DataError> {
     let url = format!("{server_url}/api/series");
