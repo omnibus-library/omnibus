@@ -60,7 +60,7 @@ pub(super) fn render_choice(
             div { class: "al-file-rows",
                 for (i, id) in order().iter().copied().enumerate() {
                     if let Some(f) = files.iter().find(|f| f.book_file_id == id) {
-                        div { class: file_row_class(!seq && primary() != Some(id)),
+                        div { key: "{id}", class: file_row_class(!seq && primary() != Some(id)),
                             if seq {
                                 span { class: "al-file-ord", "{i + 1}" }
                                 button {

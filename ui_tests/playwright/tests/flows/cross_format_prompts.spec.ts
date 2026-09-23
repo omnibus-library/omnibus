@@ -312,6 +312,37 @@ test("declaring a sync point anchors the mapping and the reader auto-applies", a
   );
 });
 
+test("sync-point refusal offers linking even when the server message changes", async ({
+  page,
+}) => {
+  // Dioxus's real wire shape for a LinkRequired refusal: HTTP 500, the
+  // refusal in the payload's `code` (428), no `data`. Only the message is
+  // rewritten, so the label must come from the code alone.
+  await page.route("**/api/rpc/cross-format/sync-point", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        message: "Choose the matching formats before syncing.",
+        code: 428,
+      }),
+    }),
+  );
+  await gotoReady(page, `/listen/${uuid}`);
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/cross-format/sync-point",
+      expectedStatus: 500,
+    },
+    async () => page.getByTestId("listen-sync-here").click(),
+  );
+  await expect(page.getByTestId("listen-sync-here")).toHaveText(
+    "Link formats first",
+  );
+});
+
 // The follow tests come last in this serial file on purpose: they flip
 // follow, which every test above depends on being on. Each restores it.
 test("the follow switch turns the jumps off without discarding the alignment", async ({
