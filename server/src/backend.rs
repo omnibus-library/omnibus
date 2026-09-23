@@ -93,6 +93,20 @@ pub const UPLOAD_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::f
 /// Max upload requests per [`UPLOAD_RATE_LIMIT_WINDOW`] per IP.
 pub const UPLOAD_RATE_LIMIT_MAX: u32 = 10;
 
+/// Wall-clock budget for a whole request, on every route but the book
+/// uploads: a slow client or a stuck handler cannot hold a task past it.
+pub const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The [`REQUEST_TIMEOUT`] guard, answering 408. `main.rs` puts it on every
+/// surface except this module's router, which carries its own.
+pub fn request_timeout_layer() -> tower_http::timeout::TimeoutLayer {
+    timeout_layer(REQUEST_TIMEOUT)
+}
+
+fn timeout_layer(timeout: std::time::Duration) -> tower_http::timeout::TimeoutLayer {
+    tower_http::timeout::TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, timeout)
+}
+
 /// 403 unless `user` may download. The single enforcement point for every
 /// download-shaped route — one whose purpose is handing the caller a file to
 /// keep (`Content-Disposition: attachment`), as opposed to the in-app
@@ -295,24 +309,40 @@ pub fn rest_router_with_search_limiter(
     state: AppState,
     search_limiter: std::sync::Arc<RateLimiter>,
 ) -> Router {
+    rest_router_with_timeouts(
+        state,
+        search_limiter,
+        REQUEST_TIMEOUT,
+        uploads::UPLOAD_BODY_IDLE_TIMEOUT,
+    )
+}
+
+/// [`rest_router_with_search_limiter`] with both time limits as arguments,
+/// so a test can drive them at a sub-second scale.
+fn rest_router_with_timeouts(
+    state: AppState,
+    search_limiter: std::sync::Arc<RateLimiter>,
+    request_timeout: std::time::Duration,
+    upload_body_idle_timeout: std::time::Duration,
+) -> Router {
     let pool = state.pool().clone();
     routes::content_routes()
         .merge(routes::data_routes(search_limiter))
+        // Route-level, so it covers only the routes merged above. A book
+        // upload's body alone can outlast it, so those routes are merged
+        // after it and bound a stalled client with an idle timeout instead.
+        .layer(timeout_layer(request_timeout))
+        .merge(routes::book_upload_router(upload_body_idle_timeout))
         .with_state(state)
         // `AuthUser`/`AdminUser` read the pool from `Extension<SqlitePool>`.
         // Layer it here so the router is self-contained for integration
         // tests; in the live server `main.rs` adds the same Extension at
         // the top, which is harmless overlap.
         .layer(Extension(pool))
-        // Global guards against slow / oversized clients. `main.rs` layers
-        // the same protections at the very top so the auth router and
-        // Dioxus server functions are covered too; duplicating them here
+        // `main.rs` layers the same cap at the top so the auth router and
+        // Dioxus server functions are covered too; duplicating it here
         // means integration tests (which use `rest_router` directly) also
-        // exercise the limits.
-        .layer(tower_http::timeout::TimeoutLayer::with_status_code(
-            axum::http::StatusCode::REQUEST_TIMEOUT,
-            std::time::Duration::from_secs(30),
-        ))
+        // exercise it.
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
 }
 

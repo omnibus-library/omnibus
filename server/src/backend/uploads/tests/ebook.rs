@@ -10,22 +10,9 @@ use tower::ServiceExt;
 use omnibus_shared::{Settings, UploadCommitResult, UploadInspection};
 
 use super::super::*;
-use super::{multipart_body, post_multipart};
+use super::{fixture_epub, fixture_epub_named, multipart_body, post_multipart};
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
-
-/// Read a small committed EPUB fixture (shared with the Playwright suite).
-fn fixture_epub() -> Vec<u8> {
-    fixture_epub_named("standalone-desert.epub")
-}
-
-/// Read one of the committed generated EPUBs by file name.
-fn fixture_epub_named(name: &str) -> Vec<u8> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../test_data/epubs/generated")
-        .join(name);
-    std::fs::read(&path).unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()))
-}
 
 /// `beta.epub` declares two `dc:creator`s — the multi-creator case (#2355).
 const TWO_CREATOR_EPUB: &str = "beta.epub";

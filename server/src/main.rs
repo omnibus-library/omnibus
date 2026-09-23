@@ -332,19 +332,16 @@ mod server {
     }
 
     /// Merge every remaining route surface onto `router` (the Dioxus/RPC +
-    /// metrics base, already carrying the search rate-limit layer): REST
-    /// `/api/*`, Kobo wireless sync + Reading Services, OPDS, and auth (with
-    /// its own credential-handling rate limit layered on just that surface).
+    /// metrics base, already carrying the search rate-limit layer): Kobo
+    /// wireless sync + Reading Services, OPDS, MCP, and auth (with its own
+    /// credential-handling rate limit layered on just that surface), all
+    /// under the request timeout — then REST `/api/*`, which carries its own.
     fn merge_route_surfaces(
         router: Router,
         state: backend::AppState,
         limiters: &RouterLimiters,
     ) -> Router {
         router
-            .merge(backend::rest_router_with_search_limiter(
-                state.clone(),
-                limiters.search.clone(),
-            ))
             // Native Kobo wireless sync. Sits outside the `/api/*` auth gate
             // (require_auth passes through non-`/api/` paths); each route
             // authenticates via its path token internally.
@@ -372,18 +369,27 @@ mod server {
                 ),
             ))
             .merge(
-                auth::auth_router(state).layer(axum::middleware::from_fn_with_state(
+                auth::auth_router(state.clone()).layer(axum::middleware::from_fn_with_state(
                     (limiters.auth.clone(), limiters.auth_prefixes.clone()),
                     rate_limit::rate_limit_paths,
                 )),
             )
+            // Route-level, so it covers only the surfaces merged so far. The
+            // REST router is merged after it because it applies the same
+            // timeout itself, minus the book uploads — whose body alone can
+            // take minutes to arrive.
+            .layer(backend::request_timeout_layer())
+            .merge(backend::rest_router_with_search_limiter(
+                state,
+                limiters.search.clone(),
+            ))
     }
 
-    /// Assemble the full Axum router: RPC search rate-limit, REST router,
-    /// auth router (with its own credential-handling rate-limit), then the
-    /// auth / origin-check / extensions / timeout / body-limit middleware
-    /// stack. Returns the router; security headers and the trace layer are
-    /// added by `apply_security_headers`.
+    /// Assemble the full Axum router: RPC search rate-limit, the route
+    /// surfaces (each under the request timeout, see
+    /// `merge_route_surfaces`), then the auth / origin-check / extensions /
+    /// body-limit middleware stack. Returns the router; security headers and
+    /// the trace layer are added by `apply_security_headers`.
     fn build_router(state: backend::AppState, pool: SqlitePool, worker: Arc<Worker>) -> Router {
         let limiters = build_router_limiters();
         // Prometheus HTTP metrics: middleware + `/metrics` scrape route. The
@@ -410,22 +416,12 @@ mod server {
             .layer(axum::middleware::from_fn(auth::origin_check))
             .layer(Extension(pool))
             .layer(Extension(worker))
-            // Global request-handling guards. A slow client or oversized
-            // body can otherwise hold a tokio worker indefinitely.
-            //
-            // - `TimeoutLayer` aborts any request that takes longer than
-            //   30s end-to-end. Long-running scans run on the background
-            //   `Worker` (not the request task), so 30s is safely above
-            //   any synchronous handler.
-            // - `DefaultBodyLimit` caps request bodies to 1 MiB by
-            //   default. Routes that legitimately need larger payloads
-            //   (e.g. `POST /api/ebooks/{id}/cover`) layer their own
-            //   `DefaultBodyLimit::max(...)` closer to the handler,
-            //   which takes precedence over this outer cap.
-            .layer(tower_http::timeout::TimeoutLayer::with_status_code(
-                axum::http::StatusCode::REQUEST_TIMEOUT,
-                std::time::Duration::from_secs(30),
-            ))
+            // Global 1 MiB body cap. Routes that legitimately need larger
+            // payloads (e.g. `POST /api/ebooks/{id}/cover`) layer their own
+            // `DefaultBodyLimit::max(...)` closer to the handler, which takes
+            // precedence over this outer cap. The request timeout is not
+            // here but route-level, in `merge_route_surfaces`, because the
+            // book uploads must stay outside it.
             .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
             // Outermost app layer so the histograms observe every request
             // (including the 408/413 short-circuits from the guards above).
