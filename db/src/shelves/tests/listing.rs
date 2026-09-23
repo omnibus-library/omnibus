@@ -1,7 +1,7 @@
 //! `list_visible_shelves` and the shelf page: owner/public/admin scoping,
 //! the viewer's own shelves first, the hard cap, batched per-shelf counts,
-//! the mosaic cover uuids, owner attribution by display name, and the
-//! recently-interacted ordering.
+//! the mosaic cover uuids, owner attribution by display name, the
+//! recently-interacted ordering, and the Author axis over edited books.
 
 use omnibus_shared::{MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, Visibility};
 
@@ -468,4 +468,38 @@ async fn shelf_page_recently_interacted_orders_the_latest_signal_first() {
         Some(last_by_title.as_str()),
         "the freshly rated book must lead the shelf on this axis"
     );
+}
+
+/// A smart shelf files an edited book under the author its page shows,
+/// keyed surname-first like the library does — not under the scanned author.
+#[tokio::test]
+async fn shelf_page_sorts_a_smart_shelf_by_the_edited_author() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+    // Both members are scanned under Lovelace; re-attributing Book Two to a
+    // display name that keys under B must move it first.
+    let book_two = uuid_by_title(&pool, "Saga: Book Two").await;
+    let overrides = omnibus_shared::MetadataOverrides {
+        creators: Some(vec![omnibus_shared::Contributor {
+            name: "Charles Babbage".into(),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    crate::upsert_metadata_overrides(&pool, &book_two, &overrides, false, owner)
+        .await
+        .unwrap();
+
+    let page = shelf_page(&pool, &shelf, SortKey::Author, SortDir::Asc)
+        .await
+        .unwrap();
+    let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
+    assert_eq!(titles, ["Saga: Book Two", "Saga: Book One"]);
 }

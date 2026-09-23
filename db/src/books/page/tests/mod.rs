@@ -2,6 +2,7 @@
 //! the sibling modules below; the library, book and physical-copy insert
 //! fixtures they share live here.
 
+mod dictionary;
 mod filters;
 mod overrides;
 mod paging;

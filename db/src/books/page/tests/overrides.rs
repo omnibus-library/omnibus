@@ -64,12 +64,12 @@ async fn list_books_page_orders_title_and_author_on_the_override_not_the_scan() 
     let lib = insert_lib(&pool, "/lib").await;
     // Corrected: the scan filed it last on both axes, the override files it
     // first on both — so a stale key is visible as a reversed page.
-    let corrected = insert_authored_book(&pool, lib, "Zulu", "Zulu Author").await;
-    let scanned = insert_authored_book(&pool, lib, "Mango", "Mango Author").await;
+    let corrected = insert_authored_book(&pool, lib, "Zulu", "Zulu, Zed").await;
+    let scanned = insert_authored_book(&pool, lib, "Mango", "Mango, Mia").await;
     set_overrides_json(
         &pool,
         corrected,
-        r#"{"title":"Aardvark","creators":[{"name":"Alpha Wells"}]}"#,
+        r#"{"title":"Aardvark","creators":[{"name":"Ann Aardvark"}]}"#,
     )
     .await;
 

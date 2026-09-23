@@ -7,6 +7,8 @@
 use omnibus_shared::{AuthorSummary, SeriesSummary};
 use sqlx::{Row, SqlitePool};
 
+use crate::metadata_overrides::sql::creator_sort_sql;
+
 /// Errors returned by the browse index queries.
 #[derive(Debug, thiserror::Error)]
 pub enum BrowseError {
@@ -55,8 +57,9 @@ fn visible(book: &str, root: &str) -> String {
 }
 
 /// Return every author with their book count and an optional cover-derived
-/// accent, scoped to books `visible` under `library_paths`, ordered by name
-/// ascending and capped at [`INDEX_LIMIT`]. An empty `library_paths` is not an
+/// accent, scoped to books `visible` under `library_paths`, in the Authors
+/// index's own order — surname-first by `creator_sort_key`'s rule, dictionary
+/// collated — and capped at [`INDEX_LIMIT`]. An empty `library_paths` is not an
 /// empty result: physical-only books still browse (see [`placeholders`]).
 ///
 /// `book_count > 0` is an invariant of the result: membership is the
@@ -94,6 +97,7 @@ fn list_authors_sql(n: usize) -> String {
     let ph = placeholders(n);
     let vis = visible("b", "l");
     let vis2 = visible("b2", "l2");
+    let author_key = creator_sort_sql!("a.sort", "a.name");
     format!(
         r"
         WITH lib_paths(p) AS (VALUES {ph}),
@@ -143,7 +147,7 @@ fn list_authors_sql(n: usize) -> String {
                ) AS has_photo
         FROM authors a
         JOIN counts c ON c.author_id = a.id
-        ORDER BY COALESCE(a.sort, a.name) COLLATE NOCASE ASC
+        ORDER BY {author_key} COLLATE author_dictionary ASC, a.id ASC
         LIMIT ?
         "
     )

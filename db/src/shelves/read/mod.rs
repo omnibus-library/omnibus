@@ -9,6 +9,7 @@ use omnibus_shared::{
 };
 use sqlx::{Row, SqlitePool};
 
+use crate::books::axis_sort_columns;
 use crate::interaction::INTERACTED_AT_EPOCH;
 
 use super::rules::{membership_predicate, Bind};
@@ -95,15 +96,18 @@ async fn count_smart(
     Ok(q.fetch_one(pool).await?)
 }
 
-/// `ORDER BY` for a smart shelf's sort axis. Column set mirrors the landing
-/// keyset axes (migration 0028); the axis names are a fixed vocabulary, never
-/// user text, so interpolation is safe.
+/// `ORDER BY` for a smart shelf's sort axis. The three metadata axes are the
+/// landing page's own expressions, so a shelf files an edited book where the
+/// library does — they read `scan_roots l` and `metadata_overrides mo`, which
+/// the query must join (`override_join_sql!`). The axis names are a fixed
+/// vocabulary, never user text, so interpolation is safe.
 fn order_by_sql(sort: SortKey, dir: SortDir) -> String {
     let d = if dir == SortDir::Asc { "ASC" } else { "DESC" };
     match sort {
-        SortKey::Title => format!("b.sort {d}, b.id {d}"),
-        SortKey::Author => format!("b.author_sort {d}, b.id {d}"),
-        SortKey::Series => format!("b.series_sort {d}, b.series_index {d}, b.id {d}"),
+        SortKey::Title | SortKey::Author | SortKey::Series => match axis_sort_columns(sort) {
+            (primary, Some(secondary)) => format!("{primary} {d}, {secondary} {d}, b.id {d}"),
+            (primary, None) => format!("{primary} {d}, b.id {d}"),
+        },
         SortKey::LastUpdated => format!("b.last_modified {d}, b.id {d}"),
         SortKey::NewestAdded => format!("b.timestamp {d}, b.id {d}"),
         SortKey::RecentlyInteracted => format!("{INTERACTED_AT_EPOCH} {d}, b.id {d}"),

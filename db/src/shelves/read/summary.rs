@@ -13,6 +13,7 @@ use super::{
     count_smart, order_by_sql, parse_kind, parse_mode, parse_visibility, row_to_rule, ShelfError,
     HAS_COVER, LIST_SHELVES_LIMIT, MOSAIC_COVERS, SMART_COUNT_CONCURRENCY, SMART_VISIBLE,
 };
+use crate::metadata_overrides::sql::override_join_sql;
 use crate::shelves::rules::{membership_predicate, Bind};
 
 struct VisibleShelfRow {
@@ -358,11 +359,16 @@ async fn covers_smart_fan_out(
     ) -> Result<Vec<String>, ShelfError> {
         let pred = membership_predicate(rules, mode, owner_id)?;
         let sql = format!(
-            "SELECT b.uuid FROM books b \
-             WHERE {SMART_VISIBLE} AND {HAS_COVER} AND {} \
-             ORDER BY {} LIMIT {MOSAIC_COVERS}",
+            concat!(
+                "SELECT b.uuid FROM books b ",
+                override_join_sql!(),
+                "WHERE {} AND {} AND {} ORDER BY {} LIMIT {}"
+            ),
+            SMART_VISIBLE,
+            HAS_COVER,
             pred.sql,
             order_by_sql(SortKey::Title, SortDir::Asc),
+            MOSAIC_COVERS,
         );
         let mut q = sqlx::query(&sql);
         for b in &pred.binds {

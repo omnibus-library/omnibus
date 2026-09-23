@@ -3,8 +3,11 @@
 //! PRAGMAs, runs boot backfills, and performs legacy cache cleanup).
 
 use std::path::Path;
+use std::str::FromStr;
 
-use sqlx::{sqlite::SqlitePoolOptions, Executor, SqlitePool};
+use omnibus_shared::sort_order::{author_dictionary_cmp, dictionary_cmp};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{Executor, SqlitePool};
 
 use crate::covers::covers_dir;
 use crate::identity::IdentityError;
@@ -71,7 +74,11 @@ pub async fn init_db(database_url: &str) -> Result<SqlitePool, InitDbError> {
 /// take effect once; running it on every connection is cheap (returns the
 /// current mode) and keeps the logic in one place. It's skipped for
 /// in-memory databases so test output isn't littered with pragma results.
+///
+/// Every connection also registers the two sort collations — see
+/// [`with_sort_collations`].
 async fn connect_pool(database_url: &str, is_memory: bool) -> Result<SqlitePool, sqlx::Error> {
+    let options = with_sort_collations(SqliteConnectOptions::from_str(database_url)?);
     SqlitePoolOptions::new()
         .max_connections(5)
         .after_connect(move |conn, _meta| {
@@ -85,8 +92,22 @@ async fn connect_pool(database_url: &str, is_memory: bool) -> Result<SqlitePool,
                 Ok(())
             })
         })
-        .connect(database_url)
+        .connect_with(options)
         .await
+}
+
+/// Register the app's sort collations on every connection `options` opens:
+/// `dictionary` (accent- and case-insensitive, plain spelling first on a tie)
+/// for the text axes, and `author_dictionary` (the same order over each
+/// name's surname-first key) for the Author axis.
+///
+/// Query-only, by rule: a collation named in a migration, an index or a
+/// column definition would make the database unreadable to any tool that
+/// opens it without the app ("no such collation sequence").
+fn with_sort_collations(options: SqliteConnectOptions) -> SqliteConnectOptions {
+    options
+        .collation("dictionary", dictionary_cmp)
+        .collation("author_dictionary", author_dictionary_cmp)
 }
 
 /// Run the one-time, idempotent column backfills that fill values older
@@ -97,8 +118,9 @@ async fn run_boot_backfills(pool: &SqlitePool) -> Result<(), InitDbError> {
     repair_ghosted_audiobook_attachments(pool).await?;
     // Auto-attach match key for rows indexed before migration 0016.
     crate::normalize::backfill_norm_columns(pool).await?;
-    // Surname-first `author_sort` for rows whose write path stored the
-    // given-first display name, so the Author axis keys every row alike (#2342).
+    // Surname-first `author_sort` for rows an older write path stored verbatim
+    // (a display name or a comma-less file-as), so the Author axis keys every
+    // row alike.
     crate::normalize::backfill_author_sort(pool).await?;
     // Folded author match key for rows written before migration 0097, and a
     // self-heal for any write path that stored a stale one.
