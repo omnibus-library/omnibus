@@ -588,11 +588,14 @@ Offline/            — Cache (read-through policies), OfflineStore (SQLite
                       so the outbox can be exercised end to end — see below)
 Reader/             — SwiftUI reader chrome, the host-drawn selection layer,
                       the passage menu, the typography sheet and the quote-card
-                      composer, and ReadStatusAuto (the readers' automatic
-                      read-status transitions — unread marks reading on open,
-                      the book's end marks finished, never a downgrade; the
-                      comic pager drives the same tracker), over Web/ (vendored
-                      epub.js + JSZip + glue, hosted in a WKWebView)
+                      composer, ReaderBackdrop (what the PDF chrome floats
+                      over — page or stage, light or dark — and the ink and
+                      glass scheme that read on it), and ReadStatusAuto (the
+                      readers' automatic read-status transitions — unread
+                      marks reading on open, the book's end marks finished,
+                      never a downgrade; the comic pager drives the same
+                      tracker), over Web/ (vendored epub.js + JSZip + glue,
+                      hosted in a WKWebView)
 Comic/              — the native CBZ pager: ComicReaderView (paged TabView +
                       UIScrollView zoom per page), ComicPages (per-page server
                       reads online, ZIPFoundation over the downloaded archive
@@ -600,10 +603,14 @@ Comic/              — the native CBZ pager: ComicReaderView (paged TabView +
                       progress-record mapping shared with the web pager)
 Reader/PDF/         — the native PDF reader over PDFKit: PDFReaderView (the
                       comic pager's lifecycle — progress, ReadStatusAuto,
-                      sessions, LifecycleSync — plus the passage menu),
+                      sessions, LifecycleSync — plus the passage menu and the
+                      chrome-ink sampling that keeps the floating rows
+                      legible on any page),
                       PDFStage (the PDFView host: single-page page-view
                       controller, tap zones, settled-selection and
-                      highlight-tap reporting, system edit menu suppressed),
+                      highlight-tap reporting, system edit menu suppressed,
+                      plus the page-frame / scale / luminance probes the
+                      chrome's ink asks about),
                       PDFPosition / PDFAnchor (mirrors of `shared::pdf_anchor`:
                       the `pdf-page:N` position and the `pdf:{page}:{quads}`
                       highlight anchor), PDFHighlightPainter (selection →

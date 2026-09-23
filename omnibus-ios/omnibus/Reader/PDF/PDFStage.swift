@@ -28,6 +28,9 @@ final class PDFStageController {
     var selection: PDFSelectionData?
     /// A tapped painted highlight, with where it sits on screen.
     var tappedHighlight: (highlight: Highlight, rects: [PageRect])?
+    /// The stage's zoom, republished so the chrome can re-ask what is behind
+    /// it after a pinch settles.
+    var scaleFactor: CGFloat = 1
 
     fileprivate weak var view: PDFView?
     /// The rows currently painted, so a repaint can take the old ones down.
@@ -36,6 +39,49 @@ final class PDFStageController {
     fileprivate var highlights: [Highlight] = []
 
     var pageCount: Int { view?.document?.pageCount ?? 0 }
+
+    /// The current page's frame on screen, in the stage view's coordinates —
+    /// the chrome asks what is behind it against this.
+    func pageFrame() -> CGRect? {
+        guard let view, let page = view.currentPage else { return nil }
+        return view.convert(page.bounds(for: .cropBox), from: page)
+    }
+
+    /// Re-express a window-space rect — SwiftUI's `.global` frames — in the
+    /// stage view's coordinates.
+    func stageRect(fromWindow rect: CGRect) -> CGRect? {
+        guard let view else { return nil }
+        return view.convert(rect, from: nil)
+    }
+
+    /// One snapshot of the stage's own pixels, taken once per chrome sample
+    /// and cropped per control — a full-hierarchy render per control would
+    /// be five screen renders a sample, one of them at the exact moment the
+    /// chrome animates in. `afterScreenUpdates` is on: the sample wants the
+    /// page that is actually on screen, not the last committed one, or a
+    /// turn's sample can read the page that just left.
+    ///
+    /// Samples the `PDFView` alone — the SwiftUI chrome sits above it, so a
+    /// sample can never include the thing it is choosing a colour for.
+    func stageSnapshot() -> CGImage? {
+        guard let view, view.bounds.width >= 2, view.bounds.height >= 2 else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = true
+        format.scale = 1
+        let snapshot = UIGraphicsImageRenderer(bounds: view.bounds, format: format).image { _ in
+            view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+        }
+        return snapshot.cgImage
+    }
+
+    /// Mean luminance of a stage snapshot under `rect` (view coordinates).
+    func meanLuminance(of snapshot: CGImage, under rect: CGRect) -> Double? {
+        guard let view else { return nil }
+        let target = rect.intersection(view.bounds)
+        guard !target.isNull, target.width >= 2, target.height >= 2 else { return nil }
+        guard let crop = snapshot.cropping(to: target) else { return nil }
+        return ReaderBackdrop.meanLuminance(of: crop)
+    }
 
     func go(to page: Int) {
         guard let view, let document = view.document, document.pageCount > 0 else { return }
@@ -144,6 +190,11 @@ struct PDFStage: UIViewRepresentable {
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.selectionChanged() }
             })
+            observers.append(center.addObserver(
+                forName: .PDFViewScaleChanged, object: view, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scaleChanged() }
+            })
 
             // A single tap waits on the double so PDFKit's zoom doesn't also
             // turn a page — the same beat Apple Books takes.
@@ -180,6 +231,13 @@ struct PDFStage: UIViewRepresentable {
             // otherwise sit over the new one.
             if controller.selection != nil { controller.selection = nil }
             if controller.tappedHighlight != nil { controller.tappedHighlight = nil }
+        }
+
+        /// The stage reports every scale change mid-pinch; the chrome
+        /// debounces its resample, so passing each one along is cheap.
+        private func scaleChanged() {
+            guard let view, controller.scaleFactor != view.scaleFactor else { return }
+            controller.scaleFactor = view.scaleFactor
         }
 
         /// Settled selections only: PDFKit reports every handle movement, so
