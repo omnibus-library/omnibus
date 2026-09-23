@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use omnibus_shared::chart::{fit_axes, AXIS_DIVISION_CHOICES};
 use omnibus_shared::{
     ChartAggregate, ChartBreakdown, ChartBucket, ChartMeasure, ChartResult, ChartSeries, ChartSpec,
-    ChartSpecError, ChartUnit, BREAKDOWN_LIMIT, MAX_BUCKETS, OTHER_LABEL,
+    ChartSpecError, ChartUnit, StatsRange, BREAKDOWN_LIMIT, MAX_BUCKETS, OTHER_LABEL,
 };
 use sqlx::{Row, SqlitePool};
 
@@ -296,34 +296,39 @@ async fn breakdown_rows(
 /// place, then folded to bucket keys by the *same* [`bucket_expr`] the data
 /// used.
 ///
-/// It starts at the later of the window start and the earliest bucket the data
-/// actually reached — which is what keeps a Lifetime range from opening the
-/// axis at the unix epoch and drawing fifty empty years.
+/// A bounded window opens its axis on its own first day, so elapsed days with
+/// no activity read as zero rather than falling off the front. Only Lifetime
+/// passes `first_data_bucket` and opens at the later of the two — which is what
+/// keeps it from opening at the unix epoch and drawing fifty empty years.
 async fn axis(
     pool: &SqlitePool,
     bucket: ChartBucket,
     start: i64,
-    first_data_bucket: &str,
+    first_data_bucket: Option<&str>,
     offset_minutes: i64,
 ) -> Result<Vec<String>, ChartError> {
+    let window_day = calendar::local_day("?", offset_minutes);
+    let opening = match first_data_bucket {
+        Some(_) => format!("MAX({window_day}, ?)"),
+        None => window_day,
+    };
     // Spine and data are cut on the same calendar: a UTC spine under local
     // bucket keys would leave the newest day off the axis for a reader east of
     // UTC, and open it a day early for one west.
     let sql = format!(
         "WITH RECURSIVE d(day) AS ( \
-             SELECT MAX({}, ?) \
+             SELECT {opening} \
              UNION ALL \
              SELECT date(day, '+1 day') FROM d WHERE day < {} \
          ) SELECT DISTINCT {} AS k FROM d ORDER BY k",
-        calendar::local_day("?", offset_minutes),
         calendar::local_day("CAST(strftime('%s','now') AS INTEGER)", offset_minutes),
         bucket_expr(bucket, "day")
     );
-    Ok(sqlx::query_scalar(&sql)
-        .bind(start)
-        .bind(bucket_start_day(bucket, first_data_bucket))
-        .fetch_all(pool)
-        .await?)
+    let mut q = sqlx::query_scalar(&sql).bind(start);
+    if let Some(first) = first_data_bucket {
+        q = q.bind(bucket_start_day(bucket, first));
+    }
+    Ok(q.fetch_all(pool).await?)
 }
 
 /// Fold `(bucket, total, n)` rows into a value per bucket for this aggregate.
@@ -435,7 +440,8 @@ pub async fn chart_series(
         }
     }
 
-    // The earliest bucket anything landed in decides where the axis opens.
+    // The earliest bucket anything landed in: where a Lifetime axis opens, and
+    // whether there is a chart to draw at all.
     let first = fetched
         .iter()
         .flat_map(|(_, rows)| rows.iter().map(|r| r.bucket.as_str()))
@@ -453,7 +459,8 @@ pub async fn chart_series(
     // `SessionReport.started_at` above, so a device with a fast clock would
     // otherwise stretch the axis months into an empty future. The cost is that
     // such a session is missing here while the `/stats` totals still count it.
-    let all = axis(pool, spec.bucket, start, first, offset).await?;
+    let opens_on_data = (spec.range == StatsRange::AllTime).then_some(first);
+    let all = axis(pool, spec.bucket, start, opens_on_data, offset).await?;
     let truncated = all.len() > MAX_BUCKETS;
     // Keep the most recent window — a clipped axis that dropped the newest
     // buckets would answer a question nobody asked.

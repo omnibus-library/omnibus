@@ -287,6 +287,7 @@ struct StatsView: View {
                 label: "Avg rating",
                 value: summary.avgStars.map { String(format: "%.1f", $0) } ?? "\u{2014}",
                 icon: "star",
+                delta: delta(.avgRating),
                 action: { drill = .avgRating }
             )
             WindowTile(

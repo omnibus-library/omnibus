@@ -107,23 +107,26 @@ async fn window_start_expr_lands_on_the_readers_midnight() {
 
 #[tokio::test]
 async fn window_start_expr_opens_a_week_on_the_readers_monday_midnight() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
     for offset in [0, 540, -420, 345] {
-        let start = scalar_i64(&format!(
-            "CAST({} AS INTEGER)",
+        // One statement, so the window edge and `now` come off the same clock
+        // tick and a Monday midnight can't fall between the two reads.
+        let (weekday_time, elapsed): (String, i64) = sqlx::query_as(&format!(
+            "SELECT strftime('%w %H:%M', s + {}, 'unixepoch'), n - s FROM (
+                 SELECT CAST({} AS INTEGER) AS s,
+                        CAST(strftime('%s', 'now') AS INTEGER) AS n
+             )",
+            offset * 60,
             window_start_expr(StatsRange::Week, offset)
         ))
-        .await;
-        let now = scalar_i64("CAST(strftime('%s', 'now') AS INTEGER)").await;
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
         // `%w` is 1 for Monday. Live-clock, so a rolling window would slip
         // through on Sundays alone; the fixed-clock tests below never let it.
-        let weekday_time = scalar(&format!(
-            "strftime('%w %H:%M', {start} + {}, 'unixepoch')",
-            offset * 60
-        ))
-        .await;
-
         assert_eq!(weekday_time, "1 00:00", "offset {offset}");
-        assert!((0..7 * DAY).contains(&(now - start)), "offset {offset}");
+        assert!((0..7 * DAY).contains(&elapsed), "offset {offset}");
     }
 }
 
