@@ -146,7 +146,7 @@ async fn stream_audio_to_tempfile(
         let chunk = field
             .chunk()
             .await
-            .map_err(|e| UploadError::internal("read upload chunk", e))?;
+            .map_err(|e| UploadError::multipart("read upload chunk", e))?;
         let Some(chunk) = chunk else { break };
         if !validated {
             validated = extend_and_validate_audio_magic(&mut prefix, &chunk, family)?;
@@ -220,7 +220,7 @@ async fn parse_audiobook_multipart(
                 }
             }
             Ok(None) => break,
-            Err(e) => return Err(UploadError::internal("parse multipart", e)),
+            Err(e) => return Err(UploadError::multipart("parse multipart", e)),
         }
     }
     Ok(form)

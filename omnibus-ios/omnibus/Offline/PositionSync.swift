@@ -49,9 +49,13 @@ enum PositionSync {
     /// Whether a record actually names a place in the book. The endpoint answers
     /// with a row per `(book, format)`, and a row can exist with the position
     /// field for its format unset — which is not somewhere to send a reader.
-    private static func carriesPosition(_ record: ProgressRecord) -> Bool {
+    ///
+    /// A percent with no anchor is a place: a Kobo writes nothing else, and
+    /// passing its row over left the reader opening at the cover and writing
+    /// that back over it (#2446).
+    static func carriesPosition(_ record: ProgressRecord) -> Bool {
         switch record.format {
-        case .epub: record.epubCFI?.nilIfBlank != nil
+        case .epub: record.epubCFI?.nilIfBlank != nil || (record.progressPercent ?? 0) > 0
         case .audio: (record.audioPositionSeconds ?? 0) > 0
         }
     }

@@ -3,12 +3,13 @@
 //! feature area; the grouping used to be carried as inline comments in a
 //! single flat route list.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
+use tower_http::timeout::RequestBodyTimeoutLayer;
 
 use crate::rate_limit::{rate_limit_by_ip, RateLimiter};
 
@@ -123,7 +124,8 @@ pub(super) fn content_routes() -> Router<AppState> {
 }
 
 /// Metadata overrides, progress sync, author/cover/series/tag discovery routes,
-/// upload-rate-limited endpoints, and the search sub-router.
+/// the image-upload endpoints, and the search sub-router. The book uploads
+/// are not here: [`book_upload_router`] is merged outside the request timeout.
 ///
 /// Each helper below owns one feature area (the grouping the route list used
 /// to carry as inline comments); this function just merges them.
@@ -141,7 +143,6 @@ pub(super) fn data_routes(search_limiter: Arc<RateLimiter>) -> Router<AppState> 
         .merge(shelf_routes())
         .merge(journal_routes())
         .merge(upload_router())
-        .merge(book_upload_router())
         .merge(search_router(search_limiter))
         .merge(discovery_routes())
         .merge(suggestion_routes())
@@ -587,7 +588,11 @@ fn upload_router() -> Router<AppState> {
 /// higher) `DefaultBodyLimit` from `OMNIBUS_MAX_UPLOAD_BYTES` rather than
 /// raising the image routes' 11 MiB cap. Shares the same per-IP frequency
 /// budget as the image uploads.
-fn book_upload_router() -> Router<AppState> {
+///
+/// Merged outside [`super::REQUEST_TIMEOUT`]: a large audiobook takes minutes
+/// to arrive, and commit then waits for the library scan. `body_idle_timeout`
+/// is what bounds a client that stops sending instead.
+pub(super) fn book_upload_router(body_idle_timeout: Duration) -> Router<AppState> {
     let limiter = Arc::new(RateLimiter::with_policy(
         super::UPLOAD_RATE_LIMIT_WINDOW,
         super::UPLOAD_RATE_LIMIT_MAX,
@@ -611,6 +616,7 @@ fn book_upload_router() -> Router<AppState> {
         .layer(axum::extract::DefaultBodyLimit::max(
             uploads::max_upload_bytes(),
         ))
+        .layer(RequestBodyTimeoutLayer::new(body_idle_timeout))
         // Outermost: reject an over-budget request before buffering the body.
         .layer(axum::middleware::from_fn_with_state(
             limiter,

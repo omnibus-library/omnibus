@@ -80,6 +80,7 @@ fn progress_record(format: ProgressFormat) -> ProgressRecord {
         progress_percent: Some(42),
         total_duration_seconds: matches!(format, ProgressFormat::Audio).then_some(21_600.0),
         resolved: None,
+        derived_epub_cfi: None,
         kobo_location: None,
         book_file_id: None,
         updated_at: WHEN,

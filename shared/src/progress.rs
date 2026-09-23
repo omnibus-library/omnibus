@@ -214,6 +214,14 @@ pub struct ProgressRecord {
     /// same terms as [`Self::total_duration_seconds`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved: Option<ResolvedPosition>,
+    /// A point CFI for an epub row that stores a whole-book percent but no
+    /// CFI — a Kobo's percent-only write — so a reader can open it where it
+    /// is rather than at the cover. Floored onto the spine-stats ruler, so it
+    /// never sits past the stored percent. Derived per read and never stored;
+    /// `None` whenever [`Self::epub_cfi`] is set or the book has no measured
+    /// structure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derived_epub_cfi: Option<String>,
 }
 
 /// How far a [`ResolvedPosition`]'s chapter attribution can be trusted.

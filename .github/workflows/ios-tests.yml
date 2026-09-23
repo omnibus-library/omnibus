@@ -79,6 +79,19 @@ jobs:
           scripts/ios-test.sh unit -derivedDataPath "$RUNNER_TEMP/DerivedData" 2>&1 \
             | xcbeautify --report junit --report-path ios-test-results
 
+      # Same reasoning as the ui job's upload below: a Swift Testing issue's
+      # message reaches neither stdout nor JUnit under simulator clones, and
+      # the test host's own stdout is only in the bundle's action log (`xcrun
+      # xcresulttool get log --type action`). Three runs of the reader font
+      # suite timing out were undiagnosable without it.
+      - name: Upload xcresult on failure
+        if: ${{ failure() && hashFiles('ios-test-results/unit.xcresult/**') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-xcresult
+          path: ios-test-results/unit.xcresult
+          retention-days: 7
+
       - name: Convert coverage to lcov
         if: ${{ !cancelled() }}
         run: |
@@ -128,8 +141,12 @@ jobs:
 
       # XCUITest drives a real simulator, so it wears flakiness the unit suite
       # doesn't; -retry-tests-on-failure gives each failed test one retry
-      # before the run counts as red. Test Analytics only — UI-test line
-      # coverage isn't meaningful, matching the Playwright suite.
+      # before the run counts as red. The retry does not cover a cold
+      # simulator: ios-test.sh pre-boots the device and the scheme keeps the
+      # UI testable off simulator clones, because the first app launch on a
+      # freshly booted clone overran XCUITest's fixed 60s launch timeout here.
+      # Test Analytics only — UI-test line coverage isn't meaningful, matching
+      # the Playwright suite.
       - name: Run UI tests
         env:
           OMNIBUS_IOS_RESULTS_DIR: ${{ github.workspace }}/ios-test-results

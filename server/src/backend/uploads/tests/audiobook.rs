@@ -11,17 +11,9 @@ use tower::ServiceExt;
 use omnibus_shared::{AudiobookInspection, Settings, UploadCommitResult};
 
 use super::super::*;
-use super::{multipart_body, post_multipart};
+use super::{fixture_audiobook, multipart_body, post_multipart};
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
-
-/// Read a committed (non-download-gated) generated audiobook fixture.
-fn fixture_audiobook(rel: &str) -> Vec<u8> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../test_data/audiobooks/generated")
-        .join(rel);
-    std::fs::read(&path).unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()))
-}
 
 /// Read a public-domain audiobook fixture — fetched by `just fixtures`, not in
 /// git — with a pointer at that recipe when it is missing.

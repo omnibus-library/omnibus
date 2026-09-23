@@ -44,6 +44,7 @@ async fn mock_server() -> String {
         client_updated_at: update.client_updated_at.unwrap_or(4242),
         total_duration_seconds: None,
         resolved: None,
+        derived_epub_cfi: None,
     };
     let app = axum::Router::new()
         .route(

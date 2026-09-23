@@ -16,6 +16,7 @@ mod upsert;
 #[cfg(test)]
 mod tests;
 
+pub use enrich::fill_derived_epub_cfi;
 pub use ledger::{pages_ledger_epoch, SLOT_SECS};
 pub use resume::{recent_progress, resume_points};
 pub use session::{insert_session_tx, record_session, record_session_tx};

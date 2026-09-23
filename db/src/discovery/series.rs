@@ -14,13 +14,11 @@ use super::{DiscoveryError, MAX_DISCOVERY_BOOKS};
 
 /// Fetch a series by ID with its books, ordered by series index. Returns
 /// `None` if the series ID doesn't exist. The nested `books` vec is
-/// capped at [`MAX_DISCOVERY_BOOKS`]; `book_count` is uncapped. Results
-/// span all users (single-tenant).
+/// capped at [`MAX_DISCOVERY_BOOKS`]; `book_count` is uncapped.
 pub async fn get_series(
     pool: &SqlitePool,
     series_id: i64,
 ) -> Result<Option<SeriesDetail>, DiscoveryError> {
-    // TODO: scope by `user_id` once per-user ACLs land (single-tenant today).
     let series_row = sqlx::query("SELECT id, name, sort FROM series WHERE id = ?")
         .bind(series_id)
         .fetch_optional(pool)

@@ -63,6 +63,7 @@ private func fixtureEPUB() throws -> Data {
 
 private enum ReaderFontTestError: Error, CustomStringConvertible {
     case fixtureMissing(String)
+    case processNeverLaunched(String)
     case pageNeverBecameReady(String)
     case badJSResult
 
@@ -71,12 +72,55 @@ private enum ReaderFontTestError: Error, CustomStringConvertible {
         case let .fixtureMissing(path):
             "the embedded-font fixture is missing at \(path) — regenerate it with "
                 + "`cd ui_tests/playwright && pnpm exec tsx tools/make_epub.ts`"
+        case let .processNeverLaunched(diagnostics):
+            "WebKit never asked for reader.html, so no web-content process came up "
+                + "within \(processLaunchBudget).\n\(diagnostics)"
         case let .pageNeverBecameReady(diagnostics):
-            "the reader page never reported ready.\n\(diagnostics)"
+            "the reader page never reported ready within \(readerBootBudget) of its "
+                + "first request.\n\(diagnostics)"
         case .badJSResult:
             "the page returned something other than the expected object"
         }
     }
+}
+
+/// How long WebKit may take to spawn its processes and issue the first request
+/// for `reader.html`. Nothing of ours runs during it, and it is the one phase
+/// that scales with how starved the machine is: 0.6 s on an idle Mac, 13 s on
+/// a passing run of GitHub's three-core runner with the rest of the suite
+/// executing alongside, and past 60 s on the runs that failed. It used to share
+/// one 60 s deadline with the reader's own boot, which this launch then ate.
+private let processLaunchBudget: Duration = .seconds(240)
+
+/// From that first request to the glue reporting ready: script load, zip parse
+/// and first pagination, all inside a process that now exists. Half a second on
+/// the runner; the budget is headroom, not an expectation.
+private let readerBootBudget: Duration = .seconds(60)
+
+/// From ready to the face under test reporting `loaded`. The font is already
+/// declared in the section by then, so this is a fetch inside the page.
+private let fontLoadBudget: Duration = .seconds(30)
+
+/// How long the failure path may spend asking the page what it sees. Covers
+/// the slowest answer observed on a failing CI run (~23 s) with headroom, and
+/// exists at all because a failure path that can hang is the bug this file is
+/// fixing, not a diagnostic.
+private let diagnosticsBudget: Duration = .seconds(30)
+
+/// Where a boot spent its time, so a failure names the phase that ran out
+/// rather than just the line that noticed.
+@MainActor
+private final class PhaseLog: CustomStringConvertible {
+    private let start = ContinuousClock.now
+    private var marks: [String] = []
+
+    func mark(_ name: String) {
+        let elapsed = (ContinuousClock.now - start).components
+        let millis = elapsed.seconds * 1000 + elapsed.attoseconds / 1_000_000_000_000_000
+        marks.append("\(name)@\(millis)ms")
+    }
+
+    var description: String { marks.joined(separator: " ") }
 }
 
 /// Serves the book from a local file and hands everything else to the real
@@ -145,15 +189,19 @@ private final class BootedReader {
     private let window: UIWindow
     private let coordinator: ReaderWebView.Coordinator
     private let handler: FixtureSchemeHandler
+    /// When each boot phase landed, from the moment the window was made.
+    let phases: PhaseLog
 
     init(controller: ReaderController, webView: WKWebView, window: UIWindow,
-         coordinator: ReaderWebView.Coordinator, handler: FixtureSchemeHandler)
+         coordinator: ReaderWebView.Coordinator, handler: FixtureSchemeHandler,
+         phases: PhaseLog)
     {
         self.controller = controller
         self.webView = webView
         self.window = window
         self.coordinator = coordinator
         self.handler = handler
+        self.phases = phases
     }
 
     func teardown() {
@@ -165,34 +213,65 @@ private final class BootedReader {
         window.windowScene = nil
     }
 
+    /// The page's own answer, landed by the probe below.
+    private var probedPage: String?
+
+    /// Ask the page what it sees, and give up if it does not answer.
+    ///
+    /// `callAsyncJavaScript` is answered by the web-content process and has no
+    /// timeout of its own, so awaiting it bare on a failure path would hang
+    /// the test instead of failing it — the same unbounded wait the budgets
+    /// above exist to remove, in the one place nothing would catch it. The
+    /// probe is unstructured and simply abandoned at the deadline: a wedged
+    /// process then holds a task, not the suite.
+    private func askPage() async -> String {
+        probedPage = nil
+        let probe = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let answer: Any? = try? await self.webView.callAsyncJavaScript(
+                """
+                const stage = document.querySelector("#stage");
+                const rect = stage ? stage.getBoundingClientRect() : null;
+                return {
+                  href: location.href,
+                  readyState: document.readyState,
+                  glue: typeof window.OmnibusReader,
+                  epubjs: typeof window.ePub,
+                  jszip: typeof window.JSZip,
+                  stageBox: rect ? Math.round(rect.width) + "x" + Math.round(rect.height) : "none",
+                  sections: document.querySelectorAll("#stage iframe").length,
+                  errors: window.__omnibusTestErrors || [],
+                };
+                """,
+                arguments: [:], contentWorld: .page
+            )
+            self.probedPage = answer.map { String(describing: $0) } ?? "<page refused the query>"
+        }
+        guard await waitUntil(timeout: diagnosticsBudget, { self.probedPage != nil }) else {
+            probe.cancel()
+            return "<page did not answer within \(diagnosticsBudget)>"
+        }
+        return probedPage ?? "<page did not answer>"
+    }
+
     /// Everything worth knowing when a boot does not finish. A bare "never
     /// became ready" says which line failed and nothing about why, and this
     /// runs on a simulator in CI where there is nothing to poke at by hand.
     func diagnostics() async -> String {
-        let answer: Any? = try? await webView.callAsyncJavaScript(
-            """
-            const stage = document.querySelector("#stage");
-            const rect = stage ? stage.getBoundingClientRect() : null;
-            return {
-              href: location.href,
-              readyState: document.readyState,
-              glue: typeof window.OmnibusReader,
-              epubjs: typeof window.ePub,
-              jszip: typeof window.JSZip,
-              stageBox: rect ? Math.round(rect.width) + "x" + Math.round(rect.height) : "none",
-              sections: document.querySelectorAll("#stage iframe").length,
-              errors: window.__omnibusTestErrors || [],
-            };
-            """,
-            arguments: [:], contentWorld: .page
-        )
-        let page = answer.map { String(describing: $0) } ?? "<page did not answer>"
+        // Asked only once WebKit has asked us for something first. An empty
+        // served list is the launch having failed, so there is provably no
+        // document — and the query would be put to the very process whose
+        // absence is the thing being reported.
+        let page = handler.served.isEmpty
+            ? "<no request ever arrived, so there is no document to ask>"
+            : await askPage()
         return """
         controller: ready=\(controller.isReady) failed=\(controller.failed) \
         message=\(controller.failureMessage ?? "nil") \
         booted=\(controller.appliedSettings != nil) toc=\(controller.toc.count)
         page: \(page)
         served: \(handler.served.joined(separator: ", "))
+        phases: \(phases)
         """
     }
 }
@@ -205,6 +284,7 @@ private final class BootedReader {
 /// a font that is never used is never loaded.
 @MainActor
 private func bootFixtureReader() async throws -> BootedReader {
+    let phases = PhaseLog()
     let epub = try fixtureEPUB()
     let entry = try #require(ReaderWebView.entryURL)
 
@@ -254,6 +334,7 @@ private func bootFixtureReader() async throws -> BootedReader {
         await firstWindowScene(),
         "the test host has no UIWindowScene, so the reader has no screen to lay out against"
     )
+    phases.mark("scene")
     let window = UIWindow(windowScene: scene)
     window.frame = frame
     let root = UIViewController()
@@ -264,18 +345,33 @@ private func bootFixtureReader() async throws -> BootedReader {
     controller.webView = webView
     let booted = BootedReader(
         controller: controller, webView: webView, window: window,
-        coordinator: coordinator, handler: handler
+        coordinator: coordinator, handler: handler, phases: phases
     )
 
     // `reader.html` posts `hostReady` on load, which the coordinator routes to
     // the controller, which boots the glue — the app's own sequence, driven by
     // nothing but the page.
     webView.load(URLRequest(url: entry))
-    guard await waitUntil({ controller.isReady }) else {
+    phases.mark("load")
+    // Two deadlines, not one: the first request is the earliest sign that
+    // WebKit's processes exist, and everything before it is the launch —
+    // which is what a starved runner is slow at. Bounded on its own so a slow
+    // launch can neither eat the reader's budget nor be mistaken for a page
+    // that loaded and then hung.
+    guard await waitUntil(timeout: processLaunchBudget, { !handler.served.isEmpty }) else {
+        phases.mark("launchTimeout")
+        let why = await booted.diagnostics()
+        booted.teardown()
+        throw ReaderFontTestError.processNeverLaunched(why)
+    }
+    phases.mark("firstRequest")
+    guard await waitUntil(timeout: readerBootBudget, { controller.isReady }) else {
+        phases.mark("readyTimeout")
         let why = await booted.diagnostics()
         booted.teardown()
         throw ReaderFontTestError.pageNeverBecameReady(why)
     }
+    phases.mark("ready")
     return booted
 }
 
@@ -297,12 +393,12 @@ private func firstWindowScene() async -> UIWindowScene? {
 
 /// Poll `condition` on the main actor until it holds or the deadline passes.
 ///
-/// Generous, because a cold simulator pays for a web-content process launch, a
-/// zip parse and a first pagination before anything can be true; a passing run
-/// returns as soon as it is.
+/// Every caller names its budget: a wait that covers two phases of unequal
+/// cost has no right size, which is how the boot came to time out on a launch
+/// that was merely slow. A passing wait returns as soon as its condition holds.
 @MainActor
 private func waitUntil(
-    timeout: Duration = .seconds(60), _ condition: () async throws -> Bool
+    timeout: Duration, _ condition: () async throws -> Bool
 ) async rethrows -> Bool {
     let deadline = ContinuousClock.now + timeout
     while ContinuousClock.now < deadline {
@@ -388,9 +484,10 @@ private func sectionFontState(_ webView: WKWebView) async throws -> SectionFontS
     )
 }
 
-// Serialized: each test boots its own web-content process and key window, and
-// two of those competing for the simulator's main run loop is how a font that
-// would have loaded runs out of clock instead.
+// Serialized: each test boots its own page and key window, and two of those
+// competing for the simulator's main run loop is how a font that would have
+// loaded runs out of clock instead. WebKit's processes are shared, so only the
+// first boot pays their launch; the second is warm.
 @Suite("Reader fonts in the WebView", .serialized)
 @MainActor
 struct ReaderEmbeddedFontTests {
@@ -400,12 +497,13 @@ struct ReaderEmbeddedFontTests {
         defer { reader.teardown() }
 
         var state: SectionFontState?
-        let painted = await waitUntil {
+        let painted = await waitUntil(timeout: fontLoadBudget) {
             state = try? await sectionFontState(reader.webView)
             return state?.loadedFamilies.contains(embeddedFamily) ?? false
         }
+        reader.phases.mark(painted ? "embeddedLoaded" : "fontTimeout")
         let font = try #require(state)
-        #expect(painted, "the embedded face never loaded: \(font)")
+        #expect(painted, "the embedded face never loaded: \(font); \(reader.phases)")
 
         // The book's own face, under the reader's default. Original declares no
         // `font-family` at all, so this is the publisher's `p` rule winning.
@@ -454,10 +552,11 @@ struct ReaderEmbeddedFontTests {
         }
 
         var state: SectionFontState?
-        let loaded = await waitUntil {
+        let loaded = await waitUntil(timeout: fontLoadBudget) {
             state = try? await sectionFontState(reader.webView)
             return state?.loadedFamilies.contains(namedFamily) ?? false
         }
+        reader.phases.mark(loaded ? "namedLoaded" : "fontTimeout")
         let font = try #require(state)
 
         // A `loaded` FontFace is the assertion. The other two below look like
@@ -471,7 +570,7 @@ struct ReaderEmbeddedFontTests {
         // Both are kept as corroboration; neither can carry this test.
         #expect(
             loaded,
-            "\(namedFamily) never loaded, so the bundled woff2 did not resolve through the scheme handler: \(font)"
+            "\(namedFamily) never loaded, so the bundled woff2 did not resolve through the scheme handler: \(font); \(reader.phases)"
         )
         #expect(font.namedFaceUsable)
         #expect(font.paragraphFamily.hasPrefix("\"\(namedFamily)\""))

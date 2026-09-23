@@ -302,6 +302,7 @@ pub(crate) async fn queue_save_progress(update: &ProgressUpdate) -> Option<Progr
         // until a read path fills them.
         total_duration_seconds: None,
         resolved: None,
+        derived_epub_cfi: None,
         updated_at: now,
         // Optimistic local record: mirrors the server's own COALESCE (issue
         // #1362) — the update's own client event time when it sent one,

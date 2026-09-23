@@ -203,6 +203,16 @@ fn proxy_path_allowed_is_an_image_read_allowlist() {
 }
 
 #[test]
+fn proxy_path_allowed_rejects_dot_segments_url_parsing_would_reassemble() {
+    // Each reaches `/api/settings` once the upstream URL is parsed.
+    assert!(!proxy_path_allowed(
+        "/api/covers/%2e%2e/%2e%2e/api/settings"
+    ));
+    assert!(!proxy_path_allowed("/api/covers/.%2E/.%2E/api/settings"));
+    assert!(!proxy_path_allowed("/api/covers/.\t./.\n./api/settings"));
+}
+
+#[test]
 fn ext_mime_maps_known_media_extensions() {
     assert_eq!(ext_mime("book.epub"), "application/epub+zip");
     assert_eq!(ext_mime("part-0.m4b"), "audio/mp4");

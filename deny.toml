@@ -53,9 +53,9 @@ ignore = [
     # desktop/mobile native shell tree (wry/tao → gtk-rs/webkit2gtk on Linux,
     # plus a few proc-macro helpers). These are NOT vulnerabilities; they are
     # "crate is no longer maintained" notices. We accept them because:
-    #   1. They originate exclusively from upstream Dioxus dependencies which
-    #      we git-pin (see [sources.allow-git] below). Removing them requires
-    #      upstream Dioxus to migrate off these crates — not in our control.
+    #   1. They originate exclusively from upstream Dioxus dependencies.
+    #      Removing them requires upstream Dioxus to migrate off these
+    #      crates — not in our control.
     #   2. cargo-audit (the blocking vulnerability gate in rust.yml's
     #      `security` job) covers real RUSTSEC vulnerabilities. cargo-deny
     #      here adds source/ban enforcement; surfacing unmaintained notices
@@ -89,7 +89,7 @@ ignore = [
     # they flag `unsafe` blocks upstream can misuse. Both are confined to the
     # mobile/desktop native shell and neither is reachable from the shipped
     # `omnibus` server. Fixing them requires an upstream Dioxus bump we don't
-    # control (both crates are pinned deep under the git-pinned wry/gtk tree).
+    # control (both crates are pinned deep under Dioxus's wry/gtk tree).
     # Triaged 2026-07-06 (issue #773). Revisit when Dioxus upgrades wry/gtk.
     #
     # NB: RUSTSEC-2026-0186 (memmap2 unchecked pointer offset) is the third
@@ -97,20 +97,20 @@ ignore = [
     # reachable from the default (non-mobile) build (memmap2 → subsecond →
     # dioxus-core), so it was fixed for real by bumping memmap2 0.9.10 → 0.9.11
     # (`cargo update -p memmap2`; patched in >= 0.9.11), which needs no change
-    # to the Dioxus pin. See Cargo.lock.
+    # to the Dioxus version. See Cargo.lock.
     { id = "RUSTSEC-2024-0429", reason = "glib 0.18.5 VariantStrIter unsoundness — mobile/desktop only via wry→gtk→glib (patched in glib 0.20, forced by upstream gtk-rs 0.18 pin under wry); not reachable in the server build" },
     { id = "RUSTSEC-2026-0097", reason = "rand 0.7.3 unsoundness — aliased mutable reference when a custom `log` logger calls rand::rng()/thread_rng() and ThreadRng reseeds mid-log; build-dependency only via phf_generator 0.8, pulled in by kuchikiki (wry's bundled HTML/CSS engine, an old html5ever/cssparser codegen path), not ammonia — ammonia is a direct omnibus-db dependency but sits on a separate, newer markup5ever lineage that uses phf_generator 0.13 (fastrand-backed, no rand at all); never links into any runtime binary and that logger-reseed path is not exercised in a build script" },
 
     # ---- Unsound (informational) advisory reachable in the DEFAULT (server)
     # build — unlike the two mobile/desktop-confined entries just above, `lru`
-    # is pulled in transitively via the git-pinned `dioxus-server` -> `dioxus`
-    # (see #522 for the pin itself; `cargo tree -i lru` shows
+    # is pulled in transitively via `dioxus-server` 0.7.9 -> `dioxus`
+    # (`cargo tree -i lru` shows
     # `dioxus-server -> dioxus -> omnibus`/`omnibus-frontend`). Triggering the
     # unsoundness requires `catch_unwind` plus a panicking `Drop` on a cached
     # key during `LruCache::pop()`, which `dioxus-server`'s internal use does
     # not exercise. Triaged 2026-08-12 (issue #1859). Revisit when Dioxus
     # bumps its `lru` dependency to >= 0.18.2.
-    { id = "RUSTSEC-2026-0253", reason = "lru 0.16.4 LruCache::pop() use-after-free under a panicking Drop — reachable via the git-pinned dioxus-server -> dioxus dependency (see #522 for the pin); requires catch_unwind plus a panicking key Drop during a cache pop, which dioxus-server's internal use does not trigger" },
+    { id = "RUSTSEC-2026-0253", reason = "lru 0.16.4 LruCache::pop() use-after-free under a panicking Drop — reachable via the dioxus-server 0.7.9 -> dioxus dependency; requires catch_unwind plus a panicking key Drop during a cache pop, which dioxus-server's internal use does not trigger" },
 ]
 
 # NB: RUSTSEC-2026-0221 (event-listener unsoundness, reachable via sqlx-core)
@@ -185,8 +185,8 @@ name = "libfuzzer-sys"
 # the families listed there plus their proc-macro/companion crates
 # (e.g. `thiserror-impl`, `rand_core`, `foldhash`, `const-serialize-macro`)
 # that ship in lockstep with the duplicated runtime crate.
-# Warn rather than deny so new first-party skew is visible without blocking
-# CI until the Dioxus patches are replaced with plain crates.io versions.
+# Warn rather than deny so new skew is visible without blocking CI — most of
+# the families below are upstream Dioxus/Axum splits we cannot collapse.
 [bans]
 multiple-versions = "warn"
 # Deny crates that should never appear in the dependency tree.
@@ -218,8 +218,9 @@ skip = [
     # thiserror 2.
 
     # --- const-serialize alpha ---
-    # 0.7.2 from crates.io manganis; 0.8.0-alpha.0 bundled in Dioxus git tag.
-    # Blocked by Dioxus pin.
+    # manganis/manganis-core 0.7.9 depend on both on purpose: 0.7.2 (renamed
+    # `const-serialize-07`, `=`-pinned) beside 0.8.0-alpha.0. By design
+    # upstream until manganis drops the 0.7 format.
     { name = "const-serialize", version = "0.7.2" },
     { name = "const-serialize-macro", version = "0.7.2" },
 
@@ -341,9 +342,9 @@ skip = [
     # Collapses when sqlx bumps its rustls deps.
     { name = "webpki-roots", version = "0.26.11" },
 
-    # --- Dioxus git-pin lag (axum-extra / tower-http / reqwest) ---
-    # dioxus-fullstack 0.7.9's git-pinned Dioxus tag carries older copies of
-    # these three crates than our own server crate/workspace pin. See
+    # --- Dioxus version lag (axum-extra / tower-http / reqwest) ---
+    # dioxus-fullstack 0.7.9 carries older copies of these three crates than
+    # our own server crate/workspace pin. See
     # docs/dependency-audit.md for full source chains (issue #1100).
     { name = "axum-extra", version = "0.10.3" },
     # tower-http 0.6.11 also arrives via reqwest 0.12.28 AND reqwest 0.13.4
@@ -351,16 +352,16 @@ skip = [
     # until reqwest itself upgrades to tower-http 0.7.
     { name = "tower-http", version = "0.6.11" },
     # reqwest: two *major* versions (0.12 vs 0.13), the largest gap in this
-    # list. 0.12.28 is the dioxus-fullstack git-pin copy; 0.13.4 is the
+    # list. 0.12.28 is the dioxus-fullstack copy; 0.13.4 is the
     # workspace-pinned version (Cargo.toml [workspace.dependencies]).
     { name = "reqwest", version = "0.12.28" },
 
-    # --- Dioxus git-pin lag (gloo-net / gloo-timers / gloo-utils) ---
+    # --- Dioxus version lag (gloo-net / gloo-timers / gloo-utils) ---
     # The split described in docs/dependency-audit.md (issue #1621) is real,
     # but CI's `cargo deny check` invocation (rust.yml, no `--features`) never
     # enables omnibus-frontend's `web` feature, so omnibus-frontend's own
     # gloo-net 0.7.0 / gloo-timers 0.4.0 / gloo-utils 0.3.0 pins never enter
-    # that resolve — only the dioxus-fullstack git-pin copies (0.6.0 / 0.3.0 /
+    # that resolve — only the dioxus-fullstack copies (0.6.0 / 0.3.0 /
     # 0.2.0) do, as a single version each. Explicit skips here therefore trip
     # `unnecessary-skip`/`unmatched-skip` (verified via `cargo deny check
     # advisories sources bans licenses`, the exact CI command; issue #1681) —
@@ -393,7 +394,7 @@ skip = [
 # a duplicate, presumably pruned by cargo-deny's own graph resolution the
 # same way `rsa` is (see the advisories section above). Collapsing the rest
 # requires upstream wry/tao to migrate off gtk-rs 0.18 / bitflags 1 etc., which is
-# gated on the Dioxus pin (see [patch.crates-io] in root Cargo.toml). We skip
+# gated on a Dioxus bump (the `=` pin in root Cargo.toml). We skip
 # the whole subtree rather than enumerate ~40 leaf crates that all share this
 # single root cause. Revisit when Dioxus upgrades wry/tao.
 skip-tree = [
@@ -404,14 +405,9 @@ skip-tree = [
 # ---------------------------------------------------------------------------
 # Sources
 # ---------------------------------------------------------------------------
-# Allow crates.io plus the DioxusLabs monorepo git source that the workspace
-# patches all dioxus-* crates from (see [patch.crates-io] in root Cargo.toml).
+# crates.io only. No git source is allowed: a git dependency resolves by SHA,
+# which `cargo audit` cannot match against RUSTSEC advisories.
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = [
-    # All dioxus-* crates are git-patched to this repo until they publish
-    # the matching version to crates.io — see root Cargo.toml for rationale.
-    "https://github.com/DioxusLabs/dioxus",
-]

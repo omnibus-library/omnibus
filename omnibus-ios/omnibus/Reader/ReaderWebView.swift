@@ -394,6 +394,16 @@ final class ReaderController: NSObject {
     /// the relocate that followed the restore persisted the revert and pushed it
     /// to every other device (#1656).
     private(set) var restoreCFI: String?
+    /// Whether the stored position must be left alone until the reader moves.
+    ///
+    /// Set when the row the book opened on names no CFI of its own — a Kobo's
+    /// percent-only write, or another reader's page anchor on a mixed book.
+    /// Wherever the page lands for it is where the reader was put, not where
+    /// they went: the derived CFI's page starts at or before the stored
+    /// percent, and with nothing derived it is the cover. Writing that landing
+    /// on close replaced the stored position with an earlier one (#2446).
+    /// Cleared by the first relocate that moves off the landing.
+    private(set) var holdsStoredPosition = false
     /// The marks the next `ready` has to paint. Refilled from what the outgoing
     /// page was holding whenever the page is replaced.
     private(set) var pendingHighlights: [Highlight] = []
@@ -413,8 +423,11 @@ final class ReaderController: NSObject {
         super.init()
     }
 
-    func configure(book: Book, startCFI: String?, highlights: [Highlight]) {
+    func configure(
+        book: Book, startCFI: String?, holdStoredPosition: Bool = false, highlights: [Highlight]
+    ) {
         self.book = book
+        holdsStoredPosition = holdStoredPosition
         // A progress row can hold a blank position, and only the remote read
         // normalizes one away. "No position" has to reach the glue as an absent
         // `cfi` rather than an empty one — today `opts.cfi || null` absorbs it,
@@ -443,6 +456,24 @@ final class ReaderController: NSObject {
     /// `omnibus_shared::is_epub_cfi`.
     static func isEpubCFI(_ anchor: String) -> Bool {
         anchor.trimmingCharacters(in: .whitespaces).hasPrefix("epubcfi(")
+    }
+
+    /// Where a stored row opens: its own CFI, else the one the server derived
+    /// for a percent-only row. A `pdf-page:`/`comic-page:` anchor another
+    /// reader wrote is neither, and never reaches epub.js.
+    static func openingCFI(for record: ProgressRecord?) -> String? {
+        guard let record else { return nil }
+        return [record.epubCFI, record.derivedEpubCFI]
+            .compactMap { $0?.nilIfBlank }
+            .first(where: isEpubCFI)
+    }
+
+    /// Whether a stored row is somewhere past the start that this reader
+    /// can't name with a CFI of the row's own — see ``holdsStoredPosition``.
+    static func storesPositionWithoutCFI(_ record: ProgressRecord?) -> Bool {
+        guard let record else { return false }
+        let ownCFI = record.epubCFI?.nilIfBlank.map(isEpubCFI) ?? false
+        return !ownCFI && (record.progressPercent ?? 0) > 0
     }
 
     func display(_ target: String) {
@@ -771,6 +802,13 @@ final class ReaderController: NSObject {
             guard let payload, let data = payload.data(using: .utf8),
                   let decoded = try? JSONDecoder().decode(RelocateData.self, from: data)
             else { return }
+            // Moving off the landing releases the hold; the landing itself
+            // doesn't, even untagged — with nothing to restore, the open's
+            // first relocate is not an echo.
+            if holdsStoredPosition, decoded.isMovement,
+               let from = location?.cfi, from != decoded.cfi {
+                holdsStoredPosition = false
+            }
             location = decoded
             // Where a reboot of the page picks up. Relocates are muted until a
             // restore has settled, so this only ever moves to a position the

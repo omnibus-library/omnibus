@@ -46,15 +46,21 @@ pub async fn rpc_save_progress(update: ProgressUpdate) -> Result<ProgressRecord>
 
 /// Fetch the saved reading position for `(user, book uuid, format)`. Returns
 /// `Ok(None)` when the book is unknown or has no progress row for that
-/// format yet — the client treats both as "start from the beginning".
+/// format yet — the client treats both as "start from the beginning". A
+/// percent-only epub row carries its `derived_epub_cfi`, which is where the
+/// reader opens it.
 #[post("/api/rpc/progress/get", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_get_progress(
     uuid: String,
     format: ProgressFormat,
 ) -> Result<Option<ProgressRecord>> {
-    Ok(db::progress::get_progress(&pool.0, user.id, &uuid, format)
+    let mut record = db::progress::get_progress(&pool.0, user.id, &uuid, format)
         .await
-        .map_err(|e| internal_rpc_error("get progress", e))?)
+        .map_err(|e| internal_rpc_error("get progress", e))?;
+    if let Some(record) = record.as_mut() {
+        db::progress::fill_derived_epub_cfi(&pool.0, record).await;
+    }
+    Ok(record)
 }
 
 /// Save the current user's playback rate for one audiobook.

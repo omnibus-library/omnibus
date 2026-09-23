@@ -17,9 +17,6 @@ const TAG_CLOUD_LIMIT: i64 = 500;
 /// Return up to [`TAG_CLOUD_LIMIT`] tags with their book counts, ordered
 /// by count descending then name ascending. Serves `/api/tags` and the
 /// tag autocomplete pools.
-///
-/// Currently returns results across all users (single-tenant); scoping to a
-/// per-user `user_id` is a future extension, not yet needed.
 pub async fn get_tag_cloud(pool: &SqlitePool) -> Result<Vec<TagWeight>, DiscoveryError> {
     // Counts use the effective (override-aware) subject set, not the raw
     // `books_tags_link` rows — `overrides.subjects` replaces a book's

@@ -73,22 +73,19 @@ pub enum SyncPointError {
     Other(DataError),
 }
 
-/// Prefix of `CrossFormatError::LinkRequired`'s `#[error]` message
-/// (`db/src/cross_format.rs`) — the refusal's de-facto wire contract, the
-/// same one `rpc_set_follow_mode` relies on. The frontend can't import the
-/// db crate on web/mobile builds, so the string is mirrored here.
+/// Read the refusal's status code before the general transport mapper
+/// flattens the error to its message.
 #[cfg(not(feature = "mobile"))]
-const LINK_REQUIRED_PREFIX: &str = "confirm the alignment first";
+pub fn classify_sync_point_err(e: dioxus::CapturedError) -> SyncPointError {
+    use dioxus::fullstack::ServerFnError;
+    use omnibus_shared::CrossFormatErrorCode;
 
-/// The `LinkRequired` refusal travels as its `thiserror` message.
-#[cfg(not(feature = "mobile"))]
-fn classify_sync_point_err(e: DataError) -> SyncPointError {
-    match &e {
-        DataError::Other(msg) if msg.starts_with(LINK_REQUIRED_PREFIX) => {
-            SyncPointError::LinkRequired
+    if let Some(ServerFnError::ServerError { code, .. }) = e.0.downcast_ref::<ServerFnError>() {
+        if CrossFormatErrorCode::from_status(*code) == Some(CrossFormatErrorCode::LinkRequired) {
+            return SyncPointError::LinkRequired;
         }
-        _ => SyncPointError::Other(e),
     }
+    SyncPointError::Other(note_server_fn_err(e))
 }
 
 /// Declare a "synced here" sync point from the reader or player.
@@ -99,7 +96,7 @@ pub async fn declare_sync_point(
 ) -> Result<(), SyncPointError> {
     crate::rpc::rpc_declare_sync_point(decl)
         .await
-        .map_err(|e| classify_sync_point_err(note_server_fn_err(e)))
+        .map_err(classify_sync_point_err)
 }
 
 /// Map a [`declare_sync_point`] outcome to the label text both
@@ -160,49 +157,4 @@ pub async fn set_follow_mode(
 }
 
 #[cfg(all(test, not(feature = "mobile")))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn classify_sync_point_err_maps_link_refusal_to_link_required() {
-        let e = DataError::Other(
-            "confirm the alignment first — this book has several audio files".into(),
-        );
-        assert!(matches!(
-            classify_sync_point_err(e),
-            SyncPointError::LinkRequired
-        ));
-    }
-
-    #[test]
-    fn classify_sync_point_err_passes_other_failures_through() {
-        let e = DataError::Other("connection reset".into());
-        assert!(matches!(
-            classify_sync_point_err(e),
-            SyncPointError::Other(_)
-        ));
-    }
-
-    #[test]
-    fn sync_point_label_reports_success() {
-        assert_eq!(sync_point_label(Ok(())), "Synced \u{2713}");
-    }
-
-    #[test]
-    fn sync_point_label_prompts_linking_when_link_required() {
-        assert_eq!(
-            sync_point_label(Err(SyncPointError::LinkRequired)),
-            "Link formats first"
-        );
-    }
-
-    #[test]
-    fn sync_point_label_reports_failure_for_other_errors() {
-        assert_eq!(
-            sync_point_label(Err(SyncPointError::Other(DataError::Other(
-                "connection reset".into()
-            )))),
-            "Sync failed"
-        );
-    }
-}
+mod tests;

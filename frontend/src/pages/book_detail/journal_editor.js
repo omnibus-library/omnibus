@@ -88,7 +88,9 @@ if (!window.OmnibusJournalEditor) {
     }
 
     // --- markdown -> decorated HTML (textContent preserved exactly) ----------
-    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // `"` too: `data-bullet` interpolates through this, not just text nodes.
+    const esc = (s) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const mark = (s) => `<span class="cm-mark">${esc(s)}</span>`;
 
     // Wrap-pairs, longest-first so `**` wins over `*`. Code is last so its body

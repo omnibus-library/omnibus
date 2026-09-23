@@ -195,9 +195,12 @@ test("the stack shows one synced card with the counterpart affordance", async ({
   // The cross-format affordances describe the book that is out front, so
   // bring this one forward if a parallel spec stamped a newer position while
   // the poll above was converging. Clicking the front card would navigate, so
-  // only a card that is behind gets clicked.
+  // only a card that is behind gets clicked — and a card behind sits ~74px
+  // under its neighbour at rest, so spread the fan first and click the left
+  // sliver that is always its own.
   if (!(await cards.getAttribute("class"))?.includes("lead")) {
-    await cards.click();
+    await page.getByTestId("continue-stack").locator(".lmq-fan").hover();
+    await cards.click({ position: { x: 12, y: 60 } });
   }
   await expect(cards).toHaveClass(/\blead\b/);
 
@@ -306,6 +309,37 @@ test("declaring a sync point anchors the mapping and the reader auto-applies", a
   await expect(page.getByTestId("reader-footer")).toContainText(
     /(8[6-9]|9\d|100)%/,
     { timeout: 20_000 },
+  );
+});
+
+test("sync-point refusal offers linking even when the server message changes", async ({
+  page,
+}) => {
+  // Dioxus's real wire shape for a LinkRequired refusal: HTTP 500, the
+  // refusal in the payload's `code` (428), no `data`. Only the message is
+  // rewritten, so the label must come from the code alone.
+  await page.route("**/api/rpc/cross-format/sync-point", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        message: "Choose the matching formats before syncing.",
+        code: 428,
+      }),
+    }),
+  );
+  await gotoReady(page, `/listen/${uuid}`);
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/cross-format/sync-point",
+      expectedStatus: 500,
+    },
+    async () => page.getByTestId("listen-sync-here").click(),
+  );
+  await expect(page.getByTestId("listen-sync-here")).toHaveText(
+    "Link formats first",
   );
 });
 

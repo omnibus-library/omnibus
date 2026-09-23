@@ -1,8 +1,8 @@
 //! Discovery-detail reads: a single author or series with their books,
 //! plus the global tag and genre clouds. Membership and ordering follow
 //! the merged (override-aware) view via the BOOK_COLUMNS template shared
-//! with the book read path. Single-tenant today — every read returns all
-//! matching rows without per-user ACL filtering.
+//! with the book read path. The library is shared, so every reader gets the
+//! same rows.
 
 // Submodules are private — `db/src/lib.rs` does `pub use discovery::*`,
 // so any `pub mod` here would expose `omnibus_db::authors`, etc. to

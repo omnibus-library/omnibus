@@ -57,6 +57,7 @@ async fn read_progress_row(
         // pay for. The read paths fill these.
         total_duration_seconds: None,
         resolved: None,
+        derived_epub_cfi: None,
     })
 }
 

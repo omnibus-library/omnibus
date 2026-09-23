@@ -40,6 +40,7 @@ fn point(uuid: &str, format: ProgressFormat, pct: Option<i64>) -> ResumePoint {
             client_updated_at: 0,
             total_duration_seconds: Some(3600.0),
             resolved: None,
+            derived_epub_cfi: None,
         },
         book: book(uuid, "Piranesi", Some("oklch(0.7 0.1 200)"), &["epub"]),
         linked: false,

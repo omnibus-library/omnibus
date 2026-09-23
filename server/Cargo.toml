@@ -12,7 +12,7 @@ license.workspace = true
 # build side doesn't try to compile sqlx/tokio/axum.
 
 [dependencies]
-dioxus = "0.7"
+dioxus.workspace = true
 
 # Server-only deps — all optional and gated behind the `server` feature.
 axum = { version = "0.8", features = ["multipart"], optional = true }
