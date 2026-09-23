@@ -44,6 +44,58 @@ async fn list_authors_returns_all_with_counts_and_alpha_order() {
     // IDs are populated so cards can route to /authors/:id.
     assert!(authors.iter().all(|a| a.id > 0));
 }
+/// #2451: the index files every author on one key shape, whatever form the
+/// file's `file-as` took, and orders accented surnames in dictionary order.
+#[tokio::test]
+async fn list_authors_orders_by_surname_key_in_dictionary_order() {
+    let _guard = CoversTempDir::new("authors_dictionary_order");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let book = |file: &str, name: &str, file_as: Option<&str>| {
+        let mut b = indexed(file, Some(file), &[name], &[], None, None);
+        b.metadata.creators[0].file_as = file_as.map(Into::into);
+        b
+    };
+    crate::sync::replace_books(
+        &pool,
+        "/lib",
+        vec![
+            book("polk.epub", "Sarah Polk", Some("Polk, Sarah")),
+            book(
+                "galdos.epub",
+                "Benito Pérez Galdós",
+                Some("Pérez Galdós, Benito"),
+            ),
+            book("perry.epub", "Anne Perry", None),
+            // A given-name-form file-as keys from the display name.
+            book(
+                "pettichord.epub",
+                "Bret Pettichord",
+                Some("Bret Pettichord"),
+            ),
+            book("perez.epub", "Ana Perez", Some("Perez, Ana")),
+        ],
+    )
+    .await
+    .unwrap();
+
+    let names: Vec<String> = list_authors(&pool, &["/lib"])
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|a| a.name)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "Ana Perez",
+            "Benito Pérez Galdós",
+            "Anne Perry",
+            "Bret Pettichord",
+            "Sarah Polk",
+        ]
+    );
+}
+
 #[tokio::test]
 async fn list_authors_orders_by_surname_key_in_dictionary_order() {
     let _guard = CoversTempDir::new("authors_dictionary_order");
