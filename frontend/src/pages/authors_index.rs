@@ -4,6 +4,7 @@
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
+use omnibus_shared::sort_order::{creator_sort_key, dictionary_cmp};
 use omnibus_shared::{text_fold::fold_for_match, AuthorSummary, IndexSort};
 
 use super::index_shell::{
@@ -194,21 +195,22 @@ fn sort_authors(filtered: &mut [&AuthorSummary], sort: IndexSort) {
     match sort {
         // Within IndexSort::Name the primary axis is the sort_key bucket:
         // alpha first (`is_alpha_bucket` → false sorts before true),
-        // non-alpha (digits, punctuation, accented mononyms, etc.)
+        // non-alpha (digits, punctuation, non-Latin scripts, etc.)
         // trail at the end under the '#' section. Secondary axis is
-        // the lowercased key itself so cards stay alphabetical within
-        // their letter group.
+        // the key in the library's dictionary order, so cards stay
+        // alphabetical within their letter group and agree with the
+        // library's Author sort.
         IndexSort::Name => filtered.sort_by(|a, b| {
             let ka = sort_key(a);
             let kb = sort_key(b);
             is_non_alpha_key(&ka)
                 .cmp(&is_non_alpha_key(&kb))
-                .then_with(|| ka.to_lowercase().cmp(&kb.to_lowercase()))
+                .then_with(|| dictionary_cmp(&ka, &kb))
         }),
         IndexSort::BookCount => filtered.sort_by(|a, b| {
             b.book_count
                 .cmp(&a.book_count)
-                .then_with(|| sort_key(a).to_lowercase().cmp(&sort_key(b).to_lowercase()))
+                .then_with(|| dictionary_cmp(&sort_key(a), &sort_key(b)))
         }),
     }
 }
@@ -448,20 +450,13 @@ fn letter_frag(c: char) -> String {
 }
 
 fn first_letter(a: &AuthorSummary) -> char {
-    let raw = sort_key(a)
-        .chars()
-        .next()
-        .unwrap_or('#')
-        .to_uppercase()
-        .next()
-        .unwrap_or('#');
-    // Anything not in A–Z (digits, punctuation, accented mononyms,
+    // Anything whose folded initial is not in A–Z (digits, punctuation,
     // CJK, …) collapses into a single '#' bucket rendered after Z so
-    // the alpha range stays uncluttered.
-    if raw.is_ascii_alphabetic() {
-        raw
-    } else {
-        '#'
+    // the alpha range stays uncluttered. An accented initial files under
+    // its letter (`Éluard` under E), where dictionary order sorts it.
+    match folded_initial(&sort_key(a)) {
+        Some(c) if c.is_ascii_alphabetic() => c.to_ascii_uppercase(),
+        _ => '#',
     }
 }
 
@@ -469,45 +464,30 @@ fn first_letter(a: &AuthorSummary) -> char {
 /// than under A–Z. Used as the primary sort axis for `IndexSort::Name` so
 /// the non-alpha tail trails the alphabet.
 fn is_non_alpha_key(key: &str) -> bool {
-    !key.chars()
+    !folded_initial(key).is_some_and(|c| c.is_ascii_alphabetic())
+}
+
+/// The key's first character with accents and case folded away.
+fn folded_initial(key: &str) -> Option<char> {
+    fold_for_match(key.chars().next()?.encode_utf8(&mut [0; 4]))
+        .chars()
         .next()
-        .map(|c| c.is_ascii_alphabetic())
-        .unwrap_or(false)
 }
 
 /// Surname-first key driving both alphabetical ordering and the letter
-/// glyph above each section.
+/// glyph above each section — `creator_sort_key`, the rule the library's
+/// Author axis keys books by, so the two surfaces file an author alike.
 ///
-/// Three-stage derivation, in order:
-///
-/// 1. If `sort` follows the OPF "Surname, Given" convention (carries a
-///    comma), use it verbatim — that's what the source metadata says.
-/// 2. Else if the display `name` is already in "Surname, Given" form
-///    (some Calibre dumps store it that way), use it verbatim too.
-/// 3. Otherwise, treat the display name as "Given Surname" and
-///    construct "Surname, Given" from `name.rsplitn(2, ' ')`.
-///
-/// We deliberately do **not** trust a comma-less `sort` value. A few
-/// real-world dumps store just a surname (or an unrelated string like
+/// A comma-form `sort` is used verbatim; a comma-less one is ignored. A
+/// few real-world dumps store just a surname (or an unrelated string like
 /// a pseudonym) there, and using it blindly groups authors under the
 /// wrong letter — e.g. "Erin A. Craig" with `sort = "Underwood"`
-/// appearing under the U section. The order/letter stay coupled so
-/// cards within a section sort the same way the section glyph reads.
+/// appearing under the U section. The key is derived from the display
+/// name instead: kept verbatim in "Surname, Given" form, else its last
+/// word becomes the surname. The order/letter stay coupled so cards
+/// within a section sort the same way the section glyph reads.
 fn sort_key(a: &AuthorSummary) -> String {
-    if let Some(s) = a.sort.as_deref().filter(|s| !s.is_empty()) {
-        if s.contains(',') {
-            return s.to_string();
-        }
-    }
-    if a.name.contains(',') {
-        return a.name.clone();
-    }
-    let parts: Vec<&str> = a.name.rsplitn(2, ' ').collect();
-    if parts.len() == 2 {
-        format!("{}, {}", parts[0], parts[1])
-    } else {
-        a.name.clone()
-    }
+    creator_sort_key(a.sort.as_deref(), &a.name)
 }
 
 #[cfg(test)]

@@ -206,6 +206,33 @@ fn sort_books_by_author_asc() {
     assert_eq!(ids(&asc), vec![2, 3, 1]);
 }
 
+/// #2451: the search sort keys authors as the server's Author axis does —
+/// surname-first whatever form `file_as` took, in dictionary order.
+#[test]
+fn sort_books_by_author_keys_every_form_surname_first_in_dictionary_order() {
+    let by = |id: i64, authors: &[(&str, Option<&str>)]| {
+        book(BookSpec {
+            id,
+            filename: "x.epub",
+            title: Some("X"),
+            authors,
+            series: None,
+            modified: None,
+            added_at: None,
+            subjects: &[],
+        })
+    };
+    let books = vec![
+        by(1, &[("Andy Weir", Some("Andy Weir"))]),
+        by(2, &[("Andy Weir", Some("Weir, Andy"))]),
+        by(3, &[("Kurt Vonnegut", None)]),
+        by(4, &[("Anne Perry", None)]),
+        by(5, &[("Benito Pérez Galdós", Some("Pérez Galdós, Benito"))]),
+    ];
+    let asc = sort_books(books, SortKey::Author, SortDir::Asc);
+    assert_eq!(ids(&asc), vec![5, 4, 3, 1, 2]);
+}
+
 #[test]
 fn sort_books_by_series_grouping_with_index_then_pushes_seriesless_last() {
     let s = sample();

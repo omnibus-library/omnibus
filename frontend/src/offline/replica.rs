@@ -6,6 +6,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use omnibus_shared::sort_order::{creator_sort_key, dictionary_cmp};
 use omnibus_shared::{EbookLibrary, EbookMetadata, LibraryPage, SortDir, SortKey, ViewFilters};
 
 use super::{cache, media, store};
@@ -223,26 +224,27 @@ fn matches_formats(book: &EbookMetadata, formats: &[String]) -> bool {
         .any(|f| formats.iter().any(|want| f.eq_ignore_ascii_case(want)))
 }
 
-/// Sort the replica to approximate the server's ordering. `LastUpdated`
+/// Sort the replica to approximate the server's ordering. The text axes use
+/// the server's own dictionary order and author key; `LastUpdated`
 /// approximates the DB's `last_modified` with the closest wire field
 /// (`added_at` falls back to `modified`); exact parity isn't required
 /// offline — stability and sanity are.
 fn sort_books(books: &mut [EbookMetadata], sort_key: SortKey, sort_dir: SortDir) {
+    let by_title =
+        |a: &EbookMetadata, b: &EbookMetadata| dictionary_cmp(title_key(a), title_key(b));
     books.sort_by(|a, b| {
         let ord = match sort_key {
-            SortKey::Title => title_key(a).cmp(&title_key(b)),
-            SortKey::Author => author_key(a)
-                .cmp(&author_key(b))
-                .then_with(|| title_key(a).cmp(&title_key(b))),
-            SortKey::Series => series_key(a)
-                .cmp(&series_key(b))
-                .then_with(|| title_key(a).cmp(&title_key(b))),
-            SortKey::LastUpdated | SortKey::NewestAdded => date_key(a)
-                .cmp(&date_key(b))
-                .then_with(|| title_key(a).cmp(&title_key(b))),
+            SortKey::Title => by_title(a, b),
+            SortKey::Author => {
+                dictionary_cmp(&author_key(a), &author_key(b)).then_with(|| by_title(a, b))
+            }
+            SortKey::Series => series_cmp(a, b).then_with(|| by_title(a, b)),
+            SortKey::LastUpdated | SortKey::NewestAdded => {
+                date_key(a).cmp(&date_key(b)).then_with(|| by_title(a, b))
+            }
             SortKey::RecentlyInteracted => interacted_key(a)
                 .cmp(&interacted_key(b))
-                .then_with(|| title_key(a).cmp(&title_key(b))),
+                .then_with(|| by_title(a, b)),
         };
         match sort_dir {
             SortDir::Asc => ord,
@@ -251,32 +253,42 @@ fn sort_books(books: &mut [EbookMetadata], sort_key: SortKey, sort_dir: SortDir)
     });
 }
 
-fn title_key(b: &EbookMetadata) -> String {
+fn title_key(b: &EbookMetadata) -> &str {
     b.title
         .as_deref()
         .filter(|t| !t.trim().is_empty())
         .unwrap_or(&b.filename)
-        .to_lowercase()
 }
 
+/// The first creator's surname-first key, as the server's Author axis keys it.
 fn author_key(b: &EbookMetadata) -> String {
     b.creators
         .first()
-        .map(|c| c.name.to_lowercase())
+        .map(|c| creator_sort_key(c.file_as.as_deref(), &c.name))
         .unwrap_or_default()
 }
 
 /// Books without a series sort after every series (matching the server's
 /// NULLs-last behavior); the index breaks ties inside one series.
-fn series_key(b: &EbookMetadata) -> (bool, String, i64) {
-    let name = b.series.as_deref().unwrap_or_default().to_lowercase();
-    let index = b
-        .series_index
+fn series_cmp(a: &EbookMetadata, b: &EbookMetadata) -> std::cmp::Ordering {
+    a.series
+        .is_none()
+        .cmp(&b.series.is_none())
+        .then_with(|| {
+            dictionary_cmp(
+                a.series.as_deref().unwrap_or_default(),
+                b.series.as_deref().unwrap_or_default(),
+            )
+        })
+        .then_with(|| series_index_key(a).cmp(&series_index_key(b)))
+}
+
+fn series_index_key(b: &EbookMetadata) -> i64 {
+    b.series_index
         .as_deref()
         .and_then(|i| i.parse::<f64>().ok())
         .map(|i| (i * 1000.0) as i64)
-        .unwrap_or(0);
-    (b.series.is_none(), name, index)
+        .unwrap_or(0)
 }
 
 /// ISO-ish date strings compare lexicographically; empty dates sort first
