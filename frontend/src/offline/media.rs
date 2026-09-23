@@ -680,7 +680,10 @@ fn sanitize_segment(s: &str) -> bool {
 /// Media paths the image proxy will fetch/cache — image reads only, never a
 /// data or mutation endpoint.
 fn proxy_path_allowed(path: &str) -> bool {
-    if path.contains("..") || path.contains('?') {
+    // Only characters URL parsing leaves alone: `%2e`, `\` and stripped
+    // tabs/newlines would otherwise reassemble a `..` upstream.
+    let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '-' | '_');
+    if path.contains("..") || !path.chars().all(plain) {
         return false;
     }
     path.starts_with("/api/covers/")
