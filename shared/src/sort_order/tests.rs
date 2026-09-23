@@ -5,8 +5,8 @@ use std::cmp::Ordering;
 
 use super::*;
 
-/// The order the reader chose for #2451: accents ignored, the comma ending
-/// the surname, so `Pérez Galdós` files after `Perez` and before `Perry`.
+/// Accents ignored and the comma ending the surname, so `Pérez Galdós` files
+/// after `Perez` and before `Perry`.
 const DICTIONARY_ORDER: [&str; 5] = [
     "Perez, Ana",
     "Pérez Galdós, Benito",

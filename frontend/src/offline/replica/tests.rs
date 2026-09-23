@@ -86,8 +86,6 @@ fn page_from_replica_sorts_by_author_with_title_tiebreak() {
     );
 }
 
-/// #2451: offline, the Author axis still files by surname — a display name
-/// and a given-name `file_as` key alike — in the server's dictionary order.
 #[test]
 fn page_from_replica_sorts_authors_surname_first_in_dictionary_order() {
     let mut given_file_as = book("Project Hail Mary", "Andy Weir", &["EPUB"]);

@@ -165,9 +165,7 @@ fn sort_authors_by_name_orders_alpha_before_non_alpha_bucket() {
     assert_eq!(filtered[1].name, "1984");
 }
 
-/// #2451: the index files authors in the library's dictionary order —
-/// accents ignored, the plain spelling first on a tie — and keys a
-/// given-name-form `sort` from the display name like the library does.
+/// A given-name-form `sort` keys from the display name, as the library does.
 #[test]
 fn sort_authors_by_name_orders_accented_surnames_in_dictionary_order() {
     let all = [
