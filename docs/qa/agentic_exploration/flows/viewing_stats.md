@@ -29,13 +29,15 @@ than one that errors or spins.
    whether it is *possible* for you — a streak longer than the run, a day on
    the heatmap you never read on, a book in the open list you never touched.
 3. Find the **In this window** band and its **Week / Month / Year / Lifetime**
-   pills. **Week is a rolling seven days ending today**, and its comparison
-   is the seven days before those, cut to the same elapsed length — so a
-   delta captioned "vs last week" reaches ten to thirteen days back, not to
-   the previous calendar week. Judge the arithmetic on that basis; whether
-   the caption should say so is a separate observation. Switch between them and watch **only that band** change — the
-   streak, the goals, the heatmap and the open-books list are standing figures
-   and must not move when the window does. A tile that changes outside the
+   pills. **Week is the calendar week to date**, Monday through today on your
+   own calendar, so on a Monday it holds one day. Its comparison is the
+   previous calendar week cut to the same point — on a Wednesday afternoon,
+   last Monday through last Wednesday at the same time — exactly as Month and
+   Year compare against the same slice of the previous month and year. A tile's
+   delta and the one its drill sheet states are the same figure; a pair that
+   disagrees is a finding. Switch between them and watch **only that band**
+   change — the streak, the goals, the heatmap and the open-books list are
+   standing figures and must not move when the window does. A tile that changes outside the
    band is a finding.
 4. Under **Lifetime**, the per-tile comparisons ("+12% vs last week") are
    meant to be absent, because there is no earlier lifetime to compare

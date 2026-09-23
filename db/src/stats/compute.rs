@@ -191,7 +191,7 @@ pub(super) async fn compute(
 }
 
 /// Lower bound (unix secs, inclusive) of the reporting window, cut on the
-/// reader's calendar — a Week ends at *their* midnight, not UTC's. See
+/// reader's calendar — a Week opens at *their* Monday midnight, not UTC's. See
 /// [`calendar::window_start_expr`].
 pub(super) async fn window_start(
     pool: &SqlitePool,
@@ -297,10 +297,11 @@ pub(super) async fn heatmap(
 ///
 /// A consequence worth knowing: because the bucket key comes from the
 /// calendar rather than from a row, **the Monday can precede the window**.
-/// `Week` is a rolling seven days and `Month` starts on the 1st, so either can
-/// straddle two buckets and crown the partial leading one — whose seconds
-/// then cover only the in-window days, like every other figure here. Clamping
-/// the date into the window would just reintroduce the midweek mislabel.
+/// `Week` opens on a Monday and so is exactly one bucket, but `Month` starts on
+/// the 1st and can straddle two and crown the partial leading one — whose
+/// seconds then cover only the in-window days, like every other figure here.
+/// Clamping the date into the window would just reintroduce the midweek
+/// mislabel.
 pub(super) async fn busiest_week(
     pool: &SqlitePool,
     user_id: i64,

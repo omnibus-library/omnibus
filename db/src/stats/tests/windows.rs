@@ -1,7 +1,7 @@
 //! Where a window opens and what the previous period compares against:
-//! the rolling week, the calendar month and year, the zeroed all-time
-//! baseline, and the previous-period bounds covering only the elapsed
-//! slice of the prior period.
+//! the calendar week, month and year, the zeroed all-time baseline, and the
+//! previous-period bounds covering only the elapsed slice of the prior
+//! period.
 
 use omnibus_shared::{PeriodComparison, StatsRange};
 
@@ -14,16 +14,16 @@ use crate::init_db;
 use crate::test_support::seed_minimal_books;
 
 #[tokio::test]
-async fn week_window_keeps_only_the_rolling_last_seven_days() {
+async fn week_window_opens_at_monday_midnight_and_leaves_last_sunday_out() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     seed_minimal_books(&pool, 1).await;
     let user = seed_user(&pool, "alice").await;
 
-    // 8 days back is outside the rolling window even at start-of-day
-    // granularity; a just-now session is inside it.
-    let now = now_secs();
-    reading_session(&pool, user, "uuid-1", now - 8 * DAY, 600).await;
-    reading_session(&pool, user, "uuid-1", now, 300).await;
+    // Where the week opens is `calendar`'s to prove; this pins that every
+    // aggregate honours it — last Sunday's final second belongs to last week.
+    let start = window_start(&pool, StatsRange::Week, 0).await.unwrap();
+    reading_session(&pool, user, "uuid-1", start - 1, 600).await;
+    reading_session(&pool, user, "uuid-1", start, 300).await;
 
     let s = compute(&pool, user, StatsRange::Week, 0).await.unwrap();
     assert_eq!(s.reading_seconds, 300);

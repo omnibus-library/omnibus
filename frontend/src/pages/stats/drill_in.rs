@@ -1,6 +1,7 @@
 //! Metric-tile drill-in: a bottom sheet on mobile, a centered modal on
 //! desktop, switched by a CSS media query so the rsx stays identical on
-//! every target (rule 07). Shows a vs-previous-period delta, the
+//! every target (rule 07). Shows the metric's vs-previous-period delta —
+//! its tile's own comparison, never a second derivation of it — the
 //! metric's trend chart, and — per metric — the half-star distribution
 //! (Avg rating), the books completed in the window (Finished), or the reading
 //! speed plus the coverage-and-cutover note (Pages read), all from the
@@ -13,6 +14,7 @@ use omnibus_shared::{
 };
 
 use super::donut::LengthRows;
+use super::tiles::{comparison, Comparison};
 use crate::components::{ConfirmModal, CoverTile, CoverTileKind};
 use crate::use_server_url;
 
@@ -37,13 +39,6 @@ impl Metric {
     }
 }
 
-/// A formatted vs-previous-period delta: direction glyph + magnitude label.
-struct Delta {
-    glyph: &'static str,
-    css_class: &'static str,
-    label: String,
-}
-
 /// "vs last week/month/year" — empty for Lifetime, which has no previous
 /// window to compare against.
 fn vs_label(range: StatsRange) -> &'static str {
@@ -55,69 +50,14 @@ fn vs_label(range: StatsRange) -> &'static str {
     }
 }
 
-/// Percent change from `previous` to `current`, `None` when there's nothing
-/// to compare (no previous-period baseline and nothing new either).
-fn percent_delta(current: f64, previous: f64) -> Option<Delta> {
-    if previous <= 0.0 {
-        return (current > 0.0).then(|| Delta {
-            glyph: "\u{25B2}",
-            css_class: "up",
-            label: "New".to_string(),
-        });
+/// The direction glyph beside a comparison's label: the tile tints its delta,
+/// the sheet draws an arrow.
+fn glyph(css_class: &str) -> &'static str {
+    match css_class {
+        "up" => "\u{25B2}",
+        "down" => "\u{25BC}",
+        _ => "\u{25CF}",
     }
-    let change = (current - previous) / previous * 100.0;
-    if change.abs() < 0.5 {
-        return Some(Delta {
-            glyph: "\u{25CF}",
-            css_class: "flat",
-            label: "No change".to_string(),
-        });
-    }
-    // Display-only percentage; the clamp keeps a divide-by-near-zero blowup
-    // from saturating the cast.
-    #[allow(clippy::cast_possible_truncation)]
-    let pct = change.abs().round().clamp(0.0, f64::from(i32::MAX)) as i64;
-    Some(if change > 0.0 {
-        Delta {
-            glyph: "\u{25B2}",
-            css_class: "up",
-            label: format!("{pct}%"),
-        }
-    } else {
-        Delta {
-            glyph: "\u{25BC}",
-            css_class: "down",
-            label: format!("{pct}%"),
-        }
-    })
-}
-
-/// Absolute star-rating change, `None` when there's no baseline to compare
-/// (either window carries no rated books).
-fn stars_delta(current: Option<f64>, previous: Option<f64>) -> Option<Delta> {
-    let (cur, prev) = (current?, previous?);
-    let change = cur - prev;
-    if change.abs() < 0.05 {
-        return Some(Delta {
-            glyph: "\u{25CF}",
-            css_class: "flat",
-            label: "No change".to_string(),
-        });
-    }
-    let label = format!("{:.1}\u{2605}", change.abs());
-    Some(if change > 0.0 {
-        Delta {
-            glyph: "\u{25B2}",
-            css_class: "up",
-            label,
-        }
-    } else {
-        Delta {
-            glyph: "\u{25BC}",
-            css_class: "down",
-            label,
-        }
-    })
 }
 
 /// One rendered trend bar: a short axis label, the hover title, and a height
@@ -243,33 +183,6 @@ fn short_day(day: &str) -> String {
         .unwrap_or_else(|| "?".to_string())
 }
 
-/// The metric's current/previous values as `(current, previous)` for the
-/// percent-based deltas (Finished, Listening). Avg rating uses
-/// `stars_delta` directly since it's `Option<f64>` on both sides.
-// Display-only deltas: counts and seconds sit far below f64's 2^52
-// exact-integer range.
-#[allow(clippy::cast_precision_loss)]
-fn delta_for(metric: Metric, summary: &StatsSummary, range: StatsRange) -> Option<Delta> {
-    if range == StatsRange::AllTime {
-        return None;
-    }
-    match metric {
-        Metric::Finished => percent_delta(
-            summary.books_finished as f64,
-            summary.previous.books_finished as f64,
-        ),
-        Metric::AvgRating => stars_delta(summary.avg_stars, summary.previous.avg_stars),
-        Metric::Listening => percent_delta(
-            summary.listening_seconds as f64,
-            summary.previous.listening_seconds as f64,
-        ),
-        Metric::Pages => percent_delta(
-            summary.pages_read.unwrap_or(0) as f64,
-            summary.previous.pages_read as f64,
-        ),
-    }
-}
-
 /// Build a minimal `EbookMetadata` from a `FinishedBook` row so the drill-in
 /// list can hand it to the shared `CoverTile` — the DTO only carries the
 /// handful of fields a cover + title row needs.
@@ -308,12 +221,13 @@ pub(super) fn finished_book_as_ebook(book: &FinishedBook) -> EbookMetadata {
 pub(super) fn DrillIn(
     metric: Metric,
     summary: StatsSummary,
-    range: StatsRange,
     expanded: Signal<Option<Metric>>,
 ) -> Element {
     let server_url = use_server_url();
-    let delta = delta_for(metric, &summary, range);
-    let vs = vs_label(range);
+    // Both off the summary, so the caption names the window the delta was
+    // measured on even if the switcher has already moved.
+    let delta = comparison(metric, &summary);
+    let vs = vs_label(summary.range);
     let bars = build_trend_bars(&trend_points(metric, &summary));
 
     rsx! {
@@ -365,15 +279,15 @@ pub(super) fn DrillIn(
     }
 }
 
-/// The delta chip, or a friendly "not enough data" line when there's no
-/// baseline (fresh metric, or the Lifetime range with no previous window).
-fn render_delta(delta: Option<Delta>, vs: &str) -> Element {
+/// The delta chip, or a friendly "not enough data" line when there's nothing
+/// to compare (no rated books, or the Lifetime range with no previous window).
+fn render_delta(delta: Option<Comparison>, vs: &str) -> Element {
     match delta {
         Some(d) => rsx! {
             div {
                 class: "st-drill-delta {d.css_class}",
                 "data-testid": "stats-drill-delta",
-                span { aria_hidden: "true", "{d.glyph}" }
+                span { aria_hidden: "true", {glyph(d.css_class)} }
                 " {d.label} "
                 if !vs.is_empty() {
                     span { class: "mono st-drill-delta-vs", "{vs}" }

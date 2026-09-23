@@ -1,10 +1,11 @@
 //  StatsDrillIn.swift
 //  Metric-tile drill-in: the sheet a windowed tile opens. The same detail the
-//  web tiles expand to (`frontend/src/pages/stats/drill_in.rs`) — a
-//  vs-previous-window delta, the metric's trend, and per metric the half-star
-//  distribution (Avg rating), the reading speed and coverage note (Pages
-//  read), or the length distribution and the books completed (Finished) —
-//  all read off the `StatsSummary` already on screen. No second fetch.
+//  web tiles expand to (`frontend/src/pages/stats/drill_in.rs`) — the
+//  tile's own vs-previous-window delta, the metric's trend, and per metric
+//  the half-star distribution (Avg rating), the reading speed and coverage
+//  note (Pages read), or the length distribution and the books completed
+//  (Finished) — all read off the `StatsSummary` already on screen. No second
+//  fetch.
 
 import SwiftUI
 
@@ -30,6 +31,7 @@ enum DrillMetric: String, Identifiable, CaseIterable, Sendable {
 }
 
 /// A formatted vs-previous-window delta: which way it went and by how much.
+/// One per metric, stated by both its tile and its drill-in.
 struct DrillDelta: Equatable, Sendable {
     enum Direction: Sendable { case up, down, flat }
 
@@ -74,33 +76,55 @@ enum StatsDrill {
         }
     }
 
-    /// Percent change from `previous` to `current`, `nil` when there is
-    /// nothing to compare — no baseline and nothing new either.
-    static func percentDelta(current: Double, previous: Double) -> DrillDelta? {
+    /// A count delta in whole units — "+2", "−1", "flat". Mirrors the web
+    /// `count_comparison`: over a handful of books a percentage is noise. The
+    /// minus is a real minus sign, not a hyphen: at Space Mono's weight the
+    /// hyphen reads as a dash in a number.
+    static func countDelta(current: Int64, previous: Int64) -> DrillDelta {
+        let change = current - previous
+        if change == 0 { return DrillDelta(direction: .flat, label: "flat") }
+        return change > 0
+            ? DrillDelta(direction: .up, label: "+\(change)")
+            : DrillDelta(direction: .down, label: "\u{2212}\(-change)")
+    }
+
+    /// A magnitude delta as a percentage — "+18%", "flat", or "new" when the
+    /// previous window recorded none of it. Mirrors the web
+    /// `percent_comparison`.
+    static func percentDelta(current: Double, previous: Double) -> DrillDelta {
         if previous <= 0 {
-            return current > 0 ? DrillDelta(direction: .up, label: "New") : nil
+            return current > 0
+                ? DrillDelta(direction: .up, label: "new")
+                : DrillDelta(direction: .flat, label: "flat")
         }
         let change = (current - previous) / previous * 100
         if change.magnitude < 0.5 {
-            return DrillDelta(direction: .flat, label: "No change")
+            return DrillDelta(direction: .flat, label: "flat")
         }
         let pct = Int(min(change.magnitude.rounded(), Double(Int32.max)))
-        return DrillDelta(direction: change > 0 ? .up : .down, label: "\(pct)%")
+        return change > 0
+            ? DrillDelta(direction: .up, label: "+\(pct)%")
+            : DrillDelta(direction: .down, label: "\u{2212}\(pct)%")
     }
 
-    /// Absolute star change, `nil` when either window carries no rated books:
-    /// a mean over nothing is not zero, it is absent.
+    /// A star delta in stars — "+0.3", "flat", or "new" for a first rated
+    /// window. `nil` when this window rated nothing: a mean over nothing is not
+    /// zero, it is absent. Mirrors the web `stars_comparison`.
     static func starsDelta(current: Double?, previous: Double?) -> DrillDelta? {
-        guard let current, let previous else { return nil }
+        guard let current else { return nil }
+        guard let previous else { return DrillDelta(direction: .up, label: "new") }
         let change = current - previous
         if change.magnitude < 0.05 {
-            return DrillDelta(direction: .flat, label: "No change")
+            return DrillDelta(direction: .flat, label: "flat")
         }
-        let label = String(format: "%.1f\u{2605}", change.magnitude)
-        return DrillDelta(direction: change > 0 ? .up : .down, label: label)
+        let stars = String(format: "%.1f", change.magnitude)
+        return change > 0
+            ? DrillDelta(direction: .up, label: "+\(stars)")
+            : DrillDelta(direction: .down, label: "\u{2212}\(stars)")
     }
 
-    /// The metric's delta against the same slice of the previous window.
+    /// The metric's delta against the same slice of the previous window — the
+    /// one value its tile and its drill-in both show, so they cannot disagree.
     /// `nil` on Lifetime outright — `previous` is zeroed there rather than
     /// measured, and a delta drawn against it would report every lifetime
     /// figure as brand new.
@@ -109,8 +133,7 @@ enum StatsDrill {
         let previous = summary.previous
         switch metric {
         case .finished:
-            return percentDelta(
-                current: Double(summary.booksFinished), previous: Double(previous.booksFinished))
+            return countDelta(current: summary.booksFinished, previous: previous.booksFinished)
         case .avgRating:
             return starsDelta(current: summary.avgStars, previous: previous.avgStars)
         case .listening:

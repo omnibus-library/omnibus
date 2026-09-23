@@ -41,8 +41,9 @@ struct StatsView: View {
     /// `heatmap` — the activity grid and the four-week strip.
     ///
     /// `db::stats::compute` scopes the heatmap to the *window's* start, so on
-    /// Week the payload carries fourteen days and the grid a reader is told is
-    /// "not tied to the window" would visibly empty out on a period switch.
+    /// Week the payload carries only the days since Monday and the grid a
+    /// reader is told is "not tied to the window" would visibly empty out on a
+    /// period switch.
     /// Reading those two off the widest window instead is what makes the claim
     /// true. Cached like `librarySize`, so it costs a replica read after the
     /// first fetch — and it is the same entry the All pill warms anyway.
@@ -251,9 +252,11 @@ struct StatsView: View {
     /// where the web keeps it, and a tile that restated one line of the sheet
     /// under it left the grid a cell short.
     private func tiles(_ summary: StatsSummary) -> some View {
-        // Deltas are suppressed on Lifetime: there is no window before all of
-        // them, and `previous` is zeroed there rather than absent.
-        let comparable = range != .allTime
+        // The drill-in's own delta, so a tile and the sheet behind it state one
+        // figure. `nil` on Lifetime, which has no window before all of them.
+        func delta(_ metric: DrillMetric) -> String? {
+            StatsDrill.delta(for: metric, in: summary)?.label
+        }
         return LazyVGrid(
             columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
             spacing: 12
@@ -262,18 +265,14 @@ struct StatsView: View {
                 label: "Books finished",
                 value: "\(summary.booksFinished)",
                 icon: "checkmark.circle",
-                delta: comparable
-                    ? StatsFormat.delta(summary.booksFinished, summary.previous.booksFinished)
-                    : nil,
+                delta: delta(.finished),
                 action: { drill = .finished }
             )
             WindowTile(
                 label: "Pages read",
                 value: Self.pagesValue(summary),
                 icon: "doc.text",
-                delta: comparable
-                    ? StatsFormat.percentDelta(summary.pagesRead ?? 0, summary.previous.pagesRead)
-                    : nil,
+                delta: delta(.pages),
                 action: { drill = .pages }
             )
             WindowTile(
@@ -281,10 +280,7 @@ struct StatsView: View {
                 value: summary.listeningSeconds > 0
                     ? Format.humanDuration(summary.listeningSeconds) : "\u{2014}",
                 icon: "headphones",
-                delta: comparable
-                    ? StatsFormat.percentDelta(
-                        summary.listeningSeconds, summary.previous.listeningSeconds)
-                    : nil,
+                delta: delta(.listening),
                 action: { drill = .listening }
             )
             WindowTile(
@@ -326,18 +322,22 @@ struct StatsView: View {
     /// whose effect you have to infer from the figures moving.
     ///
     /// Every bound is read off `asOfDay`, the server's own day, and matches
-    /// `window_start_expr` in `db/src/stats/compute.rs`: Week is a rolling
-    /// seven days ending today, not a calendar week.
+    /// `window_start_expr` in `db/src/stats/calendar.rs`: Week is the calendar
+    /// week to date, opening on the Monday the server's weeks are keyed on —
+    /// never the device's `firstWeekday`, which is Sunday in half the world.
     static func rangeCaption(_ summary: StatsSummary) -> String {
         guard let asOf = StatsFormat.wireDay.date(from: summary.asOfDay) else {
             return windowLabel(summary.range)
         }
         switch summary.range {
         case .week:
-            guard let start = StatsFormat.utc.date(byAdding: .day, value: -6, to: asOf) else {
-                return "Last 7 days"
-            }
-            return "Week of \(StatsFormat.day(start, "d MMM"))"
+            // Gregorian `weekday` is 1 for Sunday, so Monday is 2 and Sunday
+            // closes the week six days after it.
+            let weekday = StatsFormat.utc.component(.weekday, from: asOf)
+            let sinceMonday = (weekday + 5) % 7
+            guard let monday = StatsFormat.utc.date(byAdding: .day, value: -sinceMonday, to: asOf)
+            else { return windowLabel(summary.range) }
+            return "Week of \(StatsFormat.day(monday, "d MMM")) to date"
         case .month:
             return StatsFormat.day(asOf, "MMMM yyyy")
         case .year:

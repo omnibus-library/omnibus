@@ -1,56 +1,8 @@
 //! Tests for the drill-in's delta/trend math and Finished-book mapping.
 
-use omnibus_shared::{PeriodComparison, TrendPoint};
+use omnibus_shared::TrendPoint;
 
 use super::*;
-
-#[test]
-fn percent_delta_reports_new_when_previous_was_zero_and_current_is_positive() {
-    let d = percent_delta(3.0, 0.0).unwrap();
-    assert_eq!(d.label, "New");
-    assert_eq!(d.css_class, "up");
-}
-
-#[test]
-fn percent_delta_is_none_when_both_windows_are_zero() {
-    assert!(percent_delta(0.0, 0.0).is_none());
-}
-
-#[test]
-fn percent_delta_rounds_and_signs_the_change() {
-    let up = percent_delta(124.0, 100.0).unwrap();
-    assert_eq!(up.label, "24%");
-    assert_eq!(up.css_class, "up");
-
-    let down = percent_delta(80.0, 100.0).unwrap();
-    assert_eq!(down.label, "20%");
-    assert_eq!(down.css_class, "down");
-}
-
-#[test]
-fn percent_delta_flags_no_change_within_half_a_percent() {
-    let d = percent_delta(100.2, 100.0).unwrap();
-    assert_eq!(d.label, "No change");
-    assert_eq!(d.css_class, "flat");
-}
-
-#[test]
-fn stars_delta_is_none_without_a_rating_on_either_side() {
-    assert!(stars_delta(Some(4.0), None).is_none());
-    assert!(stars_delta(None, Some(4.0)).is_none());
-    assert!(stars_delta(None, None).is_none());
-}
-
-#[test]
-fn stars_delta_formats_the_absolute_star_change() {
-    let up = stars_delta(Some(4.5), Some(4.0)).unwrap();
-    assert_eq!(up.label, "0.5\u{2605}");
-    assert_eq!(up.css_class, "up");
-
-    let down = stars_delta(Some(3.5), Some(4.0)).unwrap();
-    assert_eq!(down.label, "0.5\u{2605}");
-    assert_eq!(down.css_class, "down");
-}
 
 #[test]
 fn build_trend_bars_scales_to_the_tallest_point_and_stays_zero_when_empty_of_activity() {
@@ -138,26 +90,85 @@ fn render_histogram_reuses_the_trend_chart_renderer() {
     }
 }
 
-#[test]
-fn delta_for_is_none_for_lifetime_regardless_of_metric() {
-    let summary = StatsSummary::default();
-    assert!(delta_for(Metric::Finished, &summary, StatsRange::AllTime).is_none());
-    assert!(delta_for(Metric::Listening, &summary, StatsRange::AllTime).is_none());
-}
-
-#[test]
-fn delta_for_finished_compares_against_the_previous_window() {
-    let summary = StatsSummary {
-        books_finished: 3,
-        previous: PeriodComparison {
+/// A Month summary carrying the two disagreements #2454 reported: a count
+/// that fell to zero, and a metric with nothing on either side.
+#[cfg(feature = "server")]
+fn compared_month() -> StatsSummary {
+    StatsSummary {
+        range: StatsRange::Month,
+        books_finished: 0,
+        pages_read: Some(120),
+        listening_seconds: 0,
+        avg_stars: Some(4.3),
+        previous: omnibus_shared::PeriodComparison {
             books_finished: 2,
-            ..Default::default()
+            pages_read: 100,
+            listening_seconds: 0,
+            avg_stars: None,
         },
         ..Default::default()
+    }
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn render_delta_states_the_tiles_own_comparison_for_every_metric() {
+    let summary = compared_month();
+    for metric in [
+        Metric::Finished,
+        Metric::Pages,
+        Metric::Listening,
+        Metric::AvgRating,
+    ] {
+        let tile = comparison(metric, &summary).expect("a bounded window compares");
+        let html = crate::test_support::render(render_delta(
+            comparison(metric, &summary),
+            vs_label(summary.range),
+        ));
+        assert!(html.contains(&tile.label), "{}: {html}", tile.label);
+        assert!(html.contains(tile.css_class), "{}: {html}", tile.css_class);
+    }
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn render_delta_no_longer_restates_a_count_as_a_percentage() {
+    // The tile said "−2 books" while its sheet said "▼100%" (#2454).
+    let summary = compared_month();
+    let html = crate::test_support::render(render_delta(
+        comparison(Metric::Finished, &summary),
+        vs_label(summary.range),
+    ));
+    assert!(html.contains("\u{2212}2"), "{html}");
+    assert!(!html.contains('%'), "{html}");
+
+    // And "flat" on the tile was "Not enough data yet to compare" here.
+    let html = crate::test_support::render(render_delta(
+        comparison(Metric::Listening, &summary),
+        vs_label(summary.range),
+    ));
+    assert!(html.contains("flat"), "{html}");
+    assert!(!html.contains("Not enough data"), "{html}");
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn render_delta_falls_back_only_when_there_is_nothing_to_compare() {
+    let lifetime = StatsSummary {
+        range: StatsRange::AllTime,
+        ..compared_month()
     };
-    let d = delta_for(Metric::Finished, &summary, StatsRange::Month).unwrap();
-    assert_eq!(d.label, "50%");
-    assert_eq!(d.css_class, "up");
+    let unrated = StatsSummary {
+        avg_stars: None,
+        ..compared_month()
+    };
+    for (metric, summary) in [(Metric::Finished, &lifetime), (Metric::AvgRating, &unrated)] {
+        let html = crate::test_support::render(render_delta(
+            comparison(metric, summary),
+            vs_label(summary.range),
+        ));
+        assert!(html.contains("Not enough data yet to compare."), "{html}");
+    }
 }
 
 #[test]
@@ -231,42 +242,6 @@ fn trend_points_for_pages_reads_the_per_day_ledger_series() {
         points,
         vec![("03".to_string(), 41.0), ("04".to_string(), 12.0)]
     );
-}
-
-#[test]
-fn delta_for_pages_compares_against_the_previous_windows_pages() {
-    let summary = StatsSummary {
-        pages_read: Some(120),
-        previous: PeriodComparison {
-            pages_read: 100,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-
-    let d = delta_for(Metric::Pages, &summary, StatsRange::Month).unwrap();
-
-    assert_eq!(d.label, "20%");
-    assert_eq!(d.css_class, "up");
-}
-
-#[test]
-fn delta_for_pages_treats_an_unmeasured_window_as_zero_not_as_missing() {
-    // `None` is "nothing measurable happened", which against a real baseline is
-    // a drop to zero — not an absent comparison.
-    let summary = StatsSummary {
-        pages_read: None,
-        previous: PeriodComparison {
-            pages_read: 200,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-
-    let d = delta_for(Metric::Pages, &summary, StatsRange::Month).unwrap();
-
-    assert_eq!(d.label, "100%");
-    assert_eq!(d.css_class, "down");
 }
 
 #[test]

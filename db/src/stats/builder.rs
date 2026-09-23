@@ -71,9 +71,8 @@ struct Bucketed {
 fn bucket_expr(bucket: ChartBucket, day: &str) -> String {
     match bucket {
         ChartBucket::Day => day.to_string(),
-        // `weekday 0` advances to the coming Sunday (staying put if already
-        // Sunday), so backing up six days lands on that week's Monday.
-        ChartBucket::Week => format!("date({day}, 'weekday 0', '-6 days')"),
+        // The same Monday the Week window opens on.
+        ChartBucket::Week => format!("date({day}, {})", calendar::TO_MONDAY),
         ChartBucket::Month => format!("substr({day}, 1, 7)"),
         ChartBucket::Year => format!("substr({day}, 1, 4)"),
     }

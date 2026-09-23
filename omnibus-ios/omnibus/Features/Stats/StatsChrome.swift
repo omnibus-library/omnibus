@@ -216,24 +216,6 @@ enum StatsFormat {
         (dayFormatters[format] ?? pinnedFormatter(format)).string(from: date)
     }
 
-    /// A signed whole-number delta — "+2", "−1" — or `nil` when there is
-    /// nothing to compare against. The minus is a real minus sign, not a
-    /// hyphen: at Space Mono's weight the hyphen reads as a dash in a number.
-    static func delta(_ current: Int64, _ previous: Int64) -> String? {
-        guard current != previous else { return nil }
-        let difference = current - previous
-        return difference > 0 ? "+\(difference)" : "\u{2212}\(-difference)"
-    }
-
-    /// A percentage delta — "+18%". `nil` when the baseline is zero, where a
-    /// percentage change is not defined and "+∞%" is not an answer.
-    static func percentDelta(_ current: Int64, _ previous: Int64) -> String? {
-        guard previous > 0, current != previous else { return nil }
-        let change = Int(((Double(current - previous) / Double(previous)) * 100).rounded())
-        guard change != 0 else { return nil }
-        return change > 0 ? "+\(change)%" : "\u{2212}\(-change)%"
-    }
-
     /// "1 page" / "12 pages" — the unit is the caller's, since the figures
     /// here are bare numbers.
     static func counted(_ n: Int64, _ unit: String) -> String {

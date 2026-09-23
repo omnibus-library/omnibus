@@ -106,6 +106,106 @@ async fn window_start_expr_lands_on_the_readers_midnight() {
 }
 
 #[tokio::test]
+async fn window_start_expr_opens_a_week_on_the_readers_monday_midnight() {
+    for offset in [0, 540, -420, 345] {
+        let start = scalar_i64(&format!(
+            "CAST({} AS INTEGER)",
+            window_start_expr(StatsRange::Week, offset)
+        ))
+        .await;
+        let now = scalar_i64("CAST(strftime('%s', 'now') AS INTEGER)").await;
+        // `%w` is 1 for Monday. Live-clock, so a rolling window would slip
+        // through on Sundays alone; the fixed-clock tests below never let it.
+        let weekday_time = scalar(&format!(
+            "strftime('%w %H:%M', {start} + {}, 'unixepoch')",
+            offset * 60
+        ))
+        .await;
+
+        assert_eq!(weekday_time, "1 00:00", "offset {offset}");
+        assert!((0..7 * DAY).contains(&(now - start)), "offset {offset}");
+    }
+}
+
+/// One day in seconds.
+const DAY: i64 = 86_400;
+/// Wed 2026-09-23 15:30 UTC.
+const WED: i64 = 1_790_177_400;
+/// Mon 2026-09-21 00:00 UTC — the Monday of [`WED`]'s week.
+const MON: i64 = 1_789_948_800;
+
+/// A fixed instant as the SQLite time-value the window builders read.
+fn clock(secs: i64) -> String {
+    format!("datetime({secs}, 'unixepoch')")
+}
+
+/// Where the Week window opens for a reader at `offset` when it is `now`.
+async fn week_start(now: i64, offset: i64) -> i64 {
+    scalar_i64(&format!(
+        "CAST({} AS INTEGER)",
+        window_start_at(StatsRange::Week, offset, &clock(now))
+    ))
+    .await
+}
+
+#[tokio::test]
+async fn window_start_at_opens_a_week_on_its_monday_and_closes_it_on_sunday() {
+    assert_eq!(week_start(WED, 0).await, MON);
+    // Sunday is the week's last day, not the first of the next one.
+    let sunday_night = MON + 7 * DAY - 60;
+    assert_eq!(week_start(sunday_night, 0).await, MON);
+    // A second later it is Monday again, and the week starts over.
+    assert_eq!(week_start(MON + 7 * DAY, 0).await, MON + 7 * DAY);
+}
+
+#[tokio::test]
+async fn window_start_at_opens_the_week_on_the_readers_weekday_not_utcs() {
+    // 03:00 on a UTC Monday is still Sunday evening in Los Angeles, so that
+    // reader is on the last day of the *previous* week.
+    let utc_monday = MON + 3 * 3600;
+    assert_eq!(week_start(utc_monday, 0).await, MON);
+    assert_eq!(week_start(utc_monday, -420).await, MON - 7 * DAY + 7 * 3600);
+
+    // 20:00 on a UTC Sunday is already Monday in Tokyo: a new week there,
+    // opening at the reader's midnight, while UTC is still in the old one.
+    let utc_sunday = MON - 4 * 3600;
+    assert_eq!(week_start(utc_sunday, 0).await, MON - 7 * DAY);
+    assert_eq!(week_start(utc_sunday, 540).await, MON - 9 * 3600);
+}
+
+#[tokio::test]
+async fn window_start_at_gives_a_monday_a_one_day_week() {
+    let monday_morning = MON + 10 * 3600;
+    let start = week_start(monday_morning, 0).await;
+
+    assert_eq!(start, MON);
+    assert!(monday_morning - start < DAY);
+}
+
+#[tokio::test]
+async fn week_baseline_is_last_week_cut_to_the_same_elapsed_length() {
+    for offset in [0, -420] {
+        let cur = week_start(WED, offset).await;
+        let prev = scalar_i64(&format!(
+            "CAST({} AS INTEGER)",
+            prev_window_start_at(StatsRange::Week, offset, &clock(WED)).unwrap()
+        ))
+        .await;
+        let (start, end) = crate::stats::compute::prev_window_from(prev, cur, WED);
+
+        // Last Monday's midnight through last Wednesday at this same time.
+        assert_eq!(start, cur - 7 * DAY, "offset {offset}");
+        assert_eq!(end, WED - 7 * DAY, "offset {offset}");
+        let weekday_time = scalar(&format!(
+            "strftime('%w %H:%M', {start} + {}, 'unixepoch')",
+            offset * 60
+        ))
+        .await;
+        assert_eq!(weekday_time, "1 00:00", "offset {offset}");
+    }
+}
+
+#[tokio::test]
 async fn window_start_expr_is_zero_for_all_time() {
     let start = scalar_i64(&format!(
         "CAST({} AS INTEGER)",

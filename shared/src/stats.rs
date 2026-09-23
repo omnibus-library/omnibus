@@ -21,12 +21,15 @@ pub const STATS_TTL_SECS: i64 = 60;
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StatsRange {
-    /// The rolling last 7 days (start of day, 6 days ago .. now).
+    /// The current calendar week to date (Monday 00:00 .. now), on the
+    /// reader's calendar.
     Week,
-    /// The current calendar month (1st UTC .. now).
+    /// The current calendar month to date (the 1st .. now), on the reader's
+    /// calendar.
     #[default]
     Month,
-    /// The current calendar year (Jan 1 UTC .. now).
+    /// The current calendar year to date (Jan 1 .. now), on the reader's
+    /// calendar.
     Year,
     /// Every session on record. Rendered as "Lifetime".
     AllTime,

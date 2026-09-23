@@ -3,7 +3,7 @@
 //  Pages copy. Every one mirrors a function in the web drill-in
 //  (`frontend/src/pages/stats/drill_in.rs`), so these pin the two surfaces to
 //  the same answer: a reader switching from the site to the phone must read
-//  the same "▲ 18% vs last month".
+//  the same "▲ +18% vs last month" — and the tile above it must say "+18%".
 
 import Foundation
 import Testing
@@ -21,31 +21,40 @@ private func summary(range: StatsRange = .month, _ mutate: (inout StatsSummary) 
 
 @Suite("Drill-in delta")
 struct DrillDeltaTests {
-    @Test("a figure with no baseline is New, and nothing over nothing is no delta at all")
-    func newAgainstEmptyBaseline() {
-        #expect(StatsDrill.percentDelta(current: 3, previous: 0) == DrillDelta(direction: .up, label: "New"))
-        #expect(StatsDrill.percentDelta(current: 0, previous: 0) == nil)
+    @Test("a count moves in whole units, and nothing moved is flat")
+    func countDelta() {
+        #expect(StatsDrill.countDelta(current: 4, previous: 2) == DrillDelta(direction: .up, label: "+2"))
+        #expect(StatsDrill.countDelta(current: 1, previous: 2) == DrillDelta(direction: .down, label: "\u{2212}1"))
+        #expect(StatsDrill.countDelta(current: 0, previous: 0) == DrillDelta(direction: .flat, label: "flat"))
     }
 
-    @Test("a change under half a percent is flat, larger ones round to a whole percent")
+    @Test("a figure with no baseline is new, and nothing over nothing is flat")
+    func newAgainstEmptyBaseline() {
+        #expect(StatsDrill.percentDelta(current: 3, previous: 0) == DrillDelta(direction: .up, label: "new"))
+        #expect(StatsDrill.percentDelta(current: 0, previous: 0) == DrillDelta(direction: .flat, label: "flat"))
+    }
+
+    @Test("a change under half a percent is flat, larger ones round to a signed whole percent")
     func percentRounding() {
         #expect(
             StatsDrill.percentDelta(current: 1001, previous: 1000)
-                == DrillDelta(direction: .flat, label: "No change"))
-        #expect(StatsDrill.percentDelta(current: 118, previous: 100) == DrillDelta(direction: .up, label: "18%"))
-        #expect(StatsDrill.percentDelta(current: 75, previous: 100) == DrillDelta(direction: .down, label: "25%"))
+                == DrillDelta(direction: .flat, label: "flat"))
+        #expect(StatsDrill.percentDelta(current: 118, previous: 100) == DrillDelta(direction: .up, label: "+18%"))
+        #expect(
+            StatsDrill.percentDelta(current: 75, previous: 100)
+                == DrillDelta(direction: .down, label: "\u{2212}25%"))
     }
 
-    @Test("a star delta needs both windows rated, and reads in stars")
+    @Test("a star delta needs a rated window, and reads in stars")
     func starsDelta() {
-        #expect(StatsDrill.starsDelta(current: 4.2, previous: nil) == nil)
         #expect(StatsDrill.starsDelta(current: nil, previous: 4.2) == nil)
+        #expect(StatsDrill.starsDelta(current: 4.2, previous: nil) == DrillDelta(direction: .up, label: "new"))
         #expect(
             StatsDrill.starsDelta(current: 4.21, previous: 4.2)
-                == DrillDelta(direction: .flat, label: "No change"))
+                == DrillDelta(direction: .flat, label: "flat"))
         #expect(
             StatsDrill.starsDelta(current: 4.5, previous: 4.2)
-                == DrillDelta(direction: .up, label: "0.3\u{2605}"))
+                == DrillDelta(direction: .up, label: "+0.3"))
     }
 
     @Test("Lifetime has no previous window, so no metric reports a delta there")
@@ -75,11 +84,18 @@ struct DrillDeltaTests {
             $0.avgStars = 3.5
             $0.previous.avgStars = 4.5
         }
-        #expect(StatsDrill.delta(for: .finished, in: s) == DrillDelta(direction: .up, label: "50%"))
-        #expect(StatsDrill.delta(for: .listening, in: s) == DrillDelta(direction: .down, label: "50%"))
+        // A handful of books moves in whole books, not as a percentage.
+        #expect(StatsDrill.delta(for: .finished, in: s) == DrillDelta(direction: .up, label: "+1"))
+        #expect(
+            StatsDrill.delta(for: .listening, in: s)
+                == DrillDelta(direction: .down, label: "\u{2212}50%"))
         // An unmeasured window counts as zero pages against a measured baseline.
-        #expect(StatsDrill.delta(for: .pages, in: s) == DrillDelta(direction: .down, label: "100%"))
-        #expect(StatsDrill.delta(for: .avgRating, in: s) == DrillDelta(direction: .down, label: "1.0\u{2605}"))
+        #expect(
+            StatsDrill.delta(for: .pages, in: s)
+                == DrillDelta(direction: .down, label: "\u{2212}100%"))
+        #expect(
+            StatsDrill.delta(for: .avgRating, in: s)
+                == DrillDelta(direction: .down, label: "\u{2212}1.0"))
     }
 }
 

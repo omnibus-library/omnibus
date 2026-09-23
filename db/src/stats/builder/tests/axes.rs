@@ -365,3 +365,38 @@ async fn chart_series_clips_a_long_axis_to_the_most_recent_buckets_and_says_so()
         .unwrap();
     assert_eq!(r.buckets.last().unwrap(), &today);
 }
+
+#[tokio::test]
+async fn chart_series_week_axis_runs_from_the_readers_monday_to_today() {
+    let (pool, user) = fixture(1).await;
+    let monday = window_start(&pool, StatsRange::Week, 0).await.unwrap();
+    reading_session(&pool, user, "uuid-1", monday - 1, 1_200).await;
+    reading_session(&pool, user, "uuid-1", monday, 600).await;
+
+    let r = chart_series(
+        &pool,
+        user,
+        &spec(
+            vec![ChartMeasure::ReadingMinutes],
+            ChartBucket::Day,
+            StatsRange::Week,
+        ),
+        Some(0),
+    )
+    .await
+    .unwrap();
+
+    let (first, today): (String, String) =
+        sqlx::query_as("SELECT date(?, 'unixepoch'), date('now')")
+            .bind(monday)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    // Opens on Monday — last Sunday's session is last week's — and ends
+    // today: the days still to come are not on the axis, so a count can't
+    // plot a zero for a day nobody has lived yet.
+    assert_eq!(r.buckets.first(), Some(&first));
+    assert_eq!(r.buckets.last(), Some(&today));
+    assert!(r.buckets.len() <= 7);
+    assert_eq!(at(&r, 0, 0), Some(10.0));
+}

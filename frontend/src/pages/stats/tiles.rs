@@ -1,7 +1,8 @@
 //! The windowed band's headline tiles: Finished, Pages read, Listening, and
 //! How you rated. Every figure here is period-scoped, so each carries its own
 //! comparison against the same slice of the previous window — the delta above
-//! the bar, and the bar as its shape.
+//! the bar, and the bar as its shape. That comparison is also the one the
+//! metric's drill-in states, via [`comparison`].
 
 use dioxus::prelude::*;
 use omnibus_shared::{PeriodComparison, StatsRange, StatsSummary};
@@ -16,10 +17,39 @@ use super::group_thousands;
 /// `PeriodComparison` is `Default` there, so a delta drawn against it would
 /// report every lifetime figure as brand new. The whole comparison row is
 /// dropped rather than shown against a zero nobody measured.
-struct Comparison {
-    label: String,
-    css_class: &'static str,
-    fill_pct: u32,
+pub(super) struct Comparison {
+    pub(super) label: String,
+    pub(super) css_class: &'static str,
+    pub(super) fill_pct: u32,
+}
+
+/// A metric's comparison against the same slice of the previous window — the
+/// **one** value its tile and its drill-in both state, so the face and the
+/// sheet behind it cannot disagree. `None` on Lifetime, and for a rating with
+/// no mean to report.
+// Display-only: counts and seconds sit far below f64's 2^52 exact-integer
+// range.
+#[allow(clippy::cast_precision_loss)]
+pub(super) fn comparison(metric: Metric, summary: &StatsSummary) -> Option<Comparison> {
+    if summary.range == StatsRange::AllTime {
+        return None;
+    }
+    let previous: &PeriodComparison = &summary.previous;
+    match metric {
+        Metric::Finished => Some(count_comparison(
+            summary.books_finished,
+            previous.books_finished,
+        )),
+        Metric::Pages => Some(percent_comparison(
+            summary.pages_read.unwrap_or(0) as f64,
+            previous.pages_read as f64,
+        )),
+        Metric::Listening => Some(percent_comparison(
+            summary.listening_seconds as f64,
+            previous.listening_seconds as f64,
+        )),
+        Metric::AvgRating => stars_comparison(summary.avg_stars, previous.avg_stars),
+    }
 }
 
 /// Bar fill for a figure against its baseline: how close this window has come
@@ -192,20 +222,11 @@ struct Tile {
     comparison: Option<Comparison>,
 }
 
-/// Every tile in reading order, with each metric's comparison already chosen.
-/// The comparisons are dropped wholesale on Lifetime, which has no previous
-/// window to measure against.
+/// Every tile in reading order, with each metric's [`comparison`] already
+/// chosen. The comparisons are dropped wholesale on Lifetime, which has no
+/// previous window to measure against.
 fn build_tiles(summary: &StatsSummary) -> Vec<Tile> {
-    let compare = summary.range != StatsRange::AllTime;
-    let previous: &PeriodComparison = &summary.previous;
-    #[allow(clippy::cast_precision_loss)]
-    let pages_now = summary.pages_read.unwrap_or(0) as f64;
     let (listen_value, listen_unit) = duration_value(summary.listening_seconds);
-    #[allow(clippy::cast_precision_loss)]
-    let listen_pair = (
-        summary.listening_seconds as f64,
-        previous.listening_seconds as f64,
-    );
     vec![
         Tile {
             value: summary.books_finished.to_string(),
@@ -214,8 +235,7 @@ fn build_tiles(summary: &StatsSummary) -> Vec<Tile> {
             testid: "stats-tile-finished",
             metric: Metric::Finished,
             accent: true,
-            comparison: compare
-                .then(|| count_comparison(summary.books_finished, previous.books_finished)),
+            comparison: comparison(Metric::Finished, summary),
         },
         Tile {
             value: pages_value(summary.pages_read, summary.pages_detail.audio_only()),
@@ -224,8 +244,7 @@ fn build_tiles(summary: &StatsSummary) -> Vec<Tile> {
             testid: "stats-tile-pages",
             metric: Metric::Pages,
             accent: false,
-            #[allow(clippy::cast_precision_loss)]
-            comparison: compare.then(|| percent_comparison(pages_now, previous.pages_read as f64)),
+            comparison: comparison(Metric::Pages, summary),
         },
         Tile {
             value: listen_value,
@@ -234,7 +253,7 @@ fn build_tiles(summary: &StatsSummary) -> Vec<Tile> {
             testid: "stats-tile-listening",
             metric: Metric::Listening,
             accent: false,
-            comparison: compare.then(|| percent_comparison(listen_pair.0, listen_pair.1)),
+            comparison: comparison(Metric::Listening, summary),
         },
         Tile {
             value: avg_stars_value(summary.avg_stars),
@@ -249,9 +268,7 @@ fn build_tiles(summary: &StatsSummary) -> Vec<Tile> {
             testid: "stats-tile-avg-rating",
             metric: Metric::AvgRating,
             accent: false,
-            comparison: compare
-                .then(|| stars_comparison(summary.avg_stars, previous.avg_stars))
-                .flatten(),
+            comparison: comparison(Metric::AvgRating, summary),
         },
     ]
 }
