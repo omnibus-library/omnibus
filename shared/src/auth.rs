@@ -284,7 +284,6 @@ mod tests {
         assert!(!v.book_detail_scroll_stops);
     }
 
-    // A pre-0098 payload has no `stack_series`; must decode to off.
     #[test]
     fn user_summary_deserializes_payload_missing_stack_series() {
         let v: UserSummary = serde_json::from_str(
