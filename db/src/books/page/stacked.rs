@@ -33,9 +33,7 @@ const GROUP_KEY: &str = concat!(
     " WHERE bsl.book = b.id ORDER BY s.name LIMIT 1) END)), '')"
 );
 
-/// Member tie-break for equal series indexes: the effective *displayed*
-/// title (never the sort-form `b.sort`) in dictionary order, matching the
-/// client's own `dictionary_key(title)` tie-break in `sort_series_order`.
+/// Tie-break for equal indexes: the displayed title, matching the client's `sort_series_order`.
 const MEMBER_TIE_KEY: &str = effective_text_sql!("$.title"; "b.title"; "dictionary");
 
 /// One keyset page with each multi-book series folded into one row.
