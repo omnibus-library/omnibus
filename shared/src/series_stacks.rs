@@ -100,7 +100,12 @@ pub fn stack_books(books: &[EbookMetadata]) -> (Vec<EbookMetadata>, Vec<SeriesSt
         rows.push(book.clone());
         stacks.push(SeriesStack {
             lead_uuid: book.unique_identifier.clone().unwrap_or_default(),
-            name: book.series.as_deref().unwrap_or_default().trim().to_string(),
+            name: book
+                .series
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
             series_id: book.series_id,
             members,
             states: Vec::new(),

@@ -40,7 +40,10 @@ fn saga(members: Vec<EbookMetadata>, states: Vec<StackMemberState>) -> SeriesSta
 
 #[test]
 fn series_group_key_trims_lowercases_and_drops_blank_names() {
-    assert_eq!(series_group_key(Some("  The Saga ")), Some("the saga".to_string()));
+    assert_eq!(
+        series_group_key(Some("  The Saga ")),
+        Some("the saga".to_string())
+    );
     assert_eq!(series_group_key(Some("   ")), None);
     assert_eq!(series_group_key(None), None);
 }
@@ -48,7 +51,10 @@ fn series_group_key_trims_lowercases_and_drops_blank_names() {
 #[test]
 fn series_group_key_trims_ascii_spaces_only_like_sqlites_trim() {
     // SQLite's `trim(x)` strips only space characters, not other whitespace.
-    assert_eq!(series_group_key(Some("\tSaga\t")), Some("\tsaga\t".to_string()));
+    assert_eq!(
+        series_group_key(Some("\tSaga\t")),
+        Some("\tsaga\t".to_string())
+    );
 }
 
 #[test]
@@ -59,7 +65,11 @@ fn front_prefers_the_first_volume_in_progress() {
             book("b", Some("Saga"), Some("2")),
             book("c", Some("Saga"), Some("3")),
         ],
-        vec![state("a", true, true), state("b", true, false), state("c", true, false)],
+        vec![
+            state("a", true, true),
+            state("b", true, false),
+            state("c", true, false),
+        ],
     );
     assert_eq!(
         stack.front().and_then(|b| b.unique_identifier.as_deref()),
@@ -70,7 +80,10 @@ fn front_prefers_the_first_volume_in_progress() {
 #[test]
 fn front_falls_back_to_the_first_volume_when_none_is_in_progress() {
     let stack = saga(
-        vec![book("a", Some("Saga"), Some("1")), book("b", Some("Saga"), Some("2"))],
+        vec![
+            book("a", Some("Saga"), Some("1")),
+            book("b", Some("Saga"), Some("2")),
+        ],
         vec![state("a", true, true), state("b", true, true)],
     );
     assert_eq!(
@@ -93,7 +106,10 @@ fn stack_books_collapses_a_series_into_the_slot_of_its_first_listed_member() {
     assert_eq!(stacks[0].lead_uuid, "s2");
     assert_eq!(stacks[0].name, "Saga");
     assert_eq!(uuids(&stacks[0].members), vec!["s1", "s2"]);
-    assert!(stacks[0].states.is_empty(), "a client-side stack reads no state");
+    assert!(
+        stacks[0].states.is_empty(),
+        "a client-side stack reads no state"
+    );
 }
 
 #[test]
