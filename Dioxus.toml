@@ -3,3 +3,8 @@ name = "omnibus"
 
 [android]
 uses_cleartext_traffic = true
+
+[web]
+# Release bundles ship a brotli `.br` beside each asset, which dioxus-server
+# serves to any client that accepts it — no reverse-proxy compression needed.
+pre_compress = true
