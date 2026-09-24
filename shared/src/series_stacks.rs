@@ -114,14 +114,29 @@ pub fn stack_books(books: &[EbookMetadata]) -> (Vec<EbookMetadata>, Vec<SeriesSt
     (rows, stacks)
 }
 
-/// Series order: numeric index ascending, unnumbered last, ties as given.
+/// Series order: numeric index ascending, unnumbered last; ties break the
+/// same way the server's member query does — dictionary title, then id.
 fn sort_series_order(members: &mut [EbookMetadata]) {
-    members.sort_by(|a, b| match (series_number(a), series_number(b)) {
-        (Some(x), Some(y)) => x.total_cmp(&y),
-        (Some(_), None) => Ordering::Less,
-        (None, Some(_)) => Ordering::Greater,
-        (None, None) => Ordering::Equal,
+    members.sort_by(|a, b| {
+        match (series_number(a), series_number(b)) {
+            (Some(x), Some(y)) => x.total_cmp(&y),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        }
+        .then_with(|| title_tie_break(a, b))
     });
+}
+
+/// Effective displayed title in dictionary order, then id — the server's tie-break.
+fn title_tie_break(a: &EbookMetadata, b: &EbookMetadata) -> Ordering {
+    let (a_title, b_title) = (
+        a.title.as_deref().unwrap_or(""),
+        b.title.as_deref().unwrap_or(""),
+    );
+    crate::sort_order::dictionary_key(a_title)
+        .cmp(&crate::sort_order::dictionary_key(b_title))
+        .then_with(|| a.id.cmp(&b.id))
 }
 
 fn series_number(book: &EbookMetadata) -> Option<f64> {

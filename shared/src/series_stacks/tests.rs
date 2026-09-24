@@ -50,7 +50,6 @@ fn series_group_key_trims_lowercases_and_drops_blank_names() {
 
 #[test]
 fn series_group_key_trims_ascii_spaces_only_like_sqlites_trim() {
-    // SQLite's `trim(x)` strips only space characters, not other whitespace.
     assert_eq!(
         series_group_key(Some("\tSaga\t")),
         Some("\tsaga\t".to_string())
@@ -144,4 +143,19 @@ fn stack_books_orders_members_numerically_with_unnumbered_volumes_last() {
     ];
     let (_, stacks) = stack_books(&books);
     assert_eq!(uuids(&stacks[0].members), vec!["two", "ten", "none"]);
+}
+
+#[test]
+fn stack_books_breaks_index_ties_by_dictionary_title_then_id() {
+    let mut z = book("z", Some("Saga"), Some("1"));
+    (z.title, z.id) = (Some("Echo".to_string()), 3);
+    let mut a1 = book("a1", Some("Saga"), Some("1"));
+    (a1.title, a1.id) = (Some("Alpha".to_string()), 1);
+    let mut a2 = book("a2", Some("Saga"), Some("1"));
+    (a2.title, a2.id) = (Some("Alpha".to_string()), 2);
+    let books = vec![z, a2, a1];
+
+    let (_, stacks) = stack_books(&books);
+
+    assert_eq!(uuids(&stacks[0].members), vec!["a1", "a2", "z"]);
 }
