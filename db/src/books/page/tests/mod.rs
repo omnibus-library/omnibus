@@ -77,13 +77,17 @@ fn titles(page: &BookPage) -> Vec<String> {
         .collect()
 }
 
-/// Write a raw `metadata_overrides` row for `book_id`.
-async fn set_overrides_json(pool: &SqlitePool, book_id: i64, json: &str) {
-    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
-        .bind(book_id)
+async fn uuid_of(pool: &SqlitePool, id: i64) -> String {
+    sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
+        .bind(id)
         .fetch_one(pool)
         .await
-        .unwrap();
+        .unwrap()
+}
+
+/// Write a raw `metadata_overrides` row for `book_id`.
+async fn set_overrides_json(pool: &SqlitePool, book_id: i64, json: &str) {
+    let uuid = uuid_of(pool, book_id).await;
     sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
         .bind(uuid)
         .bind(json)

@@ -2,13 +2,15 @@
 //! its first-sort slot, a cursor walk that never splits a series,
 //! exclusions/overrides reshaping groups, and the viewer's reading state.
 
+use std::collections::HashSet;
+
 use omnibus_shared::{EbookMetadata, SortDir, SortKey, StackMemberState, ViewFilters};
 use sqlx::SqlitePool;
 
 use super::super::*;
-use super::{insert_book, insert_lib, set_overrides_json};
+use super::{insert_book, insert_lib, set_overrides_json, uuid_of};
 use crate::pool::init_db;
-use crate::test_support::seed_user;
+use crate::test_support::{seed_user, series_id_by_name};
 
 /// One stacked page of `/lib`, unfiltered, read for a viewer with no state.
 async fn stacked_page(
@@ -48,11 +50,7 @@ async fn link_series(pool: &SqlitePool, book_id: i64, name: &str) -> i64 {
         .execute(pool)
         .await
         .unwrap();
-    let id: i64 = sqlx::query_scalar("SELECT id FROM series WHERE name = ?")
-        .bind(name)
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let id = series_id_by_name(pool, name).await;
     sqlx::query("INSERT INTO books_series_link (book, series) VALUES (?, ?)")
         .bind(book_id)
         .bind(id)
@@ -84,14 +82,6 @@ async fn set_added(pool: &SqlitePool, id: i64, epoch: i64) {
         .execute(pool)
         .await
         .unwrap();
-}
-
-async fn uuid_of(pool: &SqlitePool, id: i64) -> String {
-    sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
-        .bind(id)
-        .fetch_one(pool)
-        .await
-        .unwrap()
 }
 
 #[tokio::test]
@@ -141,10 +131,11 @@ async fn list_books_page_stacked_walks_every_tile_once_without_splitting_a_serie
     let pool = init_db("sqlite::memory:").await.unwrap();
     let lib = insert_lib(&pool, "/lib").await;
     // Round-robin over five series so every series spans the whole title order.
+    let mut all_ids: HashSet<i64> = HashSet::new();
     for i in 0..15 {
         let series = format!("Series {}", i % 5);
         let index = f64::from(i / 5 + 1);
-        series_book(
+        let id = series_book(
             &pool,
             lib,
             &format!("Book {i:02}"),
@@ -152,11 +143,14 @@ async fn list_books_page_stacked_walks_every_tile_once_without_splitting_a_serie
             Some(index),
         )
         .await;
+        all_ids.insert(id);
     }
     for i in 0..5 {
-        series_book(&pool, lib, &format!("Plain {i}"), None, None).await;
+        let id = series_book(&pool, lib, &format!("Plain {i}"), None, None).await;
+        all_ids.insert(id);
     }
 
+    // Title/Asc, spelled out: five series stacks of three, then five plain tiles.
     let mut tiles = Vec::new();
     let mut stack_sizes = Vec::new();
     let mut cursor: Option<PageCursor> = None;
@@ -169,7 +163,6 @@ async fn list_books_page_stacked_walks_every_tile_once_without_splitting_a_serie
             None => break,
         }
     }
-
     assert_eq!(
         tiles,
         vec![
@@ -178,6 +171,56 @@ async fn list_books_page_stacked_walks_every_tile_once_without_splitting_a_serie
         ]
     );
     assert_eq!(stack_sizes, vec![3, 3, 3, 3, 3], "each series once, whole");
+
+    // Every other axis/direction: no book is skipped, revisited, or split
+    // across two pages' worth of stacks.
+    for sort in [
+        SortKey::Title,
+        SortKey::Author,
+        SortKey::Series,
+        SortKey::RecentlyInteracted,
+        SortKey::LastUpdated,
+        SortKey::NewestAdded,
+    ] {
+        for dir in [SortDir::Asc, SortDir::Desc] {
+            let mut member_seen: Vec<i64> = Vec::new();
+            let mut standalone_seen: Vec<i64> = Vec::new();
+            let mut cursor: Option<PageCursor> = None;
+            loop {
+                let page = stacked_page(&pool, sort, dir, cursor.as_ref(), 3).await;
+                let stacked_ids: HashSet<i64> = page
+                    .stacks
+                    .iter()
+                    .flat_map(|s| s.members.iter().map(|m| m.id))
+                    .collect();
+                member_seen.extend(stacked_ids.iter().copied());
+                standalone_seen.extend(
+                    page.books
+                        .iter()
+                        .map(|b| b.id)
+                        .filter(|id| !stacked_ids.contains(id)),
+                );
+                match page.next {
+                    Some(next) => cursor = Some(next),
+                    None => break,
+                }
+            }
+            assert_eq!(
+                member_seen.len() + standalone_seen.len(),
+                all_ids.len(),
+                "{sort:?}/{dir:?} revisited or split a series across pages"
+            );
+            let combined: HashSet<i64> = member_seen
+                .iter()
+                .chain(&standalone_seen)
+                .copied()
+                .collect();
+            assert_eq!(
+                combined, all_ids,
+                "{sort:?}/{dir:?} dropped or invented a tile"
+            );
+        }
+    }
 }
 
 #[tokio::test]
@@ -284,7 +327,15 @@ async fn list_books_page_stacked_groups_by_the_linked_series_even_when_series_so
     let lib = insert_lib(&pool, "/lib").await;
     // `series_sort` on two of three is stale (never re-derived when a link
     // moves, e.g. a cleanup/merge) even though all three link to one series.
-    let a = insert_book(&pool, lib, "Foundation", Some("Foundation"), Some("Foundation Series"), Some(1.0)).await;
+    let a = insert_book(
+        &pool,
+        lib,
+        "Foundation",
+        Some("Foundation"),
+        Some("Foundation Series"),
+        Some(1.0),
+    )
+    .await;
     let b = insert_book(
         &pool,
         lib,
@@ -309,7 +360,11 @@ async fn list_books_page_stacked_groups_by_the_linked_series_even_when_series_so
 
     let page = stacked_page(&pool, SortKey::Title, SortDir::Asc, None, 50).await;
 
-    assert_eq!(page.stacks.len(), 1, "series_sort drift must not split the stack");
+    assert_eq!(
+        page.stacks.len(),
+        1,
+        "series_sort drift must not split the stack"
+    );
     assert_eq!(page.stacks[0].name, "The Foundation Series");
     assert_eq!(
         titles_of(&page.stacks[0].members),
