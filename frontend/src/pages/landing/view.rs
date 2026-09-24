@@ -5,7 +5,7 @@
 //! ([`super::body`]).
 
 use dioxus::prelude::*;
-use omnibus_shared::{EbookMetadata, ShelfSummary, ViewFilters, ViewPrefs};
+use omnibus_shared::{EbookMetadata, SeriesStack, ShelfSummary, ViewFilters, ViewPrefs};
 
 use super::filtering::apply_filters;
 use super::signals::LandingSignals;
@@ -70,6 +70,23 @@ pub(super) fn shelf_book_count(
     }
 }
 
+/// The shelf lens's rows: the member list client-filtered, then — with Stack
+/// series on — grouped client-side, since a shelf page is a whole capped list
+/// rather than a keyset page. No reading state rides a shelf page, so its
+/// stacks show no segments and put the first volume in front.
+pub(super) fn shelf_lens(
+    members: &[EbookMetadata],
+    filters: &ViewFilters,
+    stack: bool,
+) -> (Vec<EbookMetadata>, Vec<SeriesStack>) {
+    let filtered = apply_filters(members, filters);
+    if stack {
+        omnibus_shared::stack_books(&filtered)
+    } else {
+        (filtered, Vec::new())
+    }
+}
+
 /// Per-render snapshot of the data the markup sub-components consume.
 /// Computed by [`derive_view_state`] so the [`super::LandingPage`] body is
 /// just composition.
@@ -85,6 +102,9 @@ pub(super) struct LandingViewState {
     /// browse lens or when the viewer hides nothing.
     pub(super) hidden_count: Option<i64>,
     pub(super) visible_books: Vec<EbookMetadata>,
+    /// Stacks riding with `visible_books`, each in its `lead_uuid` row's slot;
+    /// empty unless Stack series applies.
+    pub(super) visible_stacks: Vec<SeriesStack>,
     pub(super) visible_is_empty: bool,
     pub(super) books_empty: bool,
     pub(super) has_more: bool,
@@ -113,22 +133,28 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
     let prefs_sig = sigs.prefs;
     let selection_sig = sigs.selection;
     let shelf_books_sig = sigs.shelf_books;
+    let stacks_sig = sigs.stacks;
+    let stack_on = sigs.stack_series;
     let visible = use_memo(move || {
         let is_search = !query().trim().is_empty();
         match visible_source(is_search, selection_sig()) {
             VisibleSource::Search => {
                 let bs = books_sig.read();
                 let p = prefs_sig.read();
-                sort_books(apply_filters(&bs, &p.filters), p.sort_key, p.sort_dir)
+                (
+                    sort_books(apply_filters(&bs, &p.filters), p.sort_key, p.sort_dir),
+                    Vec::new(),
+                )
             }
             VisibleSource::Shelf => {
+                let stack = stack_on();
                 let members = shelf_books_sig.read().clone().unwrap_or_default();
                 let p = prefs_sig.read();
-                apply_filters(&members, &p.filters)
+                shelf_lens(&members, &p.filters, stack)
             }
-            // Browse renders the server-ordered list verbatim; the memo stores
-            // a `Vec` by value, so a clone is unavoidable on this branch.
-            VisibleSource::Browse => books_sig(),
+            // Browse renders the server-ordered page verbatim, with the
+            // stacks the server folded into it.
+            VisibleSource::Browse => (books_sig(), stacks_sig()),
         }
     });
 
@@ -150,7 +176,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
             .map(|t| usize::try_from(t).unwrap_or(0))
             .unwrap_or_else(|| sigs.books.read().len()),
     };
-    let visible_books = visible();
+    let (visible_books, visible_stacks) = visible();
     let visible_is_empty = visible_books.is_empty();
     let path_subtitle = path_value
         .as_ref()
@@ -179,6 +205,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
             _ => None,
         },
         visible_books,
+        visible_stacks,
         visible_is_empty,
         books_empty: match source {
             VisibleSource::Shelf => visible_is_empty,

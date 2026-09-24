@@ -4,7 +4,8 @@
 
 use dioxus::prelude::*;
 use omnibus_shared::{
-    EbookMetadata, ResumePoint, Shelf, ShelfSummary, SortDir, SortKey, TagWeight, ViewPrefs,
+    EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, SortDir, SortKey, TagWeight,
+    ViewFilters, ViewPrefs,
 };
 
 use crate::components::chip_editor::{collect_suggestions, SuggestionItem};
@@ -15,6 +16,10 @@ use super::PAGE_SIZE;
 
 /// How many resume points the continue-reading hero carousel shows.
 pub(super) const HERO_POINTS: i64 = 5;
+
+/// `(query, sort, dir, filters, hidden formats, Stack series)` — every input
+/// whose change refetches page 1.
+pub(super) type FetchKey = (String, SortKey, SortDir, ViewFilters, Vec<String>, bool);
 
 /// Stable per-page handle on the chip-editor suggestion pool signals
 /// (authors, tags, genres).
@@ -29,6 +34,9 @@ pub(super) struct SuggestionPools {
 #[derive(Copy, Clone)]
 pub(super) struct FetchSignals {
     pub(super) books: Signal<Vec<EbookMetadata>>,
+    /// Stacks riding with `books` on the browse path — empty unless the page
+    /// was fetched with Stack series on.
+    pub(super) stacks: Signal<Vec<SeriesStack>>,
     pub(super) next_cursor: Signal<Option<String>>,
     pub(super) total: Signal<Option<i64>>,
     pub(super) lib_path: Signal<Option<String>>,
@@ -95,17 +103,7 @@ pub(super) fn spawn_suggestion_pools_effect(
 /// Refetch page 1 on query/sort/filter changes; epoch-guarded so stale
 /// in-flight requests drop, and held until `prefs_ready` so the first request
 /// out carries the viewer's persisted sort rather than the defaults.
-pub(super) fn spawn_page_fetch_effect(
-    server_url: String,
-    fetch_key: Memo<(
-        String,
-        omnibus_shared::SortKey,
-        omnibus_shared::SortDir,
-        omnibus_shared::ViewFilters,
-        Vec<String>,
-    )>,
-    sigs: FetchSignals,
-) {
+pub(super) fn spawn_page_fetch_effect(server_url: String, fetch_key: Memo<FetchKey>, sigs: FetchSignals) {
     // `sigs` is `Copy`; the result-application signals are set inside
     // `apply_browse_result` / `apply_search_result`. Only the fetch-lifecycle
     // signals are driven from this body.
@@ -119,7 +117,7 @@ pub(super) fn spawn_page_fetch_effect(
         // Re-run when a background cache revalidation lands changed data;
         // the refetch below is then a fresh cache hit (zero network).
         let _ = generation();
-        let (q, sort_key, sort_dir, filters, exclude_formats) = fetch_key();
+        let (q, sort_key, sort_dir, filters, exclude_formats, stack_series) = fetch_key();
         // Read every dependency *before* the gate so the subscription set is
         // identical on the held run and the real one — bailing early on an
         // unread signal would drop `fetch_key` from this effect's deps.
@@ -151,7 +149,7 @@ pub(super) fn spawn_page_fetch_effect(
                     exclude_formats,
                     None,
                     PAGE_SIZE,
-                    false,
+                    stack_series,
                 )
                 .await;
                 if *fetch_epoch.peek() != epoch {
@@ -180,6 +178,7 @@ fn apply_browse_result(
 ) {
     let FetchSignals {
         mut books,
+        mut stacks,
         mut next_cursor,
         mut total,
         mut lib_path,
@@ -197,11 +196,13 @@ fn apply_browse_result(
             // Always a page-1 result here, so the receipt is authoritative:
             // `None` (no exclusion) clears any previous count.
             hidden.set(page.hidden_count);
+            stacks.set(page.stacks);
             books.set(page.books);
         }
         Err(e) => {
             error.set(Some(e.to_string()));
             books.set(Vec::new());
+            stacks.set(Vec::new());
             total.set(None);
             hidden.set(None);
             lib_error.set(None);
@@ -217,6 +218,7 @@ fn apply_search_result(
 ) {
     let FetchSignals {
         mut books,
+        mut stacks,
         mut total,
         mut lib_path,
         mut lib_error,
@@ -231,27 +233,32 @@ fn apply_search_result(
             total.set(lib.total);
             // Search never excludes (landing-only scope) — no receipt.
             hidden.set(None);
+            stacks.set(Vec::new());
             books.set(lib.books);
         }
         Err(e) => {
             error.set(Some(e.to_string()));
             books.set(Vec::new());
+            stacks.set(Vec::new());
             total.set(None);
             lib_error.set(None);
         }
     }
 }
 
-/// Append the next page when `want_more` bumps; drops the append if a page-1 refetch supersedes it.
+/// Append the next page (and its stacks) when `want_more` bumps; drops the
+/// append if a page-1 refetch supersedes it.
 pub(super) fn spawn_load_more_effect(
     server_url: String,
     want_more: Signal<u32>,
     prefs: Signal<ViewPrefs>,
     exclude_formats: Memo<Vec<String>>,
+    stack_series: Memo<bool>,
     sigs: FetchSignals,
 ) {
     let FetchSignals {
         mut books,
+        mut stacks,
         mut next_cursor,
         mut loading_more,
         mut error,
@@ -277,7 +284,7 @@ pub(super) fn spawn_load_more_effect(
                 exclude_formats.peek().clone(),
                 cursor,
                 PAGE_SIZE,
-                false,
+                *stack_series.peek(),
             )
             .await;
             // Drop the append if a page-1 refetch (sort/filter/query change)
@@ -290,6 +297,7 @@ pub(super) fn spawn_load_more_effect(
             match result {
                 Ok(page) => {
                     books.with_mut(|b| b.extend(page.books));
+                    stacks.with_mut(|s| s.extend(page.stacks));
                     next_cursor.set(page.next_cursor);
                 }
                 Err(e) => error.set(Some(e.to_string())),
