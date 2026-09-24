@@ -39,7 +39,9 @@ mod server {
     use anyhow::Context;
     use axum::Router;
     use dioxus::server::axum::Extension;
-    use omnibus::{auth, backend, metrics, rate_limit, request_log, security_headers};
+    use omnibus::{
+        auth, backend, encoding_vary, metrics, rate_limit, request_log, security_headers,
+    };
     use omnibus_db::{
         indexer,
         worker::{Task, Worker},
@@ -423,6 +425,10 @@ mod server {
             // here but route-level, in `merge_route_surfaces`, because the
             // book uploads must stay outside it.
             .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
+            // Router-wide because dioxus owns the precompressed asset service.
+            .layer(axum::middleware::from_fn(
+                encoding_vary::vary_on_content_encoding,
+            ))
             // Outermost app layer so the histograms observe every request
             // (including the 408/413 short-circuits from the guards above).
             .layer(prometheus_layer)
