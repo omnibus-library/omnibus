@@ -31,6 +31,10 @@ pub(super) struct VolumeCell {
     pub(super) last: bool,
     /// `--sa` for the band behind the run — see [`band_style`].
     pub(super) band_style: String,
+    /// The stack this volume was dealt from — its FLIP origin.
+    pub(super) lead_uuid: String,
+    /// Position in the deck (series order), which staggers the deal.
+    pub(super) deck: usize,
 }
 
 /// The grid's cells for `books` (the rows, in order) given the `stacks` riding
@@ -78,6 +82,8 @@ fn volume_cells(stack: &SeriesStack) -> Vec<VolumeCell> {
             caption: volume_caption(stack, book, i),
             last: i + 1 == n,
             band_style: band.clone(),
+            lead_uuid: stack.lead_uuid.clone(),
+            deck: i,
         })
         .collect()
 }

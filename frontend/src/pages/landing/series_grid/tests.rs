@@ -156,3 +156,24 @@ fn band_style_tints_with_the_front_accent_and_falls_back_to_the_page_accent() {
     stack.members[0].accent = Some("oklch(0.7 0.1 40)".into());
     assert_eq!(band_style(&stack), " --sa: oklch(0.7 0.1 40);");
 }
+
+#[test]
+fn grid_items_numbers_each_volume_by_its_place_in_the_deck_and_names_its_stack() {
+    let books = vec![volume("s2", Some("2"))];
+    let stacks = vec![saga("s2", &["s1", "s2", "s3"])];
+    let decks: Vec<(String, usize)> = grid_items(&books, &stacks, Some("s2"))
+        .into_iter()
+        .filter_map(|item| match item {
+            GridItem::Vol(v) => Some((v.lead_uuid, v.deck)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        decks,
+        vec![
+            ("s2".to_string(), 0),
+            ("s2".to_string(), 1),
+            ("s2".to_string(), 2),
+        ]
+    );
+}

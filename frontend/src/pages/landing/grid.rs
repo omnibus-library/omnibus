@@ -20,6 +20,10 @@ use crate::Route;
 /// `sizes` for a wall cover — the column's rendered width per breakpoint.
 pub(super) const TILE_SIZES: &str = "(max-width: 640px) 160px, (max-width: 1280px) 200px, 240px";
 
+/// Deal-out / fold motion. Web interop run from a post-render effect: SSR
+/// never runs effects, so the markup stays identical (rule 07).
+const SERIES_FLIP_JS: &str = include_str!("series_flip.js");
+
 /// Entrance-cascade delay for tile `index`, mirroring the iOS settle cascade:
 /// 40 ms steps, modulo 8 so late pages animate like the first.
 pub(super) fn stagger_ms(index: usize) -> usize {
@@ -45,6 +49,11 @@ pub(super) fn BookGrid(
             open.set(None);
         }
     }));
+    // Replays after the grid patches for a deal-out or a fold.
+    use_effect(move || {
+        let _ = open();
+        let _ = dioxus::document::eval(SERIES_FLIP_JS);
+    });
     let items = grid_items(&books, &stacks, open().as_deref());
 
     rsx! {
@@ -141,6 +150,10 @@ fn GridTile(
     let (thumb_src, thumb_srcset) =
         crate::components::cover_tile::thumb_srcs(&book, &uuid, &server_url, cover_bust);
 
+    let flip_key = row_ident(&book);
+    let flip_from = vol.as_ref().map(|v| format!("stack-{}", v.lead_uuid));
+    let flip_deck = vol.as_ref().map(|v| v.deck.to_string());
+
     let run_class = match vol.as_ref() {
         Some(v) if v.last => " ss-vol ss-vol--last",
         Some(_) => " ss-vol",
@@ -159,6 +172,9 @@ fn GridTile(
         a {
             class: "cover-link lib-tile{run_class}",
             "data-testid": "{tile_testid}",
+            "data-flip-key": "{flip_key}",
+            "data-flip-from": flip_from,
+            "data-flip-deck": flip_deck,
             role: "listitem",
             tabindex: "0",
             style: "animation-delay: {stagger_ms(index)}ms;{band}",

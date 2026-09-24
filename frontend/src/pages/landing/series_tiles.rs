@@ -54,6 +54,7 @@ pub(super) fn StackTile(
             a {
                 class: "cover-link lib-tile ss-stack",
                 "data-testid": "series-stack-{slug}",
+                "data-flip-key": "stack-{stack.lead_uuid}",
                 role: "button",
                 tabindex: "0",
                 "aria-expanded": "false",
@@ -132,7 +133,12 @@ pub(super) fn StackCap(stack: SeriesStack, on_fold: EventHandler<()>) -> Element
         .unwrap_or_default();
     let band = band_style(&stack);
     rsx! {
-        div { class: "ss-cap", role: "listitem", "data-testid": "series-cap", style: "{band}",
+        div {
+            class: "ss-cap",
+            role: "listitem",
+            "data-testid": "series-cap",
+            "data-flip-key": "cap-{stack.lead_uuid}",
+            style: "{band}",
             span { class: "ss-cap-k", "Series" }
             h3 { class: "ss-cap-name", "{stack.name}" }
             span { class: "ss-cap-meta",
