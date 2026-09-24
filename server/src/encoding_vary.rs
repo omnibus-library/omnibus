@@ -1,9 +1,8 @@
 //! `Vary: Accept-Encoding` for content-encoded responses. dioxus-server serves
 //! the release bundle's precompressed `.br` assets by negotiating on
 //! `Accept-Encoding` without saying so, which lets a caching reverse proxy
-//! hand a brotli body to a client that never asked for one. Layered onto the
-//! whole router in `main.rs`, since the static-asset service lives inside
-//! dioxus.
+//! hand brotli to a client that never asked for it. Layered router-wide in
+//! `main.rs`, since the static-asset service lives inside dioxus.
 
 use axum::{
     extract::Request,
