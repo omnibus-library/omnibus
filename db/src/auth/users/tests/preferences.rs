@@ -128,34 +128,26 @@ async fn get_user_by_id_carries_the_book_detail_scroll_stops_flag() {
 }
 
 #[tokio::test]
-async fn set_stack_series_round_trips_both_directions() {
+async fn set_stack_series_round_trips_through_get_user_by_id() {
     let p = pool().await;
     let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
-    assert!(!u.stack_series);
+    assert!(!u.stack_series, "a fresh account reads the off default");
 
     set_stack_series(&p, u.id, true).await.unwrap();
-    let raw: i64 = sqlx::query_scalar("SELECT stack_series FROM users WHERE id = ?")
-        .bind(u.id)
-        .fetch_one(&p)
-        .await
-        .unwrap();
-    assert_eq!(raw, 1);
+    assert!(
+        get_user_by_id(&p, u.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .stack_series
+    );
 
     set_stack_series(&p, u.id, false).await.unwrap();
-    let raw: i64 = sqlx::query_scalar("SELECT stack_series FROM users WHERE id = ?")
-        .bind(u.id)
-        .fetch_one(&p)
-        .await
-        .unwrap();
-    assert_eq!(raw, 0);
-}
-
-#[tokio::test]
-async fn get_user_by_id_carries_the_stack_series_flag() {
-    let p = pool().await;
-    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
-    set_stack_series(&p, u.id, true).await.unwrap();
-
-    let reloaded = get_user_by_id(&p, u.id).await.unwrap().unwrap();
-    assert!(reloaded.stack_series);
+    assert!(
+        !get_user_by_id(&p, u.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .stack_series
+    );
 }
