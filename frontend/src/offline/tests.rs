@@ -27,6 +27,7 @@ fn user(id: i64, username: &str) -> UserSummary {
         has_avatar: false,
         hidden_formats: Vec::new(),
         book_detail_scroll_stops: false,
+        stack_series: false,
     }
 }
 

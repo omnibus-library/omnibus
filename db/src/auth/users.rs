@@ -86,6 +86,7 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> A
         has_avatar: false,
         hidden_formats: Vec::new(),
         book_detail_scroll_stops: false,
+        stack_series: false,
     })
 }
 
@@ -134,7 +135,7 @@ async fn check_registration_preconditions(
 /// `user_avatars` rows it describes.
 pub(crate) const USER_COLUMNS: &str =
     "u.id, u.username, u.is_admin, u.can_upload, u.can_edit, u.can_download,
-     u.kindle_email, u.display_name, u.hidden_formats, u.book_detail_scroll_stops,
+     u.kindle_email, u.display_name, u.hidden_formats, u.book_detail_scroll_stops, u.stack_series,
      EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar";
 
 /// Look up a user record by username (case-insensitive); returns `None` if no match.
@@ -336,6 +337,16 @@ pub async fn get_book_detail_scroll_stops(pool: &SqlitePool, user_id: i64) -> Au
             .fetch_optional(pool)
             .await?;
     Ok(v.unwrap_or(0) != 0)
+}
+
+/// Set whether a user's landing grid folds each series into one tile.
+pub async fn set_stack_series(pool: &SqlitePool, user_id: i64, enabled: bool) -> AuthResult<()> {
+    sqlx::query("UPDATE users SET stack_series = ? WHERE id = ?")
+        .bind(i64::from(enabled))
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Change a user's password. Verifies `current` against the stored hash to

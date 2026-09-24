@@ -1,8 +1,6 @@
-//! Account reading preferences: the hidden-formats list the caller's landing
-//! view excludes, and whether their book detail page uses scroll stops.
-//! Web/SSR goes through the server functions; mobile POSTs the REST routes
-//! directly — account configuration is never queued in the outbox (rule 08),
-//! so an offline save fails loudly rather than deferring.
+//! Account reading preferences: hidden formats, book-detail scroll stops,
+//! and (web only) Stack series. Web/SSR goes through the server functions;
+//! mobile POSTs the REST routes directly — never queued (rule 08).
 
 #[cfg(not(feature = "mobile"))]
 use super::note_server_fn_err;
@@ -63,4 +61,13 @@ pub async fn set_book_detail_scroll_stops(
         return Err(drain_error(response, status).await);
     }
     Ok(())
+}
+
+/// Web/SSR: set the user's Stack series preference. No mobile twin — the
+/// Android landing never offers the switch.
+#[cfg(not(feature = "mobile"))]
+pub async fn set_stack_series(_server_url: &str, enabled: bool) -> Result<(), DataError> {
+    crate::rpc::rpc_set_stack_series(enabled)
+        .await
+        .map_err(note_server_fn_err)
 }

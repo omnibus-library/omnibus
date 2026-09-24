@@ -44,6 +44,15 @@ pub async fn rpc_set_book_detail_scroll_stops(enabled: bool) -> Result<()> {
     }
 }
 
+/// Set the authenticated user's Stack series preference.
+#[post("/api/rpc/account/stack-series", pool: PoolExt, user: AuthUser)]
+pub async fn rpc_set_stack_series(enabled: bool) -> Result<()> {
+    match db::auth::set_stack_series(&pool.0, user.id, enabled).await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(internal_rpc_error("set stack series", e).into()),
+    }
+}
+
 /// Set (or clear, with `None`/blank) the authenticated user's display name.
 /// The db layer renames their Wishlist shelf in the same transaction, so the
 /// shelf label can't drift from the name it was derived from.

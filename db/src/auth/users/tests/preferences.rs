@@ -1,7 +1,5 @@
-//! Per-account preferences: the Kindle email (validated), the hidden
-//! formats list (normalized, validated, capped, cleared) and the
-//! book-detail scroll-stops flag, each read back through
-//! `get_user_by_id`.
+//! Per-account preferences: Kindle email, hidden formats, book-detail
+//! scroll-stops, and Stack series — each read back through `get_user_by_id`.
 
 use super::super::*;
 use crate::auth::test_support::pool;
@@ -127,4 +125,37 @@ async fn get_user_by_id_carries_the_book_detail_scroll_stops_flag() {
 
     let reloaded = get_user_by_id(&p, u.id).await.unwrap().unwrap();
     assert!(reloaded.book_detail_scroll_stops);
+}
+
+#[tokio::test]
+async fn set_stack_series_round_trips_both_directions() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    assert!(!u.stack_series);
+
+    set_stack_series(&p, u.id, true).await.unwrap();
+    let raw: i64 = sqlx::query_scalar("SELECT stack_series FROM users WHERE id = ?")
+        .bind(u.id)
+        .fetch_one(&p)
+        .await
+        .unwrap();
+    assert_eq!(raw, 1);
+
+    set_stack_series(&p, u.id, false).await.unwrap();
+    let raw: i64 = sqlx::query_scalar("SELECT stack_series FROM users WHERE id = ?")
+        .bind(u.id)
+        .fetch_one(&p)
+        .await
+        .unwrap();
+    assert_eq!(raw, 0);
+}
+
+#[tokio::test]
+async fn get_user_by_id_carries_the_stack_series_flag() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    set_stack_series(&p, u.id, true).await.unwrap();
+
+    let reloaded = get_user_by_id(&p, u.id).await.unwrap().unwrap();
+    assert!(reloaded.stack_series);
 }
