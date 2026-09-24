@@ -1,7 +1,9 @@
 //! Keyset-paginated, server-sorted, server-filtered landing read path.
 //! [`list_books_page`] returns one page ordered by any [`SortKey`] axis,
 //! filtered by the sidebar [`ViewFilters`] and positioned by an opaque
-//! [`PageCursor`]; [`stacked`] folds each series into one row on top of it.
+//! [`PageCursor`] encoding the last row's `(sort-value, series-index, id)` — so
+//! each axis stays a pure index range scan and paging never uses `OFFSET`;
+//! [`stacked`] folds each series into one row on top of it.
 
 use base64::engine::{general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use omnibus_shared::{EbookMetadata, SortDir, SortKey, ViewFilters};
@@ -165,12 +167,15 @@ async fn fetch_page(
         cursor,
         stacked,
     );
-    // One extra row decides whether a further page exists.
+    // Fetch one beyond the page so a full page can advertise a `next` cursor
+    // without a trailing empty round-trip.
     binds.push(SqlVal::Int(limit + 1));
 
     let rows = bind_all(sqlx::query(&sql), &binds).fetch_all(pool).await?;
 
-    // Saturating fallback so a negative limit can't underflow `take - 1`.
+    // Saturating fallback: a (never-expected) negative limit degrades to
+    // "take everything" like the old `as usize` wrap did, rather than a
+    // zero take that would underflow the `take - 1` index below.
     let take = rows.len().min(usize::try_from(limit).unwrap_or(usize::MAX));
     let next = (rows.len() as i64 > limit).then(|| cursor_from_row(&rows[take - 1], sort));
 
@@ -184,7 +189,11 @@ async fn fetch_page(
     Ok(BookPage { books, next })
 }
 
-/// Build the paginated `SELECT` and its binds; `stacked` narrows it to each series' representative.
+/// Build the paginated `SELECT` and its positional binds for `sort`/`dir`
+/// over `library_paths`, filtered by `filters` and seeked past `cursor`.
+/// Split out of [`list_books_page`] so the SQL-construction stage is
+/// independently testable from the fetch/decode stage. `stacked` narrows it
+/// to each series' representative row.
 fn build_page_sql(
     sort: SortKey,
     dir: SortDir,
@@ -223,7 +232,13 @@ fn build_page_sql(
     };
 
     let cursor_idx_sql = secondary.unwrap_or("NULL");
-    // Reuse `BOOK_COLUMNS`' projected column rather than re-evaluating it.
+    // `BOOK_COLUMNS` already projects the Recently Interacted axis, so
+    // re-selecting it as `cursor_sort` would evaluate four correlated
+    // subqueries a second time per row (~24% of the query at 20k books).
+    // Reuse that column instead — for the projection, which SQLite won't let
+    // us alias a second time, and for the ORDER BY, where an output alias
+    // *is* in scope. The keyset predicate still needs the full expression:
+    // aliases are not visible in `WHERE`.
     let cursor_sort_sql = match sort {
         SortKey::RecentlyInteracted => String::new(),
         _ => format!("{primary} AS cursor_sort,"),
