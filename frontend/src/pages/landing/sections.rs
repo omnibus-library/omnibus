@@ -4,7 +4,7 @@
 //! `prefs` signal and the data pipeline.
 
 use dioxus::prelude::*;
-use omnibus_shared::{EbookMetadata, Shelf, SortKey, ViewMode, ViewPrefs};
+use omnibus_shared::{EbookMetadata, SeriesStack, Shelf, SortKey, ViewMode, ViewPrefs};
 
 use super::filters::EmptyFiltered;
 use super::grid::BookGrid;
@@ -168,6 +168,8 @@ fn LandingHeaderMessages(
 pub(super) struct BooksView {
     pub is_loading: bool,
     pub visible_books: Vec<EbookMetadata>,
+    /// Stacks riding with `visible_books` (grid only).
+    pub stacks: Vec<SeriesStack>,
     pub visible_is_empty: bool,
     pub books_empty: bool,
     pub lib_err: Option<String>,
@@ -296,6 +298,7 @@ fn LandingBooksArea(
     let BooksView {
         is_loading,
         visible_books,
+        stacks,
         visible_is_empty,
         books_empty,
         lib_err,
@@ -323,6 +326,7 @@ fn LandingBooksArea(
                 ViewMode::Grid => rsx! {
                     BookGrid {
                         books: visible_books.clone(),
+                        stacks: stacks.clone(),
                         server_url: ctx.server_url.clone(),
                     }
                 },

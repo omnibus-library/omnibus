@@ -24,6 +24,10 @@ mod grid;
 #[cfg(not(feature = "mobile"))]
 mod sections;
 #[cfg(not(feature = "mobile"))]
+mod series_grid;
+#[cfg(not(feature = "mobile"))]
+mod series_tiles;
+#[cfg(not(feature = "mobile"))]
 mod shelf_gallery;
 #[cfg(not(feature = "mobile"))]
 mod stack;

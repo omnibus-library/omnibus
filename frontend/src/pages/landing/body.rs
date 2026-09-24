@@ -187,6 +187,7 @@ fn render_header_and_content(
                 books: BooksView {
                     is_loading: view.is_loading,
                     visible_books: view.visible_books,
+                    stacks: view.visible_stacks,
                     visible_is_empty: view.visible_is_empty,
                     books_empty: view.books_empty,
                     lib_err: view.lib_err,
