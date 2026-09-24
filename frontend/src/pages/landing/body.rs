@@ -27,6 +27,8 @@ use super::signals::LandingSignals;
 #[cfg(not(feature = "mobile"))]
 use super::stack::{lead_accent_style, stack_entries, EdgeResume, ResumeStack};
 #[cfg(not(feature = "mobile"))]
+use super::stack_toggle::{stack_toggle_note, use_stack_toggle, StackToggleView};
+#[cfg(not(feature = "mobile"))]
 use super::table::BookTableContext;
 use super::view::{LandingHandlers, LandingViewState};
 #[cfg(not(feature = "mobile"))]
@@ -105,6 +107,9 @@ pub(super) fn web_landing_body(
     // than inside either of them. Hooks stay unconditional: this helper is on
     // the web build's only render path.
     let lead = use_signal(|| 0usize);
+    // The Stack series switch; hook order is fixed like `lead` above.
+    let (stack_view, on_stack_toggle) =
+        use_stack_toggle(stack_toggle_note(prefs.read().view_mode, view.is_search));
     // Borrowed inside its own scope, so the guard is dropped before the rsx
     // below (never held across other signal reads) without copying the map.
     // Reading it here is what re-renders the stack with a fresh thumb URL
@@ -129,7 +134,7 @@ pub(super) fn web_landing_body(
                 ResumeStack { entries: entries.clone(), lead }
             }
             {render_gallery(sigs, view.is_search, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
-            {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), edit_shelf, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters }, on_prefs_change_header)}
+            {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), edit_shelf, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters }, on_prefs_change_header, stack_view, on_stack_toggle)}
             {render_bulk_overlay(bulk, bulk_modal_open, bulk_selected, books_sig, shelf_books_sig, author_pool, tag_pool, genre_pool)}
             {render_edit_shelf_overlay(edit_shelf, selected_shelf, shelves_tick)}
             if show_stack {
@@ -162,6 +167,8 @@ fn render_header_and_content(
     bulk_selected: Signal<BTreeSet<String>>,
     content_handlers: LandingContentHandlers,
     on_prefs_change_header: EventHandler<omnibus_shared::ViewPrefs>,
+    stack: StackToggleView,
+    on_stack_toggle: EventHandler<()>,
 ) -> Element {
     let sort_lock = super::sorting::sort_lock_reason(selected_shelf.as_ref().map(|s| s.kind));
     rsx! {
@@ -176,10 +183,12 @@ fn render_header_and_content(
                 section_title: view.section_title,
                 selected_shelf,
                 sort_lock,
+                stack,
             },
             prefs: prefs.clone(),
             on_prefs_change: on_prefs_change_header,
             on_edit_shelf: move |_| edit_shelf.set(true),
+            on_stack_toggle,
         }
 
         LandingContent {

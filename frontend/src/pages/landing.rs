@@ -32,6 +32,8 @@ mod shelf_gallery;
 #[cfg(not(feature = "mobile"))]
 mod stack;
 #[cfg(not(feature = "mobile"))]
+mod stack_toggle;
+#[cfg(not(feature = "mobile"))]
 mod table;
 #[cfg(not(feature = "mobile"))]
 mod toolbar;

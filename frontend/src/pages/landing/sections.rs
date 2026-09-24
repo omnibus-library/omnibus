@@ -9,6 +9,7 @@ use omnibus_shared::{EbookMetadata, SeriesStack, Shelf, SortKey, ViewMode, ViewP
 use super::filters::EmptyFiltered;
 use super::grid::BookGrid;
 use super::sorting::{default_dir_for, toggle_dir};
+use super::stack_toggle::StackToggleView;
 use super::table::{BookTable, BookTableContext};
 use super::toolbar::Toolbar;
 use crate::components::shelf_facets::pencil_glyph;
@@ -33,6 +34,8 @@ pub(super) struct LandingHeaderView {
     /// Why the sort controls are inert for this pick — see
     /// [`super::sorting::sort_lock_reason`]. `None` leaves them live.
     pub sort_lock: Option<&'static str>,
+    /// The Stack series switch's state for this render.
+    pub stack: StackToggleView,
 }
 
 /// Sticky `data-testid="lib-header"` header; also renders page-level +
@@ -45,6 +48,7 @@ pub(super) fn LandingHeader(
     prefs: ViewPrefs,
     on_prefs_change: EventHandler<ViewPrefs>,
     on_edit_shelf: EventHandler<()>,
+    on_stack_toggle: EventHandler<()>,
 ) -> Element {
     let LandingHeaderView {
         path_subtitle,
@@ -56,6 +60,7 @@ pub(super) fn LandingHeader(
         section_title,
         selected_shelf,
         sort_lock,
+        stack,
     } = view;
     // The shelf page's rule (`shelf_access`): `None` viewer until the boot
     // effect resolves, so the pencil stays hidden on SSR + first paint
@@ -83,7 +88,9 @@ pub(super) fn LandingHeader(
                 Toolbar {
                     prefs: prefs,
                     sort_lock,
+                    stack,
                     on_change: move |next: ViewPrefs| on_prefs_change.call(next),
+                    on_stack_toggle,
                 }
             }
             if let Some(shelf) = selected_shelf.as_ref() {
