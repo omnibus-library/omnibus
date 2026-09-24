@@ -22,10 +22,8 @@ use super::{
 /// Values per `IN (…)` list — well under SQLite's bound-parameter limit.
 const IN_CHUNK: usize = 500;
 
-/// The stacking group key: the series a book is displayed in, trimmed and
-/// ASCII-lowercased; NULL for none. An emptied override (`""`) means "no
-/// series" rather than falling back to the scanned name, matching how the
-/// page itself displays it.
+/// The stacking group key: displayed series name, trimmed+lowercased; NULL
+/// for none (an emptied override means no series, not the scanned name).
 const GROUP_KEY: &str = concat!(
     "NULLIF(lower(trim(CASE WHEN ",
     overrides_win_sql!(),
@@ -43,10 +41,8 @@ pub struct StackedBookPage {
     pub stacks: Vec<SeriesStack>,
 }
 
-/// [`super::list_books_page`] with series stacked: a series with 2+ books in
-/// the filtered set appears once, as the member that sorts first, in that
-/// member's slot — so paging never splits a series. `stacks` carries each
-/// folded series' members, its series page, and `viewer_id`'s reading state.
+/// [`super::list_books_page`] with series stacked into one row per group;
+/// `stacks` carries each folded series' members and `viewer_id`'s state.
 #[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the viewer
 pub async fn list_books_page_stacked(
     pool: &SqlitePool,
@@ -91,10 +87,8 @@ pub async fn list_books_page_stacked(
     })
 }
 
-/// ` AND b.id IN (…)` keeping each series' representative: the member that
-/// sorts first under `sort`/`dir`, found by a window over the *whole*
-/// filtered set (never the post-cursor remainder), so every page agrees.
-/// Seriesless books and series with one visible book pass through.
+/// ` AND b.id IN (…)` keeping each series' representative — first-sorting
+/// member of a window over the *whole* filtered set, so every page agrees.
 pub(super) fn representative_predicate(
     sort: SortKey,
     dir: SortDir,
@@ -127,8 +121,7 @@ pub(super) fn representative_predicate(
     )
 }
 
-/// The stacks riding with `page`: for each representative whose series has
-/// 2+ books in the filtered set, its members, series page, and viewer state.
+/// The stacks riding with `page`: members, series page, and viewer state.
 async fn build_stacks(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -159,9 +152,8 @@ async fn build_stacks(
     Ok(stacks)
 }
 
-/// Every visible member of the series the page's representatives stand for,
-/// grouped by series, each group in series order. Chunked by representative:
-/// a series has exactly one, so no group spans two chunks.
+/// Every visible member of the page's represented series, in series order —
+/// chunked by representative, so a series never spans two chunks.
 async fn fetch_member_groups(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -225,8 +217,7 @@ fn group_runs(keys: Vec<String>, books: Vec<EbookMetadata>) -> Vec<Vec<EbookMeta
     groups
 }
 
-/// The name a stack shows: its representative's series, else the first
-/// member that carries one.
+/// The name a stack shows: the representative's series, else the first member that carries one.
 fn stack_name(rep: &EbookMetadata, members: &[EbookMetadata]) -> String {
     std::iter::once(rep)
         .chain(members)
@@ -235,9 +226,7 @@ fn stack_name(rep: &EbookMetadata, members: &[EbookMetadata]) -> String {
         .to_string()
 }
 
-/// Point each stack at the series page for the name it shows: an override
-/// rename leaves the projection's `series_id` on the old series, so this
-/// re-resolves by the displayed name (case-insensitive, like `series.name`).
+/// Re-resolves each stack's `series_id` by displayed name — an override rename leaves the projected id stale.
 async fn resolve_series_ids(
     pool: &SqlitePool,
     stacks: &mut [SeriesStack],
@@ -304,9 +293,7 @@ async fn attach_states(
     Ok(())
 }
 
-/// `viewer_id`'s state for each of `uuids`: ebook percent, whether they
-/// started (a status, a percent above zero, or any listening position), and
-/// whether they finished.
+/// `viewer_id`'s state for each of `uuids`: ebook percent, started, and finished.
 async fn member_states(
     pool: &SqlitePool,
     viewer_id: i64,

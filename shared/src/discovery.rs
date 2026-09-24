@@ -80,8 +80,7 @@ pub struct LibraryPage {
     /// differ only in the exclusion.
     #[serde(default)]
     pub hidden_count: Option<i64>,
-    /// The series folded into a row of `books`; present only when the
-    /// request asked for stacks.
+    /// The series folded into a row of `books`; present only when stacked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stacks: Vec<SeriesStack>,
 }

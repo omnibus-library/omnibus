@@ -68,9 +68,7 @@ pub async fn rpc_get_ebooks() -> Result<EbookLibrary> {
 /// applies it, and the first page's `total`/`hidden_count` report the visible
 /// library size and the receipt.
 ///
-/// `stack_series` asks for the Stack series page — the client sets it for
-/// the grid with the viewer's preference on and no search. `stacks` carries
-/// each folded series with the caller's reading state.
+/// `stack_series` asks for the Stack series page (grid, no search, viewer preference on).
 #[post("/api/rpc/ebooks/page", pool: PoolExt, user: AuthUser)]
 #[allow(clippy::too_many_arguments)] // the macro adds pool/user to the seven query knobs
 pub async fn rpc_get_ebooks_page(
@@ -100,8 +98,7 @@ pub async fn rpc_get_ebooks_page(
 
 /// Server-side body of [`rpc_get_ebooks_page`], extracted so the
 /// cursor-decode and first-page-aggregates branches can be unit-tested
-/// without the server-fn transport. `stack_viewer` is the caller's id when
-/// the page should be series-stacked; `None` reads the plain page.
+/// without the server-fn transport. `stack_viewer` is `Some(id)` to read the series-stacked page.
 #[cfg(feature = "server")]
 #[allow(clippy::too_many_arguments)] // the RPC's knobs plus the stacking viewer
 async fn ebooks_page(

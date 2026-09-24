@@ -42,8 +42,7 @@ pub(crate) async fn get_ebooks_online(server_url: &str) -> Result<EbookLibrary, 
 /// mobile Sort & filter sheet's chips); the rest are ignored and `facets`
 /// comes back `None` (a web concern). `total` is read from `X-Total-Count`
 /// on the first page only; `next_cursor` from `X-Next-Cursor`. `_stack_series`
-/// is ignored: the REST page carries no stacks and the Android landing never
-/// asks for them.
+/// is ignored: the REST page carries no stacks.
 #[cfg(feature = "mobile")]
 #[allow(clippy::too_many_arguments)] // the shared signature
 pub async fn get_ebooks_page(
@@ -452,8 +451,7 @@ pub async fn get_ebooks(_server_url: &str) -> Result<EbookLibrary, DataError> {
 }
 
 /// Web/SSR `get_ebooks_page` — one keyset page via `rpc_get_ebooks_page`.
-/// `server_url` is unused; `stack_series` asks the server to fold each
-/// series into one row (`LibraryPage::stacks`).
+/// `server_url` is unused; `stack_series` asks the server to fold each series into one row.
 #[cfg(not(feature = "mobile"))]
 #[allow(clippy::too_many_arguments)] // the RPC's knobs plus the unused origin
 pub async fn get_ebooks_page(

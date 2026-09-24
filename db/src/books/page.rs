@@ -135,8 +135,7 @@ pub async fn list_books_page(
     .await
 }
 
-/// Shared body of [`list_books_page`] and [`list_books_page_stacked`];
-/// `stacked` keeps only each series' representative row.
+/// Shared body of [`list_books_page`] and [`list_books_page_stacked`].
 #[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the stacking switch
 async fn fetch_page(
     pool: &SqlitePool,
@@ -171,8 +170,7 @@ async fn fetch_page(
 
     let rows = bind_all(sqlx::query(&sql), &binds).fetch_all(pool).await?;
 
-    // Saturating fallback: a negative limit degrades to "take everything"
-    // rather than underflowing the `take - 1` index below.
+    // Saturating fallback so a negative limit can't underflow `take - 1`.
     let take = rows.len().min(usize::try_from(limit).unwrap_or(usize::MAX));
     let next = (rows.len() as i64 > limit).then(|| cursor_from_row(&rows[take - 1], sort));
 
@@ -186,10 +184,7 @@ async fn fetch_page(
     Ok(BookPage { books, next })
 }
 
-/// Build the paginated `SELECT` and its positional binds for `sort`/`dir`
-/// over `library_paths`, filtered by `filters`, seeked past `cursor`, and —
-/// when `stacked` — narrowed to each series' representative. Split out of
-/// [`fetch_page`] so the SQL-construction stage is independently testable.
+/// Build the paginated `SELECT` and its binds; `stacked` narrows it to each series' representative.
 fn build_page_sql(
     sort: SortKey,
     dir: SortDir,
@@ -228,8 +223,7 @@ fn build_page_sql(
     };
 
     let cursor_idx_sql = secondary.unwrap_or("NULL");
-    // Reuse `BOOK_COLUMNS`' already-projected Recently Interacted column
-    // rather than re-evaluating its correlated subqueries a second time.
+    // Reuse `BOOK_COLUMNS`' projected column rather than re-evaluating it.
     let cursor_sort_sql = match sort {
         SortKey::RecentlyInteracted => String::new(),
         _ => format!("{primary} AS cursor_sort,"),
@@ -353,8 +347,7 @@ fn dir_keyword(dir: SortDir) -> &'static str {
     }
 }
 
-/// The landing's visibility gate over `books b` / `scan_roots l`: a file under
-/// one of `library_paths`, or any physical copy. Pushes the path binds.
+/// The landing's visibility gate: a file under `library_paths`, or any physical copy.
 fn visible_book_sql(library_paths: &[&str], binds: &mut Vec<SqlVal>) -> String {
     let path_ph = placeholders(library_paths.len());
     binds.extend(library_paths.iter().map(|p| SqlVal::Text((*p).to_string())));

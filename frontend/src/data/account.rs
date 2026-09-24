@@ -63,8 +63,7 @@ pub async fn set_book_detail_scroll_stops(
     Ok(())
 }
 
-/// Web/SSR: set the user's Stack series preference. No mobile twin — the
-/// Android landing never offers the switch.
+/// Web/SSR: set the user's Stack series preference. No mobile twin.
 #[cfg(not(feature = "mobile"))]
 pub async fn set_stack_series(_server_url: &str, enabled: bool) -> Result<(), DataError> {
     crate::rpc::rpc_set_stack_series(enabled)

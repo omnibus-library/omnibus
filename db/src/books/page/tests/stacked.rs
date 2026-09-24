@@ -140,8 +140,7 @@ async fn list_books_page_stacked_places_the_stack_at_its_newest_member_under_new
 async fn list_books_page_stacked_walks_every_tile_once_without_splitting_a_series() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let lib = insert_lib(&pool, "/lib").await;
-    // Fifteen books dealt round-robin over five series, so every series spans
-    // the whole title order, then five seriesless books after them.
+    // Round-robin over five series so every series spans the whole title order.
     for i in 0..15 {
         let series = format!("Series {}", i % 5);
         let index = f64::from(i / 5 + 1);
@@ -268,8 +267,7 @@ async fn list_books_page_stacked_resolves_the_series_page_by_the_displayed_name(
     let lib = insert_lib(&pool, "/lib").await;
     let a = series_book(&pool, lib, "Alpha", Some("Old"), Some(1.0)).await;
     let b = series_book(&pool, lib, "Bravo", Some("Old"), Some(2.0)).await;
-    // Renamed to a series that sorts after "Old": the projection's `series_id`
-    // (alphabetically-first link) still points at the old one.
+    // Renamed to "Zenith"; the projection's `series_id` still points at "Old".
     let zenith = link_series(&pool, a, "Zenith").await;
     set_overrides_json(&pool, a, r#"{"series":"Zenith"}"#).await;
     set_overrides_json(&pool, b, r#"{"series":"Zenith"}"#).await;
