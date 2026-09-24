@@ -373,38 +373,17 @@ fn visible_book_sql(library_paths: &[&str], binds: &mut Vec<SqlVal>) -> String {
     )
 }
 
-/// A query builder that can bind one [`SqlVal`] at a time — implemented for
-/// both `sqlx::query` and `sqlx::query_scalar`, so [`bind_all`] serves either.
-trait BindOne<'q> {
-    fn bind_one(self, v: &'q SqlVal) -> Self;
-}
-
-impl<'q> BindOne<'q> for sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
-    fn bind_one(self, v: &'q SqlVal) -> Self {
-        match v {
-            SqlVal::Text(s) => self.bind(s.as_str()),
-            SqlVal::Real(r) => self.bind(*r),
-            SqlVal::Int(i) => self.bind(*i),
-        }
-    }
-}
-
-impl<'q, O> BindOne<'q>
-    for sqlx::query::QueryScalar<'q, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments<'q>>
-{
-    fn bind_one(self, v: &'q SqlVal) -> Self {
-        match v {
-            SqlVal::Text(s) => self.bind(s.as_str()),
-            SqlVal::Real(r) => self.bind(*r),
-            SqlVal::Int(i) => self.bind(*i),
-        }
-    }
-}
-
 /// Bind `binds` onto `q` in order.
-fn bind_all<'q, Q: BindOne<'q>>(mut q: Q, binds: &'q [SqlVal]) -> Q {
+fn bind_all<'q>(
+    mut q: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    binds: &'q [SqlVal],
+) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
     for v in binds {
-        q = q.bind_one(v);
+        q = match v {
+            SqlVal::Text(s) => q.bind(s.as_str()),
+            SqlVal::Real(r) => q.bind(*r),
+            SqlVal::Int(i) => q.bind(*i),
+        };
     }
     q
 }
@@ -521,10 +500,15 @@ pub async fn count_books_page(
          WHERE {visible}{filter_sql}{exclude_sql}
         "
     );
-    let count = bind_all(sqlx::query_scalar::<_, i64>(&sql), &binds)
-        .fetch_one(pool)
-        .await?;
-    Ok(count)
+    let mut q = sqlx::query_scalar::<_, i64>(&sql);
+    for v in &binds {
+        q = match v {
+            SqlVal::Text(s) => q.bind(s.as_str()),
+            SqlVal::Real(r) => q.bind(*r),
+            SqlVal::Int(i) => q.bind(*i),
+        };
+    }
+    Ok(q.fetch_one(pool).await?)
 }
 
 /// Build the ` AND EXISTS(…)` server-side filter conjuncts. Each non-empty
