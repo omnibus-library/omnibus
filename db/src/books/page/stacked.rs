@@ -12,7 +12,7 @@ use crate::books::projection::{
     backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
 };
 use crate::books::BooksError;
-use crate::metadata_overrides::sql::overrides_win_sql;
+use crate::metadata_overrides::sql::{effective_text_sql, override_sql, overrides_win_sql};
 
 use super::{
     axis_sort_columns, bind_all, dir_keyword, exclude_formats_predicate, fetch_page,
@@ -33,6 +33,11 @@ const GROUP_KEY: &str = concat!(
     " WHERE bsl.book = b.id ORDER BY s.name LIMIT 1) END)), '')"
 );
 
+/// Member tie-break for equal series indexes: the effective *displayed*
+/// title (never the sort-form `b.sort`) in dictionary order, matching the
+/// client's own `dictionary_key(title)` tie-break in `sort_series_order`.
+const MEMBER_TIE_KEY: &str = effective_text_sql!("$.title"; "b.title"; "dictionary");
+
 /// One keyset page with each multi-book series folded into one row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StackedBookPage {
@@ -42,8 +47,7 @@ pub struct StackedBookPage {
     pub stacks: Vec<SeriesStack>,
 }
 
-/// [`super::list_books_page`] with series stacked into one row per group;
-/// `stacks` carries each folded series' members and `viewer_id`'s state.
+/// [`super::list_books_page`] with series folded into one stacked row; `stacks` holds members + viewer state.
 #[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the viewer
 pub async fn list_books_page_stacked(
     pool: &SqlitePool,
@@ -112,13 +116,12 @@ pub(super) fn representative_predicate(
             SELECT id FROM (
                 SELECT b.id AS id,
                        {GROUP_KEY} AS k,
-                       COUNT(*) OVER (PARTITION BY {GROUP_KEY}) AS n,
                        ROW_NUMBER() OVER (PARTITION BY {GROUP_KEY} ORDER BY {order}) AS rn
                   FROM books b
                   JOIN scan_roots l ON l.id = b.library_id
                   LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
                  WHERE {visible}{filter_sql}{exclude_sql})
-             WHERE k IS NULL OR n < 2 OR rn = 1)"
+             WHERE k IS NULL OR rn = 1)"
     )
 }
 
@@ -165,7 +168,6 @@ async fn fetch_member_groups(
     let series_index = axis_sort_columns(SortKey::Series)
         .1
         .unwrap_or("b.series_index");
-    let (title, _) = axis_sort_columns(SortKey::Title);
     let mut keys: Vec<String> = Vec::new();
     let mut books: Vec<EbookMetadata> = Vec::new();
     for chunk in rep_ids.chunks(IN_CHUNK) {
@@ -188,7 +190,7 @@ async fn fetch_member_groups(
                      JOIN scan_roots l ON l.id = b.library_id
                      LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
                     WHERE b.id IN ({ids}))
-             ORDER BY stack_key, ({series_index}) IS NULL, {series_index}, {title}, b.id
+             ORDER BY stack_key, ({series_index}) IS NULL, {series_index}, {MEMBER_TIE_KEY}, b.id
             "
         );
         let rows = bind_all(sqlx::query(&sql), &binds).fetch_all(pool).await?;
@@ -251,13 +253,13 @@ async fn resolve_series_ids(
         }
         for r in q.fetch_all(pool).await? {
             by_name.insert(
-                r.try_get::<String, _>("name")?.to_lowercase(),
+                r.try_get::<String, _>("name")?.to_ascii_lowercase(),
                 r.try_get("id")?,
             );
         }
     }
     for stack in stacks.iter_mut() {
-        if let Some(id) = by_name.get(&stack.name.to_lowercase()) {
+        if let Some(id) = by_name.get(&stack.name.to_ascii_lowercase()) {
             stack.series_id = Some(*id);
         }
     }
