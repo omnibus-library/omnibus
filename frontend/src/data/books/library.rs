@@ -41,8 +41,11 @@ pub(crate) async fn get_ebooks_online(server_url: &str) -> Result<EbookLibrary, 
 /// Of the sidebar facets only `filters.formats` rides the REST query (the
 /// mobile Sort & filter sheet's chips); the rest are ignored and `facets`
 /// comes back `None` (a web concern). `total` is read from `X-Total-Count`
-/// on the first page only; `next_cursor` from `X-Next-Cursor`.
+/// on the first page only; `next_cursor` from `X-Next-Cursor`. `_stack_series`
+/// is ignored: the REST page carries no stacks and the Android landing never
+/// asks for them.
 #[cfg(feature = "mobile")]
+#[allow(clippy::too_many_arguments)] // the shared signature
 pub async fn get_ebooks_page(
     server_url: &str,
     sort_key: SortKey,
@@ -51,6 +54,7 @@ pub async fn get_ebooks_page(
     exclude_formats: Vec<String>,
     cursor: Option<String>,
     limit: i64,
+    _stack_series: bool,
 ) -> Result<LibraryPage, DataError> {
     if crate::offline::sync::is_offline() {
         // Known-offline fast path: serve the full replica directly — its
@@ -448,8 +452,10 @@ pub async fn get_ebooks(_server_url: &str) -> Result<EbookLibrary, DataError> {
 }
 
 /// Web/SSR `get_ebooks_page` — one keyset page via `rpc_get_ebooks_page`.
-/// `server_url` is unused (server functions resolve against the page origin).
+/// `server_url` is unused; `stack_series` asks the server to fold each
+/// series into one row (`LibraryPage::stacks`).
 #[cfg(not(feature = "mobile"))]
+#[allow(clippy::too_many_arguments)] // the RPC's knobs plus the unused origin
 pub async fn get_ebooks_page(
     _server_url: &str,
     sort_key: SortKey,
@@ -458,10 +464,19 @@ pub async fn get_ebooks_page(
     exclude_formats: Vec<String>,
     cursor: Option<String>,
     limit: i64,
+    stack_series: bool,
 ) -> Result<LibraryPage, DataError> {
-    crate::rpc::rpc_get_ebooks_page(sort_key, sort_dir, filters, exclude_formats, cursor, limit)
-        .await
-        .map_err(note_server_fn_err)
+    crate::rpc::rpc_get_ebooks_page(
+        sort_key,
+        sort_dir,
+        filters,
+        exclude_formats,
+        cursor,
+        limit,
+        stack_series,
+    )
+    .await
+    .map_err(note_server_fn_err)
 }
 
 /// Web/SSR `search_ebooks` — server-function wrapper that proxies to `rpc_search`.

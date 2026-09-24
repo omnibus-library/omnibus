@@ -54,6 +54,7 @@ async fn get_ebooks_page_serves_replica_when_known_offline() {
         Vec::new(),
         None,
         10,
+        false,
     )
     .await
     .expect("replica page");
@@ -89,6 +90,7 @@ async fn get_ebooks_page_serves_cached_first_page_without_network() {
         Vec::new(),
         None,
         10,
+        false,
     )
     .await
     .expect("cached first page");
@@ -119,6 +121,7 @@ async fn get_ebooks_page_falls_back_to_replica_when_the_first_fetch_dies() {
         Vec::new(),
         None,
         10,
+        false,
     )
     .await
     .expect("replica fallback");

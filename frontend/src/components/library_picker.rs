@@ -182,6 +182,7 @@ async fn browse_page(
         Vec::new(),
         cursor,
         PAGE_SIZE,
+        false,
     )
     .await
 }
