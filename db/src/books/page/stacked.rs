@@ -29,7 +29,8 @@ const GROUP_KEY: &str = concat!(
     overrides_win_sql!(),
     " AND json_type(CASE WHEN json_valid(mo.overrides) THEN mo.overrides ELSE '{}' END,",
     " '$.series') = 'text' THEN json_extract(mo.overrides, '$.series')",
-    " ELSE b.series_sort END)), '')"
+    " ELSE (SELECT s.name FROM books_series_link bsl JOIN series s ON s.id = bsl.series",
+    " WHERE bsl.book = b.id ORDER BY s.name LIMIT 1) END)), '')"
 );
 
 /// One keyset page with each multi-book series folded into one row.

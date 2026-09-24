@@ -279,6 +279,45 @@ async fn list_books_page_stacked_resolves_the_series_page_by_the_displayed_name(
 }
 
 #[tokio::test]
+async fn list_books_page_stacked_groups_by_the_linked_series_even_when_series_sort_lags_a_rename() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = insert_lib(&pool, "/lib").await;
+    // `series_sort` on two of three is stale (never re-derived when a link
+    // moves, e.g. a cleanup/merge) even though all three link to one series.
+    let a = insert_book(&pool, lib, "Foundation", Some("Foundation"), Some("Foundation Series"), Some(1.0)).await;
+    let b = insert_book(
+        &pool,
+        lib,
+        "Foundation and Empire",
+        Some("Foundation and Empire"),
+        Some("Foundation Series"),
+        Some(2.0),
+    )
+    .await;
+    let c = insert_book(
+        &pool,
+        lib,
+        "Second Foundation",
+        Some("Second Foundation"),
+        Some("The Foundation Series"),
+        Some(3.0),
+    )
+    .await;
+    for id in [a, b, c] {
+        link_series(&pool, id, "The Foundation Series").await;
+    }
+
+    let page = stacked_page(&pool, SortKey::Title, SortDir::Asc, None, 50).await;
+
+    assert_eq!(page.stacks.len(), 1, "series_sort drift must not split the stack");
+    assert_eq!(page.stacks[0].name, "The Foundation Series");
+    assert_eq!(
+        titles_of(&page.stacks[0].members),
+        vec!["Foundation", "Foundation and Empire", "Second Foundation"]
+    );
+}
+
+#[tokio::test]
 async fn list_books_page_stacked_reports_reading_state_for_the_viewer_only() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let lib = insert_lib(&pool, "/lib").await;
