@@ -139,6 +139,7 @@ pub(crate) fn page_from_replica(
             total: None,
             facets: None,
             hidden_count: None,
+            stacks: Vec::new(),
         };
     };
 
@@ -173,6 +174,7 @@ pub(crate) fn page_from_replica(
         facets: None,
         hidden_count: (is_first_page && !exclude_formats.is_empty())
             .then_some((unexcluded_total - total) as i64),
+        stacks: Vec::new(),
     }
 }
 

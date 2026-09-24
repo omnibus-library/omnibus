@@ -75,6 +75,7 @@ async fn get_ebooks_page_serves_cached_first_page_without_network() {
             total: Some(1),
             facets: None,
             hidden_count: None,
+            stacks: Vec::new(),
         },
     );
 

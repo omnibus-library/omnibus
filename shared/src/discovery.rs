@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ebook::EbookMetadata;
+use crate::series_stacks::SeriesStack;
 
 /// Response payload for `GET /api/ebooks` and `rpc_get_ebooks`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -79,6 +80,10 @@ pub struct LibraryPage {
     /// differ only in the exclusion.
     #[serde(default)]
     pub hidden_count: Option<i64>,
+    /// The series folded into a row of `books`; present only when the
+    /// request asked for stacks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stacks: Vec<SeriesStack>,
 }
 
 /// Author detail payload for `GET /api/authors/:id` and `rpc_get_author`.

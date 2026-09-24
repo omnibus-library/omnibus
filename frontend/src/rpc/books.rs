@@ -153,6 +153,7 @@ async fn ebooks_page(
         total,
         facets,
         hidden_count,
+        stacks: Vec::new(),
     })
 }
 

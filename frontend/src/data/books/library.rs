@@ -283,6 +283,7 @@ pub(crate) async fn get_ebooks_page_online(
         facets: None,
         // The server only emits the receipt header on the first page.
         hidden_count,
+        stacks: Vec::new(),
     })
 }
 
