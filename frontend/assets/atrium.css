@@ -12322,6 +12322,129 @@ html {
   color: color-mix(in oklch, white 62%, transparent);
 }
 
+/* ── Series stacks (#2634) ─────────────────────────────────────────
+   Stack series folds each series into one cell of the wall: up to three
+   covers fanned, a count badge, and a segment per volume once one is
+   started. Opening it deals the volumes out in place behind a head card, on
+   a band tinted `--sa` (the front volume's accent, set inline). Ported from
+   the design mock with its classes mapped onto the wall's own:
+   .lmq-tile → .lib-tile, .lmq-tart → .lib-tile-art, .lmq-tcap → .lib-tile-cap. */
+/* The run's band paints at z-index -1; isolating the grid keeps it above the
+   page background instead of sinking beneath it. */
+.lmq .lib-grid { position: relative; isolation: isolate; }
+/* The stack tile's semantic listitem cell; the grid still sizes its child. */
+.lmq .ss-cell { display: contents; }
+.lmq .ss-art { position: relative; display: block; aspect-ratio: 2 / 3; }
+.lmq .ss-leaf {
+  position: absolute; left: 0; bottom: 0; width: 86%;
+  transform-origin: 15% 100%;
+  transform: translate(calc(var(--i) * 7.5%), calc(var(--i) * -2.4%)) rotate(calc(var(--i) * 1.8deg));
+  filter: brightness(calc(1 - var(--i) * .16));
+  transition: transform .38s cubic-bezier(.2,.7,.2,1), filter .3s;
+}
+.lmq .ss-leaf .cover-wrap { filter: drop-shadow(0 10px 14px oklch(0 0 0 / .5)); }
+.lmq .ss-stack:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 4px; }
+.lmq .ss-count {
+  position: absolute; left: 7px; bottom: 7px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 20px; padding: 0 8px 0 6px; border-radius: 999px;
+  background: oklch(0.12 0.005 70 / .8);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: #fff; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
+  transition: opacity .18s;
+}
+/* The caption stops short of the fanned leaves' overhang. */
+.lmq .ss-stack .lib-tile-cap { right: 14%; z-index: 4; }
+@media (hover: hover) {
+  /* A stack spreads its leaves instead of lifting like a single cover. */
+  .lmq .lib-tile.ss-stack:hover .lib-tile-art { transform: none; }
+  .lmq .ss-stack:hover .ss-leaf {
+    transform: translate(calc(var(--i) * 13%), calc(var(--i) * -3%)) rotate(calc(var(--i) * 4.5deg));
+    filter: none;
+  }
+  .lmq .ss-stack:hover .ss-count { opacity: 0; }
+}
+.lmq .ss-segs { position: absolute; left: 0; right: 14%; bottom: -7px; display: flex; gap: 2px; }
+.lmq .ss-segs i { display: block; flex: 1; height: 2px; border-radius: 999px; background: var(--bg-2); overflow: hidden; }
+.lmq .ss-segs b { display: block; height: 100%; background: var(--accent); }
+
+/* The dealt-out run: one band behind the head card and every volume. */
+.lmq .ss-vol::before, .lmq .ss-cap::before {
+  content: ''; position: absolute; z-index: -1;
+  top: -12px; bottom: -26px;
+  /* Half the wall's 22px column gap, so neighbouring cells' bands meet. */
+  left: -11px; right: -11px;
+  background: color-mix(in oklch, var(--sa) 15%, var(--bg-1));
+  pointer-events: none;
+}
+.lmq .ss-cap::before { left: -14px; border-radius: 12px 0 0 12px; }
+.lmq .ss-vol--last::before { right: -14px; border-radius: 0 12px 12px 0; }
+.lmq .ss-vn {
+  position: absolute; left: 0; bottom: -20px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-2); white-space: nowrap;
+}
+.lmq .ss-cap {
+  position: relative;
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 6px;
+  aspect-ratio: 2 / 3; min-width: 0;
+}
+.lmq .ss-cap-k {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase;
+  color: color-mix(in oklch, var(--sa) 60%, var(--ink-1));
+}
+/* Outranks `.atrium h3`'s 31px display size; `--lh` feeds its descender guard. */
+.lmq .ss-cap .ss-cap-name { --lh: 1; font-size: 22px; line-height: var(--lh); text-wrap: balance; }
+.lmq .ss-cap-meta { font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; color: var(--ink-2); line-height: 1.5; }
+.lmq .ss-cap-acts { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.lmq .ss-cap-go, .lmq .ss-cap-fold {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; border-radius: 999px; font-family: var(--sans); font-size: 12px;
+  cursor: pointer; white-space: nowrap;
+}
+/* `--accent-ink` is the theme's ink on a book accent — the edge ribbon's pairing. */
+.lmq .ss-cap-go { border: 0; background: var(--sa); color: var(--accent-ink); font-weight: 600; }
+.lmq .ss-cap-go:hover { filter: brightness(1.08); }
+.lmq .ss-cap-fold { border: 1px solid var(--line-2); background: transparent; color: var(--ink-1); }
+.lmq .ss-cap-fold:hover { color: var(--ink-0); border-color: var(--ink-3); }
+.lmq .ss-cap-fold kbd { font-family: var(--mono); font-size: 9px; color: var(--ink-3); }
+
+/* The toolbar's Stack series switch. */
+.lmq .ss-tog {
+  display: inline-flex; align-items: center; gap: 9px;
+  height: 30px; padding: 0 12px 0 6px;
+  border: 1px solid var(--line-2); border-radius: 999px;
+  background: transparent; color: var(--ink-1);
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; white-space: nowrap; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.lmq .ss-tog:hover:not(:disabled) { color: var(--ink-0); border-color: var(--ink-3); }
+.lmq .ss-sw {
+  position: relative; flex: 0 0 28px; width: 28px; height: 16px;
+  border-radius: 999px; background: var(--bg-3); transition: background .2s;
+}
+.lmq .ss-sw::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 999px; background: var(--ink-2);
+  transition: transform .2s cubic-bezier(.2,.7,.2,1), background .2s;
+}
+.lmq .ss-tog.on { color: var(--ink-0); border-color: color-mix(in oklch, var(--accent) 45%, transparent); }
+.lmq .ss-tog.on .ss-sw { background: color-mix(in oklch, var(--accent) 75%, transparent); }
+.lmq .ss-tog.on .ss-sw::after { transform: translateX(12px); background: #fff; }
+/* Pending (viewer not yet resolved) skips the dim — no faded-then-live flash. */
+.lmq .ss-tog:disabled:not(.pending) { opacity: .42; cursor: not-allowed; }
+.lmq .ss-tnote, .lmq .ss-terr {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; white-space: nowrap;
+}
+.lmq .ss-tnote { color: var(--ink-3); }
+.lmq .ss-terr { color: var(--bad); }
+@media (prefers-reduced-motion: reduce) {
+  .lmq .ss-leaf, .lmq .ss-count, .lmq .ss-sw, .lmq .ss-sw::after { transition: none; }
+}
+
 /* ── Resume, once the stack has scrolled away ─────────────────────
    Not a docked bar — a full-width strip pinned under the chrome reads as the
    audiobook mini-player. A ribbon caught in the page edge instead, widening
