@@ -1,11 +1,12 @@
 //! Keyset pagination tests for `list_books_page`, split by sub-topic into
-//! the sibling modules below; the library, book and physical-copy insert
-//! fixtures they share live here.
+//! the sibling modules below; the library, book, override and
+//! physical-copy insert fixtures they share live here.
 
 mod dictionary;
 mod filters;
 mod overrides;
 mod paging;
+mod stacked;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -74,4 +75,19 @@ fn titles(page: &BookPage) -> Vec<String> {
         .iter()
         .map(|b| b.title.clone().unwrap_or_default())
         .collect()
+}
+
+/// Write a raw `metadata_overrides` row for `book_id`.
+async fn set_overrides_json(pool: &SqlitePool, book_id: i64, json: &str) {
+    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
+        .bind(book_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
+        .bind(uuid)
+        .bind(json)
+        .execute(pool)
+        .await
+        .unwrap();
 }

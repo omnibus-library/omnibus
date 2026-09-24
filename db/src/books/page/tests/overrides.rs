@@ -7,7 +7,7 @@ use omnibus_shared::{SortDir, SortKey, ViewFilters};
 use sqlx::SqlitePool;
 
 use super::super::*;
-use super::{ids, insert_book, insert_lib, titles};
+use super::{ids, insert_book, insert_lib, set_overrides_json, titles};
 use crate::pool::init_db;
 
 // Sorting keys on the *displayed* metadata, not the scanned file (#2258).
@@ -26,21 +26,6 @@ async fn insert_authored_book(
         .await
         .unwrap();
     id
-}
-
-/// Write a raw `metadata_overrides` row for `book_id`.
-async fn set_overrides_json(pool: &SqlitePool, book_id: i64, json: &str) {
-    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
-        .bind(book_id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
-        .bind(uuid)
-        .bind(json)
-        .execute(pool)
-        .await
-        .unwrap();
 }
 
 async fn page_by(pool: &SqlitePool, sort: SortKey) -> BookPage {
