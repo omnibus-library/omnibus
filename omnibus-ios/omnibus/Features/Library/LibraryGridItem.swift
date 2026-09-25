@@ -55,6 +55,22 @@ extension LibraryModel {
     nonisolated static func stackIndex(_ stacks: [SeriesStack]?) -> [String: SeriesStack] {
         Dictionary((stacks ?? []).map { ($0.leadUuid, $0) }, uniquingKeysWith: { _, last in last })
     }
+
+    /// The grid after a later page lands, minus rows for a series it already stacks.
+    nonisolated static func appending(
+        _ page: LibraryPageResult, to books: [Book], stacks: [String: SeriesStack]
+    ) -> (books: [Book], stacks: [String: SeriesStack]) {
+        let existing = Set(books.map(\.id))
+        // Server and mirror can lead one series with different volumes.
+        let stacked = Set(stacks.values.compactMap { LibraryIndex.stackKey($0.members.first?.series) })
+        let fresh = page.books.filter { book in
+            !existing.contains(book.id)
+                && !(LibraryIndex.stackKey(book.series).map(stacked.contains) ?? false)
+        }
+        let kept = Set(fresh.map(\.uuid))
+        let incoming = stackIndex(page.stacks).filter { kept.contains($0.key) }
+        return (books + fresh, stacks.merging(incoming) { _, new in new })
+    }
 }
 
 /// The text and progress the stack cells show.

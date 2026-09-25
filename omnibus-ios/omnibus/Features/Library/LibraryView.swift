@@ -285,10 +285,8 @@ final class LibraryModel {
                 sort: sort, direction: direction, filter: activeFilter, cursor: cursor
             ) {
                 let page = read.value
-                let existing = Set(books.map(\.id))
                 hasPaginated = true
-                books.append(contentsOf: page.books.filter { !existing.contains($0.id) })
-                stacks.merge(Self.stackIndex(page.stacks)) { _, new in new }
+                (books, stacks) = Self.appending(page, to: books, stacks: stacks)
                 self.cursor = page.nextCursor
                 reachedEnd = page.nextCursor == nil || page.books.isEmpty
             }

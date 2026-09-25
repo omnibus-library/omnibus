@@ -135,6 +135,21 @@ struct LibraryModelStackTests {
         await model.reload()
         #expect(model.openSeries == nil, "a re-sorted page can lead the series with another volume")
     }
+
+    @Test func loadMoreDropsARowForASeriesAlreadyStacked() {
+        let one = book(1, "Saga One", series: "Saga", index: "1")
+        let two = book(2, "Saga Two", series: " saga ", index: "2")
+        let lone = book(3, "Lone")
+        let grid = LibraryModel.stackIndex([stack(lead: one, members: [one, two])])
+        // The mirror restarts at offset 0 and leads the series with another volume.
+        let fallback = LibraryPageResult(
+            books: [lone, two], stacks: [stack(lead: two, members: [one, two])]
+        )
+
+        let merged = LibraryModel.appending(fallback, to: [one], stacks: grid)
+        #expect(merged.books.map(\.id) == [1, 3])
+        #expect(merged.stacks.keys.sorted() == ["u1"])
+    }
 }
 
 struct LibraryGridItemsTests {
