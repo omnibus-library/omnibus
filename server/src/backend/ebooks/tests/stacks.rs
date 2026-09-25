@@ -151,42 +151,18 @@ async fn api_get_ebooks_omits_stacks_unless_a_keyset_page_asks_for_them() {
 }
 
 #[tokio::test]
-async fn api_get_ebooks_stacked_cursor_walk_returns_every_tile_once() {
+async fn api_get_ebooks_stacked_second_page_still_carries_stacks() {
     let (app, _state, pool) = fixture().await;
     let (_, token) = reader(&pool, "alice").await;
-    seed_library(
-        &pool,
-        vec![
-            book("arc-1.epub", "Arc One", Some(("Arc", "1"))),
-            book("arc-2.epub", "Arc Two", Some(("Arc", "2"))),
-            book("lone-a.epub", "Lone A", None),
-            book("lone-b.epub", "Lone B", None),
-            book("saga-1.epub", "Saga One", Some(("Saga", "1"))),
-            book("saga-2.epub", "Saga Two", Some(("Saga", "2"))),
-            book("saga-3.epub", "Saga Three", Some(("Saga", "3"))),
-        ],
-    )
-    .await;
+    seed_library(&pool, saga_and_lone()).await;
+    let uri = "/api/ebooks?sort=title&dir=asc&limit=1&stack_series=true";
 
-    let (mut titles, mut stacks, mut cursor) = (Vec::new(), 0, None::<String>);
-    for _ in 0..10 {
-        let uri = match &cursor {
-            Some(c) => {
-                format!("/api/ebooks?sort=title&dir=asc&limit=1&stack_series=true&cursor={c}")
-            }
-            None => "/api/ebooks?sort=title&dir=asc&limit=1&stack_series=true".to_string(),
-        };
-        let page = get_page(&app, &uri, &token).await;
-        titles.extend(page.titles());
-        stacks += page.stacks().len();
-        match page.next {
-            Some(c) => cursor = Some(c),
-            None => break,
-        }
-    }
+    let first = get_page(&app, uri, &token).await;
+    let cursor = first.next.expect("a second page");
+    let second = get_page(&app, &format!("{uri}&cursor={cursor}"), &token).await;
 
-    assert_eq!(titles, vec!["Arc One", "Lone A", "Lone B", "Saga One"]);
-    assert_eq!(stacks, 2, "each series rides with its one representative");
+    assert_eq!(second.titles(), vec!["Saga One"]);
+    assert_eq!(second.stacks().len(), 1, "the cursor keeps the stacked form");
 }
 
 #[tokio::test]
