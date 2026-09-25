@@ -318,14 +318,12 @@ async fn member_states(
                 ..Default::default()
             });
             if r.try_get::<String, _>("format")? == "epub" {
-                let percent = r
+                state.percent = r
                     .try_get::<Option<i64>, _>("progress_percent")?
                     .and_then(|p| u8::try_from(p.clamp(0, 100)).ok());
-                state.started |= percent.is_some_and(|p| p > 0);
-                state.percent = percent;
-            } else {
-                state.started = true;
             }
+            // Any saved position counts, including a CFI-only one with no percent.
+            state.started = true;
         }
         let sql = format!(
             "SELECT book_uuid, status FROM book_read_status
