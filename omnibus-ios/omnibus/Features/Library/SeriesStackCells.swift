@@ -126,8 +126,7 @@ struct SeriesCapCell: View {
             Color.clear
                 .aspectRatio(2.0 / 3.0, contentMode: .fit)
                 .overlay(alignment: .bottomLeading) { card }
-            // A hidden two-line spacer, so the cap's row height matches a
-            // run of `BookGridCell`s beside it.
+            // Hidden caption so the band matches the volumes' row height.
             VStack(alignment: .leading, spacing: 1) {
                 Text(" ").font(.ui(12.5, weight: .medium)).lineLimit(1)
                 Text(" ").font(.ui(11)).lineLimit(1)

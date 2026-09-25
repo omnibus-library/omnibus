@@ -53,8 +53,7 @@ pub(super) struct EbooksQuery {
     /// landing concern, and offline toggling must restore hidden books
     /// without a resync).
     exclude_formats: Option<String>,
-    /// `true` folds each series with 2+ books into one row and adds `stacks`
-    /// (keyset form only; the param-less full library ignores it).
+    /// Fold 2+-book series into one row plus `stacks` (keyset form only).
     stack_series: Option<bool>,
 }
 
@@ -210,8 +209,7 @@ fn keyset_page_response(
 /// Keyset-paginated page for an explicit `sort`/`dir`/`cursor`/`limit`. A
 /// cursor is decoded relative to the request's sort axis, so a cursor without
 /// an explicit `sort` **and** `dir`, or a malformed cursor, is a 400 rather
-/// than a silently mis-positioned page or a 500. `stack_series` reads the
-/// stacked page for `user_id`.
+/// than a silently mis-positioned page or a 500.
 async fn respond_keyset_page(
     state: &AppState,
     q: &EbooksQuery,

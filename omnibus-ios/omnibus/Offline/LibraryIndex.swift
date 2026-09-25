@@ -449,9 +449,7 @@ actor LibraryIndex {
         }
     }
 
-    /// Swift twin of `groupKey`, computed the way `row(for:payload:)` stores `series`. Folds
-    /// case with Swift's Unicode `lowercased()`, unlike the server's ASCII-only `lower()` — a
-    /// rare cosmetic divergence for non-ASCII series names, left as is.
+    /// Swift twin of `groupKey`; Unicode `lowercased()` vs the server's ASCII `lower()` is an accepted offline-only edge.
     static func stackKey(_ series: String?) -> String? {
         let key = (series ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " "))
         return key.isEmpty ? nil : key

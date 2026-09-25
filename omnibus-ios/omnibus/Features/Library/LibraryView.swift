@@ -83,8 +83,7 @@ final class LibraryModel {
     /// so this is the loaded page as-is.
     var visibleBooks: [Book] { books }
 
-    /// The category's filter with the viewer's hidden-formats and Stack
-    /// series prefs folded in — the one filter every page read uses.
+    /// The category's filter plus the viewer's hidden-formats and Stack series prefs.
     private var activeFilter: LibraryFilter {
         var filter = category.filter
         filter.hiddenFormats = hiddenFormats
@@ -382,8 +381,7 @@ struct LibraryView: View {
         }
         .environment(\.bookZoomNamespace, bookZoom)
         .task {
-            // Seed the prefs before the first read so page 1 already excludes and stacks;
-            // a later identity refresh re-seeds via `onChange` below.
+            // Seed the prefs before the first read; `onChange` below re-seeds on an identity refresh.
             model.hiddenFormats = app.user?.hiddenFormats ?? []
             model.stackSeries = app.user?.stackSeries ?? false
             await model.loadIfNeeded()
@@ -710,7 +708,7 @@ struct LibraryView: View {
 /// only shortens that cell rather than knocking the grid out of alignment.
 struct BookGridCell: View {
     let book: Book
-    /// A series volume's caption override: "Vol. N" title, "Read"/"N% read"/author subtitle.
+    /// Replaces the title and author lines.
     var caption: (title: String, subtitle: String)?
     /// A started volume's progress fraction and tint, drawn under the cover.
     var progress: (fraction: Double, tint: Color)?
