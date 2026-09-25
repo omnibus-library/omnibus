@@ -215,7 +215,6 @@ test("table view disables the switch and says it is grid only", async () => {
 test("the switch is saved per user and survives a reload", async ({
   page: adminPage,
 }) => {
-  await gotoReady(stacker, "/");
   await stacker.reload();
   await stacker.waitForLoadState("networkidle");
 
