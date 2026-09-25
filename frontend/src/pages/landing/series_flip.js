@@ -69,7 +69,7 @@
               ],
               { duration: 600, delay: deck * 38, easing: ease, fill: "backwards" },
             );
-          } else if (el.classList.contains("ss-cap") || el.classList.contains("ss-stack")) {
+          } else if (el.classList.contains("ss-cap") || el.classList.contains("ss-cell")) {
             el.animate(
               [{ opacity: 0, transform: "scale(.94)" }, { opacity: 1, transform: "none" }],
               { duration: 380, delay: 140, easing: ease, fill: "backwards" },

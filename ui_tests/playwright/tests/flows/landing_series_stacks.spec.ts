@@ -29,6 +29,11 @@ const stackToggle = (page: Page) =>
 const stackTiles = (page: Page) => page.getByTestId(/^series-stack-/);
 const pioneersStack = (page: Page) =>
   page.getByRole("button", { name: "Pioneers, 5 books" });
+const pioneersCell = (page: Page) =>
+  page
+    .getByTestId("lib-grid")
+    .getByRole("listitem")
+    .filter({ has: pioneersStack(page) });
 const volumeTile = (page: Page, slug: string) =>
   page.getByTestId(`ebook-tile-${slug}`);
 
@@ -131,6 +136,8 @@ test("turning stack series on folds each series into one counted tile", async ()
 
   await expect(stackToggle(stacker)).toHaveAttribute("aria-pressed", "true");
   await expect(pioneersStack(stacker)).toContainText("5 books");
+  // The list item is the grid cell itself, never a `display: contents` shell.
+  await expect(pioneersCell(stacker)).toHaveCSS("display", "block");
   await expect(
     stacker.getByRole("button", { name: "Code Quartet, 4 books" }),
   ).toContainText("4 books");

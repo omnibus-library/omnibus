@@ -12332,8 +12332,6 @@ html {
 /* The run's band paints at z-index -1; isolating the grid keeps it above the
    page background instead of sinking beneath it. */
 .lmq .lib-grid { position: relative; isolation: isolate; }
-/* The stack tile's semantic listitem cell; the grid still sizes its child. */
-.lmq .ss-cell { display: contents; }
 .lmq .ss-art { position: relative; display: block; aspect-ratio: 2 / 3; }
 .lmq .ss-leaf {
   position: absolute; left: 0; bottom: 0; width: 86%;

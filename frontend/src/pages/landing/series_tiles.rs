@@ -51,11 +51,10 @@ pub(super) fn StackTile(
     let take_focus = refocus.peek().as_deref() == Some(stack.lead_uuid.as_str());
 
     rsx! {
-        div { class: "ss-cell", role: "listitem",
+        div { class: "ss-cell", role: "listitem", "data-flip-key": "stack-{stack.lead_uuid}",
             a {
                 class: "cover-link lib-tile ss-stack",
                 "data-testid": "series-stack-{slug}",
-                "data-flip-key": "stack-{stack.lead_uuid}",
                 role: "button",
                 tabindex: "0",
                 "aria-expanded": "false",
