@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use omnibus_shared::{EbookMetadata, SeriesStack};
 
+use super::sorting::row_ident;
+
 /// One cell of the landing grid.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum GridItem {
@@ -19,6 +21,18 @@ pub(super) enum GridItem {
     Cap(SeriesStack),
     /// One volume of the dealt-out series.
     Vol(VolumeCell),
+}
+
+impl GridItem {
+    /// The cell's diff key: a book's row ident, or its stack's lead for a stack or head card.
+    pub(super) fn key(&self) -> String {
+        match self {
+            GridItem::Book(book) => row_ident(book),
+            GridItem::Vol(cell) => row_ident(&cell.book),
+            GridItem::Stack(stack) => format!("stack-{}", stack.lead_uuid),
+            GridItem::Cap(stack) => format!("cap-{}", stack.lead_uuid),
+        }
+    }
 }
 
 /// A volume in a dealt-out run: the book plus its run chrome.

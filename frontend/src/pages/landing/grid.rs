@@ -54,7 +54,11 @@ pub(super) fn BookGrid(
         let _ = open();
         let _ = dioxus::document::eval(SERIES_FLIP_JS);
     });
-    let items = grid_items(&books, &stacks, open().as_deref());
+    let cells: Vec<(String, usize, GridItem)> = grid_items(&books, &stacks, open().as_deref())
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| (item.key(), index, item))
+        .collect();
 
     rsx! {
         div {
@@ -67,45 +71,51 @@ pub(super) fn BookGrid(
                     fold(open, refocus);
                 }
             },
-            for (index, item) in items.into_iter().enumerate() {
-                match item {
-                    GridItem::Book(book) => rsx! {
-                        GridTile {
-                            key: "{row_ident(&book)}",
-                            book: book.clone(),
-                            server_url: server_url.clone(),
-                            index,
-                        }
-                    },
-                    GridItem::Stack(stack) => rsx! {
-                        StackTile {
-                            key: "stack-{stack.lead_uuid}",
-                            refocus: refocus.peek().as_deref() == Some(stack.lead_uuid.as_str()),
-                            stack: stack.clone(),
-                            server_url: server_url.clone(),
-                            index,
-                            on_open: move |picked: String| deal_out(open, refocus, picked),
-                        }
-                    },
-                    GridItem::Cap(stack) => rsx! {
-                        StackCap {
-                            key: "cap-{stack.lead_uuid}",
-                            stack: stack.clone(),
-                            on_fold: move |_| fold(open, refocus),
-                        }
-                    },
-                    GridItem::Vol(cell) => rsx! {
-                        GridTile {
-                            key: "{row_ident(&cell.book)}",
-                            book: cell.book.clone(),
-                            server_url: server_url.clone(),
-                            index,
-                            vol: Some(cell.clone()),
-                        }
-                    },
+            for (key, index, item) in cells {
+                GridCell {
+                    key: "{key}",
+                    item,
+                    index,
+                    server_url: server_url.clone(),
+                    open,
+                    refocus,
                 }
             }
         }
+    }
+}
+
+/// One grid cell, keyed at the loop root so opening a stack moves the wall rather than rebuilding it.
+#[component]
+fn GridCell(
+    item: GridItem,
+    index: usize,
+    server_url: String,
+    open: Signal<Option<String>>,
+    refocus: Signal<Option<String>>,
+) -> Element {
+    match item {
+        GridItem::Book(book) => rsx! {
+            GridTile { book, server_url, index }
+        },
+        GridItem::Stack(stack) => {
+            let focus = refocus.peek().as_deref() == Some(stack.lead_uuid.as_str());
+            rsx! {
+                StackTile {
+                    stack,
+                    server_url,
+                    index,
+                    refocus: focus,
+                    on_open: move |picked: String| deal_out(open, refocus, picked),
+                }
+            }
+        }
+        GridItem::Cap(stack) => rsx! {
+            StackCap { stack, on_fold: move |_| fold(open, refocus) }
+        },
+        GridItem::Vol(cell) => rsx! {
+            GridTile { book: cell.book.clone(), server_url, index, vol: Some(cell) }
+        },
     }
 }
 

@@ -12378,6 +12378,8 @@ html {
   background: color-mix(in oklch, var(--sa) 15%, var(--bg-1));
   pointer-events: none;
 }
+/* The deal-out motion owns a volume's entrance, not the wall's sweep-in. */
+.lmq .lib-tile.ss-vol { animation: none; }
 .lmq .ss-cap::before { left: -14px; border-radius: 12px 0 0 12px; }
 .lmq .ss-vol--last::before { right: -14px; border-radius: 0 12px 12px 0; }
 .lmq .ss-vn {

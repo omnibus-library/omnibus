@@ -161,6 +161,25 @@ test("opening a stack deals its volumes out behind a head card and escape folds 
   }
 });
 
+test("opening a stack moves the rest of the wall rather than rebuilding it", async () => {
+  await gotoReady(stacker, "/");
+  const grid = stacker.getByTestId("lib-grid");
+  // A cell the diff re-creates loses this mark; a moved one keeps it.
+  await grid.evaluate((g) => {
+    for (const cell of g.children) cell.setAttribute("data-e2e-kept", "");
+  });
+
+  await pioneersStack(stacker).click();
+  await expect(stacker.getByTestId("series-cap")).toBeVisible();
+
+  const fresh = await grid.evaluate(
+    (g) => g.querySelectorAll(":scope > :not([data-e2e-kept])").length,
+  );
+  expect(fresh).toBe(1 + PIONEERS.length);
+  // The deal-out motion owns a volume's entrance, not the wall's sweep-in.
+  await expect(volumeTile(stacker, "beta")).toHaveCSS("animation-name", "none");
+});
+
 test("the head card links to the series page", async () => {
   await gotoReady(stacker, "/");
   await pioneersStack(stacker).click();

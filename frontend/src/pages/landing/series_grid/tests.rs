@@ -177,3 +177,15 @@ fn grid_items_numbers_each_volume_by_its_place_in_the_deck_and_names_its_stack()
         ]
     );
 }
+
+#[test]
+fn grid_item_key_names_a_book_by_its_row_and_a_stack_or_head_card_by_its_lead() {
+    let stack = saga("s2", &["s1", "s2"]);
+    let books = vec![plain("a"), volume("s2", Some("2"))];
+    let keys: Vec<String> = grid_items(&books, &[stack.clone()], Some("s2"))
+        .iter()
+        .map(GridItem::key)
+        .collect();
+    assert_eq!(keys, vec!["a", "cap-s2", "s1", "s2"]);
+    assert_eq!(GridItem::Stack(stack).key(), "stack-s2");
+}
