@@ -91,21 +91,8 @@ test("renders the stack series switch off with every volume tiled", async () => 
 });
 
 test("turning stack series on folds each series into one counted tile", async () => {
-  await gotoReady(stacker, "/");
-  await expect(stackToggle(stacker)).toBeEnabled();
+  await setStacking(stacker, true);
 
-  await expectMutation(
-    stacker,
-    {
-      method: "POST",
-      url: SAVE_URL,
-      expectedBody: { enabled: true },
-      expectedStatus: 200,
-    },
-    async () => stackToggle(stacker).click(),
-  );
-
-  await expect(stackToggle(stacker)).toHaveAttribute("aria-pressed", "true");
   await expect(pioneersStack(stacker)).toContainText("5 books");
   // The list item is the grid cell itself, never a `display: contents` shell.
   await expect(pioneersCell(stacker)).toHaveCSS("display", "block");
