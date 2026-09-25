@@ -208,6 +208,17 @@ struct StackPresentationTests {
         #expect(StackPresentation.volumeSubtitle(b, state: nil) == "Ann")
     }
 
+    @Test func volumeLabelLeadsWithTheBookTitle() {
+        var numbered = book(1, "Saga One", series: "Saga", index: "2")
+        numbered.creators = [Contributor(name: "Ann")]
+        #expect(StackPresentation.volumeLabel(numbered, state: nil) == "Saga One, Vol. 2, Ann")
+        let finished = StackMemberState(uuid: "u2", percent: 100, started: true, finished: true)
+        #expect(
+            StackPresentation.volumeLabel(book(2, "Side Story", series: "Saga"), state: finished)
+                == "Side Story, Read"
+        )
+    }
+
     @Test func segmentsAppearOnlyOnceAVolumeIsStarted() {
         let one = book(1, "One", series: "Saga", index: "1")
         let two = book(2, "Two", series: "Saga", index: "2")

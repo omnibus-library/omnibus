@@ -90,6 +90,14 @@ enum StackPresentation {
         return book.authorDisplay
     }
 
+    /// The VoiceOver label: the book's title first, since the caption may be only "Vol. N".
+    static func volumeLabel(_ book: Book, state: StackMemberState?) -> String {
+        let title = volumeTitle(book)
+        let subtitle = volumeSubtitle(book, state: state)
+        return title == book.displayTitle
+            ? "\(title), \(subtitle)" : "\(book.displayTitle), \(title), \(subtitle)"
+    }
+
     /// One fill fraction per member, or nil until any member is started.
     static func segments(_ stack: SeriesStack) -> [Double]? {
         guard stack.states.contains(where: \.started) else { return nil }

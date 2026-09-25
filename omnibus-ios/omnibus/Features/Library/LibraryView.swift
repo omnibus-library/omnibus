@@ -525,6 +525,7 @@ struct LibraryView: View {
                     progress: progress
                 )
             }
+            .accessibilityLabel(StackPresentation.volumeLabel(book, state: state))
             .background { SeriesBand(tint: tint, trailing: index == stack.members.count - 1) }
         }
     }
