@@ -308,6 +308,7 @@ struct LibraryView: View {
     @Environment(AppState.self) private var app
     @State private var model = LibraryModel()
     @Namespace private var bookZoom
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var presentation = Presentation.shared
 
     // `alignment: .top` matters here: GridItem defaults to centering each
@@ -457,15 +458,10 @@ struct LibraryView: View {
 
     private var grid: some View {
         LazyVGrid(columns: columns, spacing: 26) {
-            ForEach(Array(model.visibleBooks.enumerated()), id: \.element.id) { index, book in
-                NavigationLink(value: Destination.book(uuid: book.uuid)) {
-                    BookGridCell(book: book)
-                }
-                .buttonStyle(BookPressStyle())
-                .bookContextMenu(book, onEdited: { Task { await model.reload() } })
-                .bookZoomSource(book.uuid, in: bookZoom)
-                .cascadeIn(index: index)
-                .task { await model.loadMoreIfNeeded(currentItem: book) }
+            ForEach(Array(model.gridItems.enumerated()), id: \.element.id) { index, item in
+                gridCell(item)
+                    .cascadeIn(index: index)
+                    .task { await model.loadMoreIfNeeded(currentItem: item.anchor) }
             }
         }
         .screenPadding()
@@ -477,6 +473,57 @@ struct LibraryView: View {
                     .offset(y: 40)
             }
         }
+    }
+
+    @ViewBuilder
+    private func gridCell(_ item: LibraryGridItem) -> some View {
+        switch item {
+        case .book(let book):
+            bookLink(book) { BookGridCell(book: book) }
+        case .stack(let stack, _):
+            Button { setOpenSeries(stack.leadUuid) } label: {
+                SeriesStackCell(stack: stack)
+            }
+            .buttonStyle(BookPressStyle())
+            .accessibilityLabel("\(stack.name), \(stack.members.count) books")
+            .accessibilityHint("Opens the series in place")
+            .accessibilityIdentifier("library-stack-\(StackPresentation.slug(stack.name))")
+        case .cap(let stack, _):
+            SeriesCapCell(stack: stack) { setOpenSeries(nil) }
+        case .volume(let book, let stack, let index, _):
+            let tint = stack.front.map { palette.accented(byCoverOf: $0).accentColor } ?? palette.accentColor
+            let state = stack.state(of: book.uuid)
+            let progress: (fraction: Double, tint: Color)? = {
+                guard let state, state.started, !state.finished, let percent = state.percent,
+                      percent > 0
+                else { return nil }
+                return (Double(percent) / 100, tint)
+            }()
+            bookLink(book) {
+                BookGridCell(
+                    book: book,
+                    caption: (
+                        StackPresentation.volumeTitle(book),
+                        StackPresentation.volumeSubtitle(book, state: state)
+                    ),
+                    progress: progress
+                )
+            }
+            .background { SeriesBand(tint: tint, trailing: index == stack.members.count - 1) }
+        }
+    }
+
+    private func bookLink<Cell: View>(_ book: Book, @ViewBuilder cell: () -> Cell) -> some View {
+        NavigationLink(value: Destination.book(uuid: book.uuid)) { cell() }
+            .buttonStyle(BookPressStyle())
+            .bookContextMenu(book, onEdited: { Task { await model.reload() } })
+            .bookZoomSource(book.uuid, in: bookZoom)
+    }
+
+    /// Opens a stack in place, or folds it with nil; one is open at a time.
+    private func setOpenSeries(_ lead: String?) {
+        Haptics.select()
+        withAnimation(reduceMotion ? nil : Motion.glide) { model.openSeries = lead }
     }
 
     /// The rail is "your shelves", so it answers to who is signed in as well as
@@ -600,9 +647,19 @@ struct LibraryView: View {
 /// only shortens that cell rather than knocking the grid out of alignment.
 struct BookGridCell: View {
     let book: Book
+    /// A series volume's caption override: "Vol. N" title, "Read"/"N% read"/author subtitle.
+    var caption: (title: String, subtitle: String)?
+    /// A started volume's progress fraction and tint, drawn under the cover.
+    var progress: (fraction: Double, tint: Color)?
 
-    init(book: Book) {
+    init(
+        book: Book,
+        caption: (title: String, subtitle: String)? = nil,
+        progress: (fraction: Double, tint: Color)? = nil
+    ) {
         self.book = book
+        self.caption = caption
+        self.progress = progress
     }
 
     @Environment(\.palette) private var palette
@@ -613,16 +670,17 @@ struct BookGridCell: View {
             BookCover(identity: CoverIdentity(book))
                 .coverShadow()
                 .overlay(alignment: .bottomLeading) { badges }
+                .overlay(alignment: .bottom) { progressBar }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(book.displayTitle)
+                Text(caption?.title ?? book.displayTitle)
                     .font(.ui(12.5, weight: .medium))
                     .lineSpacing(0)
                     .foregroundStyle(palette.ink0Color)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
-                Text(book.authorDisplay)
+                Text(caption?.subtitle ?? book.authorDisplay)
                     .font(.ui(11))
                     .foregroundStyle(palette.ink3Color)
                     .lineLimit(1)
@@ -633,6 +691,15 @@ struct BookGridCell: View {
         // union of the subviews' own shapes — the gap under the cover and the
         // strip beside a short caption are dead to taps.
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var progressBar: some View {
+        if let progress {
+            ProgressBar(fraction: progress.fraction, tint: progress.tint, height: 2)
+                .frame(height: 2)
+                .offset(y: 5)
+        }
     }
 
     /// Offline state rides on the art rather than the caption, which keeps the

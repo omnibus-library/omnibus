@@ -37,4 +37,9 @@ struct SymbolNameTests {
         // carries — a typo would leave a bare dashed plate with nothing in it.
         #expect(UIImage(systemName: ShelfDetailView.unreachableGlyph) != nil)
     }
+
+    @Test("the library's stack-series glyph resolves")
+    func stackGlyphResolves() {
+        #expect(UIImage(systemName: SeriesStackCell.glyph) != nil)
+    }
 }
