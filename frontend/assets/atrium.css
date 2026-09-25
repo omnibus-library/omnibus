@@ -12290,7 +12290,11 @@ html {
 /* 170px is chosen, not inherited: with the 22px column gap it is the widest
    minimum that still fits ten covers across a laptop-width window, and the
    narrowest that cannot fit eleven. Moving either number moves the count. */
-.lmq .lib-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 30px 22px; }
+.lmq .lib-grid {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 30px 22px;
+  /* Isolated so a run's z-index -1 band stays above the page background. */
+  position: relative; isolation: isolate;
+}
 .lmq .lib-tile .cover-wrap { filter: drop-shadow(0 14px 18px oklch(0 0 0 / .45)); }
 .lmq .lib-tile-art {
   display: block;
@@ -12323,9 +12327,7 @@ html {
 }
 
 /* ── Series stacks ── */
-/* Isolated so a run's z-index -1 band stays above the page background. */
-.lmq .lib-grid { position: relative; isolation: isolate; }
-.lmq .ss-art { position: relative; display: block; aspect-ratio: 2 / 3; }
+.lmq .ss-art { position: relative; aspect-ratio: 2 / 3; }
 .lmq .ss-leaf {
   position: absolute; left: 0; bottom: 0; width: 86%;
   transform-origin: 15% 100%;
@@ -12334,7 +12336,7 @@ html {
   transition: transform .38s cubic-bezier(.2,.7,.2,1), filter .3s;
 }
 .lmq .ss-leaf .cover-wrap { filter: drop-shadow(0 10px 14px oklch(0 0 0 / .5)); }
-.lmq .ss-stack:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 4px; }
+.lmq .ss-stack:focus-visible { outline-offset: 6px; border-radius: 4px; }
 .lmq .ss-count {
   position: absolute; left: 7px; bottom: 7px; z-index: 5;
   display: inline-flex; align-items: center; gap: 5px;
