@@ -34,6 +34,13 @@
       };
     };
     const ease = "cubic-bezier(.22,.9,.24,1)";
+    // Cancel the mount-triggered `lib-sweep-in` CSS animation (subtree: the
+    // stack tile wraps its `.lib-tile` in a `.ss-cell` div) before a FLIP
+    // animation starts, or the two visibly fight.
+    const cancelCssAnim = (el) =>
+      el.getAnimations({ subtree: true }).forEach((a) => {
+        if (a instanceof CSSAnimation) a.cancel();
+      });
     grid.__ssFlip = {
       play() {
         const prev = first;
@@ -45,6 +52,7 @@
           if (was) {
             const dx = was.left - last.left, dy = was.top - last.top;
             if (dx || dy) {
+              cancelCssAnim(el);
               el.animate(
                 [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
                 { duration: 560, easing: ease },
@@ -57,6 +65,7 @@
             const deck = Number(el.dataset.flipDeck || 0);
             const p = pose(deck, from.width);
             const dx = from.left - last.left + p.x, dy = from.top - last.top + p.y;
+            cancelCssAnim(el);
             el.animate(
               [
                 { transformOrigin: "0 0", opacity: p.opacity,
@@ -66,6 +75,7 @@
               { duration: 600, delay: deck * 38, easing: ease, fill: "backwards" },
             );
           } else if (el.classList.contains("ss-cap") || el.classList.contains("ss-cell")) {
+            cancelCssAnim(el);
             el.animate(
               [{ opacity: 0, transform: "scale(.94)" }, { opacity: 1, transform: "none" }],
               { duration: 380, delay: 140, easing: ease, fill: "backwards" },

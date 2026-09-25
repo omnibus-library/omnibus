@@ -125,6 +125,21 @@ test("opening a stack deals its volumes out behind a head card and escape folds 
   for (const slug of PIONEERS) {
     await expect(volumeTile(stacker, slug)).toHaveCount(0);
   }
+  // The returning stack tile must not replay the wall's mount sweep on top
+  // of its own FLIP fade.
+  await expect
+    .poll(() =>
+      pioneersStack(stacker).evaluate(
+        (el) =>
+          el
+            .getAnimations()
+            .filter(
+              (a) =>
+                a instanceof CSSAnimation && a.animationName === "lib-sweep-in",
+            ).length,
+      ),
+    )
+    .toBe(0);
 });
 
 test("opening a stack moves the rest of the wall rather than rebuilding it", async () => {
