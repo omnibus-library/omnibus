@@ -119,6 +119,24 @@ struct SeriesStackCacheTests {
     }
 }
 
+@MainActor
+struct LibraryModelStackTests {
+    /// A model on throwaway defaults, so the host's saved sort is never touched.
+    private func model() -> LibraryModel {
+        let name = "omnibus.tests.stacks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return LibraryModel(defaults: defaults)
+    }
+
+    @Test func reloadFoldsTheOpenStack() async {
+        let model = model()
+        model.openSeries = "u2"
+        await model.reload()
+        #expect(model.openSeries == nil, "a re-sorted page can lead the series with another volume")
+    }
+}
+
 struct LibraryGridItemsTests {
     private let one = book(1, "Saga One", series: "Saga", index: "1")
     private let two = book(2, "Saga Two", series: "Saga", index: "2")

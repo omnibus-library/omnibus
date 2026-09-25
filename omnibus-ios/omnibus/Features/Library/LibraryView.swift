@@ -108,6 +108,8 @@ final class LibraryModel {
     }
 
     func reload() async {
+        // New data can lead a series with another volume, so the open run folds.
+        openSeries = nil
         let token = UUID()
         loadToken = token
         isLoading = true
