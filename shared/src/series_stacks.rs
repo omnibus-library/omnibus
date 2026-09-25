@@ -38,7 +38,7 @@ pub struct SeriesStack {
     pub series_id: Option<i64>,
     /// Every member in the result set, in series order.
     pub members: Vec<EbookMetadata>,
-    /// The viewer's state per member; empty when none was read.
+    /// One state per member on server pages; empty on client-grouped stacks.
     #[serde(default)]
     pub states: Vec<StackMemberState>,
 }

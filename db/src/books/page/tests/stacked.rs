@@ -435,6 +435,46 @@ async fn list_books_page_stacked_reports_reading_state_for_the_viewer_only() {
 }
 
 #[tokio::test]
+async fn list_books_page_stacked_counts_a_cfi_only_position_as_started() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = insert_lib(&pool, "/lib").await;
+    series_book(&pool, lib, "Saga One", Some("Saga"), Some(1.0)).await;
+    let two = series_book(&pool, lib, "Saga Two", Some("Saga"), Some(2.0)).await;
+    let two_uuid = uuid_of(&pool, two).await;
+    let viewer = seed_user(&pool, "viewer").await;
+    sqlx::query(
+        "INSERT INTO reading_progress (user_id, book_uuid, format, epub_cfi)
+         VALUES (?, ?, 'epub', 'epubcfi(/6/4!/2)')",
+    )
+    .bind(viewer)
+    .bind(&two_uuid)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let page = list_books_page_stacked(
+        &pool,
+        &["/lib"],
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        50,
+        viewer,
+    )
+    .await
+    .unwrap();
+
+    let state = page.stacks[0].state_of(&two_uuid).unwrap();
+    assert!(state.started && state.percent.is_none());
+    assert_eq!(
+        page.stacks[0].front().unwrap().title.as_deref(),
+        Some("Saga Two")
+    );
+}
+
+#[tokio::test]
 async fn list_books_page_stacked_surfaces_a_db_error_when_the_pool_is_closed() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let lib = insert_lib(&pool, "/lib").await;
