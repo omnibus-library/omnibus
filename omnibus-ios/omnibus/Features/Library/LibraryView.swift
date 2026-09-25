@@ -53,6 +53,19 @@ final class LibraryModel {
     /// viewer hides nothing.
     var hiddenCount: Int64?
 
+    /// Whether the grid folds each series into one tile; seeded from `app.user`.
+    var stackSeries = false {
+        didSet {
+            guard stackSeries != oldValue else { return }
+            openSeries = nil
+            Task { await reload() }
+        }
+    }
+    /// The loaded pages' series stacks, keyed by lead uuid.
+    var stacks: [String: SeriesStack] = [:]
+    /// The lead uuid of the stack dealt out in place, if any.
+    var openSeries: String?
+
     /// Header category strip. Format buckets are pushed to the server as a
     /// `formats` filter; `downloaded` is answered from the local library mirror,
     /// which is what lets it mean the whole library rather than whichever page
@@ -68,11 +81,12 @@ final class LibraryModel {
     /// so this is the loaded page as-is.
     var visibleBooks: [Book] { books }
 
-    /// The category's filter with the viewer's hidden-formats folded in —
-    /// the one filter every page read uses.
+    /// The category's filter with the viewer's hidden-formats and Stack
+    /// series prefs folded in — the one filter every page read uses.
     private var activeFilter: LibraryFilter {
         var filter = category.filter
         filter.hiddenFormats = hiddenFormats
+        filter.stackSeries = stackSeries
         return filter
     }
 
@@ -115,6 +129,7 @@ final class LibraryModel {
                         self.cursor = read.value.nextCursor
                         self.reachedEnd = read.value.nextCursor == nil
                         self.hiddenCount = read.value.hiddenCount
+                        self.stacks = Self.stackIndex(read.value.stacks)
                         self.error = nil
                         self.isLoading = false
                     }
@@ -246,6 +261,7 @@ final class LibraryModel {
                 cursor = read.value.nextCursor
                 reachedEnd = read.value.nextCursor == nil
                 hiddenCount = read.value.hiddenCount
+                stacks = Self.stackIndex(read.value.stacks)
             }
         } catch {}
     }
@@ -268,6 +284,7 @@ final class LibraryModel {
                 let existing = Set(books.map(\.id))
                 hasPaginated = true
                 books.append(contentsOf: page.books.filter { !existing.contains($0.id) })
+                stacks.merge(Self.stackIndex(page.stacks)) { _, new in new }
                 self.cursor = page.nextCursor
                 reachedEnd = page.nextCursor == nil || page.books.isEmpty
             }

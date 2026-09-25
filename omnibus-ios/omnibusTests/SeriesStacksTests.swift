@@ -92,3 +92,66 @@ struct SeriesStackRequestTests {
         #expect(page.nextCursor == "c1")
     }
 }
+
+struct LibraryGridItemsTests {
+    private let one = book(1, "Saga One", series: "Saga", index: "1")
+    private let two = book(2, "Saga Two", series: "Saga", index: "2")
+    private let lone = book(3, "Lone")
+
+    private var stacks: [String: SeriesStack] {
+        LibraryModel.stackIndex([stack(lead: one, members: [one, two])])
+    }
+
+    @Test func unstackedBooksAreOneCellEach() {
+        let items = LibraryModel.gridItems(books: [one, lone], stacks: [:], open: nil)
+        #expect(items.map(\.id) == ["book-u1", "book-u3"])
+    }
+
+    @Test func aClosedStackTakesItsLeadsSlot() {
+        let items = LibraryModel.gridItems(books: [lone, one], stacks: stacks, open: nil)
+        #expect(items.map(\.id) == ["book-u3", "stack-u1"])
+    }
+
+    @Test func anOpenStackDealsItsVolumesAfterTheHeadCard() {
+        let items = LibraryModel.gridItems(books: [one, lone], stacks: stacks, open: "u1")
+        #expect(items.map(\.id) == ["cap-u1", "vol-u1-u1", "vol-u1-u2", "book-u3"])
+        #expect(items.dropLast().allSatisfy { $0.anchor.id == 1 }, "every run cell pages off the lead")
+    }
+
+    @Test func aOneMemberStackStaysAPlainBook() {
+        let single = LibraryModel.stackIndex([stack(lead: one, members: [one])])
+        #expect(LibraryModel.gridItems(books: [one], stacks: single, open: "u1").map(\.id) == ["book-u1"])
+    }
+}
+
+struct StackPresentationTests {
+    @Test func volumeTitleUsesTheSeriesIndexElseTheTitle() {
+        #expect(StackPresentation.volumeTitle(book(1, "Saga One", series: "Saga", index: "2.5")) == "Vol. 2.5")
+        #expect(StackPresentation.volumeTitle(book(2, "Side Story", series: "Saga")) == "Side Story")
+    }
+
+    @Test func volumeSubtitleReportsReadThenPercentThenAuthor() {
+        var b = book(1, "One")
+        b.creators = [Contributor(name: "Ann")]
+        let finished = StackMemberState(uuid: "u1", percent: 100, started: true, finished: true)
+        let reading = StackMemberState(uuid: "u1", percent: 40, started: true, finished: false)
+        #expect(StackPresentation.volumeSubtitle(b, state: finished) == "Read")
+        #expect(StackPresentation.volumeSubtitle(b, state: reading) == "40% read")
+        #expect(StackPresentation.volumeSubtitle(b, state: nil) == "Ann")
+    }
+
+    @Test func segmentsAppearOnlyOnceAVolumeIsStarted() {
+        let one = book(1, "One", series: "Saga", index: "1")
+        let two = book(2, "Two", series: "Saga", index: "2")
+        #expect(StackPresentation.segments(stack(lead: one, members: [one, two])) == nil)
+        let started = stack(lead: one, members: [one, two], states: [
+            StackMemberState(uuid: "u1", percent: nil, started: true, finished: true),
+            StackMemberState(uuid: "u2", percent: 25, started: true, finished: false),
+        ])
+        #expect(StackPresentation.segments(started) == [1, 0.25])
+    }
+
+    @Test func slugLowercasesAndHyphenates() {
+        #expect(StackPresentation.slug("The Expanse: Book #1") == "the-expanse-book-1")
+    }
+}
