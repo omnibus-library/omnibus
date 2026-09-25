@@ -145,13 +145,17 @@ pub(super) fn stack_segments(stack: &SeriesStack) -> Option<Vec<u8>> {
         stack
             .members
             .iter()
-            .map(
-                |m| match m.unique_identifier.as_deref().and_then(|u| stack.state_of(u)) {
+            .map(|m| {
+                match m
+                    .unique_identifier
+                    .as_deref()
+                    .and_then(|u| stack.state_of(u))
+                {
                     Some(s) if s.finished => 100,
                     Some(s) => s.percent.unwrap_or(0).min(100),
                     None => 0,
-                },
-            )
+                }
+            })
             .collect(),
     )
 }

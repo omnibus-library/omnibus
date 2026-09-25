@@ -103,7 +103,11 @@ pub(super) fn spawn_suggestion_pools_effect(
 /// Refetch page 1 on query/sort/filter changes; epoch-guarded so stale
 /// in-flight requests drop, and held until `prefs_ready` so the first request
 /// out carries the viewer's persisted sort rather than the defaults.
-pub(super) fn spawn_page_fetch_effect(server_url: String, fetch_key: Memo<FetchKey>, sigs: FetchSignals) {
+pub(super) fn spawn_page_fetch_effect(
+    server_url: String,
+    fetch_key: Memo<FetchKey>,
+    sigs: FetchSignals,
+) {
     // `sigs` is `Copy`; the result-application signals are set inside
     // `apply_browse_result` / `apply_search_result`. Only the fetch-lifecycle
     // signals are driven from this body.

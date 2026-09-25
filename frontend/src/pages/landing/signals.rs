@@ -8,8 +8,7 @@ use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
 use omnibus_shared::{
-    EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, UserSummary, ViewMode,
-    ViewPrefs,
+    EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, UserSummary, ViewMode, ViewPrefs,
 };
 
 #[cfg(feature = "web")]

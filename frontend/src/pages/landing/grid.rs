@@ -129,8 +129,7 @@ fn GridTile(
     index: usize,
     // Set for a volume of a dealt-out series: the run's chrome around the
     // ordinary tile.
-    #[props(default)]
-    vol: Option<VolumeCell>,
+    #[props(default)] vol: Option<VolumeCell>,
 ) -> Element {
     // Stable per-book uuid drives both detail-route URL and thumb URL
     // (see `Route::BookDetail`).
