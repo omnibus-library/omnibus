@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
+import { logInThroughUi, provisionUser } from "../utils/auth";
 import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
@@ -39,25 +40,13 @@ let stacker: Page;
 
 test.beforeAll(async ({ browser, request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  const created = await request.post("/api/users", {
-    data: {
-      username: STACK_USER,
-      password: STACK_PASSWORD,
-      permissions: {
-        is_admin: false,
-        can_upload: false,
-        can_edit: false,
-        can_download: true,
-      },
-    },
-  });
-  expect([201, 409]).toContain(created.status());
+  await provisionUser(request, STACK_USER, STACK_PASSWORD);
 
   const context = await browser.newContext({
     storageState: { cookies: [], origins: [] },
   });
   stacker = await context.newPage();
-  await logIn(stacker);
+  await logInThroughUi(stacker, STACK_USER, STACK_PASSWORD);
   // A rerun after a failure may find the account still stacked.
   await setStacking(stacker, false);
 });
@@ -67,19 +56,6 @@ test.afterAll(async () => {
   await setStacking(stacker, false);
   await stacker.context().close();
 });
-
-/** Log the dedicated user in through the login UI. */
-async function logIn(page: Page): Promise<void> {
-  await gotoReady(page, "/login");
-  await page.getByLabel("Username").fill(STACK_USER);
-  await page.getByLabel("Password").fill(STACK_PASSWORD);
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/auth/login", expectedStatus: 200 },
-    async () => page.getByRole("button", { name: "Log in" }).click(),
-  );
-  await expect(page).toHaveURL(/\/$/);
-}
 
 /** Save Stack series through the toolbar switch unless it already reads `on`. */
 async function setStacking(page: Page, on: boolean): Promise<void> {
