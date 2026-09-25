@@ -1,0 +1,89 @@
+// Series-stack FLIP for the landing grid, replayed after each deal-out or fold render.
+// Capture-phase listeners snapshot every cell before Dioxus handles the click or key.
+(() => {
+  const grid = document.querySelector('[data-testid="lib-grid"]');
+  if (!grid) return;
+  if (!grid.__ssFlip) {
+    let first = null;
+    const reduced = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const snap = () => {
+      first = null;
+      if (reduced()) return;
+      first = new Map();
+      for (const el of grid.querySelectorAll("[data-flip-key]")) {
+        first.set(el.dataset.flipKey, el.getBoundingClientRect());
+      }
+    };
+    const trigger = (t) =>
+      t instanceof Element && t.closest(".ss-stack, .ss-cap-fold");
+    grid.addEventListener("click", (e) => { if (trigger(e.target)) snap(); }, true);
+    grid.addEventListener("keydown", (e) => {
+      const opens = (e.key === "Enter" || e.key === " ") && trigger(e.target);
+      if (e.key === "Escape" || opens) snap();
+    }, true);
+    // A leaf's pose in a stack cell `w` wide, from its top-left (design `ssPose`, width .86).
+    const pose = (deck, w) => {
+      const pct = 0.86, h = w * 1.5, d = Math.min(deck, 2);
+      return {
+        x: d * 0.075 * w * pct,
+        y: h - h * pct - d * 0.024 * h * pct,
+        rot: d * 1.8,
+        scale: pct,
+        opacity: deck < 3 ? 1 : 0,
+      };
+    };
+    const ease = "cubic-bezier(.22,.9,.24,1)";
+    // Cancel the mount-triggered `lib-sweep-in` CSS animation (subtree: the
+    // stack tile wraps its `.lib-tile` in a `.ss-cell` div) before a FLIP
+    // animation starts, or the two visibly fight.
+    const cancelCssAnim = (el) =>
+      el.getAnimations({ subtree: true }).forEach((a) => {
+        if (a instanceof CSSAnimation) a.cancel();
+      });
+    grid.__ssFlip = {
+      play() {
+        const prev = first;
+        first = null;
+        if (!prev) return;
+        for (const el of grid.querySelectorAll("[data-flip-key]")) {
+          const last = el.getBoundingClientRect();
+          const was = prev.get(el.dataset.flipKey);
+          if (was) {
+            const dx = was.left - last.left, dy = was.top - last.top;
+            if (dx || dy) {
+              cancelCssAnim(el);
+              el.animate(
+                [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
+                { duration: 560, easing: ease },
+              );
+            }
+            continue;
+          }
+          const from = el.dataset.flipFrom && prev.get(el.dataset.flipFrom);
+          if (from) {
+            const deck = Number(el.dataset.flipDeck || 0);
+            const p = pose(deck, from.width);
+            const dx = from.left - last.left + p.x, dy = from.top - last.top + p.y;
+            cancelCssAnim(el);
+            el.animate(
+              [
+                { transformOrigin: "0 0", opacity: p.opacity,
+                  transform: `translate(${dx}px, ${dy}px) rotate(${p.rot}deg) scale(${p.scale})` },
+                { transformOrigin: "0 0", opacity: 1, transform: "none" },
+              ],
+              { duration: 600, delay: deck * 38, easing: ease, fill: "backwards" },
+            );
+          } else if (el.classList.contains("ss-cap") || el.classList.contains("ss-cell")) {
+            cancelCssAnim(el);
+            el.animate(
+              [{ opacity: 0, transform: "scale(.94)" }, { opacity: 1, transform: "none" }],
+              { duration: 380, delay: 140, easing: ease, fill: "backwards" },
+            );
+          }
+        }
+      },
+    };
+  }
+  grid.__ssFlip.play();
+})();

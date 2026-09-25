@@ -231,17 +231,22 @@ pub(crate) fn sort_key_from_value(value: &str) -> Option<SortKey> {
 }
 
 /// Stable Playwright row id derived from the ebook's on-disk filename:
-/// strip directories and extension, lowercase, then collapse runs of
-/// non-alphanumeric ASCII characters into a single `-` (with leading and
-/// trailing dashes trimmed). The Playwright fixture table mirrors this
-/// derivation so each `FIXTURE_BOOKS[i].slug` matches the row's testid.
+/// strip directories and extension, then [`slugify`]. The Playwright fixture
+/// table mirrors this derivation so each `FIXTURE_BOOKS[i].slug` matches the
+/// row's testid.
 pub(crate) fn row_slug(filename: &str) -> String {
     let basename = filename.rsplit('/').next().unwrap_or(filename);
     let stem = basename
         .rsplit_once('.')
         .map(|(s, _)| s)
         .unwrap_or(basename);
-    let lower = stem.to_ascii_lowercase();
+    slugify(stem)
+}
+
+/// Lowercase `s`, collapse every run of non-alphanumeric ASCII into one `-`,
+/// and trim dashes at either end — the testid slug shape.
+pub(crate) fn slugify(s: &str) -> String {
+    let lower = s.to_ascii_lowercase();
     let mut out = String::with_capacity(lower.len());
     let mut last_was_dash = true;
     for ch in lower.chars() {

@@ -7,14 +7,16 @@
 use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
-use omnibus_shared::{EbookMetadata, ResumePoint, Shelf, ShelfSummary, ViewPrefs};
+use omnibus_shared::{
+    EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, UserSummary, ViewMode, ViewPrefs,
+};
 
 #[cfg(feature = "web")]
 use super::effects::spawn_load_more_observer;
 use super::effects::{
     spawn_hero_effect, spawn_load_more_effect, spawn_page_fetch_effect,
     spawn_selected_shelf_effect, spawn_shelf_books_effect, spawn_shelves_list_effect,
-    spawn_suggestion_pools_effect, FetchSignals, ShelfFetchSignals, SuggestionPools,
+    spawn_suggestion_pools_effect, FetchKey, FetchSignals, ShelfFetchSignals, SuggestionPools,
 };
 use crate::components::chip_editor::SuggestionItem;
 use crate::shelf_selection::{self, ShelfSelection};
@@ -29,6 +31,10 @@ use crate::view_prefs;
 #[cfg_attr(feature = "mobile", allow(dead_code))]
 pub(super) struct LandingSignals {
     pub(super) books: Signal<Vec<EbookMetadata>>,
+    /// Stacks riding with `books` on the browse path.
+    pub(super) stacks: Signal<Vec<SeriesStack>>,
+    /// Whether Stack series applies right now — see [`use_stack_series`].
+    pub(super) stack_series: Memo<bool>,
     pub(super) next_cursor: Signal<Option<String>>,
     pub(super) total: Signal<Option<i64>>,
     /// First-page "N hidden" receipt; `None` when the viewer hides nothing.
@@ -78,6 +84,8 @@ pub(super) fn setup_landing_signals(server_url: &str, query: Signal<String>) -> 
     let pools = use_suggestion_pools();
     let shelf_wiring = use_shelf_wiring();
     let misc = use_misc_signals();
+    let viewer = crate::use_current_user_summary();
+    let stack_series = use_stack_series(viewer, query, misc.prefs);
 
     wire_landing_effects(
         server_url,
@@ -89,10 +97,14 @@ pub(super) fn setup_landing_signals(server_url: &str, query: Signal<String>) -> 
         fetch_sigs,
         shelf_wiring,
         misc.bulk_selected,
+        viewer,
+        stack_series,
     );
 
     LandingSignals {
         books: fetch_sigs.books,
+        stacks: fetch_sigs.stacks,
+        stack_series,
         next_cursor: fetch_sigs.next_cursor,
         total: fetch_sigs.total,
         hidden: fetch_sigs.hidden,
@@ -125,6 +137,7 @@ pub(super) fn setup_landing_signals(server_url: &str, query: Signal<String>) -> 
 fn use_fetch_signals() -> FetchSignals {
     FetchSignals {
         books: use_signal(Vec::<EbookMetadata>::new),
+        stacks: use_signal(Vec::<SeriesStack>::new),
         next_cursor: use_signal(|| None::<String>),
         total: use_signal(|| None::<i64>),
         // First-page "N hidden" receipt; `None` when the viewer hides nothing.
@@ -202,6 +215,20 @@ fn use_misc_signals() -> MiscSignals {
     }
 }
 
+/// Whether Stack series applies (saved on, grid, no search); off until `/me` resolves (rule 07).
+fn use_stack_series(
+    viewer: ReadSignal<Option<UserSummary>>,
+    query: Signal<String>,
+    prefs: Signal<ViewPrefs>,
+) -> Memo<bool> {
+    use_memo(move || {
+        cfg!(not(feature = "mobile"))
+            && viewer().is_some_and(|u| u.stack_series)
+            && prefs.read().view_mode == ViewMode::Grid
+            && query().trim().is_empty()
+    })
+}
+
 /// Signal bundle for the shelf-gallery + hero effects armed by
 /// [`wire_landing_effects`], so its signature stays readable.
 #[derive(Copy, Clone)]
@@ -232,35 +259,41 @@ fn wire_landing_effects(
     fetch_sigs: FetchSignals,
     shelf_wiring: ShelfWiring,
     bulk_selected: Signal<BTreeSet<String>>,
+    viewer: ReadSignal<Option<UserSummary>>,
+    stack_series: Memo<bool>,
 ) {
     spawn_suggestion_pools_effect(server_url.to_string(), is_admin, pools);
 
-    let fetch_key = wire_page_fetch_effects(server_url, query, prefs, want_more, fetch_sigs);
+    let fetch_key = wire_page_fetch_effects(
+        server_url,
+        query,
+        prefs,
+        want_more,
+        fetch_sigs,
+        viewer,
+        stack_series,
+    );
     wire_bulk_selection_clear(fetch_key, shelf_wiring.selection, bulk_selected);
     wire_prefs_hydration(prefs, fetch_sigs);
     wire_shelf_effects(server_url, prefs, fetch_sigs.generation, shelf_wiring);
 }
 
-/// Refetches page 1 on query/sort/filter/hidden-formats change and arms the
-/// load-more append (plus the web scroll observer). Returns the `fetch_key`
-/// memo so the caller can also key the bulk-selection-clear effect on it.
+/// Refetches page 1 on query/sort/filter/hidden-formats/Stack series change
+/// and arms the load-more append (plus the web scroll observer). Returns the
+/// `fetch_key` memo so the caller can also key the bulk-selection-clear
+/// effect on it.
 fn wire_page_fetch_effects(
     server_url: &str,
     query: Signal<String>,
     prefs: Signal<ViewPrefs>,
     want_more: Signal<u32>,
     fetch_sigs: FetchSignals,
-) -> Memo<(
-    String,
-    omnibus_shared::SortKey,
-    omnibus_shared::SortDir,
-    omnibus_shared::ViewFilters,
-    Vec<String>,
-)> {
+    viewer: ReadSignal<Option<UserSummary>>,
+    stack_series: Memo<bool>,
+) -> Memo<FetchKey> {
     // The viewer's hidden-formats pref, canonical order. Starts empty until
     // `/me` resolves (or on SSR), so the very first fetch may run without the
     // exclusion — the memo change then triggers exactly one refetch.
-    let viewer = crate::use_current_user_summary();
     let exclude_formats = use_memo(move || {
         viewer()
             .map(|u| {
@@ -271,10 +304,7 @@ fn wire_page_fetch_effects(
             .unwrap_or_default()
     });
 
-    // Refetch page 1 whenever the search query or a *data-affecting* pref
-    // (sort axis/dir or filters) changes — or the viewer's hidden-formats
-    // pref lands/changes. The `use_memo` keys the effect on exactly those
-    // fields, so view-mode / sidebar-open toggles don't refetch.
+    // Page 1 refetches on query, sort, filters, hidden formats, or Stack series starting to apply.
     let fetch_key = use_memo(move || {
         let p = prefs();
         (
@@ -283,6 +313,7 @@ fn wire_page_fetch_effects(
             p.sort_dir,
             p.filters.clone(),
             exclude_formats(),
+            stack_series(),
         )
     });
     spawn_page_fetch_effect(server_url.to_string(), fetch_key, fetch_sigs);
@@ -291,6 +322,7 @@ fn wire_page_fetch_effects(
         want_more,
         prefs,
         exclude_formats,
+        stack_series,
         fetch_sigs,
     );
     #[cfg(feature = "web")]
@@ -304,13 +336,7 @@ fn wire_page_fetch_effects(
 /// that are no longer rendered would otherwise be edited invisibly from a
 /// stale selection.
 fn wire_bulk_selection_clear(
-    fetch_key: Memo<(
-        String,
-        omnibus_shared::SortKey,
-        omnibus_shared::SortDir,
-        omnibus_shared::ViewFilters,
-        Vec<String>,
-    )>,
+    fetch_key: Memo<FetchKey>,
     selection: Signal<ShelfSelection>,
     mut bulk_selected: Signal<BTreeSet<String>>,
 ) {
