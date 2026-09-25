@@ -2,10 +2,10 @@ import type { Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
-import { logInThroughUi, provisionUser } from "../utils/auth";
 import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
+import { logInThroughUi, provisionUser } from "../utils/users";
 
 // Stack series is per-account, so this spec runs on its own user (see 04a).
 const STACK_USER = "stackseries";
