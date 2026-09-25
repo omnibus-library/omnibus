@@ -96,8 +96,9 @@ drops by every stacked volume, and a stack's three fanned covers triple the
 `ebook-tile-*` tiles; Escape folds. Because the pref follows the account, a
 spec that turns it on must use its own user on a cookie-less context
 (`landing_series_stacks.spec.ts`) — stacking the shared admin would fold
-volumes out from under `landing.spec.ts`. `lib-stack-toggle` stays disabled
-until `/me` resolves and in table view (`lib-stack-note`: "Grid only").
+volumes out from under `landing.spec.ts`. `lib-stack-toggle` renders only in
+grid view (absent, not disabled, in the table) and stays disabled until `/me`
+resolves.
 
 **The landing's continue surface is a fan, not a carousel.** `landing/stack.rs`
 replaced the hero carousel, so `continue-hero`, `continue-hero-track`,

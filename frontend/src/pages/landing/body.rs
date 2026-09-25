@@ -108,8 +108,7 @@ pub(super) fn web_landing_body(
     // the web build's only render path.
     let lead = use_signal(|| 0usize);
     // The Stack series switch; hook order is fixed like `lead` above.
-    let (stack_view, on_stack_toggle) =
-        use_stack_toggle(stack_toggle_note(prefs.read().view_mode, view.is_search));
+    let (stack_view, on_stack_toggle) = use_stack_toggle(stack_toggle_note(view.is_search));
     // Borrowed inside its own scope, so the guard is dropped before the rsx
     // below (never held across other signal reads) without copying the map.
     // Reading it here is what re-renders the stack with a fresh thumb URL
