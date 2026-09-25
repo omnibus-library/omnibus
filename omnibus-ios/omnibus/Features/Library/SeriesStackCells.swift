@@ -5,6 +5,13 @@
 
 import SwiftUI
 
+extension SeriesStack {
+    /// `base` accented by the front volume's cover.
+    func palette(over base: Palette) -> Palette {
+        front.map(base.accented(byCoverOf:)) ?? base
+    }
+}
+
 /// A series folded into one tile: up to three covers fanned, a count badge, progress segments.
 struct SeriesStackCell: View {
     let stack: SeriesStack
@@ -20,9 +27,7 @@ struct SeriesStackCell: View {
         return Array(([front] + stack.members.filter { $0.id != front.id }).prefix(3))
     }
 
-    private var tint: Color {
-        stack.front.map { palette.accented(byCoverOf: $0).accentColor } ?? palette.accentColor
-    }
+    private var tint: Color { stack.palette(over: palette).accentColor }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -117,9 +122,7 @@ struct SeriesCapCell: View {
 
     @Environment(\.palette) private var palette
 
-    private var tint: Palette {
-        stack.front.map { palette.accented(byCoverOf: $0) } ?? palette
-    }
+    private var tint: Palette { stack.palette(over: palette) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -505,7 +505,7 @@ struct LibraryView: View {
         case .cap(let stack, _):
             SeriesCapCell(stack: stack) { setOpenSeries(nil) }
         case .volume(let book, let stack, let index, _):
-            let tint = stack.front.map { palette.accented(byCoverOf: $0).accentColor } ?? palette.accentColor
+            let tint = stack.palette(over: palette).accentColor
             let state = stack.state(of: book.uuid)
             let progress: (fraction: Double, tint: Color)? = {
                 guard let state, state.started, !state.finished, let percent = state.percent,
