@@ -334,4 +334,20 @@ mod tests {
         // SSR escapes the apostrophe, so match the HTML-entity form.
         assert!(html.contains("Couldn&#39;t save Stack series."));
     }
+
+    #[test]
+    fn toolbar_dims_an_unresolved_stack_toggle_at_once_when_the_view_is_inert() {
+        let prefs = ViewPrefs {
+            view_mode: ViewMode::Table,
+            ..ViewPrefs::default()
+        };
+        let stack = StackToggleView {
+            note: stack_toggle_note(ViewMode::Table, false),
+            ..StackToggleView::default()
+        };
+        let html = render_toolbar_with(prefs, None, stack);
+
+        assert!(html.contains("class=\"ss-tog\""), "{html}");
+        assert!(!html.contains("pending"), "{html}");
+    }
 }

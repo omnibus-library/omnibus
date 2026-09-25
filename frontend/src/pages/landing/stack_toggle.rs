@@ -42,7 +42,8 @@ pub(super) fn StackToggle(view: StackToggleView, on_toggle: EventHandler<()>) ->
     let on = view.saved && !disabled;
     let class = if on {
         "ss-tog on"
-    } else if !view.ready {
+    } else if !view.ready && view.note.is_none() {
+        // Undimmed only where it will go live, so nothing flashes live-then-dim.
         "ss-tog pending"
     } else {
         "ss-tog"
