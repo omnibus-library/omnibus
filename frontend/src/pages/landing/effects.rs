@@ -17,8 +17,7 @@ use super::PAGE_SIZE;
 /// How many resume points the continue-reading hero carousel shows.
 pub(super) const HERO_POINTS: i64 = 5;
 
-/// `(query, sort, dir, filters, hidden formats, Stack series)` — every input
-/// whose change refetches page 1.
+/// `(query, sort, dir, filters, hidden formats, Stack series)` — every input that refetches page 1.
 pub(super) type FetchKey = (String, SortKey, SortDir, ViewFilters, Vec<String>, bool);
 
 /// Stable per-page handle on the chip-editor suggestion pool signals
@@ -34,8 +33,7 @@ pub(super) struct SuggestionPools {
 #[derive(Copy, Clone)]
 pub(super) struct FetchSignals {
     pub(super) books: Signal<Vec<EbookMetadata>>,
-    /// Stacks riding with `books` on the browse path — empty unless the page
-    /// was fetched with Stack series on.
+    /// Stacks riding with `books`; empty unless the page was fetched with Stack series on.
     pub(super) stacks: Signal<Vec<SeriesStack>>,
     pub(super) next_cursor: Signal<Option<String>>,
     pub(super) total: Signal<Option<i64>>,
@@ -250,8 +248,7 @@ fn apply_search_result(
     }
 }
 
-/// Append the next page (and its stacks) when `want_more` bumps; drops the
-/// append if a page-1 refetch supersedes it.
+/// Append the next page and its stacks on `want_more`, unless a page-1 refetch superseded it.
 pub(super) fn spawn_load_more_effect(
     server_url: String,
     want_more: Signal<u32>,

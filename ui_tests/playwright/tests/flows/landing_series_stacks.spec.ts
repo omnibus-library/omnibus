@@ -6,12 +6,7 @@ import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Stack series (#2634): a per-user preference that folds each series of two
-// or more books into one grid tile. It is saved on the account, so — like
-// hidden_formats.spec.ts — this spec provisions its OWN user on a cookie-less
-// context: stacking the shared admin would fold the Pioneers and Code Quartet
-// volumes out from under landing.spec.ts's tile counts in a parallel worker.
-// Every fixture here is only read.
+// Stack series is per-account, so this spec runs on its own user (see 04a).
 const STACK_USER = "stackseries";
 const STACK_PASSWORD = "stack-series-pw-00";
 const SAVE_URL = "/api/rpc/account/stack-series";

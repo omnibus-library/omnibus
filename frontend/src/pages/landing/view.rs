@@ -70,10 +70,7 @@ pub(super) fn shelf_book_count(
     }
 }
 
-/// The shelf lens's rows: the member list client-filtered, then — with Stack
-/// series on — grouped client-side, since a shelf page is a whole capped list
-/// rather than a keyset page. No reading state rides a shelf page, so its
-/// stacks show no segments and put the first volume in front.
+/// The shelf lens's rows: members filtered, then stacked client-side when Stack series is on.
 pub(super) fn shelf_lens(
     members: &[EbookMetadata],
     filters: &ViewFilters,
@@ -102,8 +99,7 @@ pub(super) struct LandingViewState {
     /// browse lens or when the viewer hides nothing.
     pub(super) hidden_count: Option<i64>,
     pub(super) visible_books: Vec<EbookMetadata>,
-    /// Stacks riding with `visible_books`, each in its `lead_uuid` row's slot;
-    /// empty unless Stack series applies.
+    /// Stacks riding with `visible_books`; empty unless Stack series applies.
     pub(super) visible_stacks: Vec<SeriesStack>,
     pub(super) visible_is_empty: bool,
     pub(super) books_empty: bool,

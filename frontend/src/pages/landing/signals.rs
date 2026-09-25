@@ -215,11 +215,7 @@ fn use_misc_signals() -> MiscSignals {
     }
 }
 
-/// Whether Stack series applies to this render: the viewer saved it on, the
-/// grid is showing (the table keeps a row per book), and nothing is searched
-/// (a search shows every matching volume). `false` until `/me` resolves — on
-/// SSR and the first WASM paint alike, so hydration matches (rule 07) — and
-/// always on mobile, whose REST page carries no stacks.
+/// Whether Stack series applies (saved on, grid, no search); off until `/me` resolves (rule 07).
 fn use_stack_series(
     viewer: ReadSignal<Option<UserSummary>>,
     query: Signal<String>,
@@ -308,10 +304,7 @@ fn wire_page_fetch_effects(
             .unwrap_or_default()
     });
 
-    // Refetch page 1 whenever the search query or a *data-affecting* pref
-    // (sort axis/dir or filters) changes, the viewer's hidden-formats pref
-    // lands/changes, or Stack series starts or stops applying. A view-mode
-    // toggle therefore refetches only for a viewer who stacks.
+    // Page 1 refetches on query, sort, filters, hidden formats, or Stack series starting to apply.
     let fetch_key = use_memo(move || {
         let p = prefs();
         (

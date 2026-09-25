@@ -11,12 +11,7 @@ use super::series_grid::{band_style, stack_leaves, stack_segments};
 use super::sorting::slugify;
 use crate::Route;
 
-/// A folded series: up to three covers fanned (front first), a count badge,
-/// and a progress segment per volume once one is started. A click — or
-/// Enter/Space — deals it out through `on_open(lead_uuid)`. `refocus` takes
-/// focus on mount: the tile just returned from a fold, whose Fold up button
-/// held focus and vanished. Wrapped in its own `listitem` cell so the grid's
-/// `role="list"` owns only list items; the control inside stays a button.
+/// A folded series in its own list-item cell; takes focus on mount when `refocus` names its lead.
 #[component]
 pub(super) fn StackTile(
     stack: SeriesStack,
@@ -98,8 +93,7 @@ pub(super) fn StackTile(
     }
 }
 
-/// One fanned cover. Its own component so each leaf reads its own cover
-/// cache-bust counter, as a grid tile does.
+/// One fanned cover, its own component so it reads its own cover cache-bust counter.
 #[component]
 fn StackLeaf(book: EbookMetadata, server_url: String, depth: usize) -> Element {
     let uuid = book.unique_identifier.clone().unwrap_or_default();
@@ -119,11 +113,7 @@ fn StackLeaf(book: EbookMetadata, server_url: String, depth: usize) -> Element {
     }
 }
 
-/// The head card a dealt-out stack opens on: the series name, how many of its
-/// books are in the library (the app knows no series total, so it never
-/// claims one), the series page, and Fold up — which takes focus, so Escape
-/// and Enter reach the run without a click. It is itself the grid's
-/// `listitem` cell, so no separate control needs a `role`.
+/// The dealt-out run's head card; Fold up takes focus so Escape reaches the run without a click.
 #[component]
 pub(super) fn StackCap(stack: SeriesStack, on_fold: EventHandler<()>) -> Element {
     let front = stack.front().cloned().unwrap_or_default();

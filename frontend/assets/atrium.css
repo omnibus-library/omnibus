@@ -12322,15 +12322,8 @@ html {
   color: color-mix(in oklch, white 62%, transparent);
 }
 
-/* ── Series stacks (#2634) ─────────────────────────────────────────
-   Stack series folds each series into one cell of the wall: up to three
-   covers fanned, a count badge, and a segment per volume once one is
-   started. Opening it deals the volumes out in place behind a head card, on
-   a band tinted `--sa` (the front volume's accent, set inline). Ported from
-   the design mock with its classes mapped onto the wall's own:
-   .lmq-tile → .lib-tile, .lmq-tart → .lib-tile-art, .lmq-tcap → .lib-tile-cap. */
-/* The run's band paints at z-index -1; isolating the grid keeps it above the
-   page background instead of sinking beneath it. */
+/* ── Series stacks ── */
+/* Isolated so a run's z-index -1 band stays above the page background. */
 .lmq .lib-grid { position: relative; isolation: isolate; }
 .lmq .ss-art { position: relative; display: block; aspect-ratio: 2 / 3; }
 .lmq .ss-leaf {

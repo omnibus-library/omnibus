@@ -5,8 +5,6 @@
 //! toggle is set to grid. Under the marquee layout the tiles read as a cover
 //! wall: the caption is a layer over the cover's foot that arrives on hover
 //! (`.lmq .lib-tile-cap` in `atrium.css`) rather than a block beneath it.
-//! With Stack series on, a series stands in one cell ([`super::series_tiles`])
-//! and opening it deals its volumes out in place, one series at a time.
 
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
@@ -20,8 +18,7 @@ use crate::Route;
 /// `sizes` for a wall cover — the column's rendered width per breakpoint.
 pub(super) const TILE_SIZES: &str = "(max-width: 640px) 160px, (max-width: 1280px) 200px, 240px";
 
-/// Deal-out / fold motion. Web interop run from a post-render effect: SSR
-/// never runs effects, so the markup stays identical (rule 07).
+/// Deal-out / fold motion, run from a post-render effect so SSR markup stays identical (rule 07).
 const SERIES_FLIP_JS: &str = include_str!("series_flip.js");
 
 /// Entrance-cascade delay for tile `index`, mirroring the iOS settle cascade:
@@ -87,7 +84,7 @@ pub(super) fn BookGrid(
     }
 }
 
-/// One grid cell, keyed at the loop root so opening a stack moves the wall rather than rebuilding it.
+/// One grid cell, keyed at the loop root so a deal-out moves the wall rather than rebuilding it.
 #[component]
 fn GridCell(
     item: GridItem,
@@ -136,8 +133,7 @@ fn GridTile(
     book: EbookMetadata,
     server_url: String,
     index: usize,
-    // Set for a volume of a dealt-out series: the run's chrome around the
-    // ordinary tile.
+    // A dealt-out volume's run chrome; `None` for an ordinary tile.
     #[props(default)] vol: Option<VolumeCell>,
 ) -> Element {
     // Stable per-book uuid drives both detail-route URL and thumb URL

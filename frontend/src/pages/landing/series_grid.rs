@@ -51,10 +51,7 @@ pub(super) struct VolumeCell {
     pub(super) deck: usize,
 }
 
-/// The grid's cells for `books` (the rows, in order) given the `stacks` riding
-/// with them. A row that leads a stack becomes the stack or — when `open`
-/// names it — the head card followed by every volume in series order. A stack
-/// under two members shows as its book: a stack is a series of two or more.
+/// The grid's cells: a stack's lead row becomes the stack, or its head card and volumes when open.
 pub(super) fn grid_items(
     books: &[EbookMetadata],
     stacks: &[SeriesStack],
@@ -92,7 +89,7 @@ pub(super) fn stack_leads(stacks: &[SeriesStack]) -> Vec<String> {
         .collect()
 }
 
-/// Whether `key` names a lead no current stack has — an open run or refocus left from an older page.
+/// Whether `key` names no current stack's lead: an open run or refocus left from an older page.
 pub(super) fn is_stale(key: Option<&str>, leads: &[String]) -> bool {
     key.is_some_and(|k| !leads.iter().any(|lead| lead == k))
 }
@@ -116,8 +113,7 @@ fn volume_cells(stack: &SeriesStack) -> Vec<VolumeCell> {
         .collect()
 }
 
-/// "Vol. N" — the book's series index, else its place in the run — with
-/// " · read" once the viewer finished it.
+/// "Vol. N" (series index, else run position), with " · read" once the viewer finished it.
 pub(super) fn volume_caption(stack: &SeriesStack, book: &EbookMetadata, position: usize) -> String {
     let number = book
         .series_index
@@ -136,8 +132,7 @@ pub(super) fn volume_caption(stack: &SeriesStack, book: &EbookMetadata, position
     }
 }
 
-/// ` --sa: <accent>;` — the run's tint: the front volume's accent, the page
-/// accent when it has none. Leading space so it appends to a style string.
+/// ` --sa: <accent>;` — the front volume's accent, else the page's; leading space to append.
 pub(super) fn band_style(stack: &SeriesStack) -> String {
     let accent = stack
         .front()
@@ -146,8 +141,7 @@ pub(super) fn band_style(stack: &SeriesStack) -> String {
     format!(" --sa: {accent};")
 }
 
-/// The covers a folded stack fans: the front volume first, then the rest in
-/// series order, at most three.
+/// The covers a folded stack fans: the front volume, then series order, at most three.
 pub(super) fn stack_leaves(stack: &SeriesStack) -> Vec<EbookMetadata> {
     let front = stack.front().cloned();
     let front_uuid = front.as_ref().and_then(|f| f.unique_identifier.clone());
@@ -163,8 +157,7 @@ pub(super) fn stack_leaves(stack: &SeriesStack) -> Vec<EbookMetadata> {
     leaves
 }
 
-/// Fill (0-100) per volume for the stack's progress segments, in series
-/// order; `None` until the viewer has started one — the tile then shows none.
+/// Per-volume segment fill (0-100) in series order; `None` until the viewer starts one.
 pub(super) fn stack_segments(stack: &SeriesStack) -> Option<Vec<u8>> {
     if !stack.states.iter().any(|s| s.started || s.finished) {
         return None;

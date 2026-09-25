@@ -1,8 +1,5 @@
-// Series-stack FLIP motion for the landing grid (#2634). Installed once per
-// grid element and replayed after every deal-out / fold render. A capture-
-// phase listener snapshots each cell's box *before* Dioxus handles the click
-// or key that changes the grid, so `play()` — run from a post-render effect —
-// can invert every cell from where it was. Skipped under reduced motion.
+// Series-stack FLIP for the landing grid, replayed after each deal-out or fold render.
+// Capture-phase listeners snapshot every cell before Dioxus handles the click or key.
 (() => {
   const grid = document.querySelector('[data-testid="lib-grid"]');
   if (!grid) return;
@@ -25,8 +22,7 @@
       const opens = (e.key === "Enter" || e.key === " ") && trigger(e.target);
       if (e.key === "Escape" || opens) snap();
     }, true);
-    // The stack's leaf pose (design `ssPose`, web leaf width .86) inside a
-    // cell `w` wide, relative to the cell's top-left.
+    // A leaf's pose in a stack cell `w` wide, from its top-left (design `ssPose`, width .86).
     const pose = (deck, w) => {
       const pct = 0.86, h = w * 1.5, d = Math.min(deck, 2);
       return {

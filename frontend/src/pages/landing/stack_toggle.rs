@@ -16,18 +16,15 @@ pub(super) const STACK_SAVE_ERROR: &str = "Couldn't save Stack series. Try again
 pub(super) struct StackToggleView {
     /// The viewer's saved preference.
     pub(super) saved: bool,
-    /// `/me` has resolved — until then `saved` is only the default, so the
-    /// switch waits rather than flip a value that hasn't arrived.
+    /// `/me` has resolved; until then `saved` is only the default.
     pub(super) ready: bool,
-    /// Why the switch is inert for this view; `None` leaves it live. Being
-    /// inert never touches the saved value.
+    /// Why the switch is inert here (the saved value stays put); `None` leaves it live.
     pub(super) note: Option<&'static str>,
     /// The last save's failure, cleared by the next click.
     pub(super) error: Option<String>,
 }
 
-/// Why Stack series can't apply to this view: a search shows every matching
-/// volume, and the table keeps one row per book.
+/// Why Stack series can't apply: a search shows every match, the table one row per book.
 pub(super) fn stack_toggle_note(view_mode: ViewMode, is_search: bool) -> Option<&'static str> {
     if is_search {
         Some("Unstacked while searching")
@@ -38,10 +35,7 @@ pub(super) fn stack_toggle_note(view_mode: ViewMode, is_search: bool) -> Option<
     }
 }
 
-/// The switch: an `aria-pressed` button, with the inert view's note before it
-/// and a failed save's alert after. A not-yet-`ready` switch carries a
-/// `pending` class instead of the note's dim styling, so the first paint
-/// doesn't flash faded-then-live once `/me` resolves.
+/// The switch: an `aria-pressed` button between the inert view's note and a failed save's alert.
 #[component]
 pub(super) fn StackToggle(view: StackToggleView, on_toggle: EventHandler<()>) -> Element {
     let disabled = !view.ready || view.note.is_some();
@@ -73,11 +67,7 @@ pub(super) fn StackToggle(view: StackToggleView, on_toggle: EventHandler<()>) ->
     }
 }
 
-/// This render's switch state and its click handler. A click flips the
-/// viewer's cached summary first — that re-keys the landing fetch, so the grid
-/// restacks without waiting on the save — then saves, restoring the old value
-/// and raising [`STACK_SAVE_ERROR`] if the server refuses. Patches the
-/// `CurrentUser` context, which only web/SSR has.
+/// The switch's state and click handler: flip the cached viewer, save, and revert on failure.
 pub(super) fn use_stack_toggle(note: Option<&'static str>) -> (StackToggleView, EventHandler<()>) {
     let error = use_signal(|| None::<String>);
     let saving = use_signal(|| false);
