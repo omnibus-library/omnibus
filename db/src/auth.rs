@@ -46,7 +46,8 @@ pub use users::{
     get_book_detail_scroll_stops, get_hidden_formats, get_kindle_email, get_user_by_id,
     get_user_by_username, list_users, promote_to_admin, registration_enabled,
     set_book_detail_scroll_stops, set_display_name, set_hidden_formats, set_kindle_email,
-    set_registration_enabled, unlock_user, update_user_permissions, DISPLAY_NAME_MAX_LEN,
+    set_registration_enabled, set_stack_series, unlock_user, update_user_permissions,
+    DISPLAY_NAME_MAX_LEN,
 };
 
 use sqlx::Row;
@@ -123,6 +124,8 @@ pub struct User {
     /// Whether this user's book detail page uses the snap-stop marquee.
     /// `false` (the default) renders it as one continuous scroll.
     pub book_detail_scroll_stops: bool,
+    /// Whether this user's landing grid folds each series into one tile.
+    pub stack_series: bool,
 }
 
 /// One live login. `device_id` is set only for bearer sessions minted by a
@@ -206,6 +209,7 @@ pub(crate) fn build_user_from_joined_row(row: &sqlx::sqlite::SqliteRow) -> User 
         has_avatar: row.get::<i64, _>("has_avatar") != 0,
         hidden_formats: parse_hidden_formats(row.get("hidden_formats")),
         book_detail_scroll_stops: row.get::<i64, _>("book_detail_scroll_stops") != 0,
+        stack_series: row.get::<i64, _>("stack_series") != 0,
     }
 }
 
@@ -222,6 +226,7 @@ pub(crate) fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
         has_avatar: row.get::<i64, _>("has_avatar") != 0,
         hidden_formats: parse_hidden_formats(row.get("hidden_formats")),
         book_detail_scroll_stops: row.get::<i64, _>("book_detail_scroll_stops") != 0,
+        stack_series: row.get::<i64, _>("stack_series") != 0,
     }
 }
 

@@ -37,6 +37,9 @@ pub struct UserSummary {
     /// renders it as one continuous scroll.
     #[serde(default)]
     pub book_detail_scroll_stops: bool,
+    /// Whether this user's landing grid folds each series into one tile.
+    #[serde(default)]
+    pub stack_series: bool,
 }
 
 impl UserSummary {
@@ -279,6 +282,16 @@ mod tests {
         )
         .unwrap();
         assert!(!v.book_detail_scroll_stops);
+    }
+
+    #[test]
+    fn user_summary_deserializes_payload_missing_stack_series() {
+        let v: UserSummary = serde_json::from_str(
+            r#"{"id":1,"username":"alice","is_admin":false,
+                "can_upload":false,"can_edit":false,"can_download":true}"#,
+        )
+        .unwrap();
+        assert!(!v.stack_series);
     }
 
     // Payloads from a pre-0088 server lack `client`. The default must name the

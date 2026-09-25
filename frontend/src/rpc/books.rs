@@ -67,8 +67,10 @@ pub async fn rpc_get_ebooks() -> Result<EbookLibrary> {
 /// `UserSummary::hidden_formats`) — client-passed so only the landing surface
 /// applies it, and the first page's `total`/`hidden_count` report the visible
 /// library size and the receipt.
-#[post("/api/rpc/ebooks/page", pool: PoolExt, _user: AuthUser)]
-#[allow(clippy::too_many_arguments)] // the macro adds pool/user to the six query knobs
+///
+/// `stack_series` asks for the Stack series page (grid, no search, viewer preference on).
+#[post("/api/rpc/ebooks/page", pool: PoolExt, user: AuthUser)]
+#[allow(clippy::too_many_arguments)] // the macro adds pool/user to the seven query knobs
 pub async fn rpc_get_ebooks_page(
     sort_key: SortKey,
     sort_dir: SortDir,
@@ -76,6 +78,7 @@ pub async fn rpc_get_ebooks_page(
     exclude_formats: Vec<String>,
     cursor: Option<String>,
     limit: i64,
+    stack_series: bool,
 ) -> Result<LibraryPage> {
     // Read-side clamp mirroring the REST twin: the exclusion is caller-
     // supplied, so cap it before it becomes SQL binds.
@@ -88,14 +91,16 @@ pub async fn rpc_get_ebooks_page(
         &exclude_formats,
         cursor.as_deref(),
         limit,
+        stack_series.then_some(user.id),
     )
     .await?)
 }
 
 /// Server-side body of [`rpc_get_ebooks_page`], extracted so the
 /// cursor-decode and first-page-aggregates branches can be unit-tested
-/// without the server-fn transport.
+/// without the server-fn transport. `stack_viewer` is `Some(id)` to read the series-stacked page.
 #[cfg(feature = "server")]
+#[allow(clippy::too_many_arguments)] // the RPC's knobs plus the stacking viewer
 async fn ebooks_page(
     pool: &sqlx::SqlitePool,
     sort_key: SortKey,
@@ -104,6 +109,7 @@ async fn ebooks_page(
     exclude_formats: &[String],
     cursor: Option<&str>,
     limit: i64,
+    stack_viewer: Option<i64>,
 ) -> Result<LibraryPage, ServerFnError> {
     let settings = db::get_settings(pool)
         .await
@@ -127,18 +133,39 @@ async fn ebooks_page(
         None => None,
     };
 
-    let page = db::list_books_page(
-        pool,
-        &paths,
-        sort_key,
-        sort_dir,
-        filters,
-        exclude_formats,
-        decoded.as_ref(),
-        limit,
-    )
-    .await
-    .map_err(|e| internal_rpc_error("list books page", e))?;
+    let (books, next, stacks) = match stack_viewer {
+        Some(viewer_id) => {
+            let page = db::list_books_page_stacked(
+                pool,
+                &paths,
+                sort_key,
+                sort_dir,
+                filters,
+                exclude_formats,
+                decoded.as_ref(),
+                limit,
+                viewer_id,
+            )
+            .await
+            .map_err(|e| internal_rpc_error("list stacked books page", e))?;
+            (page.books, page.next, page.stacks)
+        }
+        None => {
+            let page = db::list_books_page(
+                pool,
+                &paths,
+                sort_key,
+                sort_dir,
+                filters,
+                exclude_formats,
+                decoded.as_ref(),
+                limit,
+            )
+            .await
+            .map_err(|e| internal_rpc_error("list books page", e))?;
+            (page.books, page.next, Vec::new())
+        }
+    };
 
     let (total, facets, hidden_count) = if decoded.is_none() {
         first_page_aggregates(pool, &paths, exclude_formats).await?
@@ -148,11 +175,12 @@ async fn ebooks_page(
 
     Ok(LibraryPage {
         path,
-        books: page.books,
-        next_cursor: page.next.map(|c| c.encode()),
+        books,
+        next_cursor: next.map(|c| c.encode()),
         total,
         facets,
         hidden_count,
+        stacks,
     })
 }
 

@@ -151,6 +151,7 @@ pub(super) fn spawn_page_fetch_effect(
                     exclude_formats,
                     None,
                     PAGE_SIZE,
+                    false,
                 )
                 .await;
                 if *fetch_epoch.peek() != epoch {
@@ -276,6 +277,7 @@ pub(super) fn spawn_load_more_effect(
                 exclude_formats.peek().clone(),
                 cursor,
                 PAGE_SIZE,
+                false,
             )
             .await;
             // Drop the append if a page-1 refetch (sort/filter/query change)

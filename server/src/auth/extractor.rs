@@ -30,6 +30,7 @@ pub struct AuthUser {
     pub has_avatar: bool,
     pub hidden_formats: Vec<String>,
     pub book_detail_scroll_stops: bool,
+    pub stack_series: bool,
     pub session_id: i64,
     pub session_kind: SessionKind,
 }
@@ -49,6 +50,7 @@ impl AuthUser {
             has_avatar: self.has_avatar,
             hidden_formats: self.hidden_formats.clone(),
             book_detail_scroll_stops: self.book_detail_scroll_stops,
+            stack_series: self.stack_series,
         }
     }
 }
@@ -137,6 +139,7 @@ fn build_auth_user(user: auth_db::User, session: auth_db::Session) -> AuthUser {
         has_avatar: user.has_avatar,
         hidden_formats: user.hidden_formats,
         book_detail_scroll_stops: user.book_detail_scroll_stops,
+        stack_series: user.stack_series,
         session_id: session.id,
         session_kind: session.kind,
     }

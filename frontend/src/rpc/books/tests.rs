@@ -1,5 +1,5 @@
 use super::{ebooks_page, merge_candidates, search_ebooks};
-use omnibus_db::test_support::seed_synced_ebook;
+use omnibus_db::test_support::{indexed, seed_synced_ebook, seed_user};
 use omnibus_shared::{Settings, SortDir, SortKey, ViewFilters, SEARCH_QUERY_MAX_LEN};
 
 async fn configured_pool(audiobook_path: Option<&str>) -> sqlx::SqlitePool {
@@ -31,6 +31,7 @@ async fn ebooks_page_first_page_carries_total_and_facets() {
         &[],
         None,
         1,
+        None,
     )
     .await
     .unwrap();
@@ -56,6 +57,7 @@ async fn ebooks_page_later_page_continues_after_cursor_and_omits_aggregates() {
         &[],
         None,
         1,
+        None,
     )
     .await
     .unwrap();
@@ -69,6 +71,7 @@ async fn ebooks_page_later_page_continues_after_cursor_and_omits_aggregates() {
         &[],
         Some(&cursor),
         1,
+        None,
     )
     .await
     .unwrap();
@@ -91,6 +94,7 @@ async fn ebooks_page_surfaces_error_for_malformed_cursor() {
         &[],
         Some("not-a-server-issued-cursor"),
         10,
+        None,
     )
     .await;
 
@@ -157,6 +161,7 @@ async fn ebooks_page_with_exclusion_omits_hidden_books_and_reports_hidden_count(
         &["cbz".to_string()],
         None,
         50,
+        None,
     )
     .await
     .unwrap();
@@ -184,6 +189,7 @@ async fn ebooks_page_with_exclusion_reports_visible_total() {
         &["cbz".to_string()],
         None,
         50,
+        None,
     )
     .await
     .unwrap();
@@ -205,10 +211,103 @@ async fn ebooks_page_without_exclusion_keeps_current_total_and_no_hidden_count()
         &[],
         None,
         50,
+        None,
     )
     .await
     .unwrap();
 
     assert_eq!(page.total, Some(2));
     assert_eq!(page.hidden_count, None);
+}
+
+/// Index a two-book series and a standalone book under `/ebooks`.
+async fn seed_series(pool: &sqlx::SqlitePool) {
+    omnibus_db::replace_books(
+        pool,
+        "/ebooks",
+        vec![
+            indexed(
+                "saga-1.epub",
+                Some("Saga One"),
+                &["Ann Author"],
+                &[],
+                Some(("Saga", "1")),
+                None,
+            ),
+            indexed(
+                "saga-2.epub",
+                Some("Saga Two"),
+                &["Ann Author"],
+                &[],
+                Some(("Saga", "2")),
+                None,
+            ),
+            indexed(
+                "lone.epub",
+                Some("Lone Book"),
+                &["Bob Author"],
+                &[],
+                None,
+                None,
+            ),
+        ],
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ebooks_page_with_a_stack_viewer_folds_a_series_and_carries_its_stack() {
+    let pool = configured_pool(None).await;
+    seed_series(&pool).await;
+    let viewer = seed_user(&pool, "reader").await;
+
+    let page = ebooks_page(
+        &pool,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        50,
+        Some(viewer),
+    )
+    .await
+    .unwrap();
+
+    let titles: Vec<_> = page
+        .books
+        .iter()
+        .filter_map(|b| b.title.as_deref())
+        .collect();
+    assert_eq!(titles, vec!["Lone Book", "Saga One"]);
+    assert_eq!(page.stacks.len(), 1);
+    assert_eq!(page.stacks[0].members.len(), 2);
+    assert_eq!(
+        page.total,
+        Some(3),
+        "the header still counts books, not tiles"
+    );
+}
+
+#[tokio::test]
+async fn ebooks_page_without_a_stack_viewer_lists_every_book_and_no_stacks() {
+    let pool = configured_pool(None).await;
+    seed_series(&pool).await;
+
+    let page = ebooks_page(
+        &pool,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        50,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.books.len(), 3);
+    assert!(page.stacks.is_empty());
 }

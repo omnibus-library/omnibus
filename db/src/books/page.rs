@@ -2,7 +2,8 @@
 //! [`list_books_page`] returns one page ordered by any [`SortKey`] axis,
 //! filtered by the sidebar [`ViewFilters`] and positioned by an opaque
 //! [`PageCursor`] encoding the last row's `(sort-value, series-index, id)` — so
-//! each axis stays a pure index range scan and paging never uses `OFFSET`.
+//! each axis stays a pure index range scan and paging never uses `OFFSET`;
+//! [`stacked`] folds each series into one row on top of it.
 
 use base64::engine::{general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use omnibus_shared::{EbookMetadata, SortDir, SortKey, ViewFilters};
@@ -17,6 +18,10 @@ use super::projection::{
     backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
     MAX_BOOKS_RETURNED,
 };
+
+mod stacked;
+
+pub use stacked::{list_books_page_stacked, StackedBookPage};
 
 /// Opaque keyset position: the active axis's sort value (`sort`), the
 /// secondary numeric key for the Series axis (`idx`, the in-series index;
@@ -118,6 +123,33 @@ pub async fn list_books_page(
     cursor: Option<&PageCursor>,
     limit: i64,
 ) -> Result<BookPage, super::BooksError> {
+    fetch_page(
+        pool,
+        library_paths,
+        sort,
+        dir,
+        filters,
+        exclude_formats,
+        cursor,
+        limit,
+        false,
+    )
+    .await
+}
+
+/// Shared body of [`list_books_page`] and [`list_books_page_stacked`].
+#[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the stacking switch
+async fn fetch_page(
+    pool: &SqlitePool,
+    library_paths: &[&str],
+    sort: SortKey,
+    dir: SortDir,
+    filters: &ViewFilters,
+    exclude_formats: &[String],
+    cursor: Option<&PageCursor>,
+    limit: i64,
+    stacked: bool,
+) -> Result<BookPage, super::BooksError> {
     if library_paths.is_empty() {
         return Ok(BookPage {
             books: Vec::new(),
@@ -126,21 +158,20 @@ pub async fn list_books_page(
     }
     let limit = limit.clamp(1, MAX_BOOKS_RETURNED);
 
-    let (sql, mut binds) =
-        build_page_sql(sort, dir, library_paths, filters, exclude_formats, cursor);
+    let (sql, mut binds) = build_page_sql(
+        sort,
+        dir,
+        library_paths,
+        filters,
+        exclude_formats,
+        cursor,
+        stacked,
+    );
     // Fetch one beyond the page so a full page can advertise a `next` cursor
     // without a trailing empty round-trip.
     binds.push(SqlVal::Int(limit + 1));
 
-    let mut q = sqlx::query(&sql);
-    for v in &binds {
-        q = match v {
-            SqlVal::Text(s) => q.bind(s.as_str()),
-            SqlVal::Real(r) => q.bind(*r),
-            SqlVal::Int(i) => q.bind(*i),
-        };
-    }
-    let rows = q.fetch_all(pool).await?;
+    let rows = bind_all(sqlx::query(&sql), &binds).fetch_all(pool).await?;
 
     // Saturating fallback: a (never-expected) negative limit degrades to
     // "take everything" like the old `as usize` wrap did, rather than a
@@ -161,7 +192,8 @@ pub async fn list_books_page(
 /// Build the paginated `SELECT` and its positional binds for `sort`/`dir`
 /// over `library_paths`, filtered by `filters` and seeked past `cursor`.
 /// Split out of [`list_books_page`] so the SQL-construction stage is
-/// independently testable from the fetch/decode stage.
+/// independently testable from the fetch/decode stage. `stacked` narrows it
+/// to each series' representative row.
 fn build_page_sql(
     sort: SortKey,
     dir: SortDir,
@@ -169,20 +201,28 @@ fn build_page_sql(
     filters: &ViewFilters,
     exclude_formats: &[String],
     cursor: Option<&PageCursor>,
+    stacked: bool,
 ) -> (String, Vec<SqlVal>) {
     let (primary, secondary) = axis_sort_columns(sort);
-    let dir_sql = match dir {
-        SortDir::Asc => "ASC",
-        SortDir::Desc => "DESC",
-    };
+    let dir_sql = dir_keyword(dir);
 
     let mut binds: Vec<SqlVal> = Vec::new();
-    let path_ph = placeholders(library_paths.len());
-    for p in library_paths {
-        binds.push(SqlVal::Text((*p).to_string()));
-    }
+    let visible = visible_book_sql(library_paths, &mut binds);
     let filter_sql = filter_predicates(filters, &mut binds);
     let exclude_sql = exclude_formats_predicate(exclude_formats, &mut binds);
+    // Between the exclusion and the keyset: binds follow the `?` text order.
+    let stack_sql = if stacked {
+        stacked::representative_predicate(
+            sort,
+            dir,
+            library_paths,
+            filters,
+            exclude_formats,
+            &mut binds,
+        )
+    } else {
+        String::new()
+    };
     let keyset_sql = match cursor {
         Some(c) => format!(
             " AND {}",
@@ -220,10 +260,8 @@ fn build_page_sql(
           FROM books b
           JOIN scan_roots l ON l.id = b.library_id
           LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-         WHERE ((l.path IN ({path_ph})
-                 AND EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id))
-             OR EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid))
-           {filter_sql}{exclude_sql}{keyset_sql}
+         WHERE {visible}
+           {filter_sql}{exclude_sql}{stack_sql}{keyset_sql}
          ORDER BY {order_by}
          LIMIT ?
         "
@@ -314,6 +352,40 @@ fn cursor_from_row(row: &sqlx::sqlite::SqliteRow, sort: SortKey) -> PageCursor {
 /// `?, ?, …` of length `n`.
 pub(super) fn placeholders(n: usize) -> String {
     std::iter::repeat_n("?", n).collect::<Vec<_>>().join(", ")
+}
+
+/// `ASC` / `DESC` for `dir`.
+fn dir_keyword(dir: SortDir) -> &'static str {
+    match dir {
+        SortDir::Asc => "ASC",
+        SortDir::Desc => "DESC",
+    }
+}
+
+/// The landing's visibility gate: a file under `library_paths`, or any physical copy.
+fn visible_book_sql(library_paths: &[&str], binds: &mut Vec<SqlVal>) -> String {
+    let path_ph = placeholders(library_paths.len());
+    binds.extend(library_paths.iter().map(|p| SqlVal::Text((*p).to_string())));
+    format!(
+        "((l.path IN ({path_ph}) \
+           AND EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)) \
+          OR EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid))"
+    )
+}
+
+/// Bind `binds` onto `q` in order.
+fn bind_all<'q>(
+    mut q: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    binds: &'q [SqlVal],
+) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
+    for v in binds {
+        q = match v {
+            SqlVal::Text(s) => q.bind(s.as_str()),
+            SqlVal::Real(r) => q.bind(*r),
+            SqlVal::Int(i) => q.bind(*i),
+        };
+    }
+    q
 }
 
 /// Build the `( clause OR clause … )` keyset predicate selecting rows strictly
@@ -416,11 +488,8 @@ pub async fn count_books_page(
     if library_paths.is_empty() {
         return Ok(0);
     }
-    let mut binds: Vec<SqlVal> = library_paths
-        .iter()
-        .map(|p| SqlVal::Text((*p).to_string()))
-        .collect();
-    let path_ph = placeholders(library_paths.len());
+    let mut binds: Vec<SqlVal> = Vec::new();
+    let visible = visible_book_sql(library_paths, &mut binds);
     let filter_sql = filter_predicates(filters, &mut binds);
     let exclude_sql = exclude_formats_predicate(exclude_formats, &mut binds);
     let sql = format!(
@@ -428,9 +497,7 @@ pub async fn count_books_page(
         SELECT COUNT(*)
           FROM books b
           JOIN scan_roots l ON l.id = b.library_id
-         WHERE ((l.path IN ({path_ph})
-                 AND EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id))
-             OR EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid)){filter_sql}{exclude_sql}
+         WHERE {visible}{filter_sql}{exclude_sql}
         "
     );
     let mut q = sqlx::query_scalar::<_, i64>(&sql);
