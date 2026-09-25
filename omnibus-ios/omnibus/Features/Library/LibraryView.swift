@@ -279,11 +279,14 @@ final class LibraryModel {
 
         isLoadingMore = true
         defer { isLoadingMore = false }
+        let token = loadToken
         do {
             // Pages past the first aren't cached, so this yields exactly once.
             for try await read in LibraryService.page(
                 sort: sort, direction: direction, filter: activeFilter, cursor: cursor
             ) {
+                // A reload (a sort or Stack series change) replaced the grid mid-read.
+                guard loadToken == token else { return }
                 let page = read.value
                 hasPaginated = true
                 (books, stacks) = Self.appending(page, to: books, stacks: stacks)
@@ -291,7 +294,7 @@ final class LibraryModel {
                 reachedEnd = page.nextCursor == nil || page.books.isEmpty
             }
         } catch {
-            reachedEnd = true
+            if loadToken == token { reachedEnd = true }
         }
     }
 }

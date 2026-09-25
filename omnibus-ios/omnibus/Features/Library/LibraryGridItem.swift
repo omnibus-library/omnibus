@@ -32,7 +32,7 @@ enum LibraryGridItem: Hashable, Identifiable, Sendable {
 extension LibraryModel {
     /// The cells the grid renders for the loaded pages.
     var gridItems: [LibraryGridItem] {
-        Self.gridItems(books: visibleBooks, stacks: stacks, open: openSeries)
+        Self.gridItems(books: visibleBooks, stacks: stackSeries ? stacks : [:], open: openSeries)
     }
 
     /// Each stacked series in its lead's slot; the open one as a head card then its volumes.

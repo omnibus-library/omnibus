@@ -150,6 +150,15 @@ struct LibraryModelStackTests {
         #expect(merged.books.map(\.id) == [1, 3])
         #expect(merged.stacks.keys.sorted() == ["u1"])
     }
+
+    @Test func gridItemsAreAllBooksWhileStackSeriesIsOff() {
+        let one = book(1, "Saga One", series: "Saga", index: "1")
+        let two = book(2, "Saga Two", series: "Saga", index: "2")
+        let model = model()
+        model.books = [one]
+        model.stacks = LibraryModel.stackIndex([stack(lead: one, members: [one, two])])
+        #expect(model.gridItems.map(\.id) == ["book-u1"], "a stale stack can't fold an unstacked grid")
+    }
 }
 
 struct LibraryGridItemsTests {
