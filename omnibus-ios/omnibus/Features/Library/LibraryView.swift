@@ -662,7 +662,7 @@ struct LibraryView: View {
             }
         }
         .animation(Motion.snap, value: isFiltered)
-        .animation(Motion.snap, value: model.stackSeries)
+        .animation(reduceMotion ? nil : Motion.snap, value: model.stackSeries)
         .accessibilityLabel("Filter and sort")
         .accessibilityValue(model.stackSeries ? "Stack series on" : "")
     }
@@ -674,7 +674,7 @@ struct LibraryView: View {
             .foregroundStyle(palette.accentColor)
             .frame(width: 20, height: 20)
             .background(Circle().fill(palette.accentColor.opacity(0.22)))
-            .transition(.scale.combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
     }
 
     /// Restacks at once and saves to the account; a failed save puts the grid back.
