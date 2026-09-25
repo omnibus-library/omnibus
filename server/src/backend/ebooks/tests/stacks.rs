@@ -162,7 +162,11 @@ async fn api_get_ebooks_stacked_second_page_still_carries_stacks() {
     let second = get_page(&app, &format!("{uri}&cursor={cursor}"), &token).await;
 
     assert_eq!(second.titles(), vec!["Saga One"]);
-    assert_eq!(second.stacks().len(), 1, "the cursor keeps the stacked form");
+    assert_eq!(
+        second.stacks().len(),
+        1,
+        "the cursor keeps the stacked form"
+    );
 }
 
 #[tokio::test]
