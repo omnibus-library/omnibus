@@ -5,14 +5,19 @@
 
 use axum::{
     body::Body,
+    extract::State,
     http::{header::AUTHORIZATION, Request, StatusCode},
+    Json,
 };
 use tower::ServiceExt;
 
-use omnibus_db::{self as db};
+use omnibus_db::{self as db, auth::SessionKind};
 
 use crate::auth::test_support as auth_test_support;
+use crate::auth::AuthUser;
 use crate::backend::test_support::*;
+
+use super::{post_stack_series, SetStackSeries};
 
 /// Build an authenticated JSON POST request.
 fn post_json(uri: &str, token: &str, body: serde_json::Value) -> Request<Body> {
@@ -185,4 +190,31 @@ async fn post_stack_series_without_session_returns_401() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+// Invoked directly: a closed pool would fail the bearer extractor before the handler ran.
+#[tokio::test]
+async fn post_stack_series_returns_500_when_the_db_is_unavailable() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+    let user = AuthUser {
+        id: 1,
+        username: "reader".to_string(),
+        is_admin: false,
+        can_upload: false,
+        can_edit: false,
+        can_download: false,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+        session_id: 1,
+        session_kind: SessionKind::Bearer,
+    };
+
+    let res = post_stack_series(user, State(state), Json(SetStackSeries { enabled: true })).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
