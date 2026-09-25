@@ -93,6 +93,32 @@ struct SeriesStackRequestTests {
     }
 }
 
+struct SeriesStackCacheTests {
+    @Test func aStackedFirstPageCachesNoReadingState() async throws {
+        await OfflineStore.shared.open()
+        let key = CacheKey.libraryPage("test-\(UUID().uuidString)|stack")
+        let one = book(1, "One", series: "Saga", index: "1")
+        let two = book(2, "Two", series: "Saga", index: "2")
+        let reading = [StackMemberState(uuid: "u2", percent: 40, started: true, finished: false)]
+        let page = LibraryPageResult(
+            books: [one], stacks: [stack(lead: one, members: [one, two], states: reading)]
+        )
+
+        var live: LibraryPageResult?
+        let reads = LibraryService.firstPage(
+            signature: String(key.dropFirst(CacheKey.libraryPagePrefix.count)),
+            fetch: { page }, fallback: { LibraryPageResult(books: []) }
+        )
+        for try await read in reads { live = read.value }
+        let cached: LibraryPageResult? = await Cache.read(key)
+        await OfflineStore.shared.cacheDelete(key)
+
+        #expect(live?.stacks?.first?.states == reading, "the live answer keeps the viewer's state")
+        #expect(cached?.stacks?.first?.members.count == 2)
+        #expect(cached?.stacks?.first?.states == [], "the library-wide replica keeps none")
+    }
+}
+
 struct LibraryGridItemsTests {
     private let one = book(1, "Saga One", series: "Saga", index: "1")
     private let two = book(2, "Saga Two", series: "Saga", index: "2")

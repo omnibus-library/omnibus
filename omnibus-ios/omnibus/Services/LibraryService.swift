@@ -79,6 +79,17 @@ struct LibraryPageResult: Codable, Sendable {
     var hiddenCount: Int64?
     /// The page's series stacks when stacked; optional so pre-upgrade cached pages decode.
     var stacks: [SeriesStack]?
+
+    /// The page minus the viewer's reading state, for the library-wide replica.
+    var withoutViewerState: LibraryPageResult {
+        var page = self
+        page.stacks = stacks?.map { stack in
+            var stack = stack
+            stack.states = []
+            return stack
+        }
+        return page
+    }
 }
 
 enum LibraryService {
@@ -125,7 +136,15 @@ enum LibraryService {
             }
         }
 
-        return firstPage(query: query, signature: signature) {
+        return firstPage(signature: signature) {
+            let (library, next, hidden): (EbookLibrary, String?, Int64?) =
+                try await APIClient.shared.getPagedCounted("/api/ebooks", query: query)
+            return LibraryPageResult(
+                books: library.books, nextCursor: next,
+                total: library.total, hiddenCount: hidden,
+                stacks: library.stacks
+            )
+        } fallback: {
             await LibraryIndex.shared.page(
                 sort: sort, direction: direction, filter: filter, limit: pageSize, offset: 0
             )
@@ -189,24 +208,19 @@ enum LibraryService {
     /// The first page: replica, then server, then — if the server can't be
     /// reached and nothing was cached — the mirror. The last hop is what makes
     /// a cold launch offline show a library instead of an error.
-    private static func firstPage(
-        query: [String: String?],
+    static func firstPage(
         signature: String,
+        fetch: @escaping @Sendable () async throws -> LibraryPageResult,
         fallback: @escaping @Sendable () async -> LibraryPageResult
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 var delivered = false
                 do {
-                    let live = Cache.live(CacheKey.libraryPage(signature)) {
-                        let (library, next, hidden): (EbookLibrary, String?, Int64?) =
-                            try await APIClient.shared.getPagedCounted("/api/ebooks", query: query)
-                        return LibraryPageResult(
-                            books: library.books, nextCursor: next,
-                            total: library.total, hiddenCount: hidden,
-                            stacks: library.stacks
-                        )
-                    }
+                    let live = Cache.live(
+                        CacheKey.libraryPage(signature), storing: { $0.withoutViewerState },
+                        fetch: fetch
+                    )
                     for try await read in live {
                         delivered = true
                         continuation.yield(read)

@@ -171,8 +171,11 @@ enum Cache {
     /// was no replica to fall back on — once a value has gone out, an offline
     /// failure ends the stream quietly rather than replacing good data with an
     /// error.
+    ///
+    /// `storing` shapes what the replica keeps; the caller still gets the full answer.
     static func live<T: Codable & Sendable>(
         _ key: String,
+        storing: (@Sendable (T) -> T)? = nil,
         fetch: @escaping @Sendable () async throws -> T
     ) -> AsyncThrowingStream<CacheRead<T>, Error> {
         AsyncThrowingStream { continuation in
@@ -220,7 +223,8 @@ enum Cache {
                     // asks. Nothing is yielded to a consumer that has gone; the
                     // replica is written either way.
                     let freshData = try? encoder.encode(fresh)
-                    if let freshData { await OfflineStore.shared.cachePut(key, freshData) }
+                    let storedData = storing.map { try? encoder.encode($0(fresh)) } ?? freshData
+                    if let storedData { await OfflineStore.shared.cachePut(key, storedData) }
                     guard !Task.isCancelled else {
                         continuation.finish()
                         return
