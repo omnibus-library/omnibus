@@ -759,7 +759,13 @@ struct BookGridCell: View {
     @ViewBuilder
     private var progressBar: some View {
         if let progress {
-            ProgressBar(fraction: progress.fraction, tint: progress.tint, height: 2)
+            // Static, not `ProgressBar`: a lazy grid's rebuilds would replay its draw-in.
+            Capsule()
+                .fill(palette.bg3Color)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(progress.tint)
+                        .scaleEffect(x: progress.fraction, y: 1, anchor: .leading)
+                }
                 .frame(height: 2)
                 .offset(y: 5)
         }
