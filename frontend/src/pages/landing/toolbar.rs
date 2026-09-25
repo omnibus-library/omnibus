@@ -278,16 +278,8 @@ mod tests {
 
         assert!(html.contains("data-testid=\"lib-stack-toggle\""));
         assert!(html.contains("disabled"));
-        assert!(!html.contains("data-testid=\"lib-stack-note\""));
-    }
-
-    #[test]
-    fn toolbar_marks_the_stack_toggle_pending_without_dimming_while_the_viewer_resolves() {
-        // Not-ready is disabled but must not carry the note-based dim class —
-        // no faded-then-live flicker on the first paint.
-        let html = render_toolbar_with(ViewPrefs::default(), None, StackToggleView::default());
-
         assert!(html.contains("class=\"ss-tog pending\""));
+        assert!(!html.contains("data-testid=\"lib-stack-note\""));
     }
 
     #[test]
