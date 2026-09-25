@@ -18,6 +18,8 @@ struct LibraryFilter: Equatable, Sendable {
     /// formats-less row (physical-only) is never hidden — mirroring the
     /// server's predicate.
     var hiddenFormats: [String] = []
+    /// The viewer's Stack series preference: fold each series into one tile.
+    var stackSeries = false
 
     static let none = LibraryFilter()
 }

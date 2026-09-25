@@ -60,3 +60,35 @@ struct SeriesStackDecodeTests {
         #expect(reading.front?.id == 2)
     }
 }
+
+struct SeriesStackRequestTests {
+    @Test func pageSignatureDiffersWhenStacked() {
+        var stacked = LibraryFilter()
+        stacked.stackSeries = true
+        #expect(
+            LibraryService.pageSignature(sort: .title, direction: .asc, filter: .none)
+                != LibraryService.pageSignature(sort: .title, direction: .asc, filter: stacked),
+            "a toggle must miss the cached first page"
+        )
+    }
+
+    @Test func pageQueryAsksForStacksOnlyWhenStacked() {
+        let off = LibraryService.pageQuery(
+            sort: .title, direction: .asc, formats: [], excludeFormats: [],
+            stackSeries: false, cursor: nil
+        )
+        let on = LibraryService.pageQuery(
+            sort: .title, direction: .asc, formats: [], excludeFormats: [],
+            stackSeries: true, cursor: nil
+        )
+        #expect(off["stack_series"] == nil)
+        #expect(on["stack_series"] == "true")
+    }
+
+    @Test func aCachedPageFromBeforeStacksStillDecodes() throws {
+        let cached = #"{"books":[],"nextCursor":"c1"}"#
+        let page = try JSONDecoder().decode(LibraryPageResult.self, from: Data(cached.utf8))
+        #expect(page.stacks == nil)
+        #expect(page.nextCursor == "c1")
+    }
+}
