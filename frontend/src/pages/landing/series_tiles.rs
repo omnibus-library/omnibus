@@ -185,3 +185,6 @@ fn stack_glyph() -> Element {
         }
     }
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests;

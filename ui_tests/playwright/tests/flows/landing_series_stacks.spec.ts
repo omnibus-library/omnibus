@@ -163,6 +163,7 @@ test("opening a stack deals its volumes out behind a head card and escape folds 
 
   await expect(cap).toHaveCount(0);
   await expect(pioneersStack(stacker)).toBeVisible();
+  await expect(pioneersStack(stacker)).toBeFocused();
   for (const slug of PIONEERS) {
     await expect(volumeTile(stacker, slug)).toHaveCount(0);
   }
