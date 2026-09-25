@@ -53,6 +53,21 @@ final class LibraryModel {
     /// viewer hides nothing.
     var hiddenCount: Int64?
 
+    /// Whether the grid folds each series into one tile; seeded from `app.user`.
+    var stackSeries = false {
+        didSet {
+            guard stackSeries != oldValue else { return }
+            openSeries = nil
+            Task { await reload() }
+        }
+    }
+    /// The loaded pages' series stacks, keyed by lead uuid.
+    var stacks: [String: SeriesStack] = [:]
+    /// The lead uuid of the stack dealt out in place, if any.
+    var openSeries: String?
+    /// Why the last Stack series save failed; shown under the heading.
+    var stackSeriesError: String?
+
     /// Header category strip. Format buckets are pushed to the server as a
     /// `formats` filter; `downloaded` is answered from the local library mirror,
     /// which is what lets it mean the whole library rather than whichever page
@@ -68,11 +83,11 @@ final class LibraryModel {
     /// so this is the loaded page as-is.
     var visibleBooks: [Book] { books }
 
-    /// The category's filter with the viewer's hidden-formats folded in —
-    /// the one filter every page read uses.
+    /// The category's filter plus the viewer's hidden-formats and Stack series prefs.
     private var activeFilter: LibraryFilter {
         var filter = category.filter
         filter.hiddenFormats = hiddenFormats
+        filter.stackSeries = stackSeries
         return filter
     }
 
@@ -92,6 +107,8 @@ final class LibraryModel {
     }
 
     func reload() async {
+        // New data can lead a series with another volume, so the open run folds.
+        openSeries = nil
         let token = UUID()
         loadToken = token
         isLoading = true
@@ -115,6 +132,7 @@ final class LibraryModel {
                         self.cursor = read.value.nextCursor
                         self.reachedEnd = read.value.nextCursor == nil
                         self.hiddenCount = read.value.hiddenCount
+                        self.stacks = Self.stackIndex(read.value.stacks)
                         self.error = nil
                         self.isLoading = false
                     }
@@ -246,6 +264,7 @@ final class LibraryModel {
                 cursor = read.value.nextCursor
                 reachedEnd = read.value.nextCursor == nil
                 hiddenCount = read.value.hiddenCount
+                stacks = Self.stackIndex(read.value.stacks)
             }
         } catch {}
     }
@@ -259,20 +278,22 @@ final class LibraryModel {
 
         isLoadingMore = true
         defer { isLoadingMore = false }
+        let token = loadToken
         do {
             // Pages past the first aren't cached, so this yields exactly once.
             for try await read in LibraryService.page(
                 sort: sort, direction: direction, filter: activeFilter, cursor: cursor
             ) {
+                // A reload (a sort or Stack series change) replaced the grid mid-read.
+                guard loadToken == token else { return }
                 let page = read.value
-                let existing = Set(books.map(\.id))
                 hasPaginated = true
-                books.append(contentsOf: page.books.filter { !existing.contains($0.id) })
+                (books, stacks) = Self.appending(page, to: books, stacks: stacks)
                 self.cursor = page.nextCursor
                 reachedEnd = page.nextCursor == nil || page.books.isEmpty
             }
         } catch {
-            reachedEnd = true
+            if loadToken == token { reachedEnd = true }
         }
     }
 }
@@ -291,7 +312,9 @@ struct LibraryView: View {
     @Environment(AppState.self) private var app
     @State private var model = LibraryModel()
     @Namespace private var bookZoom
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var presentation = Presentation.shared
+    private var connectivity = Connectivity.shared
 
     // `alignment: .top` matters here: GridItem defaults to centering each
     // item within its row, so a row of `BookGridCell`s whose captions wrap to
@@ -358,15 +381,18 @@ struct LibraryView: View {
         }
         .environment(\.bookZoomNamespace, bookZoom)
         .task {
-            // Seed the pref before the first read so page 1 already excludes;
-            // a later identity refresh re-seeds via `onChange` below.
+            // Seed the prefs before the first read; `onChange` below re-seeds on an identity refresh.
             model.hiddenFormats = app.user?.hiddenFormats ?? []
+            model.stackSeries = app.user?.stackSeries ?? false
             await model.loadIfNeeded()
         }
         // An Account-screen save (or a login as someone else) reshapes the
         // already-mounted library tab.
         .onChange(of: app.user?.hiddenFormats) { _, formats in
             model.hiddenFormats = formats ?? []
+        }
+        .onChange(of: app.user?.stackSeries) { _, on in
+            model.stackSeries = on ?? false
         }
         // Background poll, mirroring the web client's sync tick. Tied to the
         // view's lifetime, so it pauses whenever the library isn't on screen.
@@ -430,6 +456,12 @@ struct LibraryView: View {
 
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     sectionHeading
+                    if let error = model.stackSeriesError {
+                        Text(error)
+                            .font(.ui(12))
+                            .foregroundStyle(palette.badColor)
+                            .screenPadding()
+                    }
                     grid
                 }
             }
@@ -440,15 +472,10 @@ struct LibraryView: View {
 
     private var grid: some View {
         LazyVGrid(columns: columns, spacing: 26) {
-            ForEach(Array(model.visibleBooks.enumerated()), id: \.element.id) { index, book in
-                NavigationLink(value: Destination.book(uuid: book.uuid)) {
-                    BookGridCell(book: book)
-                }
-                .buttonStyle(BookPressStyle())
-                .bookContextMenu(book, onEdited: { Task { await model.reload() } })
-                .bookZoomSource(book.uuid, in: bookZoom)
-                .cascadeIn(index: index)
-                .task { await model.loadMoreIfNeeded(currentItem: book) }
+            ForEach(Array(model.gridItems.enumerated()), id: \.element.id) { index, item in
+                gridCell(item)
+                    .cascadeIn(index: index)
+                    .task { await model.loadMoreIfNeeded(currentItem: item.anchor) }
             }
         }
         .screenPadding()
@@ -460,6 +487,58 @@ struct LibraryView: View {
                     .offset(y: 40)
             }
         }
+    }
+
+    @ViewBuilder
+    private func gridCell(_ item: LibraryGridItem) -> some View {
+        switch item {
+        case .book(let book):
+            bookLink(book) { BookGridCell(book: book) }
+        case .stack(let stack, _):
+            Button { setOpenSeries(stack.leadUuid) } label: {
+                SeriesStackCell(stack: stack)
+            }
+            .buttonStyle(BookPressStyle())
+            .accessibilityLabel("\(stack.name), \(stack.members.count) books")
+            .accessibilityHint("Opens the series in place")
+            .accessibilityIdentifier("library-stack-\(StackPresentation.slug(stack.name))")
+        case .cap(let stack, _):
+            SeriesCapCell(stack: stack) { setOpenSeries(nil) }
+        case .volume(let book, let stack, let index, _):
+            let tint = stack.palette(over: palette).accentColor
+            let state = stack.state(of: book.uuid)
+            let progress: (fraction: Double, tint: Color)? = {
+                guard let state, state.started, !state.finished, let percent = state.percent,
+                      percent > 0
+                else { return nil }
+                return (Double(percent) / 100, tint)
+            }()
+            bookLink(book) {
+                BookGridCell(
+                    book: book,
+                    caption: (
+                        StackPresentation.volumeTitle(book),
+                        StackPresentation.volumeSubtitle(book, state: state)
+                    ),
+                    progress: progress
+                )
+            }
+            .accessibilityLabel(StackPresentation.volumeLabel(book, state: state))
+            .background { SeriesBand(tint: tint, trailing: index == stack.members.count - 1) }
+        }
+    }
+
+    private func bookLink<Cell: View>(_ book: Book, @ViewBuilder cell: () -> Cell) -> some View {
+        NavigationLink(value: Destination.book(uuid: book.uuid)) { cell() }
+            .buttonStyle(BookPressStyle())
+            .bookContextMenu(book, onEdited: { Task { await model.reload() } })
+            .bookZoomSource(book.uuid, in: bookZoom)
+    }
+
+    /// Opens a stack in place, or folds it with nil; one is open at a time.
+    private func setOpenSeries(_ lead: String?) {
+        Haptics.select()
+        withAnimation(reduceMotion ? nil : Motion.glide) { model.openSeries = lead }
     }
 
     /// The rail is "your shelves", so it answers to who is signed in as well as
@@ -527,6 +606,16 @@ struct LibraryView: View {
     /// the screen.
     private var filterMenu: some View {
         Menu {
+            Section("View") {
+                Toggle(isOn: Binding(
+                    get: { model.stackSeries }, set: { saveStackSeries($0) }
+                )) {
+                    Label("Stack series", systemImage: SeriesStackCell.glyph)
+                }
+                // Account configuration is never queued, so offline it can't change (rule 08).
+                .disabled(!connectivity.isOnline)
+            }
+
             Picker("Show", selection: Binding(
                 get: { model.category }, set: { model.category = $0 }
             )) {
@@ -554,19 +643,55 @@ struct LibraryView: View {
                 )
             }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(isFiltered ? palette.accentInk.color : palette.ink1Color)
-                .frame(width: 32, height: 32)
-                .background(
-                    Circle().fill(isFiltered ? palette.accentColor : palette.bg2Color)
-                )
-                .overlay(
-                    Circle().strokeBorder(palette.line2.color, lineWidth: 0.5)
-                )
+            HStack(spacing: -5) {
+                if model.stackSeries {
+                    stackMark.zIndex(1)
+                }
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isFiltered ? palette.accentInk.color : palette.ink1Color)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle().fill(isFiltered ? palette.accentColor : palette.bg2Color)
+                    )
+                    .overlay(
+                        Circle().strokeBorder(palette.line2.color, lineWidth: 0.5)
+                    )
+            }
         }
         .animation(Motion.snap, value: isFiltered)
+        .animation(reduceMotion ? nil : Motion.snap, value: model.stackSeries)
         .accessibilityLabel("Filter and sort")
+        .accessibilityValue(model.stackSeries ? "Stack series on" : "")
+    }
+
+    /// Marks the filter control while Stack series is on.
+    private var stackMark: some View {
+        Image(systemName: SeriesStackCell.glyph)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(palette.accentColor)
+            .frame(width: 20, height: 20)
+            .background(Circle().fill(palette.accentColor.opacity(0.22)))
+            .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+    }
+
+    /// Restacks at once and saves to the account; a failed save puts the grid back.
+    private func saveStackSeries(_ next: Bool) {
+        let previous = model.stackSeries
+        model.stackSeries = next
+        Task {
+            do {
+                try await AuthService.setStackSeries(next)
+                await app.refreshUser()
+                model.stackSeriesError = nil
+                Haptics.success()
+            } catch {
+                model.stackSeries = previous
+                model.stackSeriesError = (error as? APIError)?.errorDescription
+                    ?? error.localizedDescription
+                Haptics.warning()
+            }
+        }
     }
 
     /// Tints the control when it's actually doing something, so a filtered grid
@@ -583,9 +708,19 @@ struct LibraryView: View {
 /// only shortens that cell rather than knocking the grid out of alignment.
 struct BookGridCell: View {
     let book: Book
+    /// Replaces the title and author lines.
+    var caption: (title: String, subtitle: String)?
+    /// A started volume's progress fraction and tint, drawn under the cover.
+    var progress: (fraction: Double, tint: Color)?
 
-    init(book: Book) {
+    init(
+        book: Book,
+        caption: (title: String, subtitle: String)? = nil,
+        progress: (fraction: Double, tint: Color)? = nil
+    ) {
         self.book = book
+        self.caption = caption
+        self.progress = progress
     }
 
     @Environment(\.palette) private var palette
@@ -596,16 +731,17 @@ struct BookGridCell: View {
             BookCover(identity: CoverIdentity(book))
                 .coverShadow()
                 .overlay(alignment: .bottomLeading) { badges }
+                .overlay(alignment: .bottom) { progressBar }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(book.displayTitle)
+                Text(caption?.title ?? book.displayTitle)
                     .font(.ui(12.5, weight: .medium))
                     .lineSpacing(0)
                     .foregroundStyle(palette.ink0Color)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
-                Text(book.authorDisplay)
+                Text(caption?.subtitle ?? book.authorDisplay)
                     .font(.ui(11))
                     .foregroundStyle(palette.ink3Color)
                     .lineLimit(1)
@@ -616,6 +752,21 @@ struct BookGridCell: View {
         // union of the subviews' own shapes — the gap under the cover and the
         // strip beside a short caption are dead to taps.
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var progressBar: some View {
+        if let progress {
+            // Static, not `ProgressBar`: a lazy grid's rebuilds would replay its draw-in.
+            Capsule()
+                .fill(palette.bg3Color)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(progress.tint)
+                        .scaleEffect(x: progress.fraction, y: 1, anchor: .leading)
+                }
+                .frame(height: 2)
+                .offset(y: 5)
+        }
     }
 
     /// Offline state rides on the art rather than the caption, which keeps the

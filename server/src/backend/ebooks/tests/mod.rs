@@ -12,6 +12,7 @@ mod format_filters;
 mod listing;
 mod pages;
 mod pagination;
+mod stacks;
 
 use axum::{body::to_bytes, http::StatusCode};
 use tower::ServiceExt;

@@ -131,6 +131,13 @@ enum AuthService {
         await OfflineStore.shared.cacheDelete(CacheKey.me)
     }
 
+    /// Set whether the library grid stacks series. Account configuration: never queued (rule 08).
+    static func setStackSeries(_ enabled: Bool) async throws {
+        struct Body: Encodable { let enabled: Bool }
+        let _: Empty = try await APIClient.shared.post("/api/account/stack-series", body: Body(enabled: enabled))
+        await OfflineStore.shared.cacheDelete(CacheKey.me)
+    }
+
     // MARK: - Profile
     //
     // A profile is account configuration, so these never go through

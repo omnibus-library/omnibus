@@ -108,7 +108,7 @@ Not queued, by test:
 | `POST /api/account/kindle-email` | 1 — account configuration |
 | `POST /api/account/profile`, avatar upload/delete | 1 — account configuration |
 | `POST /api/account/book-detail-scroll-stops` | 1 — account configuration |
-| `POST /api/rpc/account/stack-series` (Stack series) | 1 — account configuration |
+| `POST /api/account/stack-series`, `/api/rpc/account/stack-series` (Stack series) | 1 — account configuration |
 | `PUT /api/stats/goal` (annual reading goal) | 1 — account configuration |
 | `PUT /api/stats/goal/daily` (daily pages / minutes goals) | 1 — account configuration |
 | Metadata overrides | 1 — library-wide, every user sees it |

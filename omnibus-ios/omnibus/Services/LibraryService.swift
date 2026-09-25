@@ -77,6 +77,19 @@ struct LibraryPageResult: Codable, Sendable {
     /// removed. First page only; `nil` when nothing is hidden. Optional keeps
     /// pre-upgrade cached pages decoding.
     var hiddenCount: Int64?
+    /// The page's series stacks when stacked; optional so pre-upgrade cached pages decode.
+    var stacks: [SeriesStack]?
+
+    /// The page minus the viewer's reading state, for the library-wide replica.
+    var withoutViewerState: LibraryPageResult {
+        var page = self
+        page.stacks = stacks?.map { stack in
+            var stack = stack
+            stack.states = []
+            return stack
+        }
+        return page
+    }
 }
 
 enum LibraryService {
@@ -98,7 +111,8 @@ enum LibraryService {
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         let query = pageQuery(
             sort: sort, direction: direction, formats: filter.formats,
-            excludeFormats: filter.hiddenFormats, cursor: cursor
+            excludeFormats: filter.hiddenFormats, stackSeries: filter.stackSeries,
+            cursor: cursor
         )
         let signature = pageSignature(sort: sort, direction: direction, filter: filter)
 
@@ -122,7 +136,15 @@ enum LibraryService {
             }
         }
 
-        return firstPage(query: query, signature: signature) {
+        return firstPage(signature: signature) {
+            let (library, next, hidden): (EbookLibrary, String?, Int64?) =
+                try await APIClient.shared.getPagedCounted("/api/ebooks", query: query)
+            return LibraryPageResult(
+                books: library.books, nextCursor: next,
+                total: library.total, hiddenCount: hidden,
+                stacks: library.stacks
+            )
+        } fallback: {
             await LibraryIndex.shared.page(
                 sort: sort, direction: direction, filter: filter, limit: pageSize, offset: 0
             )
@@ -162,7 +184,8 @@ enum LibraryService {
                         CacheRead(
                             value: LibraryPageResult(
                                 books: library.books, nextCursor: next,
-                                total: library.total, hiddenCount: hidden
+                                total: library.total, hiddenCount: hidden,
+                                stacks: library.stacks
                             ),
                             isFresh: true
                         )
@@ -185,23 +208,19 @@ enum LibraryService {
     /// The first page: replica, then server, then — if the server can't be
     /// reached and nothing was cached — the mirror. The last hop is what makes
     /// a cold launch offline show a library instead of an error.
-    private static func firstPage(
-        query: [String: String?],
+    static func firstPage(
         signature: String,
+        fetch: @escaping @Sendable () async throws -> LibraryPageResult,
         fallback: @escaping @Sendable () async -> LibraryPageResult
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 var delivered = false
                 do {
-                    let live = Cache.live(CacheKey.libraryPage(signature)) {
-                        let (library, next, hidden): (EbookLibrary, String?, Int64?) =
-                            try await APIClient.shared.getPagedCounted("/api/ebooks", query: query)
-                        return LibraryPageResult(
-                            books: library.books, nextCursor: next,
-                            total: library.total, hiddenCount: hidden
-                        )
-                    }
+                    let live = Cache.live(
+                        CacheKey.libraryPage(signature), storing: { $0.withoutViewerState },
+                        fetch: fetch
+                    )
                     for try await read in live {
                         delivered = true
                         continuation.yield(read)
@@ -225,9 +244,9 @@ enum LibraryService {
         }
     }
 
-    private static func pageQuery(
+    static func pageQuery(
         sort: SortKey, direction: SortDirection, formats: [String],
-        excludeFormats: [String], cursor: String?
+        excludeFormats: [String], stackSeries: Bool, cursor: String?
     ) -> [String: String?] {
         var query: [String: String?] = [
             "sort": sort.rawValue,
@@ -238,6 +257,7 @@ enum LibraryService {
         if !excludeFormats.isEmpty {
             query["exclude_formats"] = excludeFormats.sorted().joined(separator: ",")
         }
+        if stackSeries { query["stack_series"] = "true" }
         if let cursor { query["cursor"] = cursor }
         return query
     }
@@ -249,7 +269,8 @@ enum LibraryService {
         // The hidden-formats pref keys the cached first page: a pref change
         // must miss the cache or a stale page serves right after a toggle.
         let hidden = filter.hiddenFormats.sorted().joined(separator: "-")
-        return "\(sort.rawValue).\(direction.rawValue).\(formats)|hide:\(hidden)"
+        let stacked = filter.stackSeries ? "|stack" : ""
+        return "\(sort.rawValue).\(direction.rawValue).\(formats)|hide:\(hidden)\(stacked)"
     }
 
     /// One book: replica, then the server, then the local mirror.

@@ -14,8 +14,8 @@ use omnibus_db::{
     self as db, scanner,
     worker::{Task, TaskOutcome},
 };
-use omnibus_shared::{EbookLibrary, SortDir, SortKey, ViewFilters};
-use serde::Deserialize;
+use omnibus_shared::{EbookLibrary, SeriesStack, SortDir, SortKey, ViewFilters};
+use serde::{Deserialize, Serialize};
 
 use super::conditional::{self, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 
@@ -53,6 +53,8 @@ pub(super) struct EbooksQuery {
     /// landing concern, and offline toggling must restore hidden books
     /// without a resync).
     exclude_formats: Option<String>,
+    /// Fold 2+-book series into one row plus `stacks` (keyset form only).
+    stack_series: Option<bool>,
 }
 
 /// Split the `?formats=` wire value into filter entries, dropping empties.
@@ -71,7 +73,7 @@ pub(super) struct EbookFileQuery {
 }
 
 pub(super) async fn get_ebooks(
-    _user: AuthUser,
+    user: AuthUser,
     State(state): State<AppState>,
     Query(q): Query<EbooksQuery>,
 ) -> Response {
@@ -95,7 +97,7 @@ pub(super) async fn get_ebooks(
         return respond_full_library(&state, ebook.as_deref(), audiobook.as_deref()).await;
     }
 
-    respond_keyset_page(&state, &q, ebook.as_deref(), audiobook.as_deref()).await
+    respond_keyset_page(&state, &q, user.id, ebook.as_deref(), audiobook.as_deref()).await
 }
 
 /// Full (capped) combined library, with `X-Total-Count` / `X-Total-Cap`
@@ -167,18 +169,27 @@ async fn page_totals(
     Ok((total, hidden))
 }
 
+/// `EbookLibrary` plus the page's stacks; omitted when empty so an unstacked body is unchanged.
+#[derive(Serialize)]
+struct KeysetBody {
+    #[serde(flatten)]
+    library: EbookLibrary,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    stacks: Vec<SeriesStack>,
+}
+
 /// Assemble the `X-Total-Count` / `X-Hidden-Count` / `X-Next-Cursor` response
 /// headers onto a JSON body. Unlike the full-library path, a keyset page is
 /// *not* truncated to `MAX_BOOKS_RETURNED` overall (the limit is a per-page
 /// clamp), so this emits the true `X-Total-Count` but never `X-Total-Cap` —
 /// the page is complete.
 fn keyset_page_response(
-    library: EbookLibrary,
+    body: KeysetBody,
     total: i64,
     hidden: Option<i64>,
     next: Option<db::PageCursor>,
 ) -> Response {
-    let mut resp = Json(library).into_response();
+    let mut resp = Json(body).into_response();
     if let Ok(v) = axum::http::HeaderValue::from_str(&total.to_string()) {
         resp.headers_mut().insert("X-Total-Count", v);
     }
@@ -202,6 +213,7 @@ fn keyset_page_response(
 async fn respond_keyset_page(
     state: &AppState,
     q: &EbooksQuery,
+    user_id: i64,
     ebook: Option<&str>,
     audiobook: Option<&str>,
 ) -> Response {
@@ -223,15 +235,15 @@ async fn respond_keyset_page(
             .map(parse_formats)
             .unwrap_or_default(),
     );
-    let page = match db::list_books_page(
-        &state.pool,
+    let viewer = q.stack_series.unwrap_or(false).then_some(user_id);
+    let page = match keyset_rows(
+        state,
+        q,
         &paths,
-        q.sort.unwrap_or_default(),
-        q.dir.unwrap_or_default(),
         &filters,
         &exclude,
         cursor.as_ref(),
-        q.limit.unwrap_or(DEFAULT_PAGE_LIMIT),
+        viewer,
     )
     .await
     {
@@ -247,13 +259,65 @@ async fn respond_keyset_page(
             Err(error) => return internal("count books", error),
         };
 
-    let library = EbookLibrary {
-        path,
-        books: page.books,
-        error: None,
-        total: None,
+    let body = KeysetBody {
+        library: EbookLibrary {
+            path,
+            books: page.books,
+            error: None,
+            total: None,
+        },
+        stacks: page.stacks,
     };
-    keyset_page_response(library, total, hidden, page.next)
+    keyset_page_response(body, total, hidden, page.next)
+}
+
+/// The page's rows: series-stacked for `viewer` when set, else plain with no stacks.
+async fn keyset_rows(
+    state: &AppState,
+    q: &EbooksQuery,
+    paths: &[&str],
+    filters: &ViewFilters,
+    exclude: &[String],
+    cursor: Option<&db::PageCursor>,
+    viewer: Option<i64>,
+) -> Result<db::StackedBookPage, db::BooksError> {
+    let sort = q.sort.unwrap_or_default();
+    let dir = q.dir.unwrap_or_default();
+    let limit = q.limit.unwrap_or(DEFAULT_PAGE_LIMIT);
+    match viewer {
+        Some(viewer_id) => {
+            db::list_books_page_stacked(
+                &state.pool,
+                paths,
+                sort,
+                dir,
+                filters,
+                exclude,
+                cursor,
+                limit,
+                viewer_id,
+            )
+            .await
+        }
+        None => {
+            let page = db::list_books_page(
+                &state.pool,
+                paths,
+                sort,
+                dir,
+                filters,
+                exclude,
+                cursor,
+                limit,
+            )
+            .await?;
+            Ok(db::StackedBookPage {
+                books: page.books,
+                next: page.next,
+                stacks: Vec::new(),
+            })
+        }
+    }
 }
 
 pub(super) async fn get_ebook_by_uuid(

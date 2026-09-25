@@ -1,8 +1,8 @@
 //! `/api/account/*` — the caller's own reading preferences: which formats the
-//! landing All Books view excludes for them, and whether their book detail
-//! page uses the snap-stop marquee. Mirrors the web server functions in
-//! `frontend::rpc::account`; both read sides ride `GET /api/auth/me` as
-//! `UserSummary` fields.
+//! landing All Books view excludes for them, whether their book detail page
+//! uses the snap-stop marquee, and whether their library stacks series.
+//! Mirrors the web server functions in `frontend::rpc::account`; the read
+//! sides ride `GET /api/auth/me` as `UserSummary` fields.
 
 use axum::{
     extract::State,
@@ -55,6 +55,24 @@ pub(super) async fn post_book_detail_scroll_stops(
     match db::auth::set_book_detail_scroll_stops(&state.pool, user.id, body.enabled).await {
         Ok(()) => StatusCode::OK.into_response(),
         Err(e) => internal("set book detail scroll stops", e),
+    }
+}
+
+/// Body for `POST /api/account/stack-series`.
+#[derive(Debug, Deserialize)]
+pub(super) struct SetStackSeries {
+    enabled: bool,
+}
+
+/// Set whether the authenticated user's library grid folds each series into one tile.
+pub(super) async fn post_stack_series(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<SetStackSeries>,
+) -> Response {
+    match db::auth::set_stack_series(&state.pool, user.id, body.enabled).await {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) => internal("set stack series", e),
     }
 }
 

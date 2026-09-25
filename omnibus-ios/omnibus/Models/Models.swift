@@ -220,6 +220,44 @@ struct EbookLibrary: Codable, Sendable {
     var books: [Book] = []
     var error: String?
     var total: Int64?
+    /// Present only on a `stack_series=true` page.
+    var stacks: [SeriesStack] = []
+}
+
+/// A series folded into one grid tile (`shared/src/series_stacks.rs`).
+struct SeriesStack: Codable, Hashable, Sendable {
+    var leadUuid: String
+    var name: String
+    var seriesId: Int64?
+    /// Every member in the result set, in series order.
+    var members: [Book] = []
+    var states: [StackMemberState] = []
+
+    enum CodingKeys: String, CodingKey {
+        case name, members, states
+        case leadUuid = "lead_uuid"
+        case seriesId = "series_id"
+    }
+
+    /// The viewer's state for member `uuid`, if the stack carries one.
+    func state(of uuid: String) -> StackMemberState? {
+        states.first { $0.uuid == uuid }
+    }
+
+    /// The volume in front: first started and unfinished, else first in series order.
+    var front: Book? {
+        members.first { member in
+            state(of: member.uuid).map { $0.started && !$0.finished } ?? false
+        } ?? members.first
+    }
+}
+
+/// The viewer's reading state for one stack member.
+struct StackMemberState: Codable, Hashable, Sendable {
+    var uuid: String
+    var percent: Int?
+    var started: Bool = false
+    var finished: Bool = false
 }
 
 // MARK: - Discovery
@@ -433,6 +471,8 @@ struct UserSummary: Codable, Hashable, Sendable {
     /// `false`, so a pre-0092 `/me` payload (or a cached blob from one) still
     /// decodes, with the off default this setting ships as.
     var bookDetailScrollStops: Bool = false
+    /// Whether the library grid folds each series into one tile; a missing key decodes as off.
+    var stackSeries: Bool = false
 
     /// The name to show for this user — never render `username` on its own.
     var display: String { displayName ?? username }
@@ -448,6 +488,7 @@ struct UserSummary: Codable, Hashable, Sendable {
         case hasAvatar = "has_avatar"
         case hiddenFormats = "hidden_formats"
         case bookDetailScrollStops = "book_detail_scroll_stops"
+        case stackSeries = "stack_series"
     }
 }
 

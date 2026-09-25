@@ -18,6 +18,8 @@ struct LibraryFilter: Equatable, Sendable {
     /// formats-less row (physical-only) is never hidden — mirroring the
     /// server's predicate.
     var hiddenFormats: [String] = []
+    /// The viewer's Stack series preference: fold each series into one tile.
+    var stackSeries = false
 
     static let none = LibraryFilter()
 }
@@ -297,13 +299,24 @@ actor LibraryIndex {
         offset: Int
     ) async -> LibraryPageResult {
         let (clause, bindings) = Self.predicate(for: filter)
-        let payloads = await OfflineStore.shared.bookPayloads(
-            whereClause: clause,
-            orderClause: Self.order(sort: sort, direction: direction),
-            bindings: bindings,
-            limit: limit,
-            offset: offset
-        )
+        let order = Self.order(sort: sort, direction: direction)
+        let books: [Book]
+        let stacks: [SeriesStack]?
+        if filter.stackSeries {
+            let read = await Self.stackedRead(
+                from: OfflineStore.shared, clause: clause, bindings: bindings,
+                order: order, limit: limit, offset: offset
+            )
+            books = read.books
+            stacks = read.stacks
+        } else {
+            let payloads = await OfflineStore.shared.bookPayloads(
+                whereClause: clause, orderClause: order, bindings: bindings,
+                limit: limit, offset: offset
+            )
+            books = Self.decode(payloads)
+            stacks = nil
+        }
         let total = await OfflineStore.shared.bookMatchCount(
             whereClause: clause, bindings: bindings
         )
@@ -319,13 +332,13 @@ actor LibraryIndex {
             )
             hiddenCount = all - total
         }
-        let books = Self.decode(payloads)
         // A short page is the end of the library; anything else can be paged
         // for. The cursor is an offset because keyset ordering is the server's
         // contract, not this table's.
         let next = books.count < limit ? nil : Self.cursor(offset: offset + limit)
         return LibraryPageResult(
-            books: books, nextCursor: next, total: total, hiddenCount: hiddenCount
+            books: books, nextCursor: next, total: total, hiddenCount: hiddenCount,
+            stacks: stacks
         )
     }
 
@@ -377,6 +390,87 @@ actor LibraryIndex {
     static func offset(fromCursor cursor: String?) -> Int? {
         guard let cursor, cursor.hasPrefix("local:") else { return nil }
         return Int(cursor.dropFirst("local:".count))
+    }
+
+    // MARK: - Stack series
+
+    /// The mirror's stacking key: the stored lowercased `series`, space-trimmed; NULL for none.
+    static let groupKey = "NULLIF(trim(series), '')"
+
+    /// A stacked mirror page: each series with 2+ matching books folded onto its first-sorting member.
+    static func stackedRead(
+        from store: OfflineStore,
+        clause: String,
+        bindings: [String],
+        order: String,
+        limit: Int,
+        offset: Int
+    ) async -> (books: [Book], stacks: [SeriesStack]) {
+        let repPayloads = await store.bookPayloads(
+            whereClause: representativeClause(clause, order: order),
+            orderClause: order, bindings: bindings, limit: limit, offset: offset
+        )
+        let reps = decode(repPayloads)
+        let keys = Array(Set(reps.compactMap { stackKey($0.series) })).sorted()
+        guard !keys.isEmpty else { return (reps, []) }
+        let inKeys = "\(groupKey) IN (\(keys.map { _ in "?" }.joined(separator: ", ")))"
+        let memberPayloads = await store.bookPayloads(
+            whereClause: clause.isEmpty ? inKeys : "\(clause) AND \(inKeys)",
+            orderClause: order, bindings: bindings + keys,
+            limit: Int(Int32.max), offset: 0
+        )
+        return (reps, stacks(reps: reps, members: decode(memberPayloads)))
+    }
+
+    /// Keeps each series' first member under `order`, windowed over the whole filtered mirror so pages agree.
+    static func representativeClause(_ clause: String, order: String) -> String {
+        """
+        uuid IN (SELECT uuid FROM (
+            SELECT uuid, \(groupKey) AS k,
+                   ROW_NUMBER() OVER (PARTITION BY \(groupKey) ORDER BY \(order), uuid) AS rn
+              FROM books\(clause.isEmpty ? "" : " WHERE \(clause)"))
+         WHERE k IS NULL OR rn = 1)
+        """
+    }
+
+    /// Groups `members` under the page's representatives; a series stacks only with 2+ members.
+    static func stacks(reps: [Book], members: [Book]) -> [SeriesStack] {
+        let groups = Dictionary(grouping: members) { stackKey($0.series) ?? "" }
+        return reps.compactMap { rep in
+            guard let key = stackKey(rep.series), let group = groups[key], group.count >= 2 else {
+                return nil
+            }
+            return SeriesStack(
+                leadUuid: rep.uuid,
+                name: rep.series?.trimmingCharacters(in: CharacterSet(charactersIn: " ")) ?? "",
+                seriesId: rep.seriesId,
+                members: group.sorted(by: seriesOrder)
+            )
+        }
+    }
+
+    /// Swift twin of `groupKey`; Unicode `lowercased()` vs the server's ASCII `lower()` is an accepted offline-only edge.
+    static func stackKey(_ series: String?) -> String? {
+        let key = (series ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " "))
+        return key.isEmpty ? nil : key
+    }
+
+    /// Series order: index ascending with the unnumbered last, then title, then id — the server's.
+    static func seriesOrder(_ a: Book, _ b: Book) -> Bool {
+        switch (seriesNumber(a), seriesNumber(b)) {
+        case let (x?, y?) where x != y: return x < y
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default:
+            let byTitle = DictionaryOrder.compare(a.displayTitle, b.displayTitle)
+            return byTitle != 0 ? byTitle < 0 : a.id < b.id
+        }
+    }
+
+    private static func seriesNumber(_ book: Book) -> Double? {
+        guard let raw = book.seriesIndex?.nilIfBlank, let value = Double(raw), value.isFinite
+        else { return nil }
+        return value
     }
 
     // MARK: - Query building
