@@ -70,6 +70,7 @@ pub(super) fn shelf_book_count(
     }
 }
 
+// Limitation: a stack links its lead book's `series_id`, which can be stale after an override rename.
 /// The shelf lens's rows: members filtered, then stacked client-side when Stack series is on.
 pub(super) fn shelf_lens(
     members: &[EbookMetadata],
