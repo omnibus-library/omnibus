@@ -77,9 +77,7 @@ extension LibraryModel {
 enum StackPresentation {
     /// "Vol. N" from the series index, else the book's title.
     static func volumeTitle(_ book: Book) -> String {
-        guard let index = book.seriesIndex?.trimmingCharacters(in: .whitespaces), !index.isEmpty else {
-            return book.displayTitle
-        }
+        guard let index = book.seriesIndex?.nilIfBlank else { return book.displayTitle }
         return "Vol. \(index)"
     }
 

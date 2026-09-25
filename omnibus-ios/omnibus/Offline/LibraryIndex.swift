@@ -468,8 +468,7 @@ actor LibraryIndex {
     }
 
     private static func seriesNumber(_ book: Book) -> Double? {
-        guard let raw = book.seriesIndex?.trimmingCharacters(in: .whitespaces),
-              let value = Double(raw), value.isFinite
+        guard let raw = book.seriesIndex?.nilIfBlank, let value = Double(raw), value.isFinite
         else { return nil }
         return value
     }
