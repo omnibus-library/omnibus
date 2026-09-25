@@ -213,14 +213,14 @@ test("the head card links to the series page", async () => {
   );
 });
 
-test("table view disables the switch and says it is grid only", async () => {
+test("table view hides the switch and the grid brings it back on", async () => {
   await gotoReady(stacker, "/");
   await switchToTableView(stacker);
 
-  await expect(stackToggle(stacker)).toBeDisabled();
-  await expect(stacker.getByTestId("lib-stack-note")).toHaveText("Grid only");
+  await expect(stackToggle(stacker)).toHaveCount(0);
+  await expect(stacker.getByTestId("lib-stack-note")).toHaveCount(0);
 
-  // Inert, not off: the saved choice comes back with the grid.
+  // Hidden, not off: the saved choice comes back with the grid.
   await stacker.getByTestId("view-toggle-grid").click();
   await expect(stackToggle(stacker)).toBeEnabled();
   await expect(stackToggle(stacker)).toHaveAttribute("aria-pressed", "true");

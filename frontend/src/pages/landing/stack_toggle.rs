@@ -4,7 +4,7 @@
 //! switch back with an inline alert; nothing is ever queued.
 
 use dioxus::prelude::*;
-use omnibus_shared::{UserSummary, ViewMode};
+use omnibus_shared::UserSummary;
 
 use crate::data;
 
@@ -24,15 +24,9 @@ pub(super) struct StackToggleView {
     pub(super) error: Option<String>,
 }
 
-/// Why Stack series can't apply: a search shows every match, the table one row per book.
-pub(super) fn stack_toggle_note(view_mode: ViewMode, is_search: bool) -> Option<&'static str> {
-    if is_search {
-        Some("Unstacked while searching")
-    } else if view_mode == ViewMode::Table {
-        Some("Grid only")
-    } else {
-        None
-    }
+/// Why Stack series can't apply in the grid: a search shows every match.
+pub(super) fn stack_toggle_note(is_search: bool) -> Option<&'static str> {
+    is_search.then_some("Unstacked while searching")
 }
 
 /// The switch: an `aria-pressed` button between the inert view's note and a failed save's alert.
@@ -120,12 +114,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stack_toggle_note_says_why_the_switch_is_inert_and_prefers_search() {
-        assert_eq!(stack_toggle_note(ViewMode::Grid, false), None);
-        assert_eq!(stack_toggle_note(ViewMode::Table, false), Some("Grid only"));
-        assert_eq!(
-            stack_toggle_note(ViewMode::Table, true),
-            Some("Unstacked while searching")
-        );
+    fn stack_toggle_note_says_why_the_switch_is_inert_only_while_searching() {
+        assert_eq!(stack_toggle_note(false), None);
+        assert_eq!(stack_toggle_note(true), Some("Unstacked while searching"));
     }
 }

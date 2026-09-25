@@ -23,7 +23,9 @@ pub(super) fn Toolbar(
 
     rsx! {
         div { class: "lib-toolbar", role: "toolbar", "data-testid": "lib-toolbar",
-            StackToggle { view: stack, on_toggle: on_stack_toggle }
+            if view_mode == ViewMode::Grid {
+                StackToggle { view: stack, on_toggle: on_stack_toggle }
+            }
             ViewModeToggle { view_mode, prefs: prefs.clone(), on_change }
             if view_mode == ViewMode::Grid {
                 SortControls { prefs, locked: sort_lock.is_some(), on_change }
@@ -294,23 +296,19 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_disables_the_stack_toggle_and_says_grid_only_in_table_mode() {
+    fn toolbar_hides_the_stack_toggle_in_table_mode() {
         let prefs = ViewPrefs {
             view_mode: ViewMode::Table,
             ..ViewPrefs::default()
         };
         let stack = StackToggleView {
             saved: true,
-            note: stack_toggle_note(ViewMode::Table, false),
             ..live_stack()
         };
         let html = render_toolbar_with(prefs, None, stack);
 
-        assert!(html.contains("data-testid=\"lib-stack-note\""));
-        assert!(html.contains("Grid only"));
-        // Inert, not off: saved stays on, the switch just doesn't show it.
-        assert!(html.contains("class=\"ss-tog\""));
-        assert!(html.contains("disabled"));
+        assert!(!html.contains("data-testid=\"lib-stack-toggle\""));
+        assert!(!html.contains("data-testid=\"lib-stack-note\""));
     }
 
     #[test]
@@ -328,16 +326,12 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_dims_an_unresolved_stack_toggle_at_once_when_the_view_is_inert() {
-        let prefs = ViewPrefs {
-            view_mode: ViewMode::Table,
-            ..ViewPrefs::default()
-        };
+    fn toolbar_dims_an_unresolved_stack_toggle_at_once_while_searching() {
         let stack = StackToggleView {
-            note: stack_toggle_note(ViewMode::Table, false),
+            note: stack_toggle_note(true),
             ..StackToggleView::default()
         };
-        let html = render_toolbar_with(prefs, None, stack);
+        let html = render_toolbar_with(ViewPrefs::default(), None, stack);
 
         assert!(html.contains("class=\"ss-tog\""), "{html}");
         assert!(!html.contains("pending"), "{html}");
