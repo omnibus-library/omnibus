@@ -1,4 +1,4 @@
-//! Toolbar (view mode + sort key + sort direction) for the landing page.
+//! Toolbar (Stack series + view mode + sort key + sort direction) for the landing page.
 //!
 //! Stateless: emits a new [`ViewPrefs`] through the parent's `on_change`
 //! handler so [`super::LandingPage`] owns the canonical signal.
@@ -9,17 +9,23 @@ use omnibus_shared::{SortDir, SortKey, ViewMode, ViewPrefs};
 use super::sorting::{
     default_dir_for, sort_key_from_value, sort_key_label, sort_key_value, toggle_dir, SORT_KEYS,
 };
+use super::stack_toggle::{StackToggle, StackToggleView};
 
 #[component]
 pub(super) fn Toolbar(
     prefs: ViewPrefs,
     sort_lock: Option<&'static str>,
+    stack: StackToggleView,
     on_change: EventHandler<ViewPrefs>,
+    on_stack_toggle: EventHandler<()>,
 ) -> Element {
     let view_mode = prefs.view_mode;
 
     rsx! {
         div { class: "lib-toolbar", role: "toolbar", "data-testid": "lib-toolbar",
+            if view_mode == ViewMode::Grid {
+                StackToggle { view: stack, on_toggle: on_stack_toggle }
+            }
             ViewModeToggle { view_mode, prefs: prefs.clone(), on_change }
             if view_mode == ViewMode::Grid {
                 SortControls { prefs, locked: sort_lock.is_some(), on_change }
@@ -146,20 +152,48 @@ mod tests {
     use super::*;
     use crate::test_support::render;
 
+    use super::super::stack_toggle::{stack_toggle_note, StackToggleView, STACK_SAVE_ERROR};
+
     #[component]
-    fn ToolbarHarness(prefs: ViewPrefs, sort_lock: Option<&'static str>) -> Element {
+    fn ToolbarHarness(
+        prefs: ViewPrefs,
+        sort_lock: Option<&'static str>,
+        stack: StackToggleView,
+    ) -> Element {
         rsx! {
-            Toolbar { prefs, sort_lock, on_change: move |_| {} }
+            Toolbar {
+                prefs,
+                sort_lock,
+                stack,
+                on_change: move |_| {},
+                on_stack_toggle: move |_| {},
+            }
+        }
+    }
+
+    /// A resolved viewer with Stack series off — the default live switch.
+    fn live_stack() -> StackToggleView {
+        StackToggleView {
+            ready: true,
+            ..StackToggleView::default()
         }
     }
 
     fn render_toolbar(prefs: ViewPrefs) -> String {
-        render_toolbar_locked(prefs, None)
+        render_toolbar_with(prefs, None, live_stack())
     }
 
     fn render_toolbar_locked(prefs: ViewPrefs, sort_lock: Option<&'static str>) -> String {
+        render_toolbar_with(prefs, sort_lock, live_stack())
+    }
+
+    fn render_toolbar_with(
+        prefs: ViewPrefs,
+        sort_lock: Option<&'static str>,
+        stack: StackToggleView,
+    ) -> String {
         render(rsx! {
-            ToolbarHarness { prefs, sort_lock }
+            ToolbarHarness { prefs, sort_lock, stack }
         })
     }
 
@@ -227,5 +261,79 @@ mod tests {
         assert!(html.contains("data-testid=\"lib-sort-select\""));
         assert!(!html.contains("data-testid=\"lib-sort-locked\""));
         assert!(!html.contains("disabled"));
+    }
+
+    #[test]
+    fn toolbar_renders_the_stack_toggle_off_and_live_by_default() {
+        let html = render_toolbar(ViewPrefs::default());
+
+        assert!(html.contains("data-testid=\"lib-stack-toggle\""));
+        assert!(html.contains("Stack series"));
+        assert!(html.contains("class=\"ss-tog\""));
+        assert!(!html.contains("data-testid=\"lib-stack-note\""));
+        assert!(!html.contains("data-testid=\"lib-stack-error\""));
+    }
+
+    #[test]
+    fn toolbar_holds_the_stack_toggle_inert_until_the_viewer_resolves() {
+        let html = render_toolbar_with(ViewPrefs::default(), None, StackToggleView::default());
+
+        assert!(html.contains("data-testid=\"lib-stack-toggle\""));
+        assert!(html.contains("disabled"));
+        assert!(html.contains("class=\"ss-tog pending\""));
+        assert!(!html.contains("data-testid=\"lib-stack-note\""));
+    }
+
+    #[test]
+    fn toolbar_presses_the_stack_toggle_when_the_viewer_saved_it_on() {
+        let stack = StackToggleView {
+            saved: true,
+            ..live_stack()
+        };
+        let html = render_toolbar_with(ViewPrefs::default(), None, stack);
+
+        assert!(html.contains("class=\"ss-tog on\""));
+    }
+
+    #[test]
+    fn toolbar_hides_the_stack_toggle_in_table_mode() {
+        let prefs = ViewPrefs {
+            view_mode: ViewMode::Table,
+            ..ViewPrefs::default()
+        };
+        let stack = StackToggleView {
+            saved: true,
+            ..live_stack()
+        };
+        let html = render_toolbar_with(prefs, None, stack);
+
+        assert!(!html.contains("data-testid=\"lib-stack-toggle\""));
+        assert!(!html.contains("data-testid=\"lib-stack-note\""));
+    }
+
+    #[test]
+    fn toolbar_shows_a_failed_stack_save_as_an_alert() {
+        let stack = StackToggleView {
+            error: Some(STACK_SAVE_ERROR.to_string()),
+            ..live_stack()
+        };
+        let html = render_toolbar_with(ViewPrefs::default(), None, stack);
+
+        assert!(html.contains("data-testid=\"lib-stack-error\""));
+        assert!(html.contains("role=\"alert\""));
+        // SSR escapes the apostrophe, so match the HTML-entity form.
+        assert!(html.contains("Couldn&#39;t save Stack series."));
+    }
+
+    #[test]
+    fn toolbar_dims_an_unresolved_stack_toggle_at_once_while_searching() {
+        let stack = StackToggleView {
+            note: stack_toggle_note(true),
+            ..StackToggleView::default()
+        };
+        let html = render_toolbar_with(ViewPrefs::default(), None, stack);
+
+        assert!(html.contains("class=\"ss-tog\""), "{html}");
+        assert!(!html.contains("pending"), "{html}");
     }
 }

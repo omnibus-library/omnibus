@@ -474,3 +474,10 @@ fn sort_lock_reason_leaves_a_smart_shelf_and_the_whole_library_sortable() {
     );
     assert_eq!(sort_lock_reason(None), None);
 }
+
+#[test]
+fn slugify_lowercases_and_collapses_runs_of_other_characters() {
+    assert_eq!(slugify("Code Quartet"), "code-quartet");
+    assert_eq!(slugify("  Dr. Who? "), "dr-who");
+    assert_eq!(slugify("Pioneers"), "pioneers");
+}

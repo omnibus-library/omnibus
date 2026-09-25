@@ -85,6 +85,21 @@ The keyboard-reachable navigate affordance is now a `link` on the cover cell:
 `ebook-cell-cover` testid — not a row-level button, and clicking an editable
 cell (title/author/…) still opens its inline editor rather than navigating.
 
+**A series stack is not a book tile.** With a viewer's Stack series on
+(`POST /api/rpc/account/stack-series`, per-user server state, off by
+default), the landing grid folds every series of two or more visible books
+into one `role="button"` named `"{series}, {n} books"` with the testid
+`series-stack-<slug>` — never `ebook-tile-*`, so a `/^ebook-tile-/` count
+drops by every stacked volume, and a stack's three fanned covers triple the
+`cover` testids in its cell. Opening one mounts `series-cap`
+(`series-cap-page`, `series-cap-fold`) and the volumes as ordinary
+`ebook-tile-*` tiles; Escape folds. Because the pref follows the account, a
+spec that turns it on must use its own user on a cookie-less context
+(`landing_series_stacks.spec.ts`) — stacking the shared admin would fold
+volumes out from under `landing.spec.ts`. `lib-stack-toggle` renders only in
+grid view (absent, not disabled, in the table) and stays disabled until `/me`
+resolves.
+
 **The landing's continue surface is a fan, not a carousel.** `landing/stack.rs`
 replaced the hero carousel, so `continue-hero`, `continue-hero-track`,
 `hero-dot-<n>` and `hero-card-<uuid>` no longer exist. The section is

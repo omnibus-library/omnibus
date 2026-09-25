@@ -78,3 +78,37 @@ fn shelf_book_count_stands_in_with_the_summary_until_the_members_land() {
     );
     assert_eq!(shelf_book_count(ShelfSelection::All, &shelves, None), 0);
 }
+
+fn series_book(uuid: &str, series: &str, index: &str) -> EbookMetadata {
+    EbookMetadata {
+        unique_identifier: Some(uuid.into()),
+        series: Some(series.into()),
+        series_index: Some(index.into()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn shelf_lens_stacks_the_filtered_members_only_with_stacking_on() {
+    let members = vec![
+        series_book("a", "Saga", "1"),
+        series_book("b", "Saga", "2"),
+        series_book("c", "Other", "1"),
+    ];
+
+    let (rows, stacks) = shelf_lens(&members, &ViewFilters::default(), true);
+    let uuids: Vec<_> = rows
+        .iter()
+        .filter_map(|b| b.unique_identifier.as_deref())
+        .collect();
+    assert_eq!(uuids, vec!["a", "c"]);
+    assert_eq!(stacks.len(), 1);
+    assert!(
+        stacks[0].states.is_empty(),
+        "a shelf page carries no reading state"
+    );
+
+    let (rows, stacks) = shelf_lens(&members, &ViewFilters::default(), false);
+    assert_eq!(rows.len(), 3);
+    assert!(stacks.is_empty());
+}
