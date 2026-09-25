@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
-import { switchToTableView } from "../utils/ebooks";
+import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
@@ -178,6 +178,46 @@ test("opening a stack moves the rest of the wall rather than rebuilding it", asy
   expect(fresh).toBe(1 + PIONEERS.length);
   // The deal-out motion owns a volume's entrance, not the wall's sweep-in.
   await expect(volumeTile(stacker, "beta")).toHaveCSS("animation-name", "none");
+});
+
+test("a sort change never reopens a run or moves focus", async ({
+  request,
+}) => {
+  const asc = `stack-${await fetchBookUuidByTitle(request, "Beta in the Series")}`;
+  const desc = `stack-${await fetchBookUuidByTitle(request, "Pioneers Vol 5: Signal")}`;
+  // The folded Pioneers stack's lead, which moves with the sort; null while dealt out.
+  const lead = () =>
+    stacker.evaluate(
+      () =>
+        document
+          .querySelector('[aria-label="Pioneers, 5 books"]')
+          ?.closest("[data-flip-key]")
+          ?.getAttribute("data-flip-key") ?? null,
+    );
+  const sortDir = stacker.getByTestId("lib-sort-dir");
+  const flipTo = async (key: string) => {
+    await sortDir.click();
+    await expect.poll(lead).toBe(key);
+  };
+
+  await gotoReady(stacker, "/");
+  await expect(sortDir).toHaveText("↑");
+  await expect.poll(lead).toBe(asc);
+  await pioneersStack(stacker).click();
+  await expect(stacker.getByTestId("series-cap")).toBeVisible();
+
+  await flipTo(desc);
+  await flipTo(asc);
+  await expect(stacker.getByTestId("series-cap")).toHaveCount(0);
+  await expect(sortDir).toBeFocused();
+
+  // A fold's refocus is spent on the tile it returns to.
+  await pioneersStack(stacker).click();
+  await stacker.keyboard.press("Escape");
+  await expect(pioneersStack(stacker)).toBeFocused();
+  await flipTo(desc);
+  await flipTo(asc);
+  await expect(sortDir).toBeFocused();
 });
 
 test("the head card links to the series page", async () => {

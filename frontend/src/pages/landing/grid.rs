@@ -12,7 +12,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 use omnibus_shared::{EbookMetadata, SeriesStack};
 
-use super::series_grid::{grid_items, GridItem, VolumeCell};
+use super::series_grid::{grid_items, is_stale, stack_leads, GridItem, VolumeCell};
 use super::series_tiles::{StackCap, StackTile};
 use super::sorting::{contributor_names, row_ident};
 use crate::Route;
@@ -40,13 +40,15 @@ pub(super) fn BookGrid(
     let open = use_signal(|| None::<String>);
     // The stack just folded, so its tile takes focus back from Fold up.
     let refocus = use_signal(|| None::<String>);
-    // Stack series going off empties `stacks`; clearing here stops a run left
-    // open from dealing itself out again when it comes back on.
-    let has_stacks = !stacks.is_empty();
-    use_effect(use_reactive!(|has_stacks| {
-        if !has_stacks && open.peek().is_some() {
-            let mut open = open;
+    // A run or refocus whose stack no longer leads is dropped, so a later page never revives it.
+    let leads = stack_leads(&stacks);
+    use_effect(use_reactive!(|leads| {
+        let (mut open, mut refocus) = (open, refocus);
+        if is_stale(open.peek().as_deref(), &leads) {
             open.set(None);
+        }
+        if is_stale(refocus.peek().as_deref(), &leads) {
+            refocus.set(None);
         }
     }));
     // Replays after the grid patches for a deal-out or a fold.
@@ -98,18 +100,15 @@ fn GridCell(
         GridItem::Book(book) => rsx! {
             GridTile { book, server_url, index }
         },
-        GridItem::Stack(stack) => {
-            let focus = refocus.peek().as_deref() == Some(stack.lead_uuid.as_str());
-            rsx! {
-                StackTile {
-                    stack,
-                    server_url,
-                    index,
-                    refocus: focus,
-                    on_open: move |picked: String| deal_out(open, refocus, picked),
-                }
+        GridItem::Stack(stack) => rsx! {
+            StackTile {
+                stack,
+                server_url,
+                index,
+                refocus,
+                on_open: move |picked: String| deal_out(open, refocus, picked),
             }
-        }
+        },
         GridItem::Cap(stack) => rsx! {
             StackCap { stack, on_fold: move |_| fold(open, refocus) }
         },

@@ -189,3 +189,17 @@ fn grid_item_key_names_a_book_by_its_row_and_a_stack_or_head_card_by_its_lead() 
     assert_eq!(keys, vec!["a", "cap-s2", "s1", "s2"]);
     assert_eq!(GridItem::Stack(stack).key(), "stack-s2");
 }
+
+#[test]
+fn stack_leads_names_each_stack_the_grid_folds_and_skips_a_one_member_one() {
+    let stacks = vec![saga("s1", &["s1", "s2"]), saga("x", &["x"])];
+    assert_eq!(stack_leads(&stacks), vec!["s1".to_string()]);
+}
+
+#[test]
+fn is_stale_flags_a_key_no_current_stack_leads_with() {
+    let leads = vec!["s1".to_string()];
+    assert!(is_stale(Some("gone"), &leads));
+    assert!(!is_stale(Some("s1"), &leads));
+    assert!(!is_stale(None, &leads));
+}

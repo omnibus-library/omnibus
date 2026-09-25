@@ -22,7 +22,7 @@ pub(super) fn StackTile(
     stack: SeriesStack,
     server_url: String,
     index: usize,
-    refocus: bool,
+    refocus: Signal<Option<String>>,
     on_open: EventHandler<String>,
 ) -> Element {
     let front = stack.front().cloned().unwrap_or_default();
@@ -48,6 +48,7 @@ pub(super) fn StackTile(
     let segments = stack_segments(&stack);
     let lead_click = stack.lead_uuid.clone();
     let lead_key = stack.lead_uuid.clone();
+    let take_focus = refocus.peek().as_deref() == Some(stack.lead_uuid.as_str());
 
     rsx! {
         div { class: "ss-cell", role: "listitem",
@@ -62,8 +63,10 @@ pub(super) fn StackTile(
                 title: "{name} · {n} books",
                 style: "animation-delay: {stagger_ms(index)}ms;{accent}",
                 onmounted: move |evt: MountedEvent| {
-                    if refocus {
+                    if take_focus {
                         crate::focus_after_paint::focus_after_paint(&evt);
+                        let mut spent = refocus;
+                        spent.set(None);
                     }
                 },
                 onclick: move |_| on_open.call(lead_click.clone()),

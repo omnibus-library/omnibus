@@ -83,6 +83,20 @@ pub(super) fn grid_items(
     items
 }
 
+/// The lead uuids of the stacks [`grid_items`] folds (two or more members).
+pub(super) fn stack_leads(stacks: &[SeriesStack]) -> Vec<String> {
+    stacks
+        .iter()
+        .filter(|s| s.members.len() >= 2)
+        .map(|s| s.lead_uuid.clone())
+        .collect()
+}
+
+/// Whether `key` names a lead no current stack has — an open run or refocus left from an older page.
+pub(super) fn is_stale(key: Option<&str>, leads: &[String]) -> bool {
+    key.is_some_and(|k| !leads.iter().any(|lead| lead == k))
+}
+
 /// The dealt-out run's volume cells, in series order.
 fn volume_cells(stack: &SeriesStack) -> Vec<VolumeCell> {
     let band = band_style(stack);
