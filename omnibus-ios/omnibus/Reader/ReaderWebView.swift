@@ -890,12 +890,7 @@ struct ReaderWebView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.setURLSchemeHandler(context.coordinator, forURLScheme: Self.scheme)
-        configuration.userContentController.add(context.coordinator, name: "omnibus")
-        configuration.allowsInlineMediaPlayback = true
-        configuration.suppressesIncrementalRendering = false
-
+        let configuration = Self.makeConfiguration(coordinator: context.coordinator)
         let webView = AnnotatingWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
@@ -912,6 +907,25 @@ struct ReaderWebView: UIViewRepresentable {
         guard let url = Self.entryURL else { return webView }
         webView.load(URLRequest(url: url))
         return webView
+    }
+
+    /// The reader's web view configuration: the scheme handler, the message
+    /// bridge, and WebKit's own text interaction switched off.
+    ///
+    /// The glue owns the range and the host draws it, so WebKit has nothing to
+    /// offer here — and left on, its long-press recogniser still runs wherever
+    /// the glue declines a press: above the first line, on an illustration,
+    /// below a chapter's last line. With the section unselectable it then
+    /// selects the iframe itself as one block, painted as a wash over the whole
+    /// page under WebKit's own handle (#2655).
+    static func makeConfiguration(coordinator: Coordinator) -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(coordinator, forURLScheme: scheme)
+        configuration.userContentController.add(coordinator, name: "omnibus")
+        configuration.allowsInlineMediaPlayback = true
+        configuration.suppressesIncrementalRendering = false
+        configuration.preferences.isTextInteractionEnabled = false
+        return configuration
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {}

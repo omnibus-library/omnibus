@@ -16,6 +16,11 @@
         background: var(--page, #201e1b);
         -webkit-tap-highlight-color: transparent;
         -webkit-touch-callout: none;
+        /* Unselectable like the section it hosts: the callout alone only hid
+           the menu, and a long press off the text still selected the iframe
+           as one block (#2655). */
+        -webkit-user-select: none;
+        user-select: none;
       }
       /* The stage is inset from the safe areas so prose never runs under the
          notch, the home indicator, or the rounded corners, and so the host's
