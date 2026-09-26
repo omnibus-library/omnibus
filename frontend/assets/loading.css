@@ -5,7 +5,7 @@
  * spinner, a pulse or a "Loading…" line.
  *
  * Three marks, one direction:
- *   · the riffle  — an open book whose leaves turn (boot, page, stage);
+ *   · the riffle  — an open book whose leaves turn (page, stage);
  *   · the line    — a row of page ticks a crest runs along, borrowed from the
  *                   book-detail progress bar and read equally as a waveform
  *                   (sheet, section, the listen stage);
@@ -240,85 +240,18 @@
 .ld-rows-row .ld-skel.circle { --w: 32px; }
 .ld-rows-text { display: flex; flex-direction: column; gap: 7px; }
 
-/* ── Boot ──────────────────────────────────────────────────────── */
-/* The whole app before the WASM client takes over. Server-rendered identical
-   to the client's first paint (rule 07); dismissed by CSS the moment the
-   client stamps `data-hydrated` on <html>.
-   It waits out `--ld-boot-wait` invisible — still catching clicks, so nothing
-   inert can be pressed — and only then fades in. A warm boot hydrates inside
-   that window and never shows it: the server-rendered page, which already
-   draws its own skeletons and loaders, simply fills in. Every mark inside
-   keys its entrance to the same wait. */
-.ld-boot {
-  --ld-boot-wait: 800ms;
-  position: fixed; inset: 0; z-index: 10000;
-  display: grid; place-items: center; overflow: hidden;
-  background: var(--bg-0); color: var(--ink-0);
-  animation: ld-boot-in .5s ease var(--ld-boot-wait) backwards;
-  transition: opacity .45s var(--ld-ease-out), visibility 0s linear .45s;
-}
-/* Dropping the entrance hands the exit whatever opacity it had reached: a
-   boot caught mid-fade-in eases back out instead of flashing. */
-html[data-hydrated] .ld-boot { animation: none; opacity: 0; visibility: hidden; pointer-events: none; }
-html[data-hydrated] .ld-boot * { animation-play-state: paused; }
-/* On the way out the mark leans toward the reader and softens, so the cut to
-   the app reads as the book opening into it rather than a plain crossfade. */
-.ld-boot-stack { transition: transform .5s var(--ld-ease-out), filter .5s var(--ld-ease-out); }
-html[data-hydrated] .ld-boot-stack { transform: scale(1.035); filter: blur(3px); }
-/* The lamp behind the book. */
-.ld-boot-glow {
-  position: absolute; left: 50%; top: 46%; width: min(120vw, 900px); aspect-ratio: 1;
-  transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
-  background: radial-gradient(closest-side, color-mix(in oklch, var(--accent) 13%, transparent), color-mix(in oklch, var(--accent) 4%, transparent) 55%, transparent);
-  animation: ld-glow 5.4s ease-in-out infinite, ld-enter-fade 1.2s ease-out var(--ld-boot-wait) backwards;
-}
-.ld-boot-stack {
-  position: relative; display: flex; flex-direction: column; align-items: center;
-  gap: 22px; padding: 24px; text-align: center;
-}
-.ld-boot .ld-riffle { animation: ld-enter .8s var(--ld-ease-out) calc(var(--ld-boot-wait) + .1s) backwards; margin-bottom: 6px; }
-/* The wordmark sets letter by letter, then a gilt glint crosses it now and
-   then — foil catching the lamp. The glint is a copy of the word laid over
-   the letters, so the per-letter entrance transforms can't break the clip. */
-.ld-boot-word {
-  position: relative; display: flex; margin: 0;
-  font-family: var(--serif); font-weight: 600; font-size: clamp(38px, 7vw, 54px);
-  letter-spacing: -0.01em; line-height: 1; color: var(--ink-0);
-}
-.ld-boot-word > span {
-  display: inline-block;
-  animation: ld-set .9s var(--ld-ease-out) backwards;
-  animation-delay: calc(var(--ld-boot-wait) + .26s + var(--i) * 55ms);
-}
-.ld-boot-word::after {
-  content: attr(data-word) / ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(105deg, transparent 40%, color-mix(in oklch, var(--accent) 85%, white) 49%, white 50%, color-mix(in oklch, var(--accent) 85%, white) 51%, transparent 60%) 0 0 / 300% 100% no-repeat;
-  background-position: 110% 0;
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  animation: ld-gilt 4.8s var(--ld-ease) calc(var(--ld-boot-wait) + 1.4s) infinite;
-}
-.ld-boot .ld-line { animation: ld-enter-fade .8s ease-out calc(var(--ld-boot-wait) + .7s) backwards; }
-/* Three captions share one cell and hand over by time alone (no script runs
-   before hydration): the promise, the reassurance, then a way out. */
-.ld-boot-notes { display: grid; min-height: 3.2em; animation: ld-enter-fade .8s ease-out calc(var(--ld-boot-wait) + .8s) backwards; }
-.ld-boot-notes > * { grid-area: 1 / 1; margin: 0; }
-.ld-boot-note.first { animation: ld-note-out .5s ease 9s forwards; }
-.ld-boot-note.later { opacity: 0; animation: ld-note-in .6s ease 9.4s forwards; }
-.ld-boot-retry {
-  display: inline-flex; margin-top: 14px; opacity: 0; pointer-events: none;
-  animation: ld-note-in .6s ease 22s forwards;
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
-  padding-bottom: 2px;
-}
-@keyframes ld-note-in { to { opacity: 1; pointer-events: auto; } }
-.ld-boot noscript p { font-family: var(--mono); font-size: 11px; color: var(--ink-2); letter-spacing: .08em; }
-
 /* ── Page ──────────────────────────────────────────────────────── */
-/* Fills `main` under the nav. Tall enough that the footer doesn't jump when
-   the page arrives, centred optically a little above middle. */
-.ld-page { min-height: min(62vh, 560px); padding: 48px 20px 12vh; gap: 20px; }
-.ld-page .ld-label { color: var(--ink-2); }
+/* Fills the page under the nav, the book centred in it. The same loader is
+   server-rendered, so it is already on screen before the client runs and
+   carries straight through hydration. While it is the whole of `main`, the
+   shell becomes a column so the loader takes exactly the height left under
+   the nav; nested under a header of its own (a shelf's back link), it falls
+   back to a height that still fits without scrolling. */
+.ld-page { min-height: calc(100dvh - 180px); padding: 24px 20px 5vh; gap: 26px; align-self: stretch; }
+.ld-page .ld-label { color: var(--ink-2); font-size: 11px; }
+.app-shell:has(> main > .ld-page) { min-height: 100dvh; display: flex; flex-direction: column; }
+.app-shell:has(> main > .ld-page) > main { flex: 1; display: flex; flex-direction: column; }
+.app-shell > main > .ld-page { flex: 1; min-height: 0; }
 
 /* ── Stage ─────────────────────────────────────────────────────── */
 /* Covers a reader or player stage, opaque, on the stage's own ground (the
@@ -426,7 +359,7 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
 }
 .ld-cover-glint > img { position: relative; z-index: 1; }
 /* Stop the moment the image is in. `data-loaded` is stamped by the page's
-   early load listener (see `BOOT_JS`) — a cover that loaded but is
+   early load listener (see `BootScript`) — a cover that loaded but is
    transparent, like a 1×1 placeholder, would otherwise glint through it. */
 .ld-cover-glint:has(img[data-loaded])::before { animation: none; opacity: 0; }
 
@@ -443,7 +376,6 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
 /* ── Keyframes ─────────────────────────────────────────────────── */
 @keyframes ld-enter { from { opacity: 0; transform: translateY(6px); } }
 @keyframes ld-enter-fade { from { opacity: 0; } }
-@keyframes ld-boot-in { from { opacity: 0; } }
 @keyframes ld-spin { to { transform: rotate(1turn); } }
 @keyframes ld-crest {
   0%, 46%, 100% { transform: scaleY(.26); opacity: .38; background: var(--ink-3); }
@@ -467,10 +399,6 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
 }
 @keyframes ld-sheen { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @keyframes ld-glint { 0% { transform: translateX(-100%); } 70%, 100% { transform: translateX(100%); } }
-@keyframes ld-gilt { 0% { background-position: 110% 0; } 38%, 100% { background-position: -10% 0; } }
-@keyframes ld-set { from { opacity: 0; transform: translateY(.32em); filter: blur(3px); } }
-@keyframes ld-note-out { to { opacity: 0; } }
-@keyframes ld-glow { 0%, 100% { opacity: .75; transform: translate(-50%, -50%) scale(.96); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); } }
 @keyframes ld-breathe { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
 @keyframes ld-knob { 0%, 100% { transform: translateX(-3px); opacity: .55; } 50% { transform: translateX(3px); opacity: .9; } }
 @keyframes ld-pop { from { transform: scale(.4); opacity: 0; } }
@@ -482,9 +410,8 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
    is a slow opacity breath on each mark — enough to say "still working"
    without asking the eye to follow anything. */
 @media (prefers-reduced-motion: reduce) {
-  .ld, .ld-pill, .ld-boot .ld-riffle, .ld-boot .ld-line, .ld-boot-notes,
-  .ld-boot-glow, .ld-boot-word > span, .ld-busy-face > .ld-ring { animation: none; }
-  .ld-boot-word::after, .ld-skel::after, .ld-cover-glint::before,
+  .ld, .ld-pill, .ld-busy-face > .ld-ring { animation: none; }
+  .ld-skel::after, .ld-cover-glint::before,
   .ld-toggle-unknown::after, .ld-stale.is-stale::before { animation: none; display: none; }
   .ld-ring::before { animation: none; transform: rotate(.35turn); }
   .ld-ring, .ld-line, .ld-riffle, .ld-sheen, .ld-toggle-unknown, .ld-dot {
@@ -498,9 +425,4 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
   .ld-rf-leaf.n2 { transform: rotateY(calc(-180deg + var(--open))); }
   .ld-rf-face::after { animation: none; }
   .ld-rf-leaf.n1 .ld-rf-face.front::after { opacity: .35; }
-  .ld-boot-note.first { animation: ld-note-out .01s linear 9s forwards; }
-  .ld-boot-note.later { animation: ld-note-in .01s linear 9.4s forwards; }
-  .ld-boot-retry { animation: ld-note-in .01s linear 22s forwards; }
-  .ld-boot-stack { transition: none; }
-  html[data-hydrated] .ld-boot-stack { transform: none; filter: none; }
 }

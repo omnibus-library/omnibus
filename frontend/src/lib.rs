@@ -599,9 +599,9 @@ pub fn App() -> Element {
         document::Stylesheet { href: ATRIUM_CSS }
         document::Stylesheet { href: LOADING_CSS }
         components::atrium::AtriumRoot {
-            // First child, so it is painted before anything it covers and its
-            // pre-paint theme script finds the `.atrium` root around it.
-            components::loading::BootScreen {}
+            // First child: its pre-paint script must run before the page
+            // paints, and finds the `.atrium` root around it.
+            components::loading::BootScript {}
             {audio_host}
             dioxus_router::Router::<Route> {}
         }

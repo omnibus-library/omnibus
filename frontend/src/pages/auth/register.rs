@@ -254,6 +254,9 @@ fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> El
 
     rsx! {
         form { class: "auth-form-inner",
+            // Never a GET: a submit that lands before hydration would put
+            // the password in the URL.
+            method: "post",
             onsubmit: on_submit,
             "data-testid": "register-form",
             if let Some(msg) = other_err {

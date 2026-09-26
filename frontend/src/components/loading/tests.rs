@@ -21,7 +21,7 @@ fn loading_page_draws_the_riffle_and_carries_label_and_testid() {
         Loading { kind: LoadingKind::Page, label: "Loading authors", testid: "authors-loading" }
     });
     assert!(html.contains("ld-page"), "html: {html}");
-    assert!(html.contains("ld-riffle"));
+    assert!(html.contains("ld-riffle lg"));
     assert!(html.contains("data-testid=\"authors-loading\""));
     assert!(html.contains("Loading authors"));
 }
@@ -111,13 +111,10 @@ fn ring_maps_the_base_size_to_its_own_modifier() {
 }
 
 #[test]
-fn boot_screen_carries_the_theme_script_wordmark_and_a_reload_link() {
-    let html = render(rsx! { BootScreen {} });
-    assert!(html.contains("data-testid=\"boot-screen\""), "html: {html}");
+fn boot_script_paints_the_saved_theme_and_watches_images_load() {
+    let html = render(rsx! { BootScript {} });
+    assert!(html.starts_with("<script"), "html: {html}");
     assert!(html.contains("localStorage.getItem('omn.theme')"));
-    assert!(html.contains("data-word=\"Omnibus\""));
-    // Letters, then the line's ticks, then the riffle's three leaves.
-    assert_eq!(count(&html, "style=\"--i:"), WORDMARK.len() + 28 + 3);
     assert!(
         html.contains("s&&s.closest('.atrium')"),
         "script escaped: {html}"
@@ -126,9 +123,6 @@ fn boot_screen_carries_the_theme_script_wordmark_and_a_reload_link() {
         html.contains("setAttribute('data-loaded','')"),
         "no image watch: {html}"
     );
-    assert!(html.contains("Finding your place"));
-    assert!(html.contains("Reload"));
-    assert!(html.contains("<noscript>"));
 }
 
 #[test]

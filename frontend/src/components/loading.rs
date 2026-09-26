@@ -1,5 +1,5 @@
 //! The shared loading vocabulary: the [`Loading`] block (page, stage, sheet,
-//! section, row), the boot screen, busy buttons, skeletons, and the small
+//! section, row), busy buttons, skeletons, the pre-paint script, and the small
 //! value/activity marks. Every surface that waits renders one of these; the
 //! visuals live in `assets/loading.css`. All markup is identical on SSR and
 //! the first WASM paint (rule 07) — nothing here reads platform state.
@@ -130,7 +130,9 @@ fn default_mark(kind: LoadingKind, mark: LoadingMark) -> Element {
         (explicit, _) => explicit,
     };
     match (mark, kind) {
-        (LoadingMark::Riffle, LoadingKind::Stage) => rsx! { Riffle { size: MarkSize::Lg } },
+        (LoadingMark::Riffle, LoadingKind::Stage | LoadingKind::Page) => {
+            rsx! { Riffle { size: MarkSize::Lg } }
+        }
         (LoadingMark::Riffle, _) => rsx! { Riffle {} },
         (LoadingMark::Line, LoadingKind::Stage) => rsx! { Line { ticks: 32, size: MarkSize::Xl } },
         (LoadingMark::Line, LoadingKind::Sheet) => rsx! { Line { ticks: 20, size: MarkSize::Lg } },
@@ -193,66 +195,31 @@ pub fn Loading(
 /// because both the boot script and [`use_hydration_marker`] install it.
 const IMAGE_WATCH_JS: &str = "if(!window.__omnImgWatch){window.__omnImgWatch=1;document.addEventListener('load',function(e){var t=e.target;if(t&&t.tagName==='IMG')t.setAttribute('data-loaded','');},true);}";
 
-/// Pre-paint work for the boot screen, the first thing a reader sees: wear
-/// their saved theme, and start watching images load. Runs once at parse time
-/// from the SSR markup; hydration adopts the node and never re-runs it, and
-/// `init_theme` then settles the signal onto the same value.
+/// Pre-paint work: wear the reader's saved theme, and start watching images
+/// load. Runs once at parse time from the SSR markup; hydration adopts the
+/// node and never re-runs it, and `init_theme` then settles the signal onto
+/// the same value.
 fn boot_js() -> String {
     format!(
         "(function(){{try{{var t=localStorage.getItem('omn.theme'),s=document.currentScript,r=s&&s.closest('.atrium');if(r&&/^(dark|black|light|sepia)$/.test(t||''))r.setAttribute('data-theme',t);}}catch(e){{}}{IMAGE_WATCH_JS}}})();"
     )
 }
 
-/// The wordmark, set letter by letter.
-const WORDMARK: &str = "Omnibus";
-
-/// The whole-app boot screen, shown until the client hydrates.
+/// The app root's pre-paint script, rendered first inside the `.atrium` root.
 ///
-/// Rendered once at the app root on every target. CSS hides it the moment
-/// [`use_hydration_marker`] stamps `data-hydrated` on `<html>`, so there is
-/// no state to diverge between SSR and the first client paint.
+/// There is no boot screen: before hydration the server-rendered page already
+/// shows the same loaders and skeletons the client will, so the load reads as
+/// one continuous page. This only makes that first paint wear the right theme.
 #[component]
-pub fn BootScreen() -> Element {
+pub fn BootScript() -> Element {
     rsx! {
-        div {
-            class: "ld-boot",
-            role: "status",
-            "aria-live": "polite",
-            "aria-label": "Loading Omnibus",
-            "data-testid": "boot-screen",
-            script { dangerous_inner_html: boot_js() }
-            div { class: "ld-boot-glow", "aria-hidden": "true" }
-            div { class: "ld-boot-stack",
-                Riffle { size: MarkSize::Lg }
-                p { class: "ld-boot-word", "data-word": WORDMARK, "aria-hidden": "true",
-                    for (i, ch) in WORDMARK.chars().enumerate() {
-                        span { key: "{i}", style: "--i:{i}", "{ch}" }
-                    }
-                }
-                Line { ticks: 28 }
-                div { class: "ld-boot-notes",
-                    p { class: "ld-label ld-boot-note first", "Finding your place" }
-                    div { class: "ld-boot-note later",
-                        p { class: "ld-label",
-                            "Still opening \u{2014} the first visit after an update takes a moment"
-                        }
-                        // Reachable before any client code runs: an empty href
-                        // resolves to this very URL, query string and all.
-                        a { class: "ld-boot-retry", href: "", "Reload" }
-                    }
-                }
-            }
-            noscript {
-                p { "Omnibus needs JavaScript to run." }
-            }
-        }
+        script { dangerous_inner_html: boot_js() }
     }
 }
 
 /// Stamp `data-hydrated` on `<html>` once the client has mounted.
 ///
-/// The boot screen keys its dismissal on this, and Playwright's `gotoReady`
-/// waits for it. Also installs the image watcher where no boot script ran (the
+/// Playwright's `gotoReady` waits for it, and CSS may key on it. Also installs the image watcher where no boot script ran (the
 /// Android shell renders client-side only). An effect, so never during SSR.
 pub fn use_hydration_marker() {
     use_effect(|| {
