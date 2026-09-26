@@ -128,7 +128,10 @@ async function strandedOffsets(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const mount = document.querySelector('[data-testid="reader-viewer"]');
     const container = mount?.querySelector("div");
-    if (!container) return ["no page container"];
+    // Thrown, not reported as an offset: returned, it would satisfy the
+    // "a drag was armed" control below and surface as a confusing failure
+    // two assertions later.
+    if (!container) throw new Error("no page container under reader-viewer");
     return Array.from(container.children)
       .map((child) => (child as HTMLElement).style.transform)
       .filter((transform) => transform !== "" && transform !== "none");
@@ -1607,11 +1610,14 @@ test.describe("two-finger gestures (touch context)", () => {
     // lift. The multi-finger gate has to come down on that too, or the next
     // single-finger tap is swallowed by a sequence that never finished.
     //
-    // Cancelled on the very spot the tap will land: the gate is a per-document
-    // closure (the handlers are installed once per section document and once
-    // for the host), so a gesture cancelled on the chrome would raise a
-    // different document's flag from the one the tap reads, and this would
-    // pass with the cancel path deleted.
+    // Cancelled on the very spot the tap will land. The gate is a per-document
+    // closure — the handlers are installed once per section document and once
+    // for the host — so cancelling on the chrome would raise one document's
+    // flag and read another's, and this would be asserting nothing at all.
+    //
+    // What it pins is the recovery *contract*, which two mechanisms implement
+    // redundantly (`touchstart` heals the flag, and `touchcancel` clears it):
+    // it goes red when both are removed, not when either one is.
     const size = page.viewportSize();
     if (!size) throw new Error("this test needs a viewport");
     await twoFingerCancel(page, {
