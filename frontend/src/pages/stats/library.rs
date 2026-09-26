@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use omnibus_shared::{LibrarySize, MeasuredTotal};
 
 use super::group_thousands;
+use crate::components::loading::Skeleton;
 use crate::format::plural_noun;
 
 /// One rendered figure: the total, its unit, and the coverage line beneath.
@@ -144,13 +145,23 @@ fn hero_sentence(size: &LibrarySize) -> (String, Option<String>, &'static str) {
 /// The Library scope's hero: the collection in one sentence, over its size in
 /// words, pages, and hours of audio.
 ///
-/// Renders nothing at all until the fetch lands or when the library has been
-/// measured for nothing: three zeroes read as a claim about the collection
-/// rather than about the backfill.
+/// A placeholder until the fetch lands (never carrying the card's testid), and
+/// nothing when the library has been measured for nothing: three zeroes read
+/// as a claim about the collection rather than about the backfill.
 #[component]
 pub(super) fn LibrarySizeHero(size: Option<LibrarySize>) -> Element {
     let Some(size) = size else {
-        return rsx! {};
+        return rsx! {
+            div {
+                class: "card st-lib",
+                role: "status",
+                "aria-live": "polite",
+                "data-testid": "stats-library-size-loading",
+                span { class: "ld-sr", "Measuring the shelf" }
+                Skeleton { style: "--w:78%;height:1.6em" }
+                Skeleton { style: "--w:52%;height:1.6em;margin-top:12px" }
+            }
+        };
     };
     let figures = build_figures(&size);
     if figures.is_empty() {

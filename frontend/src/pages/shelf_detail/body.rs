@@ -11,6 +11,7 @@ use omnibus_shared::{EbookMetadata, Shelf, ShelfKind, SortKey};
 
 use super::header::ShelfHero;
 use crate::components::atrium::fallback_title;
+use crate::components::loading::CoverSkeletons;
 use crate::components::shelf_glyphs::{plus_icon, x_icon};
 use crate::components::{CoverTile, CoverTileKind, Loading, LoadingKind};
 use crate::shelf_access::ShelfAccess;
@@ -95,6 +96,9 @@ pub(super) fn WebShelfBody(
     });
     let view = BooksView {
         kind: shelf.kind,
+        // A refetch keeps the books on screen; only a list never answered is
+        // unknown.
+        pending: !members_ready && books.is_empty() && !errored,
         books,
         errored,
         server_url,
@@ -143,6 +147,8 @@ pub(super) fn back_crumb() -> Element {
 #[derive(Clone, PartialEq)]
 struct BooksView {
     kind: ShelfKind,
+    /// No member list has answered yet — neither a count nor "empty" is known.
+    pending: bool,
     books: Vec<EbookMetadata>,
     errored: bool,
     server_url: String,
@@ -170,7 +176,11 @@ fn ShelfBooks(
             div { class: "shd-books-head",
                 h2 { class: "shd-books-title", id: "shd-books-title",
                     "Books"
-                    span { class: "mono shd-books-count", "{count}" }
+                    if view.pending {
+                        span { class: "mono shd-books-count ld-sheen", "data-testid": "shelf-count-pending", "counting" }
+                    } else {
+                        span { class: "mono shd-books-count", "{count}" }
+                    }
                 }
                 if view.kind == ShelfKind::Smart {
                     {sort_control(sort_key)}
@@ -184,7 +194,12 @@ fn ShelfBooks(
             if let Some(msg) = view.remove_error.clone() {
                 p { role: "alert", class: "error shd-alert", "data-testid": "shelf-remove-error", "{msg}" }
             }
-            if view.books.is_empty() && !view.errored {
+            if view.pending {
+                div { class: "shd-grid-pending", role: "status", "aria-live": "polite", "data-testid": "shelf-loading",
+                    span { class: "ld-sr", "Taking the books off the shelf" }
+                    CoverSkeletons { count: 6 }
+                }
+            } else if view.books.is_empty() && !view.errored {
                 {empty_state(view.kind, view.can_edit, on_add, on_edit)}
             } else {
                 div { class: "lib-grid shelf-grid shd-grid", "data-testid": "shelf-grid", role: "list",
@@ -309,5 +324,48 @@ fn empty_state(
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+    use crate::test_support::render_in_vdom;
+
+    fn books(pending: bool) -> Element {
+        let sort_key = use_signal(|| SortKey::Title);
+        rsx! {
+            ShelfBooks {
+                view: BooksView {
+                    kind: ShelfKind::Manual,
+                    pending,
+                    books: Vec::new(),
+                    errored: false,
+                    server_url: String::new(),
+                    can_edit: false,
+                    leaving: Vec::new(),
+                    remove_error: None,
+                },
+                sort_key,
+                on_add: EventHandler::new(|_| {}),
+                on_edit: EventHandler::new(|_| {}),
+                on_remove: EventHandler::new(|_| {}),
+            }
+        }
+    }
+
+    #[test]
+    fn shelf_books_hold_skeletons_rather_than_the_empty_state_before_members_answer() {
+        let html = render_in_vdom(|| books(true));
+        assert!(html.contains("shelf-loading"), "{html}");
+        assert!(html.contains("shelf-count-pending"), "{html}");
+        assert!(!html.contains("shelf-empty"), "{html}");
+    }
+
+    #[test]
+    fn shelf_books_say_the_shelf_is_empty_once_members_answer_with_none() {
+        let html = render_in_vdom(|| books(false));
+        assert!(html.contains("shelf-empty"), "{html}");
+        assert!(!html.contains("shelf-loading"), "{html}");
     }
 }

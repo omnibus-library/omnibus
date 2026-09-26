@@ -236,6 +236,62 @@ pub fn use_can_upload() -> ReadSignal<bool> {
     ReadSignal::new(use_signal(|| false))
 }
 
+/// Whether the reader may reach a gated surface. Unlike [`use_is_admin`]'s
+/// `bool`, `Unknown` keeps "not resolved yet" apart from "no", so a gate can
+/// show loading until `/me` answers rather than a false "forbidden".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// `/me` hasn't answered yet.
+    Unknown,
+    /// The reader holds the permission.
+    Allowed,
+    /// The reader lacks it, or is signed out.
+    Denied,
+}
+
+/// Classify a raw [`CurrentUser`] value (outer `None` = unresolved) against
+/// the permission `allowed` tests for.
+pub fn access_of(
+    user: &Option<Option<omnibus_shared::UserSummary>>,
+    allowed: fn(&omnibus_shared::UserSummary) -> bool,
+) -> Access {
+    match user {
+        None => Access::Unknown,
+        Some(Some(u)) if allowed(u) => Access::Allowed,
+        Some(_) => Access::Denied,
+    }
+}
+
+/// Tri-state [`Access`] over [`CurrentUser`]. Web and SSR share this arm: SSR
+/// holds the provided unresolved `None`, the same `Unknown` the client paints
+/// first (rule 07). A missing context (a bare render test) is `Unknown` too.
+#[cfg(not(feature = "mobile"))]
+fn use_access(allowed: fn(&omnibus_shared::UserSummary) -> bool) -> ReadSignal<Access> {
+    let user_ctx = try_use_context::<CurrentUser>().map(|c| c.0);
+    ReadSignal::new(use_memo(move || match user_ctx {
+        Some(user) => access_of(&user.read(), allowed),
+        None => Access::Unknown,
+    }))
+}
+
+/// Mobile has no [`CurrentUser`]; it keeps the `false` [`use_is_admin`] has
+/// always given it there, as `Denied`.
+#[cfg(feature = "mobile")]
+fn use_access(_allowed: fn(&omnibus_shared::UserSummary) -> bool) -> ReadSignal<Access> {
+    ReadSignal::new(use_signal(|| Access::Denied))
+}
+
+/// Tri-state admin gate: [`Access::Unknown`] until `/me` resolves.
+pub fn use_admin_access() -> ReadSignal<Access> {
+    use_access(|u| u.is_admin)
+}
+
+/// Tri-state upload gate (admin implies it): [`Access::Unknown`] until `/me`
+/// resolves.
+pub fn use_upload_access() -> ReadSignal<Access> {
+    use_access(|u| u.is_admin || u.can_upload)
+}
+
 /// Derive the resolved current user from the app-wide [`CurrentUser`]
 /// context — a pure function of its value, so `use_memo` recomputes it
 /// inline with no extra render pass, flattening "not yet resolved" and

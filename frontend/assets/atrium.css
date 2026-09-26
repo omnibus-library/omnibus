@@ -3143,6 +3143,9 @@ a.idx-letter-on:focus-visible {
   font-family: var(--mono); font-size: 10px; font-weight: 600;
   letter-spacing: .04em; text-transform: uppercase;
 }
+/* Before `/me` answers: a quiet plate where the monogram will land. */
+.um-trigger.is-pending { background: transparent; border-color: transparent; }
+.um-trigger.is-pending .ld-skel { border-radius: 50%; }
 
 /* Click-outside catcher. `inset: 0` would collapse this to the header
    strip: `.atrium-topbar` sets `backdrop-filter`, which makes it the
@@ -3214,6 +3217,8 @@ a.idx-letter-on:focus-visible {
   font-size: 12px;
 }
 .um-now-reading-state.error { color: var(--bad); }
+.um-now-reading-pending { align-items: center; background: var(--bg-2); border-color: var(--line-2); }
+.um-now-reading-pending .um-nr-meta { gap: 8px; }
 .um-nr-cover {
   display: block;
   width: 44px; height: 64px; flex: 0 0 44px;
@@ -4980,7 +4985,11 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .m-load-more { margin: 20px auto 0; display: flex; }
-.m-lib-loading { margin-top: 24px; }
+.m-lib-loading { margin-top: 4px; }
+/* Skeletons stand where the covers will, at the grid's own column count. */
+.m-lib-loading .ld-covers { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 12px; }
+@media (min-width: 700px) { .m-lib-loading .ld-covers { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .m-lib-loading .ld-covers { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 
 /* Search & discovery */
 .m-search { display: flex; flex-direction: column; }
@@ -5206,7 +5215,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .m-strip-note { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
-.m-suggest-loading { display: flex; align-items: center; gap: 8px; }
 
 /* Shelf detail: at phone widths the shared markup (rail hidden) reads as a
    mobile screen — tighten the grid to three columns to match the design. */
@@ -5450,6 +5458,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .settings-status { font-size: 0.875rem; margin-top: 0.5rem; min-height: 1.2em; }
 .settings-status.success, .success-msg { color: #34d399; }
 .settings-status.error, .error { color: #f87171; font-size: 0.85rem; }
+/* Still working: neutral ink with a ring, never the success green. */
+.settings-status.is-working { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
 
 /* Kobo wireless-sync device list (#923). */
 .kobo-device-list {
@@ -7613,6 +7623,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   font-size: 11.5px; color: var(--ink-2); }
 .api-key-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: 0 0 8px; }
 .api-key-dot.connected { background: oklch(0.7 0.15 150); }
+/* Status not read yet: a hollow dot that claims neither state. */
+.api-key-dot.pending { background: transparent; box-shadow: inset 0 0 0 1px var(--ink-3); }
 
 /* ── F3.1 Shelves ─────────────────────────────────────────────────── */
 
@@ -12068,6 +12080,15 @@ html {
   transition: transform .3s cubic-bezier(.2,.7,.2,1), margin .42s cubic-bezier(.2,.7,.2,1);
 }
 .lmq-fcard:first-child { margin-left: 0; }
+/* The fan's placeholder, dealt like the real one; it waits out `--ld-hold`
+   so an answer that lands at once never shows it. */
+.lmq-stack-pending { animation: ld-enter-fade .4s ease-out var(--ld-hold) backwards; }
+.lmq-fcard-pending {
+  flex: 0 0 132px; width: 132px; margin-left: -74px;
+  transform-origin: bottom center; transform: rotate(var(--rot)) translateY(var(--dy));
+}
+.lmq-fcard-pending:first-child { margin-left: 0; }
+@media (prefers-reduced-motion: reduce) { .lmq-stack-pending { animation: none; } }
 .lmq-fcard .cover-wrap { filter: drop-shadow(0 26px 34px oklch(0 0 0 / .6)); }
 .lmq-fcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 /* Pointing anywhere at the fan spreads it; pointing at one cover tilts that
@@ -12157,6 +12178,7 @@ html {
   color: inherit; font: inherit;
 }
 .lmq-shent:first-child { padding-left: 0; border-left: 0; }
+.lmq-shent-pending { cursor: default; }
 .lmq-shent:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 /* The shelf row is the quieter tier under the section header, so the name
    stays 400 while the display tier went to 600 in the type promotion — the
@@ -12275,6 +12297,11 @@ html {
   position: relative; isolation: isolate;
 }
 .lmq .lib-tile .cover-wrap { filter: drop-shadow(0 14px 18px oklch(0 0 0 / .45)); }
+/* The first page's placeholders stand at the wall's own measure, covers only
+   — the wall carries its captions on hover, not under each cover. */
+.lib-loading { margin-top: 4px; padding-bottom: 40px; }
+.lmq .lib-loading .ld-covers { --cover-min: 170px; gap: 30px 22px; }
+.lmq .lib-loading .ld-covers-cell .ld-skel.line { display: none; }
 .lmq .lib-tile-art {
   display: block;
   transition: transform .26s cubic-bezier(.2,.7,.2,1);

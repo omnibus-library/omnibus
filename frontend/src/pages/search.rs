@@ -11,6 +11,7 @@ use omnibus_shared::{
     PaletteTagHit,
 };
 
+use crate::components::{Loading, LoadingKind};
 use crate::format::{facet_query, plural, single_facet_value};
 use crate::{data, use_server_url, Route};
 
@@ -43,7 +44,7 @@ pub fn SearchPage(query: String) -> Element {
     if loading() {
         return rsx! {
             section { class: "search-page",
-                p { class: "subtitle", "Searching\u{2026}" }
+                Loading { kind: LoadingKind::Page, label: "Searching the shelves" }
             }
         };
     }
@@ -630,5 +631,16 @@ mod tests {
             summary_line(&r),
             "1 author \u{00b7} 1 tag \u{00b7} fts5 \u{00b7} 3ms"
         );
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn search_page_first_paint_is_a_page_loader() {
+        let html = crate::test_support::render_in_vdom(|| {
+            rsx! { SearchPage { query: "dune".to_string() } }
+        });
+        assert!(html.contains("search-page"), "{html}");
+        assert!(html.contains("ld-page"), "{html}");
+        assert!(html.contains("Searching the shelves"), "{html}");
     }
 }

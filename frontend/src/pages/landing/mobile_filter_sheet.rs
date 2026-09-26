@@ -93,14 +93,14 @@ fn toggle_formats(filters: &mut ViewFilters, values: &[&str]) {
 #[component]
 pub(super) fn MobileSortFilterSheet(
     prefs: ViewPrefs,
-    book_count: usize,
+    book_count: Option<usize>,
     on_change: EventHandler<ViewPrefs>,
     on_close: EventHandler<MouseEvent>,
 ) -> Element {
-    let show_label = if book_count == 1 {
-        "Show 1 book".to_string()
-    } else {
-        format!("Show {book_count} books")
+    let show_label = match book_count {
+        Some(1) => "Show 1 book".to_string(),
+        Some(n) => format!("Show {n} books"),
+        None => "Show books".to_string(),
     };
     let reset_prefs = prefs.clone();
     let on_reset = move |_| {

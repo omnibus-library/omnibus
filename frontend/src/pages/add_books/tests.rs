@@ -189,9 +189,86 @@ mod render {
         assert!(html.contains("has-file"));
     }
 
+    /// First paint (SSR and the client before `/me` lands) doesn't know the
+    /// reader, so the page waits rather than claiming they may not upload.
+    #[cfg(not(feature = "mobile"))]
+    #[test]
+    fn add_books_page_shows_loading_until_the_reader_is_known() {
+        let html = dioxus::ssr::render_element(rsx! { AddBooksPage {} });
+        assert!(html.contains("ld-page"), "{html}");
+        assert!(html.contains("Checking your access"));
+        assert!(!html.contains("add-books-forbidden"));
+        assert!(!html.contains("add-books-file-input"));
+    }
+
+    #[cfg(not(feature = "mobile"))]
+    #[test]
+    fn add_books_page_refuses_a_resolved_reader_without_upload_rights() {
+        fn app() -> Element {
+            crate::test_support::provide_current_user(Some(Some(crate::test_support::test_user(
+                false, false,
+            ))));
+            rsx! { AddBooksPage {} }
+        }
+        let html = crate::test_support::render_in_vdom(app);
+        assert!(
+            html.contains("data-testid=\"add-books-forbidden\""),
+            "{html}"
+        );
+        assert!(!html.contains("Checking your access"));
+    }
+
+    #[cfg(not(feature = "mobile"))]
+    #[test]
+    fn add_books_page_offers_the_picker_to_a_resolved_uploader() {
+        fn app() -> Element {
+            crate::test_support::provide_current_user(Some(Some(crate::test_support::test_user(
+                false, true,
+            ))));
+            rsx! { AddBooksPage {} }
+        }
+        let html = crate::test_support::render_in_vdom(app);
+        assert!(html.contains("add-books-file-input"), "{html}");
+        assert!(!html.contains("add-books-forbidden"));
+    }
+
+    /// A read or upload in flight is neither a success nor an error: the line
+    /// wears a ring and neutral ink until the outcome lands.
+    #[test]
+    fn upload_status_shows_a_ring_not_success_while_working() {
+        #[component]
+        fn Harness() -> Element {
+            let state = UploadState {
+                busy: use_signal(|| true),
+                status: use_signal(|| Some("Reading dune.epub\u{2026}".to_string())),
+                ..empty_state()
+            };
+            rsx! { UploadStatus { state } }
+        }
+        let html = dioxus::ssr::render_element(rsx! { Harness {} });
+        assert!(html.contains("settings-status is-working"), "{html}");
+        assert!(html.contains("ld-ring"));
+        assert!(!html.contains("success"));
+    }
+
+    #[test]
+    fn upload_status_reads_as_success_once_the_pick_is_staged() {
+        #[component]
+        fn Harness() -> Element {
+            let state = UploadState {
+                status: use_signal(|| Some("Review the details.".to_string())),
+                ..empty_state()
+            };
+            rsx! { UploadStatus { state } }
+        }
+        let html = dioxus::ssr::render_element(rsx! { Harness {} });
+        assert!(html.contains("settings-status success"), "{html}");
+        assert!(!html.contains("ld-ring"));
+    }
+
     /// A user without `can_upload` sees the not-authorized state, not the
     /// upload form — the markup `AddBooksPage` returns via `AddBooksForbidden`
-    /// when its `use_can_upload` gate is (the SSR/pre-hydration default) false.
+    /// once its `use_upload_access` gate resolves to denied.
     #[test]
     fn add_books_forbidden_renders_not_authorized_message_not_the_form() {
         let html = dioxus::ssr::render_element(rsx! { AddBooksForbidden {} });

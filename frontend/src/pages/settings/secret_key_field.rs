@@ -207,13 +207,16 @@ async fn clear_key(kind: SecretKeyKind, url: String, mut sigs: SecretKeyFieldSig
 /// absence before the mount-time fetch resolves).
 struct SecretKeyFieldView {
     configured: bool,
+    /// `None` until the status read answers.
+    known: Option<bool>,
     placeholder: String,
     detail: String,
 }
 
 impl SecretKeyFieldView {
     fn from_status(st: &Option<KeyStatus>, kind: SecretKeyKind) -> Self {
-        let configured = st.as_ref().map(|s| s.configured).unwrap_or(false);
+        let known = st.as_ref().map(|s| s.configured);
+        let configured = known.unwrap_or(false);
         let placeholder = st
             .as_ref()
             .and_then(|s| s.masked.clone())
@@ -230,6 +233,7 @@ impl SecretKeyFieldView {
             .unwrap_or_default();
         Self {
             configured,
+            known,
             placeholder,
             detail,
         }
@@ -238,16 +242,25 @@ impl SecretKeyFieldView {
 
 /// Load the masked key status on mount; the raw key is never read back to
 /// the client.
-fn use_load_key_status(
-    kind: SecretKeyKind,
-    server_url: String,
-    mut status: Signal<Option<KeyStatus>>,
-) {
+fn use_load_key_status(kind: SecretKeyKind, server_url: String, sigs: SecretKeyFieldSignals) {
+    let SecretKeyFieldSignals {
+        mut status,
+        mut msg,
+        mut msg_is_error,
+        ..
+    } = sigs;
     use_effect(move || {
         let url = server_url.clone();
         spawn(async move {
-            if let Ok(s) = kind.fetch(&url).await {
-                status.set(Some(s));
+            match kind.fetch(&url).await {
+                Ok(s) => status.set(Some(s)),
+                // Said aloud, or the status line would check in silence.
+                Err(e) => {
+                    msg.set(Some(format!(
+                        "Couldn\u{2019}t read the current status: {e}"
+                    )));
+                    msg_is_error.set(true);
+                }
             }
         });
     });
@@ -266,7 +279,7 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
         in_flight: use_signal(|| false),
     };
     let mut key_input = sigs.key_input;
-    use_load_key_status(kind, server_url.clone(), sigs.status);
+    use_load_key_status(kind, server_url.clone(), sigs);
 
     let save_url = server_url.clone();
     let on_save = move |_| {
@@ -279,6 +292,7 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
 
     let SecretKeyFieldView {
         configured,
+        known,
         placeholder,
         detail,
     } = SecretKeyFieldView::from_status(&(sigs.status)(), kind);
@@ -328,7 +342,7 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
                     }
                 }
             }
-            {credential_status_line(&format!("{testid}-status"), configured, &detail, "Not connected")}
+            {credential_status_line(&format!("{testid}-status"), known, &detail, "Not connected")}
             {credential_status_message(&format!("{testid}-key-status"), msg().as_deref(), msg_is_error())}
         }
     }

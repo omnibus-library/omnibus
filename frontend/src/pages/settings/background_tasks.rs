@@ -8,6 +8,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::{BackgroundTaskRecord, BackgroundTaskStatus};
 
+use crate::components::loading::RowSkeletons;
 use crate::data;
 use crate::date_fmt::fmt_timestamp;
 
@@ -75,8 +76,9 @@ fn BackgroundTasksResults(
     }
     let Some(tasks) = result() else {
         return rsx! {
-            p { class: "settings-status", role: "status", "data-testid": "background-tasks-loading",
-                "Loading\u{2026}"
+            div { role: "status", "aria-live": "polite", "data-testid": "background-tasks-loading",
+                span { class: "ld-sr", "Reading the task history" }
+                RowSkeletons { count: 4, avatar: false }
             }
         };
     };

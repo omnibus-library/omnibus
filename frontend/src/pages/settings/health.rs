@@ -9,6 +9,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::error_ring::CapturedError;
 
+use crate::components::{Loading, LoadingKind};
 use crate::date_fmt::fmt_timestamp;
 use crate::{data, Route};
 
@@ -72,8 +73,11 @@ fn LastErrorsResults(result: Signal<Option<Vec<CapturedError>>>, error: Signal<b
     }
     let Some(entries) = result() else {
         return rsx! {
-            p { class: "settings-status", role: "status", "data-testid": "last-errors-loading",
-                "Loading\u{2026}"
+            Loading {
+                kind: LoadingKind::Section,
+                class: "start",
+                testid: "last-errors-loading",
+                label: "Reading recent errors",
             }
         };
     };

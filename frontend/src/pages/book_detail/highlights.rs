@@ -9,11 +9,11 @@ use dioxus_router::Link;
 use omnibus_shared::{AlignmentEbookChapter, Highlight};
 
 use crate::components::quote_card::QUOTE_CARD_JS;
-use crate::components::{ConfirmModal, QuoteCardPanel};
+use crate::components::{ConfirmModal, Loading, LoadingKind, QuoteCardPanel};
 use crate::{data, use_server_url};
 
 use super::dates::{fmt_long_date, local_date_offset, use_local_dates_ready};
-use super::BdSectionHead;
+use super::{BdSectionHead, FeedState};
 
 mod locator;
 
@@ -35,6 +35,7 @@ pub(super) struct BdQuoteMeta {
 pub(super) fn BdHighlightsSection(uuid: String, quote_meta: BdQuoteMeta) -> Element {
     let server_url = use_server_url();
     let mut highlights = use_signal(Vec::<Highlight>::new);
+    let mut feed = use_signal(|| FeedState::Pending);
     // The book's TOC chapters (title + spine index), in TOC order — used to
     // name a passage's chapter the way the reader does (#2356, #2463). Empty
     // on SSR / first paint and until the fetch lands, which leaves the
@@ -49,9 +50,13 @@ pub(super) fn BdHighlightsSection(uuid: String, quote_meta: BdQuoteMeta) -> Elem
         let hl_url = load_url.clone();
         let hl_uuid = uuid.clone();
         spawn(async move {
-            if let Ok(list) = data::list_highlights(&hl_url, &hl_uuid).await {
+            let result = data::list_highlights(&hl_url, &hl_uuid).await;
+            let ok = result.is_ok();
+            if let Ok(list) = result {
                 highlights.set(list);
             }
+            let next = feed.peek().after(ok);
+            feed.set(next);
         });
         // The alignment view doubles as the chapter table (title + spine
         // index) for any book with text; it is what lets a passage's CFI name
@@ -67,16 +72,32 @@ pub(super) fn BdHighlightsSection(uuid: String, quote_meta: BdQuoteMeta) -> Elem
     }));
 
     let list = highlights();
+    let state = feed();
+    let kicker = match state {
+        FeedState::Loaded => passages_kicker(list.len()),
+        FeedState::Pending | FeedState::Failed => "Saved passages".to_string(),
+    };
     rsx! {
         // The standalone canvas renderer the quote-card modal's export
         // actions call into (`window.OmnibusQuoteCard`).
         document::Script { src: QUOTE_CARD_JS }
         div { class: "bd-highlights", "data-testid": "highlights-section",
             BdSectionHead {
-                kicker: passages_kicker(list.len()),
+                kicker,
                 title: "Passages you saved".to_string(),
             }
-            if list.is_empty() {
+            if state == FeedState::Pending {
+                Loading {
+                    kind: LoadingKind::Section,
+                    class: "start",
+                    testid: "highlights-loading",
+                    label: "Finding your passages",
+                }
+            } else if state == FeedState::Failed {
+                div { class: "bd-journal-empty card", "data-testid": "highlights-error",
+                    p { class: "mono", "Your saved passages didn\u{2019}t load \u{2014} try reopening the book." }
+                }
+            } else if list.is_empty() {
                 div { class: "bd-journal-empty card", "data-testid": "highlights-empty",
                     p { class: "mono",
                         "No saved passages yet \u{2014} highlight while you read to keep them here."

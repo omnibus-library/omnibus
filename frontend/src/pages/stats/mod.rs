@@ -131,7 +131,7 @@ pub fn StatsPage() -> Element {
     let all_time: Signal<Option<StatsSummary>> = use_signal(|| None);
     // Library-scale rather than per-user, so these ride their own fetches:
     // folding them into the summary would recompute and re-send them on every
-    // switcher change. `None` until they land, and their cards render nothing.
+    // switcher change. `None` until they land, and their cards show loading.
     let library_size: Signal<Option<LibrarySize>> = use_signal(|| None);
     let library_composition: Signal<Option<LibraryComposition>> = use_signal(|| None);
     let in_progress: Signal<Vec<ResumePoint>> = use_signal(Vec::new);
@@ -248,7 +248,15 @@ fn WindowContents(
 ) -> Element {
     let guard = period.read();
     let Some(summary) = guard.as_ref() else {
-        return rsx! { div { class: "card st-card-placeholder", aria_hidden: "true" } };
+        return rsx! {
+            div { class: "card st-card-placeholder",
+                Loading {
+                    kind: LoadingKind::Section,
+                    testid: "stats-window-loading",
+                    label: "Tallying this window",
+                }
+            }
+        };
     };
     rsx! {
         div { class: "st-band-body",
@@ -272,7 +280,15 @@ fn StandingBand(
 ) -> Element {
     let guard = all_time.read();
     let Some(summary) = guard.as_ref() else {
-        return rsx! { div { class: "card st-card-placeholder", aria_hidden: "true" } };
+        return rsx! {
+            div { class: "card st-card-placeholder",
+                Loading {
+                    kind: LoadingKind::Section,
+                    testid: "stats-standing-loading",
+                    label: "Looking back over the year",
+                }
+            }
+        };
     };
     rsx! {
         section { class: "st-band", "data-testid": "stats-alltime-section",
@@ -460,8 +476,14 @@ fn use_library_size_fetch_effect(server_url: String, library_size: Signal<Option
         let url = server_url.clone();
         let mut library_size = library_size;
         spawn(async move {
-            if let Ok(size) = data::fetch_library_size(&url).await {
-                library_size.set(Some(size));
+            match data::fetch_library_size(&url).await {
+                Ok(size) => library_size.set(Some(size)),
+                // Settle on the unmeasured value, which renders nothing, so
+                // the placeholder never outlives the request.
+                Err(_) if library_size.peek().is_none() => {
+                    library_size.set(Some(LibrarySize::default()));
+                }
+                Err(_) => {}
             }
         });
     });
@@ -481,8 +503,13 @@ fn use_library_composition_fetch_effect(
         let url = server_url.clone();
         let mut library_composition = library_composition;
         spawn(async move {
-            if let Ok(composition) = data::fetch_library_composition(&url).await {
-                library_composition.set(Some(composition));
+            match data::fetch_library_composition(&url).await {
+                Ok(composition) => library_composition.set(Some(composition)),
+                // Same settling as the size fetch: empty renders nothing.
+                Err(_) if library_composition.peek().is_none() => {
+                    library_composition.set(Some(LibraryComposition::default()));
+                }
+                Err(_) => {}
             }
         });
     });

@@ -1,12 +1,14 @@
 //! Users settings section — the admin table plus the New / Edit /
 //! Delete modals and inline Unlock. Admin-only; rendered as the `users`
 //! section of `/settings`. SSR and the first WASM paint both start from an
-//! empty list (rule 07); the post-mount effect loads the real rows.
+//! unanswered list shown as skeleton rows (rule 07); the post-mount effect
+//! loads the real rows.
 
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 use omnibus_shared::{AdminUserRow, UserPermissions};
 
+use crate::components::loading::RowSkeletons;
 use crate::data;
 
 mod modals;
@@ -39,7 +41,8 @@ enum UserRowAction {
 /// The Users section: header + table, with a reload counter the mutations bump.
 #[component]
 pub fn UsersSection() -> Element {
-    let users = use_signal(Vec::<AdminUserRow>::new);
+    // `None` until the first answer — an empty table would claim no accounts.
+    let users = use_signal(|| None::<Vec<AdminUserRow>>);
     let load_error = use_signal(|| None::<String>);
     // Errors from inline row actions (currently Unlock) — surfaced in the
     // section banner rather than swallowed.
@@ -66,18 +69,30 @@ pub fn UsersSection() -> Element {
                 p { role: "alert", class: "settings-status error", "data-testid": "users-action-error", "{err}" }
             }
 
-            UsersTable {
-                users: users(),
-                current_id,
-                on_action: move |action| match action {
-                    UserRowAction::Edit(row) => modal.set(Modal::Edit(row)),
-                    UserRowAction::Delete(row) => modal.set(Modal::Delete(row)),
-                    UserRowAction::Sessions(row) => modal.set(Modal::Sessions(row)),
-                    UserRowAction::Unlocked => {
-                        action_error.set(None);
-                        reload.with_mut(|n| *n += 1);
+            match users() {
+                Some(users) => rsx! {
+                    UsersTable {
+                        users,
+                        current_id,
+                        on_action: move |action| match action {
+                            UserRowAction::Edit(row) => modal.set(Modal::Edit(row)),
+                            UserRowAction::Delete(row) => modal.set(Modal::Delete(row)),
+                            UserRowAction::Sessions(row) => modal.set(Modal::Sessions(row)),
+                            UserRowAction::Unlocked => {
+                                action_error.set(None);
+                                reload.with_mut(|n| *n += 1);
+                            }
+                            UserRowAction::Error(msg) => action_error.set(Some(msg)),
+                        },
                     }
-                    UserRowAction::Error(msg) => action_error.set(Some(msg)),
+                },
+                // The load-error banner above says why there is no table.
+                None if load_error().is_some() => rsx! {},
+                None => rsx! {
+                    div { role: "status", "aria-live": "polite", "data-testid": "users-loading",
+                        span { class: "ld-sr", "Gathering the accounts" }
+                        RowSkeletons { count: 3 }
+                    }
                 },
             }
         }
@@ -90,7 +105,7 @@ pub fn UsersSection() -> Element {
 /// mutation). Called unconditionally from [`UsersSection`].
 fn use_users_load(
     reload: Signal<u32>,
-    mut users: Signal<Vec<AdminUserRow>>,
+    mut users: Signal<Option<Vec<AdminUserRow>>>,
     mut load_error: Signal<Option<String>>,
 ) {
     use_effect(move || {
@@ -98,7 +113,7 @@ fn use_users_load(
         spawn(async move {
             match data::list_users().await {
                 Ok(rows) => {
-                    users.set(rows);
+                    users.set(Some(rows));
                     load_error.set(None);
                 }
                 Err(e) => load_error.set(Some(e)),

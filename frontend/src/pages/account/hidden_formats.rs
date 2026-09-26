@@ -10,6 +10,7 @@ use dioxus::prelude::*;
 use omnibus_shared::KNOWN_LIBRARY_FORMATS;
 
 use crate::components::credential_card::credential_status_message;
+use crate::components::{Loading, LoadingKind};
 use crate::data;
 
 /// The hidden-formats preference card (Settings → Account).
@@ -22,10 +23,10 @@ pub(crate) fn HiddenFormatsCard() -> Element {
     let mut msg_is_error = use_signal(|| false);
     let mut in_flight = use_signal(|| false);
 
-    // Seed the selection once from the resolved viewer. Starts empty on SSR
-    // and the first WASM paint (rule 07) and reconciles post-mount; the
-    // `seeded` guard keeps a later context refresh (our own save) from
-    // clobbering in-progress edits.
+    // Seed the selection once from the resolved viewer. Unseeded on SSR and
+    // the first WASM paint (rule 07), where the list shows loading rather
+    // than unchecked boxes; the `seeded` guard keeps a later context refresh
+    // (our own save) from clobbering in-progress edits.
     let viewer = crate::use_current_user_summary();
     use_effect(move || {
         if *seeded.peek() {
@@ -80,19 +81,30 @@ pub(crate) fn HiddenFormatsCard() -> Element {
                 "Hide formats from your All Books view. A book stays visible while "
                 "it has any format you haven't hidden; other readers are unaffected."
             }
-            div { class: "settings-field hidden-formats-list",
-                for fmt in KNOWN_LIBRARY_FORMATS.iter().map(|f| f.to_string()) {
-                    {format_toggle(&fmt, current.contains(&fmt), selected)}
+            if seeded() {
+                div { class: "settings-field hidden-formats-list",
+                    for fmt in KNOWN_LIBRARY_FORMATS.iter().map(|f| f.to_string()) {
+                        {format_toggle(&fmt, current.contains(&fmt), selected)}
+                    }
+                    for fmt in unknown_saved {
+                        {format_toggle(&fmt, true, selected)}
+                    }
                 }
-                for fmt in unknown_saved {
-                    {format_toggle(&fmt, true, selected)}
+            } else {
+                // Unchecked boxes before the preference is read would claim
+                // nothing is hidden.
+                Loading {
+                    kind: LoadingKind::Section,
+                    class: "start",
+                    testid: "hidden-formats-loading",
+                    label: "Reading your preference",
                 }
             }
             div { class: "settings-actions",
                 button {
                     r#type: "button",
                     class: "btn",
-                    disabled: in_flight(),
+                    disabled: in_flight() || !seeded(),
                     "data-testid": "hidden-formats-save",
                     onclick: on_save,
                     "Save"
@@ -126,5 +138,23 @@ fn format_toggle(fmt: &str, checked: bool, mut selected: Signal<BTreeSet<String>
             }
             span { class: "mono", "{fmt}" }
         }
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+    use crate::test_support::{provide_current_user, render_in_vdom};
+
+    fn unresolved() -> Element {
+        provide_current_user(None);
+        rsx! { HiddenFormatsCard {} }
+    }
+
+    #[test]
+    fn hidden_formats_card_waits_rather_than_showing_every_box_unchecked() {
+        let html = render_in_vdom(unresolved);
+        assert!(html.contains("hidden-formats-loading"), "{html}");
+        assert!(!html.contains("hidden-format-toggle-"), "{html}");
     }
 }

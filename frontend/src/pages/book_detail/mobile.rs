@@ -13,12 +13,12 @@ use omnibus_shared::{
 };
 
 use crate::components::atrium::Cover;
-use crate::components::FetchSummaryButton;
+use crate::components::{FetchSummaryButton, Loading, LoadingKind};
 use crate::{data, Route};
 
 use super::discovery::{
     cover_src, list_count_label, same_hand_author_label, same_hand_title, same_hand_year,
-    suggestion_cover_book, SuggestionsSpinner,
+    suggestion_cover_book,
 };
 use super::file_picker::{
     is_audio_book_file, is_readable_book_file, BdFilePickerMenu, FilePickerChrome, FilePickerKind,
@@ -446,8 +446,11 @@ fn same_hand_section(
                 }
             }
             if linkable.is_none() {
-                p { class: "m-strip-note", "data-testid": "mobile-same-hand-loading",
-                    "looking for more by {same_hand_author_label(primary_author)}\u{2026}"
+                Loading {
+                    kind: LoadingKind::Section,
+                    class: "inline",
+                    testid: "mobile-same-hand-loading",
+                    label: "Looking for more by {same_hand_author_label(primary_author)}",
                 }
             } else if linkable.as_ref().is_some_and(Vec::is_empty) {
                 p { class: "m-strip-note",
@@ -520,9 +523,11 @@ fn suggestions_section(
                 },
                 // None (pre-fetch) or Pending → loading placeholder.
                 _ => rsx! {
-                    p { class: "m-strip-note m-suggest-loading", "data-testid": "mobile-suggestions-pending",
-                        SuggestionsSpinner {}
-                        "Looking for read-alikes via Hardcover\u{2026}"
+                    Loading {
+                        kind: LoadingKind::Section,
+                        class: "inline",
+                        testid: "mobile-suggestions-pending",
+                        label: "Looking for read-alikes via Hardcover",
                     }
                 },
             }

@@ -134,8 +134,8 @@ fn ScreenLayout(children: Element) -> Element {
 fn ScreenLayout(children: Element) -> Element {
     // Mobile auth gate. Two layers:
     //
-    // * **Render-path placeholder.** When `authed` is false we render an
-    //   empty screen instead of `{children}`. This is the no-flash
+    // * **Render-path placeholder.** When `authed` is false we render a
+    //   page loader instead of `{children}`. This is the no-flash
     //   guarantee — protected pages never mount and never kick off a
     //   data-fetch effect that would 401.
     // * **Reactive redirect.** `authed` is a Dioxus `Signal` driven by
@@ -187,7 +187,11 @@ fn ScreenLayout(children: Element) -> Element {
     use_mobile_edge_swipe_back(nav);
 
     if use_server_url().is_empty() || !authed() {
-        return rsx! { div { class: "screen" } };
+        return rsx! {
+            div { class: "screen",
+                components::Loading { kind: components::LoadingKind::Page, label: "Finding your library" }
+            }
+        };
     }
     rsx! {
         div { class: "screen",

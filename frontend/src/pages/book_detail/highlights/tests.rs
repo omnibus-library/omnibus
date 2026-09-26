@@ -118,6 +118,14 @@ fn highlight_locator_returns_none_when_the_spine_step_is_not_an_element() {
 }
 
 #[test]
+fn feed_state_after_keeps_an_earlier_answer_through_a_later_failure() {
+    assert_eq!(FeedState::Pending.after(true), FeedState::Loaded);
+    assert_eq!(FeedState::Pending.after(false), FeedState::Failed);
+    assert_eq!(FeedState::Loaded.after(false), FeedState::Loaded);
+    assert_eq!(FeedState::Failed.after(true), FeedState::Loaded);
+}
+
+#[test]
 fn passages_kicker_singularizes_and_reports_the_empty_case() {
     assert_eq!(passages_kicker(0), "No saved passages");
     assert_eq!(passages_kicker(1), "1 saved passage");
@@ -261,15 +269,18 @@ mod render_tests {
     }
 
     #[test]
-    fn section_first_paint_shows_the_empty_state_before_the_post_mount_load() {
-        // The load effect hasn't resolved after one rebuild, so the list is
-        // empty — exactly what the client hydrates against (rule 07).
+    fn section_first_paint_shows_loading_not_the_empty_state_before_the_post_mount_load() {
+        // The load effect hasn't resolved after one rebuild — exactly what
+        // the client hydrates against (rule 07). Unanswered is not empty.
         let html = render_in_vdom(section_first_paint);
         assert!(html.contains("data-testid=\"highlights-section\""));
-        assert!(html.contains("data-testid=\"highlights-empty\""));
-        // Anchored on the kicker element: the empty-state body below it opens
-        // with the same three words, so a bare substring proves nothing.
-        assert!(html.contains("bd-section-kicker\">No saved passages<"));
+        assert!(
+            html.contains("data-testid=\"highlights-loading\""),
+            "{html}"
+        );
+        assert!(!html.contains("data-testid=\"highlights-empty\""));
+        assert!(!html.contains("No saved passages"));
+        assert!(html.contains("bd-section-kicker\">Saved passages<"));
         assert!(!html.contains("data-testid=\"highlights-list\""));
         // No passage is targeted on first paint, so no modal either (rule 07).
         assert!(!html.contains("data-testid=\"quote-card-modal\""));

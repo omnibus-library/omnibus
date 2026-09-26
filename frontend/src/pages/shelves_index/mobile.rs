@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{ShelfKind, ShelfSummary, Visibility};
 
+use crate::components::loading::{RowSkeletons, Skeleton};
 use crate::components::CreateShelfModal;
 use crate::{data, use_server_url, Route};
 
@@ -50,7 +51,8 @@ pub(super) fn MobileShelvesIndex() -> Element {
     let refetch_url = url.clone();
     let refetch = move || load(refetch_url.clone());
 
-    let count = shelves.read().len();
+    // `None` until the first answer, so the header never claims "0 shelves".
+    let count = (!(loading() && shelves.read().is_empty())).then(|| shelves.read().len());
 
     rsx! {
         div { class: "m-shelves", "data-testid": "shelves-index",
@@ -72,11 +74,11 @@ pub(super) fn MobileShelvesIndex() -> Element {
 
 /// Back link, shelf count, "New" action, and page title.
 #[component]
-fn ShelvesHeader(count: usize, on_new: EventHandler<MouseEvent>) -> Element {
-    let count_label = if count == 1 {
-        "1 shelf".to_string()
-    } else {
-        format!("{count} shelves")
+fn ShelvesHeader(count: Option<usize>, on_new: EventHandler<MouseEvent>) -> Element {
+    let count_label = match count {
+        Some(1) => "1 shelf".to_string(),
+        Some(n) => format!("{n} shelves"),
+        None => String::new(),
     };
     rsx! {
         header { class: "m-head",
@@ -88,7 +90,11 @@ fn ShelvesHeader(count: usize, on_new: EventHandler<MouseEvent>) -> Element {
                         "aria-label": "Back to library",
                         "\u{2190}"
                     }
-                    span { class: "label", "{count_label}" }
+                    if count.is_some() {
+                        span { class: "label", "{count_label}" }
+                    } else {
+                        Skeleton { style: "--w:64px;height:.7em" }
+                    }
                 }
                 button {
                     r#type: "button",
@@ -118,7 +124,10 @@ fn ShelvesBody(shelves: Vec<ShelfSummary>, loading: bool, error: Option<String>)
                 "Couldn't load shelves: {msg}"
             }
         } else if loading && shelves.is_empty() {
-            p { class: "subtitle", "Loading\u{2026}" }
+            div { role: "status", "aria-live": "polite", "data-testid": "shelves-loading",
+                span { class: "ld-sr", "Gathering your shelves" }
+                RowSkeletons { count: 5 }
+            }
         } else {
             div { class: "m-shelf-list",
                 // Always-present "All Books" — the whole library as a shelf.

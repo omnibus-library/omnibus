@@ -221,8 +221,15 @@ pub fn ApiTokensSection() -> Element {
                         "here cuts the client off immediately."
                     }
                 }
-                span { class: "tkx-count", "data-testid": "api-tokens-count",
-                    "{count} live {count_word}"
+                // Never "0 live tokens" before the list has answered.
+                if loaded() {
+                    span { class: "tkx-count", "data-testid": "api-tokens-count",
+                        "{count} live {count_word}"
+                    }
+                } else {
+                    span { class: "tkx-count", "data-testid": "api-tokens-count-pending",
+                        span { class: "ld-sheen", "Counting" }
+                    }
                 }
             }
 
@@ -706,15 +713,19 @@ mod render_tests {
     }
 
     /// First paint: head, scope strip, and create form render; no secret
-    /// surface, no rows, and no empty-state card (the list hasn't loaded) —
-    /// a secret can only ever appear after a create in the same mounted
-    /// session (AC2).
+    /// surface, no rows, no empty-state card and no count (the list hasn't
+    /// loaded) — a secret can only ever appear after a create in the same
+    /// mounted session (AC2).
     #[test]
     fn api_tokens_section_first_paint_has_head_and_form_and_no_secret() {
         let html = render_in_vdom(section);
         assert!(html.contains("data-testid=\"api-tokens-card\""));
         assert!(html.contains("data-testid=\"api-token-name-input\""));
-        assert!(html.contains("0 live tokens"));
+        assert!(
+            html.contains("data-testid=\"api-tokens-count-pending\""),
+            "{html}"
+        );
+        assert!(!html.contains("0 live tokens"));
         assert!(!html.contains("data-testid=\"api-token-secret\""));
         assert!(!html.contains("data-testid=\"api-tokens-empty\""));
         assert!(!html.contains("data-testid=\"api-token-row\""));

@@ -9,11 +9,13 @@ use omnibus_shared::JournalEntry;
 
 #[cfg(not(feature = "mobile"))]
 use crate::components::user_avatar::UserAvatar;
+use crate::components::{Loading, LoadingKind};
 use crate::{data, use_server_url};
 
 use super::dates::use_local_dates_ready;
 #[cfg(feature = "mobile")]
 use super::BdSectionHead;
+use super::FeedState;
 
 mod composer;
 mod entry_card;
@@ -33,6 +35,7 @@ use entry_card::BdJournalEntryCard;
 pub(super) fn BdJournalSection(uuid: String) -> Element {
     let server_url = use_server_url();
     let entries = use_signal(Vec::<JournalEntry>::new);
+    let feed = use_signal(|| FeedState::Pending);
     // Derived from the app-wide `CurrentUser` context (`crate::use_current_user_summary`)
     // instead of an independent per-mount `/api/auth/me` fetch. Mobile/SSR
     // stay at the `None` default since the context is web-only.
@@ -40,12 +43,15 @@ pub(super) fn BdJournalSection(uuid: String) -> Element {
     // Bumped after any mutation to refetch the server-authoritative feed.
     let reload = use_signal(|| 0u32);
 
-    use_journal_entries_load(uuid.clone(), server_url.clone(), reload, entries);
+    use_journal_entries_load(uuid.clone(), server_url.clone(), reload, (entries, feed));
     use_spoiler_reveal_binding();
     let composer_open = use_signal(|| false);
 
     let list = entries();
-    let kicker = journal_kicker(&list);
+    let kicker = match feed() {
+        FeedState::Loaded => journal_kicker(&list),
+        FeedState::Pending | FeedState::Failed => "Reading journal".to_string(),
+    };
 
     rsx! {
         div { id: "journal", class: "bd-journal", "data-testid": "journal-section",
@@ -59,7 +65,7 @@ pub(super) fn BdJournalSection(uuid: String) -> Element {
                 reload,
                 open: composer_open,
             }
-            BdJournalList { list, current_user: current_user(), server_url, reload }
+            BdJournalList { list, feed: feed(), current_user: current_user(), server_url, reload }
         }
     }
 }
@@ -71,18 +77,42 @@ fn use_journal_entries_load(
     uuid: String,
     load_url: String,
     reload: Signal<u32>,
-    mut entries: Signal<Vec<JournalEntry>>,
+    (mut entries, mut feed): (Signal<Vec<JournalEntry>>, Signal<FeedState>),
 ) {
     use_effect(use_reactive!(|uuid| {
         let _ = reload();
         let url = load_url.clone();
         let uuid = uuid.clone();
         spawn(async move {
-            if let Ok(list) = data::list_journal_entries(&url, &uuid).await {
+            let result = data::list_journal_entries(&url, &uuid).await;
+            let ok = result.is_ok();
+            if let Ok(list) = result {
                 entries.set(list);
             }
+            let next = feed.peek().after(ok);
+            feed.set(next);
         });
     }));
+}
+
+/// The feed's placeholder or failure note, or `None` once it has answered.
+fn journal_feed_notice(feed: FeedState) -> Option<Element> {
+    match feed {
+        FeedState::Pending => Some(rsx! {
+            Loading {
+                kind: LoadingKind::Section,
+                class: "start",
+                testid: "journal-loading",
+                label: "Gathering the entries",
+            }
+        }),
+        FeedState::Failed => Some(rsx! {
+            div { class: "bd-journal-empty card", "data-testid": "journal-error",
+                p { class: "mono", "The journal didn\u{2019}t load \u{2014} try reopening the book." }
+            }
+        }),
+        FeedState::Loaded => None,
+    }
 }
 
 /// Binds click-to-reveal spoilers, delegated on `document` so it covers
@@ -148,13 +178,14 @@ fn journal_kicker(list: &[JournalEntry]) -> String {
 pub(super) fn MarqueeJournalStop(uuid: String, wish_mode: bool) -> Element {
     let server_url = use_server_url();
     let entries = use_signal(Vec::<JournalEntry>::new);
+    let feed = use_signal(|| FeedState::Pending);
     let current_user = crate::use_current_user_summary();
     let reload = use_signal(|| 0u32);
     // The entry opened in the overlay, by id (not index — a reload after an
     // edit must keep the same entry open or drop it if it went away).
     let mut open_entry = use_signal(|| None::<i64>);
 
-    use_journal_entries_load(uuid.clone(), server_url.clone(), reload, entries);
+    use_journal_entries_load(uuid.clone(), server_url.clone(), reload, (entries, feed));
     use_spoiler_reveal_binding();
     let dates_ready = use_local_dates_ready();
     // The composer opens as a modal over the stop (design: "✎ New entry"),
@@ -177,7 +208,13 @@ pub(super) fn MarqueeJournalStop(uuid: String, wish_mode: bool) -> Element {
     rsx! {
         div { id: "journal", class: "bd-journal bdmq-journal", "data-testid": "journal-section",
         div { class: "bdmq-journalhead",
-            div { class: "bdmq-k", "data-testid": "journal-kicker", "{kicker}" }
+            if feed() == FeedState::Loaded || wish_mode {
+                div { class: "bdmq-k", "data-testid": "journal-kicker", "{kicker}" }
+            } else {
+                div { class: "bdmq-k", "data-testid": "journal-kicker",
+                    span { class: "ld-sheen", "Counting entries" }
+                }
+            }
             span { class: "bdmq-headspacer" }
             if !wish_mode {
                 button {
@@ -221,7 +258,9 @@ pub(super) fn MarqueeJournalStop(uuid: String, wish_mode: bool) -> Element {
                     }
                 }
             }
-            if list.is_empty() {
+            if let Some(notice) = journal_feed_notice(feed()) {
+                {notice}
+            } else if list.is_empty() {
                 div { class: "bd-journal-empty card", "data-testid": "journal-empty",
                     p { class: "mono", "No journal entries yet \u{2014} be the first to write one." }
                 }
@@ -388,6 +427,7 @@ fn journal_excerpt(md: &str) -> String {
 #[component]
 fn BdJournalList(
     list: Vec<JournalEntry>,
+    feed: FeedState,
     current_user: Option<omnibus_shared::UserSummary>,
     server_url: String,
     reload: Signal<u32>,
@@ -398,7 +438,9 @@ fn BdJournalList(
     // share a stale offset across entries with different dates.
     let dates_ready = use_local_dates_ready();
     rsx! {
-        if list.is_empty() {
+        if let Some(notice) = journal_feed_notice(feed) {
+            {notice}
+        } else if list.is_empty() {
             div { class: "bd-journal-empty card", "data-testid": "journal-empty",
                 p { class: "mono", "No journal entries yet — be the first to write one." }
             }

@@ -45,6 +45,11 @@ mod users;
 use dioxus::prelude::*;
 
 #[cfg(not(feature = "mobile"))]
+use crate::components::{Loading, LoadingKind};
+#[cfg(not(feature = "mobile"))]
+use crate::Access;
+
+#[cfg(not(feature = "mobile"))]
 pub(crate) use api_tokens::use_instance_origin;
 #[cfg(not(feature = "mobile"))]
 use api_tokens::ApiTokensSection;
@@ -70,18 +75,27 @@ use users::UsersSection;
 #[component]
 pub fn SettingsPage(section: Option<String>) -> Element {
     // Admin gating is derived from the app-wide `CurrentUser` context
-    // (`use_is_admin`); the server-side `AdminUser` extractor on the config
-    // RPCs is the real boundary. This just keeps admin sections off a
-    // non-admin screen. Starts `false` on SSR/first paint (context unresolved)
-    // so hydration matches, then reconciles after the boot effect (rule 07).
-    let is_admin = crate::use_is_admin();
-    let active = parse_section(section.as_deref(), is_admin());
+    // (`use_admin_access`); the server-side `AdminUser` extractor on the
+    // config RPCs is the real boundary. This just keeps admin sections off a
+    // non-admin screen. `Unknown` on SSR/first paint (context unresolved) so
+    // hydration matches, then reconciles after the boot effect (rule 07).
+    let access = crate::use_admin_access();
+    let active = resolve_section(section.as_deref(), access());
 
     rsx! {
         div { class: "settings-layout", "data-testid": "settings-layout",
-            SettingsSidebar { active, is_admin: is_admin() }
+            SettingsSidebar { active, access: access() }
             div { class: "settings-content",
-                {section_content(active)}
+                match active {
+                    Some(active) => section_content(active),
+                    None => rsx! {
+                        Loading {
+                            kind: LoadingKind::Section,
+                            testid: "settings-section-loading",
+                            label: "Checking your access",
+                        }
+                    },
+                }
             }
         }
     }
@@ -183,13 +197,24 @@ fn parse_section(raw: Option<&str>, is_admin: bool) -> SettingsSection {
     }
 }
 
+/// The section to show, or `None` to wait: while the reader is unresolved an
+/// admin section can't be granted or refused, and falling back to Account
+/// meanwhile flashes the wrong page before the right one.
+#[cfg(not(feature = "mobile"))]
+fn resolve_section(raw: Option<&str>, access: Access) -> Option<SettingsSection> {
+    match access {
+        Access::Unknown if parse_section(raw, true).requires_admin() => None,
+        _ => Some(parse_section(raw, access == Access::Allowed)),
+    }
+}
+
 /// The card(s) for the active section. Each reuses the existing controls
 /// unchanged — the reorg only moves them behind the sidebar.
 #[cfg(not(feature = "mobile"))]
 fn section_content(active: SettingsSection) -> Element {
     match active {
         SettingsSection::Account => rsx! { super::AccountPage {} },
-        SettingsSection::Kindle => rsx! { super::account::KindleEmailCard {} },
+        SettingsSection::Kindle => rsx! { super::account::kindle::KindleEmailCard {} },
         SettingsSection::Kobo => rsx! { super::account::kobo::KoboDevicesCard {} },
         SettingsSection::ApiTokens => rsx! {
             ApiTokensSection {}
@@ -219,8 +244,8 @@ fn section_content(active: SettingsSection) -> Element {
 /// note that server settings are admin-managed.
 #[cfg(not(feature = "mobile"))]
 #[component]
-fn SettingsSidebar(active: SettingsSection, is_admin: bool) -> Element {
-    let subtitle = if is_admin {
+fn SettingsSidebar(active: Option<SettingsSection>, access: Access) -> Element {
+    let subtitle = if access == Access::Allowed {
         "Server administration"
     } else {
         "Your account"
@@ -239,7 +264,7 @@ fn SettingsSidebar(active: SettingsSection, is_admin: bool) -> Element {
                 SettingsNavItem { section: SettingsSection::ApiTokens, active, label: "API Tokens", icon: "⚷" }
             }
 
-            if is_admin {
+            if access == Access::Allowed {
                 SettingsNavGroup { label: "Library",
                     SettingsNavItem { section: SettingsSection::Library, active, label: "Library Location", icon: "≡" }
                     SettingsNavItem { section: SettingsSection::Metadata, active, label: "Metadata Lookup", icon: "◆" }
@@ -252,7 +277,7 @@ fn SettingsSidebar(active: SettingsSection, is_admin: bool) -> Element {
                     SettingsNavItem { section: SettingsSection::Health, active, label: "Server Health", icon: "♥" }
                     SettingsNavItem { section: SettingsSection::BackgroundTasks, active, label: "Background Tasks", icon: "⏱" }
                 }
-            } else {
+            } else if access == Access::Denied {
                 p { class: "settings-sidebar-note",
                     "Server settings are managed by an administrator."
                 }
@@ -279,7 +304,7 @@ fn SettingsNavGroup(label: String, children: Element) -> Element {
 #[component]
 fn SettingsNavItem(
     section: SettingsSection,
-    active: SettingsSection,
+    active: Option<SettingsSection>,
     label: String,
     icon: String,
 ) -> Element {
@@ -287,7 +312,7 @@ fn SettingsNavItem(
 
     use crate::Route;
 
-    let is_active = section == active;
+    let is_active = active == Some(section);
     let class = if is_active {
         "settings-nav-item active"
     } else {
@@ -394,6 +419,31 @@ mod tests {
         assert!(matches!(
             parse_section(Some("cleanup"), false),
             SettingsSection::Account
+        ));
+    }
+
+    #[test]
+    fn resolve_section_waits_on_an_admin_section_until_the_reader_is_known() {
+        assert!(resolve_section(Some("logs"), Access::Unknown).is_none());
+        assert!(matches!(
+            resolve_section(Some("logs"), Access::Allowed),
+            Some(SettingsSection::Logs)
+        ));
+        assert!(matches!(
+            resolve_section(Some("logs"), Access::Denied),
+            Some(SettingsSection::Account)
+        ));
+    }
+
+    #[test]
+    fn resolve_section_shows_a_per_user_section_before_the_reader_is_known() {
+        assert!(matches!(
+            resolve_section(Some("kobo"), Access::Unknown),
+            Some(SettingsSection::Kobo)
+        ));
+        assert!(matches!(
+            resolve_section(None, Access::Unknown),
+            Some(SettingsSection::Account)
         ));
     }
 

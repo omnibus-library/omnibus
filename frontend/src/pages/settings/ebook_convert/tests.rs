@@ -88,10 +88,11 @@ fn card_renders_the_unresolved_state_before_the_status_loads() {
         html.contains("placeholder=\"ebook-convert\""),
         "unresolved placeholder must be the bare $PATH name, got: {html}"
     );
-    assert!(
-        html.contains("Not detected"),
-        "an unresolved/unavailable binary reads as Not detected, not an error, got: {html}"
-    );
+    // Unresolved is not unavailable: the line checks rather than claiming the
+    // binary is missing before the server has said so.
+    assert!(html.contains("api-key-dot pending"), "got: {html}");
+    assert!(html.contains("Checking"), "got: {html}");
+    assert!(!html.contains("Not detected"), "got: {html}");
 }
 
 #[cfg(feature = "server")]

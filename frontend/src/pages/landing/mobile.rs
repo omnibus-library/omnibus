@@ -10,6 +10,8 @@ use omnibus_shared::{EbookMetadata, ProgressFormat, ResumePoint, ViewPrefs};
 
 use crate::components::atrium::Cover;
 use crate::components::cover_tile::thumb_srcs;
+use crate::components::loading::{CoverSkeletons, Skeleton, SkeletonShape};
+use crate::components::BusyLabel;
 use crate::Route;
 
 use super::mobile_filter_sheet::{dir_arrow, sort_pill_label, MobileSortFilterSheet};
@@ -60,8 +62,8 @@ pub(super) struct MobileLandingPaging {
 /// down from [`super::LandingPage`].
 #[derive(Props, Clone, PartialEq)]
 pub(super) struct MobileLandingProps {
-    /// Total book count shown in the "N books" label.
-    pub book_count: usize,
+    /// Total book count shown in the "N books" label; `None` until known.
+    pub book_count: Option<usize>,
     /// "N hidden" receipt when the viewer's hidden-formats pref applies.
     pub hidden_count: Option<i64>,
     /// The page of books to render as cover cells.
@@ -77,16 +79,20 @@ pub(super) struct MobileLandingProps {
 }
 
 /// "Pick up where you left off" — the most recent progress row, fetched per
-/// mount and re-read when a background cache revalidation lands.
-fn use_resume_point(server_url: String) -> Signal<Option<ResumePoint>> {
-    let mut resume = use_signal(|| None::<ResumePoint>);
+/// mount and re-read when a background cache revalidation lands. The outer
+/// `None` is "not answered yet"; a failed fetch settles to `Some(None)` so the
+/// placeholder never outlives the request.
+fn use_resume_point(server_url: String) -> Signal<Option<Option<ResumePoint>>> {
+    let mut resume = use_signal(|| None::<Option<ResumePoint>>);
     let generation = crate::use_cache_generation();
     use_effect(move || {
         let _ = generation();
         let url = server_url.clone();
         spawn(async move {
-            if let Ok(points) = crate::data::recent_progress(&url, 1).await {
-                resume.set(points.into_iter().next());
+            match crate::data::recent_progress(&url, 1).await {
+                Ok(points) => resume.set(Some(points.into_iter().next())),
+                Err(_) if resume.peek().is_none() => resume.set(Some(None)),
+                Err(_) => {}
             }
         });
     });
@@ -137,7 +143,7 @@ fn render_mobile_header() -> Element {
 
 /// "All Books" title + the sort/filter pill that opens [`MobileSortFilterSheet`].
 fn render_mobile_title_row(
-    book_count: usize,
+    book_count: Option<usize>,
     hidden_count: Option<i64>,
     pill_label: &str,
     pill_arrow: &str,
@@ -148,7 +154,11 @@ fn render_mobile_title_row(
     rsx! {
         div { class: "m-lib-title",
             div { class: "m-lib-title-text",
-                span { class: "label", "{book_count} books" }
+                if let Some(n) = book_count {
+                    span { class: "label", "{n} books" }
+                } else {
+                    Skeleton { style: "--w:64px;height:.7em" }
+                }
                 if let Some(n) = hidden_count.filter(|n| *n > 0) {
                     span {
                         class: "label m-lib-hidden",
@@ -191,7 +201,10 @@ fn render_mobile_grid(
 ) -> Element {
     if is_loading && books.is_empty() {
         return rsx! {
-            p { class: "subtitle m-lib-loading", "Loading\u{2026}" }
+            div { class: "m-lib-loading", role: "status", "aria-live": "polite",
+                span { class: "ld-sr", "Loading your library" }
+                CoverSkeletons { count: 9 }
+            }
         };
     }
     rsx! {
@@ -206,8 +219,9 @@ fn render_mobile_grid(
                 class: "btn m-load-more",
                 "data-testid": "mobile-load-more",
                 disabled: is_loading_more,
+                "aria-busy": if is_loading_more { "true" } else { "false" },
                 onclick: move |_| on_load_more.call(()),
-                if is_loading_more { "Loading\u{2026}" } else { "Load more" }
+                BusyLabel { busy: is_loading_more, label: "Load more", busy_label: "Loading more\u{2026}" }
             }
         }
     }
@@ -260,9 +274,11 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
             {render_mobile_header()}
             {render_mobile_title_row(book_count, hidden_count, pill_label, pill_arrow, filter_count, sheet_open)}
 
-            if let Some(point) = resume() {
-                {resume_card(&point, &server_url, cover_bust)}
-            }
+            {match resume() {
+                None => resume_card_pending(),
+                Some(Some(point)) => resume_card(&point, &server_url, cover_bust),
+                Some(None) => rsx! {},
+            }}
 
             Link {
                 to: Route::Shelves {},
@@ -284,6 +300,23 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
                     book_count,
                     on_change: on_prefs_change,
                     on_close: move |_| sheet_open.set(false),
+                }
+            }
+        }
+    }
+}
+
+/// The resume card's footprint while the latest progress row is unknown, so
+/// the grid below doesn't jump when the card lands.
+fn resume_card_pending() -> Element {
+    rsx! {
+        div { class: "m-resume m-resume-pending", "aria-hidden": "true", "data-testid": "mobile-resume-pending",
+            Skeleton { style: "--w:46%;height:.7em;margin-bottom:10px" }
+            span { class: "m-resume-card",
+                span { class: "m-resume-cover", Skeleton { shape: SkeletonShape::Cover } }
+                span { class: "m-resume-body",
+                    Skeleton { style: "--w:64%" }
+                    Skeleton { style: "--w:40%;height:.7em;margin-top:8px" }
                 }
             }
         }

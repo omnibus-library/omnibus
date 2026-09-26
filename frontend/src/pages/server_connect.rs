@@ -22,13 +22,20 @@ pub fn ServerConnectPage() -> Element {
     #[cfg(not(feature = "mobile"))]
     {
         // Same-origin on web/SSR — nothing to configure. SSR renders the
-        // empty placeholder; the client bounces to the landing route after
-        // hydration (identical markup either way, so hydration is clean).
+        // loader; the client bounces to the landing route after hydration
+        // (identical markup either way, so hydration is clean).
         let nav = use_navigator();
         use_effect(move || {
             nav.replace(Route::Landing {});
         });
-        rsx! { div { class: "screen" } }
+        rsx! {
+            div { class: "screen",
+                crate::components::Loading {
+                    kind: crate::components::LoadingKind::Page,
+                    label: "Finding your library",
+                }
+            }
+        }
     }
 
     #[cfg(feature = "mobile")]

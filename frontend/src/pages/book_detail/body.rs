@@ -7,6 +7,7 @@ use dioxus_router::Link;
 use omnibus_shared::{BookSuggestion, EbookMetadata, SuggestionsResponse};
 
 use crate::components::atrium::Cover;
+use crate::components::{Loading, LoadingKind};
 use crate::Route;
 
 use super::discovery::{
@@ -78,8 +79,11 @@ pub(super) fn BdSameHand(author: BdAuthorCluster) -> Element {
     let Some(author_books) = author_books else {
         return rsx! {
             BdSectionHead { kicker, title: "From the same hand".to_string(), action }
-            div { class: "mono bdmq-quiet-hint", "data-testid": "from-same-hand-loading",
-                "looking for more by {author_label}\u{2026}"
+            Loading {
+                kind: LoadingKind::Section,
+                class: "start",
+                testid: "from-same-hand-loading",
+                label: "Looking for more by {author_label}",
             }
         };
     };

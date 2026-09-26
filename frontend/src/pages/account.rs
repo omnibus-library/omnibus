@@ -16,6 +16,9 @@ pub(crate) mod hidden_formats;
 // The stats page renders them and never edits them.
 #[cfg(not(feature = "mobile"))]
 mod goals;
+// Send-to-Kindle address card, rendered as its own Settings section.
+#[cfg(not(feature = "mobile"))]
+pub(crate) mod kindle;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod kobo;
 // Display name + avatar, at the top of the Account section.
@@ -42,6 +45,8 @@ use omnibus_shared::{EbookMetadata, UserSummary};
 
 #[cfg(feature = "mobile")]
 use crate::components::atrium::{Cover, Theme};
+#[cfg(feature = "mobile")]
+use crate::components::loading::{Skeleton, SkeletonShape};
 #[cfg(feature = "mobile")]
 use crate::components::user_avatar::UserAvatar;
 #[cfg(feature = "mobile")]
@@ -131,167 +136,6 @@ pub fn AccountPage() -> Element {
     }
 }
 
-/// Signals backing the Kindle email form — grouped so the hydration effect
-/// and the save/clear handler builders don't each take five signal params.
-#[cfg(not(feature = "mobile"))]
-#[derive(Clone, Copy)]
-struct KindleEmailSignals {
-    email_input: Signal<String>,
-    saved_email: Signal<Option<String>>,
-    msg: Signal<Option<String>>,
-    msg_is_error: Signal<bool>,
-    in_flight: Signal<bool>,
-}
-
-/// Hydrates the saved Kindle email after mount. `current_user` is a no-op on
-/// SSR/mobile, so the first paint matches the empty-signal SSR markup.
-#[cfg(not(feature = "mobile"))]
-fn use_kindle_email_hydration(mut signals: KindleEmailSignals) {
-    use_effect(move || {
-        spawn(async move {
-            if let Ok(Some(user)) = data::current_user().await {
-                if let Some(email) = user.kindle_email.clone() {
-                    signals.email_input.set(email.clone());
-                    signals.saved_email.set(Some(email));
-                }
-            }
-        });
-    });
-}
-
-/// Submit handler for the Kindle email save form: validates non-empty
-/// locally, then round-trips through `data::set_kindle_email`.
-#[cfg(not(feature = "mobile"))]
-fn kindle_save_handler(
-    server_url: String,
-    mut signals: KindleEmailSignals,
-) -> impl FnMut(Event<FormData>) + 'static {
-    move |evt: Event<FormData>| {
-        evt.prevent_default();
-        let value = (signals.email_input)().trim().to_string();
-        if value.is_empty() {
-            signals
-                .msg
-                .set(Some("Enter a Kindle email to save.".to_string()));
-            signals.msg_is_error.set(true);
-            return;
-        }
-        let url = server_url.clone();
-        signals.in_flight.set(true);
-        spawn(async move {
-            match data::set_kindle_email(&url, Some(value.clone())).await {
-                Ok(()) => {
-                    signals.saved_email.set(Some(value));
-                    signals.msg.set(Some("Kindle email saved.".to_string()));
-                    signals.msg_is_error.set(false);
-                }
-                Err(_) => {
-                    signals.msg.set(Some(
-                        "Failed to save Kindle email — check the address.".to_string(),
-                    ));
-                    signals.msg_is_error.set(true);
-                }
-            }
-            signals.in_flight.set(false);
-        });
-    }
-}
-
-/// Click handler for the Kindle email clear button.
-#[cfg(not(feature = "mobile"))]
-fn kindle_clear_handler(
-    server_url: String,
-    mut signals: KindleEmailSignals,
-) -> impl FnMut(Event<MouseData>) + 'static {
-    move |_| {
-        let url = server_url.clone();
-        signals.in_flight.set(true);
-        spawn(async move {
-            match data::set_kindle_email(&url, None).await {
-                Ok(()) => {
-                    signals.email_input.set(String::new());
-                    signals.saved_email.set(None);
-                    signals.msg.set(Some("Kindle email cleared.".to_string()));
-                    signals.msg_is_error.set(false);
-                }
-                Err(_) => {
-                    signals
-                        .msg
-                        .set(Some("Failed to clear Kindle email.".to_string()));
-                    signals.msg_is_error.set(true);
-                }
-            }
-            signals.in_flight.set(false);
-        });
-    }
-}
-
-/// The Kindle email form: input, save/clear actions, and the approved-sender
-/// hint. Split out of `kindle_account_body` so the signal wiring above and
-/// this markup each stay readable on their own.
-#[cfg(not(feature = "mobile"))]
-fn kindle_email_form(
-    email_input: Signal<String>,
-    in_flight: Signal<bool>,
-    connected: bool,
-    on_save: impl FnMut(Event<FormData>) + 'static,
-    on_clear: impl FnMut(Event<MouseData>) + 'static,
-) -> Element {
-    let mut email_input = email_input;
-    rsx! {
-        form {
-            id: "kindle-email-form",
-            class: "settings-form",
-            onsubmit: on_save,
-            div { class: "settings-field",
-                label { r#for: "kindle-email", "Kindle Email" }
-                input {
-                    r#type: "email",
-                    id: "kindle-email",
-                    name: "kindle_email",
-                    "data-testid": "kindle-email-input",
-                    autocomplete: "off",
-                    autocapitalize: "none",
-                    autocorrect: "off",
-                    spellcheck: "false",
-                    placeholder: "you@kindle.com",
-                    value: "{email_input}",
-                    oninput: move |e| email_input.set(e.value()),
-                }
-            }
-            p { class: "subtitle",
-                "Add "
-                b { "your library's sender address" }
-                " to your Amazon "
-                a {
-                    href: "https://www.amazon.com/sendtokindle/email",
-                    target: "_blank",
-                    rel: "noopener",
-                    "approved sender list"
-                }
-                " or Amazon will silently drop the delivery."
-            }
-            div { class: "settings-actions",
-                button {
-                    r#type: "submit",
-                    class: "btn",
-                    disabled: in_flight(),
-                    "data-testid": "kindle-email-save",
-                    "Save"
-                }
-                button {
-                    r#type: "button",
-                    class: "btn ghost",
-                    disabled: in_flight() || !connected,
-                    "data-testid": "kindle-email-clear",
-                    onclick: on_clear,
-                    "Clear"
-                }
-            }
-        }
-    }
-}
-
 /// Web/SSR Account section body — the self-service cards that aren't tied to
 /// a delivery device. Kindle and Kobo have their own Settings sections.
 #[cfg(not(feature = "mobile"))]
@@ -303,44 +147,6 @@ fn account_web_body() -> Element {
         ChangePasswordCard {}
         sessions::SessionsCard {}
         hidden_formats::HiddenFormatsCard {}
-    }
-}
-
-/// The Send-to-Kindle destination card (Settings → Kindle). Hydrates the
-/// saved address from `/api/auth/me`; saving/clearing round-trips through
-/// `data::set_kindle_email`.
-#[cfg(not(feature = "mobile"))]
-#[component]
-pub(crate) fn KindleEmailCard() -> Element {
-    let server_url = use_server_url();
-    let signals = KindleEmailSignals {
-        email_input: use_signal(String::new),
-        saved_email: use_signal(|| None::<String>),
-        msg: use_signal(|| None::<String>),
-        msg_is_error: use_signal(|| false),
-        in_flight: use_signal(|| false),
-    };
-    use_kindle_email_hydration(signals);
-
-    let on_save = kindle_save_handler(server_url.clone(), signals);
-    let on_clear = kindle_clear_handler(server_url, signals);
-    let connected = (signals.saved_email)().is_some();
-
-    rsx! {
-        section { class: "card", "data-testid": "account-kindle-card",
-            h2 { "Kindle" }
-            p { class: "subtitle", "Configure your Send-to-Kindle delivery address." }
-
-            {kindle_email_form(signals.email_input, signals.in_flight, connected, on_save, on_clear)}
-
-            p {
-                class: if connected { "settings-status success" } else { "settings-status" },
-                "data-testid": "kindle-email-connected",
-                if connected { "A Kindle email is configured." } else { "No Kindle email configured yet." }
-            }
-
-            {credential_status_message("kindle-email-status", (signals.msg)().as_deref(), (signals.msg_is_error)())}
-        }
     }
 }
 
@@ -357,7 +163,7 @@ struct ChangePasswordSignals {
 
 /// Submit handler for the change-password form: validates both fields are
 /// non-empty locally, then round-trips through `data::change_password`.
-/// Mirrors `kindle_save_handler`'s shape above.
+/// Mirrors `kindle::kindle_save_handler`'s shape.
 #[cfg(not(feature = "mobile"))]
 fn change_password_submit_handler(
     server_url: String,
@@ -550,38 +356,42 @@ fn account_body() -> Element {
 }
 
 /// Identity block: avatar chip + serif name + `username · role` subline.
-/// Renders placeholders until the user resolves.
+/// Renders skeleton plates until the user resolves.
 #[cfg(feature = "mobile")]
 #[component]
 fn AccountIdentity(user: Option<UserSummary>) -> Element {
+    let Some(u) = user else {
+        return rsx! {
+            div { class: "m-account-identity", "aria-busy": "true", "data-testid": "account-identity-pending",
+                div { class: "m-account-avatar",
+                    span { class: "m-account-initials", "aria-hidden": "true",
+                        Skeleton { shape: SkeletonShape::Circle, style: "--w:100%" }
+                    }
+                }
+                div { class: "m-account-idcol",
+                    Skeleton { style: "--w:9em;height:1.2em" }
+                    Skeleton { style: "--w:6em;height:.7em;margin-top:8px" }
+                }
+            }
+        };
+    };
     // The subline keeps the *username*: it's the stable login identity, and
     // the name above it may now be a display name.
-    let (name, subline) = match &user {
-        Some(u) => (
-            u.display().to_string(),
-            identity_subline(&u.username, u.is_admin),
-        ),
-        None => ("\u{2014}".to_string(), String::new()),
-    };
+    let name = u.display().to_string();
+    let subline = identity_subline(&u.username, u.is_admin);
     rsx! {
         div { class: "m-account-identity",
             div { class: "m-account-avatar",
-                if let Some(u) = user.as_ref() {
-                    UserAvatar {
-                        user_id: u.id,
-                        name: u.display().to_string(),
-                        has_avatar: u.has_avatar,
-                        class: "m-account-initials",
-                    }
-                } else {
-                    span { class: "m-account-initials", "aria-hidden": "true", "\u{2026}" }
+                UserAvatar {
+                    user_id: u.id,
+                    name: name.clone(),
+                    has_avatar: u.has_avatar,
+                    class: "m-account-initials",
                 }
             }
             div { class: "m-account-idcol",
                 div { class: "m-account-name", "{name}" }
-                if !subline.is_empty() {
-                    div { class: "m-account-sub", "{subline}" }
-                }
+                div { class: "m-account-sub", "{subline}" }
             }
         }
     }
@@ -759,10 +569,16 @@ fn ThemeControl() -> Element {
 #[cfg(feature = "mobile")]
 #[component]
 fn VersionBlock(server_version: Option<String>) -> Element {
-    let server = server_version.as_deref().unwrap_or("\u{2026}");
     rsx! {
         div { class: "m-account-version", "data-testid": "account-version",
-            div { "Server version: {server}" }
+            div {
+                "Server version: "
+                if let Some(server) = server_version {
+                    "{server}"
+                } else {
+                    span { class: "ld-sheen", "checking" }
+                }
+            }
             div { "App version: {crate::version::app_version()}" }
         }
     }

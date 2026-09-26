@@ -322,7 +322,7 @@ pub(super) fn spawn_shelves_list_effect(
     tick: Signal<u32>,
     generation: Signal<u64>,
     mut shelves: Signal<Vec<ShelfSummary>>,
-    mut shelves_loaded: Signal<bool>,
+    (mut shelves_loaded, mut answered): (Signal<bool>, Signal<bool>),
     mut selection: Signal<ShelfSelection>,
 ) {
     use_effect(move || {
@@ -334,6 +334,9 @@ pub(super) fn spawn_shelves_list_effect(
         let url = server_url.clone();
         spawn(async move {
             let Ok(list) = data::list_shelves(&url).await else {
+                // `shelves_loaded` stays false: the pick reconcile must never
+                // treat a failed fetch's empty row as the authoritative list.
+                answered.set(true);
                 return;
             };
             let current = *selection.peek();
@@ -345,6 +348,7 @@ pub(super) fn spawn_shelves_list_effect(
             }
             shelves.set(list);
             shelves_loaded.set(true);
+            answered.set(true);
         });
     });
 }
@@ -375,14 +379,18 @@ pub(super) fn spawn_selected_shelf_effect(
 }
 
 /// Fetch the continue-reading resume points once on mount. Any error —
-/// including the logged-out 401 — leaves the list empty, which hides the hero.
-pub(super) fn spawn_hero_effect(server_url: String, mut hero_points: Signal<Vec<ResumePoint>>) {
+/// including the logged-out 401 — settles the list empty, which hides the hero.
+pub(super) fn spawn_hero_effect(
+    server_url: String,
+    mut hero_points: Signal<Option<Vec<ResumePoint>>>,
+) {
     use_effect(move || {
         let url = server_url.clone();
         spawn(async move {
-            if let Ok(points) = data::recent_progress(&url, HERO_POINTS).await {
-                hero_points.set(points);
-            }
+            let points = data::recent_progress(&url, HERO_POINTS)
+                .await
+                .unwrap_or_default();
+            hero_points.set(Some(points));
         });
     });
 }

@@ -8,6 +8,7 @@ use omnibus_shared::{ProgressFormat, ResumePoint, UserSummary};
 
 use crate::components::atrium::{Cover, Theme};
 use crate::components::glyphs::{book_glyph, play_glyph};
+use crate::components::loading::{Skeleton, SkeletonShape};
 use crate::components::user_avatar::UserAvatar;
 use crate::focus_after_paint::focus_after_paint;
 use crate::{use_current_user, Route};
@@ -90,10 +91,12 @@ mod tests;
 fn UserMenuTrigger(user: Option<UserSummary>, open: Signal<bool>) -> Element {
     let mut open = open;
     let bust = crate::use_avatar_cache_bust().0;
+    let pending = user.is_none();
     rsx! {
         button {
-            class: "um-trigger",
+            class: if pending { "um-trigger is-pending" } else { "um-trigger" },
             "data-testid": "user-menu-trigger",
+            "aria-busy": if pending { "true" } else { "false" },
             "aria-label": "Open user menu",
             "aria-haspopup": "dialog",
             "aria-expanded": "{open()}",
@@ -103,8 +106,9 @@ fn UserMenuTrigger(user: Option<UserSummary>, open: Signal<bool>) -> Element {
                 open.set(next);
             },
             // Before the boot effect resolves the user (SSR and the first
-            // WASM paint alike) this is an empty monogram, so both renders
-            // agree and hydration adopts cleanly (rule 07).
+            // WASM paint alike) this is a skeleton monogram, so both renders
+            // agree and hydration adopts cleanly (rule 07). Same outer span
+            // either way, so the diff updates it rather than replacing it.
             if let Some(u) = user {
                 UserAvatar {
                     user_id: u.id,
@@ -114,7 +118,9 @@ fn UserMenuTrigger(user: Option<UserSummary>, open: Signal<bool>) -> Element {
                     bust: bust(),
                 }
             } else {
-                span { class: "um-initials" }
+                span { class: "um-initials",
+                    Skeleton { shape: SkeletonShape::Circle, style: "--w:100%" }
+                }
             }
         }
     }
@@ -251,8 +257,16 @@ fn UmNowReading() -> Element {
             div { class: "um-section-label", "NOW READING" }
             match recent() {
                 None => rsx! {
-                    div { class: "um-now-reading um-now-reading-state", role: "status",
-                        "Loading reading progress..."
+                    div {
+                        class: "um-now-reading um-now-reading-pending",
+                        role: "status",
+                        "data-testid": "user-menu-now-reading-pending",
+                        span { class: "ld-sr", "Finding your place" }
+                        span { class: "um-nr-cover", Skeleton { shape: SkeletonShape::Cover } }
+                        span { class: "um-nr-meta",
+                            Skeleton { style: "--w:70%" }
+                            Skeleton { style: "--w:45%;height:.7em" }
+                        }
                     }
                 },
                 Some(Ok(None)) => rsx! {

@@ -147,4 +147,18 @@ mod render_tests {
         // Not the current user's entry — no "you" chip.
         assert!(!html.contains("\u{b7} you"), "{html}");
     }
+
+    fn stop_first_paint() -> Element {
+        rsx! {
+            MarqueeJournalStop { uuid: "book-uuid".to_string(), wish_mode: false }
+        }
+    }
+
+    #[test]
+    fn journal_stop_first_paint_gathers_rather_than_claims_no_entries() {
+        let html = render_in_vdom(stop_first_paint);
+        assert!(html.contains("data-testid=\"journal-loading\""), "{html}");
+        assert!(!html.contains("journal-empty"), "{html}");
+        assert!(!html.contains("No entries yet"), "{html}");
+    }
 }

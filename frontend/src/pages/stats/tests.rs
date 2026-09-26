@@ -72,3 +72,18 @@ fn freshness_note_text_states_the_real_ttl_in_seconds() {
         format!("Stats are accurate to the last ~{STATS_TTL_SECS} seconds.")
     );
 }
+
+#[cfg(feature = "server")]
+fn unanswered_window() -> Element {
+    let period = use_signal(|| None::<StatsSummary>);
+    let expanded = use_signal(|| None::<Metric>);
+    rsx! { WindowContents { period, expanded } }
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn window_contents_show_a_loader_in_the_plate_before_the_period_lands() {
+    let html = crate::test_support::render_in_vdom(unanswered_window);
+    assert!(html.contains("st-card-placeholder"), "{html}");
+    assert!(html.contains("stats-window-loading"), "{html}");
+}

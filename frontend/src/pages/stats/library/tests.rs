@@ -118,10 +118,19 @@ fn library_size_card_renders_each_figure_with_its_coverage() {
 
 #[cfg(feature = "server")]
 #[test]
-fn library_size_card_renders_nothing_before_the_fetch_lands_or_with_no_measurements() {
+fn library_size_card_shows_a_placeholder_before_the_fetch_lands_without_the_cards_testid() {
     let pending = crate::test_support::render(rsx! { LibrarySizeHero { size: None } });
-    assert!(!pending.contains("stats-library-size"), "{pending}");
+    assert!(pending.contains("stats-library-size-loading"), "{pending}");
+    assert!(pending.contains("ld-skel"), "{pending}");
+    assert!(
+        !pending.contains("data-testid=\"stats-library-size\""),
+        "{pending}"
+    );
+}
 
+#[cfg(feature = "server")]
+#[test]
+fn library_size_card_renders_nothing_with_no_measurements() {
     let unmeasured = crate::test_support::render(rsx! {
         LibrarySizeHero { size: Some(LibrarySize { books: 40, ..Default::default() }) }
     });

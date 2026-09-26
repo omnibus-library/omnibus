@@ -31,7 +31,7 @@ pub fn SmtpConfigField() -> Element {
         in_flight: use_signal(|| false),
     };
 
-    spawn_smtp_config_load(server_url.clone(), fields, io.status);
+    spawn_smtp_config_load(server_url.clone(), fields, io);
 
     let on_save = make_smtp_save(server_url.clone(), fields, io);
     let on_clear = make_smtp_clear(server_url.clone(), fields, io);
@@ -84,11 +84,13 @@ struct SmtpIo {
 }
 
 /// Load the masked SMTP config on mount and seed the editable fields.
-fn spawn_smtp_config_load(
-    server_url: String,
-    fields: SmtpFields,
-    mut status: Signal<Option<SmtpConfigStatus>>,
-) {
+fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
+    let SmtpIo {
+        mut status,
+        mut msg,
+        mut msg_is_error,
+        ..
+    } = io;
     let mut host = fields.host;
     let mut port = fields.port;
     let mut username = fields.username;
@@ -97,22 +99,31 @@ fn spawn_smtp_config_load(
     use_effect(move || {
         let url = server_url.clone();
         spawn(async move {
-            if let Ok(s) = data::get_smtp_config(&url).await {
-                if let Some(h) = s.host.clone() {
-                    host.set(h);
+            let s = match data::get_smtp_config(&url).await {
+                Ok(s) => s,
+                // Said aloud, or the status line would check in silence.
+                Err(e) => {
+                    msg.set(Some(format!(
+                        "Couldn\u{2019}t read the current settings: {e}"
+                    )));
+                    msg_is_error.set(true);
+                    return;
                 }
-                if let Some(p) = s.port {
-                    port.set(p.to_string());
-                }
-                if let Some(u) = s.username.clone() {
-                    username.set(u);
-                }
-                if let Some(f) = s.from_email.clone() {
-                    from_email.set(f);
-                }
-                security.set(s.security);
-                status.set(Some(s));
+            };
+            if let Some(h) = s.host.clone() {
+                host.set(h);
             }
+            if let Some(p) = s.port {
+                port.set(p.to_string());
+            }
+            if let Some(u) = s.username.clone() {
+                username.set(u);
+            }
+            if let Some(f) = s.from_email.clone() {
+                from_email.set(f);
+            }
+            security.set(s.security);
+            status.set(Some(s));
         });
     });
 }
@@ -390,7 +401,7 @@ fn SmtpTestActions(
                 }
             }
         }
-        {credential_status_line("smtp-status", configured, &detail, "Not configured")}
+        {credential_status_line("smtp-status", status.as_ref().map(|s| s.configured), &detail, "Not configured")}
         {credential_status_message("smtp-config-status", msg().as_deref(), msg_is_error())}
     }
 }

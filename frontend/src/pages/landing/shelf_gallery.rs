@@ -15,6 +15,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{ShelfKind, ShelfSummary, Visibility};
 
+use crate::components::loading::Skeleton;
 use crate::components::shelf_glyphs::{cog_icon, heart_icon};
 use crate::components::CreateShelfModal;
 use crate::shelf_access::shows_owner_attribution;
@@ -119,6 +120,8 @@ pub(super) fn slab_line(filtering: bool) -> &'static str {
 #[derive(Clone, PartialEq, Props)]
 pub(super) struct ShelfGalleryProps {
     pub shelves: Vec<ShelfSummary>,
+    /// False until the shelves fetch has answered; placeholders hold the row.
+    pub loaded: bool,
     pub selection: ShelfSelection,
     pub all_count: Option<i64>,
     pub all_cover_uuids: Vec<String>,
@@ -133,6 +136,7 @@ pub(super) struct ShelfGalleryProps {
 pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
     let ShelfGalleryProps {
         shelves,
+        loaded,
         selection,
         all_count,
         all_cover_uuids,
@@ -217,6 +221,18 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
                             server_url: server_url.clone(),
                             viewer_id,
                             on_select,
+                        }
+                    }
+                    if !loaded {
+                        for i in 0..3usize {
+                            span {
+                                key: "pending-{i}",
+                                class: "lmq-shent lmq-shent-pending",
+                                "data-testid": "shelf-gallery-pending",
+                                "aria-hidden": "true",
+                                Skeleton { index: i, style: "--w:{118 - i * 18}px;height:20px" }
+                                Skeleton { index: i, style: "--w:64px;height:.6em;margin-top:9px" }
+                            }
                         }
                     }
                 }

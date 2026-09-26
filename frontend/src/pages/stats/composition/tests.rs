@@ -169,11 +169,22 @@ fn a_dimension_with_no_data_renders_an_empty_state_rather_than_an_empty_chart() 
 
 #[cfg(feature = "server")]
 #[test]
-fn composition_card_renders_nothing_before_the_fetch_lands_or_for_an_empty_library() {
+fn composition_card_shows_placeholder_panels_before_the_fetch_lands_without_the_cards_testid() {
     let pending =
         crate::test_support::render(rsx! { LibraryCompositionPanels { composition: None } });
-    assert!(!pending.contains("stats-library-composition"), "{pending}");
+    assert!(
+        pending.contains("stats-library-composition-loading"),
+        "{pending}"
+    );
+    assert!(
+        !pending.contains("data-testid=\"stats-library-composition\""),
+        "{pending}"
+    );
+}
 
+#[cfg(feature = "server")]
+#[test]
+fn composition_card_renders_nothing_for_an_empty_library() {
     let empty = crate::test_support::render(rsx! {
         LibraryCompositionPanels { composition: Some(LibraryComposition::default()) }
     });

@@ -12,15 +12,17 @@ use super::sorting::{default_dir_for, toggle_dir};
 use super::stack_toggle::StackToggleView;
 use super::table::{BookTable, BookTableContext};
 use super::toolbar::Toolbar;
+use crate::components::loading::{CoverSkeletons, RowSkeletons};
 use crate::components::shelf_facets::pencil_glyph;
-use crate::components::ShelfFacets;
+use crate::components::{BusyLabel, ShelfFacets};
 use crate::shelf_access::ShelfAccess;
 
 /// Header banner fields sourced from the page's derived view state.
 #[derive(Clone, PartialEq)]
 pub(super) struct LandingHeaderView {
     pub path_subtitle: String,
-    pub book_count: usize,
+    /// `None` until the list feeding the header has answered.
+    pub book_count: Option<usize>,
     /// "N hidden" receipt (browse only, viewer has a hidden-formats pref).
     pub hidden_count: Option<i64>,
     pub path_missing: bool,
@@ -106,7 +108,7 @@ pub(super) fn LandingHeader(
 #[component]
 fn LandingHeaderTitleRow(
     section_title: String,
-    book_count: usize,
+    book_count: Option<usize>,
     hidden_count: Option<i64>,
     can_edit: bool,
     on_edit_shelf: EventHandler<()>,
@@ -115,9 +117,17 @@ fn LandingHeaderTitleRow(
         div { class: "lib-header-title-wrap",
             p { class: "lib-header-title", "data-testid": "lib-section-title",
                 em { "{section_title}" }
-                span { class: "lib-header-count",
-                    " · {book_count} "
-                    if book_count == 1 { "book" } else { "books" }
+                if let Some(n) = book_count {
+                    span { class: "lib-header-count",
+                        " · {n} "
+                        if n == 1 { "book" } else { "books" }
+                    }
+                } else {
+                    // Never "0 books" before the list has answered.
+                    span { class: "lib-header-count", "data-testid": "lib-count-pending",
+                        " · "
+                        span { class: "ld-sheen", "counting" }
+                    }
                 }
                 // The receipt: hidden books must never look like data loss,
                 // so the exclusion always shows its count.
@@ -318,7 +328,13 @@ fn LandingBooksArea(
 
     rsx! {
         if is_loading {
-            p { class: "library-empty", "Loading..." }
+            div { class: "lib-loading", role: "status", "aria-live": "polite", "data-testid": "lib-loading",
+                span { class: "ld-sr", "Taking the books off the shelf" }
+                match view_mode {
+                    ViewMode::Table => rsx! { RowSkeletons { count: 8, avatar: false } },
+                    ViewMode::Grid => rsx! { CoverSkeletons { count: 12 } },
+                }
+            }
         } else if !visible_is_empty || lib_err.is_some() || page_error.is_some() {
             match view_mode {
                 ViewMode::Table => rsx! {
@@ -348,8 +364,9 @@ fn LandingBooksArea(
                         class: "btn lib-load-more",
                         "data-testid": "lib-load-more",
                         disabled: is_loading_more,
+                        "aria-busy": if is_loading_more { "true" } else { "false" },
                         onclick: move |_| on_load_more.call(()),
-                        if is_loading_more { "Loading…" } else { "Load more" }
+                        BusyLabel { busy: is_loading_more, label: "Load more", busy_label: "Loading more\u{2026}" }
                     }
                 }
             }
@@ -376,5 +393,39 @@ mod tests {
         // A shelf holding only an audiobook must not read as "no ebooks".
         assert_eq!(empty_books_message(true), "No books in this shelf.");
         assert_eq!(empty_books_message(false), "No ebooks found.");
+    }
+
+    #[cfg(feature = "server")]
+    mod render {
+        use dioxus::prelude::*;
+
+        use super::super::LandingHeaderTitleRow;
+        use crate::test_support::render_in_vdom;
+
+        fn title_row(book_count: Option<usize>) -> Element {
+            rsx! {
+                LandingHeaderTitleRow {
+                    section_title: "All Books".to_string(),
+                    book_count,
+                    hidden_count: None,
+                    can_edit: false,
+                    on_edit_shelf: EventHandler::new(|_| {}),
+                }
+            }
+        }
+
+        #[test]
+        fn landing_header_counts_nothing_before_the_list_has_answered() {
+            let html = render_in_vdom(|| title_row(None));
+            assert!(html.contains("lib-count-pending"), "{html}");
+            assert!(!html.contains("0 books"), "{html}");
+        }
+
+        #[test]
+        fn landing_header_states_zero_books_once_the_list_says_so() {
+            let html = render_in_vdom(|| title_row(Some(0)));
+            assert!(html.contains("0 books"), "{html}");
+            assert!(!html.contains("lib-count-pending"), "{html}");
+        }
     }
 }

@@ -55,11 +55,11 @@ fn shelf_book_count_prefers_the_loaded_member_list_over_the_gallery_summary() {
     let shelves = vec![shelf(7, "Lunch Break Picks", 3)];
     assert_eq!(
         shelf_book_count(ShelfSelection::Shelf(7), &shelves, Some(4)),
-        4
+        Some(4)
     );
     assert_eq!(
         shelf_book_count(ShelfSelection::Shelf(7), &shelves, Some(0)),
-        0
+        Some(0)
     );
 }
 
@@ -68,15 +68,15 @@ fn shelf_book_count_stands_in_with_the_summary_until_the_members_land() {
     let shelves = vec![shelf(7, "Lunch Break Picks", 3)];
     assert_eq!(
         shelf_book_count(ShelfSelection::Shelf(7), &shelves, None),
-        3
+        Some(3)
     );
-    // A pick whose shelf isn't in the (still-loading) list counts nothing
-    // rather than guessing.
+    // A pick whose shelf isn't in the (still-loading) list is unknown, not a
+    // guessed zero.
     assert_eq!(
         shelf_book_count(ShelfSelection::Shelf(9), &shelves, None),
-        0
+        None
     );
-    assert_eq!(shelf_book_count(ShelfSelection::All, &shelves, None), 0);
+    assert_eq!(shelf_book_count(ShelfSelection::All, &shelves, None), None);
 }
 
 fn series_book(uuid: &str, series: &str, index: &str) -> EbookMetadata {

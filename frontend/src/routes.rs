@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use dioxus_router::navigation::NavigationTarget;
 use dioxus_router::Routable;
 
+use crate::components::{Loading, LoadingKind};
 use crate::pages::*;
 use crate::{use_page_title, ScreenLayout};
 
@@ -82,6 +83,19 @@ pub enum Route {
     NotFound { segments: Vec<String> },
 }
 
+/// Caption for a stub that bounces to the library.
+const TO_LIBRARY: &str = "Returning to the library";
+
+/// What a redirect stub paints for the frame before its effect navigates:
+/// the app's chrome around a page loader, never an empty body.
+fn redirecting(label: &'static str) -> Element {
+    rsx! {
+        ScreenLayout {
+            Loading { kind: LoadingKind::Page, label }
+        }
+    }
+}
+
 /// Route target for `/` — wraps [`LandingPage`] in the platform screen layout.
 #[component]
 pub fn Landing() -> Element {
@@ -126,7 +140,7 @@ pub fn CleanupReview(kind: String) -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/logs` — the server log viewer now lives inside Settings
@@ -142,7 +156,7 @@ pub fn Logs() -> Element {
             section: Some("logs".into()),
         });
     });
-    rsx! {}
+    redirecting("Opening the logs")
 }
 
 /// Mobile stub for `/logs`: redirect to the landing page (no log viewer on
@@ -154,7 +168,7 @@ pub fn Logs() -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/admin/health` — wraps [`AdminHealthPage`] in
@@ -179,7 +193,7 @@ pub fn AdminHealth() -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/account` on web/server — the Account content now lives
@@ -194,7 +208,7 @@ pub fn Account() -> Element {
     use_effect(move || {
         nav.replace(Route::Settings { section: None });
     });
-    rsx! {}
+    redirecting("Opening your account")
 }
 
 /// Route target for `/account` on mobile — wraps [`AccountPage`] in the
@@ -467,7 +481,7 @@ pub fn StatsChart() -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/shelves` — the shelves index: a searchable, owner-grouped
@@ -511,7 +525,7 @@ pub fn MobileSearch() -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/search/:query` — full-page search results.

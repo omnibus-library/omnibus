@@ -25,7 +25,7 @@ use super::sections::{
 use super::shelf_gallery::ShelfGallery;
 use super::signals::LandingSignals;
 #[cfg(not(feature = "mobile"))]
-use super::stack::{lead_accent_style, stack_entries, EdgeResume, ResumeStack};
+use super::stack::{lead_accent_style, stack_entries, EdgeResume, ResumeStack, ResumeStackPending};
 #[cfg(not(feature = "mobile"))]
 use super::stack_toggle::{stack_toggle_note, use_stack_toggle, StackToggleView};
 #[cfg(not(feature = "mobile"))]
@@ -116,10 +116,17 @@ pub(super) fn web_landing_body(
     let cover_bust = crate::contexts::use_cover_cache_bust().0;
     let entries = {
         let cover_bust = cover_bust.read();
-        stack_entries(&hero_points, &server_url, &cover_bust)
+        stack_entries(
+            hero_points.as_deref().unwrap_or_default(),
+            &server_url,
+            &cover_bust,
+        )
     };
     let accent_style = lead_accent_style(&entries, lead());
     let show_stack = !view.is_search && !entries.is_empty();
+    // Hold the stack's place until the open books are known, so the page
+    // below doesn't jump when it lands.
+    let stack_pending = !view.is_search && hero_points.is_none();
     // The glue binds elements the shelves row and the stack only mount once
     // their fetches land, so it re-runs when either appears or disappears.
     let glue_key = (show_stack, !view.is_search, (sigs.shelves)().len());
@@ -131,6 +138,8 @@ pub(super) fn web_landing_body(
         div { class: "landing-col lmq", id: "lmq-root", style: "{accent_style}",
             if show_stack {
                 ResumeStack { entries: entries.clone(), lead }
+            } else if stack_pending {
+                ResumeStackPending {}
             }
             {render_gallery(sigs, view.is_search, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
             {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), edit_shelf, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters }, on_prefs_change_header, stack_view, on_stack_toggle)}
@@ -237,6 +246,7 @@ fn render_gallery(
         if !is_search {
             ShelfGallery {
                 shelves: (sigs.shelves)(),
+                loaded: (sigs.shelves_answered)(),
                 selection: (sigs.selection)(),
                 all_count: (sigs.total)(),
                 all_cover_uuids,

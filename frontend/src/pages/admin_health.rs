@@ -12,8 +12,10 @@ use omnibus_shared::admin_health::{
 use omnibus_shared::error_ring::CapturedError;
 
 use crate::components::worker_status::kind_label;
+use crate::components::{Loading, LoadingKind};
 use crate::data::{self, DataError};
 use crate::platform_sleep::async_sleep_ms;
+use crate::Access;
 
 /// Polling cadence in milliseconds — AC1 asks for "approximately a
 /// 5-second cadence". Same self-hosted-single-admin reasoning as
@@ -24,11 +26,11 @@ const POLL_INTERVAL_MS: u32 = 5_000;
 /// The `/admin/health` page.
 #[component]
 pub fn AdminHealthPage() -> Element {
-    let is_admin = crate::use_is_admin();
+    let access = crate::use_admin_access();
     let result = use_signal(|| None::<AdminHealthReport>);
     let error = use_signal(|| false);
 
-    spawn_admin_health_fetch(is_admin, result, error);
+    spawn_admin_health_fetch(access, result, error);
 
     rsx! {
         div { class: "ah-page", "data-testid": "admin-health-page",
@@ -38,12 +40,16 @@ pub fn AdminHealthPage() -> Element {
                     "Index status, worker queue, search index, storage, and recent errors."
                 }
             }
-            if is_admin() {
-                AdminHealthBody { result, error }
-            } else {
-                p { class: "settings-status error", "data-testid": "admin-health-forbidden",
-                    "Administrator access is required to view server health."
-                }
+            match access() {
+                Access::Allowed => rsx! { AdminHealthBody { result, error } },
+                Access::Unknown => rsx! {
+                    Loading { kind: LoadingKind::Page, label: "Checking your access" }
+                },
+                Access::Denied => rsx! {
+                    p { class: "settings-status error", "data-testid": "admin-health-forbidden",
+                        "Administrator access is required to view server health."
+                    }
+                },
             }
         }
     }
@@ -58,13 +64,13 @@ pub fn AdminHealthPage() -> Element {
 /// rule), but [`should_poll`] gates the fetch each tick so a non-admin
 /// visitor never hits the admin-gated RPC.
 fn spawn_admin_health_fetch(
-    is_admin: ReadSignal<bool>,
+    access: ReadSignal<Access>,
     mut result: Signal<Option<AdminHealthReport>>,
     mut error: Signal<bool>,
 ) {
     use_future(move || async move {
         loop {
-            if should_poll(is_admin()) {
+            if should_poll(access()) {
                 let outcome = data::get_admin_health().await;
                 apply_poll_result(outcome, &mut result, &mut error);
             }
@@ -79,8 +85,8 @@ fn spawn_admin_health_fetch(
 /// generate a 401/403 every [`POLL_INTERVAL_MS`] for as long as the page
 /// stays open. Re-checked every tick, not just once at mount, so admin
 /// status flipping mid-session starts or stops polling within one interval.
-fn should_poll(is_admin: bool) -> bool {
-    is_admin
+fn should_poll(access: Access) -> bool {
+    access == Access::Allowed
 }
 
 /// Merge one poll's outcome into the `result`/`error` signals. A success
@@ -119,8 +125,11 @@ fn AdminHealthBody(result: Signal<Option<AdminHealthReport>>, error: Signal<bool
     }
     let Some(report) = result() else {
         return rsx! {
-            p { class: "settings-status", role: "status", "data-testid": "admin-health-loading",
-                "Loading\u{2026}"
+            Loading {
+                kind: LoadingKind::Section,
+                class: "start",
+                testid: "admin-health-loading",
+                label: "Taking the server's pulse",
             }
         };
     };

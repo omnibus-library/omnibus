@@ -53,6 +53,9 @@ pub(super) struct LandingSignals {
     pub(super) selection: Signal<ShelfSelection>,
     /// Gallery feed. Starts empty so the first WASM paint matches SSR.
     pub(super) shelves: Signal<Vec<ShelfSummary>>,
+    /// True once the shelves fetch has returned, success or not — what the
+    /// gallery's placeholders wait on.
+    pub(super) shelves_answered: Signal<bool>,
     /// Bumped after a shelf create so the gallery refetches its list.
     pub(super) shelves_tick: Signal<u32>,
     /// Selected shelf's member list (`None` = All Books / not yet loaded).
@@ -64,8 +67,9 @@ pub(super) struct LandingSignals {
     pub(super) selected_shelf: Signal<Option<Shelf>>,
     /// True while the edit-shelf modal is open.
     pub(super) edit_shelf: Signal<bool>,
-    /// Continue-reading hero feed. Starts empty (hero hidden) for SSR parity.
-    pub(super) hero_points: Signal<Vec<ResumePoint>>,
+    /// Continue-reading hero feed: `None` until the fetch returns (SSR and
+    /// the first paint agree on it), then the points, empty on failure.
+    pub(super) hero_points: Signal<Option<Vec<ResumePoint>>>,
     /// Table-view bulk-edit selection: the checked rows' uuids. Cleared
     /// whenever the visible list changes wholesale (refetch or shelf pick).
     pub(super) bulk_selected: Signal<BTreeSet<String>>,
@@ -119,6 +123,7 @@ pub(super) fn setup_landing_signals(server_url: &str, query: Signal<String>) -> 
         pools,
         selection: shelf_wiring.selection,
         shelves: shelf_wiring.shelves,
+        shelves_answered: shelf_wiring.shelves_answered,
         shelves_tick: shelf_wiring.shelves_tick,
         shelf_books: shelf_wiring.shelf_sigs.shelf_books,
         shelf_loading: shelf_wiring.shelf_sigs.shelf_loading,
@@ -183,10 +188,11 @@ fn use_shelf_wiring() -> ShelfWiring {
         selection: use_signal(ShelfSelection::default),
         shelves: use_signal(Vec::<ShelfSummary>::new),
         shelves_loaded: use_signal(|| false),
+        shelves_answered: use_signal(|| false),
         shelves_tick: use_signal(|| 0u32),
         shelf_sigs: use_shelf_fetch_signals(),
         selected_shelf: use_signal(|| None::<Shelf>),
-        hero_points: use_signal(Vec::<ResumePoint>::new),
+        hero_points: use_signal(|| None::<Vec<ResumePoint>>),
     }
 }
 
@@ -236,10 +242,11 @@ struct ShelfWiring {
     selection: Signal<ShelfSelection>,
     shelves: Signal<Vec<ShelfSummary>>,
     shelves_loaded: Signal<bool>,
+    shelves_answered: Signal<bool>,
     shelves_tick: Signal<u32>,
     shelf_sigs: ShelfFetchSignals,
     selected_shelf: Signal<Option<Shelf>>,
-    hero_points: Signal<Vec<ResumePoint>>,
+    hero_points: Signal<Option<Vec<ResumePoint>>>,
 }
 
 /// Arm every reactive side-effect the landing page needs: admin-gated
@@ -395,6 +402,7 @@ fn wire_shelf_effects(
         mut selection,
         shelves,
         shelves_loaded,
+        shelves_answered,
         shelves_tick,
         shelf_sigs,
         selected_shelf,
@@ -405,7 +413,7 @@ fn wire_shelf_effects(
         shelves_tick,
         generation,
         shelves,
-        shelves_loaded,
+        (shelves_loaded, shelves_answered),
         selection,
     );
     spawn_hero_effect(server_url.to_string(), hero_points);

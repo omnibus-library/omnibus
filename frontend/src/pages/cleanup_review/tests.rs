@@ -7,7 +7,7 @@ use omnibus_shared::{CleanupAction, CleanupKind, SuggestionCard};
 use super::card::{action_sentence, initial_value, is_editable, SuggestionCardView};
 use super::frame::{kind_label, kind_title, CleanupProgress};
 use super::{edited_value, review_key_action, ReviewKey};
-use crate::test_support::{render, render_in_vdom};
+use crate::test_support::{provide_current_user, render, render_in_vdom, test_user};
 
 fn card(kind: CleanupKind, action: CleanupAction) -> SuggestionCard {
     SuggestionCard {
@@ -61,6 +61,14 @@ enum ReviewRoute {
 fn ReviewHost() -> Element {
     rsx! {
         super::CleanupReviewPage { kind: "author".to_string() }
+    }
+}
+
+/// The review route with `/me` answered for a reader who is not an admin.
+fn review_as_non_admin() -> Element {
+    provide_current_user(Some(Some(test_user(false, true))));
+    rsx! {
+        Router::<ReviewRoute> {}
     }
 }
 
@@ -221,8 +229,17 @@ fn cleanup_review_page_renders_its_frame_before_the_queue_arrives() {
     assert!(html.contains("Review authors"), "the heading");
     assert!(html.contains("cleanup-kindline"), "the kind chips");
     assert!(html.contains("cleanup-review"), "the focusable column");
-    // The queue body is gated on an admin the first paint doesn't know about.
-    assert!(html.contains("cleanup-review-forbidden"));
+    // The first paint doesn't know the reader yet, so the gate waits rather
+    // than claiming they may not review.
+    assert!(html.contains("cleanup-review-access-loading"), "{html}");
+    assert!(!html.contains("cleanup-review-forbidden"));
+}
+
+#[test]
+fn cleanup_review_page_refuses_a_resolved_reader_who_is_not_an_admin() {
+    let html = render_in_vdom(review_as_non_admin);
+    assert!(html.contains("cleanup-review-forbidden"), "{html}");
+    assert!(!html.contains("cleanup-review-access-loading"));
 }
 
 #[test]

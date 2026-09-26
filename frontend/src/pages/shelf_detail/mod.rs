@@ -127,10 +127,13 @@ fn shelf_detail_body(
 ) -> Element {
     #[cfg(feature = "mobile")]
     {
-        // The mobile surface doesn't gate its add affordance on this yet — it
-        // has the same unknown-versus-empty membership weakness the web action
-        // bar now guards against.
-        let _ = members_ready;
+        // The mobile surface can't tell an empty shelf from an unanswered one,
+        // so it waits behind the page loader until the members first land.
+        if !members_ready && books.is_empty() && !errored {
+            return render_page_state(
+                rsx! { Loading { kind: LoadingKind::Page, label: "Opening the shelf" } },
+            );
+        }
         let ShelfUi {
             mut show_add,
             mut edit_shelf,

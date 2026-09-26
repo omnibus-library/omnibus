@@ -107,7 +107,14 @@ pub fn BookListenPage(uuid: String, file_id: Option<i64>) -> Element {
             }
         }
 
-        rsx! { p { class: "subtitle", "Loading\u{2026}" } }
+        rsx! {
+            crate::components::Loading {
+                kind: crate::components::LoadingKind::Stage,
+                mark: crate::components::LoadingMark::Line,
+                class: "in-flow",
+                label: "Opening the audiobook",
+            }
+        }
     }
 }
 

@@ -187,3 +187,63 @@ fn context_accessors_resolve_to_the_values_their_providers_set() {
     }
     VirtualDom::new(AssertAccessors).rebuild_in_place();
 }
+
+fn reader(is_admin: bool, can_upload: bool) -> omnibus_shared::UserSummary {
+    omnibus_shared::UserSummary {
+        id: 1,
+        username: "reader".into(),
+        is_admin,
+        can_upload,
+        can_edit: false,
+        can_download: false,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+    }
+}
+
+#[test]
+fn access_of_keeps_unresolved_apart_from_denied() {
+    let admin = |u: &omnibus_shared::UserSummary| u.is_admin;
+    assert_eq!(access_of(&None, admin), Access::Unknown);
+    assert_eq!(access_of(&Some(None), admin), Access::Denied);
+    assert_eq!(
+        access_of(&Some(Some(reader(false, true))), admin),
+        Access::Denied
+    );
+    assert_eq!(
+        access_of(&Some(Some(reader(true, false))), admin),
+        Access::Allowed
+    );
+}
+
+// SSR and the first WASM paint both hold the provided, unresolved context, so
+// both must answer `Unknown` — the gate renders loading, never "forbidden".
+#[cfg(not(feature = "mobile"))]
+#[test]
+fn use_admin_access_is_unknown_until_current_user_resolves() {
+    #[component]
+    fn AssertUnresolved() -> Element {
+        use_context_provider(|| CurrentUser(Signal::new(None)));
+        assert_eq!(use_admin_access()(), Access::Unknown);
+        assert_eq!(use_upload_access()(), Access::Unknown);
+        rsx! {}
+    }
+    VirtualDom::new(AssertUnresolved).rebuild_in_place();
+}
+
+#[cfg(not(feature = "mobile"))]
+#[test]
+fn use_upload_access_grants_an_uploader_and_admin_access_refuses_them() {
+    #[component]
+    fn AssertUploader() -> Element {
+        use_context_provider(|| CurrentUser(Signal::new(Some(Some(reader(false, true))))));
+        assert_eq!(use_upload_access()(), Access::Allowed);
+        assert_eq!(use_admin_access()(), Access::Denied);
+        rsx! {}
+    }
+    VirtualDom::new(AssertUploader).rebuild_in_place();
+}

@@ -2,8 +2,9 @@
 //! centred stage, the fan spreading and tilting under the cursor, and the
 //! front cover carrying the verb — the cover *is* the button. Plus
 //! [`EdgeResume`], the ribbon that keeps resume reachable once the stack has
-//! scrolled away. Both render only when a resume point exists, so SSR (empty
-//! signal) and the first WASM paint agree — rule 07.
+//! scrolled away. Both render only when a resume point exists; until the feed
+//! answers, [`ResumeStackPending`] holds the place, on SSR and the first WASM
+//! paint alike — rule 07.
 
 use dioxus::prelude::*;
 use dioxus_router::{use_navigator, Link};
@@ -11,6 +12,7 @@ use omnibus_shared::{ProgressFormat, ResumePoint};
 
 use super::resume_meta::{resume_key, resume_meta};
 use crate::components::glyphs::{book_glyph, play_glyph};
+use crate::components::loading::{Skeleton, SkeletonShape};
 use crate::Route;
 
 /// Per-card tilt and lift, cycled so a fan of any length keeps the hand-dealt
@@ -265,6 +267,34 @@ pub(super) fn ResumeStack(entries: Vec<StackEntry>, lead: Signal<usize>) -> Elem
                         index: i,
                         is_lead: i == at,
                         lead,
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The stack's footprint while the open books are unknown: the type lines and
+/// a dealt fan of cover plates, so nothing below jumps when the stack lands.
+#[component]
+pub(super) fn ResumeStackPending() -> Element {
+    rsx! {
+        section {
+            class: "lmq-stack lmq-stack-pending",
+            "data-testid": "continue-stack-pending",
+            "aria-hidden": "true",
+            div { class: "lmq-stack-side",
+                Skeleton { style: "--w:150px;height:.7em;margin:0 auto" }
+                Skeleton { style: "--w:min(340px,70vw);height:30px;margin:14px auto 0" }
+                Skeleton { style: "--w:140px;margin:12px auto 0" }
+            }
+            div { class: "lmq-fan",
+                for i in 0..3usize {
+                    div {
+                        key: "{i}",
+                        class: "lmq-fcard-pending",
+                        style: "--rot: {FAN_ROT[i]}; --dy: {FAN_DY[i]};",
+                        Skeleton { shape: SkeletonShape::Cover, index: i }
                     }
                 }
             }
