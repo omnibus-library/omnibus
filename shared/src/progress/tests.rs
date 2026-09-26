@@ -5,6 +5,18 @@
 use super::*;
 
 #[test]
+fn progress_format_as_str_matches_the_serde_token() {
+    // The doc calls it "the wire token this serializes as"; without this,
+    // nothing holds the hand-written strings to the `rename_all` beside them.
+    for f in [ProgressFormat::Epub, ProgressFormat::Audio] {
+        assert_eq!(
+            serde_json::to_string(&f).unwrap(),
+            format!("\"{}\"", f.as_str())
+        );
+    }
+}
+
+#[test]
 fn progress_update_rejects_cross_format_audio_field_on_epub() {
     let u = ProgressUpdate {
         book_uuid: "x".into(),

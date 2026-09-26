@@ -73,7 +73,6 @@ pub(super) fn BookGrid(
             for (key, index, item) in cells {
                 GridCell {
                     key: "{key}",
-                    cell_key: key.clone(),
                     item,
                     index,
                     server_url: server_url.clone(),
@@ -89,15 +88,12 @@ pub(super) fn BookGrid(
 #[component]
 fn GridCell(
     item: GridItem,
-    /// The key `BookGrid` diffed this cell on, handed down so a book tile's
-    /// `data-flip-key` is that same string rather than a second derivation of
-    /// it — `series_flip.js` maps one rect per key.
-    cell_key: String,
     index: usize,
     server_url: String,
     open: Signal<Option<String>>,
     refocus: Signal<Option<String>>,
 ) -> Element {
+    let cell_key = item.key();
     match item {
         GridItem::Book(book) => rsx! {
             GridTile { book, server_url, index, flip_key: cell_key }

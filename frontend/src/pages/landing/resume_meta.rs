@@ -1,8 +1,8 @@
-//! Per-resume-point derivations shared by every surface that lists open
-//! books — the mobile resume card, the web continue fan, and the stats
-//! in-progress list: percent/remaining labels for audio, the plain continue
-//! affordance for epub rows with no stored percent, and the point's own
-//! keyed-list key.
+//! Per-resume-point derivations shared across surfaces: percent/remaining
+//! labels for audio and the plain continue affordance for epub rows with no
+//! stored percent, used by the mobile resume card (a single point), the web
+//! continue fan and the stats in-progress list — plus the key those last two
+//! give a point as a keyed-list sibling.
 
 use omnibus_shared::{ProgressFormat, ResumePoint, StructuralPosition};
 
@@ -219,11 +219,17 @@ mod tests {
     #[test]
     fn resume_key_reads_the_progress_rows_uuid_not_the_resolved_books() {
         // `get_book_by_uuid` falls back through `merged_uuids`, so two rows
-        // filed under different uuids can resolve to one surviving book.
-        let mut p = point(ProgressFormat::Epub, None, None);
-        p.book.unique_identifier = Some("survivor".into());
+        // filed under different uuids resolve to one surviving book. Keying
+        // on that book would hand both siblings the same key again.
+        let mut old = point(ProgressFormat::Epub, None, None);
+        old.record.book_uuid = "old".into();
+        old.book.unique_identifier = Some("survivor".into());
+        let mut new = point(ProgressFormat::Epub, None, None);
+        new.record.book_uuid = "new".into();
+        new.book.unique_identifier = Some("survivor".into());
 
-        assert_eq!(resume_key(&p), "u:epub");
+        assert_eq!(resume_key(&old), "old:epub");
+        assert_ne!(resume_key(&old), resume_key(&new));
     }
 
     #[test]

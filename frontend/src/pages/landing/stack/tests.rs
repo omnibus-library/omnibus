@@ -152,15 +152,22 @@ fn stack_entries_keys_the_two_formats_of_one_book_apart() {
     assert_ne!(keys[0], keys[1]);
 }
 
+/// A point whose resolved book carries `id` — what `open_book_count` folds on.
+fn point_on_book(uuid: &str, format: ProgressFormat, book_id: i64) -> ResumePoint {
+    let mut p = point(uuid, format, Some(30));
+    p.book.id = book_id;
+    p
+}
+
 #[test]
 fn open_book_count_counts_books_not_fan_cards() {
     // A book open in both formats holds two cards; the kicker above them
     // says "N books open", so it must not count the cards.
     let entries = stack_entries_for_test(
         &[
-            point("dual", ProgressFormat::Epub, Some(30)),
-            point("dual", ProgressFormat::Audio, Some(40)),
-            point("other", ProgressFormat::Epub, Some(10)),
+            point_on_book("dual", ProgressFormat::Epub, 1),
+            point_on_book("dual", ProgressFormat::Audio, 1),
+            point_on_book("other", ProgressFormat::Epub, 2),
         ],
         "http://x",
     );
@@ -168,4 +175,25 @@ fn open_book_count_counts_books_not_fan_cards() {
     assert_eq!(entries.len(), 3);
     assert_eq!(open_book_count(&entries), 2);
     assert_eq!(stack_kicker(open_book_count(&entries)), "2 books open");
+}
+
+#[test]
+fn open_book_count_folds_two_rows_that_resolve_to_one_book() {
+    // `get_book_by_uuid` resolves through `merged_uuids`, so the two rows can
+    // carry different filing uuids — which is why the fold is on the book,
+    // not on the uuid `resume_key` keys apart.
+    let entries = stack_entries_for_test(
+        &[
+            point_on_book("old-uuid", ProgressFormat::Epub, 1),
+            point_on_book("new-uuid", ProgressFormat::Audio, 1),
+        ],
+        "http://x",
+    );
+
+    assert_eq!(entries.len(), 2);
+    assert_eq!(open_book_count(&entries), 1);
+    assert_eq!(
+        stack_kicker(open_book_count(&entries)),
+        "your in-progress book"
+    );
 }

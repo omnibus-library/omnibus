@@ -198,16 +198,22 @@ pub(super) fn lead_accent_style(entries: &[StackEntry], lead: usize) -> String {
 /// How many distinct books the fan holds. Not its card count: a book open in
 /// both formats contributes a card each, and "2 books open" over one book's
 /// two covers is a lie the reader can see.
+///
+/// Counts the **resolved** book, not `uuid` — that is the progress row's
+/// filing uuid, which [`resume_key`] deliberately keys on because two rows can
+/// resolve through `merged_uuids` to one surviving book. That is exactly the
+/// case this must fold rather than split.
 pub(super) fn open_book_count(entries: &[StackEntry]) -> usize {
     entries
         .iter()
-        .map(|e| e.uuid.as_str())
+        .map(|e| e.book.id)
         .collect::<std::collections::BTreeSet<_>>()
         .len()
 }
 
-/// The kicker above the front book. A fan of one has nothing behind it, so it
-/// names what the reader is looking at instead of counting a stack.
+/// The kicker above the front book, over [`open_book_count`] books. One book
+/// names what the reader is looking at instead of counting — it may still hold
+/// two cards, so this says nothing about what is fanned behind the lead.
 pub(super) fn stack_kicker(count: usize) -> String {
     if count <= 1 {
         "your in-progress book".to_string()
