@@ -46,3 +46,19 @@ tempfile = "3"
 dioxus = "=0.7.9"
 dioxus-html = "=0.7.9"
 dioxus-router = "=0.7.9"
+
+# `dx` builds the WASM client under these profiles. Declaring one replaces the
+# profile dx would otherwise inject, so each states its whole intent.
+#
+# DWARF was ~88% of the dev bundle and tripled wasm-bindgen's time on every
+# rebuild; nothing here reads it.
+[profile.wasm-dev]
+inherits = "dev"
+debug = false
+
+# "z" rather than dx's default "s": ~10% less to download after brotli, and
+# ~20% together with `--debug-symbols=false` on every `dx bundle` and the
+# wasm-opt level in Dioxus.toml.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
