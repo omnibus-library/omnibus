@@ -60,17 +60,20 @@ pub use data::ServerUrl;
 #[cfg(not(feature = "mobile"))]
 #[component]
 fn ScreenLayout(children: Element) -> Element {
-    // #57: web-side reactive redirect to /login on 401. Mirrors the
-    // mobile ScreenLayout's `token_store::subscribe()` loop, but driven
-    // by `data::web_auth_state` since web auth lives in a session cookie
-    // (no client-side token to clear). Render path stays unconditional
-    // so SSR and WASM produce identical markup — only the effect runs
-    // on the WASM client. `Login` / `Register` routes don't go through
-    // `ScreenLayout`, so they stay reachable for unauthenticated users
-    // and the redirect can't loop.
+    // #57: web-side reactive redirect to /login on 401, for a session that
+    // lapses mid-visit (the server's page gate redirects a signed-out page
+    // load before it renders), returning the reader to this page after
+    // sign-in. Mirrors the mobile ScreenLayout's `token_store::subscribe()`
+    // loop, but driven by `data::web_auth_state` since web auth lives in a
+    // session cookie (no client-side token to clear). Render path stays
+    // unconditional so SSR and WASM produce identical markup — only the
+    // effect runs on the WASM client. `Login` / `Register` routes don't go
+    // through `ScreenLayout`, so they stay reachable for unauthenticated
+    // users and the redirect can't loop.
     #[cfg(feature = "web")]
     {
         let nav = dioxus_router::use_navigator();
+        let route = dioxus_router::use_route::<Route>();
         let mut unauthorized = use_signal(|| false);
         use_future(move || async move {
             let mut rx = data::web_auth_state::subscribe();
@@ -93,7 +96,7 @@ fn ScreenLayout(children: Element) -> Element {
         });
         use_effect(move || {
             if unauthorized() {
-                nav.replace(Route::Login {});
+                nav.replace(login_target_from(&route));
             }
         });
     }
@@ -174,7 +177,7 @@ fn ScreenLayout(children: Element) -> Element {
         if use_server_url().is_empty() {
             nav.replace(Route::ServerConnect {});
         } else if !authed() {
-            nav.replace(Route::Login {});
+            nav.replace(login_target());
         }
     });
 

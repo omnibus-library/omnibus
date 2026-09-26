@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
+import { STORAGE_STATE_PATH } from "../../globalSetup";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { TEST_PASSWORD, TEST_USERNAME } from "../utils/auth";
@@ -83,6 +85,60 @@ test("logs in with correct credentials and redirects to landing", async ({
   );
 
   await expect(page).toHaveURL(/\/$/);
+});
+
+test("a signed-out visit to the library lands on the login page", async ({
+  page,
+}) => {
+  // The server answers the page load itself (#2632): no app shell renders
+  // around a library the reader can no longer fetch.
+  await page.goto("/");
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(
+    page.getByRole("heading", { level: 2, name: /Welcome back/i }),
+  ).toBeVisible();
+});
+
+test("a signed-out deep link returns to its page after logging in", async ({
+  page,
+  request,
+}) => {
+  // Not /stats: a visit there as the shared user would fill the server's 60s
+  // stats cache before `stats.spec.ts` seeds its sessions.
+  await gotoReady(page, "/authors");
+  await expect(page).toHaveURL(/\/login\?next=%2Fauthors$/);
+
+  // Sign in without spending the per-IP login budget the whole suite shares:
+  // the browser takes the shared session cookie, and the login POST is
+  // answered in-page with the real user. The return trip is what's under test.
+  const me = await request.get("/api/auth/me");
+  expect(me.ok()).toBe(true);
+  const user = await me.json();
+  const shared = JSON.parse(readFileSync(STORAGE_STATE_PATH, "utf8"));
+  await page.context().addCookies(shared.cookies);
+  await page.route("**/api/auth/login", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ user }),
+    });
+  });
+
+  await page.getByLabel("Username").fill(TEST_USERNAME);
+  await page.getByLabel("Password").fill(TEST_PASSWORD);
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/auth/login",
+      expectedStatus: 200,
+    },
+    async () => page.getByRole("button", { name: "Log in" }).click(),
+  );
+
+  await expect(page).toHaveURL(/\/authors$/);
+  await expect(page.getByTestId("authors-filter")).toBeVisible();
 });
 
 test("shows an error when login credentials are wrong", async ({ page }) => {

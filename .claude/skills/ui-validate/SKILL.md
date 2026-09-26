@@ -96,7 +96,7 @@ cd ui_tests/playwright && pnpm exec playwright test
 
 ## Common pitfalls
 
-- **Snapshot shows the login form.** Cookie expired or cleared. Repeat step 4.
+- **Snapshot shows the login form.** Cookie expired or cleared. Repeat step 4. The server redirects a signed-out load of any page to `/login?next=<that page>`, so logging in from there lands back on the page rather than the library.
 - **`build_id` never changes after an edit.** The change was frontend-only and didn't trigger a server restart. Skip the build-id poll, reload directly.
 - **`dev-up` exits 1 with "ports … all held by non-omnibus processes."** Run `lsof -iTCP:$PORT-$((PORT+9)) -sTCP:LISTEN -P` to see what's holding them. Most likely cause: a previous `dx serve` you forgot about — `cat .claude/runtime/server.pid` and `just dev-down` (identity-checked), or pick a different starting `PORT`.
 - **`dev-up` exits 2 with "server unhealthy — run `just dev-bounce`."** `dx serve` is up but its most recent rebuild errored. Read `.claude/runtime/server.log` for the compile error, fix it, then `just dev-bounce`.

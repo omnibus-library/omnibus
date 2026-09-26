@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 use omnibus_shared::{AdminUserRow, UserPermissions};
 
-use crate::{data, Route};
+use crate::data;
 
 mod modals;
 mod registration;
@@ -202,7 +202,7 @@ fn users_modals(
                         on_modal.set(Modal::None);
                         // Self-delete invalidates the session; reloading would just 401.
                         if is_self {
-                            nav.replace(Route::Login {});
+                            nav.replace(crate::routes::login_target());
                         } else {
                             reload.with_mut(|n| *n += 1);
                         }

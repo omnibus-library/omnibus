@@ -177,7 +177,7 @@ fn RegistrationClosed() -> Element {
             }
             p { class: "auth-footer",
                 "Already have an account? "
-                Link { to: Route::Login {}, "Log in" }
+                Link { to: crate::routes::login_target(), "Log in" }
             }
         }
     }
@@ -288,7 +288,7 @@ fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> El
             }
             p { class: "auth-footer",
                 "Already have an account? "
-                Link { to: Route::Login {}, "Log in" }
+                Link { to: crate::routes::login_target(), "Log in" }
             }
         }
     }

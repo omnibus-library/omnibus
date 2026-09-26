@@ -6,6 +6,7 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
+#[cfg(not(feature = "mobile"))]
 use crate::Route;
 #[cfg(feature = "mobile")]
 use crate::{
@@ -73,7 +74,7 @@ fn build_connect_handler(
                     let to_persist = base.clone();
                     std::thread::spawn(move || crate::data::server_url_store::set(&to_persist));
                     url_signal.set(base);
-                    nav.replace(Route::Login {});
+                    nav.replace(crate::routes::login_target());
                 }
                 Err(_) => error.set(Some(
                     "Can't reach that server. Check the address and that it's running.".into(),

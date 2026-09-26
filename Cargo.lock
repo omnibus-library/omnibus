@@ -4995,6 +4995,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "urlencoding",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

@@ -412,8 +412,14 @@ mod server {
             // exempt inside origin_check; non-cookie requests short-circuit
             // there too, so SSR and static assets pass through unchanged.
             .layer(axum::middleware::from_fn_with_state(
-                state,
+                state.clone(),
                 auth::require_auth,
+            ))
+            // Its page-load twin: a signed-out load of a page that needs a
+            // session is sent to /login before SSR renders an inert shell.
+            .layer(axum::middleware::from_fn_with_state(
+                state,
+                auth::require_page_session,
             ))
             .layer(axum::middleware::from_fn(auth::origin_check))
             .layer(Extension(pool))

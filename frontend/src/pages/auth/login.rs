@@ -9,6 +9,7 @@ use crate::components::auth::{Banner, BannerKind, Field};
 use crate::components::BusyLabel;
 #[cfg(feature = "mobile")]
 use crate::pages::server_connect::display_host;
+use crate::routes::{link_target, login_target, safe_next};
 use crate::{use_server_url, Route};
 
 #[cfg(feature = "mobile")]
@@ -33,8 +34,9 @@ struct LoginFormState {
 /// the event source so both the form's `onsubmit` (click) and each
 /// input's `onkeydown` (Enter) drive the same path — Dioxus 0.7's submit
 /// event doesn't reliably fire on implicit form submission from Enter, so
-/// we trigger it explicitly via a shared `use_callback` handle.
-fn use_login_form_state() -> LoginFormState {
+/// we trigger it explicitly via a shared `use_callback` handle. A successful
+/// sign-in lands on `next` when [`safe_next`] accepts it, else the library.
+fn use_login_form_state(next: Option<String>) -> LoginFormState {
     let username = use_signal(String::new);
     let password = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
@@ -75,12 +77,14 @@ fn use_login_form_state() -> LoginFormState {
         error.set(None);
         submitting.set(true);
         let server_url = server_url.clone();
+        let next = next.clone();
         spawn(async move {
             let res = submit_login(&server_url, u, p).await;
             submitting.set(false);
             match res {
                 Ok(()) => {
-                    nav.replace(Route::Landing {});
+                    let to = safe_next(next.as_deref()).unwrap_or(Route::Landing {});
+                    nav.replace(link_target(to));
                 }
                 Err(e) => error.set(Some(e)),
             }
@@ -107,9 +111,10 @@ fn use_login_form_state() -> LoginFormState {
     }
 }
 
-/// Renders the login page.
+/// Renders the login page. `next` is the `?next=` the reader arrived with —
+/// the page a successful sign-in returns them to.
 #[component]
-pub fn LoginPage() -> Element {
+pub fn LoginPage(next: Option<String>) -> Element {
     let LoginFormState {
         username,
         password,
@@ -119,7 +124,7 @@ pub fn LoginPage() -> Element {
         registration_open,
         on_submit,
         on_keydown,
-    } = use_login_form_state();
+    } = use_login_form_state(next);
 
     // The "keep me signed in" control only exists on the web split-pane; the
     // mobile design omits it. Read it on mobile so the signal isn't flagged
@@ -389,7 +394,7 @@ fn LoginCredentialFields(
             // without dead routes.
             action: rsx! {
                 Link {
-                    to: Route::Login {},
+                    to: login_target(),
                     class: "auth-field-action-link",
                     "Forgot?"
                 }

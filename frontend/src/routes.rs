@@ -11,6 +11,10 @@ use dioxus_router::Routable;
 use crate::pages::*;
 use crate::{use_page_title, ScreenLayout};
 
+mod login_next;
+
+pub use login_next::{login_href, login_target, login_target_from, safe_next};
+
 /// Top-level router for every omnibus frontend target.
 #[derive(Clone, Debug, PartialEq, Eq, Routable)]
 pub enum Route {
@@ -68,8 +72,8 @@ pub enum Route {
     Search { query: String },
     #[route("/connect")]
     ServerConnect {},
-    #[route("/login")]
-    Login {},
+    #[route("/login?:next")]
+    Login { next: Option<String> },
     #[route("/register")]
     Register {},
     // Must stay last: dioxus-router matches variants in declaration order,
@@ -391,11 +395,12 @@ pub fn ServerConnect() -> Element {
 
 /// Route target for `/login` — credential entry form. Rendered without the
 /// main screen chrome so the login flow stands alone. `LoginPage` owns its
-/// own full-page chrome via [`crate::components::auth::AuthShell`].
+/// own full-page chrome via [`crate::components::auth::AuthShell`]; `next`
+/// (the `?next=` query param) is the page a successful sign-in returns to.
 #[component]
-pub fn Login() -> Element {
+pub fn Login(next: Option<String>) -> Element {
     use_page_title(|| Some("Log in".into()));
-    rsx! { LoginPage {} }
+    rsx! { LoginPage { next } }
 }
 
 /// Route target for `/authors/:id` — single author discovery page.

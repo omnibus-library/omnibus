@@ -50,7 +50,7 @@ pub fn UserMenu() -> Element {
     if unauth {
         rsx! {
             Link {
-                to: Route::Login {},
+                to: crate::routes::login_target(),
                 class: "btn ghost sm",
                 "Log in"
             }
@@ -185,7 +185,7 @@ fn build_on_signout(mut open: Signal<bool>, nav: dioxus_router::Navigator) -> Ev
         spawn(async move {
             let _ = crate::data::logout().await;
             open.set(false);
-            nav.replace(Route::Login {});
+            nav.replace(crate::routes::login_target());
         });
     })
 }

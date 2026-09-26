@@ -670,7 +670,7 @@ fn AccountRows() -> Element {
         let url = server_url.clone();
         spawn(async move {
             let _ = data::mobile_logout(&url).await;
-            nav.replace(Route::Login {});
+            nav.replace(crate::routes::login_target());
         });
     };
 
