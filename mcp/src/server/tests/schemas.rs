@@ -14,9 +14,14 @@ fn every_tool_advertises_an_object_rooted_output_schema() {
         .filter(|tool| {
             tool.output_schema
                 .as_ref()
-                .is_some_and(|schema| schema.get("type").and_then(|t| t.as_str()) != Some("object"))
+                .and_then(|schema| schema.get("type"))
+                .and_then(|t| t.as_str())
+                != Some("object")
         })
         .map(|tool| tool.name.to_string())
         .collect();
-    assert!(bad.is_empty(), "non-object outputSchema root: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "missing or non-object outputSchema: {bad:?}"
+    );
 }
