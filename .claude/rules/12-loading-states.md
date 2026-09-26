@@ -12,7 +12,7 @@ placeholders are what this replaced (#2641).
 | Kind | Fills | Mark |
 |---|---|---|
 | `Loading { kind: Page }` | `main` under the nav, while a route's data loads | riffle (the open book) |
-| `Loading { kind: Stage }` | an opaque cover over a reader/player stage; retry goes in `children` | riffle, or `mark: Line` for audio |
+| `Loading { kind: Stage }` | an opaque cover over a reader/player stage; a `title` above the caption, retry in `children` | riffle, or `mark: Line` for audio |
 | `Loading { kind: Sheet }` | a modal, sheet or drawer body | the line |
 | `Loading { kind: Section }` | a card, panel or status line (the default) | the line |
 | `Loading { kind: Row }` | one list row, a "load more" | the ring |
@@ -43,8 +43,9 @@ a false statement the reader acts on. So the state must be able to say
 `loaded` flag set when the request **returns**, never when it is sent.
 
 The same holds for permission gates. `use_is_admin()` is `false` both for a
-non-admin and for a user not yet resolved; a gate must read the raw
-`CurrentUser` (outer `None` = unresolved) and show loading until it knows.
+non-admin and for a user not yet resolved, so a gate uses `use_admin_access()`
+/ `use_upload_access()` instead: `Access::Unknown` renders loading, and only
+`Denied` renders the forbidden notice. Fetches and polls wait for `Allowed`.
 
 ## The boot screen
 
