@@ -121,6 +121,20 @@ pub struct RevertReport {
     pub reverted: Vec<WrittenBook>,
 }
 
+/// `get_effective_metadata`'s answer, in request order. Wrapped because MCP
+/// requires an object-rooted `outputSchema`.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct EffectiveMetadata {
+    pub books: Vec<EbookMetadata>,
+}
+
+/// `hydrate_provider_edition`'s answer; `edition` is null when the provider
+/// no longer knows the candidate.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct HydratedEdition {
+    pub edition: Option<ProviderEdition>,
+}
+
 /// The genre annotation AC5 requires: a genre change is not an override *of*
 /// anything — it establishes the override row that is the genres' only home.
 const GENRE_NOTE: &str =
@@ -292,12 +306,12 @@ impl OmnibusMcp {
     pub async fn get_effective_metadata(
         &self,
         Parameters(p): Parameters<BookSetParams>,
-    ) -> Result<Json<Vec<EbookMetadata>>, ErrorData> {
+    ) -> Result<Json<EffectiveMetadata>, ErrorData> {
         let mut books = Vec::with_capacity(p.uuids.len());
         for uuid in &p.uuids {
             books.push(self.fetch_book(uuid).await?);
         }
-        Ok(Json(books))
+        Ok(Json(EffectiveMetadata { books }))
     }
 
     #[tool(
@@ -465,13 +479,13 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "Re-fetch one selected search candidate in full from the provider that offered it — a search hit is thinner than the provider's own record (e.g. Open Library search hits carry no description). Pass the candidate's source and provider_ref (and isbn13 when it has one) from search_metadata_providers. A read; requires can_edit like the search. Returns null when the provider no longer knows the candidate."
+        description = "Re-fetch one selected search candidate in full from the provider that offered it — a search hit is thinner than the provider's own record (e.g. Open Library search hits carry no description). Pass the candidate's source and provider_ref (and isbn13 when it has one) from search_metadata_providers. A read; requires can_edit like the search. `edition` is null when the provider no longer knows the candidate."
     )]
     pub async fn hydrate_provider_edition(
         &self,
         Parameters(p): Parameters<EditionHydrateRequest>,
-    ) -> Result<Json<Option<ProviderEdition>>, ErrorData> {
-        let found: Option<ProviderEdition> = self
+    ) -> Result<Json<HydratedEdition>, ErrorData> {
+        let edition: Option<ProviderEdition> = self
             .client
             .write_json(
                 reqwest::Method::POST,
@@ -480,7 +494,7 @@ impl OmnibusMcp {
             )
             .await
             .map_err(|e| ErrorData::internal_error(describe_edit_failure(&e), None))?;
-        Ok(Json(found))
+        Ok(Json(HydratedEdition { edition }))
     }
 }
 

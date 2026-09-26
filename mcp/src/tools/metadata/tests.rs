@@ -8,8 +8,8 @@ use axum::{Json as AxumJson, Router};
 use rmcp::handler::server::wrapper::Parameters;
 
 use omnibus_shared::metadata_lookup::{
-    EditionSearchRequest, EditionSearchResponse, MetadataProvider, ProviderEdition,
-    ProviderSearchSource, ProviderSearchStatus,
+    EditionHydrateRequest, EditionSearchRequest, EditionSearchResponse, MetadataProvider,
+    ProviderEdition, ProviderSearchSource, ProviderSearchStatus,
 };
 use omnibus_shared::{EbookMetadata, MetadataOverrides};
 
@@ -93,34 +93,45 @@ async fn delete_overrides(
     Ok(AxumJson(stub_book(&uuid)))
 }
 
+fn stub_edition(title: String) -> ProviderEdition {
+    ProviderEdition {
+        source: MetadataProvider::OpenLibrary,
+        provider_ref: "OL123W".into(),
+        isbn13: None,
+        isbn10: None,
+        title,
+        authors: vec!["Mary Shelley".into()],
+        year: Some("1818".into()),
+        pages: None,
+        publisher: None,
+        description: None,
+        cover_url: None,
+        series: None,
+        series_index: None,
+        first_publish_year: Some(1818),
+        genres: vec![],
+        relevance: Some(1000),
+    }
+}
+
 async fn edition_search(
     AxumJson(req): AxumJson<EditionSearchRequest>,
 ) -> AxumJson<EditionSearchResponse> {
     AxumJson(EditionSearchResponse {
-        editions: vec![ProviderEdition {
-            source: MetadataProvider::OpenLibrary,
-            provider_ref: "OL123W".into(),
-            isbn13: None,
-            isbn10: None,
-            title: req.query,
-            authors: vec!["Mary Shelley".into()],
-            year: Some("1818".into()),
-            pages: None,
-            publisher: None,
-            description: None,
-            cover_url: None,
-            series: None,
-            series_index: None,
-            first_publish_year: Some(1818),
-            genres: vec![],
-            relevance: Some(1000),
-        }],
+        editions: vec![stub_edition(req.query)],
         sources: vec![ProviderSearchSource {
             provider: MetadataProvider::OpenLibrary,
             display_name: "Open Library".into(),
             status: ProviderSearchStatus::Answered { count: 1 },
         }],
     })
+}
+
+/// Knows only the `OL123W` candidate; anything else is gone from the provider.
+async fn edition_hydrate(
+    AxumJson(req): AxumJson<EditionHydrateRequest>,
+) -> AxumJson<Option<ProviderEdition>> {
+    AxumJson((req.provider_ref == "OL123W").then(|| stub_edition("Frankenstein".into())))
 }
 
 /// Boot a stub instance and return a service pointed at it plus the stub.
@@ -134,6 +145,7 @@ async fn stub_service() -> (OmnibusMcp, Arc<Stub>) {
             post(post_overrides).delete(delete_overrides),
         )
         .route("/api/metadata/editions/search", post(edition_search))
+        .route("/api/metadata/editions/hydrate", post(edition_hydrate))
         .with_state(stub.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -199,9 +211,15 @@ async fn get_effective_metadata_returns_each_requested_book_in_order() {
         }))
         .await
         .unwrap();
-    assert_eq!(books.0.len(), 2);
-    assert_eq!(books.0[0].unique_identifier.as_deref(), Some("uuid-1"));
-    assert_eq!(books.0[1].unique_identifier.as_deref(), Some("uuid-2"));
+    assert_eq!(books.0.books.len(), 2);
+    assert_eq!(
+        books.0.books[0].unique_identifier.as_deref(),
+        Some("uuid-1")
+    );
+    assert_eq!(
+        books.0.books[1].unique_identifier.as_deref(),
+        Some("uuid-2")
+    );
 }
 
 #[tokio::test]
@@ -444,6 +462,39 @@ async fn search_metadata_providers_returns_the_attributed_fan_out() {
     assert_eq!(
         found.0.sources[0].status,
         ProviderSearchStatus::Answered { count: 1 }
+    );
+}
+
+fn hydrate(provider_ref: &str) -> Parameters<EditionHydrateRequest> {
+    Parameters(EditionHydrateRequest {
+        source: MetadataProvider::OpenLibrary,
+        provider_ref: provider_ref.into(),
+        isbn13: None,
+    })
+}
+
+#[tokio::test]
+async fn hydrate_provider_edition_answers_the_full_record_under_edition() {
+    let (service, _stub) = stub_service().await;
+    let found = service
+        .hydrate_provider_edition(hydrate("OL123W"))
+        .await
+        .unwrap();
+    let wire = serde_json::to_value(&found.0).unwrap();
+    assert_eq!(wire["edition"]["provider_ref"], "OL123W");
+    assert_eq!(wire["edition"]["title"], "Frankenstein");
+}
+
+#[tokio::test]
+async fn hydrate_provider_edition_answers_a_null_edition_when_the_provider_forgot_it() {
+    let (service, _stub) = stub_service().await;
+    let found = service
+        .hydrate_provider_edition(hydrate("OL999W"))
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&found.0).unwrap(),
+        serde_json::json!({ "edition": null })
     );
 }
 

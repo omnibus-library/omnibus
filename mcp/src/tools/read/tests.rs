@@ -281,6 +281,7 @@ async fn book_progress_carries_each_stamp_as_iso_beside_its_epoch() {
         .await
         .unwrap()
         .0
+        .progress
         .expect("the reader has an epub position");
     let record = envelope
         .records
@@ -297,15 +298,21 @@ async fn every_record_tool_answers_with_an_iso_stamp_for_each_epoch_it_returns()
     let service = stub_service().await;
     let uuid = || Parameters(BookRef { uuid: BOOK.into() });
 
-    let status = service.book_read_status(uuid()).await.unwrap().0.unwrap();
+    let status = service
+        .book_read_status(uuid())
+        .await
+        .unwrap()
+        .0
+        .read_status
+        .unwrap();
     assert_eq!(status.updated_at, "2026-03-04T00:00:00Z");
     assert_eq!(status.updated_at_epoch, WHEN);
 
-    let highlights = service.book_highlights(uuid()).await.unwrap().0;
+    let highlights = service.book_highlights(uuid()).await.unwrap().0.highlights;
     assert_eq!(highlights[0].created_at, "2026-03-04T00:00:00Z");
     assert_eq!(highlights[0].created_at_epoch, WHEN);
 
-    let bookmarks = service.book_bookmarks(uuid()).await.unwrap().0;
+    let bookmarks = service.book_bookmarks(uuid()).await.unwrap().0.bookmarks;
     assert_eq!(bookmarks[0].created_at, "2026-03-04T00:00:00Z");
     assert_eq!(bookmarks[0].created_at_epoch, WHEN);
 
@@ -332,7 +339,8 @@ async fn list_physical_copies_stamps_the_check_in_in_both_forms() {
         }))
         .await
         .unwrap()
-        .0;
+        .0
+        .copies;
     assert_eq!(copies[0].checked_in_at, "2026-03-04T00:00:00Z");
     assert_eq!(copies[0].checked_in_at_epoch, WHEN);
 }
@@ -346,7 +354,8 @@ async fn recent_progress_projects_a_book_stub_by_default() {
         .recent_progress(Parameters(RecentProgressParams::default()))
         .await
         .unwrap()
-        .0;
+        .0
+        .entries;
     let book = &json_of(&points[0])["book"];
     // Enough to name the book and go fetch the rest…
     assert_eq!(book["uuid"], BOOK);
@@ -371,7 +380,8 @@ async fn recent_progress_inlines_the_whole_record_when_asked_for_full() {
         }))
         .await
         .unwrap()
-        .0;
+        .0
+        .entries;
     let book = &json_of(&points[0])["book"];
     assert_eq!(book["unique_identifier"], BOOK);
     assert!(book["description"].as_str().unwrap().len() > 200);
@@ -391,7 +401,8 @@ async fn a_three_entry_stub_feed_is_a_fraction_of_the_full_one() {
                 }))
                 .await
                 .unwrap()
-                .0;
+                .0
+                .entries;
             serde_json::to_string(&points).unwrap().len()
         }
     };
@@ -412,7 +423,8 @@ async fn recent_progress_rounds_the_playback_rate_it_reports() {
         .recent_progress(Parameters(RecentProgressParams::default()))
         .await
         .unwrap()
-        .0;
+        .0
+        .entries;
     assert_eq!(points[0].playback_rate, Some(2.3));
     // And it must not come back through serde as the float sum it was.
     let rendered = serde_json::to_string(&points[0]).unwrap();

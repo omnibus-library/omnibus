@@ -59,6 +59,19 @@ pub struct IsbnResolution {
     pub detail: Option<String>,
 }
 
+/// `lookup_isbn`'s answer, one row per submitted ISBN in order. Wrapped
+/// because MCP requires an object-rooted `outputSchema`.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct IsbnLookup {
+    pub results: Vec<IsbnResolution>,
+}
+
+/// `list_physical_copies`' answer, oldest check-in first.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CopyList {
+    pub copies: Vec<PhysicalCopyView>,
+}
+
 /// Parameters for the provider title search.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchMetadataParams {
@@ -201,7 +214,7 @@ impl OmnibusMcp {
     pub async fn lookup_isbn(
         &self,
         Parameters(p): Parameters<LookupIsbnParams>,
-    ) -> Result<Json<Vec<IsbnResolution>>, ErrorData> {
+    ) -> Result<Json<IsbnLookup>, ErrorData> {
         if p.isbns.is_empty() {
             return Err(ErrorData::invalid_params(
                 "isbns must contain at least one ISBN",
@@ -230,7 +243,7 @@ impl OmnibusMcp {
                 Err(e) => return Err(e.into()),
             }
         }
-        Ok(Json(results))
+        Ok(Json(IsbnLookup { results }))
     }
 
     #[tool(
@@ -355,15 +368,16 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "List a book's physical copies (library-wide, oldest check-in first), each with its id, recorded ISBN, check-in time, and note. An unknown uuid simply has no copies (empty list). checked_in_at is ISO 8601, with unix seconds alongside under checked_in_at_epoch."
+        description = "List a book's physical copies (library-wide, oldest check-in first), each with its id, recorded ISBN, check-in time, and note. An unknown uuid simply has no copies (empty `copies`). checked_in_at is ISO 8601, with unix seconds alongside under checked_in_at_epoch."
     )]
     pub async fn list_physical_copies(
         &self,
         Parameters(p): Parameters<BookUuid>,
-    ) -> Result<Json<Vec<PhysicalCopyView>>, ErrorData> {
+    ) -> Result<Json<CopyList>, ErrorData> {
         let path = format!("/api/physical/{}/copies", p.uuid);
         let rows: Vec<PhysicalCopy> = self.client.get_json(&path, &[]).await?;
-        Ok(Json(rows.into_iter().map(Into::into).collect()))
+        let copies = rows.into_iter().map(Into::into).collect();
+        Ok(Json(CopyList { copies }))
     }
 
     #[tool(

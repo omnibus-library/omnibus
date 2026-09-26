@@ -183,6 +183,81 @@ pub struct BookPage {
     pub total: Option<i64>,
 }
 
+// Every answer below wraps a list or a nullable in an object: MCP requires an
+// `outputSchema` root of `type: "object"`, and strict clients enforce it.
+
+/// `list_authors`' answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct AuthorList {
+    pub authors: Vec<AuthorSummary>,
+}
+
+/// `list_series`' answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SeriesList {
+    pub series: Vec<SeriesSummary>,
+}
+
+/// `list_tags`' answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TagList {
+    pub tags: Vec<TagWeight>,
+}
+
+/// `list_genres`' answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct GenreList {
+    pub genres: Vec<GenreWeight>,
+}
+
+/// `list_shelves`' answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ShelfList {
+    pub shelves: Vec<ShelfSummary>,
+}
+
+/// `shelves_containing_book`'s answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ContainingShelves {
+    pub shelf_ids: Vec<i64>,
+}
+
+/// `recent_progress`' answer, most recent first.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ResumeFeed {
+    pub entries: Vec<ResumePointView>,
+}
+
+/// `book_progress`' answer; `progress` is null when the uuid names no book.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BookProgressAnswer {
+    pub progress: Option<BookProgressView>,
+}
+
+/// `book_read_status`' answer; `read_status` is null when there is none yet.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ReadStatusAnswer {
+    pub read_status: Option<ReadStatusView>,
+}
+
+/// `book_highlights`' answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct HighlightList {
+    pub highlights: Vec<HighlightView>,
+}
+
+/// `book_bookmarks`' answer.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BookmarkList {
+    pub bookmarks: Vec<BookmarkView>,
+}
+
+/// `book_journal_entries`' answer, newest first.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct JournalEntryList {
+    pub entries: Vec<JournalEntryView>,
+}
+
 fn not_found(what: &str) -> ErrorData {
     ErrorData::invalid_params(format!("{what} not found"), None)
 }
@@ -320,8 +395,9 @@ impl OmnibusMcp {
     #[tool(
         description = "List every author across both libraries with book counts. Author ids feed get_author."
     )]
-    pub async fn list_authors(&self) -> Result<Json<Vec<AuthorSummary>>, ErrorData> {
-        Ok(Json(self.client.get_json("/api/authors", &[]).await?))
+    pub async fn list_authors(&self) -> Result<Json<AuthorList>, ErrorData> {
+        let authors = self.client.get_json("/api/authors", &[]).await?;
+        Ok(Json(AuthorList { authors }))
     }
 
     #[tool(
@@ -339,8 +415,9 @@ impl OmnibusMcp {
     #[tool(
         description = "List every series across both libraries with book counts and primary author. Series ids feed get_series."
     )]
-    pub async fn list_series(&self) -> Result<Json<Vec<SeriesSummary>>, ErrorData> {
-        Ok(Json(self.client.get_json("/api/series", &[]).await?))
+    pub async fn list_series(&self) -> Result<Json<SeriesList>, ErrorData> {
+        let series = self.client.get_json("/api/series", &[]).await?;
+        Ok(Json(SeriesList { series }))
     }
 
     #[tool(description = "Fetch one series' detail by id: its books in series order.")]
@@ -356,22 +433,25 @@ impl OmnibusMcp {
     #[tool(
         description = "The weighted tag cloud: every subject/tag in the library with how many books carry it."
     )]
-    pub async fn list_tags(&self) -> Result<Json<Vec<TagWeight>>, ErrorData> {
-        Ok(Json(self.client.get_json("/api/tags", &[]).await?))
+    pub async fn list_tags(&self) -> Result<Json<TagList>, ErrorData> {
+        let tags = self.client.get_json("/api/tags", &[]).await?;
+        Ok(Json(TagList { tags }))
     }
 
     #[tool(
         description = "The weighted genre cloud: every user-assigned genre with how many books carry it. Genres are user-curated (unlike tags, which come from the files)."
     )]
-    pub async fn list_genres(&self) -> Result<Json<Vec<GenreWeight>>, ErrorData> {
-        Ok(Json(self.client.get_json("/api/genres", &[]).await?))
+    pub async fn list_genres(&self) -> Result<Json<GenreList>, ErrorData> {
+        let genres = self.client.get_json("/api/genres", &[]).await?;
+        Ok(Json(GenreList { genres }))
     }
 
     #[tool(
         description = "List every shelf visible to the signed-in user, with kind (manual or smart/rule-based), visibility, and live book counts. Shelf ids feed get_shelf."
     )]
-    pub async fn list_shelves(&self) -> Result<Json<Vec<ShelfSummary>>, ErrorData> {
-        Ok(Json(self.client.get_json("/api/shelves", &[]).await?))
+    pub async fn list_shelves(&self) -> Result<Json<ShelfList>, ErrorData> {
+        let shelves = self.client.get_json("/api/shelves", &[]).await?;
+        Ok(Json(ShelfList { shelves }))
     }
 
     #[tool(
@@ -387,14 +467,15 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "Which visible hand-picked shelves contain this book — returns their shelf ids."
+        description = "Which visible hand-picked shelves contain this book — returns their ids as shelf_ids."
     )]
     pub async fn shelves_containing_book(
         &self,
         Parameters(p): Parameters<BookRef>,
-    ) -> Result<Json<Vec<i64>>, ErrorData> {
+    ) -> Result<Json<ContainingShelves>, ErrorData> {
         let path = format!("/api/shelves/containing/{}", p.uuid);
-        Ok(Json(self.client.get_json(&path, &[]).await?))
+        let shelf_ids = self.client.get_json(&path, &[]).await?;
+        Ok(Json(ContainingShelves { shelf_ids }))
     }
 
     #[tool(
@@ -438,28 +519,27 @@ impl OmnibusMcp {
     pub async fn recent_progress(
         &self,
         Parameters(p): Parameters<RecentProgressParams>,
-    ) -> Result<Json<Vec<ResumePointView>>, ErrorData> {
+    ) -> Result<Json<ResumeFeed>, ErrorData> {
         let mut query: Vec<(&str, String)> = Vec::new();
         if let Some(limit) = p.limit {
             query.push(("limit", limit.to_string()));
         }
         let points: Vec<ResumePoint> = self.client.get_json("/api/progress/recent", &query).await?;
         let full = p.verbosity.unwrap_or_default() == Verbosity::Full;
-        Ok(Json(
-            points
-                .into_iter()
-                .map(|point| ResumePointView::project(point, full))
-                .collect(),
-        ))
+        let entries = points
+            .into_iter()
+            .map(|point| ResumePointView::project(point, full))
+            .collect();
+        Ok(Json(ResumeFeed { entries }))
     }
 
     #[tool(
-        description = "The signed-in user's saved position in one book. By default this returns EVERY format they have a position in, not just the ebook: `records` holds one entry per format, and `furthest` names the one that represents where the reader actually is. Read `furthest` — a reader 87% through the audiobook and 47% through the EPUB is 87% through the book, and answering from the EPUB record alone is how you tell them the wrong thing. Pass `format` only to narrow to one side deliberately. Each record carries the position as stored (`epub_cfi` or `audio_position_seconds`), a whole-book `progress_percent` (computed for audio, so no runtime is ever needed out of band), `total_duration_seconds` for audio, and a `resolved` block naming the place: `chapter_title`, 1-based `chapter_ordinal` of `chapters_total`, `percent_through_chapter`, `percent_through_book`, and `spine_index` for ebooks. `resolved.confidence` is `high` or `low` — `low` means the structure behind it is coarse (a percent-only position, or audio marks that are one-per-file rather than real chapters), so report it as approximate rather than exact. Never reverse-engineer a CFI or divide seconds by a guessed runtime; the answer is in `resolved`. The envelope also carries `linked` and, for a linked book, the `cross_format` candidate for picking up in the other format. A record's `format` is epub | audio — narrower than a reading session's reading | listening | mixed, because a saved position belongs to one format; the mapping is reading=epub and listening=audio, and mixed has no progress-record equivalent. Timestamps are ISO 8601 with unix seconds alongside under the same name plus _epoch. Prefer get_book with include when you want more than one section of a book's reader state. Returns null when the uuid names no book; a real book the reader has never opened returns an empty `records`."
+        description = "The signed-in user's saved position in one book. By default this returns EVERY format they have a position in, not just the ebook: `records` holds one entry per format, and `furthest` names the one that represents where the reader actually is. Read `furthest` — a reader 87% through the audiobook and 47% through the EPUB is 87% through the book, and answering from the EPUB record alone is how you tell them the wrong thing. Pass `format` only to narrow to one side deliberately. Each record carries the position as stored (`epub_cfi` or `audio_position_seconds`), a whole-book `progress_percent` (computed for audio, so no runtime is ever needed out of band), `total_duration_seconds` for audio, and a `resolved` block naming the place: `chapter_title`, 1-based `chapter_ordinal` of `chapters_total`, `percent_through_chapter`, `percent_through_book`, and `spine_index` for ebooks. `resolved.confidence` is `high` or `low` — `low` means the structure behind it is coarse (a percent-only position, or audio marks that are one-per-file rather than real chapters), so report it as approximate rather than exact. Never reverse-engineer a CFI or divide seconds by a guessed runtime; the answer is in `resolved`. The envelope also carries `linked` and, for a linked book, the `cross_format` candidate for picking up in the other format. A record's `format` is epub | audio — narrower than a reading session's reading | listening | mixed, because a saved position belongs to one format; the mapping is reading=epub and listening=audio, and mixed has no progress-record equivalent. Timestamps are ISO 8601 with unix seconds alongside under the same name plus _epoch. Prefer get_book with include when you want more than one section of a book's reader state. The envelope comes back under `progress`, which is null when the uuid names no book; a real book the reader has never opened returns an empty `records`."
     )]
     pub async fn book_progress(
         &self,
         Parameters(p): Parameters<BookProgressParams>,
-    ) -> Result<Json<Option<BookProgressView>>, ErrorData> {
+    ) -> Result<Json<BookProgressAnswer>, ErrorData> {
         // Exhaustive match rather than a serde round-trip: a new variant
         // fails the build here instead of silently narrowing to the wrong one.
         let query: Vec<(&str, String)> = match p.format {
@@ -469,19 +549,23 @@ impl OmnibusMcp {
         };
         let path = format!("/api/progress/{}", p.uuid);
         let envelope: Option<BookProgress> = self.client.get_json(&path, &query).await?;
-        Ok(Json(envelope.map(Into::into)))
+        Ok(Json(BookProgressAnswer {
+            progress: envelope.map(Into::into),
+        }))
     }
 
     #[tool(
-        description = "The signed-in user's read state for one book (want_to_read / reading / finished, with rating context). Returns null when the book has no state yet — treat that as unread. updated_at and finished_at are ISO 8601, with unix seconds alongside under the same name plus _epoch."
+        description = "The signed-in user's read state for one book (want_to_read / reading / finished, with rating context). `read_status` is null when the book has no state yet — treat that as unread. updated_at and finished_at are ISO 8601, with unix seconds alongside under the same name plus _epoch."
     )]
     pub async fn book_read_status(
         &self,
         Parameters(p): Parameters<BookRef>,
-    ) -> Result<Json<Option<ReadStatusView>>, ErrorData> {
+    ) -> Result<Json<ReadStatusAnswer>, ErrorData> {
         let path = format!("/api/read-status/{}", p.uuid);
         let record: Option<ReadStatusRecord> = self.client.get_json(&path, &[]).await?;
-        Ok(Json(record.map(Into::into)))
+        Ok(Json(ReadStatusAnswer {
+            read_status: record.map(Into::into),
+        }))
     }
 
     #[tool(
@@ -490,10 +574,11 @@ impl OmnibusMcp {
     pub async fn book_highlights(
         &self,
         Parameters(p): Parameters<BookRef>,
-    ) -> Result<Json<Vec<HighlightView>>, ErrorData> {
+    ) -> Result<Json<HighlightList>, ErrorData> {
         let path = format!("/api/highlights/book/{}", p.uuid);
         let rows: Vec<Highlight> = self.client.get_json(&path, &[]).await?;
-        Ok(Json(rows.into_iter().map(Into::into).collect()))
+        let highlights = rows.into_iter().map(Into::into).collect();
+        Ok(Json(HighlightList { highlights }))
     }
 
     #[tool(
@@ -502,10 +587,11 @@ impl OmnibusMcp {
     pub async fn book_bookmarks(
         &self,
         Parameters(p): Parameters<BookRef>,
-    ) -> Result<Json<Vec<BookmarkView>>, ErrorData> {
+    ) -> Result<Json<BookmarkList>, ErrorData> {
         let path = format!("/api/bookmarks/book/{}", p.uuid);
         let rows: Vec<Bookmark> = self.client.get_json(&path, &[]).await?;
-        Ok(Json(rows.into_iter().map(Into::into).collect()))
+        let bookmarks = rows.into_iter().map(Into::into).collect();
+        Ok(Json(BookmarkList { bookmarks }))
     }
 
     #[tool(
@@ -514,9 +600,10 @@ impl OmnibusMcp {
     pub async fn book_journal_entries(
         &self,
         Parameters(p): Parameters<BookRef>,
-    ) -> Result<Json<Vec<JournalEntryView>>, ErrorData> {
+    ) -> Result<Json<JournalEntryList>, ErrorData> {
         let path = format!("/api/journals/book/{}", p.uuid);
         let rows: Vec<JournalEntry> = self.client.get_json(&path, &[]).await?;
-        Ok(Json(rows.into_iter().map(Into::into).collect()))
+        let entries = rows.into_iter().map(Into::into).collect();
+        Ok(Json(JournalEntryList { entries }))
     }
 }
