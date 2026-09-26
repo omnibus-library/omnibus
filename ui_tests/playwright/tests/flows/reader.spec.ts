@@ -74,6 +74,10 @@ const BLOB_CSS_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-reef")!;
 // spec may open it in the reader. The three tests here share it safely —
 // they only read it and assert nothing server-side.
 const FONT_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-lagoon")!;
+// Reserved for the two-finger gesture test: it parks a position and asserts
+// nothing moved it, so no other spec may write this book's position. Small,
+// for the cold-open reason on DEEP_LINK_BOOK above.
+const TWO_FINGER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "mariucha")!;
 
 // The epub.js progress POST fires on the reader's relocate events; pin the
 // exact pathname so the sibling `/api/rpc/progress/get` reads never match.
@@ -93,6 +97,71 @@ async function footerPageLabel(page: Page): Promise<string> {
   const text = (await page.getByTestId("reader-footer").textContent()) ?? "";
   const m = text.match(PAGE_LABEL);
   return m ? m[0] : "";
+}
+
+// "Ch\u00a03 of 24" from the footer — which chapter the reader is in.
+async function chapterCounter(page: Page): Promise<string> {
+  return (
+    (await page.getByTestId("reader-chapter-counter").textContent()) ?? ""
+  ).trim();
+}
+
+// The page number out of a footer label ("p.\u00a012 of 845" -> 12).
+function footerPageNumber(label: string): number {
+  const m = label.match(/\d+/);
+  return m ? Number(m[0]) : Number.NaN;
+}
+
+// One finger in the forward gutter — how a touch reader turns the page, and
+// the only way in a touch context: the round page-turn buttons are suppressed
+// there in favour of tap and swipe.
+async function tapForward(page: Page): Promise<void> {
+  const size = page.viewportSize();
+  if (!size) throw new Error("tapForward needs a viewport");
+  await page.touchscreen.tap(size.width * 0.92, size.height / 2);
+}
+
+// Two fingers land together, slide, and lift one at a time — what a hand
+// actually does, and what the reader's gesture handling has to survive.
+// Playwright's touchscreen drives one point, so the sequence goes through
+// CDP; the suite is Chromium-only (see playwright.config.ts).
+async function twoFingerSwipe(
+  page: Page,
+  from: { x: number; y: number },
+  by: { x: number; y: number },
+): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  const points = (f: number) => [
+    { x: from.x + by.x * f, y: from.y + by.y * f, id: 1 },
+    { x: from.x + 36 + by.x * f, y: from.y + 6 + by.y * f, id: 2 },
+  ];
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: points(0),
+  });
+  for (let step = 1; step <= 3; step++) {
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: points(step / 6),
+    });
+  }
+  // The first finger leaves while the second is still travelling — the half
+  // of the gesture the defect lived in.
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [points(0.5)[0]!],
+  });
+  for (let step = 4; step <= 6; step++) {
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [points(step / 6)[1]!],
+    });
+  }
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await cdp.detach();
 }
 
 // Intentional exception to the "never assert on rendered EPUB text" rule (same
@@ -1320,5 +1389,71 @@ test.describe("mobile reader (phone viewport)", () => {
     const aaBox = await page.locator(".rd-aa-panel").boundingBox();
     expect(aaBox, "aa panel box").not.toBeNull();
     expect(aaBox!.width).toBeGreaterThan(340);
+  });
+});
+
+// A touch context, because the gesture is the subject: without `hasTouch`
+// Chromium answers `Input.dispatchTouchEvent` with synthesized *mouse* events
+// and the page's touch listeners — the code under test — never run. That also
+// suppresses the round page-turn buttons, so the position is parked by
+// tapping the forward gutter, the way a touch reader turns a page.
+test.describe("two-finger gestures (touch context)", () => {
+  test.use({ hasTouch: true });
+
+  test("a two-finger swipe over the reader chrome leaves the page where it is", async ({
+    page,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TWO_FINGER_BOOK.title);
+    await gotoReady(page, `/read/${uuid}`);
+    await expect(page.getByTestId("reader-viewer")).toBeVisible();
+    await expect
+      .poll(async () => footerPageLabel(page), { timeout: 20_000 })
+      .toMatch(PAGE_LABEL);
+    const start = await footerPageLabel(page);
+
+    // Park several pages inside one chapter, and prove that is where we are:
+    // the defect settled the page at `scrollLeft` 0 — the current chapter's
+    // own first page — so a position that happened to *be* a chapter's first
+    // page would assert nothing. Turning until the chapter counter has held
+    // still for three turns is that proof.
+    let chapter = await chapterCounter(page);
+    let held = 0;
+    for (let turn = 0; turn < 14 && held < 3; turn++) {
+      await expectMutation(page, PROGRESS_POST, async () => tapForward(page));
+      const now = await chapterCounter(page);
+      held = now === chapter ? held + 1 : 0;
+      chapter = now;
+    }
+    expect(held, "should park several pages inside one chapter").toBe(3);
+    const parked = await footerPageLabel(page);
+    expect(parked, "the turns should move the page label").not.toBe(start);
+
+    // Two fingers on the top bar: host document, outside `.rd-stage`, so the
+    // glue declines the gesture — and declines it before recording the scroll
+    // baseline a page drag settles against. The first finger then lifts while
+    // the second is still sliding, which used to re-arm that drag with the
+    // baseline still at 0 and write it straight to `scrollLeft`.
+    const bar = await page.getByTestId("reader-top").boundingBox();
+    expect(bar, "reader top bar box").not.toBeNull();
+    await twoFingerSwipe(
+      page,
+      { x: bar!.x + bar!.width / 2, y: bar!.y + bar!.height / 2 },
+      { x: 0, y: 24 },
+    );
+
+    // Nothing moved under the gesture...
+    expect(await footerPageLabel(page)).toBe(parked);
+
+    // ...and the next deliberate turn carries on from where we parked rather
+    // than from wherever a jump had left us. Its `expectMutation` is the wait
+    // that outlasts the settle the defect animated through — a jump to the
+    // chapter start would land this turn back near the chapter's opening
+    // pages, not past `parked`.
+    await expectMutation(page, PROGRESS_POST, async () => tapForward(page));
+    expect(
+      footerPageNumber(await footerPageLabel(page)),
+      "the turn after the gesture must carry on from the parked page",
+    ).toBeGreaterThan(footerPageNumber(parked));
   });
 });
