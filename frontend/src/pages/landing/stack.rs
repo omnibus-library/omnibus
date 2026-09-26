@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 use dioxus_router::{use_navigator, Link};
 use omnibus_shared::{ProgressFormat, ResumePoint};
 
-use super::resume_meta::resume_meta;
+use super::resume_meta::{resume_key, resume_meta};
 use crate::components::glyphs::{book_glyph, play_glyph};
 use crate::Route;
 
@@ -79,10 +79,7 @@ fn build_counterpart(point: &ResumePoint, uuid: &str) -> Option<(Route, String)>
 #[derive(Clone, PartialEq)]
 pub(super) struct StackEntry {
     uuid: String,
-    /// Diff key for the fan. The uuid alone is not unique across it: progress
-    /// is stored per format, so a dual-format book open in both contributes a
-    /// card each, and duplicate keyed siblings corrupt Dioxus's keyed diff
-    /// (#2633, rule 07).
+    /// Diff key for the fan — see [`resume_key`], which owns the rule.
     key: String,
     book: omnibus_shared::EbookMetadata,
     title: String,
@@ -110,7 +107,7 @@ pub(super) struct StackEntry {
 impl StackEntry {
     fn from_point(point: &ResumePoint, server_url: &str, bust: CoverBust<'_>) -> Self {
         let uuid = point.record.book_uuid.clone();
-        let key = format!("{uuid}:{:?}", point.record.format);
+        let key = resume_key(point);
         let book = point.book.clone();
         let title = book.title.as_deref().unwrap_or(&book.filename).to_string();
         let author = book
@@ -198,6 +195,17 @@ pub(super) fn lead_accent_style(entries: &[StackEntry], lead: usize) -> String {
         .unwrap_or_default()
 }
 
+/// How many distinct books the fan holds. Not its card count: a book open in
+/// both formats contributes a card each, and "2 books open" over one book's
+/// two covers is a lie the reader can see.
+pub(super) fn open_book_count(entries: &[StackEntry]) -> usize {
+    entries
+        .iter()
+        .map(|e| e.uuid.as_str())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+}
+
 /// The kicker above the front book. A fan of one has nothing behind it, so it
 /// names what the reader is looking at instead of counting a stack.
 pub(super) fn stack_kicker(count: usize) -> String {
@@ -213,8 +221,8 @@ pub(super) fn stack_kicker(count: usize) -> String {
 /// clicking any other brings it forward.
 #[component]
 pub(super) fn ResumeStack(entries: Vec<StackEntry>, lead: Signal<usize>) -> Element {
-    let count = entries.len();
-    let at = lead().min(count.saturating_sub(1));
+    let books = open_book_count(&entries);
+    let at = lead().min(entries.len().saturating_sub(1));
     let Some(front) = entries.get(at).cloned() else {
         return rsx! {};
     };
@@ -225,7 +233,7 @@ pub(super) fn ResumeStack(entries: Vec<StackEntry>, lead: Signal<usize>) -> Elem
             aria_label: "Continue reading",
             div { class: "lmq-stack-side",
                 div { class: "lmq-kicker",
-                    "{stack_kicker(count)}"
+                    "{stack_kicker(books)}"
                     if front.linked {
                         crate::components::sync_glyph::SyncGlyph { size: 13 }
                         "synced"

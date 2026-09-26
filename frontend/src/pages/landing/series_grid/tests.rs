@@ -165,8 +165,7 @@ fn grid_item_key_names_a_book_by_its_id_and_a_stack_or_head_card_by_its_lead() {
     let mut stack = saga("s2", &["s1", "s2"]);
     stack.members[0].id = 1;
     stack.members[1].id = 2;
-    let mut lead = stack.members[1].clone();
-    lead.id = 2;
+    let lead = stack.members[1].clone();
     let mut other = plain("a");
     other.id = 9;
     let books = vec![other, lead];

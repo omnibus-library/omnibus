@@ -10,7 +10,7 @@ use crate::{use_search_query, use_server_url};
 
 mod effects;
 mod filtering;
-mod resume_meta;
+pub(crate) mod resume_meta;
 mod sorting;
 
 // Web-only presentation cluster (hero + gallery + toolbar + table/grid). The

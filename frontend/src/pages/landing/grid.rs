@@ -12,7 +12,7 @@ use omnibus_shared::{EbookMetadata, SeriesStack};
 
 use super::series_grid::{grid_items, is_stale, stack_leads, GridItem, VolumeCell};
 use super::series_tiles::{StackCap, StackTile};
-use super::sorting::{contributor_names, row_diff_key, row_ident};
+use super::sorting::{contributor_names, row_ident};
 use crate::Route;
 
 /// `sizes` for a wall cover — the column's rendered width per breakpoint.
@@ -73,6 +73,7 @@ pub(super) fn BookGrid(
             for (key, index, item) in cells {
                 GridCell {
                     key: "{key}",
+                    cell_key: key.clone(),
                     item,
                     index,
                     server_url: server_url.clone(),
@@ -88,6 +89,10 @@ pub(super) fn BookGrid(
 #[component]
 fn GridCell(
     item: GridItem,
+    /// The key `BookGrid` diffed this cell on, handed down so a book tile's
+    /// `data-flip-key` is that same string rather than a second derivation of
+    /// it — `series_flip.js` maps one rect per key.
+    cell_key: String,
     index: usize,
     server_url: String,
     open: Signal<Option<String>>,
@@ -95,7 +100,7 @@ fn GridCell(
 ) -> Element {
     match item {
         GridItem::Book(book) => rsx! {
-            GridTile { book, server_url, index }
+            GridTile { book, server_url, index, flip_key: cell_key }
         },
         GridItem::Stack(stack) => rsx! {
             StackTile {
@@ -110,7 +115,7 @@ fn GridCell(
             StackCap { stack, on_fold: move |_| fold(open, refocus) }
         },
         GridItem::Vol(cell) => rsx! {
-            GridTile { book: cell.book.clone(), server_url, index, vol: Some(cell) }
+            GridTile { book: cell.book.clone(), server_url, index, vol: Some(cell), flip_key: cell_key }
         },
     }
 }
@@ -133,6 +138,8 @@ fn GridTile(
     book: EbookMetadata,
     server_url: String,
     index: usize,
+    /// This tile's cell key, from `BookGrid`.
+    flip_key: String,
     // A dealt-out volume's run chrome; `None` for an ordinary tile.
     #[props(default)] vol: Option<VolumeCell>,
 ) -> Element {
@@ -154,9 +161,6 @@ fn GridTile(
     let (thumb_src, thumb_srcset) =
         crate::components::cover_tile::thumb_srcs(&book, &uuid, &server_url, cover_bust);
 
-    // One value space with the stack/cap cells' own flip keys (`series_tiles`),
-    // and as unique: `series_flip.js` maps one rect per key.
-    let flip_key = row_diff_key(&book);
     let flip_from = vol.as_ref().map(|v| format!("stack-{}", v.lead_uuid));
     let flip_deck = vol.as_ref().map(|v| v.deck.to_string());
 

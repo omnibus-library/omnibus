@@ -1,10 +1,31 @@
-//! Resume-point meta formatting shared by the mobile resume card and the web
-//! continue-reading hero: percent/remaining labels for audio, and the plain
-//! continue affordance for epub rows that lack a stored percent.
+//! Per-resume-point derivations shared by every surface that lists open
+//! books — the mobile resume card, the web continue fan, and the stats
+//! in-progress list: percent/remaining labels for audio, the plain continue
+//! affordance for epub rows with no stored percent, and the point's own
+//! keyed-list key.
 
 use omnibus_shared::{ProgressFormat, ResumePoint, StructuralPosition};
 
 use crate::pages::listen::remaining_at_rate;
+
+/// The point's key in a keyed list of resume points.
+///
+/// Progress is stored `UNIQUE(user_id, book_uuid, format)`, so one book open
+/// in both formats is two points — the uuid alone is not unique across such a
+/// list, and duplicate keyed siblings corrupt Dioxus's keyed diff (#2633,
+/// rule 07).
+///
+/// Keyed on the **progress row's own** `book_uuid`, never on the resolved
+/// `point.book`: `get_book_by_uuid` falls back through `merged_uuids`, so two
+/// rows filed under different uuids can resolve to one surviving book and
+/// would key alike again.
+pub(crate) fn resume_key(point: &ResumePoint) -> String {
+    format!(
+        "{}:{}",
+        point.record.book_uuid,
+        point.record.format.as_str()
+    )
+}
 
 /// Meta line + progress percentage for a resume point. Audio rows with known
 /// totals get "Ch. N · 42% · 7h 50m left" — the "left" span rate-adjusted by
@@ -182,6 +203,27 @@ mod tests {
         let (meta, pct) = resume_meta(&p);
         assert_eq!(pct, Some(37));
         assert_eq!(meta, "37% \u{00b7} Continue reading");
+    }
+
+    #[test]
+    fn resume_key_separates_the_two_formats_of_one_book() {
+        // The list surfaces render one card per stored position, so both
+        // formats of one book are siblings and must key apart (#2633).
+        let epub = point(ProgressFormat::Epub, None, None);
+        let audio = point(ProgressFormat::Audio, None, None);
+
+        assert_eq!(resume_key(&epub), "u:epub");
+        assert_ne!(resume_key(&epub), resume_key(&audio));
+    }
+
+    #[test]
+    fn resume_key_reads_the_progress_rows_uuid_not_the_resolved_books() {
+        // `get_book_by_uuid` falls back through `merged_uuids`, so two rows
+        // filed under different uuids can resolve to one surviving book.
+        let mut p = point(ProgressFormat::Epub, None, None);
+        p.book.unique_identifier = Some("survivor".into());
+
+        assert_eq!(resume_key(&p), "u:epub");
     }
 
     #[test]

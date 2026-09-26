@@ -151,3 +151,21 @@ fn stack_entries_keys_the_two_formats_of_one_book_apart() {
     assert_eq!(keys.len(), 2);
     assert_ne!(keys[0], keys[1]);
 }
+
+#[test]
+fn open_book_count_counts_books_not_fan_cards() {
+    // A book open in both formats holds two cards; the kicker above them
+    // says "N books open", so it must not count the cards.
+    let entries = stack_entries_for_test(
+        &[
+            point("dual", ProgressFormat::Epub, Some(30)),
+            point("dual", ProgressFormat::Audio, Some(40)),
+            point("other", ProgressFormat::Epub, Some(10)),
+        ],
+        "http://x",
+    );
+
+    assert_eq!(entries.len(), 3);
+    assert_eq!(open_book_count(&entries), 2);
+    assert_eq!(stack_kicker(open_book_count(&entries)), "2 books open");
+}

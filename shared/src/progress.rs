@@ -55,6 +55,18 @@ pub enum ProgressFormat {
     Audio,
 }
 
+impl ProgressFormat {
+    /// The wire token this serializes as. Anything composing an identifier
+    /// from a format takes this rather than the `Debug` rendering, so the
+    /// value is a declared contract rather than a side effect of a derive.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProgressFormat::Epub => "epub",
+            ProgressFormat::Audio => "audio",
+        }
+    }
+}
+
 /// Progress-sync write payload. `format` discriminates which position
 /// field is meaningful: `Epub` requires `epub_cfi`, `Audio` requires
 /// `audio_position_seconds`. The server validates this at the handler
