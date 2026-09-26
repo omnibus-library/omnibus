@@ -234,6 +234,8 @@ fn register_submit_handlers(
 /// Register form body — inputs write the parent's signals through, submission delegates via `on_submit_now`.
 #[component]
 fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> Element {
+    // A submit before hydration would post the form natively.
+    let ready = crate::components::loading::use_hydrated();
     let RegisterFormState {
         username,
         password,
@@ -285,7 +287,7 @@ fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> El
                 // shown — keeps users from immediately re-submitting
                 // the same invalid form. Each input's `oninput` clears
                 // the error signal so editing re-enables the button.
-                disabled: submitting() || has_error,
+                disabled: submitting() || has_error || !ready(),
                 "aria-busy": if submitting() { "true" } else { "false" },
                 BusyLabel { busy: submitting(), label: submit_label, busy_label: "Creating…" }
             }

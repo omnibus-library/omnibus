@@ -299,6 +299,7 @@ fn render_delete_confirm_modal(
                         testid: "journal-delete-cancel".to_string(),
                         label: "Cancel".to_string(),
                         busy_label: None,
+                        busy: false,
                         tone: ConfirmModalTone::Ghost,
                         disabled: is_busy,
                         on_click: EventHandler::new(move |_| {
@@ -311,6 +312,7 @@ fn render_delete_confirm_modal(
                         testid: "journal-delete-confirm".to_string(),
                         label: "Delete".to_string(),
                         busy_label: Some("Deleting\u{2026}".to_string()),
+                        busy: is_busy,
                         tone: ConfirmModalTone::Danger,
                         disabled: is_busy,
                         on_click: EventHandler::new(do_delete),

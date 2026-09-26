@@ -16,14 +16,15 @@ pub enum ConfirmModalTone {
 
 /// One button in a [`confirm_modal_body`] action row.
 ///
-/// `busy_label` makes this the action that works: while it is `disabled` —
-/// which a working action always is — it shows that label with a ring in
-/// place of `label`, and reports `aria-busy`.
+/// `busy_label` makes this an action that can work: while `busy`, it shows
+/// that label with a ring in place of `label` and reports `aria-busy`. `busy`
+/// is its own field — a button disabled for any other reason is not working.
 #[derive(Clone, PartialEq)]
 pub struct ConfirmModalAction {
     pub testid: String,
     pub label: String,
     pub busy_label: Option<String>,
+    pub busy: bool,
     pub tone: ConfirmModalTone,
     pub disabled: bool,
     pub on_click: EventHandler<()>,
@@ -151,7 +152,7 @@ pub fn confirm_modal_body(
 impl ConfirmModalAction {
     /// Whether this is the working action, mid-work.
     fn is_busy(&self) -> bool {
-        self.disabled && self.busy_label.is_some()
+        self.busy && self.busy_label.is_some()
     }
 }
 

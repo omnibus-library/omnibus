@@ -70,10 +70,14 @@ fn ScreenLayout(children: Element) -> Element {
     // effect runs on the WASM client. `Login` / `Register` routes don't go
     // through `ScreenLayout`, so they stay reachable for unauthenticated
     // users and the redirect can't loop.
+    // Declared on every target so SSR and the client share a hook order
+    // (rule 07); only the web client reads it, in the redirect below.
+    let route = dioxus_router::use_route::<Route>();
+    #[cfg(not(feature = "web"))]
+    let _ = &route;
     #[cfg(feature = "web")]
     {
         let nav = dioxus_router::use_navigator();
-        let route = dioxus_router::use_route::<Route>();
         let mut unauthorized = use_signal(|| false);
         use_future(move || async move {
             let mut rx = data::web_auth_state::subscribe();
@@ -300,12 +304,22 @@ fn use_current_user_boot() {
 
     let mut slot = use_context::<CurrentUser>().0;
     use_future(move || async move {
-        // Initial fetch on mount. Only an explicit `Ok(_)` updates
-        // state — transient errors (network blip, rate-limit 429)
-        // leave the signal at `None` so callers keep showing the
-        // pre-resolve placeholder.
-        if let Ok(resolved) = data::current_user().await {
-            slot.set(Some(resolved));
+        // Initial fetch on mount, retried with backoff: only an answer
+        // settles `CurrentUser`, and the access gates show loading until one
+        // arrives, so a single transient error (network blip, 5xx, 429) must
+        // not leave them loading for good.
+        let mut backoff_ms = 1_000;
+        loop {
+            match data::current_user().await {
+                Ok(resolved) => {
+                    slot.set(Some(resolved));
+                    break;
+                }
+                Err(_) => {
+                    platform_sleep::async_sleep_ms(backoff_ms).await;
+                    backoff_ms = (backoff_ms * 2).min(30_000);
+                }
+            }
         }
 
         // React to subsequent auth-state transitions. `current_user`

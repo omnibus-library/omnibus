@@ -6,6 +6,7 @@ use dioxus_router::{use_navigator, Link};
 #[cfg(not(feature = "mobile"))]
 use crate::components::auth::AuthShell;
 use crate::components::auth::{Banner, BannerKind, Field};
+use crate::components::loading::use_hydrated;
 use crate::components::BusyLabel;
 #[cfg(feature = "mobile")]
 use crate::pages::server_connect::display_host;
@@ -43,6 +44,7 @@ fn use_login_form_state(next: Option<String>) -> LoginFormState {
     let mut submitting = use_signal(|| false);
     let keep_signed_in = use_signal(|| false);
     let nav = use_navigator();
+    let seed_user = crate::use_seed_current_user();
 
     // `use_server_url()` is feature-aware: empty string on web/server (where
     // requests are same-origin) and the `ServerUrl` context value on mobile.
@@ -82,7 +84,8 @@ fn use_login_form_state(next: Option<String>) -> LoginFormState {
             let res = submit_login(&server_url, u, p).await;
             submitting.set(false);
             match res {
-                Ok(()) => {
+                Ok(user) => {
+                    seed_user.call(user);
                     let to = safe_next(next.as_deref()).unwrap_or(Route::Landing {});
                     nav.replace(link_target(to));
                 }
@@ -212,6 +215,8 @@ fn MobileLoginForm(props: MobileLoginFormProps) -> Element {
         submitting,
         registration_open,
     } = status;
+    // A submit before hydration would post the form natively.
+    let ready = use_hydrated();
     let nav = use_navigator();
     rsx! {
         // Connected-to bar: shows which server this login targets, with a
@@ -250,7 +255,7 @@ fn MobileLoginForm(props: MobileLoginFormProps) -> Element {
             button {
                 class: "btn primary lg auth-submit",
                 r#type: "submit",
-                disabled: submitting(),
+                disabled: submitting() || !ready(),
                 "aria-busy": if submitting() { "true" } else { "false" },
                 BusyLabel { busy: submitting(), label: "Sign in", busy_label: "Signing in…" }
             }
@@ -319,6 +324,8 @@ fn LoginForm(props: LoginFormProps) -> Element {
         submitting,
         registration_open,
     } = status;
+    // A submit before hydration would post the form natively.
+    let ready = use_hydrated();
     rsx! {
         form { class: "auth-form-inner",
             // Never a GET: a submit that lands before hydration would put
@@ -350,7 +357,7 @@ fn LoginForm(props: LoginFormProps) -> Element {
             button {
                 class: "btn primary lg auth-submit",
                 r#type: "submit",
-                disabled: submitting(),
+                disabled: submitting() || !ready(),
                 "aria-busy": if submitting() { "true" } else { "false" },
                 BusyLabel { busy: submitting(), label: "Log in", busy_label: "Logging in…" }
             }

@@ -26,20 +26,24 @@ pub(super) fn SearchPanel(
     on_close: EventHandler<()>,
 ) -> Element {
     let mut query = use_signal(String::new);
-    // Raised on Enter and lowered by the glue's answer; `answered` outlives it
+    // Searches still out: one per Enter, one off per answer. The glue neither
+    // cancels nor tags its answers, so the loader stays up until every search
+    // issued has answered rather than dropping on the first — an older query's
+    // hits must not read as the answer to a newer one. `answered` outlives it
     // so "No matches." is only ever said of a search that actually ran.
-    let mut searching = use_signal(|| false);
+    let mut in_flight = use_signal(|| 0u32);
     let mut answered = use_signal(|| false);
     use_effect(move || {
         let _ = results.read().len();
-        if *searching.peek() {
-            searching.set(false);
+        let out = *in_flight.peek();
+        if out > 0 {
+            in_flight.set(out - 1);
             answered.set(true);
         }
     });
     let hits = results.read().clone();
     let has_query = !query.read().trim().is_empty();
-    let busy = searching();
+    let busy = in_flight() > 0;
 
     rsx! {
         ReaderDrawerShell {
@@ -62,7 +66,7 @@ pub(super) fn SearchPanel(
                     oninput: move |e| query.set(e.value()),
                     onkeydown: move |e| {
                         if e.key() == Key::Enter {
-                            searching.set(true);
+                            in_flight += 1;
                             on_query.call(query.peek().trim().to_string());
                         }
                     },

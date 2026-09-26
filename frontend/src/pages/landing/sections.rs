@@ -23,6 +23,8 @@ pub(super) struct LandingHeaderView {
     pub path_subtitle: String,
     /// `None` until the list feeding the header has answered.
     pub book_count: Option<usize>,
+    /// No count yet but one is coming; `false` with no count after a failure.
+    pub count_pending: bool,
     /// "N hidden" receipt (browse only, viewer has a hidden-formats pref).
     pub hidden_count: Option<i64>,
     pub path_missing: bool,
@@ -55,6 +57,7 @@ pub(super) fn LandingHeader(
     let LandingHeaderView {
         path_subtitle,
         book_count,
+        count_pending,
         hidden_count,
         path_missing,
         page_error,
@@ -83,6 +86,7 @@ pub(super) fn LandingHeader(
                 LandingHeaderTitleRow {
                     section_title,
                     book_count,
+                    count_pending,
                     hidden_count,
                     can_edit,
                     on_edit_shelf,
@@ -109,6 +113,7 @@ pub(super) fn LandingHeader(
 fn LandingHeaderTitleRow(
     section_title: String,
     book_count: Option<usize>,
+    count_pending: bool,
     hidden_count: Option<i64>,
     can_edit: bool,
     on_edit_shelf: EventHandler<()>,
@@ -122,7 +127,7 @@ fn LandingHeaderTitleRow(
                         " · {n} "
                         if n == 1 { "book" } else { "books" }
                     }
-                } else {
+                } else if count_pending {
                     // Never "0 books" before the list has answered.
                     span { class: "lib-header-count", "data-testid": "lib-count-pending",
                         " · "
@@ -402,11 +407,12 @@ mod tests {
         use super::super::LandingHeaderTitleRow;
         use crate::test_support::render_in_vdom;
 
-        fn title_row(book_count: Option<usize>) -> Element {
+        fn title_row(book_count: Option<usize>, count_pending: bool) -> Element {
             rsx! {
                 LandingHeaderTitleRow {
                     section_title: "All Books".to_string(),
                     book_count,
+                    count_pending,
                     hidden_count: None,
                     can_edit: false,
                     on_edit_shelf: EventHandler::new(|_| {}),
@@ -416,14 +422,21 @@ mod tests {
 
         #[test]
         fn landing_header_counts_nothing_before_the_list_has_answered() {
-            let html = render_in_vdom(|| title_row(None));
+            let html = render_in_vdom(|| title_row(None, true));
             assert!(html.contains("lib-count-pending"), "{html}");
             assert!(!html.contains("0 books"), "{html}");
         }
 
         #[test]
+        fn landing_header_shows_no_count_after_the_list_failed() {
+            let html = render_in_vdom(|| title_row(None, false));
+            assert!(!html.contains("lib-count-pending"), "{html}");
+            assert!(!html.contains("books"), "{html}");
+        }
+
+        #[test]
         fn landing_header_states_zero_books_once_the_list_says_so() {
-            let html = render_in_vdom(|| title_row(Some(0)));
+            let html = render_in_vdom(|| title_row(Some(0), false));
             assert!(html.contains("0 books"), "{html}");
             assert!(!html.contains("lib-count-pending"), "{html}");
         }

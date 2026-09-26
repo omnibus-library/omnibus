@@ -96,6 +96,9 @@ pub(super) struct LandingViewState {
     pub(super) path_missing: bool,
     /// `None` until the list feeding the header has answered.
     pub(super) book_count: Option<usize>,
+    /// The count is still coming (draw its placeholder); `false` with no
+    /// count means the fetch failed and the header shows none at all.
+    pub(super) count_pending: bool,
     /// The "N hidden" receipt beside the browse header count; `None` off the
     /// browse lens or when the viewer hides nothing.
     pub(super) hidden_count: Option<i64>,
@@ -188,6 +191,12 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
         VisibleSource::Shelf => (sigs.shelf_error)(),
         _ => None,
     });
+    // A failed fetch has no count to give: never "0 books" from an empty
+    // list, and no placeholder counting for good. Only a known total stands.
+    let failed = page_error.is_some();
+    let total_known = source == VisibleSource::Browse && (sigs.total)().is_some();
+    let book_count = book_count.filter(|_| !failed || total_known);
+    let count_pending = book_count.is_none() && !failed;
 
     LandingViewState {
         is_loading,
@@ -202,6 +211,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
             && !browse_loading
             && (sigs.error)().is_none(),
         book_count,
+        count_pending,
         // The exclusion (and so the receipt) applies to All Books only.
         hidden_count: match source {
             VisibleSource::Browse => (sigs.hidden)(),

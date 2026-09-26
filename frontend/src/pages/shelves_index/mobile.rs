@@ -52,11 +52,15 @@ pub(super) fn MobileShelvesIndex() -> Element {
     let refetch = move || load(refetch_url.clone());
 
     // `None` until the first answer, so the header never claims "0 shelves".
-    let count = (!(loading() && shelves.read().is_empty())).then(|| shelves.read().len());
+    // Nor after a failed first load, which has no count to give — the header
+    // shows none rather than a placeholder that never resolves.
+    let unanswered = shelves.read().is_empty() && (loading() || error().is_some());
+    let count = (!unanswered).then(|| shelves.read().len());
+    let count_pending = count.is_none() && error().is_none();
 
     rsx! {
         div { class: "m-shelves", "data-testid": "shelves-index",
-            ShelvesHeader { count, on_new: move |_| show_create.set(true) }
+            ShelvesHeader { count, count_pending, on_new: move |_| show_create.set(true) }
             ShelvesBody { shelves: shelves(), loading: loading(), error: error() }
         }
 
@@ -74,7 +78,11 @@ pub(super) fn MobileShelvesIndex() -> Element {
 
 /// Back link, shelf count, "New" action, and page title.
 #[component]
-fn ShelvesHeader(count: Option<usize>, on_new: EventHandler<MouseEvent>) -> Element {
+fn ShelvesHeader(
+    count: Option<usize>,
+    count_pending: bool,
+    on_new: EventHandler<MouseEvent>,
+) -> Element {
     let count_label = match count {
         Some(1) => "1 shelf".to_string(),
         Some(n) => format!("{n} shelves"),
@@ -92,7 +100,7 @@ fn ShelvesHeader(count: Option<usize>, on_new: EventHandler<MouseEvent>) -> Elem
                     }
                     if count.is_some() {
                         span { class: "label", "{count_label}" }
-                    } else {
+                    } else if count_pending {
                         Skeleton { style: "--w:64px;height:.7em" }
                     }
                 }

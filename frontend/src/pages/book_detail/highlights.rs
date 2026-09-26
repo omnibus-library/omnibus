@@ -45,12 +45,25 @@ pub(super) fn BdHighlightsSection(uuid: String, quote_meta: BdQuoteMeta) -> Elem
     // (rule 07), set by each card's Quote button.
     let quote_target: Signal<Option<Highlight>> = use_signal(|| None);
 
+    // The book the feed holds. The detail page is reused across books, so a
+    // new uuid starts the feed over and an answer for a book no longer shown
+    // is dropped — the last book's passages never stand in for this one's.
+    let mut feed_book = use_signal(String::new);
+
     let load_url = server_url.clone();
     use_effect(use_reactive!(|uuid| {
+        if *feed_book.peek() != uuid {
+            feed_book.set(uuid.clone());
+            highlights.set(Vec::new());
+            feed.set(FeedState::Pending);
+        }
         let hl_url = load_url.clone();
         let hl_uuid = uuid.clone();
         spawn(async move {
             let result = data::list_highlights(&hl_url, &hl_uuid).await;
+            if *feed_book.peek() != hl_uuid {
+                return;
+            }
             let ok = result.is_ok();
             if let Ok(list) = result {
                 highlights.set(list);

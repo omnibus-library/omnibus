@@ -26,6 +26,7 @@ pub fn SmtpConfigField() -> Element {
     };
     let io = SmtpIo {
         status: use_signal(|| None),
+        status_failed: use_signal(|| false),
         msg: use_signal(|| None),
         msg_is_error: use_signal(|| false),
         in_flight: use_signal(|| false),
@@ -52,6 +53,7 @@ pub fn SmtpConfigField() -> Element {
                 message: SmtpStatusMessage {
                     msg: io.msg,
                     msg_is_error: io.msg_is_error,
+                    status_failed: io.status_failed,
                 },
                 actions: SmtpActionHandlers {
                     on_save: EventHandler::new(on_save),
@@ -78,6 +80,8 @@ struct SmtpFields {
 #[derive(Copy, Clone, PartialEq)]
 struct SmtpIo {
     status: Signal<Option<SmtpConfigStatus>>,
+    /// Set when the config read failed, so the line stops saying "Checking".
+    status_failed: Signal<bool>,
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
     in_flight: Signal<bool>,
@@ -87,6 +91,7 @@ struct SmtpIo {
 fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
     let SmtpIo {
         mut status,
+        mut status_failed,
         mut msg,
         mut msg_is_error,
         ..
@@ -103,6 +108,7 @@ fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
                 Ok(s) => s,
                 // Said aloud, or the status line would check in silence.
                 Err(e) => {
+                    status_failed.set(true);
                     msg.set(Some(format!(
                         "Couldn\u{2019}t read the current settings: {e}"
                     )));
@@ -341,6 +347,7 @@ fn SmtpConnectionFields(fields: SmtpFields, configured: bool) -> Element {
 struct SmtpStatusMessage {
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
+    status_failed: Signal<bool>,
 }
 
 /// Save / send-test / clear handlers. Grouped so [`SmtpTestActions`] stays
@@ -362,7 +369,11 @@ fn SmtpTestActions(
     message: SmtpStatusMessage,
     actions: SmtpActionHandlers,
 ) -> Element {
-    let SmtpStatusMessage { msg, msg_is_error } = message;
+    let SmtpStatusMessage {
+        msg,
+        msg_is_error,
+        status_failed,
+    } = message;
     let SmtpActionHandlers {
         on_save,
         on_test,
@@ -401,7 +412,7 @@ fn SmtpTestActions(
                 }
             }
         }
-        {credential_status_line("smtp-status", status.as_ref().map(|s| s.configured), &detail, "Not configured")}
+        {credential_status_line("smtp-status", status.as_ref().map(|s| s.configured), status_failed(), &detail, "Not configured")}
         {credential_status_message("smtp-config-status", msg().as_deref(), msg_is_error())}
     }
 }

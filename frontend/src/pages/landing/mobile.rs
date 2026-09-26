@@ -64,6 +64,8 @@ pub(super) struct MobileLandingPaging {
 pub(super) struct MobileLandingProps {
     /// Total book count shown in the "N books" label; `None` until known.
     pub book_count: Option<usize>,
+    /// No count yet but one is coming; `false` with no count after a failure.
+    pub count_pending: bool,
     /// "N hidden" receipt when the viewer's hidden-formats pref applies.
     pub hidden_count: Option<i64>,
     /// The page of books to render as cover cells.
@@ -143,7 +145,7 @@ fn render_mobile_header() -> Element {
 
 /// "All Books" title + the sort/filter pill that opens [`MobileSortFilterSheet`].
 fn render_mobile_title_row(
-    book_count: Option<usize>,
+    (book_count, count_pending): (Option<usize>, bool),
     hidden_count: Option<i64>,
     pill_label: &str,
     pill_arrow: &str,
@@ -156,7 +158,7 @@ fn render_mobile_title_row(
             div { class: "m-lib-title-text",
                 if let Some(n) = book_count {
                     span { class: "label", "{n} books" }
-                } else {
+                } else if count_pending {
                     Skeleton { style: "--w:64px;height:.7em" }
                 }
                 if let Some(n) = hidden_count.filter(|n| *n > 0) {
@@ -233,6 +235,7 @@ fn render_mobile_grid(
 pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
     let MobileLandingProps {
         book_count,
+        count_pending,
         hidden_count,
         books,
         paging,
@@ -272,7 +275,7 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
                 crate::components::Ring { class: "m-ptr-ring" }
             }
             {render_mobile_header()}
-            {render_mobile_title_row(book_count, hidden_count, pill_label, pill_arrow, filter_count, sheet_open)}
+            {render_mobile_title_row((book_count, count_pending), hidden_count, pill_label, pill_arrow, filter_count, sheet_open)}
 
             {match resume() {
                 None => resume_card_pending(),

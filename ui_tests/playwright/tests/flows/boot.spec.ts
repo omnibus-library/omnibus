@@ -24,9 +24,7 @@ async function holdClient(page: Page): Promise<() => void> {
   return release;
 }
 
-test("renders the library as nav and skeletons before the client runs", async ({
-  page,
-}) => {
+test("renders the pre-hydration library layout", async ({ page }) => {
   const release = await holdClient(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
 

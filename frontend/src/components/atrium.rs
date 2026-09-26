@@ -23,6 +23,10 @@ pub enum Theme {
 }
 
 impl Theme {
+    /// Every theme, for code that must know the whole set — the pre-paint
+    /// script's whitelist. `theme_all_names_every_variant` keeps it complete.
+    pub const ALL: [Theme; 4] = [Theme::Dark, Theme::Black, Theme::Light, Theme::Sepia];
+
     /// Map this theme variant to its `data-theme` HTML attribute string
     /// (e.g. `"dark"`, `"black"`, `"light"`, `"sepia"`).
     pub fn as_attr(self) -> &'static str {
@@ -311,6 +315,21 @@ fn read_persisted_theme() -> Option<Theme> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theme_all_names_every_variant() {
+        // Exhaustive on purpose: a new variant fails to compile here until it
+        // is placed, and the position check fails until `ALL` lists it.
+        let position = |t: Theme| match t {
+            Theme::Dark => 0,
+            Theme::Black => 1,
+            Theme::Light => 2,
+            Theme::Sepia => 3,
+        };
+        for (i, t) in Theme::ALL.iter().enumerate() {
+            assert_eq!(position(*t), i);
+        }
+    }
 
     #[test]
     fn theme_attr_round_trips() {

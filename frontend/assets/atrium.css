@@ -4613,17 +4613,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   accent-color: var(--auth-accent);
   margin-top: 1px;
 }
-/* A value not yet loaded: neither ticked nor clear — a dash that breathes. */
-.auth-checkbox input[type="checkbox"].ld-unknown {
-  appearance: none; -webkit-appearance: none; position: relative; margin: 1px 0 0;
-  border-radius: 4px; border: 1px solid var(--line); cursor: progress;
-  background: color-mix(in oklch, var(--ink-3) 18%, var(--bg-2));
-}
-.auth-checkbox input[type="checkbox"].ld-unknown::after {
-  content: ""; position: absolute; left: 3px; right: 3px; top: 50%; height: 2px;
-  margin-top: -1px; border-radius: 1px; background: var(--ink-2);
-  animation: ld-breathe 1.2s ease-in-out infinite;
-}
 
 /* A settings switch: the same checkbox underneath (so the label, the form
    semantics and `role="switch"` all still work), painted as a track and a
@@ -4691,20 +4680,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   cursor: default;
 }
 .settings-switch:has(input:disabled) { cursor: default; }
-/* A value not yet loaded: the knob waits at centre instead of claiming off. */
-.settings-switch input[type="checkbox"].ld-unknown:disabled {
-  opacity: 1; cursor: progress;
-  background: color-mix(in oklch, var(--ink-3) 22%, var(--bg-2));
-}
-.settings-switch input[type="checkbox"].ld-unknown::after {
-  left: 50%; margin: -7px 0 0 -7px; transform: none;
-  animation: ld-knob 1.6s var(--ld-ease) infinite;
-}
 @media (prefers-reduced-motion: reduce) {
   .settings-switch input[type="checkbox"],
   .settings-switch input[type="checkbox"]::after { transition: none; }
-  .settings-switch input[type="checkbox"].ld-unknown::after,
-  .auth-checkbox input[type="checkbox"].ld-unknown::after { animation: none; }
 }
 
 .auth-requirements {

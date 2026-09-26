@@ -329,17 +329,30 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
   animation: ld-glint 1.6s var(--ld-ease) infinite;
 }
 
-/* ── Activity pill · non-blocking background work ───────────────── */
-.ld-pill {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 6px 12px 6px 9px; border-radius: 999px;
-  background: color-mix(in oklch, var(--bg-2) 88%, transparent);
-  border: 1px solid var(--line-2); color: var(--ink-1);
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px color-mix(in oklch, var(--bg-0) 45%, transparent);
-  animation: ld-enter .36s var(--ld-ease-out);
+/* The same unknown state on the app's own controls, still the real checkbox
+   underneath (label, form semantics and `role="switch"` all hold) and
+   disabled until known: a checkbox shows a dash that breathes, neither
+   ticked nor clear; a `.settings-switch` knob waits at centre. */
+input[type="checkbox"].ld-unknown:not(.settings-switch *) {
+  appearance: none; -webkit-appearance: none; position: relative; margin: 1px 0 0;
+  border-radius: 4px; border: 1px solid var(--line); cursor: progress;
+  background: color-mix(in oklch, var(--ink-3) 18%, var(--bg-2));
 }
+input[type="checkbox"].ld-unknown:not(.settings-switch *)::after {
+  content: ""; position: absolute; left: 3px; right: 3px; top: 50%; height: 2px;
+  margin-top: -1px; border-radius: 1px; background: var(--ink-2);
+  animation: ld-breathe 1.2s ease-in-out infinite;
+}
+.settings-switch input[type="checkbox"].ld-unknown:disabled {
+  opacity: 1; cursor: progress;
+  background: color-mix(in oklch, var(--ink-3) 22%, var(--bg-2));
+}
+.settings-switch input[type="checkbox"].ld-unknown::after {
+  left: 50%; margin: -7px 0 0 -7px; transform: none;
+  animation: ld-knob 1.6s var(--ld-ease) infinite;
+}
+
+/* ── Activity · non-blocking background work ───────────────────── */
 /* A plain status dot that breathes (the offline pill, buffering). */
 .ld-dot {
   display: inline-block; flex: none; width: var(--ld-dot, 6px); height: var(--ld-dot, 6px);
@@ -410,7 +423,7 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
    is a slow opacity breath on each mark — enough to say "still working"
    without asking the eye to follow anything. */
 @media (prefers-reduced-motion: reduce) {
-  .ld, .ld-pill, .ld-busy-face > .ld-ring { animation: none; }
+  .ld, .ld-busy-face > .ld-ring { animation: none; }
   .ld-skel::after, .ld-cover-glint::before,
   .ld-toggle-unknown::after, .ld-stale.is-stale::before { animation: none; display: none; }
   .ld-ring::before { animation: none; transform: rotate(.35turn); }
@@ -419,7 +432,7 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
   }
   .ld-line > i { animation: none; transform: scaleY(calc(.3 + var(--a, 1) * .4)); opacity: .7; }
   .ld-sheen { background: none; -webkit-text-fill-color: currentColor; }
-  .ld-toggle-unknown::before { animation: none; }
+  .ld-toggle-unknown::before, input[type="checkbox"].ld-unknown::after { animation: none; }
   .ld-rf-leaf { animation: none; }
   .ld-rf-leaf.n1 { transform: rotateY(-74deg); }
   .ld-rf-leaf.n2 { transform: rotateY(calc(-180deg + var(--open))); }

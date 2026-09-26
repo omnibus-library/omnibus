@@ -79,12 +79,24 @@ fn use_journal_entries_load(
     reload: Signal<u32>,
     (mut entries, mut feed): (Signal<Vec<JournalEntry>>, Signal<FeedState>),
 ) {
+    // The book the feed holds: a new uuid starts it over (the page is reused
+    // across books), a `reload` of the same book keeps the list on screen, and
+    // an answer for a book no longer shown is dropped.
+    let mut feed_book = use_signal(String::new);
     use_effect(use_reactive!(|uuid| {
         let _ = reload();
+        if *feed_book.peek() != uuid {
+            feed_book.set(uuid.clone());
+            entries.set(Vec::new());
+            feed.set(FeedState::Pending);
+        }
         let url = load_url.clone();
         let uuid = uuid.clone();
         spawn(async move {
             let result = data::list_journal_entries(&url, &uuid).await;
+            if *feed_book.peek() != uuid {
+                return;
+            }
             let ok = result.is_ok();
             if let Ok(list) = result {
                 entries.set(list);

@@ -1,3 +1,7 @@
+//! Render coverage for the loading vocabulary: each `Loading` kind and the
+//! mark it picks, the primitives, busy labels, skeletons, and the pre-paint
+//! `BootScript`.
+
 use super::*;
 use crate::test_support::render;
 
@@ -123,6 +127,9 @@ fn boot_script_paints_the_saved_theme_and_watches_images_load() {
         html.contains("setAttribute('data-loaded','')"),
         "no image watch: {html}"
     );
+    for theme in crate::components::atrium::Theme::ALL {
+        assert!(html.contains(theme.as_attr()), "{theme:?} missing: {html}");
+    }
 }
 
 #[test]
@@ -162,22 +169,6 @@ fn row_skeletons_drop_the_avatar_column_when_asked() {
     assert_eq!(count(&with, "ld-skel circle"), 2, "html: {with}");
     assert_eq!(count(&without, "ld-skel circle"), 0);
     assert!(without.contains("--row-cols:1fr auto"));
-}
-
-#[test]
-fn unknown_toggle_is_a_labelled_status() {
-    let html = render(rsx! { UnknownToggle { testid: "mcp-toggle-state" } });
-    assert!(html.contains("role=\"status\""), "html: {html}");
-    assert!(html.contains("aria-label=\"Checking\u{2026}\""));
-    assert!(html.contains("data-testid=\"mcp-toggle-state\""));
-}
-
-#[test]
-fn activity_pill_announces_its_label_politely() {
-    let html = render(rsx! { ActivityPill { label: "Scanning library", class: "worker-status" } });
-    assert!(html.contains("ld-pill worker-status"), "html: {html}");
-    assert!(html.contains("aria-live=\"polite\""));
-    assert!(html.contains("Scanning library"));
 }
 
 #[test]

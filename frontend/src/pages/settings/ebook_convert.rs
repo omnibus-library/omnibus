@@ -50,6 +50,8 @@ fn save_outcome_message(available: bool) -> (String, bool) {
 #[derive(Clone, Copy)]
 struct EbookConvertFieldSignals {
     status: Signal<Option<EbookConvertStatus>>,
+    /// Set when the status read failed, so the line stops saying "Checking".
+    status_failed: Signal<bool>,
     path_input: Signal<String>,
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
@@ -61,6 +63,7 @@ struct EbookConvertFieldSignals {
 fn use_load_ebook_convert_status(server_url: String, sigs: EbookConvertFieldSignals) {
     let EbookConvertFieldSignals {
         mut status,
+        mut status_failed,
         mut msg,
         mut msg_is_error,
         ..
@@ -71,6 +74,7 @@ fn use_load_ebook_convert_status(server_url: String, sigs: EbookConvertFieldSign
             match data::get_ebook_convert(&url).await {
                 Ok(s) => status.set(Some(s)),
                 Err(e) => {
+                    status_failed.set(true);
                     msg.set(Some(format!(
                         "Couldn\u{2019}t read the current status: {e}"
                     )));
@@ -137,6 +141,7 @@ pub fn EbookConvertField() -> Element {
     let server_url = use_server_url();
     let sigs = EbookConvertFieldSignals {
         status: use_signal(|| None),
+        status_failed: use_signal(|| false),
         path_input: use_signal(String::new),
         msg: use_signal(|| None::<String>),
         msg_is_error: use_signal(|| false),
@@ -205,7 +210,7 @@ pub fn EbookConvertField() -> Element {
                     }
                 }
             }
-            {credential_status_line("ebook-convert-status", available, &detail, "Not detected")}
+            {credential_status_line("ebook-convert-status", available, (sigs.status_failed)(), &detail, "Not detected")}
             {credential_status_message("ebook-convert-save-status", msg().as_deref(), msg_is_error())}
         }
     }

@@ -24,9 +24,12 @@ The smaller pieces:
   sets `disabled` and `aria-busy` on the `<button>`.
 - **`Skeleton` / `CoverSkeletons` / `RowSkeletons`** when the content's shape
   is known — a placeholder where the real rows will land beats a centred mark.
-- **`UnknownToggle`** for a switch whose state hasn't loaded — never render it
-  as off. **`ActivityPill`** for non-blocking background work. **`Stale`** to
-  keep content on screen, dimmed, while it refetches.
+- **A value that hasn't loaded** is never rendered as off or empty: add
+  `ld-unknown` to the (disabled) checkbox — a dash on a plain checkbox, the
+  knob waiting at centre on a `.settings-switch` — `ld-toggle-unknown` to a
+  custom switch track, and `ld-sheen` to a pending status word. `ld-dot` is
+  the breathing dot for background work. **`Stale`** keeps content on screen,
+  dimmed, while it refetches.
 - `Ring`, `Line`, `Riffle` are the primitives; reach for them only inside a
   composite that none of the above fits.
 

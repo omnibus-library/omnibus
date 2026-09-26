@@ -41,8 +41,14 @@ pub(crate) fn m_auth_shell(tagline: &str, children: Element) -> Element {
 // `web` and no `mobile`) get a compile-only stub — SSR never executes
 // the submit closure, so the stub is unreachable at runtime.
 
+/// Sign in; the web client answers with the user so the page it lands on can
+/// render for them before `/me` is asked again.
 #[cfg(all(feature = "web", not(feature = "mobile")))]
-async fn submit_login(_server_url: &str, username: String, password: String) -> Result<(), String> {
+async fn submit_login(
+    _server_url: &str,
+    username: String,
+    password: String,
+) -> Result<Option<omnibus_shared::UserSummary>, String> {
     use omnibus_shared::LoginRequest;
     crate::data::login(LoginRequest {
         username,
@@ -52,7 +58,7 @@ async fn submit_login(_server_url: &str, username: String, password: String) -> 
         client_version: None,
     })
     .await
-    .map(|_| ())
+    .map(|r| Some(r.user))
 }
 
 #[cfg(all(feature = "web", not(feature = "mobile")))]
@@ -94,10 +100,14 @@ async fn fetch_registration_open(_server_url: &str) -> Result<bool, String> {
 }
 
 #[cfg(feature = "mobile")]
-async fn submit_login(server_url: &str, username: String, password: String) -> Result<(), String> {
+async fn submit_login(
+    server_url: &str,
+    username: String,
+    password: String,
+) -> Result<Option<omnibus_shared::UserSummary>, String> {
     crate::data::mobile_login(server_url, username, password, default_device_name())
         .await
-        .map(|_| ())
+        .map(|_| None)
         .map_err(data_error_message)
 }
 
@@ -153,7 +163,7 @@ async fn submit_login(
     _server_url: &str,
     _username: String,
     _password: String,
-) -> Result<(), String> {
+) -> Result<Option<omnibus_shared::UserSummary>, String> {
     Err("login is only available in the web or mobile client".into())
 }
 

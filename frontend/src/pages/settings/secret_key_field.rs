@@ -142,6 +142,8 @@ impl SecretKeyKind {
 #[derive(Clone, Copy)]
 struct SecretKeyFieldSignals {
     status: Signal<Option<KeyStatus>>,
+    /// Set when the status read failed, so the line stops saying "Checking".
+    status_failed: Signal<bool>,
     key_input: Signal<String>,
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
@@ -245,6 +247,7 @@ impl SecretKeyFieldView {
 fn use_load_key_status(kind: SecretKeyKind, server_url: String, sigs: SecretKeyFieldSignals) {
     let SecretKeyFieldSignals {
         mut status,
+        mut status_failed,
         mut msg,
         mut msg_is_error,
         ..
@@ -256,6 +259,7 @@ fn use_load_key_status(kind: SecretKeyKind, server_url: String, sigs: SecretKeyF
                 Ok(s) => status.set(Some(s)),
                 // Said aloud, or the status line would check in silence.
                 Err(e) => {
+                    status_failed.set(true);
                     msg.set(Some(format!(
                         "Couldn\u{2019}t read the current status: {e}"
                     )));
@@ -273,6 +277,7 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
     let server_url = use_server_url();
     let sigs = SecretKeyFieldSignals {
         status: use_signal(|| None),
+        status_failed: use_signal(|| false),
         key_input: use_signal(String::new),
         msg: use_signal(|| None::<String>),
         msg_is_error: use_signal(|| false),
@@ -342,7 +347,7 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
                     }
                 }
             }
-            {credential_status_line(&format!("{testid}-status"), known, &detail, "Not connected")}
+            {credential_status_line(&format!("{testid}-status"), known, (sigs.status_failed)(), &detail, "Not connected")}
             {credential_status_message(&format!("{testid}-key-status"), msg().as_deref(), msg_is_error())}
         }
     }

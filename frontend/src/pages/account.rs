@@ -299,16 +299,21 @@ fn account_body() -> Element {
     // Seeded `None` so SSR and the first WASM paint agree (rule 07); the
     // effect below fills it in after mount.
     let mut server_version = use_signal(|| None::<String>);
+    // Set when a read comes back failed (offline, say), so its placeholder
+    // settles into a quiet fallback rather than loading for good.
+    let mut me_failed = use_signal(|| false);
+    let mut version_failed = use_signal(|| false);
 
-    // Resolve the current user from the bearer token. A failure leaves the
-    // signal `None` so the identity block keeps its placeholder rather than
-    // flashing an error — a transient blip shouldn't blank the account tab.
+    // Resolve the current user from the bearer token. A failure shows the
+    // quiet fallback rather than an error — a transient blip shouldn't blank
+    // the account tab.
     let me_url = server_url.clone();
     use_effect(move || {
         let url = me_url.clone();
         spawn(async move {
-            if let Ok(u) = data::get_me(&url).await {
-                user.set(Some(u));
+            match data::get_me(&url).await {
+                Ok(u) => user.set(Some(u)),
+                Err(_) => me_failed.set(true),
             }
         });
     });
@@ -335,32 +340,46 @@ fn account_body() -> Element {
     use_effect(move || {
         let url = version_url.clone();
         spawn(async move {
-            if let Ok(v) = data::get_server_version(&url).await {
-                server_version.set(Some(v));
+            match data::get_server_version(&url).await {
+                Ok(v) => server_version.set(Some(v)),
+                Err(_) => version_failed.set(true),
             }
         });
     });
 
     rsx! {
         div { class: "m-account", "data-testid": "account-screen",
-            AccountIdentity { user: user() }
+            AccountIdentity { user: user(), failed: me_failed() }
             NowReadingCard { book: now_reading(), server_url: server_url.clone() }
             QuickGrid {}
             downloads::DownloadsSection {}
             AccountRows {}
             ThemeControl {}
             downloads::SyncStatusRow {}
-            VersionBlock { server_version: server_version() }
+            VersionBlock { server_version: server_version(), failed: version_failed() }
         }
     }
 }
 
 /// Identity block: avatar chip + serif name + `username · role` subline.
-/// Renders skeleton plates until the user resolves.
+/// Renders skeleton plates until the user resolves, and a quiet dash once the
+/// read has failed.
 #[cfg(feature = "mobile")]
 #[component]
-fn AccountIdentity(user: Option<UserSummary>) -> Element {
+fn AccountIdentity(user: Option<UserSummary>, failed: bool) -> Element {
     let Some(u) = user else {
+        if failed {
+            return rsx! {
+                div { class: "m-account-identity", "data-testid": "account-identity-unavailable",
+                    div { class: "m-account-avatar",
+                        span { class: "m-account-initials", "aria-hidden": "true", "\u{2026}" }
+                    }
+                    div { class: "m-account-idcol",
+                        div { class: "m-account-name", "\u{2014}" }
+                    }
+                }
+            };
+        }
         return rsx! {
             div { class: "m-account-identity", "aria-busy": "true", "data-testid": "account-identity-pending",
                 div { class: "m-account-avatar",
@@ -568,13 +587,15 @@ fn ThemeControl() -> Element {
 /// doesn't reliably indicate a pending update.
 #[cfg(feature = "mobile")]
 #[component]
-fn VersionBlock(server_version: Option<String>) -> Element {
+fn VersionBlock(server_version: Option<String>, failed: bool) -> Element {
     rsx! {
         div { class: "m-account-version", "data-testid": "account-version",
             div {
                 "Server version: "
                 if let Some(server) = server_version {
                     "{server}"
+                } else if failed {
+                    "unavailable"
                 } else {
                     span { class: "ld-sheen", "checking" }
                 }

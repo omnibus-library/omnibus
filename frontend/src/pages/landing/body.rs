@@ -52,6 +52,7 @@ pub(super) fn mobile_landing_body(
     rsx! {
         mobile::MobileLanding {
             book_count: view.book_count,
+            count_pending: view.count_pending,
             hidden_count: view.hidden_count,
             books: view.visible_books,
             paging: mobile::MobileLandingPaging {
@@ -184,6 +185,7 @@ fn render_header_and_content(
             view: LandingHeaderView {
                 path_subtitle: view.path_subtitle,
                 book_count: view.book_count,
+                count_pending: view.count_pending,
                 hidden_count: view.hidden_count,
                 path_missing: view.path_missing,
                 page_error: view.page_error.clone(),

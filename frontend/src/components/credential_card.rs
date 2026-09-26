@@ -12,10 +12,12 @@ use dioxus::prelude::*;
 /// shown when `configured` — the caller composes the exact "Connected \u{00b7}
 /// source \u{00b7} masked" / "Configured \u{00b7} source" wording, since it
 /// varies by card. `configured` is `None` while the status read is out, which
-/// reads "Checking" rather than claiming the credential is missing.
+/// reads "Checking" rather than claiming the credential is missing — unless
+/// `read_failed`, when the read is over and the status simply isn't known.
 pub fn credential_status_line(
     testid: &str,
     configured: Option<bool>,
+    read_failed: bool,
     detail: &str,
     unconfigured: &str,
 ) -> Element {
@@ -29,6 +31,10 @@ pub fn credential_status_line(
                 Some(false) => rsx! {
                     span { class: "api-key-dot" }
                     "{unconfigured}"
+                },
+                None if read_failed => rsx! {
+                    span { class: "api-key-dot" }
+                    "Status unavailable"
                 },
                 None => rsx! {
                     span { class: "api-key-dot pending" }
@@ -65,6 +71,7 @@ mod tests {
         let html = render(credential_status_line(
             "k",
             None,
+            false,
             "Connected",
             "Not connected",
         ));
@@ -78,6 +85,7 @@ mod tests {
         let on = render(credential_status_line(
             "k",
             Some(true),
+            false,
             "Connected",
             "Not connected",
         ));
@@ -88,6 +96,7 @@ mod tests {
         let off = render(credential_status_line(
             "k",
             Some(false),
+            false,
             "Connected",
             "Not connected",
         ));
@@ -95,5 +104,19 @@ mod tests {
             off.contains("Not connected") && !off.contains("pending"),
             "{off}"
         );
+    }
+
+    #[test]
+    fn credential_status_line_stops_checking_once_the_read_has_failed() {
+        let html = render(credential_status_line(
+            "k",
+            None,
+            true,
+            "Connected",
+            "Not connected",
+        ));
+        assert!(html.contains("Status unavailable"), "{html}");
+        assert!(!html.contains("ld-sheen"), "{html}");
+        assert!(!html.contains("Not connected"), "{html}");
     }
 }

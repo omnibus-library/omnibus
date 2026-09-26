@@ -6,6 +6,8 @@
 
 use dioxus::prelude::*;
 
+use crate::components::atrium::Theme;
+
 /// Which surface a [`Loading`] block fills.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LoadingKind {
@@ -200,8 +202,9 @@ const IMAGE_WATCH_JS: &str = "if(!window.__omnImgWatch){window.__omnImgWatch=1;d
 /// node and never re-runs it, and `init_theme` then settles the signal onto
 /// the same value.
 fn boot_js() -> String {
+    let themes = Theme::ALL.map(Theme::as_attr).join("|");
     format!(
-        "(function(){{try{{var t=localStorage.getItem('omn.theme'),s=document.currentScript,r=s&&s.closest('.atrium');if(r&&/^(dark|black|light|sepia)$/.test(t||''))r.setAttribute('data-theme',t);}}catch(e){{}}{IMAGE_WATCH_JS}}})();"
+        "(function(){{try{{var t=localStorage.getItem('omn.theme'),s=document.currentScript,r=s&&s.closest('.atrium');if(r&&/^({themes})$/.test(t||''))r.setAttribute('data-theme',t);}}catch(e){{}}{IMAGE_WATCH_JS}}})();"
     )
 }
 
@@ -215,6 +218,15 @@ pub fn BootScript() -> Element {
     rsx! {
         script { dangerous_inner_html: boot_js() }
     }
+}
+
+/// `false` on SSR and the client's first paint, `true` once it has mounted:
+/// for a control that must not act before its handlers exist, like a sign-in
+/// submit that would otherwise post the form natively.
+pub fn use_hydrated() -> ReadSignal<bool> {
+    let mut hydrated = use_signal(|| false);
+    use_effect(move || hydrated.set(true));
+    ReadSignal::new(hydrated)
 }
 
 /// Stamp `data-hydrated` on `<html>` once the client has mounted.
@@ -326,42 +338,6 @@ pub fn RowSkeletons(
                     Skeleton { index: i, style: "--w:48px" }
                 }
             }
-        }
-    }
-}
-
-/// A switch whose position isn't known yet: the knob waits at centre.
-#[component]
-pub fn UnknownToggle(
-    #[props(into, default = "Checking\u{2026}".to_string())] label: String,
-    #[props(into, default)] testid: Option<String>,
-) -> Element {
-    rsx! {
-        span {
-            class: "ld-toggle-unknown",
-            role: "status",
-            "aria-label": "{label}",
-            "data-testid": testid,
-        }
-    }
-}
-
-/// A floating pill for non-blocking background work, announced politely.
-#[component]
-pub fn ActivityPill(
-    #[props(into)] label: String,
-    #[props(into, default)] testid: Option<String>,
-    #[props(into, default)] class: Option<String>,
-) -> Element {
-    let extra = class.unwrap_or_default();
-    rsx! {
-        span {
-            class: "ld-pill {extra}",
-            role: "status",
-            "aria-live": "polite",
-            "data-testid": testid,
-            Ring { size: MarkSize::Xs }
-            span { "{label}" }
         }
     }
 }

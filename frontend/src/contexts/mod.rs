@@ -195,45 +195,39 @@ pub fn use_current_user() -> CurrentUser {
     use_context::<CurrentUser>()
 }
 
-/// Derive `is_admin` from the app-wide [`CurrentUser`] context — a pure
-/// function of its value, so `use_memo` recomputes it inline with no extra
-/// render pass. Web-only: mobile has no `CurrentUser` context to read, and
-/// SSR renders this crate without the `web` feature at all, so both instead
-/// return a `false`-valued signal — the same default the web memo evaluates
-/// to on first paint (before the client's boot effect resolves `CurrentUser`),
-/// keeping SSR/first-WASM-paint parity (rule 07). Returns a boxed
-/// [`ReadSignal`] (rather than `Memo`/`Signal` directly) so call sites that
-/// store the handle in a struct field see one type regardless of which of
-/// the three arms below compiled.
-#[cfg(feature = "web")]
+/// Whether the reader is an admin, `false` while unresolved — [`use_admin_access`]
+/// collapsed to a `bool` for affordances that simply hide until known. Every
+/// target shares this one definition, so SSR and the first client paint agree
+/// (rule 07). Returns a boxed [`ReadSignal`] so call sites that store the handle
+/// in a struct field see one type.
 pub fn use_is_admin() -> ReadSignal<bool> {
-    let user_ctx = use_current_user().0;
-    ReadSignal::new(use_memo(
-        move || matches!(user_ctx(), Some(Some(ref u)) if u.is_admin),
-    ))
+    let access = use_admin_access();
+    ReadSignal::new(use_memo(move || access() == Access::Allowed))
 }
 
-/// Non-web fallback for [`use_is_admin`] — mobile has no `CurrentUser`
-/// context and SSR never resolves one, so both stay at the `false` default.
-#[cfg(not(feature = "web"))]
-pub fn use_is_admin() -> ReadSignal<bool> {
-    ReadSignal::new(use_signal(|| false))
-}
-
-/// Derive `can_upload` (admin implies it) from [`CurrentUser`] — mirrors [`use_is_admin`].
-#[cfg(feature = "web")]
+/// Whether the reader may upload (admin implies it), `false` while unresolved
+/// — [`use_upload_access`] collapsed to a `bool`, like [`use_is_admin`].
 pub fn use_can_upload() -> ReadSignal<bool> {
-    let user_ctx = use_current_user().0;
-    ReadSignal::new(use_memo(
-        move || matches!(user_ctx(), Some(Some(ref u)) if u.is_admin || u.can_upload),
-    ))
+    let access = use_upload_access();
+    ReadSignal::new(use_memo(move || access() == Access::Allowed))
 }
 
-/// Non-web fallback for [`use_can_upload`] — same reasoning as
-/// [`use_is_admin`]'s fallback.
-#[cfg(not(feature = "web"))]
-pub fn use_can_upload() -> ReadSignal<bool> {
-    ReadSignal::new(use_signal(|| false))
+/// Hand a just-signed-in user to [`CurrentUser`], so the page a sign-in lands
+/// on renders for them at once instead of as signed out until `/me` answers.
+#[cfg(not(feature = "mobile"))]
+pub fn use_seed_current_user() -> Callback<Option<omnibus_shared::UserSummary>> {
+    let slot = try_use_context::<CurrentUser>().map(|c| c.0);
+    use_callback(move |user: Option<omnibus_shared::UserSummary>| {
+        if let (Some(mut slot), Some(user)) = (slot, user) {
+            slot.set(Some(Some(user)));
+        }
+    })
+}
+
+/// Mobile has no [`CurrentUser`]; signing in there needs no hand-off.
+#[cfg(feature = "mobile")]
+pub fn use_seed_current_user() -> Callback<Option<omnibus_shared::UserSummary>> {
+    use_callback(|_user: Option<omnibus_shared::UserSummary>| {})
 }
 
 /// Whether the reader may reach a gated surface. Unlike [`use_is_admin`]'s

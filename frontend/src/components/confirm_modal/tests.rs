@@ -26,6 +26,7 @@ fn Harness() -> Element {
                         testid: "sample-cancel".to_string(),
                         label: "Cancel".to_string(),
                         busy_label: None,
+                        busy: false,
                         tone: ConfirmModalTone::Ghost,
                         disabled: false,
                         on_click: EventHandler::new(|_| {}),
@@ -34,6 +35,7 @@ fn Harness() -> Element {
                         testid: "sample-confirm".to_string(),
                         label: "I sold it".to_string(),
                         busy_label: None,
+                        busy: false,
                         tone: ConfirmModalTone::Danger,
                         disabled: false,
                         on_click: EventHandler::new(|_| {}),
@@ -108,6 +110,7 @@ fn NoteHarness() -> Element {
             testid: "note-confirm".to_string(),
             label: "Delete".to_string(),
             busy_label: None,
+            busy: false,
             tone: ConfirmModalTone::Danger,
             disabled: false,
             on_click: EventHandler::new(|_| {}),
@@ -140,6 +143,7 @@ fn BusyHarness() -> Element {
             testid: "sample-busy".to_string(),
             label: "Working\u{2026}".to_string(),
             busy_label: None,
+            busy: false,
             tone: ConfirmModalTone::Danger,
             disabled: true,
             on_click: EventHandler::new(|_| {}),
@@ -154,7 +158,7 @@ fn confirm_modal_body_disables_every_action_when_told_to() {
 }
 
 #[component]
-fn WorkingHarness(disabled: bool) -> Element {
+fn WorkingHarness(busy: bool, disabled: bool) -> Element {
     confirm_modal_body(
         "Delete shelf?",
         "This can't be undone.",
@@ -163,6 +167,7 @@ fn WorkingHarness(disabled: bool) -> Element {
             testid: "working-confirm".to_string(),
             label: "Delete".to_string(),
             busy_label: Some("Deleting\u{2026}".to_string()),
+            busy,
             tone: ConfirmModalTone::Danger,
             disabled,
             on_click: EventHandler::new(|_| {}),
@@ -172,7 +177,7 @@ fn WorkingHarness(disabled: bool) -> Element {
 
 #[test]
 fn confirm_modal_body_swaps_a_working_action_to_its_busy_label_with_a_ring() {
-    let html = render(rsx! { WorkingHarness { disabled: true } });
+    let html = render(rsx! { WorkingHarness { busy: true, disabled: true } });
     assert!(html.contains("aria-busy=\"true\""), "{html}");
     assert!(html.contains("ld-busy"), "{html}");
     assert!(html.contains("ld-ring"), "{html}");
@@ -180,8 +185,16 @@ fn confirm_modal_body_swaps_a_working_action_to_its_busy_label_with_a_ring() {
 }
 
 #[test]
-fn confirm_modal_body_shows_a_working_action_idle_until_it_is_disabled() {
-    let html = render(rsx! { WorkingHarness { disabled: false } });
+fn confirm_modal_body_shows_a_working_action_idle_until_it_is_busy() {
+    let html = render(rsx! { WorkingHarness { busy: false, disabled: false } });
+    assert!(html.contains("aria-busy=\"false\""), "{html}");
+    assert!(!html.contains("ld-ring"), "{html}");
+    assert!(html.contains(">Delete<"), "{html}");
+}
+
+#[test]
+fn confirm_modal_body_keeps_a_disabled_action_that_is_not_working_still() {
+    let html = render(rsx! { WorkingHarness { busy: false, disabled: true } });
     assert!(html.contains("aria-busy=\"false\""), "{html}");
     assert!(!html.contains("ld-ring"), "{html}");
     assert!(html.contains(">Delete<"), "{html}");
