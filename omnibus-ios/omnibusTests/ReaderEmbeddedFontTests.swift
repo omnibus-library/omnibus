@@ -303,9 +303,11 @@ private func bootFixtureReader() async throws -> BootedReader {
     )
     let handler = FixtureSchemeHandler(bundled: coordinator, epub: epub)
 
-    let configuration = WKWebViewConfiguration()
-    configuration.setURLSchemeHandler(handler, forURLScheme: ReaderWebView.scheme)
-    configuration.userContentController.add(coordinator, name: "omnibus")
+    // The production configuration, with only the scheme handler swapped —
+    // so this boot runs under the same preferences the app does.
+    let configuration = ReaderWebView.makeConfiguration(
+        schemeHandler: handler, messageHandler: coordinator
+    )
     // Test-only: a page-level error recorder, so a boot that dies on a script
     // error says so instead of just timing out. The reader page itself is
     // untouched.

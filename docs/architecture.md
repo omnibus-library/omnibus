@@ -840,9 +840,14 @@ download is checked structurally (header, `%%EOF`, a parse with pages) before
 install — no CRC exists to check, per rule 09. Streaming opens fetch the whole
 file into a validator-keyed cache and open it by URL, never from a `Data`.
 
-**Selection is drawn by the app, not by WebKit.** The iOS glue disables
-WebKit's own touch selection inside each section (`user-select: none` in the
-per-section baseline stylesheet) and runs its own engine instead:
+**Selection is drawn by the app, not by WebKit.** WebKit's text interaction
+is switched off for the whole reader web view (`isTextInteractionEnabled =
+false` in `ReaderWebView.makeConfiguration`, #2655): a long press the glue
+declines — above the first line, on an illustration — otherwise fell through
+to WebKit, which selected the section iframe as one block and washed the whole
+page. The host page and the glue's per-section baseline stylesheet also declare
+`user-select: none`; both predate the switch and are kept as belt and braces,
+but neither is what stops the recogniser. The glue runs its own engine instead:
 `beginSelectionAt` / `extendSelectionTo` / `beginEdgeDrag` own the range and
 report per-line rects in web-view coordinates, and
 `Reader/ReaderSelectionLayer.swift` draws the tint, the handles, and the
@@ -946,7 +951,9 @@ only, never configuration and never commands. `OutboxScope` in `Offline/Cache.sw
 declares each kind's blast radius. `omnibusTests/OfflineSyncTests.swift` and
 `omnibusTests/DebugOfflineTests.swift` cover them,
 and `omnibusTests/ReaderSelectionTests.swift` pins the selection payload the glue
-posts plus the passage-menu placement rules. CI runs the suite via
+posts plus the passage-menu placement rules;
+`omnibusTests/ReaderNativeSelectionTests.swift` pins the two guards that keep
+WebKit's own selection off (#2655). CI runs the suite via
 `ios-tests.yml` ([rule 01](../.claude/rules/01-dev-environment.md)); to run it
 locally:
 

@@ -1114,8 +1114,10 @@
           // feel like a fight: its long-press recogniser and the drag-to-turn
           // handler claim the same touch, and its handles and loupe are laid
           // out against the iframe's full multi-column width, so they land in
-          // the wrong column. Turned off here, it never engages — the glue's
-          // selection engine owns the range and the host draws it.
+          // the wrong column. The host switches WebKit's text interaction off
+          // for the whole view (#2655); this keeps the section unselectable
+          // beneath that, so the glue's selection engine owns the range and
+          // the host draws it.
           "html,body,body *{-webkit-user-select:none!important;" +
           "user-select:none!important;-webkit-touch-callout:none!important;}";
         doc.head.appendChild(style);
@@ -1128,8 +1130,9 @@
 
   // ── Host-drawn text selection ──────────────────────────────────────
   // The glue owns the *range*; the host owns every pixel of it. WebKit's
-  // selection is disabled in the section (see the baseline stylesheet), so
-  // this engine reads geometry out of the DOM and the host draws the tint,
+  // selection is switched off at the web view, and the section kept
+  // unselectable beneath that (see the baseline stylesheet), so this engine
+  // reads geometry out of the DOM and the host draws the tint,
   // the handles, and the menu as real UIKit layers — which is what makes
   // selecting a sentence feel like the rest of the phone rather than like a
   // web page inside it.
