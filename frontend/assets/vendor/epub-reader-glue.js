@@ -1746,7 +1746,10 @@
       springBack();
       // A cancel with fingers left down is the system taking the gesture
       // mid-sequence; the rest of it is no more a page gesture than the part
-      // already seen.
+      // already seen. The clear below is belt-and-braces — `touchstart`
+      // already heals the flag for the next sequence — so deleting it alone
+      // changes no behaviour a test can see; the recovery is the contract,
+      // not either line on its own.
       if (e && e.touches && e.touches.length) {
         dragAxis = "none";
         return;

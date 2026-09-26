@@ -151,11 +151,14 @@ async function nextFrame(page: Page): Promise<void> {
 // with the first touch's document and drops the second finger's `touchstart`
 // there, so that handler learns it had company only from a lift reporting a
 // finger still down.
+// Returns the offsets standing mid-drag, so a caller can prove the drag it
+// is about to interrupt was armed at all — without that, a gesture that
+// quietly failed to arm one asserts nothing on the way out.
 async function dragJoinedFromElsewhere(
   page: Page,
   onPage: { x: number; y: number },
   elsewhere: { x: number; y: number },
-): Promise<void> {
+): Promise<string[]> {
   const cdp = await page.context().newCDPSession(page);
   const first = (dx: number) => ({ x: onPage.x + dx, y: onPage.y, id: 1 });
   const second = { x: elsewhere.x, y: elsewhere.y, id: 2 };
@@ -170,6 +173,7 @@ async function dragJoinedFromElsewhere(
     });
     await nextFrame(page);
   }
+  const armed = await strandedOffsets(page);
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchStart",
     touchPoints: [first(-70), second],
@@ -183,6 +187,7 @@ async function dragJoinedFromElsewhere(
     touchPoints: [],
   });
   await cdp.detach();
+  return armed;
 }
 
 // Two fingers that the system takes away mid-gesture — a Control Center pull,
@@ -1570,11 +1575,15 @@ test.describe("two-finger gestures (touch context)", () => {
     expect(bar, "reader top bar box").not.toBeNull();
     const size = page.viewportSize();
     if (!size) throw new Error("this test needs a viewport");
-    await dragJoinedFromElsewhere(
+    const armed = await dragJoinedFromElsewhere(
       page,
       { x: size.width / 2, y: size.height / 2 },
       { x: bar!.x + bar!.width / 2, y: bar!.y + bar!.height / 2 },
     );
+    expect(
+      armed,
+      "the drag should be part-turned before the second finger",
+    ).not.toEqual([]);
 
     await expect
       .poll(async () => strandedOffsets(page), { timeout: 5_000 })
@@ -1597,11 +1606,17 @@ test.describe("two-finger gestures (touch context)", () => {
     // The system taking a gesture away ends it with `touchcancel`, not a
     // lift. The multi-finger gate has to come down on that too, or the next
     // single-finger tap is swallowed by a sequence that never finished.
-    const bar = await page.getByTestId("reader-top").boundingBox();
-    expect(bar, "reader top bar box").not.toBeNull();
+    //
+    // Cancelled on the very spot the tap will land: the gate is a per-document
+    // closure (the handlers are installed once per section document and once
+    // for the host), so a gesture cancelled on the chrome would raise a
+    // different document's flag from the one the tap reads, and this would
+    // pass with the cancel path deleted.
+    const size = page.viewportSize();
+    if (!size) throw new Error("this test needs a viewport");
     await twoFingerCancel(page, {
-      x: bar!.x + bar!.width / 2,
-      y: bar!.y + bar!.height / 2,
+      x: size.width * 0.92,
+      y: size.height / 2,
     });
 
     await expectMutation(page, PROGRESS_POST, async () => tapForward(page));
