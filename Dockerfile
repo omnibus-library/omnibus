@@ -4,7 +4,8 @@
 # Builder — compiles the Dioxus fullstack web bundle (native Axum server +
 # the hydrated WASM client). Mirrors the CI bundle step in
 # .github/workflows/e2e.yml: `dx bundle --platform web --package omnibus
-# --fullstack --release`, which emits target/dx/omnibus/release/web/.
+# --fullstack --release --debug-symbols=false`, which emits
+# target/dx/omnibus/release/web/.
 #
 # This deliberately does NOT use the Nix dev shell — a plain Rust toolchain
 # keeps the image conventional and light. `dx` downloads the matching
@@ -44,7 +45,9 @@ ARG OMNIBUS_VERSION
 ENV OMNIBUS_VERSION=${OMNIBUS_VERSION}
 
 # Produces /src/target/dx/omnibus/release/web/{server, public/, ...}.
-RUN dx bundle --platform web --package omnibus --fullstack --release
+# `--debug-symbols` defaults to true even with `--release`: it keeps DWARF in
+# the WASM, wasm-opt aborts parsing it, and dx ships the unoptimized module.
+RUN dx bundle --platform web --package omnibus --fullstack --release --debug-symbols=false
 
 ###############################################################################
 # Runtime — slim image carrying just the bundle, ffmpeg (audiobook HLS

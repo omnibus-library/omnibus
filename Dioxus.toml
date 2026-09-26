@@ -8,3 +8,8 @@ uses_cleartext_traffic = true
 # Release bundles ship a brotli `.br` beside each asset, which dioxus-server
 # serves to any client that accepts it — no reverse-proxy compression needed.
 pre_compress = true
+
+# `-Os` and above shrink the raw module but grow the brotli one — they fold
+# away redundancy that compressed for free. Level 1 keeps both small.
+[web.wasm_opt]
+level = "1"

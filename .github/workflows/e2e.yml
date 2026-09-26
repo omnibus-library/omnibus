@@ -123,7 +123,7 @@ jobs:
 
       - name: Bundle web app
         if: steps.bundle-cache.outputs.cache-hit != 'true'
-        run: nix develop .#e2e --command bash -c 'set -euo pipefail; dx bundle --platform web --package omnibus --fullstack --release'
+        run: nix develop .#e2e --command bash -c 'set -euo pipefail; dx bundle --platform web --package omnibus --fullstack --release --debug-symbols=false'
 
       # Explicit save (not the combined cache action's post-step) so it runs
       # while `target/dx/omnibus/release/web` still exists. See the restore step
@@ -223,7 +223,7 @@ jobs:
 
       - name: Rebuild web bundle (cache entry evicted)
         if: steps.bundle-cache.outputs.cache-hit != 'true'
-        run: nix develop .#e2e --command bash -c 'set -euo pipefail; dx bundle --platform web --package omnibus --fullstack --release'
+        run: nix develop .#e2e --command bash -c 'set -euo pipefail; dx bundle --platform web --package omnibus --fullstack --release --debug-symbols=false'
 
       # Re-seed the evicted entry so the sibling shard (and any later re-run)
       # hits it. Both shards can race to save the same key; the loser's
