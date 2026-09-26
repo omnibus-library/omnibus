@@ -2181,6 +2181,11 @@
     var selecting = false;
     // This touch lands while a selection is up, so its job is to dismiss it.
     var dismissing = false;
+    // A second finger joined this sequence, and this stays true until the last
+    // one lifts. Every page gesture is single-finger and decides itself from
+    // state captured for the *first* touch — `sx` and `dragBase` — so a later
+    // finger read against that state answers for a touch that never happened.
+    var multiTouch = false;
 
     // A touch point in host-window coordinates. `clientX/Y` inside a section
     // is relative to an iframe that is as wide as the chapter and slides
@@ -2265,6 +2270,20 @@
       cancelPress();
       selecting = false;
       dismissing = false;
+      // Before every early return below: each of them leaves `sx`/`dragBase`
+      // unset, and the flag is what stops a later lift being measured against
+      // them anyway. A drag already in flight is handed back rather than
+      // stranded at its offset.
+      if (e.touches && e.touches.length > 1) {
+        if (dragAxis === "x") springBack();
+        multiTouch = true;
+        dragAxis = "none";
+        return;
+      }
+      // The only finger on the glass, so whatever the last sequence was, this
+      // is a fresh one. Self-healing on purpose: a sequence that ended in a
+      // cancel rather than a lift must not leave the flag raised over it.
+      multiTouch = false;
       // A section turn is still laying out (or its View Transition is
       // holding the screen): a gesture started now would capture a stale
       // scroll base and fight the hand-off. Ignore the touch entirely.
@@ -2353,7 +2372,7 @@
           cancelPress();
         }
       }
-      if (bookIsRTL() || dismissing || dragAxis === "none") return;
+      if (multiTouch || bookIsRTL() || dismissing || dragAxis === "none") return;
       if (e.touches.length !== 1) { springBack(); return; }
       var t = e.touches[0];
       var x = stableX(t);
@@ -2395,7 +2414,7 @@
       if (!dragRaf) dragRaf = requestAnimationFrame(applyDrag);
     }, { passive: false });
 
-    doc.addEventListener("touchcancel", function () {
+    doc.addEventListener("touchcancel", function (e) {
       cancelPress();
       if (selecting) {
         selecting = false;
@@ -2403,6 +2422,17 @@
         return;
       }
       springBack();
+      // A cancel with fingers left down is the system taking the gesture
+      // mid-sequence; the rest of it is no more a page gesture than the part
+      // already seen. The clear below is belt-and-braces — `touchstart`
+      // already heals the flag for the next sequence — so deleting it alone
+      // changes no behaviour a test can see; the recovery is the contract,
+      // not either line on its own.
+      if (e && e.touches && e.touches.length) {
+        dragAxis = "none";
+        return;
+      }
+      multiTouch = false;
     }, { passive: true });
 
     doc.addEventListener("touchend", function (e) {
@@ -2415,6 +2445,30 @@
         dragAxis = null;
         skipTap = false;
         endSelectionDrag();
+        return;
+      }
+      // A finger is still on the glass, or one was alongside this one earlier
+      // in the sequence. Neither a tap nor a turn can be read off it: `sx` and
+      // `dragBase` belong to a different finger. Clearing `dragAxis` here is
+      // what used to re-arm the drag for the finger still down — against a
+      // `dragBase` of 0, which the settle then wrote to `scrollLeft`, landing
+      // the reader on the chapter's first page.
+      if (multiTouch || (e.touches && e.touches.length)) {
+        // `springBack` rather than a bare `stopDragRaf`: this handler may have
+        // armed a drag and be learning about the other finger only now — a
+        // lift that reports one still down, with no `touchstart` for it, is
+        // what a touch sequence captured to another document looks like.
+        // Dropping the raf there would leave the page at its dragged offset.
+        // A no-op when no drag was armed, which is the ordinary case.
+        springBack();
+        if (e.touches && e.touches.length) {
+          dragAxis = "none";
+          return;
+        }
+        multiTouch = false;
+        dragAxis = null;
+        skipTap = false;
+        dismissing = false;
         return;
       }
       stopDragRaf(axis === "x");

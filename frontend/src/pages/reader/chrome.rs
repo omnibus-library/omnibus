@@ -260,6 +260,7 @@ fn ReaderTopChrome(state: ReaderChromeState, handlers: ReaderChromeHandlers) -> 
     rsx! {
         div {
             class: "{top_class}",
+            "data-testid": "reader-top",
             button {
                 class: "rd-tool",
                 r#type: "button",
