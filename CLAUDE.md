@@ -15,7 +15,7 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [04a-playwright-surfaces.md](.claude/rules/04a-playwright-surfaces.md) — per-surface selector gotchas: the screens whose obvious selector matches nothing.
 - [05-rust-style.md](.claude/rules/05-rust-style.md) — Rust style guide: comments, function/file shape, errors, tests, mechanics. Long-form rationale in [docs/style-guide.md](docs/style-guide.md).
 - [06-migrations.md](.claude/rules/06-migrations.md) — authoring SQL migrations: `NNNN_` naming, never-edit-applied, the `_norm` backfill pattern, testing against `sqlite::memory:`, and the dev-bounce step.
-- [07-hydration.md](.claude/rules/07-hydration.md) — SSR/WASM hydration parity: never feature-gate a component body on `web`; how to confirm and fix a hydration mismatch.
+- [07-hydration.md](.claude/rules/07-hydration.md) — SSR/WASM hydration parity: never feature-gate a component body on `web`; how to confirm and fix a hydration mismatch; why keyed siblings must each be unique.
 - [08-offline-writes.md](.claude/rules/08-offline-writes.md) — what the mutation outbox may queue: content state only, never configuration or commands; the four tests, and what each excludes.
 - [09-content-validators.md](.claude/rules/09-content-validators.md) — the two content validators (response `ETag` vs wire etag), why they're derived rather than stored, and the three-valued comparison both offline clients sweep for.
 - [09a-serving-validated-bytes.md](.claude/rules/09a-serving-validated-bytes.md) — the server half: strong entity-tags, the `serve_file`/`conditional` path every byte-serving endpoint takes, and why `ETag` and `Vary` travel together.

@@ -149,7 +149,7 @@ pub(super) fn BookTable(
                 tbody {
                     for book in books.into_iter() {
                         EbookRow {
-                            key: "{super::sorting::row_ident(&book)}",
+                            key: "{super::sorting::row_diff_key(&book)}",
                             book: book,
                             ctx: ctx.clone(),
                         }

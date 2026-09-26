@@ -12,7 +12,7 @@ use omnibus_shared::{EbookMetadata, SeriesStack};
 
 use super::series_grid::{grid_items, is_stale, stack_leads, GridItem, VolumeCell};
 use super::series_tiles::{StackCap, StackTile};
-use super::sorting::{contributor_names, row_ident};
+use super::sorting::{contributor_names, row_diff_key, row_ident};
 use crate::Route;
 
 /// `sizes` for a wall cover — the column's rendered width per breakpoint.
@@ -154,7 +154,9 @@ fn GridTile(
     let (thumb_src, thumb_srcset) =
         crate::components::cover_tile::thumb_srcs(&book, &uuid, &server_url, cover_bust);
 
-    let flip_key = row_ident(&book);
+    // One value space with the stack/cap cells' own flip keys (`series_tiles`),
+    // and as unique: `series_flip.js` maps one rect per key.
+    let flip_key = row_diff_key(&book);
     let flip_from = vol.as_ref().map(|v| format!("stack-{}", v.lead_uuid));
     let flip_deck = vol.as_ref().map(|v| v.deck.to_string());
 

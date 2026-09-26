@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use omnibus_shared::{EbookMetadata, SeriesStack};
 
-use super::sorting::row_ident;
+use super::sorting::row_diff_key;
 
 /// One cell of the landing grid.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,11 +24,11 @@ pub(super) enum GridItem {
 }
 
 impl GridItem {
-    /// The cell's diff key: a book's row ident, or its stack's lead for a stack or head card.
+    /// The cell's diff key: a book's own key, or its stack's lead for a stack or head card.
     pub(super) fn key(&self) -> String {
         match self {
-            GridItem::Book(book) => row_ident(book),
-            GridItem::Vol(cell) => row_ident(&cell.book),
+            GridItem::Book(book) => row_diff_key(book),
+            GridItem::Vol(cell) => row_diff_key(&cell.book),
             GridItem::Stack(stack) => format!("stack-{}", stack.lead_uuid),
             GridItem::Cap(stack) => format!("cap-{}", stack.lead_uuid),
         }

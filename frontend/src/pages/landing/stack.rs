@@ -79,6 +79,11 @@ fn build_counterpart(point: &ResumePoint, uuid: &str) -> Option<(Route, String)>
 #[derive(Clone, PartialEq)]
 pub(super) struct StackEntry {
     uuid: String,
+    /// Diff key for the fan. The uuid alone is not unique across it: progress
+    /// is stored per format, so a dual-format book open in both contributes a
+    /// card each, and duplicate keyed siblings corrupt Dioxus's keyed diff
+    /// (#2633, rule 07).
+    key: String,
     book: omnibus_shared::EbookMetadata,
     title: String,
     author: String,
@@ -105,6 +110,7 @@ pub(super) struct StackEntry {
 impl StackEntry {
     fn from_point(point: &ResumePoint, server_url: &str, bust: CoverBust<'_>) -> Self {
         let uuid = point.record.book_uuid.clone();
+        let key = format!("{uuid}:{:?}", point.record.format);
         let book = point.book.clone();
         let title = book.title.as_deref().unwrap_or(&book.filename).to_string();
         let author = book
@@ -138,6 +144,7 @@ impl StackEntry {
             crate::components::cover_tile::thumb_srcs(&book, &uuid, server_url, cover_bust);
         Self {
             uuid,
+            key,
             title,
             author,
             is_audio,
@@ -239,7 +246,7 @@ pub(super) fn ResumeStack(entries: Vec<StackEntry>, lead: Signal<usize>) -> Elem
                 class: "lmq-fan",
                 for (i, entry) in entries.into_iter().enumerate() {
                     FanCard {
-                        key: "{entry.uuid}",
+                        key: "{entry.key}",
                         entry,
                         index: i,
                         is_lead: i == at,

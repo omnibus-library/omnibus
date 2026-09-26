@@ -35,6 +35,35 @@ paint must match.
   Keep one stable outer element and swap its *children* instead —
   `components/user_avatar.rs` is the worked example (a journal card's
   Delete died the moment its author had a profile picture).
+- **Duplicate keys among keyed siblings** — same symptom, different
+  cause, and this one fires on the first *update* rather than at mount, so
+  the page paints correctly and then dies on the first click. See below.
+
+## Keyed siblings must each be unique
+
+`dioxus-core` requires it. Two siblings sharing a key collapse in the
+diff's key→index map: one old node is diffed against two new ones and
+another is neither diffed nor removed, so the mounted-node table no
+longer describes the DOM and event dispatch stops. A debug build asserts
+(`keyed siblings must each have a unique key`) and the panic kills the
+VirtualDom outright; a release build has `debug-assertions` off and
+corrupts quietly.
+
+Key on an identity the server guarantees unique, not on a display string
+that merely usually differs:
+
+- **A book is keyed by `books.id`** — `sorting::row_diff_key`. Not
+  `row_ident`, which is the Playwright testid slug cut from the file's
+  *basename*, so `vol.epub` under two folders keys two books alike. A
+  testid may collide; a key may not.
+- **Anything stored per format carries the format** — progress is
+  `UNIQUE(user_id, book_uuid, format)`, so a dual-format book open in
+  both formats is two rows with one uuid. The resume fan and the stats
+  in-progress list key on `uuid:format`.
+
+Both shipped as #2633: a four-book shelf holding one colliding pair took
+the landing page's nav and shelf cards down on the first click after it
+was selected.
 
 ## Confirming a mismatch
 

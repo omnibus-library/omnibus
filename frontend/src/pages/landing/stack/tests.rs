@@ -132,3 +132,22 @@ fn stack_kicker_names_a_single_book_instead_of_counting_a_stack() {
     assert_eq!(stack_kicker(2), "2 books open");
     assert_eq!(stack_kicker(5), "5 books open");
 }
+
+#[test]
+fn stack_entries_keys_the_two_formats_of_one_book_apart() {
+    // Progress is stored per format, so a dual-format book open in both is two
+    // points sharing a uuid. Keying the fan on the uuid alone gave them one
+    // key, which mis-diffs the whole page (#2633).
+    let points = vec![
+        point("dual", ProgressFormat::Epub, Some(30)),
+        point("dual", ProgressFormat::Audio, Some(40)),
+    ];
+
+    let keys: Vec<String> = stack_entries_for_test(&points, "http://x")
+        .into_iter()
+        .map(|e| e.key)
+        .collect();
+
+    assert_eq!(keys.len(), 2);
+    assert_ne!(keys[0], keys[1]);
+}

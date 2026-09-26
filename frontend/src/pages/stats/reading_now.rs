@@ -123,9 +123,12 @@ fn open_row(point: &ResumePoint, server_url: &str) -> Element {
     let author = point.book.creators.first().map(|c| c.name.clone());
     let readout = resume_readout(point);
     let percent = resume_percent(point);
+    // Progress is stored per format, so a dual-format book open in both is two
+    // rows here; keying on the uuid alone would give them one key (#2633).
+    let key = format!("{uuid}:{:?}", point.record.format);
     rsx! {
         Link {
-            key: "{uuid}",
+            key: "{key}",
             class: "st-open-row",
             to: Route::BookDetail { uuid: uuid.clone() },
             div { class: "st-open-cover",
