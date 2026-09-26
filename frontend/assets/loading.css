@@ -194,6 +194,9 @@
   position: relative; display: block; overflow: hidden; isolation: isolate;
   background: color-mix(in oklch, var(--ink-3) 16%, var(--bg-1));
   border-radius: var(--r-sm);
+  /* Holds its space from the first frame but, like every block loader, only
+     shows once the wait has outlasted `--ld-hold`. */
+  animation: ld-enter-fade .35s ease var(--ld-hold) backwards;
 }
 .ld-skel::after {
   content: ""; position: absolute; inset: 0; transform: translateX(-100%);
@@ -240,16 +243,23 @@
 /* ── Boot ──────────────────────────────────────────────────────── */
 /* The whole app before the WASM client takes over. Server-rendered identical
    to the client's first paint (rule 07); dismissed by CSS the moment the
-   client stamps `data-hydrated` on <html>, so nothing inert is ever on show.
-   It is opaque from the first frame; its mark enters only after a beat, so
-   a warm boot is a clean cut to the app and a cold one gets the full show. */
+   client stamps `data-hydrated` on <html>.
+   It waits out `--ld-boot-wait` invisible — still catching clicks, so nothing
+   inert can be pressed — and only then fades in. A warm boot hydrates inside
+   that window and never shows it: the server-rendered page, which already
+   draws its own skeletons and loaders, simply fills in. Every mark inside
+   keys its entrance to the same wait. */
 .ld-boot {
+  --ld-boot-wait: 800ms;
   position: fixed; inset: 0; z-index: 10000;
   display: grid; place-items: center; overflow: hidden;
   background: var(--bg-0); color: var(--ink-0);
-  transition: opacity .38s var(--ld-ease-out), visibility 0s linear .38s;
+  animation: ld-boot-in .5s ease var(--ld-boot-wait) backwards;
+  transition: opacity .45s var(--ld-ease-out), visibility 0s linear .45s;
 }
-html[data-hydrated] .ld-boot { opacity: 0; visibility: hidden; pointer-events: none; }
+/* Dropping the entrance hands the exit whatever opacity it had reached: a
+   boot caught mid-fade-in eases back out instead of flashing. */
+html[data-hydrated] .ld-boot { animation: none; opacity: 0; visibility: hidden; pointer-events: none; }
 html[data-hydrated] .ld-boot * { animation-play-state: paused; }
 /* On the way out the mark leans toward the reader and softens, so the cut to
    the app reads as the book opening into it rather than a plain crossfade. */
@@ -260,13 +270,13 @@ html[data-hydrated] .ld-boot-stack { transform: scale(1.035); filter: blur(3px);
   position: absolute; left: 50%; top: 46%; width: min(120vw, 900px); aspect-ratio: 1;
   transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
   background: radial-gradient(closest-side, color-mix(in oklch, var(--accent) 13%, transparent), color-mix(in oklch, var(--accent) 4%, transparent) 55%, transparent);
-  animation: ld-glow 5.4s ease-in-out infinite, ld-enter-fade 1.2s ease-out .25s backwards;
+  animation: ld-glow 5.4s ease-in-out infinite, ld-enter-fade 1.2s ease-out var(--ld-boot-wait) backwards;
 }
 .ld-boot-stack {
   position: relative; display: flex; flex-direction: column; align-items: center;
   gap: 22px; padding: 24px; text-align: center;
 }
-.ld-boot .ld-riffle { animation: ld-enter .8s var(--ld-ease-out) .22s backwards; margin-bottom: 6px; }
+.ld-boot .ld-riffle { animation: ld-enter .8s var(--ld-ease-out) calc(var(--ld-boot-wait) + .1s) backwards; margin-bottom: 6px; }
 /* The wordmark sets letter by letter, then a gilt glint crosses it now and
    then — foil catching the lamp. The glint is a copy of the word laid over
    the letters, so the per-letter entrance transforms can't break the clip. */
@@ -278,19 +288,19 @@ html[data-hydrated] .ld-boot-stack { transform: scale(1.035); filter: blur(3px);
 .ld-boot-word > span {
   display: inline-block;
   animation: ld-set .9s var(--ld-ease-out) backwards;
-  animation-delay: calc(.38s + var(--i) * 55ms);
+  animation-delay: calc(var(--ld-boot-wait) + .26s + var(--i) * 55ms);
 }
 .ld-boot-word::after {
   content: attr(data-word) / ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(105deg, transparent 40%, color-mix(in oklch, var(--accent) 85%, white) 49%, white 50%, color-mix(in oklch, var(--accent) 85%, white) 51%, transparent 60%) 0 0 / 300% 100% no-repeat;
   background-position: 110% 0;
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  animation: ld-gilt 4.8s var(--ld-ease) 1.5s infinite;
+  animation: ld-gilt 4.8s var(--ld-ease) calc(var(--ld-boot-wait) + 1.4s) infinite;
 }
-.ld-boot .ld-line { animation: ld-enter-fade .8s ease-out .9s backwards; }
+.ld-boot .ld-line { animation: ld-enter-fade .8s ease-out calc(var(--ld-boot-wait) + .7s) backwards; }
 /* Three captions share one cell and hand over by time alone (no script runs
    before hydration): the promise, the reassurance, then a way out. */
-.ld-boot-notes { display: grid; min-height: 3.2em; animation: ld-enter-fade .8s ease-out 1s backwards; }
+.ld-boot-notes { display: grid; min-height: 3.2em; animation: ld-enter-fade .8s ease-out calc(var(--ld-boot-wait) + .8s) backwards; }
 .ld-boot-notes > * { grid-area: 1 / 1; margin: 0; }
 .ld-boot-note.first { animation: ld-note-out .5s ease 9s forwards; }
 .ld-boot-note.later { opacity: 0; animation: ld-note-in .6s ease 9.4s forwards; }
@@ -415,6 +425,10 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
   animation-delay: calc(var(--i, 0) * 60ms);
 }
 .ld-cover-glint > img { position: relative; z-index: 1; }
+/* Stop the moment the image is in. `data-loaded` is stamped by the page's
+   early load listener (see `BOOT_JS`) — a cover that loaded but is
+   transparent, like a 1×1 placeholder, would otherwise glint through it. */
+.ld-cover-glint:has(img[data-loaded])::before { animation: none; opacity: 0; }
 
 /* ── Stale · content kept on screen while it refetches ──────────── */
 .ld-stale { position: relative; }
@@ -429,6 +443,7 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
 /* ── Keyframes ─────────────────────────────────────────────────── */
 @keyframes ld-enter { from { opacity: 0; transform: translateY(6px); } }
 @keyframes ld-enter-fade { from { opacity: 0; } }
+@keyframes ld-boot-in { from { opacity: 0; } }
 @keyframes ld-spin { to { transform: rotate(1turn); } }
 @keyframes ld-crest {
   0%, 46%, 100% { transform: scaleY(.26); opacity: .38; background: var(--ink-3); }
@@ -486,6 +501,6 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
   .ld-boot-note.first { animation: ld-note-out .01s linear 9s forwards; }
   .ld-boot-note.later { animation: ld-note-in .01s linear 9.4s forwards; }
   .ld-boot-retry { animation: ld-note-in .01s linear 22s forwards; }
-  .ld-boot, .ld-boot-stack { transition: none; }
+  .ld-boot-stack { transition: none; }
   html[data-hydrated] .ld-boot-stack { transform: none; filter: none; }
 }

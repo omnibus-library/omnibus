@@ -187,11 +187,21 @@ pub fn Loading(
     }
 }
 
-/// Pre-paint theme: the boot screen is the first thing a reader sees, so it
-/// must already wear their theme. Runs once at parse time from the SSR markup;
-/// hydration adopts the node and never re-runs it, and `init_theme` then
-/// settles the signal onto the same value.
-const BOOT_THEME_JS: &str = "(function(){try{var t=localStorage.getItem('omn.theme'),s=document.currentScript,r=s&&s.closest('.atrium');if(r&&/^(dark|black|light|sepia)$/.test(t||''))r.setAttribute('data-theme',t);}catch(e){}})();";
+/// Stamps `data-loaded` on every `<img>` as it finishes, from a capture-phase
+/// listener (load events don't bubble). The cover glint stops on it: CSS alone
+/// can't tell a loaded-but-transparent cover from one still arriving. Guarded,
+/// because both the boot script and [`use_hydration_marker`] install it.
+const IMAGE_WATCH_JS: &str = "if(!window.__omnImgWatch){window.__omnImgWatch=1;document.addEventListener('load',function(e){var t=e.target;if(t&&t.tagName==='IMG')t.setAttribute('data-loaded','');},true);}";
+
+/// Pre-paint work for the boot screen, the first thing a reader sees: wear
+/// their saved theme, and start watching images load. Runs once at parse time
+/// from the SSR markup; hydration adopts the node and never re-runs it, and
+/// `init_theme` then settles the signal onto the same value.
+fn boot_js() -> String {
+    format!(
+        "(function(){{try{{var t=localStorage.getItem('omn.theme'),s=document.currentScript,r=s&&s.closest('.atrium');if(r&&/^(dark|black|light|sepia)$/.test(t||''))r.setAttribute('data-theme',t);}}catch(e){{}}{IMAGE_WATCH_JS}}})();"
+    )
+}
 
 /// The wordmark, set letter by letter.
 const WORDMARK: &str = "Omnibus";
@@ -210,7 +220,7 @@ pub fn BootScreen() -> Element {
             "aria-live": "polite",
             "aria-label": "Loading Omnibus",
             "data-testid": "boot-screen",
-            script { dangerous_inner_html: BOOT_THEME_JS }
+            script { dangerous_inner_html: boot_js() }
             div { class: "ld-boot-glow", "aria-hidden": "true" }
             div { class: "ld-boot-stack",
                 Riffle { size: MarkSize::Lg }
@@ -242,10 +252,13 @@ pub fn BootScreen() -> Element {
 /// Stamp `data-hydrated` on `<html>` once the client has mounted.
 ///
 /// The boot screen keys its dismissal on this, and Playwright's `gotoReady`
-/// waits for it. An effect, so it never runs during SSR.
+/// waits for it. Also installs the image watcher where no boot script ran (the
+/// Android shell renders client-side only). An effect, so never during SSR.
 pub fn use_hydration_marker() {
     use_effect(|| {
-        dioxus::document::eval("document.documentElement.setAttribute('data-hydrated', '');");
+        dioxus::document::eval(&format!(
+            "{IMAGE_WATCH_JS}document.documentElement.setAttribute('data-hydrated', '');"
+        ));
     });
 }
 

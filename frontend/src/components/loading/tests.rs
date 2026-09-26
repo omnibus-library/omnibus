@@ -122,6 +122,10 @@ fn boot_screen_carries_the_theme_script_wordmark_and_a_reload_link() {
         html.contains("s&&s.closest('.atrium')"),
         "script escaped: {html}"
     );
+    assert!(
+        html.contains("setAttribute('data-loaded','')"),
+        "no image watch: {html}"
+    );
     assert!(html.contains("Finding your place"));
     assert!(html.contains("Reload"));
     assert!(html.contains("<noscript>"));

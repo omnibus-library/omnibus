@@ -51,7 +51,11 @@ non-admin and for a user not yet resolved, so a gate uses `use_admin_access()`
 
 `BootScreen` is mounted once at the app root and covers the server-rendered
 shell until the WASM client hydrates; the client's first effect stamps
-`data-hydrated` on `<html>` and CSS dismisses it. Two rules follow:
+`data-hydrated` on `<html>` and CSS dismisses it. It waits out
+`--ld-boot-wait` (800 ms) invisible but catching clicks, then fades in — so a
+fast boot never shows it and the server-rendered page, which draws its own
+loaders, just fills in. That only works while SSR never renders a false empty
+(above). Two rules follow:
 
 - **Never read `data-hydrated` in rsx.** It exists outside the vdom so SSR and
   the first client paint stay identical (rule 07); only CSS and tests key on it.
@@ -63,8 +67,12 @@ shell until the WASM client hydrates; the client's first effect stamps
 ## Motion
 
 - Everything that travels goes left to right, the direction of reading.
-- Block loaders enter after `--ld-hold`, so a fetch that settles inside it
-  paints nothing rather than a flash.
+- Block loaders and skeleton plates enter after `--ld-hold`, so a fetch that
+  settles inside it paints nothing rather than a flash (skeletons still hold
+  their space from the first frame).
+- The cover glint stops on `img[data-loaded]`, stamped by a capture-phase load
+  listener the boot script installs. Never key loading visuals on an `onload`
+  handler: an SSR'd image can finish before hydration and the event is gone.
 - Under `prefers-reduced-motion` nothing travels: marks hold still and breathe
   opacity. This applies to **every** animation in the app, not only loaders —
   a new keyframe ships with its reduced-motion override.
