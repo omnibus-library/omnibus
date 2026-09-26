@@ -1763,7 +1763,13 @@
       // `dragBase` of 0, which the settle then wrote to `scrollLeft`, landing
       // the reader on the chapter's first page.
       if (multiTouch || (e.touches && e.touches.length)) {
-        stopDragRaf(false);
+        // `springBack` rather than a bare `stopDragRaf`: this handler may have
+        // armed a drag and be learning about the other finger only now — a
+        // lift that reports one still down, with no `touchstart` for it, is
+        // what a touch sequence captured to another document looks like.
+        // Dropping the raf there would leave the page at its dragged offset.
+        // A no-op when no drag was armed, which is the ordinary case.
+        springBack();
         if (e.touches && e.touches.length) {
           dragAxis = "none";
           return;

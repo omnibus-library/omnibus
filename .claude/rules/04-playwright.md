@@ -91,24 +91,27 @@ No `waitForTimeout`. If the DOM is going to change, poll for it. If a request mu
 
 ## Multi-touch goes through CDP, in a touch context
 
-`page.touchscreen` drives **one** point, so a gesture with two fingers —
-the reader's page turns are single-finger and have to survive the rest —
-is sent with `Input.dispatchTouchEvent` over
-`page.context().newCDPSession(page)`. The suite is Chromium-only
-(one project, `Desktop Chrome`), so that is available everywhere.
+`page.touchscreen` drives **one** point, so a two-finger gesture — the
+reader's page turns are single-finger and have to survive the rest — goes
+through `Input.dispatchTouchEvent` on
+`page.context().newCDPSession(page)`. The suite is Chromium-only (one
+project, `Desktop Chrome`), so that is available everywhere. Three things,
+each learned by getting it wrong:
 
-Two things about it, both learned by getting them wrong:
-
-- **The context needs `hasTouch`.** Without it Chromium answers a
-  dispatched touch with synthesized *mouse* events, the page's touch
-  listeners never run, and the test passes having exercised nothing.
-  `test.use({ hasTouch: true })` on the describe; the viewport can stay
-  desktop, but note that a touch context suppresses the round page-turn
-  buttons, so turn pages by tapping the forward gutter instead.
-- **Release fingers one at a time** — `touchEnd` with the point being
-  released, not an empty list. A hand lifts one finger before the other,
-  and the window between the two lifts is where the gesture bugs live; an
-  empty `touchEnd` collapses it and tests the easy case.
+- **The context needs `hasTouch`.** Without it Chromium answers a dispatched
+  touch with synthesized *mouse* events, the page's touch listeners never
+  run, and the test passes having exercised nothing. `test.use({ hasTouch:
+  true })`; the viewport can stay desktop, but a touch context suppresses
+  the round page-turn buttons, so turn pages by tapping the forward gutter.
+- **Release fingers one at a time.** A `touchEnd` carrying a point lifts
+  *that* finger and leaves the rest down; the window between two lifts is
+  where the gesture bugs live. The last release is the exception and takes
+  the usual empty `touchPoints` — what `touchscreen.tap` itself sends.
+- **A drag offset lands in a `requestAnimationFrame` callback**, so points
+  dispatched back to back never paint one. Asserting on a transform (or on
+  its cleanup) means letting a frame run between moves — `nextFrame` in
+  `reader.spec.ts`. Skip it and the assertion is about a transform that was
+  never written, which passes for the wrong reason.
 
 ## Network — every mutation must be asserted
 
