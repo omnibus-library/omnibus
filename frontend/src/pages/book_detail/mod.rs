@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 use omnibus_shared::physical::WishlistEntry;
 use omnibus_shared::{EbookMetadata, MergeBooksResult, SuggestionsResponse};
 
-use crate::components::{PageError, PageLoading, PageNotFound};
+use crate::components::{Loading, LoadingKind, PageError, PageNotFound};
 use crate::{data, use_server_url, Route};
 
 // Consumed only by the web marquee resume readout and the saved-passage
@@ -90,7 +90,7 @@ pub fn BookDetailPage(uuid: String) -> Element {
     );
 
     if (sig.loading)() {
-        return rsx! { PageLoading {} };
+        return rsx! { Loading { kind: LoadingKind::Page, label: "Taking it off the shelf" } };
     }
     if let Some(msg) = (sig.error)() {
         return rsx! { PageError { message: msg, back_to: Route::Landing {} } };

@@ -14,7 +14,7 @@ use super::filter::{
 };
 use crate::components::shelf_glyphs::lock_icon;
 use crate::components::user_avatar::UserAvatar;
-use crate::components::{CreateShelfModal, PageLoading};
+use crate::components::{CreateShelfModal, Loading, LoadingKind};
 use crate::pages::index_shell::{
     index_page_early_return, use_index_page_shell, IndexFilterInput, IndexPageState,
     IndexSortToggle,
@@ -64,11 +64,11 @@ pub(super) fn WebShelvesIndex() -> Element {
         owners(&shelves.read(), viewer_id)
     });
 
-    if let Some(early) = index_page_early_return(loading, error) {
+    if let Some(early) = index_page_early_return(loading, error, "Gathering your shelves") {
         return early;
     }
     let Some(viewer) = viewer_probe() else {
-        return rsx! { PageLoading {} };
+        return rsx! { Loading { kind: LoadingKind::Page, label: "Gathering your shelves" } };
     };
 
     let viewer_id = viewer.as_ref().map(|u| u.id);

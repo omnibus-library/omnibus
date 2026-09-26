@@ -213,6 +213,10 @@ fn ScreenLayout(children: Element) -> Element {
 /// the WASM bundle.
 const ATRIUM_CSS: Asset = asset!("/assets/atrium.css");
 
+/// The loading vocabulary's stylesheet (boot screen, marks, skeletons) — kept
+/// apart from Atrium so every loading visual lives in one reviewable file.
+const LOADING_CSS: Asset = asset!("/assets/loading.css");
+
 /// Browser-tab favicon — the Omnibus brand mark, served as a hashed static
 /// asset via Manganis. 128² PNG; browsers downscale it to the tab size.
 const FAVICON: Asset = asset!("/assets/omnibus-stoat.png");
@@ -566,6 +570,7 @@ pub fn App() -> Element {
     use_current_user_boot();
 
     components::atrium::init_theme();
+    components::loading::use_hydration_marker();
 
     use_mobile_viewport_fix();
     use_mobile_zone_capture();
@@ -585,7 +590,11 @@ pub fn App() -> Element {
         document::Title { "{page_title}" }
         document::Link { rel: "icon", href: FAVICON }
         document::Stylesheet { href: ATRIUM_CSS }
+        document::Stylesheet { href: LOADING_CSS }
         components::atrium::AtriumRoot {
+            // First child, so it is painted before anything it covers and its
+            // pre-paint theme script finds the `.atrium` root around it.
+            components::loading::BootScreen {}
             {audio_host}
             dioxus_router::Router::<Route> {}
         }

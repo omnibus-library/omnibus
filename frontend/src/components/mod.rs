@@ -55,10 +55,15 @@ pub use suggest_field::{SuggestField, SuggestFieldOptions};
 
 pub mod atrium;
 
+// The shared loading vocabulary — the `Loading` block and its kinds, the boot
+// screen, busy labels, skeletons. See `loading.rs`; visuals in `loading.css`.
+pub mod loading;
+pub use loading::{BusyLabel, Loading, LoadingKind, LoadingMark, MarkSize, Ring};
+
 // Shared loading/error/not-found states for top-level pages — see
 // `page_state.rs` for the role/text contract each one preserves.
 pub mod page_state;
-pub use page_state::{PageError, PageLoading, PageNotFound};
+pub use page_state::{PageError, PageNotFound};
 
 // Shared cover-tile chrome (`thumb_srcs` + the `CoverTile` wrapper) used by
 // the landing grid, shelf detail, and the shelf pickers. Platform-agnostic so

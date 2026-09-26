@@ -7,7 +7,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::{Contributor, EbookMetadata, MetadataOverrides};
 
-use crate::components::{PageError, PageLoading, PageNotFound};
+use crate::components::{Loading, LoadingKind, PageError, PageNotFound};
 use crate::{data, use_server_url, Route};
 
 mod cover_editor;
@@ -53,7 +53,7 @@ pub fn MetadataEditPage(uuid: String) -> Element {
     }));
 
     if loading() {
-        return rsx! { PageLoading {} };
+        return rsx! { Loading { kind: LoadingKind::Page, label: "Opening the record" } };
     }
     if let Some(msg) = error() {
         return rsx! {

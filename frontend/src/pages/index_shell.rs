@@ -9,7 +9,7 @@ use std::future::Future;
 use dioxus::prelude::*;
 use omnibus_shared::IndexSort;
 
-use crate::components::{PageError, PageLoading};
+use crate::components::{Loading, LoadingKind, PageError};
 use crate::data::DataError;
 use crate::scroll_restore::use_scroll_restore;
 use crate::Route;
@@ -106,9 +106,10 @@ fn use_fetch_effect<T, F, Fut>(
 pub(crate) fn index_page_early_return(
     loading: Signal<bool>,
     error: Signal<Option<String>>,
+    loading_label: &str,
 ) -> Option<Element> {
     if loading() {
-        return Some(rsx! { PageLoading {} });
+        return Some(rsx! { Loading { kind: LoadingKind::Page, label: loading_label } });
     }
     if let Some(msg) = error() {
         return Some(rsx! { PageError { message: msg, back_to: Route::Landing {} } });

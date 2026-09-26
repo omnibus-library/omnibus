@@ -1,21 +1,13 @@
-//! Shared page-level loading / error / not-found states. Nearly every
-//! top-level page in `pages/` hand-duplicated the same `<p class="subtitle">`
-//! / `role="alert"` markup around its own data-fetch effect; these three
-//! components are drop-in replacements that preserve the exact role/text
-//! contract existing Playwright specs assert on.
+//! Shared page-level error / not-found states. Nearly every top-level page in
+//! `pages/` hand-duplicated the same `role="alert"` markup around its own
+//! data-fetch effect; these are drop-in replacements that preserve the exact
+//! role/text contract existing Playwright specs assert on. Loading lives in
+//! [`crate::components::loading`].
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
 use crate::Route;
-
-/// Loading placeholder shown while a page's data fetch is in flight.
-#[component]
-pub fn PageLoading() -> Element {
-    rsx! {
-        p { class: "subtitle", "Loading\u{2026}" }
-    }
-}
 
 /// Error state: the fetch failure `message` plus a link back to `back_to`.
 #[component]
@@ -56,13 +48,6 @@ pub fn PageNotFound(
 mod tests {
     use super::*;
     use crate::test_support::render;
-
-    #[test]
-    fn page_loading_renders_the_shared_subtitle_placeholder() {
-        let html = render(rsx! { PageLoading {} });
-        assert!(html.contains("class=\"subtitle\""));
-        assert!(html.contains("Loading"));
-    }
 
     #[test]
     fn page_error_renders_the_message_as_an_alert() {

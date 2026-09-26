@@ -3123,18 +3123,6 @@ a.idx-letter-on:focus-visible {
     background: var(--bg-2);
   }
 }
-.worker-status-spinner {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--accent) 40%, transparent);
-  border-top-color: var(--accent);
-  animation: worker-status-spin 0.9s linear infinite;
-  flex-shrink: 0;
-}
-@keyframes worker-status-spin {
-  to { transform: rotate(360deg); }
-}
 
 /* ── User menu ──────────────────────────────────────────────────── */
 .um-root { position: relative; display: inline-flex; }
@@ -3430,17 +3418,6 @@ a.idx-letter-on:focus-visible {
   display: flex; align-items: center; gap: 6px;
   margin-top: 6px; font-family: var(--mono);
   font-size: 11px; color: var(--ink-3);
-}
-.lp-buffering::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--accent); animation: lp-buffering-pulse 1s ease-in-out infinite;
-}
-@keyframes lp-buffering-pulse {
-  0%, 100% { opacity: .3; }
-  50% { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lp-buffering::before { animation: none; }
 }
 
 /* Chapter map / seek scrubber */
@@ -7027,21 +7004,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .bd-suggest-pending { padding: 16px 18px; }
 .bd-suggest-loading { display: flex; align-items: center; gap: 10px; }
 
-/* Inline loading spinner (F3.3 suggestions fetch) — a rotating ring, shared
-   by the web `.bd-suggest-loading` and mobile `.m-suggest-loading` blocks. */
-.suggest-spinner {
-  width: 13px; height: 13px; flex-shrink: 0;
-  border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--accent) 40%, transparent);
-  border-top-color: var(--accent);
-  animation: suggest-spin 0.9s linear infinite;
-}
-@keyframes suggest-spin {
-  to { transform: rotate(360deg); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .suggest-spinner { animation: none; }
-}
 
 /* "Fetch Summary" button + inline status (on-demand Hardcover/OpenLibrary
    description fetch). Mounted under the metadata-editor Description field and,
@@ -7445,7 +7407,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   height: 93px;
   align-self: center;
   border-radius: 4px;
-  background: var(--bg-2);
 }
 .mes-skel-row {
   display: grid;
@@ -7458,16 +7419,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .mes-skel-bar {
   height: 11px;
   border-radius: 3px;
-  background: var(--bg-2);
-  animation: lp-buffering-pulse 1.4s ease-in-out infinite;
 }
-/* Staggered so the row reads as one object settling rather than three bars
-   blinking in lockstep. */
-.mes-skel-row:nth-child(even) .mes-skel-bar { animation-delay: 0.2s; }
+/* The glint is the shared `.ld-skel` one (loading.css), staggered per row. */
 .mes-skel-label { opacity: 0.6; }
-@media (prefers-reduced-motion: reduce) {
-  .mes-skel-bar { animation: none; }
-}
 
 .mes-footbar {
   position: sticky;
@@ -8752,19 +8706,12 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   }
 }
 .m-offline-pill-dot {
+  --ld-dot: 7px;
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
   border-radius: 50%;
   background: var(--warn);
-}
-.m-offline-pill.is-syncing .m-offline-pill-dot {
-  background: var(--accent);
-  animation: m-sync-pulse 1.2s ease-in-out infinite;
-}
-@keyframes m-sync-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
 }
 
 /* Account sync-status block */
@@ -9933,6 +9880,14 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   .st-mode,
   .st-range-pill,
   .st-tile { transition: none; }
+  /* The settle/swap entrances are animations, not transitions. */
+  .st-hero-run,
+  .st-hero-goals,
+  .st-scope,
+  .st-tiles .st-tile,
+  .st-duo > *,
+  .st-standouts > *,
+  .st-tile-value { animation: none; }
 }
 
 /* ── Narrow layouts ───────────────────────────────────────────────── */
@@ -10290,18 +10245,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .check-in-search-result:focus-visible .check-in-book { border-color: var(--accent); }
 .check-in-search-result:disabled { cursor: default; opacity: 0.55; }
 
-/* ── Matching spinner ─────────────────────────────────────────────── */
-.check-in-spinner {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid var(--line);
-  border-top-color: var(--accent);
-  animation: check-in-spin 0.9s linear infinite;
-}
-
-@keyframes check-in-spin { to { transform: rotate(360deg); } }
-
 /* ── Success rings ────────────────────────────────────────────────── */
 .check-in-success { align-items: center; text-align: center; }
 .check-in-rings {
@@ -10442,7 +10385,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .isbn-key:active:not(:disabled) { background: var(--bg-2); }
 
 @media (prefers-reduced-motion: reduce) {
-  .check-in-spinner { animation: none; }
   .check-in-ring { animation: none; opacity: 0.35; }
   .scanner-sweep { animation: none; top: 50%; }
 }
@@ -10569,12 +10511,8 @@ html {
 .m-ptr-arrow { font-family: var(--mono); font-size: 14px; line-height: 1; }
 .m-ptr.is-refreshing { opacity: 1; }
 .m-ptr.is-refreshing .m-ptr-arrow { display: none; }
-.m-ptr.is-refreshing::after {
-  content: ""; width: 16px; height: 16px; border-radius: 50%;
-  border: 2px solid var(--line-2); border-top-color: var(--accent);
-  animation: m-ptr-spin .7s linear infinite;
-}
-@keyframes m-ptr-spin { to { transform: rotate(360deg); } }
+.m-ptr .m-ptr-ring { display: none; --ld-ring: 16px; }
+.m-ptr.is-refreshing .m-ptr-ring { display: inline-block; }
 
 /* ============================= Comic pager ============================= */
 /* /comic/:uuid — the CBZ pager (frontend/src/pages/comic_reader.rs). Own
@@ -12997,4 +12935,14 @@ html {
   .cb-measure-list { grid-template-columns: 1fr; }
   /* The plot gets taller as it narrows so the bars keep usable height. */
   .cb-svg { aspect-ratio: 4 / 3; }
+}
+
+/* ── Reduced motion · overlay entrances ─────────────────────────────
+   The search palette, metadata-search and check-in overlays fade and slide
+   in; under reduced motion they simply appear. Loading marks have their own
+   block in loading.css. */
+@media (prefers-reduced-motion: reduce) {
+  .sp-scrim, .sp-panel,
+  .mes-scrim, .mes-panel,
+  .check-in-overlay-scrim, .check-in-overlay-panel { animation: none; }
 }

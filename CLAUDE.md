@@ -21,6 +21,7 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [09a-serving-validated-bytes.md](.claude/rules/09a-serving-validated-bytes.md) — the server half: strong entity-tags, the `serve_file`/`conditional` path every byte-serving endpoint takes, and why `ETag` and `Vary` travel together.
 - [10-reader-calendar.md](.claude/rules/10-reader-calendar.md) — which calendar a figure is cut on: day boundaries take the asking client's offset (one per request), time-of-day takes the offset each session recorded; why the ledger stores a quarter-hour and never a day.
 - [11-spoiler-boundary.md](.claude/rules/11-spoiler-boundary.md) — what a reader may be shown: the three-valued spoiler filter, why every figure rounds conservatively, and why the boundary reads stored columns rather than resolving a position.
+- [12-loading-states.md](.claude/rules/12-loading-states.md) — every wait draws from `components/loading.rs`: pick the `Loading` kind by the shape it fills, unknown is never shown as empty or forbidden, the boot screen + `data-hydrated` marker, reduced motion for every animation.
 - [98-keep-skills-fresh.md](.claude/rules/98-keep-skills-fresh.md) — update skills when the code they reference changes.
 - [99-end-of-session.md](.claude/rules/99-end-of-session.md) — end-of-session checklist (docs sync, fmt/clippy, coverage, line-count cap).
 

@@ -343,6 +343,7 @@ pub(super) fn ChapterMap(props: ChapterMapProps) -> Element {
                     class: "lp-buffering",
                     "data-testid": "listen-buffering",
                     role: "status",
+                    span { class: "ld-dot", "aria-hidden": "true" }
                     "Buffering\u{2026}"
                 }
             }

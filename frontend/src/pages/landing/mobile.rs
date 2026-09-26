@@ -255,6 +255,7 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
             // JS tracker in `super::pull_refresh`; markup-only here.
             div { class: "m-ptr", "aria-hidden": "true",
                 span { class: "m-ptr-arrow", "↓" }
+                crate::components::Ring { class: "m-ptr-ring" }
             }
             {render_mobile_header()}
             {render_mobile_title_row(book_count, hidden_count, pill_label, pill_arrow, filter_count, sheet_open)}

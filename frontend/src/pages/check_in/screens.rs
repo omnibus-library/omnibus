@@ -16,7 +16,7 @@ use crate::{media_url, use_server_url, Route};
 pub(super) fn ResolvingScreen() -> Element {
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-resolving",
-            div { class: "check-in-spinner" }
+            crate::components::Ring { size: crate::components::MarkSize::Lg }
             h1 { "Matching\u{2026}" }
             p { class: "subtitle", "Checking your library, then the web." }
         }

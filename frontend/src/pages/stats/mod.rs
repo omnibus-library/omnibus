@@ -9,7 +9,7 @@ use omnibus_shared::{
     LibraryComposition, LibrarySize, ResumePoint, StatsRange, StatsSummary, STATS_TTL_SECS,
 };
 
-use crate::components::{PageError, PageLoading};
+use crate::components::{Loading, LoadingKind, PageError};
 use crate::{data, use_server_url, Route};
 
 mod clock;
@@ -147,7 +147,7 @@ pub fn StatsPage() -> Element {
     use_in_progress_fetch_effect(server_url.clone(), in_progress);
 
     if loading() {
-        return rsx! { PageLoading {} };
+        return rsx! { Loading { kind: LoadingKind::Page, label: "Tallying your reading" } };
     }
     if let Some(msg) = error() {
         return rsx! { PageError { message: msg, back_to: Route::Landing {} } };

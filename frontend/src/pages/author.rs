@@ -12,7 +12,7 @@ use crate::components::atrium::Cover;
 use crate::components::author_photo_edit::AuthorPhotoEditOverlay;
 #[cfg(not(feature = "mobile"))]
 use crate::components::{confirm_modal_body, ConfirmModal, ConfirmModalAction, ConfirmModalTone};
-use crate::components::{disc_back_link, PageError, PageLoading, PageNotFound};
+use crate::components::{disc_back_link, Loading, LoadingKind, PageError, PageNotFound};
 use crate::{data, use_server_url, Route};
 
 /// Renders the author discovery page.
@@ -56,7 +56,7 @@ pub fn AuthorPage(id: i64) -> Element {
     }));
 
     if loading() {
-        return rsx! { PageLoading {} };
+        return rsx! { Loading { kind: LoadingKind::Page, label: "Finding the author" } };
     }
     if let Some(msg) = error() {
         return rsx! { PageError { message: msg, back_to: Route::Landing {} } };

@@ -193,7 +193,7 @@ fn ActiveRow(task: TaskProgress) -> Element {
         .map(active_tallies_line);
     rsx! {
         div { class: "worker-status-row worker-status-active",
-            span { class: "worker-status-spinner", aria_hidden: "true" }
+            crate::components::Ring { size: crate::components::MarkSize::Xs }
             div { class: "worker-status-body",
                 div { class: "worker-status-label",
                     "{label}"

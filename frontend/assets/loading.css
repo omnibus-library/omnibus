@@ -1,0 +1,479 @@
+/* Omnibus · Loading
+ * ──────────────────────────────────────────────────────────
+ * Every loading state in the app, drawn from one vocabulary. Markup comes
+ * from `frontend/src/components/loading/`; nothing else should hand-roll a
+ * spinner, a pulse or a "Loading…" line.
+ *
+ * Three marks, one direction:
+ *   · the riffle  — an open book whose leaves turn (boot, page, stage);
+ *   · the line    — a row of page ticks a crest runs along, borrowed from the
+ *                   book-detail progress bar and read equally as a waveform
+ *                   (sheet, section, the listen stage);
+ *   · the ring    — a tapered comet for anything under 24px (buttons, pills).
+ * Everything that travels travels left to right, the direction of reading:
+ * the crest along the line, the glint across a skeleton, the sheen across a
+ * word, the leaf across the spine.
+ *
+ * Colour is the accent, so a book's own `--accent` (set inline on detail and
+ * reader pages) tints its loader. Motion is gated in one block at the foot of
+ * the file: under `prefers-reduced-motion` nothing moves; the marks hold still
+ * and breathe opacity instead, so "still working" survives without travel.
+ */
+
+:root {
+  /* The page-turn curve: a slow lift, a quick fall, a soft landing. */
+  --ld-ease: cubic-bezier(.45, .05, .25, 1);
+  --ld-ease-out: cubic-bezier(.2, .7, .3, 1);
+  /* One pass of the line; one full riffle. */
+  --ld-beat: 1.7s;
+  --ld-turn: 2.7s;
+  /* A loader that resolves inside this window is never seen at all. */
+  --ld-hold: 160ms;
+}
+
+/* ── Shared shell ──────────────────────────────────────────────── */
+
+/* Every block variant enters the same way: held back for `--ld-hold`, then
+   risen into place — a fast fetch paints nothing rather than a flash. */
+.ld {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; text-align: center; color: var(--ink-2);
+  animation: ld-enter .42s var(--ld-ease-out) var(--ld-hold) backwards;
+}
+.ld-label {
+  margin: 0; font-family: var(--mono); font-size: 10.5px; font-weight: 400;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3);
+  line-height: 1.5; max-width: 34ch; text-wrap: balance;
+}
+.ld-slot:empty { display: none; }
+.ld-slot { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+/* Visually hidden, still announced (the ring and busy label use it). */
+.ld-sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── The ring ──────────────────────────────────────────────────── */
+/* A tapered arc with a round head: the tail is a conic ramp, the band is a
+   radial mask, and the head is a dot riding the same rotation. The element
+   itself paints the faint track. */
+.ld-ring {
+  --ld-ring: 14px; --ld-ring-w: 2px;
+  position: relative; display: inline-block; flex: none; vertical-align: -0.15em;
+  width: var(--ld-ring); height: var(--ld-ring); border-radius: 50%;
+  background: color-mix(in oklch, var(--ink-3) 24%, transparent);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(99% - var(--ld-ring-w)), #000 calc(100% - var(--ld-ring-w)));
+          mask: radial-gradient(farthest-side, transparent calc(99% - var(--ld-ring-w)), #000 calc(100% - var(--ld-ring-w)));
+}
+.ld-ring::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% calc(var(--ld-ring-w) / 2), var(--accent) calc(var(--ld-ring-w) / 2 - .25px), transparent calc(var(--ld-ring-w) / 2 + .25px)),
+    conic-gradient(transparent 0 12%, color-mix(in oklch, var(--accent) 30%, transparent) 50%, var(--accent));
+  animation: ld-spin .85s linear infinite;
+}
+.ld-ring.xs { --ld-ring: 11px; --ld-ring-w: 1.75px; }
+.ld-ring.sm { --ld-ring: 14px; --ld-ring-w: 2px; }
+.ld-ring.md { --ld-ring: 22px; --ld-ring-w: 2.25px; }
+.ld-ring.lg { --ld-ring: 30px; --ld-ring-w: 2.5px; }
+/* On a filled accent button the accent disappears; ride the ink instead. */
+.btn.primary .ld-ring,
+.ld-ring.on-accent {
+  --accent: var(--accent-ink);
+  background: color-mix(in oklch, var(--accent-ink) 22%, transparent);
+}
+
+/* ── The line ──────────────────────────────────────────────────── */
+/* Page ticks at rest; a crest runs along them left to right. Each tick
+   carries its index (`--i`) and an amplitude (`--a`) inline, so the crest
+   rises unevenly — a line of type seen edge-on, or a waveform. */
+.ld-line {
+  --n: 16; --tick: 2px; --gap: 3px; --tall: 16px;
+  display: inline-flex; align-items: center; gap: var(--gap); height: var(--tall);
+}
+.ld-line > i {
+  display: block; width: var(--tick); height: 100%; border-radius: 1px;
+  background: var(--ink-3); opacity: .38; transform: scaleY(.26);
+  animation: ld-crest var(--ld-beat) var(--ld-ease) infinite;
+  animation-delay: calc(var(--i) * var(--ld-beat) * .8 / var(--n) - var(--ld-beat));
+}
+.ld-line.sm { --tick: 2px; --gap: 2.5px; --tall: 11px; }
+.ld-line.lg { --tick: 2.5px; --gap: 4px; --tall: 26px; }
+.ld-line.xl { --tick: 3px; --gap: 5px; --tall: 44px; }
+
+/* ── The riffle ────────────────────────────────────────────────── */
+/* An open book seen from above, tilted back. Three leaves lift off the right
+   page, turn over the spine and settle onto the left, each a third of a cycle
+   behind the last. A leaf has two faces: its front catches the light as it
+   stands up, its back falls into shadow as it lands. At both rests a leaf is
+   the exact colour of the page under it, so the loop's reset is invisible. */
+.ld-riffle {
+  --w: 60px; --open: 13deg;
+  --paper: color-mix(in oklch, var(--accent) 86%, var(--bg-0));
+  --board: color-mix(in oklch, var(--accent) 52%, var(--bg-0));
+  --type: color-mix(in oklch, var(--bg-0) 24%, transparent);
+  position: relative; display: block; flex: none;
+  width: var(--w); height: calc(var(--w) * .7);
+  perspective: calc(var(--w) * 4.5);
+  filter: drop-shadow(0 calc(var(--w) * .12) calc(var(--w) * .16) color-mix(in oklch, var(--accent) 22%, transparent));
+}
+.ld-riffle.sm { --w: 40px; }
+.ld-riffle.lg { --w: 92px; }
+.ld-riffle.xl { --w: 120px; }
+.ld-rf-book {
+  position: absolute; inset: 0; display: block;
+  transform-style: preserve-3d; transform: rotateX(46deg) translateY(4%);
+}
+/* The boards: a hair wider and taller than the paper, behind it. */
+.ld-rf-book::before {
+  content: ""; position: absolute; inset: -4% -3.5% -6%;
+  border-radius: calc(var(--w) * .05);
+  background: var(--board); transform: translateZ(-1.5px);
+}
+/* The block of pages under the spread, seen as a lip along the bottom. */
+.ld-rf-book::after {
+  content: ""; position: absolute; left: 1%; right: 1%; bottom: -3.5%; height: 5%;
+  background: repeating-linear-gradient(90deg, var(--paper) 0 1px, color-mix(in oklch, var(--paper) 80%, var(--bg-0)) 1px 2px);
+  transform: translateZ(-1px); border-radius: 0 0 2px 2px;
+}
+.ld-rf-page, .ld-rf-leaf, .ld-rf-face {
+  position: absolute; top: 0; display: block; width: 50%; height: 100%;
+}
+.ld-rf-page, .ld-rf-face {
+  background-color: var(--paper);
+  /* Lines of type, inset from the margins. */
+  background-image: repeating-linear-gradient(180deg, transparent 0 calc(var(--w) * .065), var(--type) calc(var(--w) * .065) calc(var(--w) * .08));
+  background-size: 72% 70%; background-position: 50% 52%; background-repeat: no-repeat;
+}
+.ld-rf-page.l {
+  right: 50%; transform-origin: 100% 50%; transform: rotateY(var(--open));
+  border-radius: calc(var(--w) * .035) 0 0 calc(var(--w) * .035);
+  box-shadow: inset calc(var(--w) * -.06) 0 calc(var(--w) * .06) calc(var(--w) * -.04) color-mix(in oklch, var(--bg-0) 40%, transparent);
+}
+.ld-rf-page.r {
+  left: 50%; transform-origin: 0 50%; transform: rotateY(calc(-1 * var(--open)));
+  border-radius: 0 calc(var(--w) * .035) calc(var(--w) * .035) 0;
+  box-shadow: inset calc(var(--w) * .06) 0 calc(var(--w) * .06) calc(var(--w) * -.04) color-mix(in oklch, var(--bg-0) 40%, transparent);
+}
+.ld-rf-leaf {
+  left: 50%; transform-origin: 0 50%; transform-style: preserve-3d;
+  transform: rotateY(calc(-1 * var(--open)));
+  animation: ld-turn var(--ld-turn) var(--ld-ease) infinite;
+  animation-delay: calc(var(--i) * var(--ld-turn) / 3 - var(--ld-turn));
+}
+.ld-rf-face {
+  left: 0; width: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border-radius: 0 calc(var(--w) * .035) calc(var(--w) * .035) 0; overflow: hidden;
+}
+.ld-rf-face.back { transform: rotateY(180deg); border-radius: calc(var(--w) * .035) 0 0 calc(var(--w) * .035); }
+/* Light and shade ride the leaf's own clock (same `--i`, same delay). */
+.ld-rf-face::after {
+  content: ""; position: absolute; inset: 0; opacity: 0;
+  animation: ld-light var(--ld-turn) var(--ld-ease) infinite;
+  animation-delay: calc(var(--i) * var(--ld-turn) / 3 - var(--ld-turn));
+}
+.ld-rf-face.front::after { background: linear-gradient(90deg, transparent, color-mix(in oklch, white 55%, transparent)); }
+.ld-rf-face.back::after {
+  background: linear-gradient(270deg, color-mix(in oklch, var(--bg-0) 10%, transparent), color-mix(in oklch, var(--bg-0) 70%, transparent));
+  animation-name: ld-shade;
+}
+
+/* ── Sheen · a word that is still being worked out ──────────────── */
+.ld-sheen {
+  color: var(--ink-3);
+  background: linear-gradient(100deg, var(--ink-3) 38%, var(--ink-0) 50%, var(--ink-3) 62%) 0 0 / 320% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: ld-sheen var(--ld-beat) linear infinite;
+}
+
+/* ── Skeletons ─────────────────────────────────────────────────── */
+/* Content-shaped plates. A glint crosses each, staggered by `--i`, so a grid
+   of them reads as one light moving across the page. */
+.ld-skel {
+  position: relative; display: block; overflow: hidden; isolation: isolate;
+  background: color-mix(in oklch, var(--ink-3) 16%, var(--bg-1));
+  border-radius: var(--r-sm);
+}
+.ld-skel::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--ink-0) 8%, transparent) 45%, color-mix(in oklch, var(--ink-0) 11%, transparent) 50%, transparent);
+  animation: ld-glint 2.2s var(--ld-ease) infinite;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.ld-skel.line { height: .85em; width: var(--w, 100%); border-radius: 999px; }
+.ld-skel.line.lg { height: 1.4em; }
+.ld-skel.circle { border-radius: 50%; aspect-ratio: 1; width: var(--w, 32px); }
+.ld-skel.block { height: var(--h, 96px); width: var(--w, 100%); border-radius: var(--r-md); }
+/* A book: 2:3 plate, a spine shadow down the left edge, a pale title band. */
+.ld-skel.cover {
+  aspect-ratio: 2 / 3; width: 100%; border-radius: 3px 6px 6px 3px;
+  background:
+    linear-gradient(90deg, color-mix(in oklch, var(--bg-0) 30%, transparent) 0 3%, color-mix(in oklch, var(--ink-0) 5%, transparent) 3% 5%, transparent 9%),
+    color-mix(in oklch, var(--ink-3) 16%, var(--bg-1));
+}
+.ld-skel.cover::before {
+  content: ""; position: absolute; left: 18%; right: 18%; top: 22%; height: 7%;
+  border-radius: 999px; background: color-mix(in oklch, var(--ink-3) 18%, transparent);
+}
+.ld-skel-stack { display: flex; flex-direction: column; gap: 10px; }
+
+/* Composite: a grid of covers with a title and author line under each. */
+.ld-covers {
+  display: grid; gap: 28px 22px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--cover-min, 150px), 1fr));
+}
+.ld-covers-cell { display: flex; flex-direction: column; gap: 9px; }
+.ld-covers-cell .ld-skel.line { --w: 78%; }
+.ld-covers-cell .ld-skel.line + .ld-skel.line { --w: 52%; height: .7em; }
+
+/* Composite: text rows (a list, a log, a table body). */
+.ld-rows { display: flex; flex-direction: column; }
+.ld-rows-row {
+  display: grid; grid-template-columns: var(--row-cols, 36px 1fr auto); align-items: center;
+  gap: 14px; padding: 12px 2px; border-bottom: 1px solid var(--line-2);
+}
+.ld-rows-row:last-child { border-bottom: none; }
+.ld-rows-row .ld-skel.circle { --w: 32px; }
+.ld-rows-text { display: flex; flex-direction: column; gap: 7px; }
+
+/* ── Boot ──────────────────────────────────────────────────────── */
+/* The whole app before the WASM client takes over. Server-rendered identical
+   to the client's first paint (rule 07); dismissed by CSS the moment the
+   client stamps `data-hydrated` on <html>, so nothing inert is ever on show.
+   It is opaque from the first frame; its mark enters only after a beat, so
+   a warm boot is a clean cut to the app and a cold one gets the full show. */
+.ld-boot {
+  position: fixed; inset: 0; z-index: 10000;
+  display: grid; place-items: center; overflow: hidden;
+  background: var(--bg-0); color: var(--ink-0);
+  transition: opacity .38s var(--ld-ease-out), visibility 0s linear .38s;
+}
+html[data-hydrated] .ld-boot { opacity: 0; visibility: hidden; pointer-events: none; }
+html[data-hydrated] .ld-boot * { animation-play-state: paused; }
+/* The lamp behind the book. */
+.ld-boot-glow {
+  position: absolute; left: 50%; top: 46%; width: min(120vw, 900px); aspect-ratio: 1;
+  transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in oklch, var(--accent) 13%, transparent), color-mix(in oklch, var(--accent) 4%, transparent) 55%, transparent);
+  animation: ld-glow 5.4s ease-in-out infinite, ld-enter-fade 1.2s ease-out .25s backwards;
+}
+.ld-boot-stack {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 22px; padding: 24px; text-align: center;
+}
+.ld-boot .ld-riffle { animation: ld-enter .8s var(--ld-ease-out) .22s backwards; margin-bottom: 6px; }
+/* The wordmark sets letter by letter, then a gilt glint crosses it now and
+   then — foil catching the lamp. The glint is a copy of the word laid over
+   the letters, so the per-letter entrance transforms can't break the clip. */
+.ld-boot-word {
+  position: relative; display: flex; margin: 0;
+  font-family: var(--serif); font-weight: 600; font-size: clamp(38px, 7vw, 54px);
+  letter-spacing: -0.01em; line-height: 1; color: var(--ink-0);
+}
+.ld-boot-word > span {
+  display: inline-block;
+  animation: ld-set .9s var(--ld-ease-out) backwards;
+  animation-delay: calc(.38s + var(--i) * 55ms);
+}
+.ld-boot-word::after {
+  content: attr(data-word) / ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, color-mix(in oklch, var(--accent) 85%, white) 49%, white 50%, color-mix(in oklch, var(--accent) 85%, white) 51%, transparent 60%) 0 0 / 300% 100% no-repeat;
+  background-position: 110% 0;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: ld-gilt 4.8s var(--ld-ease) 1.5s infinite;
+}
+.ld-boot .ld-line { animation: ld-enter-fade .8s ease-out .9s backwards; }
+/* Three captions share one cell and hand over by time alone (no script runs
+   before hydration): the promise, the reassurance, then a way out. */
+.ld-boot-notes { display: grid; min-height: 3.2em; animation: ld-enter-fade .8s ease-out 1s backwards; }
+.ld-boot-notes > * { grid-area: 1 / 1; margin: 0; }
+.ld-boot-note.first { animation: ld-note-out .5s ease 9s forwards; }
+.ld-boot-note.later { opacity: 0; animation: ld-note-in .6s ease 9.4s forwards; }
+.ld-boot-retry {
+  display: inline-flex; margin-top: 14px; opacity: 0; pointer-events: none;
+  animation: ld-note-in .6s ease 22s forwards;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+  padding-bottom: 2px;
+}
+@keyframes ld-note-in { to { opacity: 1; pointer-events: auto; } }
+.ld-boot noscript p { font-family: var(--mono); font-size: 11px; color: var(--ink-2); letter-spacing: .08em; }
+
+/* ── Page ──────────────────────────────────────────────────────── */
+/* Fills `main` under the nav. Tall enough that the footer doesn't jump when
+   the page arrives, centred optically a little above middle. */
+.ld-page { min-height: min(62vh, 560px); padding: 48px 20px 12vh; gap: 20px; }
+.ld-page .ld-label { color: var(--ink-2); }
+
+/* ── Stage ─────────────────────────────────────────────────────── */
+/* Covers a reader or player stage, opaque, on the stage's own ground (the
+   reader page colour where one is set), with a slot for a retry. */
+.ld-stage {
+  position: absolute; inset: 0; z-index: 30; gap: 22px; padding: 24px;
+  background: var(--ld-stage-bg, var(--rd-page, var(--bg-0)));
+}
+.ld-stage.in-flow { position: relative; inset: auto; flex: 1; min-height: 60vh; }
+.ld-stage .ld-label { color: var(--ink-2); }
+.ld-stage-title {
+  margin: -8px 0 0; font-family: var(--serif); font-weight: 500; font-style: italic;
+  font-size: 22px; color: var(--ink-1); max-width: 26ch; text-wrap: balance; line-height: 1.2;
+}
+
+/* ── Sheet · modal, sheet and drawer bodies ─────────────────────── */
+.ld-sheet { min-height: 180px; padding: 28px 16px; gap: 18px; }
+
+/* ── Section · a block sized to its container ───────────────────── */
+.ld-section { min-height: var(--ld-min, 96px); padding: 18px 12px; gap: 12px; }
+.ld-section.start { align-items: flex-start; text-align: left; padding-left: 0; }
+.ld-section.inline {
+  flex-direction: row; min-height: 0; padding: 6px 0; gap: 12px;
+  justify-content: flex-start; text-align: left;
+}
+
+/* ── Row · one list row, a "load more" ──────────────────────────── */
+.ld-row {
+  flex-direction: row; gap: 10px; padding: 14px 0; animation-delay: 0s;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+}
+.ld-row .ld-label { font-size: inherit; }
+
+/* ── Busy button ───────────────────────────────────────────────── */
+/* The label and a hidden sizer share one grid cell, and the sizer always
+   holds the busy face (ring + busy text), so the button is as wide as its
+   wider state in both — it never jumps when it starts working. The sizer is
+   CSS-generated with empty alt text, so it is in neither textContent nor the
+   accessible name. */
+.ld-busy { display: inline-grid; place-items: center; }
+.ld-busy > .ld-busy-face, .ld-busy::after { grid-area: 1 / 1; }
+.ld-busy-face { display: inline-flex; align-items: center; gap: .55em; white-space: nowrap; }
+.ld-busy::after {
+  content: attr(data-sizer) / ""; visibility: hidden; white-space: nowrap;
+  padding-left: calc(var(--ld-ring, 11px) + .55em); height: 0; overflow: hidden;
+}
+.ld-busy .ld-ring { --ld-ring: 11px; --ld-ring-w: 1.75px; }
+.ld-busy-face > .ld-ring { animation: ld-pop .28s var(--ld-ease-out); }
+button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
+
+/* ── Value · an indeterminate switch or status word ─────────────── */
+/* A switch whose position isn't known yet: the knob waits at centre and the
+   track breathes, rather than claiming either side. */
+.ld-toggle-unknown {
+  position: relative; display: inline-block; flex: none;
+  width: 34px; height: 20px; border-radius: 999px;
+  background: color-mix(in oklch, var(--ink-3) 22%, var(--bg-2));
+  border: 1px solid var(--line-2); overflow: hidden;
+}
+.ld-toggle-unknown::before {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 14px; height: 14px;
+  margin: -7px 0 0 -7px; border-radius: 50%; background: var(--ink-2);
+  animation: ld-knob 1.6s var(--ld-ease) infinite;
+}
+.ld-toggle-unknown::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--accent) 30%, transparent), transparent);
+  animation: ld-glint 1.6s var(--ld-ease) infinite;
+}
+
+/* ── Activity pill · non-blocking background work ───────────────── */
+.ld-pill {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 6px 12px 6px 9px; border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-2) 88%, transparent);
+  border: 1px solid var(--line-2); color: var(--ink-1);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px color-mix(in oklch, var(--bg-0) 45%, transparent);
+  animation: ld-enter .36s var(--ld-ease-out);
+}
+/* A plain status dot that breathes (the offline pill, buffering). */
+.ld-dot {
+  display: inline-block; flex: none; width: var(--ld-dot, 6px); height: var(--ld-dot, 6px);
+  border-radius: 50%; background: var(--accent); animation: ld-breathe 1.2s ease-in-out infinite;
+}
+
+/* ── Cover plate · an image still arriving ──────────────────────── */
+/* Painted behind the <img>, which covers it the moment it has pixels — no
+   load event to miss across hydration. A few passes, then it rests: a grid of
+   a hundred covers must not keep a hundred animations alive underneath. */
+.ld-cover-glint { position: relative; overflow: hidden; }
+.ld-cover-glint::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--ink-0) 9%, transparent) 50%, transparent);
+  animation: ld-glint 2.2s var(--ld-ease) 3;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+.ld-cover-glint > img { position: relative; z-index: 1; }
+
+/* ── Stale · content kept on screen while it refetches ──────────── */
+.ld-stale { position: relative; }
+.ld-stale > * { transition: opacity .25s ease, filter .25s ease; }
+.ld-stale.is-stale > * { opacity: .45; filter: saturate(.6); pointer-events: none; }
+.ld-stale.is-stale::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 2;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent) 0 0 / 40% 100% no-repeat;
+  animation: ld-hairline 1.2s var(--ld-ease) infinite;
+}
+
+/* ── Keyframes ─────────────────────────────────────────────────── */
+@keyframes ld-enter { from { opacity: 0; transform: translateY(6px); } }
+@keyframes ld-enter-fade { from { opacity: 0; } }
+@keyframes ld-spin { to { transform: rotate(1turn); } }
+@keyframes ld-crest {
+  0%, 46%, 100% { transform: scaleY(.26); opacity: .38; background: var(--ink-3); }
+  20% { transform: scaleY(var(--a, 1)); opacity: 1; background: var(--accent); }
+}
+@keyframes ld-turn {
+  0%, 6% { transform: rotateY(calc(-1 * var(--open))); }
+  64%, 100% { transform: rotateY(calc(-180deg + var(--open))); }
+}
+/* Front face: brightest as the leaf stands up to the lamp, gone as it passes
+   vertical (the back takes over). */
+@keyframes ld-light {
+  0%, 6% { opacity: 0; }
+  30% { opacity: .55; }
+  36%, 100% { opacity: 0; }
+}
+/* Back face: darkest just after vertical, clearing as it settles flat. */
+@keyframes ld-shade {
+  0%, 34% { opacity: 1; }
+  64%, 100% { opacity: 0; }
+}
+@keyframes ld-sheen { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@keyframes ld-glint { 0% { transform: translateX(-100%); } 70%, 100% { transform: translateX(100%); } }
+@keyframes ld-gilt { 0% { background-position: 110% 0; } 38%, 100% { background-position: -10% 0; } }
+@keyframes ld-set { from { opacity: 0; transform: translateY(.32em); filter: blur(3px); } }
+@keyframes ld-note-out { to { opacity: 0; } }
+@keyframes ld-glow { 0%, 100% { opacity: .75; transform: translate(-50%, -50%) scale(.96); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); } }
+@keyframes ld-breathe { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+@keyframes ld-knob { 0%, 100% { transform: translateX(-3px); opacity: .55; } 50% { transform: translateX(3px); opacity: .9; } }
+@keyframes ld-pop { from { transform: scale(.4); opacity: 0; } }
+@keyframes ld-hairline { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+
+/* ── Reduced motion ────────────────────────────────────────────── */
+/* Nothing travels. The ring and the line stop where they are; the riffle
+   holds one leaf standing; skeletons and words lose their glint. What's left
+   is a slow opacity breath on each mark — enough to say "still working"
+   without asking the eye to follow anything. */
+@media (prefers-reduced-motion: reduce) {
+  .ld, .ld-pill, .ld-boot .ld-riffle, .ld-boot .ld-line, .ld-boot-notes,
+  .ld-boot-glow, .ld-boot-word > span, .ld-busy-face > .ld-ring { animation: none; }
+  .ld-boot-word::after, .ld-skel::after, .ld-cover-glint::before,
+  .ld-toggle-unknown::after, .ld-stale.is-stale::before { animation: none; display: none; }
+  .ld-ring::before { animation: none; transform: rotate(.35turn); }
+  .ld-ring, .ld-line, .ld-riffle, .ld-sheen, .ld-toggle-unknown, .ld-dot {
+    animation: ld-breathe 2.4s ease-in-out infinite;
+  }
+  .ld-line > i { animation: none; transform: scaleY(calc(.3 + var(--a, 1) * .4)); opacity: .7; }
+  .ld-sheen { background: none; -webkit-text-fill-color: currentColor; }
+  .ld-toggle-unknown::before { animation: none; }
+  .ld-rf-leaf { animation: none; }
+  .ld-rf-leaf.n1 { transform: rotateY(-74deg); }
+  .ld-rf-leaf.n2 { transform: rotateY(calc(-180deg + var(--open))); }
+  .ld-rf-face::after { animation: none; }
+  .ld-rf-leaf.n1 .ld-rf-face.front::after { opacity: .35; }
+  .ld-boot-note.first { animation: ld-note-out .01s linear 9s forwards; }
+  .ld-boot-note.later { animation: ld-note-in .01s linear 9.4s forwards; }
+  .ld-boot-retry { animation: ld-note-in .01s linear 22s forwards; }
+  .ld-boot { transition: none; }
+}

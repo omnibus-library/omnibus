@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{EbookMetadata, Shelf, SortDir, SortKey};
 
-use crate::components::{EditShelfModal, PageLoading};
+use crate::components::{EditShelfModal, Loading, LoadingKind};
 use crate::{data, use_server_url, Route};
 
 mod add_books_modal;
@@ -60,7 +60,9 @@ pub fn ShelfDetailPage(id: i64) -> Element {
     );
 
     if loading() && shelf.read().is_none() {
-        return render_page_state(rsx! { PageLoading {} });
+        return render_page_state(
+            rsx! { Loading { kind: LoadingKind::Page, label: "Opening the shelf" } },
+        );
     }
 
     let Some(current) = shelf.read().clone() else {

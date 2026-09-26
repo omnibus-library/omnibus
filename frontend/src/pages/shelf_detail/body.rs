@@ -12,7 +12,7 @@ use omnibus_shared::{EbookMetadata, Shelf, ShelfKind, SortKey};
 use super::header::ShelfHero;
 use crate::components::atrium::fallback_title;
 use crate::components::shelf_glyphs::{plus_icon, x_icon};
-use crate::components::{CoverTile, CoverTileKind, PageLoading};
+use crate::components::{CoverTile, CoverTileKind, Loading, LoadingKind};
 use crate::shelf_access::ShelfAccess;
 use crate::{data, Route};
 
@@ -58,7 +58,7 @@ pub(super) fn WebShelfBody(
         return rsx! {
             div { class: "shd-page",
                 {back_crumb()}
-                div { class: "shd-state", PageLoading {} }
+                div { class: "shd-state", Loading { kind: LoadingKind::Page, label: "Opening the shelf" } }
             }
         };
     };

@@ -174,12 +174,12 @@ pub(super) fn CompareScreen(
 fn CompareSkeleton() -> Element {
     rsx! {
         div { class: "mes-skeleton", "data-testid": "mes-compare-skeleton", aria_hidden: "true",
-            div { class: "mes-skel-cover" }
+            div { class: "ld-skel mes-skel-cover" }
             for i in 0..5 {
                 div { key: "{i}", class: "mes-skel-row",
-                    span { class: "mes-skel-bar mes-skel-label" }
-                    span { class: "mes-skel-bar" }
-                    span { class: "mes-skel-bar" }
+                    span { class: "ld-skel mes-skel-bar mes-skel-label", style: "--i:{i}" }
+                    span { class: "ld-skel mes-skel-bar", style: "--i:{i}" }
+                    span { class: "ld-skel mes-skel-bar", style: "--i:{i}" }
                 }
             }
         }

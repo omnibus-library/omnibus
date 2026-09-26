@@ -76,7 +76,7 @@ pub fn FetchSummaryButton(uuid: String, on_fetched: EventHandler<String>) -> Ele
                         class: "fs-fetch-status",
                         role: "status",
                         "data-testid": "fetch-summary-status",
-                        span { class: "suggest-spinner", aria_hidden: "true" }
+                        crate::components::Ring {}
                         span { "{searching_label(source)}" }
                     }
                 },
