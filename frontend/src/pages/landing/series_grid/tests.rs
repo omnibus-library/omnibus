@@ -161,14 +161,19 @@ fn band_style_tints_with_the_front_accent_and_falls_back_to_the_page_accent() {
 }
 
 #[test]
-fn grid_item_key_names_a_book_by_its_row_and_a_stack_or_head_card_by_its_lead() {
-    let stack = saga("s2", &["s1", "s2"]);
-    let books = vec![plain("a"), volume("s2", Some("2"))];
+fn grid_item_key_names_a_book_by_its_id_and_a_stack_or_head_card_by_its_lead() {
+    let mut stack = saga("s2", &["s1", "s2"]);
+    stack.members[0].id = 1;
+    stack.members[1].id = 2;
+    let lead = stack.members[1].clone();
+    let mut other = plain("a");
+    other.id = 9;
+    let books = vec![other, lead];
     let keys: Vec<String> = grid_items(&books, std::slice::from_ref(&stack), Some("s2"))
         .iter()
         .map(GridItem::key)
         .collect();
-    assert_eq!(keys, vec!["a", "cap-s2", "s1", "s2"]);
+    assert_eq!(keys, vec!["9", "cap-s2", "1", "2"]);
     assert_eq!(GridItem::Stack(stack).key(), "stack-s2");
 }
 
@@ -184,4 +189,49 @@ fn is_stale_flags_a_key_no_current_stack_leads_with() {
     assert!(is_stale(Some("gone"), &leads));
     assert!(!is_stale(Some("s1"), &leads));
     assert!(!is_stale(None, &leads));
+}
+
+/// A book on disk at `<folder>/vol.epub` — `filename` is the basename, so two
+/// of these slug alike however far apart the folders are.
+fn twin(id: i64, uuid: &str) -> EbookMetadata {
+    EbookMetadata {
+        id,
+        filename: "vol.epub".into(),
+        unique_identifier: Some(uuid.into()),
+        title: Some(uuid.into()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn grid_items_keys_two_books_whose_filenames_share_a_basename_apart() {
+    // Dioxus requires keyed siblings to be unique; a collision here mis-diffs
+    // the grid and kills the page's event handling (#2633).
+    let books = vec![twin(1, "a"), twin(2, "b")];
+
+    let keys: Vec<String> = grid_items(&books, &[], None)
+        .iter()
+        .map(GridItem::key)
+        .collect();
+
+    assert_eq!(keys, vec!["1".to_string(), "2".to_string()]);
+}
+
+#[test]
+fn grid_items_keys_every_cell_of_a_dealt_out_run_apart() {
+    let mut stack = saga("lead", &["lead", "v2", "v3"]);
+    for (i, member) in stack.members.iter_mut().enumerate() {
+        member.id = 10 + i as i64;
+        member.filename = "vol.epub".into();
+    }
+    let lead = stack.members[0].clone();
+    let books = vec![twin(1, "a"), lead, twin(2, "b")];
+
+    let keys: Vec<String> = grid_items(&books, std::slice::from_ref(&stack), Some("lead"))
+        .iter()
+        .map(GridItem::key)
+        .collect();
+
+    let unique: std::collections::BTreeSet<&String> = keys.iter().collect();
+    assert_eq!(unique.len(), keys.len(), "duplicate key in {keys:?}");
 }

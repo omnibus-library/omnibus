@@ -153,6 +153,38 @@ fn row_ident_falls_back_to_the_uuid_for_a_fileless_book() {
     assert_ne!(row_ident(&a), row_ident(&b));
 }
 
+#[test]
+fn row_ident_collides_for_two_books_whose_filenames_share_a_basename() {
+    // `filename` is the basename, so shelving `vol.epub` under two folders
+    // gives both books one slug. Pinned because it is what `row_diff_key`
+    // exists to stop being a page-breaking key (#2633).
+    let a = ident_book("vol.epub", "aaaaaaaa-0000-0000-0000-000000000000");
+    let b = ident_book("vol.epub", "bbbbbbbb-0000-0000-0000-000000000000");
+
+    assert_eq!(row_ident(&a), row_ident(&b));
+}
+
+#[test]
+fn row_diff_key_separates_two_books_whose_filenames_share_a_basename() {
+    let mut a = ident_book("vol.epub", "aaaaaaaa-0000-0000-0000-000000000000");
+    a.id = 17;
+    let mut b = ident_book("vol.epub", "bbbbbbbb-0000-0000-0000-000000000000");
+    b.id = 18;
+
+    assert_eq!(row_diff_key(&a), "17");
+    assert_ne!(row_diff_key(&a), row_diff_key(&b));
+}
+
+#[test]
+fn row_diff_key_separates_two_fileless_books() {
+    let mut a = ident_book("", "aaaaaaaa-0000-0000-0000-000000000000");
+    a.id = 4;
+    let mut b = ident_book("", "bbbbbbbb-0000-0000-0000-000000000000");
+    b.id = 5;
+
+    assert_ne!(row_diff_key(&a), row_diff_key(&b));
+}
+
 // sort_books cases.
 fn sample() -> Vec<EbookMetadata> {
     vec![

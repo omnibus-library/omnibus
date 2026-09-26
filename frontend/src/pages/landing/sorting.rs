@@ -264,18 +264,32 @@ pub(crate) fn slugify(s: &str) -> String {
     out
 }
 
-/// Stable per-book identity for a row/tile `key` and testid slug.
+/// Stable per-book testid slug for a row/tile.
 ///
 /// A fileless book (physical-only, or a ghost) has no `book_files` row, and
 /// `row_to_ebook` leaves its `filename` empty — slugging that alone would
-/// collapse every such book onto the same key and testid, breaking Dioxus
-/// diffing and making Playwright selectors ambiguous. Fall back to the uuid,
-/// which is always present and unique.
+/// collapse every such book onto one testid and make Playwright selectors
+/// ambiguous. Fall back to the uuid, which is always present.
+///
+/// **Not a diff key.** `filename` is the file's *basename*, so two books slug
+/// alike whenever their files are named alike, however far apart the folders
+/// holding them sit. Keyed lists take [`row_diff_key`].
 pub(crate) fn row_ident(book: &EbookMetadata) -> String {
     if book.filename.is_empty() {
         return row_slug(book.unique_identifier.as_deref().unwrap_or_default());
     }
     row_slug(&book.filename)
+}
+
+/// Stable per-book key for a keyed list — `books.id`, unique library-wide.
+///
+/// Deliberately not [`row_ident`]: that slug is cut from the file's basename,
+/// so `vol.epub` under two folders — or `A Book!.epub` beside `A Book.epub` —
+/// collapses two books onto one string. An ambiguous testid is a nuisance;
+/// duplicate keyed siblings corrupt Dioxus's keyed diff and take the whole
+/// page's event handling down with it (#2633, rule 07).
+pub(crate) fn row_diff_key(book: &EbookMetadata) -> String {
+    book.id.to_string()
 }
 
 #[cfg(test)]

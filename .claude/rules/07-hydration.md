@@ -35,6 +35,44 @@ paint must match.
   Keep one stable outer element and swap its *children* instead —
   `components/user_avatar.rs` is the worked example (a journal card's
   Delete died the moment its author had a profile picture).
+- **Duplicate keys among keyed siblings** — same symptom, different
+  cause, and this one fires on the first *update* rather than at mount, so
+  the page paints correctly and then dies on the first click. See below.
+
+## Keyed siblings must each be unique
+
+`dioxus-core` requires it. Two siblings sharing a key collapse in the
+diff's key→index map: one old node is diffed against two new ones and
+another is neither diffed nor removed, so the mounted-node table no
+longer describes the DOM and event dispatch stops. A debug build asserts
+(`keyed siblings must each have a unique key`) and the panic kills the
+VirtualDom outright; a release build has `debug-assertions` off and
+corrupts quietly.
+
+**This is not a hydration mismatch**, so the SSR-vs-DOM diff below finds
+nothing: both renders are identical and correct, and the damage happens
+on the first *update* after them. The tell is the assertion — run the
+suspect page under `dx serve`, not against the bundle.
+
+Key on an identity the data layer guarantees unique, not on a display
+string that merely usually differs:
+
+- **A book is keyed by `books.id`.** Never by `row_ident`, the landing
+  page's Playwright testid slug: it is cut from the file's *basename*, so
+  `vol.epub` under two folders slugs two books alike. A testid may
+  collide; a key may not. Most surfaces write `book.id` inline;
+  `landing::sorting::row_diff_key` is the landing grid and table's
+  named form of it.
+- **Anything stored per format carries the format** — progress is
+  `UNIQUE(user_id, book_uuid, format)`, so a dual-format book open in
+  both formats is two rows under one uuid, and the uuid it is filed
+  under is not always the one the book resolves to (`merged_uuids`).
+  `landing::resume_meta::resume_key` owns that rule for every list of
+  open books.
+
+Both shipped as #2633: a four-book shelf holding one colliding pair took
+the landing page's nav and shelf cards down on the first click after it
+was selected.
 
 ## Confirming a mismatch
 

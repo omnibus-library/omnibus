@@ -132,3 +132,69 @@ fn stack_kicker_names_a_single_book_instead_of_counting_a_stack() {
     assert_eq!(stack_kicker(2), "2 books open");
     assert_eq!(stack_kicker(5), "5 books open");
 }
+
+#[test]
+fn stack_entries_keys_the_two_formats_of_one_book_apart() {
+    // Progress is stored per format, so a dual-format book open in both is two
+    // points sharing a uuid. Keying the fan on the uuid alone gave them one
+    // key, which mis-diffs the whole page (#2633).
+    let points = vec![
+        point("dual", ProgressFormat::Epub, Some(30)),
+        point("dual", ProgressFormat::Audio, Some(40)),
+    ];
+
+    let keys: Vec<String> = stack_entries_for_test(&points, "http://x")
+        .into_iter()
+        .map(|e| e.key)
+        .collect();
+
+    assert_eq!(keys.len(), 2);
+    assert_ne!(keys[0], keys[1]);
+}
+
+/// A point whose resolved book carries `id` — what `open_book_count` folds on.
+fn point_on_book(uuid: &str, format: ProgressFormat, book_id: i64) -> ResumePoint {
+    let mut p = point(uuid, format, Some(30));
+    p.book.id = book_id;
+    p
+}
+
+#[test]
+fn open_book_count_counts_books_not_fan_cards() {
+    // A book open in both formats holds two cards; the kicker above them
+    // says "N books open", so it must not count the cards.
+    let entries = stack_entries_for_test(
+        &[
+            point_on_book("dual", ProgressFormat::Epub, 1),
+            point_on_book("dual", ProgressFormat::Audio, 1),
+            point_on_book("other", ProgressFormat::Epub, 2),
+        ],
+        "http://x",
+    );
+
+    assert_eq!(entries.len(), 3);
+    assert_eq!(open_book_count(&entries), 2);
+    assert_eq!(stack_kicker(open_book_count(&entries)), "2 books open");
+}
+
+#[test]
+fn open_book_count_folds_two_rows_that_resolve_to_one_book() {
+    // `get_book_by_uuid` resolves both rows through `merged_uuids` to the one
+    // surviving book, so the points differ in `record.book_uuid` alone and
+    // carry an identical `book` — which is why the fold is on that book and
+    // not on the uuid `resume_key` deliberately keys apart.
+    let survivor = point_on_book("survivor", ProgressFormat::Epub, 1).book;
+    let mut old = point_on_book("old-uuid", ProgressFormat::Epub, 1);
+    old.book = survivor.clone();
+    let mut new = point_on_book("new-uuid", ProgressFormat::Audio, 1);
+    new.book = survivor;
+
+    let entries = stack_entries_for_test(&[old, new], "http://x");
+
+    assert_eq!(entries.len(), 2);
+    assert_eq!(open_book_count(&entries), 1);
+    assert_eq!(
+        stack_kicker(open_book_count(&entries)),
+        "your in-progress book"
+    );
+}

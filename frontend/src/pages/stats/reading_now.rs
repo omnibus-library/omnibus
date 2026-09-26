@@ -9,6 +9,7 @@ use omnibus_shared::{FinishedBook, MonthCount, ResumePoint, StatsSummary, Struct
 
 use super::goal::year_fraction;
 use crate::components::{CoverTile, CoverTileKind, StarRating};
+use crate::pages::landing::resume_meta::resume_key;
 use crate::{use_server_url, Route};
 
 /// How far into the year the projection stays quiet. A handful of books over
@@ -123,9 +124,10 @@ fn open_row(point: &ResumePoint, server_url: &str) -> Element {
     let author = point.book.creators.first().map(|c| c.name.clone());
     let readout = resume_readout(point);
     let percent = resume_percent(point);
+    let key = resume_key(point);
     rsx! {
         Link {
-            key: "{uuid}",
+            key: "{key}",
             class: "st-open-row",
             to: Route::BookDetail { uuid: uuid.clone() },
             div { class: "st-open-cover",
