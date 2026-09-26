@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 use omnibus_shared::physical::PhysicalCopy;
 use omnibus_shared::{BookDeletionManifest, BookFileInfo, DeleteBookFilesResult};
 
-use crate::components::ConfirmModal;
+use crate::components::{BusyLabel, ConfirmModal, Loading, LoadingKind};
 use crate::{data, format, use_server_url};
 
 /// Which pane the dialog is showing.
@@ -99,12 +99,19 @@ fn render_pane(
     on_close: EventHandler<()>,
 ) -> Element {
     let Some(manifest) = signals.manifest.read().clone() else {
+        let error = signals.error.read().clone();
         return rsx! {
             div { class: "del-body",
                 h2 { class: "del-title", "Delete files\u{2026}" }
-                p { class: "del-copy", "Loading this book\u{2019}s files\u{2026}" }
-                if let Some(msg) = signals.error.read().clone() {
+                // A failed fetch has stopped working, so it says so instead.
+                if let Some(msg) = error {
                     p { role: "alert", class: "bd-merge-error", "{msg}" }
+                } else {
+                    Loading {
+                        kind: LoadingKind::Sheet,
+                        label: "Loading this book\u{2019}s files\u{2026}",
+                        testid: "delete-loading",
+                    }
                 }
                 {render_actions(rsx! {}, on_close, signals.busy)}
             }
@@ -526,8 +533,9 @@ fn render_confirm(
                     "data-testid": "delete-confirm",
                     r#type: "button",
                     disabled: busy(),
+                    "aria-busy": if busy() { "true" } else { "false" },
                     onclick: move |_| on_confirm(()),
-                    if busy() { "Deleting\u{2026}" } else { "{labels.action}" }
+                    BusyLabel { busy: busy(), label: labels.action.clone(), busy_label: "Deleting\u{2026}" }
                 }
             }, on_close, signals.busy)}
         }

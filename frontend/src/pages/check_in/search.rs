@@ -9,6 +9,7 @@ use omnibus_shared::{ExternalBookMeta, ScanSearchRequest};
 
 use super::screens::ExternalBookCard;
 use super::{friendly_error, FlowState};
+use crate::components::BusyLabel;
 use crate::{data, use_server_url};
 
 /// Title search over the metadata providers. The search read is owned here
@@ -104,8 +105,9 @@ fn TitleSearchForm(
                     r#type: "submit",
                     class: "btn primary",
                     disabled: busy() || searching() || query().trim().is_empty(),
+                    "aria-busy": if searching() { "true" } else { "false" },
                     "data-testid": "check-in-search-submit",
-                    if searching() { "Searching\u{2026}" } else { "Search" }
+                    BusyLabel { busy: searching(), label: "Search", busy_label: "Searching\u{2026}" }
                 }
             }
         }

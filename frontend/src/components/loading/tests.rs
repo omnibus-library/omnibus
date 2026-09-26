@@ -39,6 +39,25 @@ fn loading_stage_draws_a_large_riffle_and_fills_the_slot() {
 }
 
 #[test]
+fn loading_sets_an_optional_title_between_the_mark_and_the_caption() {
+    let html = render(rsx! {
+        Loading { kind: LoadingKind::Stage, title: "Preparing your audiobook", label: "A moment" }
+    });
+    let title = html
+        .find("ld-stage-title")
+        .unwrap_or_else(|| panic!("no title: {html}"));
+    let label = html
+        .find("ld-label")
+        .unwrap_or_else(|| panic!("no label: {html}"));
+    let mark = html
+        .find("ld-riffle")
+        .unwrap_or_else(|| panic!("no mark: {html}"));
+    assert!(mark < title && title < label, "html: {html}");
+    let bare = render(rsx! { Loading { kind: LoadingKind::Stage } });
+    assert!(!bare.contains("ld-stage-title"), "html: {bare}");
+}
+
+#[test]
 fn loading_honours_an_explicit_mark_over_the_kind_default() {
     let html = render(rsx! { Loading { kind: LoadingKind::Stage, mark: LoadingMark::Line } });
     assert!(html.contains("ld-line xl"), "html: {html}");

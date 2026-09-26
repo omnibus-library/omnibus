@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use omnibus_shared::{BulkMetadataEdit, EbookMetadata};
 
 use crate::components::chip_editor::{ChipEditor, ChipEditorOptions, SuggestionItem};
-use crate::components::ConfirmModal;
+use crate::components::{BusyLabel, ConfirmModal};
 use crate::{data, use_server_url};
 
 /// Floating action bar shown while at least one table row is selected.
@@ -130,8 +130,9 @@ pub(super) fn BulkEditModal(
                     class: "btn shelf-btn-primary",
                     "data-testid": "bulk-edit-submit",
                     disabled: busy() || nothing_to_apply,
+                    "aria-busy": if busy() { "true" } else { "false" },
                     onclick: on_submit,
-                    if busy() { "Applying\u{2026}" } else { "Apply to {count} {noun}" }
+                    BusyLabel { busy: busy(), label: format!("Apply to {count} {noun}"), busy_label: "Applying\u{2026}" }
                 }
             }
         }

@@ -7,6 +7,8 @@
 
 use dioxus::prelude::*;
 
+use crate::components::BusyLabel;
+
 /// Fetch the full cross-format resume for `(uuid, target)` — raw REST
 /// over the same-origin cookie session. `derive_cfi` asks the server to
 /// attach the mapped point CFI (`?derive=cfi`) — only the
@@ -42,6 +44,7 @@ pub(crate) async fn fetch_resume_with(
 pub(super) fn SyncHereButton() -> Element {
     let playback = crate::use_playback();
     let mut label = use_signal(|| "Synced here");
+    let syncing = label() == SYNCING;
     // Seeded online for SSR parity (rule 07); reconciled post-mount.
     let mut online = use_signal(|| true);
     use_effect(move || online.set(browser_online()));
@@ -51,7 +54,8 @@ pub(super) fn SyncHereButton() -> Element {
             r#type: "button",
             "data-testid": "listen-sync-here",
             title: "Declare the ebook and audiobook aligned at this spot",
-            disabled: !online(),
+            disabled: !online() || syncing,
+            "aria-busy": if syncing { "true" } else { "false" },
             onclick: move |_| {
                 if !browser_online() {
                     return;
@@ -70,14 +74,17 @@ pub(super) fn SyncHereButton() -> Element {
                     audio_seconds: Some((playback.elapsed)()),
                 };
                 spawn(async move {
-                    label.set("Syncing\u{2026}");
+                    label.set(SYNCING);
                     label.set(crate::data::declare_sync_and_label(decl).await);
                 });
             },
-            "{label}"
+            BusyLabel { busy: syncing, label: label(), busy_label: SYNCING }
         }
     }
 }
+
+/// The "synced here" controls' label while a declaration is in flight.
+pub(crate) const SYNCING: &str = "Syncing\u{2026}";
 
 /// Whether the browser reports connectivity — the "synced here" controls
 /// disable offline (rule 08). Always `true` off-web.

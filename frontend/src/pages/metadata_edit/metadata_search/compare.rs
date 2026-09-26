@@ -20,6 +20,7 @@ use super::cover_row::CoverRow;
 use super::field::MetadataField;
 use super::sources::provider_slug;
 use super::EMPTY;
+use crate::components::Loading;
 
 /// Above this many characters on either side, a row stops being readable in
 /// two narrow columns and is laid out down the panel's full width instead.
@@ -95,8 +96,10 @@ pub(super) fn CompareScreen(
             // later. A placeholder for that moment is calmer than a wrong
             // answer corrected in view.
             if hydrating {
-                p { class: "mes-subtitle", role: "status", "data-testid": "mes-hydrating",
-                    "Loading the full record\u{2026}"
+                Loading {
+                    class: "inline",
+                    testid: "mes-hydrating",
+                    label: "Loading the full record\u{2026}",
                 }
                 CompareSkeleton {}
             } else {

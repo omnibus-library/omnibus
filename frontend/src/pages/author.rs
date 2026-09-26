@@ -495,13 +495,15 @@ fn AuthorDeleteModal(
                     ConfirmModalAction {
                         testid: "author-delete-cancel".to_string(),
                         label: "Cancel".to_string(),
+                        busy_label: None,
                         tone: ConfirmModalTone::Ghost,
                         disabled: busy,
                         on_click: EventHandler::new(move |_| show_confirm.set(false)),
                     },
                     ConfirmModalAction {
                         testid: "author-delete-confirm".to_string(),
-                        label: if busy { "Deleting\u{2026}".to_string() } else { "Delete".to_string() },
+                        label: "Delete".to_string(),
+                        busy_label: Some("Deleting\u{2026}".to_string()),
                         tone: ConfirmModalTone::Danger,
                         disabled: busy,
                         on_click: EventHandler::new(confirm_delete),

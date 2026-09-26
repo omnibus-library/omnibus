@@ -7,7 +7,7 @@
 use dioxus::prelude::*;
 
 use super::image_upload::use_file_upload;
-use crate::components::ConfirmModal;
+use crate::components::{ConfirmModal, MarkSize, Ring};
 use crate::data;
 
 /// Wrapper that renders an "edit" pencil button positioned over its child.
@@ -134,6 +134,9 @@ fn AuthorPhotoEditModal(
                     class: "author-photo-modal__status",
                     role: "status",
                     "data-testid": "author-photo-status",
+                    if busy() {
+                        Ring { size: MarkSize::Xs, class: "author-photo-modal__ring" }
+                    }
                     "{msg}"
                 }
             }

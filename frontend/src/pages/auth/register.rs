@@ -9,6 +9,7 @@ use crate::components::auth::AuthShell;
 use crate::components::auth::{
     score_password, Banner, BannerKind, Field, PasswordRequirements, StrengthMeter,
 };
+use crate::components::BusyLabel;
 use crate::{use_server_url, Route};
 
 #[cfg(feature = "mobile")]
@@ -245,9 +246,7 @@ fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> El
     let err = error();
     let (username_err, password_err, other_err) = classify_errors(&err);
     let has_error = err.is_some();
-    let submit_label = if submitting() {
-        "Creating…"
-    } else if has_error {
+    let submit_label = if has_error {
         "Fix to continue"
     } else {
         "Create account"
@@ -284,7 +283,8 @@ fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> El
                 // the same invalid form. Each input's `oninput` clears
                 // the error signal so editing re-enables the button.
                 disabled: submitting() || has_error,
-                "{submit_label}"
+                "aria-busy": if submitting() { "true" } else { "false" },
+                BusyLabel { busy: submitting(), label: submit_label, busy_label: "Creating…" }
             }
             p { class: "auth-footer",
                 "Already have an account? "

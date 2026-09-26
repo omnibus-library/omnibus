@@ -10,7 +10,7 @@ use omnibus_shared::{EbookMetadata, MergeBooksResult};
 
 use crate::components::atrium::Cover;
 use crate::components::glyphs::search_glyph;
-use crate::components::ConfirmModal;
+use crate::components::{BusyLabel, ConfirmModal};
 use crate::platform_sleep::async_sleep_ms;
 use crate::{data, use_server_url};
 
@@ -410,8 +410,9 @@ fn render_confirm(
                     class: "btn primary",
                     "data-testid": "merge-confirm",
                     disabled: busy,
+                    "aria-busy": if busy { "true" } else { "false" },
                     onclick: move |_| on_confirm(()),
-                    if busy { "Merging\u{2026}" } else { "Merge" }
+                    BusyLabel { busy, label: "Merge", busy_label: "Merging\u{2026}" }
                 }
                 button {
                     class: "btn ghost",

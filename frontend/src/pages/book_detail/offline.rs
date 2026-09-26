@@ -5,6 +5,7 @@
 
 use dioxus::prelude::*;
 
+use crate::components::{MarkSize, Ring};
 use crate::offline::downloads::{self, DlFormat, DownloadStatus};
 use crate::use_server_url;
 
@@ -183,7 +184,9 @@ fn DlRow(data: DlRowData) -> Element {
                     button { r#type: "button", class: "btn sm", onclick: start, "Download" }
                 },
                 DownloadStatus::Downloading { .. } => rsx! {
-                    span { class: "m-dl-row-busy mono", "\u{2026}" }
+                    span { class: "m-dl-row-busy", role: "status", "aria-label": "Downloading",
+                        Ring { size: MarkSize::Sm }
+                    }
                 },
                 DownloadStatus::Error { .. } => rsx! {
                     button { r#type: "button", class: "btn sm", onclick: start, "Retry" }

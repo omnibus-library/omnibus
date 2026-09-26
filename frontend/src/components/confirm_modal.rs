@@ -5,6 +5,8 @@
 
 use dioxus::prelude::*;
 
+use crate::components::BusyLabel;
+
 /// Visual weight of one [`ConfirmModalAction`] button.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmModalTone {
@@ -13,10 +15,15 @@ pub enum ConfirmModalTone {
 }
 
 /// One button in a [`confirm_modal_body`] action row.
+///
+/// `busy_label` makes this the action that works: while it is `disabled` —
+/// which a working action always is — it shows that label with a ring in
+/// place of `label`, and reports `aria-busy`.
 #[derive(Clone, PartialEq)]
 pub struct ConfirmModalAction {
     pub testid: String,
     pub label: String,
+    pub busy_label: Option<String>,
     pub tone: ConfirmModalTone,
     pub disabled: bool,
     pub on_click: EventHandler<()>,
@@ -131,12 +138,30 @@ pub fn confirm_modal_body(
                         class: if action.tone == ConfirmModalTone::Danger { "del-btn-danger" } else { "del-btn-ghost" },
                         "data-testid": "{action.testid}",
                         disabled: action.disabled,
+                        "aria-busy": if action.is_busy() { "true" } else { "false" },
                         onclick: move |_| action.on_click.call(()),
-                        "{action.label}"
+                        {action_label(&action)}
                     }
                 }
             }
         }
+    }
+}
+
+impl ConfirmModalAction {
+    /// Whether this is the working action, mid-work.
+    fn is_busy(&self) -> bool {
+        self.disabled && self.busy_label.is_some()
+    }
+}
+
+/// An action's label: a working action swaps to its busy label in place.
+fn action_label(action: &ConfirmModalAction) -> Element {
+    match action.busy_label.clone() {
+        Some(busy_label) => rsx! {
+            BusyLabel { busy: action.is_busy(), label: action.label.clone(), busy_label }
+        },
+        None => rsx! { "{action.label}" },
     }
 }
 

@@ -6,6 +6,7 @@ use dioxus_router::{use_navigator, Link};
 #[cfg(not(feature = "mobile"))]
 use crate::components::auth::AuthShell;
 use crate::components::auth::{Banner, BannerKind, Field};
+use crate::components::BusyLabel;
 #[cfg(feature = "mobile")]
 use crate::pages::server_connect::display_host;
 use crate::{use_server_url, Route};
@@ -242,7 +243,8 @@ fn MobileLoginForm(props: MobileLoginFormProps) -> Element {
                 class: "btn primary lg auth-submit",
                 r#type: "submit",
                 disabled: submitting(),
-                if submitting() { "Signing in…" } else { "Sign in" }
+                "aria-busy": if submitting() { "true" } else { "false" },
+                BusyLabel { busy: submitting(), label: "Sign in", busy_label: "Signing in…" }
             }
             // Only once the probe has confirmed signup is open — offering the
             // link while unresolved would mean withdrawing it a beat later on
@@ -338,7 +340,8 @@ fn LoginForm(props: LoginFormProps) -> Element {
                 class: "btn primary lg auth-submit",
                 r#type: "submit",
                 disabled: submitting(),
-                if submitting() { "Logging in…" } else { "Log in" }
+                "aria-busy": if submitting() { "true" } else { "false" },
+                BusyLabel { busy: submitting(), label: "Log in", busy_label: "Logging in…" }
             }
             if registration_open() == Some(true) {
                 p { class: "auth-footer",

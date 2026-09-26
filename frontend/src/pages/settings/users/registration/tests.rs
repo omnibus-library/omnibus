@@ -46,6 +46,9 @@ fn registration_toggle_renders_unresolved_and_disabled_before_load() {
         html.contains("Checking"),
         "expected the unresolved subtitle, got: {html}"
     );
+    // Unknown is drawn as its own state — never as an unticked box.
+    assert!(html.contains("ld-unknown"), "{html}");
+    assert!(html.contains("ld-sheen"), "{html}");
 }
 
 // `registration_toggle_handler` runs inside a `VirtualDom::new(...)

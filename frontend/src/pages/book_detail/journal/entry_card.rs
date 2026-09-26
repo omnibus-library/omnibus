@@ -6,7 +6,9 @@ use dioxus::prelude::*;
 use omnibus_shared::{JournalEntry, JournalStatus, UpdateJournalEntry, UserSummary};
 
 use crate::components::user_avatar::UserAvatar;
-use crate::components::{confirm_modal_body, ConfirmModal, ConfirmModalAction, ConfirmModalTone};
+use crate::components::{
+    confirm_modal_body, BusyLabel, ConfirmModal, ConfirmModalAction, ConfirmModalTone,
+};
 use crate::data;
 use crate::pages::book_detail::dates::{fmt_long_date, local_date_offset};
 use crate::pages::book_detail::journal_editor::*;
@@ -296,6 +298,7 @@ fn render_delete_confirm_modal(
                     ConfirmModalAction {
                         testid: "journal-delete-cancel".to_string(),
                         label: "Cancel".to_string(),
+                        busy_label: None,
                         tone: ConfirmModalTone::Ghost,
                         disabled: is_busy,
                         on_click: EventHandler::new(move |_| {
@@ -306,7 +309,8 @@ fn render_delete_confirm_modal(
                     },
                     ConfirmModalAction {
                         testid: "journal-delete-confirm".to_string(),
-                        label: if is_busy { "Deleting\u{2026}".to_string() } else { "Delete".to_string() },
+                        label: "Delete".to_string(),
+                        busy_label: Some("Deleting\u{2026}".to_string()),
                         tone: ConfirmModalTone::Danger,
                         disabled: is_busy,
                         on_click: EventHandler::new(do_delete),
@@ -521,6 +525,7 @@ fn BdJournalEntryEditForm(
                 class: "btn primary sm",
                 "data-testid": "journal-edit-save",
                 disabled: saving() || edit_body().trim().is_empty(),
+                "aria-busy": if saving() { "true" } else { "false" },
                 onclick: move |_| {
                     let url = server_url.clone();
                     let input = UpdateJournalEntry {
@@ -546,7 +551,7 @@ fn BdJournalEntryEditForm(
                         }
                     });
                 },
-                if saving() { "Saving\u{2026}" } else { "Save" }
+                BusyLabel { busy: saving(), label: "Save", busy_label: "Saving\u{2026}" }
             }
         }
     }

@@ -4,6 +4,8 @@
 
 use dioxus::prelude::*;
 
+use crate::components::{Loading, LoadingKind};
+
 use super::signals::ReaderStatus;
 use super::ReaderPanelSignals;
 
@@ -294,7 +296,12 @@ pub(super) fn ReaderViewerStage(
             div { id: "omnibus-viewer", class: "rd-viewer", "data-testid": "reader-viewer" }
             match status {
                 ReaderStatus::Loading => rsx! {
-                    div { class: "rd-overlay", "data-testid": "reader-loading", "Loading\u{2026}" }
+                    Loading {
+                        kind: LoadingKind::Stage,
+                        class: "rd-overlay",
+                        testid: "reader-loading",
+                        label: "Finding your place",
+                    }
                 },
                 ReaderStatus::Failed => rsx! {
                     div {

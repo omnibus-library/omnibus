@@ -84,13 +84,16 @@ pub(super) fn SyncStatusRow() -> Element {
         (false, 0) => "Offline".to_string(),
         (false, n) => format!("Offline \u{2014} {n} changes waiting to sync"),
     };
+    // The dot breathes only while the outbox is actually draining.
+    let dot_class = match (state.online, state.pending_ops) {
+        (true, 0) => "m-account-sync-dot on",
+        (true, _) => "m-account-sync-dot on ld-dot",
+        (false, _) => "m-account-sync-dot",
+    };
     rsx! {
         div { class: "m-account-sync", "data-testid": "account-sync-status",
             div { class: "m-account-sync-line",
-                span {
-                    class: if state.online { "m-account-sync-dot on" } else { "m-account-sync-dot" },
-                    "aria-hidden": "true",
-                }
+                span { class: dot_class, "aria-hidden": "true" }
                 "{headline}"
             }
             if state.dropped_ops > 0 {

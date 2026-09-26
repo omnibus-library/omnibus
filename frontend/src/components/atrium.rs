@@ -189,6 +189,8 @@ pub fn Cover(
     // gets a fresh chance to load, even though this component instance
     // stays mounted across the change.
     let mut broken_cover_src: Signal<Option<String>> = use_signal(|| None);
+    let shown_src = image_src.filter(|u| broken_cover_src.read().as_deref() != Some(u.as_str()));
+    let plate_class = cover_class(shown_src.is_some());
 
     rsx! {
         div {
@@ -196,10 +198,8 @@ pub fn Cover(
             style: "{accent_style}",
             "data-testid": "cover",
             div {
-                class: "cover tpl-plate",
-                if let Some(url) =
-                    image_src.filter(|u| broken_cover_src.read().as_deref() != Some(u.as_str()))
-                {
+                class: plate_class,
+                if let Some(url) = shown_src {
                     img {
                         src: "{url}",
                         srcset: "{srcset_attr}",
@@ -217,6 +217,18 @@ pub fn Cover(
                 }
             }
         }
+    }
+}
+
+/// The cover plate's classes. A plate waiting on an image glints behind it
+/// until the pixels land — CSS rather than a load event, which an SSR'd
+/// `<img>` can fire before hydration and never repeat. The typographic plate
+/// is already final, so it stays still.
+fn cover_class(has_image: bool) -> &'static str {
+    if has_image {
+        "cover tpl-plate ld-cover-glint"
+    } else {
+        "cover tpl-plate"
     }
 }
 
@@ -392,6 +404,31 @@ mod render_tests {
             html.contains(r#"class="atrium theme-snap""#),
             "html: {html}"
         );
+    }
+
+    fn cover_harness<const IMAGE: bool>() -> Element {
+        use_context_provider(|| {
+            crate::contexts::CoverCacheBust(Signal::new(std::collections::HashMap::new()))
+        });
+        rsx! {
+            Cover {
+                book: EbookMetadata {
+                    title: Some("Piranesi".to_string()),
+                    cover_url: IMAGE.then(|| "/api/covers/1".to_string()),
+                    ..Default::default()
+                },
+            }
+        }
+    }
+
+    #[test]
+    fn cover_glints_its_plate_only_while_an_image_is_arriving() {
+        let html = render_in_vdom(cover_harness::<true>);
+        assert!(html.contains("ld-cover-glint"), "html: {html}");
+        assert!(html.contains("<img"), "html: {html}");
+        let html = render_in_vdom(cover_harness::<false>);
+        assert!(!html.contains("ld-cover-glint"), "html: {html}");
+        assert!(html.contains("Piranesi"), "html: {html}");
     }
 
     #[test]

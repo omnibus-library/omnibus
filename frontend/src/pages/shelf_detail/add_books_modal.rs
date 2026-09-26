@@ -5,7 +5,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::LibraryPicker;
+use crate::components::{BusyLabel, LibraryPicker};
 use crate::{data, use_server_url};
 
 /// Modal that appends library books to an existing manual shelf. `members`
@@ -111,8 +111,9 @@ pub(super) fn AddBooksModal(
                         class: "btn shelf-btn-primary",
                         "data-testid": "add-books-submit",
                         disabled: saving() || count == 0,
+                        "aria-busy": if saving() { "true" } else { "false" },
                         onclick: on_add,
-                        if saving() { "Adding\u{2026}" } else { "{add_label}" }
+                        BusyLabel { busy: saving(), label: add_label, busy_label: "Adding\u{2026}" }
                     }
                 }
             }

@@ -25,6 +25,7 @@ fn Harness() -> Element {
                     ConfirmModalAction {
                         testid: "sample-cancel".to_string(),
                         label: "Cancel".to_string(),
+                        busy_label: None,
                         tone: ConfirmModalTone::Ghost,
                         disabled: false,
                         on_click: EventHandler::new(|_| {}),
@@ -32,6 +33,7 @@ fn Harness() -> Element {
                     ConfirmModalAction {
                         testid: "sample-confirm".to_string(),
                         label: "I sold it".to_string(),
+                        busy_label: None,
                         tone: ConfirmModalTone::Danger,
                         disabled: false,
                         on_click: EventHandler::new(|_| {}),
@@ -105,6 +107,7 @@ fn NoteHarness() -> Element {
         vec![ConfirmModalAction {
             testid: "note-confirm".to_string(),
             label: "Delete".to_string(),
+            busy_label: None,
             tone: ConfirmModalTone::Danger,
             disabled: false,
             on_click: EventHandler::new(|_| {}),
@@ -136,6 +139,7 @@ fn BusyHarness() -> Element {
         vec![ConfirmModalAction {
             testid: "sample-busy".to_string(),
             label: "Working\u{2026}".to_string(),
+            busy_label: None,
             tone: ConfirmModalTone::Danger,
             disabled: true,
             on_click: EventHandler::new(|_| {}),
@@ -147,6 +151,40 @@ fn BusyHarness() -> Element {
 fn confirm_modal_body_disables_every_action_when_told_to() {
     let html = render(rsx! { BusyHarness {} });
     assert!(html.contains("disabled"));
+}
+
+#[component]
+fn WorkingHarness(disabled: bool) -> Element {
+    confirm_modal_body(
+        "Delete shelf?",
+        "This can't be undone.",
+        None,
+        vec![ConfirmModalAction {
+            testid: "working-confirm".to_string(),
+            label: "Delete".to_string(),
+            busy_label: Some("Deleting\u{2026}".to_string()),
+            tone: ConfirmModalTone::Danger,
+            disabled,
+            on_click: EventHandler::new(|_| {}),
+        }],
+    )
+}
+
+#[test]
+fn confirm_modal_body_swaps_a_working_action_to_its_busy_label_with_a_ring() {
+    let html = render(rsx! { WorkingHarness { disabled: true } });
+    assert!(html.contains("aria-busy=\"true\""), "{html}");
+    assert!(html.contains("ld-busy"), "{html}");
+    assert!(html.contains("ld-ring"), "{html}");
+    assert!(html.contains(">Deleting\u{2026}<"), "{html}");
+}
+
+#[test]
+fn confirm_modal_body_shows_a_working_action_idle_until_it_is_disabled() {
+    let html = render(rsx! { WorkingHarness { disabled: false } });
+    assert!(html.contains("aria-busy=\"false\""), "{html}");
+    assert!(!html.contains("ld-ring"), "{html}");
+    assert!(html.contains(">Delete<"), "{html}");
 }
 
 /// Runs [`dismiss_unless_busy`] inside a live scope (needed for

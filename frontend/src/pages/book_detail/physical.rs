@@ -650,6 +650,7 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
                         ConfirmModalAction {
                             testid: "last-copy-cancel".to_string(),
                             label: "Cancel".to_string(),
+                            busy_label: None,
                             tone: ConfirmModalTone::Ghost,
                             disabled: is_busy,
                             on_click: EventHandler::new(move |_| delete_target.set(None)),
@@ -657,6 +658,7 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
                         ConfirmModalAction {
                             testid: "last-copy-wishlist".to_string(),
                             label: "Move to wishlist".to_string(),
+                            busy_label: None,
                             tone: ConfirmModalTone::Ghost,
                             disabled: is_busy,
                             on_click: EventHandler::new(move |_| {
@@ -666,6 +668,7 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
                         ConfirmModalAction {
                             testid: "last-copy-remove".to_string(),
                             label: "Remove from library".to_string(),
+                            busy_label: None,
                             tone: ConfirmModalTone::Danger,
                             disabled: is_busy,
                             on_click: EventHandler::new(move |_| {
@@ -693,6 +696,7 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
                         ConfirmModalAction {
                             testid: "copy-delete-cancel".to_string(),
                             label: "Cancel".to_string(),
+                            busy_label: None,
                             tone: ConfirmModalTone::Ghost,
                             disabled: is_busy,
                             on_click: EventHandler::new(move |_| delete_target.set(None)),
@@ -700,6 +704,7 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
                         ConfirmModalAction {
                             testid: "copy-delete-confirm".to_string(),
                             label: "I sold it".to_string(),
+                            busy_label: Some("Removing\u{2026}".to_string()),
                             tone: ConfirmModalTone::Danger,
                             disabled: is_busy,
                             on_click: EventHandler::new(move |_| {

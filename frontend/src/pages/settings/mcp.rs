@@ -84,7 +84,12 @@ pub fn McpToggleCard() -> Element {
     };
     let endpoint = format!("{}/mcp", origin());
     let copy_endpoint = endpoint.clone();
-    let track_class = if on { "tkx-track on" } else { "tkx-track" };
+    // Unknown is its own look — the knob waits at centre — never "off".
+    let (track_class, state_class) = match enabled() {
+        None => ("tkx-track ld-toggle-unknown", "tkx-switch-state ld-sheen"),
+        Some(_) if on => ("tkx-track on", "tkx-switch-state"),
+        Some(_) => ("tkx-track", "tkx-switch-state"),
+    };
     // While the state is still loading, the track is a visual placeholder:
     // no `switch` role and no `aria-checked`, so assistive tech never hears a
     // state the server hasn't confirmed (ARIA has no "unknown" for switches).
@@ -97,7 +102,7 @@ pub fn McpToggleCard() -> Element {
                 h3 { "Hosted MCP endpoint" }
                 span { class: "tkx-admin-tag", "admin" }
                 span { class: "tkx-switch",
-                    span { class: "tkx-switch-state", "data-testid": "mcp-toggle-state",
+                    span { class: "{state_class}", "data-testid": "mcp-toggle-state",
                         "{state_word}"
                     }
                     button {

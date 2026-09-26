@@ -14,8 +14,8 @@ use crate::platform_sleep::async_sleep_ms;
 /// State for one async-action-with-toast button: `in_flight` disables the
 /// button and swaps its label; `result` drives
 /// [`super::send_result_toast`]. Plain signals, so each call site's button
-/// markup binds them directly (`disabled: in_flight()`, `if in_flight() {
-/// ... }`). `Copy` so a single value can be captured into an `onclick`
+/// markup binds them directly (`disabled: in_flight()`, `BusyLabel { busy:
+/// in_flight(), .. }`). `Copy` so a single value can be captured into an `onclick`
 /// closure and called from it.
 #[derive(Clone, Copy)]
 pub(super) struct AsyncActionToast {

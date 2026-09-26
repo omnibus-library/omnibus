@@ -113,6 +113,7 @@ pub(crate) fn ScrollStopsCard() -> Element {
     let viewer_slot = crate::use_current_user().0;
     let toggle = scroll_stops_toggle_handler(confirmed, shown, error, saving, viewer_slot);
     let is_on = shown() == Some(true);
+    let pending = confirmed().is_none();
 
     rsx! {
         section { class: "card", "data-testid": "account-scroll-stops-card",
@@ -131,7 +132,10 @@ pub(crate) fn ScrollStopsCard() -> Element {
                         td {
                             div { class: "settings-row-name", "Book details scroll stops" }
                             div { class: "settings-row-note",
-                                "{scroll_stops_status_line(confirmed())}"
+                                span {
+                                    class: if pending { "ld-sheen" } else { "scroll-stops-status" },
+                                    "{scroll_stops_status_line(confirmed())}"
+                                }
                             }
                         }
                         td { class: "settings-col-switch",
@@ -140,6 +144,8 @@ pub(crate) fn ScrollStopsCard() -> Element {
                                     r#type: "checkbox",
                                     role: "switch",
                                     "aria-label": "Use book details scroll stops",
+                                    // Unknown: the knob waits at centre rather than claim off.
+                                    class: if pending { "ld-unknown" } else { "scroll-stops-check" },
                                     "data-testid": "scroll-stops-toggle",
                                     checked: is_on,
                                     disabled: confirmed().is_none() || saving(),

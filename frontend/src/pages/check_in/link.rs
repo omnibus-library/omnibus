@@ -9,6 +9,7 @@ use omnibus_shared::{PaletteBookHit, ScanBook};
 
 use super::screens::LibraryPickOption;
 use super::{friendly_error, FlowState};
+use crate::components::BusyLabel;
 use crate::{data, use_server_url};
 
 /// Turn a library-search hit into the [`ScanBook`] the confirm screen renders.
@@ -156,8 +157,9 @@ fn LibrarySearchForm(
                     r#type: "submit",
                     class: "btn primary",
                     disabled: busy() || searching() || query().trim().is_empty(),
+                    "aria-busy": if searching() { "true" } else { "false" },
                     "data-testid": "check-in-link-submit",
-                    if searching() { "Searching\u{2026}" } else { "Search my library" }
+                    BusyLabel { busy: searching(), label: "Search my library", busy_label: "Searching\u{2026}" }
                 }
             }
         }

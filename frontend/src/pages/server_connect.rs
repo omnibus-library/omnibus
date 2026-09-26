@@ -129,7 +129,8 @@ fn server_connect_form(
                 class: "btn primary lg auth-submit",
                 r#type: "submit",
                 disabled: checking(),
-                if checking() { "Connecting…" } else { "Connect" }
+                "aria-busy": if checking() { "true" } else { "false" },
+                crate::components::BusyLabel { busy: checking(), label: "Connect", busy_label: "Connecting…" }
             }
             p { class: "auth-footer",
                 "Don't have a server? "

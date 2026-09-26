@@ -7,6 +7,9 @@
 use dioxus::prelude::*;
 
 #[cfg(not(feature = "mobile"))]
+use crate::components::BusyLabel;
+
+#[cfg(not(feature = "mobile"))]
 use super::async_action::use_async_action_toast;
 
 /// "Send to Kobo" CTA. Web/SSR renders the interactive
@@ -72,6 +75,7 @@ pub fn SendToKoboButton(
             class: "{class}",
             r#type: "button",
             disabled: in_flight(),
+            "aria-busy": if in_flight() { "true" } else { "false" },
             title: "Write the KEPUB onto a plugged-in Kobo (Chrome/Edge), or download it to copy over",
             "data-testid": "{testid}",
             onclick: move |_| {
@@ -80,7 +84,7 @@ pub fn SendToKoboButton(
                 // `None` = the user cancelled the directory picker; stay quiet.
                 action_state.run(async move { write_kepub_to_kobo(&uuid, subdir.as_deref()).await });
             },
-            if in_flight() { "Sending\u{2026}" } else { "Send to Kobo" }
+            BusyLabel { busy: in_flight(), label: "Send to Kobo", busy_label: "Sending\u{2026}" }
         }
         {super::send_result_toast("kobo", result)}
     }

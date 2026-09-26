@@ -432,6 +432,7 @@ html, body { overscroll-behavior: none; }
 .sp-results {
   overflow-y: auto; flex: 1; padding: 6px 0;
 }
+.ld-row.sp-loading { justify-content: flex-start; padding: 14px 22px 4px; }
 .sp-group-head {
   padding: 12px 22px 6px;
   font-family: var(--mono); font-size: 10.5px;
@@ -683,6 +684,8 @@ html, body { overscroll-behavior: none; }
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; display: block;
 }
+/* The shared glint rides behind the image; keep the plate's own geometry. */
+.cover.ld-cover-glint, .cover.ld-cover-glint > img { position: absolute; }
 /* page-block sliver suggesting bound pages */
 .cover-wrap::after {
   content: ''; position: absolute; top: 1.5%; bottom: 1.5%; right: -2px;
@@ -3015,6 +3018,7 @@ a.idx-letter-on:focus-visible {
   opacity: 0.7;
   cursor: not-allowed;
 }
+.author-photo-modal__ring { margin-right: .5em; }
 .author-photo-modal__status {
   margin: 0;
   padding: 10px 12px;
@@ -3922,8 +3926,9 @@ a.idx-letter-on:focus-visible {
   position: absolute; inset: 0; z-index: 10;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  background: var(--bg-0); gap: 0.5rem;
+  background: var(--bg-0); gap: 0.5rem; --ld-stage-bg: var(--bg-0);
 }
+.lp-overlay.ld-stage { z-index: 10; }
 .lp-overlay-title {
   font-family: var(--serif); font-weight: 600; font-size: 1.3rem; color: var(--ink-1);
 }
@@ -4603,6 +4608,17 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   accent-color: var(--auth-accent);
   margin-top: 1px;
 }
+/* A value not yet loaded: neither ticked nor clear — a dash that breathes. */
+.auth-checkbox input[type="checkbox"].ld-unknown {
+  appearance: none; -webkit-appearance: none; position: relative; margin: 1px 0 0;
+  border-radius: 4px; border: 1px solid var(--line); cursor: progress;
+  background: color-mix(in oklch, var(--ink-3) 18%, var(--bg-2));
+}
+.auth-checkbox input[type="checkbox"].ld-unknown::after {
+  content: ""; position: absolute; left: 3px; right: 3px; top: 50%; height: 2px;
+  margin-top: -1px; border-radius: 1px; background: var(--ink-2);
+  animation: ld-breathe 1.2s ease-in-out infinite;
+}
 
 /* A settings switch: the same checkbox underneath (so the label, the form
    semantics and `role="switch"` all still work), painted as a track and a
@@ -4670,9 +4686,20 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   cursor: default;
 }
 .settings-switch:has(input:disabled) { cursor: default; }
+/* A value not yet loaded: the knob waits at centre instead of claiming off. */
+.settings-switch input[type="checkbox"].ld-unknown:disabled {
+  opacity: 1; cursor: progress;
+  background: color-mix(in oklch, var(--ink-3) 22%, var(--bg-2));
+}
+.settings-switch input[type="checkbox"].ld-unknown::after {
+  left: 50%; margin: -7px 0 0 -7px; transform: none;
+  animation: ld-knob 1.6s var(--ld-ease) infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .settings-switch input[type="checkbox"],
   .settings-switch input[type="checkbox"]::after { transition: none; }
+  .settings-switch input[type="checkbox"].ld-unknown::after,
+  .auth-checkbox input[type="checkbox"].ld-unknown::after { animation: none; }
 }
 
 .auth-requirements {
@@ -5573,6 +5600,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .tkx-track:disabled { cursor: default; opacity: 0.6; }
 .tkx-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 999px; background: var(--ink-1); transition: left .15s; }
 .tkx-track.on .tkx-knob { left: 20px; background: var(--accent-ink); }
+/* Unknown state: the shared indeterminate switch, at this track's size. */
+.tkx-track.ld-toggle-unknown { width: 40px; height: 22px; }
+.tkx-track.ld-toggle-unknown:disabled { opacity: 1; cursor: progress; }
+.tkx-track.ld-toggle-unknown .tkx-knob { display: none; }
 .tkx-mcp-note { margin: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.6; }
 
 /* Below the grid's comfortable width, rows fall back to a stacked card. */
@@ -6405,6 +6436,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .rd-ribbon > i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
 .rd-overlay { position: absolute; inset: 0; z-index: 8; display: flex;
   align-items: center; justify-content: center; color: var(--ink-2); background: var(--rd-page); }
+/* The loading stage keeps the reader's own layer, under the drawers. */
+.rd-overlay.ld-stage { z-index: 8; }
 /* The error overlay adds a Retry action below the message (issue #1895,
    AC3), so it needs a column stack instead of the base overlay's single
    centred row. */
@@ -7299,6 +7332,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   background: var(--bg-2);
 }
 .mes-cover-note { font-size: 11px; color: var(--ink-3); }
+.mes-cover-ring, .me-cover-ring { margin-right: .5em; }
 
 .mes-fields { display: flex; flex-direction: column; }
 .mes-field {
@@ -7851,6 +7885,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   display: flex; flex-direction: column; align-items: center; gap: 12px;
   font-size: 13.5px; color: var(--ink-2);
 }
+.pick-card-skel { cursor: default; pointer-events: none; }
+.pick-card-skel .pick-meta { gap: 8px; }
 .pick-more-row { display: flex; justify-content: center; padding: 14px 0 4px; }
 .pick-more { font-size: 12.5px; }
 .pick-foot {
@@ -8726,6 +8762,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 .m-account-sync-line { display: flex; align-items: center; gap: 6px; }
 .m-account-sync-dot {
+  --ld-dot: 7px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -10340,6 +10377,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   line-height: 1.5;
   text-align: center;
 }
+.scanner-status-ring { margin-right: .5em; }
 .scanner-actions { display: flex; flex-direction: column; gap: 10px; }
 .scanner-actions .btn { width: 100%; justify-content: center; }
 
@@ -10539,6 +10577,8 @@ html {
 .cr-fit.active { border-color: var(--line); color: var(--ink); background: var(--bg-2); }
 .cr-state { flex: 1; display: flex; align-items: center; justify-content: center;
   color: var(--ink-3); font-family: var(--mono); font-size: 13px; }
+/* The loading stage wears the page stage's ground, so the first page lands on it. */
+.cr-loading { --ld-stage-bg: var(--bg-2); }
 .cr-stage { position: relative; flex: 1; min-height: 0; display: flex;
   justify-content: center; overflow: auto; background: var(--bg-2); }
 .cr-page { display: block; margin: 0 auto; }
@@ -10591,7 +10631,8 @@ html {
 .pr-textlayer .endOfContent { display: block; position: absolute; inset: 100% 0 0;
   z-index: -1; cursor: default; user-select: none; }
 .pr-overlay { position: absolute; inset: 0; z-index: 3; flex-direction: column; gap: 12px;
-  background: var(--bg-2); }
+  background: var(--bg-2); --ld-stage-bg: var(--bg-2); }
+.pr-overlay.ld-stage { z-index: 3; }
 .pr-error-detail { max-width: 60ch; text-align: center; opacity: .7; }
 .pr-tool { position: relative; gap: 6px; }
 .pr-tool svg { flex: 0 0 auto; }
@@ -10752,7 +10793,7 @@ html {
   padding: 9px 12px;
   margin: 14px 0 0;
 }
-.al-loading { font-size: 13px; opacity: 0.7; margin: 18px 0; }
+.al-loading { margin: 6px 0; }
 .al-choice { margin-top: 16px; }
 .al-choice-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .al-choice-card {
@@ -12679,9 +12720,10 @@ html {
   flex-direction: column;
   gap: 14px;
 }
-/* A refetch dims the previous chart rather than replacing it with a
-   spinner, so a picker change doesn't flash the surface. */
-.cb-canvas.is-loading .cb-plot { opacity: 0.55; transition: opacity 120ms ease; }
+/* A refetch dims the previous chart (the shared `.ld-stale` look) rather
+   than replacing it with a spinner, so a picker change doesn't flash the
+   surface; the hairline keeps inside the rounded corners. */
+.cb-canvas.ld-stale.is-stale::before { left: var(--r-lg); right: var(--r-lg); }
 
 /* `position: relative` is what the hover card is placed against — it is HTML
    over a stretching SVG, so it is positioned as a share of the plot's width

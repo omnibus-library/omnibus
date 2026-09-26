@@ -11,6 +11,7 @@ use omnibus_shared::metadata_lookup::ProviderEdition;
 use super::candidates::CandidateRow;
 use super::sources::SourceSummary;
 use super::{PickerState, Stage};
+use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::focus_after_paint::focus_after_paint;
 
 /// One labelled field of the query.
@@ -101,7 +102,8 @@ pub(super) fn ResultsScreen(
                     // Any one field is enough: an ISBN alone is the strongest
                     // question there is, and a title alone is the commonest.
                     disabled: searching || nothing_to_ask,
-                    if searching { "Searching\u{2026}" } else { "Search" }
+                    "aria-busy": if searching { "true" } else { "false" },
+                    BusyLabel { busy: searching, label: "Search", busy_label: "Searching\u{2026}" }
                 }
             }
             {match stage {
@@ -113,8 +115,10 @@ pub(super) fn ResultsScreen(
                     }
                 },
                 Stage::Searching => rsx! {
-                    p { class: "mes-note", role: "status", "data-testid": "mes-searching",
-                        "Asking every configured source\u{2026}"
+                    Loading {
+                        kind: LoadingKind::Sheet,
+                        testid: "mes-searching",
+                        label: "Asking every configured source\u{2026}",
                     }
                 },
                 Stage::Failed(msg) => rsx! {

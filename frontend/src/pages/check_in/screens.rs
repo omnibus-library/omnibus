@@ -9,16 +9,16 @@ use dioxus_router::Link;
 use omnibus_shared::{ExternalBookMeta, ScanBook, WishlistAddRequest};
 
 use super::{wishlist_request_for, CheckInOpen, FlowState, FoundVia};
+use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::{media_url, use_server_url, Route};
 
-/// Matching spinner shown while the resolve request is in flight.
+/// Matching sheet shown while the resolve request is in flight.
 #[component]
 pub(super) fn ResolvingScreen() -> Element {
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-resolving",
-            crate::components::Ring { size: crate::components::MarkSize::Lg }
             h1 { "Matching\u{2026}" }
-            p { class: "subtitle", "Checking your library, then the web." }
+            Loading { kind: LoadingKind::Sheet, label: "Checking your library, then the web." }
         }
     }
 }
@@ -58,9 +58,10 @@ pub(super) fn ConfirmScreen(
                     r#type: "button",
                     class: "btn primary",
                     disabled: busy(),
+                    "aria-busy": if busy() { "true" } else { "false" },
                     "data-testid": "check-in-confirm-submit",
                     onclick: move |_| on_check_in.call(target.clone()),
-                    "Check in"
+                    BusyLabel { busy: busy(), label: "Check in", busy_label: "Checking in\u{2026}" }
                 }
                 button {
                     r#type: "button",
@@ -231,7 +232,9 @@ pub(super) fn ChooseScreen(
             h1 { "Not in your library" }
             p { class: "subtitle", "We found it online. What would you like to do?" }
             ExternalBookCard { meta: online }
-            div { class: "check-in-actions",
+            // One flag covers all four writes, so the group — not any one
+            // button — is what reports the work.
+            div { class: "check-in-actions", "aria-busy": if busy() { "true" } else { "false" },
                 button {
                     r#type: "button",
                     class: "btn primary",

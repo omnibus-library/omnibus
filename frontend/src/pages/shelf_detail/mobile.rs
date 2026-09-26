@@ -302,13 +302,15 @@ fn render_delete_shelf_modal(
                     ConfirmModalAction {
                         testid: "shelf-delete-cancel".to_string(),
                         label: "Cancel".to_string(),
+                        busy_label: None,
                         tone: ConfirmModalTone::Ghost,
                         disabled: is_busy,
                         on_click: EventHandler::new(move |_| show_delete_confirm.set(false)),
                     },
                     ConfirmModalAction {
                         testid: "shelf-delete-confirm".to_string(),
-                        label: if is_busy { "Deleting\u{2026}".to_string() } else { "Delete".to_string() },
+                        label: "Delete".to_string(),
+                        busy_label: Some("Deleting\u{2026}".to_string()),
                         tone: ConfirmModalTone::Danger,
                         disabled: is_busy,
                         on_click: EventHandler::new(do_delete),

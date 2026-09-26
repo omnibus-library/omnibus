@@ -156,7 +156,9 @@ fn kind_class(kind: LoadingKind) -> &'static str {
 ///
 /// `class` appends modifiers (`start`, `inline` on a section; `in-flow` on a
 /// stage that replaces rather than covers) or a caller's legacy hook class;
-/// `children` fill the slot under the caption (a stage's retry, a note).
+/// `title` sets a serif line between the mark and the caption (a stage that
+/// names what it is preparing); `children` fill the slot under the caption
+/// (a stage's retry, a note).
 #[component]
 pub fn Loading(
     #[props(default)] kind: LoadingKind,
@@ -164,6 +166,7 @@ pub fn Loading(
     #[props(into, default = "Loading\u{2026}".to_string())] label: String,
     #[props(into, default)] testid: Option<String>,
     #[props(into, default)] class: Option<String>,
+    #[props(into, default)] title: Option<String>,
     children: Element,
 ) -> Element {
     let kind_cls = kind_class(kind);
@@ -175,6 +178,9 @@ pub fn Loading(
             "aria-live": "polite",
             "data-testid": testid,
             {default_mark(kind, mark)}
+            if let Some(title) = title {
+                p { class: "ld-stage-title", "{title}" }
+            }
             p { class: "ld-label", "{label}" }
             div { class: "ld-slot", {children} }
         }

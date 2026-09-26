@@ -6,7 +6,9 @@ use dioxus::prelude::*;
 use omnibus_shared::{AdminUserRow, CreateUserRequest, DeviceView, SessionView, UserPermissions};
 
 use crate::components::auth::{score_password, PasswordRequirements, StrengthMeter};
-use crate::components::{confirm_modal_body, ConfirmModal, ConfirmModalAction, ConfirmModalTone};
+use crate::components::{
+    confirm_modal_body, BusyLabel, ConfirmModal, ConfirmModalAction, ConfirmModalTone,
+};
 use crate::data;
 
 use super::PermissionToggles;
@@ -40,7 +42,8 @@ pub(super) fn NewUserModal(on_close: EventHandler<()>, on_created: EventHandler<
                         class: "btn",
                         "data-testid": "new-user-submit",
                         disabled: saving(),
-                        "Create user"
+                        "aria-busy": if saving() { "true" } else { "false" },
+                        BusyLabel { busy: saving(), label: "Create user", busy_label: "Creating\u{2026}" }
                     }
                     button { r#type: "button", class: "btn ghost", onclick: move |_| on_close.call(()), "Cancel" }
                 }
@@ -215,7 +218,8 @@ pub(super) fn EditUserModal(
                         class: "btn",
                         "data-testid": "edit-user-submit",
                         disabled: saving(),
-                        "Save changes"
+                        "aria-busy": if saving() { "true" } else { "false" },
+                        BusyLabel { busy: saving(), label: "Save changes", busy_label: "Saving\u{2026}" }
                     }
                     button { r#type: "button", class: "btn ghost", onclick: move |_| on_close.call(()), "Cancel" }
                 }
@@ -283,13 +287,15 @@ pub(super) fn DeleteUserModal(
                     ConfirmModalAction {
                         testid: "delete-user-cancel".to_string(),
                         label: "Cancel".to_string(),
+                        busy_label: None,
                         tone: ConfirmModalTone::Ghost,
                         disabled: busy,
                         on_click: EventHandler::new(move |_| on_close.call(())),
                     },
                     ConfirmModalAction {
                         testid: "delete-user-confirm".to_string(),
-                        label: if busy { "Deleting\u{2026}".to_string() } else { "Delete user".to_string() },
+                        label: "Delete user".to_string(),
+                        busy_label: Some("Deleting\u{2026}".to_string()),
                         tone: ConfirmModalTone::Danger,
                         disabled: busy,
                         on_click: EventHandler::new(confirm),
@@ -405,8 +411,9 @@ fn render_session_list(
                                 class: "btn ghost danger sm",
                                 "data-testid": "user-session-revoke-{id}",
                                 disabled: busy_id == Some(id),
+                                "aria-busy": if busy_id == Some(id) { "true" } else { "false" },
                                 onclick: move |_| on_revoke.call(id),
-                                "Revoke"
+                                BusyLabel { busy: busy_id == Some(id), label: "Revoke", busy_label: "Revoking\u{2026}" }
                             }
                         }
                     }
@@ -441,8 +448,9 @@ fn render_device_list(
                                 class: "btn ghost danger sm",
                                 "data-testid": "user-device-revoke-{id}",
                                 disabled: busy_id == Some(id),
+                                "aria-busy": if busy_id == Some(id) { "true" } else { "false" },
                                 onclick: move |_| on_revoke.call(id),
-                                "Revoke"
+                                BusyLabel { busy: busy_id == Some(id), label: "Revoke", busy_label: "Revoking\u{2026}" }
                             }
                         }
                     }

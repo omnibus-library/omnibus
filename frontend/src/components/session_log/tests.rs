@@ -45,3 +45,20 @@ fn duration_label_scales_minutes_and_hours() {
 fn duration_label_clamps_negative_input_to_zero() {
     assert_eq!(duration_label(-100), "0m");
 }
+
+// The first paint (SSR and the first WASM render) is the loading state: the
+// list must not claim "no sittings" before the first page has answered.
+#[cfg(feature = "server")]
+#[test]
+fn session_log_list_draws_row_skeletons_rather_than_the_empty_note_on_first_paint() {
+    fn harness() -> Element {
+        rsx! { SessionLogList { book: None, compact: true } }
+    }
+    let html = crate::test_support::render_in_vdom(harness);
+    assert!(
+        html.contains("data-testid=\"session-log-loading\""),
+        "{html}"
+    );
+    assert!(html.contains("ld-rows"), "{html}");
+    assert!(!html.contains("session-log-empty"), "{html}");
+}

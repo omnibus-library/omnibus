@@ -10,6 +10,8 @@ use omnibus_shared::KindleSendStatus;
 
 #[cfg(not(feature = "mobile"))]
 use super::async_action::use_async_action_toast;
+#[cfg(not(feature = "mobile"))]
+use crate::components::BusyLabel;
 // Only `poll_send_result`'s worker-poll interval awaits the shared sleeper
 // directly now — the toast auto-dismiss sleep moved into `async_action`.
 #[cfg(not(feature = "mobile"))]
@@ -89,6 +91,7 @@ pub fn SendToKindleButton(
         button {
             class: "{class}",
             disabled: in_flight(),
+            "aria-busy": if in_flight() { "true" } else { "false" },
             "data-testid": "{testid}",
             onclick: move |_| {
                 let url = server_url.clone();
@@ -103,7 +106,7 @@ pub fn SendToKindleButton(
                     Some(poll_send_result(&url, task_id).await)
                 });
             },
-            if in_flight() { "Sending\u{2026}" } else { "Send to Kindle" }
+            BusyLabel { busy: in_flight(), label: "Send to Kindle", busy_label: "Sending\u{2026}" }
         }
         {super::send_result_toast("kindle", result)}
     }
