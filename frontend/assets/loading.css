@@ -251,6 +251,10 @@
 }
 html[data-hydrated] .ld-boot { opacity: 0; visibility: hidden; pointer-events: none; }
 html[data-hydrated] .ld-boot * { animation-play-state: paused; }
+/* On the way out the mark leans toward the reader and softens, so the cut to
+   the app reads as the book opening into it rather than a plain crossfade. */
+.ld-boot-stack { transition: transform .5s var(--ld-ease-out), filter .5s var(--ld-ease-out); }
+html[data-hydrated] .ld-boot-stack { transform: scale(1.035); filter: blur(3px); }
 /* The lamp behind the book. */
 .ld-boot-glow {
   position: absolute; left: 50%; top: 46%; width: min(120vw, 900px); aspect-ratio: 1;
@@ -475,5 +479,6 @@ button[aria-busy="true"], .btn[aria-busy="true"] { cursor: progress; }
   .ld-boot-note.first { animation: ld-note-out .01s linear 9s forwards; }
   .ld-boot-note.later { animation: ld-note-in .01s linear 9.4s forwards; }
   .ld-boot-retry { animation: ld-note-in .01s linear 22s forwards; }
-  .ld-boot { transition: none; }
+  .ld-boot, .ld-boot-stack { transition: none; }
+  html[data-hydrated] .ld-boot-stack { transform: none; filter: none; }
 }
