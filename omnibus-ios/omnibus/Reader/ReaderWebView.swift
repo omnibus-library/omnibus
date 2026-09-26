@@ -306,11 +306,11 @@ enum SelectionEdge: String {
 
 /// A `WKWebView` with no edit menu of its own.
 ///
-/// Selection is drawn by the app, not by WebKit — the glue disables WebKit's
-/// own (its handles and loupe are laid out against a section iframe as wide as
-/// the whole chapter, so they land in the wrong column). This is the belt to
-/// that braces: even if a stray selection were ever made, no system callout
-/// can appear over the reader's own menu.
+/// Selection is drawn by the app, not by WebKit: `makeConfiguration` switches
+/// WebKit's text interaction off, and the glue's per-section stylesheet keeps
+/// the section unselectable beneath that. This is the last resort behind both:
+/// even if a stray selection were ever made, no system callout can appear over
+/// the reader's own menu.
 final class AnnotatingWebView: WKWebView {
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         false
@@ -909,23 +909,29 @@ struct ReaderWebView: UIViewRepresentable {
         return webView
     }
 
-    /// The reader's web view configuration: the scheme handler, the message
-    /// bridge, and WebKit's own text interaction switched off.
+    /// The reader's web view configuration, with WebKit's own text interaction
+    /// switched off: the glue owns the range and the host draws it, and left on,
+    /// WebKit's long-press recogniser ran wherever the glue declined a press and
+    /// selected the section iframe as one block (#2655). The switch also disables
+    /// editing focus, so `reader.html` must never host an editable element —
+    /// text entry is native.
     ///
-    /// The glue owns the range and the host draws it, so WebKit has nothing to
-    /// offer here — and left on, its long-press recogniser still runs wherever
-    /// the glue declines a press: above the first line, on an illustration,
-    /// below a chapter's last line. With the section unselectable it then
-    /// selects the iframe itself as one block, painted as a wash over the whole
-    /// page under WebKit's own handle (#2655).
-    static func makeConfiguration(coordinator: Coordinator) -> WKWebViewConfiguration {
+    /// The handlers are parameters so a test can substitute its own scheme
+    /// handler and still boot on the production configuration.
+    static func makeConfiguration(
+        schemeHandler: any WKURLSchemeHandler, messageHandler: any WKScriptMessageHandler
+    ) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
-        configuration.setURLSchemeHandler(coordinator, forURLScheme: scheme)
-        configuration.userContentController.add(coordinator, name: "omnibus")
+        configuration.setURLSchemeHandler(schemeHandler, forURLScheme: scheme)
+        configuration.userContentController.add(messageHandler, name: "omnibus")
         configuration.allowsInlineMediaPlayback = true
         configuration.suppressesIncrementalRendering = false
         configuration.preferences.isTextInteractionEnabled = false
         return configuration
+    }
+
+    static func makeConfiguration(coordinator: Coordinator) -> WKWebViewConfiguration {
+        makeConfiguration(schemeHandler: coordinator, messageHandler: coordinator)
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
@@ -1032,16 +1038,22 @@ struct ReaderWebView: UIViewRepresentable {
                 return (data, "application/epub+zip")
             }
 
-            guard let assetURL = Bundle.main.url(forResource: name, withExtension: nil)
-                ?? Bundle.main.url(
-                    forResource: (name as NSString).deletingPathExtension,
-                    withExtension: (name as NSString).pathExtension,
-                    subdirectory: "Web"
-                ),
+            guard let assetURL = Self.bundledAssetURL(named: name),
                 let data = try? Data(contentsOf: assetURL)
             else { throw URLError(.fileDoesNotExist) }
 
             return (data, Self.mime(for: name))
+        }
+
+        /// Where a reader asset lives in the app bundle: flat at the root, or
+        /// under `Web/` if Xcode kept the folder.
+        static func bundledAssetURL(named name: String) -> URL? {
+            Bundle.main.url(forResource: name, withExtension: nil)
+                ?? Bundle.main.url(
+                    forResource: (name as NSString).deletingPathExtension,
+                    withExtension: (name as NSString).pathExtension,
+                    subdirectory: "Web"
+                )
         }
 
         private static func mime(for name: String) -> String {

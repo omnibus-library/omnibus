@@ -1,13 +1,13 @@
 //  ReaderSelectionLayer.swift
 //  The selection the reader actually sees.
 //
-//  WebKit's own touch selection is disabled inside the section (see the
-//  baseline stylesheet in `epub-reader-glue.js`): its handles and loupe are
-//  laid out against an iframe as wide as the whole chapter, so in a paginated
-//  book they land in the wrong column, and its long-press recogniser fights
-//  the drag-to-turn handler for the same touch. The glue owns the *range* and
-//  reports geometry; everything below is drawn by the app, at the app's frame
-//  rate, in the app's colours.
+//  WebKit's own selection is switched off for the reader web view
+//  (`ReaderWebView.makeConfiguration`), with the section kept unselectable
+//  beneath that: its handles and loupe are laid out against an iframe as wide
+//  as the whole chapter, so in a paginated book they land in the wrong column,
+//  and its long-press recogniser fights the drag-to-turn handler for the same
+//  touch. The glue owns the *range* and reports geometry; everything below is
+//  drawn by the app, at the app's frame rate, in the app's colours.
 
 import SwiftUI
 
