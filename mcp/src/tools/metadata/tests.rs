@@ -199,9 +199,15 @@ async fn get_effective_metadata_returns_each_requested_book_in_order() {
         }))
         .await
         .unwrap();
-    assert_eq!(books.0.len(), 2);
-    assert_eq!(books.0[0].unique_identifier.as_deref(), Some("uuid-1"));
-    assert_eq!(books.0[1].unique_identifier.as_deref(), Some("uuid-2"));
+    assert_eq!(books.0.books.len(), 2);
+    assert_eq!(
+        books.0.books[0].unique_identifier.as_deref(),
+        Some("uuid-1")
+    );
+    assert_eq!(
+        books.0.books[1].unique_identifier.as_deref(),
+        Some("uuid-2")
+    );
 }
 
 #[tokio::test]

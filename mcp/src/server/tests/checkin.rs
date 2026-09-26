@@ -278,8 +278,8 @@ async fn lookup_isbn_names_the_provider_and_explains_every_no_match() {
         }))
         .await
         .unwrap();
-    let [provider_hit, library_hit, unresolved] = results.0.as_slice() else {
-        panic!("expected three rows, got {}", results.0.len());
+    let [provider_hit, library_hit, unresolved] = results.0.results.as_slice() else {
+        panic!("expected three rows, got {}", results.0.results.len());
     };
 
     // Provider-resolved: the answering provider is named.
@@ -311,11 +311,11 @@ async fn lookup_isbn_reports_an_invalid_isbn_as_a_structured_row() {
         }))
         .await
         .unwrap();
-    assert!(results.0[0].outcome.is_none());
-    let detail = results.0[0].detail.as_deref().unwrap();
+    assert!(results.0.results[0].outcome.is_none());
+    let detail = results.0.results[0].detail.as_deref().unwrap();
     assert!(detail.contains("HTTP 400") && detail.contains("invalid ISBN checksum"));
     // The failure did not swallow the rest of the batch.
-    assert!(results.0[1].outcome.is_some());
+    assert!(results.0.results[1].outcome.is_some());
 }
 
 #[tokio::test]
@@ -452,9 +452,9 @@ async fn list_physical_copies_returns_the_shared_typed_copies() {
         }))
         .await
         .unwrap();
-    assert_eq!(copies.0.len(), 1);
-    assert_eq!(copies.0[0].id, 5);
-    assert_eq!(copies.0[0].note.as_deref(), Some("hardcover"));
+    assert_eq!(copies.0.copies.len(), 1);
+    assert_eq!(copies.0.copies[0].id, 5);
+    assert_eq!(copies.0.copies[0].note.as_deref(), Some("hardcover"));
 }
 
 #[tokio::test]

@@ -325,6 +325,13 @@ record, because answering with a single format is the failure that endpoint was
 widened to end. Audio figures keep the `audio_part` / `audio_part_count` names
 for the same reason: they are container marks, not book chapters.
 
+Every tool answers with an object, never a bare list or a nullable: a list
+comes back under a named field (`{ "authors": [...] }`) and a maybe-absent
+value as a nullable field (`{ "progress": null }`). MCP requires an
+`outputSchema` root of `type: "object"`, and strict clients refuse the whole
+server over one tool that breaks the rule. rmcp no longer enforces this, so
+`every_tool_advertises_an_object_rooted_output_schema` does.
+
 MCP sessions are separable everywhere: `User-Agent: omnibus-mcp/<ver>` on every
 request (logged by the server's request span), and login sends
 `client_kind: "bearer"` + `device_name: "omnibus-mcp"` so a dedicated device

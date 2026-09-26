@@ -5,6 +5,7 @@
 
 mod checkin;
 mod read;
+mod schemas;
 mod shelves;
 
 use std::sync::Arc;
