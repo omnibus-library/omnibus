@@ -432,7 +432,9 @@ input[type="checkbox"].ld-unknown:not(.settings-switch *)::after {
   }
   .ld-line > i { animation: none; transform: scaleY(calc(.3 + var(--a, 1) * .4)); opacity: .7; }
   .ld-sheen { background: none; -webkit-text-fill-color: currentColor; }
-  .ld-toggle-unknown::before, input[type="checkbox"].ld-unknown::after { animation: none; }
+  .ld-toggle-unknown::before,
+  input[type="checkbox"].ld-unknown:not(.settings-switch *)::after,
+  .settings-switch input[type="checkbox"].ld-unknown::after { animation: none; }
   .ld-rf-leaf { animation: none; }
   .ld-rf-leaf.n1 { transform: rotateY(-74deg); }
   .ld-rf-leaf.n2 { transform: rotateY(calc(-180deg + var(--open))); }

@@ -193,7 +193,12 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
     });
     // A failed fetch has no count to give: never "0 books" from an empty
     // list, and no placeholder counting for good. Only a known total stands.
-    let failed = page_error.is_some();
+    // The active source's own failure: a stale browse error must not hide a
+    // shelf's count that loaded fine.
+    let failed = match source {
+        VisibleSource::Shelf => (sigs.shelf_error)().is_some(),
+        _ => (sigs.error)().is_some(),
+    };
     let total_known = source == VisibleSource::Browse && (sigs.total)().is_some();
     let book_count = book_count.filter(|_| !failed || total_known);
     let count_pending = book_count.is_none() && !failed;

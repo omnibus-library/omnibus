@@ -55,6 +55,7 @@ pub(super) fn BdHighlightsSection(uuid: String, quote_meta: BdQuoteMeta) -> Elem
         if *feed_book.peek() != uuid {
             feed_book.set(uuid.clone());
             highlights.set(Vec::new());
+            chapters.set(Vec::new());
             feed.set(FeedState::Pending);
         }
         let hl_url = load_url.clone();
@@ -78,7 +79,11 @@ pub(super) fn BdHighlightsSection(uuid: String, quote_meta: BdQuoteMeta) -> Elem
         let ch_url = load_url.clone();
         let ch_uuid = uuid.clone();
         spawn(async move {
-            if let Ok(align) = data::get_alignment(&ch_url, &ch_uuid).await {
+            let result = data::get_alignment(&ch_url, &ch_uuid).await;
+            if *feed_book.peek() != ch_uuid {
+                return;
+            }
+            if let Ok(align) = result {
                 chapters.set(align.ebook.map(|e| e.chapters).unwrap_or_default());
             }
         });
