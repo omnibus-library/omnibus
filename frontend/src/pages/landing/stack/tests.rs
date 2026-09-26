@@ -179,16 +179,17 @@ fn open_book_count_counts_books_not_fan_cards() {
 
 #[test]
 fn open_book_count_folds_two_rows_that_resolve_to_one_book() {
-    // `get_book_by_uuid` resolves through `merged_uuids`, so the two rows can
-    // carry different filing uuids — which is why the fold is on the book,
-    // not on the uuid `resume_key` keys apart.
-    let entries = stack_entries_for_test(
-        &[
-            point_on_book("old-uuid", ProgressFormat::Epub, 1),
-            point_on_book("new-uuid", ProgressFormat::Audio, 1),
-        ],
-        "http://x",
-    );
+    // `get_book_by_uuid` resolves both rows through `merged_uuids` to the one
+    // surviving book, so the points differ in `record.book_uuid` alone and
+    // carry an identical `book` — which is why the fold is on that book and
+    // not on the uuid `resume_key` deliberately keys apart.
+    let survivor = point_on_book("survivor", ProgressFormat::Epub, 1).book;
+    let mut old = point_on_book("old-uuid", ProgressFormat::Epub, 1);
+    old.book = survivor.clone();
+    let mut new = point_on_book("new-uuid", ProgressFormat::Audio, 1);
+    new.book = survivor;
+
+    let entries = stack_entries_for_test(&[old, new], "http://x");
 
     assert_eq!(entries.len(), 2);
     assert_eq!(open_book_count(&entries), 1);

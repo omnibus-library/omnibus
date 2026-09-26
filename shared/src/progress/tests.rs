@@ -1,6 +1,7 @@
-//! Tests for `ProgressUpdate` and `SessionReport` validation: cross-format
+//! Tests for `ProgressUpdate` and `SessionReport` validation — cross-format
 //! field rejection, CFI/percent length and range caps, `client_updated_at`
-//! and `book_file_id` handling, and backward-compatible payload decoding.
+//! and `book_file_id` handling, backward-compatible payload decoding — and
+//! for `ProgressFormat`'s wire token.
 
 use super::*;
 
@@ -8,10 +9,17 @@ use super::*;
 fn progress_format_as_str_matches_the_serde_token() {
     // The doc calls it "the wire token this serializes as"; without this,
     // nothing holds the hand-written strings to the `rename_all` beside them.
+    // The `match` is the half that scales: a new variant fails to compile
+    // here, where a bare list of the two would silently not cover it.
     for f in [ProgressFormat::Epub, ProgressFormat::Audio] {
+        let expected = match f {
+            ProgressFormat::Epub => "epub",
+            ProgressFormat::Audio => "audio",
+        };
+        assert_eq!(f.as_str(), expected);
         assert_eq!(
             serde_json::to_string(&f).unwrap(),
-            format!("\"{}\"", f.as_str())
+            format!("\"{expected}\"")
         );
     }
 }

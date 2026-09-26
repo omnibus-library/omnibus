@@ -1,8 +1,8 @@
-//! Per-resume-point derivations shared across surfaces: percent/remaining
-//! labels for audio and the plain continue affordance for epub rows with no
-//! stored percent, used by the mobile resume card (a single point), the web
-//! continue fan and the stats in-progress list — plus the key those last two
-//! give a point as a keyed-list sibling.
+//! Per-resume-point derivations shared across surfaces. The label half —
+//! percent/remaining for audio, the plain continue affordance for epub rows
+//! with no stored percent — is read by the mobile resume card and the web
+//! continue fan; the stats in-progress list phrases its own and takes only
+//! [`resume_key`], which every keyed list of open books shares.
 
 use omnibus_shared::{ProgressFormat, ResumePoint, StructuralPosition};
 

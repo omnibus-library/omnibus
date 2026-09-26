@@ -365,15 +365,12 @@ pub(crate) fn cover_cell(
         .first()
         .map(|c| c.name.clone())
         .unwrap_or_default();
-    let book_key = book.id;
+    let book_key = super::sorting::row_diff_key(&book);
     let bust = crate::contexts::cover_bust_for(cover_bust, &uuid);
     let (src, srcset) = thumb_srcs(&book, &uuid, server_url, bust);
 
     rsx! {
         Link {
-            // `books.id`, not the uuid this cell otherwise runs on: that one
-            // is an `Option` here and two books falling back to its default
-            // would key alike (rule 07).
             key: "{book_key}",
             to: Route::BookDetail { uuid: uuid.clone() },
             class: "m-cover-cell",

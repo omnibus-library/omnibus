@@ -12,7 +12,7 @@ use omnibus_shared::{EbookMetadata, SeriesStack};
 
 use super::series_grid::{grid_items, is_stale, stack_leads, GridItem, VolumeCell};
 use super::series_tiles::{StackCap, StackTile};
-use super::sorting::{contributor_names, row_ident};
+use super::sorting::{contributor_names, row_diff_key, row_ident};
 use crate::Route;
 
 /// `sizes` for a wall cover — the column's rendered width per breakpoint.
@@ -93,10 +93,9 @@ fn GridCell(
     open: Signal<Option<String>>,
     refocus: Signal<Option<String>>,
 ) -> Element {
-    let cell_key = item.key();
     match item {
         GridItem::Book(book) => rsx! {
-            GridTile { book, server_url, index, flip_key: cell_key }
+            GridTile { book, server_url, index }
         },
         GridItem::Stack(stack) => rsx! {
             StackTile {
@@ -111,7 +110,7 @@ fn GridCell(
             StackCap { stack, on_fold: move |_| fold(open, refocus) }
         },
         GridItem::Vol(cell) => rsx! {
-            GridTile { book: cell.book.clone(), server_url, index, vol: Some(cell), flip_key: cell_key }
+            GridTile { book: cell.book.clone(), server_url, index, vol: Some(cell) }
         },
     }
 }
@@ -134,8 +133,6 @@ fn GridTile(
     book: EbookMetadata,
     server_url: String,
     index: usize,
-    /// This tile's cell key, from `BookGrid`.
-    flip_key: String,
     // A dealt-out volume's run chrome; `None` for an ordinary tile.
     #[props(default)] vol: Option<VolumeCell>,
 ) -> Element {
@@ -157,6 +154,9 @@ fn GridTile(
     let (thumb_src, thumb_srcset) =
         crate::components::cover_tile::thumb_srcs(&book, &uuid, &server_url, cover_bust);
 
+    // The same string `GridItem::key` gives this cell — see its doc for the
+    // value space `series_flip.js` matches across a deal-out.
+    let flip_key = row_diff_key(&book);
     let flip_from = vol.as_ref().map(|v| format!("stack-{}", v.lead_uuid));
     let flip_deck = vol.as_ref().map(|v| v.deck.to_string());
 
