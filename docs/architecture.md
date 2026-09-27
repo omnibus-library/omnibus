@@ -876,7 +876,14 @@ handle stays in the SwiftUI tree offstage so its gesture survives the frame
 its caret is gone. And every rect is measured off the *text* (`textRects`),
 never `Range.getClientRects()`, which also returns the border box of any
 element the range wholly contains — a middle paragraph, an image — and painted
-a three-paragraph selection as a block over the second. The same walk is
+a three-paragraph selection as a block over the second. Those are font boxes,
+not line boxes, so `fillLeading` grows each row over the leading to make a
+paragraph one block — but only across a gap no wider than a line and a quarter
+of the shorter row; any other edge grows by half the leading measured in the
+range and never into its neighbour, so two lines either side of an
+illustration no longer grow to meet across it (#2649). It is pure and exported
+on `OmnibusReader`, and `SelectionRowsTests` runs it in a bare JavaScriptCore
+context off the bundled file. The same walk is
 patched into epub.js's marks (`patchMarkRects`), whose own filter kept that
 block and dropped the text boxes inside it. Highlights stay epub.js marks (they
 ride the page-turn transform, which a native overlay would not); their look is

@@ -64,6 +64,8 @@
  *   beginEdgeDrag(edge)             pin the opposite edge for a handle drag
  *   endSelectionDrag()              settle and re-emit with `existing`
  *   clearSelection()
+ *   fillLeading(rows)               the selection bars' line-box arithmetic;
+ *                                   pure, and exposed for omnibusTests
  *
  * Selection callbacks:
  *   - `__omnibusOnSelection(json)` — the live range, as
@@ -1509,24 +1511,7 @@
       return a.col - b.col || a.top - b.top || a.left - b.left;
     });
 
-    // `getClientRects` measures the *font* box, not the line box, so on
-    // generously leaded prose the bars come back with a stripe of page
-    // between them. Grow each row by the gap its neighbours leave, which
-    // makes a multi-line selection one continuous block the way the system's
-    // own is — without needing to know the line height.
-    var gap = Infinity;
-    for (var g = 1; g < rows.length; g++) {
-      if (rows[g].col !== rows[g - 1].col) continue;
-      var between = rows[g].top - rows[g - 1].bottom;
-      if (between > 0 && between < gap) gap = between;
-    }
-    if (gap !== Infinity && gap > 0) {
-      var grow = gap / 2;
-      for (var e = 0; e < rows.length; e++) {
-        rows[e].top -= grow;
-        rows[e].bottom += grow;
-      }
-    }
+    fillLeading(rows);
 
     var out = [];
     for (var j = 0; j < rows.length; j++) {
@@ -1539,6 +1524,69 @@
       });
     }
     return out;
+  }
+
+  // The widest gap between two rows that is still leading, as a share of the
+  // shorter row: the reader's loosest setting leaves under a line between
+  // lines, while an illustration, a heading or a section break leaves more.
+  var LEADING_MAX_LINES = 1.25;
+
+  // Grow each row, in place, over the leading `getClientRects` leaves out.
+  //
+  // It measures the *font* box, not the line box, so on generously leaded
+  // prose the bars come back with a stripe of page between them. A row meets
+  // the next one down its column halfway, which makes a paragraph one
+  // continuous block the way the system's own selection is — but only across
+  // a gap that could be leading. An illustration between two selected lines
+  // is page, and closing it tinted the whole plate.
+  //
+  // Every other edge — either end of the range, either side of such a gap —
+  // grows by half the leading measured between the range's own lines, so each
+  // bar is one line box tall, none reaches past its own, and none grows into
+  // a neighbour. A range with no leading to measure grows not at all.
+  //
+  // `rows` must be in reading order, as `lineRows` sorts them.
+  function fillLeading(rows) {
+    var leading = Infinity;
+    for (var i = 1; i < rows.length; i++) {
+      var between = leadingBetween(rows[i - 1], rows[i]);
+      if (between !== null && between < leading) leading = between;
+    }
+    var half = leading === Infinity ? 0 : leading / 2;
+    // Measured against the boxes as given, then applied: growing one row
+    // first would change the gap its neighbour measures.
+    var grow = [];
+    for (var j = 0; j < rows.length; j++) {
+      var above = j > 0 && rows[j - 1].col === rows[j].col ? rows[j - 1] : null;
+      var below = j + 1 < rows.length && rows[j + 1].col === rows[j].col ? rows[j + 1] : null;
+      grow.push({
+        up: above ? edgeGrowth(above, rows[j], half) : half,
+        down: below ? edgeGrowth(rows[j], below, half) : half,
+      });
+    }
+    for (var k = 0; k < rows.length; k++) {
+      rows[k].top -= grow[k].up;
+      rows[k].bottom += grow[k].down;
+    }
+    return rows;
+  }
+
+  // The gap between two rows stacked in one column, when it could be leading;
+  // null when they touch or overlap, or when what lies between is page.
+  function leadingBetween(upper, lower) {
+    if (upper.col !== lower.col) return null;
+    var between = lower.top - upper.bottom;
+    var line = Math.min(upper.bottom - upper.top, lower.bottom - lower.top);
+    return between > 0 && between <= line * LEADING_MAX_LINES ? between : null;
+  }
+
+  // How far one side of a gap grows toward the other: halfway across leading,
+  // so the two meet; a half leading at most across anything else, and never
+  // past the middle, so no bar reaches into its neighbour's box.
+  function edgeGrowth(upper, lower, half) {
+    var between = leadingBetween(upper, lower);
+    if (between !== null) return between / 2;
+    return Math.min(half, Math.max(0, lower.top - upper.bottom) / 2);
   }
 
   // What the host draws: only the rows on the page in front of the reader —
@@ -3587,5 +3635,6 @@
     shareQuoteCard: shareQuoteCard,
     copyQuoteCardImage: copyQuoteCardImage,
     destroy: destroy,
+    fillLeading: fillLeading,
   };
 })();
