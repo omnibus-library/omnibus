@@ -485,7 +485,11 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       `LibraryService.uploadCover`; long-press reveals "Revert
                       to original cover" (the matching `DELETE`) while an
                       override is active. Both invalidate every cached thumb
-                      size, the full cover, and the cached book record.
+                      size, the full cover, and the cached book record. A row
+                      directly under the header takes a pasted image URL too
+                      (#2665, `LibraryService.applyCoverFromURL`, shared with
+                      `MetadataFetchSheet`'s provider-cover apply), gated
+                      offline and mid-request the same way as the picker.
                       Library/ carries Stack series: with the reader's
                       `UserSummary.stackSeries` on, the grid asks for
                       `GET /api/ebooks?stack_series=true` and

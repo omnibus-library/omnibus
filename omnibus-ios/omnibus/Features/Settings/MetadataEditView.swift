@@ -57,6 +57,9 @@ struct MetadataEditView: View {
     @State private var coverPhotoItem: PhotosPickerItem?
     @State private var coverStatus: String?
     @State private var isCoverBusy = false
+    /// The header cover also takes a pasted image URL — the server fetches
+    /// it, same contract as the fetch sheet's from-URL apply.
+    @State private var coverURLText = ""
     /// Bumped after a cover write so the previews re-read: the thumb path
     /// doesn't change across a replacement, so a fresh `book` alone would
     /// still be served the cached bytes.
@@ -153,6 +156,7 @@ struct MetadataEditView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
                 if let book { header(book) }
+                if book != nil { coverURLRow }
 
                 if canFetch, book != nil { fetchButton }
 
@@ -302,6 +306,33 @@ struct MetadataEditView: View {
             }
 
             Spacer(minLength: 0)
+        }
+    }
+
+    /// "Or paste an image URL" beside the header cover — the field itself
+    /// disables offline (rule 08: a direct write, never queued); Apply
+    /// additionally gates on there being a trimmed, non-blank URL to send.
+    private var coverURLRow: some View {
+        HStack(spacing: Spacing.sm) {
+            TextField("Or paste an image URL", text: $coverURLText)
+                .keyboardType(.URL)
+                .textContentType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.go)
+                .onSubmit { Task { await applyCoverURL() } }
+                .disabled(isCoverBusy || !connectivity.isOnline)
+                .accessibilityIdentifier("cover-url-field")
+
+            Button("Apply") {
+                Task { await applyCoverURL() }
+            }
+            .disabled(
+                LibraryService.coverURLToApply(
+                    coverURLText, isBusy: isCoverBusy, isOnline: connectivity.isOnline
+                ) == nil
+            )
+            .accessibilityIdentifier("cover-url-apply")
         }
     }
 
@@ -626,6 +657,24 @@ struct MetadataEditView: View {
         do {
             let updated = try await LibraryService.uploadCover(uuid: uuid, jpegData: encoded)
             applyCoverWrite(updated, status: "Cover updated.")
+        } catch {
+            reportCoverFailure(error)
+        }
+    }
+
+    private func applyCoverURL() async {
+        guard
+            let url = LibraryService.coverURLToApply(
+                coverURLText, isBusy: isCoverBusy, isOnline: connectivity.isOnline
+            )
+        else { return }
+        isCoverBusy = true
+        coverStatus = "Applying cover\u{2026}"
+        defer { isCoverBusy = false }
+        do {
+            let updated = try await LibraryService.applyCoverFromURL(uuid: uuid, url: url)
+            applyCoverWrite(updated, status: "Cover updated.")
+            coverURLText = ""
         } catch {
             reportCoverFailure(error)
         }

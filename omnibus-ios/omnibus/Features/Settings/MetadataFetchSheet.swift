@@ -581,22 +581,10 @@ struct MetadataFetchSheet: View {
             // that had no art has `hasCover == false`, and `BookCover` gates its
             // whole image layer on that — so without a fresh identity no
             // thumbnail request is ever made and the plate survives a
-            // successful apply.
-            let updated: Book = try await APIClient.shared.post(
-                "/api/ebooks/\(uuid)/cover/from-url", body: CoverFromURLRequest(url: url)
-            )
-            // Every thumb size is regenerated server-side, so every cached one
-            // is stale — including the sizes this screen isn't showing, which
-            // the grid behind it is. The full cover goes with them: the detail
-            // hero reads that key, and leaving it behind left the screen this
-            // sheet returns to showing the replaced art until its revalidation
-            // window lapsed. Unconditional: the write has landed, and those
-            // caches are wrong whatever the sheet is showing by now.
-            await ImageCache.shared.invalidate("/api/covers/\(uuid)")
-            for size in [ThumbSize.sm, .md, .lg] {
-                await ImageCache.shared.invalidate("/api/thumbs/\(uuid)/\(size.rawValue)")
-            }
-            await OfflineStore.shared.cacheDelete(CacheKey.book(uuid))
+            // successful apply. `applyCoverFromURL` also drops every cache the
+            // write invalidates (every thumb size, the full cover, the cached
+            // record) — the same set this call used to invalidate by hand.
+            let updated = try await LibraryService.applyCoverFromURL(uuid: uuid, url: url)
             onCoverApplied(updated)
             coverIdentity = CoverIdentity(updated)
             // The thumb path is unchanged across a replacement, so the new
