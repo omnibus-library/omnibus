@@ -711,3 +711,118 @@ async fn every_relocated_table_has_a_row_identity_that_survives_reuse() {
         assert!(named, "{table} has no row identity undo can use");
     }
 }
+
+#[tokio::test]
+async fn undo_merge_leaves_a_position_updated_since_on_the_survivor() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let (target, source) = seed_pair(&pool).await;
+    for (uuid, pct, ts) in [(&target, 10, 1000), (&source, 60, 2000)] {
+        sqlx::query(
+            "INSERT INTO reading_progress (user_id, book_uuid, format, progress_percent, updated_at)
+             VALUES (?, ?, 'epub', ?, ?)",
+        )
+        .bind(user)
+        .bind(uuid)
+        .bind(pct)
+        .bind(ts)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    // Reading the merged book moves the (source-born) row on.
+    sqlx::query("UPDATE reading_progress SET progress_percent = 80, updated_at = 3000")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT book_uuid, progress_percent FROM reading_progress ORDER BY progress_percent",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, [(source, 60), (target, 80)]);
+}
+
+#[tokio::test]
+async fn undo_merge_restores_the_sitting_clocks_the_merge_cleared() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let (target, source) = seed_pair(&pool).await;
+    for (uuid, pct, ts, clock) in [(&target, 10, 1000, 900), (&source, 60, 2000, 1900)] {
+        sqlx::query(
+            "INSERT INTO reading_progress_marks
+                (user_id, book_uuid, format, sitting_max_percent, updated_at, sitting_observed_at)
+             VALUES (?, ?, 'epub', ?, ?, ?)",
+        )
+        .bind(user)
+        .bind(uuid)
+        .bind(pct)
+        .bind(ts)
+        .bind(clock)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT book_uuid, sitting_observed_at FROM reading_progress_marks
+          ORDER BY sitting_observed_at",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, [(target, 900), (source, 1900)]);
+}
+
+#[tokio::test]
+async fn undo_merge_restores_a_kobo_sync_row_the_merge_deduped() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let (target, source) = seed_pair(&pool).await;
+    let device: i64 = sqlx::query_scalar(
+        "INSERT INTO kobo_devices (user_id, token, name) VALUES (?, 't', 'Kobo') RETURNING id",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for (uuid, fingerprint) in [(&target, "tgt"), (&source, "src")] {
+        sqlx::query(
+            "INSERT INTO kobo_annotations_sync (device_id, book_uuid, acked_fingerprint)
+             VALUES (?, ?, ?)",
+        )
+        .bind(device)
+        .bind(uuid)
+        .bind(fingerprint)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT book_uuid, acked_fingerprint FROM kobo_annotations_sync
+          ORDER BY acked_fingerprint",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        [(source, "src".to_string()), (target, "tgt".to_string())]
+    );
+}

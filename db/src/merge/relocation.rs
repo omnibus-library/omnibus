@@ -21,6 +21,18 @@ use super::MergeError;
 /// re-indexed, so a partial set moved back would stay partial for good.
 const UNRELOCATED: [&str; 3] = ["book_read_status", "user_ratings", "book_content_chapters"];
 
+/// Tables whose row is a reader's *current* value rather than an event. One
+/// updated on the survivor after the merge is the survivor's now; undo leaves
+/// it there and gives the source its pre-merge value back instead.
+const CURRENT_VALUE_TABLES: [&str; 3] = [
+    "reading_progress",
+    "reading_progress_marks",
+    "audiobook_playback_preferences",
+];
+
+/// Columns the merge itself rewrites, so they can't show a post-merge change.
+const MERGE_WRITTEN: [&str; 2] = ["book_uuid", "sitting_observed_at"];
+
 /// A recorded row: its identity (an id number, or a key object) and, for a
 /// deleted row, its whole content as `column → value`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +48,11 @@ pub(super) struct DeletedRow {
 pub(super) struct RelocationSnapshot {
     pub moved: BTreeMap<String, Vec<Value>>,
     pub deleted: BTreeMap<String, Vec<DeletedRow>>,
+    /// Pre-merge content of the moved rows in [`CURRENT_VALUE_TABLES`].
+    pub moved_before: BTreeMap<String, Vec<DeletedRow>>,
+    /// Surviving `reading_progress_marks` rows whose sitting clock the merge
+    /// cleared, as they stood before it.
+    pub cleared_clocks: Vec<Map<String, Value>>,
 }
 
 /// How a table's rows are named across a merge and its undo.
@@ -64,10 +81,12 @@ pub(super) fn relocated_tables() -> impl Iterator<Item = &'static str> {
         .filter(|t| !UNRELOCATED.contains(t))
 }
 
-/// Whether the merge can delete rows of `table`.
+/// Whether the merge can delete rows of `table`. `kobo_annotations_sync` has
+/// its own per-device dedupe in `move_progress_and_history`.
 fn records_deletions(table: &str) -> bool {
     COLLISION_TABLES.iter().any(|c| c.table == table)
         || LEDGER_COUNTER_TABLES.iter().any(|(t, _)| *t == table)
+        || table == "kobo_annotations_sync"
 }
 
 async fn columns(
@@ -190,26 +209,45 @@ pub(super) async fn capture_post(
                 .await?
                 .into_iter()
                 .collect();
+        let moved_rowids: HashSet<i64> = t
+            .source
+            .iter()
+            .map(|(rowid, _)| *rowid)
+            .filter(|rowid| on_target.contains(rowid))
+            .collect();
         let moved: Vec<Value> = t
             .source
             .into_iter()
-            .filter(|(rowid, _)| on_target.contains(rowid))
+            .filter(|(rowid, _)| moved_rowids.contains(rowid))
             .map(|(_, id)| id)
             .collect();
         if !moved.is_empty() {
             snap.moved.insert(table.to_owned(), moved);
         }
-        let deleted: Vec<DeletedRow> = t
-            .rows
-            .into_iter()
-            .filter(|(rowid, _)| !on_target.contains(rowid))
-            .map(|(_, row)| DeletedRow {
+        let mut deleted = Vec::new();
+        let mut moved_before = Vec::new();
+        for (rowid, row) in t.rows {
+            if table == "reading_progress_marks"
+                && on_target.contains(&rowid)
+                && !row.get("sitting_observed_at").is_none_or(Value::is_null)
+            {
+                snap.cleared_clocks.push(row.clone());
+            }
+            let recorded = DeletedRow {
                 id: identity_of(&t.identity, &row),
                 row,
-            })
-            .collect();
+            };
+            if !on_target.contains(&rowid) {
+                deleted.push(recorded);
+            } else if moved_rowids.contains(&rowid) && CURRENT_VALUE_TABLES.contains(&table) {
+                moved_before.push(recorded);
+            }
+        }
         if !deleted.is_empty() {
             snap.deleted.insert(table.to_owned(), deleted);
+        }
+        if !moved_before.is_empty() {
+            snap.moved_before.insert(table.to_owned(), moved_before);
         }
     }
     Ok(snap)
@@ -251,7 +289,19 @@ pub(super) async fn restore_relocation(
     }
     for (table, ids) in &snap.moved {
         for id in ids {
-            move_back(tx, table, id, source_uuid, target_uuid).await?;
+            let before = snap
+                .moved_before
+                .get(table)
+                .and_then(|rows| rows.iter().find(|r| &r.id == id));
+            match before {
+                Some(before) if changed_since(tx, table, before, target_uuid).await? => {
+                    // The survivor's value now; the source gets its own back.
+                    let mut row = before.clone();
+                    row.row.remove("id");
+                    reinsert(tx, table, &row).await?;
+                }
+                _ => move_back(tx, table, id, source_uuid, target_uuid).await?,
+            }
         }
     }
     for (table, rows) in &snap.deleted {
@@ -266,6 +316,70 @@ pub(super) async fn restore_relocation(
             reinsert(tx, table, row).await?;
         }
     }
+    for row in &snap.cleared_clocks {
+        restore_clock(tx, row).await?;
+    }
+    Ok(())
+}
+
+/// Match a row by its identity, bound as JSON at `param`.
+fn id_match(id: &Value, param: &str) -> String {
+    match id {
+        Value::Object(key) => key
+            .keys()
+            .map(|c| format!("\"{c}\" = json_extract({param}, '$.\"{c}\"')"))
+            .collect::<Vec<_>>()
+            .join(" AND "),
+        _ => format!("id = json_extract({param}, '$')"),
+    }
+}
+
+/// Whether the moved row no longer says what it said before the merge — or is
+/// gone from the target altogether.
+async fn changed_since(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    table: &str,
+    before: &DeletedRow,
+    target_uuid: &str,
+) -> Result<bool, MergeError> {
+    let all = json_object(&columns(tx, table).await?);
+    let sql = format!(
+        "SELECT {all} FROM {table} WHERE book_uuid = ?1 AND {}",
+        id_match(&before.id, "?2")
+    );
+    let now: Option<String> = sqlx::query_scalar(&sql)
+        .bind(target_uuid)
+        .bind(before.id.to_string())
+        .fetch_optional(&mut **tx)
+        .await?;
+    let Some(now) = now else {
+        return Ok(false);
+    };
+    let mut now: Map<String, Value> = serde_json::from_str(&now)?;
+    let mut then = before.row.clone();
+    for col in MERGE_WRITTEN {
+        now.remove(col);
+        then.remove(col);
+    }
+    Ok(now != then)
+}
+
+/// Put back a sitting clock the merge cleared, unless a read since set a new one.
+async fn restore_clock(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    row: &Map<String, Value>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE reading_progress_marks
+            SET sitting_observed_at = json_extract(?1, '$.sitting_observed_at')
+          WHERE book_uuid = json_extract(?1, '$.book_uuid')
+            AND user_id = json_extract(?1, '$.user_id')
+            AND format = json_extract(?1, '$.format')
+            AND sitting_observed_at IS NULL",
+    )
+    .bind(Value::Object(row.clone()).to_string())
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
@@ -277,22 +391,16 @@ async fn move_back(
     source_uuid: &str,
     target_uuid: &str,
 ) -> Result<(), sqlx::Error> {
-    let matches = match id {
-        Value::Object(key) => key
-            .keys()
-            .map(|c| format!("\"{c}\" = json_extract(?3, '$.\"{c}\"')"))
-            .collect::<Vec<_>>()
-            .join(" AND "),
-        _ => "id = ?3".to_owned(),
-    };
-    let sql = format!("UPDATE {table} SET book_uuid = ?1 WHERE book_uuid = ?2 AND {matches}");
-    let q = sqlx::query(&sql).bind(source_uuid).bind(target_uuid);
-    match id {
-        Value::Object(_) => q.bind(id.to_string()),
-        _ => q.bind(id.as_i64()),
-    }
-    .execute(&mut **tx)
-    .await?;
+    let sql = format!(
+        "UPDATE {table} SET book_uuid = ?1 WHERE book_uuid = ?2 AND {}",
+        id_match(id, "?3")
+    );
+    sqlx::query(&sql)
+        .bind(source_uuid)
+        .bind(target_uuid)
+        .bind(id.to_string())
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }
 
