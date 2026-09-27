@@ -12,7 +12,7 @@ use crate::components::atrium::Cover;
 use crate::components::author_photo_edit::AuthorPhotoEditOverlay;
 #[cfg(not(feature = "mobile"))]
 use crate::components::{confirm_modal_body, ConfirmModal, ConfirmModalAction, ConfirmModalTone};
-use crate::components::{disc_back_link, PageError, PageLoading, PageNotFound};
+use crate::components::{disc_back_link, Loading, LoadingKind, PageError, PageNotFound};
 use crate::{data, use_server_url, Route};
 
 /// Renders the author discovery page.
@@ -56,7 +56,7 @@ pub fn AuthorPage(id: i64) -> Element {
     }));
 
     if loading() {
-        return rsx! { PageLoading {} };
+        return rsx! { Loading { kind: LoadingKind::Page, label: "Finding the author" } };
     }
     if let Some(msg) = error() {
         return rsx! { PageError { message: msg, back_to: Route::Landing {} } };
@@ -495,13 +495,17 @@ fn AuthorDeleteModal(
                     ConfirmModalAction {
                         testid: "author-delete-cancel".to_string(),
                         label: "Cancel".to_string(),
+                        busy_label: None,
+                        busy: false,
                         tone: ConfirmModalTone::Ghost,
                         disabled: busy,
                         on_click: EventHandler::new(move |_| show_confirm.set(false)),
                     },
                     ConfirmModalAction {
                         testid: "author-delete-confirm".to_string(),
-                        label: if busy { "Deleting\u{2026}".to_string() } else { "Delete".to_string() },
+                        label: "Delete".to_string(),
+                        busy_label: Some("Deleting\u{2026}".to_string()),
+                        busy,
                         tone: ConfirmModalTone::Danger,
                         disabled: busy,
                         on_click: EventHandler::new(confirm_delete),

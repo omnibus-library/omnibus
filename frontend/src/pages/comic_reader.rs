@@ -10,6 +10,7 @@ use omnibus_shared::{
     comic_page_anchor, parse_comic_page_anchor, EbookMetadata, ProgressFormat, ProgressUpdate,
 };
 
+use crate::components::{Loading, LoadingKind};
 use crate::{data, media_url, use_server_url, Route};
 
 /// How the page image maps onto the stage viewport. Shared with the PDF
@@ -309,7 +310,12 @@ pub fn ComicReadPage(uuid: String) -> Element {
                     "This comic could not be opened."
                 }
             } else if !loaded {
-                div { class: "cr-state", "data-testid": "comic-loading", "Loading comic…" }
+                Loading {
+                    kind: LoadingKind::Stage,
+                    class: "in-flow cr-loading",
+                    testid: "comic-loading",
+                    label: "Taking it off the shelf",
+                }
             } else {
                 div { class: fit.read().stage_class(), "data-testid": "comic-stage",
                     button {
@@ -432,6 +438,7 @@ mod render_tests {
             }
         });
         assert!(html.contains("data-testid=\"comic-loading\""), "{html}");
+        assert!(html.contains("ld ld-stage in-flow cr-loading"), "{html}");
         assert!(html.contains("data-testid=\"comic-back\""), "{html}");
         assert!(html.contains("data-testid=\"comic-fit-width\""), "{html}");
         assert!(!html.contains("data-testid=\"comic-page-image\""), "{html}");

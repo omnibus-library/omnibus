@@ -7,6 +7,7 @@
 use dioxus::prelude::*;
 
 use crate::components::image_upload::use_file_upload;
+use crate::components::{MarkSize, Ring};
 use crate::data;
 
 /// The live-editor JS module (defines `window.OmnibusJournalEditor`, then
@@ -253,6 +254,7 @@ fn BdJournalImageButton(
             role: "button",
             tabindex: "0",
             "aria-label": "Insert image",
+            "aria-busy": if uploading() { "true" } else { "false" },
             // Labels aren't keyboard-activatable by default — forward
             // Enter/Space to the hidden input's file picker.
             onkeydown: {
@@ -265,7 +267,15 @@ fn BdJournalImageButton(
                     }
                 }
             },
-            if uploading() { "\u{2026}" } else { "\u{1F5BC}" }
+            // A stable span holds the swap, so the label's own node never
+            // changes shape (rule 07).
+            span { class: "bd-journal-image-glyph",
+                if uploading() {
+                    Ring { size: MarkSize::Xs }
+                } else {
+                    "\u{1F5BC}"
+                }
+            }
         }
         input {
             id: "{input_id}",

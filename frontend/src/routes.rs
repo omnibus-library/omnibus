@@ -8,8 +8,13 @@ use dioxus::prelude::*;
 use dioxus_router::navigation::NavigationTarget;
 use dioxus_router::Routable;
 
+use crate::components::{Loading, LoadingKind};
 use crate::pages::*;
 use crate::{use_page_title, ScreenLayout};
+
+mod login_next;
+
+pub use login_next::{login_href, login_target, login_target_from, safe_next};
 
 /// Top-level router for every omnibus frontend target.
 #[derive(Clone, Debug, PartialEq, Eq, Routable)]
@@ -68,14 +73,27 @@ pub enum Route {
     Search { query: String },
     #[route("/connect")]
     ServerConnect {},
-    #[route("/login")]
-    Login {},
+    #[route("/login?:next")]
+    Login { next: Option<String> },
     #[route("/register")]
     Register {},
     // Must stay last: dioxus-router matches variants in declaration order,
     // so a catch-all above any real route would swallow it.
     #[route("/:..segments")]
     NotFound { segments: Vec<String> },
+}
+
+/// Caption for a stub that bounces to the library.
+const TO_LIBRARY: &str = "Returning to the library";
+
+/// What a redirect stub paints for the frame before its effect navigates:
+/// the app's chrome around a page loader, never an empty body.
+fn redirecting(label: &'static str) -> Element {
+    rsx! {
+        ScreenLayout {
+            Loading { kind: LoadingKind::Page, label }
+        }
+    }
 }
 
 /// Route target for `/` — wraps [`LandingPage`] in the platform screen layout.
@@ -122,7 +140,7 @@ pub fn CleanupReview(kind: String) -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/logs` — the server log viewer now lives inside Settings
@@ -138,7 +156,7 @@ pub fn Logs() -> Element {
             section: Some("logs".into()),
         });
     });
-    rsx! {}
+    redirecting("Opening the logs")
 }
 
 /// Mobile stub for `/logs`: redirect to the landing page (no log viewer on
@@ -150,7 +168,7 @@ pub fn Logs() -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/admin/health` — wraps [`AdminHealthPage`] in
@@ -175,7 +193,7 @@ pub fn AdminHealth() -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/account` on web/server — the Account content now lives
@@ -190,7 +208,7 @@ pub fn Account() -> Element {
     use_effect(move || {
         nav.replace(Route::Settings { section: None });
     });
-    rsx! {}
+    redirecting("Opening your account")
 }
 
 /// Route target for `/account` on mobile — wraps [`AccountPage`] in the
@@ -391,11 +409,12 @@ pub fn ServerConnect() -> Element {
 
 /// Route target for `/login` — credential entry form. Rendered without the
 /// main screen chrome so the login flow stands alone. `LoginPage` owns its
-/// own full-page chrome via [`crate::components::auth::AuthShell`].
+/// own full-page chrome via [`crate::components::auth::AuthShell`]; `next`
+/// (the `?next=` query param) is the page a successful sign-in returns to.
 #[component]
-pub fn Login() -> Element {
+pub fn Login(next: Option<String>) -> Element {
     use_page_title(|| Some("Log in".into()));
-    rsx! { LoginPage {} }
+    rsx! { LoginPage { next } }
 }
 
 /// Route target for `/authors/:id` — single author discovery page.
@@ -462,7 +481,7 @@ pub fn StatsChart() -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/shelves` — the shelves index: a searchable, owner-grouped
@@ -506,7 +525,7 @@ pub fn MobileSearch() -> Element {
     use_effect(move || {
         nav.replace(Route::Landing {});
     });
-    rsx! {}
+    redirecting(TO_LIBRARY)
 }
 
 /// Route target for `/search/:query` — full-page search results.

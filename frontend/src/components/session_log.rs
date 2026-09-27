@@ -7,6 +7,8 @@
 use dioxus::prelude::*;
 use omnibus_shared::SessionLogEntry;
 
+use crate::components::loading::RowSkeletons;
+use crate::components::BusyLabel;
 use crate::date_fmt::civil_from_days;
 use crate::time::{local_date_offset, use_local_dates_ready};
 use crate::{data, use_server_url};
@@ -133,7 +135,9 @@ pub fn SessionLogList(book: Option<String>, compact: bool) -> Element {
     let first_load = loading() && entries.read().is_empty();
     let body = rsx! {
         if first_load {
-            div { class: "st-log-placeholder", aria_hidden: "true" }
+            div { class: "st-log-placeholder", "data-testid": "session-log-loading",
+                RowSkeletons { count: if show_title { 4 } else { 3 }, avatar: false }
+            }
         } else if entries.read().is_empty() && error.read().is_none() {
             p { class: "st-log-empty", "data-testid": "session-log-empty",
                 if show_title {
@@ -168,8 +172,9 @@ pub fn SessionLogList(book: Option<String>, compact: bool) -> Element {
                     r#type: "button",
                     "data-testid": "session-log-more",
                     disabled: loading(),
+                    "aria-busy": if loading() { "true" } else { "false" },
                     onclick: on_more,
-                    if loading() { "Loading\u{2026}" } else { "Show more" }
+                    BusyLabel { busy: loading(), label: "Show more", busy_label: "Loading\u{2026}" }
                 }
             }
         }

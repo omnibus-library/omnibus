@@ -7,6 +7,9 @@
 
 use dioxus::prelude::*;
 
+use crate::components::BusyLabel;
+use crate::pages::listen::sync_prompt::SYNCING;
+
 /// Invisible resolver: fetches the resume candidate once per mount and,
 /// in follow mode, applies the mapped position through the glue. Renders
 /// nothing on every target, so SSR and the first WASM paint agree.
@@ -61,6 +64,7 @@ pub(super) fn SyncJumpBanner(uuid: String) -> Element {
 #[component]
 pub(super) fn SyncHerePill(uuid: String, loc: Signal<super::signals::RelocateData>) -> Element {
     let mut label = use_signal(|| "Synced here");
+    let syncing = label() == SYNCING;
     // Seeded online for SSR parity (rule 07); reconciled post-mount.
     let mut online = use_signal(|| true);
     use_effect(move || online.set(crate::pages::listen::sync_prompt::browser_online()));
@@ -80,7 +84,8 @@ pub(super) fn SyncHerePill(uuid: String, loc: Signal<super::signals::RelocateDat
             r#type: "button",
             "data-testid": "reader-sync-here",
             title: "Declare the ebook and audiobook aligned at this spot",
-            disabled: !online() || !precise,
+            disabled: !online() || !precise || syncing,
+            "aria-busy": if syncing { "true" } else { "false" },
             onclick: move |_| {
                 if !crate::pages::listen::sync_prompt::browser_online() {
                     return;
@@ -91,7 +96,7 @@ pub(super) fn SyncHerePill(uuid: String, loc: Signal<super::signals::RelocateDat
                 // locations-scale fraction rides along as the fallback.
                 let cfi = loc.peek().cfi.clone();
                 spawn(async move {
-                    label.set("Syncing\u{2026}");
+                    label.set(SYNCING);
                     let decl = omnibus_shared::cross_format::DeclareSyncPoint {
                         book_uuid: uuid,
                         format: omnibus_shared::ProgressFormat::Epub,
@@ -103,7 +108,7 @@ pub(super) fn SyncHerePill(uuid: String, loc: Signal<super::signals::RelocateDat
                     label.set(crate::data::declare_sync_and_label(decl).await);
                 });
             },
-            "{label}"
+            BusyLabel { busy: syncing, label: label(), busy_label: SYNCING }
         }
     }
 }

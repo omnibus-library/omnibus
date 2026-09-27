@@ -198,3 +198,13 @@ fn open_book_count_folds_two_rows_that_resolve_to_one_book() {
         "your in-progress book"
     );
 }
+
+#[cfg(feature = "server")]
+#[test]
+fn resume_stack_pending_holds_the_stacks_place_with_a_dealt_fan_of_plates() {
+    let html = crate::test_support::render(rsx! { ResumeStackPending {} });
+    assert!(html.contains("continue-stack-pending"), "{html}");
+    assert_eq!(html.matches("lmq-fcard-pending").count(), 3, "{html}");
+    // Not the real stack: specs and the marquee glue key on that testid.
+    assert!(!html.contains("\"continue-stack\""), "{html}");
+}

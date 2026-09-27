@@ -6,6 +6,7 @@ use dioxus::core::Task;
 use dioxus::prelude::*;
 use omnibus_shared::{CreateJournalEntry, Highlight, JournalStatus, UpdateJournalEntry};
 
+use crate::components::BusyLabel;
 use crate::data;
 use crate::pages::book_detail::journal_editor::*;
 use crate::platform_sleep::async_sleep_ms;
@@ -625,6 +626,10 @@ fn BdJournalComposerFoot(
         ..
     } = state;
     let mut save_as = build_save_as_handler(&uuid, &server_url, state, reload);
+    // Which button started the save, so only that one wears the ring.
+    let mut pressed = use_signal(|| None::<JournalStatus>);
+    let draft_busy = saving() && pressed() == Some(JournalStatus::Draft);
+    let publish_busy = saving() && pressed() == Some(JournalStatus::Published);
 
     rsx! {
         div { class: "bd-journal-composer-foot",
@@ -647,7 +652,10 @@ fn BdJournalComposerFoot(
                 r#type: "button",
                 class: "btn ghost sm",
                 disabled: saving(),
-                onclick: move |_| cancel_and_discard_draft(&server_url, state),
+                onclick: move |_| {
+                    pressed.set(None);
+                    cancel_and_discard_draft(&server_url, state)
+                },
                 "Cancel"
             }
             button {
@@ -655,19 +663,27 @@ fn BdJournalComposerFoot(
                 class: "btn ghost sm",
                 "data-testid": "journal-save-draft",
                 disabled: saving() || body().trim().is_empty(),
+                "aria-busy": if draft_busy { "true" } else { "false" },
                 onclick: {
                     let mut save_as = save_as.clone();
-                    move |_| save_as(JournalStatus::Draft)
+                    move |_| {
+                        pressed.set(Some(JournalStatus::Draft));
+                        save_as(JournalStatus::Draft)
+                    }
                 },
-                if saving() { "Saving\u{2026}" } else { "Save draft" }
+                BusyLabel { busy: draft_busy, label: "Save draft", busy_label: "Saving\u{2026}" }
             }
             button {
                 r#type: "button",
                 class: "btn primary sm",
                 "data-testid": "journal-publish",
                 disabled: saving() || body().trim().is_empty(),
-                onclick: move |_| save_as(JournalStatus::Published),
-                if saving() { "Publishing\u{2026}" } else { "Publish entry" }
+                "aria-busy": if publish_busy { "true" } else { "false" },
+                onclick: move |_| {
+                    pressed.set(Some(JournalStatus::Published));
+                    save_as(JournalStatus::Published)
+                },
+                BusyLabel { busy: publish_busy, label: "Publish entry", busy_label: "Publishing\u{2026}" }
             }
         }
     }

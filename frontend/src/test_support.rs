@@ -19,6 +19,33 @@ pub fn render(element: Element) -> String {
     dioxus::ssr::render_element(element)
 }
 
+/// A signed-in reader holding exactly the given permissions, for seeding
+/// [`crate::CurrentUser`] in a render test.
+pub fn test_user(is_admin: bool, can_upload: bool) -> omnibus_shared::UserSummary {
+    omnibus_shared::UserSummary {
+        id: 7,
+        username: "reader".to_string(),
+        is_admin,
+        can_upload,
+        can_edit: false,
+        can_download: false,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+    }
+}
+
+/// Provide [`crate::CurrentUser`] holding `user` to the calling component's
+/// subtree: `None` is unresolved, `Some(None)` signed out. A hook — call it
+/// at the top of a test's root component.
+#[cfg(not(feature = "mobile"))]
+pub fn provide_current_user(user: Option<Option<omnibus_shared::UserSummary>>) {
+    use_context_provider(|| crate::CurrentUser(Signal::new(user)));
+}
+
 /// SSR-render a zero-prop component inside a real `VirtualDom`, for the
 /// components whose body constructs a `Signal` (`Signal::new`) or otherwise
 /// needs a live runtime at mount. Returns the rendered HTML after one rebuild.

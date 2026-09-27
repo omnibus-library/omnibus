@@ -98,6 +98,9 @@ pub(super) fn MarqueeStage(
     // The series, fetched once for the stage: the Home kicker names "Book N
     // of M" from its count and the Shelf stop lays its members out.
     let mut series = use_signal(|| None::<SeriesDetail>);
+    // True once the stage fetch below has returned, so a `None` above can be
+    // told apart: still asking, or answered with nothing.
+    let mut stage_loaded = use_signal(|| false);
     let mut load_seq = use_signal(|| 0u64);
     {
         let uuid = uuid.clone();
@@ -114,6 +117,7 @@ pub(super) fn MarqueeStage(
             insights.set(None);
             alignment.set(None);
             series.set(None);
+            stage_loaded.set(false);
             let uuid = uuid.clone();
             spawn(async move {
                 let read = if has_text {
@@ -148,6 +152,7 @@ pub(super) fn MarqueeStage(
                     insights.set(ins);
                     alignment.set(align);
                     series.set(ser);
+                    stage_loaded.set(true);
                 }
             });
         }));
@@ -203,6 +208,7 @@ pub(super) fn MarqueeStage(
             stats::MarqueeStatsStop {
                 uuid: uuid.clone(),
                 insights: insights(),
+                loaded: stage_loaded(),
                 progress: MarqueeProgress { reading: reading(), listening: listening() },
                 audio_only: view.has_audio && !view.has_ebook && !view.has_comic && !view.has_pdf,
                 wish_mode,
@@ -236,6 +242,7 @@ pub(super) fn MarqueeStage(
                 view: view.clone(),
                 ctx: more::MoreStopCtx {
                     series: series(),
+                    series_loaded: stage_loaded(),
                     author_books: author_books.clone(),
                     suggestions,
                     page: BdPageCtx {

@@ -26,12 +26,13 @@ pub fn SmtpConfigField() -> Element {
     };
     let io = SmtpIo {
         status: use_signal(|| None),
+        status_failed: use_signal(|| false),
         msg: use_signal(|| None),
         msg_is_error: use_signal(|| false),
         in_flight: use_signal(|| false),
     };
 
-    spawn_smtp_config_load(server_url.clone(), fields, io.status);
+    spawn_smtp_config_load(server_url.clone(), fields, io);
 
     let on_save = make_smtp_save(server_url.clone(), fields, io);
     let on_clear = make_smtp_clear(server_url.clone(), fields, io);
@@ -52,6 +53,7 @@ pub fn SmtpConfigField() -> Element {
                 message: SmtpStatusMessage {
                     msg: io.msg,
                     msg_is_error: io.msg_is_error,
+                    status_failed: io.status_failed,
                 },
                 actions: SmtpActionHandlers {
                     on_save: EventHandler::new(on_save),
@@ -78,17 +80,22 @@ struct SmtpFields {
 #[derive(Copy, Clone, PartialEq)]
 struct SmtpIo {
     status: Signal<Option<SmtpConfigStatus>>,
+    /// Set when the config read failed, so the line stops saying "Checking".
+    status_failed: Signal<bool>,
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
     in_flight: Signal<bool>,
 }
 
 /// Load the masked SMTP config on mount and seed the editable fields.
-fn spawn_smtp_config_load(
-    server_url: String,
-    fields: SmtpFields,
-    mut status: Signal<Option<SmtpConfigStatus>>,
-) {
+fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
+    let SmtpIo {
+        mut status,
+        mut status_failed,
+        mut msg,
+        mut msg_is_error,
+        ..
+    } = io;
     let mut host = fields.host;
     let mut port = fields.port;
     let mut username = fields.username;
@@ -97,22 +104,32 @@ fn spawn_smtp_config_load(
     use_effect(move || {
         let url = server_url.clone();
         spawn(async move {
-            if let Ok(s) = data::get_smtp_config(&url).await {
-                if let Some(h) = s.host.clone() {
-                    host.set(h);
+            let s = match data::get_smtp_config(&url).await {
+                Ok(s) => s,
+                // Said aloud, or the status line would check in silence.
+                Err(e) => {
+                    status_failed.set(true);
+                    msg.set(Some(format!(
+                        "Couldn\u{2019}t read the current settings: {e}"
+                    )));
+                    msg_is_error.set(true);
+                    return;
                 }
-                if let Some(p) = s.port {
-                    port.set(p.to_string());
-                }
-                if let Some(u) = s.username.clone() {
-                    username.set(u);
-                }
-                if let Some(f) = s.from_email.clone() {
-                    from_email.set(f);
-                }
-                security.set(s.security);
-                status.set(Some(s));
+            };
+            if let Some(h) = s.host.clone() {
+                host.set(h);
             }
+            if let Some(p) = s.port {
+                port.set(p.to_string());
+            }
+            if let Some(u) = s.username.clone() {
+                username.set(u);
+            }
+            if let Some(f) = s.from_email.clone() {
+                from_email.set(f);
+            }
+            security.set(s.security);
+            status.set(Some(s));
         });
     });
 }
@@ -330,6 +347,7 @@ fn SmtpConnectionFields(fields: SmtpFields, configured: bool) -> Element {
 struct SmtpStatusMessage {
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
+    status_failed: Signal<bool>,
 }
 
 /// Save / send-test / clear handlers. Grouped so [`SmtpTestActions`] stays
@@ -351,7 +369,11 @@ fn SmtpTestActions(
     message: SmtpStatusMessage,
     actions: SmtpActionHandlers,
 ) -> Element {
-    let SmtpStatusMessage { msg, msg_is_error } = message;
+    let SmtpStatusMessage {
+        msg,
+        msg_is_error,
+        status_failed,
+    } = message;
     let SmtpActionHandlers {
         on_save,
         on_test,
@@ -390,7 +412,7 @@ fn SmtpTestActions(
                 }
             }
         }
-        {credential_status_line("smtp-status", configured, &detail, "Not configured")}
+        {credential_status_line("smtp-status", status.as_ref().map(|s| s.configured), status_failed(), &detail, "Not configured")}
         {credential_status_message("smtp-config-status", msg().as_deref(), msg_is_error())}
     }
 }

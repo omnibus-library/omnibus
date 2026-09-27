@@ -10,6 +10,8 @@ mod tests;
 
 use dioxus::prelude::*;
 
+use crate::components::{MarkSize, Ring};
+
 // The vendored runtime is loaded from JS by `install_scanner`, so SSR — which
 // never opens a camera — sees these consts (and `from_glue`) as unused.
 #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]
@@ -115,6 +117,9 @@ pub fn BarcodeScanner(on_detect: EventHandler<String>, on_manual: EventHandler<(
                 class: "scanner-status",
                 "data-testid": "barcode-scanner-status",
                 role: "status",
+                if status() == ScanStatus::Starting {
+                    Ring { size: MarkSize::Xs, class: "scanner-status-ring" }
+                }
                 "{status().message()}"
             }
             div { class: "scanner-actions",

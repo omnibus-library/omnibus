@@ -9,8 +9,8 @@
 //! a save never restates a target the reader didn't touch.
 //!
 //! Goals are account configuration, so every write goes straight to the server
-//! and surfaces its failure inline (rule 08 test 1). Signals start empty so SSR
-//! and the first WASM paint agree (rule 07).
+//! and surfaces its failure inline (rule 08 test 1). The targets start
+//! unread so SSR and the first WASM paint agree on the loading rows (rule 07).
 
 use dioxus::prelude::*;
 use omnibus_shared::{
@@ -75,7 +75,9 @@ struct GoalSignals {
     msg_is_error: Signal<bool>,
     /// The server's current targets, in [`FIELDS`] order.
     targets: Signal<[Option<i64>; 3]>,
-    loaded: Signal<bool>,
+    /// `None` until the read returns, then whether it succeeded — "Not set"
+    /// is only a fact once the server has said so.
+    loaded: Signal<Option<bool>>,
 }
 
 /// Pluralize a unit noun. The hints read as sentences, so "1 book" has to win
@@ -160,15 +162,9 @@ fn save_summary(failed: &[&'static str]) -> (String, bool) {
 /// both `goal` and `daily_goals`, and the same read the stats page makes, so
 /// this costs a shared cache hit rather than a new endpoint.
 fn use_goal_hydration(server_url: String, mut signals: GoalSignals) {
+    // Reads no signal, so it runs once after mount; `loaded` is written only
+    // when the request returns, and a failing endpoint is not retried.
     use_effect(move || {
-        if (signals.loaded)() {
-            return;
-        }
-        // Claimed before the request, not after it: `use_effect` re-runs on
-        // every render, so a guard that only closes on completion starts a
-        // fresh fetch for each render in flight — and a persistently failing
-        // endpoint would be retried forever.
-        signals.loaded.set(true);
         let url = server_url.clone();
         spawn(async move {
             let Ok(summary) = data::fetch_stats(&url, StatsRange::AllTime).await else {
@@ -179,6 +175,7 @@ fn use_goal_hydration(server_url: String, mut signals: GoalSignals) {
                     "Couldn't load your goals \u{2014} reload to try again.".to_string(),
                 ));
                 signals.msg_is_error.set(true);
+                signals.loaded.set(Some(false));
                 return;
             };
             let targets = [
@@ -190,6 +187,7 @@ fn use_goal_hydration(server_url: String, mut signals: GoalSignals) {
             signals
                 .drafts
                 .set(targets.map(|t| t.map(|n| n.to_string()).unwrap_or_default()));
+            signals.loaded.set(Some(true));
         });
     });
 }
@@ -285,8 +283,19 @@ async fn write_daily(server_url: &str, kind: &str, target: Option<i64>) -> bool 
 
 /// The three targets as a read-only list, over the one control that opens them
 /// all for editing.
+/// One goal's read-mode value: its summary once read, a sheen while the read
+/// is out, and a plain "Unknown" if it failed — never a guessed "Not set".
+fn goal_value(target: Option<i64>, unit: &str, loaded: Option<bool>) -> Element {
+    match loaded {
+        Some(true) => rsx! { {target_summary(target, unit)} },
+        Some(false) => rsx! { "Unknown" },
+        None => rsx! { span { class: "ld-sheen", "Checking" } },
+    }
+}
+
 fn goals_readout(
     targets: [Option<i64>; 3],
+    loaded: Option<bool>,
     on_edit: impl FnMut(Event<MouseData>) + 'static,
 ) -> Element {
     rsx! {
@@ -297,7 +306,7 @@ fn goals_readout(
                     dd {
                         class: if targets[i].is_some() { "goal-readout-value" } else { "goal-readout-value unset" },
                         "data-testid": "{field.testid}-value",
-                        {target_summary(targets[i], field.unit)}
+                        {goal_value(targets[i], field.unit, loaded)}
                     }
                 }
             }
@@ -307,6 +316,8 @@ fn goals_readout(
                 r#type: "button",
                 class: "btn",
                 "data-testid": "goals-edit",
+                // Editing unread targets would write over values never seen.
+                disabled: loaded != Some(true),
                 onclick: on_edit,
                 "Edit goals"
             }
@@ -397,7 +408,7 @@ pub(crate) fn ReadingGoalsCard() -> Element {
         msg: use_signal(|| None::<String>),
         msg_is_error: use_signal(|| false),
         targets: use_signal(|| [None; 3]),
-        loaded: use_signal(|| false),
+        loaded: use_signal(|| None::<bool>),
     };
     use_goal_hydration(server_url.clone(), signals);
 
@@ -425,7 +436,7 @@ pub(crate) fn ReadingGoalsCard() -> Element {
             if (signals.editing)() {
                 {goals_form(signals.drafts, signals.msg, (signals.saving)(), on_save, on_cancel)}
             } else {
-                {goals_readout((signals.targets)(), on_edit)}
+                {goals_readout((signals.targets)(), (signals.loaded)(), on_edit)}
             }
             {credential_status_message(
                 "goals-status",

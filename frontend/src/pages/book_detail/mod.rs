@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 use omnibus_shared::physical::WishlistEntry;
 use omnibus_shared::{EbookMetadata, MergeBooksResult, SuggestionsResponse};
 
-use crate::components::{PageError, PageLoading, PageNotFound};
+use crate::components::{Loading, LoadingKind, PageError, PageNotFound};
 use crate::{data, use_server_url, Route};
 
 // Consumed only by the web marquee resume readout and the saved-passage
@@ -90,7 +90,7 @@ pub fn BookDetailPage(uuid: String) -> Element {
     );
 
     if (sig.loading)() {
-        return rsx! { PageLoading {} };
+        return rsx! { Loading { kind: LoadingKind::Page, label: "Taking it off the shelf" } };
     }
     if let Some(msg) = (sig.error)() {
         return rsx! { PageError { message: msg, back_to: Route::Landing {} } };
@@ -585,6 +585,30 @@ fn poll_suggestions_until_resolved(
             }
         }
     });
+}
+
+/// Where a section's post-mount list fetch stands, so an empty list reads as
+/// "none" only once the server has said so.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FeedState {
+    /// Asked, not yet answered — SSR and the first paint.
+    Pending,
+    /// Answered; the list is the truth.
+    Loaded,
+    /// The first ask failed; nothing is known.
+    Failed,
+}
+
+impl FeedState {
+    /// The state after one fetch returns: a failure after an earlier answer
+    /// keeps that answer on screen rather than un-knowing it.
+    pub(super) fn after(self, ok: bool) -> Self {
+        match (ok, self) {
+            (true, _) => FeedState::Loaded,
+            (false, FeedState::Loaded) => FeedState::Loaded,
+            (false, _) => FeedState::Failed,
+        }
+    }
 }
 
 // Page-local primitives. None of these introduce business logic — they're

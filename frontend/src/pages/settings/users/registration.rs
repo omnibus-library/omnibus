@@ -131,17 +131,22 @@ pub(super) fn RegistrationToggle() -> Element {
     let is_on = shown() == Some(true);
     let status = registration_status_line(confirmed());
     let can_retry = error().is_some() && confirmed().is_none();
+    let pending = confirmed().is_none() && error().is_none();
 
     rsx! {
         section { class: "card", "data-testid": "registration-card",
             div { class: "users-head",
                 div {
                     h2 { "Self-registration" }
-                    p { class: "subtitle", "{status}" }
+                    p { class: "subtitle",
+                        span { class: if pending { "ld-sheen" } else { "registration-status" }, "{status}" }
+                    }
                 }
                 label { class: "auth-checkbox",
                     input {
                         r#type: "checkbox",
+                        // Unknown is drawn as neither ticked nor clear.
+                        class: if pending { "ld-unknown" } else { "registration-check" },
                         "data-testid": "registration-toggle",
                         checked: is_on,
                         disabled: confirmed().is_none() || saving(),

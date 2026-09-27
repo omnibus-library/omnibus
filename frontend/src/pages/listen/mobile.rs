@@ -99,7 +99,14 @@ pub fn MobilePlayer(uuid: String, file_id: Option<i64>) -> Element {
     }
     let Some(v) = view_now else {
         return rsx! {
-            div { class: "m-player-loading", p { class: "subtitle", "Loading\u{2026}" } }
+            div { class: "m-player-loading",
+                crate::components::Loading {
+                    kind: crate::components::LoadingKind::Stage,
+                    mark: crate::components::LoadingMark::Line,
+                    class: "in-flow",
+                    label: "Opening the audiobook",
+                }
+            }
         };
     };
     if (ctx.unsupported)() {

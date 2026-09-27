@@ -1,6 +1,6 @@
 //! Tests for `derive_reader_display` (needs a Dioxus runtime for
 //! `Signal::new`, the pattern in `frontend/src/pages/reader/prefs/tests.rs`)
-//! and an SSR render-smoke check on `ReaderViewerStage`'s error overlay.
+//! and SSR render-smoke checks on `ReaderViewerStage`'s overlays.
 
 use super::*;
 
@@ -54,6 +54,14 @@ mod render_tests {
         assert!(html.contains("data-testid=\"reader-error\""));
         assert!(html.contains("data-testid=\"reader-retry\""));
         assert!(html.contains("Retry"));
+    }
+
+    #[test]
+    fn reader_viewer_stage_covers_the_page_with_an_opaque_stage_loader_while_loading() {
+        let html = render(rsx! { ViewerStageHarness { status: ReaderStatus::Loading } });
+        assert!(html.contains("ld ld-stage rd-overlay"), "{html}");
+        assert!(html.contains("data-testid=\"reader-loading\""), "{html}");
+        assert!(html.contains("ld-riffle"), "{html}");
     }
 
     #[test]

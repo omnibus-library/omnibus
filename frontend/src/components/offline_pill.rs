@@ -29,14 +29,14 @@ pub fn OfflinePill() -> Element {
     let Some(label) = pill_label(&state) else {
         return rsx! {};
     };
-    let class = if state.online {
-        "m-offline-pill is-syncing"
+    let (class, dot) = if state.online {
+        ("m-offline-pill is-syncing", "m-offline-pill-dot ld-dot")
     } else {
-        "m-offline-pill"
+        ("m-offline-pill", "m-offline-pill-dot")
     };
     rsx! {
         div { class: "{class}", role: "status", "data-testid": "offline-pill",
-            span { class: "m-offline-pill-dot", "aria-hidden": "true" }
+            span { class: "{dot}", "aria-hidden": "true" }
             "{label}"
         }
     }

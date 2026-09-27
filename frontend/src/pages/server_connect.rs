@@ -6,6 +6,7 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
+#[cfg(not(feature = "mobile"))]
 use crate::Route;
 #[cfg(feature = "mobile")]
 use crate::{
@@ -21,13 +22,20 @@ pub fn ServerConnectPage() -> Element {
     #[cfg(not(feature = "mobile"))]
     {
         // Same-origin on web/SSR — nothing to configure. SSR renders the
-        // empty placeholder; the client bounces to the landing route after
-        // hydration (identical markup either way, so hydration is clean).
+        // loader; the client bounces to the landing route after hydration
+        // (identical markup either way, so hydration is clean).
         let nav = use_navigator();
         use_effect(move || {
             nav.replace(Route::Landing {});
         });
-        rsx! { div { class: "screen" } }
+        rsx! {
+            div { class: "screen",
+                crate::components::Loading {
+                    kind: crate::components::LoadingKind::Page,
+                    label: "Finding your library",
+                }
+            }
+        }
     }
 
     #[cfg(feature = "mobile")]
@@ -73,7 +81,7 @@ fn build_connect_handler(
                     let to_persist = base.clone();
                     std::thread::spawn(move || crate::data::server_url_store::set(&to_persist));
                     url_signal.set(base);
-                    nav.replace(Route::Login {});
+                    nav.replace(crate::routes::login_target());
                 }
                 Err(_) => error.set(Some(
                     "Can't reach that server. Check the address and that it's running.".into(),
@@ -129,7 +137,8 @@ fn server_connect_form(
                 class: "btn primary lg auth-submit",
                 r#type: "submit",
                 disabled: checking(),
-                if checking() { "Connecting…" } else { "Connect" }
+                "aria-busy": if checking() { "true" } else { "false" },
+                crate::components::BusyLabel { busy: checking(), label: "Connect", busy_label: "Connecting…" }
             }
             p { class: "auth-footer",
                 "Don't have a server? "

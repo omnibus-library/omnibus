@@ -66,7 +66,7 @@ pub(super) fn list_count_label(n: i64) -> String {
 #[component]
 pub(super) fn SuggestionsSpinner() -> Element {
     rsx! {
-        span { class: "suggest-spinner", "data-testid": "suggestions-spinner", aria_hidden: "true" }
+        crate::components::Ring { testid: "suggestions-spinner" }
     }
 }
 

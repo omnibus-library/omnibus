@@ -16,6 +16,7 @@ use super::model::{build_flat_items, plural, FlatItem};
 use super::results::SpResultsList;
 use super::PaletteOpen;
 use crate::components::glyphs::search_glyph;
+use crate::components::{Loading, LoadingKind, MarkSize, Ring};
 use crate::focus_after_paint::focus_after_paint;
 use crate::platform_sleep::async_sleep_ms;
 use crate::{data, use_server_url};
@@ -234,6 +235,12 @@ pub(super) fn SpOverlay(open: PaletteOpen) -> Element {
 
                 {sp_meta_and_error(has_results, total, duration, is_errored)}
 
+                // The first answer for a query has nothing to show yet; later
+                // keystrokes keep the last answer on screen instead.
+                if is_loading && res.is_none() {
+                    Loading { kind: LoadingKind::Row, label: "Searching", testid: "sp-loading", class: "sp-loading" }
+                }
+
                 // `has_navigated` gates whether `selected` is projected into
                 // row class names: until the user drives arrow-key selection,
                 // the first row would otherwise render "selected" on every
@@ -304,7 +311,7 @@ fn SpInputRow(query: Signal<String>, is_loading: bool, on_input: EventHandler<St
                 oninput: move |evt| on_input.call(evt.value()),
             }
             if is_loading {
-                span { class: "sp-spinner", "…" }
+                Ring { size: MarkSize::Md, class: "sp-spinner" }
             }
         }
     }

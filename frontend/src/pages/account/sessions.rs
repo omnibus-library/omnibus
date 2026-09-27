@@ -3,17 +3,20 @@
 //! signed in, when it was last used — with a per-row Revoke action; the
 //! session authenticating this page has no Revoke button, because the server
 //! refuses that revoke anyway and the control is better hidden than offered
-//! and rejected. Signals start empty so SSR and the first WASM paint agree.
+//! and rejected. The list starts unanswered so SSR and the first WASM paint
+//! agree on the loading rows.
 
 use dioxus::prelude::*;
 use omnibus_shared::SessionView;
 
+use crate::components::loading::RowSkeletons;
 use crate::data;
 
 /// Card body: session list, loaded on mount and reloaded after every revoke.
 #[component]
 pub fn SessionsCard() -> Element {
-    let mut sessions = use_signal(Vec::<SessionView>::new);
+    // `None` until the first answer: never "No sessions found." meanwhile.
+    let mut sessions = use_signal(|| None::<Vec<SessionView>>);
     let mut msg = use_signal(|| None::<String>);
     let mut msg_is_error = use_signal(|| false);
     let mut busy_id = use_signal(|| None::<i64>);
@@ -23,7 +26,7 @@ pub fn SessionsCard() -> Element {
         let _ = reload();
         spawn(async move {
             match data::list_my_sessions().await {
-                Ok(list) => sessions.set(list),
+                Ok(list) => sessions.set(Some(list)),
                 Err(e) => {
                     msg.set(Some(e));
                     msg_is_error.set(true);
@@ -60,7 +63,17 @@ pub fn SessionsCard() -> Element {
             h2 { "Sessions" }
             p { class: "subtitle", "Devices and browsers currently signed in to your account." }
 
-            {render_session_list(&session_list, busy_id(), on_revoke)}
+            match session_list.as_deref() {
+                Some(rows) => render_session_list(rows, busy_id(), on_revoke),
+                // The status line below carries the failure.
+                None if msg_is_error() => rsx! {},
+                None => rsx! {
+                    div { role: "status", "aria-live": "polite", "data-testid": "account-sessions-loading",
+                        span { class: "ld-sr", "Finding your sessions" }
+                        RowSkeletons { count: 2, avatar: false }
+                    }
+                },
+            }
 
             if let Some(m) = msg() {
                 p {
@@ -75,8 +88,7 @@ pub fn SessionsCard() -> Element {
 }
 
 /// The session table, or an empty-state line. Should never actually be empty
-/// (the request itself always holds one live session), but the loading
-/// window before the effect resolves renders the same empty state as SSR.
+/// (the request itself always holds one live session).
 fn render_session_list(
     rows: &[SessionView],
     busy_id: Option<i64>,
@@ -174,5 +186,13 @@ mod tests {
     fn fmt_timestamp_renders_iso_date() {
         // 2024-01-15T00:00:00Z
         assert_eq!(fmt_timestamp(1_705_276_800), "2024-01-15");
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn sessions_card_first_paint_loads_rather_than_claims_no_sessions() {
+        let html = crate::test_support::render_in_vdom(|| rsx! { SessionsCard {} });
+        assert!(html.contains("account-sessions-loading"), "{html}");
+        assert!(!html.contains("No sessions found."), "{html}");
     }
 }

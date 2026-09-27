@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{ShelfKind, ShelfSummary, Visibility};
 
+use crate::components::loading::{RowSkeletons, Skeleton};
 use crate::components::CreateShelfModal;
 use crate::{data, use_server_url, Route};
 
@@ -50,11 +51,16 @@ pub(super) fn MobileShelvesIndex() -> Element {
     let refetch_url = url.clone();
     let refetch = move || load(refetch_url.clone());
 
-    let count = shelves.read().len();
+    // `None` until the first answer, so the header never claims "0 shelves".
+    // Nor after a failed first load, which has no count to give — the header
+    // shows none rather than a placeholder that never resolves.
+    let unanswered = shelves.read().is_empty() && (loading() || error().is_some());
+    let count = (!unanswered).then(|| shelves.read().len());
+    let count_pending = count.is_none() && error().is_none();
 
     rsx! {
         div { class: "m-shelves", "data-testid": "shelves-index",
-            ShelvesHeader { count, on_new: move |_| show_create.set(true) }
+            ShelvesHeader { count, count_pending, on_new: move |_| show_create.set(true) }
             ShelvesBody { shelves: shelves(), loading: loading(), error: error() }
         }
 
@@ -72,11 +78,15 @@ pub(super) fn MobileShelvesIndex() -> Element {
 
 /// Back link, shelf count, "New" action, and page title.
 #[component]
-fn ShelvesHeader(count: usize, on_new: EventHandler<MouseEvent>) -> Element {
-    let count_label = if count == 1 {
-        "1 shelf".to_string()
-    } else {
-        format!("{count} shelves")
+fn ShelvesHeader(
+    count: Option<usize>,
+    count_pending: bool,
+    on_new: EventHandler<MouseEvent>,
+) -> Element {
+    let count_label = match count {
+        Some(1) => "1 shelf".to_string(),
+        Some(n) => format!("{n} shelves"),
+        None => String::new(),
     };
     rsx! {
         header { class: "m-head",
@@ -88,7 +98,11 @@ fn ShelvesHeader(count: usize, on_new: EventHandler<MouseEvent>) -> Element {
                         "aria-label": "Back to library",
                         "\u{2190}"
                     }
-                    span { class: "label", "{count_label}" }
+                    if count.is_some() {
+                        span { class: "label", "{count_label}" }
+                    } else if count_pending {
+                        Skeleton { style: "--w:64px;height:.7em" }
+                    }
                 }
                 button {
                     r#type: "button",
@@ -118,7 +132,10 @@ fn ShelvesBody(shelves: Vec<ShelfSummary>, loading: bool, error: Option<String>)
                 "Couldn't load shelves: {msg}"
             }
         } else if loading && shelves.is_empty() {
-            p { class: "subtitle", "Loading\u{2026}" }
+            div { role: "status", "aria-live": "polite", "data-testid": "shelves-loading",
+                span { class: "ld-sr", "Gathering your shelves" }
+                RowSkeletons { count: 5 }
+            }
         } else {
             div { class: "m-shelf-list",
                 // Always-present "All Books" — the whole library as a shelf.

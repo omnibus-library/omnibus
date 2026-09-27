@@ -33,7 +33,7 @@ pub fn SeriesIndexPage() -> Element {
         mut sort,
     } = shell;
 
-    if let Some(early) = index_page_early_return(loading, error) {
+    if let Some(early) = index_page_early_return(loading, error, "Gathering every series") {
         return early;
     }
 

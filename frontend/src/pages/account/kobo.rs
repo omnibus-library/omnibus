@@ -1,12 +1,13 @@
 //! Kobo wireless-sync device card (web Settings → Kobo section).
 //!
 //! Lists the caller's registered Kobos with their re-displayable `api_endpoint`
-//! URL (AC2), per-device Regenerate/Remove, and an "Add a Kobo" form. Signals
-//! start empty so SSR and the first WASM paint agree (rule 07).
+//! URL (AC2), per-device Regenerate/Remove, and an "Add a Kobo" form. The
+//! list starts unanswered so SSR and the first WASM paint agree (rule 07).
 
 use dioxus::prelude::*;
 use omnibus_shared::KoboDeviceView;
 
+use crate::components::loading::RowSkeletons;
 use crate::pages::settings::use_instance_origin;
 use crate::{data, use_server_url};
 
@@ -171,7 +172,8 @@ pub fn KoboDevicesCard() -> Element {
     // which co-locates with the server, so the page's own origin is the
     // endpoint's origin.
     let endpoint_origin = use_instance_origin();
-    let mut devices = use_signal(Vec::<KoboDeviceView>::new);
+    // `None` until the first answer: never "No Kobo registered yet." meanwhile.
+    let mut devices = use_signal(|| None::<Vec<KoboDeviceView>>);
     let mut name_input = use_signal(String::new);
     let mut msg = use_signal(|| None::<String>);
     let mut msg_is_error = use_signal(|| false);
@@ -181,8 +183,12 @@ pub fn KoboDevicesCard() -> Element {
     use_effect(move || {
         let url = load_url.clone();
         spawn(async move {
-            if let Ok(list) = data::list_kobo_devices(&url).await {
-                devices.set(list);
+            match data::list_kobo_devices(&url).await {
+                Ok(list) => devices.set(Some(list)),
+                Err(e) => {
+                    msg.set(Some(format!("Couldn\u{2019}t load your Kobos: {e}")));
+                    msg_is_error.set(true);
+                }
             }
         });
     });
@@ -202,7 +208,7 @@ pub fn KoboDevicesCard() -> Element {
             match data::create_kobo_device(&url, name).await {
                 Ok(dev) => {
                     name_input.set(String::new());
-                    devices.write().push(dev);
+                    devices.write().get_or_insert_with(Vec::new).push(dev);
                     msg.set(Some("Kobo added. Copy its endpoint URL below.".to_string()));
                     msg_is_error.set(false);
                 }
@@ -224,7 +230,7 @@ pub fn KoboDevicesCard() -> Element {
         spawn(async move {
             match data::regenerate_kobo_device(&url, id).await {
                 Ok(updated) => {
-                    if let Some(slot) = devices.write().iter_mut().find(|d| d.id == id) {
+                    if let Some(slot) = devices.write().iter_mut().flatten().find(|d| d.id == id) {
                         *slot = updated;
                     }
                     msg.set(Some(
@@ -248,7 +254,9 @@ pub fn KoboDevicesCard() -> Element {
         spawn(async move {
             match data::revoke_kobo_device(&url, id).await {
                 Ok(()) => {
-                    devices.write().retain(|d| d.id != id);
+                    if let Some(list) = devices.write().as_mut() {
+                        list.retain(|d| d.id != id);
+                    }
                     msg.set(Some("Kobo removed.".to_string()));
                     msg_is_error.set(false);
                 }
@@ -269,7 +277,17 @@ pub fn KoboDevicesCard() -> Element {
             {render_kobo_setup_steps()}
             // Unconditional: the hazard applies the moment a URL is copied.
             {render_kobo_warning()}
-            {render_kobo_device_list(&device_list, &endpoint_origin(), in_flight(), on_regenerate, on_remove)}
+            match device_list.as_deref() {
+                Some(list) => render_kobo_device_list(list, &endpoint_origin(), in_flight(), on_regenerate, on_remove),
+                // The status line below carries the failure.
+                None if msg_is_error() => rsx! {},
+                None => rsx! {
+                    div { role: "status", "aria-live": "polite", "data-testid": "kobo-devices-loading",
+                        span { class: "ld-sr", "Finding your Kobos" }
+                        RowSkeletons { count: 1, avatar: false }
+                    }
+                },
+            }
             {render_kobo_add_form(name_input, in_flight(), on_add)}
 
             if let Some(m) = msg() {
@@ -411,12 +429,30 @@ mod render_tests {
     }
 
     /// The warning must not be gated on having registered a device — a user
-    /// reads it *before* adding their first Kobo, not after.
+    /// reads it *before* adding their first Kobo, not after. First paint hasn't
+    /// heard back yet, so the list is loading rather than claiming none.
     #[test]
-    fn kobo_card_warns_even_with_no_devices_registered() {
+    fn kobo_card_warns_before_the_device_list_has_answered() {
         let html = render_in_vdom(card);
-        assert!(html.contains("data-testid=\"kobo-devices-empty\""));
+        assert!(
+            html.contains("data-testid=\"kobo-devices-loading\""),
+            "{html}"
+        );
+        assert!(!html.contains("data-testid=\"kobo-devices-empty\""));
         assert!(html.contains("data-testid=\"kobo-data-loss-warning\""));
+    }
+
+    fn empty_device_list() -> Element {
+        render_kobo_device_list(&[], "", false, Callback::new(|_| {}), Callback::new(|_| {}))
+    }
+
+    #[test]
+    fn render_kobo_device_list_says_none_registered_once_the_list_is_empty() {
+        let html = render_in_vdom(empty_device_list);
+        assert!(
+            html.contains("data-testid=\"kobo-devices-empty\""),
+            "{html}"
+        );
     }
 
     /// The row is what actually exposes the endpoint URL; assert it renders so

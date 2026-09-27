@@ -188,3 +188,43 @@ fn rail_shelves_preserves_the_servers_order_and_keeps_every_qualifying_shelf() {
         (1..=12).collect::<Vec<_>>()
     );
 }
+
+#[cfg(feature = "server")]
+mod render {
+    use dioxus::prelude::*;
+    use dioxus_router::{Routable, Router};
+
+    use super::super::ShelfGallery;
+    use crate::shelf_selection::ShelfSelection;
+    use crate::test_support::render_in_vdom;
+
+    // The row's "All shelves" link needs a router around it.
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum GalleryRoute {
+        #[route("/")]
+        UnansweredGallery {},
+    }
+
+    #[component]
+    fn UnansweredGallery() -> Element {
+        rsx! {
+            ShelfGallery {
+                shelves: Vec::new(),
+                loaded: false,
+                selection: ShelfSelection::All,
+                all_count: None,
+                all_cover_uuids: Vec::new(),
+                server_url: String::new(),
+                on_select: EventHandler::new(|_| {}),
+                on_created: EventHandler::new(|_| {}),
+            }
+        }
+    }
+
+    #[test]
+    fn shelf_gallery_holds_placeholders_until_the_shelves_answer() {
+        let html = render_in_vdom(|| rsx! { Router::<GalleryRoute> {} });
+        assert!(html.contains("gallery-all-books"), "{html}");
+        assert_eq!(html.matches("shelf-gallery-pending").count(), 3, "{html}");
+    }
+}

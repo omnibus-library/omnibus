@@ -9,6 +9,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{CleanupCounts, CleanupKind};
 
+use crate::components::{Loading, LoadingKind};
 use crate::data::{self, server_error_message};
 use crate::{use_server_url, Route};
 
@@ -137,8 +138,11 @@ fn CleanupCountsList(
     }
     let Some(rows) = counts() else {
         return rsx! {
-            p { class: "settings-status", role: "status", "data-testid": "cleanup-counts-loading",
-                "Loading\u{2026}"
+            Loading {
+                kind: LoadingKind::Section,
+                class: "start",
+                testid: "cleanup-counts-loading",
+                label: "Counting what needs tidying",
             }
         };
     };

@@ -16,6 +16,8 @@ use omnibus_shared::{EbookMetadata, SortDir, SortKey, ViewFilters};
 
 use crate::components::atrium::{fallback_title, Cover};
 use crate::components::cover_tile::thumb_srcs;
+use crate::components::loading::{Skeleton, SkeletonShape};
+use crate::components::BusyLabel;
 use crate::contexts::{cover_bust_for, CoverCacheBust};
 use crate::data;
 use crate::focus_after_paint::focus_after_paint;
@@ -365,8 +367,13 @@ pub fn LibraryPicker(
     } else {
         feed.books.read().clone()
     };
+    // Until the answer lands the count is unknown, and "0 books" would be a
+    // claim — the line works the word out instead.
+    let pending = !reviewing && *feed.loading.read();
     let status = if reviewing {
         plural(pick_count, "book picked", "books picked")
+    } else if pending {
+        pending_status(searching).to_string()
     } else {
         status_line(searching, rows.len(), feed.total.read().as_ref().copied())
     };
@@ -394,7 +401,7 @@ pub fn LibraryPicker(
                     }
                 }
                 p { class: "pick-status", role: "status", "data-testid": "picker-status",
-                    "{status}"
+                    span { class: if pending { "ld-sheen" } else { "pick-status-text" }, "{status}" }
                 }
             }
             div { class: "pick-body",
@@ -464,8 +471,9 @@ fn load_more(feed: PickerFeed, reviewing: bool) -> Element {
                 class: "btn pick-more",
                 "data-testid": "picker-load-more",
                 disabled: busy,
+                "aria-busy": if busy { "true" } else { "false" },
                 onclick: move |_| want_more.with_mut(|n| *n += 1),
-                if busy { "Loading\u{2026}" } else { "Load more" }
+                BusyLabel { busy, label: "Load more", busy_label: "Loading\u{2026}" }
             }
         }
     }
@@ -496,11 +504,7 @@ struct BodyState {
 /// The grid, or the state that says why there isn't one.
 fn body(rows: &[EbookMetadata], state: BodyState, ctx: &CardCtx) -> Element {
     if state.loading && rows.is_empty() {
-        return rsx! {
-            p { class: "pick-state", "data-testid": "picker-loading",
-                "Loading your library\u{2026}"
-            }
-        };
+        return loading_grid();
     }
     if state.errored && rows.is_empty() {
         return rsx! {
@@ -522,6 +526,33 @@ fn body(rows: &[EbookMetadata], state: BodyState, ctx: &CardCtx) -> Element {
                 {card(book, ctx)}
             }
         }
+    }
+}
+
+/// Placeholder cards in the grid's own shape while the first page loads; the
+/// status line above is what announces the wait.
+fn loading_grid() -> Element {
+    rsx! {
+        div { class: "pick-grid", "data-testid": "picker-loading", "aria-hidden": "true",
+            for i in 0..8usize {
+                div { key: "{i}", class: "pick-card pick-card-skel",
+                    Skeleton { shape: SkeletonShape::Cover, index: i }
+                    span { class: "pick-meta",
+                        Skeleton { index: i, style: format!("--w:{}%", 62 + (i * 29) % 30) }
+                        Skeleton { index: i, style: "--w:44%;height:.7em" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The status word while the first answer is in flight.
+fn pending_status(searching: bool) -> &'static str {
+    if searching {
+        "Searching\u{2026}"
+    } else {
+        "Counting\u{2026}"
     }
 }
 
@@ -702,6 +733,25 @@ mod tests {
     fn status_line_reports_only_what_it_can_see_when_the_server_sent_no_total() {
         // "Can't tell" must not render as "this is the whole library".
         assert_eq!(status_line(false, 12, None), "12 books");
+    }
+
+    #[test]
+    fn pending_status_names_the_work_rather_than_claiming_a_count() {
+        assert_eq!(pending_status(true), "Searching\u{2026}");
+        assert_eq!(pending_status(false), "Counting\u{2026}");
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn loading_grid_draws_card_shaped_skeletons_under_the_loading_testid() {
+        let html = crate::test_support::render(loading_grid());
+        assert!(html.contains("data-testid=\"picker-loading\""), "{html}");
+        assert_eq!(
+            html.matches("pick-card pick-card-skel").count(),
+            8,
+            "{html}"
+        );
+        assert!(html.contains("ld-skel cover"), "{html}");
     }
 
     #[test]

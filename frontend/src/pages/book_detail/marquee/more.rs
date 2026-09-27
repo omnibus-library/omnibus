@@ -10,6 +10,7 @@ use omnibus_shared::physical::WishlistEntry;
 use omnibus_shared::{EbookMetadata, SeriesDetail, ShelfKind, ShelfSummary, SuggestionsResponse};
 
 use crate::components::atrium::Cover;
+use crate::components::{Loading, LoadingKind};
 use crate::contexts::use_current_user_summary;
 use crate::{data, use_server_url, Route};
 
@@ -21,6 +22,9 @@ use super::MarqueeViewFacts;
 #[derive(Clone, PartialEq, Props)]
 pub(super) struct MoreStopCtx {
     pub series: Option<SeriesDetail>,
+    /// False until the stage fetch has returned — `series: None` after that
+    /// means the series couldn't be read, not that it is still coming.
+    pub series_loaded: bool,
     pub author_books: Option<Vec<EbookMetadata>>,
     pub suggestions: Option<SuggestionsResponse>,
     pub page: BdPageCtx,
@@ -44,6 +48,7 @@ pub(super) fn MarqueeMoreStop(
 ) -> Element {
     let MoreStopCtx {
         series,
+        series_loaded,
         author_books,
         suggestions,
         page,
@@ -57,6 +62,7 @@ pub(super) fn MarqueeMoreStop(
                     series_name: view.series.clone().unwrap_or_default(),
                     current_uuid: b.unique_identifier.clone().unwrap_or_default(),
                     detail: series,
+                    loaded: series_loaded,
                 }
             } else {
                 MarqueeStandaloneShelves {
@@ -93,6 +99,7 @@ fn MarqueeSeriesShelf(
     series_name: String,
     current_uuid: String,
     detail: Option<SeriesDetail>,
+    loaded: bool,
 ) -> Element {
     let count = detail.as_ref().map(|d| d.book_count).unwrap_or(0);
     // "Up next": the next series entry after this one. Per-book progress
@@ -126,8 +133,18 @@ fn MarqueeSeriesShelf(
             div { class: "mono bdmq-quiet-hint",
                 Link { to: Route::SeriesDetail { id: series_id }, class: "bdmq-k-link", "series page \u{2192}" }
             }
+        } else if !loaded {
+            Loading {
+                kind: LoadingKind::Section,
+                class: "start",
+                testid: "bdmq-series-loading",
+                label: "Gathering the series",
+            }
         } else {
-            div { class: "mono bdmq-quiet-hint", "loading the shelf\u{2026}" }
+            div { class: "mono bdmq-quiet-hint", "data-testid": "bdmq-series-unavailable",
+                "the shelf didn\u{2019}t load \u{2014} "
+                Link { to: Route::SeriesDetail { id: series_id }, class: "bdmq-k-link", "series page \u{2192}" }
+            }
         }
     }
 }
@@ -174,7 +191,9 @@ fn render_series_item(x: &EbookMetadata, current_uuid: &str, next_uuid: Option<&
 fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>>) -> Element {
     let server_url = use_server_url();
     let me = use_current_user_summary();
-    let mut shelves = use_signal(|| None::<(Vec<ShelfSummary>, Vec<i64>)>);
+    // `None` while asking; `Some(Err)` when either read failed, so the stop
+    // never claims "not on a shelf" off a fetch that didn't answer.
+    let mut shelves = use_signal(|| None::<Result<(Vec<ShelfSummary>, Vec<i64>), ()>>);
     // A fast SPA hop between books can leave the previous book's shelf fetch
     // in flight; drop its result rather than showing it under the new book.
     let mut load_seq = use_signal(|| 0u64);
@@ -189,29 +208,34 @@ fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>
             spawn(async move {
                 let all = data::list_shelves(&url).await;
                 let holding = data::shelves_containing(&url, &uuid).await;
-                if let (Ok(all), Ok(ids)) = (all, holding) {
-                    if *load_seq.peek() == my_load {
-                        shelves.set(Some((all, ids)));
-                    }
+                if *load_seq.peek() == my_load {
+                    shelves.set(Some(match (all, holding) {
+                        (Ok(all), Ok(ids)) => Ok((all, ids)),
+                        _ => Err(()),
+                    }));
                 }
             });
         }));
     }
-    let held = shelves().map(|(all, ids)| {
-        let my_id = me().map(|u| u.id);
-        let wished = wishlist().is_some();
-        all.into_iter()
-            .filter(|s| {
-                ids.contains(&s.id)
-                    || (wished && s.kind == ShelfKind::Wishlist && Some(s.owner_user_id) == my_id)
-            })
-            .collect::<Vec<ShelfSummary>>()
+    let held = shelves().map(|answer| {
+        answer.map(|(all, ids)| {
+            let my_id = me().map(|u| u.id);
+            let wished = wishlist().is_some();
+            all.into_iter()
+                .filter(|s| {
+                    ids.contains(&s.id)
+                        || (wished
+                            && s.kind == ShelfKind::Wishlist
+                            && Some(s.owner_user_id) == my_id)
+                })
+                .collect::<Vec<ShelfSummary>>()
+        })
     });
 
     rsx! {
         div { class: "bdmq-k", "Standalone \u{b7} on your shelves" }
         match held {
-            Some(held) if !held.is_empty() => rsx! {
+            Some(Ok(held)) if !held.is_empty() => rsx! {
                 div { class: "bdmq-chips bdmq-shelfchips", "data-testid": "bdmq-shelves",
                     for (i, s) in held.iter().enumerate() {
                         span {
@@ -227,15 +251,26 @@ fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>
                     Link { to: Route::Landing {}, class: "bdmq-k-link", "library page \u{2192}" }
                 }
             },
-            Some(_) => rsx! {
+            Some(Ok(_)) => rsx! {
                 div { class: "bdmq-bigquiet", "Not on a shelf yet." }
                 p { class: "mono bdmq-quiet-hint",
                     "shelves are made on the "
                     Link { to: Route::Landing {}, class: "bdmq-k-link", "library page \u{2192}" }
                 }
             },
+            Some(Err(())) => rsx! {
+                p { class: "mono bdmq-quiet-hint", "data-testid": "bdmq-shelves-unavailable",
+                    "your shelves didn\u{2019}t load \u{2014} see them on the "
+                    Link { to: Route::Landing {}, class: "bdmq-k-link", "library page \u{2192}" }
+                }
+            },
             None => rsx! {
-                div { class: "mono bdmq-quiet-hint", "checking your shelves\u{2026}" }
+                Loading {
+                    kind: LoadingKind::Section,
+                    class: "start",
+                    testid: "bdmq-shelves-loading",
+                    label: "Checking your shelves",
+                }
             },
         }
     }

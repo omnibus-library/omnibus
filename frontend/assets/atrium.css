@@ -432,6 +432,7 @@ html, body { overscroll-behavior: none; }
 .sp-results {
   overflow-y: auto; flex: 1; padding: 6px 0;
 }
+.ld-row.sp-loading { justify-content: flex-start; padding: 14px 22px 4px; }
 .sp-group-head {
   padding: 12px 22px 6px;
   font-family: var(--mono); font-size: 10.5px;
@@ -683,6 +684,8 @@ html, body { overscroll-behavior: none; }
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; display: block;
 }
+/* The shared glint rides behind the image; keep the plate's own geometry. */
+.cover.ld-cover-glint, .cover.ld-cover-glint > img { position: absolute; }
 /* page-block sliver suggesting bound pages */
 .cover-wrap::after {
   content: ''; position: absolute; top: 1.5%; bottom: 1.5%; right: -2px;
@@ -3015,6 +3018,7 @@ a.idx-letter-on:focus-visible {
   opacity: 0.7;
   cursor: not-allowed;
 }
+.author-photo-modal__ring { margin-right: .5em; }
 .author-photo-modal__status {
   margin: 0;
   padding: 10px 12px;
@@ -3123,18 +3127,6 @@ a.idx-letter-on:focus-visible {
     background: var(--bg-2);
   }
 }
-.worker-status-spinner {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--accent) 40%, transparent);
-  border-top-color: var(--accent);
-  animation: worker-status-spin 0.9s linear infinite;
-  flex-shrink: 0;
-}
-@keyframes worker-status-spin {
-  to { transform: rotate(360deg); }
-}
 
 /* ── User menu ──────────────────────────────────────────────────── */
 .um-root { position: relative; display: inline-flex; }
@@ -3151,6 +3143,9 @@ a.idx-letter-on:focus-visible {
   font-family: var(--mono); font-size: 10px; font-weight: 600;
   letter-spacing: .04em; text-transform: uppercase;
 }
+/* Before `/me` answers: a quiet plate where the monogram will land. */
+.um-trigger.is-pending { background: transparent; border-color: transparent; }
+.um-trigger.is-pending .ld-skel { border-radius: 50%; }
 
 /* Click-outside catcher. `inset: 0` would collapse this to the header
    strip: `.atrium-topbar` sets `backdrop-filter`, which makes it the
@@ -3222,6 +3217,8 @@ a.idx-letter-on:focus-visible {
   font-size: 12px;
 }
 .um-now-reading-state.error { color: var(--bad); }
+.um-now-reading-pending { align-items: center; background: var(--bg-2); border-color: var(--line-2); }
+.um-now-reading-pending .um-nr-meta { gap: 8px; }
 .um-nr-cover {
   display: block;
   width: 44px; height: 64px; flex: 0 0 44px;
@@ -3430,17 +3427,6 @@ a.idx-letter-on:focus-visible {
   display: flex; align-items: center; gap: 6px;
   margin-top: 6px; font-family: var(--mono);
   font-size: 11px; color: var(--ink-3);
-}
-.lp-buffering::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--accent); animation: lp-buffering-pulse 1s ease-in-out infinite;
-}
-@keyframes lp-buffering-pulse {
-  0%, 100% { opacity: .3; }
-  50% { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lp-buffering::before { animation: none; }
 }
 
 /* Chapter map / seek scrubber */
@@ -3945,8 +3931,9 @@ a.idx-letter-on:focus-visible {
   position: absolute; inset: 0; z-index: 10;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  background: var(--bg-0); gap: 0.5rem;
+  background: var(--bg-0); gap: 0.5rem; --ld-stage-bg: var(--bg-0);
 }
+.lp-overlay.ld-stage { z-index: 10; }
 .lp-overlay-title {
   font-family: var(--serif); font-weight: 600; font-size: 1.3rem; color: var(--ink-1);
 }
@@ -4976,7 +4963,11 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .m-load-more { margin: 20px auto 0; display: flex; }
-.m-lib-loading { margin-top: 24px; }
+.m-lib-loading { margin-top: 4px; }
+/* Skeletons stand where the covers will, at the grid's own column count. */
+.m-lib-loading .ld-covers { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 12px; }
+@media (min-width: 700px) { .m-lib-loading .ld-covers { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .m-lib-loading .ld-covers { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 
 /* Search & discovery */
 .m-search { display: flex; flex-direction: column; }
@@ -5202,7 +5193,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .m-strip-note { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
-.m-suggest-loading { display: flex; align-items: center; gap: 8px; }
 
 /* Shelf detail: at phone widths the shared markup (rail hidden) reads as a
    mobile screen — tighten the grid to three columns to match the design. */
@@ -5446,6 +5436,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .settings-status { font-size: 0.875rem; margin-top: 0.5rem; min-height: 1.2em; }
 .settings-status.success, .success-msg { color: #34d399; }
 .settings-status.error, .error { color: #f87171; font-size: 0.85rem; }
+/* Still working: neutral ink with a ring, never the success green. */
+.settings-status.is-working { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
 
 /* Kobo wireless-sync device list (#923). */
 .kobo-device-list {
@@ -5596,6 +5588,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .tkx-track:disabled { cursor: default; opacity: 0.6; }
 .tkx-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 999px; background: var(--ink-1); transition: left .15s; }
 .tkx-track.on .tkx-knob { left: 20px; background: var(--accent-ink); }
+/* Unknown state: the shared indeterminate switch, at this track's size. */
+.tkx-track.ld-toggle-unknown { width: 40px; height: 22px; }
+.tkx-track.ld-toggle-unknown:disabled { opacity: 1; cursor: progress; }
+.tkx-track.ld-toggle-unknown .tkx-knob { display: none; }
 .tkx-mcp-note { margin: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.6; }
 
 /* Below the grid's comfortable width, rows fall back to a stacked card. */
@@ -6428,6 +6424,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .rd-ribbon > i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
 .rd-overlay { position: absolute; inset: 0; z-index: 8; display: flex;
   align-items: center; justify-content: center; color: var(--ink-2); background: var(--rd-page); }
+/* The loading stage keeps the reader's own layer, under the drawers. */
+.rd-overlay.ld-stage { z-index: 8; }
 /* The error overlay adds a Retry action below the message (issue #1895,
    AC3), so it needs a column stack instead of the base overlay's single
    centred row. */
@@ -7027,21 +7025,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .bd-suggest-pending { padding: 16px 18px; }
 .bd-suggest-loading { display: flex; align-items: center; gap: 10px; }
 
-/* Inline loading spinner (F3.3 suggestions fetch) — a rotating ring, shared
-   by the web `.bd-suggest-loading` and mobile `.m-suggest-loading` blocks. */
-.suggest-spinner {
-  width: 13px; height: 13px; flex-shrink: 0;
-  border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--accent) 40%, transparent);
-  border-top-color: var(--accent);
-  animation: suggest-spin 0.9s linear infinite;
-}
-@keyframes suggest-spin {
-  to { transform: rotate(360deg); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .suggest-spinner { animation: none; }
-}
 
 /* "Fetch Summary" button + inline status (on-demand Hardcover/OpenLibrary
    description fetch). Mounted under the metadata-editor Description field and,
@@ -7337,6 +7320,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   background: var(--bg-2);
 }
 .mes-cover-note { font-size: 11px; color: var(--ink-3); }
+.mes-cover-ring, .me-cover-ring { margin-right: .5em; }
 
 .mes-fields { display: flex; flex-direction: column; }
 .mes-field {
@@ -7445,7 +7429,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   height: 93px;
   align-self: center;
   border-radius: 4px;
-  background: var(--bg-2);
 }
 .mes-skel-row {
   display: grid;
@@ -7458,16 +7441,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .mes-skel-bar {
   height: 11px;
   border-radius: 3px;
-  background: var(--bg-2);
-  animation: lp-buffering-pulse 1.4s ease-in-out infinite;
 }
-/* Staggered so the row reads as one object settling rather than three bars
-   blinking in lockstep. */
-.mes-skel-row:nth-child(even) .mes-skel-bar { animation-delay: 0.2s; }
+/* The glint is the shared `.ld-skel` one (loading.css), staggered per row. */
 .mes-skel-label { opacity: 0.6; }
-@media (prefers-reduced-motion: reduce) {
-  .mes-skel-bar { animation: none; }
-}
 
 .mes-footbar {
   position: sticky;
@@ -7625,6 +7601,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   font-size: 11.5px; color: var(--ink-2); }
 .api-key-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: 0 0 8px; }
 .api-key-dot.connected { background: oklch(0.7 0.15 150); }
+/* Status not read yet: a hollow dot that claims neither state. */
+.api-key-dot.pending { background: transparent; box-shadow: inset 0 0 0 1px var(--ink-3); }
 
 /* ── F3.1 Shelves ─────────────────────────────────────────────────── */
 
@@ -7897,6 +7875,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   display: flex; flex-direction: column; align-items: center; gap: 12px;
   font-size: 13.5px; color: var(--ink-2);
 }
+.pick-card-skel { cursor: default; pointer-events: none; }
+.pick-card-skel .pick-meta { gap: 8px; }
 .pick-more-row { display: flex; justify-content: center; padding: 14px 0 4px; }
 .pick-more { font-size: 12.5px; }
 .pick-foot {
@@ -8752,19 +8732,12 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   }
 }
 .m-offline-pill-dot {
+  --ld-dot: 7px;
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
   border-radius: 50%;
   background: var(--warn);
-}
-.m-offline-pill.is-syncing .m-offline-pill-dot {
-  background: var(--accent);
-  animation: m-sync-pulse 1.2s ease-in-out infinite;
-}
-@keyframes m-sync-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
 }
 
 /* Account sync-status block */
@@ -8779,6 +8752,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 .m-account-sync-line { display: flex; align-items: center; gap: 6px; }
 .m-account-sync-dot {
+  --ld-dot: 7px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -9933,6 +9907,14 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   .st-mode,
   .st-range-pill,
   .st-tile { transition: none; }
+  /* The settle/swap entrances are animations, not transitions. */
+  .st-hero-run,
+  .st-hero-goals,
+  .st-scope,
+  .st-tiles .st-tile,
+  .st-duo > *,
+  .st-standouts > *,
+  .st-tile-value { animation: none; }
 }
 
 /* ── Narrow layouts ───────────────────────────────────────────────── */
@@ -10290,18 +10272,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .check-in-search-result:focus-visible .check-in-book { border-color: var(--accent); }
 .check-in-search-result:disabled { cursor: default; opacity: 0.55; }
 
-/* ── Matching spinner ─────────────────────────────────────────────── */
-.check-in-spinner {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid var(--line);
-  border-top-color: var(--accent);
-  animation: check-in-spin 0.9s linear infinite;
-}
-
-@keyframes check-in-spin { to { transform: rotate(360deg); } }
-
 /* ── Success rings ────────────────────────────────────────────────── */
 .check-in-success { align-items: center; text-align: center; }
 .check-in-rings {
@@ -10397,6 +10367,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   line-height: 1.5;
   text-align: center;
 }
+.scanner-status-ring { margin-right: .5em; }
 .scanner-actions { display: flex; flex-direction: column; gap: 10px; }
 .scanner-actions .btn { width: 100%; justify-content: center; }
 
@@ -10442,7 +10413,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .isbn-key:active:not(:disabled) { background: var(--bg-2); }
 
 @media (prefers-reduced-motion: reduce) {
-  .check-in-spinner { animation: none; }
   .check-in-ring { animation: none; opacity: 0.35; }
   .scanner-sweep { animation: none; top: 50%; }
 }
@@ -10569,12 +10539,8 @@ html {
 .m-ptr-arrow { font-family: var(--mono); font-size: 14px; line-height: 1; }
 .m-ptr.is-refreshing { opacity: 1; }
 .m-ptr.is-refreshing .m-ptr-arrow { display: none; }
-.m-ptr.is-refreshing::after {
-  content: ""; width: 16px; height: 16px; border-radius: 50%;
-  border: 2px solid var(--line-2); border-top-color: var(--accent);
-  animation: m-ptr-spin .7s linear infinite;
-}
-@keyframes m-ptr-spin { to { transform: rotate(360deg); } }
+.m-ptr .m-ptr-ring { display: none; --ld-ring: 16px; }
+.m-ptr.is-refreshing .m-ptr-ring { display: inline-block; }
 
 /* ============================= Comic pager ============================= */
 /* /comic/:uuid — the CBZ pager (frontend/src/pages/comic_reader.rs). Own
@@ -10601,6 +10567,8 @@ html {
 .cr-fit.active { border-color: var(--line); color: var(--ink); background: var(--bg-2); }
 .cr-state { flex: 1; display: flex; align-items: center; justify-content: center;
   color: var(--ink-3); font-family: var(--mono); font-size: 13px; }
+/* The loading stage wears the page stage's ground, so the first page lands on it. */
+.cr-loading { --ld-stage-bg: var(--bg-2); }
 .cr-stage { position: relative; flex: 1; min-height: 0; display: flex;
   justify-content: center; overflow: auto; background: var(--bg-2); }
 .cr-page { display: block; margin: 0 auto; }
@@ -10653,7 +10621,8 @@ html {
 .pr-textlayer .endOfContent { display: block; position: absolute; inset: 100% 0 0;
   z-index: -1; cursor: default; user-select: none; }
 .pr-overlay { position: absolute; inset: 0; z-index: 3; flex-direction: column; gap: 12px;
-  background: var(--bg-2); }
+  background: var(--bg-2); --ld-stage-bg: var(--bg-2); }
+.pr-overlay.ld-stage { z-index: 3; }
 .pr-error-detail { max-width: 60ch; text-align: center; opacity: .7; }
 .pr-tool { position: relative; gap: 6px; }
 .pr-tool svg { flex: 0 0 auto; }
@@ -10814,7 +10783,7 @@ html {
   padding: 9px 12px;
   margin: 14px 0 0;
 }
-.al-loading { font-size: 13px; opacity: 0.7; margin: 18px 0; }
+.al-loading { margin: 6px 0; }
 .al-choice { margin-top: 16px; }
 .al-choice-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .al-choice-card {
@@ -12089,6 +12058,15 @@ html {
   transition: transform .3s cubic-bezier(.2,.7,.2,1), margin .42s cubic-bezier(.2,.7,.2,1);
 }
 .lmq-fcard:first-child { margin-left: 0; }
+/* The fan's placeholder, dealt like the real one; it waits out `--ld-hold`
+   so an answer that lands at once never shows it. */
+.lmq-stack-pending { animation: ld-enter-fade .4s ease-out var(--ld-hold) backwards; }
+.lmq-fcard-pending {
+  flex: 0 0 132px; width: 132px; margin-left: -74px;
+  transform-origin: bottom center; transform: rotate(var(--rot)) translateY(var(--dy));
+}
+.lmq-fcard-pending:first-child { margin-left: 0; }
+@media (prefers-reduced-motion: reduce) { .lmq-stack-pending { animation: none; } }
 .lmq-fcard .cover-wrap { filter: drop-shadow(0 26px 34px oklch(0 0 0 / .6)); }
 .lmq-fcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 /* Pointing anywhere at the fan spreads it; pointing at one cover tilts that
@@ -12178,6 +12156,7 @@ html {
   color: inherit; font: inherit;
 }
 .lmq-shent:first-child { padding-left: 0; border-left: 0; }
+.lmq-shent-pending { cursor: default; }
 .lmq-shent:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 /* The shelf row is the quieter tier under the section header, so the name
    stays 400 while the display tier went to 600 in the type promotion — the
@@ -12296,6 +12275,11 @@ html {
   position: relative; isolation: isolate;
 }
 .lmq .lib-tile .cover-wrap { filter: drop-shadow(0 14px 18px oklch(0 0 0 / .45)); }
+/* The first page's placeholders stand at the wall's own measure, covers only
+   — the wall carries its captions on hover, not under each cover. */
+.lib-loading { margin-top: 4px; padding-bottom: 40px; }
+.lmq .lib-loading .ld-covers { --cover-min: 170px; gap: 30px 22px; }
+.lmq .lib-loading .ld-covers-cell .ld-skel.line { display: none; }
 .lmq .lib-tile-art {
   display: block;
   transition: transform .26s cubic-bezier(.2,.7,.2,1);
@@ -12741,9 +12725,10 @@ html {
   flex-direction: column;
   gap: 14px;
 }
-/* A refetch dims the previous chart rather than replacing it with a
-   spinner, so a picker change doesn't flash the surface. */
-.cb-canvas.is-loading .cb-plot { opacity: 0.55; transition: opacity 120ms ease; }
+/* A refetch dims the previous chart (the shared `.ld-stale` look) rather
+   than replacing it with a spinner, so a picker change doesn't flash the
+   surface; the hairline keeps inside the rounded corners. */
+.cb-canvas.ld-stale.is-stale::before { left: var(--r-lg); right: var(--r-lg); }
 
 /* `position: relative` is what the hover card is placed against — it is HTML
    over a stretching SVG, so it is positioned as a share of the plot's width
@@ -12997,4 +12982,14 @@ html {
   .cb-measure-list { grid-template-columns: 1fr; }
   /* The plot gets taller as it narrows so the bars keep usable height. */
   .cb-svg { aspect-ratio: 4 / 3; }
+}
+
+/* ── Reduced motion · overlay entrances ─────────────────────────────
+   The search palette, metadata-search and check-in overlays fade and slide
+   in; under reduced motion they simply appear. Loading marks have their own
+   block in loading.css. */
+@media (prefers-reduced-motion: reduce) {
+  .sp-scrim, .sp-panel,
+  .mes-scrim, .mes-panel,
+  .check-in-overlay-scrim, .check-in-overlay-panel { animation: none; }
 }

@@ -10,6 +10,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 use omnibus_shared::{PaletteBookHit, PaletteResults};
 
+use crate::components::{Loading, LoadingKind};
 use crate::format::{facet_query, plural};
 use crate::{data, use_server_url, Route};
 
@@ -174,7 +175,11 @@ pub fn MobileSearchPage() -> Element {
                 if let Some(ref r) = *res {
                     {render_groups(r, sc, &q, server_url.as_str(), query, nav)}
                 } else if is_loading {
-                    p { class: "m-search-note", "Searching\u{2026}" }
+                    Loading {
+                        kind: LoadingKind::Section,
+                        testid: "mobile-search-loading",
+                        label: "Searching the shelves",
+                    }
                 } else if is_errored {
                     p { class: "m-search-note", role: "alert",
                         "Couldn\u{2019}t run that search. Check your connection and try again."

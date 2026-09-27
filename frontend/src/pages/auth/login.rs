@@ -6,8 +6,11 @@ use dioxus_router::{use_navigator, Link};
 #[cfg(not(feature = "mobile"))]
 use crate::components::auth::AuthShell;
 use crate::components::auth::{Banner, BannerKind, Field};
+use crate::components::loading::use_hydrated;
+use crate::components::BusyLabel;
 #[cfg(feature = "mobile")]
 use crate::pages::server_connect::display_host;
+use crate::routes::{link_target, login_target, safe_next};
 use crate::{use_server_url, Route};
 
 #[cfg(feature = "mobile")]
@@ -32,14 +35,16 @@ struct LoginFormState {
 /// the event source so both the form's `onsubmit` (click) and each
 /// input's `onkeydown` (Enter) drive the same path — Dioxus 0.7's submit
 /// event doesn't reliably fire on implicit form submission from Enter, so
-/// we trigger it explicitly via a shared `use_callback` handle.
-fn use_login_form_state() -> LoginFormState {
+/// we trigger it explicitly via a shared `use_callback` handle. A successful
+/// sign-in lands on `next` when [`safe_next`] accepts it, else the library.
+fn use_login_form_state(next: Option<String>) -> LoginFormState {
     let username = use_signal(String::new);
     let password = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
     let mut submitting = use_signal(|| false);
     let keep_signed_in = use_signal(|| false);
     let nav = use_navigator();
+    let seed_user = crate::use_seed_current_user();
 
     // `use_server_url()` is feature-aware: empty string on web/server (where
     // requests are same-origin) and the `ServerUrl` context value on mobile.
@@ -74,12 +79,15 @@ fn use_login_form_state() -> LoginFormState {
         error.set(None);
         submitting.set(true);
         let server_url = server_url.clone();
+        let next = next.clone();
         spawn(async move {
             let res = submit_login(&server_url, u, p).await;
             submitting.set(false);
             match res {
-                Ok(()) => {
-                    nav.replace(Route::Landing {});
+                Ok(user) => {
+                    seed_user.call(user);
+                    let to = safe_next(next.as_deref()).unwrap_or(Route::Landing {});
+                    nav.replace(link_target(to));
                 }
                 Err(e) => error.set(Some(e)),
             }
@@ -106,9 +114,10 @@ fn use_login_form_state() -> LoginFormState {
     }
 }
 
-/// Renders the login page.
+/// Renders the login page. `next` is the `?next=` the reader arrived with —
+/// the page a successful sign-in returns them to.
 #[component]
-pub fn LoginPage() -> Element {
+pub fn LoginPage(next: Option<String>) -> Element {
     let LoginFormState {
         username,
         password,
@@ -118,7 +127,7 @@ pub fn LoginPage() -> Element {
         registration_open,
         on_submit,
         on_keydown,
-    } = use_login_form_state();
+    } = use_login_form_state(next);
 
     // The "keep me signed in" control only exists on the web split-pane; the
     // mobile design omits it. Read it on mobile so the signal isn't flagged
@@ -206,6 +215,8 @@ fn MobileLoginForm(props: MobileLoginFormProps) -> Element {
         submitting,
         registration_open,
     } = status;
+    // A submit before hydration would post the form natively.
+    let ready = use_hydrated();
     let nav = use_navigator();
     rsx! {
         // Connected-to bar: shows which server this login targets, with a
@@ -227,6 +238,9 @@ fn MobileLoginForm(props: MobileLoginFormProps) -> Element {
             }
         }
         form { class: "auth-form-inner",
+            // Never a GET: a submit that lands before hydration would put
+            // the password in the URL.
+            method: "post",
             onsubmit: on_submit,
             "data-testid": "login-form",
             if let Some(msg) = error() {
@@ -241,8 +255,9 @@ fn MobileLoginForm(props: MobileLoginFormProps) -> Element {
             button {
                 class: "btn primary lg auth-submit",
                 r#type: "submit",
-                disabled: submitting(),
-                if submitting() { "Signing in…" } else { "Sign in" }
+                disabled: submitting() || !ready(),
+                "aria-busy": if submitting() { "true" } else { "false" },
+                BusyLabel { busy: submitting(), label: "Sign in", busy_label: "Signing in…" }
             }
             // Only once the probe has confirmed signup is open — offering the
             // link while unresolved would mean withdrawing it a beat later on
@@ -309,8 +324,13 @@ fn LoginForm(props: LoginFormProps) -> Element {
         submitting,
         registration_open,
     } = status;
+    // A submit before hydration would post the form natively.
+    let ready = use_hydrated();
     rsx! {
         form { class: "auth-form-inner",
+            // Never a GET: a submit that lands before hydration would put
+            // the password in the URL.
+            method: "post",
             onsubmit: on_submit,
             "data-testid": "login-form",
             if let Some(msg) = error() {
@@ -337,8 +357,9 @@ fn LoginForm(props: LoginFormProps) -> Element {
             button {
                 class: "btn primary lg auth-submit",
                 r#type: "submit",
-                disabled: submitting(),
-                if submitting() { "Logging in…" } else { "Log in" }
+                disabled: submitting() || !ready(),
+                "aria-busy": if submitting() { "true" } else { "false" },
+                BusyLabel { busy: submitting(), label: "Log in", busy_label: "Logging in…" }
             }
             if registration_open() == Some(true) {
                 p { class: "auth-footer",
@@ -386,7 +407,7 @@ fn LoginCredentialFields(
             // without dead routes.
             action: rsx! {
                 Link {
-                    to: Route::Login {},
+                    to: login_target(),
                     class: "auth-field-action-link",
                     "Forgot?"
                 }

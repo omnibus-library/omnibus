@@ -56,6 +56,8 @@ fn pdf_read_page_renders_the_loading_state_and_every_control_before_the_glue_mou
         );
     }
     assert!(html.contains("id=\"omnibus-pdf-page\""), "{html}");
+    // The loading state is an opaque stage over the page host, not a caption.
+    assert!(html.contains("ld ld-stage pr-overlay"), "{html}");
     assert!(!html.contains("data-testid=\"pdf-error\""), "{html}");
     // No overlay is open on first paint.
     assert!(!html.contains("reader-highlights-drawer"), "{html}");

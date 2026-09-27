@@ -11,7 +11,7 @@ use omnibus_shared::{BookInsights, DayActivity};
 // The log renders directly beneath this grid, so a sitting's length and
 // the "Longest sit" above it must be spelled the same way.
 pub(super) use crate::components::session_log::duration_label;
-use crate::components::SessionLogList;
+use crate::components::{Loading, LoadingKind, SessionLogList};
 use crate::date_fmt::civil_from_days;
 use crate::format::count_label;
 use crate::time::now_unix;
@@ -29,6 +29,9 @@ const SPARK_DAYS: usize = 22;
 pub(super) fn MarqueeStatsStop(
     uuid: String,
     insights: Option<BookInsights>,
+    /// False until the stage fetch returns; `insights: None` is only "no
+    /// stats" once it has.
+    loaded: bool,
     progress: MarqueeProgress,
     audio_only: bool,
     wish_mode: bool,
@@ -39,6 +42,14 @@ pub(super) fn MarqueeStatsStop(
     rsx! {
         div { class: "bdmq-k", if wish_mode { "Stats" } else { "At a glance stats" } }
         match insights {
+            None if !loaded && !wish_mode => rsx! {
+                Loading {
+                    kind: LoadingKind::Section,
+                    class: "start",
+                    testid: "bdmq-stats-loading",
+                    label: "Tallying your reading",
+                }
+            },
             Some(i) if i.sessions > 0 && !wish_mode => rsx! {
                 {render_stats(&i, &progress, audio_only, dates_ready)}
                 div { class: "bdmq-k bdmq-logk", "Your sessions" }
@@ -629,5 +640,32 @@ mod render_tests {
             html.contains("class=\"rx-spark-axis\" aria-hidden=\"true\""),
             "{html}"
         );
+    }
+
+    fn stop(loaded: bool) -> Element {
+        rsx! {
+            MarqueeStatsStop {
+                uuid: "book-uuid".to_string(),
+                insights: None,
+                loaded,
+                progress: progress_at(0),
+                audio_only: false,
+                wish_mode: false,
+            }
+        }
+    }
+
+    #[test]
+    fn stats_stop_tallies_rather_than_claims_no_stats_before_the_fetch_returns() {
+        let html = crate::test_support::render_in_vdom(|| stop(false));
+        assert!(html.contains("bdmq-stats-loading"), "{html}");
+        assert!(!html.contains("bdmq-no-stats"), "{html}");
+    }
+
+    #[test]
+    fn stats_stop_says_no_stats_once_the_fetch_returned_nothing() {
+        let html = crate::test_support::render_in_vdom(|| stop(true));
+        assert!(html.contains("bdmq-no-stats"), "{html}");
+        assert!(!html.contains("bdmq-stats-loading"), "{html}");
     }
 }

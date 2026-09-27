@@ -14,7 +14,7 @@ use omnibus_shared::{
     ChartBreakdown, ChartBucket, ChartMeasure, ChartResult, ChartSpec, StatsRange,
 };
 
-use crate::components::{PageError, PageLoading};
+use crate::components::{Loading, LoadingKind, PageError};
 use crate::{data, use_page_title, use_server_url, Route};
 
 mod notes;
@@ -294,7 +294,7 @@ fn ChartCanvas(
     // previous chart on screen while its replacement is in flight, so the
     // page doesn't flash between every selection.
     if loading() && result.read().is_none() {
-        return rsx! { PageLoading {} };
+        return rsx! { Loading { kind: LoadingKind::Page, label: "Drawing the chart" } };
     }
 
     // Held as bucket keys, so a regrouping that replaces the axis drops the
@@ -330,7 +330,10 @@ fn ChartCanvas(
 
     rsx! {
         section {
-            class: if loading() { "cb-canvas is-loading" } else { "cb-canvas" },
+            // The shared stale look: the last chart stays, dimmed, under a
+            // travelling hairline while the next spec loads.
+            class: if loading() { "cb-canvas ld-stale is-stale is-loading" } else { "cb-canvas ld-stale" },
+            "aria-busy": if loading() { "true" } else { "false" },
             "data-testid": "chart-canvas",
             if chart.is_empty() {
                 p { class: "cb-empty", "data-testid": "chart-empty",

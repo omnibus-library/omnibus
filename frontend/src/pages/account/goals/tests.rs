@@ -128,3 +128,23 @@ fn goals_card_opens_in_read_mode_behind_a_single_edit_control() {
     // The form is behind the control, not beside it.
     assert!(!html.contains("goals-save"), "{html}");
 }
+
+#[cfg(feature = "server")]
+#[test]
+fn goals_card_checks_rather_than_claims_not_set_before_the_goals_are_read() {
+    let html = crate::test_support::render(rsx! { ReadingGoalsCard {} });
+    assert!(html.contains("ld-sheen"), "{html}");
+    assert!(!html.contains("Not set"), "{html}");
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn goal_value_states_not_set_only_once_the_read_has_answered() {
+    let read = crate::test_support::render(goal_value(None, "book", Some(true)));
+    assert!(read.contains("Not set"), "{read}");
+    let failed = crate::test_support::render(goal_value(None, "book", Some(false)));
+    assert!(
+        failed.contains("Unknown") && !failed.contains("Not set"),
+        "{failed}"
+    );
+}

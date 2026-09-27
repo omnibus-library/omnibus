@@ -1,16 +1,17 @@
 //! Library-cleanup review page (`/settings/cleanup/:kind`) — one suggestion
 //! card at a time, decided with Accept / Reject / Skip. Web/SSR only: the real
 //! authorization boundary is the `AdminUser` extractor on the `cleanup/*`
-//! server functions; the in-page `use_is_admin` gate keeps the chrome off a
+//! server functions; the in-page `use_admin_access` gate keeps the chrome off a
 //! non-admin screen.
 #![cfg(not(feature = "mobile"))]
 
 use dioxus::prelude::*;
 use omnibus_shared::{CleanupCounts, CleanupKind, Decision, SuggestionCard};
 
+use crate::components::{Loading, LoadingKind};
 use crate::data::{self, CLEANUP_QUEUE_PAGE};
 use crate::focus_after_paint::focus_after_paint;
-use crate::{use_is_admin, use_server_url};
+use crate::{use_admin_access, use_server_url, Access};
 
 pub(crate) mod card;
 pub(crate) mod frame;
@@ -54,7 +55,7 @@ struct QueueState {
 /// renders the not-found notice rather than silently reviewing another kind.
 #[component]
 pub fn CleanupReviewPage(kind: String) -> Element {
-    let is_admin = use_is_admin();
+    let access = use_admin_access();
     let server_url = use_server_url();
     let parsed = CleanupKind::from_str(&kind);
     let state = QueueState {
@@ -68,8 +69,8 @@ pub fn CleanupReviewPage(kind: String) -> Element {
     };
     let counts = use_signal(|| None::<Vec<(CleanupKind, CleanupCounts)>>);
 
-    spawn_queue_fetch(is_admin, server_url.clone(), parsed, state);
-    spawn_counts_fetch(is_admin, server_url.clone(), counts);
+    spawn_queue_fetch(access, server_url.clone(), parsed, state);
+    spawn_counts_fetch(access, server_url.clone(), counts);
     sync_draft_to_card(state);
 
     rsx! {
@@ -98,12 +99,20 @@ pub fn CleanupReviewPage(kind: String) -> Element {
                         }
                     }
                     CleanupKindLine { current: parsed, counts: ReadSignal::from(counts) }
-                    if is_admin() {
-                        CleanupReviewBody { kind: parsed, state }
-                    } else {
-                        p { class: "settings-status error", "data-testid": "cleanup-review-forbidden",
-                            "Administrator access is required to review library cleanup."
-                        }
+                    match access() {
+                        Access::Allowed => rsx! { CleanupReviewBody { kind: parsed, state } },
+                        Access::Unknown => rsx! {
+                            Loading {
+                                kind: LoadingKind::Section,
+                                testid: "cleanup-review-access-loading",
+                                label: "Checking your access",
+                            }
+                        },
+                        Access::Denied => rsx! {
+                            p { class: "settings-status error", "data-testid": "cleanup-review-forbidden",
+                                "Administrator access is required to review library cleanup."
+                            }
+                        },
                     }
                 }
             }
@@ -122,7 +131,7 @@ fn loaded_total(state: QueueState) -> Option<usize> {
 /// kind slug resolves to an empty queue so the page still renders its not-found
 /// notice rather than hanging on the loading state.
 fn spawn_queue_fetch(
-    is_admin: ReadSignal<bool>,
+    access: ReadSignal<Access>,
     server_url: String,
     kind: Option<CleanupKind>,
     state: QueueState,
@@ -132,10 +141,10 @@ fn spawn_queue_fetch(
     let mut error = state.error;
     use_effect(move || {
         // Read inside the effect so it re-subscribes and re-runs when
-        // `CurrentUser` resolves. It is `false` on the first paint — firing
+        // `CurrentUser` resolves. It is `Unknown` on the first paint — firing
         // then is a guaranteed 401/403 against the admin-gated route, and the
         // non-admin branch never renders the body these signals feed.
-        if !is_admin() {
+        if access() != Access::Allowed {
             return;
         }
         let server_url = server_url.clone();
@@ -161,12 +170,12 @@ fn spawn_queue_fetch(
 /// leaves the chips countless rather than failing the page — the queue is what
 /// the reviewer came for.
 fn spawn_counts_fetch(
-    is_admin: ReadSignal<bool>,
+    access: ReadSignal<Access>,
     server_url: String,
     mut counts: Signal<Option<Vec<(CleanupKind, CleanupCounts)>>>,
 ) {
     use_effect(move || {
-        if !is_admin() {
+        if access() != Access::Allowed {
             return;
         }
         let server_url = server_url.clone();
@@ -333,8 +342,10 @@ fn CleanupReviewBody(kind: Option<CleanupKind>, state: QueueState) -> Element {
             }
         }
         if cards.is_none() {
-            p { class: "settings-status", role: "status", "data-testid": "cleanup-review-loading",
-                "Loading\u{2026}"
+            Loading {
+                kind: LoadingKind::Section,
+                testid: "cleanup-review-loading",
+                label: "Gathering the suggestions",
             }
         } else if let Some(card) = card {
             SuggestionCardView {

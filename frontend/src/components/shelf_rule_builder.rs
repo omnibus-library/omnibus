@@ -6,7 +6,8 @@
 use dioxus::prelude::*;
 use omnibus_shared::{MatchMode, RuleField, RuleOp, RulePreview, ShelfRule};
 
-use crate::components::{CoverTile, CoverTileKind};
+use crate::components::loading::Stale;
+use crate::components::{CoverTile, CoverTileKind, Loading};
 use crate::data;
 
 /// Field/op/date-unit choices exposed in the smart-rule editor.
@@ -141,6 +142,10 @@ pub fn RuleBuilder(
 ) -> Element {
     let mut rules = rules;
     let preview = use_signal(|| None::<RulePreview>);
+    let fetching = use_signal(|| false);
+    let failed = use_signal(|| false);
+    // Bumped per fetch, so only the newest answer lands and clears `fetching`.
+    let seq = use_signal(|| 0u32);
 
     // Recompute the preview whenever the rule set or match mode changes. Keyed
     // on a memo of the encoded rules so unrelated re-renders don't refetch.
@@ -152,17 +157,30 @@ pub fn RuleBuilder(
     use_effect(move || {
         let (mode, wire) = preview_key();
         let url = preview_url.clone();
-        let mut preview = preview;
+        let (mut preview, mut fetching, mut failed, mut seq) = (preview, fetching, failed, seq);
+        let mine = {
+            seq.with_mut(|n| *n += 1);
+            *seq.peek()
+        };
         if wire.is_empty() {
             preview.set(None);
+            fetching.set(false);
+            failed.set(false);
             return;
         }
+        fetching.set(true);
         spawn(async move {
-            if let Ok(p) = data::preview_shelf_rule(&url, mode, wire).await {
-                preview.set(Some(p));
+            let result = data::preview_shelf_rule(&url, mode, wire).await;
+            if *seq.peek() != mine {
+                return;
             }
+            // A failed preview must not leave the last answer passing as this one's.
+            failed.set(result.is_err());
+            preview.set(result.ok());
+            fetching.set(false);
         });
     });
+    let state = preview_state(!preview_key.read().1.is_empty(), fetching(), failed());
 
     rsx! {
         div { class: "shelf-smart",
@@ -209,34 +227,69 @@ pub fn RuleBuilder(
             }
 
             div { class: "shelf-preview",
-                {render_preview(&preview.read(), &server_url)}
+                {render_preview(&preview.read(), state, &server_url)}
             }
         }
     }
 }
 
-/// The live-preview pane content: count + sample covers.
-fn render_preview(preview: &Option<RulePreview>, server_url: &str) -> Element {
-    match preview {
-        None => rsx! {
+/// Where the live preview stands, independent of the answer it holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreviewState {
+    /// No complete condition yet — there is nothing to ask.
+    NoRules,
+    /// A preview for the current conditions is on its way.
+    Pending,
+    /// The last preview request for these conditions failed.
+    Failed,
+    /// The held preview answers the current conditions (or the first request
+    /// has not been issued yet, which reads as pending).
+    Settled,
+}
+
+/// Fold the rule set and the request flags into one [`PreviewState`].
+fn preview_state(has_rules: bool, fetching: bool, failed: bool) -> PreviewState {
+    match (has_rules, fetching, failed) {
+        (false, _, _) => PreviewState::NoRules,
+        (true, true, _) => PreviewState::Pending,
+        (true, false, true) => PreviewState::Failed,
+        (true, false, false) => PreviewState::Settled,
+    }
+}
+
+/// The live-preview pane content: count + sample covers, kept on screen
+/// dimmed while the next answer loads.
+fn render_preview(preview: &Option<RulePreview>, state: PreviewState, server_url: &str) -> Element {
+    match (preview, state) {
+        (_, PreviewState::NoRules) => rsx! {
             p { class: "shelf-preview-empty mono", "Add a condition to preview matches." }
         },
-        Some(p) => rsx! {
-            p {
-                class: "shelf-preview-count",
-                "data-testid": "rule-preview-count",
-                em { "{p.matched}" }
-                " of {p.total} match"
+        (None, PreviewState::Failed) => rsx! {
+            p { class: "shelf-preview-empty mono", role: "alert", "data-testid": "rule-preview-error",
+                "Couldn\u{2019}t preview these conditions."
             }
-            div { class: "shelf-preview-grid",
-                for book in p.sample.iter().cloned() {
-                    div {
-                        key: "{book.id}",
-                        CoverTile {
-                            book,
-                            server_url: server_url.to_string(),
-                            sizes: "120px".to_string(),
-                            kind: CoverTileKind::ReadOnly,
+        },
+        (None, _) => rsx! {
+            Loading { label: "Finding matches", testid: "rule-preview-loading" }
+        },
+        (Some(p), state) => rsx! {
+            Stale { stale: state == PreviewState::Pending,
+                p {
+                    class: "shelf-preview-count",
+                    "data-testid": "rule-preview-count",
+                    em { "{p.matched}" }
+                    " of {p.total} match"
+                }
+                div { class: "shelf-preview-grid",
+                    for book in p.sample.iter().cloned() {
+                        div {
+                            key: "{book.id}",
+                            CoverTile {
+                                book,
+                                server_url: server_url.to_string(),
+                                sizes: "120px".to_string(),
+                                kind: CoverTileKind::ReadOnly,
+                            }
                         }
                     }
                 }
@@ -499,5 +552,71 @@ mod tests {
         let draft = RuleDraft::from_rule(&rule);
         assert_eq!(draft.value, "Fantasy");
         assert_eq!(draft.to_rule(), Some(rule));
+    }
+
+    #[test]
+    fn preview_state_separates_no_rules_from_a_request_in_flight() {
+        assert_eq!(preview_state(false, true, false), PreviewState::NoRules);
+        assert_eq!(preview_state(true, true, true), PreviewState::Pending);
+        assert_eq!(preview_state(true, false, true), PreviewState::Failed);
+        assert_eq!(preview_state(true, false, false), PreviewState::Settled);
+    }
+
+    #[cfg(feature = "server")]
+    mod render {
+        use super::*;
+        use crate::test_support::render;
+
+        fn sample() -> Option<RulePreview> {
+            Some(RulePreview {
+                matched: 2,
+                total: 9,
+                sample: Vec::new(),
+            })
+        }
+
+        #[test]
+        fn render_preview_invites_a_condition_only_when_there_are_no_rules() {
+            let html = render(render_preview(&None, PreviewState::NoRules, ""));
+            assert!(
+                html.contains("Add a condition to preview matches."),
+                "{html}"
+            );
+            let html = render(render_preview(&None, PreviewState::Pending, ""));
+            assert!(!html.contains("Add a condition"), "{html}");
+        }
+
+        #[test]
+        fn render_preview_shows_a_loader_while_the_first_answer_is_in_flight() {
+            for state in [PreviewState::Pending, PreviewState::Settled] {
+                let html = render(render_preview(&None, state, ""));
+                assert!(
+                    html.contains("data-testid=\"rule-preview-loading\""),
+                    "{html}"
+                );
+            }
+        }
+
+        #[test]
+        fn render_preview_dims_the_last_answer_while_the_next_one_loads() {
+            let html = render(render_preview(&sample(), PreviewState::Pending, ""));
+            assert!(html.contains("ld-stale is-stale"), "{html}");
+            assert!(
+                html.contains("data-testid=\"rule-preview-count\""),
+                "{html}"
+            );
+            let html = render(render_preview(&sample(), PreviewState::Settled, ""));
+            assert!(!html.contains("is-stale"), "{html}");
+        }
+
+        #[test]
+        fn render_preview_reports_a_failed_request_rather_than_an_empty_rule_set() {
+            let html = render(render_preview(&None, PreviewState::Failed, ""));
+            assert!(
+                html.contains("data-testid=\"rule-preview-error\""),
+                "{html}"
+            );
+            assert!(!html.contains("Add a condition"), "{html}");
+        }
     }
 }

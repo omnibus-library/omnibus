@@ -51,22 +51,21 @@ pub(super) fn section_title(selection: ShelfSelection, shelves: &[ShelfSummary])
 /// two sources — it refetches with the pick, while the gallery's summary
 /// carries a server-side aggregate that goes stale the moment membership
 /// changes elsewhere — so it wins once it has loaded, and the summary only
-/// stands in while that fetch is still out.
+/// stands in while that fetch is still out. `None` when neither has answered.
 pub(super) fn shelf_book_count(
     selection: ShelfSelection,
     shelves: &[ShelfSummary],
     members: Option<usize>,
-) -> usize {
-    if let Some(len) = members {
-        return len;
+) -> Option<usize> {
+    if members.is_some() {
+        return members;
     }
     match selection {
         ShelfSelection::Shelf(id) => shelves
             .iter()
             .find(|s| s.id == id)
-            .and_then(|s| usize::try_from(s.book_count).ok())
-            .unwrap_or(0),
-        ShelfSelection::All => 0,
+            .and_then(|s| usize::try_from(s.book_count).ok()),
+        ShelfSelection::All => None,
     }
 }
 
@@ -95,7 +94,11 @@ pub(super) struct LandingViewState {
     pub(super) lib_err: Option<String>,
     pub(super) path_subtitle: String,
     pub(super) path_missing: bool,
-    pub(super) book_count: usize,
+    /// `None` until the list feeding the header has answered.
+    pub(super) book_count: Option<usize>,
+    /// The count is still coming (draw its placeholder); `false` with no
+    /// count means the fetch failed and the header shows none at all.
+    pub(super) count_pending: bool,
     /// The "N hidden" receipt beside the browse header count; `None` off the
     /// browse lens or when the viewer hides nothing.
     pub(super) hidden_count: Option<i64>,
@@ -160,10 +163,11 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
     let source = visible_source(is_search, selection);
     let shelves = sigs.shelves.read();
     let path_value = (sigs.lib_path)();
+    let browse_loading = (sigs.loading)();
     // Header count: the full library total on browse; the shelf's member
     // count on a gallery pick; the (capped) result count on search.
     let book_count = match source {
-        VisibleSource::Search => sigs.books.read().len(),
+        VisibleSource::Search => (!browse_loading).then(|| sigs.books.read().len()),
         VisibleSource::Shelf => shelf_book_count(
             selection,
             &shelves,
@@ -171,7 +175,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
         ),
         VisibleSource::Browse => (sigs.total)()
             .map(|t| usize::try_from(t).unwrap_or(0))
-            .unwrap_or_else(|| sigs.books.read().len()),
+            .or_else(|| (!browse_loading).then(|| sigs.books.read().len())),
     };
     let (visible_books, visible_stacks) = visible();
     let visible_is_empty = visible_books.is_empty();
@@ -181,21 +185,38 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
         .unwrap_or_default();
     let is_loading = match source {
         VisibleSource::Shelf => (sigs.shelf_loading)(),
-        _ => (sigs.loading)(),
+        _ => browse_loading,
     };
     let page_error = (sigs.error)().or_else(|| match source {
         VisibleSource::Shelf => (sigs.shelf_error)(),
         _ => None,
     });
+    // A failed fetch has no count to give: never "0 books" from an empty
+    // list, and no placeholder counting for good. Only a known total stands.
+    // The active source's own failure: a stale browse error must not hide a
+    // shelf's count that loaded fine.
+    let failed = match source {
+        VisibleSource::Shelf => (sigs.shelf_error)().is_some(),
+        _ => (sigs.error)().is_some(),
+    };
+    let total_known = source == VisibleSource::Browse && (sigs.total)().is_some();
+    let book_count = book_count.filter(|_| !failed || total_known);
+    let count_pending = book_count.is_none() && !failed;
 
     LandingViewState {
         is_loading,
         page_error,
         lib_err: (sigs.lib_error)(),
         path_subtitle,
-        // A shelf pick isn't the surface for the library-path hint.
-        path_missing: path_value.is_none() && source != VisibleSource::Shelf,
+        // A shelf pick isn't the surface for the library-path hint, and only
+        // an answered fetch can say the path is unset — not one in flight or
+        // one that failed.
+        path_missing: path_value.is_none()
+            && source != VisibleSource::Shelf
+            && !browse_loading
+            && (sigs.error)().is_none(),
         book_count,
+        count_pending,
         // The exclusion (and so the receipt) applies to All Books only.
         hidden_count: match source {
             VisibleSource::Browse => (sigs.hidden)(),

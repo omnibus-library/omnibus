@@ -19,8 +19,9 @@ use super::metadata_edit::sidebar::Sidebar;
 use super::metadata_edit::state::{
     header_strings, overrides_from_form, use_dirty_fields, use_field_signals, use_suggestion_pools,
 };
+use crate::components::{Loading, LoadingKind, MarkSize, Ring};
 use crate::data::{self, AudiobookUploadMeta, EbookUploadMeta};
-use crate::{use_server_url, Route};
+use crate::{use_server_url, Access, Route};
 
 /// Which ingest a pick goes to, decided by [`classify_pick`] from the file
 /// extensions — never chosen by the user. Drives which data-layer call the
@@ -114,9 +115,9 @@ struct UploadState {
 #[component]
 pub fn AddBooksPage() -> Element {
     // All hooks run unconditionally on every render — only the rsx output
-    // below branches on `can_upload` — so the hook call order stays stable
+    // below branches on `access` — so the hook call order stays stable
     // once the boot effect resolves the real permission (rule 07).
-    let can_upload = crate::use_can_upload();
+    let access = crate::use_upload_access();
     let server_url = use_server_url();
 
     let state = UploadState {
@@ -129,8 +130,12 @@ pub fn AddBooksPage() -> Element {
 
     let on_file = make_on_file(server_url, state);
 
-    if !can_upload() {
-        return rsx! { AddBooksForbidden {} };
+    match access() {
+        Access::Unknown => {
+            return rsx! { Loading { kind: LoadingKind::Page, label: "Checking your access" } };
+        }
+        Access::Denied => return rsx! { AddBooksForbidden {} },
+        Access::Allowed => {}
     }
 
     rsx! {
@@ -142,19 +147,42 @@ pub fn AddBooksPage() -> Element {
                 on_file: EventHandler::new(on_file),
             }
 
-            if let Some(msg) = (state.status)() {
-                p {
-                    id: "add-books-status",
-                    "data-testid": "add-books-status",
-                    role: "status",
-                    class: if (state.status_is_error)() { "settings-status error" } else { "settings-status success" },
-                    "{msg}"
-                }
-            }
+            UploadStatus { state }
         }
 
         if let Some(pick) = (state.pick)() {
             ReviewForm { key: "{pick.generation}", pick, state }
+        }
+    }
+}
+
+/// The pick's status line: a ring while a read, inspect or upload is in
+/// flight (neutral, not yet a success), then the outcome.
+#[component]
+fn UploadStatus(state: UploadState) -> Element {
+    let Some(msg) = (state.status)() else {
+        return rsx! {};
+    };
+    let is_error = (state.status_is_error)();
+    let working = (state.busy)() && !is_error;
+    let class = if is_error {
+        "settings-status error"
+    } else if working {
+        "settings-status is-working"
+    } else {
+        "settings-status success"
+    };
+    rsx! {
+        p {
+            id: "add-books-status",
+            "data-testid": "add-books-status",
+            role: "status",
+            "aria-busy": if working { "true" } else { "false" },
+            class,
+            if working {
+                Ring { size: MarkSize::Xs }
+            }
+            "{msg}"
         }
     }
 }

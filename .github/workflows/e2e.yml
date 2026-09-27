@@ -248,7 +248,9 @@ jobs:
             chmod +x ./target/dx/omnibus/release/web/server
             nohup env PORT=3000 ./target/dx/omnibus/release/web/server >server.log 2>&1 &
             disown
-            pnpm dlx wait-on -t 60000 http://127.0.0.1:3000
+            # The health probe rather than the root: a cookie-less page load
+            # answers with a redirect to /login.
+            pnpm dlx wait-on -t 60000 http://127.0.0.1:3000/api/_health
           '
 
       - name: Run Playwright tests

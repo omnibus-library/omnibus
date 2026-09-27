@@ -60,14 +60,21 @@ pub use data::ServerUrl;
 #[cfg(not(feature = "mobile"))]
 #[component]
 fn ScreenLayout(children: Element) -> Element {
-    // #57: web-side reactive redirect to /login on 401. Mirrors the
-    // mobile ScreenLayout's `token_store::subscribe()` loop, but driven
-    // by `data::web_auth_state` since web auth lives in a session cookie
-    // (no client-side token to clear). Render path stays unconditional
-    // so SSR and WASM produce identical markup — only the effect runs
-    // on the WASM client. `Login` / `Register` routes don't go through
-    // `ScreenLayout`, so they stay reachable for unauthenticated users
-    // and the redirect can't loop.
+    // #57: web-side reactive redirect to /login on 401, for a session that
+    // lapses mid-visit (the server's page gate redirects a signed-out page
+    // load before it renders), returning the reader to this page after
+    // sign-in. Mirrors the mobile ScreenLayout's `token_store::subscribe()`
+    // loop, but driven by `data::web_auth_state` since web auth lives in a
+    // session cookie (no client-side token to clear). Render path stays
+    // unconditional so SSR and WASM produce identical markup — only the
+    // effect runs on the WASM client. `Login` / `Register` routes don't go
+    // through `ScreenLayout`, so they stay reachable for unauthenticated
+    // users and the redirect can't loop.
+    // Declared on every target so SSR and the client share a hook order
+    // (rule 07); only the web client reads it, in the redirect below.
+    let route = dioxus_router::use_route::<Route>();
+    #[cfg(not(feature = "web"))]
+    let _ = &route;
     #[cfg(feature = "web")]
     {
         let nav = dioxus_router::use_navigator();
@@ -93,7 +100,7 @@ fn ScreenLayout(children: Element) -> Element {
         });
         use_effect(move || {
             if unauthorized() {
-                nav.replace(Route::Login {});
+                nav.replace(login_target_from(&route));
             }
         });
     }
@@ -131,8 +138,8 @@ fn ScreenLayout(children: Element) -> Element {
 fn ScreenLayout(children: Element) -> Element {
     // Mobile auth gate. Two layers:
     //
-    // * **Render-path placeholder.** When `authed` is false we render an
-    //   empty screen instead of `{children}`. This is the no-flash
+    // * **Render-path placeholder.** When `authed` is false we render a
+    //   page loader instead of `{children}`. This is the no-flash
     //   guarantee — protected pages never mount and never kick off a
     //   data-fetch effect that would 401.
     // * **Reactive redirect.** `authed` is a Dioxus `Signal` driven by
@@ -174,7 +181,7 @@ fn ScreenLayout(children: Element) -> Element {
         if use_server_url().is_empty() {
             nav.replace(Route::ServerConnect {});
         } else if !authed() {
-            nav.replace(Route::Login {});
+            nav.replace(login_target());
         }
     });
 
@@ -184,7 +191,11 @@ fn ScreenLayout(children: Element) -> Element {
     use_mobile_edge_swipe_back(nav);
 
     if use_server_url().is_empty() || !authed() {
-        return rsx! { div { class: "screen" } };
+        return rsx! {
+            div { class: "screen",
+                components::Loading { kind: components::LoadingKind::Page, label: "Finding your library" }
+            }
+        };
     }
     rsx! {
         div { class: "screen",
@@ -212,6 +223,10 @@ fn ScreenLayout(children: Element) -> Element {
 /// Dioxus's Manganis pipeline so the browser caches it independently of
 /// the WASM bundle.
 const ATRIUM_CSS: Asset = asset!("/assets/atrium.css");
+
+/// The loading vocabulary's stylesheet (boot screen, marks, skeletons) — kept
+/// apart from Atrium so every loading visual lives in one reviewable file.
+const LOADING_CSS: Asset = asset!("/assets/loading.css");
 
 /// Browser-tab favicon — the Omnibus brand mark, served as a hashed static
 /// asset via Manganis. 128² PNG; browsers downscale it to the tab size.
@@ -289,12 +304,22 @@ fn use_current_user_boot() {
 
     let mut slot = use_context::<CurrentUser>().0;
     use_future(move || async move {
-        // Initial fetch on mount. Only an explicit `Ok(_)` updates
-        // state — transient errors (network blip, rate-limit 429)
-        // leave the signal at `None` so callers keep showing the
-        // pre-resolve placeholder.
-        if let Ok(resolved) = data::current_user().await {
-            slot.set(Some(resolved));
+        // Initial fetch on mount, retried with backoff: only an answer
+        // settles `CurrentUser`, and the access gates show loading until one
+        // arrives, so a single transient error (network blip, 5xx, 429) must
+        // not leave them loading for good.
+        let mut backoff_ms = 1_000;
+        loop {
+            match data::current_user().await {
+                Ok(resolved) => {
+                    slot.set(Some(resolved));
+                    break;
+                }
+                Err(_) => {
+                    platform_sleep::async_sleep_ms(backoff_ms).await;
+                    backoff_ms = (backoff_ms * 2).min(30_000);
+                }
+            }
         }
 
         // React to subsequent auth-state transitions. `current_user`
@@ -566,6 +591,7 @@ pub fn App() -> Element {
     use_current_user_boot();
 
     components::atrium::init_theme();
+    components::loading::use_hydration_marker();
 
     use_mobile_viewport_fix();
     use_mobile_zone_capture();
@@ -585,7 +611,11 @@ pub fn App() -> Element {
         document::Title { "{page_title}" }
         document::Link { rel: "icon", href: FAVICON }
         document::Stylesheet { href: ATRIUM_CSS }
+        document::Stylesheet { href: LOADING_CSS }
         components::atrium::AtriumRoot {
+            // First child: its pre-paint script must run before the page
+            // paints, and finds the `.atrium` root around it.
+            components::loading::BootScript {}
             {audio_host}
             dioxus_router::Router::<Route> {}
         }

@@ -38,6 +38,7 @@ use super::reader::note_composer::NoteComposer;
 use super::reader::quote_panel::QuotePanel;
 use super::reader::reader_bookmarks::ReaderBookmarksDrawer;
 use super::reader::selection::{SelectionActions, SelectionAnchor, SelectionPopover};
+use crate::components::{Loading, LoadingKind};
 use crate::{data, media_url, use_server_url, Route};
 use highlights::{paint_all, pdf_bridge, PdfSelection};
 
@@ -635,7 +636,12 @@ pub fn PdfReadPage(uuid: String, file_id: Option<i64>, page: Option<i64>) -> Ele
                 }
                 match status_now {
                     PdfStatus::Loading => rsx! {
-                        div { class: "cr-state pr-overlay", "data-testid": "pdf-loading", "Loading PDF…" }
+                        Loading {
+                            kind: LoadingKind::Stage,
+                            class: "pr-overlay",
+                            testid: "pdf-loading",
+                            label: "Setting the page",
+                        }
                     },
                     PdfStatus::Failed => rsx! {
                         div { class: "cr-state pr-overlay", "data-testid": "pdf-error", role: "alert",

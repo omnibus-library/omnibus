@@ -12,6 +12,7 @@ use omnibus_shared::EbookMetadata;
 use super::bust_query;
 use super::cover_mode::{CoverMode, StagedCover};
 use crate::components::atrium::Cover;
+use crate::components::{MarkSize, Ring};
 use crate::contexts::{bump_cover_cache_bust, use_cover_cache_bust};
 use crate::data::UploadCover;
 use crate::{data, media_url, use_server_url};
@@ -89,6 +90,9 @@ pub(crate) fn CoverEditor(
                     class: "mono me-cover-hint",
                     role: "status",
                     "data-testid": "cover-upload-status",
+                    if (state.busy)() {
+                        Ring { size: MarkSize::Xs, class: "me-cover-ring" }
+                    }
                     "{msg}"
                 }
             }

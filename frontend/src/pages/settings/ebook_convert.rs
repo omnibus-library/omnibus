@@ -50,22 +50,36 @@ fn save_outcome_message(available: bool) -> (String, bool) {
 #[derive(Clone, Copy)]
 struct EbookConvertFieldSignals {
     status: Signal<Option<EbookConvertStatus>>,
+    /// Set when the status read failed, so the line stops saying "Checking".
+    status_failed: Signal<bool>,
     path_input: Signal<String>,
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
     in_flight: Signal<bool>,
 }
 
-/// Load the resolved `ebook-convert` status on mount.
-fn use_load_ebook_convert_status(
-    server_url: String,
-    mut status: Signal<Option<EbookConvertStatus>>,
-) {
+/// Load the resolved `ebook-convert` status on mount; a failed read says so
+/// rather than leaving the status line checking in silence.
+fn use_load_ebook_convert_status(server_url: String, sigs: EbookConvertFieldSignals) {
+    let EbookConvertFieldSignals {
+        mut status,
+        mut status_failed,
+        mut msg,
+        mut msg_is_error,
+        ..
+    } = sigs;
     use_effect(move || {
         let url = server_url.clone();
         spawn(async move {
-            if let Ok(s) = data::get_ebook_convert(&url).await {
-                status.set(Some(s));
+            match data::get_ebook_convert(&url).await {
+                Ok(s) => status.set(Some(s)),
+                Err(e) => {
+                    status_failed.set(true);
+                    msg.set(Some(format!(
+                        "Couldn\u{2019}t read the current status: {e}"
+                    )));
+                    msg_is_error.set(true);
+                }
             }
         });
     });
@@ -127,13 +141,14 @@ pub fn EbookConvertField() -> Element {
     let server_url = use_server_url();
     let sigs = EbookConvertFieldSignals {
         status: use_signal(|| None),
+        status_failed: use_signal(|| false),
         path_input: use_signal(String::new),
         msg: use_signal(|| None::<String>),
         msg_is_error: use_signal(|| false),
         in_flight: use_signal(|| false),
     };
     let mut path_input = sigs.path_input;
-    use_load_ebook_convert_status(server_url.clone(), sigs.status);
+    use_load_ebook_convert_status(server_url.clone(), sigs);
 
     let save_url = server_url.clone();
     let on_save = move |_| {
@@ -148,7 +163,7 @@ pub fn EbookConvertField() -> Element {
     let msg_is_error = sigs.msg_is_error;
     let in_flight = sigs.in_flight;
     let st = (sigs.status)();
-    let available = st.as_ref().is_some_and(|s| s.available);
+    let available = st.as_ref().map(|s| s.available);
     let overridden = is_overridden(st.as_ref());
     let placeholder = placeholder_for(st.as_ref());
     let detail = status_detail(st.as_ref());
@@ -195,7 +210,7 @@ pub fn EbookConvertField() -> Element {
                     }
                 }
             }
-            {credential_status_line("ebook-convert-status", available, &detail, "Not detected")}
+            {credential_status_line("ebook-convert-status", available, (sigs.status_failed)(), &detail, "Not detected")}
             {credential_status_message("ebook-convert-save-status", msg().as_deref(), msg_is_error())}
         }
     }

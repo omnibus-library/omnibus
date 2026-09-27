@@ -16,6 +16,7 @@ use super::super::bust_query;
 use super::super::cover_mode::{CoverMode, StagedCover};
 use super::EMPTY;
 use crate::components::atrium::Cover;
+use crate::components::{MarkSize, Ring};
 use crate::contexts::{bump_cover_cache_bust, use_cover_cache_bust};
 use crate::data::UploadCover;
 use crate::{data, media_url, use_server_url};
@@ -110,6 +111,7 @@ pub(super) fn CoverRow(
                     "data-testid": "mes-row-cover-apply",
                     aria_label: "{apply_label}",
                     disabled: !available || hydrating || busy(),
+                    "aria-busy": if busy() { "true" } else { "false" },
                     onclick: on_apply,
                     "\u{2192}"
                 }
@@ -124,6 +126,9 @@ pub(super) fn CoverRow(
             // The wording is the contract: against a saved book this is the
             // one row that doesn't wait for Save.
             span { class: "mono mes-cover-note", role: "status", "data-testid": "mes-row-cover-note",
+                if busy() {
+                    Ring { size: MarkSize::Xs, class: "mes-cover-ring" }
+                }
                 if let Some(msg) = status() {
                     "{msg}"
                 } else {

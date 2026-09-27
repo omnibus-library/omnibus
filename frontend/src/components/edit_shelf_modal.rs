@@ -9,6 +9,7 @@ use omnibus_shared::{MatchMode, Shelf, ShelfKind, ShelfRule, UpdateShelfRequest,
 
 use crate::components::create_shelf_modal::VisibilityToggle;
 use crate::components::shelf_rule_builder::{RuleBuilder, RuleDraft};
+use crate::components::BusyLabel;
 use crate::{data, use_server_url};
 
 // SSR render tests — `server`-gated so `web` builds don't carry dead code.
@@ -256,8 +257,9 @@ fn edit_shelf_foot(
                 class: "btn shelf-btn-primary",
                 "data-testid": "edit-shelf-save",
                 disabled: saving,
+                "aria-busy": if saving { "true" } else { "false" },
                 onclick: move |e| on_save.call(e),
-                if saving { "Saving\u{2026}" } else { "Save" }
+                BusyLabel { busy: saving, label: "Save", busy_label: "Saving\u{2026}" }
             }
         }
     }

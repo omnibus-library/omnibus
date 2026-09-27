@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use omnibus_shared::{CompositionDimension, CompositionSlice, LibraryComposition};
 
 use super::group_thousands;
+use crate::components::loading::{Skeleton, SkeletonShape};
 
 /// One rendered dimension: its heading, its bars, and the line beneath them
 /// that says what the bars can't speak for.
@@ -122,12 +123,27 @@ fn build_panels(c: &LibraryComposition) -> Vec<Panel> {
 /// The composition panels — format, language, publisher, publication decade,
 /// and genre, one card each.
 ///
-/// Renders nothing at all until the fetch lands, or for a library with no live
-/// books: five empty panels describe a collection that doesn't exist.
+/// Placeholder panels until the fetch lands (never carrying the card's
+/// testid), and nothing for a library with no live books: five empty panels
+/// describe a collection that doesn't exist.
 #[component]
 pub(super) fn LibraryCompositionPanels(composition: Option<LibraryComposition>) -> Element {
     let Some(composition) = composition else {
-        return rsx! {};
+        return rsx! {
+            div {
+                class: "st-comp",
+                role: "status",
+                "aria-live": "polite",
+                "data-testid": "stats-library-composition-loading",
+                span { class: "ld-sr", "Sorting the collection" }
+                for i in 0..3usize {
+                    div { key: "{i}", class: "card st-comp-panel",
+                        Skeleton { index: i, style: "--w:40%" }
+                        Skeleton { shape: SkeletonShape::Block, index: i, style: "--h:120px;margin-top:16px" }
+                    }
+                }
+            }
+        };
     };
     if composition.is_empty() {
         return rsx! {};

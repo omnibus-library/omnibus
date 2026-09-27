@@ -19,6 +19,10 @@ serde_json.workspace = true
 # the derive must be available in all builds (including the no-feature
 # default-members check). Version matches `omnibus-db`.
 thiserror.workspace = true
+# Encodes the login page's `?next=` (`routes::login_href`), which the server's
+# page gate and the web client both write, so it is on for every target.
+# Already in the tree via `omnibus-db`; same version, so cargo unifies it.
+urlencoding = "2"
 # Foreign-failure-space errors for the mobile-only `offline` module (network,
 # filesystem) per `.claude/rules/02-error-handling.md`. Optional, enabled by
 # `mobile` — not needed by the web/server builds. Version matches `omnibus-db`.

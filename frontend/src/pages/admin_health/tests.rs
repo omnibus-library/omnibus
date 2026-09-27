@@ -11,10 +11,14 @@ use super::*;
 
 #[test]
 fn should_poll_fetches_only_for_an_admin_viewer() {
-    assert!(should_poll(true));
+    assert!(should_poll(Access::Allowed));
     assert!(
-        !should_poll(false),
+        !should_poll(Access::Denied),
         "a non-admin viewer must never trigger the admin-gated RPC"
+    );
+    assert!(
+        !should_poll(Access::Unknown),
+        "an unresolved viewer must wait for `/me` before polling"
     );
 }
 
@@ -276,4 +280,25 @@ fn last_errors_card_renders_a_row_per_entry() {
     assert!(html.contains("data-testid=\"admin-health-errors-table\""));
     assert!(html.contains("boom"));
     assert!(html.contains("2023-11-14 22:13:20 UTC"));
+}
+
+// ---------- access gate (first paint vs resolved) ----------
+
+#[test]
+fn admin_health_page_first_paint_checks_access_rather_than_refusing() {
+    let html = crate::test_support::render_in_vdom(|| rsx! { AdminHealthPage {} });
+    assert!(html.contains("Checking your access"), "{html}");
+    assert!(!html.contains("admin-health-forbidden"), "{html}");
+}
+
+#[test]
+fn admin_health_page_refuses_a_resolved_reader_who_is_not_an_admin() {
+    fn app() -> Element {
+        crate::test_support::provide_current_user(Some(Some(crate::test_support::test_user(
+            false, true,
+        ))));
+        rsx! { AdminHealthPage {} }
+    }
+    let html = crate::test_support::render_in_vdom(app);
+    assert!(html.contains("admin-health-forbidden"), "{html}");
 }

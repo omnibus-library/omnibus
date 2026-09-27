@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{EbookMetadata, Shelf, SortDir, SortKey};
 
-use crate::components::{EditShelfModal, PageLoading};
+use crate::components::{EditShelfModal, Loading, LoadingKind};
 use crate::{data, use_server_url, Route};
 
 mod add_books_modal;
@@ -60,7 +60,9 @@ pub fn ShelfDetailPage(id: i64) -> Element {
     );
 
     if loading() && shelf.read().is_none() {
-        return render_page_state(rsx! { PageLoading {} });
+        return render_page_state(
+            rsx! { Loading { kind: LoadingKind::Page, label: "Opening the shelf" } },
+        );
     }
 
     let Some(current) = shelf.read().clone() else {
@@ -125,10 +127,13 @@ fn shelf_detail_body(
 ) -> Element {
     #[cfg(feature = "mobile")]
     {
-        // The mobile surface doesn't gate its add affordance on this yet — it
-        // has the same unknown-versus-empty membership weakness the web action
-        // bar now guards against.
-        let _ = members_ready;
+        // The mobile surface can't tell an empty shelf from an unanswered one,
+        // so it waits behind the page loader until the members first land.
+        if !members_ready && books.is_empty() && !errored {
+            return render_page_state(
+                rsx! { Loading { kind: LoadingKind::Page, label: "Opening the shelf" } },
+            );
+        }
         let ShelfUi {
             mut show_add,
             mut edit_shelf,

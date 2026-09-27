@@ -10,6 +10,7 @@
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
+use crate::components::BusyLabel;
 use crate::Route;
 
 /// Dirty-tracking memos forwarded to the save bar.
@@ -130,8 +131,13 @@ pub(crate) fn SaveBar(
                     class: "btn primary",
                     "data-testid": "me-save",
                     disabled: !can_leave_via_save || saving(),
+                    "aria-busy": if saving() { "true" } else { "false" },
                     onclick: move |_| on_save.call(()),
-                    {save_label(creating, saving(), dirty_count())}
+                    BusyLabel {
+                        busy: saving(),
+                        label: save_label(creating, false, dirty_count()),
+                        busy_label: save_label(creating, true, 0),
+                    }
                 }
             }
         }

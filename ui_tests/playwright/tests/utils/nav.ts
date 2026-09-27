@@ -1,14 +1,20 @@
 import type { Page } from "@playwright/test";
 import { expect } from "../fixtures/test";
 
-// Navigate and wait until the Dioxus WASM client has hydrated. The fullstack
-// server SSRs the markup (button + initial value) before the WASM bundle
-// finishes loading, so a raw `page.goto` followed by an immediate click fires
-// against un-hydrated DOM — the native click succeeds but no rsx onclick
-// handler is attached yet, so no API request goes out. `networkidle` blocks
-// until the WASM download and the initial server-function fetches settle.
+// Wait until the Dioxus WASM client has hydrated: the app stamps
+// `data-hydrated` on <html> from its first post-mount effect, which is also
+// what dismisses the boot screen. Until then the server-rendered markup is
+// inert — a click lands on it and no rsx handler runs.
+export async function waitForHydration(page: Page): Promise<void> {
+  await page.waitForSelector("html[data-hydrated]", { state: "attached" });
+}
+
+// Navigate, wait for hydration, then for the page's first fetches to settle.
+// The marker comes first because `networkidle` alone can fire in the gap
+// between the WASM download finishing and the client mounting.
 export async function gotoReady(page: Page, path: string): Promise<void> {
   await page.goto(path);
+  await waitForHydration(page);
   await page.waitForLoadState("networkidle");
 }
 

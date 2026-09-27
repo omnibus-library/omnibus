@@ -13,6 +13,7 @@ use omnibus_shared::{AlignmentView, CrossFormatLinkMode, EbookMetadata};
 
 use crate::components::confirm_modal::ConfirmModal;
 use crate::components::sync_glyph::SyncGlyph;
+use crate::components::{Loading, LoadingKind};
 use crate::data;
 
 mod choice;
@@ -144,7 +145,7 @@ pub fn AlignmentModal(uuid: String, open: Signal<bool>, on_changed: EventHandler
                 }
                 {render_notice(&v)}
             } else if error().is_none() {
-                p { class: "al-loading", "Measuring both formats…" }
+                Loading { kind: LoadingKind::Sheet, class: "al-loading", label: "Measuring both formats\u{2026}" }
             }
             if let Some(e) = error() {
                 p { role: "alert", class: "bd-merge-error", "{e}" }

@@ -20,6 +20,7 @@ use super::cover_row::CoverRow;
 use super::field::MetadataField;
 use super::sources::provider_slug;
 use super::EMPTY;
+use crate::components::Loading;
 
 /// Above this many characters on either side, a row stops being readable in
 /// two narrow columns and is laid out down the panel's full width instead.
@@ -95,8 +96,10 @@ pub(super) fn CompareScreen(
             // later. A placeholder for that moment is calmer than a wrong
             // answer corrected in view.
             if hydrating {
-                p { class: "mes-subtitle", role: "status", "data-testid": "mes-hydrating",
-                    "Loading the full record\u{2026}"
+                Loading {
+                    class: "inline",
+                    testid: "mes-hydrating",
+                    label: "Loading the full record\u{2026}",
                 }
                 CompareSkeleton {}
             } else {
@@ -174,12 +177,12 @@ pub(super) fn CompareScreen(
 fn CompareSkeleton() -> Element {
     rsx! {
         div { class: "mes-skeleton", "data-testid": "mes-compare-skeleton", aria_hidden: "true",
-            div { class: "mes-skel-cover" }
+            div { class: "ld-skel mes-skel-cover" }
             for i in 0..5 {
                 div { key: "{i}", class: "mes-skel-row",
-                    span { class: "mes-skel-bar mes-skel-label" }
-                    span { class: "mes-skel-bar" }
-                    span { class: "mes-skel-bar" }
+                    span { class: "ld-skel mes-skel-bar mes-skel-label", style: "--i:{i}" }
+                    span { class: "ld-skel mes-skel-bar", style: "--i:{i}" }
+                    span { class: "ld-skel mes-skel-bar", style: "--i:{i}" }
                 }
             }
         }

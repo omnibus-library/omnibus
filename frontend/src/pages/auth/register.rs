@@ -9,6 +9,7 @@ use crate::components::auth::AuthShell;
 use crate::components::auth::{
     score_password, Banner, BannerKind, Field, PasswordRequirements, StrengthMeter,
 };
+use crate::components::BusyLabel;
 use crate::{use_server_url, Route};
 
 #[cfg(feature = "mobile")]
@@ -176,7 +177,7 @@ fn RegistrationClosed() -> Element {
             }
             p { class: "auth-footer",
                 "Already have an account? "
-                Link { to: Route::Login {}, "Log in" }
+                Link { to: crate::routes::login_target(), "Log in" }
             }
         }
     }
@@ -233,6 +234,8 @@ fn register_submit_handlers(
 /// Register form body — inputs write the parent's signals through, submission delegates via `on_submit_now`.
 #[component]
 fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> Element {
+    // A submit before hydration would post the form natively.
+    let ready = crate::components::loading::use_hydrated();
     let RegisterFormState {
         username,
         password,
@@ -245,9 +248,7 @@ fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> El
     let err = error();
     let (username_err, password_err, other_err) = classify_errors(&err);
     let has_error = err.is_some();
-    let submit_label = if submitting() {
-        "Creating…"
-    } else if has_error {
+    let submit_label = if has_error {
         "Fix to continue"
     } else {
         "Create account"
@@ -255,6 +256,9 @@ fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> El
 
     rsx! {
         form { class: "auth-form-inner",
+            // Never a GET: a submit that lands before hydration would put
+            // the password in the URL.
+            method: "post",
             onsubmit: on_submit,
             "data-testid": "register-form",
             if let Some(msg) = other_err {
@@ -283,12 +287,13 @@ fn RegisterForm(state: RegisterFormState, on_submit_now: EventHandler<()>) -> El
                 // shown — keeps users from immediately re-submitting
                 // the same invalid form. Each input's `oninput` clears
                 // the error signal so editing re-enables the button.
-                disabled: submitting() || has_error,
-                "{submit_label}"
+                disabled: submitting() || has_error || !ready(),
+                "aria-busy": if submitting() { "true" } else { "false" },
+                BusyLabel { busy: submitting(), label: submit_label, busy_label: "Creating…" }
             }
             p { class: "auth-footer",
                 "Already have an account? "
-                Link { to: Route::Login {}, "Log in" }
+                Link { to: crate::routes::login_target(), "Log in" }
             }
         }
     }

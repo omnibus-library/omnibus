@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use omnibus_shared::{CreateShelfRequest, MatchMode, Shelf, ShelfKind, ShelfRule, Visibility};
 
 use crate::components::shelf_rule_builder::{RuleBuilder, RuleDraft};
-use crate::components::LibraryPicker;
+use crate::components::{BusyLabel, LibraryPicker};
 use crate::{data, use_server_url};
 
 #[cfg(test)]
@@ -214,8 +214,9 @@ fn create_shelf_foot(
                 class: "btn shelf-btn-primary",
                 "data-testid": "shelf-create-submit",
                 disabled: saving,
+                "aria-busy": if saving { "true" } else { "false" },
                 onclick: move |e| on_submit.call(e),
-                if saving { "Creating\u{2026}" } else { "{create_label}" }
+                BusyLabel { busy: saving, label: create_label, busy_label: "Creating\u{2026}" }
             }
         }
     }
