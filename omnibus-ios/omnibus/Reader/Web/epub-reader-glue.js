@@ -64,8 +64,8 @@
  *   beginEdgeDrag(edge)             pin the opposite edge for a handle drag
  *   endSelectionDrag()              settle and re-emit with `existing`
  *   clearSelection()
- *   fillLeading(rows)               the selection bars' line-box arithmetic;
- *                                   pure, and exposed for omnibusTests
+ *   settleLineBoxes(rows)           where the selection bars' line boxes
+ *                                   meet; pure, and exposed for omnibusTests
  *
  * Selection callbacks:
  *   - `__omnibusOnSelection(json)` — the live range, as
@@ -1391,14 +1391,17 @@
   // between two — so a selection run across three paragraphs came back as a
   // block over the second one, indent and ragged last line included. Walking
   // the text nodes yields nothing but glyphs.
-  function textRects(range) {
+  //
+  // With `withLeading`, each box also carries `lead`: how far its line box
+  // reaches past it above and below.
+  function textRects(range, withLeading) {
     var out = [];
     if (!range) return out;
     var doc = range.startContainer.ownerDocument;
     if (!doc) return out;
     var root = range.commonAncestorContainer;
     if (root.nodeType === 3) {
-      pushRects(out, range.getClientRects());
+      pushRects(out, range.getClientRects(), withLeading ? lineHeightOf(root) : null);
       return out;
     }
     var walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
@@ -1418,7 +1421,7 @@
       piece.selectNodeContents(node);
       if (node === range.startContainer) piece.setStart(node, range.startOffset);
       if (node === range.endContainer) piece.setEnd(node, range.endOffset);
-      pushRects(out, piece.getClientRects());
+      pushRects(out, piece.getClientRects(), withLeading ? lineHeightOf(node) : null);
       if (endIsText && node === range.endContainer) break;
       node = walker.nextNode();
       // An element end container — which a stored CFI can produce — has no
@@ -1428,11 +1431,33 @@
     return out;
   }
 
-  function pushRects(out, list) {
+  // CSS sets a line's box half its leading, `(line-height - content height)
+  // / 2`, past the text above and below; `lineHeight` null keeps the boxes
+  // as the engine gave them.
+  function pushRects(out, list, lineHeight) {
     for (var i = 0; i < list.length; i++) {
       var r = list[i];
-      if (r && r.width > 0 && r.height > 0) out.push(r);
+      if (!(r && r.width > 0 && r.height > 0)) continue;
+      if (lineHeight === null || lineHeight === undefined) {
+        out.push(r);
+        continue;
+      }
+      out.push({
+        left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+        width: r.width, height: r.height,
+        lead: Math.max(0, (lineHeight - r.height) / 2),
+      });
     }
+  }
+
+  // The used line height of a text node's line, in px — 0 for `normal`,
+  // which the engine reports as a keyword and which adds no leading to close.
+  function lineHeightOf(node) {
+    var el = node.parentElement;
+    var win = el && el.ownerDocument && el.ownerDocument.defaultView;
+    if (!win) return 0;
+    var px = parseFloat(win.getComputedStyle(el).lineHeight);
+    return isFinite(px) ? px : 0;
   }
 
   // The page in front of the reader, in host-window coordinates.
@@ -1478,7 +1503,7 @@
   function lineRows(range, win) {
     var off = frameOffset(win);
     var box = pageBox();
-    var raw = textRects(range);
+    var raw = textRects(range, true);
     var rows = [];
     for (var i = 0; i < raw.length; i++) {
       var r = raw[i];
@@ -1500,8 +1525,13 @@
         row.right = Math.max(row.right, r.right);
         row.top = Math.min(row.top, r.top);
         row.bottom = Math.max(row.bottom, r.bottom);
+        row.lineTop = Math.min(row.lineTop, r.top - r.lead);
+        row.lineBottom = Math.max(row.lineBottom, r.bottom + r.lead);
       } else {
-        rows.push({ col: col, left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+        rows.push({
+          col: col, left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+          lineTop: r.top - r.lead, lineBottom: r.bottom + r.lead,
+        });
       }
     }
 
@@ -1511,82 +1541,51 @@
       return a.col - b.col || a.top - b.top || a.left - b.left;
     });
 
-    fillLeading(rows);
+    // Drawn on the line box, not the text's: `getClientRects` measures the
+    // font box, so bars drawn as given leave a stripe of page between the
+    // lines of a paragraph. Each box's own half-leading grows it back to its
+    // line — measured, never inferred from the gaps, which grew two lines
+    // either side of an illustration until they met across it.
+    settleLineBoxes(rows);
 
     var out = [];
     for (var j = 0; j < rows.length; j++) {
       out.push({
         col: rows[j].col,
         x: rows[j].left + off.x,
-        y: rows[j].top + off.y,
+        y: rows[j].lineTop + off.y,
         width: rows[j].right - rows[j].left,
-        height: rows[j].bottom - rows[j].top,
+        height: rows[j].lineBottom - rows[j].lineTop,
       });
     }
     return out;
   }
 
-  // The widest gap between two rows that is still leading, as a share of the
-  // shorter row: the reader's loosest setting leaves under a line between
-  // lines, while an illustration, a heading or a section break leaves more.
-  var LEADING_MAX_LINES = 1.25;
+  // A stripe narrower than this between two line boxes is layout rounding,
+  // not page: lines land on a sub-pixel grid, so neighbours that should touch
+  // can come back a hair apart or a hair over.
+  var SEAM_PX = 1;
 
-  // Grow each row, in place, over the leading `getClientRects` leaves out.
+  // Give two neighbouring lines whose boxes meet or overlap one shared edge —
+  // halfway between them, and never inside either line's text — so a
+  // paragraph paints as one block with no hairline of page and no doubled
+  // band. Anything wider between them is page — a margin, an illustration, a
+  // scene break — and stays unpainted.
   //
-  // It measures the *font* box, not the line box, so on generously leaded
-  // prose the bars come back with a stripe of page between them. A row meets
-  // the next one down its column halfway, which makes a paragraph one
-  // continuous block the way the system's own selection is — but only across
-  // a gap that could be leading. An illustration between two selected lines
-  // is page, and closing it tinted the whole plate.
-  //
-  // Every other edge — either end of the range, either side of such a gap —
-  // grows by half the leading measured between the range's own lines, so each
-  // bar is one line box tall, none reaches past its own, and none grows into
-  // a neighbour. A range with no leading to measure grows not at all.
-  //
-  // `rows` must be in reading order, as `lineRows` sorts them.
-  function fillLeading(rows) {
-    var leading = Infinity;
+  // `rows` must be in reading order, as `lineRows` sorts them, each carrying
+  // its text box (`top`/`bottom`) and its line box (`lineTop`/`lineBottom`).
+  // Settles the line boxes in place.
+  function settleLineBoxes(rows) {
     for (var i = 1; i < rows.length; i++) {
-      var between = leadingBetween(rows[i - 1], rows[i]);
-      if (between !== null && between < leading) leading = between;
-    }
-    var half = leading === Infinity ? 0 : leading / 2;
-    // Measured against the boxes as given, then applied: growing one row
-    // first would change the gap its neighbour measures.
-    var grow = [];
-    for (var j = 0; j < rows.length; j++) {
-      var above = j > 0 && rows[j - 1].col === rows[j].col ? rows[j - 1] : null;
-      var below = j + 1 < rows.length && rows[j + 1].col === rows[j].col ? rows[j + 1] : null;
-      grow.push({
-        up: above ? edgeGrowth(above, rows[j], half) : half,
-        down: below ? edgeGrowth(rows[j], below, half) : half,
-      });
-    }
-    for (var k = 0; k < rows.length; k++) {
-      rows[k].top -= grow[k].up;
-      rows[k].bottom += grow[k].down;
+      var upper = rows[i - 1];
+      var lower = rows[i];
+      if (upper.col !== lower.col) continue;
+      if (lower.lineTop - upper.lineBottom >= SEAM_PX) continue;
+      var edge = (upper.lineBottom + lower.lineTop) / 2;
+      upper.lineBottom = Math.max(upper.bottom, Math.min(edge, lower.top));
+      lower.lineTop = Math.min(lower.top, Math.max(edge, upper.bottom));
     }
     return rows;
-  }
-
-  // The gap between two rows stacked in one column, when it could be leading;
-  // null when they touch or overlap, or when what lies between is page.
-  function leadingBetween(upper, lower) {
-    if (upper.col !== lower.col) return null;
-    var between = lower.top - upper.bottom;
-    var line = Math.min(upper.bottom - upper.top, lower.bottom - lower.top);
-    return between > 0 && between <= line * LEADING_MAX_LINES ? between : null;
-  }
-
-  // How far one side of a gap grows toward the other: halfway across leading,
-  // so the two meet; a half leading at most across anything else, and never
-  // past the middle, so no bar reaches into its neighbour's box.
-  function edgeGrowth(upper, lower, half) {
-    var between = leadingBetween(upper, lower);
-    if (between !== null) return between / 2;
-    return Math.min(half, Math.max(0, lower.top - upper.bottom) / 2);
   }
 
   // What the host draws: only the rows on the page in front of the reader —
@@ -3635,6 +3634,6 @@
     shareQuoteCard: shareQuoteCard,
     copyQuoteCardImage: copyQuoteCardImage,
     destroy: destroy,
-    fillLeading: fillLeading,
+    settleLineBoxes: settleLineBoxes,
   };
 })();

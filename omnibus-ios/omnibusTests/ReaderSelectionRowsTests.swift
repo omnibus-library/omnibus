@@ -1,13 +1,13 @@
 //  ReaderSelectionRowsTests.swift
-//  How tall the selection's bars are, run through the glue that draws them.
+//  Where the selection's bars meet, run through the glue that draws them.
 //
-//  `getClientRects` hands the glue one font box per line, and `fillLeading`
-//  grows those over the leading between them so a paragraph reads as one block.
-//  Growing across a gap that was not leading — an illustration between two
-//  selected lines — tinted the whole plate and the blank page under it (#2649).
-//  The arithmetic is pure, so it runs here in a bare JavaScriptCore context,
-//  loaded from the same bundled file the reader ships: no second copy of it to
-//  drift from the one on the page.
+//  `getClientRects` hands the glue one font box per line; each bar is drawn on
+//  its line box instead, grown by the half-leading the text's own line height
+//  sets. `settleLineBoxes` then decides where two neighbouring bars meet. The
+//  bars used to be grown by the gaps between them, which met across an
+//  illustration and tinted the whole plate (#2649). The arithmetic is pure, so
+//  it runs here in a bare JavaScriptCore context, loaded from the same bundled
+//  file the reader ships: no second copy of it to drift from the one on the page.
 
 import Foundation
 import JavaScriptCore
@@ -15,33 +15,54 @@ import Testing
 
 @testable import omnibus
 
-/// One line of a selection, as `lineRows` hands it to `fillLeading`.
+/// One line of a selection, as `lineRows` hands it to `settleLineBoxes`: its
+/// text box and the line box around it.
 private struct Row: Equatable {
-    var col = 0
+    var col: Int
     var top: Double
     var bottom: Double
+    var lineTop: Double
+    var lineBottom: Double
 
-    var height: Double { bottom - top }
+    /// A line whose box reaches `lead` past its text above and below.
+    init(col: Int = 0, top: Double, bottom: Double, lead: Double) {
+        self.col = col
+        self.top = top
+        self.bottom = bottom
+        lineTop = top - lead
+        lineBottom = bottom + lead
+    }
+
+    init(col: Int, top: Double, bottom: Double, lineTop: Double, lineBottom: Double) {
+        self.col = col
+        self.top = top
+        self.bottom = bottom
+        self.lineTop = lineTop
+        self.lineBottom = lineBottom
+    }
 }
 
 /// A 22px font box, which is what an 18px face measures in the reader.
 private let fontBox = 22.0
 /// The pitch of those lines at the reader's default 1.6 line height.
 private let pitch = 28.8
-/// The stripe of page `getClientRects` leaves between two lines of a paragraph.
-private let leading = pitch - fontBox
+/// How far each line box reaches past its text: half the leading.
+private let halfLeading = (pitch - fontBox) / 2
 
 /// A run of consecutive lines down one column, from `top`.
 private func paragraph(lines: Int, from top: Double, col: Int = 0) -> [Row] {
     (0 ..< lines).map { i in
         let y = top + Double(i) * pitch
-        return Row(col: col, top: y, bottom: y + fontBox)
+        return Row(col: col, top: y, bottom: y + fontBox, lead: halfLeading)
     }
 }
 
-/// Run `rows` through the bundled glue's `fillLeading`.
+/// Run `rows` through the bundled glue's `settleLineBoxes`.
+///
+/// A fresh context per call keeps the tests independent — `JSContext.exception`
+/// is sticky — and costs a few milliseconds.
 @MainActor
-private func fillLeading(_ rows: [Row]) throws -> [Row] {
+private func settleLineBoxes(_ rows: [Row]) throws -> [Row] {
     let url = try #require(
         ReaderWebView.Coordinator.bundledAssetURL(named: "epub-reader-glue.js"),
         "epub-reader-glue.js is not in the app bundle"
@@ -51,28 +72,31 @@ private func fillLeading(_ rows: [Row]) throws -> [Row] {
     // everything it needs to load.
     context.evaluateScript("var window = this;")
     context.evaluateScript(try String(contentsOf: url, encoding: .utf8), withSourceURL: url)
-    if let exception = context.exception {
-        Issue.record("the glue threw while loading: \(exception)")
-    }
-    let fill = try #require(
-        context.objectForKeyedSubscript("OmnibusReader")?.objectForKeyedSubscript("fillLeading")
+    try #require(context.exception == nil, "the glue threw while loading: \(String(describing: context.exception))")
+    let settle = try #require(
+        context.objectForKeyedSubscript("OmnibusReader")?.objectForKeyedSubscript("settleLineBoxes")
     )
-    let input = rows.map { ["col": $0.col, "top": $0.top, "bottom": $0.bottom] as [String: Any] }
-    let output = try #require(fill.call(withArguments: [input])?.toArray())
-    if let exception = context.exception {
-        Issue.record("fillLeading threw: \(exception)")
+    let input = rows.map {
+        [
+            "col": $0.col, "top": $0.top, "bottom": $0.bottom,
+            "lineTop": $0.lineTop, "lineBottom": $0.lineBottom,
+        ] as [String: Any]
     }
-    return try output.map { item in
+    let output = settle.call(withArguments: [input])?.toArray()
+    try #require(context.exception == nil, "settleLineBoxes threw: \(String(describing: context.exception))")
+    return try #require(output).map { item in
         let row = try #require(item as? [String: Any])
         return try Row(
             col: #require(row["col"] as? Int),
             top: #require(row["top"] as? Double),
-            bottom: #require(row["bottom"] as? Double)
+            bottom: #require(row["bottom"] as? Double),
+            lineTop: #require(row["lineTop"] as? Double),
+            lineBottom: #require(row["lineBottom"] as? Double)
         )
     }
 }
 
-/// Equal to within float noise: the growth is a sum of halves.
+/// Equal to within float noise.
 private func nearlyEqual(_ a: Double, _ b: Double) -> Bool {
     abs(a - b) < 1e-6
 }
@@ -80,104 +104,130 @@ private func nearlyEqual(_ a: Double, _ b: Double) -> Bool {
 @Suite("Selection rows")
 @MainActor
 struct SelectionRowsTests {
-    @Test("fillLeading paints nothing over an illustration between two selected lines")
-    func fillLeadingSkipsAnIllustration() throws {
-        // The measurement in #2649: a 200px plate, a line either side of it. The
-        // two bars used to grow 263px tall and meet across it.
-        let above = Row(top: 295.5, bottom: 317.5)
-        let below = Row(top: 558.5, bottom: 580.5)
+    @Test("settleLineBoxes paints nothing over an illustration between two selected lines")
+    func settleLineBoxesSkipsAnIllustration() throws {
+        // The measurement in #2649: a 200px plate, a line either side of it.
+        // The two bars used to grow 263px tall and meet across it.
+        let above = Row(top: 295.5, bottom: 317.5, lead: halfLeading)
+        let below = Row(top: 558.5, bottom: 580.5, lead: halfLeading)
         let plate = 338.5 ... 538.5
 
-        let bars = try fillLeading([above, below])
+        let bars = try settleLineBoxes([above, below])
 
         #expect(bars == [above, below])
-        #expect(bars[0].bottom < plate.lowerBound)
-        #expect(bars[1].top > plate.upperBound)
-    }
-
-    @Test("fillLeading keeps the lines either side of an illustration to one line box")
-    func fillLeadingHoldsBarsBesideAnIllustrationToALineBox() throws {
-        // Leading measured above the plate, so the lines beside it grow — by
-        // the paragraph's own leading, not by the plate.
-        let lead = paragraph(lines: 3, from: 237.9)
-        let below = Row(top: 558.5, bottom: 580.5)
-        let plate = 338.5 ... 538.5
-
-        let bars = try fillLeading(lead + [below])
-
+        #expect(bars[0].lineBottom < plate.lowerBound)
+        #expect(bars[1].lineTop > plate.upperBound)
         for bar in bars {
-            #expect(bar.height <= fontBox + leading + 1e-6)
+            #expect(nearlyEqual(bar.lineBottom - bar.lineTop, pitch))
         }
-        #expect(bars[2].bottom < plate.lowerBound)
-        #expect(bars[3].top > plate.upperBound)
-        #expect(nearlyEqual(bars[3].top, below.top - leading / 2))
-        #expect(nearlyEqual(bars[3].bottom, below.bottom + leading / 2))
     }
 
-    @Test("fillLeading paints a paragraph as one continuous block")
-    func fillLeadingClosesAParagraph() throws {
-        let rows = paragraph(lines: 4, from: 100)
-
-        let bars = try fillLeading(rows)
+    @Test("settleLineBoxes paints a paragraph as one continuous block")
+    func settleLineBoxesClosesAParagraph() throws {
+        let bars = try settleLineBoxes(paragraph(lines: 4, from: 100))
 
         for (upper, lower) in zip(bars, bars.dropFirst()) {
-            #expect(nearlyEqual(upper.bottom, lower.top), "a stripe of page between two lines")
+            #expect(nearlyEqual(upper.lineBottom, lower.lineTop), "a stripe of page between two lines")
         }
         for bar in bars {
-            #expect(nearlyEqual(bar.height, pitch))
+            #expect(nearlyEqual(bar.lineBottom - bar.lineTop, pitch))
         }
     }
 
-    @Test("fillLeading grows neither end of a range past its own line box")
-    func fillLeadingKeepsTheEndsInsideTheirLineBoxes() throws {
+    @Test("settleLineBoxes closes a paragraph whose lines land a hair apart or a hair over")
+    func settleLineBoxesAbsorbsSubPixelRounding() throws {
+        // Lines placed on the layout grid rather than at exact multiples of
+        // the pitch: one pair a fraction apart, the next a fraction over.
+        let rows = [
+            Row(top: 100, bottom: 122, lead: halfLeading),
+            Row(top: 129.2, bottom: 151.2, lead: halfLeading),
+            Row(top: 157.7, bottom: 179.7, lead: halfLeading),
+        ]
+
+        let bars = try settleLineBoxes(rows)
+
+        for (upper, lower) in zip(bars, bars.dropFirst()) {
+            #expect(nearlyEqual(upper.lineBottom, lower.lineTop))
+        }
+    }
+
+    @Test("settleLineBoxes keeps both ends of a range on their own line boxes")
+    func settleLineBoxesKeepsTheEndsOnTheirLineBoxes() throws {
         let rows = paragraph(lines: 3, from: 100)
 
-        let bars = try fillLeading(rows)
+        let bars = try settleLineBoxes(rows)
 
         let first = try #require(bars.first)
         let last = try #require(bars.last)
-        #expect(first.top >= rows[0].top - leading)
-        #expect(last.bottom <= rows[2].bottom + leading)
-        #expect(nearlyEqual(first.top, rows[0].top - leading / 2))
-        #expect(nearlyEqual(last.bottom, rows[2].bottom + leading / 2))
+        #expect(nearlyEqual(first.lineTop, rows[0].top - halfLeading))
+        #expect(nearlyEqual(last.lineBottom, rows[2].bottom + halfLeading))
     }
 
-    @Test("fillLeading never grows a row into its neighbour")
-    func fillLeadingStopsAtTheNeighbour() throws {
-        // A display line's generous leading sets the half-leading, and the
-        // gap below it is too wide to be the small lines' leading but narrower
-        // than that half-leading on each side.
-        let display = [Row(top: 0, bottom: 36), Row(top: 56, bottom: 92)]
-        let small = [Row(top: 108, bottom: 120), Row(top: 136, bottom: 148)]
+    @Test("settleLineBoxes leaves the margin between two paragraphs unpainted")
+    func settleLineBoxesLeavesAParagraphBreakOpen() throws {
+        // A 1em margin between the last line of one paragraph and the first of
+        // the next. Neither end may grow toward the unselected lines around it,
+        // at any line height.
+        let margin = 18.0
+        let last = Row(top: 100, bottom: 122, lead: halfLeading)
+        let first = Row(top: 122 + 2 * halfLeading + margin, bottom: 144 + 2 * halfLeading + margin,
+                        lead: halfLeading)
 
-        let bars = try fillLeading(display + small)
+        let bars = try settleLineBoxes([last, first])
 
-        for (upper, lower) in zip(bars, bars.dropFirst()) {
-            #expect(upper.bottom <= lower.top + 1e-6, "a bar grew into the next one")
-        }
+        #expect(bars == [last, first])
+        #expect(nearlyEqual(bars[1].lineTop - bars[0].lineBottom, margin))
     }
 
-    @Test("fillLeading treats each column of a spread on its own")
-    func fillLeadingKeepsColumnsApart() throws {
-        // A range across the spread's gutter: the right column's first line
-        // is level with the left's first, and has no line above it to meet.
+    @Test("settleLineBoxes paints nothing over an ornament shorter than a line")
+    func settleLineBoxesSkipsAShortOrnament() throws {
+        // A 16px dinkus between two lines, no margins: shorter than a line,
+        // and still page.
+        let above = Row(top: 100, bottom: 122, lead: halfLeading)
+        let below = Row(top: 122 + 2 * halfLeading + 16, bottom: 144 + 2 * halfLeading + 16,
+                        lead: halfLeading)
+
+        let bars = try settleLineBoxes([above, below])
+
+        #expect(bars == [above, below])
+    }
+
+    @Test("settleLineBoxes never grows a line into its neighbour")
+    func settleLineBoxesSharesOneEdge() throws {
+        // A line whose box reaches further down — a taller inline run on it —
+        // overlapping the next line's box. They meet at one edge between the
+        // two texts rather than painting a doubled band.
+        let upper = Row(top: 100, bottom: 122, lead: 8)
+        let lower = Row(top: 128.8, bottom: 150.8, lead: halfLeading)
+
+        let bars = try settleLineBoxes([upper, lower])
+
+        #expect(nearlyEqual(bars[0].lineBottom, bars[1].lineTop))
+        #expect(bars[0].lineBottom >= upper.bottom)
+        #expect(bars[1].lineTop <= lower.top)
+    }
+
+    @Test("settleLineBoxes treats each column of a spread on its own")
+    func settleLineBoxesKeepsColumnsApart() throws {
+        // A range across the spread's gutter: the right column's first line is
+        // level with the left's, and is no neighbour of it.
         let left = paragraph(lines: 3, from: 100, col: 0)
         let right = paragraph(lines: 1, from: 100, col: 1)
 
-        let bars = try fillLeading(left + right)
+        let bars = try settleLineBoxes(left + right)
 
-        let opening = try #require(bars.last)
-        #expect(opening.col == 1)
-        #expect(nearlyEqual(opening.top, 100 - leading / 2))
-        #expect(nearlyEqual(opening.bottom, 100 + fontBox + leading / 2))
+        #expect(bars.last == right[0])
     }
 
-    @Test("fillLeading leaves tightly set lines as measured")
-    func fillLeadingLeavesOverlappingLinesAlone() throws {
-        // A line height under the font box leaves no stripe to close.
-        let rows = [Row(top: 100, bottom: 122), Row(top: 121, bottom: 143)]
+    @Test("settleLineBoxes leaves tightly set lines as measured")
+    func settleLineBoxesLeavesOverlappingTextAlone() throws {
+        // A line height under the font box: no leading, and texts that overlap.
+        let rows = [
+            Row(top: 100, bottom: 122, lead: 0),
+            Row(top: 121, bottom: 143, lead: 0),
+        ]
 
-        let bars = try fillLeading(rows)
+        let bars = try settleLineBoxes(rows)
 
         #expect(bars == rows)
     }
