@@ -1178,23 +1178,30 @@
   // A block's text as one string, plus the map back to (text node, offset).
   // Token boundaries are then plain string arithmetic, and a word broken
   // across inline markup — `<em>hel</em>lo`, or a mid-word footnote anchor —
-  // is still one token rather than two.
+  // is still one token rather than two. A line the page breaks — a <br>, a
+  // nested block — adds a space no segment owns, so a token never runs across
+  // it and `flatPointAt` never lands inside it.
   function flatten(root, doc) {
-    var walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var walker = textWalker(doc, root);
     var probe = doc.createRange();
     var segs = [];
     var text = "";
+    var lastBlock = null;
     var node;
     while ((node = walker.nextNode())) {
+      if (node.nodeType !== 3) {
+        text += " ";
+        continue;
+      }
       if (!node.data || !node.data.length) continue;
       // Text the page never shows — a hidden page-number marker, a <style>
-      // left in the body — would otherwise weld onto the word beside it. The
-      // same test as `textLayout`'s, and undrawn whitespace stays for the
-      // same reason: it still parts the words either side of it.
-      if (/\S/.test(node.data)) {
-        probe.selectNodeContents(node);
-        if (!drawsAny(probe.getClientRects())) continue;
-      }
+      // left in the body — would otherwise weld onto the word beside it.
+      // Undrawn whitespace stays, as in `textLayout`: it still parts the
+      // words either side of it.
+      if (/\S/.test(node.data) && !nodeDraws(probe, node)) continue;
+      var block = blockRootOf(node);
+      if (lastBlock && block !== lastBlock) text += " ";
+      lastBlock = block;
       segs.push({ node: node, at: text.length, len: node.data.length });
       text += node.data;
     }
@@ -1208,9 +1215,10 @@
   // <div> (plenty are) is the whole chapter. Rebuilt per event, that is the
   // chapter's text concatenated sixty times a second.
   //
-  // Safe to hold across a drag because the index is purely textual: node
-  // identity and offsets, no geometry. Re-pagination doesn't touch it; only a
-  // new section does, which is what `rendered` below invalidates on.
+  // Safe to hold across a drag: the index is node identity and offsets, plus
+  // which nodes draw at all — and neither re-pagination nor a typography
+  // change hides or shows text. Only a new section does, which is what
+  // `rendered` below invalidates on.
   var flatCache = typeof Map === "function" ? new Map() : null;
 
   function flattenCached(root, doc) {
@@ -1233,10 +1241,14 @@
     return -1;
   }
 
-  function flatPointAt(flat, index) {
+  // Where two segments meet, a start belongs to the one after and an end to
+  // the one before: hidden text dropped from between them would otherwise
+  // land inside the range, and its CFI would anchor on the marker.
+  function flatPointAt(flat, index, isStart) {
     for (var i = 0; i < flat.segs.length; i++) {
       var seg = flat.segs[i];
-      if (index <= seg.at + seg.len) {
+      var segEnd = seg.at + seg.len;
+      if (isStart ? index < segEnd : index <= segEnd) {
         return { node: seg.node, offset: Math.max(0, index - seg.at) };
       }
     }
@@ -1277,8 +1289,8 @@
     while (end < text.length && !isSpace(text.charAt(end))) end++;
     if (start === end) return null;
 
-    var from = flatPointAt(flat, start);
-    var to = flatPointAt(flat, end);
+    var from = flatPointAt(flat, start, true);
+    var to = flatPointAt(flat, end, false);
     if (!from || !to) return null;
     try {
       var range = doc.createRange();
@@ -1416,14 +1428,29 @@
   function textLayout(range) {
     var rects = [];
     var text = "";
+    var lastBlock = null;
+    var broke = false;
     eachTextPiece(range, function (node, from, to, boxes) {
+      if (node.nodeType !== 3) {
+        broke = true;
+        return;
+      }
       var slice = node.data.slice(from, to);
       var before = rects.length;
       pushRects(rects, boxes);
-      if (rects.length > before) text += slice;
-      // Whitespace that lays out as nothing — the source's line break
-      // between two paragraphs — still parts the words either side of it.
-      else if (!/\S/.test(slice)) text += " ";
+      if (rects.length > before) {
+        // A <br> or a new block breaks the line whether or not the source
+        // has whitespace there — minified markup has none.
+        var block = blockRootOf(node);
+        if (broke || (lastBlock && block !== lastBlock)) text += " ";
+        lastBlock = block;
+        broke = false;
+        text += slice;
+      } else if (!/\S/.test(slice)) {
+        // Whitespace that lays out as nothing — the source's line break
+        // between two paragraphs — still parts the words either side of it.
+        text += " ";
+      }
     });
     // Collapsed: the source's own line breaks and indentation are invisible
     // on the page but come out as ragged breaks anywhere the passage is
@@ -1433,22 +1460,24 @@
 
   // Each text-node fragment a range covers, in document order:
   // `visit(node, from, to, boxes)` with the slice of the node inside the
-  // range and the client rects that slice lays out as.
+  // range and the client rects that slice paints — none for hidden text. A
+  // <br> the range crosses is visited too, with no slice and no boxes.
   function eachTextPiece(range, visit) {
     if (!range) return;
     var doc = range.startContainer.ownerDocument;
     if (!doc) return;
     var root = range.commonAncestorContainer;
     if (root.nodeType === 3) {
-      visit(root, range.startOffset, range.endOffset, range.getClientRects());
+      var boxes = visibleText(root) ? range.getClientRects() : NO_BOXES;
+      visit(root, range.startOffset, range.endOffset, boxes);
       return;
     }
-    var walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var walker = textWalker(doc, root);
     var node = range.startContainer;
     walker.currentNode = node;
-    // Only text nodes are walked, so an element start container (which the
-    // engine never produces, but a stored CFI could) advances to the first
-    // text under it.
+    // Only text nodes and <br>s are walked, so an element start container
+    // (which the engine never produces, but a stored CFI could) advances to
+    // the first one under it.
     if (node.nodeType !== 3) node = walker.nextNode();
     // Every text node between the two containers is inside the range, so the
     // walk stops *on* the end container rather than asking the range about
@@ -1457,11 +1486,19 @@
     var endIsText = range.endContainer.nodeType === 3;
     var piece = doc.createRange();
     while (node) {
-      var from = node === range.startContainer ? range.startOffset : 0;
-      var to = node === range.endContainer ? range.endOffset : node.data.length;
-      piece.setStart(node, from);
-      piece.setEnd(node, to);
-      visit(node, from, to, piece.getClientRects());
+      if (node.nodeType !== 3) {
+        visit(node, 0, 0, NO_BOXES);
+      } else {
+        var from = node === range.startContainer ? range.startOffset : 0;
+        var to = node === range.endContainer ? range.endOffset : node.data.length;
+        var shown = NO_BOXES;
+        if (visibleText(node)) {
+          piece.setStart(node, from);
+          piece.setEnd(node, to);
+          shown = piece.getClientRects();
+        }
+        visit(node, from, to, shown);
+      }
       if (endIsText && node === range.endContainer) break;
       node = walker.nextNode();
       // An element end container — which a stored CFI can produce — has no
@@ -1488,6 +1525,43 @@
     for (var i = 0; i < list.length; i++) {
       if (drawn(list[i])) out.push(list[i]);
     }
+  }
+
+  var NO_BOXES = [];
+
+  // Whether a text node's element lets it paint. `visibility: hidden` text
+  // still lays out boxes — the gap it leaves is real — so its rects alone
+  // would keep it; WebKit's own selection text, the web reader's, drops it.
+  function visibleText(node) {
+    var el = node.parentNode;
+    if (!el || el.nodeType !== 1) return true;
+    var view = el.ownerDocument.defaultView;
+    var style = view && view.getComputedStyle ? view.getComputedStyle(el) : null;
+    return !style || style.visibility === "visible";
+  }
+
+  // The whole-node form of the test `eachTextPiece` applies per fragment.
+  function nodeDraws(probe, node) {
+    if (!visibleText(node)) return false;
+    probe.selectNodeContents(node);
+    return drawsAny(probe.getClientRects());
+  }
+
+  // Text nodes and <br>s, in document order. A <br> is a line break the page
+  // shows with no character in the source to show it.
+  function textWalker(doc, root) {
+    return doc.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: function (n) {
+          return n.nodeType === 3 || n.localName === "br"
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_SKIP;
+        },
+      },
+      false
+    );
   }
 
   // The page in front of the reader, in host-window coordinates.
@@ -1605,7 +1679,19 @@
   // text rides along because it comes out of the same walk as the rows.
   function selectionGeometry(range, win) {
     var laid = textLayout(range);
-    var rows = lineRows(laid.rects, win);
+    var geo = rowsOnPage(laid.rects, win);
+    geo.text = laid.text;
+    return geo;
+  }
+
+  // Hit-testing a tap runs this for every highlight in the section, so it
+  // takes the rows alone rather than building text to throw away.
+  function lineRects(range, win) {
+    return rowsOnPage(textRects(range), win).rects;
+  }
+
+  function rowsOnPage(raw, win) {
+    var rows = lineRows(raw, win);
     var rects = [];
     for (var i = 0; i < rows.length; i++) {
       if (!columnOnPage(rows[i].col)) continue;
@@ -1617,12 +1703,7 @@
       rects: rects,
       startOnPage: rows.length > 0 && columnOnPage(rows[0].col),
       endOnPage: rows.length > 0 && columnOnPage(rows[rows.length - 1].col),
-      text: laid.text,
     };
-  }
-
-  function lineRects(range, win) {
-    return selectionGeometry(range, win).rects;
   }
 
   // Whether a drag target is on the page in front of the reader. A point in

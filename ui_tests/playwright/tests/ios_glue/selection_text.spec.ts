@@ -44,6 +44,10 @@ const CHAPTER = `
 <p id="road">Marlow went home by the long road.</p>
 <p id="shore">They walked the shore<span class="pagenum">[Pg 12]</span> until dark.</p>
 <p id="battle">The bat<span class="pagenum">[Pg 13]</span>tle was over by noon.</p>
+<p id="page">The next <span class="pagenum">[Pg 14]</span>page began mid-sentence.</p>
+<p id="veiled">A light <span style="visibility: hidden">148</span>burned on the point.</p>
+<p id="over">It was over.</p><p id="home">Marlow went home.</p>
+<p id="lines">The first line<br/>the second line</p>
 `;
 
 /** What `emitSelection` posts to `__omnibusOnSelection`. */
@@ -280,5 +284,56 @@ test.describe("iOS reader selection text", () => {
     await dragSelect(page, await wordPoint(page, "battle", "bat"));
 
     expect((await settled(page)).text).toBe("battle");
+  });
+
+  test("a long press on a word straight after a hidden marker starts the range at the word", async ({
+    page,
+  }) => {
+    await dragSelect(page, await wordPoint(page, "page", "page"));
+
+    const selection = await settled(page);
+    expect(selection.text).toBe("page");
+    expect(await rangeUnderCfi(page, selection.cfiRange!)).toBe("page");
+  });
+
+  test("text hidden by visibility is neither reported nor welded onto the word beside it", async ({
+    page,
+  }) => {
+    await dragSelect(page, await wordPoint(page, "veiled", "burned"));
+
+    const pressed = await settled(page);
+    expect(pressed.text).toBe("burned");
+    expect(await rangeUnderCfi(page, pressed.cfiRange!)).toBe("burned");
+
+    const from = await wordPoint(page, "veiled", "light");
+    const to = await wordPoint(page, "veiled", "point");
+    await dragSelect(page, from, to);
+
+    expect((await settled(page)).text).toBe("light burned on the point.");
+  });
+
+  test("a drag between paragraphs with no whitespace in the source reports a space where the line breaks", async ({
+    page,
+  }) => {
+    const from = await wordPoint(page, "over", "was");
+    const to = await wordPoint(page, "home", "went");
+
+    await dragSelect(page, from, to);
+
+    expect((await settled(page)).text).toBe("was over. Marlow went");
+  });
+
+  test("a line break parts the words either side of it", async ({ page }) => {
+    await dragSelect(page, await wordPoint(page, "lines", "line"));
+
+    const pressed = await settled(page);
+    expect(pressed.text).toBe("line");
+    expect(await rangeUnderCfi(page, pressed.cfiRange!)).toBe("line");
+
+    const from = await wordPoint(page, "lines", "first");
+    const to = await wordPoint(page, "lines", "second");
+    await dragSelect(page, from, to);
+
+    expect((await settled(page)).text).toBe("first line the second");
   });
 });
