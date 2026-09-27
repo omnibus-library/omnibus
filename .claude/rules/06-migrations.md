@@ -95,9 +95,10 @@ holds, not by which list is nearer**:
   keeps the newer (or the earlier wish, the lower shelf slot, the survivor's
   own link) and drops the other. **A dedupe deletes, so it is only reversible
   if the merge writes both sides down first** — `db/src/merge/curation/` is
-  that record for read status and ratings, and undo replays it. An entry
-  added without one has no undo: whichever row lost is gone, and the survivor
-  keeps a value that started on the other book.
+  that record for read status and ratings, and `db/src/merge/relocation.rs`
+  records every other entry's deleted rows generically; undo replays both.
+  A table excluded from that record (the content index, regenerated from
+  files) has no undo for its losing row.
 - **Counter → `fold_ledger_counters`.** A per-reader table keyed on a time
   bucket (`reading_progress_daily`, `reading_progress_slots`) counts ground
   covered, and a reader who covered ground in both editions in the same

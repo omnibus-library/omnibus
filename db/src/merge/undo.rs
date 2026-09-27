@@ -14,6 +14,9 @@ use crate::taxonomy::{
 };
 
 use super::curation::restore_curation;
+use super::links::{strip_added_links, supplied_links};
+use super::overrides::restore_overrides;
+use super::relocation::{deleted_rowids, restore_relocation};
 use super::snapshot::SourceSnapshot;
 use super::MergeError;
 
@@ -31,11 +34,14 @@ use super::MergeError;
 /// take back. Neither is something this undo can see past, so undoing several
 /// merges into one book is last-in-first-out wherever they overlap.
 ///
-/// Deliberate asymmetries: reading progress, sessions, annotations and journal
-/// entries stay on the target; links unioned into the target stay there;
-/// merged override values stay on the target. If a moved file row was deleted
-/// in the meantime (file removed from disk), the restored source comes back
-/// **fileless** — a legal state — rather than failing.
+/// Every row the merge moved — positions, sessions, annotations, journals,
+/// shelf slots — goes back to the source, and every row its dedupe deleted is
+/// reinserted where it was; rows written on the survivor since stay there. The
+/// links and override keys the merge added come off the target, and the
+/// source's own overrides come back. A merge logged before these were recorded
+/// leaves them where they are. If a moved file row was deleted in the meantime
+/// (file removed from disk), the restored source comes back **fileless** — a
+/// legal state — rather than failing.
 pub async fn undo_merge(pool: &SqlitePool, merge_log_id: i64) -> Result<String, MergeError> {
     let mut tx = pool.begin().await?;
 
@@ -76,14 +82,30 @@ pub async fn undo_merge(pool: &SqlitePool, merge_log_id: i64) -> Result<String, 
         &later.identifiers,
     )
     .await?;
+    strip_added_links(
+        &mut tx,
+        target_id,
+        &snap.links_added_to_target,
+        &later.links,
+    )
+    .await?;
     restore_attach_ledger(&mut tx, new_id, &source_uuid, &snap.merged_uuid_rows).await?;
 
-    // Per-reader curation keys on the durable uuid, not the row id, so the
+    // Per-reader state keys on the durable uuid, not the row id, so the
     // target's has to be read back rather than carried down from above.
     let target_uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
         .bind(target_id)
         .fetch_one(&mut *tx)
         .await?;
+    restore_relocation(
+        &mut tx,
+        &source_uuid,
+        &target_uuid,
+        &snap.relocation,
+        &later.deleted_rows,
+    )
+    .await?;
+    restore_overrides(&mut tx, &source_uuid, &target_uuid, &snap.overrides).await?;
     restore_curation(
         &mut tx,
         &source_uuid,
@@ -105,7 +127,7 @@ pub async fn undo_merge(pool: &SqlitePool, merge_log_id: i64) -> Result<String, 
 
     tx.commit().await?;
 
-    rebuild_target_fts_best_effort(pool, target_id).await?;
+    rebuild_fts_best_effort(pool, [target_uuid, source_uuid.clone()]).await;
 
     Ok(source_uuid)
 }
@@ -138,29 +160,13 @@ async fn restore_attach_ledger(
     Ok(())
 }
 
-/// Post-commit, best-effort rebuild of the merge target's FTS row. The
-/// target's row still carries the union (acceptable — links stayed), but a
-/// rebuild keeps any override-driven text current. A rebuild failure is
-/// logged and swallowed so it can't fail an already-committed undo.
-async fn rebuild_target_fts_best_effort(
-    pool: &SqlitePool,
-    target_id: i64,
-) -> Result<(), sqlx::Error> {
-    let target_uuid: Option<String> = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
-        .bind(target_id)
-        .fetch_optional(pool)
-        .await?;
-    if let Some(uuid) = target_uuid {
-        if let Err(e) = crate::metadata_overrides::rebuild_fts_for_books_batch(
-            pool,
-            std::slice::from_ref(&uuid),
-        )
-        .await
-        {
-            tracing::warn!(error = %e, uuid = %uuid, "undo_merge: target FTS rebuild failed");
-        }
+/// Post-commit, best-effort rebuild of both books' FTS rows from their
+/// override-aware metadata. A failure is logged and swallowed so it can't fail
+/// an already-committed undo.
+async fn rebuild_fts_best_effort(pool: &SqlitePool, uuids: [String; 2]) {
+    if let Err(e) = crate::metadata_overrides::rebuild_fts_for_books_batch(pool, &uuids).await {
+        tracing::warn!(error = %e, "undo_merge: FTS rebuild failed");
     }
-    Ok(())
 }
 
 /// Fold a `settings::SettingsError` from [`upsert_library`] into `MergeError`.
@@ -414,8 +420,8 @@ async fn restore_author_links(
 }
 
 /// Restore the source's link rows by **name** — taxonomy ids may have
-/// been garbage-collected between merge and undo. The unioned copies on
-/// the target are left in place.
+/// been garbage-collected between merge and undo. The copies the merge
+/// added to the target come off it in [`strip_added_links`].
 async fn restore_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -480,6 +486,11 @@ struct LaterMergeClaims {
     /// to the target: a tuple an earlier merge already put there is recorded
     /// as added by neither, yet the later-merged book still supplies it.
     identifiers: HashSet<(String, String)>,
+    /// `(link table, lowercased name)` its absorbed book carries — the same
+    /// reasoning as `identifiers`.
+    links: HashSet<(&'static str, String)>,
+    /// `(table, rowid)` of every row its dedupe deleted.
+    deleted_rows: HashSet<(String, i64)>,
 }
 
 /// Collect [`LaterMergeClaims`] from every un-undone `merge_log` row filed
@@ -502,6 +513,8 @@ async fn load_later_merge_claims(
         status_readers: HashSet::new(),
         rating_readers: HashSet::new(),
         identifiers: HashSet::new(),
+        links: HashSet::new(),
+        deleted_rows: HashSet::new(),
     };
     for json in &snapshots {
         let snap: SourceSnapshot = serde_json::from_str(json)?;
@@ -516,6 +529,14 @@ async fn load_later_merge_claims(
                 .iter()
                 .map(|(s, v)| (s.to_ascii_lowercase(), v.to_ascii_lowercase())),
         );
+        claims.links.extend(supplied_links(
+            &snap.authors,
+            &snap.series,
+            &snap.tags,
+            &snap.publishers,
+            &snap.languages,
+        ));
+        claims.deleted_rows.extend(deleted_rowids(&snap.relocation));
     }
     Ok(claims)
 }

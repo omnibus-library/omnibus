@@ -9,6 +9,7 @@ mod migration_0079;
 mod reader_state;
 mod relocation;
 mod rescan;
+mod round_trip;
 mod undo;
 
 async fn seed_user(pool: &sqlx::SqlitePool) -> i64 {

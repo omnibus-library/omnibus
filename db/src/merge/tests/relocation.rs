@@ -328,7 +328,7 @@ async fn merge_books_assigns_consecutive_ordinals_for_multi_file_move() {
 }
 
 #[tokio::test]
-async fn merge_books_merges_overrides_with_target_keys_winning() {
+async fn merge_books_keeps_target_overrides_and_fills_only_unscanned_keys() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool).await;
     let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
@@ -351,7 +351,9 @@ async fn merge_books_merges_overrides_with_target_keys_winning() {
         &source,
         &MetadataOverrides {
             title: Some("Drakula (Hungarian)".into()),
+            language: Some("hu".into()),
             description: Some("From the source".into()),
+            genres: Some(vec!["Gothic".into()]),
             ..Default::default()
         },
         false,
@@ -371,9 +373,12 @@ async fn merge_books_merges_overrides_with_target_keys_winning() {
             .await
             .unwrap();
     let merged: MetadataOverrides = serde_json::from_str(&json).unwrap();
-    // Target's key wins; source-only key fills in.
+    // The kept entry is never renamed, re-languaged or re-described; only a
+    // field nothing scans fills in.
     assert_eq!(merged.title.as_deref(), Some("Dracula (Annotated)"));
-    assert_eq!(merged.description.as_deref(), Some("From the source"));
+    assert_eq!(merged.language, None);
+    assert_eq!(merged.description, None);
+    assert_eq!(merged.genres, Some(vec!["Gothic".to_string()]));
     assert_eq!(
         count(&pool, "SELECT COUNT(*) FROM metadata_overrides").await,
         1

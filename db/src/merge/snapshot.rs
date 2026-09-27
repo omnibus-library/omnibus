@@ -5,6 +5,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use sqlx::Transaction;
 
 use super::curation::{capture_pre, CurationSnapshot};
+use super::links::LinksAdded;
+use super::overrides::OverridesRecord;
+use super::relocation::RelocationSnapshot;
 
 /// Deserialize `timestamp` from either the current INTEGER unix-seconds or the
 /// TEXT form persisted by pre-0038 snapshots. A numeric string parses to its
@@ -99,6 +102,17 @@ pub(super) struct SourceSnapshot {
     /// only record undo has of where each row started.
     #[serde(default)]
     pub curation: CurationSnapshot,
+    /// Link names the merge added to the target — undo takes exactly these
+    /// back off it. Empty on older snapshots, whose unions stay.
+    #[serde(default)]
+    pub links_added_to_target: LinksAdded,
+    /// The source's overrides row and the keys the merge filled on the target.
+    #[serde(default)]
+    pub overrides: OverridesRecord,
+    /// Which rows the retarget moved or deleted, for every relocated table
+    /// outside `curation`. Empty on older snapshots, whose rows stay put.
+    #[serde(default)]
+    pub relocation: RelocationSnapshot,
 }
 
 /// The flat `books` + `scan_roots` row that seeds a [`SourceSnapshot`].
@@ -196,10 +210,13 @@ pub(super) async fn build_snapshot(
         languages: links.languages,
         identifiers: links.identifiers,
         merged_uuid_rows: files.merged_uuid_rows,
-        // Both filled in by `merge_books` once the moves they describe have
+        // Filled in by `merge_books` once the moves they describe have
         // actually run; the snapshot is only serialized at the end.
         identifiers_added_to_target: Vec::new(),
         curation,
+        links_added_to_target: LinksAdded::default(),
+        overrides: OverridesRecord::default(),
+        relocation: RelocationSnapshot::default(),
     })
 }
 
