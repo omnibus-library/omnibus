@@ -66,7 +66,7 @@ pub(super) fn build_merge_ui(
         }
         if let Some(res) = merge_result() {
             div { class: "bd-merge-toast card", role: "status",
-                span { "Books merged." }
+                span { "Books merged. Undo is available until you leave this page." }
                 button {
                     class: "btn ghost sm",
                     "data-testid": "merge-undo",

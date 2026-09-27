@@ -2,20 +2,19 @@
 //! to the target, snapshot the source into `merge_log`, and delete the
 //! source row — all-or-nothing.
 
-use omnibus_shared::MetadataOverrides;
 use sqlx::{SqlitePool, Transaction};
 
 use crate::covers::{find_cover_file, write_cover_file};
 use crate::sync::delete_fts;
 
-use super::curation;
 use super::snapshot::{build_snapshot, SourceSnapshot};
+use super::{curation, links, overrides, relocation};
 use super::{MergeError, MergeOutcome};
 
 /// Merge the book identified by `source_uuid` into the one identified by
-/// `target_uuid`. The target's scanned metadata wins; the source's
-/// files, links, identifiers, progress, and history move over; the
-/// source row is deleted and snapshotted into `merge_log` for undo.
+/// `target_uuid`. The target's metadata — scanned and overridden — wins;
+/// the source's files, links, identifiers, progress, and history move over;
+/// the source row is deleted and snapshotted into `merge_log` for undo.
 ///
 /// Same-format files are allowed: if both books carry M4B files, the
 /// source's files are appended after the target's (ordinal offset).
@@ -36,13 +35,16 @@ pub async fn merge_books(
     migrate_book_files(&mut tx, source_id, target_id, &snapshot).await?;
     // A target left under the Physical pseudo-root is invisible to All Books/search.
     crate::physical::promote_filed_physical_book(&mut tx, target_id).await?;
-    move_links(&mut tx, source_id, target_id).await?;
+    snapshot.links_added_to_target = links::move_links(&mut tx, source_id, target_id).await?;
+    let relocated = relocation::capture_pre(&mut tx, source_uuid, target_uuid).await?;
     move_progress_and_history(&mut tx, source_id, target_id).await?;
-    // Both of these record what the preceding step *did*, so they run after
-    // it and before `finalize_merge` serializes the snapshot.
+    // These record what the preceding step *did*, so they run after it and
+    // before `finalize_merge` serializes the snapshot.
+    snapshot.relocation = relocation::capture_post(&mut tx, target_uuid, relocated).await?;
     curation::capture_post(&mut tx, target_uuid, &mut snapshot.curation).await?;
     snapshot.identifiers_added_to_target = move_identifiers(&mut tx, source_id, target_id).await?;
-    merge_overrides(&mut tx, source_uuid, target_uuid, merged_by).await?;
+    snapshot.overrides =
+        overrides::merge_overrides(&mut tx, source_uuid, target_uuid, merged_by).await?;
     let adopt_cover = adopt_cover_flag(&mut tx, source_id, target_id).await?;
 
     // FTS5 has no FK cascade; clear the source row explicitly via the
@@ -347,51 +349,6 @@ async fn move_book_files(
     Ok(())
 }
 
-/// Additive union of all five m2m link tables, then clear the source's
-/// rows (the cascade would do it, but being explicit keeps the
-/// transaction's effects readable).
-async fn move_links(
-    tx: &mut Transaction<'_, sqlx::Sqlite>,
-    source_id: i64,
-    target_id: i64,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT OR IGNORE INTO books_authors_link (book, author, position)
-         SELECT ?1, author, position FROM books_authors_link WHERE book = ?2",
-    )
-    .bind(target_id)
-    .bind(source_id)
-    .execute(&mut **tx)
-    .await?;
-    for (table, col) in [
-        ("books_series_link", "series"),
-        ("books_tags_link", "tag"),
-        ("books_publishers_link", "publisher"),
-        ("books_languages_link", "language"),
-    ] {
-        let sql = format!(
-            "INSERT OR IGNORE INTO {table} (book, {col})
-             SELECT ?1, {col} FROM {table} WHERE book = ?2"
-        );
-        sqlx::query(&sql)
-            .bind(target_id)
-            .bind(source_id)
-            .execute(&mut **tx)
-            .await?;
-    }
-    for table in [
-        "books_authors_link",
-        "books_series_link",
-        "books_tags_link",
-        "books_publishers_link",
-        "books_languages_link",
-    ] {
-        let sql = format!("DELETE FROM {table} WHERE book = ?");
-        sqlx::query(&sql).bind(source_id).execute(&mut **tx).await?;
-    }
-    Ok(())
-}
-
 /// Every table that soft-references `books.uuid` and must follow the book
 /// across a merge: the per-reader state (positions, sessions, annotations,
 /// journals, curation), the library-wide facts about the book (the shelves
@@ -437,7 +394,7 @@ pub(super) const RETARGET_TABLES: [&str; 18] = [
 pub(super) const MERGE_EXEMPT_TABLES: [(&str, &str); 4] = [
     (
         "metadata_overrides",
-        "shallow-merged onto the target by `merge_overrides` in the same transaction",
+        "settled by `overrides::merge_overrides` in the same transaction and parked in the snapshot for undo",
     ),
     (
         "book_suggestions",
@@ -478,10 +435,8 @@ pub(super) struct Collision {
 ///
 /// **A dedupe is destructive, so it is only reversible if the merge wrote both
 /// sides down first.** `book_read_status` and `user_ratings` are recorded in
-/// [`super::curation`] and restored by undo. Nothing else here is, and undo
-/// leaves it on the target — the same documented asymmetry as sessions and
-/// annotations, and the reason a new entry needs a deliberate answer rather
-/// than just a line in this list.
+/// [`super::curation`]; every other entry's deleted rows are recorded by
+/// [`super::relocation`], except the content index, which is regenerated.
 pub(super) const COLLISION_TABLES: [Collision; 9] = [
     Collision {
         table: "reading_progress",
@@ -605,7 +560,7 @@ async fn move_progress_and_history(
 /// `0083`'s frozen day buckets and `0095`'s quarter-hour slots, which replaced
 /// them so the day could be resolved at read time. Both generations are still
 /// read, so both have to survive a merge.
-const LEDGER_COUNTER_TABLES: [(&str, &str); 2] = [
+pub(super) const LEDGER_COUNTER_TABLES: [(&str, &str); 2] = [
     ("reading_progress_daily", "day"),
     ("reading_progress_slots", "slot"),
 ];
@@ -815,62 +770,6 @@ async fn move_identifiers(
     .execute(&mut **tx)
     .await?;
     Ok(added)
-}
-
-/// Shallow-merge the source's `metadata_overrides` into the target's
-/// (target keys win) and drop the source row. The target's
-/// `has_cover_override` flag is preserved; the source's uploaded
-/// override cover (if any) is not adopted — a documented simplification.
-async fn merge_overrides(
-    tx: &mut Transaction<'_, sqlx::Sqlite>,
-    source_uuid: &str,
-    target_uuid: &str,
-    merged_by: Option<i64>,
-) -> Result<(), MergeError> {
-    let source_row: Option<(String,)> =
-        sqlx::query_as("SELECT overrides FROM metadata_overrides WHERE book_uuid = ?")
-            .bind(source_uuid)
-            .fetch_optional(&mut **tx)
-            .await?;
-    let Some((source_json,)) = source_row else {
-        return Ok(());
-    };
-    let source_ov: MetadataOverrides = serde_json::from_str(&source_json)?;
-
-    let target_row: Option<(String, i64)> = sqlx::query_as(
-        "SELECT overrides, has_cover_override FROM metadata_overrides WHERE book_uuid = ?",
-    )
-    .bind(target_uuid)
-    .fetch_optional(&mut **tx)
-    .await?;
-    let (target_ov, target_flag) = match target_row {
-        Some((json, flag)) => (serde_json::from_str(&json)?, flag != 0),
-        None => (MetadataOverrides::default(), false),
-    };
-
-    // `merge` is incoming-wins, so incoming = target keeps target keys.
-    let merged = source_ov.merge(&target_ov);
-    sqlx::query(
-        "INSERT INTO metadata_overrides
-            (book_uuid, overrides, has_cover_override, updated_by, updated_at)
-         VALUES (?, ?, ?, ?, strftime('%s','now'))
-         ON CONFLICT(book_uuid) DO UPDATE SET
-           overrides = excluded.overrides,
-           has_cover_override = excluded.has_cover_override,
-           updated_by = excluded.updated_by,
-           updated_at = strftime('%s','now')",
-    )
-    .bind(target_uuid)
-    .bind(serde_json::to_string(&merged)?)
-    .bind(i64::from(target_flag))
-    .bind(merged_by)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query("DELETE FROM metadata_overrides WHERE book_uuid = ?")
-        .bind(source_uuid)
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
 }
 
 /// Cover precedence: target wins; adopt the source's scanned cover only

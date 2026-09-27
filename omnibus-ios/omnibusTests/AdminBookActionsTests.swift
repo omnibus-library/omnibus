@@ -196,7 +196,7 @@ struct AdminBookActionsTests {
     func confirmBody() {
         let body = MergeCopy.confirmBody(source: "Dune", target: "Dune (audio)")
         #expect(body.hasPrefix("\u{201c}Dune\u{201d} will be merged into \u{201c}Dune (audio)\u{201d}."))
-        #expect(body.hasSuffix("This can be undone."))
+        #expect(body.hasSuffix("You can undo it until you leave this page."))
     }
 
     // MARK: - Wire

@@ -196,12 +196,13 @@ async fn merge_books_moves_all_taxonomy_and_user_data_to_target() {
         .await
         .unwrap();
 
-    // Every taxonomy link now hangs off the target; none off the deleted source.
-    for (link, col) in [
-        ("books_series_link", "series"),
-        ("books_tags_link", "tag"),
-        ("books_publishers_link", "publisher"),
-        ("books_languages_link", "language"),
+    // Tags and publishers now hang off the target; the target keeps its own
+    // series, and the source's language is dropped rather than filed onto it.
+    for (link, col, expected) in [
+        ("books_series_link", "series", 1),
+        ("books_tags_link", "tag", 1),
+        ("books_publishers_link", "publisher", 1),
+        ("books_languages_link", "language", 0),
     ] {
         let on_target: i64 = sqlx::query_scalar(&format!(
             "SELECT COUNT(*) FROM {link} WHERE book = ? AND {col} IS NOT NULL"
@@ -210,10 +211,7 @@ async fn merge_books_moves_all_taxonomy_and_user_data_to_target() {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(
-            on_target, 1,
-            "{link} should have exactly one row on the target"
-        );
+        assert_eq!(on_target, expected, "{link} rows on the target");
     }
     // Source book row is gone, so no link can reference it.
     assert_eq!(count(&pool, "SELECT COUNT(*) FROM books").await, 1);
@@ -328,7 +326,7 @@ async fn merge_books_assigns_consecutive_ordinals_for_multi_file_move() {
 }
 
 #[tokio::test]
-async fn merge_books_merges_overrides_with_target_keys_winning() {
+async fn merge_books_keeps_target_overrides_and_fills_only_unscanned_keys() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool).await;
     let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
@@ -351,7 +349,9 @@ async fn merge_books_merges_overrides_with_target_keys_winning() {
         &source,
         &MetadataOverrides {
             title: Some("Drakula (Hungarian)".into()),
+            language: Some("hu".into()),
             description: Some("From the source".into()),
+            genres: Some(vec!["Gothic".into()]),
             ..Default::default()
         },
         false,
@@ -371,9 +371,12 @@ async fn merge_books_merges_overrides_with_target_keys_winning() {
             .await
             .unwrap();
     let merged: MetadataOverrides = serde_json::from_str(&json).unwrap();
-    // Target's key wins; source-only key fills in.
+    // The kept entry is never renamed, re-languaged or re-described; only a
+    // field nothing scans fills in.
     assert_eq!(merged.title.as_deref(), Some("Dracula (Annotated)"));
-    assert_eq!(merged.description.as_deref(), Some("From the source"));
+    assert_eq!(merged.language, None);
+    assert_eq!(merged.description, None);
+    assert_eq!(merged.genres, Some(vec!["Gothic".to_string()]));
     assert_eq!(
         count(&pool, "SELECT COUNT(*) FROM metadata_overrides").await,
         1

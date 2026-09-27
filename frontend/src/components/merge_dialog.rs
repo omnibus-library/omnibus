@@ -71,7 +71,7 @@ pub fn MergeDialog(
             {render_merge_body(target.clone(), target_title.clone(), signals, run_search, do_merge)}
             div { class: "mg-foot",
                 span { class: "mono mg-foot-note",
-                    "Nothing is deleted \u{2014} every merge can be undone."
+                    "Nothing is deleted \u{2014} undo is offered once, right after the merge."
                 }
                 button {
                     class: "btn ghost sm",
@@ -403,7 +403,7 @@ fn render_confirm(
                 strong { "\u{201c}{source_title}\u{201d}" }
                 " will be merged into "
                 strong { "\u{201c}{target_title}\u{201d}" }
-                ". Its files, tags, and reading progress move here; the other entry disappears. This can be undone."
+                ". Its files, tags, and reading progress move here; the other entry disappears. You can undo it until you leave this page."
             }
             div { class: "mg-confirm-actions",
                 button {

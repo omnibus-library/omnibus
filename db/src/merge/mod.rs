@@ -3,11 +3,14 @@
 //! indexed as two format-siblings becomes one book with multiple
 //! `book_files`. `merge_books` runs in one transaction and snapshots
 //! into `merge_log` for [`undo_merge`] — the source book, and for the
-//! per-reader state whose collision the merge resolves destructively,
-//! *both* books (see `curation`).
+//! rows whose collision the merge resolves destructively, *both* books
+//! (see `curation` and `relocation`).
 
 mod candidates;
 mod curation;
+mod links;
+mod overrides;
+mod relocation;
 mod snapshot;
 mod transaction;
 mod undo;
