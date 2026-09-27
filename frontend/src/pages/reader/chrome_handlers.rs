@@ -96,12 +96,16 @@ fn advance_page(_: Signal<Option<SelectionData>>, _: Direction) {}
 
 /// Recover from a load failure or a wedged page turn: flip the overlay back
 /// to `Loading` immediately (rather than waiting on the glue round trip) and
-/// ask it to replay the last `init()` verbatim — the
+/// re-run the web bootstrap — reloading any script that failed, then the
+/// original `init()` — or, on mobile, the glue's own replay of it. The
 /// error overlay's "Retry" affordance.
 #[cfg(any(feature = "web", feature = "mobile"))]
 fn retry_reader(mut status: Signal<ReaderStatus>) {
     status.set(ReaderStatus::Loading);
-    super::reader_call("retry", "");
+    let _ = dioxus::document::eval(
+        "if (window.__omnibusReaderBoot) window.__omnibusReaderBoot(true); \
+         else if (window.OmnibusReader) window.OmnibusReader.retry();",
+    );
 }
 
 /// SSR stub: no glue to retry against.

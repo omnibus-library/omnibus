@@ -87,6 +87,13 @@ pub(crate) fn install_reader_web_interop(uuid: String, prefs: ReaderPrefs, sigs:
             *cb_holder.borrow_mut() =
                 register_window_callbacks(&window, uuid_cb.clone(), sigs, hold_first_write.clone());
         }
+        // Start the runtime download now, alongside the progress fetch the
+        // bootstrap waits on, rather than after it.
+        let _ = dioxus::document::eval(&super::bootstrap::reader_runtime_load_js(
+            &json_literal(&super::JSZIP_JS.to_string()),
+            &json_literal(&super::EPUBJS_JS.to_string()),
+            &json_literal(&super::READER_GLUE_JS.to_string()),
+        ));
 
         let bootstrap = BootstrapLiterals {
             url_lit,

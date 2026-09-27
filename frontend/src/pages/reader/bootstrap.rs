@@ -1,7 +1,7 @@
-//! Reader bootstrap: builds the IIFE that polls for `window.OmnibusReader`
-//! and `window.ePub`, then calls `OmnibusReader.init(...)` with the chosen
-//! CFI and typography. Extracted from `BookReadPage` so the parent reads as
-//! plain Rust glue rather than JS template literals.
+//! Reader bootstrap: the two JS builders that mount the web reader — one
+//! loads the vendored runtime in order at mount, the other calls
+//! `OmnibusReader.init(...)` with the chosen CFI and typography once the
+//! progress fetch has decided where the book opens.
 
 /// Inputs to [`reader_bootstrap_js`]; all string values are JSON-quoted
 /// literals already (e.g. `"\"dark\""`, `"null"`), not raw values, so
@@ -23,9 +23,47 @@ pub(crate) struct BootstrapArgs<'a> {
     pub locations_key_lit: &'a str,
 }
 
-/// Build the JS IIFE that mounts the reader once the vendored scripts are
-/// ready. Polls up to 200 x 50 ms (~10 s) before signalling `error` via
-/// `window.__omnibusOnStatus`.
+/// Build the JS that loads JSZip → epub.js → glue **in order**, each only
+/// after the last has loaded, as `window.__omnibusReaderLoad()`, and starts
+/// it. Not `document::Script`: on a client-side navigation those tags run in
+/// download order, and an epub.js that runs before JSZip binds
+/// `window.JSZip` as undefined for the page's life. Serial rather than
+/// parallel so a failed JSZip can never let epub.js run at all. Once the glue
+/// exists it drains `window.__omnibusReaderQueue` — the glue calls made before
+/// it loaded (see `reader_call`) — so they reach it ahead of `init`, as they
+/// did when SSR put the scripts in `<head>`. Each script times out at 10 s.
+#[cfg_attr(not(feature = "web"), allow(dead_code))]
+pub(crate) fn reader_runtime_load_js(jszip_lit: &str, epub_lit: &str, glue_lit: &str) -> String {
+    format!(
+        r#"(function(){{
+  function load(src){{return new Promise(function(res,rej){{
+    var s=document.createElement("script");s.src=src;
+    var t=setTimeout(function(){{s.remove();rej();}},10000);
+    s.onload=function(){{clearTimeout(t);res();}};
+    s.onerror=function(){{clearTimeout(t);s.remove();rej();}};
+    document.head.appendChild(s);
+  }});}}
+  function ensure(has,src){{return has()?Promise.resolve():load(src);}}
+  window.__omnibusReaderQueue=[];
+  window.__omnibusReaderLoad=function(){{
+    window.__omnibusReaderLoaded=ensure(function(){{return !!window.JSZip;}},{jszip_lit})
+      .then(function(){{return ensure(function(){{return !!window.ePub;}},{epub_lit});}})
+      .then(function(){{return ensure(function(){{return !!window.OmnibusReader;}},{glue_lit});}})
+      .then(function(){{
+        var q=window.__omnibusReaderQueue;window.__omnibusReaderQueue=[];
+        for(var i=0;i<q.length;i++){{try{{q[i]();}}catch(e){{}}}}
+      }});
+    return window.__omnibusReaderLoaded;
+  }};
+  window.__omnibusReaderLoad().catch(function(){{}});
+}})();"#
+    )
+}
+
+/// Build the JS that calls `OmnibusReader.init` once the runtime load started
+/// by [`reader_runtime_load_js`] resolves, signalling `error` via
+/// `window.__omnibusOnStatus` if it fails. Kept as `window.__omnibusReaderBoot`
+/// so Retry re-runs it with `true`: reload whatever failed, then re-init.
 #[cfg_attr(not(feature = "web"), allow(dead_code))]
 pub(crate) fn reader_bootstrap_js(args: &BootstrapArgs<'_>) -> String {
     let BootstrapArgs {
@@ -42,7 +80,16 @@ pub(crate) fn reader_bootstrap_js(args: &BootstrapArgs<'_>) -> String {
         locations_key_lit,
     } = *args;
     format!(
-        r#"(function(){{ var n=0; (function go(){{ if (window.OmnibusReader && window.ePub) {{ window.OmnibusReader.init("omnibus-viewer", {url_lit}, {{ cfi: {cfi_arg}, fontSize: {font_size}, theme: {theme_lit}, fontFamily: {font_family_lit}, fontsHref: {fonts_href_lit}, lineHeight: {line_height_lit}, maxWidth: {max_width_lit}, justify: {justify_val}, spread: {spread_lit}, locationsKey: {locations_key_lit} }}); }} else if (n++ < 200) {{ setTimeout(go, 50); }} else if (typeof window.__omnibusOnStatus === "function") {{ window.__omnibusOnStatus("error"); }} }})(); }})();"#
+        r#"(function(){{
+  window.__omnibusReaderBoot=function(reload){{
+    (reload ? window.__omnibusReaderLoad() : window.__omnibusReaderLoaded).then(function(){{
+      window.OmnibusReader.init("omnibus-viewer", {url_lit}, {{ cfi: {cfi_arg}, fontSize: {font_size}, theme: {theme_lit}, fontFamily: {font_family_lit}, fontsHref: {fonts_href_lit}, lineHeight: {line_height_lit}, maxWidth: {max_width_lit}, justify: {justify_val}, spread: {spread_lit}, locationsKey: {locations_key_lit} }});
+    }}).catch(function(){{
+      if (typeof window.__omnibusOnStatus === "function") window.__omnibusOnStatus("error");
+    }});
+  }};
+  window.__omnibusReaderBoot(false);
+}})();"#
     )
 }
 
@@ -51,34 +98,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reader_bootstrap_js_contains_init_call_and_polls_for_globals() {
-        let js = reader_bootstrap_js(&BootstrapArgs {
-            url_lit: "\"/api/ebooks/x/file\"",
-            cfi_arg: "null",
-            font_size: 18,
-            theme_lit: "\"dark\"",
-            font_family_lit: "null",
-            fonts_href_lit: "\"/assets/reader-fonts/reader-fonts.css\"",
-            line_height_lit: "null",
-            max_width_lit: "null",
-            justify_val: false,
-            spread_lit: "\"auto\"",
-            locations_key_lit: "\"x\"",
-        });
-        assert!(js.contains("window.OmnibusReader.init"));
-        assert!(js.contains("window.ePub"));
-        assert!(js.contains("fontSize: 18"));
-        assert!(js.contains("theme: \"dark\""));
-        assert!(js.contains("justify: false"));
-        assert!(js.contains("spread: \"auto\""));
-        assert!(js.contains("locationsKey: \"x\""));
-        assert!(js.contains("__omnibusOnStatus"));
+    fn reader_runtime_load_js_loads_jszip_then_epub_then_glue_then_drains_the_queue() {
+        let js = reader_runtime_load_js("\"/a/jszip.js\"", "\"/a/epub.js\"", "\"/a/glue.js\"");
+        let jszip = js.find("/a/jszip.js").unwrap();
+        let epub = js.find("/a/epub.js").unwrap();
+        let glue = js.find("/a/glue.js").unwrap();
+        let drain = js.find("var q=window.__omnibusReaderQueue").unwrap();
+        assert!(jszip < epub && epub < glue && glue < drain);
+        assert!(js.contains("window.__omnibusReaderLoad=function"));
     }
 
     #[test]
-    fn reader_bootstrap_js_threads_typography_literals_through() {
+    fn reader_bootstrap_js_inits_after_the_load_and_reports_a_failed_one() {
         let js = reader_bootstrap_js(&BootstrapArgs {
-            url_lit: "\"u\"",
+            url_lit: "\"/api/ebooks/x/file\"",
             cfi_arg: "\"epubcfi(/6/2)\"",
             font_size: 22,
             theme_lit: "\"sepia\"",
@@ -90,12 +123,24 @@ mod tests {
             spread_lit: "\"none\"",
             locations_key_lit: "\"book-uuid\"",
         });
-        assert!(js.contains("spread: \"none\""));
-        assert!(js.contains("cfi: \"epubcfi(/6/2)\""));
-        assert!(js.contains("fontFamily: \"Georgia, serif\""));
-        assert!(js.contains("fontsHref: \"/assets/reader-fonts/reader-fonts.css\""));
-        assert!(js.contains("lineHeight: \"1.5\""));
-        assert!(js.contains("maxWidth: \"42rem\""));
-        assert!(js.contains("justify: true"));
+        let loaded = js.find("window.__omnibusReaderLoaded").unwrap();
+        let init = js.find("window.OmnibusReader.init").unwrap();
+        assert!(loaded < init);
+        assert!(js.contains("__omnibusOnStatus(\"error\")"));
+        assert!(js.contains("window.__omnibusReaderBoot=function"));
+        for lit in [
+            "cfi: \"epubcfi(/6/2)\"",
+            "fontSize: 22",
+            "theme: \"sepia\"",
+            "fontFamily: \"Georgia, serif\"",
+            "fontsHref: \"/assets/reader-fonts/reader-fonts.css\"",
+            "lineHeight: \"1.5\"",
+            "maxWidth: \"42rem\"",
+            "justify: true",
+            "spread: \"none\"",
+            "locationsKey: \"book-uuid\"",
+        ] {
+            assert!(js.contains(lit), "missing {lit}");
+        }
     }
 }
