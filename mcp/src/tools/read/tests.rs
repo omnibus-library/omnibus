@@ -13,9 +13,9 @@ use axum::{Json as AxumJson, Router};
 use rmcp::handler::server::wrapper::Parameters;
 
 use omnibus_shared::{
-    BookProgress, Bookmark, Contributor, EbookMetadata, Highlight, HighlightColor, PhysicalCopy,
-    ProgressFormat, ProgressRecord, ReadStatus, ReadStatusRecord, ResumePoint, SessionFormat,
-    SessionLogEntry, SessionLogPage,
+    BookProgress, Bookmark, Contributor, EbookMetadata, Highlight, HighlightColor, HouseholdReader,
+    PhysicalCopy, ProgressFormat, ProgressRecord, ReadStatus, ReadStatusRecord, ResumePoint,
+    SessionFormat, SessionLogEntry, SessionLogPage,
 };
 
 use super::views::iso;
@@ -202,6 +202,23 @@ async fn sessions(
     })
 }
 
+async fn household_readers() -> AxumJson<Vec<HouseholdReader>> {
+    AxumJson(vec![
+        HouseholdReader {
+            id: 1,
+            name: "Reader One".into(),
+            has_avatar: false,
+            is_you: true,
+        },
+        HouseholdReader {
+            id: 2,
+            name: "Reader Two".into(),
+            has_avatar: false,
+            is_you: false,
+        },
+    ])
+}
+
 async fn copies(Path(_): Path<String>) -> AxumJson<Vec<PhysicalCopy>> {
     AxumJson(vec![PhysicalCopy {
         id: 33,
@@ -225,7 +242,8 @@ async fn stub_service() -> OmnibusMcp {
         .route("/api/highlights/book/{uuid}", get(highlights))
         .route("/api/bookmarks/book/{uuid}", get(bookmarks))
         .route("/api/stats/sessions", get(sessions))
-        .route("/api/physical/{uuid}/copies", get(copies));
+        .route("/api/physical/{uuid}/copies", get(copies))
+        .route("/api/users", get(household_readers));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -550,6 +568,20 @@ async fn get_book_reports_not_found_for_an_unknown_uuid() {
             .await,
     );
     assert!(err.message.contains("not found"));
+}
+
+// MARK: - Household readers
+
+#[tokio::test]
+async fn list_household_readers_returns_the_signed_in_reader_first_then_each_sharing_reader() {
+    let service = stub_service().await;
+    let readers = service.list_household_readers().await.unwrap().0.readers;
+    assert_eq!(readers.len(), 2);
+    assert_eq!(readers[0].id, 1);
+    assert!(readers[0].is_you);
+    assert_eq!(readers[1].id, 2);
+    assert_eq!(readers[1].name, "Reader Two");
+    assert!(!readers[1].is_you);
 }
 
 // MARK: - Vocabulary

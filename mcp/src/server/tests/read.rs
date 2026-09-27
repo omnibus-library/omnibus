@@ -32,6 +32,7 @@ const EXPECTED_TOOLS: &[&str] = &[
     "list_shelves",
     "get_shelf",
     "shelves_containing_book",
+    "list_household_readers",
     "reading_stats",
     "reading_sessions",
     "recent_progress",

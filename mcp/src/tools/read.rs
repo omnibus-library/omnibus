@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use omnibus_shared::{
     AuthorDetail, AuthorSummary, BookProgress, Bookmark, EbookLibrary, EbookMetadata, GenreWeight,
-    Highlight, JournalEntry, LibraryContents, PhysicalCopy, ProgressFormat, ReadStatusRecord,
-    ResumePoint, SeriesDetail, SeriesSummary, SessionLogPage, Shelf, ShelfSummary, SortDir,
-    SortKey, StatsRange, StatsSummary, TagWeight,
+    Highlight, HouseholdReader, JournalEntry, LibraryContents, PhysicalCopy, ProgressFormat,
+    ReadStatusRecord, ResumePoint, SeriesDetail, SeriesSummary, SessionLogPage, Shelf,
+    ShelfSummary, SortDir, SortKey, StatsRange, StatsSummary, TagWeight,
 };
 
 use crate::server::OmnibusMcp;
@@ -214,6 +214,12 @@ pub struct GenreList {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ShelfList {
     pub shelves: Vec<ShelfSummary>,
+}
+
+/// `list_household_readers`' answer: the signed-in reader first, then each reader who shares.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct HouseholdReaderList {
+    pub readers: Vec<HouseholdReader>,
 }
 
 /// `shelves_containing_book`'s answer.
@@ -476,6 +482,14 @@ impl OmnibusMcp {
         let path = format!("/api/shelves/containing/{}", p.uuid);
         let shelf_ids = self.client.get_json(&path, &[]).await?;
         Ok(Json(ContainingShelves { shelf_ids }))
+    }
+
+    #[tool(
+        description = "The household's readers whose reading stats you can read: the signed-in reader first (is_you: true), then every other reader who shares their stats, ordered by name. Pass a reader's id as user_id to reading_stats or reading_sessions to read theirs; readers who don't share are not listed."
+    )]
+    pub async fn list_household_readers(&self) -> Result<Json<HouseholdReaderList>, ErrorData> {
+        let readers = self.client.get_json("/api/users", &[]).await?;
+        Ok(Json(HouseholdReaderList { readers }))
     }
 
     #[tool(
