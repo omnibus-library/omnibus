@@ -67,6 +67,8 @@ pub(super) struct LandingSignals {
     pub(super) selected_shelf: Signal<Option<Shelf>>,
     /// True while the edit-shelf modal is open.
     pub(super) edit_shelf: Signal<bool>,
+    /// True while the add-books picker is open.
+    pub(super) show_add_books: Signal<bool>,
     /// Continue-reading hero feed: `None` until the fetch returns (SSR and
     /// the first paint agree on it), then the points, empty on failure.
     pub(super) hero_points: Signal<Option<Vec<ResumePoint>>>,
@@ -130,6 +132,7 @@ pub(super) fn setup_landing_signals(server_url: &str, query: Signal<String>) -> 
         shelf_error: shelf_wiring.shelf_sigs.shelf_error,
         selected_shelf: shelf_wiring.selected_shelf,
         edit_shelf: misc.edit_shelf,
+        show_add_books: misc.show_add_books,
         hero_points: shelf_wiring.hero_points,
         bulk_selected: misc.bulk_selected,
         bulk_modal_open: misc.bulk_modal_open,
@@ -197,7 +200,8 @@ fn use_shelf_wiring() -> ShelfWiring {
 }
 
 /// The landing signals that don't belong to a fetch/shelf bundle: view
-/// prefs, the load-more trigger, and the bulk-edit / edit-shelf UI state.
+/// prefs, the load-more trigger, and the bulk-edit / edit-shelf / add-books
+/// UI state.
 struct MiscSignals {
     prefs: Signal<ViewPrefs>,
     /// Bumped by the Load-more button and the web scroll observer; one
@@ -205,6 +209,8 @@ struct MiscSignals {
     want_more: Signal<u32>,
     /// True while the edit-shelf modal is open.
     edit_shelf: Signal<bool>,
+    /// True while the add-books picker is open.
+    show_add_books: Signal<bool>,
     /// Table-view bulk-edit selection: the checked rows' uuids.
     bulk_selected: Signal<BTreeSet<String>>,
     /// True while the bulk-edit modal is open.
@@ -216,6 +222,7 @@ fn use_misc_signals() -> MiscSignals {
         prefs: use_signal(ViewPrefs::default),
         want_more: use_signal(|| 0u32),
         edit_shelf: use_signal(|| false),
+        show_add_books: use_signal(|| false),
         bulk_selected: use_signal(BTreeSet::<String>::new),
         bulk_modal_open: use_signal(|| false),
     }

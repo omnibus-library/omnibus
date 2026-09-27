@@ -1,7 +1,8 @@
 //! The "Add books" modal: search the library, pick books, and append them to
 //! a hand-picked shelf. It names the shelf it is adding to, marks the books
 //! already on it, says how many it will add, and on a failure keeps everything
-//! and says why. Shared by the web and mobile shelf-detail surfaces.
+//! and says why. Shared by the shelf-detail surfaces (web and mobile) and the
+//! landing page's shelf lens.
 
 use dioxus::prelude::*;
 
@@ -11,7 +12,7 @@ use crate::{data, use_server_url};
 /// Modal that appends library books to an existing manual shelf. `members`
 /// are the uuids the shelf already holds; `shelf_name` titles the dialog.
 #[component]
-pub(super) fn AddBooksModal(
+pub fn AddBooksModal(
     shelf_id: i64,
     shelf_name: String,
     members: Vec<String>,

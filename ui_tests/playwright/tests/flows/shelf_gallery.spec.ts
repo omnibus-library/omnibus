@@ -1,4 +1,4 @@
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
@@ -6,6 +6,7 @@ import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
+import { bookTile } from "../utils/shelves";
 
 // The gallery filters the landing book list in place, so it needs the real
 // fixture library plus a manual shelf holding one distinct book. Alpha is
@@ -175,6 +176,102 @@ test("an empty shelf says it is empty, not that a search found nothing", async (
   await expect(page.getByTestId("lib-page-error")).toHaveCount(0);
 });
 
+/** Pick `shelfId` in the gallery and wait for its members to land. */
+const selectShelf = async (page: Page, shelfId: number) =>
+  expectMutation(
+    page,
+    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
+    async () => page.getByTestId(`gallery-shelf-${shelfId}`).click(),
+  );
+
+test("adds books to a hand-picked shelf from the landing header", async ({
+  page,
+  request,
+}) => {
+  // Alpha is only read here: it joins a shelf this test made.
+  const alpha = await fetchBookUuidByTitle(request, "Alpha");
+  const name = `E2E Gallery Add ${Date.now()}`;
+  const shelfId = await createManualShelf(request, name, []);
+
+  await gotoReady(page, "/");
+  await selectShelf(page, shelfId);
+  await expect(page.getByTestId("lib-empty")).toBeVisible();
+
+  // Aria-disabled until the members are known, which the click waits out.
+  await page.getByTestId("shelf-add-books").click();
+  const modal = page.getByTestId("add-books-modal");
+  await expect(modal.getByRole("heading", { level: 2, name })).toBeVisible();
+  await modal.getByTestId("add-books-search").fill("Alpha");
+  await modal.getByTestId(`picker-tile-${alpha}`).click();
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/shelves/add-books",
+      expectedBody: { id: shelfId, book_uuids: [alpha] },
+      expectedStatus: 200,
+    },
+    async () => modal.getByTestId("add-books-submit").click(),
+  );
+
+  await expect(modal).toHaveCount(0);
+  await expect(bookTile(page, "Alpha")).toBeVisible();
+  await expect(page.getByTestId("lib-section-title")).toContainText(
+    /\b1 book\b/,
+  );
+});
+
+test("a hand-picked shelf's grid ends in an Add books tile", async ({
+  page,
+  request,
+}) => {
+  // Both books are only read: they join a shelf this test made.
+  const alpha = await fetchBookUuidByTitle(request, "Alpha");
+  const beta = await fetchBookUuidByTitle(request, "Beta in the Series");
+  const name = `E2E Gallery Add Tile ${Date.now()}`;
+  const shelfId = await createManualShelf(request, name, [beta]);
+
+  await gotoReady(page, "/");
+  await selectShelf(page, shelfId);
+
+  const grid = page.getByTestId("lib-grid");
+  const tile = grid.getByTestId("shelf-add-tile");
+  // The tile closes the shelf, after its last book.
+  await expect(grid.locator(":scope > *").last()).toHaveAttribute(
+    "data-testid",
+    "shelf-add-tile",
+  );
+  await tile.click();
+
+  // The same picker, already knowing what the shelf holds.
+  const modal = page.getByTestId("add-books-modal");
+  await expect(modal.getByRole("heading", { level: 2, name })).toBeVisible();
+  await modal.getByTestId("add-books-search").fill("Beta");
+  await expect(modal.getByTestId(`picker-tile-${beta}`)).toContainText(
+    "On this shelf",
+  );
+  await modal.getByTestId("add-books-search").fill("Alpha");
+  await modal.getByTestId(`picker-tile-${alpha}`).click();
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/shelves/add-books",
+      expectedBody: { id: shelfId, book_uuids: [alpha] },
+      expectedStatus: 200,
+    },
+    async () => modal.getByTestId("add-books-submit").click(),
+  );
+
+  await expect(modal).toHaveCount(0);
+  await expect(bookTile(page, "Alpha")).toBeVisible();
+  await expect(bookTile(page, "Beta in the Series")).toBeVisible();
+  await expect(grid.locator(":scope > *").last()).toHaveAttribute(
+    "data-testid",
+    "shelf-add-tile",
+  );
+});
+
 test("edits the selected shelf from the landing header pencil", async ({
   page,
   request,
@@ -244,6 +341,8 @@ test("edits the selected shelf from the landing header pencil", async ({
   await expect(modal).not.toBeVisible();
   await expect(page.getByTestId("lib-section-title")).toContainText(renamed);
   await expect(facets).toContainText("Public");
+  // A smart shelf's members come from its rules, so nothing offers to add.
+  await expect(page.getByTestId("shelf-add-books")).toHaveCount(0);
 });
 
 /**

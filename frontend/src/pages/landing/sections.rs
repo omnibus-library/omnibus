@@ -4,7 +4,7 @@
 //! `prefs` signal and the data pipeline.
 
 use dioxus::prelude::*;
-use omnibus_shared::{EbookMetadata, SeriesStack, Shelf, SortKey, ViewMode, ViewPrefs};
+use omnibus_shared::{EbookMetadata, SeriesStack, Shelf, ShelfKind, SortKey, ViewMode, ViewPrefs};
 
 use super::filters::EmptyFiltered;
 use super::grid::BookGrid;
@@ -14,8 +14,9 @@ use super::table::{BookTable, BookTableContext};
 use super::toolbar::Toolbar;
 use crate::components::loading::{CoverSkeletons, RowSkeletons};
 use crate::components::shelf_facets::pencil_glyph;
+use crate::components::shelf_glyphs::plus_icon;
 use crate::components::{BusyLabel, ShelfFacets};
-use crate::shelf_access::ShelfAccess;
+use crate::shelf_selection::ShelfSelection;
 
 /// Header banner fields sourced from the page's derived view state.
 #[derive(Clone, PartialEq)]
@@ -33,8 +34,11 @@ pub(super) struct LandingHeaderView {
     /// The gallery pick this header titles: "All Books" or the shelf's name.
     pub section_title: String,
     /// Full detail for the gallery pick (`None` on All Books / while it
-    /// loads) — drives the edit pencil and the facet row.
+    /// loads) — drives the facet row.
     pub selected_shelf: Option<Shelf>,
+    /// The viewer may change the selected shelf — shows the edit pencil.
+    pub can_edit: bool,
+    pub add_books: AddBooks,
     /// Why the sort controls are inert for this pick — see
     /// [`super::sorting::sort_lock_reason`]. `None` leaves them live.
     pub sort_lock: Option<&'static str>,
@@ -42,16 +46,48 @@ pub(super) struct LandingHeaderView {
     pub stack: StackToggleView,
 }
 
+/// The shelf lens's Add books control: absent unless the pick is a
+/// hand-picked shelf the viewer may change, and inert until its members are
+/// known — the picker marks the books already on the shelf from them.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum AddBooks {
+    Hidden,
+    Waiting,
+    Ready,
+}
+
+/// Resolve [`AddBooks`] for this render. `shelf` trails a new pick until its
+/// fetch lands, so a detail that isn't the selected shelf offers nothing.
+pub(super) fn add_books_state(
+    shelf: Option<&Shelf>,
+    selection: ShelfSelection,
+    can_edit: bool,
+    members_ready: bool,
+) -> AddBooks {
+    let on_screen = shelf.filter(|s| selection == ShelfSelection::Shelf(s.id));
+    match on_screen {
+        Some(s) if can_edit && s.kind == ShelfKind::Manual => {
+            if members_ready {
+                AddBooks::Ready
+            } else {
+                AddBooks::Waiting
+            }
+        }
+        _ => AddBooks::Hidden,
+    }
+}
+
 /// Sticky `data-testid="lib-header"` header; also renders page-level +
 /// library-path errors. When the gallery pick is a shelf, the title grows an
 /// edit pencil (owner/admin, non-system) and a facet row (kind / visibility /
-/// rule chips) beneath it.
+/// rule chips) beneath it, and a hand-picked shelf an Add books button.
 #[component]
 pub(super) fn LandingHeader(
     view: LandingHeaderView,
     prefs: ViewPrefs,
     on_prefs_change: EventHandler<ViewPrefs>,
     on_edit_shelf: EventHandler<()>,
+    on_add_books: EventHandler<()>,
     on_stack_toggle: EventHandler<()>,
 ) -> Element {
     let LandingHeaderView {
@@ -64,16 +100,11 @@ pub(super) fn LandingHeader(
         lib_err,
         section_title,
         selected_shelf,
+        can_edit,
+        add_books,
         sort_lock,
         stack,
     } = view;
-    // The shelf page's rule (`shelf_access`): `None` viewer until the boot
-    // effect resolves, so the pencil stays hidden on SSR + first paint
-    // (hydration parity, rule 07); system shelves stay locked.
-    let viewer = crate::use_current_user_summary()();
-    let can_edit = selected_shelf.as_ref().is_some_and(|s| {
-        ShelfAccess::resolve(viewer.as_ref(), s.owner_user_id, &s.owner_username, s.kind).can_edit()
-    });
     rsx! {
         header { class: "lib-header", "data-testid": "lib-header",
             div { class: "lib-header-kicker",
@@ -101,6 +132,9 @@ pub(super) fn LandingHeader(
             }
             if let Some(shelf) = selected_shelf.as_ref() {
                 ShelfFacets { shelf: shelf.clone() }
+            }
+            if add_books != AddBooks::Hidden {
+                {add_books_button(add_books == AddBooks::Ready, on_add_books)}
             }
             LandingHeaderMessages { path_missing, page_error, lib_err }
         }
@@ -154,6 +188,23 @@ fn LandingHeaderTitleRow(
                     {pencil_glyph()}
                 }
             }
+        }
+    }
+}
+
+/// The header's Add books button, greyed and inert while the shelf's members
+/// are still loading.
+fn add_books_button(ready: bool, on_add: EventHandler<()>) -> Element {
+    rsx! {
+        button {
+            r#type: "button",
+            class: "btn primary shd-action lib-shelf-add",
+            "data-testid": "shelf-add-books",
+            "aria-disabled": if ready { "false" } else { "true" },
+            title: (!ready).then_some("Still loading this shelf\u{2019}s books\u{2026}"),
+            onclick: move |_| if ready { on_add.call(()) },
+            {plus_icon()}
+            "Add books"
         }
     }
 }
@@ -221,6 +272,8 @@ pub(super) struct LandingContentHandlers {
     pub on_prefs_change: EventHandler<ViewPrefs>,
     pub on_load_more: EventHandler<()>,
     pub on_clear_filters: EventHandler<()>,
+    /// Set when the grid ends in an Add books tile ([`AddBooks::Ready`]).
+    pub on_add_tile: Option<EventHandler<()>>,
 }
 
 /// Per-render snapshot of the data the table/grid + load-more sentinel need.
@@ -253,6 +306,7 @@ pub(super) fn LandingContent(props: LandingContentProps) -> Element {
         on_prefs_change,
         on_load_more,
         on_clear_filters,
+        on_add_tile,
     } = handlers;
     let on_sort = build_sort_handler(prefs.clone(), on_prefs_change);
 
@@ -268,6 +322,7 @@ pub(super) fn LandingContent(props: LandingContentProps) -> Element {
                         on_sort: EventHandler::new(on_sort),
                         on_load_more,
                         on_clear_filters,
+                        on_add_tile,
                     },
                 }
             }
@@ -294,12 +349,14 @@ fn build_sort_handler(
 }
 
 /// Handlers the book area dispatches: a sort-column click, the load-more
-/// sentinel, and the filtered-empty "clear filters" escape.
+/// sentinel, the filtered-empty "clear filters" escape, and the grid's Add
+/// books tile.
 #[derive(Clone, PartialEq)]
 pub(super) struct LandingBooksHandlers {
     pub on_sort: EventHandler<SortKey>,
     pub on_load_more: EventHandler<()>,
     pub on_clear_filters: EventHandler<()>,
+    pub on_add_tile: Option<EventHandler<()>>,
 }
 
 /// The loading / table-or-grid / empty / filtered-empty states for the main
@@ -316,6 +373,7 @@ fn LandingBooksArea(
         on_sort,
         on_load_more,
         on_clear_filters,
+        on_add_tile,
     } = handlers;
     let BooksView {
         is_loading,
@@ -356,6 +414,7 @@ fn LandingBooksArea(
                         books: visible_books.clone(),
                         stacks: stacks.clone(),
                         server_url: ctx.server_url.clone(),
+                        on_add: on_add_tile,
                     }
                 },
             }
@@ -390,55 +449,4 @@ fn LandingBooksArea(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::empty_books_message;
-
-    #[test]
-    fn empty_books_message_says_a_shelf_is_empty_rather_than_naming_a_format() {
-        // A shelf holding only an audiobook must not read as "no ebooks".
-        assert_eq!(empty_books_message(true), "No books in this shelf.");
-        assert_eq!(empty_books_message(false), "No ebooks found.");
-    }
-
-    #[cfg(feature = "server")]
-    mod render {
-        use dioxus::prelude::*;
-
-        use super::super::LandingHeaderTitleRow;
-        use crate::test_support::render_in_vdom;
-
-        fn title_row(book_count: Option<usize>, count_pending: bool) -> Element {
-            rsx! {
-                LandingHeaderTitleRow {
-                    section_title: "All Books".to_string(),
-                    book_count,
-                    count_pending,
-                    hidden_count: None,
-                    can_edit: false,
-                    on_edit_shelf: EventHandler::new(|_| {}),
-                }
-            }
-        }
-
-        #[test]
-        fn landing_header_counts_nothing_before_the_list_has_answered() {
-            let html = render_in_vdom(|| title_row(None, true));
-            assert!(html.contains("lib-count-pending"), "{html}");
-            assert!(!html.contains("0 books"), "{html}");
-        }
-
-        #[test]
-        fn landing_header_shows_no_count_after_the_list_failed() {
-            let html = render_in_vdom(|| title_row(None, false));
-            assert!(!html.contains("lib-count-pending"), "{html}");
-            assert!(!html.contains("books"), "{html}");
-        }
-
-        #[test]
-        fn landing_header_states_zero_books_once_the_list_says_so() {
-            let html = render_in_vdom(|| title_row(Some(0), false));
-            assert!(html.contains("0 books"), "{html}");
-            assert!(!html.contains("lib-count-pending"), "{html}");
-        }
-    }
-}
+mod tests;

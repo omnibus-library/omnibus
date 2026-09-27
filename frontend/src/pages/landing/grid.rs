@@ -4,7 +4,8 @@
 //! the book-detail page. Used by [`super::LandingPage`] when the view-mode
 //! toggle is set to grid. Under the marquee layout the tiles read as a cover
 //! wall: the caption is a layer over the cover's foot that arrives on hover
-//! (`.lmq .lib-tile-cap` in `atrium.css`) rather than a block beneath it.
+//! (`.lmq .lib-tile-cap` in `atrium.css`) rather than a block beneath it. A
+//! hand-picked shelf the viewer may change ends in an Add books tile.
 
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
@@ -13,6 +14,7 @@ use omnibus_shared::{EbookMetadata, SeriesStack};
 use super::series_grid::{grid_items, is_stale, stack_leads, GridItem, VolumeCell};
 use super::series_tiles::{StackCap, StackTile};
 use super::sorting::{contributor_names, row_diff_key, row_ident};
+use crate::components::shelf_glyphs::plus_icon;
 use crate::Route;
 
 /// `sizes` for a wall cover — the column's rendered width per breakpoint.
@@ -32,6 +34,9 @@ pub(super) fn BookGrid(
     books: Vec<EbookMetadata>,
     stacks: Vec<SeriesStack>,
     server_url: String,
+    /// Ends the grid in an Add books tile when set.
+    #[props(default)]
+    on_add: Option<EventHandler<()>>,
 ) -> Element {
     // The dealt-out stack's lead uuid — one series open at a time.
     let open = use_signal(|| None::<String>);
@@ -58,6 +63,7 @@ pub(super) fn BookGrid(
         .enumerate()
         .map(|(index, item)| (item.key(), index, item))
         .collect();
+    let add_delay = stagger_ms(cells.len());
 
     rsx! {
         div {
@@ -78,6 +84,17 @@ pub(super) fn BookGrid(
                     server_url: server_url.clone(),
                     open,
                     refocus,
+                }
+            }
+            if let Some(on_add) = on_add {
+                button {
+                    r#type: "button",
+                    class: "shelf-add-tile",
+                    "data-testid": "shelf-add-tile",
+                    style: "animation-delay: {add_delay}ms;",
+                    onclick: move |_| on_add.call(()),
+                    span { class: "shelf-add-tile-plus", {plus_icon()} }
+                    span { "Add books" }
                 }
             }
         }
@@ -220,6 +237,31 @@ fn GridTile(
 #[cfg(test)]
 mod tests {
     use super::stagger_ms;
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn book_grid_ends_in_an_add_books_tile_only_when_offered() {
+        use dioxus::prelude::*;
+
+        use super::BookGrid;
+        use crate::test_support::render_in_vdom;
+
+        let with = render_in_vdom(|| {
+            rsx! {
+                BookGrid {
+                    books: Vec::new(),
+                    stacks: Vec::new(),
+                    server_url: String::new(),
+                    on_add: EventHandler::new(|_| {}),
+                }
+            }
+        });
+        assert!(with.contains("shelf-add-tile"), "{with}");
+        let without = render_in_vdom(|| {
+            rsx! { BookGrid { books: Vec::new(), stacks: Vec::new(), server_url: String::new() } }
+        });
+        assert!(!without.contains("shelf-add-tile"), "{without}");
+    }
 
     #[test]
     fn stagger_ms_steps_by_40_and_wraps_every_eight_tiles() {
