@@ -792,7 +792,8 @@ distribute automatically but an external group cannot, and a build nobody adds
 to one is invisible to every tester on the public link while the run still
 reports success. `scripts/testflight_distribute.py` waits out processing,
 submits for Beta App Review when the build still needs it (the first build of a
-marketing version does), optionally sets "What to Test", and adds the build to
+marketing version does), sets "What to Test" from the required `whats_new`
+dispatch input, and adds the build to
 each group named by the job's `BETA_GROUPS`. It runs on ubuntu — it is pure App
 Store Connect API — reuses the same team-scoped API key, and is idempotent, so a
 re-run attaches nothing twice. Because that script only ever executes during a
