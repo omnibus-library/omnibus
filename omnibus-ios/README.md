@@ -562,7 +562,10 @@ carries a TODO to harden it; this does that.
   (`omnibusTests/OfflineSyncTests.swift`), the player's chapter arithmetic
   (`omnibusTests/ChapterTimelineTests.swift`) and the two contracts the widget
   extension crosses a process boundary on
-  (`omnibusTests/WidgetSnapshotTests.swift`). No screen-level coverage.
+  (`omnibusTests/WidgetSnapshotTests.swift`). No screen-level coverage. The
+  reader's glue is the exception, covered from the Playwright suite instead —
+  `ui_tests/playwright/tests/ios_glue/` runs `Reader/Web/` unchanged in Chromium
+  (see `.claude/rules/04b-playwright-ios-glue.md`).
 - **Nothing drives a widget in CI, or from a script.** `simctl` can install the
   extension and prove `pluginkit` registers it, but adding a widget to a Home
   Screen is a manual gesture — so the three families and the three empty states

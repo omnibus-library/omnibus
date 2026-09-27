@@ -1181,11 +1181,20 @@
   // is still one token rather than two.
   function flatten(root, doc) {
     var walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var probe = doc.createRange();
     var segs = [];
     var text = "";
     var node;
     while ((node = walker.nextNode())) {
       if (!node.data || !node.data.length) continue;
+      // Text the page never shows — a hidden page-number marker, a <style>
+      // left in the body — would otherwise weld onto the word beside it. The
+      // same test as `textLayout`'s, and undrawn whitespace stays for the
+      // same reason: it still parts the words either side of it.
+      if (/\S/.test(node.data)) {
+        probe.selectNodeContents(node);
+        if (!drawsAny(probe.getClientRects())) continue;
+      }
       segs.push({ node: node, at: text.length, len: node.data.length });
       text += node.data;
     }
@@ -1391,13 +1400,48 @@
   // the text nodes yields nothing but glyphs.
   function textRects(range) {
     var out = [];
-    if (!range) return out;
+    eachTextPiece(range, function (node, from, to, boxes) {
+      pushRects(out, boxes);
+    });
+    return out;
+  }
+
+  // The boxes a range tints and the text it reads as, from one walk.
+  //
+  // `Range.toString()` is not that text. It is every text node between the
+  // two ends whether or not it renders — a hidden page-number marker, a
+  // `[hidden]` block, a <style> a converter left in the body — and it is what
+  // a highlight used to store, while the tint beside it showed none of it. A
+  // fragment's text is kept here exactly when the fragment is tinted.
+  function textLayout(range) {
+    var rects = [];
+    var text = "";
+    eachTextPiece(range, function (node, from, to, boxes) {
+      var slice = node.data.slice(from, to);
+      var before = rects.length;
+      pushRects(rects, boxes);
+      if (rects.length > before) text += slice;
+      // Whitespace that lays out as nothing — the source's line break
+      // between two paragraphs — still parts the words either side of it.
+      else if (!/\S/.test(slice)) text += " ";
+    });
+    // Collapsed: the source's own line breaks and indentation are invisible
+    // on the page but come out as ragged breaks anywhere the passage is
+    // re-set — a note, a quote card, a paste.
+    return { rects: rects, text: text.replace(/\s+/g, " ").trim() };
+  }
+
+  // Each text-node fragment a range covers, in document order:
+  // `visit(node, from, to, boxes)` with the slice of the node inside the
+  // range and the client rects that slice lays out as.
+  function eachTextPiece(range, visit) {
+    if (!range) return;
     var doc = range.startContainer.ownerDocument;
-    if (!doc) return out;
+    if (!doc) return;
     var root = range.commonAncestorContainer;
     if (root.nodeType === 3) {
-      pushRects(out, range.getClientRects());
-      return out;
+      visit(root, range.startOffset, range.endOffset, range.getClientRects());
+      return;
     }
     var walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
     var node = range.startContainer;
@@ -1411,25 +1455,38 @@
     // each node. This runs per highlight on every tap and once a frame while
     // a page turns under a drag, where two range ops per node is real cost.
     var endIsText = range.endContainer.nodeType === 3;
+    var piece = doc.createRange();
     while (node) {
-      var piece = doc.createRange();
-      piece.selectNodeContents(node);
-      if (node === range.startContainer) piece.setStart(node, range.startOffset);
-      if (node === range.endContainer) piece.setEnd(node, range.endOffset);
-      pushRects(out, piece.getClientRects());
+      var from = node === range.startContainer ? range.startOffset : 0;
+      var to = node === range.endContainer ? range.endOffset : node.data.length;
+      piece.setStart(node, from);
+      piece.setEnd(node, to);
+      visit(node, from, to, piece.getClientRects());
       if (endIsText && node === range.endContainer) break;
       node = walker.nextNode();
       // An element end container — which a stored CFI can produce — has no
       // text node to stop on, so that case still asks the range.
       if (!endIsText && node && range.comparePoint(node, 0) > 0) break;
     }
-    return out;
+  }
+
+  // A box that paints something. Text the page never shows — `display:none`,
+  // a <style> or <script> in the body — lays out as no box at all, and text
+  // squeezed to nothing (`font-size: 0`) as boxes with no area.
+  function drawn(r) {
+    return !!r && r.width > 0 && r.height > 0;
+  }
+
+  function drawsAny(list) {
+    for (var i = 0; i < list.length; i++) {
+      if (drawn(list[i])) return true;
+    }
+    return false;
   }
 
   function pushRects(out, list) {
     for (var i = 0; i < list.length; i++) {
-      var r = list[i];
-      if (r && r.width > 0 && r.height > 0) out.push(r);
+      if (drawn(list[i])) out.push(list[i]);
     }
   }
 
@@ -1466,17 +1523,17 @@
     return col >= 0 && col < pageColumns();
   }
 
-  // One row per visual line, in reading order, in host-window coordinates.
+  // One row per visual line of a range's `textRects`, in reading order, in
+  // host-window coordinates.
   //
   // `getClientRects` fragments a line at every inline element boundary, so a
   // sentence crossing an <em> comes back as three abutting boxes — drawn as
   // given, they show seams and doubled corners where they meet. Rows are
   // merged per column: a range that runs across the page break has a line at
   // the same height in both columns, and those are two rows, not one.
-  function lineRows(range, win) {
+  function lineRows(raw, win) {
     var off = frameOffset(win);
     var box = pageBox();
-    var raw = textRects(range);
     var rows = [];
     for (var i = 0; i < raw.length; i++) {
       var r = raw[i];
@@ -1544,9 +1601,11 @@
   // What the host draws: only the rows on the page in front of the reader —
   // a range may run onto the next page, which is off-screen but still inside
   // the chapter-wide iframe — plus whether each end of the range is among
-  // them, so a handle is only hung off an edge that is actually there.
+  // them, so a handle is only hung off an edge that is actually there. The
+  // text rides along because it comes out of the same walk as the rows.
   function selectionGeometry(range, win) {
-    var rows = lineRows(range, win);
+    var laid = textLayout(range);
+    var rows = lineRows(laid.rects, win);
     var rects = [];
     for (var i = 0; i < rows.length; i++) {
       if (!columnOnPage(rows[i].col)) continue;
@@ -1558,6 +1617,7 @@
       rects: rects,
       startOnPage: rows.length > 0 && columnOnPage(rows[0].col),
       endOnPage: rows.length > 0 && columnOnPage(rows[rows.length - 1].col),
+      text: laid.text,
     };
   }
 
@@ -1654,11 +1714,8 @@
     try {
       window.__omnibusOnSelection(JSON.stringify({
         cfiRange: cfi,
-        // Collapsed: a range's text carries the source file's own line
-        // breaks and indentation, which are invisible on the page but come
-        // out as ragged breaks anywhere the passage is re-set — a note, a
-        // quote card, a paste.
-        text: sel.range.toString().replace(/\s+/g, " ").trim(),
+        // What the page shows, not `Range.toString()` — see `textLayout`.
+        text: geo.text,
         rects: rects,
         start: geo.startOnPage && first
           ? { x: first.x, y: first.y, height: first.height }

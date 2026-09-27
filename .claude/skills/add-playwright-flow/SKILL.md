@@ -10,6 +10,9 @@ Full conventions live in [04-playwright.md](../../rules/04-playwright.md). This 
 ## 1. Create the spec file
 
 One file per user flow: `ui_tests/playwright/tests/flows/<flow-name>.spec.ts`.
+(Testing the iOS reader's glue rather than a web flow? That is
+`tests/ios_glue/` and its own recipe — see
+[04b-playwright-ios-glue.md](../../rules/04b-playwright-ios-glue.md).)
 
 Import `test` and `expect` from the fixtures file, never from `@playwright/test` directly:
 

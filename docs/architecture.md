@@ -267,6 +267,7 @@ auth/boot.rs        — OMNIBUS_INITIAL_ADMIN recovery hook (promotes named user
 ```
 tests/
   flows/            — one *.spec.ts per user flow
+  ios_glue/         — the iOS reader's own glue, served off disk and driven in Chromium (see rule 04b)
   utils/            — cross-flow helpers (nav, api mutation assertions)
   fixtures/         — extended `test` / `expect` exports
 ```
