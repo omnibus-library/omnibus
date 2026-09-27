@@ -75,6 +75,15 @@ pub(super) fn reader_fonts_css_href() -> String {
 // them out. `dioxus::document::eval` is the shared seam.
 #[cfg(any(feature = "web", feature = "mobile"))]
 fn reader_call(method: &str, arg_js: &str) {
+    // Web: a call made before the glue has loaded waits in the queue the
+    // runtime loader drains (`bootstrap::reader_runtime_load_js`), not dropped.
+    #[cfg(feature = "web")]
+    let js = format!(
+        "(function(){{ var f=function(){{ window.OmnibusReader.{method}({arg_js}); }}; \
+         if (window.OmnibusReader) f(); \
+         else (window.__omnibusReaderQueue = window.__omnibusReaderQueue || []).push(f); }})();"
+    );
+    #[cfg(not(feature = "web"))]
     let js = format!("window.OmnibusReader && window.OmnibusReader.{method}({arg_js});");
     let _ = dioxus::document::eval(&js);
 }

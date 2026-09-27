@@ -103,7 +103,7 @@ fn advance_page(_: Signal<Option<SelectionData>>, _: Direction) {}
 fn retry_reader(mut status: Signal<ReaderStatus>) {
     status.set(ReaderStatus::Loading);
     let _ = dioxus::document::eval(
-        "if (window.__omnibusReaderBoot) window.__omnibusReaderBoot(); \
+        "if (window.__omnibusReaderBoot) window.__omnibusReaderBoot(true); \
          else if (window.OmnibusReader) window.OmnibusReader.retry();",
     );
 }

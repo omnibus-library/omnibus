@@ -1012,25 +1012,10 @@ test("keeps a seeded highlight glued to its text across typeface changes", async
     .toBeLessThan(3);
 });
 
+// Holding JSZip back is the #2449 regression: a client-side navigation ran
+// the reader scripts in download order, and an epub.js that ran before JSZip
+// failed every open until a reload.
 test("opens the reader from the book detail Read action", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  // The EPUB "Read" CTA in the format switcher routes into the immersive
-  // reader. This is a read-only client-side navigation (no mutation), so we
-  // follow the SPA route change and assert on the destination chrome.
-  await page.getByTestId("action-read").click();
-  await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-});
-
-// Regression for #2449: a client-side navigation inserts script tags async,
-// so they run in download order. epub.js binds `window.JSZip` when it runs;
-// holding JSZip back is what made a first open fail until a reload.
-test("opens the book from detail even when JSZip downloads last", async ({
   page,
   request,
 }) => {
@@ -1041,8 +1026,34 @@ test("opens the book from detail even when JSZip downloads last", async ({
   });
   await gotoReady(page, `/books/${uuid}`);
 
+  // The EPUB "Read" CTA in the format switcher routes into the immersive
+  // reader. This is a read-only client-side navigation (no mutation), so we
+  // follow the SPA route change and assert on the destination chrome.
   await page.getByTestId("action-read").click();
   await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
+  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+  await expect(page.locator("#omnibus-viewer iframe")).toBeAttached({
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("reader-loading")).toHaveCount(0);
+  await expect(page.getByTestId("reader-error")).toHaveCount(0);
+});
+
+test("Retry reloads a reader script that failed and opens the book", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  let aborted = false;
+  await page.route(/\/epub\.min[^/]*\.js$/, async (route) => {
+    if (aborted) return route.continue();
+    aborted = true;
+    await route.abort();
+  });
+  await gotoReady(page, `/read/${uuid}`);
+
+  await expect(page.getByTestId("reader-error")).toBeVisible();
+  await page.getByTestId("reader-retry").click();
   await expect(page.locator("#omnibus-viewer iframe")).toBeAttached({
     timeout: 20_000,
   });
