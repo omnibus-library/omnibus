@@ -66,9 +66,10 @@ paint and installs the image-load listener; `use_hydration_marker` stamps
 - **Never read `data-hydrated` in rsx.** It exists outside the vdom so SSR and
   the first client paint stay identical (rule 07); only CSS and tests key on it.
 - **Playwright:** `gotoReady` waits for the marker, then `networkidle` — the
-  marker is what proves handlers are attached. A spec that holds `/wasm/*`
-  (`boot.spec.ts`) must navigate with `waitUntil: "domcontentloaded"`: the
-  bundle is an async module script, so `load` never fires while it's held.
+  marker is what proves handlers are attached. To pin the pre-hydration page,
+  hold the app's `omnibus_bg*.wasm` (`boot.spec.ts`), not a `/wasm/` path:
+  `dx serve` serves it from `/wasm/`, the release bundle CI runs from a hashed
+  `/assets/` name. Navigate with `waitUntil: "domcontentloaded"` while held.
 
 ## Motion
 

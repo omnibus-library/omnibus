@@ -9,15 +9,19 @@ import { expectNavVisible, waitForHydration } from "../utils/nav";
 // hasn't confirmed. These tests hold the WASM download open to pin that
 // window, which a warm local run otherwise closes in well under a second.
 
-// Hold every `/wasm/*` request until the returned release is called. The
-// bundle is an async module script, which the `load` event waits on, so a
-// held page is navigated with `waitUntil: "domcontentloaded"`.
+// The app's WASM binary: `/wasm/omnibus_bg.wasm` under `dx serve`, a hashed
+// `/assets/omnibus_bg-dxh….wasm` in the release bundle CI runs.
+const CLIENT_WASM = /\/omnibus_bg[^/]*\.wasm(\?|$)/;
+
+// Hold the client's WASM download until the returned release is called — the
+// client cannot hydrate before it instantiates. A held page is navigated with
+// `waitUntil: "domcontentloaded"`, since `load` can wait on the bundle.
 async function holdClient(page: Page): Promise<() => void> {
   let release = () => {};
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route("**/wasm/**", async (route) => {
+  await page.route(CLIENT_WASM, async (route) => {
     await gate;
     await route.continue();
   });
