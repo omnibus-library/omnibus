@@ -46,6 +46,9 @@ jobs:
               - "server/**"
               - "db/**"
               - "ui_tests/**"
+              # The iOS reader's glue; `tests/ios_glue/` is its only test lane.
+              # Not in the bundle key below: nothing in the web bundle reads it.
+              - "omnibus-ios/omnibus/Reader/Web/**"
               - "**/Cargo.toml"
               - "Cargo.lock"
               - "**/Dioxus.toml"
