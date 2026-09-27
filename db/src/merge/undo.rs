@@ -16,7 +16,7 @@ use crate::taxonomy::{
 use super::curation::restore_curation;
 use super::links::{strip_added_links, supplied_links};
 use super::overrides::restore_overrides;
-use super::relocation::{deleted_rowids, restore_relocation};
+use super::relocation::{deleted_ids, restore_relocation};
 use super::snapshot::SourceSnapshot;
 use super::MergeError;
 
@@ -488,9 +488,9 @@ struct LaterMergeClaims {
     identifiers: HashSet<(String, String)>,
     /// `(link table, lowercased name)` its absorbed book carries — the same
     /// reasoning as `identifiers`.
-    links: HashSet<(&'static str, String)>,
-    /// `(table, rowid)` of every row its dedupe deleted.
-    deleted_rows: HashSet<(String, i64)>,
+    links: HashSet<(String, String)>,
+    /// `(table, identity)` of every row its dedupe deleted.
+    deleted_rows: HashSet<(String, String)>,
 }
 
 /// Collect [`LaterMergeClaims`] from every un-undone `merge_log` row filed
@@ -529,14 +529,8 @@ async fn load_later_merge_claims(
                 .iter()
                 .map(|(s, v)| (s.to_ascii_lowercase(), v.to_ascii_lowercase())),
         );
-        claims.links.extend(supplied_links(
-            &snap.authors,
-            &snap.series,
-            &snap.tags,
-            &snap.publishers,
-            &snap.languages,
-        ));
-        claims.deleted_rows.extend(deleted_rowids(&snap.relocation));
+        claims.links.extend(supplied_links(&snap));
+        claims.deleted_rows.extend(deleted_ids(&snap.relocation));
     }
     Ok(claims)
 }

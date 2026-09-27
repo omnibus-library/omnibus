@@ -295,6 +295,6 @@ enum MergeCopy {
 
     /// The confirm step's body — the same sentence the web dialog shows.
     static func confirmBody(source: String, target: String) -> String {
-        "\u{201c}\(source)\u{201d} will be merged into \u{201c}\(target)\u{201d}. Its files, tags, and reading progress move here; the other entry disappears. This can be undone."
+        "\u{201c}\(source)\u{201d} will be merged into \u{201c}\(target)\u{201d}. Its files, tags, and reading progress move here; the other entry disappears. You can undo it until you leave this page."
     }
 }

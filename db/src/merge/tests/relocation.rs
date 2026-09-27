@@ -196,12 +196,13 @@ async fn merge_books_moves_all_taxonomy_and_user_data_to_target() {
         .await
         .unwrap();
 
-    // Every taxonomy link now hangs off the target; none off the deleted source.
-    for (link, col) in [
-        ("books_series_link", "series"),
-        ("books_tags_link", "tag"),
-        ("books_publishers_link", "publisher"),
-        ("books_languages_link", "language"),
+    // Tags and publishers now hang off the target; the target keeps its own
+    // series, and the source's language is dropped rather than filed onto it.
+    for (link, col, expected) in [
+        ("books_series_link", "series", 1),
+        ("books_tags_link", "tag", 1),
+        ("books_publishers_link", "publisher", 1),
+        ("books_languages_link", "language", 0),
     ] {
         let on_target: i64 = sqlx::query_scalar(&format!(
             "SELECT COUNT(*) FROM {link} WHERE book = ? AND {col} IS NOT NULL"
@@ -210,10 +211,7 @@ async fn merge_books_moves_all_taxonomy_and_user_data_to_target() {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(
-            on_target, 1,
-            "{link} should have exactly one row on the target"
-        );
+        assert_eq!(on_target, expected, "{link} rows on the target");
     }
     // Source book row is gone, so no link can reference it.
     assert_eq!(count(&pool, "SELECT COUNT(*) FROM books").await, 1);

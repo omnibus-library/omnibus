@@ -309,7 +309,11 @@ async fn undo_merge_returns_reader_state_to_the_book_it_was_written_on() {
         [source.clone(), target]
     );
     for table in ["annotations", "bookmarks", "journal_entries"] {
-        assert_eq!(uuids(&pool, table).await, [source.clone()], "{table}");
+        assert_eq!(
+            uuids(&pool, table).await,
+            std::slice::from_ref(&source),
+            "{table}"
+        );
     }
 }
 
@@ -449,4 +453,261 @@ async fn undo_merge_refuses_when_a_later_merge_supplies_an_added_link() {
 
     let err = undo_merge(&pool, earlier.merge_log_id).await.unwrap_err();
     assert!(matches!(err, MergeError::UndoConflict(_)), "{err:?}");
+}
+
+#[tokio::test]
+async fn undo_merge_restores_a_folded_bucket_after_its_rowid_is_reused() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let (target, source) = seed_pair(&pool).await;
+    for (uuid, gained) in [(&target, 5), (&source, 7)] {
+        sqlx::query("INSERT INTO reading_progress_slots (user_id, book_uuid, format, slot, percent_gained) VALUES (?, ?, 'epub', 42, ?)")
+            .bind(user).bind(uuid).bind(gained).execute(&pool).await.unwrap();
+    }
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    // Any reader, any book, gains a slot after the merge.
+    sqlx::query("INSERT INTO reading_progress_slots (user_id, book_uuid, format, slot, percent_gained) VALUES (?, 'other-book', 'epub', 99, 3)")
+        .bind(user).execute(&pool).await.unwrap();
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+    let rows: Vec<(String, i64)> = sqlx::query_as("SELECT book_uuid, percent_gained FROM reading_progress_slots WHERE book_uuid != 'other-book' ORDER BY percent_gained")
+        .fetch_all(&pool).await.unwrap();
+    assert_eq!(rows, [(target, 5), (source, 7)]);
+}
+
+#[tokio::test]
+async fn undo_merge_restores_a_deduped_shelf_slot_after_its_rowid_is_reused() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let (target, source) = seed_pair(&pool).await;
+    let shelf: i64 = sqlx::query_scalar(
+        "INSERT INTO shelves (owner_user_id, kind, name) VALUES (?, 'manual', 's') RETURNING id",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let shelf2: i64 = sqlx::query_scalar(
+        "INSERT INTO shelves (owner_user_id, kind, name) VALUES (?, 'manual', 's2') RETURNING id",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for (uuid, pos) in [(&target, 0), (&source, 5)] {
+        sqlx::query("INSERT INTO shelf_books (shelf_id, book_uuid, position) VALUES (?, ?, ?)")
+            .bind(shelf)
+            .bind(uuid)
+            .bind(pos)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO shelf_books (shelf_id, book_uuid, position) VALUES (?, 'other-book', 0)",
+    )
+    .bind(shelf2)
+    .execute(&pool)
+    .await
+    .unwrap();
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM shelf_books WHERE shelf_id = ? AND book_uuid = ?")
+            .bind(shelf)
+            .bind(&source)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(n, 1, "source's shelf membership came back");
+}
+
+#[tokio::test]
+async fn undo_merge_leaves_a_survivor_shelf_row_that_reused_a_moved_rowid() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let (target, source) = seed_pair(&pool).await;
+    let shelf: i64 = sqlx::query_scalar(
+        "INSERT INTO shelves (owner_user_id, kind, name) VALUES (?, 'manual', 's') RETURNING id",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let shelf2: i64 = sqlx::query_scalar(
+        "INSERT INTO shelves (owner_user_id, kind, name) VALUES (?, 'manual', 's2') RETURNING id",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO shelf_books (shelf_id, book_uuid, position) VALUES (?, ?, 0)")
+        .bind(shelf)
+        .bind(&source)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    // On the survivor: take it off shelf s, put it on shelf s2.
+    sqlx::query("DELETE FROM shelf_books WHERE shelf_id = ? AND book_uuid = ?")
+        .bind(shelf)
+        .bind(&target)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO shelf_books (shelf_id, book_uuid, position) VALUES (?, ?, 0)")
+        .bind(shelf2)
+        .bind(&target)
+        .execute(&pool)
+        .await
+        .unwrap();
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+    let on_s2: String = sqlx::query_scalar("SELECT book_uuid FROM shelf_books WHERE shelf_id = ?")
+        .bind(shelf2)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        on_s2, target,
+        "the survivor's post-merge shelving stays on the survivor"
+    );
+}
+
+#[tokio::test]
+async fn undo_merge_never_leaves_the_source_a_partial_content_index() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let (target, source) = seed_pair(&pool).await;
+    let file = |uuid: String| {
+        let pool = pool.clone();
+        async move {
+            let r: (i64, i64) = sqlx::query_as("SELECT bf.mtime_epoch, bf.size_bytes FROM book_files bf JOIN books b ON b.id = bf.book_id WHERE b.uuid = ?")
+                .bind(uuid).fetch_one(&pool).await.unwrap();
+            r
+        }
+    };
+    let (sm, ss) = file(source.clone()).await;
+    let (tm, ts) = file(target.clone()).await;
+    for i in 0..3 {
+        sqlx::query("INSERT INTO book_content_chapters (book_uuid, spine_index, mtime_epoch, size_bytes, text) VALUES (?, ?, ?, ?, 'src')")
+            .bind(&source).bind(i).bind(sm).bind(ss).execute(&pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO book_content_chapters (book_uuid, spine_index, mtime_epoch, size_bytes, text) VALUES (?, 0, ?, ?, 'tgt')")
+        .bind(&target).bind(tm).bind(ts).execute(&pool).await.unwrap();
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+    let idx: Vec<i64> = sqlx::query_scalar(
+        "SELECT spine_index FROM book_content_chapters WHERE book_uuid = ? ORDER BY spine_index",
+    )
+    .bind(&source)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let (sm2, ss2) = file(source.clone()).await;
+    let stale: bool = sqlx::query_scalar("SELECT NOT EXISTS (SELECT 1 FROM book_content_chapters WHERE book_uuid = ? AND mtime_epoch = ? AND size_bytes = ?)")
+        .bind(&source).bind(sm2).bind(ss2).fetch_one(&pool).await.unwrap();
+    assert!(
+        idx.len() == 3 || stale,
+        "source's content index is partial and will not be rebuilt: {idx:?}"
+    );
+}
+
+#[tokio::test]
+async fn merge_leaves_an_unset_language_and_series_unset() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (target, source) = seed_pair(&pool).await;
+    let target_id = book_id_by_uuid(&pool, &target).await;
+    for table in ["books_languages_link", "books_series_link"] {
+        sqlx::query(&format!("DELETE FROM {table} WHERE book = ?"))
+            .bind(target_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    merge_books(&pool, &source, &target, None).await.unwrap();
+
+    let (_, series, langs) = links(&pool, &target).await;
+    assert!(
+        series.is_empty() && langs.is_empty(),
+        "{series:?} {langs:?}"
+    );
+}
+
+#[tokio::test]
+async fn undo_merge_nulls_a_reinserted_rows_reference_to_a_deleted_account() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let owner = seed_user(&pool).await;
+    let adder: i64 = sqlx::query_scalar(
+        "INSERT INTO users (username, password_hash) VALUES ('adder', 'x') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (target, source) = seed_pair(&pool).await;
+    let shelf: i64 = sqlx::query_scalar(
+        "INSERT INTO shelves (owner_user_id, kind, name) VALUES (?, 'manual', 's') RETURNING id",
+    )
+    .bind(owner)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // The source holds the lower slot, so the target's row is the one deleted.
+    for (uuid, pos) in [(&target, 5), (&source, 0)] {
+        sqlx::query(
+            "INSERT INTO shelf_books (shelf_id, book_uuid, position, added_by_user_id)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(shelf)
+        .bind(uuid)
+        .bind(pos)
+        .bind(adder)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let out = merge_books(&pool, &source, &target, Some(owner))
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM users WHERE id = ?")
+        .bind(adder)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    let restored: (i64, Option<i64>) =
+        sqlx::query_as("SELECT position, added_by_user_id FROM shelf_books WHERE book_uuid = ?")
+            .bind(&target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(restored, (5, None));
+}
+
+/// Undo names a row by its `AUTOINCREMENT` id or its natural key. A plain
+/// `id`/rowid is reused once its maximum is deleted, so it names nothing.
+#[tokio::test]
+async fn every_relocated_table_has_a_row_identity_that_survives_reuse() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    for table in super::super::relocation::relocated_tables() {
+        let named: bool = sqlx::query_scalar(
+            "SELECT (SELECT sql LIKE '%AUTOINCREMENT%' FROM sqlite_master WHERE name = ?1)
+                 OR EXISTS (SELECT 1 FROM pragma_table_info(?1)
+                             WHERE pk > 0 AND name NOT IN ('book_uuid', 'id'))",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(named, "{table} has no row identity undo can use");
+    }
 }

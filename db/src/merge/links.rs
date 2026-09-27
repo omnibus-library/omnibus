@@ -2,121 +2,77 @@
 //! and their removal on undo. The merge records exactly what it added, by name,
 //! so undo can take that back without touching the kept book's own links.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
-use serde::{Deserialize, Serialize};
 use sqlx::Transaction;
 
+use super::snapshot::SourceSnapshot;
 use super::MergeError;
 
-/// One link table: its taxonomy column, the taxonomy table and that table's
-/// name column, and whether the kept book's own value excludes the source's.
+/// A link table the merge unions: its taxonomy column, and the taxonomy table
+/// and name column that column points at.
 struct LinkTable {
     link: &'static str,
     col: &'static str,
     taxonomy: &'static str,
     name: &'static str,
-    /// A book has one series and one language in practice, so the source's
-    /// only fills a gap. Unioning them is how a merge changed the kept entry's
-    /// language and filed it under the absorbed book's series.
-    fill_only: bool,
 }
 
-const LINK_TABLES: [LinkTable; 4] = [
+/// Series and language are deliberately absent: a book has one of each, so the
+/// kept entry keeps its own and the source's are dropped — unioning them
+/// re-languaged the kept entry and filed it under the absorbed book's series.
+const LINK_TABLES: [LinkTable; 3] = [
     LinkTable {
-        link: "books_series_link",
-        col: "series",
-        taxonomy: "series",
+        link: "books_authors_link",
+        col: "author",
+        taxonomy: "authors",
         name: "name",
-        fill_only: true,
     },
     LinkTable {
         link: "books_tags_link",
         col: "tag",
         taxonomy: "tags",
         name: "name",
-        fill_only: false,
     },
     LinkTable {
         link: "books_publishers_link",
         col: "publisher",
         taxonomy: "publishers",
         name: "name",
-        fill_only: false,
-    },
-    LinkTable {
-        link: "books_languages_link",
-        col: "language",
-        taxonomy: "languages",
-        name: "code",
-        fill_only: true,
     },
 ];
 
-/// Names the merge linked onto the kept book that it did not carry before.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub(super) struct LinksAdded {
-    pub authors: Vec<String>,
-    pub series: Vec<String>,
-    pub tags: Vec<String>,
-    pub publishers: Vec<String>,
-    pub languages: Vec<String>,
-}
+/// Every link table the source's rows are cleared from.
+const ALL_LINK_TABLES: [&str; 5] = [
+    "books_authors_link",
+    "books_series_link",
+    "books_tags_link",
+    "books_publishers_link",
+    "books_languages_link",
+];
 
-impl LinksAdded {
-    fn for_table(&mut self, link: &str) -> &mut Vec<String> {
-        match link {
-            "books_series_link" => &mut self.series,
-            "books_tags_link" => &mut self.tags,
-            "books_publishers_link" => &mut self.publishers,
-            _ => &mut self.languages,
-        }
-    }
-
-    /// `(link table, name)` pairs, the shape a later merge's claims are kept in.
-    fn entries(&self) -> impl Iterator<Item = (&'static str, &str)> {
-        let authors = self
-            .authors
-            .iter()
-            .map(|n| ("books_authors_link", n.as_str()));
-        let rest = [
-            ("books_series_link", &self.series),
-            ("books_tags_link", &self.tags),
-            ("books_publishers_link", &self.publishers),
-            ("books_languages_link", &self.languages),
-        ]
-        .into_iter()
-        .flat_map(|(t, names)| names.iter().map(move |n| (t, n.as_str())));
-        authors.chain(rest)
-    }
-}
+/// Names the merge linked onto the kept book that it did not carry before,
+/// keyed by link table.
+pub(super) type LinksAdded = BTreeMap<String, Vec<String>>;
 
 /// `(link table, lowercased name)` pairs a merged-away book supplies, from its
 /// snapshot's own link lists.
-pub(super) fn supplied_links(
-    authors: &[(String, Option<String>, i64)],
-    series: &[String],
-    tags: &[String],
-    publishers: &[String],
-    languages: &[String],
-) -> HashSet<(&'static str, String)> {
-    let mut out: HashSet<(&'static str, String)> = authors
+pub(super) fn supplied_links(snap: &SourceSnapshot) -> HashSet<(String, String)> {
+    let authors = snap
+        .authors
         .iter()
-        .map(|(n, _, _)| ("books_authors_link", n.to_lowercase()))
-        .collect();
-    for (table, names) in [
-        ("books_series_link", series),
-        ("books_tags_link", tags),
-        ("books_publishers_link", publishers),
-        ("books_languages_link", languages),
-    ] {
-        out.extend(names.iter().map(|n| (table, n.to_lowercase())));
-    }
-    out
+        .map(|(n, _, _)| ("books_authors_link", n));
+    let tags = snap.tags.iter().map(|n| ("books_tags_link", n));
+    let publishers = snap.publishers.iter().map(|n| ("books_publishers_link", n));
+    authors
+        .chain(tags)
+        .chain(publishers)
+        .map(|(t, n)| (t.to_owned(), n.to_lowercase()))
+        .collect()
 }
 
-/// Copy the source's links onto the target and clear the source's rows.
-/// Returns what was added, for undo.
+/// Copy the source's authors, tags and publishers onto the target and clear
+/// every source link row. Returns what was added, for undo.
 ///
 /// The source's authors go **after** the target's: sharing position 0 left
 /// the credit order to chance, which is how a merge demoted the kept entry's
@@ -126,39 +82,14 @@ pub(super) async fn move_links(
     source_id: i64,
     target_id: i64,
 ) -> Result<LinksAdded, sqlx::Error> {
-    let mut added = LinksAdded {
-        authors: sqlx::query_scalar(
-            "SELECT a.name FROM books_authors_link l JOIN authors a ON a.id = l.author
-              WHERE l.book = ?2 AND l.author NOT IN
-                    (SELECT author FROM books_authors_link WHERE book = ?1)
-              ORDER BY l.position",
-        )
-        .bind(target_id)
-        .bind(source_id)
-        .fetch_all(&mut **tx)
-        .await?,
-        ..Default::default()
-    };
-    let next_position: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(position), -1) + 1 FROM books_authors_link WHERE book = ?",
-    )
-    .bind(target_id)
-    .fetch_one(&mut **tx)
-    .await?;
-    sqlx::query(
-        "INSERT OR IGNORE INTO books_authors_link (book, author, position)
-         SELECT ?1, author, ?3 + position FROM books_authors_link WHERE book = ?2",
-    )
-    .bind(target_id)
-    .bind(source_id)
-    .bind(next_position)
-    .execute(&mut **tx)
-    .await?;
-
+    let mut added = LinksAdded::new();
     for t in &LINK_TABLES {
-        *added.for_table(t.link) = copy_link_table(tx, t, source_id, target_id).await?;
+        let names = copy_link_table(tx, t, source_id, target_id).await?;
+        if !names.is_empty() {
+            added.insert(t.link.to_owned(), names);
+        }
     }
-    for table in std::iter::once("books_authors_link").chain(LINK_TABLES.iter().map(|t| t.link)) {
+    for table in ALL_LINK_TABLES {
         let sql = format!("DELETE FROM {table} WHERE book = ?");
         sqlx::query(&sql).bind(source_id).execute(&mut **tx).await?;
     }
@@ -179,34 +110,41 @@ async fn copy_link_table(
         col,
         taxonomy,
         name,
-        fill_only,
     } = t;
-    if *fill_only {
-        let target_has: bool = sqlx::query_scalar(&format!(
-            "SELECT EXISTS(SELECT 1 FROM {link} WHERE book = ?)"
-        ))
-        .bind(target_id)
-        .fetch_one(&mut **tx)
-        .await?;
-        if target_has {
-            return Ok(Vec::new());
-        }
-    }
     let added: Vec<String> = sqlx::query_scalar(&format!(
         "SELECT x.{name} FROM {link} l JOIN {taxonomy} x ON x.id = l.{col}
-          WHERE l.book = ?2 AND l.{col} NOT IN (SELECT {col} FROM {link} WHERE book = ?1)"
+          WHERE l.book = ?2 AND l.{col} NOT IN (SELECT {col} FROM {link} WHERE book = ?1)
+          ORDER BY l.rowid"
     ))
     .bind(target_id)
     .bind(source_id)
     .fetch_all(&mut **tx)
     .await?;
-    sqlx::query(&format!(
-        "INSERT OR IGNORE INTO {link} (book, {col}) SELECT ?1, {col} FROM {link} WHERE book = ?2"
-    ))
-    .bind(target_id)
-    .bind(source_id)
-    .execute(&mut **tx)
-    .await?;
+    if *link == "books_authors_link" {
+        let next: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM books_authors_link WHERE book = ?",
+        )
+        .bind(target_id)
+        .fetch_one(&mut **tx)
+        .await?;
+        sqlx::query(
+            "INSERT OR IGNORE INTO books_authors_link (book, author, position)
+             SELECT ?1, author, ?3 + position FROM books_authors_link WHERE book = ?2",
+        )
+        .bind(target_id)
+        .bind(source_id)
+        .bind(next)
+        .execute(&mut **tx)
+        .await?;
+    } else {
+        sqlx::query(&format!(
+            "INSERT OR IGNORE INTO {link} (book, {col}) SELECT ?1, {col} FROM {link} WHERE book = ?2"
+        ))
+        .bind(target_id)
+        .bind(source_id)
+        .execute(&mut **tx)
+        .await?;
+    }
     Ok(added)
 }
 
@@ -219,27 +157,31 @@ pub(super) async fn strip_added_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     target_id: i64,
     added: &LinksAdded,
-    still_supplied: &HashSet<(&'static str, String)>,
+    still_supplied: &HashSet<(String, String)>,
 ) -> Result<(), MergeError> {
-    for (link, value) in added.entries() {
-        if still_supplied.contains(&(link, value.to_lowercase())) {
-            return Err(MergeError::UndoConflict(format!(
-                "a later merge into the surviving book also supplies \"{value}\"; \
-                 undo that merge first"
-            )));
+    for t in &LINK_TABLES {
+        for value in added.get(t.link).into_iter().flatten() {
+            if still_supplied.contains(&(t.link.to_owned(), value.to_lowercase())) {
+                return Err(MergeError::UndoConflict(format!(
+                    "a later merge into the surviving book also supplies \"{value}\"; \
+                     undo that merge first"
+                )));
+            }
+            let LinkTable {
+                link,
+                col,
+                taxonomy,
+                name,
+            } = t;
+            sqlx::query(&format!(
+                "DELETE FROM {link} WHERE book = ? AND {col} IN
+                    (SELECT id FROM {taxonomy} WHERE {name} = ?)"
+            ))
+            .bind(target_id)
+            .bind(value)
+            .execute(&mut **tx)
+            .await?;
         }
-        let (col, taxonomy, name) = match LINK_TABLES.iter().find(|t| t.link == link) {
-            Some(t) => (t.col, t.taxonomy, t.name),
-            None => ("author", "authors", "name"),
-        };
-        sqlx::query(&format!(
-            "DELETE FROM {link} WHERE book = ? AND {col} IN
-                (SELECT id FROM {taxonomy} WHERE {name} = ?)"
-        ))
-        .bind(target_id)
-        .bind(value)
-        .execute(&mut **tx)
-        .await?;
     }
     Ok(())
 }

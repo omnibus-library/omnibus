@@ -56,7 +56,7 @@ struct MergeBookSheet: View {
 
     private var search: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("The other entry merges into \u{201c}\(target.displayTitle)\u{201d}. Nothing is deleted \u{2014} every merge can be undone.")
+            Text("The other entry merges into \u{201c}\(target.displayTitle)\u{201d}. Nothing is deleted \u{2014} undo is offered once, right after the merge.")
                 .font(.ui(13))
                 .foregroundStyle(palette.ink2Color)
                 .fixedSize(horizontal: false, vertical: true)
