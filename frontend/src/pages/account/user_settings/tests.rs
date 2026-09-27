@@ -1,0 +1,38 @@
+//! Pure tests for each `UserSetting`'s status line. The shared toggle
+//! handler's guards and its failure revert are exercised through the same
+//! shape as the self-registration switch it mirrors; only the copy is
+//! unique per setting.
+
+use super::*;
+use crate::test_support::{provide_current_user, render_in_vdom};
+
+#[test]
+fn user_setting_status_line_describes_scroll_stops() {
+    assert_eq!(
+        UserSetting::ScrollStops.status_line(None),
+        "Checking\u{2026}"
+    );
+    assert_eq!(
+        UserSetting::ScrollStops.status_line(Some(true)),
+        "Book details snap through one panel at a time."
+    );
+    assert_eq!(
+        UserSetting::ScrollStops.status_line(Some(false)),
+        "Book details scroll continuously, top to bottom."
+    );
+}
+
+fn unresolved() -> Element {
+    provide_current_user(None);
+    rsx! { UserSettingsCard {} }
+}
+
+#[test]
+fn user_settings_card_renders_every_switch_unknown_until_the_viewer_resolves() {
+    let html = render_in_vdom(unresolved);
+    assert!(html.contains("scroll-stops-toggle"), "{html}");
+    assert!(html.contains("disabled"), "{html}");
+    assert!(html.contains("ld-unknown"), "{html}");
+    assert!(html.contains("Checking\u{2026}"), "{html}");
+    assert!(html.contains("ld-sheen"), "{html}");
+}

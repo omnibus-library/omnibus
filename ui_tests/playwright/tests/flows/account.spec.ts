@@ -43,7 +43,7 @@ test("renders the account section layout", async ({ page }) => {
   await expect(page.getByTestId("change-password-submit")).toBeVisible();
   // The per-user feature switches sit above the goals as a table — one row
   // per setting, so a new one is a row rather than another card.
-  await expect(page.getByTestId("account-scroll-stops-card")).toBeVisible();
+  await expect(page.getByTestId("account-user-settings-card")).toBeVisible();
   await expect(
     page.getByRole("heading", { level: 2, name: "Omnibus User Settings" }),
   ).toBeVisible();
