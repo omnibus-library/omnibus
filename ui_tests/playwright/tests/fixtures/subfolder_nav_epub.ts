@@ -1,15 +1,10 @@
 /**
  * A three-chapter EPUB whose nav doc lives in a subfolder of the OPF's own
- * directory — the #2450 shape. `content.opf` sits at the ZIP ROOT while
- * `OEBPS/nav.xhtml` and the chapters live under `OEBPS/`, so the nav's own
- * TOC hrefs ("ch1.xhtml", …) are relative to the nav doc, not to the
- * package — a spine lookup against them misses unless it is first rebased
- * onto the nav doc's own directory.
+ * directory, so its TOC hrefs are relative to the nav doc, not the package.
  *
- * It is served by intercepting a real book's `/file` route rather than
- * seeded into the library: a new fixture file would ripple through
- * `FIXTURE_BOOKS`, the Rust mirror, and every exact-count assertion (see
- * `jpx_pdf.ts` for the same rationale).
+ * Served by intercepting a real book's `/file` route rather than seeded, so
+ * it doesn't ripple through `FIXTURE_BOOKS` and every exact-count assertion
+ * (see `jpx_pdf.ts` for the same rationale).
  */
 import JSZip from "jszip";
 

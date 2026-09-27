@@ -49,11 +49,7 @@ impl ReaderStatus {
         matches!(self, Self::Loading | Self::NavFailed)
     }
 
-    /// Merge an incoming glue state onto the current status. A late
-    /// "nav-error" (its watchdog armed before a load failure landed) must
-    /// never replace `Failed`'s interactive Retry or `Offline`'s notice with
-    /// the non-interactive nav-error one — every other transition behaves
-    /// like [`Self::from_glue`] (#2450 review finding P1).
+    /// Apply a glue state, never letting nav-error replace Failed or Offline.
     pub(crate) fn apply_glue(self, state: &str) -> Self {
         if state == "nav-error" && matches!(self, Self::Failed | Self::Offline) {
             return self;

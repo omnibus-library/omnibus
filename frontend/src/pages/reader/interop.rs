@@ -229,8 +229,6 @@ fn build_simple_callbacks(sigs: InteropSignals) -> [(&'static str, WindowCallbac
     } = sigs;
 
     let on_status = Closure::<dyn FnMut(String)>::new(move |state: String| {
-        // `apply_glue` (not `from_glue`) so a late nav-error watchdog can't
-        // overwrite an already-Failed/Offline status (#2450 review P1).
         let next = status.peek().apply_glue(&state);
         status.set(next);
     });

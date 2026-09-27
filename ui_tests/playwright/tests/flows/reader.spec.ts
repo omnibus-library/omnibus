@@ -664,14 +664,10 @@ test("a TOC jump that cannot land clears the loading overlay and says so", async
   expect(hitsNotice).toBe(false);
 });
 
-// Regression for issue #2450 (AC1): a nav doc in a subfolder of the OPF's own
-// directory ships TOC hrefs relative to itself, not to the package — jumping
-// to one must resolve against the spine rather than reject. Intercepts the
-// TOC-jump book's `/file` and progress routes wholesale, so it neither reads
-// the real dracula file nor writes a position onto its shared uuid — the
-// read side matters too: the loading-state test above leaves a real,
-// dracula-shaped position on this uuid, and restoring THAT CFI against our
-// three-chapter stand-in book is its own way to fail to open.
+// Regression for #2450 (AC1): a TOC href relative to a nav doc in a
+// subfolder must resolve against the spine rather than reject. Intercepts
+// /file and progress so it never reads the real dracula file or restores
+// its real position's CFI against this stand-in book.
 test("resolves a TOC jump whose href is relative to a nav doc in a subfolder", async ({
   page,
   request,

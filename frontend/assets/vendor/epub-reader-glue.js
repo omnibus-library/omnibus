@@ -161,10 +161,7 @@
   var pendingJumpCfi = null;
 
   function emitStatus(state) {
-    // A hard "error" means there is no book/rendition left to land a jump
-    // on — clear any armed nav watchdog here so a late timeout can never
-    // fire "nav-error" and overwrite this state (#2450 review finding P1).
-    // One place covers every emitStatus("error") call site.
+    // An error ends any pending jump, so its watchdog can't later report nav-error over it.
     if (state === "error") clearNavWatchdog();
     if (typeof window.__omnibusOnStatus === "function") {
       try {
@@ -255,9 +252,7 @@
     } catch (e) {
       return href;
     }
-    // Return the section's OWN href, not the decoded rebased path — epub.js
-    // compares hrefs with === downstream (findChapter), and a percent-decoded
-    // path can differ byte-for-byte from what the section itself carries.
+    // The section's own href: findChapter compares hrefs with ===.
     var section = book.spine.get(rebased);
     if (!section) return href;
     return hash >= 0 ? section.href + href.slice(hash) : section.href;
@@ -2238,12 +2233,7 @@
     stage.style.opacity = "";
   }
 
-  // `reportFailure` is true only from display()'s own call — the one path
-  // that armed the nav watchdog and told the host to expect a landing or a
-  // failure. A follow/sync jump (the parked pendingJumpCfi replay,
-  // applyPercentage, displayCfi) never arms it, so a rejection there must
-  // stay silent rather than surface a nav-error the host was never told to
-  // wait for.
+  // Only display() armed the nav watchdog, so only it reports a failure.
   function displaySettled(target, reportFailure) {
     if (!rendition) return;
     displayToken++;
@@ -2411,9 +2401,7 @@
     pendingJumpPct = null;
     pendingJumpCfi = null;
     restoreEchoPending = false;
-    // A TOC/link jump is real navigation, same as a user turn (queueTurn) —
-    // a resize correction still settling for the outgoing page must not mute
-    // this jump's own relocate for up to 10s (#2450).
+    // A jump is real movement, like a user turn: don't let a resize settle mute it.
     cancelResizeCorrection();
     var t = String(target);
     armNavWatchdog(t);
@@ -2549,9 +2537,8 @@
   function applyPercentage(pct) {
     var frac = Math.min(Math.max(Number(pct) / 100, 0), 1);
     var cfi = book.locations.cfiFromPercentage(frac);
-    // locations store RANGE CFIs; rendition.display() rejects them, and this
-    // call passes no reportFailure so displaySettled stays silent on it —
-    // collapse to the start rather than rely on that.
+    // locations store RANGE CFIs; rendition.display() rejects them, so
+    // collapse to the start.
     if (cfi && cfi.indexOf(",") !== -1) {
       try {
         var collapsed = new ePub.CFI(cfi);

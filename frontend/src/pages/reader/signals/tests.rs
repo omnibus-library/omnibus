@@ -10,10 +10,7 @@ fn reader_status_default_is_loading_for_ssr_wasm_parity() {
     assert_eq!(ReaderStatus::default(), ReaderStatus::Loading);
 }
 
-// Regression for issue #2450 review finding P1: a nav watchdog armed before
-// a load failure can still fire "nav-error" afterward — it must never
-// replace the interactive Failed (Retry) surface with the non-interactive
-// nav-error notice.
+// A late nav-error must not replace the interactive Failed (Retry) surface.
 #[test]
 fn reader_status_apply_glue_keeps_failed_over_a_late_nav_error() {
     assert_eq!(
