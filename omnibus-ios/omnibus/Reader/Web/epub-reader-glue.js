@@ -1200,7 +1200,7 @@
       // words either side of it.
       if (/\S/.test(node.data) && !nodeDraws(probe, node)) continue;
       var block = blockRootOf(node);
-      if (lastBlock && block !== lastBlock) text += " ";
+      if (blockBreak(lastBlock, block)) text += " ";
       lastBlock = block;
       segs.push({ node: node, at: text.length, len: node.data.length });
       text += node.data;
@@ -1442,7 +1442,7 @@
         // A <br> or a new block breaks the line whether or not the source
         // has whitespace there — minified markup has none.
         var block = blockRootOf(node);
-        if (broke || (lastBlock && block !== lastBlock)) text += " ";
+        if (broke || blockBreak(lastBlock, block)) text += " ";
         lastBlock = block;
         broke = false;
         text += slice;
@@ -1547,21 +1547,44 @@
     return drawsAny(probe.getClientRects());
   }
 
-  // Text nodes and <br>s, in document order. A <br> is a line break the page
-  // shows with no character in the source to show it.
+  // Text nodes and the <br>s that render, in document order. A <br> is a line
+  // break the page shows with no character in the source to show it; one in
+  // hidden markup lays out no box and breaks nothing.
   function textWalker(doc, root) {
     return doc.createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
       {
         acceptNode: function (n) {
-          return n.nodeType === 3 || n.localName === "br"
+          if (n.nodeType === 3) return NodeFilter.FILTER_ACCEPT;
+          return n.localName === "br" && n.getClientRects().length
             ? NodeFilter.FILTER_ACCEPT
             : NodeFilter.FILTER_SKIP;
         },
       },
       false
     );
+  }
+
+  // Whether the page starts a new line between drawn text in block `from`
+  // and drawn text in block `to`. By layout, not by tag: a floated drop cap
+  // or a paragraph set inline is a block tag whose text runs on in the line.
+  function blockBreak(from, to) {
+    if (!from || !to || from === to) return false;
+    if (from.contains(to)) return setsOwnLines(to);
+    if (to.contains(from)) return setsOwnLines(from);
+    return setsOwnLines(from) || setsOwnLines(to);
+  }
+
+  function setsOwnLines(el) {
+    var view = el.ownerDocument.defaultView;
+    var style = view && view.getComputedStyle ? view.getComputedStyle(el) : null;
+    if (!style) return true;
+    if (style.getPropertyValue("float") !== "none") return false;
+    var position = style.getPropertyValue("position");
+    if (position === "absolute" || position === "fixed") return false;
+    var display = style.getPropertyValue("display");
+    return display !== "contents" && display.indexOf("inline") !== 0;
   }
 
   // The page in front of the reader, in host-window coordinates.

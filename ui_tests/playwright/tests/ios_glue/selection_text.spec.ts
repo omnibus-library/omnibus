@@ -48,6 +48,8 @@ const CHAPTER = `
 <p id="veiled">A light <span style="visibility: hidden">148</span>burned on the point.</p>
 <p id="over">It was over.</p><p id="home">Marlow went home.</p>
 <p id="lines">The first line<br/>the second line</p>
+<div id="dropcap"><div style="float: left">T</div>he sea rose over the wall.</div>
+<p id="foot">The foot<br class="pagenum"/>ball went long.</p>
 `;
 
 /** What `emitSelection` posts to `__omnibusOnSelection`. */
@@ -335,5 +337,19 @@ test.describe("iOS reader selection text", () => {
     await dragSelect(page, from, to);
 
     expect((await settled(page)).text).toBe("first line the second");
+  });
+
+  test("a block the page sets in the line, like a floated drop cap, does not split its word", async ({
+    page,
+  }) => {
+    await dragSelect(page, await wordPoint(page, "dropcap", "he"));
+
+    expect((await settled(page)).text).toBe("The");
+  });
+
+  test("a hidden line break parts nothing", async ({ page }) => {
+    await dragSelect(page, await wordPoint(page, "foot", "foot"));
+
+    expect((await settled(page)).text).toBe("football");
   });
 });
