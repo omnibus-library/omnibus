@@ -87,8 +87,8 @@ pub struct AdminUserRow {
     pub locked: bool,
 }
 
-/// Request body for `POST /api/users` (admin create). See [`LoginRequest`]
-/// for why `Debug` is deliberately not derived.
+/// Request body for `POST /api/admin/users` (admin create). See
+/// [`LoginRequest`] for why `Debug` is deliberately not derived.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
@@ -96,8 +96,8 @@ pub struct CreateUserRequest {
     pub permissions: UserPermissions,
 }
 
-/// Request body for `POST /api/users/{id}/password` (admin password reset).
-/// See [`LoginRequest`] for why `Debug` is deliberately not derived.
+/// Request body for `POST /api/admin/users/{id}/password` (admin password
+/// reset). See [`LoginRequest`] for why `Debug` is deliberately not derived.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SetPasswordRequest {
     pub password: String,

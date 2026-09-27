@@ -47,6 +47,18 @@ pub(super) fn content_routes() -> Router<AppState> {
         )
         .route("/api/users/{id}/password", post(users::post_password))
         .route("/api/users/{id}/unlock", post(users::post_unlock))
+        // Admin user management (F5.4) — all AdminUser-gated.
+        .route(
+            "/api/admin/users",
+            get(users::get_users).post(users::post_user),
+        )
+        .route("/api/admin/users/{id}", delete(users::delete_user))
+        .route(
+            "/api/admin/users/{id}/permissions",
+            patch(users::patch_permissions),
+        )
+        .route("/api/admin/users/{id}/password", post(users::post_password))
+        .route("/api/admin/users/{id}/unlock", post(users::post_unlock))
         // Admin device & session management (F5.4, #910) — all AdminUser-gated.
         .route(
             "/api/admin/users/{id}/sessions",

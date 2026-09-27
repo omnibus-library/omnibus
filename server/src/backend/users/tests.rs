@@ -43,7 +43,7 @@ async fn admin_token(pool: &sqlx::SqlitePool, name: &str) -> String {
 async fn list_rows(app: &axum::Router, token: &str) -> Vec<AdminUserRow> {
     let res = app
         .clone()
-        .oneshot(req("GET", "/api/users", token, None))
+        .oneshot(req("GET", "/api/admin/users", token, None))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
@@ -69,7 +69,7 @@ fn create_body(username: &str, password: &str, is_admin: bool) -> serde_json::Va
 #[tokio::test]
 async fn list_users_returns_401_when_anonymous() {
     let (app, _, _) = fixture().await;
-    let res = app.oneshot(anon("GET", "/api/users")).await.unwrap();
+    let res = app.oneshot(anon("GET", "/api/admin/users")).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -79,7 +79,7 @@ async fn list_users_returns_403_for_non_admin() {
     let user = auth_test_support::create_user(&pool, "reader").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
     let res = app
-        .oneshot(req("GET", "/api/users", &token, None))
+        .oneshot(req("GET", "/api/admin/users", &token, None))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
@@ -93,7 +93,7 @@ async fn create_user_returns_403_for_non_admin() {
     let res = app
         .oneshot(req(
             "POST",
-            "/api/users",
+            "/api/admin/users",
             &token,
             Some(create_body("bob", "bunker9-longer-pass", false)),
         ))
@@ -118,7 +118,7 @@ async fn admin_lists_and_creates_users() {
         .clone()
         .oneshot(req(
             "POST",
-            "/api/users",
+            "/api/admin/users",
             &token,
             Some(create_body("bob", "bunker9-longer-pass", false)),
         ))
@@ -141,7 +141,7 @@ async fn create_user_returns_409_on_duplicate_username() {
     let res = app
         .oneshot(req(
             "POST",
-            "/api/users",
+            "/api/admin/users",
             &token,
             Some(create_body("Alice", "bunker9-longer-pass", false)),
         ))
@@ -157,7 +157,7 @@ async fn create_user_returns_422_on_weak_password() {
     let res = app
         .oneshot(req(
             "POST",
-            "/api/users",
+            "/api/admin/users",
             &token,
             Some(create_body("bob", "short", false)),
         ))
@@ -172,7 +172,7 @@ async fn create_user_returns_422_on_weak_password() {
 async fn patch_permissions_returns_401_when_anonymous() {
     let (app, _, _) = fixture().await;
     let res = app
-        .oneshot(anon("PATCH", "/api/users/1/permissions"))
+        .oneshot(anon("PATCH", "/api/admin/users/1/permissions"))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -187,7 +187,7 @@ async fn patch_permissions_returns_403_for_non_admin() {
     let res = app
         .oneshot(req(
             "PATCH",
-            &format!("/api/users/{}/permissions", bob.id),
+            &format!("/api/admin/users/{}/permissions", bob.id),
             &token,
             Some(serde_json::json!({
                 "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false,
@@ -208,7 +208,7 @@ async fn patch_permissions_updates_flags() {
         .clone()
         .oneshot(req(
             "PATCH",
-            &format!("/api/users/{}/permissions", bob.id),
+            &format!("/api/admin/users/{}/permissions", bob.id),
             &token,
             Some(serde_json::json!({
                 "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false,
@@ -231,7 +231,7 @@ async fn patch_permissions_returns_409_demoting_last_admin() {
     let res = app
         .oneshot(req(
             "PATCH",
-            &format!("/api/users/{}/permissions", admin.id),
+            &format!("/api/admin/users/{}/permissions", admin.id),
             &token,
             Some(serde_json::json!({
                 "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true,
@@ -249,7 +249,7 @@ async fn patch_permissions_returns_404_for_unknown_user() {
     let res = app
         .oneshot(req(
             "PATCH",
-            "/api/users/9999/permissions",
+            "/api/admin/users/9999/permissions",
             &token,
             Some(serde_json::json!({
                 "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true,
@@ -266,7 +266,7 @@ async fn patch_permissions_returns_404_for_unknown_user() {
 async fn post_password_returns_401_when_anonymous() {
     let (app, _, _) = fixture().await;
     let res = app
-        .oneshot(anon("POST", "/api/users/1/password"))
+        .oneshot(anon("POST", "/api/admin/users/1/password"))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -281,7 +281,7 @@ async fn post_password_returns_403_for_non_admin() {
     let res = app
         .oneshot(req(
             "POST",
-            &format!("/api/users/{}/password", bob.id),
+            &format!("/api/admin/users/{}/password", bob.id),
             &token,
             Some(serde_json::json!({ "password": "reset-by-admin-99" })),
         ))
@@ -300,7 +300,7 @@ async fn reset_password_succeeds_and_rejects_weak() {
         .clone()
         .oneshot(req(
             "POST",
-            &format!("/api/users/{}/password", bob.id),
+            &format!("/api/admin/users/{}/password", bob.id),
             &token,
             Some(serde_json::json!({ "password": "reset-by-admin-99" })),
         ))
@@ -311,7 +311,7 @@ async fn reset_password_succeeds_and_rejects_weak() {
     let weak = app
         .oneshot(req(
             "POST",
-            &format!("/api/users/{}/password", bob.id),
+            &format!("/api/admin/users/{}/password", bob.id),
             &token,
             Some(serde_json::json!({ "password": "short" })),
         ))
@@ -326,7 +326,7 @@ async fn reset_password_succeeds_and_rejects_weak() {
 async fn post_unlock_returns_401_when_anonymous() {
     let (app, _, _) = fixture().await;
     let res = app
-        .oneshot(anon("POST", "/api/users/1/unlock"))
+        .oneshot(anon("POST", "/api/admin/users/1/unlock"))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -341,7 +341,7 @@ async fn post_unlock_returns_403_for_non_admin() {
     let res = app
         .oneshot(req(
             "POST",
-            &format!("/api/users/{}/unlock", bob.id),
+            &format!("/api/admin/users/{}/unlock", bob.id),
             &token,
             None,
         ))
@@ -361,7 +361,7 @@ async fn post_unlock_clears_lockout() {
         .clone()
         .oneshot(req(
             "POST",
-            &format!("/api/users/{}/unlock", bob.id),
+            &format!("/api/admin/users/{}/unlock", bob.id),
             &token,
             None,
         ))
@@ -378,7 +378,10 @@ async fn post_unlock_clears_lockout() {
 #[tokio::test]
 async fn delete_user_returns_401_when_anonymous() {
     let (app, _, _) = fixture().await;
-    let res = app.oneshot(anon("DELETE", "/api/users/1")).await.unwrap();
+    let res = app
+        .oneshot(anon("DELETE", "/api/admin/users/1"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -391,7 +394,7 @@ async fn delete_user_returns_403_for_non_admin() {
     let res = app
         .oneshot(req(
             "DELETE",
-            &format!("/api/users/{}", bob.id),
+            &format!("/api/admin/users/{}", bob.id),
             &token,
             None,
         ))
@@ -410,7 +413,7 @@ async fn delete_user_removes_user() {
         .clone()
         .oneshot(req(
             "DELETE",
-            &format!("/api/users/{}", bob.id),
+            &format!("/api/admin/users/{}", bob.id),
             &token,
             None,
         ))
@@ -430,7 +433,7 @@ async fn delete_user_returns_409_for_last_admin() {
     let res = app
         .oneshot(req(
             "DELETE",
-            &format!("/api/users/{}", admin.id),
+            &format!("/api/admin/users/{}", admin.id),
             &token,
             None,
         ))
@@ -444,7 +447,7 @@ async fn delete_user_returns_404_for_unknown() {
     let (app, _, pool) = fixture().await;
     let token = admin_token(&pool, "alice").await;
     let res = app
-        .oneshot(req("DELETE", "/api/users/9999", &token, None))
+        .oneshot(req("DELETE", "/api/admin/users/9999", &token, None))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
