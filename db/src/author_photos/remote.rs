@@ -3,11 +3,12 @@
 //! ranges before any TCP connect, then pins `reqwest` to the validated
 //! addresses so DNS rebinding cannot substitute a blocked IP after the check.
 //!
-//! Two callers with different terms, one implementation: the admin "paste
-//! URL" photo upload takes it as-is, and the provider-cover apply tightens it
-//! through [`RemoteImageConfig`] (host allowlist, HTTPS-only, a bounded
-//! redirect follow). A second fetcher for the second caller is the thing this
-//! module exists to prevent.
+//! Three callers with different terms, one implementation, tuned through
+//! [`RemoteImageConfig`]: the admin "paste URL" photo upload takes it as-is,
+//! the provider-cover apply adds a host allowlist, and the pasted-book-cover
+//! apply drops the allowlist but keeps HTTPS-only and the address gate. A
+//! second fetcher for any of the three is the thing this module exists to
+//! prevent.
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -76,11 +77,13 @@ fn too_large() -> FetchRemoteImageError {
 /// construct a `RemoteImageConfig` with this flag set.
 ///
 /// The remaining three fields tighten the default rather than relaxing it,
-/// and exist so the provider-cover fetch can share this one SSRF
-/// implementation instead of growing a second: `Default` reproduces the
-/// admin paste-a-URL behaviour exactly (any host, `http` allowed, redirects
-/// refused), and the cover path opts into a host allowlist, HTTPS-only, and
-/// a bounded follow.
+/// and exist so every cover fetch can share this one SSRF implementation
+/// instead of growing a second: `Default` reproduces the admin paste-a-URL
+/// behaviour exactly (any host, `http` allowed, redirects refused); the
+/// provider-cover path (`db::provider_cover_image_config`) adds a host
+/// allowlist, HTTPS-only, and a bounded follow; the pasted-book-cover path
+/// (`db::pasted_cover_image_config`) keeps HTTPS-only and the bounded follow
+/// but leaves the allowlist empty, relying on the address gate alone.
 #[derive(Debug, Clone, Default)]
 pub struct RemoteImageConfig {
     /// When `true`, [`fetch_remote_image_with`] skips the IP-range check
@@ -110,7 +113,11 @@ impl RemoteImageConfig {
     /// `*.archive.org` matches `ia1.us.archive.org` but not `archive.org`,
     /// which must be listed on its own. A single-label suffix (`*.com`) is
     /// refused outright rather than treated as a wildcard over a whole TLD.
-    pub(super) fn host_allowed(&self, host: &str) -> bool {
+    ///
+    /// `pub` rather than `pub(super)`: `metadata_lookup::cover_image_config_for`
+    /// calls it on the provider config to decide which terms a pasted URL
+    /// should fetch under, before any fetch runs.
+    pub fn host_allowed(&self, host: &str) -> bool {
         if self.host_allowlist.is_empty() {
             return true;
         }

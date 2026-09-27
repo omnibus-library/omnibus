@@ -1,10 +1,11 @@
-//! `POST /api/ebooks/:uuid/cover/from-url` — applying a provider's cover.
+//! `POST /api/ebooks/:uuid/cover/from-url` — applying a cover by URL, from
+//! either a provider catalog host or a reader-pasted one.
 //!
 //! This is the one route in the metadata-search feature that fetches a
-//! client-supplied URL server-side, so the refusals are the point: a host off
-//! the catalog's allowlist, a plain-`http` URL, a redirect that leaves the
-//! allowlist, bytes that aren't an image, and an origin that errors. Every
-//! test drives a local `wiremock` origin — never a live provider.
+//! client-supplied URL server-side, so the refusals are the point: plain
+//! `http`, a private-address literal, too many redirects, bytes that aren't
+//! an image, and an origin that errors. Every test drives a local `wiremock`
+//! origin — never a live provider or a live pasted host.
 
 use axum::{
     body::{to_bytes, Body},
@@ -83,7 +84,7 @@ async fn api_post_cover_from_url_replaces_the_cover_and_marks_the_override() {
 // ── AC6: the scanned cover is still recoverable afterwards ───────
 
 #[tokio::test]
-async fn api_delete_cover_reverts_a_cover_that_came_from_a_provider() {
+async fn api_delete_cover_reverts_a_cover_that_came_from_a_url() {
     let _covers = CoversDirGuard::new("cover_from_url_revert");
     let (app, _state, pool) = fixture_loopback_remote_image().await;
     let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "RevertProviderCover").await;
@@ -127,14 +128,18 @@ async fn api_delete_cover_reverts_a_cover_that_came_from_a_provider() {
 }
 
 // ── AC2: the SSRF gates ──────────────────────────────────────────
+//
+// A pasted (non-catalog) host is no longer refused for being off an
+// allowlist — `cover_image_config_for` routes it to the pasted terms, which
+// have none. Its control is the scheme + address gate, exercised below with
+// the production config so every case is refused offline, before any DNS
+// lookup or connect.
 
 #[tokio::test]
-async fn api_post_cover_from_url_refuses_a_host_outside_the_provider_allowlist() {
-    // The production config, not the loopback one: this is what a real server
-    // does with a URL naming a host no provider serves covers from.
-    let _covers = CoversDirGuard::new("cover_from_url_host");
+async fn api_post_cover_from_url_refuses_plain_http_for_a_pasted_host() {
+    let _covers = CoversDirGuard::new("cover_from_url_pasted_http");
     let (app, _state, pool) = fixture().await;
-    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "HostBook").await;
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "PastedHttpBook").await;
     let admin = auth_test_support::create_admin(&pool, "admin").await;
     let token = auth_test_support::bearer_token(&pool, admin.id).await;
 
@@ -142,23 +147,53 @@ async fn api_post_cover_from_url_refuses_a_host_outside_the_provider_allowlist()
         .oneshot(from_url_request(
             &uuid,
             &token,
-            "https://evil.example/cover.png",
+            "http://images.example.com/cover.jpg",
         ))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-    assert!(
-        String::from_utf8_lossy(&body).contains("not an allowed source"),
-        "the refusal must name the reason"
-    );
-    assert!(
-        db::get_metadata_overrides(&pool, &uuid)
+    assert!(String::from_utf8_lossy(&body).contains("https"));
+    assert!(db::get_metadata_overrides(&pool, &uuid)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn api_post_cover_from_url_refuses_private_address_literals_for_a_pasted_host() {
+    let _covers = CoversDirGuard::new("cover_from_url_pasted_private");
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    for (i, url) in [
+        "https://127.0.0.1/cover.png",
+        "https://10.0.0.8/cover.png",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://[::1]/cover.png",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", &format!("PrivBook{i}")).await;
+        let res = app
+            .clone()
+            .oneshot(from_url_request(&uuid, &token, url))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{url}");
+        let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        assert!(
+            String::from_utf8_lossy(&body).contains("not allowed"),
+            "{url}: {}",
+            String::from_utf8_lossy(&body)
+        );
+        assert!(db::get_metadata_overrides(&pool, &uuid)
             .await
             .unwrap()
-            .is_none(),
-        "a refused fetch must write nothing"
-    );
+            .is_none());
+    }
 }
 
 #[tokio::test]
@@ -184,21 +219,19 @@ async fn api_post_cover_from_url_refuses_plain_http_even_for_an_allowlisted_host
 }
 
 #[tokio::test]
-async fn api_post_cover_from_url_refuses_a_redirect_that_leaves_the_allowlist() {
-    // The gadget the allowlist exists for: an allowed origin answering with a
-    // 302 to somewhere it was never allowed to send us.
-    let _covers = CoversDirGuard::new("cover_from_url_redirect");
+async fn api_post_cover_from_url_refuses_a_redirect_loop_after_the_hop_cap() {
+    // The hop cap is real under the hatch even though the allowlist isn't:
+    // a wiremock origin can still 302 forever, and the fetch must give up.
+    let _covers = CoversDirGuard::new("cover_from_url_redirect_loop");
     let (app, _state, pool) = fixture_loopback_remote_image().await;
-    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "RedirectBook").await;
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "RedirectLoopBook").await;
     let admin = auth_test_support::create_admin(&pool, "admin").await;
     let token = auth_test_support::bearer_token(&pool, admin.id).await;
 
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/cover.png"))
-        .respond_with(
-            ResponseTemplate::new(302).insert_header("Location", "https://evil.example/x.png"),
-        )
+        .and(path("/loop.png"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/loop.png"))
         .mount(&server)
         .await;
 
@@ -206,16 +239,24 @@ async fn api_post_cover_from_url_refuses_a_redirect_that_leaves_the_allowlist() 
         .oneshot(from_url_request(
             &uuid,
             &token,
-            &format!("{}/cover.png", server.uri()),
+            &format!("{}/loop.png", server.uri()),
         ))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-    assert!(
-        String::from_utf8_lossy(&body).contains("evil.example"),
-        "the refusal must name the hop that was refused, not the first one"
-    );
+    assert!(String::from_utf8_lossy(&body).contains("too many redirects"));
+
+    let received = server
+        .received_requests()
+        .await
+        .expect("request recording is on by default");
+    let hits = received
+        .iter()
+        .filter(|r| r.url.path() == "/loop.png")
+        .count();
+    assert_eq!(hits, (db::MAX_COVER_REDIRECTS + 1) as usize);
+
     assert!(db::get_metadata_overrides(&pool, &uuid)
         .await
         .unwrap()
@@ -466,5 +507,15 @@ async fn cover_fetch_config_is_strict_by_default() {
             .map(str::to_string)
             .collect::<Vec<_>>(),
         "production must allow exactly the catalog's hosts and nothing else"
+    );
+
+    // The pasted-URL path is strict on the same terms, minus the allowlist —
+    // the test hatch cannot widen a real server on this path either.
+    let pasted = cover_fetch_config_for(&state, "https://images.example.com/c.jpg");
+    assert!(pasted.require_https, "pasted terms must be https-only");
+    assert!(!pasted.allow_private_addresses);
+    assert!(
+        pasted.host_allowlist.is_empty(),
+        "a non-catalog host must fetch under no allowlist, not a widened one"
     );
 }

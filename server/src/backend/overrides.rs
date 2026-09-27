@@ -153,19 +153,22 @@ pub(super) struct CoverFromUrlBody {
     url: String,
 }
 
-/// Apply a provider's cover by URL — the metadata editor's compare view
-/// pressing the arrow on the cover row.
+/// Apply a cover by URL — the metadata editor's compare view pressing the
+/// arrow on a provider's cover row, or a reader pasting an image URL of
+/// their own.
 ///
-/// The browser can't fetch a provider's image cross-origin to hand us bytes,
-/// so the server fetches it, which is the one place in this feature with a
-/// real security surface. Every gate lives in
-/// [`db::provider_cover_image_config`] and the fetch it configures: HTTPS
-/// only, hosts limited to the provider catalog's own (the same list the
-/// `img-src` CSP is built from), each redirect hop re-checked against both
-/// rather than trusted because the first hop was allowed, the IP-range guard
-/// before any connect, and a size cap that bounds memory whatever the origin
-/// advertises. The bytes are then sniffed here — an HTML error page served
-/// with an `image/*` content-type must not land on disk as a cover.
+/// The browser can't fetch a cross-origin image to hand us bytes, so the
+/// server fetches it, which is the one place in this feature with a real
+/// security surface. [`cover_fetch_config_for`] splits the terms by host: a
+/// provider-catalog host gets [`db::provider_cover_image_config`]'s
+/// allowlisted terms (the same host list the `img-src` CSP is built from);
+/// any other host gets [`db::pasted_cover_image_config`]'s terms, which drop
+/// the allowlist and rely on the address gate alone. Both share HTTPS only,
+/// each redirect hop re-checked rather than trusted because the first hop
+/// was allowed, the IP-range guard before any connect, and a size cap that
+/// bounds memory whatever the origin advertises. The bytes are then sniffed
+/// here — an HTML error page served with an `image/*` content-type must not
+/// land on disk as a cover.
 ///
 /// **Rate-limited** (mounted in `upload_router`): it carries no upload body,
 /// which is what keeps the other cover routes outside that limiter, but it is
@@ -200,9 +203,10 @@ pub(super) async fn post_ebook_cover_from_url(
     if url.is_empty() {
         return (axum::http::StatusCode::BAD_REQUEST, "url is required").into_response();
     }
-    // Capped before the string reaches the fetch pipeline, sharing the cap
-    // `ExternalBookMeta` already applies to a provider `cover_url` — which is
-    // where every URL this route legitimately receives comes from.
+    // Capped before the string reaches the fetch pipeline, the same cap
+    // `ExternalBookMeta` applies to a provider `cover_url` — a pasted URL has
+    // no such source to inherit the cap from, so this route enforces it
+    // directly.
     if url.len() > ExternalBookMeta::COVER_URL_MAX_LEN {
         return (
             axum::http::StatusCode::BAD_REQUEST,
@@ -220,13 +224,13 @@ pub(super) async fn post_ebook_cover_from_url(
         Err(e) => return internal("resolve_book_id_by_uuid", e),
     };
 
-    let config = cover_fetch_config(&state);
+    let config = cover_fetch_config_for(&state, url);
     let (advertised_mime, bytes) = match db::fetch_provider_cover(url, &config).await {
         Ok(pair) => pair,
         Err(db::author_photos::FetchRemoteImageError::Http(e)) => {
-            // A transport failure against the *provider* is not this server
+            // A transport failure against the *source* is not this server
             // erroring; 502 says whose fault it was.
-            tracing::warn!(error = ?e, "provider cover fetch failed");
+            tracing::warn!(error = ?e, "cover fetch failed");
             return (
                 axum::http::StatusCode::BAD_GATEWAY,
                 "could not fetch the cover from that source",
@@ -238,7 +242,7 @@ pub(super) async fn post_ebook_cover_from_url(
         Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
 
-    // Magic bytes, not the remote Content-Type: a provider serving an HTML
+    // Magic bytes, not the remote Content-Type: a source serving an HTML
     // error page under `image/jpeg` must not be written as `override-<uuid>.jpg`
     // and served back as a cover.
     let mime = match detect_image_format(&bytes) {
@@ -246,7 +250,7 @@ pub(super) async fn post_ebook_cover_from_url(
         None => {
             tracing::warn!(
                 advertised_mime,
-                "provider cover URL returned image content-type but bytes are not an image"
+                "cover URL returned image content-type but bytes are not an image"
             );
             return (
                 axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -284,11 +288,37 @@ pub(super) async fn post_ebook_cover_from_url(
 /// flag is `false`, so none of it applies; `cover_fetch_config_is_strict_by_default`
 /// is what holds that true.
 ///
-/// Shared with the upload commit (`uploads`), which fetches a cover the
-/// reader staged from the edition picker under exactly these terms.
+/// Provider-only — shared with the upload commit (`uploads`), which fetches a
+/// cover the reader staged from the edition picker, always a catalog URL.
+/// [`post_ebook_cover_from_url`] uses [`cover_fetch_config_for`] instead,
+/// since a pasted URL may name any host.
 pub(super) fn cover_fetch_config(state: &AppState) -> db::author_photos::RemoteImageConfig {
     let loopback_testing = state.remote_image_config().allow_private_addresses;
     let mut config = db::provider_cover_image_config(loopback_testing);
+    if loopback_testing {
+        config.require_https = false;
+        config.host_allowlist.push("127.0.0.1".to_string());
+        config.host_allowlist.push("localhost".to_string());
+    }
+    config
+}
+
+/// The terms [`post_ebook_cover_from_url`]'s fetch runs under for `url` —
+/// [`db::cover_image_config_for`]'s split between the provider catalog's
+/// allowlisted terms and the pasted terms (any public HTTPS host, the address
+/// gate alone).
+///
+/// Shares [`cover_fetch_config`]'s one test-only hatch: only when
+/// `state.remote_image_config().allow_private_addresses`, `require_https` is
+/// dropped and `127.0.0.1` + `localhost` are appended to whichever allowlist
+/// the host split picked — so a loopback `wiremock` origin is reachable on
+/// either path in a test, and never on a production `AppState`.
+pub(super) fn cover_fetch_config_for(
+    state: &AppState,
+    url: &str,
+) -> db::author_photos::RemoteImageConfig {
+    let loopback_testing = state.remote_image_config().allow_private_addresses;
+    let mut config = db::cover_image_config_for(url, loopback_testing);
     if loopback_testing {
         config.require_https = false;
         config.host_allowlist.push("127.0.0.1".to_string());

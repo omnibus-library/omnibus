@@ -113,10 +113,10 @@ pub use helpers::sanitize_fts_query;
 pub use kepub::{convert_book, kepub_path, kepubify_available, warn_if_unavailable, KepubError};
 pub use merge::{merge_books, merge_candidates, undo_merge, MergeError, MergeOutcome};
 pub use metadata_lookup::{
-    all_cover_hosts, catalog, cover_hosts, fetch_provider_cover, hydrate_edition,
-    provider_cover_image_config, search_all_providers, search_provider_by_isbn,
-    search_provider_by_title, MetadataLookupConfig, MetadataLookupError, ProviderKeys, SearchQuery,
-    ThrottleTracker, MAX_COVER_REDIRECTS,
+    all_cover_hosts, catalog, cover_hosts, cover_image_config_for, fetch_provider_cover,
+    hydrate_edition, pasted_cover_image_config, provider_cover_image_config, search_all_providers,
+    search_provider_by_isbn, search_provider_by_title, MetadataLookupConfig, MetadataLookupError,
+    ProviderKeys, SearchQuery, ThrottleTracker, MAX_COVER_REDIRECTS,
 };
 pub use metadata_overrides::*;
 pub use missing_files::{
