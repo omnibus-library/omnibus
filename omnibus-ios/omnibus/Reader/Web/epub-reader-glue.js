@@ -1563,6 +1563,7 @@
       var mid = (main.top + main.bottom) / 2;
       rows[q].lineTop = Math.min(rows[q].lineTop, mid - main.strut / 2);
       rows[q].lineBottom = Math.max(rows[q].lineBottom, mid + main.strut / 2);
+      rows[q].strut = main.strut;
     }
 
     // Reading order — column first, so the host's handles hang off the true
@@ -1591,11 +1592,13 @@
     return out;
   }
 
-  // A stripe narrower than this between two line boxes is not page: lines
+  // A stripe narrower than this between two line boxes is not page. Lines
   // land on a sub-pixel grid, so neighbours that should touch come back a
-  // hair apart or a hair over, and a line set in a smaller face sits a pixel
-  // or so lower on its baseline than the strut centred on it.
+  // hair apart or a hair over; and a line set wholly in a smaller face sits
+  // lower on its baseline than the strut centred on it, by a share of the
+  // line that grows with the face — hence a share, over a floor.
   var SEAM_PX = 2;
+  var SEAM_LINES = 0.125;
 
   // Give two neighbouring lines whose boxes meet or overlap one shared edge —
   // halfway between them, and never inside either line's text — so a
@@ -1604,14 +1607,16 @@
   // scene break — and stays unpainted.
   //
   // `rows` must be in reading order, as `lineRows` sorts them, each carrying
-  // its text box (`top`/`bottom`) and its line box (`lineTop`/`lineBottom`).
-  // Settles the line boxes in place.
+  // its text box (`top`/`bottom`), its line box (`lineTop`/`lineBottom`) and
+  // its block's line height (`strut`). Settles the line boxes in place.
   function settleLineBoxes(rows) {
     for (var i = 1; i < rows.length; i++) {
       var upper = rows[i - 1];
       var lower = rows[i];
       if (upper.col !== lower.col) continue;
-      if (lower.lineTop - upper.lineBottom >= SEAM_PX) continue;
+      var line = Math.max(upper.strut || 0, lower.strut || 0);
+      var seam = Math.max(SEAM_PX, line * SEAM_LINES);
+      if (lower.lineTop - upper.lineBottom >= seam) continue;
       var edge = (upper.lineBottom + lower.lineTop) / 2;
       upper.lineBottom = Math.max(upper.bottom, Math.min(edge, lower.top));
       lower.lineTop = Math.min(lower.top, Math.max(edge, upper.bottom));

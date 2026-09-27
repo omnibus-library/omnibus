@@ -24,22 +24,26 @@ private struct Row: Equatable {
     var bottom: Double
     var lineTop: Double
     var lineBottom: Double
+    /// The line height of the block the line is set in.
+    var strut: Double
 
     /// A line whose box reaches `lead` past its text above and below.
-    init(col: Int = 0, top: Double, bottom: Double, lead: Double) {
+    init(col: Int = 0, top: Double, bottom: Double, lead: Double, strut: Double = pitch) {
         self.col = col
         self.top = top
         self.bottom = bottom
         lineTop = top - lead
         lineBottom = bottom + lead
+        self.strut = strut
     }
 
-    init(col: Int, top: Double, bottom: Double, lineTop: Double, lineBottom: Double) {
+    init(col: Int, top: Double, bottom: Double, lineTop: Double, lineBottom: Double, strut: Double) {
         self.col = col
         self.top = top
         self.bottom = bottom
         self.lineTop = lineTop
         self.lineBottom = lineBottom
+        self.strut = strut
     }
 }
 
@@ -80,7 +84,7 @@ private func settleLineBoxes(_ rows: [Row]) throws -> [Row] {
     let input = rows.map {
         [
             "col": $0.col, "top": $0.top, "bottom": $0.bottom,
-            "lineTop": $0.lineTop, "lineBottom": $0.lineBottom,
+            "lineTop": $0.lineTop, "lineBottom": $0.lineBottom, "strut": $0.strut,
         ] as [String: Any]
     }
     let output = settle.call(withArguments: [input])?.toArray()
@@ -92,7 +96,8 @@ private func settleLineBoxes(_ rows: [Row]) throws -> [Row] {
             top: #require(row["top"] as? Double),
             bottom: #require(row["bottom"] as? Double),
             lineTop: #require(row["lineTop"] as? Double),
-            lineBottom: #require(row["lineBottom"] as? Double)
+            lineBottom: #require(row["lineBottom"] as? Double),
+            strut: #require(row["strut"] as? Double)
         )
     }
 }
@@ -150,6 +155,21 @@ struct SelectionRowsTests {
         for (upper, lower) in zip(bars, bars.dropFirst()) {
             #expect(nearlyEqual(upper.lineBottom, lower.lineTop))
         }
+    }
+
+    @Test("settleLineBoxes closes a wider seam on a larger line")
+    func settleLineBoxesScalesTheSeamWithTheLine() throws {
+        // A 34px face on a 54.4px line. A line set wholly in a smaller span
+        // comes back a few pixels below the strut centred on it — more than a
+        // fixed floor, and still not page.
+        let line = 54.4
+        let upper = Row(top: 100, bottom: 138.6, lead: 7.9, strut: line)
+        let lower = Row(top: 162.3, bottom: 191.3, lead: 12.7, strut: line)
+        #expect(nearlyEqual(lower.lineTop - upper.lineBottom, 3.1))
+
+        let bars = try settleLineBoxes([upper, lower])
+
+        #expect(nearlyEqual(bars[0].lineBottom, bars[1].lineTop))
     }
 
     @Test("settleLineBoxes never moves either end of a range off its own line box")

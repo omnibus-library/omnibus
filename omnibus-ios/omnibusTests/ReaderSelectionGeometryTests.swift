@@ -20,8 +20,9 @@ private let prose = String(
 )
 
 /// A paragraph, a line either side of a 200px plate, a paragraph set in a
-/// smaller span, and two paragraphs a 1em margin apart. The line height is
-/// set on `body` as a number, the way the reader's own override arrives.
+/// smaller span, one at the reader's largest size that runs into one, and two
+/// paragraphs a 1em margin apart. The line height is set on `body` as a
+/// number, the way the reader's own override arrives.
 private let markup = """
 <!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -37,6 +38,7 @@ private let markup = """
 <div id="plate"></div>
 <p id="after">One line below it.</p>
 <p id="small"><span style="font-size: 0.8em">\(prose)</span></p>
+<p id="mixed" style="font-size: 34px">Set full size, then <span style="font-size: 0.75em">\(prose)</span></p>
 <p id="first">\(prose)</p>
 <p id="second">\(prose)</p>
 </body></html>
@@ -61,15 +63,22 @@ const spanning = (from, to) => {
   range.setEnd(last, last.length);
   return range;
 };
-// The font box of each line: one per line, however many runs it holds.
+// The font box of each line: one per line, however many runs it holds —
+// runs of different sizes share a line when they share most of their height.
 const lines = (node) => {
   const out = [];
   for (const text of texts(node)) {
     const range = document.createRange();
     range.selectNodeContents(text);
     for (const r of Array.from(range.getClientRects())) {
-      const line = out.find((l) => Math.abs(l.top - r.top) < 2);
-      if (line) { line.bottom = Math.max(line.bottom, r.bottom); continue; }
+      const line = out.find((l) =>
+        Math.min(l.bottom, r.bottom) - Math.max(l.top, r.top) >
+          Math.min(l.bottom - l.top, r.height) / 2);
+      if (line) {
+        line.top = Math.min(line.top, r.top);
+        line.bottom = Math.max(line.bottom, r.bottom);
+        continue;
+      }
       out.push({ top: r.top, bottom: r.bottom });
     }
   }
@@ -87,6 +96,7 @@ return JSON.stringify({
   plate: selection("before", "after"),
   plateBox: { top: plate.top, bottom: plate.bottom },
   small: selection("small", "small"),
+  mixed: selection("mixed", "mixed"),
   acrossBreak: selection("first", "second"),
   firstLines: lines(el("first")).length,
 });
@@ -115,6 +125,7 @@ private struct Measured: Decodable {
     let plate: Selection
     let plateBox: Box
     let small: Selection
+    let mixed: Selection
     let acrossBreak: Selection
     let firstLines: Int
 }
@@ -201,7 +212,19 @@ struct SelectionGeometryTests {
         let small = try await measured().small
 
         #expect(small.texts.count >= 3, "the paragraph did not wrap: \(small.texts)")
+        #expect(small.bars.count == small.texts.count)
         #expect(contiguous(small.bars), "a stripe of page between two lines: \(small.bars)")
+    }
+
+    @Test("lineRects closes a large paragraph where full-size text gives way to a smaller span")
+    func lineRectsClosesALargeMixedParagraph() async throws {
+        // The span's lines sit lower on their baselines than the strut centred
+        // on them, by a share of the line that grows with the face.
+        let mixed = try await measured().mixed
+
+        #expect(mixed.texts.count >= 3, "the paragraph did not wrap: \(mixed.texts)")
+        #expect(mixed.bars.count == mixed.texts.count)
+        #expect(contiguous(mixed.bars), "a stripe of page between two lines: \(mixed.bars)")
     }
 
     @Test("lineRects leaves the margin between two paragraphs unpainted")
