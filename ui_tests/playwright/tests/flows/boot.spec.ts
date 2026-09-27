@@ -14,8 +14,9 @@ import { expectNavVisible, waitForHydration } from "../utils/nav";
 const CLIENT_WASM = /\/omnibus_bg[^/]*\.wasm(\?|$)/;
 
 // Hold the client's WASM download until the returned release is called — the
-// client cannot hydrate before it instantiates. A held page is navigated with
-// `waitUntil: "domcontentloaded"`, since `load` can wait on the bundle.
+// client cannot hydrate before it instantiates. Navigate a held page with
+// `waitUntil: "domcontentloaded"`: the server-rendered page is complete by then,
+// and nothing later is needed.
 async function holdClient(page: Page): Promise<() => void> {
   let release = () => {};
   const gate = new Promise<void>((resolve) => {
