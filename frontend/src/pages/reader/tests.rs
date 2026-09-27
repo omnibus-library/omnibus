@@ -65,6 +65,14 @@ mod render_tests {
     }
 
     #[test]
+    fn reader_viewer_stage_shows_a_nav_error_notice_without_a_blocking_overlay() {
+        let html = render(rsx! { ViewerStageHarness { status: ReaderStatus::NavFailed } });
+        assert!(html.contains("data-testid=\"reader-nav-error\""), "{html}");
+        assert!(!html.contains("rd-overlay"), "{html}");
+        assert!(!html.contains("reader-loading"), "{html}");
+    }
+
+    #[test]
     fn reader_viewer_stage_omits_the_error_overlay_when_ready() {
         let html = render(rsx! { ViewerStageHarness { status: ReaderStatus::Ready } });
         assert!(!html.contains("reader-error"));

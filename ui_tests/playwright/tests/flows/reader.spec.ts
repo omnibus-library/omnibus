@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
+import { buildSubfolderNavEpub } from "../fixtures/subfolder_nav_epub";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
@@ -55,7 +56,10 @@ const PERCENT_ONLY_BOOK = FIXTURE_BOOKS.find(
 )!;
 // Reserved for the TOC-jump loading-state regression (see the reservation
 // comment on this fixture in fixtures/epubs.ts) — a real multi-chapter book,
-// so the contents drawer lists more than one row to jump between.
+// so the contents drawer lists more than one row to jump between. The
+// subfolder-nav-hrefs test below also opens this uuid, but intercepts its
+// `/file` and `/api/rpc/progress` routes wholesale, so it never touches the
+// real dracula file or writes a position onto it.
 const TOC_JUMP_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "dracula")!;
 // Reserved for the paging-race / blank-front-matter regression (issue
 // #1895) — five one-page sections (two full-page images, three text) ahead
@@ -613,6 +617,103 @@ test("shows a loading state during a TOC jump and blanks the outgoing chapter in
   // chapter again — never stuck blank, never stuck loading.
   await expect(page.getByTestId("reader-loading")).toHaveCount(0);
   await expect(headerChapter).toBeVisible({ timeout: 20_000 });
+});
+
+// Regression for issue #2450 (AC2): a TOC jump epub.js can't resolve must
+// clear the loading overlay and say so, not hang the reader. Writes nothing —
+// a rejected display emits no relocate — so it shares the TOC-jump book.
+test("a TOC jump that cannot land clears the loading overlay and says so", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
+  await gotoReady(page, `/read/${uuid}`);
+  await expect(page.getByTestId("reader-loading")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+
+  // Stand in for a TOC whose href matches no spine item (the #2450 shape).
+  await page.evaluate(() => {
+    const onToc = (window as unknown as Record<string, (json: string) => void>)
+      .__omnibusOnToc!;
+    onToc(
+      JSON.stringify([{ label: "Nowhere", href: "missing.xhtml", level: 0 }]),
+    );
+  });
+
+  await page.getByTestId("reader-toc").click();
+  await page
+    .getByTestId("reader-toc-row")
+    .filter({ hasText: "Nowhere" })
+    .click();
+
+  await expect(page.getByTestId("reader-nav-error")).toBeVisible();
+  await expect(page.getByTestId("reader-loading")).toHaveCount(0);
+  // The notice takes no pointer events: a hit test at its own centre must
+  // land on whatever sits beneath it, never on the notice itself.
+  const notice = page.getByTestId("reader-nav-error");
+  const box = await notice.boundingBox();
+  if (!box) throw new Error("reader-nav-error has no bounding box");
+  const hitsNotice = await page.evaluate(
+    ({ x, y }) =>
+      !!document
+        .elementFromPoint(x, y)
+        ?.closest('[data-testid="reader-nav-error"]'),
+    { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+  );
+  expect(hitsNotice).toBe(false);
+});
+
+// Regression for #2450 (AC1): a TOC href relative to a nav doc in a
+// subfolder must resolve against the spine rather than reject. Intercepts
+// /file and progress so it never reads the real dracula file or restores
+// its real position's CFI against this stand-in book.
+test("resolves a TOC jump whose href is relative to a nav doc in a subfolder", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
+  const epub = await buildSubfolderNavEpub();
+  await page.route(`**/api/ebooks/${uuid}/file**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/epub+zip",
+      body: epub,
+    }),
+  );
+  await page.route("**/api/rpc/progress/get", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "null",
+    }),
+  );
+  await page.route("**/api/rpc/progress", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+  );
+
+  await gotoReady(page, `/read/${uuid}`);
+  await expect(page.getByTestId("reader-loading")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+
+  const drawer = page.getByTestId("reader-toc-drawer");
+  await page.getByTestId("reader-toc").click();
+  await expect(drawer).toBeVisible();
+  await page
+    .getByTestId("reader-toc-row")
+    .filter({ hasText: "Chapter Three" })
+    .click();
+  await expect(drawer).toHaveCount(0);
+
+  await expect(page.getByTestId("reader-loading")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("reader-nav-error")).toHaveCount(0);
+  await expect(page.getByTestId("reader-header-chapter")).toHaveText(
+    "Chapter Three",
+    { timeout: 20_000 },
+  );
 });
 
 test("seeds a highlight and deletes it from the highlights drawer", async ({

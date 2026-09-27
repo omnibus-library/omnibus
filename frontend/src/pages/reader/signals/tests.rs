@@ -10,6 +10,58 @@ fn reader_status_default_is_loading_for_ssr_wasm_parity() {
     assert_eq!(ReaderStatus::default(), ReaderStatus::Loading);
 }
 
+// A late nav-error must not replace the interactive Failed (Retry) surface.
+#[test]
+fn reader_status_apply_glue_keeps_failed_over_a_late_nav_error() {
+    assert_eq!(
+        ReaderStatus::Failed.apply_glue("nav-error"),
+        ReaderStatus::Failed
+    );
+}
+
+#[test]
+fn reader_status_apply_glue_keeps_offline_over_a_late_nav_error() {
+    assert_eq!(
+        ReaderStatus::Offline.apply_glue("nav-error"),
+        ReaderStatus::Offline
+    );
+}
+
+#[test]
+fn reader_status_apply_glue_otherwise_behaves_like_from_glue() {
+    assert_eq!(
+        ReaderStatus::Loading.apply_glue("ready"),
+        ReaderStatus::Ready
+    );
+    assert_eq!(
+        ReaderStatus::Ready.apply_glue("nav-error"),
+        ReaderStatus::NavFailed
+    );
+    assert_eq!(
+        ReaderStatus::Ready.apply_glue("error"),
+        ReaderStatus::Failed
+    );
+}
+
+#[test]
+fn reader_status_from_glue_maps_nav_error_to_a_non_blocking_nav_failed() {
+    assert_eq!(ReaderStatus::from_glue("ready"), ReaderStatus::Ready);
+    assert_eq!(ReaderStatus::from_glue("error"), ReaderStatus::Failed);
+    assert_eq!(
+        ReaderStatus::from_glue("nav-error"),
+        ReaderStatus::NavFailed
+    );
+    assert_eq!(ReaderStatus::from_glue("loading"), ReaderStatus::Loading);
+}
+
+#[test]
+fn reader_status_cleared_by_relocate_covers_a_pending_or_failed_jump_but_not_a_load_failure() {
+    assert!(ReaderStatus::Loading.cleared_by_relocate());
+    assert!(ReaderStatus::NavFailed.cleared_by_relocate());
+    assert!(!ReaderStatus::Failed.cleared_by_relocate());
+    assert!(!ReaderStatus::Ready.cleared_by_relocate());
+}
+
 #[test]
 fn format_progress_labels_returns_empty_strings_before_first_relocate() {
     let (page, chapter) = format_progress_labels(&RelocateData::default());
