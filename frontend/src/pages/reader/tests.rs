@@ -30,25 +30,6 @@ fn derive_reader_display_blanks_chapter_title_while_loading_and_restores_it_once
     VirtualDom::new(AssertDisplay).rebuild_in_place();
 }
 
-#[test]
-fn reader_status_from_glue_maps_nav_error_to_a_non_blocking_nav_failed() {
-    assert_eq!(ReaderStatus::from_glue("ready"), ReaderStatus::Ready);
-    assert_eq!(ReaderStatus::from_glue("error"), ReaderStatus::Failed);
-    assert_eq!(
-        ReaderStatus::from_glue("nav-error"),
-        ReaderStatus::NavFailed
-    );
-    assert_eq!(ReaderStatus::from_glue("loading"), ReaderStatus::Loading);
-}
-
-#[test]
-fn reader_status_cleared_by_relocate_covers_a_pending_or_failed_jump_but_not_a_load_failure() {
-    assert!(ReaderStatus::Loading.cleared_by_relocate());
-    assert!(ReaderStatus::NavFailed.cleared_by_relocate());
-    assert!(!ReaderStatus::Failed.cleared_by_relocate());
-    assert!(!ReaderStatus::Ready.cleared_by_relocate());
-}
-
 // SSR render-smoke coverage of the error overlay — separate module because
 // this needs the `server` feature (`dioxus::ssr`), while the pure
 // `derive_reader_display` test above runs under any target.

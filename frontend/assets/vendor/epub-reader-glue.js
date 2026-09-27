@@ -161,6 +161,11 @@
   var pendingJumpCfi = null;
 
   function emitStatus(state) {
+    // A hard "error" means there is no book/rendition left to land a jump
+    // on — clear any armed nav watchdog here so a late timeout can never
+    // fire "nav-error" and overwrite this state (#2450 review finding P1).
+    // One place covers every emitStatus("error") call site.
+    if (state === "error") clearNavWatchdog();
     if (typeof window.__omnibusOnStatus === "function") {
       try {
         window.__omnibusOnStatus(state);
@@ -250,8 +255,12 @@
     } catch (e) {
       return href;
     }
-    if (!book.spine.get(rebased)) return href;
-    return hash >= 0 ? rebased + href.slice(hash) : rebased;
+    // Return the section's OWN href, not the decoded rebased path — epub.js
+    // compares hrefs with === downstream (findChapter), and a percent-decoded
+    // path can differ byte-for-byte from what the section itself carries.
+    var section = book.spine.get(rebased);
+    if (!section) return href;
+    return hash >= 0 ? section.href + href.slice(hash) : section.href;
   }
 
   // Directory of the document epub.js built its navigation from (nav wins
@@ -2229,7 +2238,13 @@
     stage.style.opacity = "";
   }
 
-  function displaySettled(target) {
+  // `reportFailure` is true only from display()'s own call — the one path
+  // that armed the nav watchdog and told the host to expect a landing or a
+  // failure. A follow/sync jump (the parked pendingJumpCfi replay,
+  // applyPercentage, displayCfi) never arms it, so a rejection there must
+  // stay silent rather than surface a nav-error the host was never told to
+  // wait for.
+  function displaySettled(target, reportFailure) {
     if (!rendition) return;
     displayToken++;
     var myToken = displayToken;
@@ -2245,7 +2260,7 @@
       .then(reveal, function (err) {
         reveal();
         // After a teardown the target is simply gone; otherwise say so.
-        if (rendition && current()) navFailed(target, err);
+        if (reportFailure && rendition && current()) navFailed(target, err);
       });
   }
 
@@ -2396,6 +2411,10 @@
     pendingJumpPct = null;
     pendingJumpCfi = null;
     restoreEchoPending = false;
+    // A TOC/link jump is real navigation, same as a user turn (queueTurn) —
+    // a resize correction still settling for the outgoing page must not mute
+    // this jump's own relocate for up to 10s (#2450).
+    cancelResizeCorrection();
     var t = String(target);
     armNavWatchdog(t);
     var hash = t.indexOf("#");
@@ -2421,15 +2440,15 @@
             } catch (e) {
               /* fall back to the raw href below */
             }
-            displaySettled(cfi || t);
+            displaySettled(cfi || t, true);
           })
           .catch(function () {
-            displaySettled(t);
+            displaySettled(t, true);
           });
         return;
       }
     }
-    displaySettled(t);
+    displaySettled(t, true);
   }
 
   function copyText(text) {
@@ -2530,8 +2549,9 @@
   function applyPercentage(pct) {
     var frac = Math.min(Math.max(Number(pct) / 100, 0), 1);
     var cfi = book.locations.cfiFromPercentage(frac);
-    // locations store RANGE CFIs; rendition.display() rejects them (and
-    // displaySettled swallows the rejection), so collapse to the start.
+    // locations store RANGE CFIs; rendition.display() rejects them, and this
+    // call passes no reportFailure so displaySettled stays silent on it —
+    // collapse to the start rather than rely on that.
     if (cfi && cfi.indexOf(",") !== -1) {
       try {
         var collapsed = new ePub.CFI(cfi);

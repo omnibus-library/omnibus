@@ -352,7 +352,9 @@ fn handle_status(
     highlights: &mut Signal<Vec<Highlight>>,
     saved_highlights: &[Highlight],
 ) {
-    let st = ReaderStatus::from_glue(state);
+    // `apply_glue` (not `from_glue`) so a late nav-error watchdog can't
+    // overwrite an already-Failed/Offline status (#2450 review P1).
+    let st = status.peek().apply_glue(state);
     status.set(st);
     if matches!(st, ReaderStatus::Ready) && highlights.peek().is_empty() {
         for h in saved_highlights {
