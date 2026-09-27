@@ -31,9 +31,8 @@ pub(super) fn file_token_url(server_url: &str, uuid: &str, token: Option<&str>) 
 
 /// Build the install IIFE: define the `__omnibusOn*` → `dioxus.send` shims,
 /// then load the vendored runtime **in order** (`JSZip` → epub.js → glue) and
-/// mount the book. Unlike the web build (whose SSR emits ordered, parser-
-/// inserted `<script>` tags), mobile has no ordering guarantee from
-/// `document::Script`, so we chain `onload` promises here — epub.js binds
+/// mount the book. `document::Script` gives no ordering guarantee (the web
+/// bootstrap does the same), so we chain `onload` promises here — epub.js binds
 /// `window.JSZip` at evaluation time, so it must not run before JSZip exists.
 /// Each script is skipped if its global is already present (SPA re-entry), and
 /// each `load` has a 10 s timeout so a stalled request surfaces the error

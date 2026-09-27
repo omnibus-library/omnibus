@@ -346,8 +346,7 @@ async fn spawn_bootstrap_and_highlights(
     mut loc: Signal<super::RelocateData>,
     hold_first_write: std::rc::Rc<std::cell::Cell<bool>>,
 ) {
-    use super::bootstrap::{reader_bootstrap_js, BootstrapArgs};
-    use super::reader_call_json2;
+    use super::bootstrap::{after_reader_loaded_js, reader_bootstrap_js, BootstrapArgs};
     use crate::data;
     use crate::js_interop::json_literal;
 
@@ -391,6 +390,9 @@ async fn spawn_bootstrap_and_highlights(
         justify_val: lits.justify_val,
         spread_lit: &lits.spread_lit,
         locations_key_lit: &locations_key_lit,
+        jszip_lit: &json_literal(&super::JSZIP_JS.to_string()),
+        epub_lit: &json_literal(&super::EPUBJS_JS.to_string()),
+        glue_lit: &json_literal(&super::READER_GLUE_JS.to_string()),
     });
     let _ = dioxus::document::eval(&js);
 
@@ -403,7 +405,12 @@ async fn spawn_bootstrap_and_highlights(
                 .as_deref()
                 .filter(|c| omnibus_shared::is_epub_cfi(c))
             {
-                reader_call_json2("addAnnotation", cfi, h.color.as_str());
+                let call = format!(
+                    "addAnnotation({}, {})",
+                    json_literal(cfi),
+                    json_literal(h.color.as_str())
+                );
+                let _ = dioxus::document::eval(&after_reader_loaded_js(&call));
             }
         }
         highlights.set(list);

@@ -52,8 +52,12 @@ use signals::{
 };
 use toc_drawer::TocEntry;
 
+// Loaded in order by the interops' bootstraps, so SSR never references them.
+#[cfg(any(feature = "web", feature = "mobile"))]
 const JSZIP_JS: Asset = asset!("/assets/vendor/jszip.min.js");
+#[cfg(any(feature = "web", feature = "mobile"))]
 const EPUBJS_JS: Asset = asset!("/assets/vendor/epub.min.js");
+#[cfg(any(feature = "web", feature = "mobile"))]
 const READER_GLUE_JS: Asset = asset!("/assets/vendor/epub-reader-glue.js");
 
 /// Self-hosted reader faces (Instrument Serif, EB Garamond) as a folder asset:
@@ -570,14 +574,12 @@ fn ReaderLayout(
     let note_target = panels.note_target;
     let quote_target = panels.quote_target;
 
-    // Web/SSR emit ordered, parser-inserted tags (JSZip before epub.js, which
-    // binds `window.JSZip` at load time). Mobile has no SSR, so it loads the
-    // runtime in order from `mobile::interop` instead (see `install_surface_js`).
+    // JSZip, epub.js and the glue are loaded in order by the bootstrap
+    // (`bootstrap::reader_bootstrap_js`, `mobile::interop`), never here: a
+    // client-side navigation inserts these tags async, so epub.js could run
+    // before JSZip and bind it as undefined.
     #[cfg(not(feature = "mobile"))]
     let reader_scripts = rsx! {
-        document::Script { src: JSZIP_JS }
-        document::Script { src: EPUBJS_JS }
-        document::Script { src: READER_GLUE_JS }
         document::Script { src: crate::components::quote_card::QUOTE_CARD_JS }
     };
     #[cfg(feature = "mobile")]

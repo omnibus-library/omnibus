@@ -1027,6 +1027,29 @@ test("opens the reader from the book detail Read action", async ({
   await expect(page.getByTestId("reader-viewer")).toBeVisible();
 });
 
+// Regression for #2449: a client-side navigation inserts script tags async,
+// so they run in download order. epub.js binds `window.JSZip` when it runs;
+// holding JSZip back is what made a first open fail until a reload.
+test("opens the book from detail even when JSZip downloads last", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await page.route(/\/jszip[^/]*\.js$/, async (route) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
+  });
+  await gotoReady(page, `/books/${uuid}`);
+
+  await page.getByTestId("action-read").click();
+  await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
+  await expect(page.locator("#omnibus-viewer iframe")).toBeAttached({
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("reader-loading")).toHaveCount(0);
+  await expect(page.getByTestId("reader-error")).toHaveCount(0);
+});
+
 test("restores the exact reading position when the reader is reopened", async ({
   page,
   request,
