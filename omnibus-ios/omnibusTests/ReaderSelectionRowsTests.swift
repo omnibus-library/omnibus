@@ -2,12 +2,13 @@
 //  Where the selection's bars meet, run through the glue that draws them.
 //
 //  `getClientRects` hands the glue one font box per line; each bar is drawn on
-//  its line box instead, grown by the half-leading the text's own line height
-//  sets. `settleLineBoxes` then decides where two neighbouring bars meet. The
-//  bars used to be grown by the gaps between them, which met across an
-//  illustration and tinted the whole plate (#2649). The arithmetic is pure, so
-//  it runs here in a bare JavaScriptCore context, loaded from the same bundled
-//  file the reader ships: no second copy of it to drift from the one on the page.
+//  its line box instead, measured from the line heights of the text and of its
+//  block (`SelectionGeometryTests` pins that measurement in a real WebView).
+//  `settleLineBoxes` then decides where two neighbouring bars meet. The bars
+//  used to be grown by the gaps between them, which met across an illustration
+//  and tinted the whole plate (#2649). The arithmetic is pure, so it runs here
+//  in a bare JavaScriptCore context, loaded from the same bundled file the
+//  reader ships: no second copy of it to drift from the one on the page.
 
 import Foundation
 import JavaScriptCore
@@ -122,7 +123,7 @@ struct SelectionRowsTests {
         }
     }
 
-    @Test("settleLineBoxes paints a paragraph as one continuous block")
+    @Test("settleLineBoxes keeps a paragraph whose line boxes meet as one continuous block")
     func settleLineBoxesClosesAParagraph() throws {
         let bars = try settleLineBoxes(paragraph(lines: 4, from: 100))
 
@@ -151,7 +152,7 @@ struct SelectionRowsTests {
         }
     }
 
-    @Test("settleLineBoxes keeps both ends of a range on their own line boxes")
+    @Test("settleLineBoxes never moves either end of a range off its own line box")
     func settleLineBoxesKeepsTheEndsOnTheirLineBoxes() throws {
         let rows = paragraph(lines: 3, from: 100)
 

@@ -64,8 +64,10 @@
  *   beginEdgeDrag(edge)             pin the opposite edge for a handle drag
  *   endSelectionDrag()              settle and re-emit with `existing`
  *   clearSelection()
- *   settleLineBoxes(rows)           where the selection bars' line boxes
- *                                   meet; pure, and exposed for omnibusTests
+ *   lineRects(range, win)           the bars a selection of `range` paints,
+ *                                   one per line, in host-window coordinates
+ *   settleLineBoxes(rows)           where those bars meet (pure); both are
+ *                                   exposed for omnibusTests
  *
  * Selection callbacks:
  *   - `__omnibusOnSelection(json)` — the live range, as
@@ -1392,8 +1394,9 @@
   // block over the second one, indent and ragged last line included. Walking
   // the text nodes yields nothing but glyphs.
   //
-  // With `withLeading`, each box also carries `lead`: how far its line box
-  // reaches past it above and below.
+  // With `withLeading`, each box also carries `lead`, how far its own line
+  // box reaches past it above and below, and `strut`, the line height of the
+  // block its line is set in.
   function textRects(range, withLeading) {
     var out = [];
     if (!range) return out;
@@ -1401,7 +1404,7 @@
     if (!doc) return out;
     var root = range.commonAncestorContainer;
     if (root.nodeType === 3) {
-      pushRects(out, range.getClientRects(), withLeading ? lineHeightOf(root) : null);
+      pushRects(out, range.getClientRects(), withLeading ? lineHeights(root) : null);
       return out;
     }
     var walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
@@ -1421,7 +1424,7 @@
       piece.selectNodeContents(node);
       if (node === range.startContainer) piece.setStart(node, range.startOffset);
       if (node === range.endContainer) piece.setEnd(node, range.endOffset);
-      pushRects(out, piece.getClientRects(), withLeading ? lineHeightOf(node) : null);
+      pushRects(out, piece.getClientRects(), withLeading ? lineHeights(node) : null);
       if (endIsText && node === range.endContainer) break;
       node = walker.nextNode();
       // An element end container — which a stored CFI can produce — has no
@@ -1431,32 +1434,47 @@
     return out;
   }
 
-  // CSS sets a line's box half its leading, `(line-height - content height)
-  // / 2`, past the text above and below; `lineHeight` null keeps the boxes
-  // as the engine gave them.
-  function pushRects(out, list, lineHeight) {
+  // CSS sets an inline box half its leading, `(line-height - content
+  // height) / 2`, past its text above and below; `lines` null keeps the
+  // boxes as the engine gave them.
+  function pushRects(out, list, lines) {
     for (var i = 0; i < list.length; i++) {
       var r = list[i];
       if (!(r && r.width > 0 && r.height > 0)) continue;
-      if (lineHeight === null || lineHeight === undefined) {
+      if (!lines) {
         out.push(r);
         continue;
       }
       out.push({
         left: r.left, right: r.right, top: r.top, bottom: r.bottom,
         width: r.width, height: r.height,
-        lead: Math.max(0, (lineHeight - r.height) / 2),
+        lead: Math.max(0, (lines.own - r.height) / 2),
+        strut: lines.strut,
       });
     }
   }
 
-  // The used line height of a text node's line, in px — 0 for `normal`,
-  // which the engine reports as a keyword and which adds no leading to close.
-  function lineHeightOf(node) {
+  // The used line heights a text node is set on, in px: its own element's,
+  // and its block's — the strut every line box holds whatever runs it
+  // carries, which is what spaces the lines of a paragraph set in a smaller
+  // span. 0 for `normal`, which the engine reports as a keyword and which
+  // adds no leading to close.
+  function lineHeights(node) {
     var el = node.parentElement;
     var win = el && el.ownerDocument && el.ownerDocument.defaultView;
-    if (!win) return 0;
-    var px = parseFloat(win.getComputedStyle(el).lineHeight);
+    if (!win) return { own: 0, strut: 0 };
+    var style = win.getComputedStyle(el);
+    var own = pxOrZero(style.lineHeight);
+    var block = el;
+    while (block.parentElement && /^(inline|contents)$/.test(style.display)) {
+      block = block.parentElement;
+      style = win.getComputedStyle(block);
+    }
+    return { own: own, strut: pxOrZero(style.lineHeight) };
+  }
+
+  function pxOrZero(value) {
+    var px = parseFloat(value);
     return isFinite(px) ? px : 0;
   }
 
@@ -1527,12 +1545,24 @@
         row.bottom = Math.max(row.bottom, r.bottom);
         row.lineTop = Math.min(row.lineTop, r.top - r.lead);
         row.lineBottom = Math.max(row.lineBottom, r.bottom + r.lead);
+        if (r.height > row.main.height) row.main = r;
       } else {
         rows.push({
           col: col, left: r.left, right: r.right, top: r.top, bottom: r.bottom,
-          lineTop: r.top - r.lead, lineBottom: r.bottom + r.lead,
+          lineTop: r.top - r.lead, lineBottom: r.bottom + r.lead, main: r,
         });
       }
+    }
+
+    // Every line box also holds its block's strut. Centred on the line's
+    // tallest run rather than placed on a baseline nothing here measures —
+    // exact for text in the block's own face, and a raised superscript can't
+    // drag it up. Lines set alike shift alike, so neighbours still meet.
+    for (var q = 0; q < rows.length; q++) {
+      var main = rows[q].main;
+      var mid = (main.top + main.bottom) / 2;
+      rows[q].lineTop = Math.min(rows[q].lineTop, mid - main.strut / 2);
+      rows[q].lineBottom = Math.max(rows[q].lineBottom, mid + main.strut / 2);
     }
 
     // Reading order — column first, so the host's handles hang off the true
@@ -1543,9 +1573,9 @@
 
     // Drawn on the line box, not the text's: `getClientRects` measures the
     // font box, so bars drawn as given leave a stripe of page between the
-    // lines of a paragraph. Each box's own half-leading grows it back to its
-    // line — measured, never inferred from the gaps, which grew two lines
-    // either side of an illustration until they met across it.
+    // lines of a paragraph. The line heights grow each back to its line —
+    // measured, never inferred from the gaps, which grew two lines either
+    // side of an illustration until they met across it.
     settleLineBoxes(rows);
 
     var out = [];
@@ -1561,10 +1591,11 @@
     return out;
   }
 
-  // A stripe narrower than this between two line boxes is layout rounding,
-  // not page: lines land on a sub-pixel grid, so neighbours that should touch
-  // can come back a hair apart or a hair over.
-  var SEAM_PX = 1;
+  // A stripe narrower than this between two line boxes is not page: lines
+  // land on a sub-pixel grid, so neighbours that should touch come back a
+  // hair apart or a hair over, and a line set in a smaller face sits a pixel
+  // or so lower on its baseline than the strut centred on it.
+  var SEAM_PX = 2;
 
   // Give two neighbouring lines whose boxes meet or overlap one shared edge —
   // halfway between them, and never inside either line's text — so a
@@ -3634,6 +3665,7 @@
     shareQuoteCard: shareQuoteCard,
     copyQuoteCardImage: copyQuoteCardImage,
     destroy: destroy,
+    lineRects: lineRects,
     settleLineBoxes: settleLineBoxes,
   };
 })();

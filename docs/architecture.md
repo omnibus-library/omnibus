@@ -878,13 +878,16 @@ never `Range.getClientRects()`, which also returns the border box of any
 element the range wholly contains — a middle paragraph, an image — and painted
 a three-paragraph selection as a block over the second. Those are font boxes,
 so each bar is drawn on its *line* box instead: the walk reports each box's
-half-leading from the text's computed `line-height`, and `settleLineBoxes`
-gives two neighbouring lines whose boxes meet one shared edge. Nothing is
-inferred from the gaps between rows — that grew two lines either side of an
-illustration until they met across it (#2649) — so a margin, an ornament or a
-plate between two selected lines stays unpainted. `settleLineBoxes` is pure
-and exported on `OmnibusReader`, and `SelectionRowsTests` runs it in a bare
-JavaScriptCore context off the bundled file. The same walk is
+half-leading from the text's computed `line-height`, every row also holds its
+block's strut (so a paragraph set in a smaller span still closes), and
+`settleLineBoxes` gives two neighbouring lines whose boxes meet one shared
+edge. Nothing is inferred from the gaps between rows — that grew two lines
+either side of an illustration until they met across it (#2649) — so a
+margin, an ornament or a plate between two selected lines stays unpainted.
+`lineRects` and `settleLineBoxes` are exported on `OmnibusReader` for the
+tests: `SelectionRowsTests` runs the pure one in a bare JavaScriptCore context,
+and `SelectionGeometryTests` measures real text in a WKWebView, both off the
+bundled file. The same walk is
 patched into epub.js's marks (`patchMarkRects`), whose own filter kept that
 block and dropped the text boxes inside it. Highlights stay epub.js marks (they
 ride the page-turn transform, which a native overlay would not); their look is
