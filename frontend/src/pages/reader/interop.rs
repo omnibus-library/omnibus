@@ -199,7 +199,7 @@ fn build_relocate_callback(
                     ));
                 }
             }
-            if *status.peek() == ReaderStatus::Loading {
+            if status.peek().cleared_by_relocate() {
                 status.set(ReaderStatus::Ready);
             }
             loc.set(data);
@@ -229,11 +229,7 @@ fn build_simple_callbacks(sigs: InteropSignals) -> [(&'static str, WindowCallbac
     } = sigs;
 
     let on_status = Closure::<dyn FnMut(String)>::new(move |state: String| {
-        status.set(match state.as_str() {
-            "ready" => ReaderStatus::Ready,
-            "error" => ReaderStatus::Failed,
-            _ => ReaderStatus::Loading,
-        });
+        status.set(ReaderStatus::from_glue(&state));
     });
     let on_selection = Closure::<dyn FnMut(String)>::new(move |json: String| {
         if let Ok(data) = serde_json::from_str::<SelectionData>(&json) {

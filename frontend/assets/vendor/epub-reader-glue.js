@@ -11,7 +11,8 @@
  *     data so the Rust side can update the bottom bar and persist position.
  *   - `__omnibusOnStatus(state)` — invoked with "ready" once the first page
  *     paints, or "error" if the book fails to open/render. Lets the Rust side
- *     drive a loading/error UI instead of leaving a blank viewer.
+ *     drive a loading/error UI instead of leaving a blank viewer. Emits
+ *     "nav-error" when a display(target) navigation rejects or never lands.
  * Same-origin .epub fetch is performed by epub.js via XHR, so the session
  * cookie is sent automatically.
  *
@@ -139,6 +140,12 @@
   // emits "error" so the host shows its "couldn't be loaded" + Retry surface
   // rather than an indefinite "Loading…".
   var firstPaintWatchdog = null;
+  // Navigation watchdog: the host shows its loading overlay for a TOC jump
+  // and clears it on the relocate that lands it. A display() that rejects or
+  // never settles emits no relocate, so on either the host is told via
+  // "nav-error" instead of hanging on "Loading…" (#2450).
+  var navWatchdog = null;
+  var NAV_WATCHDOG_MS = 10000;
   // A displayPercentage call that arrived before the book/locations were
   // ready — the follow-mode auto-jump fires ~50ms after mount, racing both
   // init() (book still null) and the locations pass (seconds on a first
@@ -186,6 +193,7 @@
       clearTimeout(firstPaintWatchdog);
       firstPaintWatchdog = null;
     }
+    clearNavWatchdog();
     if (stageResizeObserver) {
       try {
         stageResizeObserver.disconnect();
@@ -216,6 +224,43 @@
       }
       book = null;
     }
+  }
+
+  // epub.js keeps nav/NCX hrefs verbatim, but they are relative to the TOC
+  // document, not the package. With the nav in a subfolder of the OPF's
+  // (OPF at the root, nav in OEBPS/) no spine lookup matches them, so every
+  // TOC display() rejects and findChapter never places the reader (#2450).
+  function resolveTocHrefs(items, base) {
+    if (!items || !base) return;
+    for (var i = 0; i < items.length; i++) {
+      items[i].href = resolveTocHref(items[i].href || "", base);
+      resolveTocHrefs(items[i].subitems, base);
+    }
+  }
+
+  // Rebase `href` onto `base` only when the verbatim href misses the spine
+  // and the rebased one hits it — a TOC that already resolves is untouched.
+  function resolveTocHref(href, base) {
+    var hash = href.indexOf("#");
+    var path = hash >= 0 ? href.slice(0, hash) : href;
+    if (!path || book.spine.get(path)) return href;
+    var rebased;
+    try {
+      rebased = decodeURI(new URL(path, "http://x/" + base).pathname.slice(1));
+    } catch (e) {
+      return href;
+    }
+    if (!book.spine.get(rebased)) return href;
+    return hash >= 0 ? rebased + href.slice(hash) : rebased;
+  }
+
+  // Directory of the document epub.js built its navigation from (nav wins
+  // over NCX, as in Book.loadNavigation), relative to the package.
+  function tocBase() {
+    var p = book && book.packaging;
+    var nav = p && (p.navPath || p.ncxPath);
+    var slash = nav ? nav.lastIndexOf("/") : -1;
+    return slash >= 0 ? nav.slice(0, slash + 1) : "";
   }
 
   function flattenToc(items, out) {
@@ -508,6 +553,7 @@
       .then(function () {
         tocFlat = [];
         if (book.navigation && book.navigation.toc) {
+          resolveTocHrefs(book.navigation.toc, tocBase());
           flattenToc(book.navigation.toc, tocFlat);
         }
         emitToc();
@@ -737,6 +783,7 @@
   // is consumed here rather than trusted to the call sites.
   function emitRelocate(location, isEcho) {
     if (!restoreSettled || resizeSettling) return;
+    clearNavWatchdog();
     var echo = !!isEcho;
     if (restoreEchoPending) {
       restoreEchoPending = false;
@@ -2195,10 +2242,32 @@
       .then(function () {
         return redisplayWhenSettled(target, current);
       })
-      .then(reveal, function () {
-        /* target may be gone after a teardown */
+      .then(reveal, function (err) {
         reveal();
+        // After a teardown the target is simply gone; otherwise say so.
+        if (rendition && current()) navFailed(target, err);
       });
+  }
+
+  function clearNavWatchdog() {
+    if (navWatchdog) {
+      clearTimeout(navWatchdog);
+      navWatchdog = null;
+    }
+  }
+
+  function armNavWatchdog(target) {
+    clearNavWatchdog();
+    navWatchdog = setTimeout(function () {
+      navWatchdog = null;
+      navFailed(target, "no relocate after " + NAV_WATCHDOG_MS + "ms");
+    }, NAV_WATCHDOG_MS);
+  }
+
+  function navFailed(target, reason) {
+    clearNavWatchdog();
+    console.warn("[omnibus-reader] display(" + target + ") failed:", reason);
+    emitStatus("nav-error");
   }
 
   // Saved positions are viewport-start CFIs — exact column boundaries — and
@@ -2328,6 +2397,7 @@
     pendingJumpCfi = null;
     restoreEchoPending = false;
     var t = String(target);
+    armNavWatchdog(t);
     var hash = t.indexOf("#");
     // CFIs and bare hrefs pass straight through. Fragment hrefs resolve to
     // the anchor's first *rendered* element first — Gutenberg-style TOCs

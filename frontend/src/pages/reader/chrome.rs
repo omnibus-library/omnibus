@@ -326,6 +326,14 @@ pub(super) fn ReaderViewerStage(
                         "You\u{2019}re offline — download this book to read it offline."
                     }
                 },
+                ReaderStatus::NavFailed => rsx! {
+                    div {
+                        class: "rd-nav-error",
+                        "data-testid": "reader-nav-error",
+                        role: "alert",
+                        "That section couldn\u{2019}t be opened."
+                    }
+                },
                 ReaderStatus::Ready => rsx! {},
             }
         }

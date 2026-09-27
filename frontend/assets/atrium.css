@@ -6430,6 +6430,11 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    AC3), so it needs a column stack instead of the base overlay's single
    centred row. */
 .rd-overlay-error { flex-direction: column; gap: 14px; text-align: center; padding: 0 24px; }
+/* A failed jump leaves the page readable, so its notice floats over the prose
+   without taking a pointer event from it; the next landed turn clears it. */
+.rd-nav-error { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
+  z-index: 8; pointer-events: none; padding: 8px 14px; border-radius: 999px;
+  background: var(--bg-2); color: var(--ink-2); font-size: 13px; white-space: nowrap; }
 /* The accent wash rides with the chrome: hidden-chrome mode is pure page
    color edge to edge, so the tint fades out alongside the bars (the fade
    rule lives in the tap-to-hide media block above). */

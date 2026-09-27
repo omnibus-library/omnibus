@@ -337,7 +337,7 @@ fn handle_relocate(
     // TOC-jump-triggered `Loading` back to `Ready` (issue #1909, AC3).
     // Guarded so a stray relocate after a load `Failed` can't resurrect the
     // overlay.
-    if *status.peek() == ReaderStatus::Loading {
+    if status.peek().cleared_by_relocate() {
         status.set(ReaderStatus::Ready);
     }
     loc.set(data);
@@ -352,11 +352,7 @@ fn handle_status(
     highlights: &mut Signal<Vec<Highlight>>,
     saved_highlights: &[Highlight],
 ) {
-    let st = match state {
-        "ready" => ReaderStatus::Ready,
-        "error" => ReaderStatus::Failed,
-        _ => ReaderStatus::Loading,
-    };
+    let st = ReaderStatus::from_glue(state);
     status.set(st);
     if matches!(st, ReaderStatus::Ready) && highlights.peek().is_empty() {
         for h in saved_highlights {

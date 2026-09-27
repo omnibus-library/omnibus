@@ -615,6 +615,41 @@ test("shows a loading state during a TOC jump and blanks the outgoing chapter in
   await expect(headerChapter).toBeVisible({ timeout: 20_000 });
 });
 
+// Regression for issue #2450 (AC2): a TOC jump epub.js can't resolve must
+// clear the loading overlay and say so, not hang the reader. Writes nothing —
+// a rejected display emits no relocate — so it shares the TOC-jump book.
+test("a TOC jump that cannot land clears the loading overlay and says so", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
+  await gotoReady(page, `/read/${uuid}`);
+  await expect(page.getByTestId("reader-loading")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+
+  // Stand in for a TOC whose href matches no spine item (the #2450 shape).
+  await page.evaluate(() => {
+    const onToc = (window as unknown as Record<string, (json: string) => void>)
+      .__omnibusOnToc!;
+    onToc(
+      JSON.stringify([{ label: "Nowhere", href: "missing.xhtml", level: 0 }]),
+    );
+  });
+
+  await page.getByTestId("reader-toc").click();
+  await page
+    .getByTestId("reader-toc-row")
+    .filter({ hasText: "Nowhere" })
+    .click();
+
+  await expect(page.getByTestId("reader-nav-error")).toBeVisible();
+  await expect(page.getByTestId("reader-loading")).toHaveCount(0);
+  // The notice takes no pointer events, so the reader stays usable.
+  await page.getByTestId("reader-toc").click();
+  await expect(page.getByTestId("reader-toc-drawer")).toBeVisible();
+});
+
 test("seeds a highlight and deletes it from the highlights drawer", async ({
   page,
   request,

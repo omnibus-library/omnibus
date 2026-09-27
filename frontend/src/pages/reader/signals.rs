@@ -26,6 +26,28 @@ pub(crate) enum ReaderStatus {
     /// Web renders the overlay arm but never constructs the variant.
     #[cfg_attr(not(feature = "mobile"), allow(dead_code))]
     Offline,
+    /// A jump the glue couldn't land: the page stays where it was, readable,
+    /// under a notice saying so — never a loading overlay left hanging.
+    NavFailed,
+}
+
+#[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]
+impl ReaderStatus {
+    /// Map an `__omnibusOnStatus` state from the glue.
+    pub(crate) fn from_glue(state: &str) -> Self {
+        match state {
+            "ready" => Self::Ready,
+            "error" => Self::Failed,
+            "nav-error" => Self::NavFailed,
+            _ => Self::Loading,
+        }
+    }
+
+    /// Whether a landed relocate clears this status back to `Ready`. Never
+    /// `Failed`, so a stray relocate can't hide the load-error surface.
+    pub(crate) fn cleared_by_relocate(self) -> bool {
+        matches!(self, Self::Loading | Self::NavFailed)
+    }
 }
 
 /// Relocated event data from epub.js glue (deserialized from JSON).
