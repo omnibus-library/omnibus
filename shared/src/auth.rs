@@ -61,6 +61,20 @@ impl UserSummary {
     }
 }
 
+/// One reader in the household listing (`GET /api/users`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct HouseholdReader {
+    /// User id; pass it as `user_id` to the stats reads.
+    pub id: i64,
+    /// Display name, else the username.
+    pub name: String,
+    /// Whether `GET /api/users/{id}/avatar` has an image to serve.
+    pub has_avatar: bool,
+    /// True for the signed-in caller, who is always listed first.
+    pub is_you: bool,
+}
+
 /// The four permission booleans that define what a user can do. `is_admin`
 /// is presented in the UI as an "Administrator" permission that implies the
 /// other three; the storage layer keeps them as independent flags (there is
