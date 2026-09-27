@@ -252,6 +252,16 @@ test("a hand-picked shelf's grid ends in an Add books tile", async ({
   );
   await modal.getByTestId("add-books-search").fill("Alpha");
   await modal.getByTestId(`picker-tile-${alpha}`).click();
+
+  // Hold the member refetch the add triggers.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/rpc/shelves/page", async (route) => {
+    await held;
+    await route.continue();
+  });
   await expectMutation(
     page,
     {
@@ -263,9 +273,24 @@ test("a hand-picked shelf's grid ends in an Add books tile", async ({
     async () => modal.getByTestId("add-books-submit").click(),
   );
 
+  // Meanwhile the grid keeps its books, but the stale list can't feed the
+  // picker: the button waits and the tile steps aside.
   await expect(modal).toHaveCount(0);
+  await expect(bookTile(page, "Beta in the Series")).toBeVisible();
+  await expect(page.getByTestId("lib-loading")).toHaveCount(0);
+  await expect(page.getByTestId("shelf-add-books")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expect(tile).toHaveCount(0);
+
+  release();
   await expect(bookTile(page, "Alpha")).toBeVisible();
   await expect(bookTile(page, "Beta in the Series")).toBeVisible();
+  await expect(page.getByTestId("shelf-add-books")).toHaveAttribute(
+    "aria-disabled",
+    "false",
+  );
   await expect(grid.locator(":scope > *").last()).toHaveAttribute(
     "data-testid",
     "shelf-add-tile",

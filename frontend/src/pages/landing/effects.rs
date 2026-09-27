@@ -422,8 +422,9 @@ pub(super) fn spawn_shelf_books_effect(
         mut shelf_error,
         mut shelf_epoch,
     } = sigs;
-    // The shelf whose members `shelf_books` holds or is fetching.
-    let mut last_pick = None::<i64>;
+    // The shelf whose members `shelf_books` holds or is fetching. Hook state,
+    // not a closure local: `use_effect` swaps in a fresh closure each render.
+    let mut last_pick = use_signal(|| None::<i64>);
     use_effect(move || {
         let (selection, sort_key, sort_dir, _tick) = key();
         // Same stale-drop idiom as `fetch_epoch`: an in-flight member fetch
@@ -433,7 +434,7 @@ pub(super) fn spawn_shelf_books_effect(
             *shelf_epoch.peek()
         };
         let ShelfSelection::Shelf(id) = selection else {
-            last_pick = None;
+            last_pick.set(None);
             shelf_books.set(None);
             shelf_loading.set(false);
             shelf_error.set(None);
@@ -443,12 +444,13 @@ pub(super) fn spawn_shelf_books_effect(
         // sweep remount (keyed on the selection) happens at click time, so
         // leaving them in place would replay the cascade twice — once with
         // stale data. Refetching the same shelf (a sort change, or a
-        // membership edit's tick) keeps them on screen until the answer lands.
-        if last_pick != Some(id) {
-            last_pick = Some(id);
+        // membership edit's tick) keeps them on screen until the answer lands,
+        // still marked loading so nothing reads them as current.
+        if *last_pick.peek() != Some(id) {
+            last_pick.set(Some(id));
             shelf_books.set(None);
-            shelf_loading.set(true);
         }
+        shelf_loading.set(true);
         let url = server_url.clone();
         spawn(async move {
             let result = data::shelf_page(&url, id, sort_key, sort_dir).await;

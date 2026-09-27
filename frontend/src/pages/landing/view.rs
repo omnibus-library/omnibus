@@ -187,7 +187,8 @@ pub(super) fn derive_view_state(sigs: &LandingSignals, query: Signal<String>) ->
         .map(|p| super::short_path(p))
         .unwrap_or_default();
     let is_loading = match source {
-        VisibleSource::Shelf => (sigs.shelf_loading)(),
+        // A same-shelf refetch keeps its members on screen.
+        VisibleSource::Shelf => (sigs.shelf_loading)() && sigs.shelf_books.read().is_none(),
         _ => browse_loading,
     };
     let page_error = (sigs.error)().or_else(|| match source {
