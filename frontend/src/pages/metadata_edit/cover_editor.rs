@@ -36,6 +36,10 @@ pub(crate) fn CoverEditor(
         status: use_signal(|| None),
         cover_url: use_signal(|| book.cover_url.clone()),
         has_cover_override: use_signal(|| book.has_cover_override),
+        // Declared unconditionally, like every other signal here, so SSR and
+        // the first WASM paint stay identical even though the input itself
+        // only renders in `CoverMode::Live` (rule 07).
+        pasted_url: use_signal(String::new),
         // Read from the app-wide registry rather than counted locally, so a
         // cover applied *elsewhere on this page* — the compare view's cover
         // row — busts this preview too. The cover route caches for a day
@@ -113,6 +117,9 @@ struct CoverState {
     /// so any writer of a cover for this book moves it.
     cover_bust: Memo<u32>,
     global_bust: Signal<std::collections::HashMap<String, u32>>,
+    /// The "Or paste an image URL" box. Live-mode only, but declared here
+    /// with the rest of the bundle so it exists unconditionally.
+    pasted_url: Signal<String>,
 }
 
 impl CoverState {
@@ -242,6 +249,38 @@ fn cover_controls(
         }
     };
 
+    let on_apply_url = {
+        let uuid = uuid.clone();
+        let server_url = server_url.clone();
+        move |evt: FormEvent| {
+            evt.prevent_default();
+            if (state.busy)() {
+                return;
+            }
+            let trimmed = state.pasted_url.read().trim().to_string();
+            if trimmed.is_empty() {
+                return;
+            }
+            let uuid = uuid.clone();
+            let server_url = server_url.clone();
+            state.start("Applying cover\u{2026}");
+            spawn(async move {
+                match data::apply_cover_from_url(&server_url, &uuid, &trimmed).await {
+                    Ok(Some(updated)) => {
+                        state.apply(&uuid, updated, "Cover updated.", on_change);
+                        state.pasted_url.set(String::new());
+                    }
+                    Ok(None) => state.fail("Couldn't apply that URL: book not found.".into()),
+                    Err(e) => state.fail(format!(
+                        "Couldn't apply that URL: {}",
+                        data::server_error_message(&e)
+                    )),
+                }
+                state.busy.set(false);
+            });
+        }
+    };
+
     let on_revert_cover = move |_| {
         let uuid = uuid.clone();
         let server_url = server_url.clone();
@@ -269,6 +308,26 @@ fn cover_controls(
                 "data-testid": "cover-upload-input",
                 disabled: (state.busy)(),
                 onchange: on_upload,
+            }
+            label { class: "label", r#for: "cover-url-input", "Or paste an image URL" }
+            form { class: "me-cover-url", onsubmit: on_apply_url,
+                input {
+                    id: "cover-url-input",
+                    class: "me-input",
+                    r#type: "url",
+                    placeholder: "https://\u{2026}",
+                    "data-testid": "cover-url-input",
+                    disabled: (state.busy)(),
+                    value: "{state.pasted_url}",
+                    oninput: move |e| state.pasted_url.set(e.value()),
+                }
+                button {
+                    r#type: "submit",
+                    class: "btn sm",
+                    "data-testid": "cover-url-apply",
+                    disabled: (state.busy)() || state.pasted_url.read().trim().is_empty(),
+                    "Apply"
+                }
             }
             if (state.has_cover_override)() {
                 button {

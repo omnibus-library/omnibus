@@ -704,3 +704,131 @@ test.describe
       );
     });
   }); // test.describe.serial
+
+// ---------------------------------------------------------------------------
+// Paste an image URL (sidebar CoverEditor) — every mutating request here is
+// mocked, so nothing is written to the shared Alpha fixture; the server's
+// SSRF gate can't reach a test origin anyway (`metadata_edit_search.spec.ts`'s
+// compare-view cover apply uses the same pattern).
+// ---------------------------------------------------------------------------
+
+const PASTED_COVER_URL = "https://images.example.com/custom-cover.jpg";
+
+test.describe
+  .serial("paste an image URL into the cover editor", () => {
+    test("shows a field to paste an image URL, disabled until filled", async ({
+      page,
+      request,
+    }) => {
+      const id = await fetchBookIdByTitle(request, TARGET.title);
+      await gotoReady(page, `/books/${id}/edit`);
+
+      const urlInput = page.getByLabel("Or paste an image URL");
+      await expect(urlInput).toBeVisible();
+      await expect(urlInput).toHaveAttribute("type", "url");
+      await expect(
+        page.getByRole("button", { name: "Apply", exact: true }),
+      ).toBeDisabled();
+    });
+
+    test("applies a pasted cover URL", async ({ page, request }) => {
+      const id = await fetchBookIdByTitle(request, TARGET.title);
+      await page.route("**/api/ebooks/*/cover/from-url", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        const resp = await request.get(`/api/ebooks/${id}`);
+        const book = (await resp.json()) as Record<string, unknown>;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ...book,
+            has_cover_override: true,
+            has_override: true,
+          }),
+        });
+      });
+
+      await gotoReady(page, `/books/${id}/edit`);
+      const urlInput = page.getByLabel("Or paste an image URL");
+      const applyBtn = page.getByRole("button", {
+        name: "Apply",
+        exact: true,
+      });
+
+      await expect(applyBtn).toBeDisabled();
+      await urlInput.fill(PASTED_COVER_URL);
+      await expect(applyBtn).toBeEnabled();
+      await urlInput.fill("");
+      await expect(applyBtn).toBeDisabled();
+      await urlInput.fill(PASTED_COVER_URL);
+
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: new RegExp(`/api/ebooks/${id}/cover/from-url$`),
+          expectedBody: { url: PASTED_COVER_URL },
+          expectedStatus: 200,
+        },
+        async () => applyBtn.click(),
+      );
+
+      await expect(page.getByTestId("cover-upload-status")).toHaveText(
+        "Cover updated.",
+      );
+      await expect(page.getByTestId("cover-hint")).toHaveText("custom upload");
+      await expect(urlInput).toHaveValue("");
+      await expect(page.getByTestId("cover-remove-override")).toBeVisible();
+      await expect(page.locator(".me-cover-preview img")).toHaveAttribute(
+        "src",
+        /[?&]v=\d+/,
+      );
+      await expect(page.getByTestId("me-cover-replaced")).toBeVisible();
+    });
+
+    test("surfaces a forced failure and keeps the typed URL", async ({
+      page,
+      request,
+    }) => {
+      const id = await fetchBookIdByTitle(request, TARGET.title);
+      await page.route("**/api/ebooks/*/cover/from-url", (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({
+              status: 500,
+              contentType: "text/plain",
+              body: "forced failure",
+            })
+          : route.continue(),
+      );
+
+      await gotoReady(page, `/books/${id}/edit`);
+      const urlInput = page.getByLabel("Or paste an image URL");
+      await urlInput.fill(PASTED_COVER_URL);
+
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: new RegExp(`/api/ebooks/${id}/cover/from-url$`),
+          expectedBody: { url: PASTED_COVER_URL },
+          expectedStatus: 500,
+        },
+        async () => urlInput.press("Enter"),
+      );
+
+      await expect(page.getByTestId("cover-upload-status")).toContainText(
+        "Couldn't apply that URL",
+      );
+      await expect(page.getByTestId("cover-upload-status")).toContainText(
+        "forced failure",
+      );
+      await expect(urlInput).toHaveValue(PASTED_COVER_URL);
+      await expect(page.getByTestId("cover-hint")).toHaveText(
+        "extracted from file",
+      );
+      await expect(page.getByTestId("cover-remove-override")).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Apply", exact: true }),
+      ).toBeEnabled();
+    });
+  });
