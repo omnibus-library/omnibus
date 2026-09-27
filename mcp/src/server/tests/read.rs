@@ -78,6 +78,34 @@ fn get_info_declares_tools_and_the_confirm_gated_write_surface() {
     assert!(instructions.contains("propose_metadata_changes"));
     assert!(instructions.contains("merge_books"));
     assert!(instructions.contains("search_book_content"));
+    assert!(instructions.contains("list_household_readers"));
+}
+
+#[test]
+fn reading_stats_and_reading_sessions_advertise_an_optional_user_id() {
+    let router = OmnibusMcp::read_tools();
+    let tools = router.list_all();
+    for name in ["reading_stats", "reading_sessions"] {
+        let tool = tools
+            .iter()
+            .find(|t| t.name.as_ref() == name)
+            .unwrap_or_else(|| panic!("missing tool {name}"));
+        let properties = tool
+            .input_schema
+            .get("properties")
+            .unwrap_or_else(|| panic!("{name} has no properties"));
+        assert!(
+            properties.get("user_id").is_some(),
+            "{name} should advertise user_id"
+        );
+        if let Some(required) = tool.input_schema.get("required") {
+            let required = required.as_array().expect("required is an array");
+            assert!(
+                !required.iter().any(|v| v == "user_id"),
+                "{name} should not require user_id"
+            );
+        }
+    }
 }
 
 #[test]

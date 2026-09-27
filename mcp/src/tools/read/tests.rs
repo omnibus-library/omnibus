@@ -15,7 +15,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use omnibus_shared::{
     BookProgress, Bookmark, Contributor, EbookMetadata, Highlight, HighlightColor, HouseholdReader,
     PhysicalCopy, ProgressFormat, ProgressRecord, ReadStatus, ReadStatusRecord, ResumePoint,
-    SessionFormat, SessionLogEntry, SessionLogPage,
+    SessionFormat, SessionLogEntry, SessionLogPage, StatsSummary,
 };
 
 use super::views::iso;
@@ -180,26 +180,49 @@ async fn bookmarks(Path(_): Path<String>) -> AxumJson<Vec<Bookmark>> {
     }])
 }
 
+fn session_entry(title: &str) -> SessionLogEntry {
+    SessionLogEntry {
+        book_uuid: BOOK.into(),
+        title: title.into(),
+        // The vocabulary a progress record cannot express.
+        format: SessionFormat::Mixed,
+        started_at: WHEN,
+        started_at_iso: None,
+        ended_at: WHEN + 1800,
+        ended_at_iso: None,
+        seconds: 1500,
+    }
+}
+
 async fn sessions(
     Query(q): Query<std::collections::HashMap<String, String>>,
-) -> AxumJson<SessionLogPage> {
+) -> Result<AxumJson<SessionLogPage>, (StatusCode, String)> {
     if q.get("book").is_some_and(|b| b != BOOK) {
-        return AxumJson(SessionLogPage::default());
+        return Ok(AxumJson(SessionLogPage::default()));
     }
-    AxumJson(SessionLogPage {
-        entries: vec![SessionLogEntry {
-            book_uuid: BOOK.into(),
-            title: "Piranesi".into(),
-            // The vocabulary a progress record cannot express.
-            format: SessionFormat::Mixed,
-            started_at: WHEN,
-            started_at_iso: None,
-            ended_at: WHEN + 1800,
-            ended_at_iso: None,
-            seconds: 1500,
-        }],
+    let entries = match q.get("user_id").map(String::as_str) {
+        None => vec![session_entry("Piranesi")],
+        Some("2") => vec![session_entry("Jonathan Strange")],
+        Some(_) => return Err((StatusCode::NOT_FOUND, NOT_SHARING.to_string())),
+    };
+    Ok(AxumJson(SessionLogPage {
+        entries,
         next_before: None,
-    })
+    }))
+}
+
+async fn stats(
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<AxumJson<StatsSummary>, (StatusCode, String)> {
+    let reading_seconds = match q.get("user_id").map(String::as_str) {
+        None => 60,
+        Some("2") => 7200,
+        Some(_) => return Err((StatusCode::NOT_FOUND, NOT_SHARING.to_string())),
+    };
+    Ok(AxumJson(StatsSummary {
+        reading_seconds,
+        ..StatsSummary::default()
+    }))
 }
 
 async fn household_readers() -> AxumJson<Vec<HouseholdReader>> {
@@ -241,6 +264,7 @@ async fn stub_service() -> OmnibusMcp {
         .route("/api/read-status/{uuid}", get(read_status))
         .route("/api/highlights/book/{uuid}", get(highlights))
         .route("/api/bookmarks/book/{uuid}", get(bookmarks))
+        .route("/api/stats", get(stats))
         .route("/api/stats/sessions", get(sessions))
         .route("/api/physical/{uuid}/copies", get(copies))
         .route("/api/users", get(household_readers));
@@ -582,6 +606,76 @@ async fn list_household_readers_returns_the_signed_in_reader_first_then_each_sha
     assert_eq!(readers[1].id, 2);
     assert_eq!(readers[1].name, "Reader Two");
     assert!(!readers[1].is_you);
+}
+
+// MARK: - Household readers' stats and sessions
+
+#[tokio::test]
+async fn reading_stats_reads_the_signed_in_reader_when_no_user_id_is_given() {
+    let service = stub_service().await;
+    let stats = service
+        .reading_stats(Parameters(StatsParams::default()))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(stats.reading_seconds, 60);
+}
+
+#[tokio::test]
+async fn reading_stats_reads_another_readers_stats_when_given_their_user_id() {
+    let service = stub_service().await;
+    let stats = service
+        .reading_stats(Parameters(StatsParams {
+            user_id: Some(2),
+            ..StatsParams::default()
+        }))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(stats.reading_seconds, 7200);
+}
+
+#[tokio::test]
+async fn reading_stats_reports_not_sharing_when_the_reader_does_not_share() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .reading_stats(Parameters(StatsParams {
+                user_id: Some(3),
+                ..StatsParams::default()
+            }))
+            .await,
+    );
+    assert_eq!(err.message, NOT_SHARING);
+}
+
+#[tokio::test]
+async fn reading_sessions_reads_another_readers_sessions_when_given_their_user_id() {
+    let service = stub_service().await;
+    let page = service
+        .reading_sessions(Parameters(SessionLogParams {
+            book: Some(BOOK.into()),
+            user_id: Some(2),
+            ..SessionLogParams::default()
+        }))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(page.entries[0].title, "Jonathan Strange");
+}
+
+#[tokio::test]
+async fn reading_sessions_reports_not_sharing_when_the_reader_does_not_share() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .reading_sessions(Parameters(SessionLogParams {
+                user_id: Some(3),
+                ..SessionLogParams::default()
+            }))
+            .await,
+    );
+    assert_eq!(err.message, NOT_SHARING);
 }
 
 // MARK: - Vocabulary
