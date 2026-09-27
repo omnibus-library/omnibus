@@ -407,10 +407,10 @@ pub(super) struct ShelfFetchSignals {
 
 /// Fetch the selected shelf's members whenever the selection or sort axis
 /// changes, or the shelves list refetches (the `u32` tick — an edit-shelf
-/// save can change smart membership). Layered over the browse pipeline
-/// rather than replacing it — the always-warm browse page keeps `lib_path`,
-/// the header subtitle, and the All Books mosaic working, and makes
-/// switching back to All instant.
+/// save can change smart membership, an add-books save manual membership).
+/// Layered over the browse pipeline rather than replacing it — the
+/// always-warm browse page keeps `lib_path`, the header subtitle, and the All
+/// Books mosaic working, and makes switching back to All instant.
 pub(super) fn spawn_shelf_books_effect(
     server_url: String,
     key: Memo<(ShelfSelection, SortKey, SortDir, u32)>,
@@ -422,6 +422,9 @@ pub(super) fn spawn_shelf_books_effect(
         mut shelf_error,
         mut shelf_epoch,
     } = sigs;
+    // The shelf whose members `shelf_books` holds or is fetching. Hook state,
+    // not a closure local: `use_effect` swaps in a fresh closure each render.
+    let mut last_pick = use_signal(|| None::<i64>);
     use_effect(move || {
         let (selection, sort_key, sort_dir, _tick) = key();
         // Same stale-drop idiom as `fetch_epoch`: an in-flight member fetch
@@ -431,15 +434,22 @@ pub(super) fn spawn_shelf_books_effect(
             *shelf_epoch.peek()
         };
         let ShelfSelection::Shelf(id) = selection else {
+            last_pick.set(None);
             shelf_books.set(None);
             shelf_loading.set(false);
             shelf_error.set(None);
             return;
         };
-        // Clear stale members before fetching: the sweep remount (keyed on the
-        // selection) happens at click time, so leaving the previous shelf's
-        // list in place would replay the cascade twice — once with stale data.
-        shelf_books.set(None);
+        // A new pick clears the previous shelf's members before fetching: the
+        // sweep remount (keyed on the selection) happens at click time, so
+        // leaving them in place would replay the cascade twice — once with
+        // stale data. Refetching the same shelf (a sort change, or a
+        // membership edit's tick) keeps them on screen until the answer lands,
+        // still marked loading so nothing reads them as current.
+        if *last_pick.peek() != Some(id) {
+            last_pick.set(Some(id));
+            shelf_books.set(None);
+        }
         shelf_loading.set(true);
         let url = server_url.clone();
         spawn(async move {

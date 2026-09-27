@@ -18,8 +18,8 @@ use super::mobile;
 use super::pull_refresh;
 #[cfg(not(feature = "mobile"))]
 use super::sections::{
-    BooksView, LandingContent, LandingContentHandlers, LandingContentProps, LandingHeader,
-    LandingHeaderView,
+    add_books_state, AddBooks, BooksView, LandingContent, LandingContentHandlers,
+    LandingContentProps, LandingHeader, LandingHeaderView,
 };
 #[cfg(not(feature = "mobile"))]
 use super::shelf_gallery::ShelfGallery;
@@ -34,7 +34,9 @@ use super::view::{LandingHandlers, LandingViewState};
 #[cfg(not(feature = "mobile"))]
 use crate::components::chip_editor::SuggestionItem;
 #[cfg(not(feature = "mobile"))]
-use crate::components::EditShelfModal;
+use crate::components::{AddBooksModal, EditShelfModal};
+#[cfg(not(feature = "mobile"))]
+use crate::shelf_access::ShelfAccess;
 
 /// Mobile presentation branch of [`super::LandingPage`]: a single compact
 /// grid plus the continue card and sort & filter sheet — no admin table or
@@ -91,6 +93,7 @@ pub(super) fn web_landing_body(
     let hero_points = (sigs.hero_points)();
     let selected_shelf = (sigs.selected_shelf)();
     let edit_shelf = sigs.edit_shelf;
+    let show_add_books = sigs.show_add_books;
     let shelves_tick = sigs.shelves_tick;
     let bulk_selected = sigs.bulk_selected;
     let bulk_modal_open = sigs.bulk_modal_open;
@@ -123,6 +126,13 @@ pub(super) fn web_landing_body(
             &cover_bust,
         )
     };
+    let lens = use_shelf_lens_actions(
+        selected_shelf.as_ref(),
+        (sigs.selection)(),
+        view.shelf_members_ready,
+        edit_shelf,
+        show_add_books,
+    );
     let accent_style = lead_accent_style(&entries, lead());
     let show_stack = !view.is_search && !entries.is_empty();
     // Hold the stack's place until the open books are known, so the page
@@ -143,8 +153,9 @@ pub(super) fn web_landing_body(
                 ResumeStackPending {}
             }
             {render_gallery(sigs, view.is_search, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
-            {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), edit_shelf, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters }, on_prefs_change_header, stack_view, on_stack_toggle)}
+            {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), lens, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters, on_add_tile: lens.add_tile() }, on_prefs_change_header, stack_view, on_stack_toggle)}
             {render_bulk_overlay(bulk, bulk_modal_open, bulk_selected, books_sig, shelf_books_sig, author_pool, tag_pool, genre_pool)}
+            {render_add_books_overlay(show_add_books, selected_shelf.clone(), &shelf_books_sig.read(), shelves_tick)}
             {render_edit_shelf_overlay(edit_shelf, selected_shelf, shelves_tick)}
             if show_stack {
                 EdgeResume { entries, lead }
@@ -162,6 +173,49 @@ pub(super) fn web_landing_body(
 #[cfg(not(feature = "mobile"))]
 const MARQUEE_JS: &str = include_str!("marquee.js");
 
+/// What the viewer may do to the selected shelf from the landing page, and
+/// the signals that open its edit and add-books modals.
+#[cfg(not(feature = "mobile"))]
+#[derive(Clone, Copy)]
+struct ShelfLensActions {
+    can_edit: bool,
+    add_books: AddBooks,
+    edit_shelf: Signal<bool>,
+    show_add: Signal<bool>,
+}
+
+#[cfg(not(feature = "mobile"))]
+impl ShelfLensActions {
+    /// The grid's Add books tile, offered only once the picker can open.
+    fn add_tile(self) -> Option<EventHandler<()>> {
+        let mut show_add = self.show_add;
+        (self.add_books == AddBooks::Ready).then(|| EventHandler::new(move |_| show_add.set(true)))
+    }
+}
+
+/// Resolve [`ShelfLensActions`] with the shelf page's rule (`shelf_access`).
+/// The viewer is `None` until the boot effect resolves, so every action stays
+/// hidden on SSR + first paint (rule 07); system shelves stay locked.
+#[cfg(not(feature = "mobile"))]
+fn use_shelf_lens_actions(
+    shelf: Option<&omnibus_shared::Shelf>,
+    selection: crate::shelf_selection::ShelfSelection,
+    members_ready: bool,
+    edit_shelf: Signal<bool>,
+    show_add: Signal<bool>,
+) -> ShelfLensActions {
+    let viewer = crate::use_current_user_summary()();
+    let can_edit = shelf.is_some_and(|s| {
+        ShelfAccess::resolve(viewer.as_ref(), s.owner_user_id, &s.owner_username, s.kind).can_edit()
+    });
+    ShelfLensActions {
+        can_edit,
+        add_books: add_books_state(shelf, selection, can_edit, members_ready),
+        edit_shelf,
+        show_add,
+    }
+}
+
 /// Section header + grid/table content for [`web_landing_body`]. See
 /// [`render_bulk_overlay`] for why this is a plain helper, not a component.
 #[cfg(not(feature = "mobile"))]
@@ -172,7 +226,7 @@ fn render_header_and_content(
     prefs: omnibus_shared::ViewPrefs,
     server_url: String,
     selected_shelf: Option<omnibus_shared::Shelf>,
-    mut edit_shelf: Signal<bool>,
+    lens: ShelfLensActions,
     bulk_selected: Signal<BTreeSet<String>>,
     content_handlers: LandingContentHandlers,
     on_prefs_change_header: EventHandler<omnibus_shared::ViewPrefs>,
@@ -180,6 +234,12 @@ fn render_header_and_content(
     on_stack_toggle: EventHandler<()>,
 ) -> Element {
     let sort_lock = super::sorting::sort_lock_reason(selected_shelf.as_ref().map(|s| s.kind));
+    let ShelfLensActions {
+        can_edit,
+        add_books,
+        mut edit_shelf,
+        mut show_add,
+    } = lens;
     rsx! {
         LandingHeader {
             view: LandingHeaderView {
@@ -192,12 +252,15 @@ fn render_header_and_content(
                 lib_err: view.lib_err.clone(),
                 section_title: view.section_title,
                 selected_shelf,
+                can_edit,
+                add_books,
                 sort_lock,
                 stack,
             },
             prefs: prefs.clone(),
             on_prefs_change: on_prefs_change_header,
             on_edit_shelf: move |_| edit_shelf.set(true),
+            on_add_books: move |_| show_add.set(true),
             on_stack_toggle,
         }
 
@@ -299,6 +362,40 @@ fn render_bulk_overlay(
                     bulk_selected.write().clear();
                     bulk_modal_open.set(false);
                 },
+            }
+        }
+    }
+}
+
+/// Add-books picker overlay for [`web_landing_body`] — see
+/// [`render_bulk_overlay`] for why this is a plain helper, not a component.
+#[cfg(not(feature = "mobile"))]
+fn render_add_books_overlay(
+    mut show_add: Signal<bool>,
+    selected_shelf: Option<omnibus_shared::Shelf>,
+    shelf_books: &Option<Vec<EbookMetadata>>,
+    mut shelves_tick: Signal<u32>,
+) -> Element {
+    let members: Vec<String> = shelf_books
+        .iter()
+        .flatten()
+        .filter_map(|b| b.unique_identifier.clone())
+        .collect();
+    rsx! {
+        if show_add() {
+            if let Some(shelf) = selected_shelf {
+                AddBooksModal {
+                    shelf_id: shelf.id,
+                    shelf_name: shelf.name,
+                    members,
+                    on_close: move |_| show_add.set(false),
+                    on_added: move |_| {
+                        show_add.set(false);
+                        // Refetches the members, the gallery's count, and the
+                        // full shelf.
+                        shelves_tick.with_mut(|n| *n += 1);
+                    },
+                }
             }
         }
     }

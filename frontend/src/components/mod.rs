@@ -191,6 +191,11 @@ pub mod shelf_rule_builder;
 pub mod edit_shelf_modal;
 pub use edit_shelf_modal::EditShelfModal;
 
+// The hand-picked shelf "Add books" picker, opened from the shelf page and
+// the landing page's shelf lens.
+pub mod add_books_modal;
+pub use add_books_modal::AddBooksModal;
+
 // Facet row (kind / visibility / rule chips) shown under shelf titles on the
 // landing header and the shelf detail header.
 pub mod shelf_facets;

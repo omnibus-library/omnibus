@@ -8,10 +8,9 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{EbookMetadata, Shelf, SortDir, SortKey};
 
-use crate::components::{EditShelfModal, Loading, LoadingKind};
+use crate::components::{AddBooksModal, EditShelfModal, Loading, LoadingKind};
 use crate::{data, use_server_url, Route};
 
-mod add_books_modal;
 #[cfg(not(feature = "mobile"))]
 mod body;
 #[cfg(not(feature = "mobile"))]
@@ -19,7 +18,6 @@ mod header;
 #[cfg(feature = "mobile")]
 mod mobile;
 
-use add_books_modal::AddBooksModal;
 #[cfg(not(feature = "mobile"))]
 use body::{back_crumb, ShelfBodySignals, WebShelfBody};
 

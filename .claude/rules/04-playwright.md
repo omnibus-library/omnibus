@@ -69,12 +69,13 @@ control that no longer exists.
   filters the book list in place. Open one with `selectShelfInGallery()` and
   assert against the landing surface — `lib-section-title` for the name,
   `shelf-facets` for kind/visibility/rules, `shelf-edit` for the pencil,
-  `lib-grid` for members, `lib-page-error` for a failed member fetch.
+  `lib-grid` for members, `lib-page-error` for a failed member fetch, and on
+  a hand-picked shelf `shelf-add-books` / the grid's closing `shelf-add-tile`.
 
-Shelf delete, add-books, the member sort control, and the Kobo badge exist
-**only** on `/shelves/:id`, where a viewer who can't change the shelf still
-gets them — greyed, not removed (see
-[04a](04a-playwright-surfaces.md)).
+Shelf delete, the member sort control, and the Kobo badge exist **only** on
+`/shelves/:id`, where a viewer who can't change the shelf still gets them —
+greyed, not removed (see [04a](04a-playwright-surfaces.md)). Add books is on
+both, but the landing *hides* it from a viewer who can't change the shelf.
 
 ## Structure — one file per flow
 
