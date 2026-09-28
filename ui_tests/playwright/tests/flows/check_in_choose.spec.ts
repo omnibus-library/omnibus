@@ -89,7 +89,7 @@ async function reachChoose(
 
 /** Provision the dedicated viewer user via the admin API; 409 = already there. */
 async function ensureViewerUser(request: APIRequestContext): Promise<void> {
-  const resp = await request.post("/api/users", {
+  const resp = await request.post("/api/admin/users", {
     data: {
       username: VIEWER_USER,
       password: VIEWER_PASSWORD,

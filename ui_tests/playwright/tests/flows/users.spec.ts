@@ -65,7 +65,7 @@ test("creates a user then deletes it", async ({ page }) => {
     page,
     {
       method: "POST",
-      url: "/api/users",
+      url: "/api/admin/users",
       expectedBody: {
         username: TEMP_USER,
         password: TEMP_PASSWORD,
@@ -90,7 +90,7 @@ test("creates a user then deletes it", async ({ page }) => {
 
   await expectMutation(
     page,
-    { method: "DELETE", url: "/api/users/", expectedStatus: 204 },
+    { method: "DELETE", url: "/api/admin/users/", expectedStatus: 204 },
     async () => page.getByTestId("delete-user-confirm").click(),
   );
 
@@ -112,7 +112,7 @@ test("a backdrop click during an in-flight delete does not dismiss the modal or 
   await page.getByTestId("new-user-password").fill(TEMP_PASSWORD);
   await expectMutation(
     page,
-    { method: "POST", url: "/api/users", expectedStatus: 201 },
+    { method: "POST", url: "/api/admin/users", expectedStatus: 201 },
     async () => page.getByTestId("new-user-submit").click(),
   );
   const row = table(page).locator("tr", { hasText: tempName });
@@ -124,7 +124,7 @@ test("a backdrop click during an in-flight delete does not dismiss the modal or 
 
   // Delay the DELETE response so the modal is provably still busy when the
   // backdrop click lands mid-request.
-  await page.route("**/api/users/*", async (route) => {
+  await page.route("**/api/admin/users/*", async (route) => {
     if (route.request().method() !== "DELETE") return route.continue();
     await new Promise((resolve) => setTimeout(resolve, 400));
     return route.continue();
@@ -133,7 +133,7 @@ test("a backdrop click during an in-flight delete does not dismiss the modal or 
   try {
     await expectMutation(
       page,
-      { method: "DELETE", url: "/api/users/", expectedStatus: 204 },
+      { method: "DELETE", url: "/api/admin/users/", expectedStatus: 204 },
       async () => {
         await page.getByTestId("delete-user-confirm").click();
         // Click the backdrop well away from the centered panel while the
@@ -144,7 +144,7 @@ test("a backdrop click during an in-flight delete does not dismiss the modal or 
       },
     );
   } finally {
-    await page.unroute("**/api/users/*");
+    await page.unroute("**/api/admin/users/*");
   }
 
   await expect(modal).toHaveCount(0);
@@ -161,7 +161,7 @@ test("surfaces a 409 when creating a duplicate username", async ({ page }) => {
 
   await expectMutation(
     page,
-    { method: "POST", url: "/api/users", expectedStatus: 409 },
+    { method: "POST", url: "/api/admin/users", expectedStatus: 409 },
     async () => page.getByTestId("new-user-submit").click(),
   );
 

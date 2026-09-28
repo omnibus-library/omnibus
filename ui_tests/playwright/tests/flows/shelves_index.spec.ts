@@ -27,7 +27,7 @@ async function createReader(
   request: APIRequestContext,
   username: string,
 ): Promise<number> {
-  const resp = await request.post("/api/users", {
+  const resp = await request.post("/api/admin/users", {
     data: {
       username,
       password: "shelf-owner-pw-0001",
@@ -39,7 +39,9 @@ async function createReader(
       },
     },
   });
-  expect(resp.status(), `POST /api/users failed for ${username}`).toBe(201);
+  expect(resp.status(), `POST /api/admin/users failed for ${username}`).toBe(
+    201,
+  );
   return ((await resp.json()) as { id: number }).id;
 }
 
@@ -213,7 +215,7 @@ test("groups another reader's shelves under their name and filters to them", asy
       .poll(async () => page.getByTestId(/^shelves-group-\d+$/).count())
       .toBeGreaterThan(1);
   } finally {
-    await request.delete(`/api/users/${readerId}`);
+    await request.delete(`/api/admin/users/${readerId}`);
   }
 });
 
