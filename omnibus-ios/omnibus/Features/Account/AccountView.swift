@@ -51,6 +51,7 @@ struct AccountView: View {
 
                     appearance($app)
                     reading
+                    ShareStatsSection()
                     library
                     offline
                     sendToKindle
