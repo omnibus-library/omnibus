@@ -786,3 +786,34 @@ async fn api_get_recent_progress_rejects_a_malformed_user_id() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
+
+/// Mirrors `backend::stats::tests::household`'s target-read 500 test: a DB
+/// failure reading a sharing target's resume points must still surface as a
+/// 500, never fold into the gate's 404.
+#[tokio::test]
+async fn api_get_recent_progress_with_user_id_returns_500_when_the_target_read_fails() {
+    let (app, _state, pool) = fixture().await;
+    let viewer = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, viewer.id).await;
+    let target = auth_test_support::create_user(&pool, "target").await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query("DROP TABLE reading_progress")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    drop(conn);
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/progress/recent?user_id={}", target.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}

@@ -317,6 +317,29 @@ async fn session_log_for_viewer_with_no_target_or_the_viewers_own_id_reads_their
     assert_eq!(own.entries.len(), 1);
 }
 
+#[tokio::test]
+async fn session_log_for_viewer_surfaces_stats_error_when_the_pool_is_closed_on_the_own_path() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    pool.close().await;
+
+    let err = session_log_for_viewer(&pool, 1, None, None, None, 25)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ViewerStatsError::Stats(_)));
+}
+
+#[tokio::test]
+async fn session_log_for_viewer_surfaces_auth_error_when_the_pool_is_closed_on_the_other_reader_path(
+) {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    pool.close().await;
+
+    let err = session_log_for_viewer(&pool, 1, Some(2), None, None, 25)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ViewerStatsError::Auth(_)));
+}
+
 /// A real book row, since `resume_points` skips any progress row whose book
 /// doesn't resolve.
 async fn seed_progress(pool: &sqlx::SqlitePool, user: i64, filename: &str) -> String {

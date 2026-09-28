@@ -371,3 +371,47 @@ async fn api_get_session_log_with_own_user_id_reads_own_sittings_even_with_shari
     let page: omnibus_shared::SessionLogPage = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(page.entries.len(), 1);
 }
+
+#[tokio::test]
+async fn api_get_session_log_rejects_a_malformed_user_id() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/stats/sessions?user_id=abc", &token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+/// Mirrors `api_get_stats_with_user_id_returns_500_when_the_target_read_fails`:
+/// a DB failure reading a sharing target's session log must still surface as
+/// a 500, never fold into the gate's 404.
+#[tokio::test]
+async fn api_get_session_log_with_user_id_returns_500_when_the_target_read_fails() {
+    let (app, _state, pool) = fixture().await;
+    let viewer = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, viewer.id).await;
+    let target = auth_test_support::create_user(&pool, "target").await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query("DROP TABLE reading_sessions")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    drop(conn);
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/stats/sessions?user_id={}", target.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
