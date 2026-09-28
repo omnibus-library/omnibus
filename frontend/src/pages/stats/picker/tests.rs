@@ -49,6 +49,18 @@ fn viewing_falls_back_to_another_reader_for_an_id_the_list_does_not_carry() {
     );
 }
 
+#[test]
+fn heading_is_none_for_you_and_the_possessive_for_another_reader() {
+    assert_eq!(Viewing::You.heading(), None);
+    assert_eq!(
+        Viewing::Reader {
+            name: "Alice".to_string()
+        }
+        .heading(),
+        Some("Alice's stats".to_string())
+    );
+}
+
 // SSR render coverage. `ReaderPicker` renders a `dioxus_router::Link`, which
 // panics without a live router (see `components::page_state`'s module
 // comment), so each state gets a one-route host mounted through

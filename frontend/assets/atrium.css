@@ -9388,6 +9388,13 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   align-items: center;
 }
 .st-hero-run { animation: st-settle .5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* Only present on another reader's page — the heading names whose figures
+   the hero below is showing. */
+.st-hero-who {
+  margin: 0 0 6px;
+  font-family: var(--serif); font-weight: 600; font-size: 15px;
+  color: var(--ink-0);
+}
 .st-hero-kicker {
   display: block;
   font-family: var(--mono); font-size: 10.5px;

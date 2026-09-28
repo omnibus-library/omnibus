@@ -74,17 +74,102 @@ fn build_spark_stays_flat_when_nothing_was_recorded() {
 #[test]
 fn streak_line_compares_the_run_against_the_record_and_says_nothing_without_one() {
     assert_eq!(
-        streak_line(3, 61).as_deref(),
+        streak_line(3, 61, true).as_deref(),
         Some("Your longest ever is 61 days.")
     );
     assert_eq!(
-        streak_line(0, 1).as_deref(),
+        streak_line(0, 1, true).as_deref(),
         Some("Your longest ever is 1 day.")
     );
     assert_eq!(
-        streak_line(61, 61).as_deref(),
+        streak_line(61, 61, true).as_deref(),
         Some("That is the longest run you have recorded.")
     );
     // Nothing recorded yet: the sentence would be furniture.
-    assert_eq!(streak_line(0, 0), None);
+    assert_eq!(streak_line(0, 0, true), None);
+}
+
+#[test]
+fn streak_line_reads_third_person_on_another_readers_page() {
+    assert_eq!(
+        streak_line(3, 61, false).as_deref(),
+        Some("The longest ever is 61 days.")
+    );
+    assert_eq!(
+        streak_line(61, 61, false).as_deref(),
+        Some("That is the longest run on record.")
+    );
+}
+
+// SSR render coverage for `who`'s first/third-person split. `StatsHero`
+// renders the goal cards' `dioxus_router::Link`s, which panic without a live
+// router (see `components::page_state`'s module comment), so each state gets
+// a one-route host mounted through `dioxus_router::Router`.
+#[cfg(feature = "server")]
+mod render_tests {
+    use dioxus_router::{Routable, Router};
+
+    use crate::test_support::render_in_vdom;
+
+    use super::*;
+
+    fn summary_with_streak(current: i64, longest: i64) -> StatsSummary {
+        StatsSummary {
+            as_of_day: "2026-07-02".to_string(),
+            current_streak_days: current,
+            longest_streak_days: longest,
+            ..StatsSummary::default()
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum AnotherReaderRoute {
+        #[route("/")]
+        AnotherReaderHost {},
+    }
+
+    #[component]
+    fn AnotherReaderHost() -> Element {
+        rsx! {
+            StatsHero {
+                summary: Some(summary_with_streak(5, 20)),
+                who: Some("alice's stats".to_string()),
+            }
+        }
+    }
+
+    #[test]
+    fn stats_hero_reads_third_person_and_hides_the_goal_editors_for_another_reader() {
+        let html = render_in_vdom(|| rsx! { Router::<AnotherReaderRoute> {} });
+        assert!(html.contains("stats-hero-who"), "{html}");
+        // SSR HTML-escapes the apostrophe.
+        assert!(html.contains("alice&#39;s stats"), "{html}");
+        assert!(html.contains("On a run"), "{html}");
+        assert!(html.contains("The longest ever is 20 days."), "{html}");
+        assert!(!html.contains("stats-goal-set-link"), "{html}");
+        assert!(!html.contains("stats-daily-set-link"), "{html}");
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum OwnPageRoute {
+        #[route("/")]
+        OwnPageHost {},
+    }
+
+    #[component]
+    fn OwnPageHost() -> Element {
+        rsx! {
+            StatsHero { summary: Some(summary_with_streak(5, 20)) }
+        }
+    }
+
+    #[test]
+    fn stats_hero_stays_first_person_and_keeps_the_goal_editors_on_the_callers_own_page() {
+        let html = render_in_vdom(|| rsx! { Router::<OwnPageRoute> {} });
+        assert!(!html.contains("stats-hero-who"), "{html}");
+        assert!(html.contains("You are on a run"), "{html}");
+        assert!(html.contains("Your longest ever is 20 days."), "{html}");
+        assert!(html.contains("stats-goal-set-link"), "{html}");
+        assert!(html.contains("stats-daily-set-link"), "{html}");
+    }
 }

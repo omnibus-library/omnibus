@@ -21,6 +21,17 @@ pub(super) enum Viewing {
     Reader { name: String },
 }
 
+impl Viewing {
+    /// The hero's heading: `None` on the caller's own page, so the hero's
+    /// first-person copy is left untouched.
+    pub(super) fn heading(&self) -> Option<String> {
+        match self {
+            Viewing::You => None,
+            Viewing::Reader { name } => Some(format!("{name}'s stats")),
+        }
+    }
+}
+
 /// Resolve `user` against the household list. A listed id names its reader;
 /// an unlisted one still needs somewhere to point (a stale link, a reader who
 /// just turned sharing off), so it falls back to [`UNLISTED_READER`] rather
