@@ -37,6 +37,7 @@ fn fake_admin(id: i64) -> AuthUser {
         hidden_formats: Vec::new(),
         book_detail_scroll_stops: false,
         stack_series: false,
+        share_stats: true,
         session_id: 1,
         session_kind: SessionKind::Bearer,
     }

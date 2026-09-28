@@ -210,6 +210,7 @@ async fn post_stack_series_returns_500_when_the_db_is_unavailable() {
         hidden_formats: Vec::new(),
         book_detail_scroll_stops: false,
         stack_series: false,
+        share_stats: true,
         session_id: 1,
         session_kind: SessionKind::Bearer,
     };

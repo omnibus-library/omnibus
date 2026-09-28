@@ -46,6 +46,7 @@ fn fake_opds_user() -> OpdsAuthUser {
         hidden_formats: Vec::new(),
         book_detail_scroll_stops: false,
         stack_series: false,
+        share_stats: true,
         session_id: 1,
         session_kind: SessionKind::Bearer,
     })
