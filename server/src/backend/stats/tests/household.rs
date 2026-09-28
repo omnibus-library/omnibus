@@ -261,7 +261,10 @@ async fn api_get_stats_with_user_id_returns_500_when_the_target_read_fails() {
 
     let res = app
         .oneshot(get_with_bearer(
-            &format!("/api/stats?user_id={}&range=year", target.id),
+            &format!(
+                "/api/stats?user_id={}&range=year&utc_offset_minutes=675",
+                target.id
+            ),
             &token,
         ))
         .await
