@@ -540,15 +540,19 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       up there has already invalidated the summary down here.
                       A masthead `StatsReaderPicker` lets a reader pick another
                       household member who shares theirs: `StatsSubject`
-                      threads through both the windowed `stats(range:subject:)`
-                      read and the all-time `standingSummary` read, hides both
-                      goal cards' pencils and the "In progress" section for
-                      anyone but you (`recent_progress` carries no `user_id`),
-                      and turns a 404 into `StatsRefusalView`, with a way back
-                      to your own stats. Another reader's stats never touch
-                      `CacheKey.stats`: `UserDataService.statsReads` routes
-                      them through `Cache.uncached` rather than `Cache.live`,
-                      so viewing them leaves your own cached summary alone.
+                      threads through the windowed `stats(range:subject:)`
+                      read, the all-time `standingSummary` read, and the "In
+                      progress" read (`UserDataService.recentProgress(subject:)`,
+                      `user_id` on `GET /api/progress/recent`), hides both
+                      goal cards' pencils for anyone but you, and turns a 404
+                      into `StatsRefusalView`, with a way back to your own
+                      stats. "In progress" rows open book detail, never a
+                      reader. Another reader's stats and in-progress list
+                      never touch `CacheKey.stats` / `CacheKey.recentProgress`:
+                      `statsReads` / `recentProgressReads` route them through
+                      `Cache.uncached` rather than `Cache.live`, so viewing
+                      them leaves your own cached summary, the Continue rail,
+                      and the widget snapshot alone.
                       The tab carries **no session log**: the web `/stats` has
                       one and `GET /api/stats/sessions` still backs it, but a
                       keyset-paged list of every sitting is a different kind of

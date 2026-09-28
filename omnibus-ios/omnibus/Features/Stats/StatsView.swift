@@ -39,9 +39,11 @@ struct StatsView: View {
     /// Fetched separately for the same reason: what the collection is *made
     /// of* is a library-wide answer that only moves on a reindex.
     @State private var libraryComposition: LibraryComposition?
-    /// What is open right now. Its own read for the third time over: being
-    /// mid-book is a standing fact, so it belongs below the standing rule and
-    /// must not reload on a period switch.
+    /// What is open right now, for whichever reader is picked. Its own read
+    /// for the third time over: being mid-book is a standing fact, so it
+    /// belongs below the standing rule and must not reload on a period
+    /// switch — but unlike everything else down there, it follows the
+    /// subject.
     @State private var resumePoints: [ResumePoint] = []
     /// The all-time summary, held only for the two surfaces drawn off
     /// `heatmap` — the activity grid and the four-week strip.
@@ -99,6 +101,7 @@ struct StatsView: View {
                 await load(force: true)
                 await loadReaders()
                 await loadStandingSummary()
+                await loadResumePoints()
             }
             .withDestinations()
         }
@@ -116,11 +119,13 @@ struct StatsView: View {
         .onChange(of: subject) { _, _ in
             summary = nil
             standingSummary = nil
+            resumePoints = []
             failure = nil
             isLoading = true
             Task {
                 await load()
                 await loadStandingSummary()
+                await loadResumePoints()
             }
         }
         .sheet(item: $drill) { metric in
@@ -261,9 +266,7 @@ struct StatsView: View {
     /// signal, and the rule above says it in words.
     @ViewBuilder
     private func standing(_ summary: StatsSummary) -> some View {
-        // `recent_progress` takes no `user_id` — it's always yours, so it
-        // must not be shown while looking at another reader's stats.
-        if subject == .you, !resumePoints.isEmpty {
+        if !resumePoints.isEmpty {
             StatsSection("In progress") { InProgressCard(points: resumePoints) }
         }
 
@@ -589,14 +592,21 @@ struct StatsView: View {
         }
     }
 
-    /// Best-effort by design, exactly like `loadLibrarySize`.
+    /// Best-effort, like `loadLibrarySize` — except a refusal for another
+    /// reader must still clear their list, since no replica stands behind it
+    /// the way `.you`'s does. Never sets `failure`: the stats read for the
+    /// same subject already owns that, and clearing it here on a benign miss
+    /// could undo a refusal that read had just set.
     private func loadResumePoints() async {
+        let requestedSubject = subject
         do {
-            for try await read in UserDataService.recentProgress() {
+            for try await read in UserDataService.recentProgress(subject: requestedSubject) {
+                guard requestedSubject == subject else { return }
                 resumePoints = read.value
             }
         } catch {
-            // Nothing to say: the section simply doesn't appear.
+            guard requestedSubject == subject else { return }
+            if case .reader = requestedSubject { resumePoints = [] }
         }
     }
 }
