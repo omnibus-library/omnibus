@@ -581,9 +581,7 @@ struct MetadataFetchSheet: View {
             // that had no art has `hasCover == false`, and `BookCover` gates its
             // whole image layer on that — so without a fresh identity no
             // thumbnail request is ever made and the plate survives a
-            // successful apply. `applyCoverFromURL` also drops every cache the
-            // write invalidates (every thumb size, the full cover, the cached
-            // record) — the same set this call used to invalidate by hand.
+            // successful apply.
             let updated = try await LibraryService.applyCoverFromURL(uuid: uuid, url: url)
             onCoverApplied(updated)
             coverIdentity = CoverIdentity(updated)
