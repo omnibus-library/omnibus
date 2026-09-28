@@ -452,3 +452,36 @@ async fn delete_user_returns_404_for_unknown() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
+
+// ── Legacy paths ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn legacy_api_users_paths_return_404_except_avatar() {
+    let (app, _, pool) = fixture().await;
+    let token = admin_token(&pool, "alice").await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+
+    for (method, uri) in [
+        ("GET", "/api/users".to_string()),
+        ("POST", "/api/users".to_string()),
+        ("DELETE", format!("/api/users/{}", bob.id)),
+        ("PATCH", format!("/api/users/{}/permissions", bob.id)),
+        ("POST", format!("/api/users/{}/password", bob.id)),
+        ("POST", format!("/api/users/{}/unlock", bob.id)),
+    ] {
+        let res = app
+            .clone()
+            .oneshot(req(method, &uri, &token, None))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND, "{method} {uri}");
+    }
+
+    // The avatar route lives in the profile group and is untouched — a
+    // matched-but-unauthenticated path answers 401, not 404.
+    let res = app
+        .oneshot(anon("GET", &format!("/api/users/{}/avatar", bob.id)))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
