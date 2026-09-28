@@ -44,7 +44,11 @@ copy it rather than paraphrasing.
 
 Deletions get `highlight.delete` with the same identifying text — an
 intentional delete and a silent data loss look identical to the audit
-otherwise.
+otherwise. A `highlight.note`, `highlight.recolour` or `highlight.delete` names
+the highlight it acts on by its passage in `params.highlight_text` (the opening
+words are enough), and a recolour carries `params.colour_before` and
+`params.colour_after`; without the passage the audit cannot tell which of two
+highlights changed.
 
 ## Pass
 
