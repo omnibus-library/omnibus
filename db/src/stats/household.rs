@@ -1,8 +1,10 @@
 //! Who may see whose stats. Owns the one predicate the readers list and the
-//! per-reader stats/session-log reads both apply, so they can't disagree
-//! about what "shares" means.
+//! per-reader stats/session-log/in-progress reads all apply, so they can't
+//! disagree about what "shares" means.
 
-use omnibus_shared::{HouseholdReader, SessionCursor, SessionLogPage, StatsRange, StatsSummary};
+use omnibus_shared::{
+    HouseholdReader, ResumePoint, SessionCursor, SessionLogPage, StatsRange, StatsSummary,
+};
 use sqlx::{Row, SqlitePool};
 
 use super::StatsError;
@@ -20,6 +22,8 @@ pub enum ViewerStatsError {
     Stats(#[from] StatsError),
     #[error(transparent)]
     Auth(#[from] crate::auth::AuthError),
+    #[error(transparent)]
+    Progress(#[from] crate::progress::ProgressError),
 }
 
 /// Whether `viewer_id` may read `target_id`'s stats: always their own, else
@@ -112,4 +116,25 @@ pub async fn session_log_for_viewer(
         _ => viewer_id,
     };
     Ok(super::session_log(pool, target, book_uuid, before, limit).await?)
+}
+
+/// `target_id`'s newest resume points as `viewer_id` may see it; `None` or
+/// the viewer's own id reads their own. Carries no offset — a resume point
+/// names a position, not a day.
+pub async fn recent_progress_for_viewer(
+    pool: &SqlitePool,
+    viewer_id: i64,
+    target_id: Option<i64>,
+    limit: i64,
+) -> Result<Vec<ResumePoint>, ViewerStatsError> {
+    let target = match target_id {
+        Some(target) if target != viewer_id => {
+            if !may_view_stats(pool, viewer_id, target).await? {
+                return Err(ViewerStatsError::NotSharing);
+            }
+            target
+        }
+        _ => viewer_id,
+    };
+    Ok(crate::progress::resume_points(pool, target, limit).await?)
 }

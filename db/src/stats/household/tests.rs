@@ -1,16 +1,18 @@
 //! `household_readers`: list ordering/exclusion, the avatar flag, and DB
 //! failure propagation. `may_view_stats` and `stats_for_viewer`: every gate
 //! branch, both viewer reads, the calendar case, and DB-failure variants.
-//! `session_log_for_viewer`: the same gate applied to the session log.
+//! `session_log_for_viewer` and `recent_progress_for_viewer`: the same gate
+//! applied to the session log and the in-progress list.
 
-use omnibus_shared::{HouseholdReader, StatsRange};
+use omnibus_shared::{HouseholdReader, ProgressFormat, ProgressUpdate, StatsRange};
 
 use super::{
-    household_readers, may_view_stats, session_log_for_viewer, stats_for_viewer, ViewerStatsError,
+    household_readers, may_view_stats, recent_progress_for_viewer, session_log_for_viewer,
+    stats_for_viewer, ViewerStatsError,
 };
 use crate::auth::{set_display_name, set_share_stats, upsert_user_avatar};
 use crate::init_db;
-use crate::test_support::{seed_user, solid_color_png};
+use crate::test_support::{seed_synced_ebook, seed_user, solid_color_png};
 
 /// Seed a user with an explicit id, so a content-asserting test on the
 /// process-wide stats cache claims a key no sibling test can collide with.
@@ -301,4 +303,104 @@ async fn session_log_for_viewer_with_no_target_or_the_viewers_own_id_reads_their
 
     assert_eq!(none.entries.len(), 1);
     assert_eq!(own.entries.len(), 1);
+}
+
+/// A real book row, since `resume_points` skips any progress row whose book
+/// doesn't resolve.
+async fn seed_progress(pool: &sqlx::SqlitePool, user: i64, filename: &str) -> String {
+    let uuid = seed_synced_ebook(pool, filename, filename, "Author").await;
+    crate::progress::upsert_progress(
+        pool,
+        user,
+        &ProgressUpdate {
+            book_uuid: uuid.clone(),
+            format: ProgressFormat::Epub,
+            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
+            audio_position_seconds: None,
+            progress_percent: None,
+            kobo_location: None,
+            book_file_id: None,
+            client_updated_at: None,
+        },
+    )
+    .await
+    .unwrap();
+    uuid
+}
+
+#[tokio::test]
+async fn recent_progress_for_viewer_reads_a_sharing_targets_points_and_none_of_the_viewers() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let viewer = seed_user(&pool, "viewer").await;
+    seed_progress(&pool, viewer, "viewer.epub").await;
+    let target = seed_user(&pool, "target").await;
+    let target_uuid = seed_progress(&pool, target, "target.epub").await;
+
+    let points = recent_progress_for_viewer(&pool, viewer, Some(target), 20)
+        .await
+        .unwrap();
+
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].record.book_uuid, target_uuid);
+}
+
+#[tokio::test]
+async fn recent_progress_for_viewer_refuses_a_non_sharing_or_missing_target_with_the_same_message()
+{
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let viewer = seed_user(&pool, "viewer").await;
+    let non_sharer = seed_user(&pool, "non-sharer").await;
+    set_share_stats(&pool, non_sharer, false).await.unwrap();
+
+    let err_a = recent_progress_for_viewer(&pool, viewer, Some(non_sharer), 20)
+        .await
+        .unwrap_err();
+    let err_b = recent_progress_for_viewer(&pool, viewer, Some(424_242), 20)
+        .await
+        .unwrap_err();
+
+    assert_eq!(err_a.to_string(), "this reader isn't sharing their stats");
+    assert_eq!(err_b.to_string(), "this reader isn't sharing their stats");
+}
+
+#[tokio::test]
+async fn recent_progress_for_viewer_with_no_target_or_the_viewers_own_id_reads_their_own_points() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let viewer = seed_user(&pool, "viewer").await;
+    set_share_stats(&pool, viewer, false).await.unwrap();
+    seed_progress(&pool, viewer, "own.epub").await;
+
+    let none = recent_progress_for_viewer(&pool, viewer, None, 20)
+        .await
+        .unwrap();
+    let own = recent_progress_for_viewer(&pool, viewer, Some(viewer), 20)
+        .await
+        .unwrap();
+
+    assert_eq!(none.len(), 1);
+    assert_eq!(own.len(), 1);
+}
+
+#[tokio::test]
+async fn recent_progress_for_viewer_surfaces_progress_error_when_the_pool_is_closed_on_the_own_path(
+) {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    pool.close().await;
+
+    let err = recent_progress_for_viewer(&pool, 1, None, 20)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ViewerStatsError::Progress(_)));
+}
+
+#[tokio::test]
+async fn recent_progress_for_viewer_surfaces_auth_error_when_the_pool_is_closed_on_the_other_reader_path(
+) {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    pool.close().await;
+
+    let err = recent_progress_for_viewer(&pool, 1, Some(2), 20)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ViewerStatsError::Auth(_)));
 }

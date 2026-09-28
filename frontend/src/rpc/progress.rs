@@ -97,16 +97,29 @@ pub async fn rpc_get_playback_rate(uuid: String) -> Result<Option<AudiobookPlayb
     }
 }
 
-/// The user's most recent progress rows joined with their books — the
-/// "pick up where you left off" feed. Mirrors the mobile REST route
-/// `GET /api/progress/recent`; `limit` is clamped to the same 1..=20 range.
+/// The caller's most recent progress rows joined with their books — the
+/// "pick up where you left off" feed — or a sharing reader's with `user_id`,
+/// under the same 404 contract `GET /api/stats` answers. Mirrors the mobile
+/// REST route `GET /api/progress/recent`; `limit` is clamped to the same
+/// 1..=20 range.
 #[post("/api/rpc/progress/recent", pool: PoolExt, user: AuthUser)]
-pub async fn rpc_recent_progress(limit: i64) -> Result<Vec<ResumePoint>> {
+pub async fn rpc_recent_progress(limit: i64, user_id: Option<i64>) -> Result<Vec<ResumePoint>> {
     const LIMIT_CAP: i64 = 20;
     let limit = limit.clamp(1, LIMIT_CAP);
-    Ok(db::progress::resume_points(&pool.0, user.id, limit)
+    Ok(reader_recent_progress(&pool.0, user.id, limit, user_id).await?)
+}
+
+/// Server-side body of [`rpc_recent_progress`], extracted for testability.
+#[cfg(feature = "server")]
+async fn reader_recent_progress(
+    pool: &sqlx::SqlitePool,
+    caller_id: i64,
+    limit: i64,
+    user_id: Option<i64>,
+) -> Result<Vec<ResumePoint>, ServerFnError> {
+    db::stats::recent_progress_for_viewer(pool, caller_id, user_id, limit)
         .await
-        .map_err(|e| internal_rpc_error("recent progress", e))?)
+        .map_err(|e| super::stats::map_viewer_error("recent progress", e))
 }
 
 /// Reject over-cap session batches at the RPC boundary, mirroring the mobile
@@ -183,13 +196,84 @@ pub async fn rpc_record_sessions(reports: Vec<SessionReport>) -> Result<u64> {
     Ok(record_sessions_batch(&pool.0, user.id, &reports).await?)
 }
 
-// `server`-gated because these tests exercise `check_session_batch_cap`, which
-// only exists in the server build. CI runs the frontend suite as
-// `cargo test -p omnibus-frontend --features server`.
+// `server`-gated: these tests exercise `check_session_batch_cap` and the
+// server-only helpers, which only exist in the server build. CI runs the
+// frontend suite as `cargo test -p omnibus-frontend --features server`.
 #[cfg(all(test, feature = "server"))]
 mod tests {
-    use super::{check_session_batch_cap, record_sessions_batch, SESSION_BATCH_CAP};
-    use omnibus_shared::{ProgressFormat, SessionReport};
+    use super::{
+        check_session_batch_cap, reader_recent_progress, record_sessions_batch, SESSION_BATCH_CAP,
+    };
+    use omnibus_shared::{ProgressFormat, ProgressUpdate, SessionReport};
+
+    async fn seed_epub_progress(pool: &sqlx::SqlitePool, user_id: i64, uuid: &str) {
+        omnibus_db::progress::upsert_progress(
+            pool,
+            user_id,
+            &ProgressUpdate {
+                book_uuid: uuid.to_string(),
+                format: ProgressFormat::Epub,
+                epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
+                audio_position_seconds: None,
+                progress_percent: None,
+                kobo_location: None,
+                book_file_id: None,
+                client_updated_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reader_recent_progress_returns_a_sharing_targets_points() {
+        let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
+        let viewer = omnibus_db::test_support::seed_user(&pool, "viewer").await;
+        let target = omnibus_db::test_support::seed_user(&pool, "target").await;
+        let uuid =
+            omnibus_db::test_support::seed_synced_ebook(&pool, "target.epub", "Target", "A").await;
+        seed_epub_progress(&pool, target, &uuid).await;
+
+        let points = reader_recent_progress(&pool, viewer, 20, Some(target))
+            .await
+            .unwrap();
+
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].record.book_uuid, uuid);
+    }
+
+    #[tokio::test]
+    async fn reader_recent_progress_message_for_a_non_sharer_carries_the_contract_string_even_for_an_admin_caller(
+    ) {
+        let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
+        let admin = omnibus_db::test_support::seed_user(&pool, "admin").await;
+        let non_sharer = omnibus_db::test_support::seed_user(&pool, "non-sharer").await;
+        omnibus_db::auth::set_share_stats(&pool, non_sharer, false)
+            .await
+            .unwrap();
+
+        let err = reader_recent_progress(&pool, admin, 20, Some(non_sharer))
+            .await
+            .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("this reader isn't sharing their stats"));
+    }
+
+    #[tokio::test]
+    async fn reader_recent_progress_with_no_user_id_reads_the_callers_own_points() {
+        let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
+        let viewer = omnibus_db::test_support::seed_user(&pool, "viewer").await;
+        let uuid = omnibus_db::test_support::seed_synced_ebook(&pool, "own.epub", "Own", "A").await;
+        seed_epub_progress(&pool, viewer, &uuid).await;
+
+        let points = reader_recent_progress(&pool, viewer, 20, None)
+            .await
+            .unwrap();
+
+        assert_eq!(points.len(), 1);
+    }
 
     fn dummy_report() -> SessionReport {
         report("uuid", ProgressFormat::Epub)

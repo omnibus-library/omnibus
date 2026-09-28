@@ -69,8 +69,12 @@ async fn reader_stats(
 }
 
 /// A refused read keeps its contract message; anything else is genericized.
+/// `pub(super)` so `rpc::progress`'s `user_id` read shares the same mapping.
 #[cfg(feature = "server")]
-fn map_viewer_error(context: &'static str, e: db::stats::ViewerStatsError) -> ServerFnError {
+pub(super) fn map_viewer_error(
+    context: &'static str,
+    e: db::stats::ViewerStatsError,
+) -> ServerFnError {
     if matches!(e, db::stats::ViewerStatsError::NotSharing) {
         return ServerFnError::new(e.to_string());
     }

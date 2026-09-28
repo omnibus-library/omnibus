@@ -647,3 +647,142 @@ async fn api_get_recent_progress_returns_resume_points_newest_first() {
     assert_eq!(points[0].record.book_uuid, uuid_b);
     assert_eq!(points[0].book.title.as_deref(), Some("Book B"));
 }
+
+const NOT_SHARING_BODY: &str = "this reader isn't sharing their stats";
+
+async fn seed_epub_progress(pool: &sqlx::SqlitePool, user_id: i64, uuid: &str) {
+    omnibus_db::progress::upsert_progress(
+        pool,
+        user_id,
+        &omnibus_shared::ProgressUpdate {
+            book_uuid: uuid.to_string(),
+            format: ProgressFormat::Epub,
+            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
+            audio_position_seconds: None,
+            progress_percent: None,
+            kobo_location: None,
+            book_file_id: None,
+            client_updated_at: None,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn api_get_recent_progress_with_user_id_reads_a_sharing_targets_points() {
+    let (app, _state, pool) = fixture().await;
+    let viewer = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, viewer.id).await;
+    let target = auth_test_support::create_user(&pool, "target").await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Target Book").await;
+    seed_epub_progress(&pool, target.id, &uuid).await;
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/progress/recent?user_id={}", target.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let points: Vec<omnibus_shared::ResumePoint> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].record.book_uuid, uuid);
+}
+
+#[tokio::test]
+async fn api_get_recent_progress_with_user_id_404s_alike_for_a_non_sharer_and_a_missing_reader() {
+    let (app, _state, pool) = fixture().await;
+    let viewer = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, viewer.id).await;
+    let non_sharer = auth_test_support::create_user(&pool, "non-sharer").await;
+    omnibus_db::auth::set_share_stats(&pool, non_sharer.id, false)
+        .await
+        .unwrap();
+
+    let non_sharer_res = app
+        .clone()
+        .oneshot(get_with_bearer(
+            &format!("/api/progress/recent?user_id={}", non_sharer.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(non_sharer_res.status(), StatusCode::NOT_FOUND);
+    let bytes = to_bytes(non_sharer_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), NOT_SHARING_BODY);
+
+    let missing_res = app
+        .oneshot(get_with_bearer(
+            "/api/progress/recent?user_id=424242",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(missing_res.status(), StatusCode::NOT_FOUND);
+    let bytes = to_bytes(missing_res.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), NOT_SHARING_BODY);
+}
+
+#[tokio::test]
+async fn api_get_recent_progress_with_user_id_404s_a_non_sharer_for_an_admin_viewer_too() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    let non_sharer = auth_test_support::create_user(&pool, "non-sharer").await;
+    omnibus_db::auth::set_share_stats(&pool, non_sharer.id, false)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/progress/recent?user_id={}", non_sharer.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), NOT_SHARING_BODY);
+}
+
+#[tokio::test]
+async fn api_get_recent_progress_with_own_user_id_reads_own_points_even_with_sharing_off() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "solo").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    omnibus_db::auth::set_share_stats(&pool, user.id, false)
+        .await
+        .unwrap();
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Own Book").await;
+    seed_epub_progress(&pool, user.id, &uuid).await;
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/progress/recent?user_id={}", user.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let points: Vec<omnibus_shared::ResumePoint> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(points.len(), 1);
+}
+
+#[tokio::test]
+async fn api_get_recent_progress_rejects_a_malformed_user_id() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/progress/recent?user_id=abc", &token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}

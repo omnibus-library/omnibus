@@ -281,10 +281,12 @@ pub async fn get_playback_rate(
         .map_err(note_server_fn_err)
 }
 
-/// Web/SSR `recent_progress` — server-function wrapper that proxies to `rpc_recent_progress`.
+/// Web/SSR `recent_progress` — server-function wrapper that proxies to
+/// `rpc_recent_progress`. `user_id: None` — this caller always reads the
+/// signed-in reader's own list.
 #[cfg(not(feature = "mobile"))]
 pub async fn recent_progress(_server_url: &str, limit: i64) -> Result<Vec<ResumePoint>, DataError> {
-    crate::rpc::rpc_recent_progress(limit)
+    crate::rpc::rpc_recent_progress(limit, None)
         .await
         .map_err(note_server_fn_err)
 }

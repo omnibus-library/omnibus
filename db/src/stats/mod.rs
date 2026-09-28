@@ -7,7 +7,8 @@
 //! `composition` for the two aggregates here that describe the collection
 //! rather than a reader, and `sessions` for the uncached per-sitting log
 //! those aggregates summarize. `household` lists which readers share their
-//! stats and gates a viewer's read of another reader's summary or log.
+//! stats and gates a viewer's read of another reader's summary, session log,
+//! or in-progress list.
 //!
 //! # Which calendar
 //!
@@ -49,7 +50,8 @@ pub use builder::{chart_series, ChartError};
 pub use composition::{invalidate as invalidate_library_composition, library_composition};
 pub use goals::{current_year, daily_goals, goal_for_year, set_daily_goal, set_goal, GoalError};
 pub use household::{
-    household_readers, session_log_for_viewer, stats_for_viewer, ViewerStatsError,
+    household_readers, recent_progress_for_viewer, session_log_for_viewer, stats_for_viewer,
+    ViewerStatsError,
 };
 pub use library::{invalidate as invalidate_library_size, library_size};
 /// Per-user aggregate cache TTL. A reload after a just-finished session
