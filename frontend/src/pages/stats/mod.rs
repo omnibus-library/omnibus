@@ -121,11 +121,9 @@ fn window_label(range: StatsRange, as_of_day: &str) -> String {
     }
 }
 
-/// Reading-stats page — owns what a reader switch never touches (the period
-/// pill, the User/Library scope, the library-scale fetches, the household
-/// list) and hands the viewed reader off to [`ReaderStats`], keyed so a
-/// switch remounts fresh rather than showing a moment of the previous
-/// reader's figures.
+/// Reading-stats page — owns the period pill, the User/Library scope, the
+/// library-scale fetches, and the household list; hands the viewed reader to
+/// [`ReaderStats`].
 #[component]
 pub fn StatsPage(user: Option<i64>) -> Element {
     let server_url = use_server_url();
@@ -159,13 +157,9 @@ pub fn StatsPage(user: Option<i64>) -> Element {
 }
 
 /// One viewed reader's figures — the standing hero, the scope switcher, and
-/// the two bands beneath it. `user` changing is reactive (`use_reactive!`,
-/// not a keyed remount — a `key` on a single non-list child is a no-op in
-/// Dioxus's diffing, so a plain prop change is the only signal a reader
-/// switch gets): [`use_reader_switch_reset_effect`] blanks this reader's
-/// signals and re-shows the page loader the instant it happens, and each
-/// fetch effect below is reactive on `user` too, so it actually refetches
-/// rather than only ever firing once at mount.
+/// the two bands beneath it. `user` is a prop, not a signal, so every
+/// reactive piece below (the reset effect, the three fetch effects) is
+/// wrapped `use_reactive!` to actually refetch when it changes.
 #[component]
 fn ReaderStats(
     user: Option<i64>,
@@ -506,12 +500,8 @@ fn StatsFreshnessNote() -> Element {
     }
 }
 
-/// Blank this reader's signals and re-show the page loader the instant
-/// `user` changes. A plain prop change earns no automatic reactivity in
-/// Dioxus — only a *signal* read inside a `use_effect` does — so without this
-/// the three fetch effects below would each need to be told the same thing;
-/// centralizing it here also means the reset always lands in the same render
-/// as the refetches it precedes, before either is aware of the other.
+/// A prop change isn't a signal; blank per-reader state so a switch never
+/// shows the previous reader's figures.
 #[allow(clippy::too_many_arguments)]
 fn use_reader_switch_reset_effect(
     user: Option<i64>,
@@ -533,16 +523,9 @@ fn use_reader_switch_reset_effect(
     }));
 }
 
-/// Refetch the period-scoped summary whenever the switcher changes, or the
-/// viewed reader does. The signal read inside the effect subscribes it to
-/// `range`; `user` needs the `use_reactive!` wrapper for the same reason
-/// [`use_reader_switch_reset_effect`] exists — a plain prop isn't a signal.
-///
-/// A monotonic `epoch` ticket guards against out-of-order completion: rapid
-/// switcher changes fan out concurrent fetches, and a slower earlier request
-/// must not overwrite a newer range's data. Only the fetch holding the current
-/// ticket applies its result, and a success clears any prior error so a
-/// transient failure can't stick the page in the error state.
+/// Refetch the period-scoped summary when the switcher or the viewed reader
+/// changes. A monotonic `epoch` ticket drops a fetch a newer one superseded,
+/// so a slower response for a prior range or reader can't overwrite it.
 fn use_period_fetch_effect(
     server_url: String,
     user: Option<i64>,
@@ -554,8 +537,10 @@ fn use_period_fetch_effect(
     let generation = crate::use_cache_generation();
     use_effect(use_reactive!(|user| {
         let r = range();
-        // Re-run on cache-revalidation bumps; the refetch is a cache hit.
-        let _ = generation();
+        // Another reader's reads bypass the offline cache — nothing new for them on a bump.
+        if user.is_none() {
+            let _ = generation();
+        }
         let ticket = *epoch.peek() + 1;
         epoch.set(ticket);
         let url = server_url.clone();
@@ -581,6 +566,9 @@ fn use_period_fetch_effect(
 /// One-shot fetch of the all-time summary, re-run when the viewed reader
 /// does — deliberately not keyed on the switcher, since it feeds the standing
 /// hero and the standing band, neither of which a range change may move.
+/// Carries the same `epoch` ticket as [`use_period_fetch_effect`], so a
+/// slower fetch for the reader just switched away from can't overwrite the
+/// new one's summary, error and loading state.
 ///
 /// The goals ride this payload and are rendered straight off it — nothing on
 /// this page writes them, so there is no saved answer to fold back in.
@@ -591,16 +579,26 @@ fn use_all_time_fetch_effect(
     loading: Signal<bool>,
     error: Signal<Option<Failure>>,
 ) {
+    let mut epoch = use_signal(|| 0u64);
     let generation = crate::use_cache_generation();
     use_effect(use_reactive!(|user| {
-        // Re-run on cache-revalidation bumps; the refetch is a cache hit.
-        let _ = generation();
+        // Another reader's reads bypass the offline cache — nothing new for them on a bump.
+        if user.is_none() {
+            let _ = generation();
+        }
+        let ticket = *epoch.peek() + 1;
+        epoch.set(ticket);
         let url = server_url.clone();
         let mut all_time = all_time;
         let mut loading = loading;
         let mut error = error;
         spawn(async move {
-            match data::fetch_stats(&url, StatsRange::AllTime, user).await {
+            let result = data::fetch_stats(&url, StatsRange::AllTime, user).await;
+            // A newer reader switch superseded this fetch — drop the stale result.
+            if *epoch.peek() != ticket {
+                return;
+            }
+            match result {
                 Ok(summary) => all_time.set(Some(summary)),
                 Err(e) => error.set(Some(Failure::from(&e))),
             }
@@ -665,20 +663,32 @@ fn use_library_composition_fetch_effect(
 /// is in progress is a fact about now, and hanging it off the windowed
 /// payload would make a period switch appear to change which books are open.
 /// Silent on failure, like the two library fetches — the card renders nothing
-/// rather than blanking the page.
+/// rather than blanking the page. Carries the same `epoch` ticket as
+/// [`use_period_fetch_effect`], so a slower fetch for the previous reader
+/// can't land after a switch and overwrite the new one's card.
 fn use_in_progress_fetch_effect(
     server_url: String,
     user: Option<i64>,
     in_progress: Signal<Vec<ResumePoint>>,
 ) {
+    let mut epoch = use_signal(|| 0u64);
     let generation = crate::use_cache_generation();
     use_effect(use_reactive!(|user| {
-        // Re-run on cache-revalidation bumps; the refetch is a cache hit.
-        let _ = generation();
+        // Another reader's reads bypass the offline cache — nothing new for them on a bump.
+        if user.is_none() {
+            let _ = generation();
+        }
+        let ticket = *epoch.peek() + 1;
+        epoch.set(ticket);
         let url = server_url.clone();
         let mut in_progress = in_progress;
         spawn(async move {
-            if let Ok(points) = data::recent_progress(&url, IN_PROGRESS_LIMIT, user).await {
+            let result = data::recent_progress(&url, IN_PROGRESS_LIMIT, user).await;
+            // A newer reader switch superseded this fetch — drop the stale result.
+            if *epoch.peek() != ticket {
+                return;
+            }
+            if let Ok(points) = result {
                 in_progress.set(points);
             }
         });
@@ -694,19 +704,13 @@ fn use_household_readers_fetch_effect(
     server_url: String,
     readers: Signal<Option<Vec<HouseholdReader>>>,
 ) {
-    let generation = crate::use_cache_generation();
     use_effect(move || {
-        // Re-run on cache-revalidation bumps; the refetch is a cache hit.
-        let _ = generation();
         let url = server_url.clone();
         let mut readers = readers;
         spawn(async move {
             match data::household_readers(&url).await {
                 Ok(list) => readers.set(Some(list)),
-                // Settle on an empty list so the loader clears; a later
-                // revalidation failure leaves an already-fetched list alone.
-                Err(_) if readers.peek().is_none() => readers.set(Some(Vec::new())),
-                Err(_) => {}
+                Err(_) => readers.set(Some(Vec::new())),
             }
         });
     });

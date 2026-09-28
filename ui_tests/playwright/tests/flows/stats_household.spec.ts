@@ -9,7 +9,7 @@ import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expectNavVisible, gotoReady, waitForHydration } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 import { logInThroughUi, provisionUser } from "../utils/users";
 
@@ -23,8 +23,6 @@ const ACCOUNT = "/settings?section=account";
 const NOT_SHARING = "This reader isn't sharing their stats";
 
 const readerTrigger = (page: Page) => page.getByTestId("stats-reader-trigger");
-const readerMenu = (page: Page) => page.getByTestId("stats-reader-menu");
-const readerOption = (page: Page, testid: string) => page.getByTestId(testid);
 
 let viewer: Page;
 let target: Page;
@@ -126,21 +124,22 @@ test("renders the stats page layout with a picker listing the sharing target", a
   await expect(viewer.getByTestId("stats-hero-who")).toHaveCount(0);
   await expect(viewer.getByTestId("stats-empty")).toBeVisible();
 
-  await readerTrigger(viewer).click();
-  await expect(readerMenu(viewer)).toBeVisible();
-  const you = readerOption(viewer, "stats-reader-option-you");
+  // Options live in the DOM while the menu is `hidden` — asserted without
+  // opening it (rule 04: a layout test takes no actions).
+  const you = viewer.getByTestId("stats-reader-option-you");
   await expect(you).toContainText("You");
-  await expect(you.locator(".st-reader-avatar")).toBeVisible();
+  await expect(you.locator(".st-reader-avatar")).toHaveCount(1);
 
-  const targetOption = readerOption(viewer, `stats-reader-option-${targetId}`);
+  const targetOption = viewer.getByTestId(`stats-reader-option-${targetId}`);
   await expect(targetOption).toContainText(TARGET);
-  await expect(targetOption.locator(".st-reader-avatar")).toBeVisible();
+  await expect(targetOption.locator(".st-reader-avatar")).toHaveCount(1);
 });
 
 test("picking the target shows their figures under a third-person heading", async () => {
   await gotoReady(viewer, "/stats");
   await readerTrigger(viewer).click();
-  await readerOption(viewer, `stats-reader-option-${targetId}`).click();
+  await expect(viewer.getByTestId("stats-reader-menu")).toBeVisible();
+  await viewer.getByTestId(`stats-reader-option-${targetId}`).click();
 
   await expect(viewer).toHaveURL(new RegExp(`/stats\\?user=${targetId}$`));
   await expect(viewer.getByTestId("stats-hero-who")).toHaveText(
@@ -188,10 +187,66 @@ test("picking the target shows their figures under a third-person heading", asyn
   // Choosing "You" returns to the caller's own page.
   await viewer.getByTestId("stats-scope-tab-user").click();
   await readerTrigger(viewer).click();
-  await readerOption(viewer, "stats-reader-option-you").click();
+  await viewer.getByTestId("stats-reader-option-you").click();
   await expect(viewer).toHaveURL(/\/stats$/);
   await expect(viewer.getByTestId("stats-empty")).toBeVisible();
   await expect(viewer.getByTestId("stats-hero-who")).toHaveCount(0);
+});
+
+test("a slower fetch for the previous reader can't overwrite the target's in-progress card", async () => {
+  // Hold the viewer's own in-progress fetch (user_id null, the page's own
+  // limit — not the user-menu's separate limit=1 call) so it resolves after
+  // the switch below, and prove the epoch guard drops it as stale.
+  let releaseOwnFetch: () => void = () => {};
+  const ownFetchHeld = new Promise<void>((resolve) => {
+    releaseOwnFetch = resolve;
+  });
+  await viewer.route("**/api/rpc/progress/recent", async (route) => {
+    const body = route.request().postDataJSON() as {
+      limit: number;
+      user_id: number | null;
+    };
+    if (body.user_id === null && body.limit === 3) {
+      await ownFetchHeld;
+    }
+    await route.continue();
+  });
+
+  // Plain goto, not gotoReady: the held request keeps the page from ever
+  // reaching networkidle (rule 04b's pattern for holding a request open).
+  await viewer.goto("/stats");
+  await waitForHydration(viewer);
+  await expect(readerTrigger(viewer)).toHaveAttribute(
+    "aria-label",
+    "Stats for You",
+  );
+
+  await readerTrigger(viewer).click();
+  await viewer.getByTestId(`stats-reader-option-${targetId}`).click();
+  await expect(viewer.getByTestId("stats-hero-who")).toHaveText(
+    `${TARGET}'s stats`,
+  );
+  await expect(viewer.getByTestId("stats-in-progress")).toContainText(
+    "Beta in the Series",
+  );
+
+  const stalePromise = viewer.waitForResponse(
+    (resp) =>
+      resp.url().includes("/api/rpc/progress/recent") &&
+      (resp.request().postDataJSON() as { user_id: number | null }).user_id ===
+        null,
+  );
+  releaseOwnFetch();
+  await stalePromise;
+
+  await expect(viewer.getByTestId("stats-in-progress")).toContainText(
+    "Beta in the Series",
+  );
+
+  await viewer.unroute("**/api/rpc/progress/recent");
+  await readerTrigger(viewer).click();
+  await viewer.getByTestId("stats-reader-option-you").click();
+  await expect(viewer).toHaveURL(/\/stats$/);
 });
 
 test("a failed reader-list fetch still renders the hero, without a picker", async () => {
@@ -229,7 +284,7 @@ test("turning sharing off drops the target from the picker and refuses a direct 
   // need to open it first.
   await gotoReady(viewer, "/stats");
   await expect(
-    readerOption(viewer, `stats-reader-option-${targetId}`),
+    viewer.getByTestId(`stats-reader-option-${targetId}`),
   ).toHaveCount(0);
 
   await gotoReady(viewer, `/stats?user=${targetId}`);
