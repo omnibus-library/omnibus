@@ -26,6 +26,12 @@ struct StatsView: View {
     @Environment(\.palette) private var palette
 
     @State private var range: StatsRange = .month
+    /// Whose stats this tab shows. Not persisted — iOS has no URL analogue for
+    /// the picker's choice, so a relaunch opens back on your own.
+    @State private var subject: StatsSubject = .you
+    /// Every household reader currently sharing, "you" first — the picker's
+    /// menu and the gate on whether it shows at all.
+    @State private var readers: [HouseholdReader] = []
     @State private var summary: StatsSummary?
     /// Fetched separately from `summary`: library-scoped rather than
     /// per-user, so it must not re-fetch when the range picker moves.
@@ -49,7 +55,8 @@ struct StatsView: View {
     /// first fetch — and it is the same entry the All pill warms anyway.
     @State private var standingSummary: StatsSummary?
     @State private var isLoading = true
-    @State private var error: String?
+    /// Why the requested subject's stats produced no figures, if they didn't.
+    @State private var failure: StatsReadFailure?
     /// Which tile's drill-in is open, if any.
     @State private var drill: DrillMetric?
     /// Whether the tab has been on screen once. `onAppear` and `task` both
@@ -59,31 +66,57 @@ struct StatsView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            Group {
-                if isLoading && summary == nil {
-                    LoadingView()
-                } else if let error, summary == nil {
-                    ErrorStateView(message: error) { Task { await load() } }
-                } else if let summary {
-                    content(summary)
+            ScrollView {
+                // The masthead (title + picker) is outside every state branch
+                // below, so a refusal or an error for another reader never
+                // takes the way back to your own stats with it.
+                LazyVStack(alignment: .leading, spacing: 30, pinnedViews: [.sectionHeaders]) {
+                    masthead
+                        .padding(.bottom, -Spacing.lg)
+
+                    if failure == .notSharing {
+                        StatsRefusalView { subject = .you }
+                    } else if isLoading && summary == nil {
+                        LoadingView()
+                    } else if let failure, case let .error(message) = failure, summary == nil {
+                        ErrorStateView(message: message) { Task { await load() } }
+                    } else if let summary {
+                        figures(summary)
+                    }
                 }
+                .padding(.bottom, 40)
             }
+            .scrollIndicators(.hidden)
             .background(ScreenBackground())
-            // The masthead carries the screen's name, as on every other tab
-            // root; a stock large title alongside it would state it twice.
             .toolbar(.hidden, for: .navigationBar)
             .topEdgeScrim()
-            .refreshTask { await load(force: true) }
+            .refreshTask {
+                await load(force: true)
+                await loadReaders()
+            }
             .withDestinations()
         }
         .task {
             await load()
+            await loadReaders()
             await loadLibrarySize()
             await loadLibraryComposition()
             await loadStandingSummary()
             await loadResumePoints()
         }
         .onChange(of: range) { _, _ in Task { await load() } }
+        // Switching subjects starts over: the figures, the unwindowed
+        // summary and any failure all belonged to whoever was picked before.
+        .onChange(of: subject) { _, _ in
+            summary = nil
+            standingSummary = nil
+            failure = nil
+            isLoading = true
+            Task {
+                await load()
+                await loadStandingSummary()
+            }
+        }
         .sheet(item: $drill) { metric in
             if let summary {
                 StatsDrillInSheet(metric: metric, summary: summary) { uuid in
@@ -115,56 +148,57 @@ struct StatsView: View {
 
     // MARK: - The screen
 
-    private func content(_ summary: StatsSummary) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 30, pinnedViews: [.sectionHeaders]) {
-                // The masthead reserves its own bottom margin, which the
-                // stack's spacing would then double.
-                Masthead(title: "Stats")
-                    .padding(.bottom, -Spacing.lg)
-
-                // Off the unwindowed summary — see `standingSummary`. The
-                // streak card needs it too: `current_streak_days` is unwindowed
-                // but `longest_streak_days` is *not* (`db/src/stats/streak.rs`:
-                // "active_days and the longest run are windowed"), so fed the
-                // rendered summary the card's "best N" dropped from 23 to 7 on
-                // a Week switch — inside the band that must not move.
-                let unwindowed = standingSummary ?? summary
-                StreakHeadline(summary: unwindowed)
-                DailyGoalsCard(summary: summary)
-                if let year = Self.goalYear(summary) {
-                    YearGoalCard(summary: summary, year: year)
-                }
-                LastFourWeeksCard(summary: unwindowed)
-
-                if !unwindowed.heatmap.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        StatsSectionLabel("Activity").screenPadding()
-                        HeatmapView(days: unwindowed.heatmap, asOf: unwindowed.asOfDay)
-                    }
-                }
-
-                Section {
-                    windowed(summary)
-                } header: {
-                    WindowBandHeader(range: $range, caption: Self.rangeCaption(summary))
-                }
-
-                // Its own section, and that is the whole mechanism: a pinned
-                // header is displaced by the *next* one, so the standing rule
-                // being a header is what makes the period control release
-                // exactly as the rule reaches the top. Left as loose content
-                // the control stayed pinned over the sections it does not
-                // govern, which is the one thing this layout must not do.
-                Section {
-                    standing(summary)
-                } header: {
-                    StandingBandHeader()
-                }
+    /// The masthead: the subject's own title, and the picker in its trailing
+    /// slot whenever there's someone else to switch to.
+    private var masthead: some View {
+        Masthead(title: subject.title) {
+            if StatsSubject.pickerIsVisible(readers: readers, current: subject) {
+                StatsReaderPicker(subject: $subject, readers: readers)
             }
-            .padding(.bottom, 40)
         }
-        .scrollIndicators(.hidden)
+    }
+
+    /// Everything below the masthead once a summary has loaded.
+    @ViewBuilder
+    private func figures(_ summary: StatsSummary) -> some View {
+        // Off the unwindowed summary — see `standingSummary`. The
+        // streak card needs it too: `current_streak_days` is unwindowed
+        // but `longest_streak_days` is *not* (`db/src/stats/streak.rs`:
+        // "active_days and the longest run are windowed"), so fed the
+        // rendered summary the card's "best N" dropped from 23 to 7 on
+        // a Week switch — inside the band that must not move.
+        let unwindowed = standingSummary ?? summary
+        StreakHeadline(summary: unwindowed)
+        DailyGoalsCard(summary: summary, canEditGoals: subject.canEditGoals)
+        if let year = Self.goalYear(summary) {
+            YearGoalCard(summary: summary, year: year, canEditGoals: subject.canEditGoals)
+        }
+        LastFourWeeksCard(summary: unwindowed)
+
+        if !unwindowed.heatmap.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                StatsSectionLabel("Activity").screenPadding()
+                HeatmapView(days: unwindowed.heatmap, asOf: unwindowed.asOfDay)
+            }
+        }
+
+        Section {
+            windowed(summary)
+        } header: {
+            WindowBandHeader(range: $range, caption: Self.rangeCaption(summary))
+        }
+
+        // Its own section, and that is the whole mechanism: a pinned
+        // header is displaced by the *next* one, so the standing rule
+        // being a header is what makes the period control release
+        // exactly as the rule reaches the top. Left as loose content
+        // the control stayed pinned over the sections it does not
+        // govern, which is the one thing this layout must not do.
+        Section {
+            standing(summary)
+        } header: {
+            StandingBandHeader()
+        }
     }
 
     /// Everything the control above it governs.
@@ -221,7 +255,9 @@ struct StatsView: View {
     /// signal, and the rule above says it in words.
     @ViewBuilder
     private func standing(_ summary: StatsSummary) -> some View {
-        if !resumePoints.isEmpty {
+        // `recent_progress` takes no `user_id` — it's always yours, so it
+        // must not be shown while looking at another reader's stats.
+        if subject == .you, !resumePoints.isEmpty {
             StatsSection("In progress") { InProgressCard(points: resumePoints) }
         }
 
@@ -463,19 +499,41 @@ struct StatsView: View {
     // MARK: - Loading
 
     private func load(force: Bool = false) async {
-        if force { await OfflineStore.shared.cacheDelete(CacheKey.stats(range)) }
+        // Captured so a stale answer — the subject moved while this was in
+        // flight — is dropped rather than painted over whoever is now picked.
+        let requestedSubject = subject
+        // `cacheKey` is `nil` for another reader, so a pull-to-refresh while
+        // viewing them deletes nothing and never touches `CacheKey.stats` (AC4).
+        if force, let key = requestedSubject.cacheKey(range) {
+            await OfflineStore.shared.cacheDelete(key)
+        }
         do {
-            for try await read in UserDataService.stats(range: range) {
+            for try await read in UserDataService.stats(range: range, subject: requestedSubject) {
+                guard requestedSubject == subject else { return }
                 summary = read.value
-                error = nil
+                failure = nil
                 isLoading = false
             }
         } catch {
-            if summary == nil {
-                self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
-            }
+            guard requestedSubject == subject else { return }
+            let result = StatsReadFailure(error, subject: requestedSubject)
+            failure = result
+            // A refusal clears whatever was on screen; a plain error leaves it.
+            if result == .notSharing { summary = nil }
         }
-        isLoading = false
+        if requestedSubject == subject { isLoading = false }
+    }
+
+    /// Every household reader currently sharing, "you" first. Best-effort: a
+    /// failure keeps the previous list, which starts empty — so the picker
+    /// stays hidden rather than offering a reader whose `user_id` a server
+    /// too old to have `/api/users` wouldn't understand.
+    private func loadReaders() async {
+        do {
+            readers = try await UserDataService.householdReaders()
+        } catch {
+            // Nothing to say: the picker simply stays as it was.
+        }
     }
 
     /// Best-effort by design: this card is context beside the reader's own
@@ -506,8 +564,10 @@ struct StatsView: View {
     /// The widest window, for the heatmap alone. Best-effort: the two strips
     /// fall back to the rendered summary's own heatmap if it never lands.
     private func loadStandingSummary() async {
+        let requestedSubject = subject
         do {
-            for try await read in UserDataService.stats(range: .allTime) {
+            for try await read in UserDataService.stats(range: .allTime, subject: requestedSubject) {
+                guard requestedSubject == subject else { return }
                 standingSummary = read.value
             }
         } catch {
@@ -535,4 +595,19 @@ struct StandoutRow: Identifiable, Hashable {
     let detail: String
 
     var id: String { label }
+}
+
+/// What renders in place of the figures once the picked reader has turned
+/// sharing off, or no longer exists (AC3).
+private struct StatsRefusalView: View {
+    let backToYourStats: () -> Void
+
+    var body: some View {
+        EmptyStateView(
+            icon: "eye.slash",
+            title: StatsReadFailure.notSharingTitle,
+            actionTitle: "Back to your stats",
+            action: backToYourStats
+        )
+    }
 }
