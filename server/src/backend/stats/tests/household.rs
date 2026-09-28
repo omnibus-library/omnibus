@@ -12,13 +12,6 @@ use super::{now_secs, seed_reading_session, seed_reading_session_at_offset};
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
 
-const NOT_SHARING_BODY: &str = "this reader isn't sharing their stats";
-
-async fn body_text(res: axum::response::Response) -> String {
-    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-    String::from_utf8(bytes.to_vec()).unwrap()
-}
-
 #[tokio::test]
 async fn api_get_users_requires_auth() {
     let (app, _state, _pool) = fixture().await;

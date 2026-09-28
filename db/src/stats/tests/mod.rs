@@ -54,6 +54,21 @@ pub(super) async fn reading_session(
     .unwrap();
 }
 
+/// Seed a user with an explicit id. The stats cache is a process-wide static
+/// keyed on `(user_id, range)` and every test pool restarts ids at 1, so a
+/// test exercising the *cached* `user_stats` entry point claims an id no
+/// sibling test can collide with — a `clear_cache()` here would race the
+/// sibling TTL test rather than help.
+pub(super) async fn seed_user_with_id(pool: &SqlitePool, id: i64, name: &str) -> i64 {
+    sqlx::query("INSERT INTO users (id, username, password_hash) VALUES (?, ?, '!x')")
+        .bind(id)
+        .bind(name)
+        .execute(pool)
+        .await
+        .unwrap();
+    id
+}
+
 pub(super) async fn listening_session(
     pool: &SqlitePool,
     user: i64,

@@ -4,7 +4,7 @@
 //! `session_log_for_viewer` and `recent_progress_for_viewer`: the same gate
 //! applied to the session log and the in-progress list.
 
-use omnibus_shared::{HouseholdReader, ProgressFormat, ProgressUpdate, StatsRange};
+use omnibus_shared::{HouseholdReader, StatsRange};
 
 use super::{
     household_readers, may_view_stats, recent_progress_for_viewer, session_log_for_viewer,
@@ -12,29 +12,8 @@ use super::{
 };
 use crate::auth::{set_display_name, set_share_stats, upsert_user_avatar};
 use crate::init_db;
-use crate::test_support::{seed_synced_ebook, seed_user, solid_color_png};
-
-/// Seed a user with an explicit id, so a content-asserting test on the
-/// process-wide stats cache claims a key no sibling test can collide with.
-async fn seed_user_with_id(pool: &sqlx::SqlitePool, id: i64, name: &str) -> i64 {
-    sqlx::query("INSERT INTO users (id, username, password_hash) VALUES (?, ?, '!x')")
-        .bind(id)
-        .bind(name)
-        .execute(pool)
-        .await
-        .unwrap();
-    id
-}
-
-async fn reading_session(
-    pool: &sqlx::SqlitePool,
-    user: i64,
-    uuid: &str,
-    started_at: i64,
-    secs: i64,
-) {
-    reading_session_at_offset(pool, user, uuid, started_at, secs, None).await;
-}
+use crate::stats::tests::{reading_session, seed_user_with_id};
+use crate::test_support::{seed_epub_position, seed_synced_ebook, seed_user, solid_color_png};
 
 async fn reading_session_at_offset(
     pool: &sqlx::SqlitePool,
@@ -340,26 +319,11 @@ async fn session_log_for_viewer_surfaces_auth_error_when_the_pool_is_closed_on_t
     assert!(matches!(err, ViewerStatsError::Auth(_)));
 }
 
-/// A real book row, since `resume_points` skips any progress row whose book
-/// doesn't resolve.
-async fn seed_progress(pool: &sqlx::SqlitePool, user: i64, filename: &str) -> String {
+/// A real book row plus a seeded position, since `resume_points` skips any
+/// progress row whose book doesn't resolve.
+async fn seed_progress_book(pool: &sqlx::SqlitePool, user: i64, filename: &str) -> String {
     let uuid = seed_synced_ebook(pool, filename, filename, "Author").await;
-    crate::progress::upsert_progress(
-        pool,
-        user,
-        &ProgressUpdate {
-            book_uuid: uuid.clone(),
-            format: ProgressFormat::Epub,
-            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
-            audio_position_seconds: None,
-            progress_percent: None,
-            kobo_location: None,
-            book_file_id: None,
-            client_updated_at: None,
-        },
-    )
-    .await
-    .unwrap();
+    seed_epub_position(pool, user, &uuid).await;
     uuid
 }
 
@@ -367,9 +331,9 @@ async fn seed_progress(pool: &sqlx::SqlitePool, user: i64, filename: &str) -> St
 async fn recent_progress_for_viewer_reads_a_sharing_targets_points_and_none_of_the_viewers() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let viewer = seed_user(&pool, "viewer").await;
-    seed_progress(&pool, viewer, "viewer.epub").await;
+    seed_progress_book(&pool, viewer, "viewer.epub").await;
     let target = seed_user(&pool, "target").await;
-    let target_uuid = seed_progress(&pool, target, "target.epub").await;
+    let target_uuid = seed_progress_book(&pool, target, "target.epub").await;
 
     let points = recent_progress_for_viewer(&pool, viewer, Some(target), 20)
         .await
@@ -403,7 +367,7 @@ async fn recent_progress_for_viewer_with_no_target_or_the_viewers_own_id_reads_t
     let pool = init_db("sqlite::memory:").await.unwrap();
     let viewer = seed_user(&pool, "viewer").await;
     set_share_stats(&pool, viewer, false).await.unwrap();
-    seed_progress(&pool, viewer, "own.epub").await;
+    seed_progress_book(&pool, viewer, "own.epub").await;
 
     let none = recent_progress_for_viewer(&pool, viewer, None, 20)
         .await
