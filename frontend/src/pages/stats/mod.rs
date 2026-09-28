@@ -148,7 +148,6 @@ pub fn StatsPage(user: Option<i64>) -> Element {
 
     rsx! {
         ReaderStats {
-            key: "{user:?}",
             user,
             range,
             scope,
@@ -160,9 +159,13 @@ pub fn StatsPage(user: Option<i64>) -> Element {
 }
 
 /// One viewed reader's figures — the standing hero, the scope switcher, and
-/// the two bands beneath it. Remounted whenever [`StatsPage`]'s `key` changes
-/// the reader, so a switch always starts from a fresh loader rather than
-/// carrying over the previous reader's numbers.
+/// the two bands beneath it. `user` changing is reactive (`use_reactive!`,
+/// not a keyed remount — a `key` on a single non-list child is a no-op in
+/// Dioxus's diffing, so a plain prop change is the only signal a reader
+/// switch gets): [`use_reader_switch_reset_effect`] blanks this reader's
+/// signals and re-shows the page loader the instant it happens, and each
+/// fetch effect below is reactive on `user` too, so it actually refetches
+/// rather than only ever firing once at mount.
 #[component]
 fn ReaderStats(
     user: Option<i64>,
@@ -181,6 +184,15 @@ fn ReaderStats(
     // Which tile's drill-in is open, if any — the sheet only ever opens from a
     // client click.
     let expanded: Signal<Option<Metric>> = use_signal(|| None);
+    use_reader_switch_reset_effect(
+        user,
+        period,
+        all_time,
+        in_progress,
+        loading,
+        error,
+        expanded,
+    );
     use_period_fetch_effect(server_url.clone(), user, range, period, error);
     use_all_time_fetch_effect(server_url.clone(), user, all_time, loading, error);
     use_in_progress_fetch_effect(server_url.clone(), user, in_progress);
@@ -494,8 +506,37 @@ fn StatsFreshnessNote() -> Element {
     }
 }
 
-/// Refetch the period-scoped summary whenever the switcher changes. The
-/// signal read inside the effect subscribes it to `range`.
+/// Blank this reader's signals and re-show the page loader the instant
+/// `user` changes. A plain prop change earns no automatic reactivity in
+/// Dioxus — only a *signal* read inside a `use_effect` does — so without this
+/// the three fetch effects below would each need to be told the same thing;
+/// centralizing it here also means the reset always lands in the same render
+/// as the refetches it precedes, before either is aware of the other.
+#[allow(clippy::too_many_arguments)]
+fn use_reader_switch_reset_effect(
+    user: Option<i64>,
+    mut period: Signal<Option<StatsSummary>>,
+    mut all_time: Signal<Option<StatsSummary>>,
+    mut in_progress: Signal<Vec<ResumePoint>>,
+    mut loading: Signal<bool>,
+    mut error: Signal<Option<Failure>>,
+    mut expanded: Signal<Option<Metric>>,
+) {
+    use_effect(use_reactive!(|user| {
+        let _ = user;
+        period.set(None);
+        all_time.set(None);
+        in_progress.set(Vec::new());
+        loading.set(true);
+        error.set(None);
+        expanded.set(None);
+    }));
+}
+
+/// Refetch the period-scoped summary whenever the switcher changes, or the
+/// viewed reader does. The signal read inside the effect subscribes it to
+/// `range`; `user` needs the `use_reactive!` wrapper for the same reason
+/// [`use_reader_switch_reset_effect`] exists — a plain prop isn't a signal.
 ///
 /// A monotonic `epoch` ticket guards against out-of-order completion: rapid
 /// switcher changes fan out concurrent fetches, and a slower earlier request
@@ -511,7 +552,7 @@ fn use_period_fetch_effect(
 ) {
     let mut epoch = use_signal(|| 0u64);
     let generation = crate::use_cache_generation();
-    use_effect(move || {
+    use_effect(use_reactive!(|user| {
         let r = range();
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
@@ -534,12 +575,12 @@ fn use_period_fetch_effect(
                 Err(e) => error.set(Some(Failure::from(&e))),
             }
         });
-    });
+    }));
 }
 
-/// One-shot fetch of the all-time summary. Deliberately not keyed on the
-/// switcher: it feeds the standing hero and the standing band, neither of
-/// which a range change may move.
+/// One-shot fetch of the all-time summary, re-run when the viewed reader
+/// does — deliberately not keyed on the switcher, since it feeds the standing
+/// hero and the standing band, neither of which a range change may move.
 ///
 /// The goals ride this payload and are rendered straight off it — nothing on
 /// this page writes them, so there is no saved answer to fold back in.
@@ -551,7 +592,7 @@ fn use_all_time_fetch_effect(
     error: Signal<Option<Failure>>,
 ) {
     let generation = crate::use_cache_generation();
-    use_effect(move || {
+    use_effect(use_reactive!(|user| {
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
         let url = server_url.clone();
@@ -565,7 +606,7 @@ fn use_all_time_fetch_effect(
             }
             loading.set(false);
         });
-    });
+    }));
 }
 
 /// One-shot fetch of the library-scale totals. Never keyed on the switcher —
@@ -619,18 +660,19 @@ fn use_library_composition_fetch_effect(
     });
 }
 
-/// One-shot fetch of the books the reader currently has open. Its own read
-/// rather than a `StatsSummary` field: what is in progress is a fact about
-/// now, and hanging it off the windowed payload would make a period switch
-/// appear to change which books are open. Silent on failure, like the two
-/// library fetches — the card renders nothing rather than blanking the page.
+/// One-shot fetch of the books the reader currently has open, re-run when the
+/// viewed reader does. Its own read rather than a `StatsSummary` field: what
+/// is in progress is a fact about now, and hanging it off the windowed
+/// payload would make a period switch appear to change which books are open.
+/// Silent on failure, like the two library fetches — the card renders nothing
+/// rather than blanking the page.
 fn use_in_progress_fetch_effect(
     server_url: String,
     user: Option<i64>,
     in_progress: Signal<Vec<ResumePoint>>,
 ) {
     let generation = crate::use_cache_generation();
-    use_effect(move || {
+    use_effect(use_reactive!(|user| {
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
         let url = server_url.clone();
@@ -640,7 +682,7 @@ fn use_in_progress_fetch_effect(
                 in_progress.set(points);
             }
         });
-    });
+    }));
 }
 
 /// Fetch the household readers whose stats the caller may view, once per
