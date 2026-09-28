@@ -4,7 +4,6 @@
 //! unique per setting.
 
 use super::*;
-use crate::test_support::{provide_current_user, render_in_vdom};
 
 #[test]
 fn user_setting_status_line_describes_scroll_stops() {
@@ -22,14 +21,17 @@ fn user_setting_status_line_describes_scroll_stops() {
     );
 }
 
+// `test_support`'s SSR renderer only exists on the `server` feature.
+#[cfg(feature = "server")]
 fn unresolved() -> Element {
-    provide_current_user(None);
+    crate::test_support::provide_current_user(None);
     rsx! { UserSettingsCard {} }
 }
 
+#[cfg(feature = "server")]
 #[test]
 fn user_settings_card_renders_every_switch_unknown_until_the_viewer_resolves() {
-    let html = render_in_vdom(unresolved);
+    let html = crate::test_support::render_in_vdom(unresolved);
     assert!(html.contains("scroll-stops-toggle"), "{html}");
     assert!(html.contains("disabled"), "{html}");
     assert!(html.contains("ld-unknown"), "{html}");
