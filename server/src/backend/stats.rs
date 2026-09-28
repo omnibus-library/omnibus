@@ -97,8 +97,7 @@ pub(super) async fn get_stats(
     }
 }
 
-/// A refused read is the contract's 404; anything else is a 500. `pub(super)`
-/// so `backend::progress`'s `?user_id=` read shares the same 404 contract.
+/// A refused read is the contract's 404; anything else is a 500.
 pub(super) fn viewer_error(context: &'static str, e: db::stats::ViewerStatsError) -> Response {
     if matches!(e, db::stats::ViewerStatsError::NotSharing) {
         return (StatusCode::NOT_FOUND, e.to_string()).into_response();

@@ -28,10 +28,7 @@ pub(super) struct ProgressQuery {
 pub(super) struct RecentQuery {
     #[serde(default = "default_recent_limit")]
     limit: i64,
-    /// Whose in-progress books to read; absent or the caller's own id reads
-    /// their own. Strict, like `StatsQuery::user_id`: an unparseable value is
-    /// a 400 rather than a silent fall-back to the caller's own list under
-    /// another reader's name.
+    /// Whose in-progress books to read; strict like `StatsQuery::user_id`.
     user_id: Option<i64>,
 }
 

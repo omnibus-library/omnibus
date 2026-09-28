@@ -1,6 +1,8 @@
-//! Who may see whose stats. Owns the one predicate the readers list and the
-//! per-reader stats/session-log/in-progress reads all apply, so they can't
-//! disagree about what "shares" means.
+//! Who may see whose stats: the caller always, else a reader who shares.
+//! `household_readers` applies that rule directly in SQL; the per-reader
+//! stats/session-log/in-progress reads apply it through the private
+//! `may_view_stats` gate. Kept in one module so the two can't disagree
+//! about what "shares" means.
 
 use omnibus_shared::{
     HouseholdReader, ResumePoint, SessionCursor, SessionLogPage, StatsRange, StatsSummary,
