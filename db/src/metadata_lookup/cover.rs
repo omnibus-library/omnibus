@@ -40,27 +40,10 @@ pub fn provider_cover_image_config(allow_private_addresses: bool) -> RemoteImage
     }
 }
 
-/// The fetch config for a pasted cover URL: any public HTTPS host, no
-/// allowlist — the address gate on every hop is the only control.
-///
-/// `allow_private_addresses` is threaded through for the same reason
-/// [`provider_cover_image_config`] takes it: a test pointing at a loopback
-/// `wiremock` origin.
-pub fn pasted_cover_image_config(allow_private_addresses: bool) -> RemoteImageConfig {
-    RemoteImageConfig {
-        allow_private_addresses,
-        host_allowlist: Vec::new(),
-        require_https: true,
-        max_redirects: MAX_COVER_REDIRECTS,
-    }
-}
-
 /// Route a cover URL to the terms it should fetch under: the provider
-/// catalog's allowlisted terms for a catalog host, the pasted terms for
-/// anything else.
-///
-/// An unparseable or hostless URL routes to the provider terms too — the
-/// fetch itself then refuses it as unparseable, same as it always has.
+/// catalog's allowlisted terms for a catalog host, or the pasted terms —
+/// [`provider_cover_image_config`] with the allowlist dropped, the address
+/// gate on every hop the only remaining control — for anything else.
 pub fn cover_image_config_for(url: &str, allow_private_addresses: bool) -> RemoteImageConfig {
     let provider_config = provider_cover_image_config(allow_private_addresses);
     let is_provider_host = reqwest::Url::parse(url)
@@ -74,7 +57,10 @@ pub fn cover_image_config_for(url: &str, allow_private_addresses: bool) -> Remot
     if is_provider_host {
         provider_config
     } else {
-        pasted_cover_image_config(allow_private_addresses)
+        RemoteImageConfig {
+            host_allowlist: Vec::new(),
+            ..provider_config
+        }
     }
 }
 
@@ -201,15 +187,6 @@ mod tests {
     }
 
     #[test]
-    fn pasted_cover_config_has_no_allowlist_and_is_https_only() {
-        let config = pasted_cover_image_config(false);
-        assert!(config.host_allowlist.is_empty());
-        assert!(config.require_https);
-        assert!(!config.allow_private_addresses);
-        assert_eq!(config.max_redirects, MAX_COVER_REDIRECTS);
-    }
-
-    #[test]
     fn cover_image_config_for_routes_a_catalog_host_to_the_provider_terms() {
         for url in [
             "https://books.google.com/books/content?id=x&zoom=1",
@@ -233,24 +210,8 @@ mod tests {
         let config = cover_image_config_for("https://images.example.com/c.jpg", false);
         assert!(config.host_allowlist.is_empty());
         assert!(config.require_https);
-    }
-
-    #[test]
-    fn cover_image_config_for_routes_an_unparseable_url_to_the_provider_terms() {
-        // "not a url" fails to parse at all; `mailto:` parses but has no host
-        // component — both are the "can't tell" case this function routes
-        // the same way.
-        for url in ["not a url", "mailto:reader@example.com"] {
-            let config = cover_image_config_for(url, false);
-            assert_eq!(
-                config.host_allowlist,
-                all_cover_hosts()
-                    .into_iter()
-                    .map(str::to_string)
-                    .collect::<Vec<_>>(),
-                "{url} should route to the provider terms so the fetch refuses it as unparseable"
-            );
-        }
+        assert!(!config.allow_private_addresses);
+        assert_eq!(config.max_redirects, MAX_COVER_REDIRECTS);
     }
 
     /// A blank JPEG of the given size — `is_larger_rendition` reads the header

@@ -19,8 +19,7 @@ mod tests;
 
 pub use config::{MetadataLookupConfig, ProviderKeys};
 pub use cover::{
-    cover_image_config_for, fetch_provider_cover, pasted_cover_image_config,
-    provider_cover_image_config, MAX_COVER_REDIRECTS,
+    cover_image_config_for, fetch_provider_cover, provider_cover_image_config, MAX_COVER_REDIRECTS,
 };
 pub use hydrate::hydrate_edition;
 pub use providers::{all_cover_hosts, catalog, cover_hosts, openlibrary_enrich, OlEnrichment};
