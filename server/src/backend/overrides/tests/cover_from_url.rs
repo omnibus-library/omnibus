@@ -127,13 +127,7 @@ async fn api_delete_cover_reverts_a_cover_that_came_from_a_url() {
     );
 }
 
-// ── AC2: the SSRF gates ──────────────────────────────────────────
-//
-// A pasted (non-catalog) host is no longer refused for being off an
-// allowlist — `cover_image_config_for` routes it to the pasted terms, which
-// have none. Its control is the scheme + address gate, exercised below with
-// the production config so every case is refused offline, before any DNS
-// lookup or connect.
+// Pasted hosts: scheme + address gate, refused offline under the production config.
 
 #[tokio::test]
 async fn api_post_cover_from_url_refuses_plain_http_for_a_pasted_host() {
@@ -184,11 +178,13 @@ async fn api_post_cover_from_url_refuses_private_address_literals_for_a_pasted_h
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{url}");
         let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        assert!(
-            String::from_utf8_lossy(&body).contains("not allowed"),
-            "{url}: {}",
-            String::from_utf8_lossy(&body)
-        );
+        let text = String::from_utf8_lossy(&body);
+        assert!(text.contains("not allowed"), "{url}: {text}");
+        // The refusal must not double as a DNS/address resolution oracle: no
+        // resolved IP or hostname literal leaks into the response body.
+        for literal in ["127.0.0.1", "10.0.0.8", "169.254", "::1"] {
+            assert!(!text.contains(literal), "{url}: {text}");
+        }
         assert!(db::get_metadata_overrides(&pool, &uuid)
             .await
             .unwrap()
@@ -517,5 +513,17 @@ async fn cover_fetch_config_is_strict_by_default() {
     assert!(
         pasted.host_allowlist.is_empty(),
         "a non-catalog host must fetch under no allowlist, not a widened one"
+    );
+
+    // A catalog host must still route through the provider allowlist on this
+    // path too, not fall through to the pasted (no-allowlist) terms.
+    let catalog = cover_fetch_config_for(&state, "https://covers.openlibrary.org/b/id/1-L.jpg");
+    assert_eq!(
+        catalog.host_allowlist,
+        db::all_cover_hosts()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>(),
+        "a catalog host must keep the provider terms via cover_image_config_for"
     );
 }

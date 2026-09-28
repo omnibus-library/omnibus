@@ -162,13 +162,13 @@ pub(super) struct CoverFromUrlBody {
 /// security surface. [`cover_fetch_config_for`] splits the terms by host: a
 /// provider-catalog host gets [`db::provider_cover_image_config`]'s
 /// allowlisted terms (the same host list the `img-src` CSP is built from);
-/// any other host gets [`db::pasted_cover_image_config`]'s terms, which drop
-/// the allowlist and rely on the address gate alone. Both share HTTPS only,
-/// each redirect hop re-checked rather than trusted because the first hop
-/// was allowed, the IP-range guard before any connect, and a size cap that
-/// bounds memory whatever the origin advertises. The bytes are then sniffed
-/// here — an HTML error page served with an `image/*` content-type must not
-/// land on disk as a cover.
+/// any other host gets the pasted terms from [`db::cover_image_config_for`],
+/// which drop the allowlist and rely on the address gate alone. Both share
+/// HTTPS only, each redirect hop re-checked rather than trusted because the
+/// first hop was allowed, the IP-range guard before any connect, and a size
+/// cap that bounds memory whatever the origin advertises. The bytes are then
+/// sniffed here — an HTML error page served with an `image/*` content-type
+/// must not land on disk as a cover.
 ///
 /// **Rate-limited** (mounted in `upload_router`): it carries no upload body,
 /// which is what keeps the other cover routes outside that limiter, but it is
@@ -237,8 +237,19 @@ pub(super) async fn post_ebook_cover_from_url(
             )
                 .into_response();
         }
+        // BlockedAddress's Display echoes the resolved IP or hostname, which
+        // would let a can_edit user use this route as a DNS/address oracle —
+        // fixed body here, detail only in the log.
+        Err(e @ db::author_photos::FetchRemoteImageError::BlockedAddress(_)) => {
+            tracing::warn!(error = %e, "cover fetch refused by address gate");
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "that address is not allowed",
+            )
+                .into_response();
+        }
         // Everything else is a refusal we made: bad scheme, host off the
-        // allowlist, blocked address, non-image content-type, too large.
+        // allowlist, non-image content-type, too large.
         Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
 
@@ -273,29 +284,22 @@ pub(super) async fn post_ebook_cover_from_url(
     }
 }
 
-/// The terms [`post_ebook_cover_from_url`]'s fetch runs under.
-///
-/// Production is [`db::provider_cover_image_config`] unchanged: HTTPS only,
-/// hosts limited to the provider catalog's, private address ranges blocked.
-///
-/// **One flag relaxes it, and only for tests.** `AppState`'s injectable
-/// `RemoteImageConfig` (see `AppState::new_with_remote_image_config`) exists
-/// so an integration test can drive a `wiremock` origin bound to
-/// `127.0.0.1`, which is plaintext and private by nature — so the same flag
-/// that permits the address also permits the scheme and adds the loopback
-/// hosts, rather than each being a separate knob a production path could
-/// trip independently. A production `AppState` is built with `Default`, whose
-/// flag is `false`, so none of it applies; `cover_fetch_config_is_strict_by_default`
-/// is what holds that true.
-///
-/// Provider-only — shared with the upload commit (`uploads`), which fetches a
-/// cover the reader staged from the edition picker, always a catalog URL.
-/// [`post_ebook_cover_from_url`] uses [`cover_fetch_config_for`] instead,
-/// since a pasted URL may name any host.
-pub(super) fn cover_fetch_config(state: &AppState) -> db::author_photos::RemoteImageConfig {
-    let loopback_testing = state.remote_image_config().allow_private_addresses;
-    let mut config = db::provider_cover_image_config(loopback_testing);
-    if loopback_testing {
+/// Relaxes `config` for a loopback `wiremock` origin — only when `state`'s
+/// injected `RemoteImageConfig` opts in. One flag relaxes it, and only for
+/// tests: `AppState`'s injectable `RemoteImageConfig` (see
+/// `AppState::new_with_remote_image_config`) exists so an integration test
+/// can drive a `wiremock` origin bound to `127.0.0.1`, which is plaintext
+/// and private by nature — so the same flag that permits the address also
+/// permits the scheme and adds the loopback hosts, rather than each being a
+/// separate knob a production path could trip independently. A production
+/// `AppState` is built with `Default`, whose flag is `false`, so none of it
+/// applies; `cover_fetch_config_is_strict_by_default` is what holds that
+/// true.
+fn with_loopback_hatch(
+    state: &AppState,
+    mut config: db::author_photos::RemoteImageConfig,
+) -> db::author_photos::RemoteImageConfig {
+    if state.remote_image_config().allow_private_addresses {
         config.require_https = false;
         config.host_allowlist.push("127.0.0.1".to_string());
         config.host_allowlist.push("localhost".to_string());
@@ -303,28 +307,25 @@ pub(super) fn cover_fetch_config(state: &AppState) -> db::author_photos::RemoteI
     config
 }
 
+/// The terms the upload commit's provider-cover fetch (`uploads`) runs
+/// under: [`db::provider_cover_image_config`] unchanged — HTTPS only, hosts
+/// limited to the provider catalog's, private address ranges blocked.
+/// Provider-only; [`post_ebook_cover_from_url`] uses [`cover_fetch_config_for`]
+/// instead, since a pasted URL may name any host.
+pub(super) fn cover_fetch_config(state: &AppState) -> db::author_photos::RemoteImageConfig {
+    let loopback_testing = state.remote_image_config().allow_private_addresses;
+    with_loopback_hatch(state, db::provider_cover_image_config(loopback_testing))
+}
+
 /// The terms [`post_ebook_cover_from_url`]'s fetch runs under for `url` —
 /// [`db::cover_image_config_for`]'s split between the provider catalog's
-/// allowlisted terms and the pasted terms (any public HTTPS host, the address
-/// gate alone).
-///
-/// Shares [`cover_fetch_config`]'s one test-only hatch: only when
-/// `state.remote_image_config().allow_private_addresses`, `require_https` is
-/// dropped and `127.0.0.1` + `localhost` are appended to whichever allowlist
-/// the host split picked — so a loopback `wiremock` origin is reachable on
-/// either path in a test, and never on a production `AppState`.
+/// allowlisted terms and the pasted terms.
 pub(super) fn cover_fetch_config_for(
     state: &AppState,
     url: &str,
 ) -> db::author_photos::RemoteImageConfig {
     let loopback_testing = state.remote_image_config().allow_private_addresses;
-    let mut config = db::cover_image_config_for(url, loopback_testing);
-    if loopback_testing {
-        config.require_https = false;
-        config.host_allowlist.push("127.0.0.1".to_string());
-        config.host_allowlist.push("localhost".to_string());
-    }
-    config
+    with_loopback_hatch(state, db::cover_image_config_for(url, loopback_testing))
 }
 
 /// Revert an overridden cover back to the scanned original, preserving any
