@@ -45,18 +45,20 @@ rather than pressing on with unreliable evidence.
   `page.getByTestId("add-books-file-input").setInputFiles("/abs/path.epub")`
   and then read the review form's fields. A file of any size is fine — a
   multi-part audiobook included.
-- **A locator that times out inside a `.then()` chain kills the driver.**
-  The rejection is unhandled in the driver's process and Node exits — that is
-  what took agent-1's browser down on a Play click. Keep every command one
-  top-level `await`, one statement per call, and let a timeout come back as an
-  error rather than as a dead server.
+- **A promise you do not return fails on the *next* command.** A locator that
+  times out inside a `.then()` chain the command does not await used to kill
+  the driver; now the server stays up and the failure comes back as an
+  `unhandled` list on your next `driver.sh run` result. Treat the step it
+  belonged to as failed. Keep every command one top-level `await`, one
+  statement per call, so a timeout comes back as the error of the command
+  that caused it.
 - **A mouse drag over the reader's iframe hangs the command** for the full
   timeout while the page stays responsive. Select text with a triple-click,
   or a click and a shift-click; both produce a correct highlight.
-- **The scratch directory is shared with every other agent.** A helper script
-  you drop there is overwritten by theirs, and one run sent an agent's
-  commands into another agent's browser that way. Use a directory named for
-  your actor and nothing else.
+- **The harness's scratchpad is shared with every other agent.** A helper
+  script you drop there is overwritten by theirs, and one run sent an agent's
+  commands into another agent's browser that way. Use the scratch directory
+  your brief names for your actor and nothing else.
 - **Some names are not what they look like.** The nav's "LIBRARY" is
   uppercase by CSS, so match it case-insensitively. The shelf dialog's Create
   button may read `Create · N` once a name is typed (one agent saw the count,
@@ -80,7 +82,9 @@ rather than pressing on with unreliable evidence.
   opposite case: the server is fine and the command itself never returned —
   an app hang, or a locator that never matched.
 - **A `403` with `"error": "ownership_guard"` is your own harness**, not the
-  app refusing you. It means a destructive call named a book you did not add.
+  app refusing you. It means a destructive call named a book you did not add,
+  or a copy you did not file. A book is yours from the moment you journal its
+  `book.add` — the guard reads the journal on every call.
   Journal it `refused` and move on; retrying or routing around it is the one
   thing the guard exists to prevent.
 - **You have your own browser.** If you ever see another actor's session, that

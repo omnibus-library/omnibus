@@ -17,43 +17,70 @@
 // the app uses XMLHttpRequest) and never touches a body it is not about to
 // inspect, so an upload of any size passes straight through.
 //
-// State lives in the driver's Node process, reached over two bindings, so a
+// State lives in the driver's Node process, reached over bindings, so a
 // navigation resets nothing: `driver.sh refusals` reads
 // `globalThis.__omnibusGuardRefusals` here, and the approved-merge count that
-// lets an undo through survives the page it was earned on. Re-running the
-// guard replaces the owned set and installs nothing twice.
+// lets an undo through survives the page it was earned on.
 //
-// __OWNED__ is replaced with a JSON array of uuids the actor has a book.add
-// entry for, in any run. __ACTOR__ with the actor id.
+// Ownership is asked of the journals on every destructive call, not baked in
+// when the guard is installed: a snapshot left a book the agent created
+// mid-flow unownable until the runner re-guarded by hand (#2486, #2518). The
+// uuids still come from `owned.sh`, never from the agent.
+//
+// __ACTOR__ is replaced with the actor id, __OWNED_SH__ with the path to
+// owned.sh, __VERSION__ with a hash of this file so `driver.sh guard` can say
+// which rules are live.
 (async () => {
-  const owned = __OWNED__;
   const actor = "__ACTOR__";
+  const version = "__VERSION__";
 
+  globalThis.__omnibusGuardActor = actor;
+  globalThis.__omnibusGuardOwnedScript = "__OWNED_SH__";
   globalThis.__omnibusGuardRefusals ||= [];
   globalThis.__omnibusGuardApprovedMerges ||= 0;
-  if (!globalThis.__omnibusGuardBound) {
-    await page.exposeBinding("__omnibusGuardRefused", (_source, refusal) => {
-      globalThis.__omnibusGuardRefusals.push(refusal);
-    });
-    // "approve" banks a merge the guard let through; "spend" consumes one for
-    // an undo and says whether there was one to spend.
-    await page.exposeBinding("__omnibusGuardMerge", (_source, op) => {
-      if (op === "approve") {
-        globalThis.__omnibusGuardApprovedMerges += 1;
-        return true;
-      }
-      if (globalThis.__omnibusGuardApprovedMerges > 0) {
-        globalThis.__omnibusGuardApprovedMerges -= 1;
-        return true;
-      }
-      return false;
-    });
-    globalThis.__omnibusGuardBound = true;
-  }
+
+  const { execFile } = process.getBuiltinModule("node:child_process");
+  const { promisify } = process.getBuiltinModule("node:util");
+  const execFileAsync = promisify(execFile);
+  const ownedNow = async () => {
+    const { stdout } = await execFileAsync(globalThis.__omnibusGuardOwnedScript, [globalThis.__omnibusGuardActor]);
+    return new Set(stdout.trim().split(",").filter(Boolean));
+  };
+
+  // A binding can be exposed once per page, so each is registered by name; a
+  // driver guarded by an older guard.js already holds the first two.
+  globalThis.__omnibusGuardBindings ||= new Set(
+    globalThis.__omnibusGuardBound ? ["__omnibusGuardRefused", "__omnibusGuardMerge"] : [],
+  );
+  const bind = async (name, fn) => {
+    if (globalThis.__omnibusGuardBindings.has(name)) return;
+    await page.exposeBinding(name, fn);
+    globalThis.__omnibusGuardBindings.add(name);
+  };
+  await bind("__omnibusGuardRefused", (_source, refusal) => {
+    globalThis.__omnibusGuardRefusals.push(refusal);
+  });
+  // "approve" banks a merge the guard let through; "spend" consumes one for
+  // an undo and says whether there was one to spend.
+  await bind("__omnibusGuardMerge", (_source, op) => {
+    if (op === "approve") {
+      globalThis.__omnibusGuardApprovedMerges += 1;
+      return true;
+    }
+    if (globalThis.__omnibusGuardApprovedMerges > 0) {
+      globalThis.__omnibusGuardApprovedMerges -= 1;
+      return true;
+    }
+    return false;
+  });
+  // Which of these uuids the actor has no `book.add` for, read at call time.
+  await bind("__omnibusGuardUnowned", async (_source, uuids) => {
+    const owned = await ownedNow();
+    return uuids.filter((u) => !owned.has(u));
+  });
 
   // Runs inside the page. Playwright serialises it, so it closes over nothing.
-  const install = ({ owned, actor }) => {
-    window.__omnibusGuardOwned = new Set(owned);
+  const install = ({ actor, version }) => {
     window.__omnibusGuardActor = actor;
     // A re-guard must *replace* the wrapper, not return early leaving the old
     // one in place: run r-20260908-02 patched this file mid-run, re-ran
@@ -72,6 +99,7 @@
     if (window.__omnibusGuardInstalled) window.fetch = window.__omnibusGuardOriginalFetch;
     window.__omnibusGuardStale = false;
     window.__omnibusGuardInstalled = true;
+    window.__omnibusGuardVersion = version;
 
     // Endpoints that destroy or restructure a book. Anything book-scoped is
     // gated on the owned set; author and series deletion is refused outright,
@@ -88,11 +116,9 @@
     // agent wishlisting a book somebody else uploaded — which every reader may
     // do.
     const PHYSICAL_ALLOWED = /\/api\/rpc\/physical\/(copies|wishlist\/(get|add|remove))$/;
-    // A copy note or removal names a copy id and no book uuid, and the check-in
-    // response carries no copy id either, so ownership cannot be read from the
-    // request or learned from an earlier one. Allowed rather than refused — the
-    // alternative loses the flow's last two steps entirely — and recorded as an
-    // unverified allowance so the runner can see what went through unchecked.
+    // A copy note or removal names a copy id and no book uuid. The copy card
+    // that sends it sits on its book's page, so the guard asks the server who
+    // filed that copy and lets through only the signed-in account's own.
     const COPY_SCOPED = /\/api\/(rpc\/physical\/copies\/(note|delete)$|physical\/copies\/\d+$)/;
     const ALWAYS_REFUSED = /\/api\/rpc\/(author\/delete|cleanup\/delete-entity)/;
     // Undo is destructive and owner-only, but its payload carries a merge_log_id
@@ -108,7 +134,7 @@
     const uuidsIn = (text) =>
       (text || "").match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || [];
 
-    // The body as text, read only for a book-scoped call — never for an upload.
+    // The body as text, read only for a guarded call — never for an upload.
     const bodyText = async (input, init) => {
       const body = init && init.body !== undefined && init.body !== null ? init.body : null;
       if (typeof body === "string") return body;
@@ -122,6 +148,34 @@
 
     const originalFetch = window.fetch;
     window.__omnibusGuardOriginalFetch = originalFetch;
+
+    const json = async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status} from ${response.url}`);
+      return response.json();
+    };
+    // Why a copy write is refused, or null when the signed-in account filed it.
+    const copyRefusal = async (url, text) => {
+      const match = /copies\/(\d+)$/.exec(url) || /copy_id\D{0,4}(\d+)/.exec(text);
+      if (!match) return "copy call carried no copy id to check";
+      const [book] = uuidsIn(location.pathname);
+      if (!book) return "copy call made from a page that names no book";
+      try {
+        const me = await json(await originalFetch("/api/auth/me"));
+        const copies = await json(
+          await originalFetch("/api/rpc/physical/copies", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ uuid: book }),
+          }),
+        );
+        const copy = copies.find((c) => c.id === Number(match[1]));
+        if (!copy) return `copy ${match[1]} is not on book ${book}`;
+        return copy.added_by_user_id === me.id ? null : "copy was filed by another reader";
+      } catch (e) {
+        return `could not look up who filed copy ${match[1]}: ${e.message}`;
+      }
+    };
+
     window.fetch = async function (input, init) {
       const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const url = new URL(raw, location.href).href;
@@ -152,16 +206,8 @@
       if (ALWAYS_REFUSED.test(url)) return refuse("author and series deletion are forbidden by the rails", []);
       if (PHYSICAL_ALLOWED.test(url)) return originalFetch.call(this, input, init);
       if (COPY_SCOPED.test(url)) {
-        const note = {
-          actor: window.__omnibusGuardActor,
-          url,
-          method,
-          allowed: true,
-          why: "copy-scoped call carries a copy id and no book uuid — allowed unverified",
-          targets: [],
-        };
-        Promise.resolve(window.__omnibusGuardRefused(note)).catch(() => {});
-        return originalFetch.call(this, input, init);
+        const why = await copyRefusal(url, await bodyText(input, init));
+        return why ? refuse(why, []) : originalFetch.call(this, input, init);
       }
       if (MERGE_READ.test(url)) return originalFetch.call(this, input, init);
       if (UNDO.test(url)) {
@@ -170,19 +216,29 @@
       }
       if (BOOK_SCOPED.test(url)) {
         const targets = [...uuidsIn(await bodyText(input, init)), ...uuidsIn(url)];
-        const unowned = targets.filter((u) => !window.__omnibusGuardOwned.has(u));
         // No uuid at all in a destructive call means the guard cannot prove
         // ownership — refuse rather than wave it through.
         if (targets.length === 0) return refuse("destructive call carried no book uuid to check", []);
+        let unowned;
+        try {
+          unowned = await window.__omnibusGuardUnowned(targets);
+        } catch (e) {
+          return refuse(`could not read the ownership ledger: ${e.message}`, targets);
+        }
         if (unowned.length > 0) return refuse("actor does not own these books", unowned);
         // Remember an approved merge so its undo can be allowed through.
         if (/merge-books$/.test(url)) await window.__omnibusGuardMerge("approve");
       }
       return originalFetch.call(this, input, init);
     };
+    return { installed: true };
   };
 
-  await page.addInitScript(install, { owned, actor });
-  const result = await page.evaluate(install, { owned, actor });
-  return result && result.installed === false ? result.reason : "installed";
+  await page.addInitScript(install, { actor, version });
+  const result = await page.evaluate(install, { actor, version });
+  return JSON.stringify({
+    reason: result && result.installed === false ? result.reason : null,
+    live: await page.evaluate(() => window.__omnibusGuardVersion ?? null),
+    owned: (await ownedNow()).size,
+  });
 })()

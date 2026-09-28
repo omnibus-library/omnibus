@@ -8,6 +8,7 @@
     journal.py path --run r-20260828-02        # where that run's journal lives
     journal.py next-seq --run … --actor agent-2
     journal.py anomalies --run r-20260828-02   # what the agents flagged
+    journal.py open-flows --run r-20260828-02  # what each agent left unfinished
 
 Agents share one file, so `echo >> journal.jsonl` is not good enough: a shell
 redirect can split a long record across two writes and a second agent's line
@@ -30,6 +31,31 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from audit_lib import env, journal  # noqa: E402
+
+
+def open_flows(entries: list[journal.Entry]) -> dict[str, dict]:
+    """Per actor: flows started and never ended, and the entry it stopped on.
+
+    The brief a resumed subagent needs after a rate limit killed the swarm
+    mid-flow: finish these without writing a second `flow.start`.
+    """
+    out: dict[str, dict] = {}
+    for actor in journal.actors(entries):
+        mine = journal.actor_entries(entries, actor)
+        started: dict[str | None, int | None] = {}
+        for e in mine:
+            if e.action == "flow.start":
+                started.pop(e.flow, None)
+                started[e.flow] = e.seq
+            elif e.action == "flow.end":
+                started.pop(e.flow, None)
+        last = mine[-1]
+        out[actor] = {
+            "open": [{"flow": flow, "started_seq": seq} for flow, seq in started.items()],
+            "last_seq": last.seq,
+            "last": {k: last.raw.get(k) for k in ("flow", "action", "target", "outcome", "note")},
+        }
+    return out
 
 
 def main() -> int:
@@ -59,6 +85,9 @@ def main() -> int:
     ano = sub.add_parser("anomalies", help="list the anomalies agents flagged")
     ano.add_argument("--run", required=True)
 
+    opn = sub.add_parser("open-flows", help="per actor, the flows started and never ended")
+    opn.add_argument("--run", required=True)
+
     args = ap.parse_args()
     env.load()
     path = journal.journal_path(args.run, args.journal_dir)
@@ -76,6 +105,9 @@ def main() -> int:
             if e.action == "anomaly":
                 severity = e.params.get("severity", "?")
                 print(f"{e.actor} seq={e.seq} [{severity}] {e.note or e.params.get('observed', '')}")
+        return 0
+    if args.cmd == "open-flows":
+        print(json.dumps(open_flows(journal.read_entries(path)), indent=2))
         return 0
 
     raw = sys.stdin.read() if args.params == "-" else args.params

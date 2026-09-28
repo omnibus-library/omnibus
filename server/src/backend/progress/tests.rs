@@ -648,27 +648,6 @@ async fn api_get_recent_progress_returns_resume_points_newest_first() {
     assert_eq!(points[0].book.title.as_deref(), Some("Book B"));
 }
 
-const NOT_SHARING_BODY: &str = "this reader isn't sharing their stats";
-
-async fn seed_epub_progress(pool: &sqlx::SqlitePool, user_id: i64, uuid: &str) {
-    omnibus_db::progress::upsert_progress(
-        pool,
-        user_id,
-        &omnibus_shared::ProgressUpdate {
-            book_uuid: uuid.to_string(),
-            format: ProgressFormat::Epub,
-            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
-            audio_position_seconds: None,
-            progress_percent: None,
-            kobo_location: None,
-            book_file_id: None,
-            client_updated_at: None,
-        },
-    )
-    .await
-    .unwrap();
-}
-
 #[tokio::test]
 async fn api_get_recent_progress_with_user_id_reads_a_sharing_targets_points() {
     let (app, _state, pool) = fixture().await;
@@ -676,7 +655,7 @@ async fn api_get_recent_progress_with_user_id_reads_a_sharing_targets_points() {
     let token = auth_test_support::bearer_token(&pool, viewer.id).await;
     let target = auth_test_support::create_user(&pool, "target").await;
     let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Target Book").await;
-    seed_epub_progress(&pool, target.id, &uuid).await;
+    omnibus_db::test_support::seed_epub_position(&pool, target.id, &uuid).await;
 
     let res = app
         .oneshot(get_with_bearer(
@@ -711,10 +690,7 @@ async fn api_get_recent_progress_with_user_id_404s_alike_for_a_non_sharer_and_a_
         .await
         .unwrap();
     assert_eq!(non_sharer_res.status(), StatusCode::NOT_FOUND);
-    let bytes = to_bytes(non_sharer_res.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), NOT_SHARING_BODY);
+    assert_eq!(body_text(non_sharer_res).await, NOT_SHARING_BODY);
 
     let missing_res = app
         .oneshot(get_with_bearer(
@@ -724,8 +700,7 @@ async fn api_get_recent_progress_with_user_id_404s_alike_for_a_non_sharer_and_a_
         .await
         .unwrap();
     assert_eq!(missing_res.status(), StatusCode::NOT_FOUND);
-    let bytes = to_bytes(missing_res.into_body(), usize::MAX).await.unwrap();
-    assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), NOT_SHARING_BODY);
+    assert_eq!(body_text(missing_res).await, NOT_SHARING_BODY);
 }
 
 #[tokio::test]
@@ -746,8 +721,7 @@ async fn api_get_recent_progress_with_user_id_404s_a_non_sharer_for_an_admin_vie
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-    assert_eq!(String::from_utf8(bytes.to_vec()).unwrap(), NOT_SHARING_BODY);
+    assert_eq!(body_text(res).await, NOT_SHARING_BODY);
 }
 
 #[tokio::test]
@@ -759,7 +733,7 @@ async fn api_get_recent_progress_with_own_user_id_reads_own_points_even_with_sha
         .await
         .unwrap();
     let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Own Book").await;
-    seed_epub_progress(&pool, user.id, &uuid).await;
+    omnibus_db::test_support::seed_epub_position(&pool, user.id, &uuid).await;
 
     let res = app
         .oneshot(get_with_bearer(
@@ -785,4 +759,35 @@ async fn api_get_recent_progress_rejects_a_malformed_user_id() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+/// Mirrors `backend::stats::tests::household`'s target-read 500 test: a DB
+/// failure reading a sharing target's resume points must still surface as a
+/// 500, never fold into the gate's 404.
+#[tokio::test]
+async fn api_get_recent_progress_with_user_id_returns_500_when_the_target_read_fails() {
+    let (app, _state, pool) = fixture().await;
+    let viewer = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, viewer.id).await;
+    let target = auth_test_support::create_user(&pool, "target").await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query("DROP TABLE reading_progress")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    drop(conn);
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/progress/recent?user_id={}", target.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

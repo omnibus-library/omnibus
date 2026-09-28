@@ -2,14 +2,36 @@
 //! the share gate's message, a sharer's success path, admin no-bypass, and a
 //! DB failure genericized to `internal server error`.
 
+use dioxus::prelude::ServerFnError;
+use omnibus_db::stats::ViewerStatsError;
 use omnibus_shared::StatsRange;
 
-use super::{household_readers, reader_session_log, reader_stats};
+use super::{household_readers, map_viewer_error, reader_session_log, reader_stats};
+
+#[test]
+fn map_viewer_error_carries_a_404_and_the_contract_message_for_a_refusal() {
+    let err = map_viewer_error("stats", ViewerStatsError::NotSharing);
+    assert!(matches!(
+        err,
+        ServerFnError::ServerError { code: 404, message, .. }
+            if message == "this reader isn't sharing their stats"
+    ));
+}
 
 async fn pool_with_user(name: &str) -> (sqlx::SqlitePool, i64) {
     let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
     let id = omnibus_db::test_support::seed_user(&pool, name).await;
     (pool, id)
+}
+
+/// A fresh pool whose first (and so far only) user is a real admin —
+/// `db::auth::create_user` grants `is_admin` to whoever registers first.
+async fn pool_with_admin(name: &str) -> (sqlx::SqlitePool, i64) {
+    let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
+    let admin = omnibus_db::auth::create_user(&pool, name, "correct-horse-battery-staple")
+        .await
+        .unwrap();
+    (pool, admin.id)
 }
 
 #[tokio::test]
@@ -26,6 +48,20 @@ async fn household_readers_returns_the_caller_first_and_excludes_a_non_sharer() 
     let names: Vec<&str> = readers.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, vec!["caller", "alice"]);
     assert!(readers[0].is_you);
+}
+
+#[tokio::test]
+async fn household_readers_lists_the_caller_first_even_with_the_callers_own_sharing_off() {
+    let (pool, caller) = pool_with_user("caller").await;
+    omnibus_db::auth::set_share_stats(&pool, caller, false)
+        .await
+        .unwrap();
+    omnibus_db::test_support::seed_user(&pool, "alice").await;
+
+    let readers = household_readers(&pool, caller).await.unwrap();
+
+    assert!(readers[0].is_you);
+    assert_eq!(readers[0].id, caller);
 }
 
 async fn seed_reading_session(
@@ -65,7 +101,7 @@ async fn reader_stats_returns_a_sharing_targets_figures() {
 #[tokio::test]
 async fn reader_stats_message_for_a_non_sharer_carries_the_contract_string_even_for_an_admin_caller(
 ) {
-    let (pool, admin) = pool_with_user("admin").await;
+    let (pool, admin) = pool_with_admin("admin").await;
     let non_sharer = omnibus_db::test_support::seed_user(&pool, "non-sharer").await;
     omnibus_db::auth::set_share_stats(&pool, non_sharer, false)
         .await
@@ -80,6 +116,59 @@ async fn reader_stats_message_for_a_non_sharer_carries_the_contract_string_even_
     )
     .await
     .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("this reader isn't sharing their stats"));
+}
+
+#[tokio::test]
+async fn reader_stats_refuses_a_missing_reader_id_with_the_contract_message_and_code() {
+    let (pool, viewer) = pool_with_user("viewer").await;
+
+    let err = reader_stats(&pool, viewer, StatsRange::AllTime, Some(255), Some(424_242))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        ServerFnError::ServerError { code: 404, ref message, .. }
+            if message == "this reader isn't sharing their stats"
+    ));
+}
+
+#[tokio::test]
+async fn reader_stats_with_no_user_id_or_the_callers_own_id_reads_their_own_summary() {
+    let (pool, viewer) = pool_with_user("viewer").await;
+    seed_reading_session(&pool, viewer, "uuid-1", 1_700_000_000, 600).await;
+
+    let none = reader_stats(&pool, viewer, StatsRange::AllTime, Some(195), None)
+        .await
+        .unwrap();
+    let own = reader_stats(&pool, viewer, StatsRange::AllTime, Some(195), Some(viewer))
+        .await
+        .unwrap();
+
+    assert_eq!(none.reading_seconds, 600);
+    assert_eq!(own.reading_seconds, 600);
+}
+
+#[tokio::test]
+async fn reader_stats_refuses_once_a_warm_targets_sharing_turns_off() {
+    let (pool, viewer) = pool_with_user("viewer").await;
+    let target = omnibus_db::test_support::seed_user(&pool, "target").await;
+    seed_reading_session(&pool, target, "uuid-1", 1_700_000_000, 300).await;
+
+    reader_stats(&pool, viewer, StatsRange::AllTime, Some(225), Some(target))
+        .await
+        .unwrap();
+    omnibus_db::auth::set_share_stats(&pool, target, false)
+        .await
+        .unwrap();
+
+    let err = reader_stats(&pool, viewer, StatsRange::AllTime, Some(225), Some(target))
+        .await
+        .unwrap_err();
 
     assert!(err
         .to_string()

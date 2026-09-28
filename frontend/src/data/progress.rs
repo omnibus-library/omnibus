@@ -304,8 +304,7 @@ pub async fn get_playback_rate(
         .map_err(note_server_fn_err)
 }
 
-/// Web/SSR `recent_progress` — server-function wrapper that proxies to
-/// `rpc_recent_progress`.
+/// Web/SSR `recent_progress` — server-function wrapper that proxies to `rpc_recent_progress`.
 #[cfg(not(feature = "mobile"))]
 pub async fn recent_progress(
     _server_url: &str,

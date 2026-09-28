@@ -18,14 +18,17 @@ so each family folds its ordered entries down to what should be true *now*:
 scalar families keep the last parseable statement, set families replay
 add/remove. A remove or edit supersedes only an expectation it can *name* —
 by prior text, note, quote, or label — and an unambiguous single occupant when
-it names nothing; matching nothing cancels nothing, because a guessed pop
-silently un-audits a write that landed.
+it names nothing (or, like a journal edit's bare `before`, only describes it);
+quoted text that matches nothing cancels nothing, because a guessed pop
+silently un-audits a write that landed. A write journalled `uncertain` folds
+once a later `ok` `<action>.verify` on the same subject confirms it.
 
 **Claims.** Alongside the checkable expectations, every entry records which
 state slots it addressed — judged or not. `unexpected` findings subtract
 these: a write the audit declined to judge usually still landed, and
 re-reporting it as "state nothing journalled" would contradict the very
-journal line that names it.
+journal line that names it. A display-name change claims the wishlist shelf
+the server renames with it.
 """
 
 from __future__ import annotations
@@ -71,6 +74,13 @@ COLOUR_SYNONYMS = {
 
 # The surface whose journal may name a book by title instead of uuid.
 TITLE_KEYED_SURFACE = "ios"
+
+# Appended to the owner's display name for their wishlist shelf's name, as
+# `WISHLIST_NAME_SUFFIX` in db/src/shelves/provision.rs spells it.
+WISHLIST_NAME_SUFFIX = "'s Wishlist"
+
+# Trailing qualifiers that report a write stuck — not an attempt, not a look.
+CONFIRMING = frozenset({"verify", "verified", "verification", "check", "checked", "recheck"})
 
 
 @dataclass
@@ -257,8 +267,12 @@ def normalise_text(text: str) -> str:
 
 
 def _texts_relate(a: str, b: str) -> bool:
-    """Equal or one contains the other, whitespace-normalised."""
-    a, b = normalise_text(a), normalise_text(b)
+    """Equal or one contains the other, whitespace aside.
+
+    Aside entirely, not collapsed: a passage copied off the page and the same
+    passage read back from a saved list can differ by a space alone (#2519).
+    """
+    a, b = re.sub(r"\s+", "", a), re.sub(r"\s+", "", b)
     return bool(a) and bool(b) and (a == b or a in b or b in a)
 
 
@@ -346,30 +360,47 @@ def _progress(entry: Entry) -> dict[str, Any]:
 
 
 def _journal_text(entry: Entry) -> Any:
-    p = entry.params
     return _first_parsable(
-        (
-            _get(p, "after_verbatim", "after", "new_verbatim"),
-            _get(p, "entry_text_verbatim", "body_md", "entry_text", "text", "body"),
-        ),
+        (_get(entry.params, "entry_text_verbatim", "body_md", "entry_text", "text", "body"),),
         parse_text,
+    )
+
+
+def _edited_text(entry: Entry) -> Any:
+    """An edit's resulting text, read only from keys that promise it verbatim.
+
+    A bare `after` is as often a description of the change ("same, plus …
+    appended") as the text itself, and comparing that against the stored
+    body reports every such edit as a loss (#2519).
+    """
+    return _first_parsable(
+        (_get(entry.params, "after_verbatim", "new_verbatim", "entry_text_verbatim", "body_md"),), parse_text
     )
 
 
 def _journal_before(entry: Entry) -> Any:
-    return _first_parsable(
-        (_get(entry.params, "before_verbatim", "before", "old_verbatim", "previous_verbatim"),),
-        parse_text,
-    )
+    """The text an edit replaced, when quoted verbatim; a bare `before` is read by the caller."""
+    return _first_parsable((_get(entry.params, "before_verbatim", "old_verbatim", "previous_verbatim"),), parse_text)
+
+
+# Where an entry quotes the passage: the create's selection, or — on a note,
+# recolour or delete — the highlight it acts on, often only its opening words.
+# Never `kept_*`: a delete names the survivor there, not what it removed.
+QUOTE_KEYS = (
+    "text", "quote", "selected_text", "selected_text_verbatim", "verbatim_text", "passage",
+    "highlight_text", "highlight_verbatim_text", "highlight_text_start", "highlight_starting",
+    "attached_to_highlight_starting", "attached_to_verbatim_text",
+    "deleted_text", "deleted_verbatim_text", "deleted_highlight_verbatim_start",
+)
 
 
 def _highlight_keys(entry: Entry) -> dict[str, Any]:
     p = entry.params
     note = _first_parsable((_get(p, "note_text", "note", "annotation"),), parse_text)
-    quote = _first_parsable((_get(p, "text", "quote", "selected_text", "passage", "deleted_text"),), parse_text)
+    quote = _first_parsable((_get(p, *QUOTE_KEYS),), parse_text)
     colour = _first_parsable(
         (
-            _get(p, "new_colour", "new_color", "to_colour", "to_color"),
+            _get(p, "new_colour", "new_color", "to_colour", "to_color", "colour_after", "color_after"),
             _get(p, "colour", "color"),
             _get(p, "to"),
         ),
@@ -396,7 +427,7 @@ def _old_colour(entry: Entry) -> Any:
     return _first_parsable(
         (
             _get(entry.params, "old_colour", "old_color", "from_colour", "from_color"),
-            _get(entry.params, "previous_colour", "previous_color", "from"),
+            _get(entry.params, "colour_before", "color_before", "previous_colour", "previous_color", "from"),
         ),
         parse_colour,
     )
@@ -531,6 +562,20 @@ class _Fold:
         return out, self.unverifiable
 
 
+# What an annotation edit changes, as opposed to what identifies the annotation.
+EDITED_KEYS = frozenset({"note", "colour"})
+
+# Each text an annotation expectation carries, with the role it plays in the
+# finding — a bare quoted note once read as the passage the audit wanted.
+_ANNOTATION_ROLES = (("quote", "quoting"), ("note", "with note"), ("label", "labelled"), ("colour", "in"))
+
+
+def _describe_annotation(noun: str, uuid: str, keys: dict[str, Any]) -> str:
+    parts = [f"{noun} on {uuid}"]
+    parts.extend(f"{role} {str(keys[k])[:50]!r}" for k, role in _ANNOTATION_ROLES if keys.get(k))
+    return " ".join(parts)
+
+
 def _ann_match(want: dict[str, Any]) -> Callable[[Expectation], bool]:
     """Predicate matching a folded annotation on the identifying values in `want`."""
 
@@ -623,21 +668,31 @@ def _fold_entry(fold: _Fold, entry: Entry, cls: vocabulary.Classification) -> No
             if popped is None:
                 fold.skip(entry, f"{entry.action}: removed a journal entry this run did not create")
             return
-        text = _journal_text(entry)
-        if text is UNPARSED:
-            fold.skip(entry, f"{entry.action}: no entry text in params (expected entry_text_verbatim)")
-            return
-        phrase = _first_parsable((_get(p, "distinctive_phrase"),), parse_text)
         if detail == "update":
             # Supersede the entry it *edited* — named by its prior text — not
-            # whichever entry happens to be most recent on the book.
-            before = _journal_before(entry)
-            if before is not UNPARSED:
+            # whichever entry happens to be most recent on the book. Quoted
+            # text matching nothing was an earlier run's entry and cancels
+            # nothing; a bare `before` matching nothing is prose ("the entry
+            # ending …"), which names this run's entry as naming nothing does.
+            quoted = _journal_before(entry)
+            before = quoted if quoted is not UNPARSED else _first_parsable((_get(p, "before"),), parse_text)
+            named = (
                 fold.pop("journal", uuid, lambda e: _texts_relate(str(e.value), str(before)))
-            else:
+                if before is not UNPARSED
+                else None
+            )
+            if named is None and quoted is UNPARSED:
                 fold.pop_single("journal", uuid)
-            # Matching nothing cancels nothing: the edit was of an earlier
-            # run's entry, and the new text is still asserted below.
+            text = _edited_text(entry)
+            if text is UNPARSED:
+                fold.skip(entry, f"{entry.action}: no verbatim edited text in params (expected after_verbatim)")
+                return
+        else:
+            text = _journal_text(entry)
+            if text is UNPARSED:
+                fold.skip(entry, f"{entry.action}: no entry text in params (expected entry_text_verbatim)")
+                return
+        phrase = _first_parsable((_get(p, "distinctive_phrase"),), parse_text)
         fold.push(
             exp(
                 "journal entry",
@@ -681,11 +736,13 @@ def _fold_entry(fold: _Fold, entry: Entry, cls: vocabulary.Classification) -> No
                 fold.skip(entry, f"{entry.action}: edited a {noun} this run cannot attribute — nothing superseded")
                 return
             merged = dict(popped.value) if isinstance(popped.value, dict) else {}
-            merged.update({k: v for k, v in keys.items() if v is not None})
+            # An edit changes the note and colour; the passage it names —
+            # often by its opening words — stays the prior's full quote.
+            merged.update(
+                {k: v for k, v in keys.items() if v is not None and (k in EDITED_KEYS or merged.get(k) is None)}
+            )
             keys = merged
-        label = keys.get("note") or keys.get("quote") or keys.get("label")
-        described = f"{noun} on {uuid}" + (f" with {str(label)[:50]!r}" if label else "")
-        fold.push(exp(noun, uuid, described, keys))
+        fold.push(exp(noun, uuid, _describe_annotation(noun, uuid, keys), keys))
         return
 
     if family == "shelf":
@@ -774,6 +831,29 @@ def _claim(claims: Claims, entry: Entry, cls: vocabulary.Classification) -> None
         if family and uuid is not UNPARSED:
             claims.slots.add((family, uuid))
 
+    if cls.kind == vocabulary.OUT_OF_SCOPE and noun == "profile":
+        # Account configuration, but a display-name change renames the
+        # reader's wishlist shelf with it (db::auth::set_display_name).
+        name = _first_parsable((_get(entry.params, "new_display_name", "display_name", "new"),), parse_text)
+        if name is not UNPARSED:
+            claims.shelf_names.add(f"{str(name).strip()}{WISHLIST_NAME_SUFFIX}")
+
+
+def _subject(entry: Entry) -> str | None:
+    """The book, or failing that the shelf, an entry is about."""
+    for candidate in (_uuid(entry), _name(entry)):
+        if candidate is not UNPARSED:
+            return str(candidate)
+    return None
+
+
+def _confirmed_write(entry: Entry) -> tuple | None:
+    """The (action, subject) of the write an `ok` `<action>.verify` vouches for."""
+    segments = vocabulary.normalise(entry.action or "")
+    if entry.outcome != "ok" or len(segments) < 3 or segments[-1] not in CONFIRMING:
+        return None
+    return segments[:-1], _subject(entry)
+
 
 def expectations_for(
     actor: str, entries: list[Entry]
@@ -787,11 +867,19 @@ def expectations_for(
     fold = _Fold(actor)
     claims = Claims()
     tally: dict[str, int] = {}
+    # Each (action, subject)'s latest attempt when it was `uncertain`, which a
+    # later `ok` verify of that action settles as done.
+    unsettled: dict[tuple, tuple[Entry, vocabulary.Classification, Unverifiable]] = {}
     for entry in entries:
         cls = vocabulary.classify(entry.action)
         tally[cls.kind] = tally.get(cls.kind, 0) + 1
         _claim(claims, entry, cls)
         if cls.kind == vocabulary.OBSERVATION:
+            confirmed = unsettled.pop(_confirmed_write(entry), None)
+            if confirmed is not None:
+                write, write_cls, skipped = confirmed
+                fold.unverifiable.remove(skipped)
+                _fold_entry(fold, write, write_cls)
             continue
         if cls.kind == vocabulary.OUT_OF_SCOPE:
             fold.skip(entry, f"{entry.action}: {cls.detail}")
@@ -799,8 +887,12 @@ def expectations_for(
         if cls.kind == vocabulary.UNKNOWN:
             fold.skip(entry, cls.reason or f"{entry.action}: unclassified")
             continue
+        key = (vocabulary.normalise(entry.action or ""), _subject(entry))
+        unsettled.pop(key, None)
         if entry.outcome != "ok":
             fold.skip(entry, f"{entry.action}: outcome={entry.outcome!r} — not a completed write")
+            if entry.outcome == "uncertain":
+                unsettled[key] = (entry, cls, fold.unverifiable[-1])
             continue
         _fold_entry(fold, entry, cls)
     exps, unver = fold.result()

@@ -9,6 +9,7 @@ mod daily_calendar;
 mod daily_targets;
 
 use super::*;
+use crate::stats::tests::seed_user_with_id;
 
 async fn seed_user(pool: &SqlitePool, name: &str) -> i64 {
     sqlx::query_scalar::<_, i64>(
@@ -19,21 +20,6 @@ async fn seed_user(pool: &SqlitePool, name: &str) -> i64 {
     .fetch_one(pool)
     .await
     .unwrap()
-}
-
-/// Seed a user with an explicit id. The stats cache is a process-wide static
-/// keyed on `(user_id, range)` and every test pool restarts ids at 1, so a
-/// test exercising the *cached* `user_stats` entry point claims an id no
-/// sibling test can collide with — a `clear_cache()` here would race the
-/// sibling TTL test rather than help.
-async fn seed_user_with_id(pool: &SqlitePool, id: i64, name: &str) -> i64 {
-    sqlx::query("INSERT INTO users (id, username, password_hash) VALUES (?, ?, '!x')")
-        .bind(id)
-        .bind(name)
-        .execute(pool)
-        .await
-        .unwrap();
-    id
 }
 
 /// Give a seeded book an exact page count — rung 2 of the length ladder, and

@@ -4,11 +4,15 @@
 #
 # Usage:
 #   driver.sh up <agent-count>     start N servers, print the port manifest
+#                                  (with each agent's scratch directory)
 #   driver.sh run <n> <command>    send one command to agent n, print the result
-#   driver.sh guard <n> <actor> <uuids>
-#                                  enforce ownership for agent n: destructive
-#                                  calls to books outside <uuids> are refused
+#   driver.sh guard <n> <actor>    enforce ownership for agent n: destructive
+#                                  calls to books <actor> never journalled a
+#                                  book.add for are refused
 #   driver.sh refusals <n>         what agent n's guard refused
+#   driver.sh console <n> [--errors]
+#                                  what agent n's browser has logged since its
+#                                  server started
 #   driver.sh restart <n>          replace agent n's server after its browser
 #                                  died, and put it back in the manifest
 #   driver.sh status               which agents are up, plus any driver
@@ -51,6 +55,12 @@ PORT_BASE="${OMNIBUS_EXPLORE_PORT_BASE:-9223}"
 WINDOW="${OMNIBUS_EXPLORE_PORT_WINDOW:-32}"
 STATE="$ROOT/.claude/runtime/explore/driver"
 MANIFEST="$STATE/ports.json"
+REPL="$DRIVER/node_modules/playwright-repl/dist/playwright-repl.js"
+# One directory per agent for its helper scripts: the harness's scratchpad is
+# shared by every subagent, and a helper one agent clobbered there once routed
+# another agent's commands into the wrong browser. Under the harness's own
+# temp root, which its sandbox lets every subagent write.
+SCRATCH="/tmp/claude-$(id -u)/explore"
 RUN_TIMEOUT=180
 
 driver::ensure_deps() {
@@ -62,7 +72,7 @@ driver::ensure_deps() {
     echo "(or via scripts/with-dev-env.sh e2e …), which pins the Chromium bundle." >&2
     return 1
   fi
-  if [ ! -x "$DRIVER/node_modules/.bin/playwright-repl" ]; then
+  if [ ! -f "$REPL" ]; then
     echo "installing driver deps (first run)…" >&2
     # `npm ci` from the committed lockfile: reproducible across machines, and
     # it cannot rewrite package-lock.json, so `driver.sh up` never dirties the
@@ -116,33 +126,61 @@ driver::manifest_ports() {
 for e in json.load(open(sys.argv[1])): print(e["port"])' "$MANIFEST"
 }
 
-# Start agent n's server on its port and wait for it to answer.
+# POST one JS expression to the server on a port and print its raw
+# {"text", "isError"} answer. The REPL hands back a value only for a
+# single-line expression, so it is wrapped to return across lines — the guard's
+# verdict used to come back as "Done" and its stale-guard check never fired.
+driver::eval() {
+  local port="$1" expr="$2" timeout="${3:-60}" body
+  body="$(python3 -c 'import json,sys
+print(json.dumps({"command": "return await (\n" + sys.argv[1] + "\n)"}))' "$expr")"
+  curl -sS --max-time "$timeout" -X POST "http://127.0.0.1:$port/run" \
+    -H 'Content-Type: application/json' -d "$body"
+}
+
+# Start buffering what agent n's browser logs, for `console`. Idempotent.
+driver::capture() {
+  local n="$1" port="$2" out
+  out="$(driver::eval "$port" "$(cat "$DRIVER/capture.js")" 30)" || true
+  case "$out" in
+    *'"capturing"'*) ;;
+    *) echo "  agent-$n: no console capture (${out:-no answer}) — driver.sh restart $n starts one that has it" >&2 ;;
+  esac
+}
+
+# Start agent n's server on its port and wait for it to answer. Node runs
+# preload.mjs first, which keeps a command's unawaited rejection from killing
+# the process and holds the buffer `console` reads.
 driver::start() {
   local n="$1" port="$2"
-  (cd "$DRIVER" && \
-    nohup ./node_modules/.bin/playwright-repl --silent --http \
+  # `;`, not `&&`: `a && b &` backgrounds the whole list in a subshell that
+  # holds this script's stdout open, so `driver.sh up | …` never finished.
+  (cd "$DRIVER" || exit 1
+    nohup node --import ./preload.mjs "$REPL" --silent --http \
       --http-port "$port" -s "agent-$n" \
-      >"$STATE/agent-$n.log" 2>&1 &)
+      >"$STATE/agent-$n.log" 2>&1 </dev/null &)
   for _ in $(seq 1 40); do driver::alive "$port" && break; sleep 1; done
   driver::alive "$port" \
     || { echo "agent-$n failed to start on $port — see $STATE/agent-$n.log" >&2; exit 1; }
+  driver::capture "$n" "$port"
 }
 
-# Record agent n's port in the manifest, creating or updating its entry.
+# Record agent n's port and scratch directory in the manifest, creating or
+# updating its entry.
 driver::register() {
   local n="$1" port="$2"
   mkdir -p "$STATE"
   python3 -c 'import json,sys
-path, actor, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+path, actor, port, scratch = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 try:
     entries = json.load(open(path))
 except (OSError, ValueError):
     entries = []
 entries = [e for e in entries if e.get("actor") != actor and e.get("port") != port]
-entries.append({"actor": actor, "port": port})
+entries.append({"actor": actor, "port": port, "scratch": scratch})
 entries.sort(key=lambda e: e["port"])
 json.dump(entries, open(path, "w"))
-open(path, "a").write("\n")' "$MANIFEST" "agent-$n" "$port"
+open(path, "a").write("\n")' "$MANIFEST" "agent-$n" "$port" "$SCRATCH/agent-$n"
 }
 
 # One JSON line in the shape `run` prints, so an agent parsing `text` and
@@ -152,7 +190,7 @@ driver::verdict() {
 print(json.dumps({"text": sys.argv[1], "isError": True, "driver": sys.argv[2]}))' "$1" "$2"
 }
 
-cmd="${1:?usage: driver.sh up <n> | run <n> <command> | guard <n> <actor> <uuids> | refusals <n> | restart <n> | status | down}"
+cmd="${1:?usage: driver.sh up <n> | run <n> <command> | guard <n> <actor> | refusals <n> | console <n> [--errors] | restart <n> | status | down}"
 
 case "$cmd" in
   up)
@@ -166,13 +204,15 @@ case "$cmd" in
     entries=""
     for i in $(seq 1 "$count"); do
       port="$(driver::port "$i")"
+      mkdir -p "$SCRATCH/agent-$i"
       if driver::alive "$port"; then
         echo "  agent-$i: reusing server on $port" >&2
+        driver::capture "$i" "$port"
       else
         driver::start "$i" "$port"
         echo "  agent-$i: started on $port" >&2
       fi
-      entries="$entries{\"actor\":\"agent-$i\",\"port\":$port},"
+      entries="$entries{\"actor\":\"agent-$i\",\"port\":$port,\"scratch\":\"$SCRATCH/agent-$i\"},"
     done
     printf '[%s]\n' "${entries%,}" | tee "$MANIFEST"
     ;;
@@ -209,7 +249,21 @@ case "$cmd" in
       fi
       exit 1
     fi
-    printf '%s\n' "$out"
+    # A rejection a command left unawaited no longer kills the server
+    # (preload.mjs); it rides on the next result instead, so the agent still
+    # learns that the step it belonged to failed.
+    pending="$(driver::eval "$port" '(globalThis.__omnibusUnhandled ?? []).splice(0)' 10 || true)"
+    printf '%s\n%s' "$out" "$pending" | python3 -c 'import json,sys
+out, _, pending = sys.stdin.read().partition("\n")
+try:
+    reply, unhandled = json.loads(out), json.loads(json.loads(pending)["text"])
+except (ValueError, KeyError, TypeError):
+    unhandled = None
+if isinstance(unhandled, list) and unhandled:
+    reply["unhandled"] = unhandled
+    print(json.dumps(reply))
+else:
+    print(out)'
     ;;
 
   guard)
@@ -219,35 +273,46 @@ case "$cmd" in
     # deleting agent-5's book. Wrapping `fetch` in the agent's own browser
     # refuses the request before it is sent, which is the difference between a
     # rule and a convention. (In the page, not via `page.route()` — see the
-    # header of driver/guard.js for why that killed large uploads.)
-    n="${2:?usage: driver.sh guard <n> <actor> <comma-separated-uuids>}"
-    actor="${3:?usage: driver.sh guard <n> <actor> <comma-separated-uuids>}"
-    uuids="${4-}"
+    # header of driver/guard.js for why that killed large uploads.) Ownership
+    # is read from the journals on every destructive call, so a book the actor
+    # journals later needs no second guard.
+    n="${2:?usage: driver.sh guard <n> <actor>}"
+    actor="${3:?usage: driver.sh guard <n> <actor>}"
     driver::check_n "$n"
     port="$(driver::port "$n")"
     driver::alive "$port" || { echo "agent-$n has no server on $port — run driver.sh up first" >&2; exit 1; }
 
-    owned_json="$(python3 -c 'import json,sys
-raw = sys.argv[1] if len(sys.argv) > 1 else ""
-print(json.dumps([u for u in raw.split(",") if u.strip()]))' "$uuids")"
-    js="$(python3 -c 'import sys
+    # Python rather than shasum/sha256sum, whichever the host happens to carry.
+    version="$(python3 -c 'import hashlib,sys
+print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest()[:12])' "$DRIVER/guard.js")"
+    js="$(python3 -c 'import json,sys
 src = open(sys.argv[1]).read()
-print(src.replace("__OWNED__", sys.argv[2]).replace("__ACTOR__", sys.argv[3]))' \
-      "$DRIVER/guard.js" "$owned_json" "$actor")"
-    body="$(python3 -c 'import json,sys; print(json.dumps({"command": sys.argv[1]}))' "await $js")"
-    out="$(curl -sS --max-time 60 -X POST "http://127.0.0.1:$port/run" \
-      -H 'Content-Type: application/json' -d "$body")"
-    # A page still carrying a guard from an older build of guard.js cannot be
-    # re-wrapped — the old rules would keep winning while this reported
-    # success. Say so loudly and name the one thing that clears it.
-    case "$out" in
-      *stale-guard-cannot-be-replaced*)
-        echo "agent-$n still runs a guard from an older guard.js and cannot be re-guarded in place." >&2
-        echo "Run 'driver.sh restart $n', then guard it again — the agent will need to log in." >&2
-        exit 1
-        ;;
-    esac
-    echo "  agent-$n guarded: $(printf '%s' "$owned_json" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))') owned book(s)"
+for key, value in (("ACTOR", sys.argv[2]), ("OWNED_SH", sys.argv[3]), ("VERSION", sys.argv[4])):
+    src = src.replace(f"\"__{key}__\"", json.dumps(value))
+print(src)' "$DRIVER/guard.js" "$actor" "$HERE/owned.sh" "$version")"
+    out="$(driver::eval "$port" "$js" 60)"
+    # The version comes back from the page, not from what was sent: a page
+    # still carrying a guard from an older guard.js cannot be re-wrapped, and
+    # the old rules would keep winning while this reported success (#2517).
+    py="$(cat <<'PY'
+import json, sys
+n, actor, want = sys.argv[1:4]
+try:
+    reply = json.loads(sys.stdin.read())
+except ValueError:
+    sys.exit(f"agent-{n}: no answer from its server while guarding")
+if reply.get("isError"):
+    sys.exit(f"agent-{n}: guard not installed: {reply.get('text')}")
+got = json.loads(reply["text"])
+if got["reason"] or got["live"] != want:
+    print(f"agent-{n} still runs an older guard ({got['live'] or 'unversioned'}; "
+          f"this checkout has {want}) and cannot be re-guarded in place.", file=sys.stderr)
+    sys.exit(f"Run 'driver.sh restart {n}', then guard it again — the agent will need to log in.")
+print(f"  agent-{n} guarded as {actor}: guard {got['live']} live, {got['owned']} owned "
+      "book(s) now, re-read from the journals on every destructive call")
+PY
+)"
+    printf '%s' "$out" | python3 -c "$py" "$n" "$actor" "$version"
     ;;
 
   refusals)
@@ -260,6 +325,30 @@ print(src.replace("__OWNED__", sys.argv[2]).replace("__ACTOR__", sys.argv[3]))' 
       -H 'Content-Type: application/json' \
       -d '{"command":"globalThis.__omnibusGuardRefusals || []"}'
     echo
+    ;;
+
+  console)
+    # What the browser logged, and any rejection a command left unawaited,
+    # buffered by the driver since the server started — so "the page logged a
+    # JavaScript error" can be answered without injecting anything (#2520).
+    n="${2:?usage: driver.sh console <n> [--errors]}"
+    driver::check_n "$n"
+    port="$(driver::port "$n")"
+    driver::alive "$port" || { echo "agent-$n has no server on $port — run driver.sh up first" >&2; exit 1; }
+    py="$(cat <<'PY'
+import json, sys
+n, errors_only = sys.argv[1], sys.argv[2] == "--errors"
+entries = json.loads(json.loads(sys.stdin.read())["text"])
+if entries is None:
+    sys.exit(f"agent-{n}'s server predates console capture — driver.sh restart {n} starts one that has it")
+for e in entries:
+    if errors_only and e["type"] != "error":
+        continue
+    where = f"  ({e['url']})" if e.get("url") else ""
+    print(f"{e['at']} {e['source']}.{e['type']}: {e['text']}{where}")
+PY
+)"
+    driver::eval "$port" 'JSON.stringify(globalThis.__omnibusLog ?? null)' 30 | python3 -c "$py" "$n" "${3-}"
     ;;
 
   restart)
@@ -278,10 +367,11 @@ print(src.replace("__OWNED__", sys.argv[2]).replace("__ACTOR__", sys.argv[3]))' 
     done
     for _ in $(seq 1 20); do driver::alive "$port" || break; sleep 0.5; done
     driver::alive "$port" && { echo "agent-$n's old server on $port would not stop" >&2; exit 1; }
+    mkdir -p "$SCRATCH/agent-$n"
     driver::start "$n" "$port"
     driver::register "$n" "$port"
     echo "  agent-$n: restarted on $port and registered"
-    echo "  the guard did not survive — re-run: driver.sh guard $n agent-$n \"\$(scripts/explore/owned.sh agent-$n)\"" >&2
+    echo "  the guard did not survive — re-run: driver.sh guard $n agent-$n" >&2
     ;;
 
   status)

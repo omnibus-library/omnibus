@@ -2752,6 +2752,17 @@ a.idx-letter-on:focus-visible {
   opacity: 0.7;
   cursor: not-allowed;
 }
+/* Mirrors `.author-photo-modal__url-row`: input grows, button stays its
+   natural width. */
+.me-cover-url {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.me-cover-url .me-input {
+  flex: 1;
+  min-width: 0;
+}
 
 /* Identifiers */
 .me-ident-list {
