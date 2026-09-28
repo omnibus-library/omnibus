@@ -9336,6 +9336,60 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
       color-mix(in oklch, var(--accent) 16%, transparent), transparent 70%),
     var(--st-hero-bg);
 }
+/* Lift the hero's own clip only while the reader menu is open, or it gets
+   clipped by the same overflow that keeps the gradient inside the hero. */
+.st-hero:has(.st-reader-menu:not([hidden])) { overflow: visible; }
+/* ── Reader picker: who the hero is showing ──────────────────────── */
+.st-reader-bar {
+  position: relative;
+  max-width: var(--st-max);
+  margin: 0 auto;
+  padding: 14px var(--st-gutter) 0;
+}
+.st-reader-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid var(--line-2); border-radius: 999px;
+  background: var(--bg-1); color: var(--ink-1);
+  font-family: var(--mono); font-size: 12px;
+  cursor: pointer;
+}
+.st-reader-kicker { color: var(--ink-3); }
+.st-reader-name { font-weight: 600; color: var(--ink-0); }
+.st-reader-caret { color: var(--ink-3); font-size: 9px; }
+.st-reader-avatar {
+  width: 22px; height: 22px; flex: none; overflow: hidden;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--bg-3);
+  font-family: var(--mono); font-size: 8.5px; font-weight: 700; color: var(--ink-1);
+}
+.st-reader-menu {
+  position: absolute; z-index: 6; top: calc(100% + 6px); left: var(--st-gutter);
+  min-width: 220px; max-width: calc(100% - 2 * var(--st-gutter));
+  /* A long household scrolls inside the menu rather than off-screen. */
+  max-height: min(70vh, 420px); overflow-y: auto;
+  list-style: none; margin: 0; padding: 6px;
+  border: 1px solid var(--line-2); border-radius: 14px;
+  background: var(--bg-1);
+  box-shadow:
+    0 18px 40px color-mix(in oklch, black 55%, transparent),
+    0 2px 0 color-mix(in oklch, black 25%, transparent);
+}
+.st-reader-option {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px;
+  color: var(--ink-1); text-decoration: none; font-size: 13px;
+}
+.st-reader-option:hover { background: var(--bg-2); }
+.st-reader-option[aria-current="page"] {
+  background: var(--bg-2); color: var(--ink-0); font-weight: 600;
+}
+.st-reader-option-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.st-reader-scrim { position: fixed; inset: 0; z-index: 5; background: transparent; }
+
 .st-hero-inner {
   max-width: var(--st-max);
   margin: 0 auto;
@@ -9346,6 +9400,13 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   align-items: center;
 }
 .st-hero-run { animation: st-settle .5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* Only present on another reader's page — the heading names whose figures
+   the hero below is showing. */
+.st-hero-who {
+  margin: 0 0 6px;
+  font-family: var(--serif); font-weight: 600; font-size: 15px;
+  color: var(--ink-0);
+}
 .st-hero-kicker {
   display: block;
   font-family: var(--mono); font-size: 10.5px;
@@ -10653,7 +10714,8 @@ html {
 .bd-journal-avatar-photo,
 .bd-other-rating-avatar-photo,
 .m-account-initials-photo,
-.profile-initials-photo {
+.profile-initials-photo,
+.st-reader-avatar-photo {
   width: 100%; height: 100%;
   /* The monogram spans are grids with an auto implicit row, so `height:
      100%` can collapse to auto and the photo reverts to its natural

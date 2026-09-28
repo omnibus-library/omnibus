@@ -4,6 +4,7 @@
 //! above the phone breakpoint so desktop keeps its top-bar links.
 
 use dioxus::prelude::*;
+use dioxus_router::navigation::NavigationTarget;
 use dioxus_router::{use_route, Link};
 
 use super::add_books_sheet::AddBooksSheet;
@@ -36,7 +37,7 @@ fn is_active(current: &Route, tab: TabKind) -> bool {
                 | Route::Search { .. }
         ),
         TabKind::Authors => matches!(current, Route::AuthorsIndex {} | Route::AuthorDetail { .. }),
-        TabKind::Stats => matches!(current, Route::Stats {}),
+        TabKind::Stats => matches!(current, Route::Stats { .. }),
         TabKind::You => matches!(
             current,
             Route::Account {} | Route::Settings { .. } | Route::AddBooks {} | Route::CheckIn {}
@@ -67,7 +68,12 @@ pub fn BottomNav() -> Element {
                 span { class: "m-tabbar-scan-disc", {tab_glyph_scan()} }
                 span { class: "m-tabbar-label", "Add" }
             }
-            MTab { to: Route::Stats {}, label: "Stats", on: is_active(&current, TabKind::Stats), glyph: tab_glyph_stats() }
+            MTab {
+                to: crate::routes::link_target(Route::Stats { user: None }),
+                label: "Stats",
+                on: is_active(&current, TabKind::Stats),
+                glyph: tab_glyph_stats(),
+            }
             MTab { to: Route::Account {}, label: "You", on: is_active(&current, TabKind::You), glyph: tab_glyph_you() }
         }
         AddBooksSheet { open: sheet_open, on_close: move |_| sheet_open.set(false) }
@@ -76,7 +82,7 @@ pub fn BottomNav() -> Element {
 
 /// One tab: a router link stacking a glyph over its label, lit when `on`.
 #[component]
-fn MTab(to: Route, label: String, on: bool, glyph: Element) -> Element {
+fn MTab(#[props(into)] to: NavigationTarget, label: String, on: bool, glyph: Element) -> Element {
     let class = if on {
         "m-tabbar-item on"
     } else {
@@ -207,9 +213,14 @@ mod tests {
 
     #[test]
     fn is_active_lights_stats_tab_only_on_the_stats_route() {
-        assert!(is_active(&Route::Stats {}, TabKind::Stats));
+        assert!(is_active(&Route::Stats { user: None }, TabKind::Stats));
         assert!(!is_active(&Route::Landing {}, TabKind::Stats));
-        assert!(!is_active(&Route::Stats {}, TabKind::Library));
+        assert!(!is_active(&Route::Stats { user: None }, TabKind::Library));
+    }
+
+    #[test]
+    fn is_active_lights_stats_tab_while_viewing_another_reader_too() {
+        assert!(is_active(&Route::Stats { user: Some(7) }, TabKind::Stats));
     }
 
     #[test]

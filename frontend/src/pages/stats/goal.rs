@@ -117,13 +117,16 @@ fn SetGoalsLink(label: &'static str, testid: &'static str) -> Element {
 /// is a claim only a target can support.
 ///
 /// `year` and `as_of_day` are both the server's, taken from the summary rather
-/// than a client clock (rule 07).
+/// than a client clock (rule 07). `editable` gates the "Set a goal" link —
+/// `false` on another reader's page, where the figures still follow the
+/// selection but there is nowhere on this page to change them.
 #[component]
 pub(super) fn AnnualGoalRing(
     goal: Option<ReadingGoal>,
     finished: Option<i64>,
     year: String,
     as_of_day: String,
+    #[props(default = true)] editable: bool,
 ) -> Element {
     // The kicker carries the timeframe rather than repeating it under the
     // figure: "This year" over "22 books" over "2026 so far" said the same
@@ -179,12 +182,16 @@ pub(super) fn AnnualGoalRing(
                             span { class: "st-year-bare-unit", {plural("book", n)} }
                         }
                     }
-                    SetGoalsLink { label: "Set a goal", testid: "stats-goal-set-link" }
+                    if editable {
+                        SetGoalsLink { label: "Set a goal", testid: "stats-goal-set-link" }
+                    }
                 } else {
                     p { class: "st-year-invite", "data-testid": "stats-goal-invite",
                         "No target for the year yet."
                     }
-                    SetGoalsLink { label: "Set a goal", testid: "stats-goal-set-link" }
+                    if editable {
+                        SetGoalsLink { label: "Set a goal", testid: "stats-goal-set-link" }
+                    }
                 }
             }
         }
@@ -197,8 +204,13 @@ pub(super) fn AnnualGoalRing(
 /// No unplaceable-sessions disclosure: `DailyGoals::unzoned_seconds` is now
 /// always zero, since every session can be placed on the reader's own day (rule
 /// 10). The wire field stays for older clients; there is nothing left to render.
+///
+/// `editable` gates the "Set goals" link, same as [`AnnualGoalRing`]'s.
 #[component]
-pub(super) fn DailyGoalsCard(daily: DailyGoals) -> Element {
+pub(super) fn DailyGoalsCard(
+    daily: DailyGoals,
+    #[props(default = true)] editable: bool,
+) -> Element {
     // "Every day" promises a recurrence, which is only true once something
     // recurs; with no target at all the rows are just what happened today.
     let neither = daily.pages.is_none() && daily.minutes.is_none();
@@ -231,7 +243,7 @@ pub(super) fn DailyGoalsCard(daily: DailyGoals) -> Element {
             // One short call to action while either kind is still unset, at the
             // card's foot rather than in each row: there is one place to set
             // them, so there is one thing to click.
-            if daily.pages.is_none() || daily.minutes.is_none() {
+            if editable && (daily.pages.is_none() || daily.minutes.is_none()) {
                 SetGoalsLink { label: "Set goals", testid: "stats-daily-set-link" }
             }
         }

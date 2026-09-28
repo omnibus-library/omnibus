@@ -5,6 +5,7 @@
 //! [`crate::components::loading`].
 
 use dioxus::prelude::*;
+use dioxus_router::navigation::NavigationTarget;
 use dioxus_router::Link;
 
 use crate::Route;
@@ -13,7 +14,7 @@ use crate::Route;
 #[component]
 pub fn PageError(
     message: String,
-    back_to: Route,
+    #[props(into)] back_to: NavigationTarget,
     #[props(default = "Back to library".to_string())] back_label: String,
 ) -> Element {
     rsx! {
@@ -51,14 +52,46 @@ mod tests {
 
     #[test]
     fn page_error_renders_the_message_as_an_alert() {
+        // A bare `NavigationTarget` (rather than a `Route`) skips the
+        // `Into` conversion's child-route lookup, which needs a live Dioxus
+        // runtime the plain `render` helper doesn't provide.
         let html = render(rsx! {
             PageError {
                 message: "Could not load this book.".to_string(),
-                back_to: Route::Landing {},
+                back_to: NavigationTarget::Internal("/".to_string()),
             }
         });
         assert!(html.contains("role=\"alert\""));
         assert!(html.contains("Could not load this book."));
+    }
+
+    // `back_to` accepting a `NavigationTarget` needs a live router to render
+    // the `Link`'s href (see the module comment above), so this one test gets
+    // its own one-route harness rather than the bare `render` the others use.
+    #[test]
+    fn page_error_renders_a_link_target_back_to_with_no_dangling_query_separator() {
+        use dioxus_router::{Routable, Router};
+
+        #[derive(Clone, Debug, PartialEq, Routable)]
+        enum HostRoute {
+            #[route("/")]
+            Host {},
+        }
+
+        #[component]
+        fn Host() -> Element {
+            rsx! {
+                PageError {
+                    message: "This reader isn't sharing their stats".to_string(),
+                    back_to: crate::routes::link_target(Route::Stats { user: None }),
+                    back_label: "Back to your stats".to_string(),
+                }
+            }
+        }
+
+        let html = crate::test_support::render_in_vdom(|| rsx! { Router::<HostRoute> {} });
+        assert!(html.contains("href=\"/stats\""));
+        assert!(html.contains("Back to your stats"));
     }
 
     #[test]

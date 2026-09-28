@@ -59,8 +59,8 @@ pub enum Route {
     SeriesIndex {},
     #[route("/series/:id")]
     SeriesDetail { id: i64 },
-    #[route("/stats")]
-    Stats {},
+    #[route("/stats?:user")]
+    Stats { user: Option<i64> },
     #[route("/stats/chart")]
     StatsChart {},
     #[route("/shelves")]
@@ -451,12 +451,13 @@ pub fn SeriesIndex() -> Element {
     }
 }
 
-/// Route target for `/stats` — the reading-stats page.
+/// Route target for `/stats` — the reading-stats page. `user` (`?user=`)
+/// picks which household reader's figures to show.
 #[component]
-pub fn Stats() -> Element {
+pub fn Stats(user: Option<i64>) -> Element {
     use_page_title(|| Some("Stats".into()));
     rsx! {
-        ScreenLayout { StatsPage {} }
+        ScreenLayout { StatsPage { user } }
     }
 }
 
@@ -621,9 +622,23 @@ pub fn resume_route(point: &omnibus_shared::ResumePoint) -> Route {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use omnibus_shared::{ProgressFormat, ProgressRecord, ResumePoint};
 
     use super::*;
+
+    #[test]
+    fn route_from_str_parses_stats_with_and_without_a_user() {
+        assert_eq!(
+            Route::from_str("/stats").unwrap(),
+            Route::Stats { user: None }
+        );
+        assert_eq!(
+            Route::from_str("/stats?user=7").unwrap(),
+            Route::Stats { user: Some(7) }
+        );
+    }
 
     fn point(format: ProgressFormat, book_file_id: Option<i64>) -> ResumePoint {
         ResumePoint {
@@ -664,6 +679,10 @@ mod tests {
             link_target(Route::Settings { section: None }),
             NavigationTarget::Internal("/settings".into())
         );
+        assert_eq!(
+            link_target(Route::Stats { user: None }),
+            NavigationTarget::Internal("/stats".into())
+        );
     }
 
     #[test]
@@ -680,6 +699,10 @@ mod tests {
                 section: Some("library".into()),
             }),
             NavigationTarget::Internal("/settings?section=library".into())
+        );
+        assert_eq!(
+            link_target(Route::Stats { user: Some(7) }),
+            NavigationTarget::Internal("/stats?user=7".into())
         );
     }
 

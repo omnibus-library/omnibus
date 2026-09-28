@@ -171,7 +171,7 @@ async fn background_tick() {
     super::replica::ensure_fresh(url.clone());
     // Cache-first, so this returns instantly and revalidates when stale —
     // keeping "pick up where you left off" fresh without a page visit.
-    let _ = data::recent_progress(&url, 1).await;
+    let _ = data::recent_progress(&url, 1, None).await;
     // The library projection carries no per-file validators, so a replaced
     // book file is only visible in the per-book read. Doing it here is what
     // lets the Downloads list surface "Update available" without the reader
