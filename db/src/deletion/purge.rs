@@ -138,13 +138,13 @@ pub(crate) async fn purge_book(
 /// the purge drops the bodies that reference them. Candidates only — run
 /// [`orphaned_images`] after the commit to drop any another book still uses.
 pub(super) async fn journal_image_names(
-    pool: &SqlitePool,
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
     uuid: &str,
 ) -> Result<Vec<String>, DeleteError> {
     let bodies: Vec<String> =
         sqlx::query_scalar("SELECT body_md FROM journal_entries WHERE book_uuid = ?")
             .bind(uuid)
-            .fetch_all(pool)
+            .fetch_all(&mut **tx)
             .await?;
     let mut names: Vec<String> = bodies
         .iter()
