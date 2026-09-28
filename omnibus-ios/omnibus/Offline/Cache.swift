@@ -302,6 +302,34 @@ enum Cache {
         continuation.yield(CacheRead(value: value, isFresh: false))
     }
 
+    /// One server answer, never read from or written to the replica — for a
+    /// read whose subject makes the replica the wrong place to look, such as
+    /// another household reader's stats (AC4).
+    static func uncached<T: Sendable>(
+        fetch: @escaping @Sendable () async throws -> T
+    ) -> AsyncThrowingStream<CacheRead<T>, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let value = try await fetch()
+                    guard !Task.isCancelled else {
+                        continuation.finish()
+                        return
+                    }
+                    continuation.yield(CacheRead(value: value, isFresh: true))
+                    continuation.finish()
+                } catch {
+                    guard !isCancellation(error) else {
+                        continuation.finish()
+                        return
+                    }
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     /// Collapse a `live` read to a single settled value. For callers with
     /// nowhere to put an intermediate answer — a share sheet, a one-shot
     /// export — never for anything that paints.
