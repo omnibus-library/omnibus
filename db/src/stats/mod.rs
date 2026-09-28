@@ -48,7 +48,7 @@ pub use book::book_insights;
 pub use builder::{chart_series, ChartError};
 pub use composition::{invalidate as invalidate_library_composition, library_composition};
 pub use goals::{current_year, daily_goals, goal_for_year, set_daily_goal, set_goal, GoalError};
-pub use household::household_readers;
+pub use household::{household_readers, stats_for_viewer, ViewerStatsError};
 pub use library::{invalidate as invalidate_library_size, library_size};
 /// Per-user aggregate cache TTL. A reload after a just-finished session
 /// reflects new data within this window; repeated calls inside it hit the

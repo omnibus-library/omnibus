@@ -35,22 +35,48 @@ async fn household_readers(
         .map_err(|e| internal_rpc_error("household readers", e))?)
 }
 
-/// Fetch the current user's stats summary over `range`. Served from the
-/// `db::stats` per-user cache (60s TTL, keyed on the offset too), so
-/// switcher-driven refetches inside the window skip the SQL. Mobile uses the
-/// analogous `GET /api/stats` REST route in `server::backend::stats`.
+/// Fetch the caller's stats summary over `range`, or a sharing reader's with
+/// `user_id`. Served from the `db::stats` per-user cache (60s TTL, keyed on
+/// the offset too), so switcher-driven refetches inside the window skip the
+/// SQL. Mobile uses the analogous `GET /api/stats` REST route in
+/// `server::backend::stats`.
 ///
 /// `utc_offset_minutes` is where the calling device is, and every day boundary
 /// in the answer is cut on it (rule 10). `None` — an older client, or one with
 /// no browser to ask — falls back to the reader's most recent session offset
 /// and then to UTC.
 #[post("/api/rpc/stats", pool: PoolExt, user: AuthUser)]
-pub async fn rpc_stats(range: StatsRange, utc_offset_minutes: Option<i64>) -> Result<StatsSummary> {
+pub async fn rpc_stats(
+    range: StatsRange,
+    utc_offset_minutes: Option<i64>,
+    user_id: Option<i64>,
+) -> Result<StatsSummary> {
+    Ok(reader_stats(&pool.0, user.id, range, utc_offset_minutes, user_id).await?)
+}
+
+/// Server-side body of [`rpc_stats`], extracted for testability.
+#[cfg(feature = "server")]
+async fn reader_stats(
+    pool: &sqlx::SqlitePool,
+    caller_id: i64,
+    range: StatsRange,
+    utc_offset_minutes: Option<i64>,
+    user_id: Option<i64>,
+) -> Result<StatsSummary, ServerFnError> {
     Ok(
-        db::stats::user_stats(&pool.0, user.id, range, utc_offset_minutes)
+        db::stats::stats_for_viewer(pool, caller_id, user_id, range, utc_offset_minutes)
             .await
-            .map_err(|e| internal_rpc_error("stats", e))?,
+            .map_err(|e| map_viewer_error("stats", e))?,
     )
+}
+
+/// A refused read keeps its contract message; anything else is genericized.
+#[cfg(feature = "server")]
+fn map_viewer_error(context: &'static str, e: db::stats::ViewerStatsError) -> ServerFnError {
+    if matches!(e, db::stats::ViewerStatsError::NotSharing) {
+        return ServerFnError::new(e.to_string());
+    }
+    internal_rpc_error(context, e)
 }
 
 /// Fetch the current user's Started/Time-read/Sessions insights for one book

@@ -49,6 +49,11 @@ pub(super) struct StatsQuery {
     /// a bad offset must not cost a reader their stats page.
     #[serde(default, deserialize_with = "lenient_offset")]
     utc_offset_minutes: Option<i64>,
+    /// Whose stats to read; absent or the caller's own id reads their own.
+    /// Strict, unlike the offset above: an unparseable value is a 400 rather
+    /// than a silent fall-back to the caller's own stats under another
+    /// reader's name.
+    user_id: Option<i64>,
 }
 
 /// Query shape for the goal writes: the same offset [`StatsQuery`] carries, on
@@ -71,16 +76,33 @@ pub(super) async fn get_household_readers(
     }
 }
 
-/// Fetch the authed user's stats summary over the requested range.
+/// Fetch the caller's stats summary over the requested range, or a sharing
+/// reader's with `user_id`.
 pub(super) async fn get_stats(
     user: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<StatsQuery>,
 ) -> Response {
-    match db::stats::user_stats(&state.pool, user.id, query.range, query.utc_offset_minutes).await {
+    match db::stats::stats_for_viewer(
+        &state.pool,
+        user.id,
+        query.user_id,
+        query.range,
+        query.utc_offset_minutes,
+    )
+    .await
+    {
         Ok(summary) => Json(summary).into_response(),
-        Err(e) => internal("get_stats", e),
+        Err(e) => viewer_error("get_stats", e),
     }
+}
+
+/// A refused read is the contract's 404; anything else is a 500.
+fn viewer_error(context: &'static str, e: db::stats::ViewerStatsError) -> Response {
+    if matches!(e, db::stats::ViewerStatsError::NotSharing) {
+        return (StatusCode::NOT_FOUND, e.to_string()).into_response();
+    }
+    internal(context, e)
 }
 
 /// How big the library is in words, pages, and hours of audio.

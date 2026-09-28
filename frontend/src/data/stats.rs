@@ -70,7 +70,7 @@ pub(crate) async fn fetch_stats_online(
 /// Web/SSR `fetch_stats` — server-function wrapper that proxies to `rpc_stats`.
 #[cfg(not(feature = "mobile"))]
 pub async fn fetch_stats(_server_url: &str, range: StatsRange) -> Result<StatsSummary, DataError> {
-    crate::rpc::rpc_stats(range, crate::time::local_utc_offset_minutes())
+    crate::rpc::rpc_stats(range, crate::time::local_utc_offset_minutes(), None)
         .await
         .map_err(note_server_fn_err)
 }
