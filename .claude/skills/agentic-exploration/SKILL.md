@@ -67,16 +67,16 @@ It needs `OMNIBUS_EXPLORE_SSH_HOST`, which `env.sh check` does not require. **If
 ## 4. Provision accounts
 
 ```bash
-scripts/explore/provision.sh <N>                  # add --reader <k> for --reader
+scripts/explore/provision.sh <N>    # <N+1> with --ios; --reader <k> for --reader
 ```
 
 Emits JSON: `actor`, `username`, `password`, `action`, `role`. **Save it** —
 the audit needs it in steps 6 and 9, and passwords are rotated per run, never
 stored. Idempotent; usernames are stable across runs because provenance
 ownership is keyed on the actor, so fresh accounts would orphan every book
-previous runs uploaded. Hand each agent only its own credential. Every account
-is an admin unless `--reader <k>` makes `explorer-k` a reader; each call sets
-every account's permissions to its role — see [scenarios.md](scenarios.md).
+previous runs uploaded. Hand each agent only its own credential. The iOS agent
+is `agent-(N+1)`. Every account is an admin unless `--reader <k>` makes one web
+agent's `explorer-k` a reader — see [scenarios.md](scenarios.md).
 
 ## 5. Decide the draw
 

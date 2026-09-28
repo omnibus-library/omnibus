@@ -282,7 +282,9 @@ else:
     port="$(driver::port "$n")"
     driver::alive "$port" || { echo "agent-$n has no server on $port — run driver.sh up first" >&2; exit 1; }
 
-    version="$(shasum -a 256 "$DRIVER/guard.js" | cut -c1-12)"
+    # Python rather than shasum/sha256sum, whichever the host happens to carry.
+    version="$(python3 -c 'import hashlib,sys
+print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest()[:12])' "$DRIVER/guard.js")"
     js="$(python3 -c 'import json,sys
 src = open(sys.argv[1]).read()
 for key, value in (("ACTOR", sys.argv[2]), ("OWNED_SH", sys.argv[3]), ("VERSION", sys.argv[4])):

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Runs** | inside adding_book — handed over as its own step, after the runner refreshes the ownership guard |
+| **Runs** | inside adding_book |
 | **Owner-only** | **yes** |
 | **Surfaces** | web |
 | **Actions** | `book.delete`, `book.delete.verify` |

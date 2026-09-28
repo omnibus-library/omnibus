@@ -63,14 +63,15 @@ finish them without writing a second `flow.start`.
 
 ## Non-admin readers
 
-Every provisioned account is an admin unless you name one a reader:
+Every provisioned account is an admin unless `--reader <k>` makes one web
+agent's account a reader — `k` in `1..N`, never `N+1`, the iOS agent's under `--ios`:
 
 ```bash
-scripts/explore/provision.sh <N+1> --reader <N+1>  # explorer-(N+1): no admin, no upload
+scripts/explore/provision.sh <N> --reader <k>   # <N+1> with --ios; explorer-k: no admin, no upload
 ```
 
-Give that account to one agent as a **reader**, and tell it so in the brief:
-it will see no **Delete files…**, no other user's private shelves, and "You
+Tell `agent-k` in its brief that it is a **reader**: it will see no **Delete
+files…**, no other user's private shelves, and "You
 don't have permission to add books" on the add page — the criteria the
 catalog marks undecidable for admins become decidable for it. Every call sets
 each account's permissions to its role, so last run's reader is this run's
