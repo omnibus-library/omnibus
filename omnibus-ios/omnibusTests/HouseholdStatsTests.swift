@@ -1,6 +1,6 @@
 //  HouseholdStatsTests.swift
 //  The `GET /api/users` decode, the stats request query, and that another
-//  reader's stats bypass the replica entirely (AC4).
+//  reader's stats bypass the replica entirely.
 
 import Foundation
 import Testing
@@ -58,8 +58,7 @@ struct StatsRequestTests {
 }
 
 /// `.serialized`: every test shares one on-disk replica key
-/// (`CacheKey.stats(.year)`), the same precedent as
-/// `SeriesStackCacheTests` in `SeriesStacksTests.swift`.
+/// (`CacheKey.stats(.year)`), so a concurrent pair would race the same file.
 @Suite(.serialized)
 struct StatsReplicaRoutingTests {
     private let key = CacheKey.stats(.year)

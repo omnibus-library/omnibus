@@ -31,7 +31,7 @@ enum StatsSubject: Hashable, Sendable {
         }
     }
 
-    /// `nil` for another reader: their stats are online-only (AC4).
+    /// `nil` for another reader: their stats are online-only.
     func cacheKey(_ range: StatsRange) -> String? {
         switch self {
         case .you: CacheKey.stats(range)

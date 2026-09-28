@@ -43,8 +43,7 @@ private struct GoalEditLink: View {
 /// occupies (`GoalRing.diameter`) so a mixed card still aligns.
 struct DailyGoalsCard: View {
     let summary: StatsSummary
-    /// `false` while viewing another household reader — their targets aren't
-    /// yours to change.
+    /// `false` while viewing another household reader's targets.
     var canEditGoals = true
 
     @Environment(\.palette) private var palette
@@ -235,8 +234,7 @@ private struct DailyGoalRow: View {
 struct YearGoalCard: View {
     let summary: StatsSummary
     let year: String
-    /// `false` while viewing another household reader — their targets aren't
-    /// yours to change.
+    /// `false` while viewing another household reader's targets.
     var canEditGoals = true
 
     @Environment(\.palette) private var palette

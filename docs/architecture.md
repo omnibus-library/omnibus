@@ -403,10 +403,10 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       while offline, and `ProfileDraft` holds the testable
                       "what does Save actually send" rules. `ShareStatsSection`
                       is the "Share stats with household" switch beneath
-                      Reading: same never-queued contract, disabled offline,
-                      and compares against a local last-confirmed value rather
-                      than `app.user` so a silently failed `refreshUser()`
-                      can't make the next flip skip its own write. BookDetail's
+                      Reading: same never-queued contract, disabled while
+                      offline or mid-save, seeds once from the server and then
+                      follows its value, and stays hidden on a server that
+                      never sends the setting. BookDetail's
                       `WishlistSection` is the native twin of the web page's
                       rail tracking card (tracked-since line, store search,
                       remove): same never-queued contract, plus a confirmation

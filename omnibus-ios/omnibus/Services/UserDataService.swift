@@ -881,10 +881,6 @@ enum UserDataService {
     /// leave the reader with nothing at all to show offline in the new zone,
     /// and this app is local-first. `Cache.live` corrects it as soon as the
     /// live read lands.
-    ///
-    /// `subject` defaults to `.you`, so every existing caller is unchanged.
-    /// Another reader's stats route through `statsReads`, which never touches
-    /// the replica for them (AC4).
     static func stats(
         range: StatsRange, subject: StatsSubject = .you
     ) -> AsyncThrowingStream<CacheRead<StatsSummary>, Error> {

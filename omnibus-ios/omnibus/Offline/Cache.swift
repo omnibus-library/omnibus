@@ -304,7 +304,7 @@ enum Cache {
 
     /// One server answer, never read from or written to the replica — for a
     /// read whose subject makes the replica the wrong place to look, such as
-    /// another household reader's stats (AC4).
+    /// another household reader's stats.
     static func uncached<T: Sendable>(
         fetch: @escaping @Sendable () async throws -> T
     ) -> AsyncThrowingStream<CacheRead<T>, Error> {
