@@ -1,9 +1,7 @@
-//! `/api/account/*` — the caller's own reading preferences: which formats the
-//! landing All Books view excludes for them, whether their book detail page
-//! uses the snap-stop marquee, whether their library stacks series, and
-//! whether other readers on this server may see their stats page.
-//! Mirrors the web server functions in `frontend::rpc::account`; the read
-//! sides ride `GET /api/auth/me` as `UserSummary` fields.
+//! `/api/account/*` — the caller's own reading preferences: hidden formats,
+//! book-detail scroll stops, Stack series, and share stats. Mirrors the web
+//! server functions in `frontend::rpc::account`; the read sides ride
+//! `GET /api/auth/me` as `UserSummary` fields.
 
 use axum::{
     extract::State,

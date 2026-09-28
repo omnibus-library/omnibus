@@ -1,7 +1,5 @@
-//! Pure tests for each `UserSetting`'s status line. The shared toggle
-//! handler's guards and its failure revert are exercised through the same
-//! shape as the self-registration switch it mirrors; only the copy is
-//! unique per setting.
+//! Tests for each `UserSetting`'s status line, plus the settings card's SSR
+//! render while the viewer is still unresolved.
 
 use super::*;
 
@@ -50,7 +48,7 @@ fn user_settings_card_renders_every_switch_unknown_until_the_viewer_resolves() {
     let html = crate::test_support::render_in_vdom(unresolved);
     assert!(html.contains("scroll-stops-toggle"), "{html}");
     assert!(html.contains("share-stats-toggle"), "{html}");
-    assert!(html.contains("disabled"), "{html}");
+    assert_eq!(html.matches("disabled").count(), 2, "{html}");
     assert_eq!(html.matches("ld-unknown").count(), 2, "{html}");
     assert!(html.contains("Checking\u{2026}"), "{html}");
     assert!(html.contains("ld-sheen"), "{html}");

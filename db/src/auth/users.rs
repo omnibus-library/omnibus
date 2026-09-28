@@ -361,9 +361,8 @@ pub async fn set_share_stats(pool: &SqlitePool, user_id: i64, enabled: bool) -> 
     Ok(())
 }
 
-/// Read a user's share-stats preference. `false` for a user that doesn't
-/// exist — the endpoints issue answers a missing and a non-sharing reader
-/// with the same 404, so the conservative answer must come from here.
+/// Read a user's share-stats preference. `false` for a missing user, so a
+/// caller refusing non-sharing readers refuses unknown ids too.
 pub async fn get_share_stats(pool: &SqlitePool, user_id: i64) -> AuthResult<bool> {
     let v: Option<i64> = sqlx::query_scalar("SELECT share_stats FROM users WHERE id = ?")
         .bind(user_id)

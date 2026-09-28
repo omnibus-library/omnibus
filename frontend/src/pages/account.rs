@@ -24,8 +24,7 @@ pub(crate) mod kobo;
 // Display name + avatar, at the top of the Account section.
 #[cfg(not(feature = "mobile"))]
 mod profile;
-// The per-user feature switches table (scroll stops today), above the goals
-// it sits beside.
+// The per-user feature switches table, above the goals it sits beside.
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod user_settings;
 // Self-service "Your sessions" card (F5.4, #910).
