@@ -9,12 +9,31 @@ use omnibus_db as db;
 #[cfg(feature = "server")]
 use omnibus_shared::SessionCursor;
 use omnibus_shared::{
-    BookInsights, ChartResult, ChartSpec, DailyGoalUpdate, DailyGoals, LibraryComposition,
-    LibrarySize, ReadingGoal, ReadingGoalUpdate, SessionLogPage, StatsRange, StatsSummary,
+    BookInsights, ChartResult, ChartSpec, DailyGoalUpdate, DailyGoals, HouseholdReader,
+    LibraryComposition, LibrarySize, ReadingGoal, ReadingGoalUpdate, SessionLogPage, StatsRange,
+    StatsSummary,
 };
 
 #[cfg(feature = "server")]
 use super::{internal_rpc_error, AuthUser, PoolExt};
+
+/// Fetch the readers whose stats the caller may view, the caller first.
+/// Mobile uses the analogous `GET /api/users` REST route.
+#[post("/api/rpc/household-readers", pool: PoolExt, user: AuthUser)]
+pub async fn rpc_household_readers() -> Result<Vec<HouseholdReader>> {
+    Ok(household_readers(&pool.0, user.id).await?)
+}
+
+/// Server-side body of [`rpc_household_readers`], extracted for testability.
+#[cfg(feature = "server")]
+async fn household_readers(
+    pool: &sqlx::SqlitePool,
+    caller_id: i64,
+) -> Result<Vec<HouseholdReader>, ServerFnError> {
+    Ok(db::stats::household_readers(pool, caller_id)
+        .await
+        .map_err(|e| internal_rpc_error("household readers", e))?)
+}
 
 /// Fetch the current user's stats summary over `range`. Served from the
 /// `db::stats` per-user cache (60s TTL, keyed on the offset too), so
@@ -175,3 +194,6 @@ pub async fn rpc_chart_series(
             })?,
     )
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests;

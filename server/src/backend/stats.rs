@@ -1,8 +1,8 @@
-//! Reading-stats REST handlers for the mobile client: the `db::stats`
-//! aggregate (`GET /api/stats`, windowed by an optional snake_case `?range=`),
-//! the same data un-aggregated as the caller's own keyset-paginated session
-//! log (`GET /api/stats/sessions`), the annual goal (`PUT /api/stats/goal`)
-//! and the daily ones (`PUT /api/stats/goal/daily`),
+//! Reading-stats REST handlers for the mobile client: the readers list
+//! (`GET /api/users`), the `db::stats` aggregate (`GET /api/stats`, windowed
+//! by an optional snake_case `?range=`), the same data un-aggregated as a
+//! keyset-paginated session log (`GET /api/stats/sessions`), the annual goal
+//! (`PUT /api/stats/goal`) and the daily ones (`PUT /api/stats/goal/daily`),
 //! and the collection's own scale and mix (`GET /api/library-size`,
 //! `GET /api/library-composition` — the same for every reader).
 
@@ -58,6 +58,17 @@ pub(super) struct StatsQuery {
 pub(super) struct GoalQuery {
     #[serde(default, deserialize_with = "lenient_offset")]
     utc_offset_minutes: Option<i64>,
+}
+
+/// `GET /api/users` — the readers whose stats the caller may view, the caller first.
+pub(super) async fn get_household_readers(
+    user: AuthUser,
+    State(state): State<AppState>,
+) -> Response {
+    match db::stats::household_readers(&state.pool, user.id).await {
+        Ok(readers) => Json(readers).into_response(),
+        Err(e) => internal("get_household_readers", e),
+    }
 }
 
 /// Fetch the authed user's stats summary over the requested range.
