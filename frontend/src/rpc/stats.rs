@@ -68,15 +68,19 @@ async fn reader_stats(
         .map_err(|e| map_viewer_error("stats", e))
 }
 
-/// A refused read keeps its contract message; anything else is genericized.
-/// `pub(super)` so `rpc::progress`'s `user_id` read shares the same mapping.
+/// A refused read keeps its contract message and rides in a 404; anything
+/// else is genericized.
 #[cfg(feature = "server")]
 pub(super) fn map_viewer_error(
     context: &'static str,
     e: db::stats::ViewerStatsError,
 ) -> ServerFnError {
     if matches!(e, db::stats::ViewerStatsError::NotSharing) {
-        return ServerFnError::new(e.to_string());
+        return ServerFnError::ServerError {
+            message: e.to_string(),
+            code: 404,
+            details: None,
+        };
     }
     internal_rpc_error(context, e)
 }

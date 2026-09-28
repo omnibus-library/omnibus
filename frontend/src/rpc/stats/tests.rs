@@ -2,9 +2,21 @@
 //! the share gate's message, a sharer's success path, admin no-bypass, and a
 //! DB failure genericized to `internal server error`.
 
+use dioxus::prelude::ServerFnError;
+use omnibus_db::stats::ViewerStatsError;
 use omnibus_shared::StatsRange;
 
-use super::{household_readers, reader_session_log, reader_stats};
+use super::{household_readers, map_viewer_error, reader_session_log, reader_stats};
+
+#[test]
+fn map_viewer_error_carries_a_404_and_the_contract_message_for_a_refusal() {
+    let err = map_viewer_error("stats", ViewerStatsError::NotSharing);
+    assert!(matches!(
+        err,
+        ServerFnError::ServerError { code: 404, message, .. }
+            if message == "this reader isn't sharing their stats"
+    ));
+}
 
 async fn pool_with_user(name: &str) -> (sqlx::SqlitePool, i64) {
     let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
