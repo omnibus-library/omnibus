@@ -84,11 +84,12 @@ fn streak_line(current: i64, longest: i64) -> Option<String> {
 
 /// The standing hero. `summary` is the all-time summary — the one fetch a
 /// period switch never re-runs — and is `None` only while it is in flight.
+/// `children` is the reader picker, rendered as the hero's first row.
 ///
 /// The goals are read straight off it rather than owned as signals: nothing on
 /// this page writes them any more, so there is no save to fold back in.
 #[component]
-pub(super) fn StatsHero(summary: Option<StatsSummary>) -> Element {
+pub(super) fn StatsHero(summary: Option<StatsSummary>, children: Element) -> Element {
     let as_of_day = summary
         .as_ref()
         .map(|s| s.as_of_day.clone())
@@ -113,6 +114,7 @@ pub(super) fn StatsHero(summary: Option<StatsSummary>) -> Element {
 
     rsx! {
         header { class: "st-hero", "data-testid": "stats-hero",
+            {children}
             div { class: "st-hero-inner",
                 div { class: "st-hero-run",
                     span { class: "st-hero-kicker",

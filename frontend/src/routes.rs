@@ -452,14 +452,12 @@ pub fn SeriesIndex() -> Element {
 }
 
 /// Route target for `/stats` — the reading-stats page. `user` (`?user=`)
-/// picks which household reader's figures to show; threaded through
-/// `StatsPage` starting Task 3.
+/// picks which household reader's figures to show.
 #[component]
 pub fn Stats(user: Option<i64>) -> Element {
     use_page_title(|| Some("Stats".into()));
-    let _ = user;
     rsx! {
-        ScreenLayout { StatsPage {} }
+        ScreenLayout { StatsPage { user } }
     }
 }
 
