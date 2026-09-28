@@ -86,12 +86,38 @@ enum UserDataService {
         return object["client_updated_at"] != nil
     }
 
-    static func recentProgress() -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
-        Cache.live(CacheKey.recentProgress) {
+    /// The reader's own in-progress list, or — with `subject: .reader` —
+    /// another household member's.
+    static func recentProgress(
+        subject: StatsSubject = .you
+    ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
+        recentProgressReads(subject: subject) {
             try await APIClient.shared.get(
-                "/api/progress/recent", query: ["limit": String(resumeLimit)]
+                "/api/progress/recent", query: recentProgressQuery(userID: subject.userID)
             )
         }
+    }
+
+    /// Routing seam: another reader's in-progress list must never enter
+    /// `CacheKey.recentProgress`, which the Continue rail and the widget
+    /// snapshot also read.
+    static func recentProgressReads(
+        subject: StatsSubject,
+        fetch: @escaping @Sendable () async throws -> [ResumePoint]
+    ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
+        switch subject {
+        case .you: Cache.live(CacheKey.recentProgress, fetch: fetch)
+        case .reader: Cache.uncached(fetch: fetch)
+        }
+    }
+
+    /// The `/api/progress/recent` query: `limit` always, and `user_id` only
+    /// when asking about another reader — omitted rather than sent blank, so
+    /// your own request is unchanged.
+    static func recentProgressQuery(userID: Int64?) -> [String: String?] {
+        var query: [String: String?] = ["limit": String(resumeLimit)]
+        if let userID { query["user_id"] = String(userID) }
+        return query
     }
 
     /// Save a reading or listening position. Coalesced — the reader emits one
