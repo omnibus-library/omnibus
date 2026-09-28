@@ -10,7 +10,7 @@
 //! second fetcher for any of the three is the thing this module exists to
 //! prevent.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use crate::author_photos::shared::default_user_agent;
@@ -81,9 +81,9 @@ fn too_large() -> FetchRemoteImageError {
 /// instead of growing a second: `Default` reproduces the admin paste-a-URL
 /// behaviour exactly (any host, `http` allowed, redirects refused); the
 /// provider-cover path (`db::provider_cover_image_config`) adds a host
-/// allowlist, HTTPS-only, and a bounded follow; the pasted-book-cover path
-/// (`db::pasted_cover_image_config`) keeps HTTPS-only and the bounded follow
-/// but leaves the allowlist empty, relying on the address gate alone.
+/// allowlist, HTTPS-only, and a bounded follow; the pasted terms from
+/// `db::cover_image_config_for` keep HTTPS-only and the bounded follow but
+/// leave the allowlist empty, relying on the address gate alone.
 #[derive(Debug, Clone, Default)]
 pub struct RemoteImageConfig {
     /// When `true`, [`fetch_remote_image_with`] skips the IP-range check
@@ -113,10 +113,6 @@ impl RemoteImageConfig {
     /// `*.archive.org` matches `ia1.us.archive.org` but not `archive.org`,
     /// which must be listed on its own. A single-label suffix (`*.com`) is
     /// refused outright rather than treated as a wildcard over a whole TLD.
-    ///
-    /// `pub` rather than `pub(super)`: `metadata_lookup::cover_image_config_for`
-    /// calls it on the provider config to decide which terms a pasted URL
-    /// should fetch under, before any fetch runs.
     pub fn host_allowed(&self, host: &str) -> bool {
         if self.host_allowlist.is_empty() {
             return true;
@@ -155,6 +151,7 @@ impl RemoteImageConfig {
 ///   - IPv6 documentation (2001:db8::/32)
 ///   - IPv6-mapped IPv4 — unwrap to the wrapped IPv4 and re-check, so
 ///     `::ffff:127.0.0.1` is still loopback.
+///   - NAT64-mapped IPv4 (64:ff9b::/96) — same unwrap-and-recheck.
 pub(super) fn is_blocked_address(addr: IpAddr) -> bool {
     match addr {
         IpAddr::V4(v4) => {
@@ -189,6 +186,17 @@ pub(super) fn is_blocked_address(addr: IpAddr) -> bool {
                 return is_blocked_address(IpAddr::V4(v4));
             }
             let seg = v6.segments();
+            // 64:ff9b::/96 — NAT64 well-known prefix; the low 32 bits embed
+            // an IPv4 address, same bypass shape as the mapped case above.
+            if seg[0..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                let v4 = Ipv4Addr::new(
+                    (seg[6] >> 8) as u8,
+                    (seg[6] & 0xff) as u8,
+                    (seg[7] >> 8) as u8,
+                    (seg[7] & 0xff) as u8,
+                );
+                return is_blocked_address(IpAddr::V4(v4));
+            }
             // fc00::/7 — Unique Local Addresses (`is_unique_local` is
             // nightly-only on `Ipv6Addr`).
             if (seg[0] & 0xfe00) == 0xfc00 {
