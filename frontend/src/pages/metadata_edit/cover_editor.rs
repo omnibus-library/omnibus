@@ -12,7 +12,7 @@ use omnibus_shared::EbookMetadata;
 use super::bust_query;
 use super::cover_mode::{CoverMode, StagedCover};
 use crate::components::atrium::Cover;
-use crate::components::{MarkSize, Ring};
+use crate::components::{BusyLabel, MarkSize, Ring};
 use crate::contexts::{bump_cover_cache_bust, use_cover_cache_bust};
 use crate::data::UploadCover;
 use crate::{data, media_url, use_server_url};
@@ -36,10 +36,9 @@ pub(crate) fn CoverEditor(
         status: use_signal(|| None),
         cover_url: use_signal(|| book.cover_url.clone()),
         has_cover_override: use_signal(|| book.has_cover_override),
-        // Declared unconditionally, like every other signal here, so SSR and
-        // the first WASM paint stay identical even though the input itself
-        // only renders in `CoverMode::Live` (rule 07).
+        // Live-only input, declared unconditionally (rule 07).
         pasted_url: use_signal(String::new),
+        applying_url: use_signal(|| false),
         // Read from the app-wide registry rather than counted locally, so a
         // cover applied *elsewhere on this page* — the compare view's cover
         // row — busts this preview too. The cover route caches for a day
@@ -117,9 +116,10 @@ struct CoverState {
     /// so any writer of a cover for this book moves it.
     cover_bust: Memo<u32>,
     global_bust: Signal<std::collections::HashMap<String, u32>>,
-    /// The "Or paste an image URL" box. Live-mode only, but declared here
-    /// with the rest of the bundle so it exists unconditionally.
     pasted_url: Signal<String>,
+    /// Drives the Apply button's [`BusyLabel`] alone — kept separate from
+    /// `busy` so a file upload doesn't show "Applying…" on this button.
+    applying_url: Signal<bool>,
 }
 
 impl CoverState {
@@ -264,6 +264,7 @@ fn cover_controls(
             let uuid = uuid.clone();
             let server_url = server_url.clone();
             state.start("Applying cover\u{2026}");
+            state.applying_url.set(true);
             spawn(async move {
                 match data::apply_cover_from_url(&server_url, &uuid, &trimmed).await {
                     Ok(Some(updated)) => {
@@ -277,6 +278,7 @@ fn cover_controls(
                     )),
                 }
                 state.busy.set(false);
+                state.applying_url.set(false);
             });
         }
     };
@@ -326,7 +328,12 @@ fn cover_controls(
                     class: "btn sm",
                     "data-testid": "cover-url-apply",
                     disabled: (state.busy)() || state.pasted_url.read().trim().is_empty(),
-                    "Apply"
+                    "aria-busy": "{(state.applying_url)()}",
+                    BusyLabel {
+                        busy: (state.applying_url)(),
+                        label: "Apply",
+                        busy_label: "Applying\u{2026}",
+                    }
                 }
             }
             if (state.has_cover_override)() {
