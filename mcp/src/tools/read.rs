@@ -374,10 +374,7 @@ impl OmnibusMcp {
         Ok(Json(detail))
     }
 
-    /// `GET path`, mapping a 404 to the "not sharing" tool error when
-    /// `user_id` was given — the shared mapping `reading_stats` and
-    /// `reading_sessions` both need. Without `user_id`, a 404 stays today's
-    /// internal error.
+    /// GET path; a 404 for another reader's user_id becomes the "not sharing" tool error.
     async fn get_user_scoped<T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
@@ -539,7 +536,7 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "The reading-session log, newest first — the signed-in user's, or another household reader's when user_id is given (ids from list_household_readers; a reader who doesn't share their stats answers with an error saying so). One entry per recorded sitting with book, format, and duration. Paginate by echoing next_before back as before; optionally scope to one book uuid. A sitting's format is reading | listening | mixed, which is deliberately wider than the epub | audio a progress record carries: a sitting can span both formats, a saved position cannot. The mapping is reading=epub, listening=audio, and mixed=both in one sitting. started_at and ended_at are ISO 8601, with unix seconds alongside under started_at_epoch / ended_at_epoch; seconds is time actually recorded, not ended_at minus started_at."
+        description = "The reading-session log, newest first — the signed-in user's, or another household reader's when user_id is given (ids from list_household_readers; a reader who doesn't share their stats answers with an error saying so). One entry per recorded sitting with book, format, and duration. Paginate by echoing next_before back as before, keeping the same user_id; optionally scope to one book uuid. A sitting's format is reading | listening | mixed, which is deliberately wider than the epub | audio a progress record carries: a sitting can span both formats, a saved position cannot. The mapping is reading=epub, listening=audio, and mixed=both in one sitting. started_at and ended_at are ISO 8601, with unix seconds alongside under started_at_epoch / ended_at_epoch; seconds is time actually recorded, not ended_at minus started_at."
     )]
     pub async fn reading_sessions(
         &self,

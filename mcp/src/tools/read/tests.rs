@@ -11,6 +11,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json as AxumJson, Router};
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::ErrorCode;
 
 use omnibus_shared::{
     BookProgress, Bookmark, Contributor, EbookMetadata, Highlight, HighlightColor, HouseholdReader,
@@ -646,7 +647,8 @@ async fn reading_stats_reports_not_sharing_when_the_reader_does_not_share() {
             }))
             .await,
     );
-    assert_eq!(err.message, NOT_SHARING);
+    assert_eq!(err.message, "this reader isn't sharing their stats");
+    assert_eq!(err.code, ErrorCode::INVALID_PARAMS);
 }
 
 #[tokio::test]
@@ -675,7 +677,8 @@ async fn reading_sessions_reports_not_sharing_when_the_reader_does_not_share() {
             }))
             .await,
     );
-    assert_eq!(err.message, NOT_SHARING);
+    assert_eq!(err.message, "this reader isn't sharing their stats");
+    assert_eq!(err.code, ErrorCode::INVALID_PARAMS);
 }
 
 // MARK: - Vocabulary
