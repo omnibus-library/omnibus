@@ -387,7 +387,7 @@ pub(super) fn spawn_hero_effect(
     use_effect(move || {
         let url = server_url.clone();
         spawn(async move {
-            let points = data::recent_progress(&url, HERO_POINTS)
+            let points = data::recent_progress(&url, HERO_POINTS, None)
                 .await
                 .unwrap_or_default();
             hero_points.set(Some(points));

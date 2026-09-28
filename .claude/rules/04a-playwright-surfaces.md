@@ -164,6 +164,11 @@ one is asserting a control that no longer exists. Three consequences:
   `stats-daily-{kind}-today` — so a spec asserting "no goal" must look for
   those, not for an invite. `*-invite` now renders only when the server sent no
   figure at all.
+- **The household reader picker's options are in the DOM even while the menu
+  is closed** — only `hidden` keeps them offscreen — so a spec asserting one
+  is gone (sharing turned off) needs `toHaveCount(0)`, not a visibility check.
+  Options are `stats-reader-option-you` / `stats-reader-option-<id>`, and
+  `/api/rpc/stats` bodies carry `user_id` (`null` on the caller's own page).
 
 **The PDF reader has no ready testid; the text layer is not an element you
 click.** `/pdf/:uuid` renders its chrome on SSR (`pdf-back`, `pdf-fit-*`,

@@ -14,7 +14,7 @@ use omnibus_shared::{
 use super::note_server_fn_err;
 use super::DataError;
 #[cfg(feature = "mobile")]
-use super::{drain_error, http_client, note_status, with_bearer};
+use super::{drain_error, http_client, note_status, require_online, with_bearer};
 
 /// POST `/api/progress` — persist the latest reading/listening position.
 /// Queued offline; the drain's stale guard keeps a newer position written
@@ -208,16 +208,35 @@ pub(crate) async fn record_sessions_online(
     Ok(body.get("recorded").and_then(|v| v.as_u64()).unwrap_or(0))
 }
 
-/// GET `/api/progress/recent?limit=…` — the "pick up where you left off" feed.
-/// Network-first with offline cache fallback.
+/// GET `/api/progress/recent?limit=…` — the "pick up where you left off"
+/// feed: the caller's own with `user_id: None`, or a sharing household
+/// reader's with `user_id: Some(id)`.
+///
+/// A `Some` id bypasses the offline cache entirely, like [`fetch_stats`]:
+/// the cache is keyed only on `limit`, so serving or storing under it here
+/// would leak one reader's open books into another's cached copy.
+///
+/// [`fetch_stats`]: crate::data::fetch_stats
 #[cfg(feature = "mobile")]
-pub async fn recent_progress(server_url: &str, limit: i64) -> Result<Vec<ResumePoint>, DataError> {
-    let url = server_url.to_string();
-    crate::offline::cache::read_through(
-        crate::offline::cache::keys::recent_progress(limit),
-        async move { recent_progress_online(&url, limit).await },
-    )
-    .await
+pub async fn recent_progress(
+    server_url: &str,
+    limit: i64,
+    user_id: Option<i64>,
+) -> Result<Vec<ResumePoint>, DataError> {
+    match user_id {
+        None => {
+            let url = server_url.to_string();
+            crate::offline::cache::read_through(
+                crate::offline::cache::keys::recent_progress(limit),
+                async move { recent_progress_online(&url, limit, None).await },
+            )
+            .await
+        }
+        Some(_) => {
+            require_online()?;
+            recent_progress_online(server_url, limit, user_id).await
+        }
+    }
 }
 
 /// Native HTTP transport for [`recent_progress`].
@@ -225,8 +244,12 @@ pub async fn recent_progress(server_url: &str, limit: i64) -> Result<Vec<ResumeP
 pub(crate) async fn recent_progress_online(
     server_url: &str,
     limit: i64,
+    user_id: Option<i64>,
 ) -> Result<Vec<ResumePoint>, DataError> {
-    let url = format!("{server_url}/api/progress/recent?limit={limit}");
+    let mut url = format!("{server_url}/api/progress/recent?limit={limit}");
+    if let Some(id) = user_id {
+        url.push_str(&format!("&user_id={id}"));
+    }
     let response = with_bearer(http_client().get(&url)).send().await?;
     let status = note_status(response.status());
     if !status.is_success() {
@@ -283,8 +306,12 @@ pub async fn get_playback_rate(
 
 /// Web/SSR `recent_progress` — server-function wrapper that proxies to `rpc_recent_progress`.
 #[cfg(not(feature = "mobile"))]
-pub async fn recent_progress(_server_url: &str, limit: i64) -> Result<Vec<ResumePoint>, DataError> {
-    crate::rpc::rpc_recent_progress(limit, None)
+pub async fn recent_progress(
+    _server_url: &str,
+    limit: i64,
+    user_id: Option<i64>,
+) -> Result<Vec<ResumePoint>, DataError> {
+    crate::rpc::rpc_recent_progress(limit, user_id)
         .await
         .map_err(note_server_fn_err)
 }
@@ -299,3 +326,6 @@ pub async fn record_sessions(
         .await
         .map_err(note_server_fn_err)
 }
+
+#[cfg(all(test, feature = "mobile"))]
+mod tests;

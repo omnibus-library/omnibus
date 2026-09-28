@@ -86,12 +86,34 @@ enum UserDataService {
         return object["client_updated_at"] != nil
     }
 
-    static func recentProgress() -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
-        Cache.live(CacheKey.recentProgress) {
+    static func recentProgress(
+        subject: StatsSubject = .you
+    ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
+        recentProgressReads(subject: subject) {
             try await APIClient.shared.get(
-                "/api/progress/recent", query: ["limit": String(resumeLimit)]
+                "/api/progress/recent", query: recentProgressQuery(userID: subject.userID)
             )
         }
+    }
+
+    /// Routing seam: another reader's in-progress list must never enter
+    /// `CacheKey.recentProgress`, which the Continue rail and the widget
+    /// snapshot also read.
+    static func recentProgressReads(
+        subject: StatsSubject,
+        fetch: @escaping @Sendable () async throws -> [ResumePoint]
+    ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
+        switch subject {
+        case .you: Cache.live(CacheKey.recentProgress, fetch: fetch)
+        case .reader: Cache.uncached(fetch: fetch)
+        }
+    }
+
+    /// `user_id` only for another reader, so your own request is unchanged.
+    static func recentProgressQuery(userID: Int64?) -> [String: String?] {
+        var query: [String: String?] = ["limit": String(resumeLimit)]
+        if let userID { query["user_id"] = String(userID) }
+        return query
     }
 
     /// Save a reading or listening position. Coalesced — the reader emits one
@@ -881,13 +903,37 @@ enum UserDataService {
     /// leave the reader with nothing at all to show offline in the new zone,
     /// and this app is local-first. `Cache.live` corrects it as soon as the
     /// live read lands.
-    static func stats(range: StatsRange) -> AsyncThrowingStream<CacheRead<StatsSummary>, Error> {
-        Cache.live(CacheKey.stats(range)) {
+    static func stats(
+        range: StatsRange, subject: StatsSubject = .you
+    ) -> AsyncThrowingStream<CacheRead<StatsSummary>, Error> {
+        statsReads(range: range, subject: subject) {
             try await APIClient.shared.get(
-                "/api/stats",
-                query: ["range": range.rawValue, "utc_offset_minutes": localOffsetQuery()]
+                "/api/stats", query: statsQuery(range: range, userID: subject.userID)
             )
         }
+    }
+
+    /// Routing seam: `subject.cacheKey(range)` sends `.you` through the
+    /// replica as always, and sends another reader straight to the server —
+    /// their stats must never be read from or written to `CacheKey.stats`.
+    static func statsReads(
+        range: StatsRange, subject: StatsSubject,
+        fetch: @escaping @Sendable () async throws -> StatsSummary
+    ) -> AsyncThrowingStream<CacheRead<StatsSummary>, Error> {
+        guard let key = subject.cacheKey(range) else { return Cache.uncached(fetch: fetch) }
+        return Cache.live(key, fetch: fetch)
+    }
+
+    /// The `/api/stats` query: this device's UTC offset always, and `user_id`
+    /// only when asking about another reader — omitted rather than sent
+    /// blank, so the server's `Option<i64>` sees "not asked" for your own.
+    static func statsQuery(range: StatsRange, userID: Int64?) -> [String: String?] {
+        var query: [String: String?] = [
+            "range": range.rawValue,
+            "utc_offset_minutes": localOffsetQuery(),
+        ]
+        if let userID { query["user_id"] = String(userID) }
+        return query
     }
 
     /// This device's UTC offset as a query value, for the stats reads and the
@@ -899,6 +945,13 @@ enum UserDataService {
     /// ground it measures.
     private static func localOffsetQuery() -> String {
         String(SessionReport.localOffsetMinutes())
+    }
+
+    /// Every household reader currently sharing, "you" first. Online only: a
+    /// cached list would offer choices that then fail offline, and it would
+    /// mean persisting other people's names on this device for no benefit.
+    static func householdReaders() async throws -> [HouseholdReader] {
+        try await APIClient.shared.get("/api/users")
     }
 
     /// How big the library is in words, pages, and hours of audio.

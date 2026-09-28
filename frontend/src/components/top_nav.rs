@@ -29,7 +29,7 @@ pub fn TopNav() -> Element {
     let is_library = matches!(route, Route::Landing {});
     let is_authors = matches!(route, Route::AuthorsIndex {} | Route::AuthorDetail { .. });
     let is_series = matches!(route, Route::SeriesIndex {} | Route::SeriesDetail { .. });
-    let is_stats = matches!(route, Route::Stats {});
+    let is_stats = matches!(route, Route::Stats { .. });
     let can_upload = crate::use_can_upload();
 
     rsx! {
@@ -57,7 +57,7 @@ pub fn TopNav() -> Element {
                     "Series"
                 }
                 Link {
-                    to: Route::Stats {},
+                    to: crate::routes::link_target(Route::Stats { user: None }),
                     class: if is_stats { "on" } else { "" },
                     "Stats"
                 }

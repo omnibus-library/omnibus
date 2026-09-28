@@ -473,9 +473,17 @@ struct UserSummary: Codable, Hashable, Sendable {
     var bookDetailScrollStops: Bool = false
     /// Whether the library grid folds each series into one tile; a missing key decodes as off.
     var stackSeries: Bool = false
+    /// Raw wire value; read `shareStats`. `Bool?` rather than the file's
+    /// lenient `Bool`, which defaults a missing key to `false` — the
+    /// household contract wants a missing key to mean *on*, the opposite.
+    var shareStatsSetting: Bool?
 
     /// The name to show for this user — never render `username` on its own.
     var display: String { displayName ?? username }
+
+    /// Whether other readers on this server can pick this user's stats.
+    /// Missing means on, per the household contract.
+    var shareStats: Bool { shareStatsSetting ?? true }
 
     enum CodingKeys: String, CodingKey {
         case id, username
@@ -489,7 +497,13 @@ struct UserSummary: Codable, Hashable, Sendable {
         case hiddenFormats = "hidden_formats"
         case bookDetailScrollStops = "book_detail_scroll_stops"
         case stackSeries = "stack_series"
+        case shareStatsSetting = "share_stats"
     }
+}
+
+/// Body of `POST /api/account/share-stats`.
+struct ShareStatsUpdate: Encodable, Sendable {
+    var enabled: Bool
 }
 
 struct LoginRequest: Encodable, Sendable {

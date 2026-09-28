@@ -167,7 +167,7 @@ fn use_goal_hydration(server_url: String, mut signals: GoalSignals) {
     use_effect(move || {
         let url = server_url.clone();
         spawn(async move {
-            let Ok(summary) = data::fetch_stats(&url, StatsRange::AllTime).await else {
+            let Ok(summary) = data::fetch_stats(&url, StatsRange::AllTime, None).await else {
                 // Say so rather than rendering "Not set" for goals that may
                 // well exist — an empty card is indistinguishable from a
                 // reader who has set nothing.
