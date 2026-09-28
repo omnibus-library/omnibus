@@ -15,9 +15,9 @@ book you own only on paper.
 **Physical copies are library-wide.** A PHYS badge in the library, a physical
 pill on the detail page, and the ISBN binding the copy files under are seen by
 every reader and outlive the run. The ownership guard treats copy removal as
-destructive, so **you can only remove a copy from a book you own** — file
-copies against books you uploaded, or against a paper-only book you create
-here, never against the baseline corpus.
+destructive, so **you can only note or remove a copy you filed yourself** —
+and only delete a paper-only book you created here. Never file copies against
+the baseline corpus.
 
 ## Steps
 
@@ -80,12 +80,11 @@ here, never against the baseline corpus.
    with Cancel / Move to wishlist / **Remove from library**, and removing it
    removes the book. Both are correct. iOS has no remove control, so the book
    stays; say so.
-   **Remove only a copy you filed yourself.** The ownership guard does not
-   cover this route — a copy note or delete names a copy id and no book uuid,
-   so the guard cannot check it and lets it through (#2516) — and the server
-   does not check either (#2509). A removal on someone else's copy will
-   therefore *succeed*, not be refused. If you are offered the control on a
-   copy you did not file, that is the finding: report it and do not click.
+   **Remove only a copy you filed yourself.** The guard asks the server who
+   filed a copy and refuses a note or removal on anyone else's with its
+   `ownership_guard` 403; the server itself does not check (#2509). If you are
+   offered the control on a copy you did not file, that is the finding:
+   report it and do not click.
 
 ## Journal
 

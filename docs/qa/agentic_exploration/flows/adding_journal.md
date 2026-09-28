@@ -85,8 +85,12 @@ Two worth deliberately trying on web, because each has been wrong before:
 ## Journal
 
 `journal.create` with the uuid and the **verbatim text you typed**, including
-the markup. `journal.update` with before and after. `journal.delete` with the phrase you
-chose, so the audit can tell a deliberate delete from a loss.
+the markup. `journal.update` with the entry's **complete text after the edit,
+verbatim**, in `params.after_verbatim`, and the text it replaced in
+`params.before_verbatim`; a description of the change ("same, plus a closing
+paragraph") cannot be matched, so an edit journalled that way goes unchecked.
+`journal.delete` with the phrase you chose, so the audit can tell a deliberate
+delete from a loss.
 
 ## Pass
 

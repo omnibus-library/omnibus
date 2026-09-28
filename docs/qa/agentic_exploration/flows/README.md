@@ -8,30 +8,35 @@ the run is looking for defects, not modelling how often a reader does
 something, and a weighted draw over a handful of distinct flows mostly decided
 which rare flows never ran. A subflow **always** runs inside its parent once
 the parent is drawn, for the same reason. The sampler reads this table, so the **Runs** cell
-is either `on its own` or `inside <parent>`, exactly.
+is either `on its own` or `inside <parent>`, exactly, and the **Drawn after**
+cell is `—` or a comma-separated list of top-level flows: when an agent draws
+the flow *before* any of them, the flow moves to just after the last one drawn
+(stats read back what reading and listening wrote). It also reads each flow's
+**Surfaces** row and draws the iOS agent only from flows that list iOS. An
+unknown name in any cell, or a doc with no Surfaces row, stops the draw.
 
-| Flow | Runs | Owner-only |
-|---|---|---|
-| [reading_a_book](reading_a_book.md) | on its own | no |
-| [browsing_book_details](browsing_book_details.md) | on its own | no |
-| [listening_to_audiobook](listening_to_audiobook.md) | on its own | no |
-| [adding_book](adding_book.md) | on its own | — creates ownership |
-| [sorting_the_library](sorting_the_library.md) | on its own | no |
-| [browsing_authors](browsing_authors.md) | on its own | no |
-| [browsing_series](browsing_series.md) | on its own | no |
-| [viewing_stats](viewing_stats.md) | on its own | no — own account |
-| [searching_the_library](searching_the_library.md) | on its own | no |
-| [wishlist](wishlist.md) | on its own | no |
-| [creating_a_shelf](creating_a_shelf.md) | on its own | no — web can create but not fill |
-| [checking_in_a_book](checking_in_a_book.md) | on its own | removing a copy: yes |
-| [updating_profile](updating_profile.md) | on its own | own account |
-| [adding_highlight](adding_highlight.md) | inside reading_a_book | no |
-| [resuming_from_another_device](resuming_from_another_device.md) | inside reading_a_book | no — the runner plays the device |
-| [adding_bookmark](adding_bookmark.md) | inside listening_to_audiobook | no |
-| [editing_metadata](editing_metadata.md) | inside browsing_book_details | no |
-| [adding_journal](adding_journal.md) | inside browsing_book_details | no |
-| [merging_books](merging_books.md) | inside adding_book | **yes, both books** |
-| [deleting_a_book](deleting_a_book.md) | inside adding_book | **yes** |
+| Flow | Runs | Owner-only | Drawn after |
+|---|---|---|---|
+| [reading_a_book](reading_a_book.md) | on its own | no | — |
+| [browsing_book_details](browsing_book_details.md) | on its own | no | — |
+| [listening_to_audiobook](listening_to_audiobook.md) | on its own | no | — |
+| [adding_book](adding_book.md) | on its own | — creates ownership | — |
+| [sorting_the_library](sorting_the_library.md) | on its own | no | — |
+| [browsing_authors](browsing_authors.md) | on its own | no | — |
+| [browsing_series](browsing_series.md) | on its own | no | — |
+| [viewing_stats](viewing_stats.md) | on its own | no — own account | reading_a_book, listening_to_audiobook |
+| [searching_the_library](searching_the_library.md) | on its own | no | — |
+| [wishlist](wishlist.md) | on its own | no | — |
+| [creating_a_shelf](creating_a_shelf.md) | on its own | no — web can create but not fill | — |
+| [checking_in_a_book](checking_in_a_book.md) | on its own | removing a copy: yes | — |
+| [updating_profile](updating_profile.md) | on its own | own account | — |
+| [adding_highlight](adding_highlight.md) | inside reading_a_book | no | — |
+| [resuming_from_another_device](resuming_from_another_device.md) | inside reading_a_book | no — the runner plays the device | — |
+| [adding_bookmark](adding_bookmark.md) | inside listening_to_audiobook | no | — |
+| [editing_metadata](editing_metadata.md) | inside browsing_book_details | no | — |
+| [adding_journal](adding_journal.md) | inside browsing_book_details | no | — |
+| [merging_books](merging_books.md) | inside adding_book | **yes, both books** | — |
+| [deleting_a_book](deleting_a_book.md) | inside adding_book | **yes** | — |
 
 You never sample anything yourself. You are handed a flow; you execute it.
 

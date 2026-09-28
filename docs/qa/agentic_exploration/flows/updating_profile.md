@@ -59,7 +59,9 @@ source filename. `auth.logout` and `auth.login`, the latter with the outcome
 and the message shown. **None of these is checked by the audit**: the profile
 is account configuration, deliberately outside the audited per-user state,
 and auth is a look. Your journal entries are the record, and the runner reads
-them.
+them. The audit does read the new name, as `params.new_display_name`, to
+recognise the wishlist shelf the server renames with it — leave it out and the
+renamed wishlist is reported as a shelf nothing journalled.
 
 ## Pass
 
