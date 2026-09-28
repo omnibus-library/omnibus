@@ -130,7 +130,7 @@ mod mobile {
     }
 
     #[tokio::test]
-    async fn household_readers_is_offline_when_known_offline_and_writes_no_cache() {
+    async fn household_readers_is_offline_when_known_offline() {
         crate::offline::store::init_global_for_tests();
         let _guard = test_state_lock().lock().unwrap();
         crate::offline::sync::note_offline();

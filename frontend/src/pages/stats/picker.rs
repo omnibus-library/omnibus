@@ -70,10 +70,11 @@ pub(super) fn ReaderPicker(readers: Vec<HouseholdReader>, selected: Option<i64>)
     }
 
     let current = viewing(selected, &readers);
-    let trigger_label = match &current {
-        Viewing::You => "Stats for You".to_string(),
-        Viewing::Reader { name } => format!("Stats for {name}"),
+    let viewed_name = match &current {
+        Viewing::You => "You".to_string(),
+        Viewing::Reader { name } => name.clone(),
     };
+    let trigger_label = format!("Stats for {viewed_name}");
     // The avatar beside the trigger: the caller's own for `You`, the matched
     // reader's for a listed id — `None` (so no avatar) for an unlisted one.
     let selected_reader = match selected {
@@ -113,12 +114,7 @@ pub(super) fn ReaderPicker(readers: Vec<HouseholdReader>, selected: Option<i64>)
                         }
                     }
                 }
-                span { class: "st-reader-name",
-                    {match &current {
-                        Viewing::You => "You".to_string(),
-                        Viewing::Reader { name } => name.clone(),
-                    }}
-                }
+                span { class: "st-reader-name", {viewed_name} }
                 span { "aria-hidden": "true", class: "st-reader-caret", "\u{25BE}" }
             }
             ul {

@@ -121,8 +121,15 @@ mod render_tests {
             opening_tag(&html, "id=\"stats-reader-menu\"").contains("hidden"),
             "{html}"
         );
-        // The selected reader (Alice) carries aria-current.
-        assert!(html.contains("aria-current=\"page\""), "{html}");
+        // Only the selected reader's own option (Alice) carries aria-current.
+        assert!(
+            opening_tag(&html, "stats-reader-option-2").contains("aria-current=\"page\""),
+            "{html}"
+        );
+        assert!(
+            !opening_tag(&html, "stats-reader-option-you").contains("aria-current=\"page\""),
+            "{html}"
+        );
     }
 
     #[derive(Clone, Debug, PartialEq, Routable)]
