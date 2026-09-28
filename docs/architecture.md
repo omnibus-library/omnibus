@@ -401,7 +401,12 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       account configuration, so it writes straight through
                       `AuthService` and never queues (rule 08), Save is disabled
                       while offline, and `ProfileDraft` holds the testable
-                      "what does Save actually send" rules. BookDetail's
+                      "what does Save actually send" rules. `ShareStatsSection`
+                      is the "Share stats with household" switch beneath
+                      Reading: same never-queued contract, disabled offline,
+                      and compares against a local last-confirmed value rather
+                      than `app.user` so a silently failed `refreshUser()`
+                      can't make the next flip skip its own write. BookDetail's
                       `WishlistSection` is the native twin of the web page's
                       rail tracking card (tracked-since line, store search,
                       remove): same never-queued contract, plus a confirmation
@@ -533,6 +538,17 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       editor isn't in two places at once. The tab reloads when
                       its navigation path empties, since the write that happened
                       up there has already invalidated the summary down here.
+                      A masthead `StatsReaderPicker` lets a reader pick another
+                      household member who shares theirs: `StatsSubject`
+                      threads through both the windowed `stats(range:subject:)`
+                      read and the all-time `standingSummary` read, hides both
+                      goal cards' pencils and the "In progress" section for
+                      anyone but you (`recent_progress` carries no `user_id`),
+                      and turns a 404 into `StatsRefusalView`, with a way back
+                      to your own stats. Another reader's stats never touch
+                      `CacheKey.stats`: `UserDataService.statsReads` routes
+                      them through `Cache.uncached` rather than `Cache.live`,
+                      so viewing them leaves your own cached summary alone.
                       The tab carries **no session log**: the web `/stats` has
                       one and `GET /api/stats/sessions` still backs it, but a
                       keyset-paged list of every sitting is a different kind of
@@ -568,7 +584,10 @@ Models/             — Codable mirrors of the `shared/` wire DTOs.
                       `MetadataProvider` is a `RawRepresentable` wrapper rather
                       than a closed enum, so a server that grows a fourth source
                       still decodes — and still round-trips into a hydrate
-                      request — on a client that can't be updated in lockstep
+                      request — on a client that can't be updated in lockstep.
+                      `Household.swift` mirrors `shared::HouseholdReader`
+                      (`GET /api/users`) and carries `StatsSubject` — whose
+                      stats a Stats-tab read is about, `.you` or `.reader`
 Networking/         — APIClient (plus a separate upload session, whose
                       whole-transfer budget is sized for bytes rather than for
                       server think time, and which neither claims the
@@ -676,10 +695,16 @@ Services/           — AuthService, LibraryService, UserDataService, AdminBookS
                       registry of live staging directories so the sweep cannot
                       delete an upload still reading from one).
                       `UserDataService.sessionLog(book:before:)` (#2181)
-                      serves the Stats tab's per-sitting log — a direct
-                      read rather than a `Cache.live` one, since a page is
-                      keyed by a cursor the device only learns from the
-                      page before it.
+                      serves book detail's per-sitting log — its only caller,
+                      the Stats tab carries none — a direct read rather than a
+                      `Cache.live` one, since a page is keyed by a cursor the
+                      device only learns from the page before it.
+                      `UserDataService.householdReaders()` (`GET /api/users`)
+                      is a direct, uncached read for the Stats tab's reader
+                      picker — another reader's name has no reason to persist
+                      once the picker moves on — and `AuthService.setShareStats`
+                      posts the household sharing toggle the same never-queued
+                      way as `setStackSeries` (rule 08 test 1).
                       KindleService (#2149) — the book-detail Send-to-Kindle
                       action: `gate` decides up front whether a send can run
                       (EPUB present, under Kindle's email cap, an address on
