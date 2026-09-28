@@ -325,6 +325,27 @@ async fn api_get_session_log_with_user_id_404s_alike_for_a_non_sharer_and_a_miss
 }
 
 #[tokio::test]
+async fn api_get_session_log_with_user_id_404s_a_non_sharer_for_an_admin_viewer_too() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+    let non_sharer = auth_test_support::create_user(&pool, "non-sharer").await;
+    omnibus_db::auth::set_share_stats(&pool, non_sharer.id, false)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/stats/sessions?user_id={}", non_sharer.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(body_text(res).await, NOT_SHARING_BODY);
+}
+
+#[tokio::test]
 async fn api_get_session_log_with_own_user_id_reads_own_sittings_even_with_sharing_off() {
     let (app, _state, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "solo").await;

@@ -246,7 +246,10 @@ mod tests {
     async fn reader_recent_progress_message_for_a_non_sharer_carries_the_contract_string_even_for_an_admin_caller(
     ) {
         let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
-        let admin = omnibus_db::test_support::seed_user(&pool, "admin").await;
+        let admin = omnibus_db::auth::create_user(&pool, "admin", "correct-horse-battery-staple")
+            .await
+            .unwrap()
+            .id;
         let non_sharer = omnibus_db::test_support::seed_user(&pool, "non-sharer").await;
         omnibus_db::auth::set_share_stats(&pool, non_sharer, false)
             .await
