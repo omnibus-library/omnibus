@@ -480,10 +480,10 @@ fn metadata_routes() -> Router<AppState> {
 }
 
 /// Send-to-Kindle plus the per-user account preferences that grew up
-/// beside it (hidden formats, the book-detail scroll-stops switch, the
-/// profile and its avatar) — all mobile-facing REST. Web hits the analogous
-/// `/api/rpc/kindle/send`, `/api/rpc/account/*`, and `/api/rpc/smtp*` server
-/// fns.
+/// beside it (hidden formats, the book-detail scroll-stops switch, Stack
+/// series, sharing stats with the household, the profile and its avatar) —
+/// all mobile-facing REST. Web hits the analogous `/api/rpc/kindle/send`,
+/// `/api/rpc/account/*`, and `/api/rpc/smtp*` server fns.
 fn kindle_routes() -> Router<AppState> {
     Router::new()
         .route("/api/kindle/send", post(kindle::post_send))
@@ -501,6 +501,7 @@ fn kindle_routes() -> Router<AppState> {
             "/api/account/stack-series",
             post(account::post_stack_series),
         )
+        .route("/api/account/share-stats", post(account::post_share_stats))
         .route("/api/account/profile", post(profile::post_profile))
         .route("/api/account/avatar", delete(profile::delete_avatar))
         .route("/api/users/{user_id}/avatar", get(profile::get_user_avatar))

@@ -1,6 +1,7 @@
 //! `/api/account/*` — the caller's own reading preferences: which formats the
 //! landing All Books view excludes for them, whether their book detail page
-//! uses the snap-stop marquee, and whether their library stacks series.
+//! uses the snap-stop marquee, whether their library stacks series, and
+//! whether other readers on this server may see their stats page.
 //! Mirrors the web server functions in `frontend::rpc::account`; the read
 //! sides ride `GET /api/auth/me` as `UserSummary` fields.
 
@@ -73,6 +74,25 @@ pub(super) async fn post_stack_series(
     match db::auth::set_stack_series(&state.pool, user.id, body.enabled).await {
         Ok(()) => StatusCode::OK.into_response(),
         Err(e) => internal("set stack series", e),
+    }
+}
+
+/// Body for `POST /api/account/share-stats`. No serde default: a missing
+/// `enabled` is a 422, never a write.
+#[derive(Debug, Deserialize)]
+pub(super) struct SetShareStats {
+    enabled: bool,
+}
+
+/// Set whether other readers on this server may see the authenticated user's stats page.
+pub(super) async fn post_share_stats(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<SetShareStats>,
+) -> Response {
+    match db::auth::set_share_stats(&state.pool, user.id, body.enabled).await {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) => internal("set share stats", e),
     }
 }
 
