@@ -127,6 +127,8 @@ The baseline corpus was added by nobody, so **nobody may ever destroy it**.
 The server will not enforce any of this when you are an admin — but your
 browser will. Destructive calls to a book you do not own are refused before
 they are sent, and you will see a `403` carrying `"error": "ownership_guard"`.
+The guard reads the journal at the moment of the call, so a book you journal a
+`book.add` for is yours from your next step on.
 
 **That refusal is correct behaviour, not a bug and not an obstacle.** Journal it
 `refused`, do not retry it, and do not go looking for another route to the same
@@ -156,7 +158,7 @@ transcripts are thrown away.
 | `action` | Dotted `noun.verb` — `book.open`, `highlight.create`, `metadata.save`, `shelf.add`. Use the names the flow document lists. The report matches names as strings; the audit classifies them by noun and verb, and every name a flow document lists is classified — as a write it checks, a look, or something it declines by policy — while an invented one lands in `unverifiable` as a gap. A trailing `.verify` on any name means "I checked it stuck" and is always accepted. |
 | `target` | The book uuid or other entity id, **in full** — never abbreviated. Ownership is looked up on this exact string, so a truncated uuid loses the book forever. `null` when there isn't one. |
 | `params` | **Everything a replayer needs to redo this.** Under-filling it is the commonest way a real bug becomes an anecdote. |
-| `outcome` | `ok`, `error`, `refused` (an ownership or permission refusal that was correct), or `uncertain` (you did it and cannot tell whether it took). Anything but `ok` needs a `note`, and the audit does not check a write that is not `ok`. |
+| `outcome` | `ok`, `error`, `refused` (an ownership or permission refusal that was correct), or `uncertain` (you did it and cannot tell whether it took). Anything but `ok` needs a `note`, and the audit does not check a write that is not `ok` — unless a later `<action>.verify` on the same target, journalled `ok`, confirms an `uncertain` one took. |
 | `note` | One human sentence **about the outcome**. Required whenever `outcome` is not `ok`. Content the *user* wrote — a highlight's note, a journal entry — belongs in `params` under its own key (`note_text`), never here. |
 
 Three entries are special, and a subflow that runs inside another flow
@@ -190,8 +192,9 @@ happen, nothing downstream can tell whether it did.
 Each flow document carries its own criteria. Globally, on top of those:
 
 **Fail** if the app lost your data, showed you someone else's, crashed, hung
-past thirty seconds, returned a 5xx, logged a JavaScript error, or reached a
-state you could not leave without reloading. **Pass** if you completed the flow
+past thirty seconds, returned a 5xx, logged a JavaScript error (`driver.sh
+console <n> --errors` shows what your browser has logged), or reached a state
+you could not leave without reloading. **Pass** if you completed the flow
 and everything you did is still there when you come back to it.
 
 **Uncertain** — and this is a real verdict, not a cop-out — if you could not
