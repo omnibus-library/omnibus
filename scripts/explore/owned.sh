@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# Print the uuids an actor owns, comma-separated, for `driver.sh guard`.
+# Print the uuids an actor owns, comma-separated — what the ownership guard
+# asks on every destructive call.
 #
 # Ownership is provenance: you own a book if you added it, in *any* run. So
 # this reads every journal, not just the current one — which is also why the
 # exploration accounts keep stable usernames (see provision.sh).
 #
 # Usage: owned.sh <actor>            e.g. owned.sh agent-1
+#        owned.sh --files <actor|all>
+#                                    the corpus files those adds came from, one
+#                                    per line: what adding_book.md must not
+#                                    hand out again
 
 set -euo pipefail
-actor="${1:?usage: owned.sh <actor>}"
+usage="usage: owned.sh <actor> | owned.sh --files <actor|all>"
+mode=uuids
+if [ "${1-}" = "--files" ]; then mode=files; shift; fi
+actor="${1:?$usage}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
 
@@ -30,10 +38,10 @@ if [ -z "${OMNIBUS_EXPLORE_JOURNAL_DIR-}" ] && [ -f "$ROOT/.env" ]; then
 fi
 JOURNALS="${OMNIBUS_EXPLORE_JOURNAL_DIR:-$ROOT/.claude/runtime/explore}"
 
-python3 - "$actor" "$JOURNALS" <<'PY'
+python3 - "$mode" "$actor" "$JOURNALS" <<'PY'
 import json, pathlib, sys
 
-actor, root = sys.argv[1], pathlib.Path(sys.argv[2])
+mode, actor, root = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3])
 owned = []
 for journal in sorted(root.glob("*/journal.jsonl")):
     with journal.open() as fh:
@@ -47,8 +55,18 @@ for journal in sorted(root.glob("*/journal.jsonl")):
             # A torn line is not a reason to hand back a shorter ownership
             # list — that would silently un-own a book. Fail loudly instead.
             sys.exit(f"unparseable journal line in {journal}: {line[:80]}")
-        if e.get("actor") == actor and e.get("action") == "book.add" \
-                and e.get("outcome") == "ok" and e.get("target"):
+        # Require a target: a `book.add` whose upload never produced a book
+        # (r-20260829-01's crashed audiobook) neither owns anything nor
+        # retires its file.
+        if e.get("action") != "book.add" or e.get("outcome") != "ok" or not e.get("target"):
+            continue
+        if mode == "uuids" and e.get("actor") == actor:
             owned.append(e["target"])
-print(",".join(dict.fromkeys(owned)))
+        elif mode == "files" and actor in ("all", e.get("actor")):
+            p = e.get("params") or {}
+            owned.append(p.get("source_filename") or p.get("filename") or p.get("file") or "?")
+if mode == "files":
+    print("\n".join(dict.fromkeys(owned)))
+else:
+    print(",".join(dict.fromkeys(owned)))
 PY

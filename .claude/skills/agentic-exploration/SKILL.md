@@ -67,38 +67,39 @@ It needs `OMNIBUS_EXPLORE_SSH_HOST`, which `env.sh check` does not require. **If
 ## 4. Provision accounts
 
 ```bash
-scripts/explore/provision.sh <N>
+scripts/explore/provision.sh <N>    # <N+1> with --ios; --reader <k> for --reader
 ```
 
-Emits JSON: `actor`, `username`, `password`, `action`. **Save it** — the audit
-needs it in steps 6 and 9, and passwords are rotated per run, never stored.
-Idempotent; usernames are stable across runs because provenance ownership is
-keyed on the actor, so fresh accounts would orphan every book previous runs
-uploaded. Hand each agent only its own credential. Every account it creates is
-an admin; `--reader` needs a second call, in [scenarios.md](scenarios.md).
+Emits JSON: `actor`, `username`, `password`, `action`, `role`. **Save it** —
+the audit needs it in steps 6 and 9, and passwords are rotated per run, never
+stored. Idempotent; usernames are stable across runs because provenance
+ownership is keyed on the actor, so fresh accounts would orphan every book
+previous runs uploaded. Hand each agent only its own credential. The iOS agent
+is `agent-(N+1)`. Every account is an admin unless `--reader <k>` makes one web
+agent's `explorer-k` a reader — see [scenarios.md](scenarios.md).
 
 ## 5. Decide the draw
 
 ```bash
 explore::login_admin && explore::curl -b "$EXPLORE_JAR" "$EXPLORE_URL/api/ebooks?limit=1"
 scripts/explore/sample.py --agents N --flows-per-agent K --seed S --run <run-id> \
-  [--library-empty] [--exclude flow1,flow2]
+  [--ios] [--library-empty] [--exclude flow1,flow2] [--exclude-for agent-K=flow1,flow2 ...]
 ```
 
-- **`--library-empty`** when no books exist: ten flows have nothing to act on,
-  so `adding_book` is forced first for every agent.
-- **`--exclude`** a flow nothing can supply — no corpus makes `adding_book`
-  impossible, no audio files makes `listening_to_audiobook` impossible, not
-  merely blocked. Say what you excluded and why; a silent exclusion reads as
-  coverage that never happened.
+- **`--library-empty`** when no books exist: `adding_book` goes first for
+  every agent that can draw it.
+- **`--exclude`** a flow or subflow nothing can supply — no corpus for
+  `adding_book`, no audio for `listening_to_audiobook` — not merely blocked;
+  **`--exclude-for agent-K=…`** drops flows for one agent only.
+- **`--ios`** adds `agent-(N+1)`, drawn last from the flows whose doc lists
+  iOS, without changing the web agents' draws for the same seed.
 
-The catalog table in `flows/README.md` is the single source of truth: every
-top-level flow is equally likely, and every subflow runs inside its parent.
-The sampler exits non-zero if that table cannot be parsed or a subflow names a
-parent that is not a flow — a bug in the catalog, not a reason to sample by
-hand.
-
-The sampler cannot exclude a **subflow** or vary the draw **per agent**. [scenarios.md](scenarios.md) lists the hand-edits that follow — `merging_books` for an agent owning fewer than two books, the destructive flows for the iOS agent, `viewing_stats` drawn first — and how to check for CBZ and audio before deciding `--exclude`. Every edit is said in the hand-back.
+`flows/README.md` is the single source of truth — every top-level flow equally
+likely, every subflow inside its parent, `viewing_stats` drawn after reading or
+listening — and the sampler exits non-zero on a catalog or flag it cannot read:
+a bug to fix, not a reason to sample by hand. **Never hand-edit the draw**:
+every cut comes back in an `excluded` with its reason, and
+[scenarios.md](scenarios.md) says which to pass. Say each in the hand-back.
 
 ## 6. Set up the run
 
@@ -127,19 +128,19 @@ scripts/explore/audit.py --accounts <accounts.json> \
 ## 7. Start the browsers, and the simulator if `--ios`
 
 ```bash
-scripts/explore/driver.sh up <N>     # one server, session and browser per agent
+scripts/explore/driver.sh up <N>     # one server, session, browser and scratch dir per agent
 scripts/explore/driver.sh status
-scripts/explore/driver.sh guard 1 agent-1 "$(scripts/explore/owned.sh agent-1)"
+scripts/explore/driver.sh guard 1 agent-1
 scripts/explore/ios.sh up            # `--ios` only: boot, build, install, launch
 ```
 
 **One browser per agent, and at most one iOS agent.** Sharing either collapses
 several users into one cookie jar, which is how run `r-20260828-01` died. Guard
-every agent before any of them starts, with uuids read from the journals rather
-than supplied by the agent. A browser that dies mid-run is replaced with
-`driver.sh restart <n>` and guarded again. [drivers.md](drivers.md) carries the
-rest: what the guard buys, how an agent drives its browser, what a dead driver
-looks like, the iOS agent's extra account and scenario, and teardown.
+every agent before any starts; it reads ownership from the journals on every
+destructive call, never from the agent, so a book added mid-run needs no second
+guard. Replace a browser that dies mid-run with `driver.sh restart <n>` and
+guard it again. [drivers.md](drivers.md) has the rest: what the guard buys,
+driving a browser, a dead driver, the iOS agent, and teardown.
 
 ## 8. Fan out
 
@@ -151,9 +152,9 @@ One subagent per actor, in parallel, each given **only**:
 - the corpus path, **the corpus files already uploaded** (per [scenarios.md](scenarios.md), naming this agent's file when two drew `adding_book`), and whether the library holds a CBZ;
 - `scripts/explore/journal.py append` — the only way to write the journal, since a bare `>>` can tear a line — and that `flow.start` carries `base_url`;
 - the run id;
-- **its agent number**, for `driver.sh run <n>` — never another agent's. The iOS agent gets `ios.sh` instead, which takes no agent number.
+- **its agent number**, for `driver.sh run <n>` and `driver.sh console <n>` — never another agent's — and the `scratch` directory `driver.sh up` printed for it. The iOS agent gets `ios.sh` instead, which takes no agent number.
 
-`resuming_from_another_device` needs the phantom position written **before** the hand-over, `adding_book` needs a **re-guard** before its subflows, every flow is a **fresh subagent** briefed from a standing file, and `--kobo` makes you the device — all in [scenarios.md](scenarios.md).
+`resuming_from_another_device` needs the phantom position written **before** the hand-over, every flow is a **fresh subagent** briefed from a standing file, and `--kobo` makes you the device — all in [scenarios.md](scenarios.md).
 
 Tell each agent, verbatim in the brief: read
 [`pitfalls.md`](../../../docs/qa/agentic_exploration/pitfalls.md) before
@@ -185,7 +186,7 @@ empty rather than dropped:
    validate, a step that took far longer than it should.
 3. **Journal files** — every path, as bullets.
 
-Then say what was excluded or hand-edited, what was left on the instance, and
+Then say what was excluded, what was left on the instance, and
 the snapshot name to roll back to — or that there is none. Whether to roll
 back is the user's decision; [after-run.md](after-run.md) says when to
 recommend it.
