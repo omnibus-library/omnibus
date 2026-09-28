@@ -13,16 +13,18 @@ use crate::data;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UserSetting {
     ScrollStops,
+    ShareStats,
 }
 
 /// Every row the table renders, in display order.
-const USER_SETTINGS: [UserSetting; 1] = [UserSetting::ScrollStops];
+const USER_SETTINGS: [UserSetting; 2] = [UserSetting::ScrollStops, UserSetting::ShareStats];
 
 impl UserSetting {
     /// Testid stem: `user-setting-{slug}`, `{slug}-toggle`, `{slug}-error`.
     fn slug(self) -> &'static str {
         match self {
             UserSetting::ScrollStops => "scroll-stops",
+            UserSetting::ShareStats => "share-stats",
         }
     }
 
@@ -30,6 +32,7 @@ impl UserSetting {
     fn name(self) -> &'static str {
         match self {
             UserSetting::ScrollStops => "Book details scroll stops",
+            UserSetting::ShareStats => "Share stats with household",
         }
     }
 
@@ -37,6 +40,7 @@ impl UserSetting {
     fn aria_label(self) -> &'static str {
         match self {
             UserSetting::ScrollStops => "Use book details scroll stops",
+            UserSetting::ShareStats => "Share stats with household",
         }
     }
 
@@ -49,6 +53,11 @@ impl UserSetting {
                 Some(true) => "Book details snap through one panel at a time.",
                 Some(false) => "Book details scroll continuously, top to bottom.",
             },
+            UserSetting::ShareStats => match enabled {
+                None => "Checking…",
+                Some(true) => "Other readers on this server can see your stats page.",
+                Some(false) => "Only you can see your stats page.",
+            },
         }
     }
 
@@ -56,6 +65,7 @@ impl UserSetting {
     fn read(self, user: &UserSummary) -> bool {
         match self {
             UserSetting::ScrollStops => user.book_detail_scroll_stops,
+            UserSetting::ShareStats => user.share_stats,
         }
     }
 
@@ -63,6 +73,7 @@ impl UserSetting {
     fn write(self, user: &mut UserSummary, enabled: bool) {
         match self {
             UserSetting::ScrollStops => user.book_detail_scroll_stops = enabled,
+            UserSetting::ShareStats => user.share_stats = enabled,
         }
     }
 
@@ -70,6 +81,7 @@ impl UserSetting {
     async fn save(self, enabled: bool) -> Result<(), data::DataError> {
         match self {
             UserSetting::ScrollStops => data::set_book_detail_scroll_stops("", enabled).await,
+            UserSetting::ShareStats => data::set_share_stats("", enabled).await,
         }
     }
 }
