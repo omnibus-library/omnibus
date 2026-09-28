@@ -79,7 +79,12 @@ struct StatsView: View {
                     } else if isLoading && summary == nil {
                         LoadingView()
                     } else if let failure, case let .error(message) = failure, summary == nil {
-                        ErrorStateView(message: message) { Task { await load() } }
+                        ErrorStateView(message: message) {
+                            Task {
+                                await load()
+                                await loadStandingSummary()
+                            }
+                        }
                     } else if let summary {
                         figures(summary)
                     }
@@ -93,6 +98,7 @@ struct StatsView: View {
             .refreshTask {
                 await load(force: true)
                 await loadReaders()
+                await loadStandingSummary()
             }
             .withDestinations()
         }
@@ -499,29 +505,37 @@ struct StatsView: View {
     // MARK: - Loading
 
     private func load(force: Bool = false) async {
-        // Captured so a stale answer — the subject moved while this was in
-        // flight — is dropped rather than painted over whoever is now picked.
+        // Captured so a stale answer — the subject or the range moved while
+        // this was in flight — is dropped rather than painted over whatever
+        // is now picked.
         let requestedSubject = subject
+        let requestedRange = range
         // `cacheKey` is `nil` for another reader, so a pull-to-refresh while
-        // viewing them deletes nothing and never touches `CacheKey.stats` (AC4).
-        if force, let key = requestedSubject.cacheKey(range) {
+        // viewing them deletes nothing and never touches `CacheKey.stats`.
+        if force, let key = requestedSubject.cacheKey(requestedRange) {
             await OfflineStore.shared.cacheDelete(key)
         }
         do {
-            for try await read in UserDataService.stats(range: range, subject: requestedSubject) {
-                guard requestedSubject == subject else { return }
+            for try await read in UserDataService.stats(
+                range: requestedRange, subject: requestedSubject
+            ) {
+                guard requestedSubject == subject, requestedRange == range else { return }
                 summary = read.value
                 failure = nil
                 isLoading = false
             }
         } catch {
-            guard requestedSubject == subject else { return }
+            guard requestedSubject == subject, requestedRange == range else { return }
             let result = StatsReadFailure(error, subject: requestedSubject)
             failure = result
-            // A refusal clears whatever was on screen; a plain error leaves it.
-            if result == .notSharing { summary = nil }
+            // A refusal, or a subject with no replica to fall back on, clears
+            // whatever was on screen rather than leaving another window's
+            // figures under a new label. Your own stats keep the replica.
+            if result == .notSharing || requestedSubject.cacheKey(requestedRange) == nil {
+                summary = nil
+            }
         }
-        if requestedSubject == subject { isLoading = false }
+        if requestedSubject == subject, requestedRange == range { isLoading = false }
     }
 
     /// Every household reader currently sharing, "you" first. Best-effort: a
@@ -598,7 +612,7 @@ struct StandoutRow: Identifiable, Hashable {
 }
 
 /// What renders in place of the figures once the picked reader has turned
-/// sharing off, or no longer exists (AC3).
+/// sharing off, or no longer exists.
 private struct StatsRefusalView: View {
     let backToYourStats: () -> Void
 
