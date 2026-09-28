@@ -32,7 +32,7 @@ test.beforeAll(async ({ request }) => {
 
 /** Provision the dedicated user via the admin API; 409 = already there. */
 async function ensureHiddenUser(request: APIRequestContext): Promise<void> {
-  const resp = await request.post("/api/users", {
+  const resp = await request.post("/api/admin/users", {
     data: {
       username: HIDDEN_USER,
       password: HIDDEN_PASSWORD,

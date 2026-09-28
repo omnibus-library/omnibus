@@ -509,6 +509,25 @@ enum LibraryService {
         return updated
     }
 
+    /// Apply a cover by URL — a provider's art, or one a reader pasted. The
+    /// server fetches it, so this is the one write neither the file-upload
+    /// nor the revert path shares in.
+    static func applyCoverFromURL(uuid: String, url: String) async throws -> Book {
+        let updated: Book = try await APIClient.shared.post(
+            "/api/ebooks/\(uuid)/cover/from-url", body: CoverFromURLRequest(url: url)
+        )
+        await invalidateCoverCaches(uuid: uuid)
+        return updated
+    }
+
+    /// The trimmed, applicable form of a pasted-cover text box, or `nil` when
+    /// it isn't applicable right now. Direct write, never queued (rule 08) —
+    /// disabled offline rather than risking a stale URL replaying later.
+    static func coverURLToApply(_ text: String, isBusy: Bool, isOnline: Bool) -> String? {
+        guard !isBusy, isOnline else { return nil }
+        return text.nilIfBlank
+    }
+
     /// Drop every cached image a cover write invalidates. The paths don't
     /// change when the bytes do, so without this the old art keeps rendering
     /// from `ImageCache` until its revalidation window elapses — every thumb

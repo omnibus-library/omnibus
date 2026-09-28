@@ -13,7 +13,7 @@ use omnibus_db::{self as db, progress::ProgressError};
 use omnibus_shared::{ProgressFormat, ProgressUpdate, SessionReport, SESSION_BATCH_CAP};
 use serde::Deserialize;
 
-use super::{internal, AppState};
+use super::{internal, stats::viewer_error, AppState};
 use crate::auth::AuthUser;
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +28,8 @@ pub(super) struct ProgressQuery {
 pub(super) struct RecentQuery {
     #[serde(default = "default_recent_limit")]
     limit: i64,
+    /// Whose in-progress books to read; strict like `StatsQuery::user_id`.
+    user_id: Option<i64>,
 }
 
 fn default_recent_limit() -> i64 {
@@ -89,19 +91,20 @@ pub(super) async fn get_progress(
     }
 }
 
-/// The user's most recent progress rows joined with their books — the
-/// mobile "pick up where you left off" feed. `limit` defaults to 1 and is
-/// capped at [`RECENT_LIMIT_CAP`]. Rows whose book has vanished are skipped
-/// in the db layer.
+/// The caller's most recent progress rows joined with their books — the
+/// mobile "pick up where you left off" feed — or a sharing reader's with
+/// `user_id`, under the same 404 contract `GET /api/stats` answers. `limit`
+/// defaults to 1 and is capped at [`RECENT_LIMIT_CAP`]. Rows whose book has
+/// vanished are skipped in the db layer.
 pub(super) async fn get_recent_progress(
     user: AuthUser,
     State(state): State<AppState>,
     Query(q): Query<RecentQuery>,
 ) -> Response {
     let limit = q.limit.clamp(1, RECENT_LIMIT_CAP);
-    match db::progress::resume_points(&state.pool, user.id, limit).await {
+    match db::stats::recent_progress_for_viewer(&state.pool, user.id, q.user_id, limit).await {
         Ok(points) => Json(points).into_response(),
-        Err(e) => internal("resume_points", e),
+        Err(e) => viewer_error("get_recent_progress", e),
     }
 }
 

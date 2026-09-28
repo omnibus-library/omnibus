@@ -175,8 +175,8 @@ async fn api_get_session_log_scopes_to_the_requested_book() {
     assert_eq!(page.entries[0].book_uuid, uuid_a);
 }
 
-/// AC7: the log is keyed on the token's user, never on a parameter — so one
-/// reader's token can't surface another's sittings on any of the surfaces.
+/// With no `user_id`, the log stays keyed on the token's own id — see
+/// `household.rs` for the gated cross-reader read.
 #[tokio::test]
 async fn api_get_session_log_never_serves_another_users_sessions() {
     let (app, _state, pool) = fixture().await;

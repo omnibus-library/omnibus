@@ -1,7 +1,8 @@
 //! Edition-picker client wrappers for the metadata-edit page: the provider
 //! catalog, the fan-out search, and the detail fetch for a selected
-//! candidate. Web/SSR only — mobile has no metadata-edit surface (same split
-//! as the other web-only data wrappers).
+//! candidate. Web/SSR only — the picker itself has no mobile surface, though
+//! Android reaches the edit page (`book_detail/mobile.rs`) and so shares
+//! [`apply_cover_from_url`]'s pasted-URL apply.
 
 use omnibus_shared::metadata_lookup::{
     EditionSearchRequest, EditionSearchResponse, MetadataProvider, ProviderEdition, ProviderInfo,
@@ -11,6 +12,8 @@ use omnibus_shared::EbookMetadata;
 #[cfg(not(feature = "mobile"))]
 use super::note_server_fn_err;
 use super::DataError;
+#[cfg(feature = "mobile")]
+use super::{drain_error, http_client, note_status, with_bearer};
 
 /// Web/SSR: the provider catalog, which the picker reads to decide whether
 /// to offer a search at all.
@@ -122,9 +125,34 @@ pub async fn apply_cover_from_url(
         .map_err(|e| DataError::Other(e.to_string()))
 }
 
-/// Non-web stub. The compare view's cover row is a web-only surface, and its
-/// apply only fires from a click that never happens under SSR or on mobile.
-#[cfg(not(feature = "web"))]
+/// Android: apply a cover by URL — bearer REST to the same route the web
+/// sidebar posts to, mirroring `books::manage::upload_ebook_cover`'s mobile
+/// variant.
+#[cfg(feature = "mobile")]
+pub async fn apply_cover_from_url(
+    server_url: &str,
+    uuid: &str,
+    url: &str,
+) -> Result<Option<EbookMetadata>, DataError> {
+    crate::data::require_online()?;
+    let endpoint = format!("{server_url}/api/ebooks/{uuid}/cover/from-url");
+    let response = with_bearer(http_client().post(&endpoint))
+        .json(&serde_json::json!({ "url": url }))
+        .send()
+        .await?;
+    let status = note_status(response.status());
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        return Err(drain_error(response, status).await);
+    }
+    Ok(Some(response.json::<EbookMetadata>().await?))
+}
+
+/// SSR stub. The web sidebar's apply only fires from a client-side click, and
+/// SSR never renders the control busy.
+#[cfg(not(any(feature = "web", feature = "mobile")))]
 pub async fn apply_cover_from_url(
     _server_url: &str,
     _uuid: &str,
