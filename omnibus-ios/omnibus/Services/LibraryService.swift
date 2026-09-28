@@ -525,8 +525,7 @@ enum LibraryService {
     /// disabled offline rather than risking a stale URL replaying later.
     static func coverURLToApply(_ text: String, isBusy: Bool, isOnline: Bool) -> String? {
         guard !isBusy, isOnline else { return nil }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        return text.nilIfBlank
     }
 
     /// Drop every cached image a cover write invalidates. The paths don't
