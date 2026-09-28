@@ -74,9 +74,21 @@ async fn household_readers_lists_the_caller_first_then_sharers_by_name_and_exclu
 
     let names: Vec<&str> = readers.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, vec!["caller", "alice", "Bob"]);
-    assert!(!names.contains(&"dave"));
     assert!(readers[0].is_you);
     assert!(readers[1..].iter().all(|r| !r.is_you));
+}
+
+#[tokio::test]
+async fn household_readers_lists_the_caller_first_even_with_the_callers_own_sharing_off() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let caller = seed_user(&pool, "caller").await;
+    set_share_stats(&pool, caller, false).await.unwrap();
+    seed_user(&pool, "alice").await;
+
+    let readers = household_readers(&pool, caller).await.unwrap();
+
+    assert!(readers[0].is_you);
+    assert_eq!(readers[0].id, caller);
 }
 
 #[tokio::test]

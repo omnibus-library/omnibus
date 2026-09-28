@@ -40,6 +40,20 @@ async fn household_readers_returns_the_caller_first_and_excludes_a_non_sharer() 
     assert!(readers[0].is_you);
 }
 
+#[tokio::test]
+async fn household_readers_lists_the_caller_first_even_with_the_callers_own_sharing_off() {
+    let (pool, caller) = pool_with_user("caller").await;
+    omnibus_db::auth::set_share_stats(&pool, caller, false)
+        .await
+        .unwrap();
+    omnibus_db::test_support::seed_user(&pool, "alice").await;
+
+    let readers = household_readers(&pool, caller).await.unwrap();
+
+    assert!(readers[0].is_you);
+    assert_eq!(readers[0].id, caller);
+}
+
 async fn seed_reading_session(
     pool: &sqlx::SqlitePool,
     user: i64,

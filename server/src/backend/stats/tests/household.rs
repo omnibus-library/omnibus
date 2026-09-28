@@ -4,10 +4,7 @@
 //! extractor reads first, so a handler-only DB failure is unreachable over
 //! HTTP — the db-layer closed-pool test covers that propagation.
 
-use axum::{
-    body::{to_bytes, Body},
-    http::{Request, StatusCode},
-};
+use axum::{body::to_bytes, http::StatusCode};
 use omnibus_shared::HouseholdReader;
 use tower::ServiceExt;
 
@@ -25,15 +22,7 @@ async fn body_text(res: axum::response::Response) -> String {
 #[tokio::test]
 async fn api_get_users_requires_auth() {
     let (app, _state, _pool) = fixture().await;
-    let res = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/users")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let res = app.oneshot(get_anon("/api/users")).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -71,6 +60,27 @@ async fn api_get_users_lists_the_caller_first_then_sharers_by_name() {
     let names: Vec<&str> = readers.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, vec!["caller", "alice"]);
     assert!(readers[0].is_you);
+}
+
+#[tokio::test]
+async fn api_get_users_lists_the_caller_first_even_with_the_callers_own_sharing_off() {
+    let (app, _state, pool) = fixture().await;
+    let caller = auth_test_support::create_user(&pool, "caller").await;
+    let token = auth_test_support::bearer_token(&pool, caller.id).await;
+    omnibus_db::auth::set_share_stats(&pool, caller.id, false)
+        .await
+        .unwrap();
+    auth_test_support::create_user(&pool, "alice").await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/users", &token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let readers: Vec<HouseholdReader> = serde_json::from_slice(&bytes).unwrap();
+    assert!(readers[0].is_you);
+    assert_eq!(readers[0].id, caller.id);
 }
 
 #[tokio::test]
