@@ -236,7 +236,7 @@ pub async fn fetch_session_log(
     book: Option<&str>,
     before: Option<&str>,
 ) -> Result<SessionLogPage, DataError> {
-    crate::rpc::rpc_session_log(book.map(str::to_string), before.map(str::to_string))
+    crate::rpc::rpc_session_log(book.map(str::to_string), before.map(str::to_string), None)
         .await
         .map_err(note_server_fn_err)
 }

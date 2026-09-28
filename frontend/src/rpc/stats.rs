@@ -162,10 +162,11 @@ pub async fn rpc_library_composition() -> Result<LibraryComposition> {
         .map_err(|e| internal_rpc_error("library composition", e))?)
 }
 
-/// Fetch one page of the current user's session log, newest sitting first.
-/// `book` scopes it to a single book (the book-detail Stats stop); `before` is
-/// the previous page's `next_before`, echoed back verbatim. Mobile uses the
-/// analogous `GET /api/stats/sessions` REST route.
+/// Fetch one page of the caller's session log, newest sitting first, or a
+/// sharing reader's with `user_id`. `book` scopes it to a single book (the
+/// book-detail Stats stop); `before` is the previous page's `next_before`,
+/// echoed back verbatim. Mobile uses the analogous `GET /api/stats/sessions`
+/// REST route.
 ///
 /// A `before` that doesn't parse is an **error**, matching the REST route's
 /// 400. Returning an empty page instead would end the reader's log early with
@@ -174,23 +175,44 @@ pub async fn rpc_library_composition() -> Result<LibraryComposition> {
 pub async fn rpc_session_log(
     book: Option<String>,
     before: Option<String>,
+    user_id: Option<i64>,
 ) -> Result<SessionLogPage> {
-    let cursor = match before.as_deref() {
-        Some(raw) => match SessionCursor::parse(raw) {
-            Some(cursor) => Some(cursor),
-            None => return Err(ServerFnError::new("invalid before cursor").into()),
-        },
-        None => None,
-    };
-    Ok(db::stats::session_log(
+    Ok(reader_session_log(
         &pool.0,
         user.id,
         book.as_deref(),
+        before.as_deref(),
+        user_id,
+    )
+    .await?)
+}
+
+/// Server-side body of [`rpc_session_log`], extracted for testability.
+#[cfg(feature = "server")]
+async fn reader_session_log(
+    pool: &sqlx::SqlitePool,
+    caller_id: i64,
+    book: Option<&str>,
+    before: Option<&str>,
+    user_id: Option<i64>,
+) -> Result<SessionLogPage, ServerFnError> {
+    let cursor = match before {
+        Some(raw) => match SessionCursor::parse(raw) {
+            Some(cursor) => Some(cursor),
+            None => return Err(ServerFnError::new("invalid before cursor")),
+        },
+        None => None,
+    };
+    Ok(db::stats::session_log_for_viewer(
+        pool,
+        caller_id,
+        user_id,
+        book,
         cursor.as_ref(),
         db::stats::SESSION_LOG_DEFAULT_LIMIT,
     )
     .await
-    .map_err(|e| internal_rpc_error("session log", e))?)
+    .map_err(|e| map_viewer_error("session log", e))?)
 }
 
 /// Run a chart-builder spec and return its aligned series.

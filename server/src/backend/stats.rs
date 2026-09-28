@@ -218,13 +218,15 @@ pub(super) struct SessionLogQuery {
     limit: Option<i64>,
     /// The previous page's `next_before`, echoed back verbatim.
     before: Option<String>,
+    /// Whose log to read; absent or the caller's own id reads their own.
+    user_id: Option<i64>,
 }
 
-/// Fetch a page of the authed user's session log, newest sitting first.
+/// Fetch a page of the caller's session log, newest sitting first, or a
+/// sharing reader's with `user_id`.
 ///
-/// Scoped to `user.id` from the token — there is no user parameter, so no
-/// caller can ask for someone else's log. A `before` that isn't a cursor this
-/// endpoint issued is a 400 rather than a silent rewind to page one, which
+/// A `before` that isn't a cursor this endpoint issued is a 400 checked
+/// before the share gate, rather than a silent rewind to page one, which
 /// would loop a paging client forever.
 pub(super) async fn get_session_log(
     user: AuthUser,
@@ -242,9 +244,10 @@ pub(super) async fn get_session_log(
         None => None,
     };
     let limit = query.limit.unwrap_or(db::stats::SESSION_LOG_DEFAULT_LIMIT);
-    match db::stats::session_log(
+    match db::stats::session_log_for_viewer(
         &state.pool,
         user.id,
+        query.user_id,
         query.book.as_deref(),
         before.as_ref(),
         limit,
@@ -252,6 +255,6 @@ pub(super) async fn get_session_log(
     .await
     {
         Ok(page) => Json(page).into_response(),
-        Err(e) => internal("get_session_log", e),
+        Err(e) => viewer_error("get_session_log", e),
     }
 }

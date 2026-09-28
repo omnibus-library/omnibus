@@ -1,10 +1,13 @@
 //! `household_readers`: list ordering/exclusion, the avatar flag, and DB
 //! failure propagation. `may_view_stats` and `stats_for_viewer`: every gate
 //! branch, both viewer reads, the calendar case, and DB-failure variants.
+//! `session_log_for_viewer`: the same gate applied to the session log.
 
 use omnibus_shared::{HouseholdReader, StatsRange};
 
-use super::{household_readers, may_view_stats, stats_for_viewer, ViewerStatsError};
+use super::{
+    household_readers, may_view_stats, session_log_for_viewer, stats_for_viewer, ViewerStatsError,
+};
 use crate::auth::{set_display_name, set_share_stats, upsert_user_avatar};
 use crate::init_db;
 use crate::test_support::{seed_user, solid_color_png};
@@ -250,4 +253,52 @@ async fn stats_for_viewer_surfaces_auth_error_when_the_pool_is_closed_on_the_oth
         .await
         .unwrap_err();
     assert!(matches!(err, ViewerStatsError::Auth(_)));
+}
+
+#[tokio::test]
+async fn session_log_for_viewer_reads_a_sharing_targets_sittings_and_none_of_the_viewers() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let viewer = seed_user(&pool, "viewer").await;
+    reading_session(&pool, viewer, "uuid-viewer", 1_700_000_000, 300).await;
+    let target = seed_user(&pool, "target").await;
+    reading_session(&pool, target, "uuid-target", 1_700_000_100, 400).await;
+
+    let page = session_log_for_viewer(&pool, viewer, Some(target), None, None, 25)
+        .await
+        .unwrap();
+
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].book_uuid, "uuid-target");
+}
+
+#[tokio::test]
+async fn session_log_for_viewer_refuses_a_non_sharing_target() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let viewer = seed_user(&pool, "viewer").await;
+    let target = seed_user(&pool, "target").await;
+    set_share_stats(&pool, target, false).await.unwrap();
+
+    let err = session_log_for_viewer(&pool, viewer, Some(target), None, None, 25)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, ViewerStatsError::NotSharing));
+}
+
+#[tokio::test]
+async fn session_log_for_viewer_with_no_target_or_the_viewers_own_id_reads_their_own_sittings() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let viewer = seed_user(&pool, "viewer").await;
+    set_share_stats(&pool, viewer, false).await.unwrap();
+    reading_session(&pool, viewer, "uuid-1", 1_700_000_000, 300).await;
+
+    let none = session_log_for_viewer(&pool, viewer, None, None, None, 25)
+        .await
+        .unwrap();
+    let own = session_log_for_viewer(&pool, viewer, Some(viewer), None, None, 25)
+        .await
+        .unwrap();
+
+    assert_eq!(none.entries.len(), 1);
+    assert_eq!(own.entries.len(), 1);
 }

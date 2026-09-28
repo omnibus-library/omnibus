@@ -4,7 +4,7 @@
 
 use omnibus_shared::StatsRange;
 
-use super::{household_readers, reader_stats};
+use super::{household_readers, reader_session_log, reader_stats};
 
 async fn pool_with_user(name: &str) -> (sqlx::SqlitePool, i64) {
     let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
@@ -98,4 +98,46 @@ async fn reader_stats_genericizes_a_db_failure_rather_than_the_contract_string()
 
     assert!(err.to_string().contains("internal server error"));
     assert!(!err.to_string().contains("sharing"));
+}
+
+#[tokio::test]
+async fn reader_session_log_returns_a_sharing_targets_entries() {
+    let (pool, viewer) = pool_with_user("viewer").await;
+    let target = omnibus_db::test_support::seed_user(&pool, "target").await;
+    seed_reading_session(&pool, target, "uuid-1", 1_700_000_000, 600).await;
+
+    let page = reader_session_log(&pool, viewer, None, None, Some(target))
+        .await
+        .unwrap();
+
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].book_uuid, "uuid-1");
+}
+
+#[tokio::test]
+async fn reader_session_log_message_for_a_non_sharer_carries_the_contract_string() {
+    let (pool, viewer) = pool_with_user("viewer").await;
+    let non_sharer = omnibus_db::test_support::seed_user(&pool, "non-sharer").await;
+    omnibus_db::auth::set_share_stats(&pool, non_sharer, false)
+        .await
+        .unwrap();
+
+    let err = reader_session_log(&pool, viewer, None, None, Some(non_sharer))
+        .await
+        .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("this reader isn't sharing their stats"));
+}
+
+#[tokio::test]
+async fn reader_session_log_rejects_a_malformed_before_cursor() {
+    let (pool, viewer) = pool_with_user("viewer").await;
+
+    let err = reader_session_log(&pool, viewer, None, Some("nonsense"), None)
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("invalid before cursor"));
 }

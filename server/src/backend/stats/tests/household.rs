@@ -11,7 +11,7 @@ use axum::{
 use omnibus_shared::HouseholdReader;
 use tower::ServiceExt;
 
-use super::{now_secs, seed_reading_session_at_offset};
+use super::{now_secs, seed_reading_session, seed_reading_session_at_offset};
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
 
@@ -257,4 +257,83 @@ async fn api_get_stats_with_user_id_returns_500_when_the_target_read_fails() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn api_get_session_log_with_user_id_reads_a_sharing_targets_sittings() {
+    let (app, _state, pool) = fixture().await;
+    let viewer = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, viewer.id).await;
+    let target = auth_test_support::create_user(&pool, "target").await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    seed_reading_session(&pool, target.id, &uuid, now_secs() - 1000, 600).await;
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/stats/sessions?user_id={}", target.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let page: omnibus_shared::SessionLogPage = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].book_uuid, uuid);
+}
+
+#[tokio::test]
+async fn api_get_session_log_with_user_id_404s_alike_for_a_non_sharer_and_a_missing_reader() {
+    let (app, _state, pool) = fixture().await;
+    let viewer = auth_test_support::create_user(&pool, "viewer").await;
+    let token = auth_test_support::bearer_token(&pool, viewer.id).await;
+    let non_sharer = auth_test_support::create_user(&pool, "non-sharer").await;
+    omnibus_db::auth::set_share_stats(&pool, non_sharer.id, false)
+        .await
+        .unwrap();
+
+    let non_sharer_res = app
+        .clone()
+        .oneshot(get_with_bearer(
+            &format!("/api/stats/sessions?user_id={}", non_sharer.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(non_sharer_res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(body_text(non_sharer_res).await, NOT_SHARING_BODY);
+
+    let missing_res = app
+        .oneshot(get_with_bearer(
+            "/api/stats/sessions?user_id=424242",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(missing_res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(body_text(missing_res).await, NOT_SHARING_BODY);
+}
+
+#[tokio::test]
+async fn api_get_session_log_with_own_user_id_reads_own_sittings_even_with_sharing_off() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "solo").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    omnibus_db::auth::set_share_stats(&pool, user.id, false)
+        .await
+        .unwrap();
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    seed_reading_session(&pool, user.id, &uuid, now_secs() - 1000, 450).await;
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/stats/sessions?user_id={}", user.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let page: omnibus_shared::SessionLogPage = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(page.entries.len(), 1);
 }

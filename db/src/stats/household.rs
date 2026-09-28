@@ -2,7 +2,7 @@
 //! per-reader stats/session-log reads both apply, so they can't disagree
 //! about what "shares" means.
 
-use omnibus_shared::{HouseholdReader, StatsRange, StatsSummary};
+use omnibus_shared::{HouseholdReader, SessionCursor, SessionLogPage, StatsRange, StatsSummary};
 use sqlx::{Row, SqlitePool};
 
 use super::StatsError;
@@ -89,4 +89,27 @@ pub async fn stats_for_viewer(
         }
         _ => Ok(super::user_stats(pool, viewer_id, range, claimed_offset_minutes).await?),
     }
+}
+
+/// One page of `target_id`'s session log as `viewer_id` may see it; `None` or
+/// the viewer's own id reads their own. Carries no offset — the log reports
+/// each sitting's own recorded times rather than bucketing them by day.
+pub async fn session_log_for_viewer(
+    pool: &SqlitePool,
+    viewer_id: i64,
+    target_id: Option<i64>,
+    book_uuid: Option<&str>,
+    before: Option<&SessionCursor>,
+    limit: i64,
+) -> Result<SessionLogPage, ViewerStatsError> {
+    let target = match target_id {
+        Some(target) if target != viewer_id => {
+            if !may_view_stats(pool, viewer_id, target).await? {
+                return Err(ViewerStatsError::NotSharing);
+            }
+            target
+        }
+        _ => viewer_id,
+    };
+    Ok(super::session_log(pool, target, book_uuid, before, limit).await?)
 }
