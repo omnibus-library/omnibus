@@ -30,9 +30,9 @@ async fn household_readers(
     pool: &sqlx::SqlitePool,
     caller_id: i64,
 ) -> Result<Vec<HouseholdReader>, ServerFnError> {
-    Ok(db::stats::household_readers(pool, caller_id)
+    db::stats::household_readers(pool, caller_id)
         .await
-        .map_err(|e| internal_rpc_error("household readers", e))?)
+        .map_err(|e| internal_rpc_error("household readers", e))
 }
 
 /// Fetch the caller's stats summary over `range`, or a sharing reader's with
@@ -63,11 +63,9 @@ async fn reader_stats(
     utc_offset_minutes: Option<i64>,
     user_id: Option<i64>,
 ) -> Result<StatsSummary, ServerFnError> {
-    Ok(
-        db::stats::stats_for_viewer(pool, caller_id, user_id, range, utc_offset_minutes)
-            .await
-            .map_err(|e| map_viewer_error("stats", e))?,
-    )
+    db::stats::stats_for_viewer(pool, caller_id, user_id, range, utc_offset_minutes)
+        .await
+        .map_err(|e| map_viewer_error("stats", e))
 }
 
 /// A refused read keeps its contract message; anything else is genericized.
@@ -203,7 +201,7 @@ async fn reader_session_log(
         },
         None => None,
     };
-    Ok(db::stats::session_log_for_viewer(
+    db::stats::session_log_for_viewer(
         pool,
         caller_id,
         user_id,
@@ -212,7 +210,7 @@ async fn reader_session_log(
         db::stats::SESSION_LOG_DEFAULT_LIMIT,
     )
     .await
-    .map_err(|e| map_viewer_error("session log", e))?)
+    .map_err(|e| map_viewer_error("session log", e))
 }
 
 /// Run a chart-builder spec and return its aligned series.
