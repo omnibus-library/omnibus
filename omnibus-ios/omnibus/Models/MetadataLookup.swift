@@ -224,9 +224,9 @@ struct EditionHydrateRequest: Encodable, Sendable {
     }
 }
 
-/// Body for `POST /api/ebooks/{uuid}/cover/from-url` — the one field on the
-/// compare screen that cannot stage, because applying it means the server
-/// fetching the provider's image on the reader's behalf.
+/// Body for `POST /api/ebooks/{uuid}/cover/from-url` — a provider's cover
+/// (the compare screen's one field that cannot stage) or a reader-pasted
+/// URL (the editor's header row); either way the server fetches it.
 struct CoverFromURLRequest: Encodable, Sendable {
     var url: String
 }

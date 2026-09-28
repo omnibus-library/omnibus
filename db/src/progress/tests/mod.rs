@@ -18,6 +18,7 @@ use omnibus_shared::{EbookMetadata, ProgressUpdate};
 use sqlx::SqlitePool;
 
 use crate::replace_books;
+use crate::test_support::seed_epub_position;
 
 use super::*;
 
@@ -224,26 +225,6 @@ async fn seed_audiobook(pool: &SqlitePool, uuid: &str) -> i64 {
         .unwrap();
     }
     book_id
-}
-
-/// Seed an epub position for `(user, uuid)` so the row shows up on the rail.
-async fn seed_epub_position(pool: &SqlitePool, user: i64, uuid: &str) {
-    upsert_progress(
-        pool,
-        user,
-        &ProgressUpdate {
-            book_uuid: uuid.to_string(),
-            format: ProgressFormat::Epub,
-            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
-            audio_position_seconds: None,
-            progress_percent: None,
-            kobo_location: None,
-            book_file_id: None,
-            client_updated_at: None,
-        },
-    )
-    .await
-    .expect("seed position");
 }
 
 /// Attach a second audiobook file to `book_id` — a different narration of

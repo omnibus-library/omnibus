@@ -58,8 +58,10 @@ async function selectPeriod(
       // and the request it fires can't drift apart. `utc_offset_minutes` is
       // the browser's own offset, which the config pins to UTC (`timezoneId`)
       // so it is deterministically 0 — it is where the server cuts the
-      // answer's day boundaries (rule 10).
-      expectedBody: { range, utc_offset_minutes: 0 },
+      // answer's day boundaries (rule 10). `user_id: null` is the Dioxus
+      // encoding of the omitted argument — the web page never reads another
+      // reader's stats.
+      expectedBody: { range, utc_offset_minutes: 0, user_id: null },
       expectedStatus: 200,
     },
     async () => periodPill(page, range).click(),

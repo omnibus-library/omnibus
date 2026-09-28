@@ -8,7 +8,7 @@ export async function provisionUser(
   username: string,
   password: string,
 ): Promise<void> {
-  const resp = await request.post("/api/users", {
+  const resp = await request.post("/api/admin/users", {
     data: {
       username,
       password,

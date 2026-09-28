@@ -1,6 +1,7 @@
 //! Account reading preferences: hidden formats, book-detail scroll stops,
-//! and (web only) Stack series. Web/SSR goes through the server functions;
-//! mobile POSTs the REST routes directly — never queued (rule 08).
+//! and (web only) Stack series and share stats with household. Web/SSR
+//! goes through the server functions; mobile POSTs the REST routes
+//! directly — never queued (rule 08).
 
 #[cfg(not(feature = "mobile"))]
 use super::note_server_fn_err;
@@ -67,6 +68,16 @@ pub async fn set_book_detail_scroll_stops(
 #[cfg(not(feature = "mobile"))]
 pub async fn set_stack_series(_server_url: &str, enabled: bool) -> Result<(), DataError> {
     crate::rpc::rpc_set_stack_series(enabled)
+        .await
+        .map_err(note_server_fn_err)
+}
+
+/// Web/SSR: set whether other readers on this server may see the user's
+/// stats page. No mobile twin — the Android "You" tab has no settings
+/// table, and iOS writes the REST route itself.
+#[cfg(not(feature = "mobile"))]
+pub async fn set_share_stats(_server_url: &str, enabled: bool) -> Result<(), DataError> {
+    crate::rpc::rpc_set_share_stats(enabled)
         .await
         .map_err(note_server_fn_err)
 }

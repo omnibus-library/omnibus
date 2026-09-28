@@ -24,9 +24,9 @@ pub(crate) mod kobo;
 // Display name + avatar, at the top of the Account section.
 #[cfg(not(feature = "mobile"))]
 mod profile;
-// The book-detail scroll-stops switch, above the goals it sits beside.
+// The per-user feature switches table, above the goals it sits beside.
 #[cfg(not(feature = "mobile"))]
-pub(crate) mod scroll_stops;
+pub(crate) mod user_settings;
 // Self-service "Your sessions" card (F5.4, #910).
 #[cfg(not(feature = "mobile"))]
 mod sessions;
@@ -142,7 +142,7 @@ pub fn AccountPage() -> Element {
 fn account_web_body() -> Element {
     rsx! {
         profile::ProfileCard {}
-        scroll_stops::ScrollStopsCard {}
+        user_settings::UserSettingsCard {}
         goals::ReadingGoalsCard {}
         ChangePasswordCard {}
         sessions::SessionsCard {}

@@ -106,6 +106,14 @@ fn is_blocked_address_blocks_ipv4_mapped_loopback() {
 }
 
 #[test]
+fn is_blocked_address_blocks_nat64_mapped_private_v4() {
+    // 64:ff9b::/96 — NAT64 well-known prefix wraps an embedded IPv4 in its
+    // last 32 bits, same bypass shape as the IPv4-mapped case above.
+    assert!(is_blocked_address("64:ff9b::a00:5".parse().unwrap()));
+    assert!(!is_blocked_address("64:ff9b::808:808".parse().unwrap()));
+}
+
+#[test]
 fn is_blocked_address_blocks_ipv6_multicast_and_documentation() {
     assert!(is_blocked_address("ff02::1".parse().unwrap()));
     // 2001:db8::/32 documentation prefix.

@@ -39,14 +39,17 @@ pub(super) fn content_routes() -> Router<AppState> {
         .route("/api/scan-library", post(settings::post_scan_library))
         .route("/api/fts/rebuild", post(settings::post_rebuild_fts))
         // Admin user management (F5.4) — all AdminUser-gated.
-        .route("/api/users", get(users::get_users).post(users::post_user))
-        .route("/api/users/{id}", delete(users::delete_user))
         .route(
-            "/api/users/{id}/permissions",
+            "/api/admin/users",
+            get(users::get_users).post(users::post_user),
+        )
+        .route("/api/admin/users/{id}", delete(users::delete_user))
+        .route(
+            "/api/admin/users/{id}/permissions",
             patch(users::patch_permissions),
         )
-        .route("/api/users/{id}/password", post(users::post_password))
-        .route("/api/users/{id}/unlock", post(users::post_unlock))
+        .route("/api/admin/users/{id}/password", post(users::post_password))
+        .route("/api/admin/users/{id}/unlock", post(users::post_unlock))
         // Admin device & session management (F5.4, #910) — all AdminUser-gated.
         .route(
             "/api/admin/users/{id}/sessions",
@@ -277,6 +280,7 @@ fn bookmark_routes() -> Router<AppState> {
 /// `/api/rpc/ratings/*`, and `/api/rpc/read-status/*` server functions.
 fn engagement_routes() -> Router<AppState> {
     Router::new()
+        .route("/api/users", get(stats::get_household_readers))
         .route("/api/stats", get(stats::get_stats))
         .route("/api/stats/sessions", get(stats::get_session_log))
         .route("/api/stats/goal", put(stats::put_stats_goal))
@@ -480,10 +484,10 @@ fn metadata_routes() -> Router<AppState> {
 }
 
 /// Send-to-Kindle plus the per-user account preferences that grew up
-/// beside it (hidden formats, the book-detail scroll-stops switch, the
-/// profile and its avatar) — all mobile-facing REST. Web hits the analogous
-/// `/api/rpc/kindle/send`, `/api/rpc/account/*`, and `/api/rpc/smtp*` server
-/// fns.
+/// beside it (hidden formats, the book-detail scroll-stops switch, Stack
+/// series, sharing stats with the household, the profile and its avatar) —
+/// all mobile-facing REST. Web hits the analogous `/api/rpc/kindle/send`,
+/// `/api/rpc/account/*`, and `/api/rpc/smtp*` server fns.
 fn kindle_routes() -> Router<AppState> {
     Router::new()
         .route("/api/kindle/send", post(kindle::post_send))
@@ -501,6 +505,7 @@ fn kindle_routes() -> Router<AppState> {
             "/api/account/stack-series",
             post(account::post_stack_series),
         )
+        .route("/api/account/share-stats", post(account::post_share_stats))
         .route("/api/account/profile", post(profile::post_profile))
         .route("/api/account/avatar", delete(profile::delete_avatar))
         .route("/api/users/{user_id}/avatar", get(profile::get_user_avatar))

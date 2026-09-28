@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Runs** | inside adding_book — handed over as its own step, after the runner refreshes the ownership guard |
+| **Runs** | inside adding_book |
 | **Owner-only** | **yes** |
 | **Surfaces** | web |
 | **Actions** | `book.delete`, `book.delete.verify` |
@@ -60,11 +60,11 @@ skipped and why.
 `book.delete.verify` with what the library, the author page, and search show
 afterwards.
 
-**The audit does not verify deletions.** `book.delete` is listed as out of
-scope because a deletion is library-wide. What the audit *will* notice is
-your `book.add` for this book now failing its "present in the library" check —
-so say in the `book.delete` entry that it supersedes the add, and the runner
-will read the pair together.
+The audit reads your `book.delete` as superseding your own `book.add` for the
+same uuid, so the book being gone afterwards is expected, not a loss. Journal
+the delete `ok` once you saw it take. If you could not tell at the time,
+journal it `uncertain`, then `book.delete.verify` `ok` on the same uuid once
+the library shows it gone — the verify confirms the delete.
 
 ## Pass
 
