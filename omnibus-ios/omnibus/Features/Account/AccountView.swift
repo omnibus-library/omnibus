@@ -51,7 +51,12 @@ struct AccountView: View {
 
                     appearance($app)
                     reading
-                    ShareStatsSection()
+                    // A server that never sent the field can't save it either
+                    // — same reasoning as the reader picker hiding on a
+                    // server without `/api/users`.
+                    if app.user?.shareStatsSetting != nil {
+                        ShareStatsSection()
+                    }
                     library
                     offline
                     sendToKindle
