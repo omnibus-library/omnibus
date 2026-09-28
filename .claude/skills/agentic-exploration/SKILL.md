@@ -72,10 +72,11 @@ scripts/explore/provision.sh <N>
 
 Emits JSON: `actor`, `username`, `password`, `action`. **Save it** — the audit
 needs it in steps 6 and 9, and passwords are rotated per run, never stored.
-Idempotent; usernames are stable across runs because provenance ownership is
-keyed on the actor, so fresh accounts would orphan every book previous runs
-uploaded. Hand each agent only its own credential. Every account it creates is
-an admin; `--reader` needs a second call, in [scenarios.md](scenarios.md).
+Idempotent: it lists and creates via `/api/admin/users` and rotates via
+`/api/admin/users/{id}/password`. Usernames are stable because provenance
+ownership is keyed on the actor, so fresh accounts would orphan every book
+earlier runs uploaded. Hand each agent only its own credential. Every account it
+creates is an admin; `--reader` needs a second call, in [scenarios.md](scenarios.md).
 
 ## 5. Decide the draw
 
