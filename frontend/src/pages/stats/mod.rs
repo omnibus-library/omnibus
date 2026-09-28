@@ -418,7 +418,7 @@ fn use_period_fetch_effect(
         let mut period = period;
         let mut error = error;
         spawn(async move {
-            let result = data::fetch_stats(&url, r).await;
+            let result = data::fetch_stats(&url, r, None).await;
             // A newer switcher change superseded this fetch — drop the stale result.
             if *epoch.peek() != ticket {
                 return;
@@ -455,7 +455,7 @@ fn use_all_time_fetch_effect(
         let mut loading = loading;
         let mut error = error;
         spawn(async move {
-            match data::fetch_stats(&url, StatsRange::AllTime).await {
+            match data::fetch_stats(&url, StatsRange::AllTime, None).await {
                 Ok(summary) => all_time.set(Some(summary)),
                 Err(e) => error.set(Some(e.to_string())),
             }
@@ -528,7 +528,7 @@ fn use_in_progress_fetch_effect(server_url: String, in_progress: Signal<Vec<Resu
         let url = server_url.clone();
         let mut in_progress = in_progress;
         spawn(async move {
-            if let Ok(points) = data::recent_progress(&url, IN_PROGRESS_LIMIT).await {
+            if let Ok(points) = data::recent_progress(&url, IN_PROGRESS_LIMIT, None).await {
                 in_progress.set(points);
             }
         });

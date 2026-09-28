@@ -91,7 +91,7 @@ fn use_resume_point(server_url: String) -> Signal<Option<Option<ResumePoint>>> {
         let _ = generation();
         let url = server_url.clone();
         spawn(async move {
-            match crate::data::recent_progress(&url, 1).await {
+            match crate::data::recent_progress(&url, 1, None).await {
                 Ok(points) => resume.set(Some(points.into_iter().next())),
                 Err(_) if resume.peek().is_none() => resume.set(Some(None)),
                 Err(_) => {}
