@@ -24,6 +24,11 @@ test.beforeAll(async ({ request }) => {
 // Alpha fixture: standalone, single author, has cover.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 
+// Paste-a-URL cover tests mock every mutating request, so nothing is written
+// to the shared Alpha fixture — the server's SSRF gate can't reach a test
+// origin anyway (`metadata_edit_search.spec.ts`'s compare-view apply mirrors this).
+const PASTED_COVER_URL = "https://images.example.com/custom-cover.jpg";
+
 // Every test in this file mutates / reads override state on the same
 // `Alpha` book (the layout test reads the title, "edits title and saves"
 // writes "Alpha Edited", "reverts" deletes that override, "adds and
@@ -81,6 +86,14 @@ test.describe
 
       // Save is initially disabled (no dirty fields).
       await expect(page.getByTestId("me-save")).toBeDisabled();
+
+      // Paste-a-URL cover field is present, and Apply starts disabled (empty).
+      const urlInput = page.getByLabel("Or paste an image URL");
+      await expect(urlInput).toBeVisible();
+      await expect(urlInput).toHaveAttribute("type", "url");
+      await expect(
+        page.getByRole("button", { name: "Apply", exact: true }),
+      ).toBeDisabled();
     });
 
     // ---------------------------------------------------------------------------
@@ -703,33 +716,10 @@ test.describe
         "extracted from file",
       );
     });
-  }); // test.describe.serial
 
-// ---------------------------------------------------------------------------
-// Paste an image URL (sidebar CoverEditor) — every mutating request here is
-// mocked, so nothing is written to the shared Alpha fixture; the server's
-// SSRF gate can't reach a test origin anyway (`metadata_edit_search.spec.ts`'s
-// compare-view cover apply uses the same pattern).
-// ---------------------------------------------------------------------------
-
-const PASTED_COVER_URL = "https://images.example.com/custom-cover.jpg";
-
-test.describe
-  .serial("paste an image URL into the cover editor", () => {
-    test("shows a field to paste an image URL, disabled until filled", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      const urlInput = page.getByLabel("Or paste an image URL");
-      await expect(urlInput).toBeVisible();
-      await expect(urlInput).toHaveAttribute("type", "url");
-      await expect(
-        page.getByRole("button", { name: "Apply", exact: true }),
-      ).toBeDisabled();
-    });
+    // ---------------------------------------------------------------------------
+    // Paste an image URL (sidebar CoverEditor)
+    // ---------------------------------------------------------------------------
 
     test("applies a pasted cover URL", async ({ page, request }) => {
       const id = await fetchBookIdByTitle(request, TARGET.title);
@@ -831,4 +821,4 @@ test.describe
         page.getByRole("button", { name: "Apply", exact: true }),
       ).toBeEnabled();
     });
-  });
+  }); // test.describe.serial
