@@ -39,11 +39,9 @@ struct StatsView: View {
     /// Fetched separately for the same reason: what the collection is *made
     /// of* is a library-wide answer that only moves on a reindex.
     @State private var libraryComposition: LibraryComposition?
-    /// What is open right now, for whichever reader is picked. Its own read
-    /// for the third time over: being mid-book is a standing fact, so it
-    /// belongs below the standing rule and must not reload on a period
-    /// switch — but unlike everything else down there, it follows the
-    /// subject.
+    /// What is open right now, for the picked reader. Its own read for the
+    /// third time over: being mid-book is a standing fact, so it belongs
+    /// below the standing rule and must not reload on a period switch.
     @State private var resumePoints: [ResumePoint] = []
     /// The all-time summary, held only for the two surfaces drawn off
     /// `heatmap` — the activity grid and the four-week strip.
@@ -85,6 +83,7 @@ struct StatsView: View {
                             Task {
                                 await load()
                                 await loadStandingSummary()
+                                await loadResumePoints()
                             }
                         }
                     } else if let summary {
@@ -125,8 +124,8 @@ struct StatsView: View {
             Task {
                 await load()
                 await loadStandingSummary()
-                await loadResumePoints()
             }
+            Task { await loadResumePoints() }
         }
         .sheet(item: $drill) { metric in
             if let summary {
@@ -592,11 +591,7 @@ struct StatsView: View {
         }
     }
 
-    /// Best-effort, like `loadLibrarySize` — except a refusal for another
-    /// reader must still clear their list, since no replica stands behind it
-    /// the way `.you`'s does. Never sets `failure`: the stats read for the
-    /// same subject already owns that, and clearing it here on a benign miss
-    /// could undo a refusal that read had just set.
+    /// Best-effort by design, exactly like `loadLibrarySize`.
     private func loadResumePoints() async {
         let requestedSubject = subject
         do {
@@ -605,8 +600,7 @@ struct StatsView: View {
                 resumePoints = read.value
             }
         } catch {
-            guard requestedSubject == subject else { return }
-            if case .reader = requestedSubject { resumePoints = [] }
+            // Nothing to say: the section simply doesn't appear.
         }
     }
 }

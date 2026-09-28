@@ -86,8 +86,6 @@ enum UserDataService {
         return object["client_updated_at"] != nil
     }
 
-    /// The reader's own in-progress list, or — with `subject: .reader` —
-    /// another household member's.
     static func recentProgress(
         subject: StatsSubject = .you
     ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
@@ -111,9 +109,7 @@ enum UserDataService {
         }
     }
 
-    /// The `/api/progress/recent` query: `limit` always, and `user_id` only
-    /// when asking about another reader — omitted rather than sent blank, so
-    /// your own request is unchanged.
+    /// `user_id` only for another reader, so your own request is unchanged.
     static func recentProgressQuery(userID: Int64?) -> [String: String?] {
         var query: [String: String?] = ["limit": String(resumeLimit)]
         if let userID { query["user_id"] = String(userID) }

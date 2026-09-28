@@ -32,8 +32,7 @@ private func resumePoint(uuid: String) -> ResumePoint {
 
 /// Open the real replica, seed `key` with `seed`, hand the test the exact
 /// bytes that landed, and restore whatever was there before — or delete the
-/// key — once `body` returns or throws. Shared by every routing suite below,
-/// each of which seeds its own key.
+/// key — once `body` returns or throws.
 private func withSeededReplica<T: Codable & Sendable>(
     key: String, seed: T, _ body: (_ seedBytes: Data?) async throws -> Void
 ) async throws {
@@ -177,8 +176,7 @@ struct StatsReplicaRoutingTests {
 }
 
 /// `.serialized`: every test shares one on-disk replica key
-/// (`CacheKey.recentProgress`), which the Continue rail and the widget also
-/// read, so a concurrent pair would race the same file.
+/// (`CacheKey.recentProgress`), so a concurrent pair would race the same file.
 @Suite(.serialized)
 struct RecentProgressReplicaRoutingTests {
     private let key = CacheKey.recentProgress
