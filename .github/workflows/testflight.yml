@@ -68,8 +68,8 @@ on:
         required: false
         type: string
       whats_new:
-        description: "What to Test note shown to TestFlight testers. Leave blank to keep whatever App Store Connect already has."
-        required: false
+        description: "What to Test note shown to TestFlight testers."
+        required: true
         type: string
       distribute_externally:
         description: "Add the build to the external tester groups (and submit for Beta App Review if needed)."
@@ -102,6 +102,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # `required: true` only means present: `gh workflow run` and the API
+      # still accept a blank value.
+      - name: Require What to Test note
+        env:
+          INPUT_WHATS_NEW: ${{ inputs.whats_new }}
+        run: |
+          if [ -z "${INPUT_WHATS_NEW//[[:space:]]/}" ]; then
+            echo "::error::whats_new (the What to Test note) is required."
+            exit 1
+          fi
       - name: Resolve marketing version
         id: resolve
         env:

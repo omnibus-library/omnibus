@@ -80,8 +80,8 @@ the command, and you run it only when told to. But the hand-back must say
 whether you *recommend* it, and on what evidence. Recommend a restore when the
 run left state nobody can explain or nobody can undo through the app:
 
-- a `refusals` list showing the guard let something through, or a deletion,
-  merge or copy removal on a book the actor did not own;
+- a deletion, merge or copy removal on a book or copy the actor did not own —
+  one the guard should have refused and did not;
 - an audit `unexpected` finding on a **library-wide** thing — a book gone,
   metadata blanked, a cover swapped onto the wrong book — with no journal
   entry to explain it;

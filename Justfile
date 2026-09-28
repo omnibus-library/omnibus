@@ -57,11 +57,12 @@ dev-bounce:
 fixtures:
     scripts/fetch-fixtures.sh
 
-# Unit tests for the agentic-exploration audit (scripts/explore/audit_lib).
-# Stdlib unittest on the system python3 — no nix shell, no pytest, ~0.2s — so
-# it hangs off `test` rather than living as a lane nobody remembers to run.
+# Unit tests for the agentic-exploration tooling (scripts/explore): the audit,
+# the report, the sampler and the journal readers. Stdlib unittest on the
+# system python3 — no nix shell, no pytest, a few seconds — so it hangs off
+# `test` rather than living as a lane nobody remembers to run.
 explore-test:
-    cd scripts/explore && python3 -m unittest audit_lib.tests
+    cd scripts/explore && python3 -m unittest audit_lib.tests && python3 -m unittest discover -s tests -p 'test_*.py'
 
 # Run the full unit/integration test matrix via cargo-nextest (the same runner
 # CI uses, so local and CI results match; no doctests in the tree, which is all
