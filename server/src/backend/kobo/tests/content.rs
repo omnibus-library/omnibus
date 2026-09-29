@@ -4,12 +4,24 @@
 
 use axum::{
     body::{to_bytes, Body},
-    http::{Request, StatusCode},
+    http::{header::AUTHORIZATION, Request, StatusCode},
+    Router,
 };
 use omnibus_db::{self as db, test_support::seed_synced_ebook};
 use tower::ServiceExt;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::{body_json, fixture, get, seed_book_with_kepub_cache};
+use crate::auth::test_support as auth_test_support;
+use crate::backend::test_support::{
+    build_cover_multipart, fixture_loopback_remote_image, seed_book_with_uuid, CoversDirGuard,
+    TINY_PNG,
+};
+
+use super::{
+    body_json, book_metadata, fixture, get, kobo_router, seed_book_with_kepub_cache,
+    seed_downloadable_book, seed_override_cover,
+};
 
 #[tokio::test]
 async fn image_returns_304_when_the_if_none_match_etag_is_current() {
@@ -525,4 +537,142 @@ async fn image_returns_500_on_db_failure() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+/// The cover route's answer for `image_id`, in the quality-template shape.
+async fn fetch_cover(kobo: &Router, token: &str, image_id: &str) -> (StatusCode, Vec<u8>) {
+    let res = kobo
+        .clone()
+        .oneshot(get(format!(
+            "/kobo/{token}/v1/books/{image_id}/thumbnail/400/600/100/false/image.jpg"
+        )))
+        .await
+        .unwrap();
+    let status = res.status();
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    (status, bytes.to_vec())
+}
+
+#[tokio::test]
+async fn cover_writes_move_the_synced_cover_image_id_and_the_route_serves_the_new_bytes() {
+    let _covers = CoversDirGuard::new("kobo_cover_image_id");
+    let (rest, state, pool) = fixture_loopback_remote_image().await;
+    let kobo = kobo_router(state);
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Cover Id Book").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let bearer = auth_test_support::bearer_token(&pool, admin.id).await;
+    let device = db::kobo_devices::create_device(&pool, admin.id, "Test Kobo")
+        .await
+        .unwrap();
+    let origin = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cover.png"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "image/png")
+                .set_body_bytes(TINY_PNG.to_vec()),
+        )
+        .mount(&origin)
+        .await;
+
+    let from_url = Request::builder()
+        .uri(format!("/api/ebooks/{uuid}/cover/from-url"))
+        .method("POST")
+        .header("content-type", "application/json")
+        .header(AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::from(
+            serde_json::json!({ "url": format!("{}/cover.png", origin.uri()) }).to_string(),
+        ))
+        .unwrap();
+    let (content_type, multipart) = build_cover_multipart("image/png", TINY_PNG);
+    let upload = Request::builder()
+        .uri(format!("/api/ebooks/{uuid}/cover"))
+        .method("POST")
+        .header("content-type", content_type)
+        .header(AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::from(multipart))
+        .unwrap();
+    let delete = Request::builder()
+        .uri(format!("/api/ebooks/{uuid}/cover"))
+        .method("DELETE")
+        .header(AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::empty())
+        .unwrap();
+
+    for (write, label) in [
+        (from_url, "from-url"),
+        (upload, "multipart upload"),
+        (delete, "delete"),
+    ] {
+        // `last_modified` is second-granular, so pin it below any real write.
+        sqlx::query("UPDATE books SET last_modified = 1 WHERE uuid = ?")
+            .bind(&uuid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let before = book_metadata(&kobo, &device.token, &uuid).await["CoverImageId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(before, format!("{uuid}-1"), "{label}");
+
+        if label == "from-url" {
+            let (status, _) = fetch_cover(&kobo, &device.token, &before).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "no cover before the write");
+        }
+        let res = rest.clone().oneshot(write).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "{label}");
+
+        let after = book_metadata(&kobo, &device.token, &uuid).await["CoverImageId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_ne!(after, before, "{label} must move the cover id");
+        if label == "from-url" {
+            let (status, body) = fetch_cover(&kobo, &device.token, &after).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body, TINY_PNG, "the versioned id serves the new cover");
+        }
+    }
+}
+
+#[tokio::test]
+async fn image_serves_requests_built_from_either_initialization_template() {
+    let _covers = CoversDirGuard::new("kobo_image_templates");
+    let (app, pool, token, uid) = fixture().await;
+    let uuid = "62e1c9f0-0000-4000-8000-000000002684";
+    seed_downloadable_book(&pool, uuid, "Template Book", "Ada Lovelace").await;
+    seed_override_cover(&pool, uuid, uid).await;
+
+    let res = app
+        .clone()
+        .oneshot(get(format!("/kobo/{token}/v1/initialization")))
+        .await
+        .unwrap();
+    let init = body_json(res).await;
+
+    for key in ["image_url_template", "image_url_quality_template"] {
+        for image_id in [uuid.to_owned(), format!("{uuid}-1700000000")] {
+            let url = init["Resources"][key]
+                .as_str()
+                .unwrap()
+                .replace("{ImageId}", &image_id)
+                .replace("{Width}", "400")
+                .replace("{Height}", "600")
+                .replace("{Quality}", "100")
+                .replace("{IsGreyscale}", "false")
+                .replace("http://omni.test", "");
+            let res = app.clone().oneshot(get(url.clone())).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{url}");
+            assert_eq!(
+                res.headers()
+                    .get(axum::http::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok()),
+                Some("image/png"),
+                "{url}"
+            );
+            let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(&bytes[..], TINY_PNG, "{url}");
+        }
+    }
 }

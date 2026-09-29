@@ -7,6 +7,7 @@
 mod analytics;
 mod auth;
 mod content;
+mod metadata;
 mod resources;
 mod state;
 mod state_statistics;
@@ -20,7 +21,7 @@ use axum::{
 };
 use omnibus_db as db;
 use omnibus_shared::ReadStatus;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
 
@@ -85,6 +86,17 @@ fn get(uri: String) -> Request<Body> {
         .unwrap()
 }
 
+/// `GET /v1/library/{uuid}/metadata` for `uuid`, asserted 200; the book's entry.
+async fn book_metadata(app: &Router, token: &str, uuid: &str) -> Value {
+    let res = app
+        .clone()
+        .oneshot(get(format!("/kobo/{token}/v1/library/{uuid}/metadata")))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    body_json(res).await[0].take()
+}
+
 /// Seed one real book on disk — a copy of the committed EPUB fixture under a
 /// fresh scan root — so [`download`](super::resources::download) has real
 /// bytes to serve. Mirrors the on-disk setup
@@ -145,6 +157,20 @@ async fn seed_downloadable_book(pool: &SqlitePool, uuid: &str, title: &str, auth
         .execute(pool)
         .await
         .unwrap();
+}
+
+/// Give `uuid` an override cover of `TINY_PNG`; the caller holds a `CoversDirGuard`.
+async fn seed_override_cover(pool: &SqlitePool, uuid: &str, user_id: i64) {
+    db::write_override_cover(uuid, "image/png", crate::backend::test_support::TINY_PNG).unwrap();
+    db::upsert_metadata_overrides(
+        pool,
+        uuid,
+        &omnibus_shared::MetadataOverrides::default(),
+        true,
+        user_id,
+    )
+    .await
+    .unwrap();
 }
 
 /// Source/kepub fixture pair used by the derivation tests: single-chapter
@@ -344,9 +370,15 @@ async fn full_device_sequence_replays_initialization_through_state_put() {
     assert_eq!(ent["BookEntitlement"]["IsRemoved"], false);
     assert_eq!(ent["BookMetadata"]["Title"], "The Golden Fixture");
     assert_eq!(
+        ent["BookMetadata"]["CoverImageId"],
+        format!("{uuid}-1700000000"),
+        "the cover id carries the version the device caches the cover under"
+    );
+    assert_eq!(
         ent["BookMetadata"]["ContributorRoles"][0]["Name"],
         "Ada Lovelace"
     );
+    assert_eq!(ent["BookMetadata"]["Contributors"], json!(["Ada Lovelace"]));
     let download_url = ent["BookMetadata"]["DownloadUrls"][0]["Url"]
         .as_str()
         .unwrap()

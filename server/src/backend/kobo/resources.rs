@@ -14,7 +14,7 @@ use omnibus_db::{
     worker::{Task, TaskOutcome},
 };
 
-use super::{extractor::KoboAuthUser, reject_oversized_uuid, AppState};
+use super::{dto, extractor::KoboAuthUser, reject_oversized_uuid, AppState};
 use crate::backend::serve_download;
 use crate::http_errors::internal;
 
@@ -125,17 +125,15 @@ async fn record_download_state(
     Ok(())
 }
 
-/// `GET books/<uuid>/thumbnail/.../image.jpg` — serve the book cover. The
-/// requested dimensions are advisory; the stored cover is served as-is.
+/// `GET books/<ImageId>/thumbnail/.../image.jpg` — serve the stored cover as-is.
 ///
-/// Carries a weak `ETag` derived from `(book id, last_modified)` and honors
-/// `If-None-Match` with a bodyless 304 — the device re-validates covers on
-/// every sync, so without this each sync re-downloads every cover it already
-/// holds.
+/// `ImageId` is `{uuid}-{last_modified}` or a bare uuid; the version is ignored.
+/// The device caches covers per `(ImageId, size)` and never revalidates, so the
+/// versioned id is what makes it refetch; the `ETag`/304 path serves clients that do.
 pub async fn image(
     _auth: KoboAuthUser,
     State(state): State<AppState>,
-    Path((_token, uuid, _w, _h, _quality, _greyscale)): Path<(
+    Path((_token, image_id, _w, _h, _quality, _greyscale)): Path<(
         String,
         String,
         u32,
@@ -145,10 +143,26 @@ pub async fn image(
     )>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(rejected) = reject_oversized_uuid(&uuid) {
+    serve_cover(&state, &image_id, &headers).await
+}
+
+/// `GET books/<ImageId>/thumbnail/{w}/{h}/{greyscale}/image.jpg` — the `image_url_template` shape of [`image`].
+pub async fn image_plain(
+    _auth: KoboAuthUser,
+    State(state): State<AppState>,
+    Path((_token, image_id, _w, _h, _greyscale)): Path<(String, String, u32, u32, String)>,
+    headers: HeaderMap,
+) -> Response {
+    serve_cover(&state, &image_id, &headers).await
+}
+
+/// Resolve `image_id` and serve its cover, honouring `If-None-Match`.
+async fn serve_cover(state: &AppState, image_id: &str, headers: &HeaderMap) -> Response {
+    if let Some(rejected) = reject_oversized_uuid(image_id) {
         return rejected;
     }
-    let id = match db::resolve_book_id_by_uuid(state.pool(), &uuid).await {
+    let uuid = dto::cover_image_uuid(image_id);
+    let id = match db::resolve_book_id_by_uuid(state.pool(), uuid).await {
         Ok(Some(id)) => id,
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(e) => return internal("kobo image resolve", e),

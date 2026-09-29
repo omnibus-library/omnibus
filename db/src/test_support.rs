@@ -921,17 +921,27 @@ pub async fn seed_synced_ebook(
     title: &str,
     author: &str,
 ) -> String {
+    seed_indexed_ebook(
+        pool,
+        indexed(filename, Some(title), &[author], &[], None, None),
+    )
+    .await
+}
+
+/// Index a prepared `IndexedBook` under `/ebooks` and return its minted uuid.
+pub async fn seed_indexed_ebook(pool: &SqlitePool, book: IndexedBook) -> String {
+    let scan_key = crate::helpers::scan_key_for(&book.metadata.filename);
     crate::sync::sync_books(
         pool,
         "/ebooks",
         crate::sync::SyncPlan {
-            new_books: vec![indexed(filename, Some(title), &[author], &[], None, None)],
+            new_books: vec![book],
             ..Default::default()
         },
     )
     .await
     .unwrap();
-    uuid_by_scan_key(pool, &crate::helpers::scan_key_for(filename)).await
+    uuid_by_scan_key(pool, &scan_key).await
 }
 
 /// Index one audiobook under `/audio` through the real `sync_audiobooks`

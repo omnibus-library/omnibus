@@ -2,7 +2,7 @@
 //! the device sends and expects. Models the entitlement envelope emitted by
 //! `library/sync` plus the request/response for the `state` PUT.
 
-use omnibus_db::kobo::{KoboBookRow, KoboBookState};
+use omnibus_db::kobo::{KoboBookRow, KoboBookState, KoboSeries};
 use omnibus_shared::ReadStatus;
 use serde::{Deserialize, Serialize};
 
@@ -68,9 +68,10 @@ fn derive_opaque(token: &str, purpose: &str) -> String {
 ///
 /// The three shapes map 1:1 onto `db::kobo::SyncChange`: an add is a
 /// `NewEntitlement`; a change is `ChangedProductMetadata` (the device
-/// re-fetches metadata + file) paired with a `ChangedReadingState`; a removal
-/// is a `ChangedEntitlement` whose `BookEntitlement.IsRemoved` is true, which
-/// archives the book on-device without touching annotations.
+/// refreshes its metadata; the file is not re-downloaded) paired with a
+/// `ChangedReadingState`; a removal is a `ChangedEntitlement` whose
+/// `BookEntitlement.IsRemoved` is true, which archives the book on-device
+/// without touching annotations.
 #[derive(Debug, Serialize)]
 pub enum SyncItem {
     NewEntitlement(Entitlement),
@@ -134,7 +135,33 @@ pub struct BookMetadata {
     pub cover_image_id: String,
     pub slug: String,
     pub download_urls: Vec<DownloadUrl>,
+    pub contributors: Vec<String>,
     pub contributor_roles: Vec<Contributor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series: Option<Series>,
+}
+
+/// A book's series, shaped like Calibre-Web's.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct Series {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number_float: Option<f64>,
+    pub id: String,
+}
+
+impl From<&KoboSeries> for Series {
+    fn from(series: &KoboSeries) -> Self {
+        Self {
+            name: series.name.clone(),
+            number: series.index,
+            number_float: series.index,
+            id: series.id.clone(),
+        }
+    }
 }
 
 /// One credited name and the role it is credited under.
@@ -374,7 +401,9 @@ fn removed_entitlement(book_uuid: &str) -> SyncItem {
             cover_image_id: uuid.clone(),
             slug: uuid.clone(),
             download_urls: Vec::new(),
+            contributors: Vec::new(),
             contributor_roles: Vec::new(),
+            series: None,
         },
         reading_state: ReadingState {
             entitlement_id: uuid,
@@ -393,6 +422,25 @@ fn removed_entitlement(book_uuid: &str) -> SyncItem {
     })
 }
 
+/// The `CoverImageId` for `book`: its uuid versioned by `last_modified`.
+pub fn cover_image_id(book: &KoboBookRow) -> String {
+    format!("{}-{}", book.uuid, book.last_modified_epoch)
+}
+
+/// The book uuid a cover `ImageId` names: strips a `-<digits>` version only when a 36-char uuid remains.
+pub fn cover_image_uuid(image_id: &str) -> &str {
+    match image_id.rsplit_once('-') {
+        Some((uuid, version))
+            if uuid.len() == 36
+                && !version.is_empty()
+                && version.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            uuid
+        }
+        _ => image_id,
+    }
+}
+
 /// Build the `BookMetadata` for `book`, with a `DownloadUrl` pointing back at
 /// this server's Kobo download route. Shared by `library/sync` and the
 /// `library/<uuid>/metadata` endpoint so the two never drift.
@@ -405,7 +453,7 @@ pub fn book_metadata(base: &str, token: &str, book: &KoboBookRow) -> BookMetadat
         title: book.title.clone(),
         description: book.description.clone(),
         language: "en".to_owned(),
-        cover_image_id: uuid.clone(),
+        cover_image_id: cover_image_id(book),
         slug: uuid.clone(),
         download_urls: vec![DownloadUrl {
             // Mirrors the ladder `download` takes: KEPUB (or its plain-EPUB
@@ -420,10 +468,16 @@ pub fn book_metadata(base: &str, token: &str, book: &KoboBookRow) -> BookMetadat
             platform: "Generic",
             drm_type: "None",
         }],
-        contributor_roles: vec![Contributor {
-            name: book.author.clone(),
-            role: "Author",
-        }],
+        contributors: book.authors.clone(),
+        contributor_roles: book
+            .authors
+            .iter()
+            .map(|name| Contributor {
+                name: name.clone(),
+                role: "Author",
+            })
+            .collect(),
+        series: book.series.as_ref().map(Series::from),
     }
 }
 
