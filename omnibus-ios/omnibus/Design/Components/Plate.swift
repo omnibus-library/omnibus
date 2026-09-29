@@ -57,6 +57,8 @@ struct Plate<Content: View>: View {
 struct PlateRow<Content: View>: View {
     let label: String
     var isFirst = false
+    /// An optional line beneath the label, styled by the caller.
+    var detail: Text? = nil
     @ViewBuilder var content: () -> Content
 
     @Environment(\.palette) private var palette
@@ -66,7 +68,10 @@ struct PlateRow<Content: View>: View {
             if !isFirst { Hairline() }
 
             HStack(spacing: Spacing.md) {
-                RowLabel(label)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    RowLabel(label)
+                    if let detail { detail }
+                }
                 Spacer(minLength: Spacing.sm)
                 content()
             }
