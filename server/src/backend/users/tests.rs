@@ -461,9 +461,8 @@ async fn legacy_api_users_paths_return_404_except_avatar() {
     let token = admin_token(&pool, "alice").await;
     let bob = auth_test_support::create_user(&pool, "bob").await;
 
+    // /api/users is a live route (household readers), not a dead path.
     for (method, uri) in [
-        ("GET", "/api/users".to_string()),
-        ("POST", "/api/users".to_string()),
         ("DELETE", format!("/api/users/{}", bob.id)),
         ("PATCH", format!("/api/users/{}/permissions", bob.id)),
         ("POST", format!("/api/users/{}/password", bob.id)),

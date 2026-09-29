@@ -280,6 +280,7 @@ fn bookmark_routes() -> Router<AppState> {
 /// `/api/rpc/ratings/*`, and `/api/rpc/read-status/*` server functions.
 fn engagement_routes() -> Router<AppState> {
     Router::new()
+        .route("/api/users", get(stats::get_household_readers))
         .route("/api/stats", get(stats::get_stats))
         .route("/api/stats/sessions", get(stats::get_session_log))
         .route("/api/stats/goal", put(stats::put_stats_goal))

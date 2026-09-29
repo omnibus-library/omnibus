@@ -1,8 +1,8 @@
 //! Reading-session log — the per-sitting list behind the stats aggregates,
-//! mounted user-wide on `/stats` and book-scoped on the book-detail Stats
-//! stop. One row is one *sitting*, not one heartbeat flush: the server
-//! stitches adjacent checkpoint rows before it pages them, so a two-hour read
-//! is one entry rather than a hundred and twenty.
+//! mounted book-scoped on the book-detail Stats stop. One row is one
+//! *sitting*, not one heartbeat flush: the server stitches adjacent
+//! checkpoint rows before it pages them, so a two-hour read is one entry
+//! rather than a hundred and twenty.
 
 use dioxus::prelude::*;
 use omnibus_shared::SessionLogEntry;

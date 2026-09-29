@@ -97,16 +97,29 @@ pub async fn rpc_get_playback_rate(uuid: String) -> Result<Option<AudiobookPlayb
     }
 }
 
-/// The user's most recent progress rows joined with their books — the
-/// "pick up where you left off" feed. Mirrors the mobile REST route
-/// `GET /api/progress/recent`; `limit` is clamped to the same 1..=20 range.
+/// The caller's most recent progress rows joined with their books — the
+/// "pick up where you left off" feed — or a sharing reader's with `user_id`,
+/// under the same 404 contract `GET /api/stats` answers. Mirrors the mobile
+/// REST route `GET /api/progress/recent`; `limit` is clamped to the same
+/// 1..=20 range.
 #[post("/api/rpc/progress/recent", pool: PoolExt, user: AuthUser)]
-pub async fn rpc_recent_progress(limit: i64) -> Result<Vec<ResumePoint>> {
+pub async fn rpc_recent_progress(limit: i64, user_id: Option<i64>) -> Result<Vec<ResumePoint>> {
     const LIMIT_CAP: i64 = 20;
     let limit = limit.clamp(1, LIMIT_CAP);
-    Ok(db::progress::resume_points(&pool.0, user.id, limit)
+    Ok(reader_recent_progress(&pool.0, user.id, limit, user_id).await?)
+}
+
+/// Server-side body of [`rpc_recent_progress`], extracted for testability.
+#[cfg(feature = "server")]
+async fn reader_recent_progress(
+    pool: &sqlx::SqlitePool,
+    caller_id: i64,
+    limit: i64,
+    user_id: Option<i64>,
+) -> Result<Vec<ResumePoint>, ServerFnError> {
+    db::stats::recent_progress_for_viewer(pool, caller_id, user_id, limit)
         .await
-        .map_err(|e| internal_rpc_error("recent progress", e))?)
+        .map_err(|e| super::stats::map_viewer_error("recent progress", e))
 }
 
 /// Reject over-cap session batches at the RPC boundary, mirroring the mobile
@@ -183,87 +196,8 @@ pub async fn rpc_record_sessions(reports: Vec<SessionReport>) -> Result<u64> {
     Ok(record_sessions_batch(&pool.0, user.id, &reports).await?)
 }
 
-// `server`-gated because these tests exercise `check_session_batch_cap`, which
-// only exists in the server build. CI runs the frontend suite as
-// `cargo test -p omnibus-frontend --features server`.
+// `server`-gated: these tests exercise `check_session_batch_cap` and the
+// server-only helpers, which only exist in the server build. CI runs the
+// frontend suite as `cargo test -p omnibus-frontend --features server`.
 #[cfg(all(test, feature = "server"))]
-mod tests {
-    use super::{check_session_batch_cap, record_sessions_batch, SESSION_BATCH_CAP};
-    use omnibus_shared::{ProgressFormat, SessionReport};
-
-    fn dummy_report() -> SessionReport {
-        report("uuid", ProgressFormat::Epub)
-    }
-
-    fn report(book_uuid: &str, format: ProgressFormat) -> SessionReport {
-        SessionReport {
-            book_uuid: book_uuid.into(),
-            format,
-            started_at: 0,
-            ended_at: 1,
-            progress_units: 1,
-            device_id: None,
-            client_id: None,
-            utc_offset_minutes: None,
-            time_zone: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn record_sessions_batch_skips_unknown_uuid_and_counts_only_inserted_rows() {
-        let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
-        omnibus_db::test_support::seed_minimal_books(&pool, 2).await;
-        let user_id: i64 = sqlx::query_scalar(
-            "INSERT INTO users (username, password_hash) VALUES ('alice', 'x') RETURNING id",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        let reports = vec![
-            report("uuid-1", ProgressFormat::Epub),
-            report("no-such-book", ProgressFormat::Epub),
-            report("uuid-2", ProgressFormat::Audio),
-        ];
-        let inserted = record_sessions_batch(&pool, user_id, &reports)
-            .await
-            .unwrap();
-        assert_eq!(inserted, 2, "unknown uuid must be skipped, not counted");
-
-        let reading: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reading_sessions")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        let listening: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM listening_sessions")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!((reading, listening), (1, 1));
-    }
-
-    #[test]
-    fn check_session_batch_cap_accepts_batch_at_cap() {
-        // Boundary: exactly at the cap must be accepted so a client packing
-        // batches to the documented maximum isn't rejected off-by-one.
-        let reports = vec![dummy_report(); SESSION_BATCH_CAP];
-        assert!(check_session_batch_cap(&reports).is_ok());
-    }
-
-    #[test]
-    fn check_session_batch_cap_rejects_batch_over_cap() {
-        // Mirrors the mobile REST path's 422 rejection in
-        // `server::backend::progress::post_sessions` — the web RPC path
-        // must not permit an unbounded per-record write loop.
-        let reports = vec![dummy_report(); SESSION_BATCH_CAP + 1];
-        let err = check_session_batch_cap(&reports).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains(&SESSION_BATCH_CAP.to_string()),
-            "error message should name the cap: {msg}"
-        );
-        assert!(
-            msg.contains(&(SESSION_BATCH_CAP + 1).to_string()),
-            "error message should name the batch length: {msg}"
-        );
-    }
-}
+mod tests;

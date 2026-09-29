@@ -10,7 +10,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use omnibus_shared::{Contributor, EbookMetadata};
+use omnibus_shared::{Contributor, EbookMetadata, ProgressFormat, ProgressUpdate};
 use sqlx::SqlitePool;
 
 use crate::ebook::IndexedBook;
@@ -1067,4 +1067,29 @@ pub async fn lock_account(pool: &SqlitePool, user_id: i64) -> i64 {
         .await
         .unwrap();
     until
+}
+
+// ---------------------------------------------------------------------------
+// Progress
+// ---------------------------------------------------------------------------
+
+/// Seed an epub position for `(user, uuid)` — the one shape every progress
+/// fixture across `db`/`server`/`frontend` upserts (one CFI, no percent).
+pub async fn seed_epub_position(pool: &SqlitePool, user: i64, uuid: &str) {
+    crate::progress::upsert_progress(
+        pool,
+        user,
+        &ProgressUpdate {
+            book_uuid: uuid.to_string(),
+            format: ProgressFormat::Epub,
+            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
+            audio_position_seconds: None,
+            progress_percent: None,
+            kobo_location: None,
+            book_file_id: None,
+            client_updated_at: None,
+        },
+    )
+    .await
+    .expect("seed position");
 }
