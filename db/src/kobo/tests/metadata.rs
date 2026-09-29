@@ -56,6 +56,14 @@ fn kobo_series_new_derives_a_stable_id_from_the_normalized_name() {
     assert_ne!(KoboSeries::new("Expanse".into(), None).id, id);
 }
 
+#[test]
+fn kobo_series_new_id_ignores_the_cross_format_match_key() {
+    let plain = KoboSeries::new("Mistborn Era 1".into(), None).id;
+
+    assert_ne!(KoboSeries::new("Mistborn: Era 1".into(), None).id, plain);
+    assert_ne!(KoboSeries::new("Mistbörn Era 1".into(), None).id, plain);
+}
+
 #[tokio::test]
 async fn book_for_sync_carries_the_series_the_web_shows_with_its_index() {
     let pool = init_db("sqlite::memory:").await.unwrap();

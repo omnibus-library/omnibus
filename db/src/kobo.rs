@@ -116,15 +116,17 @@ pub struct KoboSeries {
     pub name: String,
     /// `None` when the index is unknown.
     pub index: Option<f64>,
-    /// UUIDv5 of the normalized name, so a series groups on every device.
+    /// UUIDv5 of the trimmed, whitespace-collapsed, lowercased name, so a
+    /// series groups on every device.
     pub id: String,
 }
 
 impl KoboSeries {
     /// Build a series, deriving `id` from `name`.
     pub fn new(name: String, index: Option<f64>) -> Self {
-        let key =
-            crate::normalize::normalize_title(&name).unwrap_or_else(|| name.trim().to_lowercase());
+        // Frozen: a device keys its series shelf on this id, so the fold must not
+        // follow `normalize_title`, which has changed before.
+        let key = name.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
         let id = uuid::Uuid::new_v5(
             &uuid::Uuid::NAMESPACE_URL,
             format!("omnibus:series:{key}").as_bytes(),
