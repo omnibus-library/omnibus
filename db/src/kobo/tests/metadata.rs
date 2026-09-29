@@ -143,3 +143,36 @@ async fn book_for_sync_applies_a_series_override_and_drops_a_cleared_series() {
     let row = book_for_sync(&pool, &uuid).await.unwrap().unwrap();
     assert_eq!(row.series, None);
 }
+
+#[tokio::test]
+async fn book_for_sync_keeps_the_stored_series_index_when_only_the_series_name_is_overridden() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "editor").await;
+    let uuid = seed_indexed_ebook(
+        &pool,
+        indexed("leviathan.epub", Some("A Book"), &["An Author"], &[], None, None),
+    )
+    .await;
+    sqlx::query("UPDATE books SET series_index = 2 WHERE uuid = ?")
+        .bind(&uuid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    override_series(&pool, &uuid, user, "The Expanse", None).await;
+    // The override saved the link too; drop it so the name comes from the override alone.
+    sqlx::query("DELETE FROM books_series_link WHERE book = (SELECT id FROM books WHERE uuid = ?)")
+        .bind(&uuid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let series = book_for_sync(&pool, &uuid)
+        .await
+        .unwrap()
+        .unwrap()
+        .series
+        .unwrap();
+
+    assert_eq!(series.name, "The Expanse");
+    assert_eq!(series.index, Some(2.0));
+}

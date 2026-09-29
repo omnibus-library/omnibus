@@ -92,6 +92,9 @@ pub struct KoboBookRow {
     pub description: String,
     /// The series the web shows for this book, overrides applied.
     pub series: Option<KoboSeries>,
+    /// `books.series_index` as stored, kept even with no linked series so an
+    /// override that only names one still finds it.
+    pub series_index: Option<f64>,
     pub last_modified_epoch: i64,
     /// Size of the file the download route would serve: the lowest-ordinal
     /// EPUB, else CBZ, else PDF, `0` when the book has none. Advertised on
@@ -318,11 +321,7 @@ async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Res
             title: Some(row.title.clone()),
             description: (!row.description.is_empty()).then(|| row.description.clone()),
             series: row.series.as_ref().map(|s| s.name.clone()),
-            series_index: row
-                .series
-                .as_ref()
-                .and_then(|s| s.index)
-                .map(crate::helpers::format_series_index),
+            series_index: row.series_index.map(crate::helpers::format_series_index),
             creators: row
                 .authors
                 .iter()
@@ -345,7 +344,7 @@ async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Res
         }
         row.authors = book.creators.into_iter().map(|c| c.name).collect();
         row.description = book.description.unwrap_or_default();
-        row.series = book.series.filter(|name| !name.is_empty()).map(|name| {
+        row.series = book.series.map(|name| {
             let index = book
                 .series_index
                 .as_deref()
@@ -356,25 +355,18 @@ async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Res
     Ok(())
 }
 
-/// The row's series, with a NULL or non-finite index read as unknown.
-fn row_series(row: &sqlx::sqlite::SqliteRow) -> Result<Option<KoboSeries>, sqlx::Error> {
-    let Some(name) = row.try_get::<Option<String>, _>("series_name")? else {
-        return Ok(None);
-    };
-    let index = row
-        .try_get::<Option<f64>, _>("series_index")?
-        .filter(|n| n.is_finite());
-    Ok(Some(KoboSeries::new(name, index)))
-}
-
 fn row_to_book(row: &sqlx::sqlite::SqliteRow) -> Result<KoboBookRow, sqlx::Error> {
+    let series_index: Option<f64> = row.get("series_index");
     Ok(KoboBookRow {
         id: row.get("id"),
         uuid: row.get("uuid"),
         title: row.get("title"),
         authors: crate::books::parse_json_array(row.get("authors_json"))?,
         description: crate::books::sanitize_description(row.get("description")).unwrap_or_default(),
-        series: row_series(row)?,
+        series: row
+            .get::<Option<String>, _>("series_name")
+            .map(|name| KoboSeries::new(name, series_index)),
+        series_index,
         last_modified_epoch: row.get("last_modified_epoch"),
         download_size_bytes: row.get("download_size_bytes"),
         has_epub: row.get("has_epub"),
