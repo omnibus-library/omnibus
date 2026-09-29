@@ -410,7 +410,8 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       offline and share stats also mid-save; share stats seeds
                       once from the server and then follows its value, and its
                       row stays hidden on a server that never sends the
-                      setting. BookDetail's
+                      setting; `ShareStatsToggle` holds its testable save
+                      rules. BookDetail's
                       `WishlistSection` is the native twin of the web page's
                       rail tracking card (tracked-since line, store search,
                       remove): same never-queued contract, plus a confirmation

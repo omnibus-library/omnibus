@@ -6,6 +6,63 @@
 
 import SwiftUI
 
+/// The share switch's save rules, separated from the view so they're testable
+/// without a UI or a server.
+struct ShareStatsToggle: Equatable {
+    /// What the switch shows.
+    var value = true
+    /// The last value this device confirmed the server holds. Compared
+    /// against on every flip rather than `app.user` — a `refreshUser()` that
+    /// silently fails to land would otherwise leave the next flip believing
+    /// nothing had changed and skip its own write.
+    var saved = true
+    /// True for the life of a save, so a flip made mid-save can't be
+    /// dropped by another flip landing on top of it.
+    var isSaving = false
+    /// Set by the first seed, so a later appearance doesn't re-seed from a
+    /// value the server may since have changed.
+    var hasSeeded = false
+    var error: String?
+
+    mutating func seed(_ current: Bool) {
+        guard !hasSeeded else { return }
+        hasSeeded = true
+        value = current
+        saved = current
+    }
+
+    /// Follows the server's value, except mid-save, when the save's own answer wins.
+    mutating func serverChanged(to next: Bool?) {
+        guard hasSeeded, !isSaving, let next else { return }
+        value = next
+        saved = next
+    }
+
+    /// Whether the switch's value needs a write; marks one in flight if so.
+    mutating func beginSave() -> Bool {
+        guard value != saved else { return false }
+        isSaving = true
+        return true
+    }
+
+    mutating func saveSucceeded(wrote next: Bool) {
+        saved = next
+        error = nil
+    }
+
+    /// A failed write never happened, so the switch goes back to what the server holds.
+    mutating func saveFailed(revertTo previous: Bool, message: String) {
+        value = previous
+        error = message
+    }
+
+    mutating func finishSave() {
+        isSaving = false
+    }
+
+    func isDisabled(online: Bool) -> Bool { !online || isSaving }
+}
+
 struct UserSettingsSection: View {
     /// Owned by `AccountView`, which seeds and saves it.
     @Binding var scrollStops: Bool
@@ -14,19 +71,7 @@ struct UserSettingsSection: View {
     @Environment(AppState.self) private var app
     @Environment(\.palette) private var palette
 
-    @State private var shareStats = true
-    /// The last value this device confirmed the server holds. Compared
-    /// against on every flip rather than `app.user` — a `refreshUser()` that
-    /// silently fails to land would otherwise leave the next flip believing
-    /// nothing had changed and skip its own write.
-    @State private var saved = true
-    @State private var error: String?
-    /// True for the life of a save, so a flip made mid-save can't be
-    /// dropped by another flip landing on top of it.
-    @State private var isSaving = false
-    /// Set once `.task` has seeded from `app.user`, so a later re-render
-    /// doesn't re-seed from a value the server may since have changed.
-    @State private var hasSeeded = false
+    @State private var share = ShareStatsToggle()
     private var connectivity = Connectivity.shared
 
     // Explicit: the private stored properties would make the memberwise init private.
@@ -73,45 +118,35 @@ struct UserSettingsSection: View {
                 if showsShareStats {
                     PlateRow(
                         label: "Share stats with household",
-                        detail: captionText(.shareStats, isOn: shareStats, error: error)
+                        detail: captionText(.shareStats, isOn: share.value, error: share.error)
                     ) {
-                        Toggle("", isOn: $shareStats)
+                        Toggle("", isOn: $share.value)
                             .labelsHidden()
                             .tint(palette.accentColor)
-                            .disabled(!connectivity.isOnline || isSaving)
+                            .disabled(share.isDisabled(online: connectivity.isOnline))
                     }
                 }
             }
         }
         .screenPadding()
-        .task {
-            guard !hasSeeded else { return }
-            hasSeeded = true
-            let current = app.user?.shareStats ?? true
-            shareStats = current
-            saved = current
-        }
-        .onChange(of: app.user?.shareStats) { _, next in
-            guard hasSeeded, !isSaving, let next else { return }
-            shareStats = next
-            saved = next
-        }
-        .onChange(of: shareStats) { previous, next in
-            guard next != saved else { return }
-            isSaving = true
+        .task { share.seed(app.user?.shareStats ?? true) }
+        .onChange(of: app.user?.shareStats) { _, next in share.serverChanged(to: next) }
+        .onChange(of: share.value) { previous, next in
+            guard share.beginSave() else { return }
             Task {
                 do {
                     try await AuthService.setShareStats(next)
-                    saved = next
+                    share.saveSucceeded(wrote: next)
                     await app.refreshUser()
-                    error = nil
                     Haptics.success()
                 } catch let failure {
-                    shareStats = previous
-                    error = (failure as? APIError)?.errorDescription ?? failure.localizedDescription
+                    share.saveFailed(
+                        revertTo: previous,
+                        message: (failure as? APIError)?.errorDescription ?? failure.localizedDescription
+                    )
                     Haptics.warning()
                 }
-                isSaving = false
+                share.finishSave()
             }
         }
     }
