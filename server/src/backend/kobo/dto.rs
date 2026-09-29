@@ -2,7 +2,7 @@
 //! the device sends and expects. Models the entitlement envelope emitted by
 //! `library/sync` plus the request/response for the `state` PUT.
 
-use omnibus_db::kobo::{KoboBookRow, KoboBookState};
+use omnibus_db::kobo::{KoboBookRow, KoboBookState, KoboSeries};
 use omnibus_shared::ReadStatus;
 use serde::{Deserialize, Serialize};
 
@@ -136,6 +136,31 @@ pub struct BookMetadata {
     pub download_urls: Vec<DownloadUrl>,
     pub contributors: Vec<String>,
     pub contributor_roles: Vec<Contributor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series: Option<Series>,
+}
+
+/// A book's series, shaped like Calibre-Web's.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct Series {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number_float: Option<f64>,
+    pub id: String,
+}
+
+impl From<&KoboSeries> for Series {
+    fn from(series: &KoboSeries) -> Self {
+        Self {
+            name: series.name.clone(),
+            number: series.index,
+            number_float: series.index,
+            id: series.id.clone(),
+        }
+    }
 }
 
 /// One credited name and the role it is credited under.
@@ -377,6 +402,7 @@ fn removed_entitlement(book_uuid: &str) -> SyncItem {
             download_urls: Vec::new(),
             contributors: Vec::new(),
             contributor_roles: Vec::new(),
+            series: None,
         },
         reading_state: ReadingState {
             entitlement_id: uuid,
@@ -450,6 +476,7 @@ pub fn book_metadata(base: &str, token: &str, book: &KoboBookRow) -> BookMetadat
                 role: "Author",
             })
             .collect(),
+        series: book.series.as_ref().map(Series::from),
     }
 }
 

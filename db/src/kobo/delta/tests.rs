@@ -362,6 +362,7 @@ fn synthetic_book(n: usize, last_modified_epoch: i64) -> KoboBookRow {
         title: format!("Book {n}"),
         authors: vec!["Author".into()],
         description: String::new(),
+        series: None,
         last_modified_epoch,
         download_size_bytes: 0,
         has_epub: true,

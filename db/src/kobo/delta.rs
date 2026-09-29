@@ -7,7 +7,7 @@ use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 use super::{sync_books, KoboBookRow, KoboError};
 
 /// What `library/sync` should emit for one book on one device.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SyncChange {
     /// The device has never seen this book.
     New(KoboBookRow),

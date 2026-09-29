@@ -15,7 +15,8 @@ pub mod delta;
 pub use delta::{clear_snapshot, record_synced, sync_delta, SyncChange, SyncDelta};
 
 /// SELECT list shared by [`sync_books`] and [`book_for_sync`]. `b` is the
-/// `books` alias; `authors_json` carries every author in `position` order.
+/// `books` alias; `authors_json` carries every author in `position` order and
+/// `series_name` the same series pick `books::projection` shows the web.
 const SELECT_COLS: &str = "b.id AS id,
                 b.uuid,
                 COALESCE(b.title, '') AS title,
@@ -27,6 +28,10 @@ const SELECT_COLS: &str = "b.id AS id,
                     ORDER BY bal.position ASC, a.name ASC
                 )) AS authors_json,
                 b.description AS description,
+                (SELECT s.name FROM books_series_link bsl
+                   JOIN series s ON s.id = bsl.series
+                  WHERE bsl.book = b.id ORDER BY s.name LIMIT 1) AS series_name,
+                b.series_index AS series_index,
                 CAST(COALESCE(b.last_modified, 0) AS INTEGER) AS last_modified_epoch,
                 COALESCE((
                     SELECT bf.size_bytes
@@ -72,7 +77,7 @@ const DOWNLOADABLE_PREDICATE: &str = "EXISTS(
 /// One book shaped for the Kobo sync endpoint: durable uuid, display title,
 /// authors, and the last-modified epoch that drives the device's
 /// metadata-freshness check.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct KoboBookRow {
     /// `books.id` — lets sync-out reach the kepub cache and source file for
     /// span derivation without a second lookup.
@@ -85,6 +90,8 @@ pub struct KoboBookRow {
     /// sanitized the same way `db::get_book` sanitizes it. Empty when the
     /// book has none — Kobo tolerates a blank description.
     pub description: String,
+    /// The series the web shows for this book, overrides applied.
+    pub series: Option<KoboSeries>,
     pub last_modified_epoch: i64,
     /// Size of the file the download route would serve: the lowest-ordinal
     /// EPUB, else CBZ, else PDF, `0` when the book has none. Advertised on
@@ -98,6 +105,30 @@ pub struct KoboBookRow {
     /// Whether the book has any CBZ file — the second rung (`CBZ`); a book
     /// with neither advertises `PDF`.
     pub has_cbz: bool,
+}
+
+/// The series a book syncs under, overrides applied.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct KoboSeries {
+    pub name: String,
+    /// `None` when the index is unknown.
+    pub index: Option<f64>,
+    /// UUIDv5 of the normalized name, so a series groups on every device.
+    pub id: String,
+}
+
+impl KoboSeries {
+    /// Build a series, deriving `id` from `name`.
+    pub fn new(name: String, index: Option<f64>) -> Self {
+        let key =
+            crate::normalize::normalize_title(&name).unwrap_or_else(|| name.trim().to_lowercase());
+        let id = uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_URL,
+            format!("omnibus:series:{key}").as_bytes(),
+        )
+        .to_string();
+        Self { name, index, id }
+    }
 }
 
 impl KoboBookRow {
@@ -286,6 +317,12 @@ async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Res
         let mut book = omnibus_shared::EbookMetadata {
             title: Some(row.title.clone()),
             description: (!row.description.is_empty()).then(|| row.description.clone()),
+            series: row.series.as_ref().map(|s| s.name.clone()),
+            series_index: row
+                .series
+                .as_ref()
+                .and_then(|s| s.index)
+                .map(crate::helpers::format_series_index),
             creators: row
                 .authors
                 .iter()
@@ -308,8 +345,26 @@ async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Res
         }
         row.authors = book.creators.into_iter().map(|c| c.name).collect();
         row.description = book.description.unwrap_or_default();
+        row.series = book.series.filter(|name| !name.is_empty()).map(|name| {
+            let index = book
+                .series_index
+                .as_deref()
+                .and_then(crate::helpers::parse_series_index);
+            KoboSeries::new(name, index)
+        });
     }
     Ok(())
+}
+
+/// The row's series, with a NULL or non-finite index read as unknown.
+fn row_series(row: &sqlx::sqlite::SqliteRow) -> Result<Option<KoboSeries>, sqlx::Error> {
+    let Some(name) = row.try_get::<Option<String>, _>("series_name")? else {
+        return Ok(None);
+    };
+    let index = row
+        .try_get::<Option<f64>, _>("series_index")?
+        .filter(|n| n.is_finite());
+    Ok(Some(KoboSeries::new(name, index)))
 }
 
 fn row_to_book(row: &sqlx::sqlite::SqliteRow) -> Result<KoboBookRow, sqlx::Error> {
@@ -319,6 +374,7 @@ fn row_to_book(row: &sqlx::sqlite::SqliteRow) -> Result<KoboBookRow, sqlx::Error
         title: row.get("title"),
         authors: crate::books::parse_json_array(row.get("authors_json"))?,
         description: crate::books::sanitize_description(row.get("description")).unwrap_or_default(),
+        series: row_series(row)?,
         last_modified_epoch: row.get("last_modified_epoch"),
         download_size_bytes: row.get("download_size_bytes"),
         has_epub: row.get("has_epub"),

@@ -1,5 +1,5 @@
 //! Tests for the bibliographic fields a Kobo sync row carries beyond the
-//! title: every author in position order, overrides applied.
+//! title: every author in position order and the series, overrides applied.
 
 use super::*;
 use crate::test_support::{indexed, uuid_by_scan_key};
@@ -57,4 +57,139 @@ async fn sync_books_replaces_every_author_with_a_creators_override() {
     let rows = sync_books(&pool, user).await.unwrap();
 
     assert_eq!(rows[0].authors, vec!["Terry Pratchett", "Neil Gaiman"]);
+}
+
+/// Index one ebook under `/ebooks` and return its minted uuid.
+async fn seed_with_series(
+    pool: &SqlitePool,
+    filename: &str,
+    series: Option<(&str, &str)>,
+) -> String {
+    crate::sync::sync_books(
+        pool,
+        "/ebooks",
+        crate::sync::SyncPlan {
+            new_books: vec![indexed(
+                filename,
+                Some("A Book"),
+                &["An Author"],
+                &[],
+                series,
+                None,
+            )],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    uuid_by_scan_key(pool, &crate::helpers::scan_key_for(filename)).await
+}
+
+async fn override_series(
+    pool: &SqlitePool,
+    uuid: &str,
+    user: i64,
+    series: &str,
+    index: Option<&str>,
+) {
+    upsert_metadata_overrides(
+        pool,
+        uuid,
+        &MetadataOverrides {
+            series: Some(series.into()),
+            series_index: index.map(Into::into),
+            ..Default::default()
+        },
+        false,
+        user,
+    )
+    .await
+    .unwrap();
+}
+
+#[test]
+fn kobo_series_new_derives_a_stable_id_from_the_normalized_name() {
+    let id = KoboSeries::new("The Expanse".into(), None).id;
+
+    assert_eq!(id, "17a975b6-3a16-5b73-8aad-82cde885aedc");
+    assert_eq!(KoboSeries::new("the  EXPANSE".into(), Some(3.0)).id, id);
+    assert_ne!(KoboSeries::new("Expanse".into(), None).id, id);
+}
+
+#[tokio::test]
+async fn book_for_sync_carries_the_series_the_web_shows_with_its_index() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_with_series(&pool, "leviathan.epub", Some(("The Expanse", "2"))).await;
+    let zeta: i64 = sqlx::query_scalar(
+        "INSERT INTO series (name, sort) VALUES ('Zeta Omnibus', 'Zeta Omnibus') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO books_series_link (book, series) SELECT id, ? FROM books WHERE uuid = ?",
+    )
+    .bind(zeta)
+    .bind(&uuid)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let series = book_for_sync(&pool, &uuid)
+        .await
+        .unwrap()
+        .unwrap()
+        .series
+        .unwrap();
+
+    assert_eq!(series.name, "The Expanse");
+    assert_eq!(series.index, Some(2.0));
+}
+
+#[tokio::test]
+async fn book_for_sync_omits_the_series_index_when_it_is_unknown() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_with_series(&pool, "mort.epub", Some(("Discworld", ""))).await;
+
+    let series = book_for_sync(&pool, &uuid)
+        .await
+        .unwrap()
+        .unwrap()
+        .series
+        .unwrap();
+
+    assert_eq!(series.name, "Discworld");
+    assert_eq!(series.index, None);
+}
+
+#[tokio::test]
+async fn book_for_sync_has_no_series_for_a_book_in_none() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_with_series(&pool, "standalone.epub", None).await;
+
+    let row = book_for_sync(&pool, &uuid).await.unwrap().unwrap();
+
+    assert_eq!(row.series, None);
+}
+
+#[tokio::test]
+async fn book_for_sync_applies_a_series_override_and_drops_a_cleared_series() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "editor").await;
+    let uuid = seed_with_series(&pool, "leviathan.epub", Some(("The Expanse", "2"))).await;
+
+    override_series(&pool, &uuid, user, "Renamed Saga", Some("4.5")).await;
+    let series = book_for_sync(&pool, &uuid)
+        .await
+        .unwrap()
+        .unwrap()
+        .series
+        .unwrap();
+    assert_eq!(series.name, "Renamed Saga");
+    assert_eq!(series.index, Some(4.5));
+    assert_eq!(series.id, KoboSeries::new("Renamed Saga".into(), None).id);
+
+    override_series(&pool, &uuid, user, "", None).await;
+    let row = book_for_sync(&pool, &uuid).await.unwrap().unwrap();
+    assert_eq!(row.series, None);
 }
