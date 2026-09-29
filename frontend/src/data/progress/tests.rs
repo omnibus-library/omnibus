@@ -1,3 +1,4 @@
+//! Mobile `recent_progress` transport tests: another reader's list is online-only and never touches the viewer's cache.
 #![allow(clippy::await_holding_lock)]
 
 use axum::extract::Query;
