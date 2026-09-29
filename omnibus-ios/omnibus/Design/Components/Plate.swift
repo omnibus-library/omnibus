@@ -57,7 +57,8 @@ struct Plate<Content: View>: View {
 struct PlateRow<Content: View>: View {
     let label: String
     var isFirst = false
-    /// An optional line beneath the label, styled by the caller.
+    /// An optional line beneath the label, styled by the caller. A row with one
+    /// reads as a setting, so its label becomes a sentence-case title.
     var detail: Text? = nil
     @ViewBuilder var content: () -> Content
 
@@ -69,8 +70,14 @@ struct PlateRow<Content: View>: View {
 
             HStack(spacing: Spacing.md) {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    RowLabel(label)
-                    if let detail { detail }
+                    if let detail {
+                        Text(label)
+                            .font(.ui(14, weight: .semibold))
+                            .foregroundStyle(palette.ink0Color)
+                        detail
+                    } else {
+                        RowLabel(label)
+                    }
                 }
                 Spacer(minLength: Spacing.sm)
                 content()
