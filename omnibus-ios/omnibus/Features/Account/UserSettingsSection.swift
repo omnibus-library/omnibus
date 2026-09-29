@@ -59,29 +59,26 @@ struct UserSettingsSection: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             SectionLabel("User settings")
 
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                Plate {
-                    PlateRow(label: "Book details scroll stops", isFirst: true) {
-                        Toggle("", isOn: $scrollStops)
-                            .labelsHidden()
-                            .tint(palette.accentColor)
-                            .disabled(!connectivity.isOnline)
-                    }
-
-                    if showsShareStats {
-                        PlateRow(label: "Share stats with household") {
-                            Toggle("", isOn: $shareStats)
-                                .labelsHidden()
-                                .tint(palette.accentColor)
-                                .disabled(!connectivity.isOnline || isSaving)
-                        }
-                    }
+            Plate {
+                PlateRow(
+                    label: "Book details scroll stops", isFirst: true,
+                    detail: captionText(.scrollStops, isOn: scrollStops, error: scrollStopsError)
+                ) {
+                    Toggle("", isOn: $scrollStops)
+                        .labelsHidden()
+                        .tint(palette.accentColor)
+                        .disabled(!connectivity.isOnline)
                 }
 
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    captionText(.scrollStops, isOn: scrollStops, error: scrollStopsError)
-                    if showsShareStats {
-                        captionText(.shareStats, isOn: shareStats, error: error)
+                if showsShareStats {
+                    PlateRow(
+                        label: "Share stats with household",
+                        detail: captionText(.shareStats, isOn: shareStats, error: error)
+                    ) {
+                        Toggle("", isOn: $shareStats)
+                            .labelsHidden()
+                            .tint(palette.accentColor)
+                            .disabled(!connectivity.isOnline || isSaving)
                     }
                 }
             }
@@ -119,7 +116,7 @@ struct UserSettingsSection: View {
         }
     }
 
-    private func captionText(_ row: Row, isOn: Bool, error: String?) -> some View {
+    private func captionText(_ row: Row, isOn: Bool, error: String?) -> Text {
         Text(Self.caption(row, isOn: isOn, error: error))
             .font(.ui(12))
             .foregroundStyle(error == nil ? palette.ink3Color : palette.badColor)
