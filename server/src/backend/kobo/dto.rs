@@ -68,9 +68,10 @@ fn derive_opaque(token: &str, purpose: &str) -> String {
 ///
 /// The three shapes map 1:1 onto `db::kobo::SyncChange`: an add is a
 /// `NewEntitlement`; a change is `ChangedProductMetadata` (the device
-/// re-fetches metadata + file) paired with a `ChangedReadingState`; a removal
-/// is a `ChangedEntitlement` whose `BookEntitlement.IsRemoved` is true, which
-/// archives the book on-device without touching annotations.
+/// refreshes its metadata; the file is not re-downloaded) paired with a
+/// `ChangedReadingState`; a removal is a `ChangedEntitlement` whose
+/// `BookEntitlement.IsRemoved` is true, which archives the book on-device
+/// without touching annotations.
 #[derive(Debug, Serialize)]
 pub enum SyncItem {
     NewEntitlement(Entitlement),

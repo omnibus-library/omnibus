@@ -10,6 +10,9 @@ use crate::init_db;
 use crate::shelves::{create_shelf, update_shelf};
 use crate::test_support::seed_synced_ebook;
 
+/// Migration `0100`'s resend, read from the migration itself so the two cannot drift.
+const KOBO_RESEND: &str = include_str!("../../../migrations/0100_kobo_resend_metadata.sql");
+
 async fn make_user(pool: &SqlitePool, username: &str) -> i64 {
     sqlx::query_scalar::<_, i64>(
         "INSERT INTO users (username, password_hash, is_admin) VALUES (?, 'x', 0) RETURNING id",
@@ -525,4 +528,33 @@ async fn sync_delta_removes_a_held_book_that_no_longer_has_a_downloadable_file()
         &delta.changes[0],
         SyncChange::Removed { book_uuid } if *book_uuid == uuid
     ));
+}
+
+#[tokio::test]
+async fn resend_migration_marks_every_held_book_changed_exactly_once() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let device = make_device(&pool, user, "Clara").await;
+    let dune = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    let emma = seed_synced_ebook(&pool, "emma.epub", "Emma", "Austen").await;
+    synced_shelf(&pool, user, "Kobo", &[dune.clone(), emma.clone()]).await;
+    sync_once(&pool, user, device).await;
+    assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
+
+    sqlx::raw_sql(KOBO_RESEND).execute(&pool).await.unwrap();
+
+    let delta = sync_once(&pool, user, device).await;
+    let mut changed: Vec<String> = delta
+        .changes
+        .iter()
+        .map(|change| match change {
+            SyncChange::Changed(book) => book.uuid.clone(),
+            other => panic!("expected Changed, got {other:?}"),
+        })
+        .collect();
+    changed.sort();
+    let mut expected = vec![dune, emma];
+    expected.sort();
+    assert_eq!(changed, expected);
+    assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
 }
