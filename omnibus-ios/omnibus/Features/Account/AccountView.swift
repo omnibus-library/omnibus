@@ -51,16 +51,10 @@ struct AccountView: View {
 
                     appearance($app)
                     reading
-                    // A server that never sent the field can't save it either
-                    // — same reasoning as the reader picker hiding on a
-                    // server without `/api/users`.
-                    if app.user?.shareStatsSetting != nil {
-                        ShareStatsSection()
-                    }
+                    UserSettingsSection(scrollStops: $scrollStops, scrollStopsError: scrollStopsError)
                     library
                     offline
                     sendToKindle
-                    bookDetailSection
                     hiddenFormatsSection
                     session
                     colophon
@@ -346,31 +340,6 @@ struct AccountView: View {
                     .contentTransition(.numericText())
                     .animation(Motion.snap, value: kindleSaved)
                 }
-            }
-        }
-    }
-
-    /// Whether this reader's book detail page uses the snap-stop marquee —
-    /// off, it renders as one continuous flow. Account configuration: saved
-    /// directly, never queued (rule 08).
-    private var bookDetailSection: some View {
-        group("Book details") {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                Plate {
-                    PlateRow(label: "Use scroll stops", isFirst: true) {
-                        Toggle("", isOn: $scrollStops)
-                            .labelsHidden()
-                            .tint(palette.accentColor)
-                            .disabled(!connectivity.isOnline)
-                    }
-                }
-
-                Text(
-                    scrollStopsError
-                        ?? "Snap through the book detail page one panel at a time, instead of scrolling it continuously."
-                )
-                .font(.ui(12))
-                .foregroundStyle(scrollStopsError == nil ? palette.ink3Color : palette.badColor)
             }
         }
     }
