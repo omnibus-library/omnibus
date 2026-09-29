@@ -15,15 +15,17 @@
 #[cfg(not(feature = "mobile"))]
 use omnibus_shared::{ChartResult, ChartSpec};
 use omnibus_shared::{
-    DailyGoalUpdate, DailyGoals, LibraryComposition, LibrarySize, ReadingGoal, ReadingGoalUpdate,
-    SessionLogPage, StatsRange, StatsSummary,
+    DailyGoalUpdate, DailyGoals, HouseholdReader, LibraryComposition, LibrarySize, ReadingGoal,
+    ReadingGoalUpdate, SessionLogPage, StatsRange, StatsSummary,
 };
 
 #[cfg(not(feature = "mobile"))]
 use super::note_server_fn_err;
 use super::DataError;
 #[cfg(feature = "mobile")]
-use super::{drain_error, encode_query_value, http_client, note_status, with_bearer};
+use super::{
+    drain_error, encode_query_value, http_client, note_status, require_online, with_bearer,
+};
 
 /// `?utc_offset_minutes=…` for the goal writes, or an empty string when this
 /// build has no offset to declare.
@@ -38,15 +40,34 @@ fn offset_query() -> String {
         .unwrap_or_default()
 }
 
-/// GET `/api/stats?range=…` — fetch the current user's stats summary.
+/// GET `/api/stats?range=…` — fetch a stats summary: the caller's own with
+/// `user_id: None`, or a sharing household reader's with `user_id: Some(id)`.
+///
+/// A `Some` id bypasses the offline cache entirely (read and write): the
+/// cache is keyed only on `range`, so serving or storing under it here would
+/// let one reader's figures leak into another's cached copy. `require_online`
+/// makes that failure mode a fast, honest [`DataError::Offline`] rather than a
+/// stale answer.
 #[cfg(feature = "mobile")]
-pub async fn fetch_stats(server_url: &str, range: StatsRange) -> Result<StatsSummary, DataError> {
-    let url = server_url.to_string();
-    crate::offline::cache::read_through(
-        crate::offline::cache::keys::stats(range.as_query()),
-        async move { fetch_stats_online(&url, range).await },
-    )
-    .await
+pub async fn fetch_stats(
+    server_url: &str,
+    range: StatsRange,
+    user_id: Option<i64>,
+) -> Result<StatsSummary, DataError> {
+    match user_id {
+        None => {
+            let url = server_url.to_string();
+            crate::offline::cache::read_through(
+                crate::offline::cache::keys::stats(range.as_query()),
+                async move { fetch_stats_online(&url, range, None).await },
+            )
+            .await
+        }
+        Some(_) => {
+            require_online()?;
+            fetch_stats_online(server_url, range, user_id).await
+        }
+    }
 }
 
 /// Native HTTP transport for [`fetch_stats`].
@@ -54,10 +75,14 @@ pub async fn fetch_stats(server_url: &str, range: StatsRange) -> Result<StatsSum
 pub(crate) async fn fetch_stats_online(
     server_url: &str,
     range: StatsRange,
+    user_id: Option<i64>,
 ) -> Result<StatsSummary, DataError> {
     let mut url = format!("{server_url}/api/stats?range={}", range.as_query());
     if let Some(offset) = crate::time::local_utc_offset_minutes() {
         url.push_str(&format!("&utc_offset_minutes={offset}"));
+    }
+    if let Some(id) = user_id {
+        url.push_str(&format!("&user_id={id}"));
     }
     let response = with_bearer(http_client().get(&url)).send().await?;
     let status = note_status(response.status());
@@ -69,10 +94,52 @@ pub(crate) async fn fetch_stats_online(
 
 /// Web/SSR `fetch_stats` — server-function wrapper that proxies to `rpc_stats`.
 #[cfg(not(feature = "mobile"))]
-pub async fn fetch_stats(_server_url: &str, range: StatsRange) -> Result<StatsSummary, DataError> {
-    crate::rpc::rpc_stats(range, crate::time::local_utc_offset_minutes())
+pub async fn fetch_stats(
+    _server_url: &str,
+    range: StatsRange,
+    user_id: Option<i64>,
+) -> Result<StatsSummary, DataError> {
+    crate::rpc::rpc_stats(range, crate::time::local_utc_offset_minutes(), user_id)
         .await
         .map_err(note_server_fn_err)
+}
+
+/// GET `/api/users` — the readers whose stats the caller may view, the
+/// caller first. Web/SSR proxies to `rpc_household_readers`; mobile reads
+/// the REST route directly, uncached like [`fetch_session_log`] — there is
+/// no small key to serve stale.
+#[cfg(feature = "mobile")]
+pub async fn household_readers(server_url: &str) -> Result<Vec<HouseholdReader>, DataError> {
+    require_online()?;
+    let url = format!("{server_url}/api/users");
+    let response = with_bearer(http_client().get(&url)).send().await?;
+    let status = note_status(response.status());
+    if !status.is_success() {
+        return Err(drain_error(response, status).await);
+    }
+    Ok(response.json::<Vec<HouseholdReader>>().await?)
+}
+
+/// Web/SSR `household_readers` — proxies to `rpc_household_readers`.
+#[cfg(not(feature = "mobile"))]
+pub async fn household_readers(_server_url: &str) -> Result<Vec<HouseholdReader>, DataError> {
+    crate::rpc::rpc_household_readers()
+        .await
+        .map_err(note_server_fn_err)
+}
+
+/// Pinned by the epic's API contract (#2670); the db layer owns the server's
+/// own copy of this text.
+const NOT_SHARING_MESSAGE: &str = "this reader isn't sharing their stats";
+
+/// Whether `err` is the server refusing to answer for a reader who isn't
+/// sharing their stats, rather than some other failure.
+pub fn is_not_sharing(err: &DataError) -> bool {
+    match err {
+        DataError::Http { status: 404, .. } => true,
+        DataError::Other(message) => message.contains(NOT_SHARING_MESSAGE),
+        _ => false,
+    }
 }
 
 /// GET `/api/library-size` — how big the library is in words, pages, and
@@ -236,7 +303,7 @@ pub async fn fetch_session_log(
     book: Option<&str>,
     before: Option<&str>,
 ) -> Result<SessionLogPage, DataError> {
-    crate::rpc::rpc_session_log(book.map(str::to_string), before.map(str::to_string))
+    crate::rpc::rpc_session_log(book.map(str::to_string), before.map(str::to_string), None)
         .await
         .map_err(note_server_fn_err)
 }
@@ -255,3 +322,6 @@ pub async fn fetch_chart_series(
         .await
         .map_err(note_server_fn_err)
 }
+
+#[cfg(test)]
+mod tests;

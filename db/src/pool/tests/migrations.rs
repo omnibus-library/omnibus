@@ -1,6 +1,7 @@
 //! Per-migration correctness: 0021's schema cleanup, 0038's timestamp
-//! coercion and orphan-row handling across the recreated tables, and
-//! 0069's library-cleanup tables with their unique constraints.
+//! coercion and orphan-row handling across the recreated tables, 0069's
+//! library-cleanup tables with their unique constraints, and 0099's
+//! share-stats backfill.
 
 use super::super::*;
 
@@ -458,5 +459,45 @@ async fn migration_0069_entity_aliases_rejects_duplicate_kind_alias_name() {
     assert!(
         err.to_string().to_lowercase().contains("constraint"),
         "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
+    // A pool migrated to just below 0099 — the schema an install predating
+    // the share-stats column sits at. One connection, so the in-memory
+    // database is a single shared one, matching `pool_before_merge_orphan_heal`
+    // in `crate::merge::tests::migration_0079`.
+    const SHARE_STATS_VERSION: i64 = 99;
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < SHARE_STATS_VERSION) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == SHARE_STATS_VERSION)
+        .expect("0099 must exist");
+    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+
+    let share_stats: i64 = sqlx::query_scalar("SELECT share_stats FROM users WHERE id = 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        share_stats, 1,
+        "an existing reader's row must turn on sharing"
     );
 }

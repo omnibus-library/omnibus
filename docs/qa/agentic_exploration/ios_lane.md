@@ -45,7 +45,7 @@ and no note edit for a highlight, only create and delete; no image control in
 the journal composer; no Genres section in Search; no toast on a profile save
 (the sheet closes and the header updates); "reload" is `ios.sh relaunch`; and after sign-out the
 **Welcome back** screen keeps the server, with the connect step behind "Use a
-different server". The You tab's **Book details → Use scroll stops** toggle
+different server". The You tab's **User settings → Book details scroll stops** toggle
 exists, as on the web.
 
 The prime directive still holds: **you navigate by tapping**, never by deep link. The only URL you

@@ -35,7 +35,11 @@ fn login_href_is_bare_for_the_landing_page() {
 
 #[test]
 fn login_href_round_trips_a_page_through_the_router() {
-    assert_eq!(round_trip("/stats"), Some(Route::Stats {}));
+    assert_eq!(round_trip("/stats"), Some(Route::Stats { user: None }));
+    assert_eq!(
+        round_trip("/stats?user=7"),
+        Some(Route::Stats { user: Some(7) })
+    );
     assert_eq!(
         round_trip("/books/book-a"),
         Some(Route::BookDetail {
@@ -84,8 +88,12 @@ fn login_href_round_trips_an_already_encoded_path_segment() {
 #[test]
 fn login_target_from_returns_the_reader_to_the_page_they_were_on() {
     assert_eq!(
-        login_target_from(&Route::Stats {}),
+        login_target_from(&Route::Stats { user: None }),
         NavigationTarget::Internal("/login?next=%2Fstats".into())
+    );
+    assert_eq!(
+        login_target_from(&Route::Stats { user: Some(7) }),
+        NavigationTarget::Internal("/login?next=%2Fstats%3Fuser%3D7".into())
     );
     // The router's dangling `?` for an absent query argument stays out of it.
     assert_eq!(
@@ -115,7 +123,11 @@ fn login_target_is_bare_login() {
 
 #[test]
 fn safe_next_accepts_an_in_app_page() {
-    assert_eq!(safe_next(Some("/stats")), Some(Route::Stats {}));
+    assert_eq!(safe_next(Some("/stats")), Some(Route::Stats { user: None }));
+    assert_eq!(
+        safe_next(Some("/stats?user=7")),
+        Some(Route::Stats { user: Some(7) })
+    );
     assert_eq!(safe_next(Some("/")), Some(Route::Landing {}));
 }
 

@@ -472,6 +472,35 @@ async fn delete_book_items_never_orphans_a_zero_item_book_row_under_concurrent_d
     std::fs::remove_dir_all(&dir).ok();
 }
 
+#[tokio::test]
+async fn delete_book_items_completes_on_one_connection_when_the_rest_of_the_pool_is_held() {
+    // Writers queued behind the `BEGIN IMMEDIATE` lock hold every other pooled
+    // connection; a transaction that asks the pool for another deadlocks until
+    // the acquire timeout.
+    let dir = temp_dir("one_connection");
+    let _env = cache_env(&dir);
+    let pool = pool().await;
+    let lib = seed_root(&pool, "/lib").await;
+    let book = seed_book(&pool, lib, "uuid-a", "Starved").await;
+    let file = seed_file(&pool, book, "/lib", "a", "a", "EPUB").await;
+    let mut held = Vec::new();
+    for _ in 1..pool.options().get_max_connections() {
+        held.push(pool.acquire().await.unwrap());
+    }
+
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        delete_book_items(&pool, "uuid-a", &[file], &[]),
+    )
+    .await
+    .expect("the deletion transaction must not wait on a second connection")
+    .unwrap();
+
+    assert!(out.book_deleted);
+    drop(held);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 // --- DeleteError variants ------------------------------------------------
 
 #[tokio::test]

@@ -66,29 +66,48 @@ fn build_spark(summary: &StatsSummary, anchor: i64) -> Vec<SparkBar> {
 }
 
 /// The line under the headline: where this run stands against the record.
+/// `yours` picks first- or third-person phrasing — `false` on another
+/// reader's page.
 ///
 /// `None` when the reader has neither a live run nor a record — there is
 /// nothing to compare, and a sentence saying so is furniture.
-fn streak_line(current: i64, longest: i64) -> Option<String> {
+fn streak_line(current: i64, longest: i64, yours: bool) -> Option<String> {
     if longest <= 0 {
         return None;
     }
     if current >= longest {
-        return Some("That is the longest run you have recorded.".to_string());
+        return Some(if yours {
+            "That is the longest run you have recorded.".to_string()
+        } else {
+            "That is the longest run on record.".to_string()
+        });
     }
-    Some(format!(
-        "Your longest ever is {longest} {}.",
-        plural_noun(longest, "day")
-    ))
+    let days = plural_noun(longest, "day");
+    Some(if yours {
+        format!("Your longest ever is {longest} {days}.")
+    } else {
+        format!("The longest ever is {longest} {days}.")
+    })
 }
 
 /// The standing hero. `summary` is the all-time summary — the one fetch a
 /// period switch never re-runs — and is `None` only while it is in flight.
+/// `who` is [`super::picker::Viewing::heading`] — `None` on the caller's own
+/// page, `Some("{name}'s stats")` on another reader's. `children` is the
+/// reader picker, rendered as the hero's first row.
 ///
 /// The goals are read straight off it rather than owned as signals: nothing on
 /// this page writes them any more, so there is no save to fold back in.
 #[component]
-pub(super) fn StatsHero(summary: Option<StatsSummary>) -> Element {
+pub(super) fn StatsHero(
+    summary: Option<StatsSummary>,
+    #[props(default)] who: Option<String>,
+    children: Element,
+) -> Element {
+    // Goals are read-only on another reader's page — all three are set
+    // together in Settings → Account, which is reachable only from the
+    // caller's own.
+    let editable = who.is_none();
     let as_of_day = summary
         .as_ref()
         .map(|s| s.as_of_day.clone())
@@ -113,10 +132,18 @@ pub(super) fn StatsHero(summary: Option<StatsSummary>) -> Element {
 
     rsx! {
         header { class: "st-hero", "data-testid": "stats-hero",
+            {children}
             div { class: "st-hero-inner",
                 div { class: "st-hero-run",
+                    if let Some(who) = who.clone() {
+                        p { class: "st-hero-who", "data-testid": "stats-hero-who", "{who}" }
+                    }
                     span { class: "st-hero-kicker",
-                        if current > 0 { "You are on a run" } else { "No run right now" }
+                        match (current > 0, editable) {
+                            (true, true) => "You are on a run",
+                            (true, false) => "On a run",
+                            (false, _) => "No run right now",
+                        }
                     }
                     h1 { class: "st-hero-figure", "data-testid": "stats-current-streak",
                         "{current} "
@@ -126,7 +153,7 @@ pub(super) fn StatsHero(summary: Option<StatsSummary>) -> Element {
                     // Not `stats-longest-streak` — this is the sentence
                     // *about* the record, and the heatmap's header carries
                     // the figure itself under that name.
-                    if let Some(line) = streak_line(current, longest) {
+                    if let Some(line) = streak_line(current, longest, editable) {
                         p { class: "st-hero-line", "data-testid": "stats-streak-line", {line} }
                     }
                     if !spark.is_empty() {
@@ -155,8 +182,8 @@ pub(super) fn StatsHero(summary: Option<StatsSummary>) -> Element {
                     }
                 }
                 div { class: "st-hero-goals",
-                    AnnualGoalRing { goal, finished, year, as_of_day }
-                    DailyGoalsCard { daily }
+                    AnnualGoalRing { goal, finished, year, as_of_day, editable }
+                    DailyGoalsCard { daily, editable }
                 }
             }
         }

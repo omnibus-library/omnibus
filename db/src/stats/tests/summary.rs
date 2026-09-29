@@ -7,7 +7,8 @@ use omnibus_shared::StatsRange;
 
 use super::super::*;
 use super::{
-    book_id, link_author, link_tag, listening_session, reading_session, seed_user, DAY, T0,
+    book_id, link_author, link_tag, listening_session, reading_session, seed_user,
+    seed_user_with_id, DAY, T0,
 };
 use crate::init_db;
 use crate::test_support::seed_minimal_books;
@@ -330,21 +331,6 @@ async fn listening_daily_sums_seconds_per_day_within_the_window() {
     assert_eq!(daily.len(), 2);
     assert_eq!(daily[0].seconds, 500);
     assert_eq!(daily[1].seconds, 400);
-}
-
-/// Seed a user with an explicit id. The stats cache is a process-wide static
-/// keyed on `(user_id, range)` and every test pool restarts ids at 1, so
-/// tests exercising the *cached* `user_stats` entry point must claim ids no
-/// sibling test can collide with (tests run in parallel — a `clear_cache()`
-/// here would race the TTL test instead of helping).
-async fn seed_user_with_id(pool: &SqlitePool, id: i64, name: &str) -> i64 {
-    sqlx::query("INSERT INTO users (id, username, password_hash) VALUES (?, ?, '!x')")
-        .bind(id)
-        .bind(name)
-        .execute(pool)
-        .await
-        .unwrap();
-    id
 }
 
 #[tokio::test]

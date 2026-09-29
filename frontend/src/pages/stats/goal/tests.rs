@@ -147,6 +147,18 @@ mod render_tests {
         HalfDailyHost {},
     }
 
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum ReadOnlyUnsetRingRoute {
+        #[route("/")]
+        ReadOnlyUnsetRingHost {},
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum ReadOnlyNoDailyRoute {
+        #[route("/")]
+        ReadOnlyNoDailyHost {},
+    }
+
     #[component]
     fn SetRingHost() -> Element {
         rsx! {
@@ -185,6 +197,35 @@ mod render_tests {
                     pages_today: Some(47),
                     minutes_today: Some(0),
                 },
+            }
+        }
+    }
+
+    #[component]
+    fn ReadOnlyUnsetRingHost() -> Element {
+        rsx! {
+            AnnualGoalRing {
+                goal: None,
+                finished: Some(22),
+                year: "2026".to_string(),
+                as_of_day: "2026-07-02".to_string(),
+                editable: false,
+            }
+        }
+    }
+
+    #[component]
+    fn ReadOnlyNoDailyHost() -> Element {
+        rsx! {
+            DailyGoalsCard {
+                daily: DailyGoals {
+                    pages: None,
+                    minutes: None,
+                    unzoned_seconds: 0,
+                    pages_today: Some(47),
+                    minutes_today: Some(0),
+                },
+                editable: false,
             }
         }
     }
@@ -281,5 +322,24 @@ mod render_tests {
         assert!(html.contains(">Pages a day<"), "{html}");
         // And the card still offers the one place to finish setting up.
         assert!(html.contains("stats-daily-set-link"), "{html}");
+    }
+
+    /// Viewing another reader's page: the figure still shows (their goals
+    /// follow the selection), but the Settings link goes — there's nowhere on
+    /// this page to change someone else's targets.
+    #[test]
+    fn a_read_only_annual_ring_reports_the_year_to_date_figure_with_no_link() {
+        let html = render_in_vdom(|| rsx! { Router::<ReadOnlyUnsetRingRoute> {} });
+        assert!(html.contains("stats-goal-year-to-date"), "{html}");
+        assert!(html.contains("22"), "{html}");
+        assert!(!html.contains("stats-goal-set-link"), "{html}");
+    }
+
+    #[test]
+    fn a_read_only_daily_card_reports_todays_figures_with_no_link() {
+        let html = render_in_vdom(|| rsx! { Router::<ReadOnlyNoDailyRoute> {} });
+        assert!(html.contains("stats-daily-pages-today"), "{html}");
+        assert!(html.contains("47"), "{html}");
+        assert!(!html.contains("stats-daily-set-link"), "{html}");
     }
 }

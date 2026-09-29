@@ -87,6 +87,7 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> A
         hidden_formats: Vec::new(),
         book_detail_scroll_stops: false,
         stack_series: false,
+        share_stats: true,
     })
 }
 
@@ -136,6 +137,7 @@ async fn check_registration_preconditions(
 pub(crate) const USER_COLUMNS: &str =
     "u.id, u.username, u.is_admin, u.can_upload, u.can_edit, u.can_download,
      u.kindle_email, u.display_name, u.hidden_formats, u.book_detail_scroll_stops, u.stack_series,
+     u.share_stats,
      EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar";
 
 /// Look up a user record by username (case-insensitive); returns `None` if no match.
@@ -347,6 +349,26 @@ pub async fn set_stack_series(pool: &SqlitePool, user_id: i64, enabled: bool) ->
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Set whether other readers on this server may see a user's stats page.
+pub async fn set_share_stats(pool: &SqlitePool, user_id: i64, enabled: bool) -> AuthResult<()> {
+    sqlx::query("UPDATE users SET share_stats = ? WHERE id = ?")
+        .bind(i64::from(enabled))
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Read a user's share-stats preference. `false` for a missing user, so a
+/// caller refusing non-sharing readers refuses unknown ids too.
+pub async fn get_share_stats(pool: &SqlitePool, user_id: i64) -> AuthResult<bool> {
+    let v: Option<i64> = sqlx::query_scalar("SELECT share_stats FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(v.unwrap_or(0) != 0)
 }
 
 /// Change a user's password. Verifies `current` against the stored hash to

@@ -552,6 +552,20 @@ pub async fn book_file_path_by_id(
     book_file_id: i64,
     format: Option<&str>,
 ) -> Result<Option<std::path::PathBuf>, super::BooksError> {
+    book_file_path_by_id_exec(pool, book_id, book_file_id, format).await
+}
+
+/// Executor-generic counterpart to [`book_file_path_by_id`], for a caller
+/// resolving paths inside its own open transaction.
+pub async fn book_file_path_by_id_exec<'e, E>(
+    executor: E,
+    book_id: i64,
+    book_file_id: i64,
+    format: Option<&str>,
+) -> Result<Option<std::path::PathBuf>, super::BooksError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
     let sql = if format.is_some() {
         "SELECT COALESCE(bf.library_path, l.path), COALESCE(bf.path, b.path), \
                 bf.filename, bf.format \
@@ -573,7 +587,7 @@ pub async fn book_file_path_by_id(
     if let Some(fmt) = format {
         q = q.bind(fmt);
     }
-    let row = q.fetch_optional(pool).await?;
+    let row = q.fetch_optional(executor).await?;
     Ok(row.map(|(lib, dir, stem, fmt)| {
         std::path::Path::new(&lib)
             .join(&dir)

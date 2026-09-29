@@ -43,6 +43,8 @@ private struct GoalEditLink: View {
 /// occupies (`GoalRing.diameter`) so a mixed card still aligns.
 struct DailyGoalsCard: View {
     let summary: StatsSummary
+    /// `false` while viewing another household reader's targets.
+    var canEditGoals = true
 
     @Environment(\.palette) private var palette
 
@@ -62,7 +64,7 @@ struct DailyGoalsCard: View {
                         .textCase(.uppercase)
                         .foregroundStyle(palette.ink2Color)
                     Spacer(minLength: Spacing.sm)
-                    GoalEditLink()
+                    if canEditGoals { GoalEditLink() }
                 }
 
                 HStack(alignment: .center, spacing: 14) {
@@ -232,6 +234,8 @@ private struct DailyGoalRow: View {
 struct YearGoalCard: View {
     let summary: StatsSummary
     let year: String
+    /// `false` while viewing another household reader's targets.
+    var canEditGoals = true
 
     @Environment(\.palette) private var palette
 
@@ -266,7 +270,7 @@ struct YearGoalCard: View {
                     .foregroundStyle(palette.ink3Color)
                     .lineLimit(1)
             }
-            GoalEditLink()
+            if canEditGoals { GoalEditLink() }
         }
     }
 

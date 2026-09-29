@@ -43,7 +43,7 @@ test("renders the account section layout", async ({ page }) => {
   await expect(page.getByTestId("change-password-submit")).toBeVisible();
   // The per-user feature switches sit above the goals as a table — one row
   // per setting, so a new one is a row rather than another card.
-  await expect(page.getByTestId("account-scroll-stops-card")).toBeVisible();
+  await expect(page.getByTestId("account-user-settings-card")).toBeVisible();
   await expect(
     page.getByRole("heading", { level: 2, name: "Omnibus User Settings" }),
   ).toBeVisible();
@@ -54,6 +54,11 @@ test("renders the account section layout", async ({ page }) => {
   });
   await expect(scrollStops).toBeEnabled();
   await expect(page.getByTestId("scroll-stops-soon")).toHaveCount(0);
+  // Share stats with household (its state is covered by the serial block below).
+  await expect(page.getByTestId("user-setting-share-stats")).toBeVisible();
+  await expect(
+    page.getByRole("switch", { name: "Share stats with household" }),
+  ).toBeEnabled();
   // Hidden-formats card (its behavior is covered by hidden_formats.spec.ts).
   await expect(page.getByTestId("account-hidden-formats-card")).toBeVisible();
 
@@ -604,5 +609,97 @@ test.describe
       await expect(page.getByTestId("goal-books-value")).toHaveText("24 books");
       await page.getByTestId("goals-edit").click();
       await expect(page.getByTestId("goal-books-input")).toHaveValue("24");
+    });
+  });
+
+// The shared admin's share-stats flag is per-account state every other spec
+// (and the layout test above) reads as "on" — serialized so no other test in
+// this file observes it mid-flip, and reset to on both before and after.
+test.describe
+  .serial("share stats", () => {
+    /**
+     * Set the caller's `share_stats` preference, asserting it landed. A silent
+     * setup failure would otherwise surface as a confusing assertion about
+     * which state rendered — the `setScrollStops` shape in `book_detail.spec.ts`.
+     */
+    async function setShareStats(request: APIRequestContext, enabled: boolean) {
+      const resp = await request.post("/api/account/share-stats", {
+        data: { enabled },
+      });
+      expect(resp.status(), `setting share stats to ${enabled} failed`).toBe(
+        200,
+      );
+    }
+
+    test.beforeEach(async ({ request }) => {
+      await setShareStats(request, true);
+    });
+    test.afterEach(async ({ request }) => {
+      await setShareStats(request, true);
+    });
+
+    const shareStatsSwitch = (page: Page) =>
+      page.getByRole("switch", { name: "Share stats with household" });
+
+    test("turning share stats off saves and survives a reload", async ({
+      page,
+    }) => {
+      await gotoReady(page, ACCOUNT);
+
+      await expect(shareStatsSwitch(page)).toBeChecked();
+      await expect(page.getByTestId("user-setting-share-stats")).toContainText(
+        "Other readers on this server can see your stats page.",
+      );
+
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: "/api/rpc/account/share-stats",
+          expectedBody: { enabled: false },
+          expectedStatus: 200,
+        },
+        async () => shareStatsSwitch(page).click(),
+      );
+
+      await expect(shareStatsSwitch(page)).not.toBeChecked();
+
+      await gotoReady(page, ACCOUNT);
+      await expect(shareStatsSwitch(page)).not.toBeChecked();
+      await expect(page.getByTestId("user-setting-share-stats")).toContainText(
+        "Only you can see your stats page.",
+      );
+    });
+
+    test("a failed share-stats save puts the switch back and shows the error", async ({
+      page,
+    }) => {
+      await gotoReady(page, ACCOUNT);
+      await expect(shareStatsSwitch(page)).toBeChecked();
+
+      await page.route("**/api/rpc/account/share-stats", (route) => {
+        if (route.request().method() === "POST") {
+          return route.fulfill({
+            status: 500,
+            contentType: "text/plain",
+            body: "forced failure",
+          });
+        }
+        return route.continue();
+      });
+
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: "/api/rpc/account/share-stats",
+          expectedBody: { enabled: false },
+          expectedStatus: 500,
+        },
+        async () => shareStatsSwitch(page).click(),
+      );
+
+      await expect(shareStatsSwitch(page)).toBeChecked();
+      await expect(page.getByTestId("share-stats-error")).toBeVisible();
     });
   });

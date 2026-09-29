@@ -66,6 +66,7 @@ fn user_summary(u: &auth_db::User) -> UserSummary {
         hidden_formats: u.hidden_formats.clone(),
         book_detail_scroll_stops: u.book_detail_scroll_stops,
         stack_series: u.stack_series,
+        share_stats: u.share_stats,
     }
 }
 

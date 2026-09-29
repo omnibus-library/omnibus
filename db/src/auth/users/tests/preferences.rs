@@ -1,5 +1,6 @@
 //! Per-account preferences: Kindle email, hidden formats, book-detail
-//! scroll-stops, and Stack series — each read back through `get_user_by_id`.
+//! scroll-stops, Stack series, and share stats — each read back through
+//! `get_user_by_id`.
 
 use super::super::*;
 use crate::auth::test_support::pool;
@@ -150,4 +151,32 @@ async fn set_stack_series_round_trips_through_get_user_by_id() {
             .unwrap()
             .stack_series
     );
+}
+
+#[tokio::test]
+async fn create_user_turns_share_stats_on_for_a_new_reader() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    assert!(u.share_stats, "a fresh account arrives sharing");
+    assert!(get_share_stats(&p, u.id).await.unwrap());
+}
+
+#[tokio::test]
+async fn set_share_stats_round_trips_through_get_share_stats_and_get_user_by_id() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+
+    set_share_stats(&p, u.id, false).await.unwrap();
+    assert!(!get_share_stats(&p, u.id).await.unwrap());
+    assert!(!get_user_by_id(&p, u.id).await.unwrap().unwrap().share_stats);
+
+    set_share_stats(&p, u.id, true).await.unwrap();
+    assert!(get_share_stats(&p, u.id).await.unwrap());
+    assert!(get_user_by_id(&p, u.id).await.unwrap().unwrap().share_stats);
+}
+
+#[tokio::test]
+async fn get_share_stats_reads_false_for_a_missing_user() {
+    let p = pool().await;
+    assert!(!get_share_stats(&p, 999).await.unwrap());
 }

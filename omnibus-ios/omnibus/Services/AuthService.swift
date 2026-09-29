@@ -138,6 +138,15 @@ enum AuthService {
         await OfflineStore.shared.cacheDelete(CacheKey.me)
     }
 
+    /// Set whether other household readers can pick this reader's stats.
+    /// Account configuration: direct call, never queued (rule 08 test 1).
+    static func setShareStats(_ enabled: Bool) async throws {
+        let _: Empty = try await APIClient.shared.post(
+            "/api/account/share-stats", body: ShareStatsUpdate(enabled: enabled)
+        )
+        await OfflineStore.shared.cacheDelete(CacheKey.me)
+    }
+
     // MARK: - Profile
     //
     // A profile is account configuration, so these never go through

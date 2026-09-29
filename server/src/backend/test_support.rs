@@ -4,11 +4,22 @@
 //! their callers — sound only on tokio's current-thread runtime, which
 //! `assert_current_thread_test_runtime` below enforces.
 use axum::{
-    body::Body,
+    body::{to_bytes, Body},
     http::{header::AUTHORIZATION, Request},
 };
 
 use super::*;
+
+/// The household share gate's one contract message — a missing and a
+/// non-sharing reader answer alike, so neither is revealed.
+pub(crate) const NOT_SHARING_BODY: &str = "this reader isn't sharing their stats";
+
+/// Decode a response body to a `String`, for asserting an exact plain-text
+/// body like [`NOT_SHARING_BODY`].
+pub(crate) async fn body_text(res: Response) -> String {
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    String::from_utf8(bytes.to_vec()).unwrap()
+}
 
 /// Asserts the calling test runs on tokio's current-thread flavor — the
 /// invariant every `*DirGuard` in this module (and `EnvGuard` in

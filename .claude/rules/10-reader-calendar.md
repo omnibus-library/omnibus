@@ -48,6 +48,11 @@ month from the chart built over the same data. Both shipped that way once.
 - **The server still owns the arithmetic.** The client contributes only *where
   it is*. A client that derived its own bucketing is what makes the web page,
   the iOS tab and a widget disagree about one streak.
+- **Viewing another reader's stats still cuts days on the *viewer's*
+  calendar.** `db::stats::stats_for_viewer` resolves the offset from the
+  viewer's own claim or latest session, never the target's — resolving an
+  unclaimed offset against the target's history would put the viewer on a
+  calendar they aren't on.
 
 ## Time of day: the offset the session recorded
 

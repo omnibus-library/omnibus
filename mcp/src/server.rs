@@ -85,7 +85,11 @@ impl ServerHandler for OmnibusMcp {
                  and search books, explore authors/series/tags/genres and shelves, and \
                  read the signed-in user's stats, progress, highlights, bookmarks, and \
                  journal entries; books are identified by the uuid field returned by \
-                 the listing and search tools. Book text is readable too: list_chapters \
+                 the listing and search tools. list_household_readers names the readers \
+                 who share their stats with the signed-in user; pass one's id as \
+                 user_id to reading_stats or reading_sessions to read theirs — sharing \
+                 is each reader's own setting, and no tool changes it. Book text is \
+                 readable too: list_chapters \
                  maps a book's chapters to spine indexes, read_chapter_text reads one \
                  chapter as bounded plain-text slices (page via next_offset), and \
                  search_book_content full-text-searches the library's book text — \

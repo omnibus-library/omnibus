@@ -35,7 +35,7 @@ async function createReader(
   request: APIRequestContext,
   username: string,
 ): Promise<number> {
-  const resp = await request.post("/api/users", {
+  const resp = await request.post("/api/admin/users", {
     data: {
       username,
       password: READER_PASSWORD,
@@ -47,7 +47,9 @@ async function createReader(
       },
     },
   });
-  expect(resp.status(), `POST /api/users failed for ${username}`).toBe(201);
+  expect(resp.status(), `POST /api/admin/users failed for ${username}`).toBe(
+    201,
+  );
   return ((await resp.json()) as { id: number }).id;
 }
 
@@ -556,7 +558,7 @@ test("greys out another reader's shelf and names its owner", async ({
     await expect(page.getByTestId("add-books-modal")).toHaveCount(0);
   } finally {
     await context.close();
-    await request.delete(`/api/users/${readerId}`);
+    await request.delete(`/api/admin/users/${readerId}`);
   }
 });
 
@@ -588,6 +590,6 @@ test("lets an admin change another reader's shelf without explaining why", async
     await expect(editButton(page)).toBeEnabled();
     await expect(lockNote(page)).toHaveCount(0);
   } finally {
-    await request.delete(`/api/users/${readerId}`);
+    await request.delete(`/api/admin/users/${readerId}`);
   }
 });

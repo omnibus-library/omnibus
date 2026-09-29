@@ -40,6 +40,16 @@ pub struct UserSummary {
     /// Whether this user's landing grid folds each series into one tile.
     #[serde(default)]
     pub stack_series: bool,
+    /// Whether other readers on this server may see this user's stats page.
+    /// `true` — the default, and what a pre-0099 payload decodes to.
+    #[serde(default = "share_stats_default")]
+    pub share_stats: bool,
+}
+
+/// Serde default for [`UserSummary::share_stats`]; a bare `#[serde(default)]`
+/// would decode `false`.
+fn share_stats_default() -> bool {
+    true
 }
 
 impl UserSummary {
@@ -49,6 +59,20 @@ impl UserSummary {
     pub fn display(&self) -> &str {
         self.display_name.as_deref().unwrap_or(&self.username)
     }
+}
+
+/// One reader in the household listing (`GET /api/users`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct HouseholdReader {
+    /// User id; pass it as `user_id` to the stats reads.
+    pub id: i64,
+    /// Display name, else the username.
+    pub name: String,
+    /// Whether `GET /api/users/{id}/avatar` has an image to serve.
+    pub has_avatar: bool,
+    /// True for the signed-in caller, who is always listed first.
+    pub is_you: bool,
 }
 
 /// The four permission booleans that define what a user can do. `is_admin`
@@ -87,8 +111,8 @@ pub struct AdminUserRow {
     pub locked: bool,
 }
 
-/// Request body for `POST /api/users` (admin create). See [`LoginRequest`]
-/// for why `Debug` is deliberately not derived.
+/// Request body for `POST /api/admin/users` (admin create). See
+/// [`LoginRequest`] for why `Debug` is deliberately not derived.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
@@ -96,8 +120,8 @@ pub struct CreateUserRequest {
     pub permissions: UserPermissions,
 }
 
-/// Request body for `POST /api/users/{id}/password` (admin password reset).
-/// See [`LoginRequest`] for why `Debug` is deliberately not derived.
+/// Request body for `POST /api/admin/users/{id}/password` (admin password
+/// reset). See [`LoginRequest`] for why `Debug` is deliberately not derived.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SetPasswordRequest {
     pub password: String,
@@ -292,6 +316,20 @@ mod tests {
         )
         .unwrap();
         assert!(!v.stack_series);
+    }
+
+    // A pre-0099 payload (or a cached `/me` body from one) has no
+    // `share_stats`, and must decode to the on default rather than off —
+    // the opposite of every other preference here, since a pre-existing
+    // reader must arrive still sharing.
+    #[test]
+    fn user_summary_deserializes_payload_missing_share_stats_as_on() {
+        let v: UserSummary = serde_json::from_str(
+            r#"{"id":1,"username":"alice","is_admin":false,
+                "can_upload":false,"can_edit":false,"can_download":true}"#,
+        )
+        .unwrap();
+        assert!(v.share_stats);
     }
 
     // Payloads from a pre-0088 server lack `client`. The default must name the

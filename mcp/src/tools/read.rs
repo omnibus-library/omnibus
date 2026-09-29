@@ -10,11 +10,12 @@ use serde::{Deserialize, Serialize};
 
 use omnibus_shared::{
     AuthorDetail, AuthorSummary, BookProgress, Bookmark, EbookLibrary, EbookMetadata, GenreWeight,
-    Highlight, JournalEntry, LibraryContents, PhysicalCopy, ProgressFormat, ReadStatusRecord,
-    ResumePoint, SeriesDetail, SeriesSummary, SessionLogPage, Shelf, ShelfSummary, SortDir,
-    SortKey, StatsRange, StatsSummary, TagWeight,
+    Highlight, HouseholdReader, JournalEntry, LibraryContents, PhysicalCopy, ProgressFormat,
+    ReadStatusRecord, ResumePoint, SeriesDetail, SeriesSummary, SessionLogPage, Shelf,
+    ShelfSummary, SortDir, SortKey, StatsRange, StatsSummary, TagWeight,
 };
 
+use crate::client::ClientError;
 use crate::server::OmnibusMcp;
 
 pub mod views;
@@ -122,6 +123,8 @@ pub struct SearchParams {
 pub struct StatsParams {
     /// Reporting window; defaults to the current calendar month.
     pub range: Option<StatsRange>,
+    /// Another reader's id from list_household_readers; omit for the signed-in reader.
+    pub user_id: Option<i64>,
 }
 
 /// Parameters for the reading-session log.
@@ -133,6 +136,8 @@ pub struct SessionLogParams {
     pub limit: Option<i64>,
     /// The previous page's `next_before` cursor, echoed back verbatim.
     pub before: Option<String>,
+    /// Another reader's id from list_household_readers; omit for the signed-in reader.
+    pub user_id: Option<i64>,
 }
 
 /// How much of each book a feed entry carries.
@@ -216,6 +221,12 @@ pub struct ShelfList {
     pub shelves: Vec<ShelfSummary>,
 }
 
+/// `list_household_readers`' answer: the signed-in reader first, then each reader who shares.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct HouseholdReaderList {
+    pub readers: Vec<HouseholdReader>,
+}
+
 /// `shelves_containing_book`'s answer.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ContainingShelves {
@@ -261,6 +272,9 @@ pub struct JournalEntryList {
 fn not_found(what: &str) -> ErrorData {
     ErrorData::invalid_params(format!("{what} not found"), None)
 }
+
+/// The contract's 404 body for a reader who doesn't share their stats, or doesn't exist.
+const NOT_SHARING: &str = "this reader isn't sharing their stats";
 
 #[tool_router(router = read_tools, vis = "pub(crate)")]
 impl OmnibusMcp {
@@ -358,6 +372,21 @@ impl OmnibusMcp {
             detail.copies = Some(rows.into_iter().map(Into::into).collect());
         }
         Ok(Json(detail))
+    }
+
+    /// GET path; a 404 for another reader's user_id becomes the "not sharing" tool error.
+    async fn get_user_scoped<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        user_id: Option<i64>,
+    ) -> Result<T, ErrorData> {
+        match self.client.get_json(path, query).await {
+            Err(ClientError::Status { status: 404, .. }) if user_id.is_some() => {
+                Err(ErrorData::invalid_params(NOT_SHARING, None))
+            }
+            result => result.map_err(Into::into),
+        }
     }
 
     /// Every format's saved position for one book, skipping the formats the
@@ -479,7 +508,15 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "The signed-in user's reading/listening stats over a window (week, month, year, all_time): totals, streaks, per-day activity, top books/authors, superlatives, and goal progress. Day-granularity fields (as_of_day, busiest_week_start, every heatmap day) are already YYYY-MM-DD; the one exception is finished_books[].finished_at, which is unix seconds."
+        description = "The household's readers whose reading stats you can read: the signed-in reader first (is_you: true), then every other reader who shares their stats, ordered by name. Pass a reader's id as user_id to reading_stats or reading_sessions to read theirs; readers who don't share are not listed."
+    )]
+    pub async fn list_household_readers(&self) -> Result<Json<HouseholdReaderList>, ErrorData> {
+        let readers = self.client.get_json("/api/users", &[]).await?;
+        Ok(Json(HouseholdReaderList { readers }))
+    }
+
+    #[tool(
+        description = "Reading/listening stats over a window (week, month, year, all_time) — the signed-in user's, or another household reader's when user_id is given (ids from list_household_readers): totals, streaks, per-day activity, top books/authors, superlatives, and goal progress. A reader who doesn't share their stats answers with an error saying so. Day-granularity fields (as_of_day, busiest_week_start, every heatmap day) are already YYYY-MM-DD; the one exception is finished_books[].finished_at, which is unix seconds."
     )]
     pub async fn reading_stats(
         &self,
@@ -489,11 +526,17 @@ impl OmnibusMcp {
         if let Some(range) = p.range {
             query.push(("range", range.as_query().to_string()));
         }
-        Ok(Json(self.client.get_json("/api/stats", &query).await?))
+        if let Some(user_id) = p.user_id {
+            query.push(("user_id", user_id.to_string()));
+        }
+        Ok(Json(
+            self.get_user_scoped("/api/stats", &query, p.user_id)
+                .await?,
+        ))
     }
 
     #[tool(
-        description = "The signed-in user's reading-session log, newest first — one entry per recorded sitting with book, format, and duration. Paginate by echoing next_before back as before; optionally scope to one book uuid. A sitting's format is reading | listening | mixed, which is deliberately wider than the epub | audio a progress record carries: a sitting can span both formats, a saved position cannot. The mapping is reading=epub, listening=audio, and mixed=both in one sitting. started_at and ended_at are ISO 8601, with unix seconds alongside under started_at_epoch / ended_at_epoch; seconds is time actually recorded, not ended_at minus started_at."
+        description = "The reading-session log, newest first — the signed-in user's, or another household reader's when user_id is given (ids from list_household_readers; a reader who doesn't share their stats answers with an error saying so). One entry per recorded sitting with book, format, and duration. Paginate by echoing next_before back as before, keeping the same user_id; optionally scope to one book uuid. A sitting's format is reading | listening | mixed, which is deliberately wider than the epub | audio a progress record carries: a sitting can span both formats, a saved position cannot. The mapping is reading=epub, listening=audio, and mixed=both in one sitting. started_at and ended_at are ISO 8601, with unix seconds alongside under started_at_epoch / ended_at_epoch; seconds is time actually recorded, not ended_at minus started_at."
     )]
     pub async fn reading_sessions(
         &self,
@@ -509,7 +552,12 @@ impl OmnibusMcp {
         if let Some(before) = p.before {
             query.push(("before", before));
         }
-        let page: SessionLogPage = self.client.get_json("/api/stats/sessions", &query).await?;
+        if let Some(user_id) = p.user_id {
+            query.push(("user_id", user_id.to_string()));
+        }
+        let page: SessionLogPage = self
+            .get_user_scoped("/api/stats/sessions", &query, p.user_id)
+            .await?;
         Ok(Json(page.into()))
     }
 

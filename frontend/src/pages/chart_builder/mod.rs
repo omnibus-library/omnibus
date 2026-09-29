@@ -287,7 +287,7 @@ fn ChartCanvas(
 ) -> Element {
     if let Some(msg) = error() {
         return rsx! {
-            PageError { message: msg, back_to: Route::Stats {} }
+            PageError { message: msg, back_to: crate::routes::link_target(Route::Stats { user: None }) }
         };
     }
     // Only the very first load blanks the surface; a spec change keeps the

@@ -1,8 +1,8 @@
-//! Reading-stats REST handlers for the mobile client: the `db::stats`
-//! aggregate (`GET /api/stats`, windowed by an optional snake_case `?range=`),
-//! the same data un-aggregated as the caller's own keyset-paginated session
-//! log (`GET /api/stats/sessions`), the annual goal (`PUT /api/stats/goal`)
-//! and the daily ones (`PUT /api/stats/goal/daily`),
+//! Reading-stats REST handlers for the mobile client: the readers list
+//! (`GET /api/users`), the `db::stats` aggregate (`GET /api/stats`, windowed
+//! by an optional snake_case `?range=`), the same data un-aggregated as a
+//! keyset-paginated session log (`GET /api/stats/sessions`), the annual goal
+//! (`PUT /api/stats/goal`) and the daily ones (`PUT /api/stats/goal/daily`),
 //! and the collection's own scale and mix (`GET /api/library-size`,
 //! `GET /api/library-composition` — the same for every reader).
 
@@ -49,6 +49,11 @@ pub(super) struct StatsQuery {
     /// a bad offset must not cost a reader their stats page.
     #[serde(default, deserialize_with = "lenient_offset")]
     utc_offset_minutes: Option<i64>,
+    /// Whose stats to read; absent or the caller's own id reads their own.
+    /// Strict, unlike the offset above: an unparseable value is a 400 rather
+    /// than a silent fall-back to the caller's own stats under another
+    /// reader's name.
+    user_id: Option<i64>,
 }
 
 /// Query shape for the goal writes: the same offset [`StatsQuery`] carries, on
@@ -60,16 +65,44 @@ pub(super) struct GoalQuery {
     utc_offset_minutes: Option<i64>,
 }
 
-/// Fetch the authed user's stats summary over the requested range.
+/// `GET /api/users` — the readers whose stats the caller may view, the caller first.
+pub(super) async fn get_household_readers(
+    user: AuthUser,
+    State(state): State<AppState>,
+) -> Response {
+    match db::stats::household_readers(&state.pool, user.id).await {
+        Ok(readers) => Json(readers).into_response(),
+        Err(e) => internal("get_household_readers", e),
+    }
+}
+
+/// Fetch the caller's stats summary over the requested range, or a sharing
+/// reader's with `user_id`.
 pub(super) async fn get_stats(
     user: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<StatsQuery>,
 ) -> Response {
-    match db::stats::user_stats(&state.pool, user.id, query.range, query.utc_offset_minutes).await {
+    match db::stats::stats_for_viewer(
+        &state.pool,
+        user.id,
+        query.user_id,
+        query.range,
+        query.utc_offset_minutes,
+    )
+    .await
+    {
         Ok(summary) => Json(summary).into_response(),
-        Err(e) => internal("get_stats", e),
+        Err(e) => viewer_error("get_stats", e),
     }
+}
+
+/// A refused read is the contract's 404; anything else is a 500.
+pub(super) fn viewer_error(context: &'static str, e: db::stats::ViewerStatsError) -> Response {
+    if matches!(e, db::stats::ViewerStatsError::NotSharing) {
+        return (StatusCode::NOT_FOUND, e.to_string()).into_response();
+    }
+    internal(context, e)
 }
 
 /// How big the library is in words, pages, and hours of audio.
@@ -185,13 +218,15 @@ pub(super) struct SessionLogQuery {
     limit: Option<i64>,
     /// The previous page's `next_before`, echoed back verbatim.
     before: Option<String>,
+    /// Whose log to read; absent or the caller's own id reads their own.
+    user_id: Option<i64>,
 }
 
-/// Fetch a page of the authed user's session log, newest sitting first.
+/// Fetch a page of the caller's session log, newest sitting first, or a
+/// sharing reader's with `user_id`.
 ///
-/// Scoped to `user.id` from the token — there is no user parameter, so no
-/// caller can ask for someone else's log. A `before` that isn't a cursor this
-/// endpoint issued is a 400 rather than a silent rewind to page one, which
+/// A `before` that isn't a cursor this endpoint issued is a 400 checked
+/// before the share gate, rather than a silent rewind to page one, which
 /// would loop a paging client forever.
 pub(super) async fn get_session_log(
     user: AuthUser,
@@ -209,9 +244,10 @@ pub(super) async fn get_session_log(
         None => None,
     };
     let limit = query.limit.unwrap_or(db::stats::SESSION_LOG_DEFAULT_LIMIT);
-    match db::stats::session_log(
+    match db::stats::session_log_for_viewer(
         &state.pool,
         user.id,
+        query.user_id,
         query.book.as_deref(),
         before.as_ref(),
         limit,
@@ -219,6 +255,6 @@ pub(super) async fn get_session_log(
     .await
     {
         Ok(page) => Json(page).into_response(),
-        Err(e) => internal("get_session_log", e),
+        Err(e) => viewer_error("get_session_log", e),
     }
 }
