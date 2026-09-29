@@ -53,7 +53,7 @@ fi
 explore::load_env
 explore::login_admin
 
-existing="$(explore::curl -b "$EXPLORE_JAR" "$EXPLORE_URL/api/users")"
+existing="$(explore::curl -b "$EXPLORE_JAR" "$EXPLORE_URL/api/admin/users")"
 
 out="[]"
 for i in $(seq 1 "$count"); do
@@ -76,12 +76,12 @@ for u in json.load(sys.stdin):
 
   if [ -n "$id" ]; then
     code=$(explore::curl -b "$EXPLORE_JAR" -o /dev/null -w '%{http_code}' \
-      -X POST "$EXPLORE_URL/api/users/$id/password" \
+      -X POST "$EXPLORE_URL/api/admin/users/$id/password" \
       -H 'Content-Type: application/json' \
       -d "{\"password\":$(explore::json_str "$pass")}")
     [ "$code" = "204" ] || { echo "password rotate for $user failed (HTTP $code)" >&2; exit 1; }
     code=$(explore::curl -b "$EXPLORE_JAR" -o /dev/null -w '%{http_code}' \
-      -X PATCH "$EXPLORE_URL/api/users/$id/permissions" \
+      -X PATCH "$EXPLORE_URL/api/admin/users/$id/permissions" \
       -H 'Content-Type: application/json' -d "$perms")
     [ "$code" = "204" ] || { echo "setting $user's permissions to $role failed (HTTP $code)" >&2; exit 1; }
     action=reused
@@ -89,7 +89,7 @@ for u in json.load(sys.stdin):
     body=$(printf '{"username":%s,"password":%s,"permissions":%s}' \
       "$(explore::json_str "$user")" "$(explore::json_str "$pass")" "$perms")
     resp=$(explore::curl -b "$EXPLORE_JAR" -w '\n%{http_code}' \
-      -X POST "$EXPLORE_URL/api/users" -H 'Content-Type: application/json' -d "$body")
+      -X POST "$EXPLORE_URL/api/admin/users" -H 'Content-Type: application/json' -d "$body")
     code="${resp##*$'\n'}"
     [ "$code" = "201" ] || { echo "create $user failed (HTTP $code): ${resp%$'\n'*}" >&2; exit 1; }
     action=created

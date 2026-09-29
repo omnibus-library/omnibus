@@ -15,7 +15,7 @@ use omnibus_shared::{CreateUserRequest, SetPasswordRequest, UserPermissions};
 use super::{internal, AppState};
 use crate::auth::AdminUser;
 
-/// `GET /api/users` — list every user for the admin table.
+/// `GET /api/admin/users` — list every user for the admin table.
 pub(super) async fn get_users(_admin: AdminUser, State(state): State<AppState>) -> Response {
     match db::auth::list_users(&state.pool).await {
         Ok(rows) => Json(rows).into_response(),
@@ -23,7 +23,7 @@ pub(super) async fn get_users(_admin: AdminUser, State(state): State<AppState>) 
     }
 }
 
-/// `POST /api/users` — create a user with explicit permissions. `201` with the
+/// `POST /api/admin/users` — create a user with explicit permissions. `201` with the
 /// new row; `409` on a duplicate username; `422` on username/password policy.
 pub(super) async fn post_user(
     _admin: AdminUser,
@@ -42,7 +42,7 @@ pub(super) async fn post_user(
     }
 }
 
-/// `PATCH /api/users/{id}/permissions` — replace the four permission flags.
+/// `PATCH /api/admin/users/{id}/permissions` — replace the four permission flags.
 /// `404` for an unknown id; `409` when it would demote the last admin.
 pub(super) async fn patch_permissions(
     _admin: AdminUser,
@@ -60,7 +60,7 @@ pub(super) async fn patch_permissions(
     }
 }
 
-/// `POST /api/users/{id}/password` — admin password reset. `404` for an unknown
+/// `POST /api/admin/users/{id}/password` — admin password reset. `404` for an unknown
 /// id; `422` when the new password fails policy.
 pub(super) async fn post_password(
     _admin: AdminUser,
@@ -76,7 +76,7 @@ pub(super) async fn post_password(
     }
 }
 
-/// `POST /api/users/{id}/unlock` — clear a repeated-failed-login lockout. `404`
+/// `POST /api/admin/users/{id}/unlock` — clear a repeated-failed-login lockout. `404`
 /// for an unknown id.
 pub(super) async fn post_unlock(
     _admin: AdminUser,
@@ -90,7 +90,7 @@ pub(super) async fn post_unlock(
     }
 }
 
-/// `DELETE /api/users/{id}` — delete a user (their owned rows cascade). `404`
+/// `DELETE /api/admin/users/{id}` — delete a user (their owned rows cascade). `404`
 /// for an unknown id; `409` when it would delete the last admin.
 pub(super) async fn delete_user(
     _admin: AdminUser,

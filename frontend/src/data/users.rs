@@ -1,18 +1,18 @@
 //! Admin user-management client wrappers. Web hits the AdminUser-gated
-//! `/api/users*` REST routes via `gloo-net` (same-origin cookie session,
-//! mirroring `data::auth`); SSR builds get no-op stubs so the Users settings
-//! page compiles and hydrates with identical markup. Mobile has no admin
-//! Users surface, so this module is not compiled there.
+//! `/api/admin/users*` REST routes via `gloo-net` (same-origin cookie
+//! session, mirroring `data::auth`); SSR builds get no-op stubs so the Users
+//! settings page compiles and hydrates with identical markup. Mobile has no
+//! admin Users surface, so this module is not compiled there.
 
 use omnibus_shared::{AdminUserRow, CreateUserRequest, UserPermissions};
 
 // ── Web (gloo-net) ───────────────────────────────────────────────
 
-/// GET `/api/users` — list all users for the admin table.
+/// GET `/api/admin/users` — list all users for the admin table.
 #[cfg(feature = "web")]
 pub async fn list_users() -> Result<Vec<AdminUserRow>, String> {
     use gloo_net::http::Request;
-    let res = Request::get("/api/users")
+    let res = Request::get("/api/admin/users")
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -24,11 +24,11 @@ pub async fn list_users() -> Result<Vec<AdminUserRow>, String> {
         .map_err(|e| e.to_string())
 }
 
-/// POST `/api/users` — create a user; returns the created row.
+/// POST `/api/admin/users` — create a user; returns the created row.
 #[cfg(feature = "web")]
 pub async fn create_user(req: CreateUserRequest) -> Result<AdminUserRow, String> {
     use gloo_net::http::Request;
-    let res = Request::post("/api/users")
+    let res = Request::post("/api/admin/users")
         .json(&req)
         .map_err(|e| e.to_string())?
         .send()
@@ -40,11 +40,11 @@ pub async fn create_user(req: CreateUserRequest) -> Result<AdminUserRow, String>
     res.json::<AdminUserRow>().await.map_err(|e| e.to_string())
 }
 
-/// PATCH `/api/users/{id}/permissions` — replace the four permission flags.
+/// PATCH `/api/admin/users/{id}/permissions` — replace the four permission flags.
 #[cfg(feature = "web")]
 pub async fn update_permissions(id: i64, perms: UserPermissions) -> Result<(), String> {
     use gloo_net::http::Request;
-    let res = Request::patch(&format!("/api/users/{id}/permissions"))
+    let res = Request::patch(&format!("/api/admin/users/{id}/permissions"))
         .json(&perms)
         .map_err(|e| e.to_string())?
         .send()
@@ -53,11 +53,11 @@ pub async fn update_permissions(id: i64, perms: UserPermissions) -> Result<(), S
     ok_or_error(res).await
 }
 
-/// POST `/api/users/{id}/password` — admin password reset.
+/// POST `/api/admin/users/{id}/password` — admin password reset.
 #[cfg(feature = "web")]
 pub async fn set_password(id: i64, password: String) -> Result<(), String> {
     use gloo_net::http::Request;
-    let res = Request::post(&format!("/api/users/{id}/password"))
+    let res = Request::post(&format!("/api/admin/users/{id}/password"))
         .json(&omnibus_shared::SetPasswordRequest { password })
         .map_err(|e| e.to_string())?
         .send()
@@ -66,22 +66,22 @@ pub async fn set_password(id: i64, password: String) -> Result<(), String> {
     ok_or_error(res).await
 }
 
-/// POST `/api/users/{id}/unlock` — clear a failed-login lockout.
+/// POST `/api/admin/users/{id}/unlock` — clear a failed-login lockout.
 #[cfg(feature = "web")]
 pub async fn unlock_user(id: i64) -> Result<(), String> {
     use gloo_net::http::Request;
-    let res = Request::post(&format!("/api/users/{id}/unlock"))
+    let res = Request::post(&format!("/api/admin/users/{id}/unlock"))
         .send()
         .await
         .map_err(|e| e.to_string())?;
     ok_or_error(res).await
 }
 
-/// DELETE `/api/users/{id}` — delete a user (their owned rows cascade).
+/// DELETE `/api/admin/users/{id}` — delete a user (their owned rows cascade).
 #[cfg(feature = "web")]
 pub async fn delete_user(id: i64) -> Result<(), String> {
     use gloo_net::http::Request;
-    let res = Request::delete(&format!("/api/users/{id}"))
+    let res = Request::delete(&format!("/api/admin/users/{id}"))
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -89,7 +89,7 @@ pub async fn delete_user(id: i64) -> Result<(), String> {
 }
 
 /// Read the response body as the error message, falling back to the status
-/// code. The `/api/users*` handlers return a plain-text reason (e.g.
+/// code. The `/api/admin/users*` handlers return a plain-text reason (e.g.
 /// "username is already taken", "cannot delete the last administrator") that
 /// the Users UI surfaces inline.
 #[cfg(feature = "web")]
