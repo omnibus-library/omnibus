@@ -12,7 +12,10 @@ use tower::ServiceExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::{body_json, fixture, get, kobo_router, seed_book_with_kepub_cache};
+use super::{
+    body_json, fixture, get, kobo_router, seed_book_with_kepub_cache, seed_downloadable_book,
+    seed_override_cover,
+};
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{
     build_cover_multipart, fixture_loopback_remote_image, seed_book_with_uuid, CoversDirGuard,
@@ -641,6 +644,47 @@ async fn cover_writes_move_the_synced_cover_image_id_and_the_route_serves_the_ne
             let (status, body) = fetch_cover(&kobo, &device.token, &after).await;
             assert_eq!(status, StatusCode::OK);
             assert_eq!(body, TINY_PNG, "the versioned id serves the new cover");
+        }
+    }
+}
+
+#[tokio::test]
+async fn image_serves_requests_built_from_either_initialization_template() {
+    let _covers = CoversDirGuard::new("kobo_image_templates");
+    let (app, pool, token, uid) = fixture().await;
+    let uuid = "62e1c9f0-0000-4000-8000-000000002684";
+    seed_downloadable_book(&pool, uuid, "Template Book", "Ada Lovelace").await;
+    seed_override_cover(&pool, uuid, uid).await;
+
+    let res = app
+        .clone()
+        .oneshot(get(format!("/kobo/{token}/v1/initialization")))
+        .await
+        .unwrap();
+    let init = body_json(res).await;
+
+    for key in ["image_url_template", "image_url_quality_template"] {
+        for image_id in [uuid.to_owned(), format!("{uuid}-1700000000")] {
+            let url = init["Resources"][key]
+                .as_str()
+                .unwrap()
+                .replace("{ImageId}", &image_id)
+                .replace("{Width}", "400")
+                .replace("{Height}", "600")
+                .replace("{Quality}", "100")
+                .replace("{IsGreyscale}", "false")
+                .replace("http://omni.test", "");
+            let res = app.clone().oneshot(get(url.clone())).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{url}");
+            assert_eq!(
+                res.headers()
+                    .get(axum::http::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok()),
+                Some("image/png"),
+                "{url}"
+            );
+            let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(&bytes[..], TINY_PNG, "{url}");
         }
     }
 }

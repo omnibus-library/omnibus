@@ -112,6 +112,7 @@ async fn uuid_routes_reject_an_oversized_path_uuid() {
         format!("/kobo/{token}/v1/library/{oversized}/metadata"),
         format!("/kobo/{token}/v1/download/{oversized}"),
         format!("/kobo/{token}/v1/books/{oversized}/thumbnail/400/600/100/false/image.jpg"),
+        format!("/kobo/{token}/v1/books/{oversized}/thumbnail/400/600/false/image.jpg"),
     ] {
         let res = app.clone().oneshot(get(uri.clone())).await.unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST, "GET {uri}");

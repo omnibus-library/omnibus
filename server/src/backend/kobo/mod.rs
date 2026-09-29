@@ -66,6 +66,10 @@ pub fn kobo_router(state: AppState) -> Router {
             "/kobo/{token}/v1/books/{uuid}/thumbnail/{w}/{h}/{quality}/{greyscale}/image.jpg",
             get(resources::image),
         )
+        .route(
+            "/kobo/{token}/v1/books/{uuid}/thumbnail/{w}/{h}/{greyscale}/image.jpg",
+            get(resources::image_plain),
+        )
         // Registered routes win over the wildcard; only unhandled paths land here.
         .route("/kobo/{token}/{*rest}", any(store_stub))
         .with_state(state)

@@ -143,10 +143,25 @@ pub async fn image(
     )>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(rejected) = reject_oversized_uuid(&image_id) {
+    serve_cover(&state, &image_id, &headers).await
+}
+
+/// `GET books/<ImageId>/thumbnail/{w}/{h}/{greyscale}/image.jpg` — the `image_url_template` shape of [`image`].
+pub async fn image_plain(
+    _auth: KoboAuthUser,
+    State(state): State<AppState>,
+    Path((_token, image_id, _w, _h, _greyscale)): Path<(String, String, u32, u32, String)>,
+    headers: HeaderMap,
+) -> Response {
+    serve_cover(&state, &image_id, &headers).await
+}
+
+/// Resolve `image_id` and serve its cover, honouring `If-None-Match`.
+async fn serve_cover(state: &AppState, image_id: &str, headers: &HeaderMap) -> Response {
+    if let Some(rejected) = reject_oversized_uuid(image_id) {
         return rejected;
     }
-    let uuid = dto::cover_image_uuid(&image_id);
+    let uuid = dto::cover_image_uuid(image_id);
     let id = match db::resolve_book_id_by_uuid(state.pool(), uuid).await {
         Ok(Some(id)) => id,
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
