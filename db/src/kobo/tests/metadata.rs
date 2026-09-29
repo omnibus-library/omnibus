@@ -1,8 +1,9 @@
 //! Tests for the bibliographic fields a Kobo sync row carries beyond the
 //! title: every author in position order and the series, overrides applied.
 
-use super::*;
 use crate::test_support::{indexed, seed_indexed_ebook};
+
+use super::*;
 
 #[tokio::test]
 async fn book_for_sync_carries_every_author_in_position_order() {

@@ -1,5 +1,5 @@
 //! The bibliographic half of `BookMetadata` on the wire: every author in
-//! `Contributors` and `ContributorRoles`.
+//! `Contributors` and `ContributorRoles`, and the `Series` fields.
 
 use omnibus_db::{self as db, test_support::seed_synced_ebook};
 use omnibus_shared::{Contributor, MetadataOverrides};

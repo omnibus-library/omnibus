@@ -298,7 +298,7 @@ pub async fn book_for_sync(
     Ok(Some(book))
 }
 
-/// Overlay each row's title/authors/description with its saved
+/// Overlay each row's title/authors/series/description with its saved
 /// `metadata_overrides` (the same [`crate::metadata_overrides::apply_overrides`]
 /// merge `db::get_book` runs for every other book-detail surface), gated by
 /// the owning scan root's configured source precedence. A no-op for
@@ -320,7 +320,7 @@ async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Res
             .cloned()
             .unwrap_or_else(|| omnibus_shared::DEFAULT_METADATA_PRECEDENCE.to_vec());
         // A throwaway `EbookMetadata` seeded with this row's current
-        // title/authors lets `apply_overrides` do the real merge (title
+        // title/authors/series lets `apply_overrides` do the real merge (title
         // replace, precedence gate, creators-list replace) instead of
         // re-deriving those rules here.
         let mut book = omnibus_shared::EbookMetadata {

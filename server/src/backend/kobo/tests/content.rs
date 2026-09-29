@@ -12,14 +12,15 @@ use tower::ServiceExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::{
-    body_json, book_metadata, fixture, get, kobo_router, seed_book_with_kepub_cache,
-    seed_downloadable_book, seed_override_cover,
-};
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{
     build_cover_multipart, fixture_loopback_remote_image, seed_book_with_uuid, CoversDirGuard,
     TINY_PNG,
+};
+
+use super::{
+    body_json, book_metadata, fixture, get, kobo_router, seed_book_with_kepub_cache,
+    seed_downloadable_book, seed_override_cover,
 };
 
 #[tokio::test]
