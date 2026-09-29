@@ -6,10 +6,12 @@
 
 use dioxus::prelude::*;
 use omnibus_shared::{
-    LibraryComposition, LibrarySize, ResumePoint, StatsRange, StatsSummary, STATS_TTL_SECS,
+    HouseholdReader, LibraryComposition, LibrarySize, ResumePoint, StatsRange, StatsSummary,
+    STATS_TTL_SECS,
 };
 
 use crate::components::{Loading, LoadingKind, PageError};
+use crate::data::DataError;
 use crate::{data, use_server_url, Route};
 
 mod clock;
@@ -21,6 +23,7 @@ mod heatmap;
 mod hero;
 mod library;
 mod monthly;
+mod picker;
 mod reading_now;
 mod superlatives;
 mod tiles;
@@ -33,6 +36,7 @@ use heatmap::HeatmapCard;
 use hero::StatsHero;
 use library::LibrarySizeHero;
 use monthly::MonthlyChart;
+use picker::{viewing, ReaderPicker, Viewing};
 use reading_now::{InProgressCard, RecentlyFinishedCard};
 use superlatives::StandoutsGrid;
 use tiles::HeadlineTiles;
@@ -117,52 +121,108 @@ fn window_label(range: StatsRange, as_of_day: &str) -> String {
     }
 }
 
-/// Reading-stats page — the standing hero, the scope switcher, and the two
-/// bands beneath it.
+/// Reading-stats page — owns the period pill, the User/Library scope, the
+/// library-scale fetches, and the household list; hands the viewed reader to
+/// [`ReaderStats`].
 #[component]
-pub fn StatsPage() -> Element {
+pub fn StatsPage(user: Option<i64>) -> Element {
     let server_url = use_server_url();
     // Every signal below is seeded to the same value on every target so SSR
     // and the first WASM paint agree (rule 07); nothing is read from
     // localStorage or a client clock at render time.
     let range = use_signal(StatsRange::default);
     let scope = use_signal(|| Scope::User);
-    let period: Signal<Option<StatsSummary>> = use_signal(|| None);
-    let all_time: Signal<Option<StatsSummary>> = use_signal(|| None);
     // Library-scale rather than per-user, so these ride their own fetches:
     // folding them into the summary would recompute and re-send them on every
     // switcher change. `None` until they land, and their cards show loading.
     let library_size: Signal<Option<LibrarySize>> = use_signal(|| None);
     let library_composition: Signal<Option<LibraryComposition>> = use_signal(|| None);
+    // `None` while the list is in flight; an empty `Vec` (never refetched per
+    // reader) once it lands or fails.
+    let readers: Signal<Option<Vec<HouseholdReader>>> = use_signal(|| None);
+    use_library_size_fetch_effect(server_url.clone(), library_size);
+    use_library_composition_fetch_effect(server_url.clone(), library_composition);
+    use_household_readers_fetch_effect(server_url.clone(), readers);
+
+    rsx! {
+        ReaderStats {
+            user,
+            range,
+            scope,
+            readers,
+            library_size,
+            library_composition,
+        }
+    }
+}
+
+/// One viewed reader's figures — the standing hero, the scope switcher, and
+/// the two bands beneath it. `user` is a prop, not a signal, so every
+/// reactive piece below (the reset effect, the three fetch effects) is
+/// wrapped `use_reactive!` to actually refetch when it changes.
+#[component]
+fn ReaderStats(
+    user: Option<i64>,
+    range: Signal<StatsRange>,
+    scope: Signal<Scope>,
+    readers: Signal<Option<Vec<HouseholdReader>>>,
+    library_size: Signal<Option<LibrarySize>>,
+    library_composition: Signal<Option<LibraryComposition>>,
+) -> Element {
+    let server_url = use_server_url();
+    let period: Signal<Option<StatsSummary>> = use_signal(|| None);
+    let all_time: Signal<Option<StatsSummary>> = use_signal(|| None);
     let in_progress: Signal<Vec<ResumePoint>> = use_signal(Vec::new);
     let loading = use_signal(|| true);
-    let error: Signal<Option<String>> = use_signal(|| None);
+    let error: Signal<Option<Failure>> = use_signal(|| None);
     // Which tile's drill-in is open, if any — the sheet only ever opens from a
     // client click.
     let expanded: Signal<Option<Metric>> = use_signal(|| None);
-    use_period_fetch_effect(server_url.clone(), range, period, error);
-    use_all_time_fetch_effect(server_url.clone(), all_time, loading, error);
-    use_library_size_fetch_effect(server_url.clone(), library_size);
-    use_library_composition_fetch_effect(server_url.clone(), library_composition);
-    use_in_progress_fetch_effect(server_url.clone(), in_progress);
+    use_reader_switch_reset_effect(
+        user,
+        period,
+        all_time,
+        in_progress,
+        loading,
+        error,
+        expanded,
+    );
+    use_period_fetch_effect(server_url.clone(), user, range, period, error);
+    use_all_time_fetch_effect(server_url.clone(), user, all_time, loading, error);
+    use_in_progress_fetch_effect(server_url.clone(), user, in_progress);
 
-    if loading() {
+    // Rule 12: hold the page loader until both this reader's all-time summary
+    // and the household list (fetched once, in the parent) have answered —
+    // a picker that pops in after the rest of the page has already settled
+    // reads as content shifting under the reader.
+    if loading() || readers.read().is_none() {
         return rsx! { Loading { kind: LoadingKind::Page, label: "Tallying your reading" } };
     }
-    if let Some(msg) = error() {
-        return rsx! { PageError { message: msg, back_to: Route::Landing {} } };
+
+    let reader_list = readers.read().clone().unwrap_or_default();
+    let current = viewing(user, &reader_list);
+    let who = current.heading();
+
+    if let Some(failure) = error() {
+        return rsx! { StatsFailure { failure, other: who.is_some() } };
     }
 
     let standing = all_time.read().clone();
     let empty = standing.as_ref().is_none_or(StatsSummary::is_empty);
+    let who_name = match &current {
+        Viewing::You => None,
+        Viewing::Reader { name } => Some(name.clone()),
+    };
 
     rsx! {
         div { class: "st-page",
-            StatsHero { summary: standing.clone() }
+            StatsHero { summary: standing.clone(), who: who.clone(),
+                ReaderPicker { readers: reader_list, selected: user }
+            }
             ScopeSwitch { scope }
             div { class: "st-body",
                 if empty {
-                    StatsEmpty {}
+                    StatsEmpty { who_name }
                 } else if scope() == Scope::User {
                     UserScope { range, period, all_time, in_progress, expanded }
                 } else {
@@ -174,6 +234,54 @@ pub fn StatsPage() -> Element {
                 DrillIn { metric, summary, expanded }
             }
         }
+    }
+}
+
+/// Why the page can't show a reader's figures.
+#[derive(Clone, Debug, PartialEq)]
+enum Failure {
+    /// The server refused another reader's stats: not sharing, or no such
+    /// reader.
+    NotSharing,
+    /// Any other failed read, with its message.
+    Other(String),
+}
+
+impl From<&DataError> for Failure {
+    fn from(e: &DataError) -> Self {
+        if data::is_not_sharing(e) {
+            Failure::NotSharing
+        } else {
+            Failure::Other(e.to_string())
+        }
+    }
+}
+
+/// Renders a [`Failure`]. `other` is whether the reader being viewed is
+/// someone besides the caller — it decides where "back" goes: another
+/// reader's failed page returns to the caller's own `/stats`, the caller's
+/// own failed page keeps today's "Back to library".
+#[component]
+fn StatsFailure(failure: Failure, other: bool) -> Element {
+    let back_to_stats = crate::routes::link_target(Route::Stats { user: None });
+    match failure {
+        Failure::NotSharing => rsx! {
+            PageError {
+                message: "This reader isn't sharing their stats".to_string(),
+                back_to: back_to_stats,
+                back_label: "Back to your stats".to_string(),
+            }
+        },
+        Failure::Other(message) if other => rsx! {
+            PageError {
+                message,
+                back_to: back_to_stats,
+                back_label: "Back to your stats".to_string(),
+            }
+        },
+        Failure::Other(message) => rsx! {
+            PageError { message, back_to: Route::Landing {} }
+        },
     }
 }
 
@@ -392,33 +500,54 @@ fn StatsFreshnessNote() -> Element {
     }
 }
 
-/// Refetch the period-scoped summary whenever the switcher changes. The
-/// signal read inside the effect subscribes it to `range`.
-///
-/// A monotonic `epoch` ticket guards against out-of-order completion: rapid
-/// switcher changes fan out concurrent fetches, and a slower earlier request
-/// must not overwrite a newer range's data. Only the fetch holding the current
-/// ticket applies its result, and a success clears any prior error so a
-/// transient failure can't stick the page in the error state.
+/// A prop change isn't a signal; blank per-reader state so a switch never
+/// shows the previous reader's figures.
+#[allow(clippy::too_many_arguments)]
+fn use_reader_switch_reset_effect(
+    user: Option<i64>,
+    mut period: Signal<Option<StatsSummary>>,
+    mut all_time: Signal<Option<StatsSummary>>,
+    mut in_progress: Signal<Vec<ResumePoint>>,
+    mut loading: Signal<bool>,
+    mut error: Signal<Option<Failure>>,
+    mut expanded: Signal<Option<Metric>>,
+) {
+    use_effect(use_reactive!(|user| {
+        let _ = user;
+        period.set(None);
+        all_time.set(None);
+        in_progress.set(Vec::new());
+        loading.set(true);
+        error.set(None);
+        expanded.set(None);
+    }));
+}
+
+/// Refetch the period-scoped summary when the switcher or the viewed reader
+/// changes. A monotonic `epoch` ticket drops a fetch a newer one superseded,
+/// so a slower response for a prior range or reader can't overwrite it.
 fn use_period_fetch_effect(
     server_url: String,
+    user: Option<i64>,
     range: Signal<StatsRange>,
     period: Signal<Option<StatsSummary>>,
-    error: Signal<Option<String>>,
+    error: Signal<Option<Failure>>,
 ) {
     let mut epoch = use_signal(|| 0u64);
     let generation = crate::use_cache_generation();
-    use_effect(move || {
+    use_effect(use_reactive!(|user| {
         let r = range();
-        // Re-run on cache-revalidation bumps; the refetch is a cache hit.
-        let _ = generation();
+        // Another reader's reads bypass the offline cache — nothing new for them on a bump.
+        if user.is_none() {
+            let _ = generation();
+        }
         let ticket = *epoch.peek() + 1;
         epoch.set(ticket);
         let url = server_url.clone();
         let mut period = period;
         let mut error = error;
         spawn(async move {
-            let result = data::fetch_stats(&url, r).await;
+            let result = data::fetch_stats(&url, r, user).await;
             // A newer switcher change superseded this fetch — drop the stale result.
             if *epoch.peek() != ticket {
                 return;
@@ -428,40 +557,54 @@ fn use_period_fetch_effect(
                     period.set(Some(summary));
                     error.set(None);
                 }
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(Failure::from(&e))),
             }
         });
-    });
+    }));
 }
 
-/// One-shot fetch of the all-time summary. Deliberately not keyed on the
-/// switcher: it feeds the standing hero and the standing band, neither of
-/// which a range change may move.
+/// One-shot fetch of the all-time summary, re-run when the viewed reader
+/// does — deliberately not keyed on the switcher, since it feeds the standing
+/// hero and the standing band, neither of which a range change may move.
+/// Carries the same `epoch` ticket as [`use_period_fetch_effect`], so a
+/// slower fetch for the reader just switched away from can't overwrite the
+/// new one's summary, error and loading state.
 ///
 /// The goals ride this payload and are rendered straight off it — nothing on
 /// this page writes them, so there is no saved answer to fold back in.
 fn use_all_time_fetch_effect(
     server_url: String,
+    user: Option<i64>,
     all_time: Signal<Option<StatsSummary>>,
     loading: Signal<bool>,
-    error: Signal<Option<String>>,
+    error: Signal<Option<Failure>>,
 ) {
+    let mut epoch = use_signal(|| 0u64);
     let generation = crate::use_cache_generation();
-    use_effect(move || {
-        // Re-run on cache-revalidation bumps; the refetch is a cache hit.
-        let _ = generation();
+    use_effect(use_reactive!(|user| {
+        // Another reader's reads bypass the offline cache — nothing new for them on a bump.
+        if user.is_none() {
+            let _ = generation();
+        }
+        let ticket = *epoch.peek() + 1;
+        epoch.set(ticket);
         let url = server_url.clone();
         let mut all_time = all_time;
         let mut loading = loading;
         let mut error = error;
         spawn(async move {
-            match data::fetch_stats(&url, StatsRange::AllTime).await {
+            let result = data::fetch_stats(&url, StatsRange::AllTime, user).await;
+            // A newer reader switch superseded this fetch — drop the stale result.
+            if *epoch.peek() != ticket {
+                return;
+            }
+            match result {
                 Ok(summary) => all_time.set(Some(summary)),
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(Failure::from(&e))),
             }
             loading.set(false);
         });
-    });
+    }));
 }
 
 /// One-shot fetch of the library-scale totals. Never keyed on the switcher —
@@ -515,35 +658,80 @@ fn use_library_composition_fetch_effect(
     });
 }
 
-/// One-shot fetch of the books the reader currently has open. Its own read
-/// rather than a `StatsSummary` field: what is in progress is a fact about
-/// now, and hanging it off the windowed payload would make a period switch
-/// appear to change which books are open. Silent on failure, like the two
-/// library fetches — the card renders nothing rather than blanking the page.
-fn use_in_progress_fetch_effect(server_url: String, in_progress: Signal<Vec<ResumePoint>>) {
+/// One-shot fetch of the books the reader currently has open, re-run when the
+/// viewed reader does. Its own read rather than a `StatsSummary` field: what
+/// is in progress is a fact about now, and hanging it off the windowed
+/// payload would make a period switch appear to change which books are open.
+/// Silent on failure, like the two library fetches — the card renders nothing
+/// rather than blanking the page. Carries the same `epoch` ticket as
+/// [`use_period_fetch_effect`], so a slower fetch for the previous reader
+/// can't land after a switch and overwrite the new one's card.
+fn use_in_progress_fetch_effect(
+    server_url: String,
+    user: Option<i64>,
+    in_progress: Signal<Vec<ResumePoint>>,
+) {
+    let mut epoch = use_signal(|| 0u64);
     let generation = crate::use_cache_generation();
-    use_effect(move || {
-        // Re-run on cache-revalidation bumps; the refetch is a cache hit.
-        let _ = generation();
+    use_effect(use_reactive!(|user| {
+        // Another reader's reads bypass the offline cache — nothing new for them on a bump.
+        if user.is_none() {
+            let _ = generation();
+        }
+        let ticket = *epoch.peek() + 1;
+        epoch.set(ticket);
         let url = server_url.clone();
         let mut in_progress = in_progress;
         spawn(async move {
-            if let Ok(points) = data::recent_progress(&url, IN_PROGRESS_LIMIT).await {
+            let result = data::recent_progress(&url, IN_PROGRESS_LIMIT, user).await;
+            // A newer reader switch superseded this fetch — drop the stale result.
+            if *epoch.peek() != ticket {
+                return;
+            }
+            if let Ok(points) = result {
                 in_progress.set(points);
+            }
+        });
+    }));
+}
+
+/// Fetch the household readers whose stats the caller may view, once per
+/// [`StatsPage`] mount (never per-reader — switching whose figures are shown
+/// doesn't change who else shares). Silent on failure, like the library
+/// fetches beside it: a failed list settles as empty, which hides the picker
+/// rather than stalling the page's loader forever.
+fn use_household_readers_fetch_effect(
+    server_url: String,
+    readers: Signal<Option<Vec<HouseholdReader>>>,
+) {
+    use_effect(move || {
+        let url = server_url.clone();
+        let mut readers = readers;
+        spawn(async move {
+            match data::household_readers(&url).await {
+                Ok(list) => readers.set(Some(list)),
+                Err(_) => readers.set(Some(Vec::new())),
             }
         });
     });
 }
 
-/// Friendly empty state for a user with no recorded activity.
+/// Friendly empty state for a reader with no recorded activity. `who_name`
+/// switches the sub-line to third person when it names another reader —
+/// `None` on the caller's own page, which keeps today's copy. One stable
+/// outer element either way (rule 07): only the sub-line's text changes.
 #[component]
-fn StatsEmpty() -> Element {
+fn StatsEmpty(#[props(default)] who_name: Option<String>) -> Element {
+    let sub = match &who_name {
+        Some(name) => format!("{name} hasn't tracked any reading yet."),
+        None => {
+            "Open a book or start an audiobook and your stats will begin to fill in.".to_string()
+        }
+    };
     rsx! {
         div { class: "card st-empty", "data-testid": "stats-empty",
             h3 { class: "st-empty-title", "No reading activity yet" }
-            p { class: "st-empty-sub",
-                "Open a book or start an audiobook and your stats will begin to fill in."
-            }
+            p { class: "st-empty-sub", {sub} }
         }
     }
 }

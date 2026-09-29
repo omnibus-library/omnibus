@@ -244,7 +244,7 @@ fn UmNowReading() -> Element {
 
     use_effect(move || {
         spawn(async move {
-            let result = crate::data::recent_progress("", 1)
+            let result = crate::data::recent_progress("", 1, None)
                 .await
                 .map(|points| points.into_iter().next())
                 .map_err(|error| error.to_string());
