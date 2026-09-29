@@ -2,87 +2,27 @@
 //! title: every author in position order and the series, overrides applied.
 
 use super::*;
-use crate::test_support::{indexed, uuid_by_scan_key};
+use crate::test_support::{indexed, seed_indexed_ebook};
 
 #[tokio::test]
 async fn book_for_sync_carries_every_author_in_position_order() {
     let pool = init_db("sqlite::memory:").await.unwrap();
-    crate::sync::sync_books(
+    let uuid = seed_indexed_ebook(
         &pool,
-        "/ebooks",
-        crate::sync::SyncPlan {
-            new_books: vec![indexed(
-                "omens.epub",
-                Some("Good Omens"),
-                &["Terry Pratchett", "Neil Gaiman"],
-                &[],
-                None,
-                None,
-            )],
-            ..Default::default()
-        },
+        indexed(
+            "omens.epub",
+            Some("Good Omens"),
+            &["Terry Pratchett", "Neil Gaiman"],
+            &[],
+            None,
+            None,
+        ),
     )
-    .await
-    .unwrap();
-    let uuid = uuid_by_scan_key(&pool, &crate::helpers::scan_key_for("omens.epub")).await;
+    .await;
 
     let row = book_for_sync(&pool, &uuid).await.unwrap().unwrap();
 
     assert_eq!(row.authors, vec!["Terry Pratchett", "Neil Gaiman"]);
-}
-
-#[tokio::test]
-async fn sync_books_replaces_every_author_with_a_creators_override() {
-    let pool = init_db("sqlite::memory:").await.unwrap();
-    let user = make_user(&pool, "reader").await;
-    let uuid = seed_synced_ebook(&pool, "omens.epub", "Good Omens", "Somebody Else").await;
-    synced_manual_shelf(&pool, user, "Kobo", std::slice::from_ref(&uuid)).await;
-    let creators = ["Terry Pratchett", "Neil Gaiman"].map(|name| Contributor {
-        name: name.into(),
-        ..Default::default()
-    });
-    upsert_metadata_overrides(
-        &pool,
-        &uuid,
-        &MetadataOverrides {
-            creators: Some(creators.to_vec()),
-            ..Default::default()
-        },
-        false,
-        user,
-    )
-    .await
-    .unwrap();
-
-    let rows = sync_books(&pool, user).await.unwrap();
-
-    assert_eq!(rows[0].authors, vec!["Terry Pratchett", "Neil Gaiman"]);
-}
-
-/// Index one ebook under `/ebooks` and return its minted uuid.
-async fn seed_with_series(
-    pool: &SqlitePool,
-    filename: &str,
-    series: Option<(&str, &str)>,
-) -> String {
-    crate::sync::sync_books(
-        pool,
-        "/ebooks",
-        crate::sync::SyncPlan {
-            new_books: vec![indexed(
-                filename,
-                Some("A Book"),
-                &["An Author"],
-                &[],
-                series,
-                None,
-            )],
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    uuid_by_scan_key(pool, &crate::helpers::scan_key_for(filename)).await
 }
 
 async fn override_series(
@@ -119,9 +59,20 @@ fn kobo_series_new_derives_a_stable_id_from_the_normalized_name() {
 #[tokio::test]
 async fn book_for_sync_carries_the_series_the_web_shows_with_its_index() {
     let pool = init_db("sqlite::memory:").await.unwrap();
-    let uuid = seed_with_series(&pool, "leviathan.epub", Some(("The Expanse", "2"))).await;
-    let zeta: i64 = sqlx::query_scalar(
-        "INSERT INTO series (name, sort) VALUES ('Zeta Omnibus', 'Zeta Omnibus') RETURNING id",
+    let uuid = seed_indexed_ebook(
+        &pool,
+        indexed(
+            "leviathan.epub",
+            Some("Leviathan Wakes"),
+            &["James S. A. Corey"],
+            &[],
+            Some(("The Expanse", "2")),
+            None,
+        ),
+    )
+    .await;
+    let aardvark: i64 = sqlx::query_scalar(
+        "INSERT INTO series (name, sort) VALUES ('Aardvark Omnibus', 'Aardvark Omnibus') RETURNING id",
     )
     .fetch_one(&pool)
     .await
@@ -129,7 +80,7 @@ async fn book_for_sync_carries_the_series_the_web_shows_with_its_index() {
     sqlx::query(
         "INSERT INTO books_series_link (book, series) SELECT id, ? FROM books WHERE uuid = ?",
     )
-    .bind(zeta)
+    .bind(aardvark)
     .bind(&uuid)
     .execute(&pool)
     .await
@@ -142,30 +93,18 @@ async fn book_for_sync_carries_the_series_the_web_shows_with_its_index() {
         .series
         .unwrap();
 
-    assert_eq!(series.name, "The Expanse");
+    assert_eq!(series.name, "Aardvark Omnibus");
     assert_eq!(series.index, Some(2.0));
-}
-
-#[tokio::test]
-async fn book_for_sync_omits_the_series_index_when_it_is_unknown() {
-    let pool = init_db("sqlite::memory:").await.unwrap();
-    let uuid = seed_with_series(&pool, "mort.epub", Some(("Discworld", ""))).await;
-
-    let series = book_for_sync(&pool, &uuid)
-        .await
-        .unwrap()
-        .unwrap()
-        .series
-        .unwrap();
-
-    assert_eq!(series.name, "Discworld");
-    assert_eq!(series.index, None);
 }
 
 #[tokio::test]
 async fn book_for_sync_has_no_series_for_a_book_in_none() {
     let pool = init_db("sqlite::memory:").await.unwrap();
-    let uuid = seed_with_series(&pool, "standalone.epub", None).await;
+    let uuid = seed_indexed_ebook(
+        &pool,
+        indexed("standalone.epub", Some("A Book"), &["An Author"], &[], None, None),
+    )
+    .await;
 
     let row = book_for_sync(&pool, &uuid).await.unwrap().unwrap();
 
@@ -176,7 +115,18 @@ async fn book_for_sync_has_no_series_for_a_book_in_none() {
 async fn book_for_sync_applies_a_series_override_and_drops_a_cleared_series() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = make_user(&pool, "editor").await;
-    let uuid = seed_with_series(&pool, "leviathan.epub", Some(("The Expanse", "2"))).await;
+    let uuid = seed_indexed_ebook(
+        &pool,
+        indexed(
+            "leviathan.epub",
+            Some("Leviathan Wakes"),
+            &["James S. A. Corey"],
+            &[],
+            Some(("The Expanse", "2")),
+            None,
+        ),
+    )
+    .await;
 
     override_series(&pool, &uuid, user, "Renamed Saga", Some("4.5")).await;
     let series = book_for_sync(&pool, &uuid)

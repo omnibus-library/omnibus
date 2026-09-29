@@ -299,10 +299,14 @@ async fn sync_books_reflects_a_saved_title_and_author_override() {
         &uuid,
         &MetadataOverrides {
             title: Some("Dune (Corrected)".into()),
-            creators: Some(vec![Contributor {
-                name: "F. Herbert".into(),
-                ..Default::default()
-            }]),
+            creators: Some(
+                ["F. Herbert", "Brian Herbert"]
+                    .map(|name| Contributor {
+                        name: name.into(),
+                        ..Default::default()
+                    })
+                    .to_vec(),
+            ),
             ..Default::default()
         },
         false,
@@ -315,7 +319,7 @@ async fn sync_books_reflects_a_saved_title_and_author_override() {
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].title, "Dune (Corrected)");
-    assert_eq!(rows[0].authors, vec!["F. Herbert"]);
+    assert_eq!(rows[0].authors, vec!["F. Herbert", "Brian Herbert"]);
 }
 
 #[tokio::test]
