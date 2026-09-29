@@ -1,3 +1,5 @@
+//! `is_not_sharing` tests: which transport failures mean the reader isn't sharing their stats.
+
 use super::*;
 
 #[test]
