@@ -134,6 +134,7 @@ pub struct BookMetadata {
     pub cover_image_id: String,
     pub slug: String,
     pub download_urls: Vec<DownloadUrl>,
+    pub contributors: Vec<String>,
     pub contributor_roles: Vec<Contributor>,
 }
 
@@ -374,6 +375,7 @@ fn removed_entitlement(book_uuid: &str) -> SyncItem {
             cover_image_id: uuid.clone(),
             slug: uuid.clone(),
             download_urls: Vec::new(),
+            contributors: Vec::new(),
             contributor_roles: Vec::new(),
         },
         reading_state: ReadingState {
@@ -439,10 +441,15 @@ pub fn book_metadata(base: &str, token: &str, book: &KoboBookRow) -> BookMetadat
             platform: "Generic",
             drm_type: "None",
         }],
-        contributor_roles: vec![Contributor {
-            name: book.author.clone(),
-            role: "Author",
-        }],
+        contributors: book.authors.clone(),
+        contributor_roles: book
+            .authors
+            .iter()
+            .map(|name| Contributor {
+                name: name.clone(),
+                role: "Author",
+            })
+            .collect(),
     }
 }
 

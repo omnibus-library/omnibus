@@ -7,6 +7,7 @@
 mod analytics;
 mod auth;
 mod content;
+mod metadata;
 mod resources;
 mod state;
 mod state_statistics;
@@ -20,7 +21,7 @@ use axum::{
 };
 use omnibus_db as db;
 use omnibus_shared::ReadStatus;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
 
@@ -366,6 +367,7 @@ async fn full_device_sequence_replays_initialization_through_state_put() {
         ent["BookMetadata"]["ContributorRoles"][0]["Name"],
         "Ada Lovelace"
     );
+    assert_eq!(ent["BookMetadata"]["Contributors"], json!(["Ada Lovelace"]));
     let download_url = ent["BookMetadata"]["DownloadUrls"][0]["Url"]
         .as_str()
         .unwrap()

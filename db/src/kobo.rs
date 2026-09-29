@@ -15,18 +15,17 @@ pub mod delta;
 pub use delta::{clear_snapshot, record_synced, sync_delta, SyncChange, SyncDelta};
 
 /// SELECT list shared by [`sync_books`] and [`book_for_sync`]. `b` is the
-/// `books` alias; the correlated subquery pulls the lowest-`position` author.
+/// `books` alias; `authors_json` carries every author in `position` order.
 const SELECT_COLS: &str = "b.id AS id,
                 b.uuid,
                 COALESCE(b.title, '') AS title,
-                COALESCE((
-                    SELECT a.name
+                (SELECT json_group_array(name) FROM (
+                    SELECT a.name AS name
                     FROM books_authors_link bal
                     JOIN authors a ON a.id = bal.author
                     WHERE bal.book = b.id
                     ORDER BY bal.position ASC, a.name ASC
-                    LIMIT 1
-                ), '') AS author,
+                )) AS authors_json,
                 b.description AS description,
                 CAST(COALESCE(b.last_modified, 0) AS INTEGER) AS last_modified_epoch,
                 COALESCE((
@@ -70,9 +69,9 @@ const DOWNLOADABLE_PREDICATE: &str = "EXISTS(
                     WHERE bf.book_id = b.id AND bf.format IN ('EPUB', 'CBZ', 'PDF')
                 )";
 
-/// One book shaped for the Kobo sync endpoint: durable uuid, display title, a
-/// best-effort author line, and the last-modified epoch that drives the
-/// device's metadata-freshness check.
+/// One book shaped for the Kobo sync endpoint: durable uuid, display title,
+/// authors, and the last-modified epoch that drives the device's
+/// metadata-freshness check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct KoboBookRow {
     /// `books.id` — lets sync-out reach the kepub cache and source file for
@@ -80,7 +79,8 @@ pub struct KoboBookRow {
     pub id: i64,
     pub uuid: String,
     pub title: String,
-    pub author: String,
+    /// Every author in `books_authors_link` position order, overrides applied.
+    pub authors: Vec<String>,
     /// The blurb the device shows, `metadata_overrides` applied and HTML
     /// sanitized the same way `db::get_book` sanitizes it. Empty when the
     /// book has none — Kobo tolerates a blank description.
@@ -182,9 +182,8 @@ impl From<crate::metadata_overrides::MetadataOverridesError> for KoboError {
 /// union of membership across that user's shelves flagged `sync_to_kobo`.
 ///
 /// Sync is **never whole-library** — a user with no opted-in shelf gets
-/// an empty set, which is the correct answer, not a degenerate one. The author
-/// is the lowest-`position` entry in `books_authors_link` (empty when a book
-/// has none — Kobo tolerates a blank author).
+/// an empty set, which is the correct answer, not a degenerate one. A book
+/// with no authors carries an empty list — Kobo tolerates that.
 ///
 /// Membership alone is not enough: a member with no EPUB and no CBZ is
 /// filtered out by [`DOWNLOADABLE_PREDICATE`], because the device can only
@@ -224,7 +223,9 @@ pub async fn sync_books(pool: &SqlitePool, user_id: i64) -> Result<Vec<KoboBookR
         for uuid in chunk {
             q = q.bind(uuid);
         }
-        rows.extend(q.fetch_all(pool).await?.iter().map(row_to_book));
+        for row in q.fetch_all(pool).await? {
+            rows.push(row_to_book(&row)?);
+        }
     }
     // Ordering moves out of SQL because the result set is now assembled across
     // chunks; sorting here keeps newest-modified-first over the whole set
@@ -249,14 +250,15 @@ pub async fn book_for_sync(
         .bind(&canonical)
         .fetch_optional(pool)
         .await?;
-    let Some(mut book) = row.as_ref().map(row_to_book) else {
+    let Some(row) = row else {
         return Ok(None);
     };
+    let mut book = row_to_book(&row)?;
     apply_row_overrides(pool, std::slice::from_mut(&mut book)).await?;
     Ok(Some(book))
 }
 
-/// Overlay each row's title/author/description with its saved
+/// Overlay each row's title/authors/description with its saved
 /// `metadata_overrides` (the same [`crate::metadata_overrides::apply_overrides`]
 /// merge `db::get_book` runs for every other book-detail surface), gated by
 /// the owning scan root's configured source precedence. A no-op for
@@ -278,20 +280,20 @@ async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Res
             .cloned()
             .unwrap_or_else(|| omnibus_shared::DEFAULT_METADATA_PRECEDENCE.to_vec());
         // A throwaway `EbookMetadata` seeded with this row's current
-        // title/author lets `apply_overrides` do the real merge (title
+        // title/authors lets `apply_overrides` do the real merge (title
         // replace, precedence gate, creators-list replace) instead of
         // re-deriving those rules here.
         let mut book = omnibus_shared::EbookMetadata {
             title: Some(row.title.clone()),
             description: (!row.description.is_empty()).then(|| row.description.clone()),
-            creators: if row.author.is_empty() {
-                Vec::new()
-            } else {
-                vec![omnibus_shared::Contributor {
-                    name: row.author.clone(),
+            creators: row
+                .authors
+                .iter()
+                .map(|name| omnibus_shared::Contributor {
+                    name: name.clone(),
                     ..Default::default()
-                }]
-            },
+                })
+                .collect(),
             ..Default::default()
         };
         crate::metadata_overrides::apply_overrides(
@@ -304,28 +306,24 @@ async fn apply_row_overrides(pool: &SqlitePool, rows: &mut [KoboBookRow]) -> Res
         if let Some(title) = book.title {
             row.title = title;
         }
-        row.author = book
-            .creators
-            .first()
-            .map(|c| c.name.clone())
-            .unwrap_or_default();
+        row.authors = book.creators.into_iter().map(|c| c.name).collect();
         row.description = book.description.unwrap_or_default();
     }
     Ok(())
 }
 
-fn row_to_book(row: &sqlx::sqlite::SqliteRow) -> KoboBookRow {
-    KoboBookRow {
+fn row_to_book(row: &sqlx::sqlite::SqliteRow) -> Result<KoboBookRow, sqlx::Error> {
+    Ok(KoboBookRow {
         id: row.get("id"),
         uuid: row.get("uuid"),
         title: row.get("title"),
-        author: row.get("author"),
+        authors: crate::books::parse_json_array(row.get("authors_json"))?,
         description: crate::books::sanitize_description(row.get("description")).unwrap_or_default(),
         last_modified_epoch: row.get("last_modified_epoch"),
         download_size_bytes: row.get("download_size_bytes"),
         has_epub: row.get("has_epub"),
         has_cbz: row.get("has_cbz"),
-    }
+    })
 }
 
 /// One book's per-user reading state, as the Kobo protocol wants it: a read

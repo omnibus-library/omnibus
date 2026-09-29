@@ -2,6 +2,8 @@
 //! manual and smart shelves, per-user scoping, dedup across shelves,
 //! ordering, chunk-boundary and no-cap enumeration, and override reflection.
 
+mod metadata;
+
 use omnibus_shared::{
     Contributor, CreateShelfRequest, MatchMode, MetadataOverrides, RuleField, RuleOp, ShelfKind,
     ShelfRule,
@@ -70,7 +72,7 @@ async fn sync_books_returns_books_from_an_opted_in_shelf_with_author() {
     let row = &rows[0];
     assert_eq!(row.uuid, uuid);
     assert_eq!(row.title, "Dune");
-    assert_eq!(row.author, "Frank Herbert");
+    assert_eq!(row.authors, vec!["Frank Herbert"]);
 }
 
 #[tokio::test]
@@ -313,7 +315,7 @@ async fn sync_books_reflects_a_saved_title_and_author_override() {
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].title, "Dune (Corrected)");
-    assert_eq!(rows[0].author, "F. Herbert");
+    assert_eq!(rows[0].authors, vec!["F. Herbert"]);
 }
 
 #[tokio::test]
@@ -337,7 +339,7 @@ async fn book_for_sync_returns_the_row_for_a_known_uuid() {
 
     assert_eq!(row.uuid, uuid);
     assert_eq!(row.title, "Dune");
-    assert_eq!(row.author, "Frank Herbert");
+    assert_eq!(row.authors, vec!["Frank Herbert"]);
 }
 
 #[tokio::test]
@@ -363,7 +365,7 @@ async fn book_for_sync_reflects_a_saved_title_override_with_no_creators_override
     assert_eq!(row.title, "Dune (Corrected)");
     // Author has no override in this test — the scanned value must survive
     // the merge unchanged rather than being blanked.
-    assert_eq!(row.author, "Frank Herbert");
+    assert_eq!(row.authors, vec!["Frank Herbert"]);
 }
 
 #[tokio::test]

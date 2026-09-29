@@ -360,7 +360,7 @@ fn synthetic_book(n: usize, last_modified_epoch: i64) -> KoboBookRow {
         id: n as i64,
         uuid: format!("synthetic-{n:05}"),
         title: format!("Book {n}"),
-        author: "Author".into(),
+        authors: vec!["Author".into()],
         description: String::new(),
         last_modified_epoch,
         download_size_bytes: 0,
