@@ -40,6 +40,16 @@ pub struct UserSummary {
     /// Whether this user's landing grid folds each series into one tile.
     #[serde(default)]
     pub stack_series: bool,
+    /// Whether other readers on this server may see this user's stats page.
+    /// `true` — the default, and what a pre-0099 payload decodes to.
+    #[serde(default = "share_stats_default")]
+    pub share_stats: bool,
+}
+
+/// Serde default for [`UserSummary::share_stats`]; a bare `#[serde(default)]`
+/// would decode `false`.
+fn share_stats_default() -> bool {
+    true
 }
 
 impl UserSummary {
@@ -292,6 +302,20 @@ mod tests {
         )
         .unwrap();
         assert!(!v.stack_series);
+    }
+
+    // A pre-0099 payload (or a cached `/me` body from one) has no
+    // `share_stats`, and must decode to the on default rather than off —
+    // the opposite of every other preference here, since a pre-existing
+    // reader must arrive still sharing.
+    #[test]
+    fn user_summary_deserializes_payload_missing_share_stats_as_on() {
+        let v: UserSummary = serde_json::from_str(
+            r#"{"id":1,"username":"alice","is_admin":false,
+                "can_upload":false,"can_edit":false,"can_download":true}"#,
+        )
+        .unwrap();
+        assert!(v.share_stats);
     }
 
     // Payloads from a pre-0088 server lack `client`. The default must name the

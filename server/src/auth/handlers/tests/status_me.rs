@@ -183,3 +183,36 @@ async fn me_reports_saved_stack_series() {
     let me: omnibus_shared::UserSummary = serde_json::from_slice(&body).unwrap();
     assert!(me.stack_series);
 }
+
+#[tokio::test]
+async fn me_reports_share_stats_on_by_default_and_off_once_saved() {
+    let (app, pool) = app().await;
+    let user = crate::auth::test_support::create_user(&pool, "sharer").await;
+    let token = crate::auth::test_support::bearer_token(&pool, user.id).await;
+
+    let fetch_me = |app: Router, token: String| async move {
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/auth/me")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice::<omnibus_shared::UserSummary>(&body).unwrap()
+    };
+
+    assert!(fetch_me(app.clone(), token.clone()).await.share_stats);
+
+    db::auth::set_share_stats(&pool, user.id, false)
+        .await
+        .unwrap();
+
+    assert!(!fetch_me(app, token).await.share_stats);
+}

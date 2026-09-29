@@ -1,7 +1,8 @@
 //! Per-user account server functions: the display name, the Send-to-Kindle
-//! destination address, and the self-service change-password flow, all
-//! editable from `/settings`. The avatar upload is REST-only — multipart
-//! doesn't fit a server function, so it follows the author-photo precedent.
+//! destination address, the self-service change-password flow, and the
+//! share-stats-with-household switch, all editable from `/settings`. The
+//! avatar upload is REST-only — multipart doesn't fit a server function, so
+//! it follows the author-photo precedent.
 
 use dioxus::fullstack::post;
 use dioxus::prelude::*;
@@ -50,6 +51,15 @@ pub async fn rpc_set_stack_series(enabled: bool) -> Result<()> {
     match db::auth::set_stack_series(&pool.0, user.id, enabled).await {
         Ok(()) => Ok(()),
         Err(e) => Err(internal_rpc_error("set stack series", e).into()),
+    }
+}
+
+/// Set whether other readers on this server may see the authenticated user's stats page.
+#[post("/api/rpc/account/share-stats", pool: PoolExt, user: AuthUser)]
+pub async fn rpc_set_share_stats(enabled: bool) -> Result<()> {
+    match db::auth::set_share_stats(&pool.0, user.id, enabled).await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(internal_rpc_error("set share stats", e).into()),
     }
 }
 
