@@ -4,12 +4,20 @@
 
 use axum::{
     body::{to_bytes, Body},
-    http::{Request, StatusCode},
+    http::{header::AUTHORIZATION, Request, StatusCode},
+    Router,
 };
 use omnibus_db::{self as db, test_support::seed_synced_ebook};
 use tower::ServiceExt;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::{body_json, fixture, get, seed_book_with_kepub_cache};
+use super::{body_json, fixture, get, kobo_router, seed_book_with_kepub_cache};
+use crate::auth::test_support as auth_test_support;
+use crate::backend::test_support::{
+    build_cover_multipart, fixture_loopback_remote_image, seed_book_with_uuid, CoversDirGuard,
+    TINY_PNG,
+};
 
 #[tokio::test]
 async fn image_returns_304_when_the_if_none_match_etag_is_current() {
@@ -525,4 +533,114 @@ async fn image_returns_500_on_db_failure() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+/// The `CoverImageId` `library/<uuid>/metadata` currently reports for `uuid`.
+async fn synced_cover_image_id(kobo: &Router, token: &str, uuid: &str) -> String {
+    let res = kobo
+        .clone()
+        .oneshot(get(format!("/kobo/{token}/v1/library/{uuid}/metadata")))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    body_json(res).await[0]["CoverImageId"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Send `req` to the REST router and assert it succeeded.
+async fn send_ok(rest: &Router, req: Request<Body>) {
+    let res = rest.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+/// The cover route's answer for `image_id`, in the quality-template shape.
+async fn fetch_cover(kobo: &Router, token: &str, image_id: &str) -> (StatusCode, Vec<u8>) {
+    let res = kobo
+        .clone()
+        .oneshot(get(format!(
+            "/kobo/{token}/v1/books/{image_id}/thumbnail/400/600/100/false/image.jpg"
+        )))
+        .await
+        .unwrap();
+    let status = res.status();
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    (status, bytes.to_vec())
+}
+
+#[tokio::test]
+async fn cover_writes_move_the_synced_cover_image_id_and_the_route_serves_the_new_bytes() {
+    let _covers = CoversDirGuard::new("kobo_cover_image_id");
+    let (rest, state, pool) = fixture_loopback_remote_image().await;
+    let kobo = kobo_router(state);
+    let (_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Cover Id Book").await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let bearer = auth_test_support::bearer_token(&pool, admin.id).await;
+    let device = db::kobo_devices::create_device(&pool, admin.id, "Test Kobo")
+        .await
+        .unwrap();
+    let origin = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cover.png"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "image/png")
+                .set_body_bytes(TINY_PNG.to_vec()),
+        )
+        .mount(&origin)
+        .await;
+
+    let from_url = Request::builder()
+        .uri(format!("/api/ebooks/{uuid}/cover/from-url"))
+        .method("POST")
+        .header("content-type", "application/json")
+        .header(AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::from(
+            serde_json::json!({ "url": format!("{}/cover.png", origin.uri()) }).to_string(),
+        ))
+        .unwrap();
+    let (content_type, multipart) = build_cover_multipart("image/png", TINY_PNG);
+    let upload = Request::builder()
+        .uri(format!("/api/ebooks/{uuid}/cover"))
+        .method("POST")
+        .header("content-type", content_type)
+        .header(AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::from(multipart))
+        .unwrap();
+    let delete = Request::builder()
+        .uri(format!("/api/ebooks/{uuid}/cover"))
+        .method("DELETE")
+        .header(AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::empty())
+        .unwrap();
+
+    for (write, label) in [
+        (from_url, "from-url"),
+        (upload, "multipart upload"),
+        (delete, "delete"),
+    ] {
+        // `last_modified` is second-granular, so pin it below any real write.
+        sqlx::query("UPDATE books SET last_modified = 1 WHERE uuid = ?")
+            .bind(&uuid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let before = synced_cover_image_id(&kobo, &device.token, &uuid).await;
+        assert_eq!(before, format!("{uuid}-1"), "{label}");
+
+        if label == "from-url" {
+            let (status, _) = fetch_cover(&kobo, &device.token, &before).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "no cover before the write");
+        }
+        send_ok(&rest, write).await;
+
+        let after = synced_cover_image_id(&kobo, &device.token, &uuid).await;
+        assert_ne!(after, before, "{label} must move the cover id");
+        if label == "from-url" {
+            let (status, body) = fetch_cover(&kobo, &device.token, &after).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body, TINY_PNG, "the versioned id serves the new cover");
+        }
+    }
 }

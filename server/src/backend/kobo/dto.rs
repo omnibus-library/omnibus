@@ -393,6 +393,25 @@ fn removed_entitlement(book_uuid: &str) -> SyncItem {
     })
 }
 
+/// The `CoverImageId` for `book`: its uuid versioned by `last_modified`.
+pub fn cover_image_id(book: &KoboBookRow) -> String {
+    format!("{}-{}", book.uuid, book.last_modified_epoch)
+}
+
+/// The book uuid a cover `ImageId` names: strips a `-<digits>` version only when a 36-char uuid remains.
+pub fn cover_image_uuid(image_id: &str) -> &str {
+    match image_id.rsplit_once('-') {
+        Some((uuid, version))
+            if uuid.len() == 36
+                && !version.is_empty()
+                && version.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            uuid
+        }
+        _ => image_id,
+    }
+}
+
 /// Build the `BookMetadata` for `book`, with a `DownloadUrl` pointing back at
 /// this server's Kobo download route. Shared by `library/sync` and the
 /// `library/<uuid>/metadata` endpoint so the two never drift.
@@ -405,7 +424,7 @@ pub fn book_metadata(base: &str, token: &str, book: &KoboBookRow) -> BookMetadat
         title: book.title.clone(),
         description: book.description.clone(),
         language: "en".to_owned(),
-        cover_image_id: uuid.clone(),
+        cover_image_id: cover_image_id(book),
         slug: uuid.clone(),
         download_urls: vec![DownloadUrl {
             // Mirrors the ladder `download` takes: KEPUB (or its plain-EPUB

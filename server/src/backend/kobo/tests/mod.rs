@@ -344,6 +344,11 @@ async fn full_device_sequence_replays_initialization_through_state_put() {
     assert_eq!(ent["BookEntitlement"]["IsRemoved"], false);
     assert_eq!(ent["BookMetadata"]["Title"], "The Golden Fixture");
     assert_eq!(
+        ent["BookMetadata"]["CoverImageId"],
+        format!("{uuid}-1700000000"),
+        "the cover id carries the version the device caches the cover under"
+    );
+    assert_eq!(
         ent["BookMetadata"]["ContributorRoles"][0]["Name"],
         "Ada Lovelace"
     );
