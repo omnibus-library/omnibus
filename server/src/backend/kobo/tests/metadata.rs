@@ -1,13 +1,11 @@
 //! The bibliographic half of `BookMetadata` on the wire: every author in
 //! `Contributors` and `ContributorRoles`.
 
-use axum::http::StatusCode;
 use omnibus_db::{self as db, test_support::seed_synced_ebook};
 use omnibus_shared::{Contributor, MetadataOverrides};
 use serde_json::json;
-use tower::ServiceExt;
 
-use super::{body_json, fixture, get};
+use super::{book_metadata, fixture};
 
 #[tokio::test]
 async fn library_metadata_lists_every_author_in_both_contributor_fields() {
@@ -30,13 +28,8 @@ async fn library_metadata_lists_every_author_in_both_contributor_fields() {
     .await
     .unwrap();
 
-    let res = app
-        .oneshot(get(format!("/kobo/{token}/v1/library/{uuid}/metadata")))
-        .await
-        .unwrap();
+    let book = book_metadata(&app, &token, &uuid).await;
 
-    assert_eq!(res.status(), StatusCode::OK);
-    let book = &body_json(res).await[0];
     assert_eq!(
         book["Contributors"],
         json!(["Terry Pratchett", "Neil Gaiman"])
@@ -48,20 +41,6 @@ async fn library_metadata_lists_every_author_in_both_contributor_fields() {
             {"Name": "Neil Gaiman", "Role": "Author"},
         ])
     );
-}
-
-async fn series_of(
-    app: &axum::Router,
-    token: &str,
-    uuid: &str,
-) -> serde_json::Map<String, serde_json::Value> {
-    let res = app
-        .clone()
-        .oneshot(get(format!("/kobo/{token}/v1/library/{uuid}/metadata")))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-    body_json(res).await[0].as_object().unwrap().clone()
 }
 
 #[tokio::test]
@@ -90,7 +69,7 @@ async fn library_metadata_carries_a_calibre_web_shaped_series_block() {
         .unwrap();
     }
 
-    let book = series_of(&app, &token, &indexed).await;
+    let book = book_metadata(&app, &token, &indexed).await;
     assert_eq!(
         book["Series"],
         json!({
@@ -101,12 +80,12 @@ async fn library_metadata_carries_a_calibre_web_shaped_series_block() {
         })
     );
 
-    let series = series_of(&app, &token, &unindexed).await["Series"].clone();
+    let series = book_metadata(&app, &token, &unindexed).await["Series"].clone();
     assert_eq!(series["Name"], "Discworld");
     assert!(series["Id"].is_string());
     assert!(series.get("Number").is_none() && series.get("NumberFloat").is_none());
 
-    assert!(series_of(&app, &token, &standalone)
+    assert!(book_metadata(&app, &token, &standalone)
         .await
         .get("Series")
         .is_none());

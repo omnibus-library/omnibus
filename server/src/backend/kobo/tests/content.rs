@@ -13,8 +13,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::{
-    body_json, fixture, get, kobo_router, seed_book_with_kepub_cache, seed_downloadable_book,
-    seed_override_cover,
+    body_json, book_metadata, fixture, get, kobo_router, seed_book_with_kepub_cache,
+    seed_downloadable_book, seed_override_cover,
 };
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{
@@ -538,26 +538,6 @@ async fn image_returns_500_on_db_failure() {
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
-/// The `CoverImageId` `library/<uuid>/metadata` currently reports for `uuid`.
-async fn synced_cover_image_id(kobo: &Router, token: &str, uuid: &str) -> String {
-    let res = kobo
-        .clone()
-        .oneshot(get(format!("/kobo/{token}/v1/library/{uuid}/metadata")))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-    body_json(res).await[0]["CoverImageId"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
-
-/// Send `req` to the REST router and assert it succeeded.
-async fn send_ok(rest: &Router, req: Request<Body>) {
-    let res = rest.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-}
-
 /// The cover route's answer for `image_id`, in the quality-template shape.
 async fn fetch_cover(kobo: &Router, token: &str, image_id: &str) -> (StatusCode, Vec<u8>) {
     let res = kobo
@@ -629,16 +609,23 @@ async fn cover_writes_move_the_synced_cover_image_id_and_the_route_serves_the_ne
             .execute(&pool)
             .await
             .unwrap();
-        let before = synced_cover_image_id(&kobo, &device.token, &uuid).await;
+        let before = book_metadata(&kobo, &device.token, &uuid).await["CoverImageId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         assert_eq!(before, format!("{uuid}-1"), "{label}");
 
         if label == "from-url" {
             let (status, _) = fetch_cover(&kobo, &device.token, &before).await;
             assert_eq!(status, StatusCode::NOT_FOUND, "no cover before the write");
         }
-        send_ok(&rest, write).await;
+        let res = rest.clone().oneshot(write).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "{label}");
 
-        let after = synced_cover_image_id(&kobo, &device.token, &uuid).await;
+        let after = book_metadata(&kobo, &device.token, &uuid).await["CoverImageId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         assert_ne!(after, before, "{label} must move the cover id");
         if label == "from-url" {
             let (status, body) = fetch_cover(&kobo, &device.token, &after).await;

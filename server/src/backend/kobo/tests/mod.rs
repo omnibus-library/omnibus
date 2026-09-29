@@ -86,6 +86,17 @@ fn get(uri: String) -> Request<Body> {
         .unwrap()
 }
 
+/// `GET /v1/library/{uuid}/metadata` for `uuid`, asserted 200; the book's entry.
+async fn book_metadata(app: &Router, token: &str, uuid: &str) -> Value {
+    let res = app
+        .clone()
+        .oneshot(get(format!("/kobo/{token}/v1/library/{uuid}/metadata")))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    body_json(res).await[0].take()
+}
+
 /// Seed one real book on disk — a copy of the committed EPUB fixture under a
 /// fresh scan root — so [`download`](super::resources::download) has real
 /// bytes to serve. Mirrors the on-disk setup
