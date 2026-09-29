@@ -110,7 +110,14 @@ async fn book_for_sync_has_no_series_for_a_book_in_none() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let uuid = seed_indexed_ebook(
         &pool,
-        indexed("standalone.epub", Some("A Book"), &["An Author"], &[], None, None),
+        indexed(
+            "standalone.epub",
+            Some("A Book"),
+            &["An Author"],
+            &[],
+            None,
+            None,
+        ),
     )
     .await;
 
@@ -158,7 +165,14 @@ async fn book_for_sync_keeps_the_stored_series_index_when_only_the_series_name_i
     let user = make_user(&pool, "editor").await;
     let uuid = seed_indexed_ebook(
         &pool,
-        indexed("leviathan.epub", Some("A Book"), &["An Author"], &[], None, None),
+        indexed(
+            "leviathan.epub",
+            Some("A Book"),
+            &["An Author"],
+            &[],
+            None,
+            None,
+        ),
     )
     .await;
     sqlx::query("UPDATE books SET series_index = 2 WHERE uuid = ?")

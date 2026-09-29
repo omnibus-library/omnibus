@@ -126,7 +126,11 @@ impl KoboSeries {
     pub fn new(name: String, index: Option<f64>) -> Self {
         // Frozen: a device keys its series shelf on this id, so the fold must not
         // follow `normalize_title`, which has changed before.
-        let key = name.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+        let key = name
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
         let id = uuid::Uuid::new_v5(
             &uuid::Uuid::NAMESPACE_URL,
             format!("omnibus:series:{key}").as_bytes(),
