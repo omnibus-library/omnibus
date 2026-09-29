@@ -16,7 +16,7 @@ use omnibus_shared::physical::PhysicalCopy;
 use omnibus_shared::BookFileInfo;
 
 use crate::books::{
-    book_file_path_by_id, get_book_files, get_book_files_exec, resolve_book_id_by_uuid,
+    book_file_path_by_id_exec, get_book_files, get_book_files_exec, resolve_book_id_by_uuid,
 };
 use crate::physical::list_physical_copies_by_canonical_uuid_exec;
 
@@ -198,18 +198,17 @@ async fn run_deletion_tx(
     };
 
     // Resolve on-disk paths before the rows they're derived from disappear.
-    // Read on the pool rather than the tx: the rows aren't deleted until the
-    // writes below, so a separate connection still sees them, and a plain
-    // `SELECT` never contends with the tx's RESERVED write lock under WAL.
+    // Read on the tx, never the pool: writers queued behind this lock can hold
+    // every other connection, so a second acquire here deadlocks.
     let mut paths = Vec::with_capacity(file_ids.len());
     for id in file_ids {
-        if let Some(path) = book_file_path_by_id(pool, book_id, *id, None).await? {
+        if let Some(path) = book_file_path_by_id_exec(&mut *tx, book_id, *id, None).await? {
             paths.push(path);
         }
     }
-    let library_roots = library_roots(pool).await?;
+    let library_roots = library_roots(&mut tx).await?;
     let journal_images = if total_delete {
-        purge::journal_image_names(pool, uuid).await?
+        purge::journal_image_names(&mut tx, uuid).await?
     } else {
         Vec::new()
     };
@@ -291,10 +290,12 @@ async fn canonical_uuid(pool: &SqlitePool, book_id: i64) -> Result<String, Delet
 
 /// Every configured scan root, used as the stop line for the empty-directory
 /// prune so cleanup can never walk out of a library.
-async fn library_roots(pool: &SqlitePool) -> Result<Vec<String>, DeleteError> {
+async fn library_roots(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+) -> Result<Vec<String>, DeleteError> {
     Ok(
         sqlx::query_scalar::<_, String>("SELECT path FROM scan_roots")
-            .fetch_all(pool)
+            .fetch_all(&mut **tx)
             .await?,
     )
 }
