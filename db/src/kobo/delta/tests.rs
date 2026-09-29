@@ -539,6 +539,11 @@ async fn resend_migration_marks_every_held_book_changed_exactly_once() {
     let dune = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
     let emma = seed_synced_ebook(&pool, "emma.epub", "Emma", "Austen").await;
     synced_shelf(&pool, user, "Kobo", &[dune.clone(), emma.clone()]).await;
+    sqlx::query("UPDATE books SET last_modified = NULL WHERE uuid = ?")
+        .bind(&emma)
+        .execute(&pool)
+        .await
+        .unwrap();
     sync_once(&pool, user, device).await;
     assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
 
