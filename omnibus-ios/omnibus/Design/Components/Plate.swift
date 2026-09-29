@@ -57,6 +57,9 @@ struct Plate<Content: View>: View {
 struct PlateRow<Content: View>: View {
     let label: String
     var isFirst = false
+    /// An optional line beneath the label, styled by the caller. A row with one
+    /// reads as a setting, so its label becomes a sentence-case title.
+    var detail: Text? = nil
     @ViewBuilder var content: () -> Content
 
     @Environment(\.palette) private var palette
@@ -66,7 +69,16 @@ struct PlateRow<Content: View>: View {
             if !isFirst { Hairline() }
 
             HStack(spacing: Spacing.md) {
-                RowLabel(label)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    if let detail {
+                        Text(label)
+                            .font(.ui(14, weight: .semibold))
+                            .foregroundStyle(palette.ink0Color)
+                        detail
+                    } else {
+                        RowLabel(label)
+                    }
+                }
                 Spacer(minLength: Spacing.sm)
                 content()
             }

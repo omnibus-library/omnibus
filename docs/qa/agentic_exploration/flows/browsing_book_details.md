@@ -74,7 +74,7 @@ turn up something cosmetic that no assertion would catch.
      correct, and one moving because the other did is not.
    - **Flip the scroll-stop layout.** The detail page has two shapes, chosen
      by a toggle on **your own** account page (Settings → Account on the web,
-     reached from the user menu's Edit link; You → Book details on iOS): off
+     reached from the user menu's Edit link; You → User settings on iOS): off
      (the default) is one
      continuous page with the sections introduced by rules; on snaps the page
      section by section with a dot rail. Go to your account page, turn it on,
