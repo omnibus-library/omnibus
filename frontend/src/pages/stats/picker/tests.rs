@@ -1,3 +1,5 @@
+//! Reader-picker logic tests: when the picker shows, whom a selection resolves to, and the page heading.
+
 use super::*;
 
 fn reader(id: i64, name: &str, is_you: bool) -> HouseholdReader {
