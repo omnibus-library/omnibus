@@ -102,6 +102,17 @@
   // emission re-states the restored position and is tagged `echo` so the
   // host renders it without persisting it (see emitRelocate).
   var restoreEchoPending = false;
+  // The page the restore's echo re-stated, and the navigation generation it
+  // was stated under: the same page again with no navigation since is the
+  // settle chain landing late, not movement (see emitRelocate).
+  var restoreEchoCfi = null;
+  var restoreEchoToken = -1;
+  // Counts `relocated` events, so a deferred emission can tell one arrived.
+  var relocatedSeq = 0;
+  // How long unmute waits for the corrective redisplay's own `relocated`
+  // before stating the landing itself — just past the relocate debounce.
+  var UNMUTE_FALLBACK_MS = 450;
+  var unmuteFallbackTimer = null;
   // True from the first resize-driven "resized" event of a rotation/resize
   // burst until the corrected redisplay that follows it has been reported —
   // mutes every relocate in between (issue #2081, finding 1 & 2). A
@@ -176,6 +187,10 @@
     if (relocateTimer) {
       clearTimeout(relocateTimer);
       relocateTimer = null;
+    }
+    if (unmuteFallbackTimer) {
+      clearTimeout(unmuteFallbackTimer);
+      unmuteFallbackTimer = null;
     }
     if (stageResizeTimer) {
       clearTimeout(stageResizeTimer);
@@ -645,6 +660,7 @@
     var initialCfi = opts.cfi || null;
     restoreSettled = !initialCfi;
     restoreEchoPending = !!initialCfi;
+    restoreEchoCfi = null;
     // A jump or turn during the settle supersedes the restore — its
     // corrective redisplay must not pull the view back (see displayToken).
     var restoreToken = displayToken;
@@ -673,17 +689,25 @@
           // display target rather than the rendered viewport, so it is
           // only the fallback.
           if (relocateTimer) return;
-          var loc = null;
-          try {
-            loc = rendition.currentLocation();
-          } catch (e) {
-            /* not ready yet */
-          }
-          if (loc && loc.start) {
-            emitRelocate(loc);
-          } else if (rendition.location) {
-            emitRelocate(rendition.location);
-          }
+          // The corrective redisplay's own `relocated` can still be a frame
+          // out: a snapshot now would spend the echo tag and leave that one
+          // to land untagged, so defer to it when it comes.
+          var seq = relocatedSeq;
+          unmuteFallbackTimer = setTimeout(function () {
+            unmuteFallbackTimer = null;
+            if (rendition !== r || relocatedSeq !== seq || relocateTimer) return;
+            var loc = null;
+            try {
+              loc = rendition.currentLocation();
+            } catch (e) {
+              /* not ready yet */
+            }
+            if (loc && loc.start) {
+              emitRelocate(loc);
+            } else if (rendition.location) {
+              emitRelocate(rendition.location);
+            }
+          }, UNMUTE_FALLBACK_MS);
         };
         redisplayWhenSettled(initialCfi, restoreCurrent)
           .then(function () {
@@ -697,8 +721,13 @@
         // Fail-open: if the settle chain ever hangs (an epub.js display that
         // never resolves), the mute must not permanently stop progress
         // persistence, nor the deferred ready leave the loading overlay up
-        // forever — worst case reverts to the uncorrected landing.
-        setTimeout(unmute, 4000);
+        // forever — worst case reverts to the uncorrected landing. The chain
+        // is retired first, so a redisplay it issues late can't move the
+        // page after the echo has been spent.
+        setTimeout(function () {
+          if (rendition === r && !restoreSettled) displayToken++;
+          unmute();
+        }, 4000);
       },
       function () {
         emitStatus("error");
@@ -706,6 +735,7 @@
     );
 
     rendition.on("relocated", function (location) {
+      relocatedSeq++;
       if (relocateTimer) {
         clearTimeout(relocateTimer);
       }
@@ -784,16 +814,27 @@
   // out-orders a newer counterpart-format position at the cross-format
   // clock gate. The first emission after a CFI restore is an echo even
   // when it arrives through the debounced relocated handler, so the flag
-  // is consumed here rather than trusted to the call sites.
+  // is consumed here rather than trusted to the call sites — and never by an
+  // explicit echo while the settle emission is still due, which would spend
+  // it and leave that one to write.
   function emitRelocate(location, isEcho) {
     if (!restoreSettled || resizeSettling) return;
     clearNavWatchdog();
     var echo = !!isEcho;
-    if (restoreEchoPending) {
+    var data = buildRelocateData(location);
+    if (restoreEchoPending && (!echo || (!relocateTimer && !unmuteFallbackTimer))) {
       restoreEchoPending = false;
       echo = true;
+      restoreEchoCfi = data.cfi || null;
+      restoreEchoToken = displayToken;
+    } else if (!echo && restoreEchoCfi !== null) {
+      // Any movement ends it, so returning to the restored page still writes.
+      if (data.cfi === restoreEchoCfi && displayToken === restoreEchoToken) {
+        echo = true;
+      } else {
+        restoreEchoCfi = null;
+      }
     }
-    var data = buildRelocateData(location);
     data.echo = echo;
     if (data.cfi && typeof window.__omnibusOnRelocate === "function") {
       window.__omnibusOnRelocate(JSON.stringify(data));
