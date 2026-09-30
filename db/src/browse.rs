@@ -7,7 +7,12 @@
 use omnibus_shared::{AuthorSummary, SeriesSummary};
 use sqlx::{Row, SqlitePool};
 
-use crate::metadata_overrides::sql::creator_sort_sql;
+// The membership fragments expand the precedence and presence macros at this
+// site, so those must be in scope here too.
+use crate::metadata_overrides::sql::{
+    creator_sort_sql, effective_authors_sql, effective_series_sql, override_present_sql,
+    overrides_win_sql,
+};
 
 /// Errors returned by the browse index queries.
 #[derive(Debug, thiserror::Error)]
@@ -85,14 +90,12 @@ pub async fn list_authors(
 /// binding. Split out from [`list_authors`] because the SQL, not the
 /// bind/fetch/map plumbing, is the bulk of that function's length.
 ///
-/// `effective(author_id, book_id)` is the override-aware membership set,
-/// built once: arm (1) canonical link rows whose book has no creators
-/// override, arm (2) override-derived `(authors.id, book_id)` pairs. A
+/// `effective(author_id, book_id)` is the shared override-aware membership
+/// set (`effective_authors_sql!`) narrowed to visible books, built once. A
 /// single `GROUP BY author_id` over it replaces the old per-author
 /// correlated `COUNT(*)` subquery, so the books table is scanned once
-/// rather than once per author. UNION (not ALL) collapses a duplicate
-/// author name inside one override array. The inner `JOIN counts` is also
-/// what enforces the `book_count > 0` invariant.
+/// rather than once per author. The inner `JOIN counts` is also what
+/// enforces the `book_count > 0` invariant.
 fn list_authors_sql(n: usize) -> String {
     let ph = placeholders(n);
     let vis = visible("b", "l");
@@ -102,26 +105,11 @@ fn list_authors_sql(n: usize) -> String {
         r"
         WITH lib_paths(p) AS (VALUES {ph}),
         effective AS (
-            -- (1) Canonical authorship with no creators override.
-            SELECT bal.author AS author_id, bal.book AS book_id
-              FROM books_authors_link bal
-              JOIN books b ON b.id = bal.book
+            SELECT e.author_id, e.book_id
+              FROM ({effective}) e
+              JOIN books b ON b.id = e.book_id
               JOIN scan_roots l ON l.id = b.library_id
-              LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
              WHERE {vis}
-               AND (mo.book_uuid IS NULL
-                    OR json_type(mo.overrides, '$.creators') IS NULL)
-            UNION
-            -- (2) Override creators resolved (NOCASE) to an authors row.
-            SELECT a2.id AS author_id, b.id AS book_id
-              FROM books b
-              JOIN scan_roots l ON l.id = b.library_id
-              JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-              JOIN json_each(mo.overrides, '$.creators') je
-              JOIN authors a2
-                ON a2.name = json_extract(je.value, '$.name') COLLATE NOCASE
-             WHERE {vis}
-               AND json_type(mo.overrides, '$.creators') IS NOT NULL
         ),
         counts AS (
             SELECT author_id, COUNT(*) AS book_count
@@ -149,7 +137,8 @@ fn list_authors_sql(n: usize) -> String {
         JOIN counts c ON c.author_id = a.id
         ORDER BY {author_key} COLLATE author_dictionary ASC, a.id ASC
         LIMIT ?
-        "
+        ",
+        effective = effective_authors_sql!()
     )
 }
 
@@ -203,25 +192,11 @@ fn series_index_sql(n: usize) -> String {
         r"
         WITH lib_paths(p) AS (VALUES {ph}),
         effective AS (
-            -- (1) Canonical members with no series override.
-            SELECT bsl.series AS series_id, bsl.book AS book_id
-              FROM books_series_link bsl
-              JOIN books b ON b.id = bsl.book
+            SELECT e.series_id, e.book_id
+              FROM ({effective}) e
+              JOIN books b ON b.id = e.book_id
               JOIN scan_roots l ON l.id = b.library_id
-              LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
              WHERE {vis}
-               AND (mo.book_uuid IS NULL
-                    OR json_type(mo.overrides, '$.series') IS NULL)
-            UNION
-            -- (2) Books whose `overrides.series` names a series (NOCASE).
-            SELECT s2.id AS series_id, b.id AS book_id
-              FROM books b
-              JOIN scan_roots l ON l.id = b.library_id
-              JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-              JOIN series s2
-                ON s2.name = json_extract(mo.overrides, '$.series') COLLATE NOCASE
-             WHERE {vis}
-               AND json_type(mo.overrides, '$.series') IS NOT NULL
         ),
         counts AS (
             SELECT series_id, COUNT(*) AS book_count
@@ -261,7 +236,8 @@ fn series_index_sql(n: usize) -> String {
         JOIN counts c ON c.series_id = s.id
         ORDER BY COALESCE(s.sort, s.name) COLLATE NOCASE ASC
         LIMIT ?
-        "
+        ",
+        effective = effective_series_sql!()
     )
 }
 

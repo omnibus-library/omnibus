@@ -1,4 +1,4 @@
-//! Direct-query coverage for effective tag and genre membership SQL.
+//! Direct-query coverage for effective tag, genre, author and series membership SQL.
 
 use omnibus_shared::{MetadataOverrides, MetadataSource};
 use sqlx::SqlitePool;
@@ -368,4 +368,179 @@ async fn effective_genres_returns_nothing_when_the_genres_override_is_json_null(
 
     // Then.
     assert!(rows.is_empty());
+}
+
+async fn replace_one_series_book(pool: &SqlitePool) {
+    replace_books(
+        pool,
+        "/lib",
+        vec![indexed(
+            "a.epub",
+            Some("A"),
+            &["Author"],
+            &[],
+            Some(("Saga", "1")),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+}
+
+async fn corrupt_overrides(pool: &SqlitePool, uuid: &str) {
+    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
+        .bind(uuid)
+        .bind("{ not valid json")
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn id_named(pool: &SqlitePool, table: &str, name: &str) -> i64 {
+    sqlx::query_scalar(&format!("SELECT id FROM {table} WHERE name = ?"))
+        .bind(name)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn author_rows(pool: &SqlitePool) -> Vec<(i64, i64)> {
+    sqlx::query_as::<_, (i64, i64)>(concat!(
+        "SELECT book_id, author_id FROM (",
+        effective_authors_sql!(),
+        ") ORDER BY book_id, author_id"
+    ))
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn series_rows(pool: &SqlitePool) -> Vec<(i64, i64)> {
+    sqlx::query_as::<_, (i64, i64)>(concat!(
+        "SELECT book_id, series_id FROM (",
+        effective_series_sql!(),
+        ") ORDER BY book_id, series_id"
+    ))
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+fn creators(name: &str) -> MetadataOverrides {
+    MetadataOverrides {
+        creators: Some(vec![omnibus_shared::Contributor {
+            name: name.into(),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    }
+}
+
+fn series(name: &str) -> MetadataOverrides {
+    MetadataOverrides {
+        series: Some(name.into()),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn effective_authors_replaces_the_canonical_link_with_the_override_creators() {
+    // Given.
+    let _covers = CoversTempDir::new("effective_authors_override");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_one_book!(&pool);
+    let (uuid, book_id) = book_identity(&pool).await;
+    write_overrides(&pool, &uuid, &creators("Override Author")).await;
+
+    // When.
+    let rows = author_rows(&pool).await;
+
+    // Then.
+    let author_id = id_named(&pool, "authors", "Override Author").await;
+    assert_eq!(rows, vec![(book_id, author_id)]);
+}
+
+#[tokio::test]
+async fn effective_authors_keeps_the_canonical_link_on_an_embedded_tags_first_root() {
+    // Given.
+    let _covers = CoversTempDir::new("effective_authors_precedence");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_one_book!(&pool);
+    let (uuid, book_id) = book_identity(&pool).await;
+    write_overrides(&pool, &uuid, &creators("Override Author")).await;
+    set_embedded_tags_first(&pool).await;
+
+    // When.
+    let rows = author_rows(&pool).await;
+
+    // Then.
+    let author_id = id_named(&pool, "authors", "Author").await;
+    assert_eq!(rows, vec![(book_id, author_id)]);
+}
+
+#[tokio::test]
+async fn effective_authors_tolerates_a_corrupt_overrides_blob() {
+    // Given.
+    let _covers = CoversTempDir::new("effective_authors_corrupt");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_one_book!(&pool);
+    let (uuid, book_id) = book_identity(&pool).await;
+    corrupt_overrides(&pool, &uuid).await;
+
+    // When.
+    let rows = author_rows(&pool).await;
+
+    // Then.
+    let author_id = id_named(&pool, "authors", "Author").await;
+    assert_eq!(rows, vec![(book_id, author_id)]);
+}
+
+#[tokio::test]
+async fn effective_series_resolves_an_override_name_to_its_series_row() {
+    // Given.
+    let _covers = CoversTempDir::new("effective_series_override");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_one_series_book(&pool).await;
+    let (uuid, book_id) = book_identity(&pool).await;
+    write_overrides(&pool, &uuid, &series("Other Saga")).await;
+
+    // When.
+    let rows = series_rows(&pool).await;
+
+    // Then.
+    let series_id = id_named(&pool, "series", "Other Saga").await;
+    assert_eq!(rows, vec![(book_id, series_id)]);
+}
+
+#[tokio::test]
+async fn effective_series_holds_a_book_in_no_series_when_its_override_is_emptied() {
+    // Given.
+    let _covers = CoversTempDir::new("effective_series_cleared");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_one_series_book(&pool).await;
+    let (uuid, _) = book_identity(&pool).await;
+    write_overrides(&pool, &uuid, &series("")).await;
+
+    // When.
+    let rows = series_rows(&pool).await;
+
+    // Then.
+    assert!(rows.is_empty());
+}
+
+#[tokio::test]
+async fn effective_series_tolerates_a_corrupt_overrides_blob() {
+    // Given.
+    let _covers = CoversTempDir::new("effective_series_corrupt");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_one_series_book(&pool).await;
+    let (uuid, book_id) = book_identity(&pool).await;
+    corrupt_overrides(&pool, &uuid).await;
+
+    // When.
+    let rows = series_rows(&pool).await;
+
+    // Then.
+    let series_id = id_named(&pool, "series", "Saga").await;
+    assert_eq!(rows, vec![(book_id, series_id)]);
 }

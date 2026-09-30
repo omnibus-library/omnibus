@@ -1,10 +1,16 @@
 //! Smart-rule → SQL predicate translation: each [`ShelfRule`] becomes an
-//! `EXISTS`/comparison fragment over the `books b` alias, and the rule set
+//! `EXISTS`/`IN`/comparison fragment over the `books b` alias, and the rule set
 //! joins with `OR` (match any) or `AND` (match all). Per-field semantics —
-//! override-aware tags, override-only genres, name matching, owner-scoped
+//! override-aware tags, authors and series, override-only genres, owner-scoped
 //! rating/status, date windows — are documented on each condition helper.
 
 use omnibus_shared::{MatchMode, ReadStatus, RuleField, RuleOp, ShelfRule};
+
+// The membership fragments expand the precedence and presence macros at this
+// site, so those must be in scope here too.
+use crate::metadata_overrides::sql::{
+    effective_authors_sql, effective_series_sql, override_present_sql, overrides_win_sql,
+};
 
 use super::ShelfError;
 
@@ -64,21 +70,29 @@ fn condition_sql(rule: &ShelfRule, owner_id: i64) -> Result<(String, Vec<Bind>),
         // (all `COLLATE NOCASE`), so the user types a name, not an id.
         RuleField::Tag => tag_condition(rule),
         RuleField::Genre => genre_condition(rule),
+        // Author and series match the effective membership the Authors and
+        // Series indexes count, so an override moves a book on both.
         RuleField::Author => text_condition(
             rule,
-            "SELECT 1 FROM books_authors_link bal JOIN authors a ON a.id = bal.author \
-             WHERE bal.book = b.id AND ",
+            concat!(
+                "SELECT ea.book_id FROM (",
+                effective_authors_sql!(),
+                ") ea JOIN authors a ON a.id = ea.author_id WHERE "
+            ),
             "a.name",
         ),
         RuleField::Series => text_condition(
             rule,
-            "SELECT 1 FROM books_series_link bsl JOIN series s ON s.id = bsl.series \
-             WHERE bsl.book = b.id AND ",
+            concat!(
+                "SELECT es.book_id FROM (",
+                effective_series_sql!(),
+                ") es JOIN series s ON s.id = es.series_id WHERE "
+            ),
             "s.name",
         ),
         RuleField::Format => text_condition(
             rule,
-            "SELECT 1 FROM book_files bf WHERE bf.book_id = b.id AND ",
+            "SELECT bf.book_id FROM book_files bf WHERE ",
             "bf.format",
         ),
         RuleField::Rating => {
@@ -172,18 +186,19 @@ fn date_condition(rule: &ShelfRule, v: &str) -> Result<(String, Vec<Bind>), Shel
     }
 }
 
-/// Build a case-insensitive `EXISTS`/`NOT EXISTS` text predicate for a joined
-/// name column.
+/// Build a case-insensitive `IN`/`NOT IN` text predicate for a joined name
+/// column.
 ///
-/// `inner` is the subquery up to (but not including) the column comparison, e.g.
-/// `"SELECT 1 FROM books_authors_link bal JOIN authors a ON a.id = bal.author
-/// WHERE bal.book = b.id AND "`; `col` is the compared column (`"a.name"`). Equality
+/// `members` selects the `book_id`s up to (but not including) the column
+/// comparison, e.g. `"SELECT bf.book_id FROM book_files bf WHERE "`; `col` is
+/// the compared column (`"bf.format"`). Uncorrelated, so a membership union is
+/// built once per query rather than once per book. Equality
 /// (`is`/`is_not`/`includes`) uses `COLLATE NOCASE`; `contains`/`starts_with`
 /// use `LIKE` (case-insensitive for ASCII) with metacharacters escaped so user
 /// text matches literally.
 fn text_condition(
     rule: &ShelfRule,
-    inner: &str,
+    members: &str,
     col: &str,
 ) -> Result<(String, Vec<Bind>), ShelfError> {
     let v = rule.value.trim();
@@ -210,13 +225,8 @@ fn text_condition(
         ),
         _ => return Err(unsupported(rule)),
     };
-    let exists = format!("EXISTS ({inner}{cmp})");
-    let sql = if negate {
-        format!("NOT {exists}")
-    } else {
-        exists
-    };
-    Ok((sql, vec![bind]))
+    let not = if negate { "NOT " } else { "" };
+    Ok((format!("b.id {not}IN ({members}{cmp})"), vec![bind]))
 }
 
 /// Build a tag predicate over the book's *effective* tag set.
@@ -556,14 +566,14 @@ mod rule_tests {
     }
 
     #[test]
-    fn series_is_not_negates_the_exists() {
+    fn series_is_not_negates_the_membership() {
         let p = membership_predicate(
             &[rule(RuleField::Series, RuleOp::IsNot, "Foundation")],
             MatchMode::Any,
             1,
         )
         .unwrap();
-        assert!(p.sql.starts_with("(NOT EXISTS"), "sql was {}", p.sql);
+        assert!(p.sql.starts_with("(b.id NOT IN"), "sql was {}", p.sql);
         assert!(p.sql.contains("s.name = ? COLLATE NOCASE"));
     }
 

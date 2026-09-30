@@ -214,10 +214,76 @@ macro_rules! effective_genres_sql {
     };
 }
 
+/// Effective `(book_id, author_id)` membership — who a book is *by* on every
+/// surface that credits it: the canonical link rows for a book with no
+/// creators override (or whose scan root ranks it below the scan), the
+/// override's creator names resolved (NOCASE) to `authors` rows otherwise;
+/// `materialize_author_rows` guarantees the row. Same `'array'` presence test
+/// as [`effective_tags_sql`]. The `je.type` guard sits in the argument because
+/// the join may be evaluated before any `WHERE`.
+macro_rules! effective_authors_sql {
+    () => {
+        concat!(
+            "SELECT bal.book AS book_id, bal.author AS author_id
+               FROM books_authors_link bal
+               JOIN books b ON b.id = bal.book
+               JOIN scan_roots l ON l.id = b.library_id
+               LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+              WHERE json_type(CASE WHEN json_valid(mo.overrides)
+                                   THEN mo.overrides ELSE '{}' END, '$.creators') IS NOT 'array'
+                 OR NOT ",
+            overrides_win_sql!(),
+            " UNION
+             SELECT b.id AS book_id, a.id AS author_id
+               FROM books b
+               JOIN scan_roots l ON l.id = b.library_id
+               JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+               JOIN json_each(CASE WHEN json_valid(mo.overrides)
+                                   THEN mo.overrides ELSE '{}' END, '$.creators') je
+               JOIN authors a
+                 ON a.name = CASE WHEN je.type = 'object'
+                                  THEN json_extract(je.value, '$.name') END COLLATE NOCASE
+              WHERE ",
+            overrides_win_sql!(),
+            " AND json_type(CASE WHEN json_valid(mo.overrides)
+                                 THEN mo.overrides ELSE '{}' END, '$.creators') = 'array'"
+        )
+    };
+}
+
+/// Effective `(book_id, series_id)` membership: the canonical link rows for a
+/// book with no series override, the `series` row the override names (NOCASE)
+/// otherwise — none for the empty clear. The presence test is the Series sort
+/// axis' own, so a book is held under the series it sorts and displays under.
+macro_rules! effective_series_sql {
+    () => {
+        concat!(
+            "SELECT bsl.book AS book_id, bsl.series AS series_id
+               FROM books_series_link bsl
+               JOIN books b ON b.id = bsl.book
+               JOIN scan_roots l ON l.id = b.library_id
+               LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+              WHERE NOT ",
+            override_present_sql!("$.series"),
+            " UNION
+             SELECT b.id AS book_id, s.id AS series_id
+               FROM books b
+               JOIN scan_roots l ON l.id = b.library_id
+               JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+               JOIN series s
+                 ON s.name = json_extract(CASE WHEN json_valid(mo.overrides)
+                                               THEN mo.overrides ELSE '{}' END, '$.series')
+                    COLLATE NOCASE
+              WHERE ",
+            override_present_sql!("$.series")
+        )
+    };
+}
+
 pub(crate) use {
-    creator_sort_sql, effective_author_sql, effective_genres_sql, effective_tags_sql,
-    effective_text_sql, effective_value_sql, override_join_sql, override_present_sql, override_sql,
-    overrides_win_sql,
+    creator_sort_sql, effective_author_sql, effective_authors_sql, effective_genres_sql,
+    effective_series_sql, effective_tags_sql, effective_text_sql, effective_value_sql,
+    override_join_sql, override_present_sql, override_sql, overrides_win_sql,
 };
 
 #[cfg(test)]

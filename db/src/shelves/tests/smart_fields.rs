@@ -8,7 +8,7 @@ use omnibus_shared::{MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey};
 use super::super::*;
 use super::{make_user, smart_req, tag_rule, uuid_by_title};
 use crate::pool::init_db;
-use crate::test_support::{seed_discovery_fixture, seed_minimal_books};
+use crate::test_support::{indexed, seed_discovery_fixture, seed_minimal_books, CoversTempDir};
 
 #[tokio::test]
 async fn smart_shelf_date_added_rules_match_epoch_column() {
@@ -308,4 +308,206 @@ async fn preview_rule_reports_matched_and_total() {
     assert_eq!(preview.matched, 2);
     assert_eq!(preview.total, 4);
     assert_eq!(preview.sample.len(), 2);
+}
+
+/// Two books by one author, stored the way a mixed library holds them: one
+/// scanned under the display name, one under the file-as form and corrected
+/// through a creators override. Returns `(scanned, corrected)` uuids.
+async fn seed_one_author_two_spellings(pool: &sqlx::SqlitePool, editor: i64) -> (String, String) {
+    crate::sync::replace_books(
+        pool,
+        "/lib",
+        vec![
+            indexed(
+                "martian.epub",
+                Some("The Martian"),
+                &["Andy Weir"],
+                &[],
+                None,
+                None,
+            ),
+            indexed(
+                "phm.epub",
+                Some("Project Hail Mary"),
+                &["Weir, Andy"],
+                &[],
+                None,
+                None,
+            ),
+        ],
+    )
+    .await
+    .unwrap();
+    let corrected = uuid_by_title(pool, "Project Hail Mary").await;
+    let overrides = omnibus_shared::MetadataOverrides {
+        creators: Some(vec![omnibus_shared::Contributor {
+            name: "Andy Weir".into(),
+            file_as: Some("Weir, Andy".into()),
+            role: Some("aut".into()),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    crate::upsert_metadata_overrides(pool, &corrected, &overrides, false, editor)
+        .await
+        .unwrap();
+    (uuid_by_title(pool, "The Martian").await, corrected)
+}
+
+fn text_rule(field: RuleField, value: &str) -> ShelfRule {
+    ShelfRule {
+        field,
+        op: RuleOp::Is,
+        value: value.into(),
+    }
+}
+
+#[tokio::test]
+async fn smart_shelf_author_rule_holds_every_book_the_authors_index_credits() {
+    let _covers = CoversTempDir::new("shelf_author_effective");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let owner = make_user(&pool, "owner", false).await;
+    seed_one_author_two_spellings(&pool, owner).await;
+
+    let index = crate::browse::list_authors(&pool, &["/lib"]).await.unwrap();
+    let credited = index.iter().find(|a| a.name == "Andy Weir").unwrap();
+    assert_eq!(credited.book_count, 2);
+    assert!(!index.iter().any(|a| a.name == "Weir, Andy"));
+
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &smart_req(
+            "Weir",
+            MatchMode::Any,
+            vec![text_rule(RuleField::Author, "Andy Weir")],
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(shelf.book_count, 2, "the shelf agrees with the index");
+
+    // The override replaced the file-as credit; a rule naming it finds nothing.
+    let stale = create_shelf(
+        &pool,
+        owner,
+        &smart_req(
+            "Stale",
+            MatchMode::Any,
+            vec![text_rule(RuleField::Author, "Weir, Andy")],
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(stale.book_count, 0);
+}
+
+#[tokio::test]
+async fn smart_shelf_series_rule_matches_the_series_an_override_names() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    // Rehome "Other Story" from Pioneers into Saga, and clear Saga's second
+    // book out of any series.
+    for (title, series) in [("Other Story", "Saga"), ("Saga: Book Two", "")] {
+        let uuid = uuid_by_title(&pool, title).await;
+        let overrides = omnibus_shared::MetadataOverrides {
+            series: Some(series.into()),
+            ..Default::default()
+        };
+        crate::upsert_metadata_overrides(&pool, &uuid, &overrides, false, owner)
+            .await
+            .unwrap();
+    }
+
+    let saga = create_shelf(
+        &pool,
+        owner,
+        &smart_req(
+            "Saga",
+            MatchMode::Any,
+            vec![text_rule(RuleField::Series, "Saga")],
+        ),
+    )
+    .await
+    .unwrap();
+    let page = shelf_page(&pool, &saga, SortKey::Title, SortDir::Asc)
+        .await
+        .unwrap();
+    let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
+    assert_eq!(titles, ["Other Story", "Saga: Book One"]);
+
+    let pioneers = create_shelf(
+        &pool,
+        owner,
+        &smart_req(
+            "Pioneers",
+            MatchMode::Any,
+            vec![text_rule(RuleField::Series, "Pioneers")],
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(pioneers.book_count, 0, "the scanned series was replaced");
+}
+
+#[tokio::test]
+async fn shelf_page_orders_the_metadata_axes_like_the_library() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let retitle = [
+        ("Standalone", r#"{"title":"Aardvark","series":"Zed"}"#),
+        (
+            "Saga: Book Two",
+            r#"{"title":"","series":"","series_index":""}"#,
+        ),
+    ];
+    for (title, json) in retitle {
+        sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
+            .bind(uuid_by_title(&pool, title).await)
+            .bind(json)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let everything = ShelfRule {
+        field: RuleField::Format,
+        op: RuleOp::Includes,
+        value: "EPUB".into(),
+    };
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &smart_req("All", MatchMode::Any, vec![everything]),
+    )
+    .await
+    .unwrap();
+
+    for sort in [SortKey::Title, SortKey::Author, SortKey::Series] {
+        for dir in [SortDir::Asc, SortDir::Desc] {
+            let shelf_ids: Vec<i64> = shelf_page(&pool, &shelf, sort, dir)
+                .await
+                .unwrap()
+                .books
+                .iter()
+                .map(|b| b.id)
+                .collect();
+            let library_ids: Vec<i64> = crate::books::list_books_page(
+                &pool,
+                &["/lib"],
+                sort,
+                dir,
+                &omnibus_shared::ViewFilters::default(),
+                &[],
+                None,
+                50,
+            )
+            .await
+            .unwrap()
+            .books
+            .iter()
+            .map(|b| b.id)
+            .collect();
+            assert_eq!(shelf_ids, library_ids, "{sort:?} {dir:?}");
+        }
+    }
 }
