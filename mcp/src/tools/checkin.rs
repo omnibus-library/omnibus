@@ -180,9 +180,9 @@ fn resolution(isbn: String, outcome: ScanOutcome) -> IsbnResolution {
     }
 }
 
-/// Map a write failure to a tool error, naming the missing permission on a
-/// 403 and passing the server's actionable message through on the other
-/// user-addressable statuses.
+/// Map a write failure to a tool error, naming the ownership rule on a 403
+/// (the only one these routes send) and passing the server's actionable
+/// message through on the other user-addressable statuses.
 fn write_error(e: ClientError) -> ErrorData {
     match e {
         ClientError::WriteStatus {
@@ -191,9 +191,9 @@ fn write_error(e: ClientError) -> ErrorData {
             ..
         } => ErrorData::invalid_params(
             format!(
-                "forbidden: {message} — the signed-in account lacks the `can_edit` permission \
-                 (physical copies are library-wide, so editing them takes the same gate as \
-                 metadata overrides; an admin can grant it)"
+                "forbidden: {message} — only the reader who checked a copy in (or an admin) \
+                 may change its note or remove it; list_physical_copies names each copy's \
+                 added_by_user_id"
             ),
             None,
         ),
@@ -381,7 +381,7 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "Replace a physical copy's free-text edition/condition note (blank or omitted note clears it). Copies are library-wide, so this requires the `can_edit` permission. Returns the updated copy."
+        description = "Replace a physical copy's free-text edition/condition note (blank or omitted note clears it). Only the reader who checked the copy in (or an admin) may edit it — anyone else gets a 403. Returns the updated copy."
     )]
     pub async fn update_copy_note(
         &self,
@@ -398,7 +398,7 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "Permanently delete one physical copy record (\"I sold it\") — every user stops seeing it, and there is no undo. Requires the `can_edit` permission, and refuses without confirm=true: show the user the copy (list_physical_copies) and get their approval first."
+        description = "Permanently delete one physical copy record (\"I sold it\") — every user stops seeing it, and there is no undo. Only the reader who checked the copy in (or an admin) may remove it — anyone else gets a 403 — and it refuses without confirm=true: show the user the copy (list_physical_copies) and get their approval first."
     )]
     pub async fn remove_physical_copy(
         &self,

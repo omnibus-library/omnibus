@@ -5,6 +5,7 @@ import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
+import { logInThroughUi, provisionUser } from "../utils/users";
 
 // Physical-collection + wishlist book-detail UI (issue #1186). The physical /
 // wishlist RPCs are `/api/rpc/physical/*` server functions returning plain
@@ -29,6 +30,7 @@ type CopyMock = {
   book_uuid: string;
   isbn: string | null;
   added_by_user_id: number | null;
+  added_by_name?: string;
   checked_in_at: number;
   note: string | null;
 };
@@ -297,4 +299,39 @@ test("deletes a copy through the I-sold-it confirm", async ({
   );
 
   await expect(page.getByTestId("physical-copy-card")).toBeHidden();
+});
+
+test("names another reader's copy and offers its viewer no controls", async ({
+  browser,
+  request,
+}) => {
+  // A copy's note and removal belong to whoever filed it (or an admin), so a
+  // plain reader looking at someone else's copy sees who filed it and nothing
+  // to press. The copy is mocked, so no library-wide state changes.
+  // A fixed account: `provisionUser` tolerates the 409 of a rerun.
+  const username = "e2e_copy_viewer";
+  const password = "copy-viewer-pw-0001";
+  await provisionUser(request, username, password);
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  const context = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+  });
+  const page = await context.newPage();
+  try {
+    await logInThroughUi(page, username, password);
+    await mockPhysicalLoad(
+      page,
+      [{ ...SAMPLE_COPY, added_by_user_id: 424242, added_by_name: "Ada" }],
+      null,
+    );
+    await gotoReady(page, `/books/${uuid}`);
+
+    const card = page.getByTestId("physical-copy-card");
+    await expect(card).toContainText("by Ada");
+    await expect(card).toContainText("Trade paperback, MIT Press");
+    await expect(page.getByTestId("copy-edit-note")).toHaveCount(0);
+    await expect(page.getByTestId("copy-delete")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
 });

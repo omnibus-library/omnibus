@@ -61,7 +61,8 @@ the baseline corpus.
 4. Confirm. Watch for the confirmation naming the right book.
 5. Open the book's detail page and confirm the physical copy is shown — on
    the web a **Physical copy** card under THE FILES reading "Physical copy /
-   Checked in N minutes ago / ISBN …". The phrase "In your physical
+   Checked in N minutes ago by you / ISBN …" — another reader's copy names
+   them instead of "you". The phrase "In your physical
    collection" is the *confirmation dialog's* heading and is not visible text
    on this page — it exists only as a `title` on the format badge and an
    `aria-label` on the physical pill, so do not hunt for it. On iOS, a
@@ -80,11 +81,10 @@ the baseline corpus.
    with Cancel / Move to wishlist / **Remove from library**, and removing it
    removes the book. Both are correct. iOS has no remove control, so the book
    stays; say so.
-   **Remove only a copy you filed yourself.** The guard asks the server who
-   filed a copy and refuses a note or removal on anyone else's with its
-   `ownership_guard` 403; the server itself does not check (#2509). If you are
-   offered the control on a copy you did not file, that is the finding:
-   report it and do not click.
+   **Remove only a copy you filed yourself.** The server refuses a note or
+   removal on anyone else's copy with a 403 (an admin excepted), and the card
+   offers neither control there. If you are offered the control on a copy you
+   did not file, that is the finding: report it and do not click.
 
 ## Journal
 

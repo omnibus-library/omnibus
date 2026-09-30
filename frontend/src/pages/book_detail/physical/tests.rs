@@ -1,5 +1,6 @@
-//! Unit tests for the physical-collection + wishlist panel's pure helpers,
-//! plus SSR render-smoke coverage for its section builders and delete modal.
+//! Unit tests for the physical-collection + wishlist panel's pure helpers and
+//! viewer rules, plus SSR render-smoke coverage for its section builders and
+//! delete modal.
 
 use super::*;
 
@@ -27,7 +28,66 @@ fn time_ago_clamps_future_timestamps_to_just_now() {
 
 #[test]
 fn checked_in_label_prefixes_the_relative_phrase() {
-    assert_eq!(checked_in_label(1_060, 1_000), "Checked in 1 minute ago");
+    assert_eq!(
+        checked_in_label(1_060, 1_000, None),
+        "Checked in 1 minute ago"
+    );
+}
+
+#[test]
+fn checked_in_label_names_the_filer_when_known() {
+    assert_eq!(
+        checked_in_label(1_060, 1_000, Some("Ada")),
+        "Checked in 1 minute ago by Ada"
+    );
+}
+
+fn copy_filed_by(id: Option<i64>, name: Option<&str>) -> PhysicalCopy {
+    PhysicalCopy {
+        id: 1,
+        book_uuid: "u".to_string(),
+        isbn: Some("978".to_string()),
+        added_by_user_id: id,
+        added_by_name: name.map(str::to_string),
+        checked_in_at: 0,
+        checked_in_at_iso: None,
+        note: Some("First edition".to_string()),
+    }
+}
+
+fn viewer(id: i64, is_admin: bool, can_edit: bool) -> PhysViewer {
+    PhysViewer {
+        id: Some(id),
+        is_admin,
+        can_edit,
+    }
+}
+
+#[test]
+fn phys_viewer_may_change_only_its_own_copy_unless_admin() {
+    let copy = copy_filed_by(Some(7), Some("Ada"));
+    assert!(viewer(7, false, false).may_change(&copy));
+    // `can_edit` is the library-wide edit right; it does not reach a copy.
+    assert!(!viewer(8, false, true).may_change(&copy));
+    assert!(viewer(8, true, false).may_change(&copy));
+    assert!(!PhysViewer::default().may_change(&copy));
+}
+
+#[test]
+fn phys_viewer_filer_label_says_you_for_the_viewers_own_copy() {
+    let copy = copy_filed_by(Some(7), Some("Ada"));
+    assert_eq!(
+        viewer(7, false, false).filer_label(&copy).as_deref(),
+        Some("you")
+    );
+    assert_eq!(
+        viewer(8, false, false).filer_label(&copy).as_deref(),
+        Some("Ada")
+    );
+    assert_eq!(
+        viewer(8, false, false).filer_label(&copy_filed_by(None, None)),
+        None
+    );
 }
 
 #[test]
@@ -144,17 +204,7 @@ mod render_tests {
     /// the loaded markup (pill + copy card) is covered without the async load.
     fn physical_section_preview() -> Element {
         let state = PhysPanelState {
-            copies: use_signal(|| {
-                vec![PhysicalCopy {
-                    id: 1,
-                    book_uuid: "u".to_string(),
-                    isbn: Some("978".to_string()),
-                    added_by_user_id: None,
-                    checked_in_at: 0,
-                    checked_in_at_iso: None,
-                    note: Some("First edition".to_string()),
-                }]
-            }),
+            copies: use_signal(|| vec![copy_filed_by(Some(7), Some("Ada"))]),
             wishlist: use_signal(|| None),
             busy: use_signal(|| false),
             err: use_signal(|| None),
@@ -163,7 +213,7 @@ mod render_tests {
             delete_target: use_signal(|| None),
             refresh: use_signal(|| 0u32),
         };
-        render_physical_section(state, "".to_string(), false, true)
+        render_physical_section(state, "".to_string(), false, viewer(7, false, false))
     }
 
     #[test]
@@ -173,25 +223,16 @@ mod render_tests {
         assert!(html.contains("In your physical collection"));
         assert!(html.contains("data-testid=\"physical-copy-card\""));
         assert!(html.contains("First edition"));
-        // Edit-permitted, so both actions render.
+        // The viewer filed it, so both actions render and the card says so.
         assert!(html.contains("data-testid=\"copy-edit-note\""));
         assert!(html.contains("data-testid=\"copy-delete\""));
+        assert!(html.contains("by you"), "{html}");
     }
 
     /// The same copies, rendered as marquee rows in the book's copies list.
     fn physical_rows_marquee_preview() -> Element {
         let state = PhysPanelState {
-            copies: use_signal(|| {
-                vec![PhysicalCopy {
-                    id: 1,
-                    book_uuid: "u".to_string(),
-                    isbn: Some("978".to_string()),
-                    added_by_user_id: None,
-                    checked_in_at: 0,
-                    checked_in_at_iso: None,
-                    note: Some("First edition".to_string()),
-                }]
-            }),
+            copies: use_signal(|| vec![copy_filed_by(Some(7), Some("Ada"))]),
             wishlist: use_signal(|| None),
             busy: use_signal(|| false),
             err: use_signal(|| None),
@@ -200,7 +241,7 @@ mod render_tests {
             delete_target: use_signal(|| None),
             refresh: use_signal(|| 0u32),
         };
-        render_physical_rows_marquee(state, "".to_string(), false, true)
+        render_physical_rows_marquee(state, "".to_string(), false, viewer(7, false, false))
     }
 
     #[test]
@@ -222,6 +263,30 @@ mod render_tests {
         assert!(html.contains("First edition"), "{html}");
         assert!(html.contains("data-testid=\"copy-edit-note\""), "{html}");
         assert!(html.contains("data-testid=\"copy-delete\""), "{html}");
+    }
+
+    /// Another reader's copy, seen by a reader with the library-wide edit
+    /// right but no claim on the copy.
+    fn someone_elses_copy_preview() -> Element {
+        let state = PhysPanelState {
+            copies: use_signal(|| vec![copy_filed_by(Some(7), Some("Ada"))]),
+            wishlist: use_signal(|| None),
+            busy: use_signal(|| false),
+            err: use_signal(|| None),
+            editing: use_signal(|| None),
+            note_draft: use_signal(String::new),
+            delete_target: use_signal(|| None),
+            refresh: use_signal(|| 0u32),
+        };
+        render_physical_rows_marquee(state, "".to_string(), false, viewer(8, false, true))
+    }
+
+    #[test]
+    fn physical_rows_marquee_name_the_filer_and_offer_no_controls_on_someone_elses_copy() {
+        let html = render_in_vdom(someone_elses_copy_preview);
+        assert!(html.contains("by Ada"), "{html}");
+        assert!(!html.contains("data-testid=\"copy-edit-note\""), "{html}");
+        assert!(!html.contains("data-testid=\"copy-delete\""), "{html}");
     }
 
     /// The rail slot for a wishlisted book (tracking card + actions).
@@ -316,11 +381,30 @@ mod render_tests {
     }
 
     fn simple_delete_modal_preview() -> Element {
-        render_delete_modal(state_with_target(false), "".to_string(), "u".to_string())
+        render_delete_modal(
+            state_with_target(false),
+            "".to_string(),
+            "u".to_string(),
+            true,
+        )
     }
 
     fn last_copy_modal_preview() -> Element {
-        render_delete_modal(state_with_target(true), "".to_string(), "u".to_string())
+        render_delete_modal(
+            state_with_target(true),
+            "".to_string(),
+            "u".to_string(),
+            true,
+        )
+    }
+
+    fn last_copy_modal_without_book_delete_preview() -> Element {
+        render_delete_modal(
+            state_with_target(true),
+            "".to_string(),
+            "u".to_string(),
+            false,
+        )
     }
 
     #[test]
@@ -337,5 +421,15 @@ mod render_tests {
         assert!(html.contains("data-testid=\"last-copy-modal\""));
         assert!(html.contains("data-testid=\"last-copy-remove\""));
         assert!(html.contains("data-testid=\"last-copy-wishlist\""));
+    }
+
+    #[test]
+    fn last_copy_modal_offers_only_the_wishlist_to_a_reader_who_cannot_delete_the_book() {
+        let html = render_in_vdom(last_copy_modal_without_book_delete_preview);
+        assert!(
+            html.contains("data-testid=\"last-copy-wishlist\""),
+            "{html}"
+        );
+        assert!(!html.contains("data-testid=\"last-copy-remove\""), "{html}");
     }
 }

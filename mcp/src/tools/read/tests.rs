@@ -249,6 +249,7 @@ async fn copies(Path(_): Path<String>) -> AxumJson<Vec<PhysicalCopy>> {
         book_uuid: BOOK.into(),
         isbn: Some("9781635575637".into()),
         added_by_user_id: Some(1),
+        added_by_name: None,
         checked_in_at_iso: None,
         checked_in_at: WHEN,
         note: None,

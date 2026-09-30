@@ -1,7 +1,7 @@
 //! The physical check-in family against a recording stub: tool listing
 //! and the combined router, ISBN / title lookups naming their provider,
 //! the confirm gates on check-in and copy removal, the wishlist add and
-//! remove paths, copy listing and note edits, the 403 permission names,
+//! remove paths, copy listing and note edits, the 403 ownership rule,
 //! and the one-path-segment uuid guard.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -142,6 +142,7 @@ fn copy(note: Option<String>) -> PhysicalCopy {
         book_uuid: "uuid-frank".into(),
         isbn: Some("9781111111111".into()),
         added_by_user_id: Some(1),
+        added_by_name: None,
         checked_in_at_iso: None,
         checked_in_at: 1_700_000_000,
         note,
@@ -152,8 +153,8 @@ async fn copies() -> AxumJson<Vec<PhysicalCopy>> {
     AxumJson(vec![copy(Some("hardcover".into()))])
 }
 
-/// Copy 5 accepts edits; copy 6 answers the `can_edit` 403 the real handler
-/// sends; anything else is a 404.
+/// Copy 5 accepts edits; copy 6 answers the not-your-copy 403 the real
+/// handler sends; anything else is a 404.
 async fn patch_copy(
     Path(copy_id): Path<i64>,
     AxumJson(body): AxumJson<serde_json::Value>,
@@ -161,7 +162,7 @@ async fn patch_copy(
     use axum::response::IntoResponse;
     match copy_id {
         5 => AxumJson(copy(body["note"].as_str().map(str::to_string))).into_response(),
-        6 => (StatusCode::FORBIDDEN, "edit permission required").into_response(),
+        6 => (StatusCode::FORBIDDEN, "not your copy").into_response(),
         _ => (StatusCode::NOT_FOUND, "physical copy not found").into_response(),
     }
 }
@@ -176,7 +177,7 @@ async fn delete_copy(
             stub.copy_deletes.fetch_add(1, Ordering::SeqCst);
             StatusCode::NO_CONTENT.into_response()
         }
-        6 => (StatusCode::FORBIDDEN, "edit permission required").into_response(),
+        6 => (StatusCode::FORBIDDEN, "not your copy").into_response(),
         _ => (StatusCode::NOT_FOUND, "physical copy not found").into_response(),
     }
 }
@@ -471,7 +472,7 @@ async fn update_copy_note_patches_and_returns_the_copy() {
 }
 
 #[tokio::test]
-async fn update_copy_note_names_the_missing_edit_permission_on_403() {
+async fn update_copy_note_names_the_ownership_rule_on_403() {
     let (service, _stub) = checkin_stub_service().await;
     let err = service
         .update_copy_note(Parameters(UpdateCopyNoteParams {
@@ -480,8 +481,12 @@ async fn update_copy_note_names_the_missing_edit_permission_on_403() {
         }))
         .await
         .expect_err_data();
-    assert!(err.message.contains("can_edit"), "got: {}", err.message);
-    assert!(err.message.contains("edit permission required"));
+    assert!(
+        err.message.contains("checked a copy in"),
+        "got: {}",
+        err.message
+    );
+    assert!(err.message.contains("not your copy"));
 }
 
 #[tokio::test]
@@ -513,7 +518,7 @@ async fn remove_physical_copy_deletes_when_confirmed() {
 }
 
 #[tokio::test]
-async fn remove_physical_copy_names_the_missing_edit_permission_on_403() {
+async fn remove_physical_copy_names_the_ownership_rule_on_403() {
     let (service, _stub) = checkin_stub_service().await;
     let err = service
         .remove_physical_copy(Parameters(RemoveCopyParams {
@@ -522,7 +527,11 @@ async fn remove_physical_copy_names_the_missing_edit_permission_on_403() {
         }))
         .await
         .expect_err_data();
-    assert!(err.message.contains("can_edit"), "got: {}", err.message);
+    assert!(
+        err.message.contains("checked a copy in"),
+        "got: {}",
+        err.message
+    );
 }
 
 #[tokio::test]

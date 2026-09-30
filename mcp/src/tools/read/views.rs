@@ -351,6 +351,9 @@ pub struct PhysicalCopyView {
     pub book_uuid: String,
     pub isbn: Option<String>,
     pub added_by_user_id: Option<i64>,
+    /// Who checked the copy in — the only reader, besides an admin, who may
+    /// re-note or remove it.
+    pub added_by_name: Option<String>,
     pub checked_in_at: String,
     pub checked_in_at_epoch: i64,
     pub note: Option<String>,
@@ -363,6 +366,7 @@ impl From<PhysicalCopy> for PhysicalCopyView {
             book_uuid: c.book_uuid,
             isbn: c.isbn,
             added_by_user_id: c.added_by_user_id,
+            added_by_name: c.added_by_name,
             checked_in_at: iso(c.checked_in_at),
             checked_in_at_epoch: c.checked_in_at,
             note: c.note,

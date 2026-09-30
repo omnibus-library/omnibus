@@ -20,6 +20,7 @@ fn copy(id: i64) -> PhysicalCopy {
         book_uuid: "uuid-a".into(),
         isbn: Some("9781635575637".into()),
         added_by_user_id: None,
+        added_by_name: None,
         checked_in_at: 0,
         checked_in_at_iso: None,
         note: Some("Hardback".into()),

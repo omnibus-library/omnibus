@@ -115,6 +115,7 @@ mod tests {
                 book_uuid: "u".into(),
                 isbn: None,
                 added_by_user_id: None,
+                added_by_name: None,
                 checked_in_at: 0,
                 checked_in_at_iso: None,
                 note: None,

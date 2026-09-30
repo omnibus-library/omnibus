@@ -1,5 +1,5 @@
-//! Serde/token round-trip tests plus `UpdateCopyNoteRequest::validate` length-cap
-//! coverage.
+//! Serde/token round-trip tests, `UpdateCopyNoteRequest::validate` length-cap
+//! coverage, and the `PhysicalCopy::can_change` ownership rule.
 
 use super::*;
 
@@ -45,4 +45,34 @@ fn update_copy_note_request_validate_rejects_an_oversized_note() {
     };
     let err = req.validate().expect_err("oversized note must be rejected");
     assert!(err.contains("note"), "got: {err}");
+}
+
+fn copy_filed_by(user: Option<i64>) -> PhysicalCopy {
+    PhysicalCopy {
+        id: 1,
+        book_uuid: "u".into(),
+        isbn: None,
+        added_by_user_id: user,
+        added_by_name: None,
+        checked_in_at: 0,
+        checked_in_at_iso: None,
+        note: None,
+    }
+}
+
+#[test]
+fn physical_copy_can_change_allows_the_reader_who_filed_it() {
+    assert!(copy_filed_by(Some(7)).can_change(7, false));
+}
+
+#[test]
+fn physical_copy_can_change_allows_an_admin_on_anyones_copy() {
+    assert!(copy_filed_by(Some(7)).can_change(8, true));
+    assert!(copy_filed_by(None).can_change(8, true));
+}
+
+#[test]
+fn physical_copy_can_change_denies_another_reader_and_an_orphaned_copy() {
+    assert!(!copy_filed_by(Some(7)).can_change(8, false));
+    assert!(!copy_filed_by(None).can_change(8, false));
 }
