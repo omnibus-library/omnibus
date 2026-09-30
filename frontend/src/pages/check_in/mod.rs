@@ -47,6 +47,20 @@ pub struct CheckInOpen(pub Signal<bool>);
 #[derive(Copy, Clone, PartialEq)]
 pub struct CheckInPrefill(pub Signal<Option<String>>);
 
+/// Bumped after every copy or wishlist entry the check-in flow files. The
+/// overlay writes over a page no route change will remount, so the pages it
+/// can change (the library's shelf row, a book's own detail page) refetch
+/// on it. Starts at zero for SSR parity (rule 07).
+#[derive(Copy, Clone, PartialEq)]
+pub struct CheckInWrites(pub Signal<u32>);
+
+/// The app's [`CheckInWrites`] counter, or a local one that never moves where
+/// no provider is mounted (a component rendered on its own in a test).
+pub fn use_check_in_writes() -> Signal<u32> {
+    let local = use_signal(|| 0u32);
+    try_use_context::<CheckInWrites>().map_or(local, |w| w.0)
+}
+
 /// Centered check-in overlay: the [`CheckInPage`] flow floating in a card over
 /// a blurred scrim of the current page.
 ///
@@ -397,11 +411,12 @@ pub fn CheckInPage() -> Element {
         }
     });
 
+    let writes = use_check_in_writes();
     let on_resolve = make_on_resolve(server_url.clone(), state, nav, overlay_open);
-    let on_check_in = make_on_check_in(server_url.clone(), state);
-    let on_own_it = make_on_own_it(server_url.clone(), state);
+    let on_check_in = make_on_check_in(server_url.clone(), state, writes);
+    let on_own_it = make_on_own_it(server_url.clone(), state, writes);
     let on_pick = make_on_pick(server_url.clone(), state, nav, overlay_open);
-    let on_wishlist = make_on_wishlist(server_url, state);
+    let on_wishlist = make_on_wishlist(server_url, state, writes);
     let handlers = CheckInHandlers {
         on_resolve: EventHandler::new(on_resolve),
         on_check_in: EventHandler::new(on_check_in),
@@ -803,7 +818,11 @@ fn make_on_pick(
 }
 
 /// Build the 3a check-in handler: file a physical copy against a library book.
-fn make_on_check_in(server_url: String, state: FlowState) -> impl FnMut(ScanBook) {
+fn make_on_check_in(
+    server_url: String,
+    state: FlowState,
+    mut writes: Signal<u32>,
+) -> impl FnMut(ScanBook) {
     let FlowState {
         mut stage,
         note,
@@ -830,11 +849,14 @@ fn make_on_check_in(server_url: String, state: FlowState) -> impl FnMut(ScanBook
                 note,
             };
             match data::check_in(&server_url, req).await {
-                Ok(book_ref) => stage.set(Stage::CheckedIn {
-                    uuid: book_ref.book_uuid,
-                    title,
-                    off_wishlist,
-                }),
+                Ok(book_ref) => {
+                    writes.with_mut(|n| *n += 1);
+                    stage.set(Stage::CheckedIn {
+                        uuid: book_ref.book_uuid,
+                        title,
+                        off_wishlist,
+                    });
+                }
                 Err(e) => error.set(Some(format!(
                     "Check-in failed: {}",
                     friendly_error(&e.to_string())
@@ -846,7 +868,11 @@ fn make_on_check_in(server_url: String, state: FlowState) -> impl FnMut(ScanBook
 }
 
 /// Build the 3c "I own it" handler: create the fileless book + its first copy.
-fn make_on_own_it(server_url: String, state: FlowState) -> impl FnMut(ExternalBookMeta) {
+fn make_on_own_it(
+    server_url: String,
+    state: FlowState,
+    mut writes: Signal<u32>,
+) -> impl FnMut(ExternalBookMeta) {
     let FlowState {
         mut stage,
         note,
@@ -863,11 +889,14 @@ fn make_on_own_it(server_url: String, state: FlowState) -> impl FnMut(ExternalBo
         spawn(async move {
             let req = AddPhysicalOnlyRequest { meta, note };
             match data::add_physical_only(&server_url, req).await {
-                Ok(book_ref) => stage.set(Stage::CheckedIn {
-                    uuid: book_ref.book_uuid,
-                    title,
-                    off_wishlist: false,
-                }),
+                Ok(book_ref) => {
+                    writes.with_mut(|n| *n += 1);
+                    stage.set(Stage::CheckedIn {
+                        uuid: book_ref.book_uuid,
+                        title,
+                        off_wishlist: false,
+                    });
+                }
                 Err(e) => error.set(Some(format!(
                     "Could not add that book: {}",
                     friendly_error(&e.to_string())
@@ -880,7 +909,11 @@ fn make_on_own_it(server_url: String, state: FlowState) -> impl FnMut(ExternalBo
 
 /// Build the wishlist handler. The request is assembled by the screen (it
 /// knows whether it holds a library book or online metadata).
-fn make_on_wishlist(server_url: String, state: FlowState) -> impl FnMut(WishlistAddRequest) {
+fn make_on_wishlist(
+    server_url: String,
+    state: FlowState,
+    mut writes: Signal<u32>,
+) -> impl FnMut(WishlistAddRequest) {
     let FlowState {
         mut stage,
         mut busy,
@@ -898,7 +931,10 @@ fn make_on_wishlist(server_url: String, state: FlowState) -> impl FnMut(Wishlist
         busy.set(true);
         spawn(async move {
             match data::wishlist_add(&server_url, req).await {
-                Ok(_) => stage.set(Stage::Wishlisted { title }),
+                Ok(_) => {
+                    writes.with_mut(|n| *n += 1);
+                    stage.set(Stage::Wishlisted { title });
+                }
                 Err(e) => error.set(Some(format!(
                     "Could not add to your wishlist: {}",
                     friendly_error(&e.to_string())

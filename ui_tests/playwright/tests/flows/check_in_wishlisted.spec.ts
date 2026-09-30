@@ -4,8 +4,10 @@ import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
+import { bookTile, galleryTile, selectShelfInGallery } from "../utils/shelves";
 
-// Checking in a book you wished for. Every book here is minted by the spec
+// Checking in a book you wished for, and the pages under the check-in overlay
+// that must follow the writes it lands. Every book here is minted by the spec
 // itself — a fileless wishlist entry with a title, author and ISBN nothing
 // else in the suite reads — for a reader created per test on a cookie-less
 // context, so neither the admin's wishlist nor any fixture is touched. Each
@@ -131,11 +133,27 @@ async function deleteBook(
   expect.soft(resp?.status(), `cleanup delete of ${uuid}`).toBe(200);
 }
 
+async function mockJsonPost(
+  page: Page,
+  url: string | RegExp,
+  body: unknown,
+): Promise<void> {
+  await page.route(url, (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(body),
+        })
+      : route.continue(),
+  );
+}
+
 test.beforeAll(async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
 });
 
-test("checks in a wishlisted book from its own page", async ({
+test("checks in a wishlisted book from its own page, then a second copy", async ({
   browser,
   request,
   playwright,
@@ -207,9 +225,124 @@ test("checks in a wishlisted book from its own page", async ({
       book_count: number;
     }[];
     expect(shelves.find((s) => s.id === shelfId)?.book_count).toBe(0);
+
+    // The page under the overlay follows the write: the copy is on it and
+    // the wishlist actions are gone, with no reload.
+    await page.getByTestId("check-in-overlay-close").click();
+    await expect(page.getByTestId("physical-copy-card")).toHaveCount(1);
+    await expect(page.getByTestId("physical-copy-card")).toContainText(
+      "by you",
+    );
+    await expect(page.getByTestId("wishlist-check-in")).toHaveCount(0);
+
+    // A second copy filed the same way lands on the page too. The resolve is
+    // mocked onto the confirm screen — a filed book resolves as already
+    // owned — but the check-in itself is real.
+    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
+      kind: "in_library_unowned",
+      book: {
+        uuid,
+        title,
+        authors: ["Wren Wishlisted"],
+        cover_url: null,
+        has_physical: true,
+        has_files: false,
+        isbn,
+      },
+    });
+    await page.getByTestId("check-in-button").click();
+    await page.getByTestId("check-in-isbn").fill(isbn);
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: /\/api\/rpc\/scan\/resolve$/,
+        expectedStatus: 200,
+      },
+      async () => page.getByTestId("check-in-submit").click(),
+    );
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/scan/check-in",
+        expectedBody: { req: { book_uuid: uuid, isbn, note: null } },
+        expectedStatus: 200,
+      },
+      async () => page.getByTestId("check-in-confirm-submit").click(),
+    );
+    await page.getByTestId("check-in-overlay-close").click();
+    await expect(page.getByTestId("physical-copy-card")).toHaveCount(2);
   } finally {
     await context.close();
     await deleteBook(request, uuid);
+    await request.delete(`/api/admin/users/${readerId}`);
+  }
+});
+
+test("a wishlist add over the library refreshes the selected wishlist shelf", async ({
+  browser,
+  request,
+  playwright,
+  baseURL,
+}) => {
+  const username = `e2e_wishrail_${Date.now()}`;
+  const readerId = await createReader(request, username);
+  const first = await wishFor(
+    playwright.request,
+    baseURL ?? "",
+    username,
+    meta(uniqueIsbn(), `E2E Rail First ${Date.now()}`),
+  );
+  const secondTitle = `E2E Rail Second ${Date.now()}`;
+  let secondUuid: string | null = null;
+  const context = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+  });
+  const page = await context.newPage();
+  try {
+    await logIn(page, username);
+    await gotoReady(page, "/");
+    await selectShelfInGallery(page, first.shelfId, first.shelfName);
+    await expect(galleryTile(page, first.shelfId)).toContainText("1 book");
+
+    // The lookup is mocked onto the "not in your library" chooser; the
+    // wishlist write it leads to is real.
+    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
+      kind: "not_in_library",
+      online: meta(uniqueIsbn(), secondTitle),
+    });
+    await page.getByTestId("check-in-button").click();
+    await page.getByTestId("check-in-isbn").fill(uniqueIsbn());
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: /\/api\/rpc\/scan\/resolve$/,
+        expectedStatus: 200,
+      },
+      async () => page.getByTestId("check-in-submit").click(),
+    );
+    const { response } = await expectMutation(
+      page,
+      { method: "POST", url: "/api/rpc/scan/wishlist", expectedStatus: 200 },
+      async () => page.getByTestId("check-in-wishlist").click(),
+    );
+    secondUuid = ((await response.json()) as { book_uuid: string }).book_uuid;
+    await expect(page.getByTestId("check-in-success")).toContainText(
+      secondTitle,
+    );
+    await page.getByTestId("check-in-overlay-close").click();
+
+    // Still selected, the shelf's chip count and its members follow the add.
+    await expect(galleryTile(page, first.shelfId)).toContainText("2 books");
+    await expect(bookTile(page, secondTitle)).toBeVisible();
+  } finally {
+    await context.close();
+    await deleteBook(request, first.uuid);
+    if (secondUuid) {
+      await deleteBook(request, secondUuid);
+    }
     await request.delete(`/api/admin/users/${readerId}`);
   }
 });

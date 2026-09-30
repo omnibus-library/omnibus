@@ -238,12 +238,15 @@ fn use_book_data_effects(uuid: String, server_url: String, sig: BookDataSignals)
     let url = server_url.clone();
     let refresh = sig.refresh;
     let generation = crate::use_cache_generation();
+    let check_in_writes = crate::pages::use_check_in_writes();
     use_effect(use_reactive!(|uuid| {
-        // Read `refresh` so a merge/undo bump re-arms this effect, and the
-        // cache generation so a background revalidation refreshes the page
-        // (served from the fresh cache, zero network).
+        // Read `refresh` so a merge/undo bump re-arms this effect, the cache
+        // generation so a background revalidation refreshes the page (served
+        // from the fresh cache, zero network), and the check-in overlay's
+        // writes, which can file a copy of this very book.
         let _ = refresh();
         let _ = generation();
+        let _ = check_in_writes();
         fetch_book_and_author_books(
             url.clone(),
             uuid.clone(),

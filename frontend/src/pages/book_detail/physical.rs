@@ -372,9 +372,10 @@ fn BdWishlistAddCard(state: WishlistCardState) -> Element {
     }
 }
 
-/// Install the uuid-reactive load effect: fetch this book's physical copies
-/// and wishlist entry post-mount, resetting state first so a previous book's
-/// copies/wishlist don't flash under the new book before its load resolves.
+/// Install the load effect: fetch this book's physical copies and wishlist
+/// entry post-mount, and again after a check-in the overlay files over this
+/// page. A new book resets state first so a previous book's copies/wishlist
+/// don't flash under it; a refetch of the same book keeps them on screen.
 fn use_physical_load_effect(
     uuid: String,
     load_url: String,
@@ -383,11 +384,17 @@ fn use_physical_load_effect(
     mut err: Signal<Option<String>>,
     mut loaded: Signal<bool>,
 ) {
+    let writes = crate::pages::use_check_in_writes();
+    let mut shown = use_signal(String::new);
     use_effect(use_reactive!(|uuid| {
-        copies.set(Vec::new());
-        wishlist.set(None);
+        let _ = writes();
         err.set(None);
-        loaded.set(false);
+        if *shown.peek() != uuid {
+            shown.set(uuid.clone());
+            copies.set(Vec::new());
+            wishlist.set(None);
+            loaded.set(false);
+        }
         if uuid.is_empty() {
             return;
         }
@@ -396,11 +403,17 @@ fn use_physical_load_effect(
         spawn(async move {
             // Surface a read failure rather than silently degrading to the
             // empty "add to wishlist" state (which would mask a 500/transient).
-            match data::list_physical_copies(&load_url, &uuid).await {
+            let fetched_copies = data::list_physical_copies(&load_url, &uuid).await;
+            let fetched_entry = data::get_wishlist_entry(&load_url, &uuid).await;
+            // The page moved on to another book while these were in flight.
+            if *shown.peek() != uuid {
+                return;
+            }
+            match fetched_copies {
                 Ok(c) => copies.set(c),
                 Err(e) => err.set(Some(e.to_string())),
             }
-            match data::get_wishlist_entry(&load_url, &uuid).await {
+            match fetched_entry {
                 Ok(w) => wishlist.set(w),
                 Err(e) => err.set(Some(e.to_string())),
             }

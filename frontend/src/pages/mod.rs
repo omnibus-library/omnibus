@@ -52,7 +52,9 @@ pub(crate) use book_detail::retarget_and_open_immersive;
 pub use book_detail::BookDetailPage;
 #[cfg(not(feature = "mobile"))]
 pub use chart_builder::ChartBuilderPage;
-pub use check_in::{CheckInOpen, CheckInOverlay, CheckInPage, CheckInPrefill};
+pub use check_in::{
+    use_check_in_writes, CheckInOpen, CheckInOverlay, CheckInPage, CheckInPrefill, CheckInWrites,
+};
 #[cfg(not(feature = "mobile"))]
 pub use cleanup_review::CleanupReviewPage;
 pub use comic_reader::ComicReadPage;
