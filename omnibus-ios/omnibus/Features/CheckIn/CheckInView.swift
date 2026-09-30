@@ -31,6 +31,8 @@ struct CheckInView: View {
     @State private var scannerAvailable = DataScannerViewController.isSupported
         && DataScannerViewController.isAvailable
     @State private var note = ""
+    /// Close-match candidates already on the reader's wishlist.
+    @State private var wishlisted: Set<String> = []
     /// Book detail presented full-screen over the sheet, so dismissing it
     /// lands back on the scanner rather than losing the check-in loop.
     @State private var detailTarget: DetailTarget?
@@ -73,6 +75,7 @@ struct CheckInView: View {
                 }
             }
             .background(ScreenBackground())
+            .task(id: stage) { await loadWishlisted(for: stage) }
             .navigationTitle("Check in")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -225,7 +228,9 @@ struct CheckInView: View {
                     Text("Checking a copy in clears this book from your wishlist.")
                         .font(.ui(14))
                         .foregroundStyle(palette.ink2Color)
-                    checkInButton(book: book, isbn: book.isbn, label: "Check in this copy")
+                    checkInButton(
+                        book: book, isbn: book.isbn, label: "Check in this copy", fromWishlist: true
+                    )
                     if let uuid = CheckInFlow.detailUUID(for: outcome) {
                         detailsLink(uuid: uuid, style: .quiet)
                     }
@@ -329,16 +334,27 @@ struct CheckInView: View {
                 .foregroundStyle(palette.ink1Color)
         }
         ForEach(books, id: \.uuid) { book in
+            let onWishlist = wishlisted.contains(book.uuid)
+            let label = CheckInFlow.candidateLabel(isWishlisted: onWishlist)
             VStack(alignment: .leading, spacing: Spacing.md) {
                 resultCard(
                     title: book.title, authors: book.authors,
                     cover: .library(uuid: book.uuid),
-                    badge: "Possible match", tint: palette.warnColor
+                    badge: label.badge, tint: onWishlist ? palette.accentColor : palette.warnColor
                 )
+                if let note = label.note {
+                    Text(note)
+                        .font(.ui(14))
+                        .foregroundStyle(palette.ink2Color)
+                }
                 checkInButton(
                     book: book, isbn: scanned.isbn13,
-                    label: many ? "This one — check in" : "Yes, same book — check in"
+                    label: many ? "This one — check in" : "Yes, same book — check in",
+                    fromWishlist: onWishlist
                 )
+                if onWishlist {
+                    detailsLink(uuid: book.uuid, style: .quiet)
+                }
             }
         }
     }
@@ -601,9 +617,11 @@ struct CheckInView: View {
         }
     }
 
-    private func checkInButton(book: ScanBook, isbn: String?, label: String) -> some View {
+    private func checkInButton(
+        book: ScanBook, isbn: String?, label: String, fromWishlist: Bool = false
+    ) -> some View {
         Button {
-            Task { await checkIn(book: book, isbn: isbn) }
+            Task { await checkIn(book: book, isbn: isbn, fromWishlist: fromWishlist) }
         } label: {
             if isWriting {
                 ProgressView().controlSize(.small)
@@ -616,6 +634,34 @@ struct CheckInView: View {
     }
 
     // MARK: - Actions
+
+    /// Ask which close-match candidates the reader already wishlists. Keyed on
+    /// the stage, so a newer outcome cancels an older lookup.
+    private func loadWishlisted(for stage: CheckInStage) async {
+        let uuids = CheckInFlow.wishlistLookups(for: stage)
+        guard !uuids.isEmpty else {
+            wishlisted = []
+            return
+        }
+        let found = await withTaskGroup(of: String?.self) { group in
+            for uuid in uuids {
+                group.addTask {
+                    var entry: WishlistEntry?
+                    for await value in UserDataService.wishlistEntry(uuid: uuid).values() {
+                        entry = value
+                    }
+                    return entry == nil ? nil : uuid
+                }
+            }
+            var found: Set<String> = []
+            for await uuid in group {
+                if let uuid { found.insert(uuid) }
+            }
+            return found
+        }
+        guard !Task.isCancelled else { return }
+        wishlisted = found
+    }
 
     private func resolve(_ raw: String, via: FoundVia) async {
         let isbn = raw.filter { $0.isNumber || $0 == "X" || $0 == "x" }
@@ -711,7 +757,7 @@ struct CheckInView: View {
         return true
     }
 
-    private func checkIn(book: ScanBook, isbn: String?) async {
+    private func checkIn(book: ScanBook, isbn: String?, fromWishlist: Bool) async {
         guard beginWrite() else { return }
         defer { isWriting = false }
         do {
@@ -729,7 +775,14 @@ struct CheckInView: View {
             // Check-in fulfills every user's wishlist for the book, so shelf
             // counts and preview covers are stale too.
             await UserDataService.shelvesChanged()
-            withAnimation(Motion.settle) { stage = .success(CheckInFlow.checkedInSuccess(book: book, ref: ref)) }
+            for uuid in Set([book.uuid, ref.bookUUID]) {
+                await Cache.write(CacheKey.wishlistEntry(uuid), WishlistEntry?.none)
+            }
+            withAnimation(Motion.settle) {
+                stage = .success(
+                    CheckInFlow.checkedInSuccess(book: book, ref: ref, fromWishlist: fromWishlist)
+                )
+            }
         } catch {
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
