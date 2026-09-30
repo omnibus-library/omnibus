@@ -1649,7 +1649,7 @@ html, body { overscroll-behavior: none; }
   box-decoration-break: clone;
 }
 .spoiler-text, button.spoiler { filter: blur(5px); transition: filter 0.12s ease; }
-.spoiler:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.spoiler:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .spoiler.revealed { cursor: auto; background: transparent; }
 .spoiler.revealed .spoiler-text, button.spoiler.revealed { filter: none; }
 

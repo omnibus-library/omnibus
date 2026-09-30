@@ -602,8 +602,7 @@ test("reveals a spoiler with Enter and toggles it back with Space", async ({
   await expect(spoiler).toHaveAttribute("aria-expanded", "false");
   expect(
     await page.evaluate(
-      () =>
-        (window as unknown as { spacePrevented?: boolean }).spacePrevented,
+      () => (window as unknown as { spacePrevented?: boolean }).spacePrevented,
     ),
   ).toBe(true);
 
