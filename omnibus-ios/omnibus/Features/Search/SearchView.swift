@@ -74,7 +74,7 @@ struct SearchView: View {
     private func resultSections(_ results: PaletteResults) -> some View {
         VStack(alignment: .leading, spacing: 30) {
             if !results.books.isEmpty {
-                section("Books", total: results.bookTotal, shown: results.books.count) {
+                section(.books, total: results.bookTotal, shown: results.books.count) {
                     ForEach(Array(results.books.enumerated()), id: \.element.id) { index, hit in
                         NavigationLink(value: Destination.book(uuid: hit.uuid)) {
                             bookRow(hit, isFirst: index == 0)
@@ -86,7 +86,7 @@ struct SearchView: View {
             }
 
             if !results.authors.isEmpty {
-                section("Authors", total: results.authorTotal, shown: results.authors.count) {
+                section(.authors, total: results.authorTotal, shown: results.authors.count) {
                     ForEach(Array(results.authors.enumerated()), id: \.element.id) { index, hit in
                         NavigationLink(value: Destination.author(id: hit.id)) {
                             personRow(
@@ -102,7 +102,7 @@ struct SearchView: View {
             }
 
             if !results.series.isEmpty {
-                section("Series", total: results.seriesTotal, shown: results.series.count) {
+                section(.series, total: results.seriesTotal, shown: results.series.count) {
                     ForEach(Array(results.series.enumerated()), id: \.element.id) { index, hit in
                         NavigationLink(value: Destination.series(id: hit.id)) {
                             plainRow(
@@ -120,18 +120,26 @@ struct SearchView: View {
             // Tags and genres are short labels with a count — as full-width rows
             // they read as a list of almost nothing. A cloud shows the whole set.
             if !results.tags.isEmpty {
-                chipSection(.tag, names: results.tags.map { ($0.name, $0.bookCount) })
+                chipSection(
+                    .tag, total: results.tagTotal,
+                    names: results.tags.map { ($0.name, $0.bookCount) }
+                )
             }
 
             if !results.genres.isEmpty {
-                chipSection(.genre, names: results.genres.map { ($0.name, $0.bookCount) })
+                chipSection(
+                    .genre, total: results.genreTotal ?? UInt32(results.genres.count),
+                    names: results.genres.map { ($0.name, $0.bookCount) }
+                )
             }
         }
     }
 
-    private func chipSection(_ facet: SearchFacet, names: [(String, UInt32)]) -> some View {
+    private func chipSection(
+        _ facet: SearchFacet, total: UInt32, names: [(String, UInt32)]
+    ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            SectionLabel(facet.plural)
+            sectionHeader(.taxonomy(facet), total: total, shown: names.count)
             FlowLayout(spacing: 6, lineSpacing: 6) {
                 ForEach(names, id: \.0) { name, count in
                     NavigationLink(value: facet.destination(name)) {
@@ -145,28 +153,31 @@ struct SearchView: View {
     }
 
     private func section<Content: View>(
-        _ title: String, total: UInt32, shown: Int, @ViewBuilder rows: () -> Content
+        _ kind: SearchSection, total: UInt32, shown: Int, @ViewBuilder rows: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .firstTextBaseline) {
-                SectionLabel(title)
-                Spacer(minLength: Spacing.sm)
-                if Int(total) > shown {
-                    NavigationLink(value: Destination.searchResults(query: trimmed)) {
-                        HStack(spacing: 3) {
-                            Text("All \(total)")
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                        }
-                        .font(.ui(13, weight: .medium))
-                        .foregroundStyle(palette.accentColor)
-                    }
-                }
-            }
-
+            sectionHeader(kind, total: total, shown: shown)
             VStack(spacing: 0) { rows() }
         }
         .screenPadding()
+    }
+
+    private func sectionHeader(_ kind: SearchSection, total: UInt32, shown: Int) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            SectionLabel(kind.title)
+            Spacer(minLength: Spacing.sm)
+            if let all = kind.seeAll(query: trimmed, total: total, shown: shown) {
+                NavigationLink(value: all) {
+                    HStack(spacing: 3) {
+                        Text("All \(total)")
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .font(.ui(13, weight: .medium))
+                    .foregroundStyle(palette.accentColor)
+                }
+            }
+        }
     }
 
     private func bookRow(_ hit: PaletteBookHit, isFirst: Bool) -> some View {
@@ -270,6 +281,33 @@ struct SearchView: View {
                 guard !Task.isCancelled else { return }
                 results = answer
             }
+        }
+    }
+}
+
+/// One section of the results page, and where its "All N" leads: the list that
+/// holds all N of what it counted — a book grid only for books.
+enum SearchSection: Equatable {
+    case books, authors, series
+    case taxonomy(SearchFacet)
+
+    var title: String {
+        switch self {
+        case .books: "Books"
+        case .authors: "Authors"
+        case .series: "Series"
+        case let .taxonomy(facet): facet.plural
+        }
+    }
+
+    /// `nil` when the section already shows everything it counted.
+    func seeAll(query: String, total: UInt32, shown: Int) -> Destination? {
+        guard Int(total) > shown else { return nil }
+        switch self {
+        case .books: return .searchResults(query: query)
+        case .authors: return .authorsMatching(query: query)
+        case .series: return .seriesMatching(query: query)
+        case let .taxonomy(facet): return .taxonomyMatching(facet, query: query)
         }
     }
 }

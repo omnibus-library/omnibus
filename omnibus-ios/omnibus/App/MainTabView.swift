@@ -23,6 +23,11 @@ enum Destination: Hashable {
     case readingGoals
     case downloads
     case authorsIndex
+    /// An index narrowed to the names containing `query`, where a search
+    /// section's "All N" leads.
+    case authorsMatching(query: String)
+    case seriesMatching(query: String)
+    case taxonomyMatching(SearchFacet, query: String)
     case searchResults(query: String)
     case metadataEdit(uuid: String)
 
@@ -327,6 +332,12 @@ struct DestinationRouter: ViewModifier {
                 DownloadsView()
             case .authorsIndex:
                 AuthorsView()
+            case let .authorsMatching(query):
+                AuthorsView(filter: query)
+            case let .seriesMatching(query):
+                SeriesIndexView(filter: query)
+            case let .taxonomyMatching(facet, query):
+                TaxonomyCloudView(facet: facet, filter: query)
             case let .searchResults(query):
                 SearchResultsView(query: query, title: "“\(query)”")
             case let .metadataEdit(uuid):

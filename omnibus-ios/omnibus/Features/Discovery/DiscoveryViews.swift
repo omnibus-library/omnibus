@@ -10,7 +10,11 @@ struct AuthorsView: View {
     @State private var authors: [AuthorSummary] = []
     @State private var isLoading = true
     @State private var error: String?
-    @State private var query = ""
+    @State private var query: String
+
+    init(filter: String = "") {
+        _query = State(initialValue: filter)
+    }
 
     private var filtered: [AuthorSummary] {
         guard let needle = query.nilIfBlank?.lowercased() else { return authors }
@@ -297,7 +301,11 @@ struct SeriesIndexView: View {
     @Environment(\.palette) private var palette
     @State private var series: [SeriesSummary] = []
     @State private var isLoading = true
-    @State private var query = ""
+    @State private var query: String
+
+    init(filter: String = "") {
+        _query = State(initialValue: filter)
+    }
 
     private var filtered: [SeriesSummary] {
         let matched: [SeriesSummary]
@@ -495,13 +503,24 @@ struct SeriesDetailView: View {
 struct TaxonomyCloudView: View {
     let facet: SearchFacet
 
-    init(facet: SearchFacet) {
+    init(facet: SearchFacet, filter: String = "") {
         self.facet = facet
+        _query = State(initialValue: filter)
     }
 
     @Environment(\.palette) private var palette
     @State private var tags: [TagWeight] = []
     @State private var isLoading = true
+    @State private var query: String
+
+    private var filtered: [TagWeight] { Self.filtered(tags, by: query) }
+
+    /// The names containing `query`, case-insensitively — the same substring
+    /// test the search palette counts by, so "All N" lands on N names.
+    nonisolated static func filtered(_ entries: [TagWeight], by query: String) -> [TagWeight] {
+        guard let needle = query.nilIfBlank?.lowercased() else { return entries }
+        return entries.filter { $0.name.lowercased().contains(needle) }
+    }
 
     /// Weight the type scale by count so the cloud reads as a cloud, with a
     /// floor and ceiling so nothing becomes unreadable or absurd.
@@ -545,10 +564,16 @@ struct TaxonomyCloudView: View {
                     message: emptyCopy.message,
                     kicker: emptyCopy.kicker
                 )
+            } else if filtered.isEmpty {
+                EmptyStateView(
+                    icon: "questionmark.circle",
+                    title: "No \(facet.plural.lowercased()) match",
+                    message: "Nothing in the library is filed under \u{201C}\(query)\u{201D}."
+                )
             } else {
                 ScrollView {
                     FlowLayout(spacing: 8, lineSpacing: 10) {
-                        ForEach(tags) { tag in
+                        ForEach(filtered) { tag in
                             NavigationLink(value: facet.destination(tag.name)) {
                                 HStack(spacing: 5) {
                                     Text(tag.name)
@@ -574,6 +599,7 @@ struct TaxonomyCloudView: View {
         .background(ScreenBackground())
         .navigationTitle(facet.plural)
         .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Filter \(facet.plural.lowercased())")
         .task {
             switch facet {
             case .tag:
