@@ -57,16 +57,19 @@ fn overlap_note(dim: &CompositionDimension) -> Option<String> {
     Some(format!("+{overlap} {noun} held in more than one format"))
 }
 
-/// The card's footnote for `books` rows whose files are gone. They carry no
+/// The card's footnote for `books` rows with no file on disk. They carry no
 /// format at all, so they'd otherwise vanish from the format bars and leave
 /// the counts quietly failing to reconcile against the library.
+///
+/// Worded for a row that never had files as much as one that lost them: a
+/// paper-only check-in or a wishlist entry is counted here too.
 fn ghosted_note(ghosted: i64) -> Option<String> {
     if ghosted == 0 {
         return None;
     }
     let noun = if ghosted == 1 { "book" } else { "books" };
     Some(format!(
-        "{ghosted} {noun} excluded — indexed once, no files on disk now"
+        "{ghosted} {noun} excluded \u{2014} no files on disk (paper copies, wishlist entries, removed files)"
     ))
 }
 

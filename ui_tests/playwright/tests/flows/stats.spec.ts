@@ -1150,6 +1150,6 @@ test("with no goals the hero reports the real figures and links to the editor", 
   // Both halves link to the one place goals are set.
   await expect(page.getByTestId("stats-daily-set-link")).toBeVisible();
   await page.getByTestId("stats-goal-set-link").click();
-  await expect(page).toHaveURL(/\/settings/);
+  await expect(page).toHaveURL(/\/settings\?section=account$/);
   await expect(page.getByTestId("account-goals-card")).toBeVisible();
 });

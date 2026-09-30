@@ -133,3 +133,85 @@ fn clamped_stars_keeps_a_half_and_reports_an_unrated_book_as_none() {
     assert_eq!(clamped_stars(Some(7.0)), Some(5.0));
     assert_eq!(clamped_stars(Some(-1.0)), Some(0.0));
 }
+
+#[test]
+fn more_open_note_speaks_only_when_the_list_is_cut() {
+    assert_eq!(more_open_note(IN_PROGRESS_SHOWN), None);
+    assert_eq!(more_open_note(0), None);
+    let note = more_open_note(IN_PROGRESS_SHOWN + 1).unwrap();
+    assert!(note.contains(&IN_PROGRESS_SHOWN.to_string()), "{note}");
+}
+
+#[cfg(feature = "server")]
+mod render_tests {
+    use super::*;
+    use crate::test_support::render_in_vdom;
+    use dioxus_router::{Routable, Router};
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum CutRoute {
+        #[route("/")]
+        CutHost {},
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum WholeRoute {
+        #[route("/")]
+        WholeHost {},
+    }
+
+    fn open_books(n: usize) -> Vec<ResumePoint> {
+        (0..n)
+            .map(|i| {
+                let mut p = point(Some(10), None);
+                p.record.book_uuid = format!("u{i}");
+                p.book.id = i as i64 + 1;
+                p.book.title = Some(format!("Open Book {i}"));
+                p
+            })
+            .collect()
+    }
+
+    #[component]
+    fn CutHost() -> Element {
+        rsx! {
+            InProgressCard {
+                books: open_books(IN_PROGRESS_SHOWN + 1),
+                summary: StatsSummary::default(),
+            }
+        }
+    }
+
+    #[component]
+    fn WholeHost() -> Element {
+        rsx! {
+            InProgressCard {
+                books: open_books(IN_PROGRESS_SHOWN),
+                summary: StatsSummary::default(),
+            }
+        }
+    }
+
+    #[test]
+    fn a_cut_in_progress_list_says_it_is_showing_some_of_the_open_books() {
+        let html = render_in_vdom(|| rsx! { Router::<CutRoute> {} });
+        assert_eq!(
+            html.matches("st-open-row").count(),
+            IN_PROGRESS_SHOWN,
+            "{html}"
+        );
+        assert!(
+            !html.contains(&format!("Open Book {IN_PROGRESS_SHOWN}")),
+            "{html}"
+        );
+        assert!(html.contains("stats-in-progress-more"), "{html}");
+
+        let whole = render_in_vdom(|| rsx! { Router::<WholeRoute> {} });
+        assert_eq!(
+            whole.matches("st-open-row").count(),
+            IN_PROGRESS_SHOWN,
+            "{whole}"
+        );
+        assert!(!whole.contains("stats-in-progress-more"), "{whole}");
+    }
+}

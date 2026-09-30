@@ -271,6 +271,11 @@ mod render_tests {
         assert!(!unset.contains("This year"), "{unset}");
         assert!(unset.contains("stats-goal-set-link"), "{unset}");
         assert!(!unset.contains("stats-goal-progress"), "{unset}");
+        // Goals live in the Account section, so the link has to open it.
+        assert!(
+            unset.contains(r#"href="/settings?section=account""#),
+            "{unset}"
+        );
     }
 
     /// With no target the row still shows today's figure — the number a
@@ -300,6 +305,10 @@ mod render_tests {
         assert!(!html.contains("Pages today"), "{html}");
         // One short call to action for the card, not one per row.
         assert_eq!(html.matches("stats-daily-set-link").count(), 1, "{html}");
+        assert!(
+            html.contains(r#"href="/settings?section=account""#),
+            "{html}"
+        );
         // Every session is placeable on the reader's own day now, so there is
         // no disclosure left to draw — not even for the non-zero figure an
         // older server would still send.

@@ -102,7 +102,7 @@ fn SetGoalsLink(label: &'static str, testid: &'static str) -> Element {
         Link {
             class: "st-goal-link",
             "data-testid": testid,
-            to: Route::Settings { section: None },
+            to: Route::Settings { section: Some("account".to_string()) },
             {label}
         }
     }
