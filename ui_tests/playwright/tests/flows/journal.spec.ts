@@ -361,7 +361,7 @@ test("renders a markdown preview and blurs spoilers until clicked", async ({
   const spoiler = spoilerCard.locator(".spoiler");
   await expect(spoiler).toHaveText("the secret");
   await expect(spoiler).not.toHaveClass(/revealed/);
-  // The wrapper is a native `<button>` so `aria-expanded` reflects state.
+  // A `role="button"` span, so `aria-expanded` reflects state.
   await expect(spoiler).toHaveAttribute("aria-expanded", "false");
   await spoiler.click();
   await expect(spoiler).toHaveClass(/revealed/);
@@ -457,7 +457,7 @@ test("wraps a spoiler too wide for its line without breaking the list", async ({
   await gotoReady(page, `/books/${uuid}`);
 
   // Typed through the keyboard, not `fill`: only the editor's own newline
-  // handling produces a real `<ul>`, and the bug is about how the spoiler box
+  // handling produces a real `<ul>`, and the bug is about how the spoiler
   // sits inside its list item.
   const marker = `e2e-wrap-${Date.now()}`;
   const long = "a spoiler far too long to sit on one line ".repeat(5);
@@ -473,33 +473,75 @@ test("wraps a spoiler too wide for its line without breaking the list", async ({
   const card = await openEntry(page, marker);
   const spoiler = card.locator(".spoiler");
 
-  // A `<button>` inherits `text-align: center` from the UA sheet, which makes
-  // a wrapped spoiler read as a stray centred paragraph mid-list.
-  await expect(spoiler).toHaveCSS("text-align", "start");
-
   const box = await spoiler.evaluate((el) => {
     const li = el.closest("li");
-    const e = el.getBoundingClientRect();
+    const rects = el.getClientRects();
     return {
       inList: li !== null,
-      height: e.height,
+      fragments: rects.length,
       lineHeight: Number.parseFloat(getComputedStyle(el).lineHeight),
-      topDelta: li ? Math.abs(e.top - li.getBoundingClientRect().top) : -1,
+      firstTopDelta: li ? rects[0]!.top - li.getBoundingClientRect().top : -1,
     };
   });
 
-  // Geometry, not just the declaration. The fixture has to genuinely wrap for
-  // the rule above to mean anything — a spoiler that fits on one line
-  // shrink-to-fits to its own text, where centred and left-aligned are
-  // indistinguishable.
   expect(box.inList, "the fixture must build a real list item").toBe(true);
+  // An inline span flows across lines as prose — no box to centre its text
+  // in, and no atomic box whose baseline drags the list marker down.
   expect(
-    box.height,
+    box.fragments,
     "the spoiler must wrap for this spec to cover the bug",
-  ).toBeGreaterThan(box.lineHeight * 1.5);
-  // `vertical-align: top` — without it the box aligns on its *last* line's
-  // baseline and the list marker drops to the bottom of the spoiler.
-  expect(box.topDelta).toBeLessThanOrEqual(1);
+  ).toBeGreaterThan(1);
+  // Its first fragment sits on the list item's first line, beside the marker.
+  expect(box.firstTopDelta).toBeLessThan(box.lineHeight);
+
+  await deleteEntry(page, marker);
+});
+
+test("wraps a spoiler as prose, keeping the punctuation before it on its line", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await gotoReady(page, `/books/${uuid}`);
+
+  // The reproduction from the report: an opening bracket right before a
+  // spoiler too wide for what is left of its line.
+  const marker = `e2e-prose-${Date.now()}`;
+  await publish(
+    page,
+    `${marker} It's a happy ending and one that you can imagine going in different directions (||war continues, constant hardships for Darrow, Mustang, and Pax forever... or war ends & peace forever||)`,
+  );
+
+  const card = await openEntry(page, marker);
+  const spoiler = card.locator(".spoiler");
+
+  const layout = await spoiler.evaluate((el) => {
+    // Narrow the paragraph so the spoiler cannot fit on any one line,
+    // whatever width the overlay card happens to have.
+    const p = el.closest("p")!;
+    p.style.width = "360px";
+    const rects = Array.from(el.getClientRects());
+    const before = el.previousSibling!;
+    const range = document.createRange();
+    const text = before.textContent ?? "";
+    range.setStart(before, text.length - 1);
+    range.setEnd(before, text.length);
+    const paren = range.getBoundingClientRect();
+    const mid = (r: DOMRect) => (r.top + r.bottom) / 2;
+    return {
+      bracket: range.toString(),
+      fragments: rects.length,
+      sameLine: Math.abs(mid(paren) - mid(rects[0]!)) < rects[0]!.height / 2,
+    };
+  });
+
+  expect(layout.bracket).toBe("(");
+  // A `<button>` laid out one atomic box on a line of its own; a span
+  // continues the current line and wraps onto the next.
+  expect(layout.fragments).toBeGreaterThan(1);
+  expect(layout.sameLine, "the ( must not be stranded on its own line").toBe(
+    true,
+  );
 
   await deleteEntry(page, marker);
 });
@@ -516,26 +558,54 @@ test("reveals a spoiler with Enter and toggles it back with Space", async ({
   await gotoReady(page, `/books/${uuid}`);
 
   // Publish an entry whose only interactive element on the card is the spoiler
-  // button, so `focus()` + Enter/Space unambiguously drive it (independent of
-  // any surrounding controls).
+  // control, so Tab + Enter/Space unambiguously drive it (independent of any
+  // surrounding controls).
   const marker = `e2e-spoiler-kb-${Date.now()}`;
   await publish(page, `keyboard ${marker}: ||hidden reveal||`);
 
   const card = await openEntry(page, marker);
-  const spoiler = card.locator(".spoiler");
+  // Announced as a named, collapsed control — and its text is not read out
+  // before it is revealed.
+  const spoiler = card.getByRole("button", { name: "Reveal spoiler" });
   await expect(spoiler).toHaveAttribute("aria-expanded", "false");
+  await expect(card.getByRole("button", { name: "hidden reveal" })).toHaveCount(
+    0,
+  );
+  await expect(spoiler.locator(".spoiler-text")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
 
-  // Native `<button>` semantics: Enter fires click → reveals + expands.
+  // Tab reaches it: it is in the focus order, not only focusable by script.
+  await expect(spoiler).toHaveAttribute("tabindex", "0");
   await spoiler.focus();
+  await expect(spoiler).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(spoiler).toHaveClass(/revealed/);
-  await expect(spoiler).toHaveAttribute("aria-expanded", "true");
+  // Revealed, it is named by its text and reports itself expanded.
+  const revealed = card.getByRole("button", { name: "hidden reveal" });
+  await expect(revealed).toHaveClass(/revealed/);
+  await expect(revealed).toHaveAttribute("aria-expanded", "true");
 
-  // Space toggles it back to hidden without scrolling the page (the button
-  // handles Space natively, so no explicit preventDefault is required).
+  // Space toggles it back, and its default — scrolling the page — is
+  // cancelled. A window listener runs after the document one, so it sees
+  // whether the control prevented it.
+  await page.evaluate(() => {
+    window.addEventListener("keydown", (e) => {
+      if (e.key === " ") {
+        (window as unknown as { spacePrevented: boolean }).spacePrevented =
+          e.defaultPrevented;
+      }
+    });
+  });
   await page.keyboard.press("Space");
   await expect(spoiler).not.toHaveClass(/revealed/);
   await expect(spoiler).toHaveAttribute("aria-expanded", "false");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { spacePrevented?: boolean }).spacePrevented,
+    ),
+  ).toBe(true);
 
   await deleteEntry(page, marker);
 });

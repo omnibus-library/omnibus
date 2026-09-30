@@ -127,14 +127,15 @@ fn journal_feed_notice(feed: FeedState) -> Option<Element> {
     }
 }
 
-/// Binds click-to-reveal spoilers, delegated on `document` so it covers
-/// entries that render after mount and bound once via a window guard. The
-/// sanitizer emits the spoiler as a real `<button>`, so Tab reaches it and
-/// Enter/Space fire a native click without a keydown listener; the handler
-/// just needs to keep `aria-expanded` in sync with the `.revealed` class so
-/// assistive tech reflects the toggled state. Web-only: the eval is a no-op
-/// on SSR / native, and gating the body (not the hook) keeps the hook count
-/// identical across targets for hydration. Called unconditionally from
+/// Binds click- and key-to-reveal spoilers, delegated on `document` so it
+/// covers entries that render after mount and bound once via a window guard.
+/// The sanitizer emits the spoiler as an inline `role="button"` span, which
+/// gets no native activation, so Enter and Space are handled here (Space with
+/// `preventDefault`, or it scrolls the page). A toggle keeps `aria-expanded`,
+/// the "Reveal spoiler" label and the text's `aria-hidden` in step, so the
+/// text reaches assistive tech only once revealed. Web-only: the eval is a
+/// no-op on SSR / native, and gating the body (not the hook) keeps the hook
+/// count identical across targets for hydration. Called unconditionally from
 /// [`BdJournalSection`].
 fn use_spoiler_reveal_binding() {
     use_effect(move || {
@@ -144,11 +145,29 @@ fn use_spoiler_reveal_binding() {
                 r#"
                 if (!window.__omnibusSpoilerBound) {
                     window.__omnibusSpoilerBound = true;
-                    document.addEventListener('click', (e) => {
-                        const s = e.target.closest && e.target.closest('.spoiler');
-                        if (!s) return;
+                    const toggle = (s) => {
                         const revealed = s.classList.toggle('revealed');
                         s.setAttribute('aria-expanded', revealed ? 'true' : 'false');
+                        const text = s.querySelector(':scope > .spoiler-text');
+                        if (!text) return;
+                        if (revealed) {
+                            s.removeAttribute('aria-label');
+                            text.removeAttribute('aria-hidden');
+                        } else {
+                            s.setAttribute('aria-label', 'Reveal spoiler');
+                            text.setAttribute('aria-hidden', 'true');
+                        }
+                    };
+                    document.addEventListener('click', (e) => {
+                        const s = e.target.closest && e.target.closest('.spoiler');
+                        if (s) toggle(s);
+                    });
+                    document.addEventListener('keydown', (e) => {
+                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                        const s = e.target;
+                        if (!s.matches || !s.matches('.spoiler[role="button"]')) return;
+                        e.preventDefault();
+                        toggle(s);
                     });
                 }
                 "#,

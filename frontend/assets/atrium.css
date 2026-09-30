@@ -1636,33 +1636,22 @@ html, body { overscroll-behavior: none; }
   margin-top: 6px;
 }
 
-/* Spoiler — blurred until clicked (handler bound in journal.rs). The wrapper
-   is a native `<button>` so keyboard users can Tab to it and Enter/Space
-   reveal it; the reset strips UA button chrome (border/padding/font/color) so
-   it reads as inline prose, not a rendered control. */
+/* Spoiler — blurred until revealed (handler bound in journal.rs). An inline
+   `role="button"` span rather than a `<button>`, so a long one wraps as prose
+   instead of dropping whole to the next line. The blur sits on the inner text
+   so the focus ring around the control stays sharp; `button.spoiler` is the
+   old markup, still in offline caches until they refetch. */
 .spoiler {
-  filter: blur(5px);
   cursor: pointer;
   border-radius: 3px;
   background: var(--bg-2);
-  transition: filter 0.12s ease;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
-button.spoiler {
-  font: inherit;
-  color: inherit;
-  padding: 0;
-  border: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  /* A button is always at least an inline-block, so a spoiler long enough to
-     wrap becomes its own box — and the UA centres a button's text, which
-     reads as a stray centred paragraph mid-list. Inherit the prose alignment
-     instead, and align the box to the top of the line so a list marker stays
-     on the spoiler's first line rather than dropping to its last. */
-  text-align: inherit;
-  vertical-align: top;
-}
-.spoiler.revealed { filter: none; cursor: auto; background: transparent; }
+.spoiler-text, button.spoiler { filter: blur(5px); transition: filter 0.12s ease; }
+.spoiler:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.spoiler.revealed { cursor: auto; background: transparent; }
+.spoiler.revealed .spoiler-text, button.spoiler.revealed { filter: none; }
 
 /* "From the same hand" — the author-lead card + spreading cover stack live in
    the F3.3 suggestions block below (they reuse `.suggest-stack` / `.sug-cap`). */
