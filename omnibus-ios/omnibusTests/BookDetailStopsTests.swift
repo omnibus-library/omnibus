@@ -25,8 +25,45 @@ import Testing
 }
 
 @Test func kickerSurvivesABareRecord() {
+    // Worded as the web's `home_kicker` does: never "In your library", which
+    // a wishlist-only or just-removed record is not.
     let line = DetailRead.kicker(series: nil, seriesIndex: nil, fallback: nil, year: nil)
-    #expect(line == "In your library")
+    #expect(line == "Book · standalone")
+}
+
+@Test func kickerNamesTheWishlistForAWishlistOnlyBook() {
+    let line = DetailRead.kicker(
+        series: "Dune", seriesIndex: "1", fallback: nil, year: "1965",
+        wishlistSource: "a scan"
+    )
+    #expect(line == "On your wishlist · added from a scan")
+}
+
+// MARK: - Fileless records
+
+@Test func readStatusIsOfferedOnlyForSomethingToRead() {
+    #expect(DetailRead.showsReadStatus(hasFile: true, hasPhysical: false))
+    #expect(DetailRead.showsReadStatus(hasFile: false, hasPhysical: true))
+    #expect(!DetailRead.showsReadStatus(hasFile: false, hasPhysical: false))
+}
+
+@Test func removingTheWishlistEntryLeavesAPageWithNothingLeftToShow() {
+    #expect(DetailRead.leavesAfterWishlistRemoval(bookDeleted: true, hasFile: false, hasPhysical: false))
+    // Kept because another reader still wants it, but unreachable from browse.
+    #expect(DetailRead.leavesAfterWishlistRemoval(bookDeleted: false, hasFile: false, hasPhysical: false))
+    #expect(!DetailRead.leavesAfterWishlistRemoval(bookDeleted: false, hasFile: false, hasPhysical: true))
+    #expect(!DetailRead.leavesAfterWishlistRemoval(bookDeleted: false, hasFile: true, hasPhysical: false))
+}
+
+@Test func emptyStatsOnlyAskAReaderToOpenABookThatHasAFile() {
+    let open = "Open the book to start tracking your reading here."
+    #expect(DetailStats.emptyExplainer(wishlistOnly: false, hasFile: true, hasPhysical: false) == open)
+    for (wishlist, physical) in [(true, false), (false, true), (false, false)] {
+        let line = DetailStats.emptyExplainer(
+            wishlistOnly: wishlist, hasFile: false, hasPhysical: physical
+        )
+        #expect(!line.localizedCaseInsensitiveContains("open the book"))
+    }
 }
 
 // MARK: - Resume label

@@ -37,21 +37,39 @@ enum DetailJournal {
 }
 
 enum DetailRead {
-    /// The Home stop's kicker line: where this book sits in the catalog.
+    /// The Home stop's kicker line: where this book sits in the catalog, or —
+    /// for a wishlisted book with no files — where the entry came from, as
+    /// `home_kicker` words it on the web. `wishlistSource` is that phrase.
     static func kicker(
-        series: String?, seriesIndex: String?, fallback: String?, year: String?
+        series: String?, seriesIndex: String?, fallback: String?, year: String?,
+        wishlistSource: String? = nil
     ) -> String {
+        if let wishlistSource { return "On your wishlist · added from \(wishlistSource)" }
         var lead: String
         if let series {
             lead = series
             if let seriesIndex { lead += " · Book \(seriesIndex)" }
-        } else if let fallback {
-            lead = "\(fallback) · standalone"
         } else {
-            lead = "In your library"
+            lead = "\(fallback ?? "Book") · standalone"
         }
         if let year { lead += " · \(year)" }
         return lead
+    }
+
+    /// Whether Home offers the read-status segment. A record with nothing to
+    /// read — no file, no paper copy — has no reading to mark; a paper copy
+    /// keeps it, since the status is the only record of reading one.
+    static func showsReadStatus(hasFile: Bool, hasPhysical: Bool) -> Bool {
+        hasFile || hasPhysical
+    }
+
+    /// Whether the page leaves once the wishlist entry is removed. A book that
+    /// stayed but has neither files nor a paper copy is hidden from browse,
+    /// so the page would be showing a record the reader can no longer reach.
+    static func leavesAfterWishlistRemoval(
+        bookDeleted: Bool, hasFile: Bool, hasPhysical: Bool
+    ) -> Bool {
+        bookDeleted || (!hasFile && !hasPhysical)
     }
 
     /// The action bar's primary label. Speaks the position when one is saved
@@ -227,6 +245,19 @@ enum DetailStats {
             readSeconds: read,
             listenSeconds: listen
         )
+    }
+
+    /// What the empty stop says about starting a record. Only a book with a
+    /// file can be opened here, so only that one is told to open it.
+    static func emptyExplainer(wishlistOnly: Bool, hasFile: Bool, hasPhysical: Bool) -> String {
+        if wishlistOnly {
+            return "Stats begin when the book does — check in a copy to start the record."
+        }
+        if hasFile { return "Open the book to start tracking your reading here." }
+        if hasPhysical {
+            return "Stats come from reading in the app — a paper copy is tracked by its read status."
+        }
+        return "The library holds no copy of this book, so there is nothing to track yet."
     }
 
     /// Minutes of activity per calendar day for the trailing `days` days,
@@ -887,7 +918,10 @@ struct StopHome: View {
                 series: book.series,
                 seriesIndex: book.seriesIndex,
                 fallback: book.genres.first ?? book.subjects.first,
-                year: book.year
+                year: book.year,
+                wishlistSource: model.isWishlistOnly
+                    ? model.wishlistEntry.map { WishlistSection.sourceLabel($0.source) }
+                    : nil
             ))
 
             Text(book.displayTitle)
@@ -976,7 +1010,7 @@ struct StopHome: View {
                     WishlistSection(book: book, entry: entry, onRemoved: onRemovedWishlist)
                         .padding(.top, 16)
                 }
-            } else {
+            } else if DetailRead.showsReadStatus(hasFile: model.hasFile, hasPhysical: book.hasPhysical) {
                 DetailSegmented(
                     selection: Binding(
                         get: { model.readStatus },
@@ -987,8 +1021,10 @@ struct StopHome: View {
                 }
                 .padding(.top, 14)
 
-                ruler
-                    .padding(.top, 17)
+                if model.hasFile {
+                    ruler
+                        .padding(.top, 17)
+                }
 
                 if book.hasEbook, book.hasAudiobook {
                     DetailSyncRow(state: model.syncState, onOpen: onAlignment)
@@ -1022,7 +1058,7 @@ struct StopHome: View {
             MonoNote(text: ["in progress", updatedLabel].compactMap { $0 }
                 .joined(separator: " · "))
         } else {
-            MonoNote(text: book.hasEbook || book.hasAudiobook ? "not started yet" : " ")
+            MonoNote(text: "not started yet")
         }
     }
 
@@ -1235,9 +1271,11 @@ struct StopStats: View {
     }
 
     private var emptyExplainer: String {
-        model.isWishlistOnly
-            ? "Stats begin when the book does — check in a copy to start the record."
-            : "Open the book to start tracking your reading here."
+        DetailStats.emptyExplainer(
+            wishlistOnly: model.isWishlistOnly,
+            hasFile: model.hasFile,
+            hasPhysical: book.hasPhysical
+        )
     }
 
     /// The stat grid with its keys shown and its values withheld — the same

@@ -224,11 +224,16 @@ final class BookDetailModel {
         await UserDataService.setReadStatus(uuid: uuid, status: status)
     }
 
+    /// Whether the library holds anything this book can be opened in.
+    var hasFile: Bool {
+        guard let book else { return false }
+        return book.hasEbook || book.hasAudiobook
+    }
+
     /// A wishlisted book the library holds no files for. The ruler and Resume
     /// drop out; the action bar becomes Find a copy · check in.
     var isWishlistOnly: Bool {
-        guard let book else { return false }
-        return wishlistEntry != nil && !book.hasEbook && !book.hasAudiobook
+        book != nil && wishlistEntry != nil && !hasFile
     }
 }
 
@@ -851,9 +856,13 @@ struct BookDetailView: View {
                 onAlignment: { showAlignment = true },
                 onRemovedWishlist: { bookDeleted in
                     model.wishlistEntry = nil
-                    // A wishlist-only book nobody else wants went with the
-                    // entry; this screen is now about a book that is gone.
-                    if bookDeleted { dismiss() }
+                    if DetailRead.leavesAfterWishlistRemoval(
+                        bookDeleted: bookDeleted,
+                        hasFile: model.hasFile,
+                        hasPhysical: book.hasPhysical
+                    ) {
+                        dismiss()
+                    }
                 }
             )
         case .stats:
