@@ -992,7 +992,9 @@ a Release build; the lane's contract is
 **Offline writes** follow [rule 08](../.claude/rules/08-offline-writes.md): the
 `OpKind` outbox in `Offline/SyncEngine.swift` carries per-user content state
 only, never configuration and never commands. `OutboxScope` in `Offline/Cache.swift`
-declares each kind's blast radius. `omnibusTests/OfflineSyncTests.swift` and
+declares each kind's blast radius, and `Offline/ReplicaInvalidations.swift` applies
+the same declaration to mounted screens: each `SyncEngine.write` announces its kind,
+and the Library home's rails re-read the keys it moves. `omnibusTests/OfflineSyncTests.swift` and
 `omnibusTests/DebugOfflineTests.swift` cover them,
 and `omnibusTests/ReaderSelectionTests.swift` pins the selection payload the glue
 posts plus the passage-menu placement rules;
