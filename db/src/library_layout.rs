@@ -177,9 +177,10 @@ fn find_with_extensions(dir: &Path, base: &str) -> Option<PathBuf> {
 }
 
 /// Compute a canonical path that doesn't already exist on disk. If the
-/// canonical title-slug folder already exists, append ` (2)`, ` (3)`, … to
-/// the title-slug component until an unused folder is found, and place the
-/// file inside that suffixed folder.
+/// canonical title-slug folder already holds something, append ` (2)`,
+/// ` (3)`, … to the title-slug component until an unused folder is found, and
+/// place the file inside that suffixed folder. An empty folder counts as
+/// unused (see [`is_free_folder`]).
 ///
 /// Upload-time helper, kept covered by tests even though no caller wires
 /// it in yet. An empty `ext` is rejected with `InvalidInput` — uploads
@@ -209,7 +210,7 @@ pub fn allocate_canonical_path(
             format!("{title_slug} ({suffix})")
         };
         let candidate = author_dir.join(&folder_name);
-        if !candidate.exists() {
+        if is_free_folder(&candidate) {
             return Ok(candidate.join(format!("{title_slug}.{ext_clean}")));
         }
         suffix += 1;
@@ -248,7 +249,7 @@ pub fn allocate_canonical_dir(
             format!("{title_slug} ({suffix})")
         };
         let candidate = author_dir.join(&folder_name);
-        if !candidate.exists() {
+        if is_free_folder(&candidate) {
             return Ok(candidate);
         }
         suffix += 1;
@@ -258,6 +259,17 @@ pub fn allocate_canonical_dir(
                 format!("too many collisions for title slug {title_slug:?}"),
             ));
         }
+    }
+}
+
+/// Whether an upload may take `folder`: absent, or present but empty. An
+/// empty folder holds no book to collide with — typically what an upload that
+/// failed before it could clean up left behind — so a retry reuses it rather
+/// than filing beside it under a numbered sibling.
+fn is_free_folder(folder: &Path) -> bool {
+    match std::fs::read_dir(folder) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(_) => !folder.exists(),
     }
 }
 

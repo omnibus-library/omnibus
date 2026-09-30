@@ -14,17 +14,17 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use omnibus_db::{
-    self as db, library_layout,
-    worker::{Task, TaskOutcome},
-};
+use omnibus_db::{self as db, library_layout, worker::Task};
 use omnibus_shared::{
     detect_audiobook_format, AudiobookInspection, UploadCommitResult, AUDIOBOOK_MAGIC_LEN,
 };
 use tokio::io::AsyncWriteExt as _;
 
 use super::review::{self, CommitExtras, LegacyFields};
-use super::{max_upload_bytes, norm, require_upload, UploadError};
+use super::{
+    discard_placed, discard_placed_blocking, max_upload_bytes, norm,
+    reindex_and_resolve_uploaded_uuid, require_upload, UploadError,
+};
 use crate::auth::AuthUser;
 use crate::backend::AppState;
 
@@ -350,18 +350,6 @@ struct PlacedAudiobook {
     /// The single file (Single) or the parts folder (Mp3Set).
     path: PathBuf,
     scan_key: String,
-    is_folder: bool,
-}
-
-impl PlacedAudiobook {
-    /// Remove the filed audiobook so a failed scan doesn't strand it on disk.
-    async fn cleanup(&self) {
-        if self.is_folder {
-            let _ = tokio::fs::remove_dir_all(&self.path).await;
-        } else {
-            let _ = tokio::fs::remove_file(&self.path).await;
-        }
-    }
 }
 
 /// File the uploaded audiobook into the canonical audiobook library, reindex so
@@ -399,30 +387,12 @@ pub(in crate::backend) async fn post_upload_audiobook(
 
     let placed = place_audiobook(&root_path, &author, &title, kind, files).await?;
 
-    // Reindex so the indexer mints the uuid, extracts the cover + chapters, and
-    // writes `book_file_parts` — the single source of truth for inserting books.
-    let task_id = state.worker.post(Task::ScanAudiobooks {
+    // The scan also extracts the chapters and writes `book_file_parts`.
+    let scan = || Task::ScanAudiobooks {
         library_path: root.clone(),
-    });
-    if let TaskOutcome::Err(e) = state.worker.await_completion(task_id).await {
-        placed.cleanup().await;
-        return Err(UploadError::internal("reindex after audiobook upload", e));
-    }
-
-    let uuid = match db::get_book_uuid_by_scan_key(&state.pool, &root, &placed.scan_key).await {
-        Ok(Some(uuid)) => uuid,
-        Ok(None) => {
-            placed.cleanup().await;
-            return Err(UploadError::internal(
-                "resolve uploaded audiobook",
-                "reindex did not surface the uploaded audiobook",
-            ));
-        }
-        Err(e) => {
-            placed.cleanup().await;
-            return Err(UploadError::internal("get_book_uuid_by_scan_key", e));
-        }
     };
+    let uuid =
+        reindex_and_resolve_uploaded_uuid(&state, scan, &root, &root_path, &placed.path).await?;
 
     // A failure here undoes the book: the client sees an error, so nothing
     // may stay — neither the row the scan inserted nor the parts on disk.
@@ -438,7 +408,7 @@ pub(in crate::backend) async fn post_upload_audiobook(
     .await;
     if let Err(e) = finished {
         review::rollback_uploaded_file(&state, &uuid, &placed.scan_key).await;
-        placed.cleanup().await;
+        discard_placed(&root_path, &placed.path).await;
         return Err(e);
     }
 
@@ -446,7 +416,8 @@ pub(in crate::backend) async fn post_upload_audiobook(
 }
 
 /// Copy the streamed audiobook file(s) into the canonical library and return
-/// the placement (with its durable scan_key). A read-only library maps to
+/// the placement (with its durable scan_key); a copy that fails partway is
+/// taken back out. A read-only library maps to
 /// [`UploadError::AudiobookLibraryNotWritable`]; other IO failures to 500.
 async fn place_audiobook(
     root: &Path,
@@ -485,15 +456,18 @@ fn place_single_blocking(
         .first()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no file"))?;
     let dest = library_layout::allocate_canonical_path(root, author, title, &file.ext)?;
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)?;
+    let copied = dest
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::copy(file.tmp.path(), &dest).map(|_| ()));
+    if let Err(e) = copied {
+        discard_placed_blocking(root, &dest);
+        return Err(e);
     }
-    std::fs::copy(file.tmp.path(), &dest)?;
     let scan_key = relative_scan_key(root, &dest);
     Ok(PlacedAudiobook {
         path: dest,
         scan_key,
-        is_folder: false,
     })
 }
 
@@ -508,21 +482,29 @@ fn place_mp3_folder_blocking(
     files: Vec<AudioUpload>,
 ) -> std::io::Result<PlacedAudiobook> {
     let folder = library_layout::allocate_canonical_dir(root, author, title)?;
-    std::fs::create_dir_all(&folder)?;
+    if let Err(e) = copy_parts(&folder, &files) {
+        discard_placed_blocking(root, &folder);
+        return Err(e);
+    }
+    let scan_key = relative_scan_key(root, &folder);
+    Ok(PlacedAudiobook {
+        path: folder,
+        scan_key,
+    })
+}
+
+/// Copy each `.mp3` part into `folder` under its sanitized, de-duplicated name.
+fn copy_parts(folder: &Path, files: &[AudioUpload]) -> std::io::Result<()> {
+    std::fs::create_dir_all(folder)?;
     let mut used: HashSet<String> = HashSet::new();
-    for file in &files {
+    for file in files {
         let name = dedupe_part_name(
             library_layout::sanitize_part_filename(&file.filename),
             &mut used,
         );
         std::fs::copy(file.tmp.path(), folder.join(&name))?;
     }
-    let scan_key = relative_scan_key(root, &folder);
-    Ok(PlacedAudiobook {
-        path: folder,
-        scan_key,
-        is_folder: true,
-    })
+    Ok(())
 }
 
 /// Library-relative path of `dest` under `root`, used as the reindex scan_key.

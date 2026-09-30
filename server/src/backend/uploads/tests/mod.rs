@@ -6,6 +6,7 @@
 
 mod audiobook;
 mod ebook;
+mod placement;
 mod review;
 mod timeouts;
 
