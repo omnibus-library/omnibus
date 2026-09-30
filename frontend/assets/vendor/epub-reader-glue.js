@@ -109,8 +109,8 @@
   var restoreEchoToken = -1;
   // Counts `relocated` events, so a deferred emission can tell one arrived.
   var relocatedSeq = 0;
-  // How long unmute waits for the corrective redisplay's own `relocated`
-  // before stating the landing itself — just past the relocate debounce.
+  // How long unmute holds the echo tag for the corrective redisplay's own
+  // `relocated` — just past the relocate debounce.
   var UNMUTE_FALLBACK_MS = 450;
   var unmuteFallbackTimer = null;
   // True from the first resize-driven "resized" event of a rotation/resize
@@ -690,24 +690,25 @@
           // only the fallback.
           if (relocateTimer) return;
           // The corrective redisplay's own `relocated` can still be a frame
-          // out: a snapshot now would spend the echo tag and leave that one
-          // to land untagged, so defer to it when it comes.
+          // out, and must land as the echo too: state the landing now without
+          // spending the tag, which lapses only if none comes.
           var seq = relocatedSeq;
           unmuteFallbackTimer = setTimeout(function () {
             unmuteFallbackTimer = null;
             if (rendition !== r || relocatedSeq !== seq || relocateTimer) return;
-            var loc = null;
-            try {
-              loc = rendition.currentLocation();
-            } catch (e) {
-              /* not ready yet */
-            }
-            if (loc && loc.start) {
-              emitRelocate(loc);
-            } else if (rendition.location) {
-              emitRelocate(rendition.location);
-            }
+            restoreEchoPending = false;
           }, UNMUTE_FALLBACK_MS);
+          var loc = null;
+          try {
+            loc = rendition.currentLocation();
+          } catch (e) {
+            /* not ready yet */
+          }
+          if (loc && loc.start) {
+            emitRelocate(loc, true);
+          } else if (rendition.location) {
+            emitRelocate(rendition.location, true);
+          }
         };
         redisplayWhenSettled(initialCfi, restoreCurrent)
           .then(function () {
@@ -822,9 +823,11 @@
     clearNavWatchdog();
     var echo = !!isEcho;
     var data = buildRelocateData(location);
-    if (restoreEchoPending && (!echo || (!relocateTimer && !unmuteFallbackTimer))) {
-      restoreEchoPending = false;
-      echo = true;
+    if (restoreEchoPending) {
+      if (!echo || (!relocateTimer && !unmuteFallbackTimer)) {
+        restoreEchoPending = false;
+        echo = true;
+      }
       restoreEchoCfi = data.cfi || null;
       restoreEchoToken = displayToken;
     } else if (!echo && restoreEchoCfi !== null) {

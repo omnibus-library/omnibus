@@ -1004,6 +1004,8 @@ test("a named typeface is self-hosted and overrides the publisher's element-leve
   await page.getByTestId("reader-aa").click();
   await page.getByTestId("reader-typeface-editorial").click();
 
+  // One snapshot: the typeface change re-mounts the reader, so a second read
+  // can land on the section it is tearing down.
   await expect
     .poll(async () => await sectionFontState(page), { timeout: 20_000 })
     .toMatchObject({
@@ -1011,18 +1013,17 @@ test("a named typeface is self-hosted and overrides the publisher's element-leve
       faces: expect.arrayContaining([
         { family: "Instrument Serif", status: "loaded" },
       ]),
+      // `body,body *` is what beats the publisher's element-level `p` rule.
+      override: expect.stringContaining(
+        "body,body *{font-family:'Instrument Serif'",
+      ),
+      // The section itself got the sheet — the request log alone would also
+      // be satisfied by the parent document's AA-panel chip preview, which
+      // loads the same file and proves nothing about the iframe.
+      fontsHref: expect.stringMatching(
+        /\/assets\/reader-fonts\/reader-fonts\.css$/,
+      ),
     });
-  const named = await sectionFontState(page);
-  // `body,body *` is what beats the publisher's element-level `p` rule.
-  expect(named?.override).toContain(
-    "body,body *{font-family:'Instrument Serif'",
-  );
-  // The section itself got the sheet — the request log alone would also be
-  // satisfied by the parent document's AA-panel chip preview, which loads the
-  // same file and proves nothing about the iframe.
-  expect(named?.fontsHref).toMatch(
-    /\/assets\/reader-fonts\/reader-fonts\.css$/,
-  );
 
   expect(
     fontRequests.some((u) =>
