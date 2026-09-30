@@ -31,4 +31,28 @@ enum SearchFacet: String, Hashable, Sendable {
         case .genre: "genres"
         }
     }
+
+    /// The screen listing the books filed under `name`.
+    func destination(_ name: String) -> Destination {
+        switch self {
+        case .tag: .tag(name: name)
+        case .genre: .genre(name: name)
+        }
+    }
+
+    /// The index's title, and the search section's label.
+    var plural: String {
+        switch self {
+        case .tag: "Tags"
+        case .genre: "Genres"
+        }
+    }
+
+    /// Named so a test can prove it resolves — a misspelt SF Symbol draws nothing.
+    var glyph: String {
+        switch self {
+        case .tag: "tag"
+        case .genre: "theatermasks"
+        }
+    }
 }

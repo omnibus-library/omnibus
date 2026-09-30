@@ -393,29 +393,46 @@ struct PaletteTagHit: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// A genre carries no id: the only thing to do with one is ask for its books.
+struct PaletteGenreHit: Codable, Hashable, Sendable, Identifiable {
+    var name: String
+    var bookCount: UInt32
+
+    var id: String { name }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case bookCount = "book_count"
+    }
+}
+
 struct PaletteResults: Codable, Sendable {
     var query: String = ""
     var books: [PaletteBookHit] = []
     var authors: [PaletteAuthorHit] = []
     var series: [PaletteSeriesHit] = []
     var tags: [PaletteTagHit] = []
+    var genres: [PaletteGenreHit] = []
     var durationMs: UInt64 = 0
     var bookTotal: UInt32 = 0
     var authorTotal: UInt32 = 0
     var seriesTotal: UInt32 = 0
     var tagTotal: UInt32 = 0
+    /// Optional because a server from before genres were searchable omits it.
+    var genreTotal: UInt32?
 
     enum CodingKeys: String, CodingKey {
-        case query, books, authors, series, tags
+        case query, books, authors, series, tags, genres
         case durationMs = "duration_ms"
         case bookTotal = "book_total"
         case authorTotal = "author_total"
         case seriesTotal = "series_total"
         case tagTotal = "tag_total"
+        case genreTotal = "genre_total"
     }
 
     var isEmpty: Bool {
-        books.isEmpty && authors.isEmpty && series.isEmpty && tags.isEmpty
+        books.isEmpty && authors.isEmpty && series.isEmpty && tags.isEmpty && genres.isEmpty
     }
 
     /// The books-only answer the local mirror can produce.

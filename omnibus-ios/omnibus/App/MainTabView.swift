@@ -17,6 +17,8 @@ enum Destination: Hashable {
     case shelf(id: Int64)
     case tags
     case tag(name: String)
+    case genres
+    case genre(name: String)
     case settings
     case readingGoals
     case downloads
@@ -310,9 +312,13 @@ struct DestinationRouter: ViewModifier {
             case let .shelf(id):
                 ShelfDetailView(id: id)
             case .tags:
-                TagCloudView()
+                TaxonomyCloudView(facet: .tag)
             case let .tag(name):
                 SearchResultsView(facet: .tag, name: name)
+            case .genres:
+                TaxonomyCloudView(facet: .genre)
+            case let .genre(name):
+                SearchResultsView(facet: .genre, name: name)
             case .settings:
                 SettingsView()
             case .readingGoals:

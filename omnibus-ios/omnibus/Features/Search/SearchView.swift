@@ -1,5 +1,5 @@
 //  SearchView.swift
-//  Live grouped search across books, authors, series, and tags.
+//  Live grouped search across books, authors, series, tags, and genres.
 
 import SwiftUI
 
@@ -28,7 +28,7 @@ struct SearchView: View {
                 VStack(spacing: 0) {
                     Masthead(title: "Search")
                     SearchField(
-                        text: $query, prompt: "Books, authors, series, tags",
+                        text: $query, prompt: "Books, authors, series, tags, genres",
                         identifier: "search-query"
                     )
                     .screenPadding()
@@ -117,23 +117,31 @@ struct SearchView: View {
                 }
             }
 
-            // Tags are short labels with a count — as full-width rows they read
-            // as a list of almost nothing. A cloud shows the whole set at once.
+            // Tags and genres are short labels with a count — as full-width rows
+            // they read as a list of almost nothing. A cloud shows the whole set.
             if !results.tags.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    SectionLabel("Tags")
-                    FlowLayout(spacing: 6, lineSpacing: 6) {
-                        ForEach(results.tags) { hit in
-                            NavigationLink(value: Destination.tag(name: hit.name)) {
-                                Chip(label: hit.name, count: Int(hit.bookCount))
-                            }
-                            .buttonStyle(PressableStyle())
-                        }
-                    }
-                }
-                .screenPadding()
+                chipSection(.tag, names: results.tags.map { ($0.name, $0.bookCount) })
+            }
+
+            if !results.genres.isEmpty {
+                chipSection(.genre, names: results.genres.map { ($0.name, $0.bookCount) })
             }
         }
+    }
+
+    private func chipSection(_ facet: SearchFacet, names: [(String, UInt32)]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            SectionLabel(facet.plural)
+            FlowLayout(spacing: 6, lineSpacing: 6) {
+                ForEach(names, id: \.0) { name, count in
+                    NavigationLink(value: facet.destination(name)) {
+                        Chip(label: name, count: Int(count))
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+        }
+        .screenPadding()
     }
 
     private func section<Content: View>(

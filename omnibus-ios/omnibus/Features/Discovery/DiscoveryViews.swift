@@ -1,5 +1,5 @@
 //  DiscoveryViews.swift
-//  Authors index + detail, series index + detail, and the tag cloud.
+//  Authors index + detail, series index + detail, and the tag and genre clouds.
 
 import SwiftUI
 
@@ -489,9 +489,16 @@ struct SeriesDetailView: View {
     }
 }
 
-// MARK: - Tags
+// MARK: - Tags and genres
 
-struct TagCloudView: View {
+/// The tag or genre vocabulary as a cloud, each name opening its books.
+struct TaxonomyCloudView: View {
+    let facet: SearchFacet
+
+    init(facet: SearchFacet) {
+        self.facet = facet
+    }
+
     @Environment(\.palette) private var palette
     @State private var tags: [TagWeight] = []
     @State private var isLoading = true
@@ -510,22 +517,39 @@ struct TagCloudView: View {
         return 13.5 + CGFloat(t.squareRoot()) * 9
     }
 
+    private var emptyCopy: (title: String, message: String, kicker: String) {
+        switch facet {
+        case .tag:
+            (
+                "No tags yet",
+                "Tags come from a book\u{2019}s own subjects, and from any you add on its detail page.",
+                "By tag"
+            )
+        case .genre:
+            (
+                "No genres yet",
+                "A book has a genre once you give it one on its detail page.",
+                "By genre"
+            )
+        }
+    }
+
     var body: some View {
         Group {
             if isLoading {
                 LoadingView()
             } else if tags.isEmpty {
                 EmptyStateView(
-                    icon: "tag",
-                    title: "No tags yet",
-                    message: "Tags come from a book\u{2019}s own subjects, and from any you add on its detail page.",
-                    kicker: "By tag"
+                    icon: facet.glyph,
+                    title: emptyCopy.title,
+                    message: emptyCopy.message,
+                    kicker: emptyCopy.kicker
                 )
             } else {
                 ScrollView {
                     FlowLayout(spacing: 8, lineSpacing: 10) {
                         ForEach(tags) { tag in
-                            NavigationLink(value: Destination.tag(name: tag.name)) {
+                            NavigationLink(value: facet.destination(tag.name)) {
                                 HStack(spacing: 5) {
                                     Text(tag.name)
                                         .font(.ui(fontSize(for: tag), weight: .medium))
@@ -548,14 +572,23 @@ struct TagCloudView: View {
             }
         }
         .background(ScreenBackground())
-        .navigationTitle("Tags")
+        .navigationTitle(facet.plural)
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            for await weights in LibraryService.tags().values() {
-                tags = weights.sorted { $0.count > $1.count }
-                isLoading = false
+            switch facet {
+            case .tag:
+                for await weights in LibraryService.tags().values() { show(weights) }
+            case .genre:
+                for await weights in LibraryService.genres().values() {
+                    show(weights.map { TagWeight(name: $0.name, count: $0.count) })
+                }
             }
             isLoading = false
         }
+    }
+
+    private func show(_ weights: [TagWeight]) {
+        tags = weights.sorted { $0.count > $1.count }
+        isLoading = false
     }
 }

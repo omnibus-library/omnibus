@@ -908,7 +908,12 @@ struct StopHome: View {
             if showsGenres {
                 ChipStrip {
                     addChip(.genres)
-                    ForEach(book.genres, id: \.self) { GenreChip(label: $0) }
+                    ForEach(book.genres, id: \.self) { genre in
+                        NavigationLink(value: Destination.genre(name: genre)) {
+                            GenreChip(label: genre)
+                        }
+                        .buttonStyle(PressableStyle())
+                    }
                 }
                 .padding(.top, 11)
                 .accessibilityIdentifier("book-detail-genres")

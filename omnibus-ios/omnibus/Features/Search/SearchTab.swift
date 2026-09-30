@@ -36,9 +36,9 @@ struct SearchTab: View {
 
 /// Shown under the search field before anything is typed.
 ///
-/// Four hairline rows left most of the screen empty and gave no sense of what
-/// was behind them. As tiles the four ways in are one glance rather than four
-/// reads, and the space they now take is space the screen had going spare.
+/// Hairline rows left most of the screen empty and gave no sense of what was
+/// behind them. As tiles the ways in are one glance rather than a read each,
+/// and the space they now take is space the screen had going spare.
 struct BrowseDirectory: View {
     @Environment(\.palette) private var palette
 
@@ -54,12 +54,15 @@ struct BrowseDirectory: View {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 SectionLabel("Browse")
 
+                // The library's own vocabulary as a square; shelves, which are
+                // yours rather than the books', span the row beneath it.
                 LazyVGrid(columns: columns, spacing: Spacing.md) {
                     tile("Authors", icon: "person.2", note: "Who wrote it", to: .authorsIndex)
                     tile("Series", icon: "books.vertical", note: "In order", to: .seriesIndex)
-                    tile("Shelves", icon: "square.stack", note: "Your groupings", to: .shelves)
-                    tile("Tags", icon: "tag", note: "By subject", to: .tags)
+                    tile("Tags", icon: SearchFacet.tag.glyph, note: "By subject", to: .tags)
+                    tile("Genres", icon: SearchFacet.genre.glyph, note: "By kind", to: .genres)
                 }
+                tile("Shelves", icon: "square.stack", note: "Your groupings", to: .shelves)
             }
             .screenPadding()
 
