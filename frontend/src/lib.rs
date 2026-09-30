@@ -581,6 +581,7 @@ pub fn App() -> Element {
     // root-mounted `CheckInOverlay` can read it. Starts closed for SSR/WASM
     // hydration parity (rule 07).
     use_context_provider(|| pages::CheckInOpen(Signal::new(false)));
+    use_context_provider(|| pages::CheckInPrefill(Signal::new(None)));
     // Hook calls in App() are unconditional — the feature gates live inside
     // the helper bodies (mobile compiles them to no-op stubs). This keeps
     // rule 07's SSR-vs-WASM hydration parity within the not(mobile) build,

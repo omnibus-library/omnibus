@@ -529,6 +529,7 @@ fn MarqueeWishlistCtas(
     let find_url = find_a_copy_url(isbn.as_deref(), &view.title, &view.primary_author);
     let server_url = use_server_url();
     let mut check_in_open = use_context::<crate::pages::CheckInOpen>().0;
+    let mut check_in_isbn = use_context::<crate::pages::CheckInPrefill>().0;
     let wishlist = phys.wishlist;
     let busy = use_signal(|| false);
     let err = use_signal(|| None::<String>);
@@ -545,7 +546,10 @@ fn MarqueeWishlistCtas(
             button {
                 class: "btn lg",
                 "data-testid": "wishlist-check-in",
-                onclick: move |_| check_in_open.set(true),
+                onclick: move |_| {
+                    check_in_isbn.set(isbn.clone());
+                    check_in_open.set(true);
+                },
                 "Check in when acquired"
             }
             button {

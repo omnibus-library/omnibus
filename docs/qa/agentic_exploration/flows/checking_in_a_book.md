@@ -55,9 +55,10 @@ the baseline corpus.
      three buttons, and it opens a **"Which book is this?"** library picker
      that files the copy against a book already in the library with no new
      row. Say what you find there; the path past its search is uncovered.
-   There is **no "On your wishlist" outcome on the web**. A book on your own
-   wishlist cannot currently be checked in at all — see #2505 — so do not
-   report its absence as a new finding.
+   - **On your wishlist** — the book is on your own wishlist. The same
+     "Check in this copy" confirm opens, saying so, and checking the copy in
+     takes it off your wishlist; the success screen names the book and says
+     the entry went.
 4. Confirm. Watch for the confirmation naming the right book.
 5. Open the book's detail page and confirm the physical copy is shown — on
    the web a **Physical copy** card under THE FILES reading "Physical copy /

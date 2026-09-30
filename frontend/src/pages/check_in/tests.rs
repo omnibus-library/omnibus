@@ -128,19 +128,35 @@ fn stage_for_already_owned_yields_no_stage_so_the_caller_navigates() {
 }
 
 #[test]
-fn stage_for_on_wishlist_yields_no_stage_so_the_caller_navigates() {
+fn stage_for_on_wishlist_opens_the_check_in_confirm_marked_as_wishlisted() {
     let outcome = ScanOutcome::OnWishlist { book: scan_book() };
-    assert!(stage_for(outcome, "9780441013593").is_none());
+    let Some(Stage::Confirm {
+        book,
+        isbn,
+        wishlisted,
+    }) = stage_for(outcome, "9780441013593")
+    else {
+        panic!("expected the confirm stage");
+    };
+    assert_eq!(book.uuid, "book-uuid");
+    assert_eq!(isbn, "9780441013593");
+    assert!(wishlisted);
 }
 
 #[test]
 fn stage_for_in_library_unowned_opens_the_check_in_confirm() {
     let outcome = ScanOutcome::InLibraryUnowned { book: scan_book() };
-    let Some(Stage::Confirm { book, isbn }) = stage_for(outcome, "9780441013593") else {
+    let Some(Stage::Confirm {
+        book,
+        isbn,
+        wishlisted,
+    }) = stage_for(outcome, "9780441013593")
+    else {
         panic!("expected the confirm stage");
     };
     assert_eq!(book.uuid, "book-uuid");
     assert_eq!(isbn, "9780441013593");
+    assert!(!wishlisted);
 }
 
 #[test]
@@ -181,14 +197,14 @@ fn stage_for_close_match_flattens_the_wire_head_and_tail_into_one_picker() {
 #[test]
 fn confirm_subtitle_claims_a_digital_copy_only_for_a_book_with_a_file() {
     let digital = scan_book();
-    assert!(confirm_subtitle(&digital).contains("digitally"));
+    assert!(confirm_subtitle(&digital, false).contains("digitally"));
 
     let paper_only = ScanBook {
         has_files: false,
         has_physical: true,
         ..scan_book()
     };
-    let paper = confirm_subtitle(&paper_only);
+    let paper = confirm_subtitle(&paper_only, false);
     assert!(!paper.contains("digitally"), "got: {paper}");
     assert!(paper.contains("print copy"), "got: {paper}");
 
@@ -197,9 +213,21 @@ fn confirm_subtitle_claims_a_digital_copy_only_for_a_book_with_a_file() {
         has_physical: false,
         ..scan_book()
     };
-    let fileless = confirm_subtitle(&wished);
+    let fileless = confirm_subtitle(&wished, false);
     assert!(!fileless.contains("digitally"), "got: {fileless}");
     assert!(fileless.contains("without a file"), "got: {fileless}");
+}
+
+#[test]
+fn confirm_subtitle_says_a_wishlisted_book_comes_off_the_wishlist() {
+    let wished = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+    let line = confirm_subtitle(&wished, true);
+    assert!(line.contains("on your wishlist"), "got: {line}");
+    assert!(line.contains("takes it off"), "got: {line}");
 }
 
 #[test]
@@ -436,7 +464,7 @@ fn scan_book_from_hit_reports_a_paper_only_book_as_a_print_copy() {
     let book = scan_book_from_hit(&hit);
     assert!(!book.has_files);
     assert!(book.has_physical);
-    assert!(confirm_subtitle(&book).contains("print copy of this one"));
+    assert!(confirm_subtitle(&book, false).contains("print copy of this one"));
 }
 
 #[test]

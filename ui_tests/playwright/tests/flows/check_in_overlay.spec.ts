@@ -228,7 +228,7 @@ test.describe("check-in overlay", () => {
 
   // The same navigating outcome off the other resolve entry point: a title
   // search result the reader picked, which resolves through `resolve-meta`.
-  test("picking a wishlisted search result navigates and dismisses the overlay", async ({
+  test("picking an already-owned search result navigates and dismisses the overlay", async ({
     page,
     request,
   }) => {
@@ -251,8 +251,8 @@ test.describe("check-in overlay", () => {
       ],
     });
     await mockJsonPost(page, /\/api\/rpc\/scan\/resolve-meta$/, {
-      kind: "on_wishlist",
-      book: scanBook(uuid),
+      kind: "already_owned",
+      book: scanBook(uuid, { has_physical: true }),
     });
     await openOverlay(page);
     // Scoped to the panel: the overlay floats over the landing page, whose

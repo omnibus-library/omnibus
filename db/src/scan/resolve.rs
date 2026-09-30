@@ -57,10 +57,11 @@ pub enum ScanError {
 ///    `NotInLibrary`; a provider miss is `Unresolved`.
 ///
 /// `user_id` scopes the wishlist check: a book the caller already wishlists (no
-/// physical copy yet) resolves to `OnWishlist` so the flow opens its detail page
-/// rather than the "own it digitally" confirm screen. Checking in a copy clears
-/// the book from every user's wishlist, so a book with a physical copy is never
-/// also wishlisted — the wishlist check only bites the no-physical branch.
+/// physical copy yet) resolves to `OnWishlist` so the flow can say so while it
+/// offers the check-in, rather than the "own it digitally" confirm screen.
+/// Checking in a copy clears the book from every user's wishlist, so a book
+/// with a physical copy is never also wishlisted — the wishlist check only
+/// bites the no-physical branch.
 pub async fn resolve_scan(
     pool: &SqlitePool,
     user_id: i64,

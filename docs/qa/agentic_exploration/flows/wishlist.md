@@ -33,8 +33,8 @@ fail.
 6. Confirm it lands there — on your wishlist shelf in the rail, and on the
    book's own page, whose header reads ON YOUR WISHLIST. Then revisit the same
    book **from a different page**: on the web, picking the candidate again
-   navigates to that entry page with no message in the dialog, and the
-   candidate list carries no marker; on iOS the confirmation screen says ON
+   opens a check-in confirm that says the book is on your wishlist (the
+   candidate list carries no marker); on iOS the confirmation screen says ON
    YOUR WISHLIST and withdraws the Add option. Either is recognition; a second
    entry is the fail.
 7. Occasionally remove it again and confirm it goes. Removal has no
@@ -95,7 +95,8 @@ your wishlist shelf; without it the entry is journalled but not checked.
   (#2523). Confirm the entry from its own book page, not from the chip.
 - **Removing an entry navigates away** to the library home.
 - **"Check in when acquired"** is the entry page's most prominent action and
-  the natural next step for this flow's own framing. It does not currently
-  work — a book on your own wishlist cannot be checked in by any route
-  (#2505) — so exercise it and record what happens rather than treating the
-  dead end as your own mistake.
+  the natural next step for this flow's own framing. It opens the check-in
+  dialog with the entry's ISBN already typed; checking the copy in files it
+  and takes the book off your wishlist — that is
+  [checking_in_a_book](checking_in_a_book.md)'s territory, library-wide, so
+  only do it for a book you really own.

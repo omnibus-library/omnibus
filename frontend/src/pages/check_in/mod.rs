@@ -40,6 +40,13 @@ use screens::{
 #[derive(Copy, Clone, PartialEq)]
 pub struct CheckInOpen(pub Signal<bool>);
 
+/// An ISBN for the next check-in the overlay opens, from an entry point that
+/// already knows the book (a wishlist entry's "Check in when acquired"). The
+/// flow takes it into the lookup field once and clears it. Starts empty for
+/// SSR parity (rule 07).
+#[derive(Copy, Clone, PartialEq)]
+pub struct CheckInPrefill(pub Signal<Option<String>>);
+
 /// Centered check-in overlay: the [`CheckInPage`] flow floating in a card over
 /// a blurred scrim of the current page.
 ///
@@ -124,7 +131,13 @@ pub(crate) enum Stage {
     /// Resolve request in flight.
     Resolving,
     /// 3a — confirm checking in a copy of a book we already hold.
-    Confirm { book: ScanBook, isbn: String },
+    /// `wishlisted` marks a book on the caller's own wishlist, which the
+    /// check-in takes off it.
+    Confirm {
+        book: ScanBook,
+        isbn: String,
+        wishlisted: bool,
+    },
     /// 2b — a fuzzy (title, author) hit that needs a human "is this it?".
     /// More than one library row can carry the same effective norm (an EPUB
     /// and the audiobook nothing attached to it), so this is a list to pick
@@ -143,8 +156,13 @@ pub(crate) enum Stage {
     LinkExisting { isbn: String, origin: Box<Stage> },
     /// Neither the library nor any provider knew the ISBN.
     Unresolved { isbn: String },
-    /// 4 — the copy is checked in.
-    CheckedIn { uuid: String, title: String },
+    /// 4 — the copy is checked in; `off_wishlist` when that fulfilled the
+    /// caller's own wishlist entry.
+    CheckedIn {
+        uuid: String,
+        title: String,
+        off_wishlist: bool,
+    },
     /// The book went on the caller's physical wishlist instead.
     Wishlisted { title: String },
 }
@@ -179,15 +197,22 @@ pub(crate) fn manual_fallback(origin: &Stage) -> Stage {
 
 /// Map a resolved outcome onto the screen it opens.
 ///
-/// [`ScanOutcome::AlreadyOwned`] and [`ScanOutcome::OnWishlist`] have no stage
-/// of their own: the design routes an already-owned or already-wishlisted book
-/// straight to its detail page, so the caller navigates and this returns `None`.
+/// [`ScanOutcome::AlreadyOwned`] has no stage of its own: the design routes an
+/// already-owned book straight to its detail page, so the caller navigates and
+/// this returns `None`. A book on the caller's wishlist is the one they wanted
+/// and now hold, so it opens the check-in confirm like any library book.
 pub(crate) fn stage_for(outcome: ScanOutcome, isbn: &str) -> Option<Stage> {
     match outcome {
-        ScanOutcome::AlreadyOwned { .. } | ScanOutcome::OnWishlist { .. } => None,
+        ScanOutcome::AlreadyOwned { .. } => None,
+        ScanOutcome::OnWishlist { book } => Some(Stage::Confirm {
+            book,
+            isbn: isbn.to_string(),
+            wishlisted: true,
+        }),
         ScanOutcome::InLibraryUnowned { book } => Some(Stage::Confirm {
             book,
             isbn: isbn.to_string(),
+            wishlisted: false,
         }),
         // Head + tail on the wire (older clients only know `book`); the picker
         // wants one list, so flatten it here.
@@ -344,9 +369,10 @@ pub fn CheckInPage() -> Element {
     // here (rather than in each handler) keeps the context lookup a hook.
     // A no-op on the full-page `/check-in` route, where it is already false.
     let overlay_open = use_context::<CheckInOpen>().0;
+    let prefill = try_use_context::<CheckInPrefill>().map(|p| p.0);
     let state = FlowState {
         stage: use_signal(front_door),
-        isbn: use_signal(String::new),
+        isbn: use_signal(|| prefill.and_then(|p| p.peek().clone()).unwrap_or_default()),
         note: use_signal(String::new),
         busy: use_signal(|| false),
         error: use_signal(|| None),
@@ -363,6 +389,12 @@ pub fn CheckInPage() -> Element {
     use_effect(move || {
         let _ = stage.read();
         focus_overlay_panel();
+    });
+    // Taken once: a later open from any other entry point starts blank.
+    use_effect(move || {
+        if let Some(mut prefill) = prefill {
+            prefill.set(None);
+        }
     });
 
     let on_resolve = make_on_resolve(server_url.clone(), state, nav, overlay_open);
@@ -441,18 +473,27 @@ fn CheckInStage(state: FlowState, handlers: CheckInHandlers) -> Element {
         Stage::Scan => scan_stage(state, handlers.on_resolve),
         Stage::Entry => entry_stage(state, handlers.on_resolve),
         Stage::Resolving => rsx! { ResolvingScreen {} },
-        Stage::Confirm { book, isbn } => rsx! {
-            ConfirmScreen { book, isbn, state, on_check_in: handlers.on_check_in, on_cancel: on_restart }
+        Stage::Confirm {
+            book,
+            isbn,
+            wishlisted,
+        } => rsx! {
+            ConfirmScreen { book, isbn, wishlisted, state, on_check_in: handlers.on_check_in, on_cancel: on_restart }
         },
         Stage::CloseMatch { books, scanned } => close_match_stage(books, scanned, state),
         Stage::Choose { online } => choose_stage(online, state, handlers, on_restart),
         Stage::LinkExisting { isbn, origin } => link_stage(isbn, *origin, state),
         Stage::Unresolved { isbn } => unresolved_stage(isbn, state, on_restart),
-        Stage::CheckedIn { uuid, title } => rsx! {
+        Stage::CheckedIn {
+            uuid,
+            title,
+            off_wishlist,
+        } => rsx! {
             SuccessScreen {
                 title,
                 headline: "In your physical collection".to_string(),
                 book_uuid: Some(uuid),
+                off_wishlist,
                 on_restart,
             }
         },
@@ -461,6 +502,7 @@ fn CheckInStage(state: FlowState, handlers: CheckInHandlers) -> Element {
                 title,
                 headline: "On your wishlist".to_string(),
                 book_uuid: None,
+                off_wishlist: false,
                 on_restart,
             }
         },
@@ -559,7 +601,11 @@ fn close_match_stage(books: Vec<ScanBook>, scanned: ExternalBookMeta, state: Flo
             scanned,
             found_via: (state.found_via)(),
             on_yes: EventHandler::new(move |book: ScanBook| {
-                stage.set(Stage::Confirm { book, isbn: isbn.clone() });
+                stage.set(Stage::Confirm {
+                    book,
+                    isbn: isbn.clone(),
+                    wishlisted: false,
+                });
             }),
             // Declining every candidate lands on the chooser, which carries
             // the link-to-an-existing-book escape hatch — so this screen needs
@@ -610,7 +656,11 @@ fn link_stage(isbn: String, origin: Stage, state: FlowState) -> Element {
         LinkExistingScreen {
             state,
             on_pick: EventHandler::new(move |book: ScanBook| {
-                stage.set(Stage::Confirm { book, isbn: isbn.clone() });
+                stage.set(Stage::Confirm {
+                    book,
+                    isbn: isbn.clone(),
+                    wishlisted: false,
+                });
             }),
             on_back: EventHandler::new(move |_| stage.set(back_to.clone())),
         }
@@ -683,7 +733,7 @@ fn make_on_resolve(
         spawn(async move {
             let req = ResolveRequest { isbn: isbn.clone() };
             match data::resolve_scan(&server_url, req).await {
-                Ok(ScanOutcome::AlreadyOwned { book }) | Ok(ScanOutcome::OnWishlist { book }) => {
+                Ok(ScanOutcome::AlreadyOwned { book }) => {
                     overlay_open.set(false);
                     nav.push(Route::BookDetail { uuid: book.uuid });
                 }
@@ -730,7 +780,7 @@ fn make_on_pick(
         spawn(async move {
             let req = ResolveMetaRequest { meta };
             match data::resolve_scan_meta(&server_url, req).await {
-                Ok(ScanOutcome::AlreadyOwned { book }) | Ok(ScanOutcome::OnWishlist { book }) => {
+                Ok(ScanOutcome::AlreadyOwned { book }) => {
                     overlay_open.set(false);
                     nav.push(Route::BookDetail { uuid: book.uuid });
                 }
@@ -763,9 +813,11 @@ fn make_on_check_in(server_url: String, state: FlowState) -> impl FnMut(ScanBook
     } = state;
     move |book: ScanBook| {
         let server_url = server_url.clone();
-        let isbn = match stage() {
-            Stage::Confirm { isbn, .. } => Some(isbn),
-            _ => None,
+        let (isbn, off_wishlist) = match stage() {
+            Stage::Confirm {
+                isbn, wishlisted, ..
+            } => (Some(isbn), wishlisted),
+            _ => (None, false),
         };
         let note = some_if_filled(&note());
         let title = book.title.clone();
@@ -781,6 +833,7 @@ fn make_on_check_in(server_url: String, state: FlowState) -> impl FnMut(ScanBook
                 Ok(book_ref) => stage.set(Stage::CheckedIn {
                     uuid: book_ref.book_uuid,
                     title,
+                    off_wishlist,
                 }),
                 Err(e) => error.set(Some(format!(
                     "Check-in failed: {}",
@@ -813,6 +866,7 @@ fn make_on_own_it(server_url: String, state: FlowState) -> impl FnMut(ExternalBo
                 Ok(book_ref) => stage.set(Stage::CheckedIn {
                     uuid: book_ref.book_uuid,
                     title,
+                    off_wishlist: false,
                 }),
                 Err(e) => error.set(Some(format!(
                     "Could not add that book: {}",
