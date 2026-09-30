@@ -1,7 +1,8 @@
 //! Series arm of the search palette: substring `LIKE` match with
 //! override-aware book count plus an author_display drawn from the
-//! first book's effective creators. Visibility still requires at least
-//! one canonical link on a visible book.
+//! first book's effective creators. Visibility is the rule
+//! `browse::list_series` uses — an effective member on a visible book — so
+//! the palette cannot count a series the Series index drops.
 
 use std::sync::OnceLock;
 
@@ -20,29 +21,20 @@ use super::PaletteError;
 /// Series-arm palette query, bound `?1 = library_paths JSON array`, `?2 = like_pattern`,
 /// `?3 = limit`.
 ///
-/// The count reads the shared effective membership (`effective_series_sql!`)
-/// narrowed to the visible books — the relation the Series index and
-/// smart-shelf series rules read — so a book rehomed through the edit form
-/// moves between the two counts, and an emptied series override drops it
-/// from both. The `author_display` line follows the first book's creators
-/// override. Visibility still requires at least one canonical link on a
-/// visible book so we don't list series that exist only inside override JSON
-/// (no navigable id).
+/// Both the count and the visibility gate read the shared effective
+/// membership (`effective_series_sql!`) narrowed to the visible books — the
+/// relation the Series index and smart-shelf series rules read — so a book
+/// rehomed through the edit form moves between the two counts, and a series
+/// whose every book was moved out drops from both. The `author_display` line
+/// follows the first book's creators override.
 pub(super) fn search_series_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {
-        let vis = visible_book_sql("b", "l", "?1");
         let vis_author = visible_book_sql("b2", "l2", "?1");
         let vis_lead = visible_book_sql("b3", "l3", "?1");
         format!(
             r"
-        WITH effective AS MATERIALIZED (
-          SELECT es.series_id, es.book_id
-            FROM ({membership}) es
-            JOIN books b ON b.id = es.book_id
-            JOIN scan_roots l ON l.id = b.library_id
-           WHERE {vis}
-        )
+        WITH {effective}
         SELECT s.id, s.name,
           (SELECT COUNT(*) FROM effective e WHERE e.series_id = s.id) AS book_count,
           (SELECT
@@ -72,21 +64,32 @@ pub(super) fn search_series_sql() -> &'static str {
             ORDER BY b3.sort, b3.id LIMIT 1) AS lead_book_title
         FROM series s
         WHERE s.name LIKE ?2 ESCAPE '\'
-          AND EXISTS (
-            SELECT 1 FROM books_series_link bsl
-              JOIN books b ON b.id = bsl.book
-              JOIN scan_roots l ON l.id = b.library_id
-             WHERE bsl.series = s.id
-               AND {vis}
-          )
+          AND EXISTS (SELECT 1 FROM effective e WHERE e.series_id = s.id)
         ORDER BY book_count DESC, s.name
         LIMIT ?3
         ",
-            membership = effective_series_sql!(),
+            effective = visible_effective_series(),
             overrides2 = safe_overrides_sql!("mo2"),
             overrides3 = safe_overrides_sql!("mo3"),
         )
     })
+}
+
+/// The `effective(series_id, book_id)` CTE both series queries share: the
+/// shared membership narrowed to the books visible under `?1`, materialized
+/// so the gate and the count scan it once.
+fn visible_effective_series() -> String {
+    let vis = visible_book_sql("b", "l", "?1");
+    format!(
+        r"effective AS MATERIALIZED (
+          SELECT es.series_id, es.book_id
+            FROM ({membership}) es
+            JOIN books b ON b.id = es.book_id
+            JOIN scan_roots l ON l.id = b.library_id
+           WHERE {vis}
+        )",
+        membership = effective_series_sql!()
+    )
 }
 
 /// Run the series arm of the palette for `like_pattern` (already escaped)
@@ -131,7 +134,7 @@ pub async fn search_series_for_paths(
 
 /// Count visible series matching `like_pattern` in `library_path` — the
 /// uncapped total behind the palette's 5-hit series cap. Visibility mirrors
-/// [`search_series`]: at least one canonical link on a visible book.
+/// [`search_series`]: at least one effective member on a visible book.
 pub async fn count_series(
     pool: &SqlitePool,
     library_path: &str,
@@ -149,19 +152,14 @@ pub async fn count_series_for_paths(
     if library_paths.is_empty() {
         return Ok(0);
     }
-    let visible = visible_book_sql("b", "l", "?1");
     Ok(sqlx::query_scalar::<_, i64>(&format!(
         r"
+        WITH {effective}
         SELECT COUNT(*) FROM series s
         WHERE s.name LIKE ?2 ESCAPE '\'
-          AND EXISTS (
-            SELECT 1 FROM books_series_link bsl
-              JOIN books b ON b.id = bsl.book
-              JOIN scan_roots l ON l.id = b.library_id
-             WHERE bsl.series = s.id
-               AND {visible}
-          )
-        "
+          AND EXISTS (SELECT 1 FROM effective e WHERE e.series_id = s.id)
+        ",
+        effective = visible_effective_series()
     ))
     .bind(library_paths_json(library_paths))
     .bind(like_pattern)
