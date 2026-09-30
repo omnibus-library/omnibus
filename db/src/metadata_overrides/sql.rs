@@ -24,6 +24,21 @@ macro_rules! override_join_sql {
     };
 }
 
+/// `$mo.overrides`, coerced to an empty object when it does not parse, so no
+/// `json_*` read of it can abort the query. The guard goes on the argument: a
+/// `WHERE json_valid(…)` filter may be evaluated after the read it guards.
+macro_rules! safe_overrides_sql {
+    ($mo:literal) => {
+        concat!(
+            "(CASE WHEN json_valid(",
+            $mo,
+            ".overrides) THEN ",
+            $mo,
+            ".overrides ELSE '{}' END)"
+        )
+    };
+}
+
 /// SQL mirror of `apply_overrides`' precedence gate: does this book's scan
 /// root rank `omnibus_overrides` above `embedded_tags`? The stored list is
 /// validated whole on write, so a token's byte offset is its rank; a list
@@ -283,7 +298,7 @@ macro_rules! effective_series_sql {
 pub(crate) use {
     creator_sort_sql, effective_author_sql, effective_authors_sql, effective_genres_sql,
     effective_series_sql, effective_tags_sql, effective_text_sql, effective_value_sql,
-    override_join_sql, override_present_sql, override_sql, overrides_win_sql,
+    override_join_sql, override_present_sql, override_sql, overrides_win_sql, safe_overrides_sql,
 };
 
 #[cfg(test)]

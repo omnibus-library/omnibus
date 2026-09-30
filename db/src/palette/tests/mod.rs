@@ -1,9 +1,11 @@
 //! Unit tests for the search-palette query layer, split by sub-topic into
 //! the sibling modules below: per-arm matching, override-aware hits and
-//! counts, library scoping, the direct arm functions, genres, the
-//! `*_for_paths` variants, and physical-only visibility.
+//! counts, unreadable override blobs, library scoping, the direct arm
+//! functions, genres, the `*_for_paths` variants, and physical-only
+//! visibility.
 
 mod arms;
+mod corrupt_overrides;
 mod direct_arms;
 mod facet_agreement;
 mod for_paths;

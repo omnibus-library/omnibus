@@ -11,7 +11,7 @@ use sqlx::{Row, SqlitePool};
 // site, so those must be in scope here too.
 use crate::metadata_overrides::sql::{
     creator_sort_sql, effective_authors_sql, effective_series_sql, override_present_sql,
-    overrides_win_sql,
+    overrides_win_sql, safe_overrides_sql,
 };
 
 /// Errors returned by the browse index queries.
@@ -208,8 +208,8 @@ fn series_index_sql(n: usize) -> String {
                (SELECT
                   CASE
                     WHEN mo2.book_uuid IS NOT NULL
-                         AND json_type(mo2.overrides, '$.creators') IS NOT NULL
-                      THEN json_extract(mo2.overrides, '$.creators[0].name')
+                         AND json_type({overrides2}, '$.creators') IS NOT NULL
+                      THEN json_extract({overrides2}, '$.creators[0].name')
                     ELSE (SELECT a.name FROM books_authors_link bal
                             JOIN authors a ON a.id = bal.author
                            WHERE bal.book = b2.id
@@ -237,7 +237,8 @@ fn series_index_sql(n: usize) -> String {
         ORDER BY COALESCE(s.sort, s.name) COLLATE NOCASE ASC
         LIMIT ?
         ",
-        effective = effective_series_sql!()
+        effective = effective_series_sql!(),
+        overrides2 = safe_overrides_sql!("mo2"),
     )
 }
 

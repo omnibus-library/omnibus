@@ -637,9 +637,6 @@ async fn search_palette_tags_tolerate_a_corrupt_overrides_blob() {
         .await
         .unwrap();
 
-    // The tags arm directly: the author and series arms read override JSON
-    // without a validity guard of their own, so a whole-palette call would
-    // report their failure rather than this arm's success.
     let rows = search_tags(&pool, "/lib", "%Canonical%", 5)
         .await
         .expect("a corrupt blob must not fail the tags arm");
