@@ -44,10 +44,14 @@ extension ReaderGround {
         }
     }
 
-    /// The ground an indicator draws for: what was sampled under it, except
-    /// on the chrome's scrim, which is dark whatever page is below it.
-    static func indicator(sampled: ReaderGround?, onScrim: Bool) -> ReaderGround {
-        onScrim ? .stage : sampled ?? .stage
+    /// The ground an indicator draws for, and how strongly. The chrome's
+    /// scrim reads as the stage, but paper under it is still lighter than the
+    /// bare stage, so the strength follows the sample either way.
+    static func indicator(
+        sampled: ReaderGround?, onScrim: Bool
+    ) -> (ground: ReaderGround, opacity: Double) {
+        let under = sampled ?? .stage
+        return (onScrim ? .stage : under, under.indicatorOpacity)
     }
 
     /// The colour scheme a control on this ground resolves against. The

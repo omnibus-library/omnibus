@@ -172,20 +172,34 @@ struct ReaderIndicatorInkTests {
     }
 
     @Test("with the chrome up the page label keeps the stage's white, whatever was sampled")
-    func chromeUpLabelOnTheScrim() {
+    func chromeUpLabelKeepsWhite() {
         let samples: [ReaderGround?] = [.page, .stage, nil]
         for sampled in samples {
-            let ground = ReaderGround.indicator(sampled: sampled, onScrim: true)
-            #expect(ground == .stage)
-            #expect(ground.ink == .white)
-            #expect(ground.indicatorOpacity == 0.5)
+            #expect(ReaderGround.indicator(sampled: sampled, onScrim: true).ground.ink == .white)
         }
+    }
+
+    @Test("with the chrome up over the stage the page label clears 4.5:1")
+    func chromeUpLabelOverTheStage() {
+        let style = ReaderGround.indicator(sampled: .stage, onScrim: true)
+        let ratio = worstContrast(ink: (1, 1, 1), alpha: style.opacity, over: 0)
+        #expect(ratio >= 4.5, "got \(ratio)")
+    }
+
+    @Test("with the chrome up over paper the page label draws firmer and clears 4.5:1")
+    func chromeUpLabelOverScrimmedPaper() {
+        let style = ReaderGround.indicator(sampled: .page, onScrim: true)
+        // The scrim leaves white paper at about a third where the label sits.
+        let ratio = worstContrast(ink: (1, 1, 1), alpha: style.opacity, over: 1.0 / 3)
+        #expect(ratio >= 4.5, "got \(ratio)")
     }
 
     @Test("with the chrome down an indicator follows what was sampled under it")
     func chromeDownLabelFollowsTheSample() {
-        #expect(ReaderGround.indicator(sampled: .page, onScrim: false) == .page)
-        #expect(ReaderGround.indicator(sampled: .stage, onScrim: false) == .stage)
-        #expect(ReaderGround.indicator(sampled: nil, onScrim: false) == .stage)
+        let paper = ReaderGround.indicator(sampled: .page, onScrim: false)
+        #expect(paper.ground == .page)
+        #expect(paper.opacity == ReaderGround.page.indicatorOpacity)
+        #expect(ReaderGround.indicator(sampled: .stage, onScrim: false).ground == .stage)
+        #expect(ReaderGround.indicator(sampled: nil, onScrim: false).ground == .stage)
     }
 }

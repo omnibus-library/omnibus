@@ -226,21 +226,17 @@ struct PDFReaderView: View {
         return chromeVisible ? "\(page + 1) of \(count)" : "\(page + 1)"
     }
 
-    private func indicatorGround(_ control: ChromeControl) -> ReaderGround {
-        .indicator(
-            sampled: chromeGrounds[control],
-            onScrim: control == .pageLabel && chromeVisible
-        )
-    }
-
     @ViewBuilder
     private func indicatorLabel(_ text: String?, _ control: ChromeControl) -> some View {
         if let text {
-            let ground = indicatorGround(control)
+            let style = ReaderGround.indicator(
+                sampled: chromeGrounds[control],
+                onScrim: control == .pageLabel && chromeVisible
+            )
             measure(control) {
                 Text(text)
                     .font(.ui(12.5))
-                    .foregroundStyle(ground.ink.opacity(ground.indicatorOpacity))
+                    .foregroundStyle(style.ground.ink.opacity(style.opacity))
                     .lineLimit(1)
                     .frame(height: ReaderMenu.buttonSize)
             }
