@@ -76,6 +76,7 @@ pub(super) fn MarqueeMoreStop(
                     primary_author: view.primary_author.clone(),
                     author_id: view.author_id,
                     author_books,
+                    current_uuid: b.unique_identifier.clone().unwrap_or_default(),
                 },
             }
             // The suggestions strip opens with its own `.divider`, which the

@@ -23,6 +23,16 @@ pub(super) fn same_hand_author_label(primary_author: &str) -> String {
     }
 }
 
+/// The note under an author with no other books here: "the only book" only
+/// when the library counts this one — a wishlist-only book it does not.
+pub(super) fn same_hand_empty_note(author_label: &str, this_counts: bool) -> String {
+    if this_counts {
+        format!("This is the only book by {author_label} in your library so far.")
+    } else {
+        format!("No books by {author_label} are in your library yet.")
+    }
+}
+
 /// Publication year for the tile subline, or `None` when the book names no
 /// real one.
 pub(super) fn same_hand_year(b: &EbookMetadata) -> Option<String> {
@@ -135,6 +145,18 @@ mod tests {
     fn same_hand_author_label_falls_back_when_author_blank() {
         assert_eq!(same_hand_author_label(""), "this author");
         assert_eq!(same_hand_author_label("   "), "this author");
+    }
+
+    #[test]
+    fn same_hand_empty_note_claims_the_only_book_only_when_this_one_counts() {
+        assert_eq!(
+            same_hand_empty_note("Lovelace", true),
+            "This is the only book by Lovelace in your library so far."
+        );
+        assert_eq!(
+            same_hand_empty_note("Lovelace", false),
+            "No books by Lovelace are in your library yet."
+        );
     }
 
     #[test]

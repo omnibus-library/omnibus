@@ -176,6 +176,11 @@ test("checks in a wishlisted book from its own page, then a second copy", async 
   try {
     await logIn(page, username);
     await gotoReady(page, `/books/${uuid}`);
+    // A wishlist-only book is not in the library, so its author's count here
+    // agrees with the author page, which credits them with nothing yet.
+    await expect(page.getByTestId("from-same-hand-empty")).toContainText(
+      "0 books in your library",
+    );
 
     // "Check in when acquired" opens the flow with the entry's ISBN already
     // typed, rather than a blank field under a page that is showing it.
@@ -234,6 +239,9 @@ test("checks in a wishlisted book from its own page, then a second copy", async 
       "by you",
     );
     await expect(page.getByTestId("wishlist-check-in")).toHaveCount(0);
+    await expect(page.getByTestId("from-same-hand-empty")).toContainText(
+      "1 book in your library",
+    );
 
     // A second copy filed the same way lands on the page too. The resolve is
     // mocked onto the confirm screen — a filed book resolves as already

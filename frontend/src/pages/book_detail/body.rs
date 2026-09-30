@@ -11,8 +11,8 @@ use crate::components::{Loading, LoadingKind};
 use crate::Route;
 
 use super::discovery::{
-    cover_src, list_count_label, same_hand_author_label, same_hand_title, same_hand_year,
-    suggestion_cover_book, SuggestionsSpinner,
+    cover_src, list_count_label, same_hand_author_label, same_hand_empty_note, same_hand_title,
+    same_hand_year, suggestion_cover_book, SuggestionsSpinner,
 };
 use super::BdSectionHead;
 
@@ -23,18 +23,20 @@ pub(super) struct BdPageCtx {
     pub is_admin: bool,
 }
 
-/// The "from the same hand" author cluster: name, id, and other books.
+/// The "from the same hand" author cluster: name, id, and the books the
+/// author page credits them with — this one among them only when the library
+/// counts it, so the count here is the author page's own.
 ///
 /// `author_books` is `None` until the author fetch settles — not an empty
-/// list. The distinction is the whole point: an empty list is the claim "this
-/// is the only book by them in your library", and asserting that before
-/// asking made a three-book author read as a one-book author for the first
-/// second of every page load.
+/// list. The distinction is the whole point: a settled list is a claim about
+/// what the library holds, and asserting it before asking made a three-book
+/// author read as a one-book author for the first second of every page load.
 #[derive(Clone, PartialEq, Props)]
 pub(super) struct BdAuthorCluster {
     pub primary_author: String,
     pub author_id: Option<i64>,
     pub author_books: Option<Vec<EbookMetadata>>,
+    pub current_uuid: String,
 }
 
 /// "From the same hand" — an author-lead card heading a spreading cover stack
@@ -48,19 +50,8 @@ pub(super) fn BdSameHand(author: BdAuthorCluster) -> Element {
         primary_author,
         author_id,
         author_books,
+        current_uuid,
     } = author;
-    // Only books with a real uuid can be linked; drop the rest so a tile never
-    // emits a `/books/` route or an empty-uuid thumbnail URL.
-    let author_books: Option<Vec<EbookMetadata>> = author_books.map(|books| {
-        books
-            .into_iter()
-            .filter(|ab| {
-                ab.unique_identifier
-                    .as_deref()
-                    .is_some_and(|u| !u.is_empty())
-            })
-            .collect()
-    });
     let kicker = if primary_author.is_empty() {
         "More to read".to_string()
     } else {
@@ -76,7 +67,7 @@ pub(super) fn BdSameHand(author: BdAuthorCluster) -> Element {
     // Nothing past here may state a count, so the unsettled fetch returns
     // first — the sibling series shelf says "loading the shelf…" at the same
     // instant, and this said "the only book by them" (#2478).
-    let Some(author_books) = author_books else {
+    let Some(credited) = author_books else {
         return rsx! {
             BdSectionHead { kicker, title: "From the same hand".to_string(), action }
             Loading {
@@ -87,7 +78,20 @@ pub(super) fn BdSameHand(author: BdAuthorCluster) -> Element {
             }
         };
     };
-    let owned = author_books.len() + 1;
+    let owned = credited.len();
+    let this_counts = credited
+        .iter()
+        .any(|ab| ab.unique_identifier.as_deref() == Some(current_uuid.as_str()));
+    // The other books, linkable ones only, so a tile never emits a `/books/`
+    // route or an empty-uuid thumbnail URL.
+    let author_books: Vec<EbookMetadata> = credited
+        .into_iter()
+        .filter(|ab| {
+            ab.unique_identifier
+                .as_deref()
+                .is_some_and(|u| !u.is_empty() && u != current_uuid)
+        })
+        .collect();
     let shown = author_books.len().min(4);
     let rest = author_books.len() - shown;
 
@@ -96,9 +100,7 @@ pub(super) fn BdSameHand(author: BdAuthorCluster) -> Element {
         if author_books.is_empty() {
             div { class: "bd-same-hand-empty", "data-testid": "from-same-hand-empty",
                 AuthorLead { author: primary_author.clone(), owned, rest, author_route: author_route.clone() }
-                div { class: "bd-same-hand-note",
-                    "This is the only book by {author_label} in your library so far."
-                }
+                div { class: "bd-same-hand-note", {same_hand_empty_note(&author_label, this_counts)} }
             }
         } else {
             p { class: "mono bd-same-hand-hint",
@@ -313,6 +315,14 @@ mod render_tests {
             primary_author: "Taylor".to_string(),
             author_id: Some(7),
             author_books,
+            current_uuid: "this-book".to_string(),
+        }
+    }
+
+    fn this_book() -> EbookMetadata {
+        EbookMetadata {
+            unique_identifier: Some("this-book".to_string()),
+            ..Default::default()
         }
     }
 
@@ -328,11 +338,23 @@ mod render_tests {
     }
 
     #[test]
-    fn same_hand_states_the_only_book_once_the_fetch_returns_nothing() {
-        let html = render(rsx! { BdSameHand { author: cluster(Some(Vec::new())) } });
+    fn same_hand_states_the_only_book_once_the_fetch_returns_just_this_one() {
+        let html = render(rsx! { BdSameHand { author: cluster(Some(vec![this_book()])) } });
         assert!(html.contains("from-same-hand-empty"), "{html}");
         assert!(html.contains("only book by Taylor"), "{html}");
+        assert!(html.contains("1 book in your library"), "{html}");
         assert!(!html.contains("from-same-hand-loading"), "{html}");
+    }
+
+    // A wishlist-only book is not in the library, so the author page credits
+    // them with nothing and this section must agree.
+    #[test]
+    fn same_hand_counts_nothing_for_a_book_the_library_does_not_count() {
+        let html = render(rsx! { BdSameHand { author: cluster(Some(Vec::new())) } });
+        assert!(html.contains("from-same-hand-empty"), "{html}");
+        assert!(html.contains("0 books in your library"), "{html}");
+        assert!(html.contains("No books by Taylor"), "{html}");
+        assert!(!html.contains("only book by"), "{html}");
     }
 
     // The populated branch renders router `Link` tiles, which panic outside a
