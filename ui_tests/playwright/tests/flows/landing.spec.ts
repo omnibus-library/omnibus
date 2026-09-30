@@ -1,6 +1,11 @@
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
-import { expectRowMatches, switchToTableView } from "../utils/ebooks";
+import {
+  expectRowMatches,
+  MONTH_NAMES,
+  ordinalSuffix,
+  switchToTableView,
+} from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
@@ -74,6 +79,55 @@ test("renders every fixture book with the expected metadata", async ({
     await test.step(`renders "${expected.title}" from ${expected.filename}`, async () => {
       await expectRowMatches(page, expected);
     });
+  }
+});
+
+test("dates the Added cell on the reader's day, as the detail page does", async ({
+  browser,
+  request,
+}) => {
+  const book = FIXTURE_BOOKS[0]!;
+  const resp = await request.get("/api/rpc/ebooks");
+  expect(resp.status()).toBe(200);
+  const { books } = (await resp.json()) as {
+    books: {
+      title: string | null;
+      unique_identifier: string | null;
+      added_at: string | null;
+    }[];
+  };
+  const row = books.find((b) => b.title === book.title);
+  expect(row?.added_at, `${book.title} carries an added_at`).toBeTruthy();
+  const added = Date.parse(row!.added_at!);
+
+  // A zone whose day differs from UTC's for this instant: UTC−12 before noon
+  // UTC, UTC+14 after it.
+  const early = new Date(added).getUTCHours() < 12;
+  const offsetHours = early ? -12 : 14;
+  const local = new Date(added + offsetHours * 3_600_000);
+  const day = local.getUTCDate();
+  const expected = `${MONTH_NAMES[local.getUTCMonth()]} ${day}${ordinalSuffix(day)}, ${local.getUTCFullYear()}`;
+
+  const context = await browser.newContext({
+    timezoneId: early ? "Etc/GMT+12" : "Etc/GMT-14",
+  });
+  const page = await context.newPage();
+  try {
+    await gotoReady(page, "/");
+    await switchToTableView(page);
+    await expect(
+      page
+        .getByTestId(`ebook-row-${book.slug}`)
+        .getByTestId("ebook-cell-added"),
+    ).toHaveText(expected);
+
+    await gotoReady(page, `/books/${row!.unique_identifier}`);
+    const addedRow = page
+      .locator("tr.bd-meta-row")
+      .filter({ has: page.locator(".bd-meta-k", { hasText: /^Added$/ }) });
+    await expect(addedRow.locator(".bd-meta-v")).toHaveText(expected);
+  } finally {
+    await context.close();
   }
 });
 

@@ -333,6 +333,27 @@ fn format_instant_short_opt_dates_an_instant_on_the_viewers_day() {
     );
 }
 
+// A book filed at 21:00 on Sep 8 in UTC−4 is Sep 9 in UTC; the library table
+// must date it Sep 8 like its detail page.
+#[test]
+fn format_instant_short_opt_dates_a_late_evening_filing_on_the_readers_day() {
+    assert_eq!(
+        format_instant_short_opt("2026-09-09T01:00:00Z", -4 * 3600).as_deref(),
+        Some("Sep 8th, 2026")
+    );
+}
+
+#[test]
+fn format_reader_instant_short_renders_utc_until_the_client_is_ready() {
+    // SSR and the first client paint have no reader zone to ask (rule 07).
+    assert_eq!(
+        format_reader_instant_short("2026-09-09T01:00:00Z", false),
+        "Sep 9th, 2026"
+    );
+    assert_eq!(format_reader_instant_short("", false), "\u{2014}");
+    assert_eq!(format_reader_instant_short_opt("", true), None);
+}
+
 #[test]
 fn format_instant_short_opt_reads_the_sqlite_datetime_shape() {
     assert_eq!(

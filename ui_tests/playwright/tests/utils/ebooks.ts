@@ -90,7 +90,7 @@ function expectedSeriesText(book: ExpectedBook): string {
   return "";
 }
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   "Jan",
   "Feb",
   "Mar",
@@ -107,7 +107,7 @@ const MONTH_NAMES = [
 
 /** English ordinal suffix for a day of the month — mirrors
  *  `ordinal_suffix` in `frontend/src/format.rs`. */
-function ordinalSuffix(day: number): string {
+export function ordinalSuffix(day: number): string {
   if (day % 100 >= 11 && day % 100 <= 13) return "th";
   if (day % 10 === 1) return "st";
   if (day % 10 === 2) return "nd";
