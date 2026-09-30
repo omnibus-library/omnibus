@@ -464,7 +464,7 @@ struct OfflinePill: View {
 /// your finger continuously, so a half star is the same gesture as a whole one
 /// rather than a second tap on a star you already picked. A tap is just a
 /// zero-distance drag, so it lands wherever you touched: the left half of the
-/// third star is 2.5.
+/// third star is 2.5, and tapping the value already set clears it.
 struct StarRating: View {
     let stars: Double
     var size: CGFloat = 13
@@ -528,10 +528,22 @@ struct StarRating: View {
                         .onEnded { drag in
                             defer { dragValue = nil }
                             guard !isVerticalSwipe(drag.translation) else { return }
-                            onChange?(rating(at: drag.location.x, width: geometry.size.width))
+                            onChange?(Self.committed(
+                                rating(at: drag.location.x, width: geometry.size.width),
+                                current: stars,
+                                isTap: abs(drag.translation.width) < 4
+                                    && abs(drag.translation.height) < 4
+                            ))
                         }
                 )
         }
+    }
+
+    /// The value a finished gesture commits. A tap on the value already set
+    /// clears it, the way re-clicking the active star does on the web; a drag
+    /// that ends there is someone adjusting, and keeps it.
+    static func committed(_ value: Double, current: Double, isTap: Bool) -> Double {
+        isTap && current > 0 && value == current ? 0 : value
     }
 
     /// Whether this gesture is someone scrolling the page, not rating.

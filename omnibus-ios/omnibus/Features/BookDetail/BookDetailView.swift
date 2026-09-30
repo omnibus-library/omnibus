@@ -508,7 +508,9 @@ struct BookDetailView: View {
             openJournal = pending
         }) {
             if let book = model.book {
-                AllJournalsSheet(book: book, entries: model.journals) { entry in
+                AllJournalsSheet(
+                    book: book, entries: model.journals, viewerId: app.user?.id
+                ) { entry in
                     pendingJournal = entry
                     showAllJournals = false
                 }
@@ -517,7 +519,7 @@ struct BookDetailView: View {
         .sheet(item: $openJournal) { entry in
             JournalDrawer(
                 entry: entry,
-                isMine: entry.authorId == app.user?.id
+                isMine: DetailJournal.isOwn(entry, viewerId: app.user?.id)
             ) {
                 openJournal = nil
                 composing = .editing(entry)
@@ -879,6 +881,7 @@ struct BookDetailView: View {
             StopJournals(
                 book: book,
                 model: model,
+                viewerId: app.user?.id,
                 uncapped: uncapped,
                 onWrite: {
                     composing = .new

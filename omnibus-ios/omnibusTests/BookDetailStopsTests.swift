@@ -343,6 +343,39 @@ private func journalEntry(
     #expect(DetailJournal.kicker([]) == "No entries yet")
 }
 
+@Test func journalBylineMarksOnlyTheViewersOwnEntries() {
+    #expect(DetailJournal.isOwn(journalEntry(author: 3), viewerId: 3))
+    #expect(!DetailJournal.isOwn(journalEntry(author: 3), viewerId: 4))
+    // Not yet signed in: nothing is "you", including an optimistic row whose
+    // author fell back to 0.
+    #expect(!DetailJournal.isOwn(journalEntry(author: 0), viewerId: nil))
+}
+
+// MARK: - Creators
+
+@Test func everyLinkedCreatorGetsItsOwnAuthorPage() {
+    let creators = [
+        Contributor(name: "Frank Herbert", id: 1),
+        Contributor(name: "John Schoenherr", role: "ill", id: 2),
+        Contributor(name: "Unlinked Editor"),
+        Contributor(name: "Frank Herbert", role: "aut", id: 1),
+    ]
+    #expect(DetailRead.linkedCreators(creators) == [
+        DetailCreatorLink(id: 1, name: "Frank Herbert"),
+        DetailCreatorLink(id: 2, name: "John Schoenherr"),
+    ])
+}
+
+// MARK: - Rating
+
+@Test func tappingTheRatingAlreadySetClearsIt() {
+    #expect(StarRating.committed(4, current: 4, isTap: true) == 0)
+    // A drag that happens to end on the set value is an adjustment.
+    #expect(StarRating.committed(4, current: 4, isTap: false) == 4)
+    #expect(StarRating.committed(3.5, current: 4, isTap: true) == 3.5)
+    #expect(StarRating.committed(2, current: 0, isTap: true) == 2)
+}
+
 // MARK: - Journal composer target
 
 private func entry(id: Int64, clientID: String? = nil) -> JournalEntry {

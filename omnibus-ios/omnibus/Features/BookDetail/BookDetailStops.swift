@@ -34,6 +34,11 @@ enum DetailJournal {
         }
         return out
     }
+
+    /// Whether `viewerId` wrote this entry — what the byline's "you" marks.
+    static func isOwn(_ entry: JournalEntry, viewerId: Int64?) -> Bool {
+        viewerId.map { $0 == entry.authorId } ?? false
+    }
 }
 
 enum DetailRead {
@@ -54,6 +59,18 @@ enum DetailRead {
         }
         if let year { lead += " · \(year)" }
         return lead
+    }
+
+    /// The creators an author page can be opened for, in credit order — one
+    /// per author id, skipping a name the server could not link.
+    static func linkedCreators(_ creators: [Contributor]) -> [DetailCreatorLink] {
+        var seen = Set<Int64>()
+        return creators.compactMap { creator in
+            guard let id = creator.id, let name = creator.name.nilIfBlank,
+                  seen.insert(id).inserted
+            else { return nil }
+            return DetailCreatorLink(id: id, name: name)
+        }
     }
 
     /// Whether Home offers the read-status segment. A record with nothing to
@@ -196,6 +213,12 @@ enum DetailRead {
             DetailSyncCopy(label: "Positions linked", action: "Manage", linked: true)
         }
     }
+}
+
+/// A creator with an author page to open.
+struct DetailCreatorLink: Equatable {
+    var id: Int64
+    var name: String
 }
 
 /// The Home sync row's copy, plus whether it wears the linked (accent) look.
@@ -1342,6 +1365,19 @@ struct StopStats: View {
                     ? "rated \(model.rating.formatted()) of 5"
                     : "not rated yet"
             )
+            if model.rating > 0 {
+                Button {
+                    Haptics.tap()
+                    Task { await model.clearRating(uuid: book.uuid) }
+                } label: {
+                    MonoNote(text: "clear", color: palette.accentColor)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear your \(model.rating.formatted())-star rating")
+                .accessibilityIdentifier("rating-clear")
+            }
         }
         .animation(Motion.snap, value: model.rating)
     }
@@ -1506,6 +1542,8 @@ struct HighlightRow: View {
 struct StopJournals: View {
     let book: Book
     let model: BookDetailModel
+    /// The signed-in reader, whose own entries carry the "you" marker.
+    var viewerId: Int64?
     /// The flow (Option B) has no fixed screenful to fit, so it lists every
     /// entry inline instead of capping at `stopCount` behind a sheet.
     var uncapped = false
@@ -1545,14 +1583,20 @@ struct StopJournals: View {
                     // Lazy, and no copied slice: the flow's list is unbounded.
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(entries) { entry in
-                            JournalRow(entry: entry) { onOpen(entry) }
+                            JournalRow(
+                                entry: entry,
+                                isMine: DetailJournal.isOwn(entry, viewerId: viewerId)
+                            ) { onOpen(entry) }
                         }
                     }
                     .padding(.top, 8)
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(entries.prefix(Self.stopCount)) { entry in
-                            JournalRow(entry: entry) { onOpen(entry) }
+                            JournalRow(
+                                entry: entry,
+                                isMine: DetailJournal.isOwn(entry, viewerId: viewerId)
+                            ) { onOpen(entry) }
                         }
                     }
                     .padding(.top, 8)
@@ -1593,6 +1637,7 @@ struct StopJournals: View {
 /// One journal row: who, where they were, and the opening line.
 struct JournalRow: View {
     let entry: JournalEntry
+    var isMine = false
     var onOpen: () -> Void
 
     @Environment(\.palette) private var palette
@@ -1633,6 +1678,11 @@ struct JournalRow: View {
                             Text(entry.authorName)
                                 .font(.ui(12, weight: .medium))
                                 .foregroundStyle(palette.ink0Color)
+                            if isMine {
+                                Text("· you")
+                                    .font(.ui(12, weight: .medium))
+                                    .foregroundStyle(palette.accentColor)
+                            }
                             if let progress = entry.progress {
                                 Text("— at \(progress)%")
                                     .font(.monoUI(9))
@@ -1933,30 +1983,13 @@ struct StopRecommendations: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let authorId = book.creators.first?.id {
+            let creators = DetailRead.linkedCreators(book.creators)
+            if !creators.isEmpty {
                 InsetList {
-                    NavigationLink(value: Destination.author(id: authorId)) {
-                        HStack(spacing: 12) {
-                            authorDisc
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(book.authorDisplay)
-                                    .font(.ui(14))
-                                    .foregroundStyle(palette.ink0Color)
-                                    .lineLimit(1)
-                                Text("you own \(model.authorBooks.count + 1) · author page")
-                                    .font(.monoUI(9.5))
-                                    .foregroundStyle(palette.ink3Color)
-                            }
-                            Spacer(minLength: Spacing.sm)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(palette.ink3Color.opacity(0.7))
-                        }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
+                    ForEach(Array(creators.enumerated()), id: \.offset) { index, creator in
+                        if index > 0 { Hairline() }
+                        creatorRow(creator, isFirst: index == 0)
                     }
-                    .buttonStyle(PressableStyle())
                 }
             }
 
@@ -2022,7 +2055,34 @@ struct StopRecommendations: View {
         }
     }
 
-    private var authorDisc: some View {
+    /// One creator's way to their author page. Only the first author's
+    /// books are fetched, so only that row can say how many you own.
+    private func creatorRow(_ creator: DetailCreatorLink, isFirst: Bool) -> some View {
+        NavigationLink(value: Destination.author(id: creator.id)) {
+            HStack(spacing: 12) {
+                authorDisc(creator.name)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(creator.name)
+                        .font(.ui(14))
+                        .foregroundStyle(palette.ink0Color)
+                        .lineLimit(1)
+                    Text(isFirst ? "you own \(model.authorBooks.count + 1) · author page" : "author page")
+                        .font(.monoUI(9.5))
+                        .foregroundStyle(palette.ink3Color)
+                }
+                Spacer(minLength: Spacing.sm)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.ink3Color.opacity(0.7))
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    private func authorDisc(_ name: String) -> some View {
         Circle()
             .fill(palette.accentColor.opacity(0.22))
             .frame(width: 34, height: 34)
@@ -2030,7 +2090,7 @@ struct StopRecommendations: View {
                 Circle().strokeBorder(palette.accentColor.opacity(0.4), lineWidth: 0.5)
             )
             .overlay {
-                Text(String(book.authorDisplay.prefix(1)))
+                Text(String(name.prefix(1)))
                     .font(.displayItalic(16))
                     .foregroundStyle(palette.accentColor)
             }
@@ -2118,6 +2178,7 @@ struct AllHighlightsSheet: View {
 struct AllJournalsSheet: View {
     let book: Book
     let entries: [JournalEntry]
+    var viewerId: Int64?
     var onOpen: (JournalEntry) -> Void
 
     @Environment(\.palette) private var palette
@@ -2143,7 +2204,11 @@ struct AllJournalsSheet: View {
                             onOpen(entry)
                         } label: {
                             VStack(alignment: .leading, spacing: 9) {
-                                JournalByline(entry: entry, avatarSize: 26)
+                                JournalByline(
+                                    entry: entry,
+                                    avatarSize: 26,
+                                    isMine: DetailJournal.isOwn(entry, viewerId: viewerId)
+                                )
                                 // Not revealable here: the card is a button, so
                                 // a tap belongs to the row — it opens the entry
                                 // in the drawer, where a spoiler does open.
@@ -2178,7 +2243,7 @@ struct JournalDrawer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            JournalByline(entry: entry, avatarSize: 34)
+            JournalByline(entry: entry, avatarSize: 34, isMine: isMine)
                 .padding(.horizontal, 18)
                 .padding(.top, 20)
                 .padding(.bottom, 12)
@@ -2239,6 +2304,7 @@ struct JournalDrawer: View {
 struct JournalByline: View {
     let entry: JournalEntry
     var avatarSize: CGFloat
+    var isMine = false
 
     @Environment(\.palette) private var palette
 
@@ -2251,9 +2317,15 @@ struct JournalByline: View {
                 size: avatarSize
             )
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.authorName)
-                    .font(.ui(14, weight: .semibold))
-                    .foregroundStyle(palette.ink0Color)
+                HStack(spacing: 6) {
+                    Text(entry.authorName)
+                        .foregroundStyle(palette.ink0Color)
+                    if isMine {
+                        Text("· you")
+                            .foregroundStyle(palette.accentColor)
+                    }
+                }
+                .font(.ui(14, weight: .semibold))
                 MonoNote(text: bylineDetail)
             }
         }
