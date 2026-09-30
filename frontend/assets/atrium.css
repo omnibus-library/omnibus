@@ -10098,11 +10098,25 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 .st-drill-trend-col { display: flex; flex-direction: column; align-items: center; height: 100%; }
 .st-drill-trend-track { flex: 1 1 auto; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
-.st-drill-trend-bar { width: 60%; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--accent); }
+.st-drill-trend-bar { position: relative; width: 60%; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--accent); }
 .st-drill-trend-label { margin-top: 6px; font-size: 10px; color: var(--ink-3); }
+/* Room above a full-height bar for the figure printed on it. */
+.st-drill-trend-valued { height: 116px; }
+.st-drill-trend-valued .st-drill-trend-track { padding-top: 14px; }
+.st-drill-trend-value {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  margin-bottom: 2px; font-size: 9px; color: var(--ink-2); white-space: nowrap;
+}
+/* Nothing measured: an outlined slot, so it can't be read as a low value. */
+.st-drill-trend-slot {
+  width: 60%; height: 100%;
+  border: 1px dashed var(--line-2); border-bottom: 0; border-radius: 3px 3px 0 0;
+}
 /* Names the chart beneath it, so two bar strips in one sheet (the rating
    trend and the distribution below it) don't read as one broken chart. */
 .st-drill-section-label { margin-bottom: -8px; }
+/* The period a chart covers, tucked under its label. */
+.st-drill-caption { margin: -6px 0 -6px; font-size: 12px; color: var(--ink-3); }
 
 .st-drill-rate { font-size: 13px; color: var(--ink-2); }
 .st-drill-rate-value {

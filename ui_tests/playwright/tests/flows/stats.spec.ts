@@ -283,6 +283,12 @@ test("the Avg rating drill-in charts every half-star bucket on a star axis", asy
     half_stars: i + 1,
     books: i === 6 ? 2 : i === 9 ? 3 : 0,
   }));
+  // Oct 2025 through Sep 2026, rated in three months only.
+  const ratingMonthly = Array.from({ length: 12 }, (_, i) => {
+    const [year, month] = i < 3 ? [2025, 10 + i] : [2026, i - 2];
+    const value = i === 4 ? 3.5 : i === 5 ? 4.25 : i === 11 ? 5 : 0;
+    return { label: `${year}-${String(month).padStart(2, "0")}`, value };
+  });
   await page.route("**/api/rpc/stats", (route) =>
     route.fulfill({
       status: 200,
@@ -304,12 +310,14 @@ test("the Avg rating drill-in charts every half-star bucket on a star axis", asy
         top_tags: [],
         finished_books: [],
         rating_histogram: histogram,
+        rating_monthly: ratingMonthly,
       }),
     }),
   );
 
   await gotoReady(page, "/stats");
   await page.getByTestId("stats-tile-avg-rating").click();
+  const drillIn = page.getByTestId("stats-drill-in");
 
   // Ten columns — empty buckets keep their place, or the shape lies — labelled
   // in stars rather than the stored 1..=10 half-star scale.
@@ -320,6 +328,46 @@ test("the Avg rating drill-in charts every half-star bucket on a star axis", asy
     .toEqual(["0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5"]);
   // The tallest bucket carries its book count on hover.
   await expect(chart.locator('[title="5 ★ · 3 books"]')).toBeVisible();
+  // …and every rated bucket prints its count, so the shape reads without a
+  // hover; the eight empty ones are slots, not stubs.
+  await expect(chart.getByTestId("stats-drill-bar-value")).toHaveText([
+    "2",
+    "3",
+  ]);
+  await expect(chart.getByTestId("stats-drill-bar-empty")).toHaveCount(8);
+  await expect(drillIn).toContainText("Books at each rating");
+  await expect(
+    page.getByTestId("stats-drill-histogram-caption"),
+  ).toHaveText("Rated this month");
+
+  // The trend names what it measures and the period it covers — the trailing
+  // year, not the window the delta and histogram follow.
+  await expect(drillIn).toContainText("Average rating by month");
+  await expect(page.getByTestId("stats-drill-trend-caption")).toHaveText(
+    "Oct 2025 – Sep 2026 · the last 12 months, whatever period is selected",
+  );
+  const trend = page.getByTestId("stats-drill-trend");
+  // Twelve distinct month names — June and July no longer both read "J".
+  await expect(trend.getByTestId("stats-drill-bar-label")).toHaveText([
+    "Oct",
+    "Nov",
+    "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+  ]);
+  await expect(trend.getByTestId("stats-drill-bar-value")).toHaveText([
+    "3.5",
+    "4.3",
+    "5.0",
+  ]);
+  await expect(trend.getByTestId("stats-drill-bar-empty")).toHaveCount(9);
 });
 
 test("the Pages drill-in reports a reading rate, and says so when it can't", async ({

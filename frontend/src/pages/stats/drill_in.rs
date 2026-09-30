@@ -10,11 +10,12 @@
 use dioxus::prelude::*;
 use omnibus_shared::{
     Contributor, EbookMetadata, FinishedBook, PagesReadDetail, RatingBucket, StatsRange,
-    StatsSummary,
+    StatsSummary, TrendPoint,
 };
 
 use super::donut::LengthRows;
-use super::tiles::{comparison, Comparison};
+use super::heatmap::month_abbr;
+use super::tiles::{avg_stars_value, comparison, Comparison};
 use crate::components::{ConfirmModal, CoverTile, CoverTileKind};
 use crate::use_server_url;
 
@@ -69,6 +70,11 @@ struct TrendBar {
     /// useful to say (the histogram's book count) overwrites it.
     title: String,
     height_pct: u32,
+    /// The figure printed on the column, so its height reads without hovering.
+    value: Option<String>,
+    /// Nothing was measured here: drawn as an empty slot, never a stub that
+    /// reads as a low value.
+    empty: bool,
 }
 
 /// Normalize any of the summary's label/value series into bar heights.
@@ -79,6 +85,8 @@ fn build_trend_bars(points: &[(String, f64)]) -> Vec<TrendBar> {
         .map(|(label, value)| TrendBar {
             label: label.clone(),
             title: label.clone(),
+            value: None,
+            empty: false,
             height_pct: if max <= 0.0 {
                 0
             } else {
@@ -104,9 +112,9 @@ fn star_label(bucket: &RatingBucket) -> String {
     }
 }
 
-/// The window's ratings as bars, one per half-star bucket, with the book count
-/// on hover. Empty when the window carries no ratings at all — the caller
-/// renders its empty state rather than ten flat bars.
+/// The window's ratings as bars, one per half-star bucket, each carrying its
+/// book count. An empty bucket keeps its column as an empty slot — the shape
+/// needs every bucket — but draws no bar a reader could take for a small one.
 // Display-only heights: bucket counts sit far below f64's 2^52 exact-integer
 // range.
 #[allow(clippy::cast_precision_loss)]
@@ -122,8 +130,78 @@ fn build_histogram_bars(buckets: &[RatingBucket]) -> Vec<TrendBar> {
             "{} \u{2605} \u{00B7} {} book{plural}",
             bar.label, bucket.books
         );
+        bar.empty = bucket.books <= 0;
+        bar.value = (!bar.empty).then(|| bucket.books.to_string());
     }
     bars
+}
+
+/// The Avg rating trend: each month's mean with its figure on the bar, on a
+/// fixed five-star scale so a bar's height *is* the rating rather than its
+/// share of the best month. A month nobody rated is an empty slot.
+fn build_rating_trend_bars(points: &[TrendPoint]) -> Vec<TrendBar> {
+    points
+        .iter()
+        .map(|p| {
+            let month = month_year(&p.label).unwrap_or_else(|| p.label.clone());
+            // A real mean is at least half a star; the server sends 0.0 for a
+            // month with no ratings.
+            let empty = p.value <= 0.0;
+            let value = (!empty).then(|| avg_stars_value(Some(p.value)));
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let height_pct = ((p.value / 5.0) * 100.0).round().clamp(0.0, 100.0) as u32;
+            TrendBar {
+                label: short_month(&p.label),
+                title: match &value {
+                    Some(v) => format!("{month} \u{00B7} {v} \u{2605}"),
+                    None => format!("{month} \u{00B7} no ratings"),
+                },
+                height_pct,
+                value,
+                empty,
+            }
+        })
+        .collect()
+}
+
+/// The metric's trend as drawn bars — the rating trend on its own scale, every
+/// other metric scaled to its tallest point.
+fn trend_bars(metric: Metric, summary: &StatsSummary) -> Vec<TrendBar> {
+    match metric {
+        Metric::AvgRating => build_rating_trend_bars(&summary.rating_monthly),
+        _ => build_trend_bars(&trend_points(metric, summary)),
+    }
+}
+
+/// The heading a metric's trend carries, when it needs one to be read: the
+/// rating trend sits beside a histogram and covers a different period.
+fn trend_title(metric: Metric) -> Option<&'static str> {
+    (metric == Metric::AvgRating).then_some("Average rating by month")
+}
+
+/// Which period the rating trend covers. It is the trailing twelve months
+/// whatever the switcher says, while the delta and the histogram follow it —
+/// so it names its span rather than letting a reader assume the window.
+fn rating_trend_caption(points: &[TrendPoint]) -> String {
+    const TAIL: &str = "last 12 months, whatever period is selected";
+    let span = points
+        .first()
+        .zip(points.last())
+        .and_then(|(a, b)| Some((month_year(&a.label)?, month_year(&b.label)?)));
+    match span {
+        Some((from, to)) => format!("{from} \u{2013} {to} \u{00B7} the {TAIL}"),
+        None => format!("The {TAIL}"),
+    }
+}
+
+/// Which period the rating histogram covers: the one the switcher selected.
+fn histogram_caption(range: StatsRange) -> &'static str {
+    match range {
+        StatsRange::Week => "Rated this week",
+        StatsRange::Month => "Rated this month",
+        StatsRange::Year => "Rated this year",
+        StatsRange::AllTime => "Rated at any time",
+    }
 }
 
 /// The metric's trend series as `(short label, value)` pairs, drawn from the
@@ -157,19 +235,22 @@ fn trend_points(metric: Metric, summary: &StatsSummary) -> Vec<(String, f64)> {
     }
 }
 
-/// First letter of a `YYYY-MM` month, `?` when malformed.
+/// `(year, month)` of a `YYYY-MM` month, `None` when malformed.
+fn year_month(month: &str) -> Option<(i64, i64)> {
+    let (y, m) = month.split_once('-')?;
+    let m = m.parse::<i64>().ok().filter(|m| (1..=12).contains(m))?;
+    Some((y.parse().ok()?, m))
+}
+
+/// Three-letter name of a `YYYY-MM` month, `?` when malformed. Never an
+/// initial: June and July would share "J" side by side.
 fn short_month(month: &str) -> String {
-    month
-        .rsplit('-')
-        .next()
-        .and_then(|m| m.parse::<usize>().ok())
-        .filter(|m| (1..=12).contains(m))
-        .map(|m| {
-            const INITIALS: [char; 12] =
-                ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-            INITIALS[m - 1].to_string()
-        })
-        .unwrap_or_else(|| "?".to_string())
+    year_month(month).map_or_else(|| "?".to_string(), |(_, m)| month_abbr(m).to_string())
+}
+
+/// "Oct 2025" for a `YYYY-MM` month, `None` when malformed.
+fn month_year(month: &str) -> Option<String> {
+    year_month(month).map(|(y, m)| format!("{} {y}", month_abbr(m)))
 }
 
 /// Day-of-month for a `YYYY-MM-DD` day, `?` when malformed.
@@ -228,7 +309,7 @@ pub(super) fn DrillIn(
     // measured on even if the switcher has already moved.
     let delta = comparison(metric, &summary);
     let vs = vs_label(summary.range);
-    let bars = build_trend_bars(&trend_points(metric, &summary));
+    let bars = trend_bars(metric, &summary);
 
     rsx! {
         ConfirmModal {
@@ -258,9 +339,12 @@ pub(super) fn DrillIn(
             },
             div { class: "st-drill-body",
                 {render_delta(delta, vs)}
+                if let Some(title) = trend_title(metric).filter(|_| !bars.is_empty()) {
+                    {render_section_head(title, &rating_trend_caption(&summary.rating_monthly), "stats-drill-trend-caption")}
+                }
                 {render_trend(metric, &bars)}
                 if metric == Metric::AvgRating {
-                    {render_histogram(&summary.rating_histogram)}
+                    {render_histogram(&summary.rating_histogram, summary.range)}
                 }
                 if metric == Metric::Pages {
                     {render_pages_rate(summary.pages_per_hour)}
@@ -307,16 +391,30 @@ fn render_delta(delta: Option<Comparison>, vs: &str) -> Element {
 /// through this — the histogram is the same widget with a different x-axis, so
 /// a second bar renderer would only be a second thing to keep in sync.
 fn render_bars(bars: &[TrendBar], testid: &str, aria_label: &str) -> Element {
+    let valued = bars.iter().any(|b| b.value.is_some());
     rsx! {
         div {
-            class: "st-drill-trend",
+            class: if valued { "st-drill-trend st-drill-trend-valued" } else { "st-drill-trend" },
             "data-testid": "{testid}",
             role: "img",
             aria_label: "{aria_label}",
             for (i, bar) in bars.iter().enumerate() {
                 div { key: "{i}-{bar.label}", class: "st-drill-trend-col", title: "{bar.title}",
                     div { class: "st-drill-trend-track",
-                        div { class: "st-drill-trend-bar", style: "height: {bar.height_pct}%;" }
+                        // One element either way, so an empty slot and a bar
+                        // swap a class rather than a node (rule 07).
+                        div {
+                            class: if bar.empty { "st-drill-trend-slot" } else { "st-drill-trend-bar" },
+                            "data-testid": if bar.empty { "stats-drill-bar-empty" } else { "stats-drill-bar" },
+                            style: if bar.empty { String::new() } else { format!("height: {}%;", bar.height_pct) },
+                            if let Some(value) = &bar.value {
+                                span {
+                                    class: "st-drill-trend-value mono",
+                                    "data-testid": "stats-drill-bar-value",
+                                    "{value}"
+                                }
+                            }
+                        }
                     }
                     div {
                         class: "st-drill-trend-label mono",
@@ -336,11 +434,17 @@ fn render_trend(metric: Metric, bars: &[TrendBar]) -> Element {
     if bars.is_empty() {
         return rsx! { div {} };
     }
-    render_bars(
-        bars,
-        "stats-drill-trend",
-        &format!("{} trend", metric.title()),
-    )
+    let aria =
+        trend_title(metric).map_or_else(|| format!("{} trend", metric.title()), String::from);
+    render_bars(bars, "stats-drill-trend", &aria)
+}
+
+/// A chart's heading and, beneath it, the period it covers.
+fn render_section_head(title: &str, caption: &str, testid: &str) -> Element {
+    rsx! {
+        div { class: "label st-drill-section-label", "{title}" }
+        p { class: "st-drill-caption", "data-testid": "{testid}", "{caption}" }
+    }
 }
 
 /// A reading rate for display: one decimal under ten pages an hour, whole
@@ -388,7 +492,7 @@ fn render_pages_rate(rate: Option<f64>) -> Element {
 /// The Avg rating drill-in's distribution: how many books landed in each
 /// half-star bucket. The mean above it can't tell a reader who rates
 /// everything 4 from one who splits evenly between 2 and 5 — this can.
-fn render_histogram(buckets: &[RatingBucket]) -> Element {
+fn render_histogram(buckets: &[RatingBucket], range: StatsRange) -> Element {
     if buckets.iter().all(|b| b.books == 0) {
         return rsx! {
             p { class: "st-drill-delta-empty", "data-testid": "stats-drill-histogram-empty",
@@ -397,7 +501,7 @@ fn render_histogram(buckets: &[RatingBucket]) -> Element {
         };
     }
     rsx! {
-        div { class: "label st-drill-section-label", "Books at each rating" }
+        {render_section_head("Books at each rating", histogram_caption(range), "stats-drill-histogram-caption")}
         {render_bars(&build_histogram_bars(buckets), "stats-drill-histogram", "Star rating distribution")}
     }
 }
