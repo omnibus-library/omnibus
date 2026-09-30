@@ -152,9 +152,6 @@ upload is as interesting as an accepted one.
   not by elapsed time alone. A large file refused with a server error after
   about thirty seconds is a finding, not a slow upload — journal the size and
   the timing.
-- A cover declared only through the EPUB2 manifest and guide, with no
-  `<meta name="cover">`, may not be extracted even though the reader renders
-  it. Journal it as a finding with the file named.
 - A file the app legitimately does not support should be refused with a clear
   message. A clear refusal is a pass; a silent one is a fail.
 

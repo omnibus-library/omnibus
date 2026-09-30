@@ -315,9 +315,9 @@ fn flatten_navpoints(
     }
 }
 
-/// Join a nav-document-relative href onto the nav document's directory,
-/// resolving `.`/`..` segments and preserving any fragment.
-fn join_href(dir: &str, href: &str) -> String {
+/// Join a document-relative href onto the document's directory, resolving
+/// `.`/`..` segments and preserving any fragment.
+pub fn join_href(dir: &str, href: &str) -> String {
     let (path, frag) = match href.split_once('#') {
         Some((p, f)) => (p, Some(f)),
         None => (href, None),
