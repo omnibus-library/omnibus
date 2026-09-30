@@ -64,7 +64,11 @@ struct PDFReaderView: View {
     /// The floating controls the chrome samples for — one case per drawn
     /// control, so a sample always has a frame to ask about.
     private enum ChromeControl: CaseIterable {
-        case close, contents, bookmarks, bookmark, slider
+        case close, contents, bookmarks, bookmark, slider, title, pageLabel
+
+        /// The title and page label draw with the chrome down too, so they
+        /// are sampled whether or not it is up.
+        var isIndicator: Bool { self == .title || self == .pageLabel }
     }
 
     private static let sessionCheckpointInterval: TimeInterval = 300
@@ -201,10 +205,10 @@ struct PDFReaderView: View {
 
     private var indicators: some View {
         VStack(spacing: 0) {
-            indicatorLabel(document == nil ? nil : book.displayTitle)
+            indicatorLabel(document == nil ? nil : book.displayTitle, .title)
                 .padding(.top, Spacing.xs)
             Spacer(minLength: 0)
-            indicatorLabel(pageLabel)
+            indicatorLabel(pageLabel, .pageLabel)
                 .padding(.bottom, Spacing.xs)
         }
         .allowsHitTesting(false)
@@ -216,15 +220,25 @@ struct PDFReaderView: View {
         return chromeVisible ? "\(page + 1) of \(count)" : "\(page + 1)"
     }
 
+    /// What an indicator reads against. With the chrome up the page label
+    /// sits in the bottom cluster's scrim, which is dark whatever the page is.
+    private func indicatorGround(_ control: ChromeControl) -> ReaderGround {
+        if control == .pageLabel, chromeVisible { return .stage }
+        return chromeGrounds[control] ?? .stage
+    }
+
     @ViewBuilder
-    private func indicatorLabel(_ text: String?) -> some View {
+    private func indicatorLabel(_ text: String?, _ control: ChromeControl) -> some View {
         if let text {
-            Text(text)
-                .font(.ui(12.5))
-                .foregroundStyle(.white.opacity(0.5))
-                .lineLimit(1)
-                .frame(height: ReaderMenu.buttonSize)
-                .padding(.horizontal, 72)
+            let ground = indicatorGround(control)
+            measure(control) {
+                Text(text)
+                    .font(.ui(12.5))
+                    .foregroundStyle(ground.ink.opacity(ground.indicatorOpacity))
+                    .lineLimit(1)
+                    .frame(height: ReaderMenu.buttonSize)
+            }
+            .padding(.horizontal, 72)
         }
     }
 
@@ -339,32 +353,31 @@ struct PDFReaderView: View {
             }
     }
 
-    /// Re-ask every control what is behind it, right now — one snapshot for
-    /// the whole sample, cropped per control.
+    /// Re-ask every drawn control what is behind it, right now — one snapshot
+    /// for the whole sample, cropped per control. With the chrome down only
+    /// the indicators are drawn, and the snapshot is taken only once one of
+    /// them actually sits over the page.
     private func sampleChromeInk() {
-        guard chromeVisible else { return }
         let page = stage.pageFrame()
-        let snapshot = stage.stageSnapshot()
+        var snapshot: CGImage??
+        func luminance(_ overlap: CGRect) -> Double? {
+            if snapshot == nil { snapshot = .some(stage.stageSnapshot()) }
+            guard let image = snapshot ?? nil else { return nil }
+            return stage.meanLuminance(of: image, under: overlap)
+        }
         // The page's own ground first: it is the fallback ink for controls
         // whose frames have not landed yet.
-        if let snapshot, let page {
+        if chromeVisible, let page {
             stageGround = ReaderBackdrop.ground(
-                control: page,
-                pageFrame: page,
-                pageLuminance: { overlap in stage.meanLuminance(of: snapshot, under: overlap) }
+                control: page, pageFrame: page, pageLuminance: luminance
             )
         }
-        for control in ChromeControl.allCases {
+        for control in ChromeControl.allCases where chromeVisible || control.isIndicator {
             guard let frame = chromeFrames[control],
                   let rect = stage.stageRect(fromWindow: frame)
             else { continue }
             let ground = ReaderBackdrop.ground(
-                control: rect,
-                pageFrame: page,
-                pageLuminance: { overlap in
-                    guard let snapshot else { return nil }
-                    return stage.meanLuminance(of: snapshot, under: overlap)
-                }
+                control: rect, pageFrame: page, pageLuminance: luminance
             )
             if chromeGrounds[control] != ground { chromeGrounds[control] = ground }
         }

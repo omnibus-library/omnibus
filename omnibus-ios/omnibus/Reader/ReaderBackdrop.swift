@@ -33,6 +33,17 @@ extension ReaderGround {
         }
     }
 
+    /// How strongly the ambient indicators — the title and page label, which
+    /// float with no glass or scrim — draw that ink. Quiet over the stage,
+    /// where white at half strength has always read; firmer on paper, where
+    /// the dark ink has to clear 4.5:1 against white under either blend.
+    var indicatorOpacity: Double {
+        switch self {
+        case .stage: 0.5
+        case .page: 0.85
+        }
+    }
+
     /// The colour scheme a control on this ground resolves against. The
     /// glass follows the scheme, so driving it from the same ground the ink
     /// comes from is what keeps the two from disagreeing about the paper
