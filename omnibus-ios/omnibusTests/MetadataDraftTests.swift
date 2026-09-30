@@ -544,3 +544,33 @@ struct ChipEntryTests {
         #expect(chip == "F. Scott Fitzgerald")
     }
 }
+
+// MARK: - Save report
+
+@Test func editedFieldsNameEveryChangedFieldInFormOrder() {
+    let loaded = MetadataDraft(book: gatsby())
+    var draft = loaded
+    draft.description = "A summer on West Egg."
+    draft.title = "Trimalchio"
+    draft.authors = ["F. Scott Fitzgerald", "Maxwell Perkins"]
+
+    #expect(draft.editedFields(since: loaded) == ["Title", "Authors", "Summary"])
+    #expect(loaded.editedFields(since: loaded).isEmpty)
+}
+
+@Test func editedFieldsCountAChipStillSittingInItsEntryField() {
+    let loaded = MetadataDraft(book: gatsby())
+    let pending = loaded.committingPending(author: "", tag: "  Jazz Age ", genre: "")
+    #expect(pending.tags == ["Classics", "Novel", "Jazz Age"])
+    #expect(pending.editedFields(since: loaded) == ["Tags"])
+    // A duplicate tag commits nothing, so it is no edit.
+    let duplicate = loaded.committingPending(author: "", tag: "novel", genre: "")
+    #expect(duplicate.editedFields(since: loaded).isEmpty)
+}
+
+@Test func saveReportCountsFieldsTheWayTheWebSaveBarDoes() {
+    #expect(MetadataDraft.editedLabel(count: 1) == "1 field edited")
+    #expect(MetadataDraft.editedLabel(count: 2) == "2 fields edited")
+    #expect(MetadataDraft.savedLabel(count: 1) == "Saved · 1 field")
+    #expect(MetadataDraft.savedLabel(count: 3) == "Saved · 3 fields")
+}

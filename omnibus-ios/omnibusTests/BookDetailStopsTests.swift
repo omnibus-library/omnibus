@@ -57,13 +57,47 @@ import Testing
 
 @Test func emptyStatsOnlyAskAReaderToOpenABookThatHasAFile() {
     let open = "Open the book to start tracking your reading here."
-    #expect(DetailStats.emptyExplainer(wishlistOnly: false, hasFile: true, hasPhysical: false) == open)
+    #expect(
+        DetailStats.emptyExplainer(
+            hasPosition: false, wishlistOnly: false, hasFile: true, hasPhysical: false
+        ) == open
+    )
     for (wishlist, physical) in [(true, false), (false, true), (false, false)] {
         let line = DetailStats.emptyExplainer(
-            wishlistOnly: wishlist, hasFile: false, hasPhysical: physical
+            hasPosition: false, wishlistOnly: wishlist, hasFile: false, hasPhysical: physical
         )
         #expect(!line.localizedCaseInsensitiveContains("open the book"))
     }
+}
+
+@Test func emptyStatsAgreeWithHomeThatAPositionMeansStarted() {
+    // Home reads "in progress" off the saved position; the session log trails
+    // it, so an empty log beside a position is underway, not "not begun".
+    #expect(DetailStats.emptyKicker(hasPosition: true) == "This read · underway")
+    #expect(DetailStats.emptyKicker(hasPosition: false) == "This read · not begun")
+    let line = DetailStats.emptyExplainer(
+        hasPosition: true, wishlistOnly: false, hasFile: true, hasPhysical: false
+    )
+    #expect(!line.localizedCaseInsensitiveContains("open the book"))
+}
+
+// MARK: - Language
+
+@Test func languageNamesTheCodeRatherThanPrintingIt() {
+    #expect(Format.language("en") == "English")
+    #expect(Format.language("eng") == "English")
+    #expect(Format.language("en-US") == "English")
+    #expect(Format.language("pt_BR") == "Portuguese")
+}
+
+@Test func languageFilesCodesThatDeclineToAnswerAsUnknown() {
+    // The same bucket the stats composition breakdown uses for them.
+    for code in ["und", "UND", "mul", "zxx", "mis", "und-Latn"] {
+        #expect(Format.language(code) == "Unknown")
+    }
+    #expect(Format.language(nil) == nil)
+    #expect(Format.language("  ") == nil)
+    #expect(Format.language("qaa") == "QAA")
 }
 
 // MARK: - Resume label

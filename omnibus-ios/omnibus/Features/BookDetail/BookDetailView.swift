@@ -224,6 +224,12 @@ final class BookDetailModel {
         await UserDataService.setReadStatus(uuid: uuid, status: status)
     }
 
+    /// Whether this reader has a saved position in either format — the one
+    /// fact Home and Stats both key "started" on.
+    var hasPosition: Bool {
+        epubProgress != nil || audioProgress != nil
+    }
+
     /// Whether the library holds anything this book can be opened in.
     var hasFile: Bool {
         guard let book else { return false }

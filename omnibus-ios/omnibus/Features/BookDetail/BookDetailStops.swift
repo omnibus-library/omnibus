@@ -270,9 +270,20 @@ enum DetailStats {
         )
     }
 
+    /// The empty stop's kicker. Keyed on the same saved position the Home
+    /// ruler reads, so the two never disagree about whether the book is
+    /// started: the session log is a server read that counts only sittings
+    /// of a minute or more, and trails a position this device just wrote.
+    static func emptyKicker(hasPosition: Bool) -> String {
+        hasPosition ? "This read · underway" : "This read · not begun"
+    }
+
     /// What the empty stop says about starting a record. Only a book with a
     /// file can be opened here, so only that one is told to open it.
-    static func emptyExplainer(wishlistOnly: Bool, hasFile: Bool, hasPhysical: Bool) -> String {
+    static func emptyExplainer(
+        hasPosition: Bool, wishlistOnly: Bool, hasFile: Bool, hasPhysical: Bool
+    ) -> String {
+        if hasPosition { return "Sittings of a minute or more show here once they sync." }
         if wishlistOnly {
             return "Stats begin when the book does — check in a copy to start the record."
         }
@@ -1075,7 +1086,7 @@ struct StopHome: View {
                 left: leftLabel(fraction: fraction),
                 right: updatedLabel
             )
-        } else if model.epubProgress != nil || model.audioProgress != nil {
+        } else if model.hasPosition {
             // A position exists but supports no honest bar (a bare CFI, or
             // audio with no measured duration) — say so instead of "unread".
             MonoNote(text: ["in progress", updatedLabel].compactMap { $0 }
@@ -1264,7 +1275,7 @@ struct StopStats: View {
                 SparkBars(minutes: DetailStats.sparkMinutes(from: model.sessions))
                     .padding(.top, 18)
             } else {
-                DetailKicker(text: "This read · not begun")
+                DetailKicker(text: DetailStats.emptyKicker(hasPosition: model.hasPosition))
 
                 Text("No stats yet.")
                     .font(.display(34))
@@ -1295,6 +1306,7 @@ struct StopStats: View {
 
     private var emptyExplainer: String {
         DetailStats.emptyExplainer(
+            hasPosition: model.hasPosition,
             wishlistOnly: model.isWishlistOnly,
             hasFile: model.hasFile,
             hasPhysical: book.hasPhysical
@@ -1846,7 +1858,7 @@ struct StopFiles: View {
         VStack(spacing: 0) {
             kvRow("Publisher", book.publisher)
             kvRow("Published", book.published.map(Format.looseDate))
-            kvRow("Language", book.language)
+            kvRow("Language", Format.language(book.language))
             kvRow("ISBN", book.isbn13)
             kvRow("Added", book.addedAt.map(Format.isoDate))
             kvRow("File", book.filename)

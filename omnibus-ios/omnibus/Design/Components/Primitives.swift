@@ -746,6 +746,19 @@ enum Format {
         return trimmed
     }
 
+    /// A declared language as a reader names it: `en`, `eng` and `en-US` all
+    /// read "English". Codes that decline to answer — `und`, `mul`, `zxx`,
+    /// `mis` — read "Unknown", the bucket the stats composition files them
+    /// under; a code no name is known for keeps its primary subtag.
+    static func language(_ code: String?) -> String? {
+        guard let primary = code?.trimmingCharacters(in: .whitespaces)
+            .split(whereSeparator: { $0 == "-" || $0 == "_" }).first?.lowercased()
+        else { return nil }
+        if ["und", "mul", "zxx", "mis"].contains(primary) { return "Unknown" }
+        return Locale(identifier: "en_US").localizedString(forLanguageCode: primary)
+            ?? primary.uppercased()
+    }
+
     static func date(unix: Int64) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(unix))
         let formatter = DateFormatter()
