@@ -85,6 +85,49 @@ fn extract_structure_keeps_fragment_hrefs_and_resolves_their_spine_item() {
     assert_eq!(s.chapters[0].spine_index, 1);
 }
 
+// Front matter, then two chapters inside one document: the second chapter's
+// heading sits in a wrapper, so its path runs two steps deep.
+const SHARED: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>S</title></head>
+<body><p>Front matter.</p><br/><h2 id="one">One</h2><p>Text.</p>
+<div class="chapter"><h2 id="two">Two</h2><p>More text.</p></div></body>
+</html>"#;
+
+#[test]
+fn extract_structure_places_the_anchors_of_chapters_sharing_a_spine_item() {
+    let mut doc = open(build_test_epub_with_nav(
+        &[("s.xhtml", SHARED), ("c2.xhtml", CH)],
+        &[
+            ("Front", "s.xhtml"),
+            ("One", "s.xhtml#one"),
+            ("Two", "s.xhtml#two"),
+            ("Three", "c2.xhtml#three"),
+            ("Missing", "s.xhtml#gone"),
+        ],
+    ));
+    let s = extract_structure(&mut doc).unwrap();
+    let anchors: Vec<Option<&str>> = s
+        .chapters
+        .iter()
+        .map(|c| c.anchor_path.as_deref())
+        .collect();
+    // `<br/>` is the body's second child, so the first heading is its third.
+    assert_eq!(
+        anchors,
+        vec![None, Some("/4/6"), Some("/4/10/2"), None, None],
+        "only chapters sharing an item are placed, and only on an element that exists"
+    );
+}
+
+#[test]
+fn element_paths_counts_element_children_only_and_ignores_unparseable_input() {
+    let ids: HashSet<String> = ["two".to_string()].into();
+    let paths = element_paths(SHARED.as_bytes(), &ids);
+    assert_eq!(paths.get("two").map(String::as_str), Some("/4/10/2"));
+    assert!(element_paths(b"<html><body><p", &ids).is_empty());
+}
+
 #[test]
 fn extract_structure_drops_entries_that_resolve_to_no_spine_item() {
     let mut doc = open(build_test_epub_with_nav(

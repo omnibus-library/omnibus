@@ -244,12 +244,7 @@ fn chapter_now(
     let idx = reading
         .epub_cfi
         .as_deref()
-        .and_then(|cfi| {
-            super::super::chapter_ref::chapter_index_for_cfi(
-                chapters.iter().map(|c| c.spine_index),
-                cfi,
-            )
-        })
+        .and_then(|cfi| super::super::chapter_ref::chapter_index_for_cfi(chapters, cfi))
         .or_else(|| {
             // No CFI: chapter starts are whole-book percents (0..=100), the same
             // scale as the saved position. Only meaningful past the start.

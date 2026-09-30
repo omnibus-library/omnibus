@@ -3,6 +3,7 @@
 //! NCX fallback), resolved to spine indices. Runs inside the
 //! `BackfillEpubStructure` worker task; persisted by `crate::epub_structure`.
 
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek};
 
 use anyhow::Context;
@@ -32,6 +33,11 @@ pub struct TocChapter {
     /// Cumulative visible chars before the chapter's spine item — the
     /// chapter start as a whole-book text offset, at spine granularity.
     pub start_chars: i64,
+    /// In-document CFI step path (`/4/2/6`) of the element the href's
+    /// fragment names, for a chapter sharing its spine item with another —
+    /// the one case the spine step can't tell chapters apart. `None` when
+    /// the item is its own, or the fragment names nothing.
+    pub anchor_path: Option<String>,
 }
 
 /// Everything the extraction learns about one EPUB file.
@@ -79,8 +85,112 @@ pub fn extract_structure<R: Read + Seek>(doc: &mut EpubDoc<R>) -> Option<EpubStr
         .filter(|entries| !entries.is_empty())
         .or_else(|| ncx_toc(doc))
         .unwrap_or_default();
-    let chapters = resolve_chapters(&spine, raw);
+    let mut chapters = resolve_chapters(&spine, raw);
+    place_shared_anchors(doc, &idrefs, &mut chapters);
     Some(EpubStructure { spine, chapters })
+}
+
+/// Fill `anchor_path` for every chapter that shares its spine item with
+/// another, parsing each such document once.
+fn place_shared_anchors<R: Read + Seek>(
+    doc: &mut EpubDoc<R>,
+    idrefs: &[String],
+    chapters: &mut [TocChapter],
+) {
+    let mut per_spine: HashMap<i64, usize> = HashMap::new();
+    for c in chapters.iter() {
+        *per_spine.entry(c.spine_index).or_default() += 1;
+    }
+    let mut shared: Vec<i64> = per_spine
+        .into_iter()
+        .filter(|(_, n)| *n > 1)
+        .map(|(i, _)| i)
+        .collect();
+    shared.sort_unstable();
+    for spine_index in shared {
+        let ids: HashSet<String> = chapters
+            .iter()
+            .filter(|c| c.spine_index == spine_index)
+            .filter_map(|c| c.href.split_once('#').map(|(_, f)| f.to_string()))
+            .collect();
+        let Some((bytes, _)) = usize::try_from(spine_index)
+            .ok()
+            .and_then(|i| idrefs.get(i))
+            .and_then(|idref| doc.get_resource(idref))
+        else {
+            continue;
+        };
+        let paths = element_paths(&bytes, &ids);
+        for c in chapters.iter_mut().filter(|c| c.spine_index == spine_index) {
+            c.anchor_path = c
+                .href
+                .split_once('#')
+                .and_then(|(_, f)| paths.get(f).cloned());
+        }
+    }
+}
+
+/// The in-document CFI step path of each element whose `id` is in `ids`:
+/// the even child-element steps from the root element down, as epub.js
+/// writes them after the `!`. An unparseable document places nothing.
+fn element_paths(xhtml: &[u8], ids: &HashSet<String>) -> HashMap<String, String> {
+    let mut found = HashMap::new();
+    let mut reader = quick_xml::Reader::from_reader(xhtml);
+    let mut buf = Vec::new();
+    // Element children seen so far at each open depth; empty until the root.
+    let mut counts: Vec<u32> = Vec::new();
+    let mut path: Vec<u32> = Vec::new();
+    loop {
+        let (start, open) = match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => (e.into_owned(), true),
+            Ok(Event::Empty(e)) => (e.into_owned(), false),
+            Ok(Event::End(_)) => {
+                counts.pop();
+                path.pop();
+                buf.clear();
+                continue;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            Ok(_) => {
+                buf.clear();
+                continue;
+            }
+        };
+        buf.clear();
+        // The root element is the path's origin, not a step on it.
+        let Some(count) = counts.last_mut() else {
+            if open {
+                counts.push(0);
+            }
+            continue;
+        };
+        *count += 1;
+        let step = *count * 2;
+        if let Some(id) = element_id(&start).filter(|id| ids.contains(id)) {
+            let steps: String = path
+                .iter()
+                .chain(std::iter::once(&step))
+                .map(|s| format!("/{s}"))
+                .collect();
+            found.entry(id).or_insert(steps);
+            if found.len() == ids.len() {
+                break;
+            }
+        }
+        if open {
+            counts.push(0);
+            path.push(step);
+        }
+    }
+    found
+}
+
+fn element_id(e: &BytesStart) -> Option<String> {
+    e.try_get_attribute("id").ok().flatten().and_then(|a| {
+        a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+            .ok()
+            .map(|v| v.into_owned())
+    })
 }
 
 /// [`extract_structure`] straight from an EPUB file on disk — the
@@ -115,6 +225,7 @@ fn resolve_chapters(spine: &[SpineStat], raw: Vec<(String, String)>) -> Vec<TocC
             href,
             spine_index: idx as i64,
             start_chars: cumulative[idx],
+            anchor_path: None,
         });
     }
     chapters

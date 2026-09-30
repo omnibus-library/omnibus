@@ -198,6 +198,7 @@ async fn ebook_lane(
             title: c.title,
             percent: (100.0 * c.start_chars.max(0) as f64 / total as f64).clamp(0.0, 100.0),
             spine_index: c.spine_index,
+            anchor_path: c.anchor_path,
         })
         .collect();
     Ok(Some(AlignmentEbook {

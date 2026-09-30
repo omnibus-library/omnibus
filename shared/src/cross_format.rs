@@ -248,6 +248,11 @@ pub struct AlignmentEbookChapter {
     /// payload from a server predating the field still decodes.
     #[serde(default)]
     pub spine_index: i64,
+    /// In-document CFI step path (`/4/2/6`) of the chapter's anchor when it
+    /// shares its spine item with another chapter, placing a position
+    /// between them. `None` for a chapter with its spine item to itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_path: Option<String>,
 }
 
 /// One audio file segment for the lane, in current ordinal order.

@@ -87,6 +87,13 @@ const TWO_FINGER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "mariucha")!;
 const GUTTER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "room-with-a-view")!;
 // The start of its Chapter II: a page of prose in either view.
 const GUTTER_CFI = "epubcfi(/6/10!/4/2)";
+// Reserved for the shared-spine chapter test: its front matter and first
+// eight chapters are one spine document, so only their anchors tell them
+// apart. Opened at a deep link; nothing else opens it.
+const SHARED_SPINE_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "moby-dick")!;
+// Well into "CHAPTER 1. Loomings." — the seventh of that document's fourteen
+// anchors, where naming the last would read "CHAPTER 8. The Pulpit.".
+const SHARED_SPINE_CFI = "epubcfi(/6/4!/4/50/1:0)";
 
 // The epub.js progress POST fires on the reader's relocate events; pin the
 // exact pathname so the sibling `/api/rpc/progress/get` reads never match.
@@ -566,6 +573,28 @@ test("keeps the page-turn buttons clear of the prose in one- and two-page view",
         .toBe("clear");
     }
   }
+});
+
+test("names the chapter the page is in when several share its spine document", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, SHARED_SPINE_BOOK.title);
+  await gotoReady(
+    page,
+    `/read/${uuid}?cfi=${encodeURIComponent(SHARED_SPINE_CFI)}`,
+  );
+  await expect(page.getByTestId("reader-header-chapter")).toHaveText(
+    "CHAPTER 1. Loomings.",
+    { timeout: 20_000 },
+  );
+
+  // The Contents drawer marks the same row.
+  await page.getByTestId("reader-toc").click();
+  await expect(page.getByTestId("reader-toc-drawer")).toBeVisible();
+  await expect(
+    page.locator('[data-testid="reader-toc-row"].current'),
+  ).toHaveText("CHAPTER 1. Loomings.");
 });
 
 test("the back button leaves the reader for the book detail page", async ({

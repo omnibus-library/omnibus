@@ -18,9 +18,9 @@ use crate::pages::book_detail::chapter_ref;
 /// position, which the resume readout already carries; a saved passage wants
 /// the name.
 ///
-/// Resolution is the CFI's spine step against the chapters' spine indices —
-/// the same `chapter_ref` path the resume readout uses, so the two can't name
-/// different chapters for one location. Falls back to the 1-based
+/// Resolution is the CFI's spine step, then its place among the anchors of
+/// chapters sharing that item — the same `chapter_ref` path the resume
+/// readout uses, so the two can't name different chapters for one location. Falls back to the 1-based
 /// spine "Section N" when no chapter structure is loaded, when the CFI sits
 /// before the first chapter (front matter), or when the matched chapter
 /// carries no title to print. `None` when the string has no readable spine
@@ -29,7 +29,7 @@ pub(super) fn highlight_locator(cfi: &str, chapters: &[AlignmentEbookChapter]) -
     if let Some(page) = pdf_anchor_page(cfi) {
         return Some(pdf_locator(page, chapters));
     }
-    let titled = chapter_ref::chapter_index_for_cfi(chapters.iter().map(|c| c.spine_index), cfi)
+    let titled = chapter_ref::chapter_index_for_cfi(chapters, cfi)
         .and_then(|idx| chapters.get(idx))
         .map(|c| c.title.trim())
         .filter(|t| !t.is_empty());

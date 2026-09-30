@@ -78,6 +78,7 @@ async fn alignment_view_reports_ebook_ticks_when_structure_exists() {
                 href: "c2.xhtml".into(),
                 spine_index: 1,
                 start_chars: 40,
+                anchor_path: None,
             }],
         },
     )

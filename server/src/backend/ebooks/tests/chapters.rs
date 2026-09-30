@@ -218,6 +218,7 @@ async fn api_get_ebook_chapters_serves_the_persisted_structure() {
             href: "c2.xhtml".into(),
             spine_index: 1,
             start_chars: 40,
+            anchor_path: None,
         }],
     };
     db::epub_structure::replace_structure(&pool, file_id, &structure)

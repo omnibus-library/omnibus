@@ -13,6 +13,7 @@ fn toc(entries: &[(&str, i64)]) -> Vec<AlignmentEbookChapter> {
             title: (*title).to_string(),
             percent: 0.0,
             spine_index: *spine_index,
+            anchor_path: None,
         })
         .collect()
 }
@@ -49,6 +50,25 @@ fn highlight_locator_names_the_chapter_rather_than_its_toc_ordinal() {
     assert_eq!(
         highlight_locator("epubcfi(/6/16!/4/2)", &chapters),
         Some("Chapter 1: Joost".to_string())
+    );
+}
+
+#[test]
+fn highlight_locator_names_the_first_chapter_of_a_spine_item_it_shares() {
+    // Moby Dick's shape: front matter and chapters one to eight are one spine
+    // document. A passage from the opening of chapter one is filed under it,
+    // not under the item's last anchor.
+    let mut chapters = toc(&[
+        ("ETYMOLOGY.", 2),
+        ("CHAPTER 1. Loomings.", 2),
+        ("CHAPTER 8. The Pulpit.", 2),
+    ]);
+    for (c, anchor) in chapters.iter_mut().zip(["/4/26/6", "/4/32", "/4/346"]) {
+        c.anchor_path = Some(anchor.to_string());
+    }
+    assert_eq!(
+        highlight_locator("epubcfi(/6/6!/4/34,/1:0,/1:16)", &chapters),
+        Some("CHAPTER 1. Loomings.".to_string())
     );
 }
 

@@ -236,14 +236,59 @@
     }
   }
 
-  function findChapter(href) {
+  // The TOC entry a position in spine item `href` sits in. Several entries can
+  // share one spine item, so with `cfi` and a `placer` for that item's
+  // document ({ doc, cfiOf(el) }) the one whose anchor is last at or before
+  // the position wins; an anchor that can't be placed keeps the item's last
+  // entry.
+  function findChapter(href, cfi, placer) {
     if (!tocFlat.length || !href) return null;
     var clean = href.split("#")[0];
-    for (var i = tocFlat.length - 1; i >= 0; i--) {
-      var tocHref = (tocFlat[i].href || "").split("#")[0];
-      if (tocHref === clean) {
-        return { index: i + 1, total: tocFlat.length, title: tocFlat[i].label.trim() };
+    var hits = [];
+    for (var i = 0; i < tocFlat.length; i++) {
+      if ((tocFlat[i].href || "").split("#")[0] === clean) hits.push(i);
+    }
+    if (!hits.length) return null;
+    var at = hits.length > 1 ? entryAtOrBefore(hits, cfi, placer) : hits[0];
+    return { index: at + 1, total: tocFlat.length, title: tocFlat[at].label.trim() };
+  }
+
+  function entryAtOrBefore(hits, cfi, placer) {
+    var last = hits[hits.length - 1];
+    if (!cfi || !placer || !placer.doc) return last;
+    var at = -1;
+    try {
+      var cmp = new ePub.CFI();
+      for (var h = 0; h < hits.length; h++) {
+        var href = tocFlat[hits[h]].href || "";
+        var hash = href.indexOf("#");
+        // No fragment: the entry opens the spine item.
+        if (hash >= 0) {
+          var el = placer.doc.getElementById(href.slice(hash + 1));
+          if (!el) return last;
+          if (cmp.compare(placer.cfiOf(el), cfi) > 0) continue;
+        }
+        at = hits[h];
       }
+    } catch (e) {
+      return last;
+    }
+    // Ahead of every anchor: the item's first entry is the nearest name.
+    return at >= 0 ? at : hits[0];
+  }
+
+  // A placer for the rendered section at spine `index`, or null.
+  function renderedPlacer(index) {
+    try {
+      var all = rendition ? rendition.getContents() : [];
+      for (var i = 0; i < all.length; i++) {
+        if (all[i].sectionIndex === index && all[i].document) {
+          var c = all[i];
+          return { doc: c.document, cfiOf: function (el) { return c.cfiFromNode(el); } };
+        }
+      }
+    } catch (e) {
+      /* no rendered sections */
     }
     return null;
   }
@@ -299,7 +344,10 @@
       totalPages = book.locations.total || 0;
       pagesLeft = pagesLeftInSection(cfi, page);
     }
-    var ch = location && location.start ? findChapter(location.start.href) : null;
+    var ch =
+      location && location.start
+        ? findChapter(location.start.href, cfi, renderedPlacer(location.start.index))
+        : null;
     return {
       cfi: cfi,
       page: page + 1,
@@ -3627,8 +3675,12 @@
           .load(book.load.bind(book))
           .then(function () {
             var found = section.find(q) || [];
-            var chap = findChapter(section.href);
+            var placer = {
+              doc: section.document,
+              cfiOf: function (el) { return section.cfiFromElement(el); },
+            };
             for (var i = 0; i < found.length && results.length < 80; i++) {
+              var chap = findChapter(section.href, found[i].cfi, placer);
               results.push({
                 cfi: found[i].cfi,
                 excerpt: (found[i].excerpt || "").trim(),

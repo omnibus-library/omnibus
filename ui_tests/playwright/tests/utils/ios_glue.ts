@@ -31,6 +31,7 @@ const GLUE_FILES = new Set([
 export interface RelocatePayload {
   cfi: string;
   echo: boolean;
+  chapterTitle: string;
 }
 
 /** One host-window row the host paints a selection bar over. */
@@ -70,16 +71,21 @@ export interface GlueWindow {
 /**
  * A one-chapter EPUB3 whose chapter body is `body`. `head` lands in the
  * chapter's `<head>`; `files` are extra `OEBPS/`-relative resources, each
- * listed in the manifest under the given media type.
+ * listed in the manifest under the given media type; `toc` is the nav's
+ * `[label, href]` entries, one "One" entry for the chapter by default.
  */
 export async function buildChapterEpub(
   body: string,
   opts: {
     head?: string;
     files?: Record<string, { data: Buffer | string; mediaType: string }>;
+    toc?: [string, string][];
   } = {},
 ): Promise<Buffer> {
   const files = opts.files ?? {};
+  const toc = (opts.toc ?? [["One", "chapter.xhtml"]])
+    .map(([label, href]) => `<li><a href="${href}">${label}</a></li>`)
+    .join("");
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
   zip.file(
@@ -118,7 +124,7 @@ export async function buildChapterEpub(
     `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head><title>Contents</title></head>
-<body><nav epub:type="toc"><ol><li><a href="chapter.xhtml">One</a></li></ol></nav></body>
+<body><nav epub:type="toc"><ol>${toc}</ol></nav></body>
 </html>`,
   );
   zip.file(
