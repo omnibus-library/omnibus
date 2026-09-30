@@ -265,3 +265,58 @@ async fn search_palette_totals_report_uncapped_counts() {
         "books + authors + tags (no series)"
     );
 }
+
+/// The results page's "Show all": a raised per-category cap returns the whole
+/// section, with the same uncapped totals the capped call reports.
+#[tokio::test]
+async fn search_palette_for_paths_limited_returns_a_whole_section_up_to_the_cap() {
+    let _covers = CoversTempDir::new("palette_limited");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let books: Vec<_> = (0..7)
+        .map(|i| {
+            let author = format!("Quest Author {i}");
+            let tag = format!("questing {i}");
+            indexed(
+                &format!("q{i}.epub"),
+                Some(&format!("Quest {i}")),
+                &[author.as_str()],
+                &[tag.as_str()],
+                None,
+                None,
+            )
+        })
+        .collect();
+    replace_books(&pool, "/lib", books).await.unwrap();
+
+    let capped = search_palette_for_paths(&pool, &["/lib"], "quest")
+        .await
+        .unwrap();
+    assert_eq!(capped.books.len(), 5);
+    assert_eq!(capped.tags.len(), 5);
+
+    let whole = search_palette_for_paths_limited(&pool, &["/lib"], "quest", 20)
+        .await
+        .unwrap();
+    assert_eq!(whole.books.len(), 7);
+    assert_eq!(whole.authors.len(), 7);
+    assert_eq!(whole.tags.len(), 7);
+    assert_eq!(
+        (whole.book_total, whole.author_total, whole.tag_total),
+        (capped.book_total, capped.author_total, capped.tag_total),
+        "the totals don't depend on the cap"
+    );
+    assert_eq!(whole.tag_total, 7);
+
+    // A cap under the match count still counts every match.
+    let two = search_palette_for_paths_limited(&pool, &["/lib"], "quest", 2)
+        .await
+        .unwrap();
+    assert_eq!(two.tags.len(), 2);
+    assert_eq!(two.tag_total, 7);
+
+    // Zero is clamped up to one row rather than returning nothing.
+    let zero = search_palette_for_paths_limited(&pool, &["/lib"], "quest", 0)
+        .await
+        .unwrap();
+    assert_eq!(zero.books.len(), 1);
+}

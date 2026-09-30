@@ -1,5 +1,6 @@
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
+import { expectMutation } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
@@ -128,4 +129,62 @@ test("renders the /search results page layout", async ({ page }) => {
   );
   await expect(page.getByRole("button", { name: "Table" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Grid" })).toHaveCount(0);
+});
+
+test("a section counting more hits than it previews reaches them all through Show all", async ({
+  page,
+}) => {
+  // "the" matches more fixture titles than the five a section previews.
+  await gotoReady(page, "/search/the");
+
+  const showAll = page.getByTestId("search-show-all-results-books");
+  await expect(showAll).toHaveText(/^Show all \d+$/);
+  const total = Number((await showAll.innerText()).replace(/\D/g, ""));
+  expect(total, "the query must outrun the preview").toBeGreaterThan(5);
+  await expect(page.getByTestId("search-book-row")).toHaveCount(5);
+  await expect(showAll).toHaveAttribute("aria-expanded", "false");
+
+  // The rail names the same count the section can now reach.
+  const railBooks = page
+    .getByRole("complementary")
+    .getByRole("link", { name: /^Books/ });
+  await expect(railBooks).toContainText(String(total));
+
+  // A read, but a POST — asserted like one.
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/search-results",
+      expectedBody: { q: "the", limit: total },
+      expectedStatus: 200,
+    },
+    async () => showAll.click(),
+  );
+  await expect(page.getByTestId("search-book-row")).toHaveCount(total);
+  await expect(showAll).toHaveText("Show fewer");
+  await expect(showAll).toHaveAttribute("aria-expanded", "true");
+
+  // Collapsing needs no second fetch.
+  await showAll.click();
+  await expect(page.getByTestId("search-book-row")).toHaveCount(5);
+});
+
+test("a failed Show all fetch says so and leaves the section collapsed", async ({
+  page,
+}) => {
+  await gotoReady(page, "/search/the");
+  await page.route("**/api/rpc/search-results", (route) =>
+    route.fulfill({ status: 500, body: "boom" }),
+  );
+
+  const showAll = page.getByTestId("search-show-all-results-books");
+  await expectMutation(
+    page,
+    { method: "POST", url: "/api/rpc/search-results", expectedStatus: 500 },
+    async () => showAll.click(),
+  );
+  await expect(page.getByTestId("search-section-error")).toBeVisible();
+  await expect(page.getByTestId("search-book-row")).toHaveCount(5);
+  await expect(showAll).toHaveAttribute("aria-expanded", "false");
 });

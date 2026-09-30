@@ -26,6 +26,14 @@ pub(super) struct SearchQuery {
     q: String,
 }
 
+/// `GET /api/search/palette` params. `limit` raises the per-category cap for a
+/// caller showing a whole section; absent, the palette's own cap applies.
+#[derive(Deserialize)]
+pub(super) struct PaletteQuery {
+    q: String,
+    limit: Option<u32>,
+}
+
 /// `GET /api/search/content` params. Everything past `q` is optional, so a
 /// caller that only knows the old shape still works.
 #[derive(Deserialize)]
@@ -180,7 +188,7 @@ pub(super) async fn get_search_content(
 pub(super) async fn get_search_palette(
     _user: AuthUser,
     State(state): State<AppState>,
-    Query(params): Query<SearchQuery>,
+    Query(params): Query<PaletteQuery>,
 ) -> Response {
     if let Some(rejection) = reject_if_over_length(&params.q) {
         return rejection;
@@ -196,7 +204,13 @@ pub(super) async fn get_search_palette(
     if paths.is_empty() {
         return Json(omnibus_shared::PaletteResults::default()).into_response();
     }
-    match db::search_palette_for_paths(&state.pool, &paths, &params.q).await {
+    let results = match params.limit {
+        Some(limit) => {
+            db::search_palette_for_paths_limited(&state.pool, &paths, &params.q, limit).await
+        }
+        None => db::search_palette_for_paths(&state.pool, &paths, &params.q).await,
+    };
+    match results {
         Ok(results) => Json(results).into_response(),
         Err(error) => internal("search palette", error),
     }

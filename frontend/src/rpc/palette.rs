@@ -30,13 +30,26 @@ pub async fn rpc_get_genre_cloud() -> Result<Vec<GenreWeight>> {
 /// for the command-palette overlay.
 #[post("/api/rpc/search-palette", pool: PoolExt, _user: AuthUser)]
 pub async fn rpc_search_palette(q: String) -> Result<PaletteResults> {
-    Ok(search_palette(&pool.0, &q).await?)
+    Ok(search_palette(&pool.0, &q, None).await?)
 }
 
-/// Server-side body of [`rpc_search_palette`], extracted so the grouped
-/// search can be unit-tested without the server-fn transport.
+/// The same grouped search with a raised per-category cap — the full results
+/// page asking for a whole section behind its "Show all". Clamped server-side
+/// to `db::MAX_SECTION_LIMIT`.
+#[post("/api/rpc/search-results", pool: PoolExt, _user: AuthUser)]
+pub async fn rpc_search_results(q: String, limit: u32) -> Result<PaletteResults> {
+    Ok(search_palette(&pool.0, &q, Some(limit)).await?)
+}
+
+/// Server-side body of [`rpc_search_palette`] and [`rpc_search_results`],
+/// extracted so the grouped search can be unit-tested without the server-fn
+/// transport. `None` keeps the palette's own cap.
 #[cfg(feature = "server")]
-async fn search_palette(pool: &sqlx::SqlitePool, q: &str) -> Result<PaletteResults, ServerFnError> {
+async fn search_palette(
+    pool: &sqlx::SqlitePool,
+    q: &str,
+    limit: Option<u32>,
+) -> Result<PaletteResults, ServerFnError> {
     if omnibus_shared::search_query_too_long(q) {
         return Err(ServerFnError::new("query too long"));
     }
@@ -50,9 +63,11 @@ async fn search_palette(pool: &sqlx::SqlitePool, q: &str) -> Result<PaletteResul
     if paths.is_empty() {
         return Ok(PaletteResults::default());
     }
-    db::search_palette_for_paths(pool, &paths, q)
-        .await
-        .map_err(|e| internal_rpc_error("search palette", e))
+    match limit {
+        Some(limit) => db::search_palette_for_paths_limited(pool, &paths, q, limit).await,
+        None => db::search_palette_for_paths(pool, &paths, q).await,
+    }
+    .map_err(|e| internal_rpc_error("search palette", e))
 }
 
 // `server`-gated: exercises the extracted server-side body against an
@@ -78,15 +93,44 @@ mod tests {
         .unwrap();
         seed_synced_ebook(&pool, "dune.epub", "Dune", "Frank Herbert").await;
 
-        let results = search_palette(&pool, "Dune").await.unwrap();
+        let results = search_palette(&pool, "Dune", None).await.unwrap();
         assert_eq!(results.books.len(), 1);
         assert_eq!(results.books[0].title, "Dune".to_string());
     }
 
     #[tokio::test]
+    async fn search_palette_with_a_limit_returns_more_than_the_palettes_five() {
+        let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
+        omnibus_db::set_settings(
+            &pool,
+            &omnibus_shared::Settings {
+                ebook_library_path: Some("/ebooks".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for i in 0..7 {
+            seed_synced_ebook(
+                &pool,
+                &format!("dune{i}.epub"),
+                &format!("Dune {i}"),
+                "Frank Herbert",
+            )
+            .await;
+        }
+
+        let capped = search_palette(&pool, "Dune", None).await.unwrap();
+        let whole = search_palette(&pool, "Dune", Some(50)).await.unwrap();
+        assert_eq!(capped.books.len(), 5);
+        assert_eq!(whole.books.len(), 7);
+        assert_eq!(whole.book_total, 7);
+    }
+
+    #[tokio::test]
     async fn search_palette_returns_empty_results_when_no_library_configured() {
         let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
-        let results = search_palette(&pool, "anything").await.unwrap();
+        let results = search_palette(&pool, "anything", None).await.unwrap();
         assert_eq!(results, omnibus_shared::PaletteResults::default());
     }
 
@@ -95,7 +139,7 @@ mod tests {
         let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
         let oversized = "a".repeat(SEARCH_QUERY_MAX_LEN + 1);
 
-        let result = search_palette(&pool, &oversized).await;
+        let result = search_palette(&pool, &oversized, None).await;
 
         assert!(result.is_err(), "oversized query must be rejected");
     }

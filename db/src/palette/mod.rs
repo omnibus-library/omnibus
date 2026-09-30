@@ -77,6 +77,11 @@ impl From<crate::metadata_overrides::MetadataOverridesError> for PaletteError {
 /// uncapped per-category totals (`book_total` etc.) are computed separately.
 const LIMIT: i32 = 5;
 
+/// The most hits one category returns to [`search_palette_for_paths_limited`]
+/// — the results page asking for a whole section. The same ceiling the
+/// full-text book search holds to.
+pub const MAX_SECTION_LIMIT: u32 = 500;
+
 /// Grouped command-palette results for one library path.
 ///
 /// Returns up to 5 books, authors, series, tags, and genres plus server-side
@@ -97,6 +102,19 @@ pub async fn search_palette_for_paths(
     library_paths: &[&str],
     q: &str,
 ) -> Result<PaletteResults, PaletteError> {
+    search_palette_for_paths_limited(pool, library_paths, q, LIMIT.unsigned_abs()).await
+}
+
+/// [`search_palette_for_paths`] with a caller-chosen per-category cap, clamped
+/// to `1..=MAX_SECTION_LIMIT`. The totals are the same uncapped counts either
+/// way; only how many rows each category carries changes.
+pub async fn search_palette_for_paths_limited(
+    pool: &SqlitePool,
+    library_paths: &[&str],
+    q: &str,
+    limit: u32,
+) -> Result<PaletteResults, PaletteError> {
+    let limit = i32::try_from(limit.clamp(1, MAX_SECTION_LIMIT)).unwrap_or(LIMIT);
     if library_paths.is_empty() {
         return Ok(PaletteResults::default());
     }
@@ -116,7 +134,7 @@ pub async fn search_palette_for_paths(
     // displays (FTS already matches on the merged text — see
     // `rebuild_fts_for_book` in the override write path). The books arm also
     // returns its uncapped total in the same FTS5 pass.
-    let (books, book_total) = search_books_for_paths(pool, library_paths, trimmed, LIMIT).await?;
+    let (books, book_total) = search_books_for_paths(pool, library_paths, trimmed, limit).await?;
 
     // Escape the query for LIKE pattern: backslash first (it's the ESCAPE char),
     // then the LIKE wildcards percent and underscore.
@@ -127,35 +145,35 @@ pub async fn search_palette_for_paths(
     let like_pattern = format!("%{like_q}%");
 
     // B. Authors — substring match, scoped to library, ordered by book count.
-    let authors = search_authors_for_paths(pool, library_paths, &like_pattern, LIMIT).await?;
+    let authors = search_authors_for_paths(pool, library_paths, &like_pattern, limit).await?;
 
     // C. Series — substring match with primary author from first book.
-    let series = search_series_for_paths(pool, library_paths, &like_pattern, LIMIT).await?;
+    let series = search_series_for_paths(pool, library_paths, &like_pattern, limit).await?;
 
     // D. Tags — substring match, scoped to library.
-    let tags = search_tags_for_paths(pool, library_paths, &like_pattern, LIMIT).await?;
+    let tags = search_tags_for_paths(pool, library_paths, &like_pattern, limit).await?;
 
     // E. Genres — substring match over the override-JSON arm alone; genres
     // have no link table to give them a canonical arm.
-    let genres = search_genres_for_paths(pool, library_paths, &like_pattern, LIMIT).await?;
+    let genres = search_genres_for_paths(pool, library_paths, &like_pattern, limit).await?;
 
     // Uncapped per-category totals for the full-page results header. Each is a
     // cheap COUNT over the same visibility predicate the arm uses; books got
     // theirs in-pass above. Skipped when the capped vec already holds the whole
-    // match set (len < LIMIT ⇒ no more rows to count).
-    let author_total = total_for(authors.len(), || {
+    // match set (len < limit ⇒ no more rows to count).
+    let author_total = total_for(authors.len(), limit, || {
         count_authors_for_paths(pool, library_paths, &like_pattern)
     })
     .await?;
-    let series_total = total_for(series.len(), || {
+    let series_total = total_for(series.len(), limit, || {
         count_series_for_paths(pool, library_paths, &like_pattern)
     })
     .await?;
-    let tag_total = total_for(tags.len(), || {
+    let tag_total = total_for(tags.len(), limit, || {
         count_tags_for_paths(pool, library_paths, &like_pattern)
     })
     .await?;
-    let genre_total = total_for(genres.len(), || {
+    let genre_total = total_for(genres.len(), limit, || {
         count_genres_for_paths(pool, library_paths, &like_pattern)
     })
     .await?;
@@ -179,15 +197,15 @@ pub async fn search_palette_for_paths(
 }
 
 /// Resolve a category's uncapped total, skipping the COUNT query when the
-/// capped result already holds the entire match set. The arms cap at `LIMIT`,
+/// capped result already holds the entire match set. The arms cap at `limit`,
 /// so a vec shorter than the cap is exhaustive and `len` *is* the total — only
 /// a full vec might be hiding further matches worth counting.
-async fn total_for<F, Fut>(returned: usize, count: F) -> Result<u32, PaletteError>
+async fn total_for<F, Fut>(returned: usize, limit: i32, count: F) -> Result<u32, PaletteError>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<i64, PaletteError>>,
 {
-    if returned < LIMIT as usize {
+    if returned < usize::try_from(limit).unwrap_or(0) {
         return Ok(u32::try_from(returned).unwrap_or(u32::MAX));
     }
     Ok(u32::try_from(count().await?).unwrap_or(u32::MAX))
