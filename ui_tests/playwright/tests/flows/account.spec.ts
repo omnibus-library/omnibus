@@ -378,6 +378,48 @@ test("shows an error status when saving the display name fails", async ({
   await expect(profileStatus(page)).toHaveClass(/error/);
 });
 
+test("confirms a replaced avatar and clears it when the next upload starts", async ({
+  page,
+}) => {
+  await gotoReady(page, ACCOUNT);
+
+  // Stubbed: the admin's real avatar would show in every other spec's menu.
+  let answer = 204;
+  await page.route("**/api/account/avatar", (route) => {
+    if (route.request().method() === "POST") {
+      return route.fulfill({ status: answer, body: "" });
+    }
+    return route.continue();
+  });
+  const pick = () =>
+    page.getByTestId("avatar-file-input").setInputFiles({
+      name: "avatar.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    });
+
+  await expectMutation(
+    page,
+    { method: "POST", url: "/api/account/avatar", expectedStatus: 204 },
+    pick,
+  );
+  await expect(profileStatus(page)).toHaveText("Profile picture saved.");
+  await expect(profileStatus(page)).toHaveClass(/success/);
+
+  // A confirmation left from the last write must not pass for this one's.
+  answer = 400;
+  await expectMutation(
+    page,
+    { method: "POST", url: "/api/account/avatar", expectedStatus: 400 },
+    pick,
+  );
+  await expect(page.getByTestId("avatar-status")).toHaveClass(/error/);
+  await expect(profileStatus(page)).toHaveCount(0);
+});
+
 test("shows an error when the avatar upload fails", async ({ page }) => {
   await gotoReady(page, ACCOUNT);
 
