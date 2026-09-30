@@ -56,17 +56,49 @@ macro_rules! override_sql {
     };
 }
 
-/// An axis keyed on the *displayed* value: the override where one exists, the
-/// scanned column otherwise. A collation is always stated because a `COALESCE`
+/// Does this book carry a winning override for the text field at `$path`? A
+/// string is the one shape serde reads into `Some`, so the empty string counts
+/// as present — it is the edit form's clear, not an absent key. `IS`, so a
+/// book with no overrides row reads false rather than NULL under a `NOT`.
+macro_rules! override_present_sql {
+    ($path:literal) => {
+        concat!(
+            "(",
+            overrides_win_sql!(),
+            " AND json_type(CASE WHEN json_valid(mo.overrides) THEN mo.overrides ELSE '{}' END, '",
+            $path,
+            "') IS 'text')"
+        )
+    };
+}
+
+/// The *displayed* value of one text field: a present override outright —
+/// NULL when it is the empty clear, never the scanned value it cleared, as in
+/// `apply_overrides` — and the scanned column otherwise.
+macro_rules! effective_value_sql {
+    ($path:literal ; $scanned:literal) => {
+        concat!(
+            "(CASE WHEN ",
+            override_present_sql!($path),
+            " THEN NULLIF(json_extract(mo.overrides, '",
+            $path,
+            "'), '') ELSE ",
+            $scanned,
+            " END)"
+        )
+    };
+}
+
+/// [`effective_value_sql`] with a collation stated, because a `CASE`
 /// expression carries no implicit one — without it the text axes would
 /// silently become case-sensitive, unlike the NOCASE columns they wrap.
 /// `NOCASE` unless named; a sort axis names `dictionary` (see `pool.rs`).
 macro_rules! effective_text_sql {
-    ($($path:literal),+ ; $scanned:literal) => {
-        effective_text_sql!($($path),+ ; $scanned ; "NOCASE")
+    ($path:literal ; $scanned:literal) => {
+        effective_text_sql!($path ; $scanned ; "NOCASE")
     };
-    ($($path:literal),+ ; $scanned:literal ; $collation:literal) => {
-        concat!("COALESCE(", $(override_sql!($path), ", ",)+ $scanned, ") COLLATE ", $collation)
+    ($path:literal ; $scanned:literal ; $collation:literal) => {
+        concat!(effective_value_sql!($path ; $scanned), " COLLATE ", $collation)
     };
 }
 
@@ -184,7 +216,8 @@ macro_rules! effective_genres_sql {
 
 pub(crate) use {
     creator_sort_sql, effective_author_sql, effective_genres_sql, effective_tags_sql,
-    effective_text_sql, override_join_sql, override_sql, overrides_win_sql,
+    effective_text_sql, effective_value_sql, override_join_sql, override_present_sql, override_sql,
+    overrides_win_sql,
 };
 
 #[cfg(test)]

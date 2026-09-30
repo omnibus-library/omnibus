@@ -170,3 +170,104 @@ async fn list_books_page_keeps_the_title_axis_case_insensitive_across_overrides(
         vec![lower, upper]
     );
 }
+
+#[tokio::test]
+async fn list_books_page_files_an_emptied_series_and_index_with_the_series_less_books() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = insert_lib(&pool, "/lib").await;
+    let loose = insert_book(&pool, lib, "Loose", Some("Loose"), None, None).await;
+    let named = insert_book(&pool, lib, "Named", Some("Named"), Some("Mango"), Some(1.0)).await;
+    // A stale scanned key the page no longer shows: the cleared override must
+    // not fall through to it.
+    let cleared = insert_book(
+        &pool,
+        lib,
+        "Babel",
+        Some("Babel"),
+        Some("save to disk"),
+        Some(3.0),
+    )
+    .await;
+    set_overrides_json(&pool, cleared, r#"{"series":"","series_index":""}"#).await;
+
+    assert_eq!(
+        ids(&page_by(&pool, SortKey::Series).await),
+        vec![loose, cleared, named]
+    );
+    let desc = list_books_page(
+        &pool,
+        &["/lib"],
+        SortKey::Series,
+        SortDir::Desc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        50,
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids(&desc), vec![named, cleared, loose]);
+}
+
+#[tokio::test]
+async fn list_books_page_files_a_cleared_series_name_with_the_series_less_books() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = insert_lib(&pool, "/lib").await;
+    let loose = insert_book(&pool, lib, "Loose", Some("Loose"), None, None).await;
+    let native = insert_book(&pool, lib, "B", Some("B"), Some("Mango"), Some(1.0)).await;
+    let cleared = insert_book(&pool, lib, "A", Some("A"), Some("Zed Cycle"), Some(1.0)).await;
+    set_overrides_json(&pool, cleared, r#"{"series":""}"#).await;
+
+    assert_eq!(
+        ids(&page_by(&pool, SortKey::Series).await),
+        vec![loose, cleared, native]
+    );
+}
+
+#[tokio::test]
+async fn list_books_page_orders_on_the_value_it_displays() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let lib = insert_lib(&pool, "/lib").await;
+    let set = insert_book(&pool, lib, "Zulu", Some("Zulu"), None, None).await;
+    let cleared = insert_book(&pool, lib, "Kilo", Some("Kilo"), Some("stale"), None).await;
+    let _scanned = insert_book(&pool, lib, "Mango", Some("Mango"), None, None).await;
+    set_overrides_json(&pool, set, r#"{"title":"Aardvark","series":"Alpha"}"#).await;
+    set_overrides_json(&pool, cleared, r#"{"title":"","series":""}"#).await;
+
+    let page = page_by(&pool, SortKey::Title).await;
+    for (sort, displayed) in [
+        (
+            SortKey::Title,
+            page.books
+                .iter()
+                .map(|b| (b.id, b.title.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            SortKey::Series,
+            page.books
+                .iter()
+                .map(|b| (b.id, b.series.clone()))
+                .collect(),
+        ),
+    ] {
+        let (key, _) = axis_sort_columns(sort);
+        for (id, shown) in displayed {
+            let keyed: Option<String> = sqlx::query_scalar(&format!(
+                "SELECT {key} FROM books b
+                   JOIN scan_roots l ON l.id = b.library_id
+                   LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+                  WHERE b.id = ?"
+            ))
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                keyed,
+                shown.filter(|s| !s.is_empty()),
+                "{sort:?} key for book {id} must be the value the page shows"
+            );
+        }
+    }
+}

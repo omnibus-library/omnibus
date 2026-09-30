@@ -11,7 +11,8 @@ use omnibus_shared::{BookSuperlative, DayActivity, Superlatives, FASTEST_READ_MI
 use sqlx::{Row, SqlitePool};
 
 use crate::metadata_overrides::sql::{
-    effective_text_sql, override_join_sql, override_sql, overrides_win_sql,
+    effective_text_sql, effective_value_sql, override_join_sql, override_present_sql,
+    overrides_win_sql,
 };
 
 use super::compute::{SESSION_ROWS, USER_SESSION_ROWS};
@@ -36,9 +37,9 @@ const AUTHOR_JOIN: &str = concat!(
 /// the authority. `COALESCE` on the title mirrors `compute::finished_books`:
 /// an untitled row still has to name itself.
 const BOOK_COLUMNS: &str = concat!(
-    "b.uuid AS uuid, ",
-    effective_text_sql!("$.title"; "COALESCE(b.title, 'Untitled')"),
-    " AS title, ",
+    "b.uuid AS uuid, COALESCE(",
+    effective_value_sql!("$.title"; "b.title"),
+    ", 'Untitled') COLLATE NOCASE AS title, ",
     effective_text_sql!("$.creators[0].name"; "a.name"),
     " AS author"
 );

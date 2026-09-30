@@ -12,7 +12,9 @@ use crate::books::projection::{
     backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
 };
 use crate::books::BooksError;
-use crate::metadata_overrides::sql::{effective_text_sql, override_sql, overrides_win_sql};
+use crate::metadata_overrides::sql::{
+    effective_text_sql, effective_value_sql, override_present_sql, overrides_win_sql,
+};
 
 use super::{
     axis_sort_columns, bind_all, dir_keyword, exclude_formats_predicate, fetch_page,
