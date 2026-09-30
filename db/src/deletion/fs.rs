@@ -46,7 +46,7 @@ fn cleanup_blocking(job: Cleanup) {
     };
     crate::metadata_overrides::delete_override_cover(&book.uuid);
     crate::covers::delete_cover_files_for(std::slice::from_ref(&book.uuid));
-    remove_thumbnails(book.book_id);
+    crate::thumbs::invalidate_thumbs(book.book_id);
     remove_dir(&crate::hls::hls_dir().join(book.book_id.to_string()));
     remove_file(&crate::kepub::kepub_path(book.book_id));
     crate::epub_rewrite::invalidate_export_epub_cache(book.book_id);
@@ -71,17 +71,6 @@ fn remove_dir(path: &Path) {
         if e.kind() != std::io::ErrorKind::NotFound {
             tracing::warn!(path = ?path, error = %e, "delete: failed to remove directory");
         }
-    }
-}
-
-/// Remove the WebP thumbnails cached for `book_id`, all three sizes.
-fn remove_thumbnails(book_id: i64) {
-    for size in [
-        crate::thumbs::ThumbSize::Sm,
-        crate::thumbs::ThumbSize::Md,
-        crate::thumbs::ThumbSize::Lg,
-    ] {
-        remove_file(&crate::thumbs::thumb_path_for(book_id, size));
     }
 }
 
