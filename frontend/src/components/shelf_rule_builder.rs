@@ -402,8 +402,10 @@ fn ConditionRow(
                 "data-testid": "condition-field-{index}",
                 value: field.as_str(),
                 onchange: move |e| handlers.on_field.call(e),
+                // A select's value is written before its looped options
+                // exist, so each option carries its own selectedness.
                 for (f, label) in FIELDS.iter() {
-                    option { key: "{f.as_str()}", value: f.as_str(), "{label}" }
+                    option { key: "{f.as_str()}", value: f.as_str(), selected: *f == field, "{label}" }
                 }
             }
             select {
@@ -412,7 +414,7 @@ fn ConditionRow(
                 value: op.as_str(),
                 onchange: move |e| handlers.on_op.call(e),
                 for (o, label) in OPS.iter().filter(|(o, _)| field.accepts(*o)) {
-                    option { key: "{o.as_str()}", value: o.as_str(), "{label}" }
+                    option { key: "{o.as_str()}", value: o.as_str(), selected: *o == op, "{label}" }
                 }
             }
             {condition_value_input(&draft, handlers)}
@@ -479,7 +481,7 @@ fn condition_value_input(draft: &RuleDraft, handlers: ConditionHandlers) -> Elem
         return rsx! {
             select { class: "shelf-select", value: "{selected}", onchange: on_val,
                 for (v, label) in STATUS_VALUES.iter() {
-                    option { key: "{v}", value: *v, "{label}" }
+                    option { key: "{v}", value: *v, selected: *v == selected, "{label}" }
                 }
             }
         };
