@@ -10099,8 +10099,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .st-drill-trend-bar { position: relative; width: 60%; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--accent); }
 .st-drill-trend-label { margin-top: 6px; font-size: 10px; color: var(--ink-3); }
 /* Room above a full-height bar for the figure printed on it. */
-.st-drill-trend-valued { height: 116px; }
-.st-drill-trend-valued .st-drill-trend-track { padding-top: 14px; }
+.st-drill-trend-valued { height: 120px; }
+.st-drill-trend-valued .st-drill-trend-track { padding-top: 18px; }
 .st-drill-trend-value {
   position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
   margin-bottom: 2px; font-size: 9px; color: var(--ink-2); white-space: nowrap;

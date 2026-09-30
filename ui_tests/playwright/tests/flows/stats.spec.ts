@@ -336,9 +336,9 @@ test("the Avg rating drill-in charts every half-star bucket on a star axis", asy
   ]);
   await expect(chart.getByTestId("stats-drill-bar-empty")).toHaveCount(8);
   await expect(drillIn).toContainText("Books at each rating");
-  await expect(
-    page.getByTestId("stats-drill-histogram-caption"),
-  ).toHaveText("Rated this month");
+  await expect(page.getByTestId("stats-drill-histogram-caption")).toHaveText(
+    "Rated this month",
+  );
 
   // The trend names what it measures and the period it covers — the trailing
   // year, not the window the delta and histogram follow.
