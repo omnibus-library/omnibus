@@ -266,14 +266,23 @@ struct SearchView: View {
     }
 }
 
-/// Full result grid for one query — reached from "See all" and from tag taps.
+/// Full result grid for one query — reached from "See all" — or for the books
+/// filed under one tag or genre.
 struct SearchResultsView: View {
     let query: String
     let title: String
+    private let facet: SearchFacet?
 
     init(query: String, title: String) {
         self.query = query
         self.title = title
+        facet = nil
+    }
+
+    init(facet: SearchFacet, name: String) {
+        query = name
+        title = name
+        self.facet = facet
     }
 
     @Environment(\.palette) private var palette
@@ -292,7 +301,9 @@ struct SearchResultsView: View {
                 EmptyStateView(
                     icon: "questionmark.circle",
                     title: "No matches",
-                    message: "Nothing here matches \u{201C}\(query)\u{201D}."
+                    message: facet == nil
+                        ? "Nothing here matches \u{201C}\(query)\u{201D}."
+                        : "No books are filed under \u{201C}\(query)\u{201D}."
                 )
             } else {
                 ScrollView {
@@ -319,7 +330,9 @@ struct SearchResultsView: View {
     }
 
     private func load() async {
-        for await hits in LibraryService.searchFull(query: query) {
+        let reads = facet.map { LibraryService.facetBooks($0, name: query) }
+            ?? LibraryService.searchFull(query: query)
+        for await hits in reads {
             books = hits
             isLoading = false
         }

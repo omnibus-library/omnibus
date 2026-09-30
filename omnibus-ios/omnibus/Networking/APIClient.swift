@@ -406,15 +406,9 @@ actor APIClient {
         query: [String: String?],
         body: Body?
     ) throws -> URLRequest {
-        guard let baseURL else { throw APIError.notConfigured }
-        guard var components = URLComponents(string: baseURL + path) else {
-            throw APIError.notConfigured
-        }
-        let items = query.compactMap { key, value in
-            value.map { URLQueryItem(name: key, value: $0) }
-        }
-        if !items.isEmpty { components.queryItems = items }
-        guard let url = components.url else { throw APIError.notConfigured }
+        guard let baseURL,
+              let url = Self.requestURL(base: baseURL, path: path, query: query)
+        else { throw APIError.notConfigured }
 
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -427,6 +421,22 @@ actor APIClient {
         // Last, so a throw above can't strand the probe slot it claims.
         try failFastWhenUnreachable()
         return request
+    }
+
+    /// `URLComponents` leaves `+` bare in a query value, and the server's form
+    /// decoding reads a bare `+` as a space — a tag named "C++" went out as
+    /// "C  ". It already escapes everything else that matters (`&`, `=`, `"`).
+    static func requestURL(base: String, path: String, query: [String: String?]) -> URL? {
+        guard var components = URLComponents(string: base + path) else { return nil }
+        let items = query.compactMap { key, value in
+            value.map { URLQueryItem(name: key, value: $0) }
+        }
+        if !items.isEmpty {
+            components.queryItems = items
+            components.percentEncodedQuery = components.percentEncodedQuery?
+                .replacingOccurrences(of: "+", with: "%2B")
+        }
+        return components.url
     }
 
     private func validate(_ response: URLResponse, data: Data) throws {

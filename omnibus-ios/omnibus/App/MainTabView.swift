@@ -312,7 +312,7 @@ struct DestinationRouter: ViewModifier {
             case .tags:
                 TagCloudView()
             case let .tag(name):
-                SearchResultsView(query: name, title: name)
+                SearchResultsView(facet: .tag, name: name)
             case .settings:
                 SettingsView()
             case .readingGoals:
