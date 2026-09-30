@@ -58,6 +58,7 @@ export interface GlueWindow {
     extendSelectionTo(x: number, y: number): void;
     endSelectionDrag(): void;
   };
+  ePub: { CFI: new (cfi: string) => { toRange(doc: Document): Range } };
   __omnibusOnSelection: (json: string) => void;
   __omnibusOnStatus: (state: string) => void;
   __omnibusOnRelocate: (json: string) => void;
@@ -189,4 +190,65 @@ export async function openGlue(
 /** Every relocate the glue has reported so far. */
 export function relocates(page: Page): Promise<RelocatePayload[]> {
   return page.evaluate(() => (window as unknown as GlueWindow).glueRelocates);
+}
+
+/** The centre of `word` in element `id`, in host-window coordinates. */
+export function wordPoint(
+  page: Page,
+  id: string,
+  word: string,
+): Promise<{ x: number; y: number }> {
+  return page.evaluate(
+    ([id, word]) => {
+      const frame = document.querySelector<HTMLIFrameElement>("#stage iframe");
+      const doc = frame?.contentDocument;
+      const para = doc?.getElementById(id);
+      if (!frame || !doc || !para) throw new Error(`no paragraph #${id}`);
+      const walker = doc.createTreeWalker(para, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const at = (n as Text).data.indexOf(word);
+        if (at < 0) continue;
+        const range = doc.createRange();
+        range.setStart(n, at);
+        range.setEnd(n, at + word.length);
+        const box = range.getBoundingClientRect();
+        const off = frame.getBoundingClientRect();
+        return {
+          x: off.left + box.left + box.width / 2,
+          y: off.top + box.top + box.height / 2,
+        };
+      }
+      throw new Error(`no "${word}" in #${id}`);
+    },
+    [id, word] as const,
+  );
+}
+
+/** Long-press `from`, drag to `to` (by the word), and lift. */
+export async function dragSelect(
+  page: Page,
+  from: { x: number; y: number },
+  to?: { x: number; y: number },
+): Promise<void> {
+  await page.evaluate(
+    ([from, to]) => {
+      const reader = (window as unknown as GlueWindow).OmnibusReader;
+      if (!reader.beginSelectionAt(from.x, from.y)) {
+        throw new Error("the press selected nothing");
+      }
+      if (to) reader.extendSelectionTo(to.x, to.y);
+      reader.endSelectionDrag();
+    },
+    [from, to] as const,
+  );
+}
+
+/** The last settled selection payload — the one a highlight is created from. */
+export async function settled(page: Page): Promise<SelectionPayload> {
+  const all = await page.evaluate(
+    () => (window as unknown as GlueWindow).glueSelections,
+  );
+  const last = all.filter((s) => !s.dragging).at(-1);
+  if (!last) throw new Error("no settled selection was reported");
+  return last;
 }

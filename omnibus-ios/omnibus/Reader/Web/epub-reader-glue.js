@@ -1715,21 +1715,30 @@
 
     // `getClientRects` measures the *font* box, not the line box, so on
     // generously leaded prose the bars come back with a stripe of page
-    // between them. Grow each row by the gap its neighbours leave, which
-    // makes a multi-line selection one continuous block the way the system's
-    // own is — without needing to know the line height.
-    var gap = Infinity;
+    // between them. A gap no wider than the lines are tall is that leading,
+    // and is closed halfway from each side, which makes a paragraph one
+    // continuous block the way the system's own is — without needing to know
+    // the line height. A wider gap is a figure, a heading or a break: there,
+    // and at the selection's own ends, a row grows by half the leading alone.
+    var lead = Infinity;
     for (var g = 1; g < rows.length; g++) {
       if (rows[g].col !== rows[g - 1].col) continue;
       var between = rows[g].top - rows[g - 1].bottom;
-      if (between > 0 && between < gap) gap = between;
+      if (isLeading(between, rows[g - 1], rows[g]) && between < lead) lead = between;
     }
-    if (gap !== Infinity && gap > 0) {
-      var grow = gap / 2;
-      for (var e = 0; e < rows.length; e++) {
-        rows[e].top -= grow;
-        rows[e].bottom += grow;
-      }
+    var half = lead === Infinity ? 0 : lead / 2;
+    var grown = [];
+    for (var e = 0; e < rows.length; e++) {
+      var above = e > 0 && rows[e - 1].col === rows[e].col ? rows[e - 1] : null;
+      var below = e + 1 < rows.length && rows[e + 1].col === rows[e].col ? rows[e + 1] : null;
+      grown.push({
+        up: growToward(above ? rows[e].top - above.bottom : null, above, rows[e], half),
+        down: growToward(below ? below.top - rows[e].bottom : null, rows[e], below, half),
+      });
+    }
+    for (var h = 0; h < rows.length; h++) {
+      rows[h].top -= grown[h].up;
+      rows[h].bottom += grown[h].down;
     }
 
     var out = [];
@@ -1743,6 +1752,22 @@
       });
     }
     return out;
+  }
+
+  // Whether the gap between two consecutive rows is the leading of set text
+  // rather than something standing between the lines.
+  function isLeading(gap, a, b) {
+    return gap > 0 && gap <= Math.min(a.bottom - a.top, b.bottom - b.top);
+  }
+
+  // How far a row grows across `gap` toward its neighbour — `null` for none,
+  // the selection's own end: all of its half of leading, else half the
+  // leading at most, and never into the neighbour's box.
+  function growToward(gap, a, b, half) {
+    if (gap === null) return half;
+    if (gap <= 0) return 0;
+    if (isLeading(gap, a, b)) return gap / 2;
+    return Math.min(half, gap / 2);
   }
 
   // What the host draws: only the rows on the page in front of the reader —
