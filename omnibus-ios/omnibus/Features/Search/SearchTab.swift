@@ -43,6 +43,7 @@ struct BrowseDirectory: View {
     @Environment(\.palette) private var palette
 
     @State private var finished: [FinishedBook] = []
+    private var invalidations = ReplicaInvalidations.shared
 
     private let columns = [
         GridItem(.flexible(), spacing: Spacing.md),
@@ -71,6 +72,10 @@ struct BrowseDirectory: View {
             }
         }
         .task { await loadFinished() }
+        // A status changed elsewhere moves which books this rail holds.
+        .onChange(of: invalidations.generation(of: CacheKey.stats(.allTime))) { _, _ in
+            Task { await loadFinished(force: true) }
+        }
     }
 
     private func tile(
@@ -170,8 +175,8 @@ struct BrowseDirectory: View {
         .contentShape(Rectangle())
     }
 
-    private func loadFinished() async {
-        guard finished.isEmpty else { return }
+    private func loadFinished(force: Bool = false) async {
+        guard force || finished.isEmpty else { return }
         for await summary in UserDataService.stats(range: .allTime).values() {
             finished = Array(summary.finishedBooks.prefix(10))
         }

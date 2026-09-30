@@ -16,7 +16,9 @@ final class ReplicaInvalidations {
     static let shared = ReplicaInvalidations()
 
     /// The keys a mounted surface re-reads when a write moves them.
-    static let watched = [CacheKey.recentProgress, CacheKey.shelfPreviews]
+    static let watched = [
+        CacheKey.recentProgress, CacheKey.shelfPreviews, CacheKey.stats(.allTime),
+    ]
 
     private(set) var generations: [String: Int] = [:]
 

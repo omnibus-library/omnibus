@@ -29,6 +29,13 @@ struct ReplicaInvalidationsTests {
         #expect(hub.generation(of: CacheKey.shelfPreviews) == 0)
     }
 
+    @Test("a read-status write moves the summary Search's Recently finished rail reads")
+    func readStatusAnnouncesTheFinishedRail() {
+        let hub = ReplicaInvalidations()
+        hub.note(kind: OpKind.readStatus("b-1"))
+        #expect(hub.generation(of: CacheKey.stats(.allTime)) == 1)
+    }
+
     @Test("a shelf delete or membership write moves the Shelves rail")
     func shelfWriteAnnouncesTheShelvesRail() {
         let hub = ReplicaInvalidations()
