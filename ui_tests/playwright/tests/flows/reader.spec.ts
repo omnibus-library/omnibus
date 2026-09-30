@@ -82,6 +82,11 @@ const FONT_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-lagoon")!;
 // nothing moved it, so no other spec may write this book's position. Small,
 // for the cold-open reason on DEEP_LINK_BOOK above.
 const TWO_FINGER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "mariucha")!;
+// Reserved for the page-turn gutter test, which opens it at a deep link and
+// reads layout alone; nothing else opens it.
+const GUTTER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "room-with-a-view")!;
+// The start of its Chapter II: a page of prose in either view.
+const GUTTER_CFI = "epubcfi(/6/10!/4/2)";
 
 // The epub.js progress POST fires on the reader's relocate events; pin the
 // exact pathname so the sibling `/api/rpc/progress/get` reads never match.
@@ -479,6 +484,88 @@ test("the Aa button closes the display panel it opened", async ({
   await expect(panel).toBeVisible();
   await page.locator(".rd-scrim").click();
   await expect(panel).toHaveCount(0);
+});
+
+/**
+ * Whether the prose on screen stays clear of both page-turn buttons, as a
+ * sentence a failed poll can print. A page without a spread of prose on it
+ * proves nothing, so it is not clear either.
+ */
+async function turnButtonClearance(page: Page): Promise<string> {
+  const m = await page.evaluate(() => {
+    const clip = document
+      .querySelector("#omnibus-viewer")
+      ?.getBoundingClientRect();
+    const prev = document
+      .querySelector("[data-testid=reader-prev]")
+      ?.getBoundingClientRect();
+    const next = document
+      .querySelector("[data-testid=reader-next]")
+      ?.getBoundingClientRect();
+    const frame = document.querySelector<HTMLIFrameElement>(
+      "#omnibus-viewer iframe",
+    );
+    const doc = frame?.contentDocument;
+    if (!clip || !prev || !next || !frame || !doc?.body) return null;
+    const off = frame.getBoundingClientRect();
+    let left = Number.POSITIVE_INFINITY;
+    let right = Number.NEGATIVE_INFINITY;
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!(n as Text).data.trim()) continue;
+      const range = doc.createRange();
+      range.selectNodeContents(n);
+      for (const box of Array.from(range.getClientRects())) {
+        const l = off.left + box.left;
+        const r = off.left + box.right;
+        // The rest of the section sits beside the page, clipped by the viewer.
+        if (box.width === 0 || r <= clip.left || l >= clip.right) continue;
+        left = Math.min(left, l);
+        right = Math.max(right, r);
+      }
+    }
+    return {
+      underPrev: prev.right - left,
+      underNext: right - next.left,
+      span: (right - left) / clip.width,
+    };
+  });
+  if (!m || !(m.span > 0.6)) return "no page of prose on screen";
+  if (m.underPrev > 0) {
+    return `prose runs ${Math.ceil(m.underPrev)}px under the previous-page button`;
+  }
+  if (m.underNext > 0) {
+    return `prose runs ${Math.ceil(m.underNext)}px under the next-page button`;
+  }
+  return "clear";
+}
+
+test("keeps the page-turn buttons clear of the prose in one- and two-page view", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, GUTTER_BOOK.title);
+  await page.setViewportSize({ width: 1920, height: 900 });
+  await gotoReady(page, `/read/${uuid}?cfi=${encodeURIComponent(GUTTER_CFI)}`);
+  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+
+  for (const spread of ["single", "double"] as const) {
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await page.getByTestId("reader-aa").click();
+    await page.getByTestId(`reader-spread-${spread}`).click();
+    await page.keyboard.press("Escape");
+    // Narrowing only: a layout left over from a wider page overflows the
+    // buttons, so it can never read as clear before the re-layout lands.
+    for (const width of [1920, 1280, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect
+        .poll(() => turnButtonClearance(page), {
+          message: `${spread} view at ${width}px`,
+          timeout: 20_000,
+        })
+        .toBe("clear");
+    }
+  }
 });
 
 test("the back button leaves the reader for the book detail page", async ({

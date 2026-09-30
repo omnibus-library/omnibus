@@ -6397,7 +6397,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    distraction-free centre-tap keeps them in place (the top bar still
    slides away). */
 .rd-dock-full.rd-immersive .rd-chrome-hidden .rd-bottom { transform: none; }
-.rd-viewer { position: absolute; inset: 0; }
+/* The reserve keeps prose clear of the `.rd-turn` buttons (22px + 48px). It
+   has to be the container's: in paginated mode epub.js pins the section
+   body's own max-width and margin, so no column cap set on it survives. */
+.rd-viewer { position: absolute; inset: 0 70px; }
 .rd-turn { position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
   width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
   background: color-mix(in oklch, var(--bg-1) 70%, transparent);
@@ -6414,7 +6417,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    than the phone breakpoint), while the width arm covers phones and viewport-only
    emulators (Playwright's desktop Chromium reports a fine pointer even at a phone
    size). */
-@media (max-width: 480px), (hover: none) and (pointer: coarse) { .rd-turn { display: none; } }
+@media (max-width: 480px), (hover: none) and (pointer: coarse) {
+  .rd-turn { display: none; }
+  .rd-viewer { inset: 0; }
+}
 /* Tap-center hides the chrome for a distraction-free page view — a centre tap
    flips the host's `chrome_hidden` signal, which adds `rd-chrome-hidden` to the
    surface; the bars slide out and the progress ribbon fades.
