@@ -113,6 +113,51 @@ async fn create_returns_book_not_found_for_unknown_uuid() {
 }
 
 #[tokio::test]
+async fn create_journal_entry_at_dates_both_clocks_by_the_device_up_to_now() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let uuid = seed(&pool, "/lib", "Book A").await;
+    let now = crate::auth::now_unix();
+
+    let offline = create_journal_entry_at(
+        &pool,
+        user,
+        &create(&uuid, "offline", None),
+        Some(now - 600),
+    )
+    .await
+    .unwrap();
+    let fast = create_journal_entry_at(
+        &pool,
+        user,
+        &create(&uuid, "fast", None),
+        Some(now + 86_400),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        (offline.created_at, offline.updated_at),
+        (now - 600, now - 600)
+    );
+    assert!(
+        fast.created_at <= crate::auth::now_unix(),
+        "a future stamp clamps to now"
+    );
+    assert_eq!(fast.updated_at, fast.created_at);
+}
+
+#[tokio::test]
+async fn create_journal_entry_at_returns_book_not_found_for_unknown_uuid() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let err = create_journal_entry_at(&pool, user, &create("no-such-book", "x", None), Some(1))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, JournalError::BookNotFound));
+}
+
+#[tokio::test]
 async fn list_returns_all_users_entries_newest_first() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let alice = seed_user(&pool, "alice").await;

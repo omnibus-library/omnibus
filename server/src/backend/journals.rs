@@ -13,7 +13,7 @@ use axum::{
 use omnibus_db::{self as db, journals::JournalError};
 use omnibus_shared::{CreateJournalEntry, JournalImageUpload, UpdateJournalEntry, BODY_MAX_LEN};
 
-use super::{image_upload, internal, AppState};
+use super::{image_upload, internal, AppState, ClientStamped};
 use crate::auth::{AuthUser, MediaAuthUser};
 
 /// Create a journal entry. 400 on an empty/oversized body or out-of-range
@@ -21,12 +21,19 @@ use crate::auth::{AuthUser, MediaAuthUser};
 pub(super) async fn post_journal(
     user: AuthUser,
     State(state): State<AppState>,
-    Json(input): Json<CreateJournalEntry>,
+    Json(stamped): Json<ClientStamped<CreateJournalEntry>>,
 ) -> Response {
-    if let Err(msg) = input.validate() {
+    if let Err(msg) = stamped.body.validate().and(stamped.validate_stamp()) {
         return (axum::http::StatusCode::BAD_REQUEST, msg).into_response();
     }
-    match db::journals::create_journal_entry(&state.pool, user.id, &input).await {
+    match db::journals::create_journal_entry_at(
+        &state.pool,
+        user.id,
+        &stamped.body,
+        stamped.client_created_at,
+    )
+    .await
+    {
         Ok(entry) => Json(entry).into_response(),
         Err(JournalError::BookNotFound) => {
             (axum::http::StatusCode::NOT_FOUND, "book not found").into_response()

@@ -1010,12 +1010,16 @@ struct CreateHighlight: Codable, Sendable {
     var color: HighlightColor
     var text: String?
     var clientID: String
+    /// When the reader made it, by this device's clock — the server dates the
+    /// row by it, so a create the outbox drains later isn't dated by the drain.
+    var clientCreatedAt: Int64 = Int64(Date().timeIntervalSince1970)
 
     enum CodingKeys: String, CodingKey {
         case color, text
         case bookUUID = "book_uuid"
         case epubCFIRange = "epub_cfi_range"
         case clientID = "client_id"
+        case clientCreatedAt = "client_created_at"
     }
 }
 
@@ -1042,11 +1046,14 @@ struct CreateBookmark: Codable, Sendable {
     var position: String
     var title: String?
     var clientID: String
+    /// See `CreateHighlight.clientCreatedAt`.
+    var clientCreatedAt: Int64 = Int64(Date().timeIntervalSince1970)
 
     enum CodingKeys: String, CodingKey {
         case position, title
         case bookUUID = "book_uuid"
         case clientID = "client_id"
+        case clientCreatedAt = "client_created_at"
     }
 }
 
@@ -1086,7 +1093,7 @@ extension CreateHighlight {
         Highlight(
             id: AnnotationID.pending(), bookUUID: bookUUID, epubCFIRange: epubCFIRange,
             color: color, note: nil, text: text, clientID: clientID,
-            createdAt: Int64(Date().timeIntervalSince1970)
+            createdAt: clientCreatedAt
         )
     }
 }
@@ -1103,7 +1110,7 @@ extension CreateBookmark {
         Bookmark(
             id: AnnotationID.pending(), bookUUID: bookUUID, position: position,
             title: title, clientID: clientID,
-            createdAt: Int64(Date().timeIntervalSince1970)
+            createdAt: clientCreatedAt
         )
     }
 }
@@ -1240,12 +1247,15 @@ struct CreateJournalEntry: Codable, Sendable {
     var progress: Int?
     var status: JournalStatus = .published
     var clientID: String = AnnotationID.mint()
+    /// See `CreateHighlight.clientCreatedAt`.
+    var clientCreatedAt: Int64 = Int64(Date().timeIntervalSince1970)
 
     enum CodingKeys: String, CodingKey {
         case progress, status
         case bookUUID = "book_uuid"
         case bodyMd = "body_md"
         case clientID = "client_id"
+        case clientCreatedAt = "client_created_at"
     }
 }
 

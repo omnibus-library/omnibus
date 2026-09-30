@@ -542,8 +542,8 @@ enum UserDataService {
             progress: payload.progress,
             status: payload.status,
             clientID: payload.clientID,
-            createdAt: Int64(Date().timeIntervalSince1970),
-            updatedAt: Int64(Date().timeIntervalSince1970)
+            createdAt: payload.clientCreatedAt,
+            updatedAt: payload.clientCreatedAt
         )
     }
 

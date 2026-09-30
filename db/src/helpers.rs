@@ -541,5 +541,13 @@ pub(crate) fn format_series_index(v: f64) -> String {
     }
 }
 
+/// A row's creation time from the client stamp bound in place of the `?`:
+/// clamped to server-now so a fast device clock can't date a row into the
+/// future, and server-now when the client sent none. The casts matter —
+/// `strftime` yields TEXT, which SQLite sorts above every INTEGER.
+pub(crate) const CLIENT_CREATED_AT_SQL: &str =
+    "MIN(COALESCE(?, CAST(strftime('%s','now') AS INTEGER)), \
+     CAST(strftime('%s','now') AS INTEGER))";
+
 #[cfg(test)]
 mod tests;

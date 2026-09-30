@@ -870,9 +870,16 @@ struct ReaderView: View {
     /// backgrounding — as opposed to the steady trickle of page turns, which
     /// still queue immediately but push at most once every four seconds.
     private func persist(force: Bool) async {
-        guard !controller.holdsStoredPosition, let cfi = controller.location?.cfi else { return }
+        guard !controller.holdsStoredPosition, let location = controller.location,
+              let cfi = location.cfi
+        else { return }
+        // The percent rides the op, so a position saved offline shows one in
+        // the replica before the server has derived its own.
         await UserDataService.saveProgress(
-            ProgressUpdate(bookUUID: book.uuid, format: .epub, epubCFI: cfi, audioPositionSeconds: nil),
+            ProgressUpdate(
+                bookUUID: book.uuid, format: .epub, epubCFI: cfi, audioPositionSeconds: nil,
+                progressPercent: location.savedPercent
+            ),
             push: pushThrottle.shouldPush(force: force)
         )
         await checkpointSessionIfStale()

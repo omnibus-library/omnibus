@@ -418,3 +418,57 @@ async fn api_patch_highlight_color_404s_for_unknown_client_id() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
+
+fn post_highlight_req(token: &str, body: serde_json::Value) -> Request<Body> {
+    Request::builder()
+        .uri("/api/highlights")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header(AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn api_post_highlight_keeps_the_devices_client_created_at() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    // An offline create the outbox drains well after the gesture.
+    let made = 1_700_000_000;
+    let body = serde_json::json!({
+        "book_uuid": uuid,
+        "epub_cfi_range": "epubcfi(/6/4)",
+        "color": "amber",
+        "client_id": "offline-1",
+        "client_created_at": made,
+    });
+
+    let res = app.oneshot(post_highlight_req(&token, body)).await.unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let h: Highlight = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(h.created_at, made);
+}
+
+#[tokio::test]
+async fn api_post_highlight_400_on_negative_client_created_at() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let body = serde_json::json!({
+        "book_uuid": uuid,
+        "epub_cfi_range": "epubcfi(/6/4)",
+        "color": "amber",
+        "client_created_at": -1,
+    });
+
+    let res = app.oneshot(post_highlight_req(&token, body)).await.unwrap();
+
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    assert!(String::from_utf8_lossy(&bytes).contains("client_created_at"));
+}

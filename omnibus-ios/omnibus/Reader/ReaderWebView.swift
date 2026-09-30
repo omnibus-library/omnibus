@@ -232,6 +232,13 @@ struct RelocateData: Codable {
 
     var hasPageNumbers: Bool { totalPages > 0 }
 
+    /// The whole-book percent a saved position carries, the figure the reader
+    /// shows and the web reader sends. `nil` until the locations pass lands:
+    /// before it epub.js has no percentage and `pct` is a placeholder 0.
+    var savedPercent: Int64? {
+        hasPageNumbers ? Int64(min(100, max(0, pct))) : nil
+    }
+
     var chapterName: String? { chapterTitle.nilIfBlank }
 
     /// Whether this position is worth persisting or worth moving the
