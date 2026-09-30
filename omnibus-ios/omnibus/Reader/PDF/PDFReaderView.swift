@@ -208,10 +208,16 @@ struct PDFReaderView: View {
             indicatorLabel(document == nil ? nil : book.displayTitle, .title)
                 .padding(.top, Spacing.xs)
             Spacer(minLength: 0)
-            indicatorLabel(pageLabel, .pageLabel)
-                .padding(.bottom, Spacing.xs)
+            // With the chrome up the page label draws in the chrome instead:
+            // down here the bottom cluster's scrim would paint over it.
+            if !chromeVisible { pageIndicator }
         }
         .allowsHitTesting(false)
+    }
+
+    private var pageIndicator: some View {
+        indicatorLabel(pageLabel, .pageLabel)
+            .padding(.bottom, Spacing.xs)
     }
 
     private var pageLabel: String? {
@@ -220,11 +226,11 @@ struct PDFReaderView: View {
         return chromeVisible ? "\(page + 1) of \(count)" : "\(page + 1)"
     }
 
-    /// What an indicator reads against. With the chrome up the page label
-    /// sits in the bottom cluster's scrim, which is dark whatever the page is.
     private func indicatorGround(_ control: ChromeControl) -> ReaderGround {
-        if control == .pageLabel, chromeVisible { return .stage }
-        return chromeGrounds[control] ?? .stage
+        .indicator(
+            sampled: chromeGrounds[control],
+            onScrim: control == .pageLabel && chromeVisible
+        )
     }
 
     @ViewBuilder
@@ -320,6 +326,9 @@ struct PDFReaderView: View {
                     )
                     .ignoresSafeArea()
                 )
+            }
+            .overlay(alignment: .bottom) {
+                pageIndicator.allowsHitTesting(false)
             }
             .transition(.opacity)
         }

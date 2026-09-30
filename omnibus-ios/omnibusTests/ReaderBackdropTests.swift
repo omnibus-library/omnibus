@@ -170,4 +170,22 @@ struct ReaderIndicatorInkTests {
         )
         #expect(ratio >= 4.5, "got \(ratio)")
     }
+
+    @Test("with the chrome up the page label keeps the stage's white, whatever was sampled")
+    func chromeUpLabelOnTheScrim() {
+        let samples: [ReaderGround?] = [.page, .stage, nil]
+        for sampled in samples {
+            let ground = ReaderGround.indicator(sampled: sampled, onScrim: true)
+            #expect(ground == .stage)
+            #expect(ground.ink == .white)
+            #expect(ground.indicatorOpacity == 0.5)
+        }
+    }
+
+    @Test("with the chrome down an indicator follows what was sampled under it")
+    func chromeDownLabelFollowsTheSample() {
+        #expect(ReaderGround.indicator(sampled: .page, onScrim: false) == .page)
+        #expect(ReaderGround.indicator(sampled: .stage, onScrim: false) == .stage)
+        #expect(ReaderGround.indicator(sampled: nil, onScrim: false) == .stage)
+    }
 }

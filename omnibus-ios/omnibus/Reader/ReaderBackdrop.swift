@@ -44,6 +44,12 @@ extension ReaderGround {
         }
     }
 
+    /// The ground an indicator draws for: what was sampled under it, except
+    /// on the chrome's scrim, which is dark whatever page is below it.
+    static func indicator(sampled: ReaderGround?, onScrim: Bool) -> ReaderGround {
+        onScrim ? .stage : sampled ?? .stage
+    }
+
     /// The colour scheme a control on this ground resolves against. The
     /// glass follows the scheme, so driving it from the same ground the ink
     /// comes from is what keeps the two from disagreeing about the paper
