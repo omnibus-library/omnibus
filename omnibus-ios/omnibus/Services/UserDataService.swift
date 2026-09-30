@@ -318,10 +318,22 @@ enum UserDataService {
                 finishedAt: status == .finished ? Int64(Date().timeIntervalSince1970) : nil
             )
         )
+        await Cache.mutate(CacheKey.recentProgress) { (points: inout [ResumePoint]) in
+            points = resumePoints(points, marking: uuid, as: status)
+        }
         await SyncEngine.shared.write(
             kind: OpKind.readStatus(uuid), path: "/api/read-status",
             method: "PUT", body: update, coalesce: true
         )
+    }
+
+    /// The Continue rail after marking `uuid`: the server's rail leaves out
+    /// unread and finished books, so the replica drops every card for it too.
+    static func resumePoints(
+        _ points: [ResumePoint], marking uuid: String, as status: ReadStatus
+    ) -> [ResumePoint] {
+        guard status != .reading else { return points }
+        return points.filter { $0.record.bookUUID != uuid && $0.book.uuid != uuid }
     }
 
     // MARK: - Highlights
@@ -642,7 +654,7 @@ enum UserDataService {
     @discardableResult
     static func createShelf(_ payload: CreateShelfRequest) async throws -> Shelf {
         let shelf: Shelf = try await APIClient.shared.post("/api/shelves", body: payload)
-        await invalidateShelves()
+        await shelvesChanged()
         return shelf
     }
 
@@ -658,7 +670,7 @@ enum UserDataService {
         // A rule change recomputes membership on the server, and the cached
         // page is the only copy an offline open would show.
         await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(id))
-        await invalidateShelves()
+        await shelvesChanged()
         return shelf
     }
 
@@ -833,6 +845,27 @@ enum UserDataService {
         await OfflineStore.shared.cacheDelete(CacheKey.shelfPreviews)
     }
 
+    /// Drop the cached shelf lists after a direct write and have the mounted
+    /// ones re-read — the outbox announces its own writes, never these.
+    static func shelvesChanged() async {
+        await invalidateShelves()
+        await MainActor.run {
+            ReplicaInvalidations.shared.note(keys: [CacheKey.shelves, CacheKey.shelfPreviews])
+        }
+    }
+
+    /// The server no longer has this shelf for this reader — deleted, or
+    /// unshared, somewhere else. Forget every cached trace, so no card keeps
+    /// offering it.
+    static func forgetShelf(id: Int64) async {
+        await OfflineStore.shared.cacheDelete(CacheKey.shelf(id))
+        await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(id))
+        await removeShelfLocally(id)
+        await MainActor.run {
+            ReplicaInvalidations.shared.note(keys: [CacheKey.shelves, CacheKey.shelfPreviews])
+        }
+    }
+
     // MARK: - Wishlist
 
     /// The caller's wishlist entry for a book, or `nil` when not tracked.
@@ -872,7 +905,7 @@ enum UserDataService {
         // count it. Drop the page before invalidating the lists — the shelf id
         // this route doesn't carry is read off the cached list.
         await dropCachedWishlistPages()
-        await invalidateShelves()
+        await shelvesChanged()
         return removal.bookDeleted
     }
 

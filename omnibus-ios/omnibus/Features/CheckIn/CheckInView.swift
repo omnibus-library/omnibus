@@ -728,8 +728,7 @@ struct CheckInView: View {
             }
             // Check-in fulfills every user's wishlist for the book, so shelf
             // counts and preview covers are stale too.
-            await OfflineStore.shared.cacheDelete(CacheKey.shelves)
-            await OfflineStore.shared.cacheDelete(CacheKey.shelfPreviews)
+            await UserDataService.shelvesChanged()
             withAnimation(Motion.settle) { stage = .success(CheckInFlow.checkedInSuccess(book: book, ref: ref)) }
         } catch {
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
@@ -762,8 +761,7 @@ struct CheckInView: View {
             Haptics.success()
             // The wishlist is a real shelf whose membership derives from these
             // entries, so its count and preview covers are now stale.
-            await OfflineStore.shared.cacheDelete(CacheKey.shelves)
-            await OfflineStore.shared.cacheDelete(CacheKey.shelfPreviews)
+            await UserDataService.shelvesChanged()
             withAnimation(Motion.settle) { stage = .success(CheckInFlow.wishlistedSuccess(meta: meta, ref: ref)) }
         } catch {
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
