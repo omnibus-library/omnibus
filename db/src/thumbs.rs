@@ -93,6 +93,8 @@ pub fn cap_bytes() -> u64 {
 /// `<thumbs_dir>/<book_id>_<size>_<last_modified_epoch>.webp`. The epoch in
 /// the name is what binds the bytes to the cover they were encoded from.
 pub fn thumb_path_for(book_id: i64, size: ThumbSize, last_modified_epoch: i64) -> PathBuf {
+    // `as_str`, not `Display`: a literal per variant keeps the request's size text out of the path.
+    let size = size.as_str();
     thumbs_dir().join(format!("{book_id}_{size}_{last_modified_epoch}.webp"))
 }
 
