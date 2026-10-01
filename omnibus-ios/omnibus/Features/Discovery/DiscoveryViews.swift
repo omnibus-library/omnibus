@@ -503,37 +503,16 @@ struct SeriesDetailView: View {
 struct TaxonomyCloudView: View {
     let facet: SearchFacet
 
-    init(facet: SearchFacet, filter: String = "") {
-        self.facet = facet
-        _query = State(initialValue: filter)
-    }
-
-    @Environment(\.palette) private var palette
     @State private var tags: [TagWeight] = []
     @State private var isLoading = true
-    @State private var query: String
+    @State private var query = ""
 
     private var filtered: [TagWeight] { Self.filtered(tags, by: query) }
 
-    /// The names containing `query`, case-insensitively — the same substring
-    /// test the search palette counts by, so "All N" lands on N names.
+    /// The names containing `query`, case-insensitively.
     nonisolated static func filtered(_ entries: [TagWeight], by query: String) -> [TagWeight] {
         guard let needle = query.nilIfBlank?.lowercased() else { return entries }
         return entries.filter { $0.name.lowercased().contains(needle) }
-    }
-
-    /// Weight the type scale by count so the cloud reads as a cloud, with a
-    /// floor and ceiling so nothing becomes unreadable or absurd.
-    ///
-    /// The ramp is square-rooted and the range kept narrow on purpose. On a
-    /// library where the commonest tag has four books and the rest have one, a
-    /// linear ramp across a 15pt range made a difference of three books look
-    /// like a difference in kind — three headlines over a field of small print.
-    private func fontSize(for tag: TagWeight) -> CGFloat {
-        let counts = tags.map(\.count)
-        guard let low = counts.min(), let high = counts.max(), high > low else { return 16 }
-        let t = Double(tag.count - low) / Double(high - low)
-        return 13.5 + CGFloat(t.squareRoot()) * 9
     }
 
     private var emptyCopy: (title: String, message: String, kicker: String) {
@@ -572,27 +551,9 @@ struct TaxonomyCloudView: View {
                 )
             } else {
                 ScrollView {
-                    FlowLayout(spacing: 8, lineSpacing: 10) {
-                        ForEach(filtered) { tag in
-                            NavigationLink(value: facet.destination(tag.name)) {
-                                HStack(spacing: 5) {
-                                    Text(tag.name)
-                                        .font(.ui(fontSize(for: tag), weight: .medium))
-                                    Text("\(tag.count)")
-                                        .font(.monoUI(max(9, fontSize(for: tag) * 0.6)))
-                                        .foregroundStyle(palette.ink3Color)
-                                }
-                                .foregroundStyle(palette.ink1Color)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(palette.bg1Color))
-                                .overlay(Capsule().strokeBorder(palette.line2.color, lineWidth: 0.5))
-                            }
-                            .buttonStyle(PressableStyle())
-                        }
-                    }
-                    .screenPadding()
-                    .padding(.vertical, Spacing.lg)
+                    TaxonomyCloud(facet: facet, entries: filtered, scale: tags)
+                        .screenPadding()
+                        .padding(.vertical, Spacing.lg)
                 }
             }
         }
@@ -616,5 +577,51 @@ struct TaxonomyCloudView: View {
     private func show(_ weights: [TagWeight]) {
         tags = weights.sorted { $0.count > $1.count }
         isLoading = false
+    }
+}
+
+/// Tag or genre names as weighted chips, each opening its books.
+struct TaxonomyCloud: View {
+    let facet: SearchFacet
+    let entries: [TagWeight]
+    /// The set the type scale spans, so filtering doesn't resize what remains.
+    var scale: [TagWeight]?
+
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        FlowLayout(spacing: 8, lineSpacing: 10) {
+            ForEach(entries) { tag in
+                NavigationLink(value: facet.destination(tag.name)) {
+                    HStack(spacing: 5) {
+                        Text(tag.name)
+                            .font(.ui(fontSize(for: tag), weight: .medium))
+                        Text("\(tag.count)")
+                            .font(.monoUI(max(9, fontSize(for: tag) * 0.6)))
+                            .foregroundStyle(palette.ink3Color)
+                    }
+                    .foregroundStyle(palette.ink1Color)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(palette.bg1Color))
+                    .overlay(Capsule().strokeBorder(palette.line2.color, lineWidth: 0.5))
+                }
+                .buttonStyle(PressableStyle())
+            }
+        }
+    }
+
+    /// Weight the type scale by count so the cloud reads as a cloud, with a
+    /// floor and ceiling so nothing becomes unreadable or absurd.
+    ///
+    /// The ramp is square-rooted and the range kept narrow on purpose. On a
+    /// library where the commonest tag has four books and the rest have one, a
+    /// linear ramp across a 15pt range made a difference of three books look
+    /// like a difference in kind — three headlines over a field of small print.
+    private func fontSize(for tag: TagWeight) -> CGFloat {
+        let counts = (scale ?? entries).map(\.count)
+        guard let low = counts.min(), let high = counts.max(), high > low else { return 16 }
+        let t = Double(tag.count - low) / Double(high - low)
+        return 13.5 + CGFloat(t.squareRoot()) * 9
     }
 }

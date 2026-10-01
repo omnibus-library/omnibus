@@ -416,6 +416,22 @@ enum LibraryService {
         }
     }
 
+    /// The server's most hits per palette section (`MAX_SECTION_LIMIT`).
+    static let paletteSectionCeiling: UInt32 = 500
+
+    /// The palette asked for a whole section of `total` hits, server only: the
+    /// local mirror knows no tags or genres to answer with.
+    static func paletteSection(query: String, total: UInt32) async throws -> PaletteResults {
+        try await APIClient.shared.get(
+            "/api/search/palette", query: paletteSectionQuery(query, total: total)
+        )
+    }
+
+    /// A server that predates `limit` ignores it and answers its usual five.
+    static func paletteSectionQuery(_ query: String, total: UInt32) -> [String: String?] {
+        ["q": query, "limit": String(min(max(total, 1), paletteSectionCeiling))]
+    }
+
     /// Full result set for one query, local first then the server's ranking.
     static func searchFull(query: String) -> AsyncStream<[Book]> {
         search(mirror: { await LibraryIndex.shared.search(query, limit: 200) }) {

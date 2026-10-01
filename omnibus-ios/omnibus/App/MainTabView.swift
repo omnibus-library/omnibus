@@ -27,7 +27,8 @@ enum Destination: Hashable {
     /// section's "All N" leads.
     case authorsMatching(query: String)
     case seriesMatching(query: String)
-    case taxonomyMatching(SearchFacet, query: String)
+    /// The palette's own `total` matches for `query`, fetched whole.
+    case taxonomyMatching(SearchFacet, query: String, total: UInt32)
     case searchResults(query: String)
     case metadataEdit(uuid: String)
 
@@ -336,8 +337,8 @@ struct DestinationRouter: ViewModifier {
                 AuthorsView(filter: query)
             case let .seriesMatching(query):
                 SeriesIndexView(filter: query)
-            case let .taxonomyMatching(facet, query):
-                TaxonomyCloudView(facet: facet, filter: query)
+            case let .taxonomyMatching(facet, query, total):
+                TaxonomyMatchesView(facet: facet, query: query, total: total)
             case let .searchResults(query):
                 SearchResultsView(query: query, title: "“\(query)”")
             case let .metadataEdit(uuid):

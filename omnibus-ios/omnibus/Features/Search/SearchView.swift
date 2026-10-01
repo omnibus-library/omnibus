@@ -286,7 +286,8 @@ struct SearchView: View {
 }
 
 /// One section of the results page, and where its "All N" leads: the list that
-/// holds all N of what it counted — a book grid only for books.
+/// holds all N of what it counted — a book grid only for books, and the
+/// palette's own matches for tags and genres, whose index clouds are capped.
 enum SearchSection: Equatable {
     case books, authors, series
     case taxonomy(SearchFacet)
@@ -307,7 +308,7 @@ enum SearchSection: Equatable {
         case .books: return .searchResults(query: query)
         case .authors: return .authorsMatching(query: query)
         case .series: return .seriesMatching(query: query)
-        case let .taxonomy(facet): return .taxonomyMatching(facet, query: query)
+        case let .taxonomy(facet): return .taxonomyMatching(facet, query: query, total: total)
         }
     }
 }
