@@ -156,6 +156,7 @@ async fn seed_epub_chapters(pool: &SqlitePool, titles: &[(&str, i64)], per_chapt
             href: format!("c{i}.xhtml"),
             spine_index: i as i64,
             start_chars: *start,
+            anchor_path: None,
         })
         .collect();
     crate::epub_structure::replace_structure(

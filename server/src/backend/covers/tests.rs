@@ -340,8 +340,7 @@ async fn api_get_thumb_returns_401_when_anonymous() {
 async fn api_get_thumb_returns_200_and_serves_cached_webp_on_cache_hit() {
     let (app, _, pool) = fixture().await;
     let (id, uuid) = seed_book_with_uuid(&pool, "/lib", "Thumb Book").await;
-    // Force `last_modified` far in the past so the thumb file we drop in
-    // below (written with the real current mtime) reads as fresh.
+    // Pin `last_modified` so the thumb dropped in below is named for it.
     sqlx::query("UPDATE books SET last_modified = 0 WHERE id = ?")
         .bind(id)
         .execute(&pool)
@@ -349,7 +348,7 @@ async fn api_get_thumb_returns_200_and_serves_cached_webp_on_cache_hit() {
         .unwrap();
     let _thumbs_guard = ThumbsDirGuard::new("thumb_cache_hit");
     let thumb_bytes = b"fake-cached-webp-bytes";
-    std::fs::write(db::thumb_path_for(id, db::ThumbSize::Md), thumb_bytes)
+    std::fs::write(db::thumb_path_for(id, db::ThumbSize::Md, 0), thumb_bytes)
         .expect("write thumb fixture");
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
@@ -381,7 +380,7 @@ async fn api_get_thumb_returns_304_when_if_none_match_matches_the_cached_webps_e
         .unwrap();
     let _thumbs_guard = ThumbsDirGuard::new("thumb_cache_hit_304");
     std::fs::write(
-        db::thumb_path_for(id, db::ThumbSize::Md),
+        db::thumb_path_for(id, db::ThumbSize::Md, 0),
         b"fake-cached-webp-bytes",
     )
     .expect("write thumb fixture");
@@ -439,7 +438,7 @@ async fn api_get_thumb_returns_304_without_reading_the_thumb_file_from_disk() {
         .await
         .unwrap();
     let _thumbs_guard = ThumbsDirGuard::new("thumb_304_no_read");
-    let thumb_path = db::thumb_path_for(id, db::ThumbSize::Md);
+    let thumb_path = db::thumb_path_for(id, db::ThumbSize::Md, 0);
     std::fs::write(&thumb_path, b"fake-cached-webp-bytes").expect("write thumb fixture");
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
@@ -458,8 +457,8 @@ async fn api_get_thumb_returns_304_without_reading_the_thumb_file_from_disk() {
         .to_string();
 
     // Swap the file for a directory at the same path: `is_stale_async`'s
-    // metadata stat still sees a fresh mtime (so the cache-hit branch is
-    // still taken), but a `tokio::fs::read` of a directory always errors.
+    // metadata stat still finds it (so the cache-hit branch is still taken),
+    // but a `tokio::fs::read` of a directory always errors.
     // Before #1751 the ETag came from hashing the file's bytes, so a
     // matching `If-None-Match` still had to read (and thus fail on) this
     // path, falling through to the miss/regenerate branch instead of
@@ -491,7 +490,7 @@ async fn api_get_thumb_serves_fresh_bytes_and_a_new_etag_after_last_modified_epo
         .unwrap();
     let _thumbs_guard = ThumbsDirGuard::new("thumb_etag_changes_on_last_modified");
     let thumb_bytes = b"fake-cached-webp-bytes";
-    std::fs::write(db::thumb_path_for(id, db::ThumbSize::Md), thumb_bytes)
+    std::fs::write(db::thumb_path_for(id, db::ThumbSize::Md, 0), thumb_bytes)
         .expect("write thumb fixture");
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
@@ -510,14 +509,15 @@ async fn api_get_thumb_serves_fresh_bytes_and_a_new_etag_after_last_modified_epo
         .to_string();
 
     // Simulate a reindex that regenerated this thumb: `last_modified_epoch`
-    // moves forward, but stays well behind the thumb file's real (current)
-    // mtime so it still reads as fresh — the ETag must change on this
-    // alone, even though the on-disk bytes didn't (#1751 AC3).
+    // moves forward and the thumb is rewritten for it with the same bytes —
+    // the ETag must change on the epoch alone (#1751 AC3).
     sqlx::query("UPDATE books SET last_modified = 1 WHERE id = ?")
         .bind(id)
         .execute(&pool)
         .await
         .unwrap();
+    std::fs::write(db::thumb_path_for(id, db::ThumbSize::Md, 1), thumb_bytes)
+        .expect("write regenerated thumb fixture");
 
     let second = app
         .oneshot(get_with_bearer_and_if_none_match(
@@ -703,7 +703,7 @@ async fn api_get_thumb_stand_in_validator_never_matches_the_generated_thumbnail(
 
     // The worker catches up: the WebP lands, so the hit path takes over.
     std::fs::write(
-        db::thumb_path_for(id, db::ThumbSize::Md),
+        db::thumb_path_for(id, db::ThumbSize::Md, 0),
         b"real-webp-bytes",
     )
     .expect("write thumb fixture");

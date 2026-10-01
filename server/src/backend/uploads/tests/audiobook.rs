@@ -3,7 +3,7 @@
 //! override, the permission and library-path gates, and the 415 / 400
 //! rejections for non-audio, multiple single containers, a renamed MP3, a
 //! container with a video track or no audio track, unparseable tags and a
-//! read-only library.
+//! read-only library, and a commit whose reindex fails.
 
 use axum::{body::to_bytes, http::StatusCode};
 use tower::ServiceExt;
@@ -657,4 +657,89 @@ async fn audiobook_commit_rejects_read_only_library_with_400() {
     let mut perms = std::fs::metadata(library.path()).unwrap().permissions();
     std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
     std::fs::set_permissions(library.path(), perms).expect("chmod library back");
+}
+
+/// A commit whose reindex fails takes the file and the folders it made back
+/// out, says so, and leaves its retry to land where it meant to — even beside
+/// the empty folder an older build left behind.
+#[tokio::test]
+async fn audiobook_commit_that_fails_to_index_keeps_nothing_and_its_retry_lands_in_place() {
+    let (app, state, pool) = fixture().await;
+    let _covers = CoversDirGuard::new("upload_audiobook_not_indexed");
+    let library = tempfile::tempdir().expect("temp library dir");
+    let root = library.path().to_string_lossy().to_string();
+    set_audiobook_library(&pool, &root).await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    // Index more books than the mass-missing breaker lets vanish at once, then
+    // take their files away: the upload's own reindex refuses to run.
+    let mp3 = fixture_audiobook("ada_lovelace_solo/the_analytical_audiobook.mp3");
+    let shelf = library.path().join("shelf");
+    for i in 0..=db::indexer::MASS_MISSING_MIN_ABSOLUTE {
+        let dir = shelf.join(format!("book-{i}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("part.mp3"), &mp3).unwrap();
+    }
+    let scan = state.worker.post(db::worker::Task::ScanAudiobooks {
+        library_path: root.clone(),
+    });
+    assert!(matches!(
+        state.worker.await_completion(scan).await,
+        db::worker::TaskOutcome::Ok(_)
+    ));
+    let away = tempfile::tempdir().unwrap();
+    std::fs::rename(&shelf, away.path().join("shelf")).unwrap();
+
+    let m4b = fixture_public_domain_audiobook(PUBLIC_DOMAIN_M4B);
+    let commit = || {
+        multipart_body(&[
+            ("title", None, b"The Fires of December"),
+            ("author", None, b"Brandon Sanderson"),
+            ("file", Some("book.m4b"), &m4b),
+        ])
+    };
+    let (ct, body) = commit();
+    let res = app
+        .clone()
+        .oneshot(post_multipart("/api/uploads/audiobooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&bytes),
+        NOT_INDEXED_DISCARDED,
+        "the client is told the file was not kept, so a retry is safe"
+    );
+    let author_dir = library.path().join("brandon-sanderson");
+    assert!(
+        !author_dir.exists(),
+        "no folder the failed commit made is left behind"
+    );
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT (SELECT COUNT(*) FROM books WHERE scan_key LIKE 'brandon-sanderson/%') \
+              + (SELECT COUNT(*) FROM book_files WHERE scan_key LIKE 'brandon-sanderson/%')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, 0, "no row claims the discarded file");
+
+    std::fs::rename(away.path().join("shelf"), &shelf).unwrap();
+    // The folder a build without the cleanup stranded on a failed attempt.
+    let intended = author_dir.join("the-fires-of-december");
+    std::fs::create_dir_all(&intended).unwrap();
+
+    let (ct, body) = commit();
+    let res = app
+        .oneshot(post_multipart("/api/uploads/audiobooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::CREATED);
+    assert!(intended.join("the-fires-of-december.m4b").is_file());
+    assert!(
+        !author_dir.join("the-fires-of-december (2)").exists(),
+        "the retry reuses the intended folder rather than numbering a sibling"
+    );
 }

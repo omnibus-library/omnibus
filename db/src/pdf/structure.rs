@@ -69,6 +69,7 @@ fn outline_chapters(doc: &Document, cumulative: &[i64]) -> Vec<TocChapter> {
             href: page_href(page),
             spine_index: page as i64,
             start_chars,
+            anchor_path: None,
         })
         .collect()
 }

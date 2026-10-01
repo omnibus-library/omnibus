@@ -6,6 +6,7 @@ use omnibus_shared::{Bookmark, CreateBookmark};
 use sqlx::{Row, SqlitePool};
 
 use crate::anchor::{AnchorIndex, AnnotationOrder};
+use crate::helpers::CLIENT_CREATED_AT_SQL;
 use crate::resolve_canonical_book_uuid;
 
 /// Hard cap on how many bookmarks `list_bookmarks` returns for a single
@@ -55,21 +56,33 @@ pub async fn create_bookmark(
     user_id: i64,
     input: &CreateBookmark,
 ) -> Result<Bookmark, BookmarkError> {
+    create_bookmark_at(pool, user_id, input, None).await
+}
+
+/// [`create_bookmark`] dated by the device that made it — see
+/// `annotations::create_highlight_at`. Clamped to server-now; `None` is now.
+pub async fn create_bookmark_at(
+    pool: &SqlitePool,
+    user_id: i64,
+    input: &CreateBookmark,
+    client_created_at: Option<i64>,
+) -> Result<Bookmark, BookmarkError> {
     let book_uuid = resolve_canonical_book_uuid(pool, &input.book_uuid)
         .await?
         .ok_or(BookmarkError::BookNotFound)?;
     let client_id = input.client_id.as_deref();
-    let id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO bookmarks (user_id, book_uuid, position, title, client_id)
-         VALUES (?, ?, ?, ?, ?)
+    let id = sqlx::query_scalar::<_, i64>(&format!(
+        "INSERT INTO bookmarks (user_id, book_uuid, position, title, client_id, created_at)
+         VALUES (?, ?, ?, ?, ?, {CLIENT_CREATED_AT_SQL})
          ON CONFLICT(user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
-         RETURNING id",
-    )
+         RETURNING id"
+    ))
     .bind(user_id)
     .bind(&book_uuid)
     .bind(&input.position)
     .bind(input.title.as_deref())
     .bind(client_id)
+    .bind(client_created_at)
     .fetch_optional(pool)
     .await?;
 

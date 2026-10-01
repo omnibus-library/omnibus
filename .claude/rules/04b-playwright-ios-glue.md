@@ -26,7 +26,11 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
   reach into the glue's closure: a test-only export on `OmnibusReader` is API
   the app ships.
 - **Wait on what the glue reports** — `expect.poll` on the recorded status
-  until `"ready"` — never on a timeout.
+  until `"ready"` — never on a timeout. The one exception is asserting an
+  absence (no relocate reported movement), which needs a window.
+
+`tests/utils/ios_glue.ts` is that harness — `buildChapterEpub`, `openGlue`
+and the recorders — so a spec supplies only its chapter and its drive.
 
 The one-layout-test rule in 04 is for `tests/flows/`; a glue spec has no page
 of its own to lay out. It needs no server, but it runs under the suite's

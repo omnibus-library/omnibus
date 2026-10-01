@@ -65,6 +65,8 @@ pub async fn set_read_status(
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let record = set_read_status_tx(&mut tx, user_id, update).await?;
     tx.commit().await?;
+    // A status moves the stats summary's finished list, so the cached one is stale.
+    crate::stats::invalidate_user(user_id);
     Ok(record)
 }
 

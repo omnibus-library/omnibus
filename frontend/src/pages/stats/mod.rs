@@ -41,8 +41,9 @@ use reading_now::{InProgressCard, RecentlyFinishedCard};
 use superlatives::StandoutsGrid;
 use tiles::HeadlineTiles;
 
-/// How many in-progress books the standing band lists.
-const IN_PROGRESS_LIMIT: i64 = 3;
+/// How many in-progress books the standing band asks for: one past what it
+/// lists, so the card can tell a cut list from a whole one.
+const IN_PROGRESS_LIMIT: i64 = reading_now::IN_PROGRESS_SHOWN as i64 + 1;
 
 /// Which scope the page is showing: the reader's own figures, or the shelf's.
 ///

@@ -124,6 +124,9 @@ actor SyncEngine {
         let id = await enqueue(
             kind: kind, path: path, method: method, body: body, coalesce: coalesce
         )
+        // Here and not in `enqueue`: `record`'s coalesced positions would
+        // otherwise make every mounted rail re-read, and each re-read drain.
+        await MainActor.run { ReplicaInvalidations.shared.note(kind: kind) }
         await drain()
         return !(await OfflineStore.shared.hasOp(id))
     }

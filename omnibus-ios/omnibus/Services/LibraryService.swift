@@ -407,7 +407,7 @@ enum LibraryService {
     /// Cancelling the consuming task cancels the debounce with it, which is
     /// what makes this safe to restart on every keystroke.
     static func searchPalette(query: String) -> AsyncStream<PaletteResults> {
-        search(query: query, localLimit: 8) {
+        search(mirror: { await LibraryIndex.shared.search(query, limit: 8) }) {
             try await APIClient.shared.get("/api/search/palette", query: ["q": query])
         } localAnswer: {
             PaletteResults(localBooks: $0)
@@ -416,13 +416,26 @@ enum LibraryService {
         }
     }
 
+    /// The server's most hits per palette section (`MAX_SECTION_LIMIT`).
+    static let paletteSectionCeiling: UInt32 = 500
+
+    /// The palette asked for a whole section of `total` hits, server only: the
+    /// local mirror knows no tags or genres to answer with.
+    static func paletteSection(query: String, total: UInt32) async throws -> PaletteResults {
+        try await APIClient.shared.get(
+            "/api/search/palette", query: paletteSectionQuery(query, total: total)
+        )
+    }
+
+    /// A server that predates `limit` ignores it and answers its usual five.
+    static func paletteSectionQuery(_ query: String, total: UInt32) -> [String: String?] {
+        ["q": query, "limit": String(min(max(total, 1), paletteSectionCeiling))]
+    }
+
     /// Full result set for one query, local first then the server's ranking.
     static func searchFull(query: String) -> AsyncStream<[Book]> {
-        search(query: query, localLimit: 200) {
-            let library: EbookLibrary = try await APIClient.shared.get(
-                "/api/search", query: ["q": query]
-            )
-            return library.books
+        search(mirror: { await LibraryIndex.shared.search(query, limit: 200) }) {
+            try await searchBooks(query)
         } localAnswer: {
             $0
         } emptyAnswer: {
@@ -430,21 +443,40 @@ enum LibraryService {
         }
     }
 
+    /// The books filed under one tag or genre. Not debounced: nobody is
+    /// typing, the name was tapped.
+    static func facetBooks(_ facet: SearchFacet, name: String) -> AsyncStream<[Book]> {
+        search(mirror: { await LibraryIndex.shared.books(in: facet, named: name) }, debounce: nil) {
+            try await searchBooks(facet.query(name))
+        } localAnswer: {
+            $0
+        } emptyAnswer: {
+            []
+        }
+    }
+
+    private static func searchBooks(_ query: String) async throws -> [Book] {
+        let library: EbookLibrary = try await APIClient.shared.get(
+            "/api/search", query: ["q": query]
+        )
+        return library.books
+    }
+
     /// Shared two-phase search: mirror now, server after the debounce.
     private static func search<T: Sendable>(
-        query: String,
-        localLimit: Int,
+        mirror: @escaping @Sendable () async -> [Book],
+        debounce: Duration? = searchDebounce,
         remote: @escaping @Sendable () async throws -> T,
         localAnswer: @escaping @Sendable ([Book]) -> T,
         emptyAnswer: @escaping @Sendable () -> T
     ) -> AsyncStream<T> {
         AsyncStream { continuation in
             let task = Task {
-                let local = await LibraryIndex.shared.search(query, limit: localLimit)
+                let local = await mirror()
                 guard !Task.isCancelled else { return continuation.finish() }
                 if !local.isEmpty { continuation.yield(localAnswer(local)) }
 
-                try? await Task.sleep(for: searchDebounce)
+                if let debounce { try? await Task.sleep(for: debounce) }
                 guard !Task.isCancelled else { return continuation.finish() }
 
                 if let answer = try? await remote(), !Task.isCancelled {

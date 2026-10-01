@@ -30,34 +30,13 @@ struct AddRow {
 /// the first paint (closed) is identical SSR and client.
 #[component]
 pub(super) fn AddBooksSheet(open: Signal<bool>, on_close: EventHandler<()>) -> Element {
+    let nav = use_navigator();
+    let mut check_in_open = use_context::<CheckInOpen>().0;
+    let can_upload = crate::use_can_upload();
     if !open() {
         return rsx!();
     }
-    let nav = use_navigator();
-    let mut check_in_open = use_context::<CheckInOpen>().0;
-    let rows = vec![
-        AddRow {
-            action: AddAction::CheckIn,
-            primary: true,
-            title: "Scan a barcode",
-            subtitle: "Check in a book you own",
-            icon: icon_scan(),
-        },
-        AddRow {
-            action: AddAction::Navigate(Route::AddBooks {}),
-            primary: false,
-            title: "Upload a file",
-            subtitle: "Add an EPUB from this device",
-            icon: icon_upload(),
-        },
-        AddRow {
-            action: AddAction::CheckIn,
-            primary: false,
-            title: "Enter an ISBN",
-            subtitle: "Add a book by its number",
-            icon: icon_isbn(),
-        },
-    ];
+    let rows = add_rows(can_upload());
 
     rsx! {
         div {
@@ -107,6 +86,36 @@ pub(super) fn AddBooksSheet(open: Signal<bool>, on_close: EventHandler<()>) -> E
     }
 }
 
+/// The chooser's rows. Upload is offered only to a reader the top nav offers
+/// Add books to — hidden, like that button, until `/me` says so; checking in
+/// a physical copy needs no permission.
+fn add_rows(can_upload: bool) -> Vec<AddRow> {
+    let mut rows = vec![AddRow {
+        action: AddAction::CheckIn,
+        primary: true,
+        title: "Scan a barcode",
+        subtitle: "Check in a book you own",
+        icon: icon_scan(),
+    }];
+    if can_upload {
+        rows.push(AddRow {
+            action: AddAction::Navigate(Route::AddBooks {}),
+            primary: false,
+            title: "Upload a file",
+            subtitle: "Add an EPUB from this device",
+            icon: icon_upload(),
+        });
+    }
+    rows.push(AddRow {
+        action: AddAction::CheckIn,
+        primary: false,
+        title: "Enter an ISBN",
+        subtitle: "Add a book by its number",
+        icon: icon_isbn(),
+    });
+    rows
+}
+
 /// Barcode-scan glyph for the highlighted Scan row.
 fn icon_scan() -> Element {
     rsx! {
@@ -148,5 +157,30 @@ fn icon_isbn() -> Element {
             line { x1: "10", y1: "3", x2: "8", y2: "21" }
             line { x1: "16", y1: "3", x2: "14", y2: "21" }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn titles(rows: &[AddRow]) -> Vec<&'static str> {
+        rows.iter().map(|r| r.title).collect()
+    }
+
+    #[test]
+    fn add_rows_offers_upload_to_a_reader_who_may_upload() {
+        assert_eq!(
+            titles(&add_rows(true)),
+            ["Scan a barcode", "Upload a file", "Enter an ISBN"]
+        );
+    }
+
+    #[test]
+    fn add_rows_drops_upload_for_a_reader_who_may_not_or_is_not_known_yet() {
+        assert_eq!(
+            titles(&add_rows(false)),
+            ["Scan a barcode", "Enter an ISBN"]
+        );
     }
 }

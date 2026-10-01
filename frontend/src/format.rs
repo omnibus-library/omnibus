@@ -263,6 +263,22 @@ pub fn format_instant_short_opt(raw: &str, offset_secs: i64) -> Option<String> {
     Some(format!("{month} {d}{}, {y}", ordinal_suffix(d)))
 }
 
+/// [`format_instant_short_opt`] on the reader's own calendar once
+/// `dates_ready` (see [`crate::time::use_local_dates_ready`]), and on UTC
+/// before it, so SSR and the first client paint agree (rule 07). Each instant
+/// takes its own historical offset, as a DST change between two stamps needs.
+pub fn format_reader_instant_short_opt(raw: &str, dates_ready: bool) -> Option<String> {
+    let offset =
+        instant_secs(raw).map_or(0, |secs| crate::time::local_date_offset(dates_ready, secs));
+    format_instant_short_opt(raw, offset)
+}
+
+/// [`format_reader_instant_short_opt`]'s answer, or an em dash — for a table
+/// cell, which prints one rather than dropping the cell.
+pub fn format_reader_instant_short(raw: &str, dates_ready: bool) -> String {
+    format_reader_instant_short_opt(raw, dates_ready).unwrap_or_else(|| EM_DASH.to_string())
+}
+
 /// Unix seconds for a stored timestamp that carries a time of day —
 /// `2026-09-08T03:36:00Z` or the SQLite `datetime()` shape
 /// `2024-01-02 03:04:05`. `None` when the string is a bare calendar date (no

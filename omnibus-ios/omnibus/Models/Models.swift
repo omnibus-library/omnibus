@@ -393,29 +393,46 @@ struct PaletteTagHit: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// A genre carries no id: the only thing to do with one is ask for its books.
+struct PaletteGenreHit: Codable, Hashable, Sendable, Identifiable {
+    var name: String
+    var bookCount: UInt32
+
+    var id: String { name }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case bookCount = "book_count"
+    }
+}
+
 struct PaletteResults: Codable, Sendable {
     var query: String = ""
     var books: [PaletteBookHit] = []
     var authors: [PaletteAuthorHit] = []
     var series: [PaletteSeriesHit] = []
     var tags: [PaletteTagHit] = []
+    var genres: [PaletteGenreHit] = []
     var durationMs: UInt64 = 0
     var bookTotal: UInt32 = 0
     var authorTotal: UInt32 = 0
     var seriesTotal: UInt32 = 0
     var tagTotal: UInt32 = 0
+    /// Optional because a server from before genres were searchable omits it.
+    var genreTotal: UInt32?
 
     enum CodingKeys: String, CodingKey {
-        case query, books, authors, series, tags
+        case query, books, authors, series, tags, genres
         case durationMs = "duration_ms"
         case bookTotal = "book_total"
         case authorTotal = "author_total"
         case seriesTotal = "series_total"
         case tagTotal = "tag_total"
+        case genreTotal = "genre_total"
     }
 
     var isEmpty: Bool {
-        books.isEmpty && authors.isEmpty && series.isEmpty && tags.isEmpty
+        books.isEmpty && authors.isEmpty && series.isEmpty && tags.isEmpty && genres.isEmpty
     }
 
     /// The books-only answer the local mirror can produce.
@@ -993,12 +1010,16 @@ struct CreateHighlight: Codable, Sendable {
     var color: HighlightColor
     var text: String?
     var clientID: String
+    /// When the reader made it, by this device's clock — the server dates the
+    /// row by it, so a create the outbox drains later isn't dated by the drain.
+    var clientCreatedAt: Int64 = Int64(Date().timeIntervalSince1970)
 
     enum CodingKeys: String, CodingKey {
         case color, text
         case bookUUID = "book_uuid"
         case epubCFIRange = "epub_cfi_range"
         case clientID = "client_id"
+        case clientCreatedAt = "client_created_at"
     }
 }
 
@@ -1025,11 +1046,14 @@ struct CreateBookmark: Codable, Sendable {
     var position: String
     var title: String?
     var clientID: String
+    /// See `CreateHighlight.clientCreatedAt`.
+    var clientCreatedAt: Int64 = Int64(Date().timeIntervalSince1970)
 
     enum CodingKeys: String, CodingKey {
         case position, title
         case bookUUID = "book_uuid"
         case clientID = "client_id"
+        case clientCreatedAt = "client_created_at"
     }
 }
 
@@ -1069,7 +1093,7 @@ extension CreateHighlight {
         Highlight(
             id: AnnotationID.pending(), bookUUID: bookUUID, epubCFIRange: epubCFIRange,
             color: color, note: nil, text: text, clientID: clientID,
-            createdAt: Int64(Date().timeIntervalSince1970)
+            createdAt: clientCreatedAt
         )
     }
 }
@@ -1086,7 +1110,7 @@ extension CreateBookmark {
         Bookmark(
             id: AnnotationID.pending(), bookUUID: bookUUID, position: position,
             title: title, clientID: clientID,
-            createdAt: Int64(Date().timeIntervalSince1970)
+            createdAt: clientCreatedAt
         )
     }
 }
@@ -1223,12 +1247,15 @@ struct CreateJournalEntry: Codable, Sendable {
     var progress: Int?
     var status: JournalStatus = .published
     var clientID: String = AnnotationID.mint()
+    /// See `CreateHighlight.clientCreatedAt`.
+    var clientCreatedAt: Int64 = Int64(Date().timeIntervalSince1970)
 
     enum CodingKeys: String, CodingKey {
         case progress, status
         case bookUUID = "book_uuid"
         case bodyMd = "body_md"
         case clientID = "client_id"
+        case clientCreatedAt = "client_created_at"
     }
 }
 

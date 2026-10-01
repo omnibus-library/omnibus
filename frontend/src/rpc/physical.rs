@@ -24,6 +24,11 @@ fn map_physical_error(context: &'static str, e: db::PhysicalError) -> ServerFnEr
     match e {
         db::PhysicalError::BookNotFound => ServerFnError::new("book not found"),
         db::PhysicalError::CopyNotFound => ServerFnError::new("physical copy not found"),
+        db::PhysicalError::NotCopyOwner => ServerFnError::ServerError {
+            message: "not your copy".into(),
+            code: 403,
+            details: None,
+        },
         db::PhysicalError::BookHasFiles => {
             ServerFnError::new("book still has files; remove them first")
         }
@@ -31,8 +36,9 @@ fn map_physical_error(context: &'static str, e: db::PhysicalError) -> ServerFnEr
     }
 }
 
-/// Reject a caller without `can_edit`. Copies are library-wide, so an edit
-/// changes what every user sees — same gate as the metadata-override writes.
+/// Reject a caller without `can_edit`. Deleting a fileless book removes it for
+/// every user — same gate as the metadata-override writes. (A copy's own
+/// writes are gated on ownership in the data layer instead.)
 #[cfg(feature = "server")]
 fn require_edit(user: &AuthUser) -> Result<(), ServerFnError> {
     if !user.is_admin && !user.can_edit {
@@ -52,31 +58,33 @@ pub async fn rpc_list_physical_copies(uuid: String) -> Result<Vec<PhysicalCopy>>
 }
 
 /// Replace a copy's free-text note, returning the updated copy. A blank note
-/// clears it.
+/// clears it. Refused unless the caller filed the copy or is an admin.
 #[post("/api/rpc/physical/copies/note", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_update_physical_copy_note(
     copy_id: i64,
     note: Option<String>,
 ) -> Result<PhysicalCopy> {
-    require_edit(&user)?;
     let req = UpdateCopyNoteRequest { note };
     if let Err(msg) = req.validate() {
         return Err(ServerFnError::new(msg).into());
     }
+    let note = req.note.as_deref();
     Ok(
-        db::update_physical_copy_note(&pool.0, copy_id, req.note.as_deref())
+        db::update_physical_copy_note(&pool.0, copy_id, user.id, user.is_admin, note)
             .await
             .map_err(|e| map_physical_error("update physical copy note", e))?,
     )
 }
 
-/// Delete one physical copy ("I sold it").
+/// Delete one physical copy ("I sold it"). Refused unless the caller filed
+/// the copy or is an admin.
 #[post("/api/rpc/physical/copies/delete", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_delete_physical_copy(copy_id: i64) -> Result<()> {
-    require_edit(&user)?;
-    Ok(db::delete_physical_copy(&pool.0, copy_id)
-        .await
-        .map_err(|e| map_physical_error("delete physical copy", e))?)
+    Ok(
+        db::delete_physical_copy(&pool.0, copy_id, user.id, user.is_admin)
+            .await
+            .map_err(|e| map_physical_error("delete physical copy", e))?,
+    )
 }
 
 /// The caller's wishlist entry for a book, or `None` when not wishlisted.
@@ -118,11 +126,12 @@ pub async fn rpc_delete_fileless_book(uuid: String) -> Result<()> {
         .map_err(|e| map_physical_error("delete fileless book", e))?)
 }
 
-// `server`-gated: exercises the `is_admin || can_edit` gate directly, no DB
-// needed. CI runs this via `cargo test -p omnibus-frontend --features server`.
+// `server`-gated: exercises the `is_admin || can_edit` gate and the ownership
+// refusal's mapping directly, no DB needed. CI runs this via
+// `cargo test -p omnibus-frontend --features server`.
 #[cfg(all(test, feature = "server"))]
 mod tests {
-    use super::{require_edit, AuthUser};
+    use super::{db, map_physical_error, require_edit, AuthUser, ServerFnError};
 
     fn auth_user(is_admin: bool, can_edit: bool) -> AuthUser {
         AuthUser {
@@ -150,5 +159,16 @@ mod tests {
         let user = auth_user(false, false);
         let err = require_edit(&user).unwrap_err();
         assert!(err.to_string().contains("edit permission required"));
+    }
+
+    #[test]
+    fn map_physical_error_answers_a_non_owner_with_a_403() {
+        match map_physical_error("delete physical copy", db::PhysicalError::NotCopyOwner) {
+            ServerFnError::ServerError { message, code, .. } => {
+                assert_eq!(code, 403);
+                assert!(message.contains("not your copy"), "got: {message}");
+            }
+            other => panic!("expected ServerError, got {other:?}"),
+        }
     }
 }

@@ -396,6 +396,21 @@ fn wire_prefs_hydration(mut prefs: Signal<ViewPrefs>, fetch_sigs: FetchSignals) 
     });
 }
 
+/// Bump `shelves_tick` whenever the check-in overlay files something over this
+/// page: a wishlist add moves the Wishlist's count (or brings it onto the row
+/// at all) and its members, and no remount will refetch them.
+fn refetch_shelves_after_check_in(mut shelves_tick: Signal<u32>) {
+    let writes = crate::pages::use_check_in_writes();
+    let mut seen = use_signal(|| *writes.peek());
+    use_effect(move || {
+        let now = writes();
+        if now != *seen.peek() {
+            seen.set(now);
+            shelves_tick.with_mut(|n| *n += 1);
+        }
+    });
+}
+
 /// Arms the shelf-gallery + hero effects: the shelves list, the hero feed,
 /// the selected shelf's full detail, its member list, and the one-time
 /// reconcile of a persisted gallery pick.
@@ -415,6 +430,7 @@ fn wire_shelf_effects(
         selected_shelf,
         hero_points,
     } = shelf_wiring;
+    refetch_shelves_after_check_in(shelves_tick);
     spawn_shelves_list_effect(
         server_url.to_string(),
         shelves_tick,

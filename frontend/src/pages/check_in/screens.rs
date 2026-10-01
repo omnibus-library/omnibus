@@ -23,11 +23,13 @@ pub(super) fn ResolvingScreen() -> Element {
     }
 }
 
-/// 3a — confirm checking in a copy of a book the library already holds.
+/// 3a — confirm checking in a copy of a book the library already holds, or
+/// one on the reader's own wishlist (`wishlisted`).
 #[component]
 pub(super) fn ConfirmScreen(
     book: ScanBook,
     isbn: String,
+    wishlisted: bool,
     state: FlowState,
     on_check_in: EventHandler<ScanBook>,
     on_cancel: EventHandler<()>,
@@ -38,7 +40,7 @@ pub(super) fn ConfirmScreen(
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-confirm",
             h1 { "Check in this copy" }
-            p { class: "subtitle", {confirm_subtitle(&book)} }
+            p { class: "subtitle", {confirm_subtitle(&book, wishlisted)} }
             LibraryBookCard { book }
             div { class: "settings-field",
                 label { r#for: "check-in-note", "Edition note (optional)" }
@@ -79,7 +81,10 @@ pub(super) fn ConfirmScreen(
 /// The confirm screen's one-line framing of what the copy is being added
 /// to, worded from the book's actual holdings: the "already have it
 /// digitally" line was shown for paper-only rows, where it was simply untrue.
-pub(super) fn confirm_subtitle(book: &ScanBook) -> &'static str {
+pub(super) fn confirm_subtitle(book: &ScanBook, wishlisted: bool) -> &'static str {
+    if wishlisted {
+        return "This one is on your wishlist \u{2014} checking your copy in takes it off.";
+    }
     match (book.has_files, book.has_physical) {
         (true, _) => "You already have this one digitally \u{2014} this adds your print copy.",
         (false, true) => "You already have a print copy of this one \u{2014} this adds another.",
@@ -321,12 +326,14 @@ pub(super) fn UnresolvedScreen(
 }
 
 /// 4 — the collector-delight landing for a completed check-in, reused (with a
-/// different headline and no book link) for a wishlist add.
+/// different headline and no book link) for a wishlist add. `off_wishlist`
+/// says the check-in took the book off the reader's wishlist.
 #[component]
 pub(super) fn SuccessScreen(
     title: String,
     headline: String,
     book_uuid: Option<String>,
+    off_wishlist: bool,
     on_restart: EventHandler<()>,
 ) -> Element {
     // "View book" is the flow's one navigating control, so it is also what
@@ -343,6 +350,11 @@ pub(super) fn SuccessScreen(
             }
             h1 { "{headline}" }
             p { class: "subtitle", "{title}" }
+            if off_wishlist {
+                p { class: "check-in-why", "data-testid": "check-in-off-wishlist",
+                    "Checked in and taken off your wishlist."
+                }
+            }
             if book_uuid.is_none() {
                 p { class: "check-in-why",
                     "Wishlisted books have no files \u{2014} they'll appear on your wishlist shelf until someone checks a copy in."

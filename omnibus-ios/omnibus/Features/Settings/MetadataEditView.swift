@@ -88,6 +88,16 @@ struct MetadataEditView: View {
             || !pendingGenreName.isEmpty
     }
 
+    /// The fields a save would write right now, pending chip entries included.
+    private var editedFields: [String] {
+        draft.committingPending(author: pendingAuthor, tag: pendingTag, genre: pendingGenre)
+            .editedFields(since: loaded)
+    }
+
+    /// How many fields the last save wrote — set once it lands, and shown for
+    /// a beat before the editor closes, so a save is confirmed, not assumed.
+    @State private var savedCount: Int?
+
     var body: some View {
         Group {
             if isLoading {
@@ -103,6 +113,7 @@ struct MetadataEditView: View {
         .task { await load() }
         .task { await loadSuggestionPools() }
         .task { await checkProviders() }
+        .safeAreaInset(edge: .bottom, spacing: 0) { saveReport }
         .sheet(isPresented: $showFetch) { fetchSheet }
         .onChange(of: coverPhotoItem) { _, item in
             Task { await uploadPickedCover(item) }
@@ -248,6 +259,47 @@ struct MetadataEditView: View {
     }
 
     // MARK: - Pieces
+
+    /// The web save bar's report: how many fields a save will write and which,
+    /// then what it wrote once it has.
+    @ViewBuilder
+    private var saveReport: some View {
+        let edited = editedFields
+        if savedCount != nil || !edited.isEmpty {
+            HStack(spacing: 8) {
+                if let savedCount {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(palette.okColor)
+                    Text(MetadataDraft.savedLabel(count: savedCount))
+                        .font(.ui(13, weight: .medium))
+                        .foregroundStyle(palette.ink0Color)
+                } else {
+                    Circle()
+                        .fill(palette.accentColor)
+                        .frame(width: 6, height: 6)
+                    Text(MetadataDraft.editedLabel(count: edited.count))
+                        .font(.ui(13, weight: .medium))
+                        .foregroundStyle(palette.ink0Color)
+                    Text(edited.joined(separator: " · "))
+                        .font(.monoUI(10))
+                        .foregroundStyle(palette.ink3Color)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer(minLength: 0)
+            }
+            .screenPadding()
+            .padding(.vertical, 12)
+            .background {
+                palette.bg1Color
+                    .overlay(alignment: .top) { Hairline() }
+                    .ignoresSafeArea(edges: .bottom)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("metadata-edit-status")
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
 
     /// Which book you're editing — a title in the bar alone isn't enough
     /// anchoring once the fields are full of someone else's punctuation.
@@ -542,6 +594,7 @@ struct MetadataEditView: View {
 
         flushPendingChips()
 
+        let written = draft.editedFields(since: loaded).count
         let body = draft.payload(since: loaded)
         // Nothing to send. Not merely wasteful: an empty body makes the
         // server insert an override row that latches this book to "Edited"
@@ -558,6 +611,9 @@ struct MetadataEditView: View {
             await OfflineStore.shared.cacheDelete(CacheKey.book(uuid))
             Haptics.success()
             onSaved?()
+            dismissKeyboard()
+            withAnimation(Motion.settle) { savedCount = written }
+            try? await Task.sleep(for: .milliseconds(900))
             dismiss()
         } catch {
             reportSaveFailure(error)
@@ -587,23 +643,9 @@ struct MetadataEditView: View {
     /// what the user meant to save; dropping it silently is worse than
     /// accepting it.
     private func flushPendingChips() {
-        if let chip = ChipEntry.committed(
-            from: pendingAuthor, existing: draft.authors, deduplicating: false
-        ) {
-            draft.authors.append(chip)
-        }
+        draft = draft.committingPending(author: pendingAuthor, tag: pendingTag, genre: pendingGenre)
         pendingAuthor = ""
-        if let chip = ChipEntry.committed(
-            from: pendingTag, existing: draft.tags, deduplicating: true
-        ) {
-            draft.tags.append(chip)
-        }
         pendingTag = ""
-        if let chip = ChipEntry.committed(
-            from: pendingGenre, existing: draft.genres, deduplicating: true
-        ) {
-            draft.genres.append(chip)
-        }
         pendingGenre = ""
     }
 

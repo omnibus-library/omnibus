@@ -521,6 +521,15 @@ html, body { overscroll-behavior: none; }
 }
 .search-section-count { font-size: 11px; color: var(--ink-3); }
 .search-section-sub { margin-left: auto; font-size: 12px; color: var(--ink-3); }
+/* The way to every hit the count names; trails the hint when there is one. */
+.search-section-all {
+  margin-left: auto; padding: 0; border: 0; background: none;
+  font: inherit; font-size: 13px; font-weight: 500; color: var(--accent); cursor: pointer;
+}
+.search-section-sub + .search-section-all { margin-left: 0; }
+.search-section-all:disabled { cursor: progress; }
+.search-section-all:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.search-section-note { margin: 14px 0 0; font-size: 12px; color: var(--ink-3); }
 
 /* Books — dense cover grid with the matched term lit in the title. */
 .search-cover-grid {
@@ -1627,33 +1636,22 @@ html, body { overscroll-behavior: none; }
   margin-top: 6px;
 }
 
-/* Spoiler — blurred until clicked (handler bound in journal.rs). The wrapper
-   is a native `<button>` so keyboard users can Tab to it and Enter/Space
-   reveal it; the reset strips UA button chrome (border/padding/font/color) so
-   it reads as inline prose, not a rendered control. */
+/* Spoiler — blurred until revealed (handler bound in journal.rs). An inline
+   `role="button"` span rather than a `<button>`, so a long one wraps as prose
+   instead of dropping whole to the next line. The blur sits on the inner text
+   so the focus ring around the control stays sharp; `button.spoiler` is the
+   old markup, still in offline caches until they refetch. */
 .spoiler {
-  filter: blur(5px);
   cursor: pointer;
   border-radius: 3px;
   background: var(--bg-2);
-  transition: filter 0.12s ease;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
-button.spoiler {
-  font: inherit;
-  color: inherit;
-  padding: 0;
-  border: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  /* A button is always at least an inline-block, so a spoiler long enough to
-     wrap becomes its own box — and the UA centres a button's text, which
-     reads as a stray centred paragraph mid-list. Inherit the prose alignment
-     instead, and align the box to the top of the line so a list marker stays
-     on the spoiler's first line rather than dropping to its last. */
-  text-align: inherit;
-  vertical-align: top;
-}
-.spoiler.revealed { filter: none; cursor: auto; background: transparent; }
+.spoiler-text, button.spoiler { filter: blur(5px); transition: filter 0.12s ease; }
+.spoiler:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.spoiler.revealed { cursor: auto; background: transparent; }
+.spoiler.revealed .spoiler-text, button.spoiler.revealed { filter: none; }
 
 /* "From the same hand" — the author-lead card + spreading cover stack live in
    the F3.3 suggestions block below (they reuse `.suggest-stack` / `.sug-cap`). */
@@ -6399,7 +6397,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    distraction-free centre-tap keeps them in place (the top bar still
    slides away). */
 .rd-dock-full.rd-immersive .rd-chrome-hidden .rd-bottom { transform: none; }
-.rd-viewer { position: absolute; inset: 0; }
+/* The reserve keeps prose clear of the `.rd-turn` buttons (22px + 48px). It
+   has to be the container's: in paginated mode epub.js pins the section
+   body's own max-width and margin, so no column cap set on it survives. */
+.rd-viewer { position: absolute; inset: 0 70px; }
 .rd-turn { position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
   width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
   background: color-mix(in oklch, var(--bg-1) 70%, transparent);
@@ -6416,7 +6417,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    than the phone breakpoint), while the width arm covers phones and viewport-only
    emulators (Playwright's desktop Chromium reports a fine pointer even at a phone
    size). */
-@media (max-width: 480px), (hover: none) and (pointer: coarse) { .rd-turn { display: none; } }
+@media (max-width: 480px), (hover: none) and (pointer: coarse) {
+  .rd-turn { display: none; }
+  .rd-viewer { inset: 0; }
+}
 /* Tap-center hides the chrome for a distraction-free page view — a centre tap
    flips the host's `chrome_hidden` signal, which adds `rd-chrome-hidden` to the
    surface; the bars slide out and the progress ribbon fades.
@@ -9870,6 +9874,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .st-open-track { height: 3px; border-radius: 999px; background: var(--bg-3); overflow: hidden; }
 .st-open-fill { height: 100%; border-radius: 999px; background: var(--accent); }
 .st-open-readout { font-family: var(--mono); font-size: 11px; color: var(--ink-2); flex: none; }
+.st-open-more { margin: 14px 0 0; font-size: 12px; color: var(--ink-3); }
 .st-open-foot {
   margin-top: 18px; padding-top: 16px;
   border-top: 1px solid var(--line-2);
@@ -10097,11 +10102,25 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 .st-drill-trend-col { display: flex; flex-direction: column; align-items: center; height: 100%; }
 .st-drill-trend-track { flex: 1 1 auto; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
-.st-drill-trend-bar { width: 60%; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--accent); }
+.st-drill-trend-bar { position: relative; width: 60%; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--accent); }
 .st-drill-trend-label { margin-top: 6px; font-size: 10px; color: var(--ink-3); }
+/* Room above a full-height bar for the figure printed on it. */
+.st-drill-trend-valued { height: 120px; }
+.st-drill-trend-valued .st-drill-trend-track { padding-top: 18px; }
+.st-drill-trend-value {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  margin-bottom: 2px; font-size: 9px; color: var(--ink-2); white-space: nowrap;
+}
+/* Nothing measured: an outlined slot, so it can't be read as a low value. */
+.st-drill-trend-slot {
+  width: 60%; height: 100%;
+  border: 1px dashed var(--line-2); border-bottom: 0; border-radius: 3px 3px 0 0;
+}
 /* Names the chart beneath it, so two bar strips in one sheet (the rating
    trend and the distribution below it) don't read as one broken chart. */
 .st-drill-section-label { margin-bottom: -8px; }
+/* The period a chart covers, tucked under its label. */
+.st-drill-caption { margin: -6px 0 -6px; font-size: 12px; color: var(--ink-3); }
 
 .st-drill-rate { font-size: 13px; color: var(--ink-2); }
 .st-drill-rate-value {

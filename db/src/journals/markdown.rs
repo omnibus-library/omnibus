@@ -1,8 +1,9 @@
 //! Server-side markdown rendering for journal entries. Rendered HTML is
 //! sanitized with a strict `ammonia` allowlist — never trust the raw output. A
 //! custom `||spoiler||` pass runs over the source first, wrapping spoiler
-//! regions in a native `<button class="spoiler">` so keyboard and screen-reader
-//! users get the same reveal affordance as mouse users.
+//! regions in an inline `role="button"` span so keyboard and screen-reader
+//! users get the same reveal affordance as mouse users, and a long spoiler
+//! still wraps as prose.
 
 use pulldown_cmark::{html, Event, Options, Parser};
 
@@ -10,6 +11,10 @@ use pulldown_cmark::{html, Event, Options, Parser};
 /// sanitizer drops any `<img>` whose `src` points elsewhere, so entries can't
 /// embed cross-origin trackers or arbitrary remote content.
 pub const IMAGE_URL_PREFIX: &str = "/api/journals/images/";
+
+/// The accessible name a concealed spoiler carries. The client drops it on
+/// reveal so the control is named by its text instead.
+pub const SPOILER_LABEL: &str = "Reveal spoiler";
 
 /// Render a journal body's markdown to sanitized HTML safe for
 /// `dangerous_inner_html`.
@@ -34,12 +39,12 @@ pub fn render(md: &str) -> String {
     wrap_figures(&sanitize(&raw_html))
 }
 
-/// Sanitize rendered HTML, additionally permitting the spoiler `<button>` the
+/// Sanitize rendered HTML, additionally permitting the spoiler span the
 /// spoiler pass introduces and the read-only task-list checkbox pulldown-cmark
 /// emits for `- [ ]` items.
 fn sanitize(html: &str) -> String {
     let cleaned = ammonia::Builder::default()
-        .add_tags(["input", "button"])
+        .add_tags(["input"])
         // Embedded journal images: relative `src` values must survive (the
         // default policy strips them), but only ones under our own serving
         // prefix — anything else (absolute URLs included) loses its `src` and
@@ -51,12 +56,16 @@ fn sanitize(html: &str) -> String {
             }
             Some(value.into())
         })
-        // Spoiler wrapper: only the `spoiler` class, `type="button"` (pinned via
-        // value allowlist so an arbitrary type like `submit` can't leak in),
-        // and `aria-expanded` (kept in sync by the client-side toggle handler).
-        .add_allowed_classes("button", ["spoiler"])
-        .add_tag_attribute_values("button", "type", ["button"])
-        .add_tag_attribute_values("button", "aria-expanded", ["false", "true"])
+        // Spoiler wrapper and its concealed text: each attribute pinned to the
+        // exact values the spoiler pass writes (`aria-expanded` is flipped by
+        // the client-side toggle), so a hand-authored span can't pose as a
+        // control.
+        .add_allowed_classes("span", ["spoiler", "spoiler-text"])
+        .add_tag_attribute_values("span", "role", ["button"])
+        .add_tag_attribute_values("span", "tabindex", ["0"])
+        .add_tag_attribute_values("span", "aria-expanded", ["false", "true"])
+        .add_tag_attribute_values("span", "aria-label", [SPOILER_LABEL])
+        .add_tag_attribute_values("span", "aria-hidden", ["true"])
         // Task-list checkboxes only — `disabled`/`checked` are valueless flags;
         // `type` is pinned to `checkbox` via the value allowlist (kept out of
         // the generic attribute set, which would otherwise permit any value).
@@ -200,13 +209,14 @@ fn has_attr_value(tag: &str, name: &str, value: &str) -> bool {
     })
 }
 
-/// Rewrite `||text||` spoiler markers in the markdown **source** into inline
-/// `<button class="spoiler" type="button" aria-expanded="false">text</button>`
-/// HTML, which pulldown-cmark passes through (and whose inner text still gets
-/// markdown inline processing). Emitting a native button — rather than a
-/// `<span>` with click-only handling — means Tab reaches it, Enter/Space
-/// activate it, and screen readers announce it as a button. Pairs are matched
-/// greedily left-to-right; an unterminated trailing `||` is left literal.
+/// Rewrite `||text||` spoiler markers in the markdown **source** into an inline
+/// `role="button"` span around an `aria-hidden` text span, which pulldown-cmark
+/// passes through (the text still gets markdown inline processing). Not a
+/// `<button>`: that is an atomic box, so a spoiler wider than the rest of its
+/// line drops whole to the next one. `tabindex` puts it in the Tab order, the
+/// label names it until it is revealed, and the client handles Enter/Space.
+/// Pairs are matched greedily left-to-right; an unterminated trailing `||` is
+/// left literal.
 fn wrap_spoilers(md: &str) -> String {
     let mut out = String::with_capacity(md.len());
     let mut rest = md;
@@ -215,9 +225,13 @@ fn wrap_spoilers(md: &str) -> String {
         match after.find("||") {
             Some(close) => {
                 out.push_str(&rest[..open]);
-                out.push_str("<button class=\"spoiler\" type=\"button\" aria-expanded=\"false\">");
+                out.push_str(&format!(
+                    "<span class=\"spoiler\" role=\"button\" tabindex=\"0\" \
+                     aria-expanded=\"false\" aria-label=\"{SPOILER_LABEL}\">\
+                     <span class=\"spoiler-text\" aria-hidden=\"true\">"
+                ));
                 out.push_str(&after[..close]);
-                out.push_str("</button>");
+                out.push_str("</span></span>");
                 rest = &after[close + 2..];
             }
             None => break, // no closing marker — emit the remainder verbatim

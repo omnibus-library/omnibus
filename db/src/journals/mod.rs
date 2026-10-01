@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use omnibus_shared::{CreateJournalEntry, JournalEntry, UpdateJournalEntry};
 use sqlx::{Row, SqlitePool};
 
+use crate::helpers::CLIENT_CREATED_AT_SQL;
 use crate::resolve_canonical_book_uuid;
 
 pub mod markdown;
@@ -69,22 +70,38 @@ pub async fn create_journal_entry(
     user_id: i64,
     input: &CreateJournalEntry,
 ) -> Result<JournalEntry, JournalError> {
+    create_journal_entry_at(pool, user_id, input, None).await
+}
+
+/// [`create_journal_entry`] dated by the device that composed it — see
+/// `annotations::create_highlight_at`. Both clocks take the stamp: an entry
+/// written offline was last edited when it was written. Clamped to
+/// server-now; `None` is now.
+pub async fn create_journal_entry_at(
+    pool: &SqlitePool,
+    user_id: i64,
+    input: &CreateJournalEntry,
+    client_created_at: Option<i64>,
+) -> Result<JournalEntry, JournalError> {
     let book_uuid = resolve_canonical_book_uuid(pool, &input.book_uuid)
         .await?
         .ok_or(JournalError::BookNotFound)?;
     let client_id = input.client_id.as_deref();
-    let id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO journal_entries (user_id, book_uuid, body_md, progress, status, client_id)
-         VALUES (?, ?, ?, ?, ?, ?)
+    let id = sqlx::query_scalar::<_, i64>(&format!(
+        "INSERT INTO journal_entries
+            (user_id, book_uuid, body_md, progress, status, client_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, {CLIENT_CREATED_AT_SQL}, {CLIENT_CREATED_AT_SQL})
          ON CONFLICT(user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
-         RETURNING id",
-    )
+         RETURNING id"
+    ))
     .bind(user_id)
     .bind(&book_uuid)
     .bind(&input.body_md)
     .bind(input.progress.map(|p| p as i64))
     .bind(input.status.as_str())
     .bind(client_id)
+    .bind(client_created_at)
+    .bind(client_created_at)
     .fetch_optional(pool)
     .await?;
 

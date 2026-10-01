@@ -354,6 +354,25 @@ pub async fn search_palette(server_url: &str, q: &str) -> Result<PaletteResults,
     Ok(response.json::<PaletteResults>().await?)
 }
 
+/// The palette's grouped search with a raised per-category cap — the results
+/// page asking for a whole section.
+#[cfg(feature = "mobile")]
+pub async fn search_results(
+    server_url: &str,
+    q: &str,
+    limit: u32,
+) -> Result<PaletteResults, DataError> {
+    crate::data::require_online()?;
+    let encoded = super::super::encode_query_value(q);
+    let url = format!("{server_url}/api/search/palette?q={encoded}&limit={limit}");
+    let response = with_bearer(http_client().get(&url)).send().await?;
+    let status = note_status(response.status());
+    if !status.is_success() {
+        return Err(drain_error(response, status).await);
+    }
+    Ok(response.json::<PaletteResults>().await?)
+}
+
 /// GET `/api/ebooks/{uuid}` — fetch one ebook by uuid, `Ok(None)` on 404.
 /// Cache-first with background revalidation.
 #[cfg(feature = "mobile")]
@@ -489,6 +508,18 @@ pub async fn search_ebooks(_server_url: &str, q: &str) -> Result<EbookLibrary, D
 #[cfg(not(feature = "mobile"))]
 pub async fn search_palette(_server_url: &str, q: &str) -> Result<PaletteResults, DataError> {
     crate::rpc::rpc_search_palette(q.to_string())
+        .await
+        .map_err(note_server_fn_err)
+}
+
+/// Web/SSR `search_results` — proxies to `rpc_search_results`.
+#[cfg(not(feature = "mobile"))]
+pub async fn search_results(
+    _server_url: &str,
+    q: &str,
+    limit: u32,
+) -> Result<PaletteResults, DataError> {
+    crate::rpc::rpc_search_results(q.to_string(), limit)
         .await
         .map_err(note_server_fn_err)
 }

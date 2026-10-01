@@ -35,6 +35,8 @@ pub struct EbookChapterRow {
     pub href: String,
     pub spine_index: i64,
     pub start_chars: i64,
+    /// See [`crate::ebook::toc::TocChapter::anchor_path`].
+    pub anchor_path: Option<String>,
 }
 
 /// Replace both structure tables for one `book_files` row atomically.
@@ -55,7 +57,7 @@ pub async fn replace_structure(
         .await?;
 
     // Chunked VALUES inserts under SQLite's 999-bind cap: 5 binds per
-    // spine row → 199/chunk, 6 per chapter row → 166/chunk (the
+    // spine row → 199/chunk, 7 per chapter row → 142/chunk (the
     // `bulk_insert_chapters` pattern).
     let mut chars_before: i64 = 0;
     let spine_rows: Vec<(i64, String, i64, i64)> = structure
@@ -85,11 +87,11 @@ pub async fn replace_structure(
         }
         q.execute(&mut *tx).await?;
     }
-    for chunk in structure.chapters.chunks(166) {
-        let placeholders = vec!["(?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
+    for chunk in structure.chapters.chunks(142) {
+        let placeholders = vec!["(?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
         let sql = format!(
             "INSERT INTO ebook_chapters
-                (book_file_id, ordinal, title, href, spine_index, start_chars)
+                (book_file_id, ordinal, title, href, spine_index, start_chars, anchor_path)
              VALUES {placeholders}"
         );
         let mut q = sqlx::query(&sql);
@@ -100,7 +102,8 @@ pub async fn replace_structure(
                 .bind(&c.title)
                 .bind(&c.href)
                 .bind(c.spine_index)
-                .bind(c.start_chars);
+                .bind(c.start_chars)
+                .bind(&c.anchor_path);
         }
         q.execute(&mut *tx).await?;
     }
@@ -130,7 +133,7 @@ pub async fn get_chapters(
     book_file_id: i64,
 ) -> Result<Vec<EbookChapterRow>, EpubStructureError> {
     Ok(sqlx::query_as(
-        "SELECT ordinal, title, href, spine_index, start_chars
+        "SELECT ordinal, title, href, spine_index, start_chars, anchor_path
          FROM ebook_chapters WHERE book_file_id = ? ORDER BY ordinal",
     )
     .bind(book_file_id)

@@ -224,11 +224,22 @@ final class BookDetailModel {
         await UserDataService.setReadStatus(uuid: uuid, status: status)
     }
 
+    /// Whether this reader has a saved position in either format — the one
+    /// fact Home and Stats both key "started" on.
+    var hasPosition: Bool {
+        epubProgress != nil || audioProgress != nil
+    }
+
+    /// Whether the library holds anything this book can be opened in.
+    var hasFile: Bool {
+        guard let book else { return false }
+        return book.hasEbook || book.hasAudiobook
+    }
+
     /// A wishlisted book the library holds no files for. The ruler and Resume
     /// drop out; the action bar becomes Find a copy · check in.
     var isWishlistOnly: Bool {
-        guard let book else { return false }
-        return wishlistEntry != nil && !book.hasEbook && !book.hasAudiobook
+        book != nil && wishlistEntry != nil && !hasFile
     }
 }
 
@@ -503,7 +514,9 @@ struct BookDetailView: View {
             openJournal = pending
         }) {
             if let book = model.book {
-                AllJournalsSheet(book: book, entries: model.journals) { entry in
+                AllJournalsSheet(
+                    book: book, entries: model.journals, viewerId: app.user?.id
+                ) { entry in
                     pendingJournal = entry
                     showAllJournals = false
                 }
@@ -512,7 +525,7 @@ struct BookDetailView: View {
         .sheet(item: $openJournal) { entry in
             JournalDrawer(
                 entry: entry,
-                isMine: entry.authorId == app.user?.id
+                isMine: DetailJournal.isOwn(entry, viewerId: app.user?.id)
             ) {
                 openJournal = nil
                 composing = .editing(entry)
@@ -851,9 +864,13 @@ struct BookDetailView: View {
                 onAlignment: { showAlignment = true },
                 onRemovedWishlist: { bookDeleted in
                     model.wishlistEntry = nil
-                    // A wishlist-only book nobody else wants went with the
-                    // entry; this screen is now about a book that is gone.
-                    if bookDeleted { dismiss() }
+                    if DetailRead.leavesAfterWishlistRemoval(
+                        bookDeleted: bookDeleted,
+                        hasFile: model.hasFile,
+                        hasPhysical: book.hasPhysical
+                    ) {
+                        dismiss()
+                    }
                 }
             )
         case .stats:
@@ -870,6 +887,7 @@ struct BookDetailView: View {
             StopJournals(
                 book: book,
                 model: model,
+                viewerId: app.user?.id,
                 uncapped: uncapped,
                 onWrite: {
                     composing = .new

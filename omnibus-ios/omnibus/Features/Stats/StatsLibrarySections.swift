@@ -59,13 +59,14 @@ extension StatsView {
         return "+\(overlap) \(overlap == 1 ? "book" : "books") held in more than one format"
     }
 
-    /// The footnote for `books` rows whose files are gone. They carry no
+    /// The footnote for `books` rows with no file on disk. They carry no
     /// format, so they'd otherwise vanish from the bars and leave the counts
-    /// failing to reconcile against the library.
+    /// failing to reconcile against the library. Worded for a paper copy or a
+    /// wishlist entry, which never had files, as much as for a removed file.
     static func ghostedNote(_ ghosted: Int64) -> String? {
         guard ghosted > 0 else { return nil }
         return
-            "\(ghosted) \(ghosted == 1 ? "book" : "books") excluded \u{2014} indexed once, no files on disk now"
+            "\(ghosted) \(ghosted == 1 ? "book" : "books") excluded \u{2014} no files on disk (paper copies, wishlist entries, removed files)"
     }
 
     /// The library figures worth rendering, skipping anything nothing has

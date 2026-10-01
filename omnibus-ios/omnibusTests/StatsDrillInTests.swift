@@ -117,9 +117,10 @@ struct DrillTrendTests {
             $0.listeningDaily = [DayActivity(day: "2026-08-03", seconds: 120)]
             $0.pagesDetail.daily = [TrendPoint(label: "2026-08-09", value: 12)]
         }
-        #expect(StatsDrill.trendBars(for: .finished, in: s).map(\.label) == ["J", "J"])
+        // Adjacent months never share a label: June and July were both "J".
+        #expect(StatsDrill.trendBars(for: .finished, in: s).map(\.label) == ["Jun", "Jul"])
         #expect(StatsDrill.trendBars(for: .finished, in: s).map(\.fraction) == [0.5, 1])
-        #expect(StatsDrill.trendBars(for: .avgRating, in: s).map(\.label) == ["M"])
+        #expect(StatsDrill.trendBars(for: .avgRating, in: s).map(\.label) == ["Mar"])
         #expect(StatsDrill.trendBars(for: .listening, in: s).map(\.label) == ["03"])
         #expect(StatsDrill.trendBars(for: .pages, in: s).map(\.label) == ["09"])
     }
@@ -128,7 +129,9 @@ struct DrillTrendTests {
     func malformedLabels() {
         #expect(StatsDrill.shortMonth("2026-13") == "?")
         #expect(StatsDrill.shortMonth("garbage") == "?")
-        #expect(StatsDrill.shortMonth("2026-01") == "J")
+        #expect(StatsDrill.shortMonth("2026-01") == "Jan")
+        #expect(StatsDrill.monthYear("2025-10") == "Oct 2025")
+        #expect(StatsDrill.monthYear("garbage") == nil)
         #expect(StatsDrill.shortDay("2026-02-31") == "31")
         #expect(StatsDrill.shortDay("2026-02-32") == "?")
         #expect(StatsDrill.shortDay("9") == "?", "a bare number is not a day")
@@ -148,6 +151,56 @@ struct DrillTrendTests {
         #expect(bars[9].title == "5 \u{2605} \u{00B7} 1 book")
         #expect(bars[7].fraction == 1)
         #expect(bars[9].fraction == 0.5)
+        // Each column prints its count; an empty bucket is a slot, not a stub.
+        #expect(bars[7].value == "2")
+        #expect(bars[9].value == "1")
+        #expect(bars[0].value == nil)
+        #expect(bars[0].isEmpty)
+        #expect(!bars[7].isEmpty)
+    }
+
+    @Test("the rating trend draws each month on a five-star scale, with its figure, and an unrated month as a slot")
+    func ratingTrend() {
+        let bars = StatsDrill.ratingTrendBars([
+            TrendPoint(label: "2026-06", value: 2.5),
+            TrendPoint(label: "2026-07", value: 0),
+            TrendPoint(label: "2026-08", value: 5),
+            TrendPoint(label: "2026-09", value: 4.25),
+        ])
+        // The rating out of five, not a share of the best month.
+        #expect(bars.map(\.fraction) == [0.5, 0, 1, 0.85])
+        #expect(bars.map(\.value) == ["2.5", nil, "5.0", "4.3"])
+        #expect(bars.map(\.isEmpty) == [false, true, false, false])
+        #expect(bars[1].title == "Jul 2026 \u{00B7} no ratings")
+        #expect(bars[3].title == "Sep 2026 \u{00B7} 4.3 \u{2605}")
+    }
+
+    @Test("a trailing year of months never repeats an axis label")
+    func uniqueMonthLabels() {
+        let months = (0..<12).map { i in
+            let (year, month) = i < 3 ? (2025, 10 + i) : (2026, i - 2)
+            return TrendPoint(label: String(format: "%d-%02d", year, month), value: 4)
+        }
+        #expect(
+            StatsDrill.ratingTrendBars(months).map(\.label)
+                == ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"])
+    }
+
+    @Test("each Avg rating section says what it measures and over which period")
+    func ratingSectionLabels() {
+        #expect(StatsDrill.trendTitle(.avgRating) == "Average rating by month")
+        for metric in [DrillMetric.finished, .listening, .pages] {
+            #expect(StatsDrill.trendTitle(metric) == nil)
+        }
+        #expect(
+            StatsDrill.ratingTrendCaption([
+                TrendPoint(label: "2025-10", value: 4), TrendPoint(label: "2026-09", value: 3),
+            ]) == "Oct 2025 \u{2013} Sep 2026 \u{00B7} the last 12 months, whatever period is selected")
+        #expect(StatsDrill.ratingTrendCaption([]) == "The last 12 months, whatever period is selected")
+        #expect(StatsDrill.histogramCaption(.week) == "Rated this week")
+        #expect(StatsDrill.histogramCaption(.month) == "Rated this month")
+        #expect(StatsDrill.histogramCaption(.year) == "Rated this year")
+        #expect(StatsDrill.histogramCaption(.allTime) == "Rated at any time")
     }
 
     @Test("a dozen columns all carry a label; a month of days labels every third")

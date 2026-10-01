@@ -8,6 +8,7 @@ use omnibus_shared::{CreateHighlight, Highlight, HighlightColor};
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 
 use crate::anchor::{position_key, AnchorIndex, AnnotationOrder};
+use crate::helpers::CLIENT_CREATED_AT_SQL;
 use crate::resolve_canonical_book_uuid;
 
 mod backfill;
@@ -67,6 +68,18 @@ pub async fn create_highlight(
     user_id: i64,
     input: &CreateHighlight,
 ) -> Result<Highlight, HighlightError> {
+    create_highlight_at(pool, user_id, input, None).await
+}
+
+/// [`create_highlight`] dated by the device that made it, so a create the
+/// mobile outbox replays after a drain keeps the time of the gesture. The
+/// stamp is clamped to server-now; `None` is server-now.
+pub async fn create_highlight_at(
+    pool: &SqlitePool,
+    user_id: i64,
+    input: &CreateHighlight,
+    client_created_at: Option<i64>,
+) -> Result<Highlight, HighlightError> {
     let book_uuid = resolve_canonical_book_uuid(pool, &input.book_uuid)
         .await?
         .ok_or(HighlightError::BookNotFound)?;
@@ -74,18 +87,20 @@ pub async fn create_highlight(
     // `DO NOTHING` rather than `DO UPDATE`: the first write of a given
     // client_id is the user's gesture, and a replay carries no newer intent.
     // Colour and note changes arrive as their own ops.
-    let id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO annotations (user_id, book_uuid, epub_cfi_range, color, text, client_id)
-         VALUES (?, ?, ?, ?, ?, ?)
+    let id = sqlx::query_scalar::<_, i64>(&format!(
+        "INSERT INTO annotations
+            (user_id, book_uuid, epub_cfi_range, color, text, client_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, {CLIENT_CREATED_AT_SQL})
          ON CONFLICT(user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
-         RETURNING id",
-    )
+         RETURNING id"
+    ))
     .bind(user_id)
     .bind(&book_uuid)
     .bind(&input.epub_cfi_range)
     .bind(input.color.as_str())
     .bind(input.text.as_deref())
     .bind(client_id)
+    .bind(client_created_at)
     .fetch_optional(pool)
     .await?;
 

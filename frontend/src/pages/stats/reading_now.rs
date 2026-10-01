@@ -85,12 +85,24 @@ fn resume_percent(point: &ResumePoint) -> i64 {
     point.record.progress_percent.unwrap_or(0).clamp(0, 100)
 }
 
+/// How many open books the card lists. The page asks for one more, which is
+/// how the card knows it is showing only some of them.
+pub(super) const IN_PROGRESS_SHOWN: usize = 3;
+
+/// The line under a list cut to [`IN_PROGRESS_SHOWN`], or `None` when the
+/// list is every open book there is.
+fn more_open_note(fetched: usize) -> Option<String> {
+    (fetched > IN_PROGRESS_SHOWN)
+        .then(|| format!("Showing the {IN_PROGRESS_SHOWN} most recently opened."))
+}
+
 /// "In progress" — the books currently open, with the year's projected finish
 /// beneath them.
 #[component]
 pub(super) fn InProgressCard(books: Vec<ResumePoint>, summary: StatsSummary) -> Element {
     let server_url = use_server_url();
     let projection = year_projection(&summary);
+    let more = more_open_note(books.len());
     rsx! {
         div { class: "card st-open", "data-testid": "stats-in-progress",
             div { class: "label", "In progress" }
@@ -98,10 +110,13 @@ pub(super) fn InProgressCard(books: Vec<ResumePoint>, summary: StatsSummary) -> 
                 p { class: "st-card-empty", "Nothing open right now." }
             } else {
                 div { class: "st-open-list",
-                    for point in books.iter() {
+                    for point in books.iter().take(IN_PROGRESS_SHOWN) {
                         {open_row(point, &server_url)}
                     }
                 }
+            }
+            if let Some(note) = more {
+                p { class: "st-open-more", "data-testid": "stats-in-progress-more", "{note}" }
             }
             if let Some(projected) = projection {
                 div { class: "st-open-foot", "data-testid": "stats-year-projection",

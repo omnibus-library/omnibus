@@ -140,7 +140,7 @@ upload: the library is shared and a filed book is visible to every other spec.
 
 **The stats period pills are not a menu, and half the page is not behind
 them.** `/stats` splits on the windowed / standing boundary: the Week / Month /
-Year / Lifetime pills (`stats-range-week` … `stats-range-all`) live in the
+Year / Lifetime pills (`stats-range-week` … `stats-range-all_time`) live in the
 "In this window" band's own sticky header and govern that band alone. There is
 no `role="dialog"` period menu and no `stats-range-trigger` — a spec that opens
 one is asserting a control that no longer exists. Three consequences:

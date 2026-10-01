@@ -66,6 +66,8 @@ pub(super) fn BookTable(
         .filter_map(|b| b.unique_identifier.clone())
         .collect();
     let mut selected = ctx.selected;
+    // Once per table rather than per row: one signal and one effect.
+    let dates_ready = crate::time::use_local_dates_ready()();
     let all_selected = !visible_uuids.is_empty() && {
         let set = selected.read();
         visible_uuids.iter().all(|u| set.contains(u))
@@ -152,6 +154,7 @@ pub(super) fn BookTable(
                             key: "{super::sorting::row_diff_key(&book)}",
                             book: book,
                             ctx: ctx.clone(),
+                            dates_ready,
                         }
                     }
                 }

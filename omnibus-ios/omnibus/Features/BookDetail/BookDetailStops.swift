@@ -34,24 +34,59 @@ enum DetailJournal {
         }
         return out
     }
+
+    /// Whether `viewerId` wrote this entry — what the byline's "you" marks.
+    static func isOwn(_ entry: JournalEntry, viewerId: Int64?) -> Bool {
+        viewerId.map { $0 == entry.authorId } ?? false
+    }
 }
 
 enum DetailRead {
-    /// The Home stop's kicker line: where this book sits in the catalog.
+    /// The Home stop's kicker line: where this book sits in the catalog, or —
+    /// for a wishlisted book with no files — where the entry came from, as
+    /// `home_kicker` words it on the web. `wishlistSource` is that phrase.
     static func kicker(
-        series: String?, seriesIndex: String?, fallback: String?, year: String?
+        series: String?, seriesIndex: String?, fallback: String?, year: String?,
+        wishlistSource: String? = nil
     ) -> String {
+        if let wishlistSource { return "On your wishlist · added from \(wishlistSource)" }
         var lead: String
         if let series {
             lead = series
             if let seriesIndex { lead += " · Book \(seriesIndex)" }
-        } else if let fallback {
-            lead = "\(fallback) · standalone"
         } else {
-            lead = "In your library"
+            lead = "\(fallback ?? "Book") · standalone"
         }
         if let year { lead += " · \(year)" }
         return lead
+    }
+
+    /// The creators an author page can be opened for, in credit order — one
+    /// per author id, skipping a name the server could not link.
+    static func linkedCreators(_ creators: [Contributor]) -> [DetailCreatorLink] {
+        var seen = Set<Int64>()
+        return creators.compactMap { creator in
+            guard let id = creator.id, let name = creator.name.nilIfBlank,
+                  seen.insert(id).inserted
+            else { return nil }
+            return DetailCreatorLink(id: id, name: name)
+        }
+    }
+
+    /// Whether Home offers the read-status segment. A record with nothing to
+    /// read — no file, no paper copy — has no reading to mark; a paper copy
+    /// keeps it, since the status is the only record of reading one.
+    static func showsReadStatus(hasFile: Bool, hasPhysical: Bool) -> Bool {
+        hasFile || hasPhysical
+    }
+
+    /// Whether the page leaves once the wishlist entry is removed. A book that
+    /// stayed but has neither files nor a paper copy is hidden from browse,
+    /// so the page would be showing a record the reader can no longer reach.
+    static func leavesAfterWishlistRemoval(
+        bookDeleted: Bool, hasFile: Bool, hasPhysical: Bool
+    ) -> Bool {
+        bookDeleted || (!hasFile && !hasPhysical)
     }
 
     /// The action bar's primary label. Speaks the position when one is saved
@@ -180,6 +215,12 @@ enum DetailRead {
     }
 }
 
+/// A creator with an author page to open.
+struct DetailCreatorLink: Equatable {
+    var id: Int64
+    var name: String
+}
+
 /// The Home sync row's copy, plus whether it wears the linked (accent) look.
 struct DetailSyncCopy: Equatable {
     var label: String
@@ -227,6 +268,30 @@ enum DetailStats {
             readSeconds: read,
             listenSeconds: listen
         )
+    }
+
+    /// The empty stop's kicker. Keyed on the same saved position the Home
+    /// ruler reads, so the two never disagree about whether the book is
+    /// started: the session log is a server read that counts only sittings
+    /// of a minute or more, and trails a position this device just wrote.
+    static func emptyKicker(hasPosition: Bool) -> String {
+        hasPosition ? "This read · underway" : "This read · not begun"
+    }
+
+    /// What the empty stop says about starting a record. Only a book with a
+    /// file can be opened here, so only that one is told to open it.
+    static func emptyExplainer(
+        hasPosition: Bool, wishlistOnly: Bool, hasFile: Bool, hasPhysical: Bool
+    ) -> String {
+        if hasPosition { return "Sittings of a minute or more show here once they sync." }
+        if wishlistOnly {
+            return "Stats begin when the book does — check in a copy to start the record."
+        }
+        if hasFile { return "Open the book to start tracking your reading here." }
+        if hasPhysical {
+            return "Stats come from reading in the app — a paper copy is tracked by its read status."
+        }
+        return "The library holds no copy of this book, so there is nothing to track yet."
     }
 
     /// Minutes of activity per calendar day for the trailing `days` days,
@@ -887,7 +952,10 @@ struct StopHome: View {
                 series: book.series,
                 seriesIndex: book.seriesIndex,
                 fallback: book.genres.first ?? book.subjects.first,
-                year: book.year
+                year: book.year,
+                wishlistSource: model.isWishlistOnly
+                    ? model.wishlistEntry.map { WishlistSection.sourceLabel($0.source) }
+                    : nil
             ))
 
             Text(book.displayTitle)
@@ -908,7 +976,12 @@ struct StopHome: View {
             if showsGenres {
                 ChipStrip {
                     addChip(.genres)
-                    ForEach(book.genres, id: \.self) { GenreChip(label: $0) }
+                    ForEach(book.genres, id: \.self) { genre in
+                        NavigationLink(value: Destination.genre(name: genre)) {
+                            GenreChip(label: genre)
+                        }
+                        .buttonStyle(PressableStyle())
+                    }
                 }
                 .padding(.top, 11)
                 .accessibilityIdentifier("book-detail-genres")
@@ -971,7 +1044,7 @@ struct StopHome: View {
                     WishlistSection(book: book, entry: entry, onRemoved: onRemovedWishlist)
                         .padding(.top, 16)
                 }
-            } else {
+            } else if DetailRead.showsReadStatus(hasFile: model.hasFile, hasPhysical: book.hasPhysical) {
                 DetailSegmented(
                     selection: Binding(
                         get: { model.readStatus },
@@ -982,8 +1055,10 @@ struct StopHome: View {
                 }
                 .padding(.top, 14)
 
-                ruler
-                    .padding(.top, 17)
+                if model.hasFile {
+                    ruler
+                        .padding(.top, 17)
+                }
 
                 if book.hasEbook, book.hasAudiobook {
                     DetailSyncRow(state: model.syncState, onOpen: onAlignment)
@@ -1011,13 +1086,13 @@ struct StopHome: View {
                 left: leftLabel(fraction: fraction),
                 right: updatedLabel
             )
-        } else if model.epubProgress != nil || model.audioProgress != nil {
+        } else if model.hasPosition {
             // A position exists but supports no honest bar (a bare CFI, or
             // audio with no measured duration) — say so instead of "unread".
             MonoNote(text: ["in progress", updatedLabel].compactMap { $0 }
                 .joined(separator: " · "))
         } else {
-            MonoNote(text: book.hasEbook || book.hasAudiobook ? "not started yet" : " ")
+            MonoNote(text: "not started yet")
         }
     }
 
@@ -1200,7 +1275,7 @@ struct StopStats: View {
                 SparkBars(minutes: DetailStats.sparkMinutes(from: model.sessions))
                     .padding(.top, 18)
             } else {
-                DetailKicker(text: "This read · not begun")
+                DetailKicker(text: DetailStats.emptyKicker(hasPosition: model.hasPosition))
 
                 Text("No stats yet.")
                     .font(.display(34))
@@ -1230,9 +1305,12 @@ struct StopStats: View {
     }
 
     private var emptyExplainer: String {
-        model.isWishlistOnly
-            ? "Stats begin when the book does — check in a copy to start the record."
-            : "Open the book to start tracking your reading here."
+        DetailStats.emptyExplainer(
+            hasPosition: model.hasPosition,
+            wishlistOnly: model.isWishlistOnly,
+            hasFile: model.hasFile,
+            hasPhysical: book.hasPhysical
+        )
     }
 
     /// The stat grid with its keys shown and its values withheld — the same
@@ -1299,6 +1377,19 @@ struct StopStats: View {
                     ? "rated \(model.rating.formatted()) of 5"
                     : "not rated yet"
             )
+            if model.rating > 0 {
+                Button {
+                    Haptics.tap()
+                    Task { await model.clearRating(uuid: book.uuid) }
+                } label: {
+                    MonoNote(text: "clear", color: palette.accentColor)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear your \(model.rating.formatted())-star rating")
+                .accessibilityIdentifier("rating-clear")
+            }
         }
         .animation(Motion.snap, value: model.rating)
     }
@@ -1463,6 +1554,8 @@ struct HighlightRow: View {
 struct StopJournals: View {
     let book: Book
     let model: BookDetailModel
+    /// The signed-in reader, whose own entries carry the "you" marker.
+    var viewerId: Int64?
     /// The flow (Option B) has no fixed screenful to fit, so it lists every
     /// entry inline instead of capping at `stopCount` behind a sheet.
     var uncapped = false
@@ -1502,14 +1595,20 @@ struct StopJournals: View {
                     // Lazy, and no copied slice: the flow's list is unbounded.
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(entries) { entry in
-                            JournalRow(entry: entry) { onOpen(entry) }
+                            JournalRow(
+                                entry: entry,
+                                isMine: DetailJournal.isOwn(entry, viewerId: viewerId)
+                            ) { onOpen(entry) }
                         }
                     }
                     .padding(.top, 8)
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(entries.prefix(Self.stopCount)) { entry in
-                            JournalRow(entry: entry) { onOpen(entry) }
+                            JournalRow(
+                                entry: entry,
+                                isMine: DetailJournal.isOwn(entry, viewerId: viewerId)
+                            ) { onOpen(entry) }
                         }
                     }
                     .padding(.top, 8)
@@ -1550,6 +1649,7 @@ struct StopJournals: View {
 /// One journal row: who, where they were, and the opening line.
 struct JournalRow: View {
     let entry: JournalEntry
+    var isMine = false
     var onOpen: () -> Void
 
     @Environment(\.palette) private var palette
@@ -1590,6 +1690,11 @@ struct JournalRow: View {
                             Text(entry.authorName)
                                 .font(.ui(12, weight: .medium))
                                 .foregroundStyle(palette.ink0Color)
+                            if isMine {
+                                Text("· you")
+                                    .font(.ui(12, weight: .medium))
+                                    .foregroundStyle(palette.accentColor)
+                            }
                             if let progress = entry.progress {
                                 Text("— at \(progress)%")
                                     .font(.monoUI(9))
@@ -1753,7 +1858,7 @@ struct StopFiles: View {
         VStack(spacing: 0) {
             kvRow("Publisher", book.publisher)
             kvRow("Published", book.published.map(Format.looseDate))
-            kvRow("Language", book.language)
+            kvRow("Language", Format.language(book.language))
             kvRow("ISBN", book.isbn13)
             kvRow("Added", book.addedAt.map(Format.isoDate))
             kvRow("File", book.filename)
@@ -1890,30 +1995,13 @@ struct StopRecommendations: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let authorId = book.creators.first?.id {
+            let creators = DetailRead.linkedCreators(book.creators)
+            if !creators.isEmpty {
                 InsetList {
-                    NavigationLink(value: Destination.author(id: authorId)) {
-                        HStack(spacing: 12) {
-                            authorDisc
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(book.authorDisplay)
-                                    .font(.ui(14))
-                                    .foregroundStyle(palette.ink0Color)
-                                    .lineLimit(1)
-                                Text("you own \(model.authorBooks.count + 1) · author page")
-                                    .font(.monoUI(9.5))
-                                    .foregroundStyle(palette.ink3Color)
-                            }
-                            Spacer(minLength: Spacing.sm)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(palette.ink3Color.opacity(0.7))
-                        }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
+                    ForEach(Array(creators.enumerated()), id: \.offset) { index, creator in
+                        if index > 0 { Hairline() }
+                        creatorRow(creator, isFirst: index == 0)
                     }
-                    .buttonStyle(PressableStyle())
                 }
             }
 
@@ -1979,7 +2067,34 @@ struct StopRecommendations: View {
         }
     }
 
-    private var authorDisc: some View {
+    /// One creator's way to their author page. Only the first author's
+    /// books are fetched, so only that row can say how many you own.
+    private func creatorRow(_ creator: DetailCreatorLink, isFirst: Bool) -> some View {
+        NavigationLink(value: Destination.author(id: creator.id)) {
+            HStack(spacing: 12) {
+                authorDisc(creator.name)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(creator.name)
+                        .font(.ui(14))
+                        .foregroundStyle(palette.ink0Color)
+                        .lineLimit(1)
+                    Text(isFirst ? "you own \(model.authorBooks.count + 1) · author page" : "author page")
+                        .font(.monoUI(9.5))
+                        .foregroundStyle(palette.ink3Color)
+                }
+                Spacer(minLength: Spacing.sm)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.ink3Color.opacity(0.7))
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    private func authorDisc(_ name: String) -> some View {
         Circle()
             .fill(palette.accentColor.opacity(0.22))
             .frame(width: 34, height: 34)
@@ -1987,7 +2102,7 @@ struct StopRecommendations: View {
                 Circle().strokeBorder(palette.accentColor.opacity(0.4), lineWidth: 0.5)
             )
             .overlay {
-                Text(String(book.authorDisplay.prefix(1)))
+                Text(String(name.prefix(1)))
                     .font(.displayItalic(16))
                     .foregroundStyle(palette.accentColor)
             }
@@ -2075,6 +2190,7 @@ struct AllHighlightsSheet: View {
 struct AllJournalsSheet: View {
     let book: Book
     let entries: [JournalEntry]
+    var viewerId: Int64?
     var onOpen: (JournalEntry) -> Void
 
     @Environment(\.palette) private var palette
@@ -2100,7 +2216,11 @@ struct AllJournalsSheet: View {
                             onOpen(entry)
                         } label: {
                             VStack(alignment: .leading, spacing: 9) {
-                                JournalByline(entry: entry, avatarSize: 26)
+                                JournalByline(
+                                    entry: entry,
+                                    avatarSize: 26,
+                                    isMine: DetailJournal.isOwn(entry, viewerId: viewerId)
+                                )
                                 // Not revealable here: the card is a button, so
                                 // a tap belongs to the row — it opens the entry
                                 // in the drawer, where a spoiler does open.
@@ -2135,7 +2255,7 @@ struct JournalDrawer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            JournalByline(entry: entry, avatarSize: 34)
+            JournalByline(entry: entry, avatarSize: 34, isMine: isMine)
                 .padding(.horizontal, 18)
                 .padding(.top, 20)
                 .padding(.bottom, 12)
@@ -2196,6 +2316,7 @@ struct JournalDrawer: View {
 struct JournalByline: View {
     let entry: JournalEntry
     var avatarSize: CGFloat
+    var isMine = false
 
     @Environment(\.palette) private var palette
 
@@ -2208,9 +2329,15 @@ struct JournalByline: View {
                 size: avatarSize
             )
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.authorName)
-                    .font(.ui(14, weight: .semibold))
-                    .foregroundStyle(palette.ink0Color)
+                HStack(spacing: 6) {
+                    Text(entry.authorName)
+                        .foregroundStyle(palette.ink0Color)
+                    if isMine {
+                        Text("· you")
+                            .foregroundStyle(palette.accentColor)
+                    }
+                }
+                .font(.ui(14, weight: .semibold))
                 MonoNote(text: bylineDetail)
             }
         }

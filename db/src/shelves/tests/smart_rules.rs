@@ -1,7 +1,8 @@
 //! Smart-shelf tag and genre rules against overrides and physical-only
 //! books: override-added subjects and genres match, scanned tags replaced
-//! by an override do not, a fileless book counts only with a physical
-//! copy, and Kobo sync excludes physical-only members.
+//! by an override do not, an unreadable blob or a scan-first root leaves the
+//! scanned membership, a fileless book counts only with a physical copy, and
+//! Kobo sync excludes physical-only members.
 
 use omnibus_shared::{
     MatchMode, RuleField, RuleOp, ShelfKind, ShelfRule, SortDir, SortKey, UpdateShelfRequest,
@@ -284,4 +285,82 @@ async fn kobo_sync_excludes_physical_only_smart_members() {
     let uuids = kobo_synced_book_uuids(&pool, owner).await.unwrap();
     assert_eq!(uuids.len(), 2);
     assert!(!uuids.contains(&physical));
+}
+
+#[tokio::test]
+async fn smart_shelf_taxonomy_rules_survive_a_corrupt_overrides_blob() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, '{not json')")
+        .bind(uuid_by_title(&pool, "Saga: Book One").await)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // The unreadable row reads as "no override": its scanned tag, author and
+    // series still count, and no rule on it fails the shelf.
+    for (field, value, expected) in [
+        (RuleField::Tag, "fiction", 2),
+        (RuleField::Genre, "Horror", 0),
+        (RuleField::Author, "Grace Hopper", 1),
+        (RuleField::Series, "Saga", 2),
+    ] {
+        let rule = ShelfRule {
+            field,
+            op: RuleOp::Is,
+            value: value.into(),
+        };
+        let shelf = create_shelf(&pool, owner, &smart_req(value, MatchMode::Any, vec![rule]))
+            .await
+            .unwrap();
+        assert_eq!(shelf.book_count, expected, "{field:?} {value}");
+    }
+}
+
+#[tokio::test]
+async fn smart_shelf_genre_rule_ignores_override_genres_on_an_embedded_tags_first_root() {
+    use omnibus_shared::MetadataSource::*;
+
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let overrides = omnibus_shared::MetadataOverrides {
+        genres: Some(vec!["Space Opera".into()]),
+        ..Default::default()
+    };
+    crate::upsert_metadata_overrides(
+        &pool,
+        &uuid_by_title(&pool, "Other Story").await,
+        &overrides,
+        false,
+        owner,
+    )
+    .await
+    .unwrap();
+    crate::settings::set_metadata_precedence(
+        &pool,
+        "/lib",
+        &[
+            FolderStructure,
+            OmnibusOverrides,
+            OpfSidecar,
+            EmbeddedTags,
+            ProviderMatch,
+        ],
+    )
+    .await
+    .unwrap();
+
+    let rule = ShelfRule {
+        field: RuleField::Genre,
+        op: RuleOp::Is,
+        value: "Space Opera".into(),
+    };
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &smart_req("Opera", MatchMode::Any, vec![rule]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(shelf.book_count, 0, "the root ranks the scan first");
 }

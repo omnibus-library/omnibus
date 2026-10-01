@@ -380,6 +380,7 @@ async fn book_progress_resolves_a_pdf_page_onto_its_outline_chapter() {
                     href: "page:0".into(),
                     spine_index: 0,
                     start_chars: 0,
+                    anchor_path: None,
                 },
                 crate::ebook::toc::TocChapter {
                     ordinal: 1,
@@ -387,6 +388,7 @@ async fn book_progress_resolves_a_pdf_page_onto_its_outline_chapter() {
                     href: "page:2".into(),
                     spine_index: 2,
                     start_chars: 200,
+                    anchor_path: None,
                 },
             ],
         },
@@ -458,6 +460,7 @@ async fn book_progress_resolves_a_pdf_page_against_the_pdf_on_a_mixed_book() {
                 href: "page:0".into(),
                 spine_index: 0,
                 start_chars: 0,
+                anchor_path: None,
             }],
         },
     )

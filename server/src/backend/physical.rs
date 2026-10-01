@@ -23,6 +23,7 @@ fn physical_error(context: &'static str, e: PhysicalError) -> Response {
         PhysicalError::CopyNotFound => {
             (StatusCode::NOT_FOUND, "physical copy not found").into_response()
         }
+        PhysicalError::NotCopyOwner => (StatusCode::FORBIDDEN, "not your copy").into_response(),
         PhysicalError::BookHasFiles => (
             StatusCode::CONFLICT,
             "book still has files; remove them first",
@@ -32,8 +33,9 @@ fn physical_error(context: &'static str, e: PhysicalError) -> Response {
     }
 }
 
-/// Reject a caller without `can_edit`. Physical copies are library-wide, so
-/// editing one changes what every user sees — same gate as metadata overrides.
+/// Reject a caller without `can_edit`. Deleting a fileless book removes it for
+/// every user — same gate as metadata overrides. (A copy's own writes are
+/// gated on ownership in the data layer instead.)
 fn require_edit(user: &AuthUser) -> Option<Response> {
     (!user.is_admin && !user.can_edit)
         .then(|| (StatusCode::FORBIDDEN, "edit permission required").into_response())
@@ -52,35 +54,32 @@ pub(super) async fn get_copies(
     }
 }
 
-/// Replace a copy's free-text note. A blank note clears it.
+/// Replace a copy's free-text note. A blank note clears it. 403 unless the
+/// caller filed the copy or is an admin.
 pub(super) async fn patch_copy_note(
     user: AuthUser,
     State(state): State<AppState>,
     Path(copy_id): Path<i64>,
     Json(req): Json<UpdateCopyNoteRequest>,
 ) -> Response {
-    if let Some(denied) = require_edit(&user) {
-        return denied;
-    }
     if let Err(msg) = req.validate() {
         return (StatusCode::BAD_REQUEST, msg).into_response();
     }
-    match db::update_physical_copy_note(&state.pool, copy_id, req.note.as_deref()).await {
+    let note = req.note.as_deref();
+    match db::update_physical_copy_note(&state.pool, copy_id, user.id, user.is_admin, note).await {
         Ok(copy) => Json(copy).into_response(),
         Err(e) => physical_error("update_physical_copy_note", e),
     }
 }
 
-/// Delete one physical copy ("I sold it"). 404 when the id is unknown.
+/// Delete one physical copy ("I sold it"). 404 when the id is unknown, 403
+/// unless the caller filed the copy or is an admin.
 pub(super) async fn delete_copy(
     user: AuthUser,
     State(state): State<AppState>,
     Path(copy_id): Path<i64>,
 ) -> Response {
-    if let Some(denied) = require_edit(&user) {
-        return denied;
-    }
-    match db::delete_physical_copy(&state.pool, copy_id).await {
+    match db::delete_physical_copy(&state.pool, copy_id, user.id, user.is_admin).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => physical_error("delete_physical_copy", e),
     }

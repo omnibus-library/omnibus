@@ -8,11 +8,11 @@ use dioxus_router::Link;
 use omnibus_shared::EbookMetadata;
 
 use crate::components::{BookActionMeta, FormatSwitcher};
-use crate::format::{format_date_short_opt, format_instant_short_opt};
+use crate::format::{format_date_short_opt, format_reader_instant_short_opt};
 use crate::pages::book_detail::identifiers::bd_identifier_rows;
 use crate::pages::book_detail::physical::{BdBookIdentity, BdPhysicalPanel, BdWishlistRailSlot};
 use crate::pages::book_detail::{BdMetaRow, PhysSignals};
-use crate::time::{local_date_offset, use_local_dates_ready};
+use crate::time::use_local_dates_ready;
 use crate::Route;
 
 use super::{MarqueeAdminActions, MarqueeViewFacts};
@@ -35,11 +35,10 @@ pub(super) fn MarqueeFilesStop(
     // lands on the reader's day (#2464); `published` is a calendar date that
     // belongs to no zone and must not be shifted.
     let published_display = b.published.as_deref().and_then(format_date_short_opt);
-    let added_display = b.added_at.as_deref().and_then(|raw| {
-        let offset =
-            crate::format::instant_secs(raw).map_or(0, |secs| local_date_offset(dates_ready, secs));
-        format_instant_short_opt(raw, offset)
-    });
+    let added_display = b
+        .added_at
+        .as_deref()
+        .and_then(|raw| format_reader_instant_short_opt(raw, dates_ready));
     rsx! {
         div { class: "bdmq-k", "Formats and copies" }
         // One list, one row per way you hold the book — file formats first,

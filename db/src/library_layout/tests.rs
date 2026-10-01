@@ -374,10 +374,16 @@ fn allocate_no_collision_returns_canonical() {
     assert!(s.ends_with("/author-a/title-t/title-t.epub"), "got: {s}");
 }
 
+/// A folder that already holds a book — the only kind that is a collision.
+fn occupied(folder: &std::path::Path) {
+    std::fs::create_dir_all(folder).unwrap();
+    std::fs::write(folder.join("book.epub"), b"x").unwrap();
+}
+
 #[test]
 fn allocate_one_collision_appends_2() {
     let dir = temp_dir("alloc_one");
-    std::fs::create_dir_all(dir.join("author-a").join("title-t")).unwrap();
+    occupied(&dir.join("author-a").join("title-t"));
     let p = allocate_canonical_path(&dir, "Author A", "Title T", "epub").unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
     let s = p.to_string_lossy();
@@ -409,15 +415,37 @@ fn allocate_lone_dot_ext_is_invalid_input() {
 fn allocate_three_collisions_returns_4() {
     let dir = temp_dir("alloc_three");
     let author = dir.join("author-a");
-    std::fs::create_dir_all(author.join("title-t")).unwrap();
-    std::fs::create_dir_all(author.join("title-t (2)")).unwrap();
-    std::fs::create_dir_all(author.join("title-t (3)")).unwrap();
+    occupied(&author.join("title-t"));
+    occupied(&author.join("title-t (2)"));
+    occupied(&author.join("title-t (3)"));
     let p = allocate_canonical_path(&dir, "Author A", "Title T", "epub").unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
     let s = p.to_string_lossy();
     assert!(
         s.ends_with("/author-a/title-t (4)/title-t.epub"),
         "got: {s}"
+    );
+}
+
+#[test]
+fn allocate_reuses_an_empty_title_folder_instead_of_numbering_a_sibling() {
+    // What a failed upload leaves behind when it could not clean up: the
+    // retry must land where the first attempt meant to, not in `(2)`.
+    let dir = temp_dir("alloc_empty_reuse");
+    std::fs::create_dir_all(dir.join("author-a").join("title-t")).unwrap();
+    let file = allocate_canonical_path(&dir, "Author A", "Title T", "epub").unwrap();
+    let folder = allocate_canonical_dir(&dir, "Author A", "Title T").unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(
+        file.to_string_lossy()
+            .ends_with("/author-a/title-t/title-t.epub"),
+        "got: {}",
+        file.display()
+    );
+    assert!(
+        folder.to_string_lossy().ends_with("/author-a/title-t"),
+        "got: {}",
+        folder.display()
     );
 }
 
@@ -433,7 +461,7 @@ fn allocate_dir_no_collision_returns_canonical_folder() {
 #[test]
 fn allocate_dir_one_collision_appends_2() {
     let dir = temp_dir("alloc_dir_one");
-    std::fs::create_dir_all(dir.join("author-a").join("title-t")).unwrap();
+    occupied(&dir.join("author-a").join("title-t"));
     let p = allocate_canonical_dir(&dir, "Author A", "Title T").unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
     let s = p.to_string_lossy();

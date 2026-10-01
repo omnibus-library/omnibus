@@ -383,6 +383,31 @@ actor LibraryIndex {
         return Self.decode(payloads)
     }
 
+    /// Books filed under `name` in `facet`, matched as the server's facet
+    /// matches — the whole name, case-insensitively — rather than as a
+    /// substring of the haystack.
+    func books(in facet: SearchFacet, named name: String, limit: Int = 500) async -> [Book] {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let payloads = await OfflineStore.shared.bookPayloads(
+            whereClause: Self.facetClause(facet),
+            orderClause: Self.order(sort: .title, direction: .asc),
+            bindings: [trimmed],
+            limit: limit,
+            offset: 0
+        )
+        return Self.decode(payloads)
+    }
+
+    /// Membership in one taxonomy list of the mirrored `Book` payload, bound
+    /// to the name. `internal` so the SQL is testable against a scratch table.
+    static func facetClause(_ facet: SearchFacet) -> String {
+        """
+        EXISTS (SELECT 1 FROM json_each(CAST(payload AS TEXT), '$.\(facet.payloadKey)') \
+        WHERE value = ? COLLATE NOCASE)
+        """
+    }
+
     /// The synthetic cursor `page` hands back, so `LibraryService` can tell a
     /// local cursor from one the server minted and resume in the right place.
     static func cursor(offset: Int) -> String { "local:\(offset)" }

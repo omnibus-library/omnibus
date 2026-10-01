@@ -464,7 +464,7 @@ struct OfflinePill: View {
 /// your finger continuously, so a half star is the same gesture as a whole one
 /// rather than a second tap on a star you already picked. A tap is just a
 /// zero-distance drag, so it lands wherever you touched: the left half of the
-/// third star is 2.5.
+/// third star is 2.5, and tapping the value already set clears it.
 struct StarRating: View {
     let stars: Double
     var size: CGFloat = 13
@@ -528,10 +528,22 @@ struct StarRating: View {
                         .onEnded { drag in
                             defer { dragValue = nil }
                             guard !isVerticalSwipe(drag.translation) else { return }
-                            onChange?(rating(at: drag.location.x, width: geometry.size.width))
+                            onChange?(Self.committed(
+                                rating(at: drag.location.x, width: geometry.size.width),
+                                current: stars,
+                                isTap: abs(drag.translation.width) < 4
+                                    && abs(drag.translation.height) < 4
+                            ))
                         }
                 )
         }
+    }
+
+    /// The value a finished gesture commits. A tap on the value already set
+    /// clears it, the way re-clicking the active star does on the web; a drag
+    /// that ends there is someone adjusting, and keeps it.
+    static func committed(_ value: Double, current: Double, isTap: Bool) -> Double {
+        isTap && current > 0 && value == current ? 0 : value
     }
 
     /// Whether this gesture is someone scrolling the page, not rating.
@@ -734,6 +746,19 @@ enum Format {
         return trimmed
     }
 
+    /// A declared language as a reader names it: `en`, `eng` and `en-US` all
+    /// read "English". Codes that decline to answer — `und`, `mul`, `zxx`,
+    /// `mis` — read "Unknown", the bucket the stats composition files them
+    /// under; a code no name is known for keeps its primary subtag.
+    static func language(_ code: String?) -> String? {
+        guard let primary = code?.trimmingCharacters(in: .whitespaces)
+            .split(whereSeparator: { $0 == "-" || $0 == "_" }).first?.lowercased()
+        else { return nil }
+        if ["und", "mul", "zxx", "mis"].contains(primary) { return "Unknown" }
+        return Locale(identifier: "en_US").localizedString(forLanguageCode: primary)
+            ?? primary.uppercased()
+    }
+
     static func date(unix: Int64) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(unix))
         let formatter = DateFormatter()
@@ -749,11 +774,11 @@ enum Format {
     /// views — and an untestable duplicate is how the two would drift.
     static func relative(unix: Int64, relativeTo now: Date = Date()) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(unix))
-        // Non-past deltas — a moments-ago write whose timestamp sits at or just
-        // past `now` from clock skew — read as "just now" rather than the
-        // formatter's countdown ("in 0s"). Mirrors `WidgetLabels.relative`
-        // (#2358); the two are held equal by `WidgetSnapshotTests`.
-        guard date < now else { return "just now" }
+        // The formatter phrases anything under a second — past or future — as
+        // a countdown ("in 0s"), and a whole-second stamp written moments ago
+        // is always that close. Mirrors `WidgetLabels.relative`; the two are
+        // held equal by `WidgetSnapshotTests`.
+        guard now.timeIntervalSince(date) >= 1 else { return "just now" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: now)

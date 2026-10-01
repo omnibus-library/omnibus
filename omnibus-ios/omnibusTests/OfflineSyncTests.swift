@@ -691,6 +691,43 @@ struct OptimisticJournalEntryTests {
     }
 }
 
+// MARK: - Offline creation time
+
+@Suite("Offline writes carry their own time and percent")
+struct OfflineWriteStampTests {
+    private let made: Int64 = 1_700_000_000
+
+    @Test("an annotation create sends when it was made, and shows that time")
+    func annotationCreatesCarryTheirCreationTime() throws {
+        var highlight = CreateHighlight(
+            bookUUID: "b", epubCFIRange: "epubcfi(/6/4)", color: .amber, text: nil
+        )
+        highlight.clientCreatedAt = made
+        var bookmark = CreateBookmark(bookUUID: "b", position: "12", title: nil)
+        bookmark.clientCreatedAt = made
+        let journal = CreateJournalEntry(bookUUID: "b", bodyMd: "x", clientCreatedAt: made)
+
+        #expect(highlight.optimistic.createdAt == made)
+        #expect(bookmark.optimistic.createdAt == made)
+        #expect(UserDataService.optimisticJournalEntry(for: journal, author: nil).createdAt == made)
+        for body in [
+            try JSONEncoder().encode(highlight),
+            try JSONEncoder().encode(bookmark),
+            try JSONEncoder().encode(journal),
+        ] {
+            let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect((object["client_created_at"] as? NSNumber)?.int64Value == made)
+        }
+    }
+
+    @Test("a reading position carries its percent once epub.js can name one")
+    func readingPositionCarriesItsPercent() {
+        #expect(RelocateData(cfi: "epubcfi(/6/4)", totalPages: 300, pct: 34).savedPercent == 34)
+        // Before the locations pass `pct` is a placeholder 0, not a position.
+        #expect(RelocateData(cfi: "epubcfi(/6/4)", totalPages: 0, pct: 0).savedPercent == nil)
+    }
+}
+
 // MARK: - Account scoping
 
 @Suite("User-scoped cache wipe")

@@ -129,3 +129,66 @@ async fn highlight_id_for_client_id_propagates_db_error_when_pool_is_closed() {
         .unwrap_err();
     assert!(matches!(err, HighlightError::Sqlx(_)));
 }
+
+fn stamped_input(uuid: &str, client_id: &str) -> CreateHighlight {
+    CreateHighlight {
+        client_id: Some(client_id.into()),
+        book_uuid: uuid.into(),
+        epub_cfi_range: "epubcfi(/6/4!/4/2)".into(),
+        color: HighlightColor::Amber,
+        text: None,
+    }
+}
+
+#[tokio::test]
+async fn create_highlight_at_keeps_the_devices_creation_time() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+    // Made offline an hour ago, drained now.
+    let made = crate::auth::now_unix() - 3_600;
+
+    let h = create_highlight_at(&pool, user, &stamped_input(&uuid, "offline"), Some(made))
+        .await
+        .unwrap();
+
+    assert_eq!(h.created_at, made);
+}
+
+#[tokio::test]
+async fn create_highlight_at_clamps_a_future_stamp_to_now() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+    let before = crate::auth::now_unix();
+
+    let fast = create_highlight_at(
+        &pool,
+        user,
+        &stamped_input(&uuid, "fast"),
+        Some(before + 86_400),
+    )
+    .await
+    .unwrap();
+    let none = create_highlight_at(&pool, user, &stamped_input(&uuid, "none"), None)
+        .await
+        .unwrap();
+
+    let after = crate::auth::now_unix();
+    for created in [fast.created_at, none.created_at] {
+        assert!(
+            (before..=after).contains(&created),
+            "{created} not in {before}..={after}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn create_highlight_at_returns_book_not_found_for_unknown_uuid() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let err = create_highlight_at(&pool, user, &stamped_input("no-such-book", "x"), Some(1))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, HighlightError::BookNotFound));
+}

@@ -206,7 +206,7 @@ test("a slower fetch for the previous reader can't overwrite the target's in-pro
       limit: number;
       user_id: number | null;
     };
-    if (body.user_id === null && body.limit === 3) {
+    if (body.user_id === null && body.limit > 1) {
       await ownFetchHeld;
     }
     await route.continue();

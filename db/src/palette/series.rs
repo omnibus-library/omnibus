@@ -1,7 +1,8 @@
 //! Series arm of the search palette: substring `LIKE` match with
 //! override-aware book count plus an author_display drawn from the
-//! first book's effective creators. Visibility still requires at least
-//! one canonical link on a visible book.
+//! first book's effective creators. Visibility is the rule
+//! `browse::list_series` uses — an effective member on a visible book — so
+//! the palette cannot count a series the Series index drops.
 
 use std::sync::OnceLock;
 
@@ -9,68 +10,38 @@ use omnibus_shared::PaletteSeriesHit;
 use sqlx::{Row, SqlitePool};
 
 use crate::helpers::{library_paths_json, visible_book_sql};
+// The membership fragment expands the precedence and presence macros at this
+// site, so those must be in scope here too.
+use crate::metadata_overrides::sql::{
+    effective_series_sql, override_present_sql, overrides_win_sql, safe_overrides_sql,
+};
 
 use super::PaletteError;
 
 /// Series-arm palette query, bound `?1 = library_paths JSON array`, `?2 = like_pattern`,
 /// `?3 = limit`.
 ///
-/// Both the count and the `author_display` line use the effective
-/// (override-aware) view, mirroring `get_series` and the palette author
-/// count. `overrides.series` (string) drives membership; if a book's first
-/// creator was renamed through the metadata edit form,
-/// `overrides.creators[0].name` drives the displayed author. Visibility still
-/// requires at least one canonical link on a visible book so we don't list
-/// series that exist only inside override JSON (no navigable id).
-///
-/// The per-series correlated `COUNT(*)` is replaced with a
-/// single-pass `effective` membership CTE (scoped to the visible books up
-/// front) —
-/// the UNION of (1) canonical `books_series_link` rows whose book has no
-/// `series` override and (2) the scalar `overrides.series` string for books
-/// that do. Each visible series' count is then a single scan of that union.
-/// The override match stays BINARY (`json_extract(...) = s.name`, no COLLATE)
-/// exactly as before. The clear-all case (`Some("")`) falls out: it drops the
-/// book from arm (1) and the empty string won't equal any real series name in
-/// arm (2). The `author_display` subquery is unchanged (not a count — out of
-/// scope). UNION (not ALL) is harmless here (a book has one scalar
-/// series override) but keeps the shape uniform with the other sites.
+/// Both the count and the visibility gate read the shared effective
+/// membership (`effective_series_sql!`) narrowed to the visible books — the
+/// relation the Series index and smart-shelf series rules read — so a book
+/// rehomed through the edit form moves between the two counts, and a series
+/// whose every book was moved out drops from both. The `author_display` line
+/// follows the first book's creators override.
 pub(super) fn search_series_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {
-        let vis = visible_book_sql("b", "l2", "?1");
         let vis_author = visible_book_sql("b2", "l2", "?1");
         let vis_lead = visible_book_sql("b3", "l3", "?1");
-        let vis_exists = visible_book_sql("b", "l", "?1");
         format!(
             r"
-        WITH effective AS (
-          SELECT bsl.series AS series_id, NULL AS series_name, bsl.book AS book_id
-            FROM books_series_link bsl
-            JOIN books b ON b.id = bsl.book
-            JOIN scan_roots l2 ON l2.id = b.library_id
-            LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-           WHERE {vis}
-             AND (mo.book_uuid IS NULL
-                  OR json_type(mo.overrides, '$.series') IS NULL)
-          UNION
-          SELECT NULL AS series_id,
-                 json_extract(mo.overrides, '$.series') AS series_name,
-                 b.id AS book_id
-            FROM books b
-            JOIN scan_roots l2 ON l2.id = b.library_id
-            JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-           WHERE {vis}
-             AND json_type(mo.overrides, '$.series') IS NOT NULL
-        )
+        WITH {effective}
         SELECT s.id, s.name,
-          (SELECT COUNT(*) FROM effective e
-            WHERE e.series_id = s.id OR e.series_name = s.name) AS book_count,
+          (SELECT COUNT(*) FROM effective e WHERE e.series_id = s.id) AS book_count,
           (SELECT
              CASE
                WHEN mo2.book_uuid IS NOT NULL
-                    AND json_type(mo2.overrides, '$.creators') IS NOT NULL
-                 THEN json_extract(mo2.overrides, '$.creators[0].name')
+                    AND json_type({overrides2}, '$.creators') IS NOT NULL
+                 THEN json_extract({overrides2}, '$.creators[0].name')
                ELSE (SELECT a.name FROM books_authors_link bal
                        JOIN authors a ON a.id = bal.author
                       WHERE bal.book = b2.id
@@ -83,7 +54,7 @@ pub(super) fn search_series_sql() -> &'static str {
             WHERE bsl2.series = s.id
               AND {vis_author}
             ORDER BY b2.sort, b2.id LIMIT 1) AS author_display,
-          (SELECT COALESCE(json_extract(mo3.overrides, '$.title'), b3.title)
+          (SELECT COALESCE(json_extract({overrides3}, '$.title'), b3.title)
              FROM books_series_link bsl3
              JOIN books b3 ON b3.id = bsl3.book
              JOIN scan_roots l3 ON l3.id = b3.library_id
@@ -93,18 +64,32 @@ pub(super) fn search_series_sql() -> &'static str {
             ORDER BY b3.sort, b3.id LIMIT 1) AS lead_book_title
         FROM series s
         WHERE s.name LIKE ?2 ESCAPE '\'
-          AND EXISTS (
-            SELECT 1 FROM books_series_link bsl
-              JOIN books b ON b.id = bsl.book
-              JOIN scan_roots l ON l.id = b.library_id
-             WHERE bsl.series = s.id
-               AND {vis_exists}
-          )
+          AND EXISTS (SELECT 1 FROM effective e WHERE e.series_id = s.id)
         ORDER BY book_count DESC, s.name
         LIMIT ?3
-        "
+        ",
+            effective = visible_effective_series(),
+            overrides2 = safe_overrides_sql!("mo2"),
+            overrides3 = safe_overrides_sql!("mo3"),
         )
     })
+}
+
+/// The `effective(series_id, book_id)` CTE both series queries share: the
+/// shared membership narrowed to the books visible under `?1`, materialized
+/// so the gate and the count scan it once.
+fn visible_effective_series() -> String {
+    let vis = visible_book_sql("b", "l", "?1");
+    format!(
+        r"effective AS MATERIALIZED (
+          SELECT es.series_id, es.book_id
+            FROM ({membership}) es
+            JOIN books b ON b.id = es.book_id
+            JOIN scan_roots l ON l.id = b.library_id
+           WHERE {vis}
+        )",
+        membership = effective_series_sql!()
+    )
 }
 
 /// Run the series arm of the palette for `like_pattern` (already escaped)
@@ -149,7 +134,7 @@ pub async fn search_series_for_paths(
 
 /// Count visible series matching `like_pattern` in `library_path` — the
 /// uncapped total behind the palette's 5-hit series cap. Visibility mirrors
-/// [`search_series`]: at least one canonical link on a visible book.
+/// [`search_series`]: at least one effective member on a visible book.
 pub async fn count_series(
     pool: &SqlitePool,
     library_path: &str,
@@ -167,19 +152,14 @@ pub async fn count_series_for_paths(
     if library_paths.is_empty() {
         return Ok(0);
     }
-    let visible = visible_book_sql("b", "l", "?1");
     Ok(sqlx::query_scalar::<_, i64>(&format!(
         r"
+        WITH {effective}
         SELECT COUNT(*) FROM series s
         WHERE s.name LIKE ?2 ESCAPE '\'
-          AND EXISTS (
-            SELECT 1 FROM books_series_link bsl
-              JOIN books b ON b.id = bsl.book
-              JOIN scan_roots l ON l.id = b.library_id
-             WHERE bsl.series = s.id
-               AND {visible}
-          )
-        "
+          AND EXISTS (SELECT 1 FROM effective e WHERE e.series_id = s.id)
+        ",
+        effective = visible_effective_series()
     ))
     .bind(library_paths_json(library_paths))
     .bind(like_pattern)

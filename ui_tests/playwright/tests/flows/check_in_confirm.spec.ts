@@ -7,10 +7,10 @@ import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // The terminal branches reached once a resolved ISBN lands past the lookup
-// screen: checking in a copy of a book the library already holds (3a), the
-// fuzzy (title, author) close-match confirm (2b), and the two "already
-// tracked" outcomes that skip the wizard and navigate straight to the book's
-// detail page. Every provider RPC is mocked — same rationale as
+// screen: checking in a copy of a book the library already holds (3a) or one
+// on the reader's own wishlist, the fuzzy (title, author) close-match confirm
+// (2b), and the already-owned outcome that skips the wizard and navigates
+// straight to the book's detail page. Every provider RPC is mocked — same rationale as
 // `check_in_search.spec.ts` — and here the check-in write itself is mocked
 // too: the target book (`standalone-island`) is read by
 // `physical_collection.spec.ts` elsewhere in the suite, so a real physical
@@ -338,14 +338,14 @@ test.describe("check-in confirm and close-match", () => {
     await expect(page.getByTestId("check-in")).toHaveCount(0);
   });
 
-  test("an on-wishlist scan navigates straight to the book's detail page", async ({
+  test("an on-wishlist scan offers the check-in and says the entry went", async ({
     page,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
     await mockJsonPost(page, /\/api\/rpc\/scan\/resolve$/, {
       kind: "on_wishlist",
-      book: scanBook(uuid),
+      book: scanBook(uuid, { has_files: false }),
     });
     await gotoReady(page, "/check-in");
     await page.getByTestId("check-in-isbn").fill(ISBN);
@@ -359,9 +359,31 @@ test.describe("check-in confirm and close-match", () => {
       async () => page.getByTestId("check-in-submit").click(),
     );
 
-    await expect(page).toHaveURL(new RegExp(`/books/${uuid}$`));
-    await expect(
-      page.getByRole("heading", { level: 1, name: TARGET.title }),
-    ).toBeVisible();
+    // The book the reader wished for is the one they now hold: the flow
+    // offers to file it rather than sending them to its page.
+    await expect(page).toHaveURL(/\/check-in$/);
+    await expect(page.getByTestId("check-in-confirm")).toContainText(
+      "on your wishlist",
+    );
+    await expect(page.getByTestId("check-in-book")).toContainText(TARGET.title);
+
+    await mockJsonPost(page, "**/api/rpc/scan/check-in", { book_uuid: uuid });
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/scan/check-in",
+        expectedBody: { req: { book_uuid: uuid, isbn: ISBN, note: null } },
+        expectedStatus: 200,
+      },
+      async () => page.getByTestId("check-in-confirm-submit").click(),
+    );
+
+    const success = page.getByTestId("check-in-success");
+    await expect(success).toContainText("In your physical collection");
+    await expect(success).toContainText(TARGET.title);
+    await expect(page.getByTestId("check-in-off-wishlist")).toContainText(
+      "off your wishlist",
+    );
   });
 });

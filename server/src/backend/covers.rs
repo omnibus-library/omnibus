@@ -171,18 +171,18 @@ async fn thumb_cache_hit_response(
 
     // Derived from values already in hand (#1751), no file I/O — so a
     // matching `If-None-Match` can be answered without ever reading the
-    // thumb off disk. `is_stale`/`is_stale_async` key freshness on this
-    // exact `(book_id, size, last_modified_epoch)` triple, so this
-    // validator cannot disagree with that check.
+    // thumb off disk. The thumb's file is named by this exact `(book_id,
+    // size, last_modified_epoch)` triple, so this validator cannot disagree
+    // with the freshness check.
     let etag = db::thumbs::thumb_etag(id, size, last_modified_epoch);
-    spawn_touch_thumb(id, size);
+    spawn_touch_thumb(id, size, last_modified_epoch);
 
     if if_none_match_hits(headers, &etag) {
         tracing::debug!(uuid, book_id = id, ?size, "thumb: not modified (304)");
         return Some(not_modified(&etag));
     }
 
-    let thumb_path = db::thumb_path_for(id, size);
+    let thumb_path = db::thumb_path_for(id, size, last_modified_epoch);
     let bytes = tokio::fs::read(&thumb_path).await.ok()?;
     tracing::debug!(
         uuid,
@@ -220,10 +220,12 @@ async fn thumb_cache_hit_response(
 /// (`handle_generate_thumbs` in db/src/worker/handlers.rs) instead of
 /// silently dropping it. Called on both the 200 and 304 paths — a
 /// revalidated thumb is still a used one.
-fn spawn_touch_thumb(id: i64, size: db::ThumbSize) {
+fn spawn_touch_thumb(id: i64, size: db::ThumbSize, last_modified_epoch: i64) {
     tokio::spawn(async move {
-        if let Err(join_err) =
-            tokio::task::spawn_blocking(move || db::thumbs::touch_thumb(id, size)).await
+        if let Err(join_err) = tokio::task::spawn_blocking(move || {
+            db::thumbs::touch_thumb(id, size, last_modified_epoch)
+        })
+        .await
         {
             let kind = if join_err.is_panic() {
                 "panicked"

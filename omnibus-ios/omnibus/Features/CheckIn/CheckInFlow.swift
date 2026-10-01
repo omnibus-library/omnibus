@@ -64,14 +64,33 @@ enum CheckInFlow {
     /// Checked in a physical copy of a library book. The server answers with
     /// the *canonical* uuid (merged books resolve to their primary), so the
     /// success screen links and renders through `ref`, not the scanned book.
-    static func checkedInSuccess(book: ScanBook, ref: BookRef) -> CheckInSuccess {
+    /// A copy of a wishlisted book says the wish is settled: the server clears
+    /// the entry when the copy lands.
+    static func checkedInSuccess(
+        book: ScanBook, ref: BookRef, fromWishlist: Bool = false
+    ) -> CheckInSuccess {
         CheckInSuccess(
             tone: .celebration,
-            headline: "In your physical collection",
+            headline: fromWishlist ? "Off your wishlist, on your shelf" : "In your physical collection",
             title: book.title,
             bookUUID: ref.bookUUID,
             cover: .library(uuid: ref.bookUUID)
         )
+    }
+
+    /// The candidates whose wishlist state a close match needs asked: the
+    /// fuzzy rung carries none, so a wished-for book read as a stranger.
+    static func wishlistLookups(for stage: CheckInStage) -> [String] {
+        guard case let .outcome(.closeMatch(books, _)) = stage else { return [] }
+        return books.map(\.uuid)
+    }
+
+    /// What a close-match candidate's card says. One the reader already
+    /// wishlists is the book they were waiting for, not a mere resemblance.
+    static func candidateLabel(isWishlisted: Bool) -> (badge: String, note: String?) {
+        isWishlisted
+            ? ("On your wishlist", "Checking a copy in clears this book from your wishlist.")
+            : ("Possible match", nil)
     }
 
     /// Added a physical-only book that wasn't in the library. The book is

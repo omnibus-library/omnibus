@@ -1,6 +1,7 @@
 //! Web-only physical-collection + wishlist UI for the book-detail page: the
-//! full-width checked-in-copies panel (edit-note / delete) and the rail-card
-//! wishlist slot (tracking card / add-to-wishlist affordance) the hero embeds.
+//! full-width checked-in-copies panel (who filed each copy; edit-note / delete
+//! for its filer or an admin) and the rail-card wishlist slot (tracking card /
+//! add-to-wishlist affordance) the hero embeds.
 //! Self-loads post-mount for SSR/WASM hydration parity; bumps the page
 //! `refresh` signal after mutations that change physical/visibility state.
 
@@ -13,6 +14,9 @@ use crate::time::now_unix;
 use crate::{data, use_server_url, Route};
 
 use super::{BdSectionHead, PhysSignals};
+use viewer::PhysViewer;
+
+mod viewer;
 
 /// A pending copy deletion awaiting confirmation. `last_fileless` marks the
 /// only copy of a book with no files — deleting it needs the remove-or-wishlist
@@ -68,7 +72,7 @@ pub(super) fn BdPhysicalPanel(
 ) -> Element {
     let server_url = use_server_url();
     let user = crate::use_current_user_summary();
-    let can_edit = user().map(|u| u.is_admin || u.can_edit).unwrap_or(false);
+    let viewer = PhysViewer::from_user(user().as_ref());
 
     let copies = use_signal(Vec::<PhysicalCopy>::new);
     let wishlist = phys.wishlist;
@@ -109,15 +113,15 @@ pub(super) fn BdPhysicalPanel(
             "data-testid": "bd-physical-panel",
             if !copies().is_empty() {
                 if marquee {
-                    {render_physical_rows_marquee(state, server_url.clone(), is_fileless, can_edit)}
+                    {render_physical_rows_marquee(state, server_url.clone(), is_fileless, viewer)}
                 } else {
-                    {render_physical_section(state, server_url.clone(), is_fileless, can_edit)}
+                    {render_physical_section(state, server_url.clone(), is_fileless, viewer)}
                 }
             }
             if let Some(e) = state.err.read().clone() {
                 p { role: "alert", class: "bd-phys-error", "data-testid": "physical-error", "{e}" }
             }
-            {render_delete_modal(state, server_url, uuid)}
+            {render_delete_modal(state, server_url, uuid, viewer.may_remove_book())}
         }
     }
 }
@@ -368,9 +372,10 @@ fn BdWishlistAddCard(state: WishlistCardState) -> Element {
     }
 }
 
-/// Install the uuid-reactive load effect: fetch this book's physical copies
-/// and wishlist entry post-mount, resetting state first so a previous book's
-/// copies/wishlist don't flash under the new book before its load resolves.
+/// Install the load effect: fetch this book's physical copies and wishlist
+/// entry post-mount, and again after a check-in the overlay files over this
+/// page. A new book resets state first so a previous book's copies/wishlist
+/// don't flash under it; a refetch of the same book keeps them on screen.
 fn use_physical_load_effect(
     uuid: String,
     load_url: String,
@@ -379,11 +384,17 @@ fn use_physical_load_effect(
     mut err: Signal<Option<String>>,
     mut loaded: Signal<bool>,
 ) {
+    let writes = crate::pages::use_check_in_writes();
+    let mut shown = use_signal(String::new);
     use_effect(use_reactive!(|uuid| {
-        copies.set(Vec::new());
-        wishlist.set(None);
+        let _ = writes();
         err.set(None);
-        loaded.set(false);
+        if *shown.peek() != uuid {
+            shown.set(uuid.clone());
+            copies.set(Vec::new());
+            wishlist.set(None);
+            loaded.set(false);
+        }
         if uuid.is_empty() {
             return;
         }
@@ -392,11 +403,17 @@ fn use_physical_load_effect(
         spawn(async move {
             // Surface a read failure rather than silently degrading to the
             // empty "add to wishlist" state (which would mask a 500/transient).
-            match data::list_physical_copies(&load_url, &uuid).await {
+            let fetched_copies = data::list_physical_copies(&load_url, &uuid).await;
+            let fetched_entry = data::get_wishlist_entry(&load_url, &uuid).await;
+            // The page moved on to another book while these were in flight.
+            if *shown.peek() != uuid {
+                return;
+            }
+            match fetched_copies {
                 Ok(c) => copies.set(c),
                 Err(e) => err.set(Some(e.to_string())),
             }
-            match data::get_wishlist_entry(&load_url, &uuid).await {
+            match fetched_entry {
                 Ok(w) => wishlist.set(w),
                 Err(e) => err.set(Some(e.to_string())),
             }
@@ -410,7 +427,7 @@ fn render_physical_section(
     state: PhysPanelState,
     url: String,
     is_fileless: bool,
-    can_edit: bool,
+    viewer: PhysViewer,
 ) -> Element {
     let copies = state.copies;
     rsx! {
@@ -422,7 +439,7 @@ fn render_physical_section(
         }
         div { class: "bd-phys-copies",
             for copy in copies() {
-                {render_copy_card(state, url.clone(), copy, is_fileless, can_edit)}
+                {render_copy_card(state, url.clone(), copy, is_fileless, viewer)}
             }
         }
     }
@@ -437,12 +454,12 @@ fn render_physical_rows_marquee(
     state: PhysPanelState,
     url: String,
     is_fileless: bool,
-    can_edit: bool,
+    viewer: PhysViewer,
 ) -> Element {
     let copies = state.copies;
     rsx! {
         for copy in copies() {
-            {render_copy_row_marquee(state, url.clone(), copy, is_fileless, can_edit)}
+            {render_copy_row_marquee(state, url.clone(), copy, is_fileless, viewer)}
         }
     }
 }
@@ -453,7 +470,7 @@ fn render_copy_row_marquee(
     url: String,
     copy: PhysicalCopy,
     is_fileless: bool,
-    can_edit: bool,
+    viewer: PhysViewer,
 ) -> Element {
     let mut editing = state.editing;
     let mut note_draft = state.note_draft;
@@ -461,7 +478,9 @@ fn render_copy_row_marquee(
     let copies_sig = state.copies;
     let copy_id = copy.id;
     let is_editing = editing() == Some(copy_id);
-    let checked_in = checked_in_label(now_unix(), copy.checked_in_at);
+    let filer = viewer.filer_label(&copy);
+    let checked_in = checked_in_label(now_unix(), copy.checked_in_at, filer.as_deref());
+    let may_change = viewer.may_change(&copy);
     let note_val = copy.note.clone().unwrap_or_default();
     let note_is_empty = note_val.trim().is_empty();
     rsx! {
@@ -493,7 +512,7 @@ fn render_copy_row_marquee(
             }
             if is_editing {
                 div { class: "rx-copy-editor", {render_note_editor(state, url, copy_id)} }
-            } else if can_edit {
+            } else if may_change {
                 div { class: "format-actions",
                     button {
                         class: "btn ghost sm",
@@ -519,14 +538,14 @@ fn render_copy_row_marquee(
     }
 }
 
-/// One physical-copy card: check-in date, ISBN, note (view or inline editor),
-/// and the edit/delete actions (edit-gated).
+/// One physical-copy card: who checked it in and when, ISBN, note (view or
+/// inline editor), and the edit/delete actions (filer or admin only).
 fn render_copy_card(
     state: PhysPanelState,
     url: String,
     copy: PhysicalCopy,
     is_fileless: bool,
-    can_edit: bool,
+    viewer: PhysViewer,
 ) -> Element {
     let mut editing = state.editing;
     let mut note_draft = state.note_draft;
@@ -534,7 +553,9 @@ fn render_copy_card(
     let copies_sig = state.copies;
     let copy_id = copy.id;
     let is_editing = editing() == Some(copy_id);
-    let checked_in = checked_in_label(now_unix(), copy.checked_in_at);
+    let filer = viewer.filer_label(&copy);
+    let checked_in = checked_in_label(now_unix(), copy.checked_in_at, filer.as_deref());
+    let may_change = viewer.may_change(&copy);
     let note_val = copy.note.clone().unwrap_or_default();
     let note_is_empty = note_val.trim().is_empty();
     rsx! {
@@ -554,7 +575,7 @@ fn render_copy_card(
                 if !note_is_empty {
                     p { class: "bd-phys-copy-note", "{note_val}" }
                 }
-                if can_edit {
+                if may_change {
                     div { class: "bd-phys-copy-actions",
                         button {
                             class: "btn ghost sm",
@@ -620,9 +641,14 @@ fn render_note_editor(state: PhysPanelState, url: String, copy_id: i64) -> Eleme
 }
 
 /// Confirmation modal for a copy delete. A last-copy-on-fileless-book delete
-/// gets the remove-or-wishlist choice; every other delete gets a plain "I sold
-/// it" confirm.
-fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Element {
+/// gets the remove-or-wishlist choice — "remove" only for a viewer who may
+/// delete the book; every other delete gets a plain "I sold it" confirm.
+fn render_delete_modal(
+    state: PhysPanelState,
+    url: String,
+    uuid: String,
+    can_remove_book: bool,
+) -> Element {
     let mut delete_target = state.delete_target;
     let busy = state.busy;
     let Some(target) = delete_target() else {
@@ -633,6 +659,46 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
     if target.last_fileless {
         let (uw, ww) = (url.clone(), uuid.clone());
         let title = "Remove your last copy";
+        let body = if can_remove_book {
+            "This is the only copy of a book with no files in your library. Remove it entirely, or keep tracking it on your wishlist?"
+        } else {
+            "This is the only copy of a book with no files in your library. Keep tracking it on your wishlist instead?"
+        };
+        let mut actions = vec![
+            ConfirmModalAction {
+                testid: "last-copy-cancel".to_string(),
+                label: "Cancel".to_string(),
+                busy_label: None,
+                busy: false,
+                tone: ConfirmModalTone::Ghost,
+                disabled: is_busy,
+                on_click: EventHandler::new(move |_| delete_target.set(None)),
+            },
+            ConfirmModalAction {
+                testid: "last-copy-wishlist".to_string(),
+                label: "Move to wishlist".to_string(),
+                busy_label: None,
+                busy: false,
+                tone: ConfirmModalTone::Ghost,
+                disabled: is_busy,
+                on_click: EventHandler::new(move |_| {
+                    delete_last_and_wishlist(state, uw.clone(), ww.clone(), copy_id)
+                }),
+            },
+        ];
+        if can_remove_book {
+            actions.push(ConfirmModalAction {
+                testid: "last-copy-remove".to_string(),
+                label: "Remove from library".to_string(),
+                busy_label: None,
+                busy: false,
+                tone: ConfirmModalTone::Danger,
+                disabled: is_busy,
+                on_click: EventHandler::new(move |_| {
+                    delete_last_and_remove(state, url.clone(), uuid.clone(), copy_id)
+                }),
+            });
+        }
         rsx! {
             ConfirmModal {
                 testid: "last-copy-modal".to_string(),
@@ -642,44 +708,7 @@ fn render_delete_modal(state: PhysPanelState, url: String, uuid: String) -> Elem
                 dialog_class: "mg-modal del-modal".to_string(),
                 busy: is_busy,
                 on_dismiss: move |_| delete_target.set(None),
-                {confirm_modal_body(
-                    title,
-                    "This is the only copy of a book with no files in your library. Remove it entirely, or keep tracking it on your wishlist?",
-                    None,
-                    vec![
-                        ConfirmModalAction {
-                            testid: "last-copy-cancel".to_string(),
-                            label: "Cancel".to_string(),
-                            busy_label: None,
-                            busy: false,
-                            tone: ConfirmModalTone::Ghost,
-                            disabled: is_busy,
-                            on_click: EventHandler::new(move |_| delete_target.set(None)),
-                        },
-                        ConfirmModalAction {
-                            testid: "last-copy-wishlist".to_string(),
-                            label: "Move to wishlist".to_string(),
-                            busy_label: None,
-                            busy: false,
-                            tone: ConfirmModalTone::Ghost,
-                            disabled: is_busy,
-                            on_click: EventHandler::new(move |_| {
-                                delete_last_and_wishlist(state, uw.clone(), ww.clone(), copy_id)
-                            }),
-                        },
-                        ConfirmModalAction {
-                            testid: "last-copy-remove".to_string(),
-                            label: "Remove from library".to_string(),
-                            busy_label: None,
-                            busy: false,
-                            tone: ConfirmModalTone::Danger,
-                            disabled: is_busy,
-                            on_click: EventHandler::new(move |_| {
-                                delete_last_and_remove(state, url.clone(), uuid.clone(), copy_id)
-                            }),
-                        },
-                    ],
-                )}
+                {confirm_modal_body(title, body, None, actions)}
             }
         }
     } else {
@@ -913,9 +942,13 @@ fn time_ago(now: i64, ts: i64) -> String {
     }
 }
 
-/// "Checked in {relative}" label for a copy's check-in timestamp.
-fn checked_in_label(now: i64, ts: i64) -> String {
-    format!("Checked in {}", time_ago(now, ts))
+/// "Checked in {relative} by {filer}" label for a copy — the filer omitted
+/// when their account is gone.
+fn checked_in_label(now: i64, ts: i64, filer: Option<&str>) -> String {
+    match filer {
+        Some(name) => format!("Checked in {} by {name}", time_ago(now, ts)),
+        None => format!("Checked in {}", time_ago(now, ts)),
+    }
 }
 
 /// Human phrase for where a wishlist entry originated.

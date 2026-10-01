@@ -72,6 +72,55 @@ fn edit_shelf_modal_hides_the_kobo_toggle_for_system_shelves() {
     assert!(!html.contains("edit-shelf-kobo-on"));
 }
 
+#[component]
+fn RuleHarness(rules: Vec<ShelfRule>) -> Element {
+    let mut s = shelf(ShelfKind::Smart, false);
+    s.rules = rules;
+    rsx! { EditShelfModal { shelf: s, on_close: move |_| {}, on_saved: move |_| {} } }
+}
+
+/// The first `<option …>` tag carrying `value="<value>"` after the element
+/// tagged `data-testid="<testid>"`.
+fn option_tag<'a>(html: &'a str, testid: &str, value: &str) -> &'a str {
+    let from = html
+        .find(&format!("data-testid=\"{testid}\""))
+        .unwrap_or_else(|| panic!("no element with testid {testid} in: {html}"));
+    let needle = format!("value=\"{value}\"");
+    html[from..]
+        .split("<option")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('>').expect("unterminated option")])
+        .find(|tag| tag.contains(&needle))
+        .unwrap_or_else(|| panic!("no option {value} after {testid}: {html}"))
+}
+
+/// The selects set their value before their options exist, so the saved rule
+/// must be marked on the option itself or the first option paints first.
+#[test]
+fn edit_shelf_modal_selects_the_saved_rule_from_the_first_paint() {
+    let rules = vec![
+        ShelfRule {
+            field: RuleField::Genre,
+            op: RuleOp::IsNot,
+            value: "Science Fiction".into(),
+        },
+        ShelfRule {
+            field: RuleField::Status,
+            op: RuleOp::Is,
+            value: "reading".into(),
+        },
+    ];
+    let html = render(rsx! { RuleHarness { rules } });
+
+    assert!(option_tag(&html, "condition-field-0", "genre").contains("selected"));
+    assert!(!option_tag(&html, "condition-field-0", "tag").contains("selected"));
+    assert!(option_tag(&html, "condition-op-0", "is_not").contains("selected"));
+    assert!(!option_tag(&html, "condition-op-0", "is").contains("selected"));
+    assert!(option_tag(&html, "condition-field-1", "status").contains("selected"));
+    assert!(option_tag(&html, "condition-row-1", "reading").contains("selected"));
+    assert!(!option_tag(&html, "condition-row-1", "finished").contains("selected"));
+}
+
 /// A single complete Tag-is-Fantasy draft — the minimal input a smart shelf
 /// needs to encode a non-empty rule set.
 fn complete_draft() -> RuleDraft {

@@ -1,6 +1,7 @@
 //! Unit tests for the `thumbs` module: `thumbs_dir` env-var resolution,
-//! `thumb_path_for` formatting, `is_stale` mtime comparison (including the
-//! same-second tie), `ThumbSize` FromStr roundtrip, `thumb_etag` derivation,
+//! `thumb_path_for` formatting, `is_stale` keyed on the exact epoch (and a
+//! cover replaced mid-generation never passing for current), sweeping every
+//! generation, `ThumbSize` FromStr roundtrip, `thumb_etag` derivation,
 //! `generate_thumbnail`'s lossy WebP output, the one-time previous-scheme
 //! purge, and LRU-on-read `evict_if_over_cap` enforcement.
 
@@ -68,11 +69,36 @@ fn thumbs_dir_respects_env_var() {
     assert_eq!(thumbs_dir(), PathBuf::from("/tmp/omnibus-test-thumbs"));
 }
 
+/// A flat `rgb` fill — a second cover that cannot be confused with
+/// [`photographic_png`]'s output at any encoder setting.
+fn solid_png(w: u32, h: u32, rgb: [u8; 3]) -> Vec<u8> {
+    use image::{ImageBuffer, Rgba};
+
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+        ImageBuffer::from_fn(w, h, |_, _| Rgba([rgb[0], rgb[1], rgb[2], 255]));
+    let mut png = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    png
+}
+
+/// Every thumbnail file left in `dir`, sorted.
+fn thumb_files(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".webp"))
+        .collect();
+    names.sort();
+    names
+}
+
 #[test]
 fn thumb_path_for_format() {
     let _guard = EnvVarGuard::set("OMNIBUS_THUMBS_DIR", None);
-    let path = thumb_path_for(42, ThumbSize::Md);
-    assert_eq!(path, PathBuf::from("./thumbs/42_md.webp"));
+    let path = thumb_path_for(42, ThumbSize::Md, 1_700_000_000);
+    assert_eq!(path, PathBuf::from("./thumbs/42_md_1700000000.webp"));
 }
 
 #[test]
@@ -82,51 +108,122 @@ fn is_stale_returns_true_when_file_missing() {
 }
 
 #[test]
-fn is_stale_returns_false_when_mtime_is_newer() {
+fn is_stale_returns_false_only_for_the_epoch_the_thumb_was_generated_for() {
     let tmp = tempfile::tempdir().unwrap();
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
-    std::fs::write(tmp.path().join("1_sm.webp"), b"x").unwrap();
-    let mtime = std::fs::metadata(tmp.path().join("1_sm.webp"))
-        .unwrap()
-        .modified()
-        .unwrap()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    assert!(!is_stale(1, ThumbSize::Sm, mtime - 1));
+    std::fs::write(tmp.path().join("1_sm_100.webp"), b"x").unwrap();
+
+    assert!(!is_stale(1, ThumbSize::Sm, 100));
+    assert!(
+        is_stale(1, ThumbSize::Sm, 101),
+        "a later epoch is not this thumb"
+    );
+    assert!(is_stale(1, ThumbSize::Sm, 99), "nor is an earlier one");
+    assert!(is_stale(1, ThumbSize::Md, 100), "nor another size");
 }
 
 #[test]
-fn is_stale_returns_true_when_mtime_ties_last_modified() {
-    // Regression for #832 item 2: a thumb regenerated in the same
-    // wall-clock second as the triggering cover rewrite must not be
-    // mistaken for fresh, or it never regenerates.
+fn is_stale_never_serves_a_thumb_named_without_its_epoch() {
+    // A file from before names carried the epoch cannot say which cover it
+    // was encoded from, so it is current for no epoch at all.
     let tmp = tempfile::tempdir().unwrap();
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
     std::fs::write(tmp.path().join("3_sm.webp"), b"x").unwrap();
-    let mtime = std::fs::metadata(tmp.path().join("3_sm.webp"))
-        .unwrap()
-        .modified()
-        .unwrap()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    assert!(is_stale(3, ThumbSize::Sm, mtime));
+
+    assert!(is_stale(3, ThumbSize::Sm, 0));
+    assert!(is_stale(3, ThumbSize::Sm, i64::MAX));
 }
 
 #[test]
-fn is_stale_returns_true_when_mtime_is_older() {
+fn ensure_thumbnails_sync_never_passes_off_a_superseded_cover_as_current() {
+    // The worker captures `last_modified_epoch` when the task is QUEUED but
+    // reads the cover bytes when it RUNS, so a cover replaced between the two
+    // is thumbnailed under the epoch it has already left.
     let tmp = tempfile::tempdir().unwrap();
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
-    std::fs::write(tmp.path().join("2_md.webp"), b"x").unwrap();
-    let mtime = std::fs::metadata(tmp.path().join("2_md.webp"))
-        .unwrap()
-        .modified()
-        .unwrap()
+    const BOOK: i64 = 7;
+
+    let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    assert!(is_stale(2, ThumbSize::Md, mtime + 1));
+    // `books.last_modified` when the task was queued (cover A)...
+    let queued_epoch = now - 10;
+    // ...and after the upload that replaced it with cover B.
+    let replaced_epoch = now - 5;
+
+    let cover_a = photographic_png(400, 600);
+    let cover_b = solid_png(400, 600, [12, 180, 96]);
+
+    ensure_thumbnails_sync(BOOK, queued_epoch, cover_a).unwrap();
+    let from_cover_a = std::fs::read(thumb_path_for(BOOK, ThumbSize::Md, queued_epoch)).unwrap();
+
+    // AC1: written after the replacement, still not current for its epoch.
+    assert!(
+        is_stale(BOOK, ThumbSize::Md, replaced_epoch),
+        "a thumb generated for the superseded epoch must not read as current"
+    );
+
+    // AC2: the task carrying the new epoch regenerates rather than skipping.
+    ensure_thumbnails_sync(BOOK, replaced_epoch, cover_b.clone()).unwrap();
+    let served = std::fs::read(thumb_path_for(BOOK, ThumbSize::Md, replaced_epoch)).unwrap();
+    assert_ne!(served, from_cover_a, "the current thumb is cover B's");
+
+    invalidate_thumbs(BOOK);
+    ensure_thumbnails_sync(BOOK, replaced_epoch, cover_b).unwrap();
+    assert_eq!(
+        std::fs::read(thumb_path_for(BOOK, ThumbSize::Md, replaced_epoch)).unwrap(),
+        served,
+        "and a clean regeneration from cover B agrees"
+    );
+}
+
+#[test]
+fn ensure_thumbnails_sync_drops_the_books_earlier_generations_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
+    for name in [
+        "8_md.webp",
+        "8_md_100.webp",
+        "8_lg_300.webp",
+        "9_md_100.webp",
+    ] {
+        std::fs::write(tmp.path().join(name), b"x").unwrap();
+    }
+
+    ensure_thumbnails_sync(8, 200, solid_png(40, 60, [1, 2, 3])).unwrap();
+
+    assert_eq!(
+        thumb_files(tmp.path()),
+        [
+            "8_lg_200.webp",
+            // A later generation is not this pass's to drop.
+            "8_lg_300.webp",
+            "8_md_200.webp",
+            "8_sm_200.webp",
+            "9_md_100.webp",
+        ]
+    );
+}
+
+#[test]
+fn invalidate_thumbs_removes_every_generation_of_the_book_and_nothing_else() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
+    for name in [
+        "4_sm.webp",
+        "4_sm_100.webp",
+        "4_md_200.webp",
+        "4_lg_300.webp",
+        "44_sm_100.webp",
+        "5_sm_100.webp",
+    ] {
+        std::fs::write(tmp.path().join(name), b"x").unwrap();
+    }
+
+    invalidate_thumbs(4);
+
+    assert_eq!(thumb_files(tmp.path()), ["44_sm_100.webp", "5_sm_100.webp"]);
 }
 
 #[test]
@@ -200,10 +297,10 @@ fn generate_thumbnail_produces_valid_webp() {
 
     let tmp = tempfile::tempdir().unwrap();
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
-    let bytes_written = generate_thumbnail(10, ThumbSize::Sm, &png_bytes).unwrap();
+    let bytes_written = generate_thumbnail(10, ThumbSize::Sm, 1, &png_bytes).unwrap();
 
     assert!(bytes_written > 0);
-    let out = std::fs::read(tmp.path().join("10_sm.webp")).unwrap();
+    let out = std::fs::read(tmp.path().join("10_sm_1.webp")).unwrap();
     // RIFF....WEBP magic
     assert_eq!(&out[0..4], b"RIFF");
     assert_eq!(&out[8..12], b"WEBP");
@@ -218,9 +315,9 @@ fn generate_thumbnail_encodes_lossy_rather_than_lossless_webp() {
     let tmp = tempfile::tempdir().unwrap();
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
 
-    generate_thumbnail(20, ThumbSize::Lg, &png).unwrap();
+    generate_thumbnail(20, ThumbSize::Lg, 1, &png).unwrap();
 
-    let out = std::fs::read(tmp.path().join("20_lg.webp")).unwrap();
+    let out = std::fs::read(tmp.path().join("20_lg_1.webp")).unwrap();
     let fourcc = webp_fourcc(&out);
     assert_ne!(fourcc, "VP8L", "thumbnails must not be losslessly encoded");
     assert!(
@@ -240,7 +337,7 @@ fn generate_thumbnail_is_far_smaller_than_the_lossless_encoding() {
     let tmp = tempfile::tempdir().unwrap();
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
 
-    let lossy = generate_thumbnail(21, ThumbSize::Lg, &png).unwrap();
+    let lossy = generate_thumbnail(21, ThumbSize::Lg, 1, &png).unwrap();
 
     let (w, h) = ThumbSize::Lg.dimensions();
     let resized = image::load_from_memory(&png)
@@ -266,8 +363,8 @@ fn generate_thumbnail_writes_exact_dimensions_for_every_size() {
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
 
     for size in ThumbSize::all() {
-        generate_thumbnail(22, size, &png).unwrap();
-        let out = std::fs::read(thumb_path_for(22, size)).unwrap();
+        generate_thumbnail(22, size, 1, &png).unwrap();
+        let out = std::fs::read(thumb_path_for(22, size, 1)).unwrap();
         let decoded = image::load_from_memory(&out).unwrap();
         assert_eq!(
             (decoded.width(), decoded.height()),
@@ -281,10 +378,9 @@ fn generate_thumbnail_writes_exact_dimensions_for_every_size() {
 
 #[test]
 fn purge_stale_scheme_thumbs_once_removes_thumbs_from_a_previous_encoder() {
-    // #1750 AC3: `is_stale` only compares mtime against the book's
-    // `last_modified_epoch`, so a re-encode invalidates nothing on its own —
-    // without this sweep an upgraded install serves its lossless thumbs
-    // forever.
+    // #1750 AC3: `is_stale` keys only on the book's `last_modified_epoch`,
+    // so a re-encode invalidates nothing on its own — without this sweep an
+    // upgraded install serves its previous-scheme thumbs forever.
     let tmp = tempfile::tempdir().unwrap();
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
     std::fs::write(tmp.path().join("1_sm.webp"), vec![0u8; 100]).unwrap();
@@ -428,17 +524,17 @@ fn evict_if_over_cap_removes_oldest_files() {
 fn touch_thumb_bumps_mtime_to_now() {
     let tmp = tempfile::tempdir().unwrap();
     let _guard = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(tmp.path().as_os_str()));
-    std::fs::write(tmp.path().join("5_sm.webp"), b"x").unwrap();
+    std::fs::write(tmp.path().join("5_sm_1.webp"), b"x").unwrap();
     // Rewind the mtime so a bump is observable rather than a no-op.
     let old = SystemTime::now() - std::time::Duration::from_secs(60);
-    std::fs::File::open(tmp.path().join("5_sm.webp"))
+    std::fs::File::open(tmp.path().join("5_sm_1.webp"))
         .unwrap()
         .set_modified(old)
         .unwrap();
 
-    touch_thumb(5, ThumbSize::Sm);
+    touch_thumb(5, ThumbSize::Sm, 1);
 
-    let mtime = std::fs::metadata(tmp.path().join("5_sm.webp"))
+    let mtime = std::fs::metadata(tmp.path().join("5_sm_1.webp"))
         .unwrap()
         .modified()
         .unwrap();
@@ -454,28 +550,28 @@ fn evict_if_over_cap_keeps_recently_touched_file_over_an_older_untouched_one() {
     // between writes) keep this deterministic on filesystems with coarse
     // (e.g. whole-second) mtime resolution.
     let now = SystemTime::now();
-    std::fs::write(tmp.path().join("0_sm.webp"), vec![0u8; 100]).unwrap();
-    std::fs::File::open(tmp.path().join("0_sm.webp"))
+    std::fs::write(tmp.path().join("0_sm_1.webp"), vec![0u8; 100]).unwrap();
+    std::fs::File::open(tmp.path().join("0_sm_1.webp"))
         .unwrap()
         .set_modified(now - std::time::Duration::from_secs(120))
         .unwrap();
-    std::fs::write(tmp.path().join("1_sm.webp"), vec![0u8; 100]).unwrap();
-    std::fs::File::open(tmp.path().join("1_sm.webp"))
+    std::fs::write(tmp.path().join("1_sm_1.webp"), vec![0u8; 100]).unwrap();
+    std::fs::File::open(tmp.path().join("1_sm_1.webp"))
         .unwrap()
         .set_modified(now - std::time::Duration::from_secs(60))
         .unwrap();
     // "0" is the older-by-creation file; touching it after "1" was written
     // marks it recently-used, so eviction should take "1" instead.
-    touch_thumb(0, ThumbSize::Sm);
+    touch_thumb(0, ThumbSize::Sm, 1);
 
     evict_if_over_cap(100).unwrap();
 
     assert!(
-        tmp.path().join("0_sm.webp").exists(),
+        tmp.path().join("0_sm_1.webp").exists(),
         "recently-touched file should survive eviction"
     );
     assert!(
-        !tmp.path().join("1_sm.webp").exists(),
+        !tmp.path().join("1_sm_1.webp").exists(),
         "untouched older-relative-use file should be evicted"
     );
 }
@@ -490,7 +586,7 @@ fn generate_thumbnail_returns_failed_when_bytes_are_not_a_decodable_image() {
     // rather than panicking. `Failed` is the coarse variant folding the
     // former Decode/Encode/I-O cases, so the decode failure exercises it.
     let _guard = EnvVarGuard::set("OMNIBUS_THUMBS_DIR", None);
-    let err = generate_thumbnail(7, ThumbSize::Sm, b"definitely not an image")
+    let err = generate_thumbnail(7, ThumbSize::Sm, 1, b"definitely not an image")
         .expect_err("undecodable bytes must not produce a thumbnail");
     assert!(
         matches!(err, ThumbError::Failed(ref msg) if msg.contains("decode")),
@@ -613,12 +709,12 @@ mod cover_moved {
         let (id, uuid) = covered_book(&pool).await;
         let user_id = crate::test_support::seed_user(&pool, "admin").await;
         for size in ThumbSize::all() {
-            std::fs::write(thumb_path_for(id, size), b"old art").unwrap();
+            std::fs::write(thumb_path_for(id, size, 1), b"old art").unwrap();
         }
 
         // Nothing moved: the thumbnails stay.
         discard_thumbs_if_cover_moved(&pool, id, b"SCANNED").await;
-        assert!(thumb_path_for(id, ThumbSize::Lg).exists());
+        assert!(thumb_path_for(id, ThumbSize::Lg, 1).exists());
 
         write_override_cover(&uuid, "image/png", b"OVERRIDE").unwrap();
         upsert_metadata_overrides(&pool, &uuid, &MetadataOverrides::default(), true, user_id)
@@ -627,7 +723,10 @@ mod cover_moved {
 
         discard_thumbs_if_cover_moved(&pool, id, b"SCANNED").await;
         for size in ThumbSize::all() {
-            assert!(!thumb_path_for(id, size).exists(), "{size} should be gone");
+            assert!(
+                !thumb_path_for(id, size, 1).exists(),
+                "{size} should be gone"
+            );
         }
     }
 }

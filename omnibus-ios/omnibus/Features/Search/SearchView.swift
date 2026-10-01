@@ -1,5 +1,5 @@
 //  SearchView.swift
-//  Live grouped search across books, authors, series, and tags.
+//  Live grouped search across books, authors, series, tags, and genres.
 
 import SwiftUI
 
@@ -28,7 +28,7 @@ struct SearchView: View {
                 VStack(spacing: 0) {
                     Masthead(title: "Search")
                     SearchField(
-                        text: $query, prompt: "Books, authors, series, tags",
+                        text: $query, prompt: "Books, authors, series, tags, genres",
                         identifier: "search-query"
                     )
                     .screenPadding()
@@ -74,7 +74,7 @@ struct SearchView: View {
     private func resultSections(_ results: PaletteResults) -> some View {
         VStack(alignment: .leading, spacing: 30) {
             if !results.books.isEmpty {
-                section("Books", total: results.bookTotal, shown: results.books.count) {
+                section(.books, total: results.bookTotal, shown: results.books.count) {
                     ForEach(Array(results.books.enumerated()), id: \.element.id) { index, hit in
                         NavigationLink(value: Destination.book(uuid: hit.uuid)) {
                             bookRow(hit, isFirst: index == 0)
@@ -86,7 +86,7 @@ struct SearchView: View {
             }
 
             if !results.authors.isEmpty {
-                section("Authors", total: results.authorTotal, shown: results.authors.count) {
+                section(.authors, total: results.authorTotal, shown: results.authors.count) {
                     ForEach(Array(results.authors.enumerated()), id: \.element.id) { index, hit in
                         NavigationLink(value: Destination.author(id: hit.id)) {
                             personRow(
@@ -102,7 +102,7 @@ struct SearchView: View {
             }
 
             if !results.series.isEmpty {
-                section("Series", total: results.seriesTotal, shown: results.series.count) {
+                section(.series, total: results.seriesTotal, shown: results.series.count) {
                     ForEach(Array(results.series.enumerated()), id: \.element.id) { index, hit in
                         NavigationLink(value: Destination.series(id: hit.id)) {
                             plainRow(
@@ -117,48 +117,67 @@ struct SearchView: View {
                 }
             }
 
-            // Tags are short labels with a count — as full-width rows they read
-            // as a list of almost nothing. A cloud shows the whole set at once.
+            // Tags and genres are short labels with a count — as full-width rows
+            // they read as a list of almost nothing. A cloud shows the whole set.
             if !results.tags.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    SectionLabel("Tags")
-                    FlowLayout(spacing: 6, lineSpacing: 6) {
-                        ForEach(results.tags) { hit in
-                            NavigationLink(value: Destination.tag(name: hit.name)) {
-                                Chip(label: hit.name, count: Int(hit.bookCount))
-                            }
-                            .buttonStyle(PressableStyle())
-                        }
-                    }
-                }
-                .screenPadding()
+                chipSection(
+                    .tag, total: results.tagTotal,
+                    names: results.tags.map { ($0.name, $0.bookCount) }
+                )
+            }
+
+            if !results.genres.isEmpty {
+                chipSection(
+                    .genre, total: results.genreTotal ?? UInt32(results.genres.count),
+                    names: results.genres.map { ($0.name, $0.bookCount) }
+                )
             }
         }
     }
 
-    private func section<Content: View>(
-        _ title: String, total: UInt32, shown: Int, @ViewBuilder rows: () -> Content
+    private func chipSection(
+        _ facet: SearchFacet, total: UInt32, names: [(String, UInt32)]
     ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .firstTextBaseline) {
-                SectionLabel(title)
-                Spacer(minLength: Spacing.sm)
-                if Int(total) > shown {
-                    NavigationLink(value: Destination.searchResults(query: trimmed)) {
-                        HStack(spacing: 3) {
-                            Text("All \(total)")
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                        }
-                        .font(.ui(13, weight: .medium))
-                        .foregroundStyle(palette.accentColor)
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            sectionHeader(.taxonomy(facet), total: total, shown: names.count)
+            FlowLayout(spacing: 6, lineSpacing: 6) {
+                ForEach(names, id: \.0) { name, count in
+                    NavigationLink(value: facet.destination(name)) {
+                        Chip(label: name, count: Int(count))
                     }
+                    .buttonStyle(PressableStyle())
                 }
             }
+        }
+        .screenPadding()
+    }
 
+    private func section<Content: View>(
+        _ kind: SearchSection, total: UInt32, shown: Int, @ViewBuilder rows: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionHeader(kind, total: total, shown: shown)
             VStack(spacing: 0) { rows() }
         }
         .screenPadding()
+    }
+
+    private func sectionHeader(_ kind: SearchSection, total: UInt32, shown: Int) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            SectionLabel(kind.title)
+            Spacer(minLength: Spacing.sm)
+            if let all = kind.seeAll(query: trimmed, total: total, shown: shown) {
+                NavigationLink(value: all) {
+                    HStack(spacing: 3) {
+                        Text("All \(total)")
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .font(.ui(13, weight: .medium))
+                    .foregroundStyle(palette.accentColor)
+                }
+            }
+        }
     }
 
     private func bookRow(_ hit: PaletteBookHit, isFirst: Bool) -> some View {
@@ -266,14 +285,51 @@ struct SearchView: View {
     }
 }
 
-/// Full result grid for one query — reached from "See all" and from tag taps.
+/// One section of the results page, and where its "All N" leads: the list that
+/// holds all N of what it counted — a book grid only for books, and the
+/// palette's own matches for tags and genres, whose index clouds are capped.
+enum SearchSection: Equatable {
+    case books, authors, series
+    case taxonomy(SearchFacet)
+
+    var title: String {
+        switch self {
+        case .books: "Books"
+        case .authors: "Authors"
+        case .series: "Series"
+        case let .taxonomy(facet): facet.plural
+        }
+    }
+
+    /// `nil` when the section already shows everything it counted.
+    func seeAll(query: String, total: UInt32, shown: Int) -> Destination? {
+        guard Int(total) > shown else { return nil }
+        switch self {
+        case .books: return .searchResults(query: query)
+        case .authors: return .authorsMatching(query: query)
+        case .series: return .seriesMatching(query: query)
+        case let .taxonomy(facet): return .taxonomyMatching(facet, query: query, total: total)
+        }
+    }
+}
+
+/// Full result grid for one query — reached from "See all" — or for the books
+/// filed under one tag or genre.
 struct SearchResultsView: View {
     let query: String
     let title: String
+    private let facet: SearchFacet?
 
     init(query: String, title: String) {
         self.query = query
         self.title = title
+        facet = nil
+    }
+
+    init(facet: SearchFacet, name: String) {
+        query = name
+        title = name
+        self.facet = facet
     }
 
     @Environment(\.palette) private var palette
@@ -292,7 +348,9 @@ struct SearchResultsView: View {
                 EmptyStateView(
                     icon: "questionmark.circle",
                     title: "No matches",
-                    message: "Nothing here matches \u{201C}\(query)\u{201D}."
+                    message: facet == nil
+                        ? "Nothing here matches \u{201C}\(query)\u{201D}."
+                        : "No books are filed under \u{201C}\(query)\u{201D}."
                 )
             } else {
                 ScrollView {
@@ -319,7 +377,9 @@ struct SearchResultsView: View {
     }
 
     private func load() async {
-        for await hits in LibraryService.searchFull(query: query) {
+        let reads = facet.map { LibraryService.facetBooks($0, name: query) }
+            ?? LibraryService.searchFull(query: query)
+        for await hits in reads {
             books = hits
             isLoading = false
         }

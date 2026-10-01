@@ -314,16 +314,19 @@ fn chapter_now_prefers_the_cfi_spine_over_the_rounded_percent() {
             title: "Front".into(),
             percent: 0.0,
             spine_index: 0,
+            anchor_path: None,
         },
         AlignmentEbookChapter {
             title: "Chapter One".into(),
             percent: 8.4,
             spine_index: 4,
+            anchor_path: None,
         },
         AlignmentEbookChapter {
             title: "Chapter Two".into(),
             percent: 8.9,
             spine_index: 6,
+            anchor_path: None,
         },
     ];
     let rec = |cfi: Option<&str>, pct: Option<i64>| ProgressRecord {

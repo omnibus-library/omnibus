@@ -42,8 +42,8 @@ const AUTHOR_SEP: char = '\u{1f}';
 /// screen shows beside the scanned ISBN; the exact rung has no reader for it
 /// and skips the cost.
 pub(super) fn scan_book_cols(effective: bool, with_isbn: bool) -> String {
-    // Not `effective_text_sql!`: that reads the blob unguarded, and a corrupt
-    // one must fail the override, not the lookup (#2556).
+    // Not `effective_text_sql!`: a cleared title reads NULL there, and the
+    // confirm card's title is not optional.
     let title = if effective {
         format!(
             "COALESCE(NULLIF(CASE WHEN {win} THEN json_extract({SAFE_OVERRIDES}, '$.title') END, ''),

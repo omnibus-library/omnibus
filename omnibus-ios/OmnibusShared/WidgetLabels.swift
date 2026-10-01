@@ -37,11 +37,10 @@ enum WidgetLabels {
     /// ago reads "2 hr, 0 min", which on a card full of audiobooks looks like
     /// time *remaining*.
     static func relative(_ date: Date, relativeTo now: Date = .now) -> String {
-        // A position written moments ago can carry a timestamp at or just past
-        // `now` — clock skew between the write and this render — which the
-        // relative formatter phrases as a countdown ("in 0s"). Anything not
-        // in the past reads as "just now" (#2358).
-        guard date < now else { return "just now" }
+        // The formatter phrases anything under a second — past or future — as
+        // a countdown ("in 0s"), and a position written moments ago is always
+        // that close.
+        guard now.timeIntervalSince(date) >= 1 else { return "just now" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: now)

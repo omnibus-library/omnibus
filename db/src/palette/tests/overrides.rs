@@ -528,6 +528,59 @@ async fn count_authors_agrees_with_the_rows_the_authors_arm_returns() {
     assert_eq!(i64::try_from(hits.len()).unwrap(), total);
 }
 
+// A series whose only book was cleared out of it through the edit form keeps
+// its canonical link; the Series index drops it, so the palette must not
+// offer or count it either.
+#[tokio::test]
+async fn search_palette_series_arm_drops_a_series_emptied_by_an_override() {
+    let _covers = CoversTempDir::new("palette_emptied_series");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user_id = crate::auth::create_user(&pool, "admin", "securepassword1")
+        .await
+        .unwrap()
+        .id;
+    replace_books(
+        &pool,
+        "/lib",
+        vec![
+            indexed(
+                "babel.epub",
+                Some("Babel"),
+                &["X"],
+                &[],
+                Some(("Save to Disk", "1")),
+                None,
+            ),
+            indexed(
+                "kept.epub",
+                Some("Kept"),
+                &["X"],
+                &[],
+                Some(("Kept Saga", "1")),
+                None,
+            ),
+        ],
+    )
+    .await
+    .unwrap();
+    let books = list_books(&pool, "/lib").await.unwrap();
+    let babel = books.iter().find(|b| b.filename == "babel.epub").unwrap();
+    let uuid = babel.unique_identifier.clone().unwrap();
+    let ov = MetadataOverrides {
+        series: Some(String::new()),
+        ..Default::default()
+    };
+    upsert_metadata_overrides(&pool, &uuid, &ov, false, user_id)
+        .await
+        .unwrap();
+
+    let palette = search_palette(&pool, "/lib", "a").await.unwrap();
+    let names: Vec<&str> = palette.series.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["Kept Saga"]);
+    assert_eq!(palette.series_total, 1);
+    assert_eq!(count_series(&pool, "/lib", "%a%").await.unwrap(), 1);
+}
+
 /// Seed one book and replace its subject list through the override door,
 /// which is the path the detail page's tag editor takes.
 async fn seed_book_with_override_subjects(
@@ -637,9 +690,6 @@ async fn search_palette_tags_tolerate_a_corrupt_overrides_blob() {
         .await
         .unwrap();
 
-    // The tags arm directly: the author and series arms read override JSON
-    // without a validity guard of their own, so a whole-palette call would
-    // report their failure rather than this arm's success.
     let rows = search_tags(&pool, "/lib", "%Canonical%", 5)
         .await
         .expect("a corrupt blob must not fail the tags arm");

@@ -80,6 +80,37 @@ async fn create_bookmark_returns_book_not_found_for_unknown_uuid() {
 }
 
 #[tokio::test]
+async fn create_bookmark_at_keeps_the_devices_creation_time_up_to_now() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+    let now = crate::auth::now_unix();
+
+    let offline = create_bookmark_at(&pool, user, &input(&uuid, "10", None), Some(now - 600))
+        .await
+        .unwrap();
+    let fast = create_bookmark_at(&pool, user, &input(&uuid, "20", None), Some(now + 86_400))
+        .await
+        .unwrap();
+
+    assert_eq!(offline.created_at, now - 600);
+    assert!(
+        fast.created_at <= crate::auth::now_unix(),
+        "a future stamp clamps to now"
+    );
+}
+
+#[tokio::test]
+async fn create_bookmark_at_returns_book_not_found_for_unknown_uuid() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let err = create_bookmark_at(&pool, user, &input("no-such-uuid", "0", None), Some(1))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, BookmarkError::BookNotFound));
+}
+
+#[tokio::test]
 async fn list_bookmarks_returns_empty_when_none_exist() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "alice").await;

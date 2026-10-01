@@ -42,6 +42,9 @@ pub enum PhysicalError {
     /// The physical copy id does not exist.
     #[error("physical copy not found")]
     CopyNotFound,
+    /// Refused: the caller neither filed the copy nor is an admin.
+    #[error("not your copy")]
+    NotCopyOwner,
     /// Refused: the book still has digital files, so the reindex diff owns it.
     #[error("book still has files")]
     BookHasFiles,

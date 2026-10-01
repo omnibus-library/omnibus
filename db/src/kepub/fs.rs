@@ -34,9 +34,8 @@ fn mtime_epoch(meta: &std::fs::Metadata) -> i64 {
 
 /// `true` when the cached KEPUB for `book_id` is missing or no newer than
 /// the book's `last_modified` (so a metadata/file edit forces a reconvert).
-/// Identical semantics to `thumbs::is_stale`, including the `<=` tie-break:
-/// both timestamps are whole-second Unix epochs, so a same-second
-/// regeneration must still count as stale.
+/// Compares with `<=`: both timestamps are whole-second Unix epochs, so a
+/// same-second regeneration must still count as stale.
 pub fn is_stale(book_id: i64, last_modified_epoch: i64) -> bool {
     let path = kepub_path(book_id);
     match std::fs::metadata(&path) {
@@ -46,8 +45,7 @@ pub fn is_stale(book_id: i64, last_modified_epoch: i64) -> bool {
 }
 
 /// Async form of [`is_stale`] for callers on a tokio runtime — uses
-/// `tokio::fs::metadata` so it doesn't block a worker thread (mirrors
-/// `thumbs::is_stale_async`).
+/// `tokio::fs::metadata` so it doesn't block a worker thread.
 pub async fn is_stale_async(book_id: i64, last_modified_epoch: i64) -> bool {
     let path = kepub_path(book_id);
     match tokio::fs::metadata(&path).await {

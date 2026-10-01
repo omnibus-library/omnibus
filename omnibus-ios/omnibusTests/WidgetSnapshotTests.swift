@@ -421,6 +421,21 @@ struct WidgetLabelsTests {
         #expect(Format.relative(unix: unix, relativeTo: now) == "just now")
         #expect(Format.relative(unix: unix + 5, relativeTo: now) == "just now")
     }
+
+    @Test
+    func relative_reads_just_now_for_a_stamp_under_a_second_old() {
+        // A whole-second stamp read a fraction of a second later is in the
+        // past, but the formatter rounds it to zero and says "in 0s".
+        let now = Date(timeIntervalSince1970: 1_724_500_000.4)
+        let unix = Int64(1_724_500_000)
+
+        #expect(Format.relative(unix: unix, relativeTo: now) == "just now")
+        #expect(
+            WidgetLabels.relative(Date(timeIntervalSince1970: TimeInterval(unix)), relativeTo: now)
+                == "just now"
+        )
+        #expect(Format.relative(unix: unix - 1, relativeTo: now) != "just now")
+    }
 }
 
 @Suite("Resume format resolution")

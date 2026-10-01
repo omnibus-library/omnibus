@@ -251,3 +251,37 @@ async fn set_read_status_succeeds_for_many_concurrent_writers_on_one_pool() {
         }
     }
 }
+
+#[tokio::test]
+async fn set_read_status_drops_the_cached_stats_summary() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    // An id no sibling test uses: the stats cache is process-wide, keyed on it.
+    let user: i64 = sqlx::query_scalar(
+        "INSERT INTO users (id, username, password_hash) VALUES (9931, 'status-cache', '!x')
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Harbour Lights").await;
+    set_read_status(&pool, user, &set(&uuid, ReadStatus::Finished))
+        .await
+        .unwrap();
+    let range = omnibus_shared::StatsRange::AllTime;
+    let before = crate::stats::user_stats(&pool, user, range, None)
+        .await
+        .unwrap();
+    assert_eq!(before.finished_books.len(), 1);
+
+    set_read_status(&pool, user, &set(&uuid, ReadStatus::Reading))
+        .await
+        .unwrap();
+    let after = crate::stats::user_stats(&pool, user, range, None)
+        .await
+        .unwrap();
+    assert!(
+        after.finished_books.is_empty(),
+        "got {:?}",
+        after.finished_books
+    );
+}

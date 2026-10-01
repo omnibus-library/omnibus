@@ -17,10 +17,18 @@ enum Destination: Hashable {
     case shelf(id: Int64)
     case tags
     case tag(name: String)
+    case genres
+    case genre(name: String)
     case settings
     case readingGoals
     case downloads
     case authorsIndex
+    /// An index narrowed to the names containing `query`, where a search
+    /// section's "All N" leads.
+    case authorsMatching(query: String)
+    case seriesMatching(query: String)
+    /// The palette's own `total` matches for `query`, fetched whole.
+    case taxonomyMatching(SearchFacet, query: String, total: UInt32)
     case searchResults(query: String)
     case metadataEdit(uuid: String)
 
@@ -310,9 +318,13 @@ struct DestinationRouter: ViewModifier {
             case let .shelf(id):
                 ShelfDetailView(id: id)
             case .tags:
-                TagCloudView()
+                TaxonomyCloudView(facet: .tag)
             case let .tag(name):
-                SearchResultsView(query: name, title: name)
+                SearchResultsView(facet: .tag, name: name)
+            case .genres:
+                TaxonomyCloudView(facet: .genre)
+            case let .genre(name):
+                SearchResultsView(facet: .genre, name: name)
             case .settings:
                 SettingsView()
             case .readingGoals:
@@ -321,6 +333,12 @@ struct DestinationRouter: ViewModifier {
                 DownloadsView()
             case .authorsIndex:
                 AuthorsView()
+            case let .authorsMatching(query):
+                AuthorsView(filter: query)
+            case let .seriesMatching(query):
+                SeriesIndexView(filter: query)
+            case let .taxonomyMatching(facet, query, total):
+                TaxonomyMatchesView(facet: facet, query: query, total: total)
             case let .searchResults(query):
                 SearchResultsView(query: query, title: "“\(query)”")
             case let .metadataEdit(uuid):

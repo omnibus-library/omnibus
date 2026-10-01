@@ -108,6 +108,53 @@ struct MetadataDraft: Equatable {
         )
     }
 
+    /// The form labels of the fields this draft changes against `loaded`, in
+    /// form order — what the web save bar lists beside "2 fields edited".
+    func editedFields(since loaded: MetadataDraft) -> [String] {
+        let checks: [(String, Bool)] = [
+            ("Title", title != loaded.title),
+            ("Authors", authors != loaded.authors),
+            ("Series", series != loaded.series),
+            ("Index", seriesIndex != loaded.seriesIndex),
+            ("Publisher", publisher != loaded.publisher),
+            ("Published", published != loaded.published),
+            ("Language", language != loaded.language),
+            ("ISBN-13", isbn13 != loaded.isbn13),
+            ("ISBN-10", isbn10 != loaded.isbn10),
+            ("Print Pages", printPages != loaded.printPages),
+            ("Tags", tags != loaded.tags),
+            ("Genres", genres != loaded.genres),
+            ("Summary", description != loaded.description),
+        ]
+        return checks.filter(\.1).map(\.0)
+    }
+
+    /// This draft with whatever still sits in a chip entry field committed, as
+    /// a save commits it — a typed-but-unentered author is still an edit.
+    func committingPending(author: String, tag: String, genre: String) -> MetadataDraft {
+        var draft = self
+        if let chip = ChipEntry.committed(from: author, existing: draft.authors, deduplicating: false) {
+            draft.authors.append(chip)
+        }
+        if let chip = ChipEntry.committed(from: tag, existing: draft.tags, deduplicating: true) {
+            draft.tags.append(chip)
+        }
+        if let chip = ChipEntry.committed(from: genre, existing: draft.genres, deduplicating: true) {
+            draft.genres.append(chip)
+        }
+        return draft
+    }
+
+    /// "2 fields edited", the web save bar's count.
+    static func editedLabel(count: Int) -> String {
+        "\(count) \(count == 1 ? "field" : "fields") edited"
+    }
+
+    /// What a landed save reports before the editor closes.
+    static func savedLabel(count: Int) -> String {
+        "Saved · \(count) \(count == 1 ? "field" : "fields")"
+    }
+
     /// ISBN-10 diffed on its *trimmed* form. The field is `.asciiCapable`
     /// (an ISBN-10's check digit can be `X`), so unlike the `.numberPad`
     /// ISBN-13 beside it a pasted value can carry surrounding whitespace —

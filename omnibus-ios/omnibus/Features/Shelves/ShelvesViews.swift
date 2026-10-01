@@ -65,6 +65,9 @@ struct ShelvesView: View {
             CreateShelfSheet { Task { await load(force: true) } }
         }
         .task { await load() }
+        .onChange(of: ReplicaInvalidations.shared.generation(of: CacheKey.shelfPreviews)) { _, _ in
+            Task { await load() }
+        }
     }
 
     private func load(force: Bool = false) async {
@@ -115,6 +118,9 @@ struct ShelfDetailView: View {
     /// who was online that the books would arrive when they next were.
     @State private var booksSettled = false
     @State private var isLoading = true
+    /// The server answered that this shelf doesn't exist — a card cached
+    /// before it was deleted elsewhere must not open it.
+    @State private var isGone = false
     @State private var showAddBooks = false
     @State private var showEdit = false
     @State private var scrollY: CGFloat = 0
@@ -125,7 +131,9 @@ struct ShelfDetailView: View {
     private let columns = [GridItem(.adaptive(minimum: 112, maximum: 168), spacing: 16, alignment: .top)]
 
     /// Whatever is known about this shelf, detail read first.
-    private var identity: ShelfSummary? { shelf.map(Self.summary) ?? indexed?.shelf }
+    private var identity: ShelfSummary? {
+        isGone ? nil : shelf.map(Self.summary) ?? indexed?.shelf
+    }
 
     /// Covers for the header mosaic: this shelf's own members once they land,
     /// and the ones the cached index already holds until then. Without the
@@ -153,7 +161,14 @@ struct ShelfDetailView: View {
 
     var body: some View {
         Group {
-            if isLoading {
+            if isGone {
+                EmptyStateView(
+                    icon: "square.stack",
+                    title: "This shelf is gone",
+                    message: "It was deleted, or its owner stopped sharing it.",
+                    kicker: "Shelf"
+                )
+            } else if isLoading {
                 LoadingView()
             } else {
                 ScrollView {
@@ -374,6 +389,13 @@ struct ShelfDetailView: View {
         return parts.joined(separator: " · ")
     }
 
+    /// Whether a failed shelf read means the shelf no longer exists for this
+    /// reader, as opposed to not being reachable right now.
+    nonisolated static func isGone(_ error: Error) -> Bool {
+        if case APIError.http(status: 404, _) = error { return true }
+        return false
+    }
+
     /// The mosaic takes a summary; detail carries the same fields under a
     /// different type.
     static func summary(_ shelf: Shelf) -> ShelfSummary {
@@ -406,10 +428,18 @@ struct ShelfDetailView: View {
                 self.indexed = previews?.first { $0.shelf.id == self.id }
             }
             group.addTask { @MainActor in
-                for await value in UserDataService.shelf(id: id).values() {
-                    self.shelf = value
-                    self.isLoading = false
-                }
+                do {
+                    for try await read in UserDataService.shelf(id: id) {
+                        self.shelf = read.value
+                        self.isLoading = false
+                    }
+                } catch where Self.isGone(error) {
+                    self.isGone = true
+                    self.shelf = nil
+                    self.indexed = nil
+                    self.books = []
+                    await UserDataService.forgetShelf(id: self.id)
+                } catch {}
             }
             group.addTask { @MainActor in
                 for await page in UserDataService.shelfBooks(id: id).values() {

@@ -522,6 +522,9 @@ struct LibraryCompositionTests {
         #expect(StatsView.ghostedNote(0) == nil)
         #expect(StatsView.ghostedNote(1)?.hasPrefix("1 book excluded") == true)
         #expect(StatsView.ghostedNote(4)?.hasPrefix("4 books excluded") == true)
+        // A paper copy or a wishlist entry never had files to lose.
+        #expect(StatsView.ghostedNote(4)?.contains("indexed once") == false)
+        #expect(StatsView.ghostedNote(4)?.contains("no files on disk") == true)
     }
 }
 

@@ -44,6 +44,110 @@ fn build_histogram_bars_normalizes_counts_and_titles_each_bar_with_its_total() {
     assert_eq!(bars[2].title, "5 \u{2605} \u{00B7} 4 books");
 }
 
+#[test]
+fn build_histogram_bars_prints_each_count_and_leaves_an_empty_bucket_an_empty_slot() {
+    let bars = build_histogram_bars(&[bucket(1, 1), bucket(2, 0), bucket(10, 4)]);
+
+    let values: Vec<_> = bars.iter().map(|b| b.value.clone()).collect();
+    assert_eq!(values, [Some("1".to_string()), None, Some("4".to_string())]);
+    assert_eq!(
+        bars.iter().map(|b| b.empty).collect::<Vec<_>>(),
+        [false, true, false]
+    );
+}
+
+fn month(label: &str, value: f64) -> TrendPoint {
+    TrendPoint {
+        label: label.to_string(),
+        value,
+    }
+}
+
+#[test]
+fn build_rating_trend_bars_draws_each_month_on_a_five_star_scale_with_its_figure() {
+    let bars = build_rating_trend_bars(&[
+        month("2026-06", 2.5),
+        month("2026-07", 0.0),
+        month("2026-08", 5.0),
+        month("2026-09", 4.25),
+    ]);
+
+    // Heights are the rating out of five, not a share of the best month: a
+    // 2.5 is half height even beside a 5.
+    assert_eq!(bars[0].height_pct, 50);
+    assert_eq!(bars[2].height_pct, 100);
+    assert_eq!(bars[0].value.as_deref(), Some("2.5"));
+    assert_eq!(bars[3].value.as_deref(), Some("4.3"));
+    assert_eq!(bars[3].title, "Sep 2026 \u{00B7} 4.3 \u{2605}");
+    // A month nobody rated is an empty slot with no figure, never a stub.
+    assert!(bars[1].empty);
+    assert_eq!(bars[1].value, None);
+    assert_eq!(bars[1].title, "Jul 2026 \u{00B7} no ratings");
+    assert!(!bars[0].empty && !bars[2].empty && !bars[3].empty);
+}
+
+#[test]
+fn rating_trend_axis_never_repeats_a_label_across_twelve_months() {
+    let year: Vec<_> = (0..12)
+        .map(|i| {
+            let (y, m) = if i < 3 { (2025, 10 + i) } else { (2026, i - 2) };
+            month(&format!("{y}-{m:02}"), 4.0)
+        })
+        .collect();
+    let labels: Vec<_> = build_rating_trend_bars(&year)
+        .into_iter()
+        .map(|b| b.label)
+        .collect();
+    assert_eq!(
+        labels,
+        ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
+    );
+}
+
+#[test]
+fn rating_trend_caption_names_its_trailing_span_and_that_it_ignores_the_switcher() {
+    let caption = rating_trend_caption(&[month("2025-10", 4.0), month("2026-09", 3.0)]);
+    assert_eq!(
+        caption,
+        "Oct 2025 \u{2013} Sep 2026 \u{00B7} the last 12 months, whatever period is selected"
+    );
+    assert_eq!(
+        rating_trend_caption(&[]),
+        "The last 12 months, whatever period is selected"
+    );
+}
+
+#[test]
+fn histogram_caption_follows_the_selected_period() {
+    assert_eq!(histogram_caption(StatsRange::Week), "Rated this week");
+    assert_eq!(histogram_caption(StatsRange::Month), "Rated this month");
+    assert_eq!(histogram_caption(StatsRange::Year), "Rated this year");
+    assert_eq!(histogram_caption(StatsRange::AllTime), "Rated at any time");
+}
+
+#[test]
+fn only_the_rating_trend_carries_a_title() {
+    assert_eq!(
+        trend_title(Metric::AvgRating),
+        Some("Average rating by month")
+    );
+    for metric in [Metric::Finished, Metric::Listening, Metric::Pages] {
+        assert_eq!(trend_title(metric), None);
+    }
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn render_bars_prints_values_and_draws_an_empty_slot_for_nothing_measured() {
+    let bars = build_rating_trend_bars(&[month("2026-07", 0.0), month("2026-08", 4.5)]);
+    let html = crate::test_support::render(render_trend(Metric::AvgRating, &bars));
+
+    assert!(html.contains("Average rating by month"), "{html}");
+    assert!(html.contains("st-drill-trend-slot"), "{html}");
+    assert_eq!(html.matches("stats-drill-bar-value").count(), 1, "{html}");
+    assert!(html.contains(">4.5<"), "{html}");
+}
+
 /// Whether a rendered chunk carries an exact testid — `stats-drill-histogram`
 /// is a prefix of `stats-drill-histogram-empty`, so a bare `contains` on the
 /// shorter name matches the empty state too.
@@ -59,16 +163,19 @@ fn render_histogram_shows_the_empty_state_rather_than_ten_flat_bars() {
     // chart of nothing and read as a real distribution that happens to be
     // flat, so the drill-in says so in words instead.
     let none_rated = (1..=10).map(|h| bucket(h, 0)).collect::<Vec<_>>();
-    let html = crate::test_support::render(render_histogram(&none_rated));
+    let html = crate::test_support::render(render_histogram(&none_rated, StatsRange::Month));
     assert!(has_testid(&html, "stats-drill-histogram-empty"), "{html}");
     assert!(!has_testid(&html, "stats-drill-histogram"), "{html}");
 
     // One rating anywhere is enough to be worth drawing.
     let mut rated = none_rated;
     rated[6] = bucket(7, 1);
-    let html = crate::test_support::render(render_histogram(&rated));
+    let html = crate::test_support::render(render_histogram(&rated, StatsRange::Month));
     assert!(has_testid(&html, "stats-drill-histogram"), "{html}");
     assert!(!has_testid(&html, "stats-drill-histogram-empty"), "{html}");
+    // Labelled, and scoped to the period the switcher selected.
+    assert!(html.contains("Books at each rating"), "{html}");
+    assert!(html.contains("Rated this month"), "{html}");
 }
 
 #[cfg(feature = "server")]
@@ -79,7 +186,8 @@ fn render_histogram_reuses_the_trend_chart_renderer() {
     // come out of `render_bars`.
     let bars = build_trend_bars(&[("J".to_string(), 1.0)]);
     let trend = crate::test_support::render(render_trend(Metric::AvgRating, &bars));
-    let histogram = crate::test_support::render(render_histogram(&[bucket(10, 1)]));
+    let histogram =
+        crate::test_support::render(render_histogram(&[bucket(10, 1)], StatsRange::Month));
 
     for class in ["st-drill-trend", "st-drill-trend-col", "st-drill-trend-bar"] {
         assert!(trend.contains(class), "trend missing {class}: {trend}");
@@ -179,7 +287,9 @@ fn vs_label_is_empty_only_for_all_time() {
 
 #[test]
 fn short_month_and_short_day_fall_back_on_malformed_input() {
-    assert_eq!(short_month("2026-07"), "J");
+    assert_eq!(short_month("2026-07"), "Jul");
+    assert_eq!(short_month("2026-06"), "Jun");
+    assert_eq!(short_month("2026-13"), "?");
     assert_eq!(short_month("garbage"), "?");
     assert_eq!(short_day("2026-07-14"), "14");
     assert_eq!(short_day("garbage"), "?");

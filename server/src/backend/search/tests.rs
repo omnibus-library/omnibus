@@ -339,6 +339,47 @@ async fn api_search_palette_carries_a_genres_group_with_its_uncapped_total() {
     );
 }
 
+#[tokio::test]
+async fn api_search_palette_limit_raises_the_per_category_cap() {
+    // The web results page's "Show all" rides this on the mobile shell: the
+    // palette's own cap without `limit`, a whole section with it.
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    db::set_settings(
+        &pool,
+        &Settings {
+            ebook_library_path: Some("/lib".into()),
+            audiobook_library_path: None,
+            scan_interval_hours: None,
+        },
+    )
+    .await
+    .unwrap();
+    let books = (0..7)
+        .map(|i| {
+            let title = format!("Quest {i}");
+            db::test_support::indexed(
+                &format!("quest{i}.epub"),
+                Some(&title),
+                &[],
+                &[],
+                None,
+                None,
+            )
+        })
+        .collect();
+    db::replace_books(&pool, "/lib", books).await.unwrap();
+
+    let capped = palette_query(app.clone(), &token, "quest").await;
+    assert_eq!(capped.books.len(), 5);
+    assert_eq!(capped.book_total, 7);
+
+    let whole = palette_query(app, &token, "quest&limit=20").await;
+    assert_eq!(whole.books.len(), 7);
+    assert_eq!(whole.book_total, 7);
+}
+
 /// Issue one palette request and decode the body, asserting a 200 on the way.
 async fn palette_query(app: axum::Router, token: &str, q: &str) -> omnibus_shared::PaletteResults {
     let response = app

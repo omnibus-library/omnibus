@@ -33,6 +33,7 @@ fn index() -> AnchorIndex {
                     href: "a.xhtml".into(),
                     spine_index: 0,
                     start_chars: 0,
+                    anchor_path: None,
                 },
                 EbookChapterRow {
                     ordinal: 1,
@@ -40,6 +41,7 @@ fn index() -> AnchorIndex {
                     href: "b.xhtml".into(),
                     spine_index: 1,
                     start_chars: 100,
+                    anchor_path: None,
                 },
             ],
             total_chars: 500,
@@ -96,6 +98,7 @@ fn locate_places_pdf_anchors_against_the_pdf_structure_on_a_mixed_book() {
             href: "page:2".into(),
             spine_index: 2,
             start_chars: 100,
+            anchor_path: None,
         }],
         total_chars: 200,
     });
@@ -124,6 +127,7 @@ fn locate_names_the_chapter_a_shared_spine_document_opens_with() {
         href: "b.xhtml".into(),
         spine_index: 1,
         start_chars: 100,
+        anchor_path: None,
     });
     assert_eq!(
         index

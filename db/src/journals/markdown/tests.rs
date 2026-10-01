@@ -32,17 +32,25 @@ fn render_strips_event_handler_attributes() {
 }
 
 #[test]
-fn render_wraps_spoiler_markers_in_keyboard_reachable_buttons() {
-    // The spoiler wrapper is a real button so keyboard/screen-reader users
-    // can reveal it. `type="button"` keeps it out of any surrounding form
-    // (composer submits happen via a distinct Publish button), and
-    // `aria-expanded="false"` seeds the collapsed state the client flips.
+fn render_wraps_spoiler_markers_in_a_named_collapsed_inline_control() {
+    // An inline span, not a `<button>`: a button is an atomic box that drops
+    // whole to the next line, where a span wraps as prose. It still reads as
+    // a control — a named button, collapsed — and keeps its text away from
+    // assistive tech until the client reveals it.
     let html = render("the killer is ||the butler||");
-    assert!(html.contains("<button "), "spoiler is a button: {html}");
-    assert!(html.contains("class=\"spoiler\""), "got: {html}");
-    assert!(html.contains("type=\"button\""), "got: {html}");
+    assert!(!html.contains("<button"), "no atomic button box: {html}");
+    assert!(html.contains("<span class=\"spoiler\""), "got: {html}");
+    assert!(html.contains("role=\"button\""), "got: {html}");
+    assert!(html.contains("tabindex=\"0\""), "got: {html}");
     assert!(html.contains("aria-expanded=\"false\""), "got: {html}");
-    assert!(html.contains(">the butler</button>"), "got: {html}");
+    assert!(
+        html.contains(&format!("aria-label=\"{SPOILER_LABEL}\"")),
+        "got: {html}"
+    );
+    assert!(
+        html.contains("<span class=\"spoiler-text\" aria-hidden=\"true\">the butler</span></span>"),
+        "got: {html}"
+    );
 }
 
 #[test]
@@ -56,7 +64,10 @@ fn render_processes_markdown_inside_spoiler_text() {
 fn render_leaves_unterminated_spoiler_marker_literal() {
     let html = render("a lone ||marker here");
     assert!(!html.contains("class=\"spoiler\""), "got: {html}");
-    assert!(!html.contains("<button"), "no button emitted: {html}");
+    assert!(
+        !html.contains("role=\"button\""),
+        "no control emitted: {html}"
+    );
     assert!(html.contains("||marker here"), "got: {html}");
 }
 
@@ -207,35 +218,36 @@ fn render_strips_journal_figure_class_from_hand_authored_figure() {
 }
 
 #[test]
-fn render_disallows_arbitrary_span_classes() {
-    // Since spoilers no longer use `<span>`, the sanitizer no longer
-    // allowlists any class on it: `<span>` itself remains under ammonia's
-    // default tag list, but its `class` attribute (and thus a hand-authored
-    // `spoiler` or `evil` class) is stripped.
-    let html = render("<span class=\"evil\">x</span>");
-    assert!(!html.contains("evil"), "non-spoiler class dropped: {html}");
-    assert!(!html.contains("class="), "span class attr dropped: {html}");
+fn render_disallows_arbitrary_span_classes_and_attrs() {
+    // Only the spoiler wrapper's exact shape is allowlisted on `<span>`: its
+    // two classes, `role="button"`, `tabindex="0"`, `aria-expanded` in
+    // {true,false}, its own label and `aria-hidden="true"`. Anything else is
+    // stripped, so a hand-authored span can't impersonate site chrome.
+    let html = render(
+        "<span class=\"evil\" role=\"link\" tabindex=\"-1\" aria-expanded=\"maybe\" aria-label=\"Click me\" aria-hidden=\"false\" onclick=\"x()\">x</span>",
+    );
+    // ammonia leaves an emptied `class=""` behind, which carries nothing.
+    for gone in [
+        "evil",
+        "role=",
+        "tabindex=",
+        "aria-expanded=",
+        "aria-label=",
+        "aria-hidden=",
+        "onclick",
+    ] {
+        assert!(!html.contains(gone), "{gone} must be stripped: {html}");
+    }
 }
 
 #[test]
-fn render_disallows_arbitrary_button_classes_and_attrs() {
-    // Only the spoiler wrapper's exact shape (`class="spoiler"`,
-    // `type="button"`, `aria-expanded` ∈ {true,false}) is allowlisted; any
-    // other class, an off-list `type`, or a spoofed `aria-expanded` value
-    // gets stripped so a hand-authored `<button>` can't impersonate site
-    // chrome or fire form submits.
-    let html = render(
-        "<button class=\"evil primary\" type=\"submit\" aria-expanded=\"maybe\" onclick=\"x()\">boom</button>",
-    );
-    assert!(!html.contains("evil"), "arbitrary class dropped: {html}");
-    assert!(!html.contains("primary"), "arbitrary class dropped: {html}");
-    assert!(
-        !html.contains("type=\"submit\""),
-        "off-list type dropped: {html}"
-    );
-    assert!(
-        !html.contains("aria-expanded=\"maybe\""),
-        "off-list aria value dropped: {html}"
-    );
+fn render_drops_hand_authored_buttons() {
+    // The spoiler no longer needs `<button>`, so it is off the allowlist
+    // altogether: a hand-authored one can't fire a form submit or pose as a
+    // control.
+    let html = render("<button class=\"spoiler\" type=\"submit\" onclick=\"x()\">boom</button>");
+    assert!(!html.contains("<button"), "button dropped: {html}");
+    assert!(!html.contains("type=\"submit\""), "got: {html}");
     assert!(!html.contains("onclick"), "handler dropped: {html}");
+    assert!(html.contains("boom"), "its text survives as text: {html}");
 }

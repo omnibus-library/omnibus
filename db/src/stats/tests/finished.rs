@@ -268,3 +268,19 @@ async fn finished_metrics_agree_when_a_completion_outlives_its_book() {
     assert_eq!(rail.len(), 1);
     assert_eq!(months.last().unwrap().books, 1);
 }
+
+#[tokio::test]
+async fn finished_books_name_a_cleared_title_untitled_rather_than_the_scanned_one() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    seed_minimal_books(&pool, 1).await;
+    let user = seed_user(&pool, "alice").await;
+    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES ('uuid-1', ?)")
+        .bind(r#"{"title":""}"#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    finish_journal(&pool, user, "uuid-1", T0).await;
+
+    let s = compute(&pool, user, StatsRange::AllTime, 0).await.unwrap();
+    assert_eq!(s.finished_books[0].title, "Untitled");
+}

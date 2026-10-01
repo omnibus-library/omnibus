@@ -450,8 +450,7 @@ async fn backfill_page_counts_is_a_noop_when_no_candidates_exist() {
 
 /// Seed a `has_cover = 1` book with a real cover file on disk, so
 /// `backfill_thumbs` has bytes to (maybe) re-encode. `last_modified` is
-/// pinned far in the past so any thumbnail written just now is unambiguously
-/// fresher than it, regardless of clock resolution.
+/// pinned to 1, the epoch [`write_fresh_sentinel_thumbs`] names its files for.
 async fn seed_covered_book(pool: &SqlitePool, lib_id: i64, uuid: &str, title: &str) -> i64 {
     let book_id: i64 = sqlx::query_scalar(
         "INSERT INTO books (uuid, scan_key, library_id, path, title, sort, has_cover, last_modified) \
@@ -474,12 +473,12 @@ async fn seed_covered_book(pool: &SqlitePool, lib_id: i64, uuid: &str, title: &s
 }
 
 /// Write sentinel bytes (never produced by a real encode) at all three
-/// thumbnail sizes for `book_id`, so it reads as fresh relative to its
-/// far-past `last_modified` and a would-be re-encode is detectable.
+/// thumbnail sizes for `book_id`, so it reads as fresh for its
+/// `last_modified` and a would-be re-encode is detectable.
 fn write_fresh_sentinel_thumbs(book_id: i64) {
     let sentinel = b"not-a-real-webp-sentinel".to_vec();
     for size in crate::thumbs::ThumbSize::all() {
-        std::fs::write(crate::thumbs::thumb_path_for(book_id, size), &sentinel).unwrap();
+        std::fs::write(crate::thumbs::thumb_path_for(book_id, size, 1), &sentinel).unwrap();
     }
 }
 
@@ -608,7 +607,7 @@ async fn backfill_thumbs_reports_progress_only_for_stale_covers_in_a_mixed_libra
 
     let sentinel = b"not-a-real-webp-sentinel".to_vec();
     for size in crate::thumbs::ThumbSize::all() {
-        let on_disk = std::fs::read(crate::thumbs::thumb_path_for(fresh, size)).unwrap();
+        let on_disk = std::fs::read(crate::thumbs::thumb_path_for(fresh, size, 1)).unwrap();
         assert_eq!(
             on_disk, sentinel,
             "the already-fresh book's thumbnail for size {size} must not be re-encoded"

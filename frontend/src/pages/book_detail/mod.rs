@@ -238,12 +238,15 @@ fn use_book_data_effects(uuid: String, server_url: String, sig: BookDataSignals)
     let url = server_url.clone();
     let refresh = sig.refresh;
     let generation = crate::use_cache_generation();
+    let check_in_writes = crate::pages::use_check_in_writes();
     use_effect(use_reactive!(|uuid| {
-        // Read `refresh` so a merge/undo bump re-arms this effect, and the
-        // cache generation so a background revalidation refreshes the page
-        // (served from the fresh cache, zero network).
+        // Read `refresh` so a merge/undo bump re-arms this effect, the cache
+        // generation so a background revalidation refreshes the page (served
+        // from the fresh cache, zero network), and the check-in overlay's
+        // writes, which can file a copy of this very book.
         let _ = refresh();
         let _ = generation();
+        let _ = check_in_writes();
         fetch_book_and_author_books(
             url.clone(),
             uuid.clone(),
@@ -466,12 +469,9 @@ fn fetch_book_and_author_books(
         }
         match data::get_ebook(&server_url, &uuid).await {
             Ok(b) => {
-                let author_fetch = b.as_ref().map(|inner| {
-                    (
-                        inner.creators.first().and_then(|c| c.id),
-                        inner.unique_identifier.clone(),
-                    )
-                });
+                let author_fetch = b
+                    .as_ref()
+                    .map(|inner| (inner.creators.first().and_then(|c| c.id), inner.clone()));
                 description.value.set(
                     b.as_ref()
                         .and_then(|inner| inner.description.clone())
@@ -485,27 +485,27 @@ fn fetch_book_and_author_books(
                 // the one that finds books: `None` means "not fetched yet" and
                 // the section renders a loading note against it (#2478), so a
                 // book with no author id, an author that 404s, or a failed
-                // request must land on `Some(vec![])` — the honest "no others"
-                // — rather than leaving the note up for good.
+                // request must land on `Some(..)` rather than leaving the note
+                // up for good. The list is the author's books as their own page
+                // credits them — this one only when the library counts it (a
+                // wishlist-only book it does not); with no author read, this
+                // book alone.
                 match author_fetch {
-                    Some((Some(aid), current_uuid)) => {
-                        let others = match data::get_author(&server_url, aid).await {
-                            Ok(Some(ad)) => ad
-                                .books
-                                .into_iter()
-                                .filter(|ab| ab.unique_identifier != current_uuid)
-                                .collect(),
-                            _ => Vec::new(),
+                    Some((Some(aid), current)) => {
+                        let current_uuid = current.unique_identifier.clone();
+                        let credited = match data::get_author(&server_url, aid).await {
+                            Ok(Some(ad)) => ad.books,
+                            _ => vec![current],
                         };
                         let still_current =
                             book().as_ref().and_then(|b| b.unique_identifier.as_ref())
                                 == current_uuid.as_ref();
                         if still_current {
-                            author_books.set(Some(others));
+                            author_books.set(Some(credited));
                         }
                     }
-                    // No creator to ask about: settled, and empty.
-                    _ => author_books.set(Some(Vec::new())),
+                    Some((None, current)) => author_books.set(Some(vec![current])),
+                    None => author_books.set(Some(Vec::new())),
                 }
             }
             Err(e) => {

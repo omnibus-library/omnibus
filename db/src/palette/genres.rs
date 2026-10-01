@@ -1,8 +1,7 @@
 //! Genres arm of the search palette: substring `LIKE` match scoped to the
 //! visible books, ordered by book count. Simpler than
 //! [`super::tags`] — genres have no link table, so there is no canonical arm
-//! to `UNION` against and the override JSON is the whole story, exactly as in
-//! [`crate::discovery::genres`].
+//! to `UNION` against and the override JSON is the whole story.
 
 use std::sync::OnceLock;
 
@@ -10,19 +9,22 @@ use omnibus_shared::PaletteGenreHit;
 use sqlx::{Row, SqlitePool};
 
 use crate::helpers::{library_paths_json, visible_book_sql};
+// The membership fragment expands the precedence macro at this site, so it
+// must be in scope here too.
+use crate::metadata_overrides::sql::{effective_genres_sql, overrides_win_sql};
 
 use super::PaletteError;
 
 /// The `FROM`/`WHERE` body both the hits query and the count share, bound
 /// `?1 = library_paths JSON array`, `?2 = like_pattern`.
 ///
-/// The join to `genres` — rather than grouping `je.value` directly — is what
-/// makes the reported name canonical: `materialize_genre_rows` deduplicates
-/// into a `NOCASE`-unique row, so a library holding both "sci-fi" and
-/// "Sci-Fi" shows one palette row under whichever spelling was coined first,
-/// matching `get_genre_cloud` and the landing facets. Grouping the raw JSON
-/// values instead would split them into two rows whose counts each cover half
-/// the shelf.
+/// Membership is the shared `effective_genres_sql!` — guarded against an
+/// unreadable blob and gated on metadata precedence, like every other
+/// effective read. Its join to `genres` is what makes the reported name
+/// canonical: `materialize_genre_rows` deduplicates into a `NOCASE`-unique
+/// row, so a library holding both "sci-fi" and "Sci-Fi" shows one palette
+/// row under whichever spelling was coined first, matching `get_genre_cloud`
+/// and the landing facets.
 ///
 /// `COUNT(DISTINCT b.id)` guards a duplicate entry inside a single book's
 /// array (`["Horror","Horror"]` counts once).
@@ -32,15 +34,14 @@ fn genre_scan_sql() -> &'static str {
         let visible = visible_book_sql("b", "l", "?1");
         format!(
             r"
-        FROM books b
+        FROM ({membership}) eg
+        JOIN genres g ON g.id = eg.genre_id
+        JOIN books b ON b.id = eg.book_id
         JOIN scan_roots l ON l.id = b.library_id
-        JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
-        JOIN json_each(mo.overrides, '$.genres') je
-        JOIN genres g ON g.name = je.value COLLATE NOCASE
-       WHERE json_type(mo.overrides, '$.genres') IS NOT NULL
-         AND g.name LIKE ?2 ESCAPE '\'
+       WHERE g.name LIKE ?2 ESCAPE '\'
          AND {visible}
-        "
+        ",
+            membership = effective_genres_sql!()
         )
     })
 }

@@ -1,7 +1,8 @@
 //! Tests for EPUB cover extraction: sidecar-over-embedded precedence,
 //! opt-in sidecar materialization and its reuse on a second scan, repairing
-//! or falling back from an unreadable/failed materialization, and leaving
-//! an unrelated existing sidecar untouched.
+//! or falling back from an unreadable/failed materialization, leaving an
+//! unrelated existing sidecar untouched, and finding an embedded cover the
+//! package never declares.
 
 use crate::ebook::test_support::*;
 use crate::ebook::{scan_ebook_library, scan_ebook_library_with, ScanOptions};
@@ -313,4 +314,175 @@ fn extract_metadata_extracts_the_cover_from_both_declaration_styles() {
         epub3,
         "the legacy declaration must reach the same image"
     );
+}
+
+/// Write an EPUB2 package into `dir` whose OPF sits at `opf_path`, beside
+/// `entries`. Built in memory, so each test states exactly how the cover is
+/// (or isn't) declared.
+fn write_epub2(
+    dir: &std::path::Path,
+    name: &str,
+    opf_path: &str,
+    opf: &str,
+    entries: &[(&str, &[u8])],
+) -> std::path::PathBuf {
+    let container = format!(
+        "<?xml version=\"1.0\"?><container version=\"1.0\" \
+         xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles>\
+         <rootfile full-path=\"{opf_path}\" media-type=\"application/oebps-package+xml\"/>\
+         </rootfiles></container>"
+    );
+    let mut all: Vec<(&str, &[u8])> = vec![
+        ("mimetype", b"application/epub+zip"),
+        ("META-INF/container.xml", container.as_bytes()),
+        (opf_path, opf.as_bytes()),
+    ];
+    all.extend_from_slice(entries);
+    let path = dir.join(name);
+    std::fs::write(&path, crate::test_support::build_stored_zip(&all)).unwrap();
+    path
+}
+
+/// An EPUB2 OPF with no `<meta name="cover">`, carrying `manifest` items and
+/// `guide` references as given.
+fn epub2_opf(manifest: &str, guide: &str) -> String {
+    format!(
+        "<?xml version='1.0' encoding='utf-8'?>\
+         <package xmlns=\"http://www.idpf.org/2007/opf\" unique-identifier=\"uuid_id\" version=\"2.0\">\
+         <metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:opf=\"http://www.idpf.org/2007/opf\">\
+         <dc:title>The Dungeon Anarchist's Cookbook</dc:title>\
+         <dc:creator opf:role=\"aut\">Matt Dinniman</dc:creator>\
+         <dc:identifier id=\"uuid_id\">urn:uuid:5f0c9a3e-0000-4000-8000-000000000000</dc:identifier>\
+         <dc:language>en</dc:language>\
+         </metadata>\
+         <manifest>{manifest}\
+         <item id=\"html1\" href=\"text/part0000.html\" media-type=\"application/xhtml+xml\"/>\
+         </manifest>\
+         <spine><itemref idref=\"html1\"/></spine>\
+         <guide>{guide}</guide>\
+         </package>"
+    )
+}
+
+const CHAPTER: &[u8] =
+    b"<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><p>Chapter one.</p></body></html>";
+
+/// Calibre's title page: the cover drawn by an SVG `<image xlink:href>`.
+fn svg_title_page(href: &str) -> String {
+    format!(
+        "<?xml version='1.0' encoding='utf-8'?>\
+         <html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Cover</title></head><body><div>\
+         <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" \
+         version=\"1.1\" viewBox=\"0 0 1200 1800\"><image width=\"1200\" height=\"1800\" \
+         xlink:href=\"{href}\"/></svg></div></body></html>"
+    )
+}
+
+fn scanned_cover(dir: &std::path::Path, filename: &str) -> Option<Vec<u8>> {
+    scan_ebook_library(Some(dir.to_str().unwrap()))
+        .books
+        .into_iter()
+        .find(|b| b.metadata.filename == filename)
+        .unwrap_or_else(|| panic!("{filename} present"))
+        .cover
+        .map(|(_, bytes)| bytes)
+}
+
+#[test]
+fn extract_metadata_extracts_a_calibre_epub2_cover_named_only_by_manifest_id_and_guide() {
+    // The Calibre 7.2 shape: the image is manifest item `id="cover"`, the
+    // guide points at an SVG title page, and nothing declares either.
+    let dir = make_test_dir("calibre_epub2_cover");
+    let cover: &[u8] = b"\xFF\xD8\xFF\xE0calibre-cover";
+    let page = svg_title_page("cover.jpeg");
+    let opf = epub2_opf(
+        "<item id=\"cover\" href=\"cover.jpeg\" media-type=\"image/jpeg\"/>\
+         <item id=\"titlepage\" href=\"titlepage.xhtml\" media-type=\"application/xhtml+xml\"/>",
+        "<reference type=\"cover\" title=\"Cover\" href=\"titlepage.xhtml\"/>",
+    );
+    let path = write_epub2(
+        &dir,
+        "calibre.epub",
+        "content.opf",
+        &opf,
+        &[
+            ("cover.jpeg", cover),
+            ("titlepage.xhtml", page.as_bytes()),
+            ("text/part0000.html", CHAPTER),
+        ],
+    );
+
+    let scanned = scanned_cover(&dir, "calibre.epub");
+    let backfilled = crate::ebook::extract_cover(&path);
+    std::fs::remove_dir_all(&dir).unwrap();
+
+    assert_eq!(scanned.as_deref(), Some(cover), "the scan finds the cover");
+    assert_eq!(
+        backfilled,
+        Some(("image/jpeg".to_string(), cover.to_vec())),
+        "the cover backfill finds it too"
+    );
+}
+
+#[test]
+fn extract_metadata_follows_the_guide_cover_page_to_its_single_image() {
+    // No conventional id: only the guide leads to the image, through a page
+    // in another directory than the image it shows.
+    let dir = make_test_dir("guide_cover_page");
+    let cover: &[u8] = b"\x89PNGguide-cover";
+    let page = b"<html xmlns=\"http://www.w3.org/1999/xhtml\"><body>\
+        <img src=\"../images/front.png\" alt=\"\"/></body></html>";
+    let opf = epub2_opf(
+        "<item id=\"img0\" href=\"images/front.png\" media-type=\"image/png\"/>\
+         <item id=\"img1\" href=\"images/larger-map.png\" media-type=\"image/png\"/>\
+         <item id=\"front\" href=\"text/front.xhtml\" media-type=\"application/xhtml+xml\"/>",
+        "<reference type=\"cover\" href=\"text/front.xhtml#top\"/>",
+    );
+    write_epub2(
+        &dir,
+        "guide.epub",
+        "OEBPS/content.opf",
+        &opf,
+        &[
+            ("OEBPS/images/front.png", cover),
+            ("OEBPS/images/larger-map.png", &[7u8; 64]),
+            ("OEBPS/text/front.xhtml", page),
+            ("OEBPS/text/part0000.html", CHAPTER),
+        ],
+    );
+
+    let scanned = scanned_cover(&dir, "guide.epub");
+    std::fs::remove_dir_all(&dir).unwrap();
+
+    assert_eq!(scanned.as_deref(), Some(cover));
+}
+
+#[test]
+fn extract_metadata_falls_back_to_the_largest_manifest_image() {
+    let dir = make_test_dir("largest_image_cover");
+    let opf = epub2_opf(
+        "<item id=\"a\" href=\"a.png\" media-type=\"image/png\"/>\
+         <item id=\"b\" href=\"b.jpg\" media-type=\"image/jpeg\"/>\
+         <item id=\"c\" href=\"c.svg\" media-type=\"image/svg+xml\"/>",
+        "",
+    );
+    let largest = [2u8; 48];
+    write_epub2(
+        &dir,
+        "undeclared.epub",
+        "content.opf",
+        &opf,
+        &[
+            ("a.png", &[1u8; 16]),
+            ("b.jpg", &largest),
+            // Larger still, but a vector image is not a cover to guess at.
+            ("c.svg", &[3u8; 96]),
+            ("text/part0000.html", CHAPTER),
+        ],
+    );
+
+    let scanned = scanned_cover(&dir, "undeclared.epub");
+    std::fs::remove_dir_all(&dir).unwrap();
+
+    assert_eq!(scanned.as_deref(), Some(&largest[..]));
 }

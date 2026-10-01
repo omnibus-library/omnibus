@@ -122,3 +122,84 @@ struct ReaderBackdropLuminanceTests {
         return image
     }
 }
+
+// MARK: - Indicator contrast
+
+/// WCAG relative luminance of a gamma-encoded sRGB channel triple.
+private func relativeLuminance(_ r: Double, _ g: Double, _ b: Double) -> Double {
+    func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+}
+
+private func contrast(_ a: Double, _ b: Double) -> Double {
+    (max(a, b) + 0.05) / (min(a, b) + 0.05)
+}
+
+/// The weaker contrast of `ink` at `alpha` over `ground`, whichever space the
+/// compositor blends in — gamma-encoded or linear light.
+private func worstContrast(
+    ink: (Double, Double, Double), alpha: Double, over ground: Double
+) -> Double {
+    let groundY = relativeLuminance(ground, ground, ground)
+    let gamma = relativeLuminance(
+        alpha * ink.0 + (1 - alpha) * ground,
+        alpha * ink.1 + (1 - alpha) * ground,
+        alpha * ink.2 + (1 - alpha) * ground
+    )
+    let linear = alpha * relativeLuminance(ink.0, ink.1, ink.2) + (1 - alpha) * groundY
+    return min(contrast(gamma, groundY), contrast(linear, groundY))
+}
+
+@Suite("Reader indicator ink")
+struct ReaderIndicatorInkTests {
+    @Test("the page label and title clear 4.5:1 over white paper")
+    func legibleOverWhitePaper() {
+        // `ReaderGround.page.ink` is `ReaderTheme.ink("light")`, the light
+        // palette's ink0.
+        let ink = Palette.light.ink0.components
+        let ratio = worstContrast(
+            ink: (ink.r, ink.g, ink.b), alpha: ReaderGround.page.indicatorOpacity, over: 1
+        )
+        #expect(ratio >= 4.5, "got \(ratio)")
+    }
+
+    @Test("the stage's white clears 4.5:1 over the black stage")
+    func legibleOverTheStage() {
+        let ratio = worstContrast(
+            ink: (1, 1, 1), alpha: ReaderGround.stage.indicatorOpacity, over: 0
+        )
+        #expect(ratio >= 4.5, "got \(ratio)")
+    }
+
+    @Test("with the chrome up the page label keeps the stage's white, whatever was sampled")
+    func chromeUpLabelKeepsWhite() {
+        let samples: [ReaderGround?] = [.page, .stage, nil]
+        for sampled in samples {
+            #expect(ReaderGround.indicator(sampled: sampled, onScrim: true).ground.ink == .white)
+        }
+    }
+
+    @Test("with the chrome up over the stage the page label clears 4.5:1")
+    func chromeUpLabelOverTheStage() {
+        let style = ReaderGround.indicator(sampled: .stage, onScrim: true)
+        let ratio = worstContrast(ink: (1, 1, 1), alpha: style.opacity, over: 0)
+        #expect(ratio >= 4.5, "got \(ratio)")
+    }
+
+    @Test("with the chrome up over paper the page label draws firmer and clears 4.5:1")
+    func chromeUpLabelOverScrimmedPaper() {
+        let style = ReaderGround.indicator(sampled: .page, onScrim: true)
+        // The scrim leaves white paper at about a third where the label sits.
+        let ratio = worstContrast(ink: (1, 1, 1), alpha: style.opacity, over: 1.0 / 3)
+        #expect(ratio >= 4.5, "got \(ratio)")
+    }
+
+    @Test("with the chrome down an indicator follows what was sampled under it")
+    func chromeDownLabelFollowsTheSample() {
+        let paper = ReaderGround.indicator(sampled: .page, onScrim: false)
+        #expect(paper.ground == .page)
+        #expect(paper.opacity == ReaderGround.page.indicatorOpacity)
+        #expect(ReaderGround.indicator(sampled: .stage, onScrim: false).ground == .stage)
+        #expect(ReaderGround.indicator(sampled: nil, onScrim: false).ground == .stage)
+    }
+}

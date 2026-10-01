@@ -25,8 +25,79 @@ import Testing
 }
 
 @Test func kickerSurvivesABareRecord() {
+    // Worded as the web's `home_kicker` does: never "In your library", which
+    // a wishlist-only or just-removed record is not.
     let line = DetailRead.kicker(series: nil, seriesIndex: nil, fallback: nil, year: nil)
-    #expect(line == "In your library")
+    #expect(line == "Book · standalone")
+}
+
+@Test func kickerNamesTheWishlistForAWishlistOnlyBook() {
+    let line = DetailRead.kicker(
+        series: "Dune", seriesIndex: "1", fallback: nil, year: "1965",
+        wishlistSource: "a scan"
+    )
+    #expect(line == "On your wishlist · added from a scan")
+}
+
+// MARK: - Fileless records
+
+@Test func readStatusIsOfferedOnlyForSomethingToRead() {
+    #expect(DetailRead.showsReadStatus(hasFile: true, hasPhysical: false))
+    #expect(DetailRead.showsReadStatus(hasFile: false, hasPhysical: true))
+    #expect(!DetailRead.showsReadStatus(hasFile: false, hasPhysical: false))
+}
+
+@Test func removingTheWishlistEntryLeavesAPageWithNothingLeftToShow() {
+    #expect(DetailRead.leavesAfterWishlistRemoval(bookDeleted: true, hasFile: false, hasPhysical: false))
+    // Kept because another reader still wants it, but unreachable from browse.
+    #expect(DetailRead.leavesAfterWishlistRemoval(bookDeleted: false, hasFile: false, hasPhysical: false))
+    #expect(!DetailRead.leavesAfterWishlistRemoval(bookDeleted: false, hasFile: false, hasPhysical: true))
+    #expect(!DetailRead.leavesAfterWishlistRemoval(bookDeleted: false, hasFile: true, hasPhysical: false))
+}
+
+@Test func emptyStatsOnlyAskAReaderToOpenABookThatHasAFile() {
+    let open = "Open the book to start tracking your reading here."
+    #expect(
+        DetailStats.emptyExplainer(
+            hasPosition: false, wishlistOnly: false, hasFile: true, hasPhysical: false
+        ) == open
+    )
+    for (wishlist, physical) in [(true, false), (false, true), (false, false)] {
+        let line = DetailStats.emptyExplainer(
+            hasPosition: false, wishlistOnly: wishlist, hasFile: false, hasPhysical: physical
+        )
+        #expect(!line.localizedCaseInsensitiveContains("open the book"))
+    }
+}
+
+@Test func emptyStatsAgreeWithHomeThatAPositionMeansStarted() {
+    // Home reads "in progress" off the saved position; the session log trails
+    // it, so an empty log beside a position is underway, not "not begun".
+    #expect(DetailStats.emptyKicker(hasPosition: true) == "This read · underway")
+    #expect(DetailStats.emptyKicker(hasPosition: false) == "This read · not begun")
+    let line = DetailStats.emptyExplainer(
+        hasPosition: true, wishlistOnly: false, hasFile: true, hasPhysical: false
+    )
+    #expect(!line.localizedCaseInsensitiveContains("open the book"))
+}
+
+// MARK: - Language
+
+@Test func languageNamesTheCodeRatherThanPrintingIt() {
+    #expect(Format.language("en") == "English")
+    #expect(Format.language("eng") == "English")
+    #expect(Format.language("en-US") == "English")
+    #expect(Format.language("pt_BR") == "Portuguese")
+}
+
+@Test func languageFilesCodesThatDeclineToAnswerAsUnknown() {
+    // The same bucket the stats composition breakdown uses for them.
+    for code in ["und", "UND", "mul", "zxx", "mis", "und-Latn"] {
+        #expect(Format.language(code) == "Unknown")
+    }
+    #expect(Format.language(nil) == nil)
+    #expect(Format.language("  ") == nil)
+    #expect(Format.language("qaa") == "QAA")
 }
 
 // MARK: - Resume label
@@ -304,6 +375,39 @@ private func journalEntry(
 
 @Test func journalKickerReportsTheEmptyFeedWithoutCounts() {
     #expect(DetailJournal.kicker([]) == "No entries yet")
+}
+
+@Test func journalBylineMarksOnlyTheViewersOwnEntries() {
+    #expect(DetailJournal.isOwn(journalEntry(author: 3), viewerId: 3))
+    #expect(!DetailJournal.isOwn(journalEntry(author: 3), viewerId: 4))
+    // Not yet signed in: nothing is "you", including an optimistic row whose
+    // author fell back to 0.
+    #expect(!DetailJournal.isOwn(journalEntry(author: 0), viewerId: nil))
+}
+
+// MARK: - Creators
+
+@Test func everyLinkedCreatorGetsItsOwnAuthorPage() {
+    let creators = [
+        Contributor(name: "Frank Herbert", id: 1),
+        Contributor(name: "John Schoenherr", role: "ill", id: 2),
+        Contributor(name: "Unlinked Editor"),
+        Contributor(name: "Frank Herbert", role: "aut", id: 1),
+    ]
+    #expect(DetailRead.linkedCreators(creators) == [
+        DetailCreatorLink(id: 1, name: "Frank Herbert"),
+        DetailCreatorLink(id: 2, name: "John Schoenherr"),
+    ])
+}
+
+// MARK: - Rating
+
+@Test func tappingTheRatingAlreadySetClearsIt() {
+    #expect(StarRating.committed(4, current: 4, isTap: true) == 0)
+    // A drag that happens to end on the set value is an adjustment.
+    #expect(StarRating.committed(4, current: 4, isTap: false) == 4)
+    #expect(StarRating.committed(3.5, current: 4, isTap: true) == 3.5)
+    #expect(StarRating.committed(2, current: 0, isTap: true) == 2)
 }
 
 // MARK: - Journal composer target

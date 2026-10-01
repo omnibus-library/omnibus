@@ -101,6 +101,16 @@
   // host renders it without persisting it or moving `restoreCFI` (see
   // emitRelocate; mirrors frontend/assets/vendor/epub-reader-glue.js).
   var restoreEchoPending = false;
+  // The page the restore's echo re-stated: the same page again with no
+  // navigation since is the settle chain landing late, not movement (see
+  // emitRelocate).
+  var restoreEchoCfi = null;
+  // Counts `relocated` events, so a deferred emission can tell one arrived.
+  var relocatedSeq = 0;
+  // How long unmute holds the echo tag for the corrective redisplay's own
+  // `relocated` — just past the relocate debounce.
+  var UNMUTE_FALLBACK_MS = 450;
+  var unmuteFallbackTimer = null;
   // True from the first resize-driven "resized" event of a rotation/resize
   // burst until the corrected redisplay that follows it has been reported —
   // mutes every relocate in between (issue #2081). A rotation re-paginates
@@ -159,6 +169,10 @@
     if (relocateTimer) {
       clearTimeout(relocateTimer);
       relocateTimer = null;
+    }
+    if (unmuteFallbackTimer) {
+      clearTimeout(unmuteFallbackTimer);
+      unmuteFallbackTimer = null;
     }
     if (stageResizeTimer) {
       clearTimeout(stageResizeTimer);
@@ -222,14 +236,59 @@
     }
   }
 
-  function findChapter(href) {
+  // The TOC entry a position in spine item `href` sits in. Several entries can
+  // share one spine item, so with `cfi` and a `placer` for that item's
+  // document ({ doc, cfiOf(el) }) the one whose anchor is last at or before
+  // the position wins; an anchor that can't be placed keeps the item's last
+  // entry.
+  function findChapter(href, cfi, placer) {
     if (!tocFlat.length || !href) return null;
     var clean = href.split("#")[0];
-    for (var i = tocFlat.length - 1; i >= 0; i--) {
-      var tocHref = (tocFlat[i].href || "").split("#")[0];
-      if (tocHref === clean) {
-        return { index: i + 1, total: tocFlat.length, title: tocFlat[i].label.trim() };
+    var hits = [];
+    for (var i = 0; i < tocFlat.length; i++) {
+      if ((tocFlat[i].href || "").split("#")[0] === clean) hits.push(i);
+    }
+    if (!hits.length) return null;
+    var at = hits.length > 1 ? entryAtOrBefore(hits, cfi, placer) : hits[0];
+    return { index: at + 1, total: tocFlat.length, title: tocFlat[at].label.trim() };
+  }
+
+  function entryAtOrBefore(hits, cfi, placer) {
+    var last = hits[hits.length - 1];
+    if (!cfi || !placer || !placer.doc) return last;
+    var at = -1;
+    try {
+      var cmp = new ePub.CFI();
+      for (var h = 0; h < hits.length; h++) {
+        var href = tocFlat[hits[h]].href || "";
+        var hash = href.indexOf("#");
+        // No fragment: the entry opens the spine item.
+        if (hash >= 0) {
+          var el = placer.doc.getElementById(href.slice(hash + 1));
+          if (!el) return last;
+          if (cmp.compare(placer.cfiOf(el), cfi) > 0) continue;
+        }
+        at = hits[h];
       }
+    } catch (e) {
+      return last;
+    }
+    // Ahead of every anchor: the item's first entry is the nearest name.
+    return at >= 0 ? at : hits[0];
+  }
+
+  // A placer for the rendered section at spine `index`, or null.
+  function renderedPlacer(index) {
+    try {
+      var all = rendition ? rendition.getContents() : [];
+      for (var i = 0; i < all.length; i++) {
+        if (all[i].sectionIndex === index && all[i].document) {
+          var c = all[i];
+          return { doc: c.document, cfiOf: function (el) { return c.cfiFromNode(el); } };
+        }
+      }
+    } catch (e) {
+      /* no rendered sections */
     }
     return null;
   }
@@ -285,7 +344,10 @@
       totalPages = book.locations.total || 0;
       pagesLeft = pagesLeftInSection(cfi, page);
     }
-    var ch = location && location.start ? findChapter(location.start.href) : null;
+    var ch =
+      location && location.start
+        ? findChapter(location.start.href, cfi, renderedPlacer(location.start.index))
+        : null;
     return {
       cfi: cfi,
       page: page + 1,
@@ -476,6 +538,12 @@
     var initialCfi = opts.cfi || null;
     restoreSettled = !initialCfi;
     restoreEchoPending = !!initialCfi;
+    restoreEchoCfi = null;
+    // Cleared by the fail-open below, retiring a settle chain still running.
+    var restoreLive = true;
+    var restoreCurrent = function () {
+      return restoreLive;
+    };
     rendition.display(initialCfi || undefined).then(
       function () {
         if (!initialCfi) {
@@ -496,6 +564,15 @@
           // display target rather than the rendered viewport, so it is
           // only the fallback.
           if (relocateTimer) return;
+          // The corrective redisplay's own `relocated` can still be a frame
+          // out, and must land as the echo too: state the landing now without
+          // spending the tag, which lapses only if none comes.
+          var seq = relocatedSeq;
+          unmuteFallbackTimer = setTimeout(function () {
+            unmuteFallbackTimer = null;
+            if (rendition !== r || relocatedSeq !== seq || relocateTimer) return;
+            restoreEchoPending = false;
+          }, UNMUTE_FALLBACK_MS);
           var loc = null;
           try {
             loc = rendition.currentLocation();
@@ -503,13 +580,14 @@
             /* not ready yet */
           }
           if (loc && loc.start) {
-            emitRelocate(loc);
+            emitRelocate(loc, true);
           } else if (rendition.location) {
-            emitRelocate(rendition.location);
+            emitRelocate(rendition.location, true);
           }
         };
-        redisplayWhenSettled(initialCfi)
+        redisplayWhenSettled(initialCfi, restoreCurrent)
           .then(function () {
+            if (!restoreCurrent()) return;
             return nudgeToTarget(initialCfi);
           })
           .catch(function () {
@@ -519,8 +597,13 @@
         // Fail-open: if the settle chain ever hangs (an epub.js display that
         // never resolves), the mute must not permanently stop progress
         // persistence, nor the deferred ready leave the loading overlay up
-        // forever — worst case reverts to the uncorrected landing.
-        setTimeout(unmute, 4000);
+        // forever — worst case reverts to the uncorrected landing. The chain
+        // is retired first, so a redisplay it issues late can't move the
+        // page after the echo has been spent.
+        setTimeout(function () {
+          restoreLive = false;
+          unmute();
+        }, 4000);
       },
       function () {
         emitStatus("error");
@@ -528,6 +611,7 @@
     );
 
     rendition.on("relocated", function (location) {
+      relocatedSeq++;
       if (relocateTimer) {
         clearTimeout(relocateTimer);
       }
@@ -604,15 +688,27 @@
   // position at the cross-format clock gate (see `RelocateData.isMovement`
   // in ReaderWebView.swift). The first emission after a CFI restore is an
   // echo even when it arrives through the debounced relocated handler, so
-  // the flag is consumed here rather than trusted to the call sites.
+  // the flag is consumed here rather than trusted to the call sites — and
+  // never by an explicit echo while the settle emission is still due, which
+  // would spend it and leave that one to write.
   function emitRelocate(location, isEcho) {
     if (!restoreSettled || resizeSettling) return;
     var echo = !!isEcho;
-    if (restoreEchoPending) {
-      restoreEchoPending = false;
-      echo = true;
-    }
     var data = buildRelocateData(location);
+    if (restoreEchoPending) {
+      if (!echo || (!relocateTimer && !unmuteFallbackTimer)) {
+        restoreEchoPending = false;
+        echo = true;
+      }
+      restoreEchoCfi = data.cfi || null;
+    } else if (!echo && restoreEchoCfi !== null) {
+      // Any movement ends it, so returning to the restored page still writes.
+      if (data.cfi === restoreEchoCfi) {
+        echo = true;
+      } else {
+        restoreEchoCfi = null;
+      }
+    }
     data.echo = echo;
     if (data.cfi && typeof window.__omnibusOnRelocate === "function") {
       window.__omnibusOnRelocate(JSON.stringify(data));
@@ -621,12 +717,14 @@
 
   function next() {
     if (!rendition) return;
+    restoreEchoCfi = null;
     cancelResizeCorrection();
     return rendition.next();
   }
 
   function prev() {
     if (!rendition) return;
+    restoreEchoCfi = null;
     cancelResizeCorrection();
     return rendition.prev();
   }
@@ -1665,21 +1763,30 @@
 
     // `getClientRects` measures the *font* box, not the line box, so on
     // generously leaded prose the bars come back with a stripe of page
-    // between them. Grow each row by the gap its neighbours leave, which
-    // makes a multi-line selection one continuous block the way the system's
-    // own is — without needing to know the line height.
-    var gap = Infinity;
+    // between them. A gap no wider than the lines are tall is that leading,
+    // and is closed halfway from each side, which makes a paragraph one
+    // continuous block the way the system's own is — without needing to know
+    // the line height. A wider gap is a figure, a heading or a break: there,
+    // and at the selection's own ends, a row grows by half the leading alone.
+    var lead = Infinity;
     for (var g = 1; g < rows.length; g++) {
       if (rows[g].col !== rows[g - 1].col) continue;
       var between = rows[g].top - rows[g - 1].bottom;
-      if (between > 0 && between < gap) gap = between;
+      if (isLeading(between, rows[g - 1], rows[g]) && between < lead) lead = between;
     }
-    if (gap !== Infinity && gap > 0) {
-      var grow = gap / 2;
-      for (var e = 0; e < rows.length; e++) {
-        rows[e].top -= grow;
-        rows[e].bottom += grow;
-      }
+    var half = lead === Infinity ? 0 : lead / 2;
+    var grown = [];
+    for (var e = 0; e < rows.length; e++) {
+      var above = e > 0 && rows[e - 1].col === rows[e].col ? rows[e - 1] : null;
+      var below = e + 1 < rows.length && rows[e + 1].col === rows[e].col ? rows[e + 1] : null;
+      grown.push({
+        up: growToward(above ? rows[e].top - above.bottom : null, above, rows[e], half),
+        down: growToward(below ? below.top - rows[e].bottom : null, rows[e], below, half),
+      });
+    }
+    for (var h = 0; h < rows.length; h++) {
+      rows[h].top -= grown[h].up;
+      rows[h].bottom += grown[h].down;
     }
 
     var out = [];
@@ -1693,6 +1800,22 @@
       });
     }
     return out;
+  }
+
+  // Whether the gap between two consecutive rows is the leading of set text
+  // rather than something standing between the lines.
+  function isLeading(gap, a, b) {
+    return gap > 0 && gap <= Math.min(a.bottom - a.top, b.bottom - b.top);
+  }
+
+  // How far a row grows across `gap` toward its neighbour — `null` for none,
+  // the selection's own end: all of its half of leading, else half the
+  // leading at most, and never into the neighbour's box.
+  function growToward(gap, a, b, half) {
+    if (gap === null) return half;
+    if (gap <= 0) return 0;
+    if (isLeading(gap, a, b)) return gap / 2;
+    return Math.min(half, gap / 2);
   }
 
   // What the host draws: only the rows on the page in front of the reader —
@@ -3231,7 +3354,7 @@
   // Wait for the active section's webfonts to settle, then re-display
   // `target` against the final layout. Returns a promise resolving once the
   // corrective redisplay completes, so callers can sequence on it.
-  function redisplayWhenSettled(target) {
+  function redisplayWhenSettled(target, stillCurrent) {
     var doc = null;
     try {
       var contents = rendition.getContents();
@@ -3261,6 +3384,7 @@
         });
       })
       .then(function () {
+        if (stillCurrent && !stillCurrent()) return;
         if (rendition) return rendition.display(target);
       });
   }
@@ -3449,6 +3573,7 @@
 
   function display(target) {
     if (!rendition || !target) return;
+    restoreEchoCfi = null;
     var t = String(target);
     var hash = t.indexOf("#");
     // CFIs and bare hrefs pass straight through. Fragment hrefs resolve to
@@ -3550,8 +3675,12 @@
           .load(book.load.bind(book))
           .then(function () {
             var found = section.find(q) || [];
-            var chap = findChapter(section.href);
+            var placer = {
+              doc: section.document,
+              cfiOf: function (el) { return section.cfiFromElement(el); },
+            };
             for (var i = 0; i < found.length && results.length < 80; i++) {
+              var chap = findChapter(section.href, found[i].cfi, placer);
               results.push({
                 cfi: found[i].cfi,
                 excerpt: (found[i].excerpt || "").trim(),

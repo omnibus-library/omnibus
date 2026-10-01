@@ -568,7 +568,9 @@ pub struct StatsSummary {
     pub listening_daily: Vec<DayActivity>,
     /// Mean star rating per month over the trailing 12 calendar months —
     /// the Avg rating tile's drill-in trend chart. Independent of `range`,
-    /// same trailing-window convention as `books_per_month`.
+    /// same trailing-window convention as `books_per_month`. A month with
+    /// nothing rated carries `0.0`, which no real mean (at least half a star)
+    /// can, so renderers draw it as empty rather than as a low rating.
     #[serde(default)]
     pub rating_monthly: Vec<TrendPoint>,
     /// How the window's ratings are distributed across the ten half-star

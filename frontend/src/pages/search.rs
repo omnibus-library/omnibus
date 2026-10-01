@@ -2,7 +2,8 @@
 //! Reuses the `data::search_palette` RPC and groups hits by type (Books,
 //! Authors, Series, Tags, Genres) with the matched term highlighted, an "On
 //! this page" jump rail, and a tags-first ordering when the query matches tag
-//! names.
+//! names. Each section previews its first few hits and offers the rest behind
+//! a "Show all", fetched through `data::search_results`.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
@@ -11,7 +12,7 @@ use omnibus_shared::{
     PaletteTagHit,
 };
 
-use crate::components::{Loading, LoadingKind};
+use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::format::{facet_query, plural, single_facet_value};
 use crate::{data, use_server_url, Route};
 
@@ -65,10 +66,16 @@ pub fn SearchPage(query: String) -> Element {
 
     rsx! {
         section { class: "search-page",
-            SearchResults { results: r, query: query.clone() }
+            // Keyed on the query so a new search starts with every section
+            // collapsed again.
+            SearchResults { key: "{query}", results: r, query: query.clone() }
         }
     }
 }
+
+/// How many hits a collapsed section shows — the palette's own cap, so the
+/// first paint needs no second fetch.
+const PREVIEW: usize = 5;
 
 /// Which result group a section renders. Drives both the main column order
 /// and the "On this page" rail.
@@ -112,6 +119,52 @@ impl Section {
             Section::Genres => r.genre_total,
         }
     }
+
+    /// How many hits the fetched results actually carry for this section.
+    fn fetched(self, r: &PaletteResults) -> usize {
+        match self {
+            Section::Books => r.books.len(),
+            Section::Authors => r.authors.len(),
+            Section::Series => r.series.len(),
+            Section::Tags => r.tags.len(),
+            Section::Genres => r.genres.len(),
+        }
+    }
+}
+
+/// Each section's show-all state, threaded through the group renderers.
+#[derive(Clone, Copy)]
+struct Expansion {
+    open: Signal<Vec<Section>>,
+    busy: Signal<Option<Section>>,
+    failed: Signal<Option<Section>>,
+    toggle: Callback<Section>,
+}
+
+impl Expansion {
+    fn is_open(self, sec: Section) -> bool {
+        self.open.read().contains(&sec)
+    }
+
+    /// How many of a section's hits to render.
+    fn shown(self, sec: Section) -> usize {
+        if self.is_open(sec) {
+            usize::MAX
+        } else {
+            PREVIEW
+        }
+    }
+}
+
+/// The note under an opened section the server still couldn't hand over whole
+/// — past its per-section ceiling — or `None` when every hit is on the page.
+fn cut_note(sec: Section, r: &PaletteResults) -> Option<String> {
+    let (fetched, total) = (sec.fetched(r), sec.count(r));
+    (u32::try_from(fetched).unwrap_or(u32::MAX) < total).then(|| {
+        format!(
+            "Showing the first {fetched} of {total} \u{2014} narrow your search to see the rest."
+        )
+    })
 }
 
 /// Grouped, highlighted result sections + an "On this page" rail for a loaded
@@ -119,7 +172,50 @@ impl Section {
 #[component]
 fn SearchResults(results: PaletteResults, query: String) -> Element {
     let server_url = use_server_url();
-    let r = results;
+    // The whole-section fetch replaces the preview once it lands; collapsed
+    // sections still render only their first few.
+    let mut fuller: Signal<Option<PaletteResults>> = use_signal(|| None);
+    let mut open = use_signal(Vec::<Section>::new);
+    let mut busy = use_signal(|| None::<Section>);
+    let mut failed = use_signal(|| None::<Section>);
+    let url = server_url.clone();
+    let q_fetch = query.clone();
+    let preview = results.clone();
+    let toggle = use_callback(move |sec: Section| {
+        if open.peek().contains(&sec) {
+            open.write().retain(|s| *s != sec);
+            return;
+        }
+        let current = fuller.peek().clone().unwrap_or_else(|| preview.clone());
+        let want = sec.count(&current);
+        if sec.fetched(&current) >= usize::try_from(want).unwrap_or(usize::MAX) {
+            open.write().push(sec);
+            return;
+        }
+        let url = url.clone();
+        let q = q_fetch.clone();
+        busy.set(Some(sec));
+        failed.set(None);
+        spawn(async move {
+            match data::search_results(&url, &q, want).await {
+                Ok(r) => {
+                    fuller.set(Some(r));
+                    open.write().push(sec);
+                }
+                Err(_) => failed.set(Some(sec)),
+            }
+            busy.set(None);
+        });
+    });
+    let ctl = Expansion {
+        open,
+        busy,
+        failed,
+        toggle,
+    };
+    // Ordered off the preview, so opening a section never reshuffles the page.
+    let (order, tag_match) = section_order(&results, &query);
+    let r = fuller().unwrap_or(results);
     let q = query;
     let total = r.total_count();
 
@@ -127,7 +223,6 @@ fn SearchResults(results: PaletteResults, query: String) -> Element {
         return empty_results(&r, &q);
     }
 
-    let (order, tag_match) = section_order(&r, &q);
     let result_word = if total == 1 { "result" } else { "results" };
     // A one-facet query is headed by the name the reader clicked, not by the
     // `tag:"…"` string the link was built from (#2504). Anything else keeps
@@ -159,7 +254,7 @@ fn SearchResults(results: PaletteResults, query: String) -> Element {
                         if i > 0 {
                             div { class: "divider" }
                         }
-                        {section_node(*sec, &r, &q, tag_match, &server_url)}
+                        {section_node(*sec, &r, &q, tag_match, &server_url, ctl)}
                     }
                 }
             }
@@ -227,18 +322,52 @@ fn section_node(
     q: &str,
     tag_match: bool,
     server_url: &str,
+    ctl: Expansion,
 ) -> Element {
-    match sec {
-        Section::Books => books_group(r, q, tag_match, server_url),
-        Section::Authors => authors_group(r, q),
-        Section::Series => series_group(r, q),
-        Section::Tags => tags_group(r, q, tag_match),
-        Section::Genres => genres_group(r, q),
+    let shown = ctl.shown(sec);
+    let body = match sec {
+        Section::Books => books_group(r, q, server_url, shown),
+        Section::Authors => authors_group(r, q, shown),
+        Section::Series => series_group(r, q, shown),
+        Section::Tags => tags_group(r, q, shown),
+        Section::Genres => genres_group(r, q, shown),
+    };
+    let sub = match sec {
+        Section::Books => tag_match.then_some("in matched tags"),
+        Section::Tags if tag_match => Some("matched in tag name"),
+        Section::Tags => Some("related to your matches"),
+        Section::Genres => Some("matched in genre name"),
+        Section::Authors | Section::Series => None,
+    };
+    let note = ctl.is_open(sec).then(|| cut_note(sec, r)).flatten();
+    rsx! {
+        section { id: "{sec.anchor()}", class: "search-section",
+            {section_head(sec, sec.count(r), sub, ctl)}
+            {body}
+            if let Some(note) = note {
+                p { class: "search-section-note mono", "data-testid": "search-section-cut", "{note}" }
+            }
+            if ctl.failed.read().as_ref() == Some(&sec) {
+                p { class: "search-section-note", role: "alert", "data-testid": "search-section-error",
+                    "Couldn\u{2019}t load the rest \u{2014} try again."
+                }
+            }
+        }
     }
 }
 
-/// Section heading: `LABEL · count` with an optional right-aligned hint.
-fn section_head(sec: Section, count: u32, sub: Option<&str>) -> Element {
+/// Section heading: `LABEL · count` with an optional right-aligned hint, and
+/// the "Show all" that reaches every hit the count names when the preview
+/// holds fewer.
+fn section_head(sec: Section, count: u32, sub: Option<&str>, ctl: Expansion) -> Element {
+    let more = usize::try_from(count).unwrap_or(usize::MAX) > PREVIEW;
+    let open = ctl.is_open(sec);
+    let busy = ctl.busy.read().as_ref() == Some(&sec);
+    let label = if open {
+        "Show fewer".to_string()
+    } else {
+        format!("Show all {count}")
+    };
     rsx! {
         div { class: "search-section-head",
             div { class: "label", "{sec.label()}" }
@@ -246,44 +375,45 @@ fn section_head(sec: Section, count: u32, sub: Option<&str>) -> Element {
             if let Some(sub) = sub {
                 div { class: "search-section-sub", "{sub}" }
             }
-        }
-    }
-}
-
-fn books_group(r: &PaletteResults, q: &str, tag_match: bool, server_url: &str) -> Element {
-    let sub = if tag_match {
-        Some("in matched tags")
-    } else {
-        None
-    };
-    rsx! {
-        section { id: "{Section::Books.anchor()}", class: "search-section",
-            {section_head(Section::Books, r.book_total, sub)}
-            div { class: "search-cover-grid",
-                for book in r.books.iter().cloned() {
-                    Link {
-                        key: "{book.uuid}",
-                        to: Route::BookDetail { uuid: book.uuid.clone() },
-                        class: "search-cover-card",
-                        "data-testid": "search-book-row",
-                        {book_cover(server_url, &book)}
-                        div { class: "search-cover-title", {highlight(&book.title, q)} }
-                        div { class: "search-cover-sub", "{book.author_display}" }
-                    }
+            if more {
+                button {
+                    class: "search-section-all",
+                    r#type: "button",
+                    "data-testid": "search-show-all-{sec.anchor()}",
+                    "aria-expanded": "{open}",
+                    "aria-busy": "{busy}",
+                    disabled: busy,
+                    onclick: move |_| ctl.toggle.call(sec),
+                    BusyLabel { busy, label, busy_label: "Loading\u{2026}" }
                 }
             }
         }
     }
 }
 
-fn authors_group(r: &PaletteResults, q: &str) -> Element {
+fn books_group(r: &PaletteResults, q: &str, server_url: &str, shown: usize) -> Element {
     rsx! {
-        section { id: "{Section::Authors.anchor()}", class: "search-section",
-            {section_head(Section::Authors, r.author_total, None)}
-            div { class: "search-card-grid",
-                for author in r.authors.iter().cloned() {
-                    {author_card(&author, q)}
+        div { class: "search-cover-grid",
+            for book in r.books.iter().take(shown).cloned() {
+                Link {
+                    key: "{book.uuid}",
+                    to: Route::BookDetail { uuid: book.uuid.clone() },
+                    class: "search-cover-card",
+                    "data-testid": "search-book-row",
+                    {book_cover(server_url, &book)}
+                    div { class: "search-cover-title", {highlight(&book.title, q)} }
+                    div { class: "search-cover-sub", "{book.author_display}" }
                 }
+            }
+        }
+    }
+}
+
+fn authors_group(r: &PaletteResults, q: &str, shown: usize) -> Element {
+    rsx! {
+        div { class: "search-card-grid",
+            for author in r.authors.iter().take(shown).cloned() {
+                {author_card(&author, q)}
             }
         }
     }
@@ -319,14 +449,11 @@ fn author_card(author: &PaletteAuthorHit, q: &str) -> Element {
     }
 }
 
-fn series_group(r: &PaletteResults, q: &str) -> Element {
+fn series_group(r: &PaletteResults, q: &str, shown: usize) -> Element {
     rsx! {
-        section { id: "{Section::Series.anchor()}", class: "search-section",
-            {section_head(Section::Series, r.series_total, None)}
-            div { class: "search-card-grid",
-                for s in r.series.iter().cloned() {
-                    {series_card(&s, q)}
-                }
+        div { class: "search-card-grid",
+            for s in r.series.iter().take(shown).cloned() {
+                {series_card(&s, q)}
             }
         }
     }
@@ -358,20 +485,12 @@ fn series_card(s: &PaletteSeriesHit, q: &str) -> Element {
     }
 }
 
-fn tags_group(r: &PaletteResults, q: &str, tag_match: bool) -> Element {
-    let sub = if tag_match {
-        "matched in tag name"
-    } else {
-        "related to your matches"
-    };
+fn tags_group(r: &PaletteResults, q: &str, shown: usize) -> Element {
     let q_lower = q.to_lowercase();
     rsx! {
-        section { id: "{Section::Tags.anchor()}", class: "search-section",
-            {section_head(Section::Tags, r.tag_total, Some(sub))}
-            div { class: "search-tags",
-                for tag in r.tags.iter().cloned() {
-                    {tag_chip(&tag, q, &q_lower)}
-                }
+        div { class: "search-tags",
+            for tag in r.tags.iter().take(shown).cloned() {
+                {tag_chip(&tag, q, &q_lower)}
             }
         }
     }
@@ -396,15 +515,12 @@ fn tag_chip(tag: &PaletteTagHit, q: &str, q_lower: &str) -> Element {
     }
 }
 
-fn genres_group(r: &PaletteResults, q: &str) -> Element {
+fn genres_group(r: &PaletteResults, q: &str, shown: usize) -> Element {
     let q_lower = q.to_lowercase();
     rsx! {
-        section { id: "{Section::Genres.anchor()}", class: "search-section",
-            {section_head(Section::Genres, r.genre_total, Some("matched in genre name"))}
-            div { class: "search-tags",
-                for genre in r.genres.iter().cloned() {
-                    {genre_chip(&genre, q, &q_lower)}
-                }
+        div { class: "search-tags",
+            for genre in r.genres.iter().take(shown).cloned() {
+                {genre_chip(&genre, q, &q_lower)}
             }
         }
     }
@@ -565,7 +681,7 @@ fn summary_line(r: &PaletteResults) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use omnibus_shared::{PaletteAuthorHit, PaletteBookHit, PaletteResults};
+    use omnibus_shared::{PaletteAuthorHit, PaletteBookHit, PaletteResults, PaletteTagHit};
 
     #[test]
     fn total_count_sums_per_category_totals_not_capped_lengths() {
@@ -631,6 +747,77 @@ mod tests {
             summary_line(&r),
             "1 author \u{00b7} 1 tag \u{00b7} fts5 \u{00b7} 3ms"
         );
+    }
+
+    fn tag(id: i64, name: &str) -> PaletteTagHit {
+        PaletteTagHit {
+            id,
+            name: name.to_string(),
+            book_count: 1,
+        }
+    }
+
+    #[test]
+    fn cut_note_speaks_only_when_an_opened_section_still_holds_back_hits() {
+        let whole = PaletteResults {
+            tags: (0..20).map(|i| tag(i, "fiction")).collect(),
+            tag_total: 20,
+            ..Default::default()
+        };
+        assert_eq!(cut_note(Section::Tags, &whole), None);
+
+        let clamped = PaletteResults {
+            tags: (0..3).map(|i| tag(i, "fiction")).collect(),
+            tag_total: 812,
+            ..Default::default()
+        };
+        let note = cut_note(Section::Tags, &clamped).unwrap();
+        assert!(note.starts_with("Showing the first 3 of 812"), "{note}");
+    }
+
+    #[cfg(feature = "server")]
+    mod render_tests {
+        use super::*;
+        use crate::test_support::render_in_vdom;
+        use dioxus_router::{Routable, Router};
+
+        #[derive(Clone, Debug, PartialEq, Routable)]
+        enum ResultsRoute {
+            #[route("/")]
+            ResultsHost {},
+        }
+
+        #[component]
+        fn ResultsHost() -> Element {
+            // The palette's preview: five of twenty tags, and two authors
+            // that are the whole of their section.
+            let results = PaletteResults {
+                query: "fiction".into(),
+                tags: (0..5).map(|i| tag(i, &format!("fiction {i}"))).collect(),
+                tag_total: 20,
+                authors: (1..=2)
+                    .map(|id| PaletteAuthorHit {
+                        id,
+                        name: format!("Author {id}"),
+                        ..Default::default()
+                    })
+                    .collect(),
+                author_total: 2,
+                ..Default::default()
+            };
+            rsx! { SearchResults { results, query: "fiction".to_string() } }
+        }
+
+        #[test]
+        fn a_section_holding_back_hits_offers_a_show_all_that_names_the_count() {
+            let html = render_in_vdom(|| rsx! { Router::<ResultsRoute> {} });
+            assert_eq!(html.matches("search-tag-row").count(), 5, "{html}");
+            assert!(html.contains("search-show-all-results-tags"), "{html}");
+            assert!(html.contains("Show all 20"), "{html}");
+            assert!(html.contains(r#"aria-expanded="false""#), "{html}");
+            // A section already whole has nothing to reach.
+            assert!(!html.contains("search-show-all-results-authors"), "{html}");
+        }
     }
 
     #[cfg(feature = "server")]

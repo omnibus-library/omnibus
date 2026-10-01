@@ -4,8 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A physical copy of a book, owned library-wide (shared by all users like a
-/// digital file). A book can have many; each is individually deletable.
+/// A physical copy of a book, seen library-wide (shared by all users like a
+/// digital file) but changed only by the reader who filed it — see
+/// [`Self::can_change`]. A book can have many; each is individually deletable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PhysicalCopy {
@@ -15,6 +16,10 @@ pub struct PhysicalCopy {
     pub isbn: Option<String>,
     /// User who checked the copy in; `None` if that account was later deleted.
     pub added_by_user_id: Option<i64>,
+    /// That user's display name (username when unset), for "checked in by".
+    /// `None` when the account is gone or on a payload a client built itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_by_name: Option<String>,
     pub checked_in_at: i64,
     /// [`Self::checked_in_at`] rendered as ISO 8601 UTC. When the copy was checked in.
     ///
@@ -35,6 +40,14 @@ impl PhysicalCopy {
     pub fn with_iso(mut self) -> Self {
         self.checked_in_at_iso = Some(crate::to_iso8601(self.checked_in_at));
         self
+    }
+
+    /// Whether `viewer` may edit this copy's note or remove it: the reader who
+    /// filed it, or an admin — the shelf rule. Removal is destructive and the
+    /// copy is the filer's record, so `can_edit` alone does not reach it; a
+    /// copy whose filer's account is gone is admin-only.
+    pub fn can_change(&self, viewer_id: i64, is_admin: bool) -> bool {
+        is_admin || self.added_by_user_id == Some(viewer_id)
     }
 }
 

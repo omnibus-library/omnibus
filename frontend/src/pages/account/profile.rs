@@ -57,6 +57,19 @@ fn refresh_current_user(mut current_user: Signal<Option<Option<UserSummary>>>) {
     });
 }
 
+/// Report a profile write on the card's one status line, so every save —
+/// name or picture — confirms the same way.
+fn report_profile_saved(mut signals: ProfileSignals, message: &str) {
+    signals.msg.set(Some(message.to_string()));
+    signals.msg_is_error.set(false);
+}
+
+/// Drop the status line's last report, so an earlier save's confirmation
+/// never passes for the write now in flight.
+fn clear_profile_status(mut signals: ProfileSignals) {
+    signals.msg.set(None);
+}
+
 /// Submit handler for the display-name save form. Mirrors
 /// `kindle_save_handler`'s shape in `account.rs`.
 fn profile_save_handler(
@@ -70,11 +83,11 @@ fn profile_save_handler(
         let value = (!trimmed.is_empty()).then_some(trimmed);
         let url = server_url.clone();
         signals.in_flight.set(true);
+        clear_profile_status(signals);
         spawn(async move {
             match data::set_display_name(&url, value).await {
                 Ok(()) => {
-                    signals.msg.set(Some("Profile saved.".to_string()));
-                    signals.msg_is_error.set(false);
+                    report_profile_saved(signals, "Profile saved.");
                     refresh_current_user(current_user);
                 }
                 Err(e) => {
@@ -97,7 +110,10 @@ fn profile_avatar_upload_handler(
     use_file_upload(
         signals.uploading,
         signals.upload_error,
-        |_| None,
+        move |_| {
+            clear_profile_status(signals);
+            None
+        },
         move |filename, mime, bytes| {
             let url = server_url.clone();
             async move { data::upload_avatar(&url, filename, mime, bytes).await }
@@ -107,6 +123,7 @@ fn profile_avatar_upload_handler(
             // copy bumps the same counter from this `Fn` closure.
             let mut bust = bust;
             bust += 1;
+            report_profile_saved(signals, "Profile picture saved.");
             refresh_current_user(current_user);
         },
     )
@@ -123,11 +140,13 @@ fn profile_avatar_remove_handler(
         let url = server_url.clone();
         let mut bust = bust;
         signals.uploading.set(true);
+        clear_profile_status(signals);
         spawn(async move {
             match data::delete_avatar(&url).await {
                 Ok(()) => {
                     signals.upload_error.set(None);
                     bust += 1;
+                    report_profile_saved(signals, "Profile picture removed.");
                     refresh_current_user(current_user);
                 }
                 Err(e) => signals

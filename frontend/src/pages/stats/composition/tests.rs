@@ -86,6 +86,17 @@ fn ghosted_note_is_absent_when_every_book_still_has_its_files() {
 }
 
 #[test]
+fn ghosted_note_fits_a_book_that_never_had_files() {
+    // A paper-only check-in or a wishlist entry is counted here too, and it
+    // never had files to lose.
+    let note = ghosted_note(8).unwrap();
+    assert!(note.starts_with("8 books excluded"), "{note}");
+    assert!(note.contains("no files on disk"), "{note}");
+    assert!(!note.contains("indexed once"), "{note}");
+    assert!(!note.contains(" now"), "{note}");
+}
+
+#[test]
 fn build_panels_gives_the_genre_panel_a_coverage_line_that_names_it_hand_assigned() {
     let panels = build_panels(&full());
 

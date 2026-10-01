@@ -116,6 +116,14 @@ pub(super) enum UploadError {
         context: &'static str,
         detail: String,
     },
+    /// The file was placed but never became a book → 500. `stored` says
+    /// whether it is still in the library, which is what tells the client
+    /// to upload again or to wait for a scan instead.
+    NotIndexed {
+        stored: bool,
+        context: &'static str,
+        detail: String,
+    },
 }
 
 impl UploadError {
@@ -236,9 +244,30 @@ impl IntoResponse for UploadError {
                 tracing::error!(error = %detail, context = context, "internal server error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response()
             }
+            UploadError::NotIndexed {
+                stored,
+                context,
+                detail,
+            } => {
+                tracing::error!(error = %detail, context, stored, "upload was not indexed");
+                let msg = if stored {
+                    NOT_INDEXED_STORED
+                } else {
+                    NOT_INDEXED_DISCARDED
+                };
+                (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
+            }
         }
     }
 }
+
+/// [`UploadError::NotIndexed`] when the file is still in the library.
+const NOT_INDEXED_STORED: &str = "The file was saved to the library but could not be \
+     added as a book. The next library scan will pick it up, so there is no need to upload it again.";
+
+/// [`UploadError::NotIndexed`] when the file was taken back out.
+const NOT_INDEXED_DISCARDED: &str =
+    "The book could not be added to the library, and the file was not kept. Try the upload again.";
 
 /// 403 unless the user may upload (`can_upload` or admin). Mirrors the
 /// `can_edit` gate in [`super::overrides`].
@@ -569,16 +598,12 @@ pub(super) async fn post_upload_ebook(
     let root_path = PathBuf::from(&root);
     let dest = library_layout::allocate_canonical_path(&root_path, &author, &title, ext)
         .map_err(|e| UploadError::internal("allocate_canonical_path", e))?;
-    copy_uploaded_ebook_to_library(&dest, tmp).await?;
+    copy_uploaded_ebook_to_library(&root_path, &dest, tmp).await?;
 
-    let uuid = match reindex_and_resolve_uploaded_uuid(&state, &root, &root_path, &dest).await {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            // Don't strand a file whose scan or lookup failed.
-            let _ = tokio::fs::remove_file(&dest).await;
-            return Err(e);
-        }
+    let scan = || Task::Scan {
+        library_path: root.clone(),
     };
+    let uuid = reindex_and_resolve_uploaded_uuid(&state, scan, &root, &root_path, &dest).await?;
 
     // Make the displayed metadata match what the user confirmed. A failure
     // here undoes the book: the client sees an error, so nothing may stay.
@@ -595,7 +620,7 @@ pub(super) async fn post_upload_ebook(
     .await;
     if let Err(e) = finished {
         review::rollback_uploaded_file(&state, &uuid, &scan_key).await;
-        let _ = tokio::fs::remove_file(&dest).await;
+        discard_placed(&root_path, &dest).await;
         return Err(e);
     }
 
@@ -603,20 +628,26 @@ pub(super) async fn post_upload_ebook(
 }
 
 /// Copy the streamed-to-tempfile upload (EPUB or PDF) to its final canonical `dest`,
-/// creating parent directories as needed. The tempfile is deleted as a side
-/// effect of `tmp` dropping once the blocking closure returns.
+/// creating parent directories as needed; a copy that fails partway is taken
+/// back out. The tempfile is deleted as a side effect of `tmp` dropping once
+/// the blocking closure returns.
 async fn copy_uploaded_ebook_to_library(
+    root: &Path,
     dest: &Path,
     tmp: tempfile::NamedTempFile,
 ) -> Result<(), UploadError> {
+    let root = root.to_path_buf();
     let dest_for_copy = dest.to_path_buf();
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        if let Some(parent) = dest_for_copy.parent() {
-            std::fs::create_dir_all(parent)?;
+        let copied = dest_for_copy
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::copy(tmp.path(), &dest_for_copy).map(|_| ()));
+        if copied.is_err() {
+            discard_placed_blocking(&root, &dest_for_copy);
         }
-        std::fs::copy(tmp.path(), &dest_for_copy).map(|_| ())?;
         // tmp drops here, deleting the upload tempfile.
-        Ok(())
+        copied
     })
     .await
     .map_err(|e| UploadError::internal("spawn_blocking(file ebook)", e))?
@@ -629,32 +660,88 @@ async fn copy_uploaded_ebook_to_library(
     })
 }
 
-/// Reindex the library so the indexer mints the uuid, extracts the cover,
-/// and updates FTS — the single source of truth for inserting books — then
-/// map the just-placed file back to its row via the durable scan_key.
+/// Run `scan` so the indexer mints the uuid, extracts the cover, and updates
+/// FTS — the single source of truth for inserting books — then map the
+/// upload placed at `placed` back to its row via the durable scan_key.
+///
+/// On failure the upload is taken back out ([`UploadError::NotIndexed`]).
+/// When the scan ran but the file resolved to no book, what the scan recorded
+/// for it is unknown, so `scan` is queued once more to settle it: nothing may
+/// go on claiming a file that is gone.
 async fn reindex_and_resolve_uploaded_uuid(
     state: &AppState,
+    scan: impl Fn() -> Task,
     root: &str,
     root_path: &Path,
-    dest: &Path,
+    placed: &Path,
 ) -> Result<String, UploadError> {
-    let task_id = state.worker.post(Task::Scan {
-        library_path: root.to_string(),
-    });
+    let task_id = state.worker.post(scan());
     if let TaskOutcome::Err(e) = state.worker.await_completion(task_id).await {
-        return Err(UploadError::internal("reindex after upload", e));
+        return Err(abandon_placed(root_path, placed, "reindex after upload", e).await);
     }
 
-    let scan_key = scan_key_of(root_path, dest);
-    db::get_book_uuid_by_scan_key(&state.pool, root, &scan_key)
+    let scan_key = scan_key_of(root_path, placed);
+    let detail = match db::get_book_uuid_by_scan_key(&state.pool, root, &scan_key).await {
+        Ok(Some(uuid)) => return Ok(uuid),
+        Ok(None) => "reindex did not surface the uploaded file".to_string(),
+        Err(e) => e.to_string(),
+    };
+    let err = abandon_placed(root_path, placed, "resolve uploaded book", detail).await;
+    state.worker.post(scan());
+    Err(err)
+}
+
+/// Remove an upload placed at `path` — a file, or a folder of parts — and
+/// every directory that leaves empty, up to but never including `root`, so a
+/// retry is filed where this attempt meant to be. Returns whether the upload
+/// is gone from the library. Blocking.
+fn discard_placed_blocking(root: &Path, path: &Path) -> bool {
+    let removed = if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+    let gone = match removed {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(e) => {
+            tracing::error!(error = %e, path = %path.display(), "upload: could not remove the placed file");
+            false
+        }
+    };
+    let mut dir = path.parent();
+    while let Some(d) = dir.filter(|d| d.starts_with(root) && *d != root) {
+        // A folder something else still occupies ends the walk.
+        if std::fs::remove_dir(d).is_err() {
+            break;
+        }
+        dir = d.parent();
+    }
+    gone
+}
+
+/// [`discard_placed_blocking`] off the async runtime.
+async fn discard_placed(root: &Path, path: &Path) -> bool {
+    let (root, path) = (root.to_path_buf(), path.to_path_buf());
+    let probe = path.clone();
+    tokio::task::spawn_blocking(move || discard_placed_blocking(&root, &path))
         .await
-        .map_err(|e| UploadError::internal("get_book_uuid_by_scan_key", e))?
-        .ok_or_else(|| {
-            UploadError::internal(
-                "resolve uploaded book",
-                "reindex did not surface the uploaded file",
-            )
-        })
+        .unwrap_or_else(|_| !probe.exists())
+}
+
+/// Take back out a placed upload that never became a book, reporting
+/// whether it is gone.
+async fn abandon_placed(
+    root: &Path,
+    path: &Path,
+    context: &'static str,
+    detail: impl std::fmt::Display,
+) -> UploadError {
+    UploadError::NotIndexed {
+        stored: !discard_placed(root, path).await,
+        context,
+        detail: detail.to_string(),
+    }
 }
 
 /// Library-relative path of `dest` under `root_path` — the durable scan_key

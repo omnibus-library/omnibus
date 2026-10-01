@@ -1,5 +1,9 @@
 import { expect, test } from "../fixtures/test";
 import { gotoReady } from "../utils/nav";
+import { logInThroughUi, provisionUser } from "../utils/users";
+
+const READER = "e2e_sheet_no_upload";
+const READER_PASSWORD = "sheet-reader-pw-0001";
 
 // The bottom tab bar (and its raised center action) only renders below the
 // phone breakpoint, so this whole flow runs at a phone viewport. The bar is
@@ -67,6 +71,35 @@ test.describe("add-books sheet (phone viewport)", () => {
     await expect(page).toHaveURL(/\/add-books$/);
     await expect(page.getByTestId("add-books-file-input")).toBeAttached();
     await expect(page.getByTestId("add-books-sheet")).toHaveCount(0);
+  });
+
+  test("a reader who may not upload is offered it at neither width", async ({
+    browser,
+    request,
+  }) => {
+    await provisionUser(request, READER, READER_PASSWORD);
+    const context = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+      viewport: { width: 375, height: 812 },
+    });
+    const page = await context.newPage();
+    try {
+      await logInThroughUi(page, READER, READER_PASSWORD);
+
+      // Checking in a physical copy needs no permission, so the sheet stays.
+      await page.getByTestId("tabbar-scan").click();
+      const rows = page.getByTestId("add-books-row");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0)).toContainText("Scan a barcode");
+      await expect(rows.nth(1)).toContainText("Enter an ISBN");
+      await expect(page.getByText("Upload a file")).toHaveCount(0);
+
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await expect(page.getByTestId("check-in-button")).toBeVisible();
+      await expect(page.getByTestId("add-books-button")).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
   });
 
   test("scrim click dismisses the sheet without navigating", async ({

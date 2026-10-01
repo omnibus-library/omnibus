@@ -232,3 +232,36 @@ async fn api_bookmark_user_isolation() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn api_post_bookmark_keeps_the_devices_client_created_at() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let made = 1_700_000_000;
+    let body = serde_json::json!({
+        "book_uuid": uuid,
+        "position": "12.5",
+        "title": null,
+        "client_created_at": made,
+    });
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/bookmarks")
+                .method("POST")
+                .header("content-type", "application/json")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let b: Bookmark = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(b.created_at, made);
+}

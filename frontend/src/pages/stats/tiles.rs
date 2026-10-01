@@ -187,7 +187,7 @@ fn duration_value(secs: i64) -> (String, &'static str) {
 /// One-decimal star mean, or the em-dash empty state — never NaN or 0.0.
 /// Rounds half away from zero (explicit `round`) so a quarter-step mean like
 /// 4.25 shows as 4.3, not the 4.2 that `{:.1}`'s round-half-to-even yields.
-fn avg_stars_value(avg: Option<f64>) -> String {
+pub(super) fn avg_stars_value(avg: Option<f64>) -> String {
     match avg {
         Some(stars) => format!("{:.1}", (stars * 10.0).round() / 10.0),
         None => "\u{2014}".to_string(),

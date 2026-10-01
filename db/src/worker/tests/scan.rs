@@ -137,8 +137,12 @@ async fn task_scan_posts_backfill_thumbs_that_pregenerates_all_sizes_for_a_cover
         .await
         .expect("alpha.epub has an embedded cover, so the scan sets has_cover = 1");
 
+    let epoch = crate::covers::get_last_modified_epoch(&w.pool, book_id)
+        .await
+        .unwrap()
+        .unwrap();
     for size in crate::thumbs::ThumbSize::all() {
-        let path = crate::thumbs::thumb_path_for(book_id, size);
+        let path = crate::thumbs::thumb_path_for(book_id, size, epoch);
         assert!(
             path.exists(),
             "expected a pre-generated {size} thumbnail at {path:?}"
@@ -147,11 +151,10 @@ async fn task_scan_posts_backfill_thumbs_that_pregenerates_all_sizes_for_a_cover
 }
 
 /// [`crate::indexer::backfill_thumbs`] (via `Task::BackfillThumbs`) skips a
-/// book whose three thumbnail sizes are already fresher than its
-/// `last_modified` — the already-caught-up case a re-scan of an unchanged
-/// library hits on every book (AC3). Seeds fresh sentinel thumbnail bytes
-/// that a real encode would never produce, so any re-encoding shows up as a
-/// changed file rather than relying on mtime granularity.
+/// book whose three thumbnail sizes already exist for its `last_modified` —
+/// the already-caught-up case a re-scan of an unchanged library hits on every
+/// book (AC3). Seeds sentinel thumbnail bytes that a real encode would never
+/// produce, so any re-encoding shows up as a changed file.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn task_backfill_thumbs_skips_a_book_whose_thumbnails_are_already_fresh() {
     let thumbs_dir = tempfile::tempdir().unwrap();
@@ -168,8 +171,7 @@ async fn task_backfill_thumbs_skips_a_book_whose_thumbnails_are_already_fresh() 
     .fetch_one(&pool)
     .await
     .unwrap();
-    // `last_modified` far in the past so any thumbnail written just now is
-    // unambiguously fresher than it, regardless of clock resolution.
+    // `last_modified = 1`: the epoch the sentinel thumbnails below are named for.
     let book_id: i64 = sqlx::query_scalar(
         "INSERT INTO books (uuid, scan_key, library_id, path, title, sort, has_cover, last_modified) \
          VALUES ('uuid-fresh', 'fresh.epub', ?, '', 'Fresh', 'Fresh', 1, 1) RETURNING id",
@@ -191,7 +193,7 @@ async fn task_backfill_thumbs_skips_a_book_whose_thumbnails_are_already_fresh() 
     // paths `backfill_thumbs` would touch if it decided to re-encode.
     let sentinel = b"not-a-real-webp-sentinel".to_vec();
     for size in crate::thumbs::ThumbSize::all() {
-        std::fs::write(crate::thumbs::thumb_path_for(book_id, size), &sentinel).unwrap();
+        std::fs::write(crate::thumbs::thumb_path_for(book_id, size, 1), &sentinel).unwrap();
     }
 
     let w = make_worker_default(pool);
@@ -202,7 +204,7 @@ async fn task_backfill_thumbs_skips_a_book_whose_thumbnails_are_already_fresh() 
     }
 
     for size in crate::thumbs::ThumbSize::all() {
-        let on_disk = std::fs::read(crate::thumbs::thumb_path_for(book_id, size)).unwrap();
+        let on_disk = std::fs::read(crate::thumbs::thumb_path_for(book_id, size, 1)).unwrap();
         assert_eq!(
             on_disk, sentinel,
             "already-fresh thumbnail for size {size} was re-encoded"

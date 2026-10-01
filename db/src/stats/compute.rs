@@ -16,7 +16,8 @@ use omnibus_shared::{
 use sqlx::{Row, SqlitePool};
 
 use crate::metadata_overrides::sql::{
-    effective_text_sql, override_join_sql, override_sql, overrides_win_sql,
+    effective_text_sql, effective_value_sql, override_join_sql, override_present_sql,
+    overrides_win_sql,
 };
 
 use super::{
@@ -494,7 +495,11 @@ pub(super) async fn finished_books(
          GROUP BY b.uuid
          ORDER BY finished_at DESC
          LIMIT ?",
-        effective_text_sql!("$.title"; "COALESCE(b.title, 'Untitled')"),
+        concat!(
+            "COALESCE(",
+            effective_value_sql!("$.title"; "b.title"),
+            ", 'Untitled') COLLATE NOCASE"
+        ),
         effective_text_sql!("$.creators[0].name"; "a.name"),
         override_join_sql!()
     );

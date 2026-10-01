@@ -315,6 +315,7 @@ struct LibraryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var presentation = Presentation.shared
     private var connectivity = Connectivity.shared
+    private var invalidations = ReplicaInvalidations.shared
 
     // `alignment: .top` matters here: GridItem defaults to centering each
     // item within its row, so a row of `BookGridCell`s whose captions wrap to
@@ -407,6 +408,14 @@ struct LibraryView: View {
         // closing one neither re-runs `task` nor re-appears this view.
         .onChange(of: presentation.progressToken) { _, _ in
             Task { await model.refreshResume() }
+        }
+        // A write made on another screen — a book marked finished, a shelf
+        // deleted or refilled — moves what the rails already painted.
+        .onChange(of: invalidations.generation(of: CacheKey.recentProgress)) { _, _ in
+            Task { await model.refreshResume() }
+        }
+        .onChange(of: invalidations.generation(of: CacheKey.shelfPreviews)) { _, _ in
+            Task { await model.refreshShelves() }
         }
     }
 

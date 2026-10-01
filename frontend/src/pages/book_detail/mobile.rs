@@ -17,8 +17,8 @@ use crate::components::{FetchSummaryButton, Loading, LoadingKind};
 use crate::{data, Route};
 
 use super::discovery::{
-    cover_src, list_count_label, same_hand_author_label, same_hand_title, same_hand_year,
-    suggestion_cover_book,
+    cover_src, list_count_label, same_hand_author_label, same_hand_empty_note, same_hand_title,
+    same_hand_year, suggestion_cover_book,
 };
 use super::file_picker::{
     is_audio_book_file, is_readable_book_file, BdFilePickerMenu, FilePickerChrome, FilePickerKind,
@@ -160,7 +160,7 @@ pub(super) fn render_loaded_mobile(view: MobileBookView) -> Element {
             }
 
             // Discovery — other books by the author, then Hardcover read-alikes.
-            {same_hand_section(&primary_author, author_id, author_books.as_deref(), &server_url)}
+            {same_hand_section(&primary_author, author_id, author_books.as_deref(), &uuid, &server_url)}
             {suggestions_section(&title, &suggestions, is_admin, &server_url)}
 
             div { class: "m-bd-footer",
@@ -416,26 +416,32 @@ fn info_sections(uuid: &str, b: &EbookMetadata, series: &Option<String>) -> Elem
 
 /// "From the same hand" — other books by the primary author as a horizontal
 /// cover strip, or a short note when the library holds no others.
+/// `author_books` is every book the author page credits them with.
 fn same_hand_section(
     primary_author: &str,
     author_id: Option<i64>,
     author_books: Option<&[EbookMetadata]>,
+    current_uuid: &str,
     server_url: &str,
 ) -> Element {
     let author_route = author_id.map(|id| Route::AuthorDetail { id });
-    // Only books with a real uuid can be linked; drop the rest so a tile never
-    // emits a `/books/` route or an empty-uuid thumbnail URL. `None` is the
-    // unsettled fetch, which states nothing at all rather than the empty
-    // list's "this is the only book by them" (#2478).
+    // The other books, linkable ones only, so a tile never emits a `/books/`
+    // route or an empty-uuid thumbnail URL. `None` is the unsettled fetch,
+    // which states nothing at all rather than the empty note (#2478).
     let linkable: Option<Vec<&EbookMetadata>> = author_books.map(|books| {
         books
             .iter()
             .filter(|ab| {
                 ab.unique_identifier
                     .as_deref()
-                    .is_some_and(|u| !u.is_empty())
+                    .is_some_and(|u| !u.is_empty() && u != current_uuid)
             })
             .collect()
+    });
+    let this_counts = author_books.is_some_and(|books| {
+        books
+            .iter()
+            .any(|ab| ab.unique_identifier.as_deref() == Some(current_uuid))
     });
     rsx! {
         section { class: "m-section", "data-testid": "mobile-from-same-hand",
@@ -454,7 +460,7 @@ fn same_hand_section(
                 }
             } else if linkable.as_ref().is_some_and(Vec::is_empty) {
                 p { class: "m-strip-note",
-                    "This is the only book by {same_hand_author_label(primary_author)} in your library so far."
+                    {same_hand_empty_note(&same_hand_author_label(primary_author), this_counts)}
                 }
             } else {
                 div { class: "m-strip",

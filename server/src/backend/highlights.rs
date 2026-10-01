@@ -11,19 +11,26 @@ use axum::{
 use omnibus_db::{self as db, annotations::HighlightError};
 use omnibus_shared::{CreateHighlight, HighlightColor, UpdateHighlightNote};
 
-use super::{internal, AnnotationOrderQuery, AppState};
+use super::{internal, AnnotationOrderQuery, AppState, ClientStamped};
 use crate::auth::AuthUser;
 
 /// Create a highlight annotation on a book.
 pub(super) async fn post_highlight(
     user: AuthUser,
     State(state): State<AppState>,
-    Json(input): Json<CreateHighlight>,
+    Json(stamped): Json<ClientStamped<CreateHighlight>>,
 ) -> Response {
-    if let Err(msg) = input.validate() {
+    if let Err(msg) = stamped.body.validate().and(stamped.validate_stamp()) {
         return (axum::http::StatusCode::BAD_REQUEST, msg).into_response();
     }
-    match db::annotations::create_highlight(&state.pool, user.id, &input).await {
+    match db::annotations::create_highlight_at(
+        &state.pool,
+        user.id,
+        &stamped.body,
+        stamped.client_created_at,
+    )
+    .await
+    {
         Ok(h) => {
             // Kobo down-sync: convert the fresh row in the background so it
             // reaches the device on its next sync. The worker handle lets a

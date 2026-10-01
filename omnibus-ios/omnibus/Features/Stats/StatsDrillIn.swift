@@ -55,6 +55,11 @@ struct TrendBar: Identifiable, Equatable, Sendable {
     let label: String
     let title: String
     let fraction: Double
+    /// The figure printed on the column, so its height reads without a tap.
+    var value: String? = nil
+    /// Nothing was measured here: an empty slot, never a stub that reads as a
+    /// low value.
+    var isEmpty = false
 
     var id: Int { index }
 }
@@ -151,18 +156,75 @@ enum StatsDrill {
     /// The metric's trend series as bars, drawn from the fields already on the
     /// summary — no metric needs a fresh fetch to drill in.
     static func trendBars(for metric: DrillMetric, in summary: StatsSummary) -> [TrendBar] {
+        if metric == .avgRating { return ratingTrendBars(summary.ratingMonthly) }
         let points: [(label: String, value: Double)] =
             switch metric {
             case .finished:
                 summary.booksPerMonth.map { (shortMonth($0.month), Double($0.books)) }
             case .avgRating:
-                summary.ratingMonthly.map { (shortMonth($0.label), $0.value) }
+                []
             case .listening:
                 summary.listeningDaily.map { (shortDay($0.day), Double($0.seconds) / 60) }
             case .pages:
                 summary.pagesDetail.daily.map { (shortDay($0.label), $0.value) }
             }
         return bars(points)
+    }
+
+    /// The Avg rating trend: each month's mean with its figure on the bar, on
+    /// a fixed five-star scale so a bar's height *is* the rating rather than
+    /// its share of the best month. A month nobody rated is an empty slot.
+    /// Mirrors the web `build_rating_trend_bars`.
+    static func ratingTrendBars(_ points: [TrendPoint]) -> [TrendBar] {
+        points.enumerated().map { index, point in
+            let month = monthYear(point.label) ?? point.label
+            // A real mean is at least half a star; the server sends 0 for a
+            // month with no ratings.
+            let isEmpty = point.value <= 0
+            let value = isEmpty ? nil : starsValue(point.value)
+            return TrendBar(
+                index: index,
+                label: shortMonth(point.label),
+                title: value.map { "\(month) \u{00B7} \($0) \u{2605}" } ?? "\(month) \u{00B7} no ratings",
+                fraction: min(1, max(0, point.value / 5)),
+                value: value,
+                isEmpty: isEmpty
+            )
+        }
+    }
+
+    /// One-decimal star mean, rounded half away from zero like the web
+    /// `avg_stars_value` — `%.1f` alone would show 4.25 as 4.2.
+    static func starsValue(_ stars: Double) -> String {
+        String(format: "%.1f", (stars * 10).rounded() / 10)
+    }
+
+    /// The heading a metric's trend carries, when it needs one to be read:
+    /// the rating trend sits beside a histogram and covers a different period.
+    static func trendTitle(_ metric: DrillMetric) -> String? {
+        metric == .avgRating ? "Average rating by month" : nil
+    }
+
+    /// Which period the rating trend covers. It is the trailing twelve months
+    /// whatever the switcher says, while the delta and the histogram follow
+    /// it — so it names its span. Mirrors the web `rating_trend_caption`.
+    static func ratingTrendCaption(_ points: [TrendPoint]) -> String {
+        let tail = "last 12 months, whatever period is selected"
+        guard let first = points.first.flatMap({ monthYear($0.label) }),
+            let last = points.last.flatMap({ monthYear($0.label) })
+        else { return "The \(tail)" }
+        return "\(first) \u{2013} \(last) \u{00B7} the \(tail)"
+    }
+
+    /// Which period the rating histogram covers: the one the switcher
+    /// selected. Mirrors the web `histogram_caption`.
+    static func histogramCaption(_ range: StatsRange) -> String {
+        switch range {
+        case .week: "Rated this week"
+        case .month: "Rated this month"
+        case .year: "Rated this year"
+        case .allTime: "Rated at any time"
+        }
     }
 
     /// Normalize any label/value series into bar heights. The title defaults
@@ -180,9 +242,10 @@ enum StatsDrill {
         }
     }
 
-    /// The window's ratings as bars, one per half-star bucket, with the book
-    /// count in the title. Empty when the window carries no ratings at all, so
-    /// the caller renders its empty state rather than ten flat bars.
+    /// The window's ratings as bars, one per half-star bucket, each carrying
+    /// its book count. An empty bucket keeps its column as an empty slot. Empty
+    /// outright when the window carries no ratings at all, so the caller
+    /// renders its empty state rather than ten flat bars.
     static func histogramBars(_ buckets: [RatingBucket]) -> [TrendBar] {
         guard buckets.contains(where: { $0.books > 0 }) else { return [] }
         let base = bars(buckets.map { ($0.starLabel, Double($0.books)) })
@@ -191,18 +254,37 @@ enum StatsDrill {
                 index: bar.index,
                 label: bar.label,
                 title: "\(bar.label) \u{2605} \u{00B7} \(StatsFormat.counted(bucket.books, "book"))",
-                fraction: bar.fraction
+                fraction: bar.fraction,
+                value: bucket.books > 0 ? String(bucket.books) : nil,
+                isEmpty: bucket.books <= 0
             )
         }
     }
 
-    /// First letter of a `YYYY-MM` month, `?` when malformed.
+    private static let monthAbbreviations = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+
+    /// `(year, month)` of a `YYYY-MM` month, `nil` when malformed.
+    private static func yearMonth(_ month: String) -> (year: Int, month: Int)? {
+        let parts = month.split(separator: "-")
+        guard parts.count == 2, let year = Int(parts[0]), let index = Int(parts[1]),
+            (1...12).contains(index)
+        else { return nil }
+        return (year, index)
+    }
+
+    /// Three-letter name of a `YYYY-MM` month, `?` when malformed. Never an
+    /// initial: June and July would share "J" side by side.
     static func shortMonth(_ month: String) -> String {
-        let initials = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
-        guard let last = month.split(separator: "-").last,
-            let index = Int(last), (1...12).contains(index)
-        else { return "?" }
-        return initials[index - 1]
+        guard let parsed = yearMonth(month) else { return "?" }
+        return monthAbbreviations[parsed.month - 1]
+    }
+
+    /// "Oct 2025" for a `YYYY-MM` month, `nil` when malformed.
+    static func monthYear(_ month: String) -> String? {
+        guard let parsed = yearMonth(month) else { return nil }
+        return "\(monthAbbreviations[parsed.month - 1]) \(parsed.year)"
     }
 
     /// Day-of-month of a `YYYY-MM-DD` day, zero-padded, `?` when malformed.
@@ -389,7 +471,14 @@ struct StatsDrillInSheet: View {
     private var trend: some View {
         let bars = StatsDrill.trendBars(for: metric, in: summary)
         if !bars.isEmpty {
-            TrendStrip(bars: bars, accessibilityLabel: "\(metric.title) trend")
+            if let title = StatsDrill.trendTitle(metric) {
+                section(title) {
+                    quiet(StatsDrill.ratingTrendCaption(summary.ratingMonthly))
+                    TrendStrip(bars: bars, accessibilityLabel: title)
+                }
+            } else {
+                TrendStrip(bars: bars, accessibilityLabel: "\(metric.title) trend")
+            }
         }
     }
 
@@ -405,6 +494,7 @@ struct StatsDrillInSheet: View {
             quiet("No ratings in this window yet.")
         } else {
             section("Books at each rating") {
+                quiet(StatsDrill.histogramCaption(summary.range))
                 TrendStrip(bars: bars, accessibilityLabel: "Star rating distribution")
             }
         }
@@ -566,17 +656,38 @@ struct TrendStrip: View {
 
     var body: some View {
         let step = StatsDrill.labelStep(for: bars.count)
+        // Headroom above a full bar for the figure printed on it.
+        let barRoom = bars.contains { $0.value != nil } ? height - 12 : height
         HStack(alignment: .bottom, spacing: 3) {
             ForEach(bars) { bar in
                 VStack(spacing: 5) {
                     ZStack(alignment: .bottom) {
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(palette.bg2Color)
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(palette.accentColor)
-                            // A zero column keeps a hairline of ground so the
-                            // axis stays readable as a row of slots.
-                            .frame(height: max(2, height * bar.fraction))
+                        if bar.isEmpty {
+                            // Nothing measured: an outlined slot, so it can't
+                            // be read as a low value.
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .strokeBorder(
+                                    palette.ink3Color.opacity(0.5),
+                                    style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                        } else {
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .fill(palette.bg2Color)
+                            VStack(spacing: 2) {
+                                if let value = bar.value {
+                                    Text(value)
+                                        .font(.monoUI(8))
+                                        .foregroundStyle(palette.ink2Color)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.7)
+                                }
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(palette.accentColor)
+                                    // A zero column keeps a hairline of ground
+                                    // so the axis stays readable as a row of
+                                    // slots.
+                                    .frame(height: max(2, barRoom * bar.fraction))
+                            }
+                        }
                     }
                     .frame(height: height)
                     // Unlabelled columns keep the slot so every bar sits on

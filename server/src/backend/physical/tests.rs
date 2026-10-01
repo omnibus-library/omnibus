@@ -1,7 +1,7 @@
 //! Tests for the physical-collection REST handlers: copy reads/edits, the
-//! per-user wishlist entry, and fileless-book removal. Copies are library-wide,
-//! so the write paths are gated on `can_edit` — `create_user` has it off and
-//! `create_admin` has it on, which is what separates the 403s from the 200s.
+//! per-user wishlist entry, and fileless-book removal. A copy's writes are
+//! gated on ownership (its filer or an admin); fileless-book removal on
+//! `can_edit` — `create_user` has it off and `create_admin` has it on.
 
 use axum::{
     body::{to_bytes, Body},
@@ -36,6 +36,15 @@ async fn json_body<T: serde::de::DeserializeOwned>(res: axum::response::Response
 /// A fileless book with one physical copy — the physical-only shape book detail
 /// renders. Returns `(book uuid, copy id)`.
 async fn seed_physical_only(pool: &sqlx::SqlitePool, title: &str) -> (String, i64) {
+    seed_physical_only_filed_by(pool, title, None).await
+}
+
+/// [`seed_physical_only`], with the copy filed by `filer`.
+async fn seed_physical_only_filed_by(
+    pool: &sqlx::SqlitePool,
+    title: &str,
+    filer: Option<i64>,
+) -> (String, i64) {
     let uuid = db::create_fileless_book(
         pool,
         db::FilelessBook {
@@ -49,7 +58,7 @@ async fn seed_physical_only(pool: &sqlx::SqlitePool, title: &str) -> (String, i6
     )
     .await
     .expect("create_fileless_book");
-    let copy = db::add_physical_copy(pool, &uuid, None, None, Some("1st ed"))
+    let copy = db::add_physical_copy(pool, &uuid, None, filer, Some("1st ed"))
         .await
         .expect("add_physical_copy");
     (uuid, copy.id)
@@ -69,8 +78,8 @@ async fn api_get_physical_copies_requires_auth() {
 async fn api_get_physical_copies_returns_the_books_copies() {
     let _covers = CoversDirGuard::new("phys_list");
     let (app, _state, pool) = fixture().await;
-    let (uuid, copy_id) = seed_physical_only(&pool, "Paper Only").await;
     let user = auth_test_support::create_user(&pool, "reader").await;
+    let (uuid, copy_id) = seed_physical_only_filed_by(&pool, "Paper Only", Some(user.id)).await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
 
     let res = app
@@ -86,6 +95,7 @@ async fn api_get_physical_copies_returns_the_books_copies() {
     assert_eq!(copies.len(), 1);
     assert_eq!(copies[0].id, copy_id);
     assert_eq!(copies[0].note.as_deref(), Some("1st ed"));
+    assert_eq!(copies[0].added_by_name.as_deref(), Some("reader"));
 }
 
 #[tokio::test]
@@ -129,7 +139,30 @@ async fn api_patch_copy_note_updates_the_note() {
 }
 
 #[tokio::test]
-async fn api_patch_copy_note_rejects_a_user_without_edit_permission() {
+async fn api_patch_copy_note_lets_the_filer_change_it_without_edit_permission() {
+    let _covers = CoversDirGuard::new("phys_patch_filer");
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let (_uuid, copy_id) = seed_physical_only_filed_by(&pool, "Paper Only", Some(user.id)).await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(req(
+            "PATCH",
+            &format!("/api/physical/copies/{copy_id}"),
+            &token,
+            Some(serde_json::json!({ "note": "foxed edges" })),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let copy: PhysicalCopy = json_body(res).await;
+    assert_eq!(copy.note.as_deref(), Some("foxed edges"));
+}
+
+#[tokio::test]
+async fn api_patch_copy_note_rejects_a_reader_who_did_not_file_the_copy() {
     let _covers = CoversDirGuard::new("phys_patch_403");
     let (app, _state, pool) = fixture().await;
     let (_uuid, copy_id) = seed_physical_only(&pool, "Paper Only").await;
@@ -213,6 +246,57 @@ async fn api_delete_copy_removes_it() {
         .await
         .unwrap()
         .is_empty());
+}
+
+#[tokio::test]
+async fn api_delete_copy_lets_the_filer_remove_it() {
+    let _covers = CoversDirGuard::new("phys_del_filer");
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let (uuid, copy_id) = seed_physical_only_filed_by(&pool, "Paper Only", Some(user.id)).await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(req(
+            "DELETE",
+            &format!("/api/physical/copies/{copy_id}"),
+            &token,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    assert!(db::list_physical_copies(&pool, &uuid)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn api_delete_copy_rejects_a_reader_who_did_not_file_the_copy() {
+    let _covers = CoversDirGuard::new("phys_del_403");
+    let (app, _state, pool) = fixture().await;
+    let filer = auth_test_support::create_user(&pool, "filer").await;
+    let (uuid, copy_id) = seed_physical_only_filed_by(&pool, "Paper Only", Some(filer.id)).await;
+    let other = auth_test_support::create_user(&pool, "other").await;
+    let token = auth_test_support::bearer_token(&pool, other.id).await;
+
+    let res = app
+        .oneshot(req(
+            "DELETE",
+            &format!("/api/physical/copies/{copy_id}"),
+            &token,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        db::list_physical_copies(&pool, &uuid).await.unwrap().len(),
+        1
+    );
 }
 
 #[tokio::test]

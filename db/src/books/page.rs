@@ -11,7 +11,8 @@ use sqlx::{Row, SqlitePool};
 
 use crate::interaction::INTERACTED_AT_ISO;
 use crate::metadata_overrides::sql::{
-    creator_sort_sql, effective_author_sql, effective_text_sql, override_sql, overrides_win_sql,
+    creator_sort_sql, effective_author_sql, effective_text_sql, effective_value_sql,
+    override_present_sql, override_sql, overrides_win_sql,
 };
 
 use super::projection::{
@@ -306,9 +307,9 @@ pub(crate) fn axis_sort_columns(sort: SortKey) -> (&'static str, Option<&'static
         SortKey::Series => (
             effective_text_sql!("$.series"; "b.series_sort"; "dictionary"),
             Some(concat!(
-                "COALESCE(CAST(",
-                override_sql!("$.series_index"),
-                " AS REAL), b.series_index)"
+                "CAST(",
+                effective_value_sql!("$.series_index"; "b.series_index"),
+                " AS REAL)"
             )),
         ),
         SortKey::RecentlyInteracted => (INTERACTED_AT_ISO, None),

@@ -1,5 +1,5 @@
 //  DiscoveryViews.swift
-//  Authors index + detail, series index + detail, and the tag cloud.
+//  Authors index + detail, series index + detail, and the tag and genre clouds.
 
 import SwiftUI
 
@@ -10,7 +10,11 @@ struct AuthorsView: View {
     @State private var authors: [AuthorSummary] = []
     @State private var isLoading = true
     @State private var error: String?
-    @State private var query = ""
+    @State private var query: String
+
+    init(filter: String = "") {
+        _query = State(initialValue: filter)
+    }
 
     private var filtered: [AuthorSummary] {
         guard let needle = query.nilIfBlank?.lowercased() else { return authors }
@@ -297,7 +301,11 @@ struct SeriesIndexView: View {
     @Environment(\.palette) private var palette
     @State private var series: [SeriesSummary] = []
     @State private var isLoading = true
-    @State private var query = ""
+    @State private var query: String
+
+    init(filter: String = "") {
+        _query = State(initialValue: filter)
+    }
 
     private var filtered: [SeriesSummary] {
         let matched: [SeriesSummary]
@@ -489,12 +497,119 @@ struct SeriesDetailView: View {
     }
 }
 
-// MARK: - Tags
+// MARK: - Tags and genres
 
-struct TagCloudView: View {
-    @Environment(\.palette) private var palette
+/// The tag or genre vocabulary as a cloud, each name opening its books.
+struct TaxonomyCloudView: View {
+    let facet: SearchFacet
+
     @State private var tags: [TagWeight] = []
     @State private var isLoading = true
+    @State private var query = ""
+
+    private var filtered: [TagWeight] { Self.filtered(tags, by: query) }
+
+    /// The names containing `query`, case-insensitively.
+    nonisolated static func filtered(_ entries: [TagWeight], by query: String) -> [TagWeight] {
+        guard let needle = query.nilIfBlank?.lowercased() else { return entries }
+        return entries.filter { $0.name.lowercased().contains(needle) }
+    }
+
+    private var emptyCopy: (title: String, message: String, kicker: String) {
+        switch facet {
+        case .tag:
+            (
+                "No tags yet",
+                "Tags come from a book\u{2019}s own subjects, and from any you add on its detail page.",
+                "By tag"
+            )
+        case .genre:
+            (
+                "No genres yet",
+                "A book has a genre once you give it one on its detail page.",
+                "By genre"
+            )
+        }
+    }
+
+    var body: some View {
+        Group {
+            if isLoading {
+                LoadingView()
+            } else if tags.isEmpty {
+                EmptyStateView(
+                    icon: facet.glyph,
+                    title: emptyCopy.title,
+                    message: emptyCopy.message,
+                    kicker: emptyCopy.kicker
+                )
+            } else if filtered.isEmpty {
+                EmptyStateView(
+                    icon: "questionmark.circle",
+                    title: "No \(facet.plural.lowercased()) match",
+                    message: "Nothing in the library is filed under \u{201C}\(query)\u{201D}."
+                )
+            } else {
+                ScrollView {
+                    TaxonomyCloud(facet: facet, entries: filtered, scale: tags)
+                        .screenPadding()
+                        .padding(.vertical, Spacing.lg)
+                }
+            }
+        }
+        .background(ScreenBackground())
+        .navigationTitle(facet.plural)
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Filter \(facet.plural.lowercased())")
+        .task {
+            switch facet {
+            case .tag:
+                for await weights in LibraryService.tags().values() { show(weights) }
+            case .genre:
+                for await weights in LibraryService.genres().values() {
+                    show(weights.map { TagWeight(name: $0.name, count: $0.count) })
+                }
+            }
+            isLoading = false
+        }
+    }
+
+    private func show(_ weights: [TagWeight]) {
+        tags = weights.sorted { $0.count > $1.count }
+        isLoading = false
+    }
+}
+
+/// Tag or genre names as weighted chips, each opening its books.
+struct TaxonomyCloud: View {
+    let facet: SearchFacet
+    let entries: [TagWeight]
+    /// The set the type scale spans, so filtering doesn't resize what remains.
+    var scale: [TagWeight]?
+
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        FlowLayout(spacing: 8, lineSpacing: 10) {
+            ForEach(entries) { tag in
+                NavigationLink(value: facet.destination(tag.name)) {
+                    HStack(spacing: 5) {
+                        Text(tag.name)
+                            .font(.ui(fontSize(for: tag), weight: .medium))
+                        Text("\(tag.count)")
+                            .font(.monoUI(max(9, fontSize(for: tag) * 0.6)))
+                            .foregroundStyle(palette.ink3Color)
+                    }
+                    .foregroundStyle(palette.ink1Color)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(palette.bg1Color))
+                    .overlay(Capsule().strokeBorder(palette.line2.color, lineWidth: 0.5))
+                }
+                .buttonStyle(PressableStyle())
+            }
+        }
+    }
 
     /// Weight the type scale by count so the cloud reads as a cloud, with a
     /// floor and ceiling so nothing becomes unreadable or absurd.
@@ -504,58 +619,9 @@ struct TagCloudView: View {
     /// linear ramp across a 15pt range made a difference of three books look
     /// like a difference in kind — three headlines over a field of small print.
     private func fontSize(for tag: TagWeight) -> CGFloat {
-        let counts = tags.map(\.count)
+        let counts = (scale ?? entries).map(\.count)
         guard let low = counts.min(), let high = counts.max(), high > low else { return 16 }
         let t = Double(tag.count - low) / Double(high - low)
         return 13.5 + CGFloat(t.squareRoot()) * 9
-    }
-
-    var body: some View {
-        Group {
-            if isLoading {
-                LoadingView()
-            } else if tags.isEmpty {
-                EmptyStateView(
-                    icon: "tag",
-                    title: "No tags yet",
-                    message: "Tags come from a book\u{2019}s own subjects, and from any you add on its detail page.",
-                    kicker: "By tag"
-                )
-            } else {
-                ScrollView {
-                    FlowLayout(spacing: 8, lineSpacing: 10) {
-                        ForEach(tags) { tag in
-                            NavigationLink(value: Destination.tag(name: tag.name)) {
-                                HStack(spacing: 5) {
-                                    Text(tag.name)
-                                        .font(.ui(fontSize(for: tag), weight: .medium))
-                                    Text("\(tag.count)")
-                                        .font(.monoUI(max(9, fontSize(for: tag) * 0.6)))
-                                        .foregroundStyle(palette.ink3Color)
-                                }
-                                .foregroundStyle(palette.ink1Color)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(palette.bg1Color))
-                                .overlay(Capsule().strokeBorder(palette.line2.color, lineWidth: 0.5))
-                            }
-                            .buttonStyle(PressableStyle())
-                        }
-                    }
-                    .screenPadding()
-                    .padding(.vertical, Spacing.lg)
-                }
-            }
-        }
-        .background(ScreenBackground())
-        .navigationTitle("Tags")
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            for await weights in LibraryService.tags().values() {
-                tags = weights.sorted { $0.count > $1.count }
-                isLoading = false
-            }
-            isLoading = false
-        }
     }
 }

@@ -15,9 +15,10 @@ use super::cells::{
 };
 use super::{BookTableContext, EditField};
 
-/// One row in the power-user table for `book`.
+/// One row in the power-user table for `book`. `dates_ready` is
+/// [`crate::time::use_local_dates_ready`]'s answer, hoisted to the table.
 #[component]
-pub(super) fn EbookRow(book: EbookMetadata, ctx: BookTableContext) -> Element {
+pub(super) fn EbookRow(book: EbookMetadata, ctx: BookTableContext, dates_ready: bool) -> Element {
     let BookTableContext {
         server_url,
         is_admin,
@@ -41,7 +42,13 @@ pub(super) fn EbookRow(book: EbookMetadata, ctx: BookTableContext) -> Element {
     let save_genres = build_save_genres(uuid.clone(), server_url.clone(), book_state);
     let cover_bust =
         crate::contexts::cover_bust_for(crate::contexts::use_cover_cache_bust().0, &uuid);
-    let display = derive_row_display(&book_state.read(), &server_url, &uuid, cover_bust);
+    let display = derive_row_display(
+        &book_state.read(),
+        &server_url,
+        &uuid,
+        cover_bust,
+        dates_ready,
+    );
 
     let ctx = RowContext {
         is_admin,
@@ -174,12 +181,15 @@ struct RowDisplay {
 /// counter (0 = unchanged this session) — `/api/thumbs/*` is cached
 /// `private, max-age=86400`, so without it the table would keep showing a
 /// pre-edit thumbnail for the otherwise-unchanged URL after navigating back
-/// from a cover edit.
+/// from a cover edit. The two stored instants land on the reader's own day
+/// once `dates_ready`, as the detail page dates them (rule 10); `published`
+/// is a calendar date and is never shifted.
 fn derive_row_display(
     book: &EbookMetadata,
     server_url: &str,
     uuid: &str,
     cover_bust: u32,
+    dates_ready: bool,
 ) -> RowDisplay {
     let row_testid = format!("ebook-row-{}", row_ident(book));
     // Per-variant URLs (not a shared base) so mobile's `?token=` attaches to
@@ -205,8 +215,14 @@ fn derive_row_display(
         series_line,
         series_text: book.series.clone().unwrap_or_default(),
         authors_text: contributor_names(&book.creators),
-        updated: crate::format::format_date_short(book.modified.as_deref().unwrap_or("")),
-        added: crate::format::format_date_short(book.added_at.as_deref().unwrap_or("")),
+        updated: crate::format::format_reader_instant_short(
+            book.modified.as_deref().unwrap_or(""),
+            dates_ready,
+        ),
+        added: crate::format::format_reader_instant_short(
+            book.added_at.as_deref().unwrap_or(""),
+            dates_ready,
+        ),
         tags_text: book.subjects.join(", "),
         genres_text: book.genres.join(", "),
         published_display: crate::format::format_date_short(

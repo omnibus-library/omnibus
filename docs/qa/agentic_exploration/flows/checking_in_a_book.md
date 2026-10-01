@@ -55,13 +55,15 @@ the baseline corpus.
      three buttons, and it opens a **"Which book is this?"** library picker
      that files the copy against a book already in the library with no new
      row. Say what you find there; the path past its search is uncovered.
-   There is **no "On your wishlist" outcome on the web**. A book on your own
-   wishlist cannot currently be checked in at all — see #2505 — so do not
-   report its absence as a new finding.
+   - **On your wishlist** — the book is on your own wishlist. The same
+     "Check in this copy" confirm opens, saying so, and checking the copy in
+     takes it off your wishlist; the success screen names the book and says
+     the entry went.
 4. Confirm. Watch for the confirmation naming the right book.
 5. Open the book's detail page and confirm the physical copy is shown — on
    the web a **Physical copy** card under THE FILES reading "Physical copy /
-   Checked in N minutes ago / ISBN …". The phrase "In your physical
+   Checked in N minutes ago by you / ISBN …" — another reader's copy names
+   them instead of "you". The phrase "In your physical
    collection" is the *confirmation dialog's* heading and is not visible text
    on this page — it exists only as a `title` on the format badge and an
    `aria-label` on the physical pill, so do not hunt for it. On iOS, a
@@ -80,11 +82,10 @@ the baseline corpus.
    with Cancel / Move to wishlist / **Remove from library**, and removing it
    removes the book. Both are correct. iOS has no remove control, so the book
    stays; say so.
-   **Remove only a copy you filed yourself.** The guard asks the server who
-   filed a copy and refuses a note or removal on anyone else's with its
-   `ownership_guard` 403; the server itself does not check (#2509). If you are
-   offered the control on a copy you did not file, that is the finding:
-   report it and do not click.
+   **Remove only a copy you filed yourself.** The server refuses a note or
+   removal on anyone else's copy with a 403 (an admin excepted), and the card
+   offers neither control there. If you are offered the control on a copy you
+   did not file, that is the finding: report it and do not click.
 
 ## Journal
 

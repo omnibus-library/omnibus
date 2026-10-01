@@ -33,6 +33,7 @@ fn sample_structure() -> EpubStructure {
             href: "c2.xhtml".into(),
             spine_index: 1,
             start_chars: 40,
+            anchor_path: None,
         }],
     }
 }
@@ -66,6 +67,20 @@ async fn replace_structure_round_trips_and_is_idempotent() {
     assert_eq!(chapters.len(), 1);
     assert_eq!(chapters[0].title, "Chapter Two");
     assert_eq!(chapters[0].start_chars, 40);
+    assert_eq!(chapters[0].anchor_path, None);
+}
+
+#[tokio::test]
+async fn replace_structure_stores_a_chapter_anchor_path() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let file_id = seeded_file_id(&pool).await;
+    let mut structure = sample_structure();
+    structure.chapters[0].anchor_path = Some("/4/10/2".into());
+
+    replace_structure(&pool, file_id, &structure).await.unwrap();
+
+    let chapters = get_chapters(&pool, file_id).await.unwrap();
+    assert_eq!(chapters[0].anchor_path.as_deref(), Some("/4/10/2"));
 }
 
 #[tokio::test]
@@ -302,4 +317,65 @@ fn position_at_fraction_inverts_fraction_at() {
     // 1.0 clamps to the last visible char, never past the end.
     assert_eq!(position_at_fraction(&stats, 1.0), Some((1, 59)));
     assert_eq!(position_at_fraction(&[], 0.5), None);
+}
+
+/// Version of `0101_ebook_chapter_anchor_path.sql`.
+const ANCHOR_PATH_VERSION: i64 = 101;
+
+/// One connection migrated to just below [`ANCHOR_PATH_VERSION`], holding an
+/// EPUB with two chapters in one spine item, an EPUB with one per item, and a
+/// PDF with two outline entries on one page.
+async fn pool_before_anchor_paths() -> SqlitePool {
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < ANCHOR_PATH_VERSION) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+    sqlx::raw_sql(
+        "INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'Lib');
+         INSERT INTO books (id, uuid, scan_key, library_id, path, title)
+              VALUES (1, 'u1', 'a.epub', 1, '/lib/a', 'A');
+         INSERT INTO book_files (id, book_id, format, ordinal, filename, size_bytes, mtime_epoch)
+              VALUES (1, 1, 'EPUB', 0, 'shared', 1, 1), (2, 1, 'EPUB', 1, 'own', 1, 1),
+                     (3, 1, 'PDF', 0, 'pages', 1, 1);
+         INSERT INTO epub_spine_stats (book_file_id, spine_index)
+              VALUES (1, 0), (2, 0), (2, 1), (3, 0);
+         INSERT INTO ebook_chapters (book_file_id, ordinal, spine_index)
+              VALUES (1, 0, 0), (1, 1, 0), (2, 0, 0), (2, 1, 1), (3, 0, 0), (3, 1, 0);",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == ANCHOR_PATH_VERSION)
+        .expect("0101 must exist");
+    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    pool
+}
+
+#[tokio::test]
+async fn migration_0101_hands_only_shared_spine_epubs_back_to_the_backfill() {
+    let pool = pool_before_anchor_paths().await;
+    let rows = |table: &'static str, file: i64| {
+        let pool = pool.clone();
+        async move {
+            crate::test_support::count_rows(
+                &pool,
+                &format!("SELECT COUNT(*) FROM {table} WHERE book_file_id = {file}"),
+            )
+            .await
+        }
+    };
+    assert_eq!(rows("epub_spine_stats", 1).await, 0);
+    assert_eq!(rows("ebook_chapters", 1).await, 0);
+    assert_eq!(rows("epub_spine_stats", 2).await, 2);
+    assert_eq!(rows("ebook_chapters", 2).await, 2);
+    // A PDF's page-per-spine outline is untouched: its entries can't carry a fragment.
+    assert_eq!(rows("epub_spine_stats", 3).await, 1);
+    assert_eq!(rows("ebook_chapters", 3).await, 2);
 }
