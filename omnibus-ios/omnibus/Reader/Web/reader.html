@@ -88,6 +88,10 @@
       window.__omnibusOnToggleChrome = function () {
         send("toggleChrome", null);
       };
+      // A gutter tap while the host is curling: it draws the turn.
+      window.__omnibusOnTurnRequest = function (dir) {
+        send("turnRequest", dir);
+      };
       window.__omnibusOnShareText = function (text) {
         send("shareText", text);
       };

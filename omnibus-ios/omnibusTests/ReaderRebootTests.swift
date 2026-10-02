@@ -292,6 +292,16 @@ struct ReaderRebootTests {
         #expect(ReaderController.settingsScripts(from: wanted, to: wanted).isEmpty)
     }
 
+    /// The curl is drawn by the host, so switching to it is nothing the page
+    /// has to re-lay out for.
+    @Test("a sync sends nothing for the page turn")
+    func syncSendsNothingForThePageTurn() {
+        var curled = ReaderSettings()
+        curled.pageTurn = .curl
+
+        #expect(ReaderController.settingsScripts(from: ReaderSettings(), to: curled).isEmpty)
+    }
+
     @Test("a sync sends a named face as its stack and Original as null")
     func syncCarriesTheStackOrClearsIt() {
         var editorial = ReaderSettings()

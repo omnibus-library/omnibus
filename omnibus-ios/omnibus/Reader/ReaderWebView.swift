@@ -70,6 +70,19 @@ enum ReaderSpread: String, Codable, CaseIterable {
     }
 }
 
+/// How a page turn is drawn: the glue's own slide, or Books' curl, which
+/// `PageCurlHost` draws over the web view.
+enum ReaderPageTurn: String, Codable, CaseIterable {
+    case slide, curl
+
+    var label: String {
+        switch self {
+        case .slide: "Slide"
+        case .curl: "Curl"
+        }
+    }
+}
+
 /// The reader's typeface choice. `original` is the absence of an override —
 /// the publisher's embedded faces and the book's own CSS win — and the
 /// default, as in Apple Books. Mirrors `Typeface` in
@@ -126,11 +139,13 @@ struct ReaderSettings: Codable, Equatable {
     /// Matches epub.js's own default ("auto"), which is what a build predating
     /// the setting rendered.
     var spread: ReaderSpread = .double
+    /// Slide, the only turn a build predating the setting drew.
+    var pageTurn: ReaderPageTurn = .slide
 
     static let storageKey = "omnibus.readerSettings"
 
     enum CodingKeys: String, CodingKey {
-        case fontSize, lineHeight, margins, justify, theme, spread
+        case fontSize, lineHeight, margins, justify, theme, spread, pageTurn
         /// The JSON key is unchanged so an upgraded blob keeps its value; only
         /// what it holds changed, from a raw CSS stack to a token.
         case typeface = "fontFamily"
@@ -176,6 +191,7 @@ extension ReaderSettings {
         justify = container.value(.justify, or: justify)
         theme = container.value(.theme, or: theme)
         spread = container.value(.spread, or: spread)
+        pageTurn = container.value(.pageTurn, or: pageTurn)
     }
 }
 
@@ -369,11 +385,17 @@ final class ReaderController: NSObject {
     /// swallow the touches those depend on.
     private(set) var chromeToggleToken = 0
 
+    /// The curl drawn over the page, when the stage has one.
+    @ObservationIgnored weak var pageCurl: PageCurlHost?
+
     var settings: ReaderSettings {
         didSet {
             guard settings != oldValue else { return }
             settings.save()
             syncSettings()
+            pageCurl?.isEnabled = settings.pageTurn == .curl
+            // Any other setting repaints the page under the snapshots.
+            pageCurl?.pageChanged()
         }
     }
 
@@ -459,6 +481,9 @@ final class ReaderController: NSObject {
     func next() { run("OmnibusReader.next()") }
     func previous() { run("OmnibusReader.prev()") }
 
+    /// The glue's own animated turn, for when the curl can't draw one.
+    func slide(_ dir: Int) { run("OmnibusReader.turnSlide(\(dir))") }
+
     /// Whether a stored position is an EPUB CFI at all — the mirror of
     /// `omnibus_shared::is_epub_cfi`.
     static func isEpubCFI(_ anchor: String) -> Bool {
@@ -512,10 +537,12 @@ final class ReaderController: NSObject {
             "OmnibusReader.addAnnotation("
                 + "\(cfiRange.jsQuoted), \(color.rawValue.jsQuoted), \(hasNote))"
         )
+        pageCurl?.pageChanged()
     }
 
     func removeAnnotation(cfiRange: String) {
         run("OmnibusReader.removeAnnotation(\(cfiRange.jsQuoted))")
+        pageCurl?.pageChanged()
     }
 
     /// Reconcile the drawn annotations against `items`, touching only what
@@ -580,6 +607,7 @@ final class ReaderController: NSObject {
 
     func clearSelection() {
         selection = nil
+        pageCurl?.selectionCleared()
         // The range lives in the glue, so dropping our copy isn't enough —
         // left standing, the next tap on the page would only dismiss it.
         run("OmnibusReader.clearSelection()")
@@ -799,6 +827,7 @@ final class ReaderController: NSObject {
                 // which has the same repaint gap (#2193), but is at least the
                 // one path the reader already exercises.
                 syncSettings()
+                pageCurl?.pageChanged()
             case "error":
                 failed = true
             default:
@@ -817,6 +846,7 @@ final class ReaderController: NSObject {
                 holdsStoredPosition = false
             }
             location = decoded
+            pageCurl?.pageChanged(byRelocate: true)
             // Where a reboot of the page picks up. Relocates are muted until a
             // restore has settled, so this only ever moves to a position the
             // reader was actually shown. An echo (a rotation's corrected
@@ -856,6 +886,10 @@ final class ReaderController: NSObject {
 
         case "selectionCleared":
             selection = nil
+            pageCurl?.selectionCleared()
+
+        case "turnRequest":
+            if let dir = payload.flatMap({ Int($0) }), dir != 0 { pageCurl?.tapTurn(dir) }
 
         case "annotationTap":
             guard let payload, let data = payload.data(using: .utf8),
@@ -896,7 +930,7 @@ struct ReaderWebView: UIViewRepresentable {
         Coordinator(controller: controller, bookUUID: bookUUID)
     }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> ReaderStageView {
         let configuration = Self.makeConfiguration(coordinator: context.coordinator)
         let webView = AnnotatingWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
@@ -911,9 +945,16 @@ struct ReaderWebView: UIViewRepresentable {
 
         controller.webView = webView
 
-        guard let url = Self.entryURL else { return webView }
+        let curl = PageCurlHost()
+        curl.webView = webView
+        curl.controller = controller
+        curl.isEnabled = controller.settings.pageTurn == .curl
+        controller.pageCurl = curl
+        let stage = ReaderStageView(webView: webView, curl: curl)
+
+        guard let url = Self.entryURL else { return stage }
         webView.load(URLRequest(url: url))
-        return webView
+        return stage
     }
 
     /// The reader's web view configuration, with WebKit's own text interaction
@@ -941,10 +982,12 @@ struct ReaderWebView: UIViewRepresentable {
         makeConfiguration(schemeHandler: coordinator, messageHandler: coordinator)
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {}
+    func updateUIView(_ stage: ReaderStageView, context: Context) {}
 
-    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "omnibus")
+    static func dismantleUIView(_ stage: ReaderStageView, coordinator: Coordinator) {
+        stage.webView.configuration.userContentController.removeScriptMessageHandler(
+            forName: "omnibus"
+        )
     }
 
     static let scheme = "omnibus-reader"

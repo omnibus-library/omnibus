@@ -29,8 +29,9 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
   until `"ready"` — never on a timeout. The one exception is asserting an
   absence (no relocate reported movement), which needs a window.
 
-`tests/utils/ios_glue.ts` is that harness — `buildChapterEpub`, `openGlue`
-and the recorders — so a spec supplies only its chapter and its drive.
+`tests/utils/ios_glue.ts` is that harness — `buildChapterEpub` (further spine
+items via `chapters`, for anything that crosses a chapter), `openGlue` and the
+recorders — so a spec supplies only its chapters and its drive.
 
 The one-layout-test rule in 04 is for `tests/flows/`; a glue spec has no page
 of its own to lay out. It needs no server, but it runs under the suite's

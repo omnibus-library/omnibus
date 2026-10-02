@@ -58,13 +58,20 @@ export interface GlueWindow {
     beginSelectionAt(x: number, y: number): boolean;
     extendSelectionTo(x: number, y: number): void;
     endSelectionDrag(): void;
+    setCurlReady(on: boolean, next: boolean, prev: boolean): void;
+    neighbourKind(dir: number): "page" | "section" | "none";
+    whenSettled(): Promise<{ columns: number; next: string; prev: string }>;
+    peek(dir: number): Promise<boolean>;
+    turnInstant(dir: number): Promise<boolean>;
   };
   ePub: { CFI: new (cfi: string) => { toRange(doc: Document): Range } };
   __omnibusOnSelection: (json: string) => void;
   __omnibusOnStatus: (state: string) => void;
   __omnibusOnRelocate: (json: string) => void;
+  __omnibusOnTurnRequest: (dir: string) => void;
   glueSelections: SelectionPayload[];
   glueRelocates: RelocatePayload[];
+  glueTurnRequests: string[];
   glueStatus: string | null;
 }
 
@@ -73,6 +80,7 @@ export interface GlueWindow {
  * chapter's `<head>`; `files` are extra `OEBPS/`-relative resources, each
  * listed in the manifest under the given media type; `toc` is the nav's
  * `[label, href]` entries, one "One" entry for the chapter by default.
+ * `chapters` are the bodies of further spine items, `chapter2.xhtml` on.
  */
 export async function buildChapterEpub(
   body: string,
@@ -80,9 +88,15 @@ export async function buildChapterEpub(
     head?: string;
     files?: Record<string, { data: Buffer | string; mediaType: string }>;
     toc?: [string, string][];
+    chapters?: string[];
   } = {},
 ): Promise<Buffer> {
   const files = opts.files ?? {};
+  const more = (opts.chapters ?? []).map((chapterBody, i) => ({
+    id: `ch${i + 2}`,
+    href: `chapter${i + 2}.xhtml`,
+    body: chapterBody,
+  }));
   const toc = (opts.toc ?? [["One", "chapter.xhtml"]])
     .map(([label, href]) => `<li><a href="${href}">${label}</a></li>`)
     .join("");
@@ -114,9 +128,10 @@ export async function buildChapterEpub(
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
     <item id="ch1" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+    ${more.map((c) => `<item id="${c.id}" href="${c.href}" media-type="application/xhtml+xml"/>`).join("\n    ")}
     ${extra}
   </manifest>
-  <spine><itemref idref="ch1"/></spine>
+  <spine><itemref idref="ch1"/>${more.map((c) => `<itemref idref="${c.id}"/>`).join("")}</spine>
 </package>`,
   );
   zip.file(
@@ -135,6 +150,16 @@ export async function buildChapterEpub(
 <body>${body}</body>
 </html>`,
   );
+  for (const c of more) {
+    zip.file(
+      `OEBPS/${c.href}`,
+      `<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head><title>${c.id}</title></head>
+<body>${c.body}</body>
+</html>`,
+    );
+  }
   for (const [href, f] of Object.entries(files)) {
     zip.file(`OEBPS/${href}`, f.data);
   }
@@ -168,6 +193,7 @@ export async function openGlue(
     const w = window as unknown as GlueWindow;
     w.glueSelections = [];
     w.glueRelocates = [];
+    w.glueTurnRequests = [];
     w.glueStatus = null;
     w.__omnibusOnSelection = (json) => {
       w.glueSelections.push(JSON.parse(json));
@@ -177,6 +203,9 @@ export async function openGlue(
     };
     w.__omnibusOnStatus = (state) => {
       w.glueStatus = state;
+    };
+    w.__omnibusOnTurnRequest = (dir) => {
+      w.glueTurnRequests.push(dir);
     };
     w.OmnibusReader.init("stage", "/book.epub", {
       theme: "light",

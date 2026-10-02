@@ -1,7 +1,7 @@
 //  ReaderSettingsTests.swift
 //  A stored reader-settings blob survives the struct growing a field.
 //
-//  All seven typography settings share one JSON blob under
+//  Every reader setting shares one JSON blob under
 //  `omnibus.readerSettings`, and Swift's synthesized decoder ignores property
 //  defaults — so before #2117 a key the stored payload didn't carry threw
 //  `keyNotFound`, `load()`'s `try?` swallowed it, and the reader came back on
@@ -18,7 +18,7 @@ import Testing
 /// A reader who has changed every setting.
 private let stored = ReaderSettings(
     fontSize: 24, typeface: .sans, lineHeight: 1.9,
-    margins: .wide, justify: false, theme: "sepia", spread: .single
+    margins: .wide, justify: false, theme: "sepia", spread: .single, pageTurn: .curl
 )
 
 /// `stored` on the wire. The typeface still travels under the `fontFamily`
@@ -32,6 +32,7 @@ private func fullPayload() -> [String: Any] {
         "justify": false,
         "theme": "sepia",
         "spread": "single",
+        "pageTurn": "curl",
     ]
 }
 
@@ -63,6 +64,7 @@ struct ReaderSettingsTests {
         "a payload missing one key keeps every other setting",
         arguments: [
             "fontSize", "fontFamily", "lineHeight", "margins", "justify", "theme", "spread",
+            "pageTurn",
         ]
     )
     func missingOneKeyCostsOnlyThatSetting(dropped: String) throws {
@@ -81,6 +83,7 @@ struct ReaderSettingsTests {
         case "justify": expected.justify = defaults.justify
         case "theme": expected.theme = defaults.theme
         case "spread": expected.spread = defaults.spread
+        case "pageTurn": expected.pageTurn = defaults.pageTurn
         default: Issue.record("unhandled key \(dropped)")
         }
         #expect(decoded == expected)
