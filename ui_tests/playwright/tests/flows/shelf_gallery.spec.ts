@@ -503,6 +503,9 @@ test("the shelves row pages horizontally and arms only the end with more", async
   await expect(prev).toHaveClass(/\bon\b/);
   await expect(prev).toHaveAttribute("tabindex", "0");
 
+  // One press back is the whole way back, whatever shelves the parallel
+  // specs have left ahead of this test's own: the row snaps, and a plain
+  // `scrollBy` back used to settle on the first shelf, All Books' width short.
   await prev.click();
   await expect
     .poll(async () => row.evaluate((n) => n.scrollLeft), { timeout: 5_000 })

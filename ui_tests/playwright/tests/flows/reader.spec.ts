@@ -85,8 +85,12 @@ const TWO_FINGER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "mariucha")!;
 // Reserved for the page-turn gutter test, which opens it at a deep link and
 // reads layout alone; nothing else opens it.
 const GUTTER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "room-with-a-view")!;
-// The start of its Chapter II: a page of prose in either view.
-const GUTTER_CFI = "epubcfi(/6/10!/4/2)";
+// A paragraph a third of the way into its Chapter II, so a spread of drift
+// either way still has prose on both pages. Not the chapter's own element
+// (`/6/10!/4/2`): epub.js orders an element before every point inside it, so
+// the open's nudge read Chapter II's first page as past the target and turned
+// back onto Chapter I's last spread — prose on the left page only.
+const GUTTER_CFI = "epubcfi(/6/10!/4/2/92/1:0)";
 // Reserved for the shared-spine chapter test: its front matter and first
 // eight chapters are one spine document, so only their anchors tell them
 // apart. Opened at a deep link; nothing else opens it.
@@ -552,19 +556,21 @@ test("keeps the page-turn buttons clear of the prose in one- and two-page view",
   request,
 }) => {
   const uuid = await fetchBookUuidByTitle(request, GUTTER_BOOK.title);
+  const passage = `/read/${uuid}?cfi=${encodeURIComponent(GUTTER_CFI)}`;
   await page.setViewportSize({ width: 1920, height: 900 });
-  await gotoReady(page, `/read/${uuid}?cfi=${encodeURIComponent(GUTTER_CFI)}`);
+  await gotoReady(page, passage);
   await expect(page.getByTestId("reader-viewer")).toBeVisible();
 
   for (const spread of ["single", "double"] as const) {
-    await page.setViewportSize({ width: 1920, height: 900 });
     await page.getByTestId("reader-aa").click();
     await page.getByTestId(`reader-spread-${spread}`).click();
     await page.keyboard.press("Escape");
-    // Narrowing only: a layout left over from a wider page overflows the
-    // buttons, so it can never read as clear before the re-layout lands.
+    // Reopened at the passage for each width rather than resized into it: a
+    // resize re-displays wherever the last layout left the reader, so the
+    // spread measured would depend on every width before it.
     for (const width of [1920, 1280, 800]) {
       await page.setViewportSize({ width, height: 900 });
+      await gotoReady(page, passage);
       await expect
         .poll(() => turnButtonClearance(page), {
           message: `${spread} view at ${width}px`,

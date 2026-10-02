@@ -40,10 +40,29 @@
     arm(right, row.scrollLeft + row.clientWidth < row.scrollWidth - 4);
   }
 
+  // The row snaps (`scroll-snap-type: x proximity`), so a plain `scrollBy`
+  // settles on whichever entry start is nearest where it lands. A page
+  // forward could round up past the step and the same step back then round
+  // onto the first shelf: one press short of the start, All Books hidden and
+  // the left arrow still lit. Land each page on the last entry start it
+  // reaches instead — forward never passes the step, so back always undoes
+  // it — and snapping has nothing left to move.
   function nudge(dir) {
     if (!row) return;
-    row.scrollBy({
-      left: dir * Math.max(240, row.clientWidth * 0.6),
+    var from = row.scrollLeft;
+    var max = row.scrollWidth - row.clientWidth;
+    var want = from + dir * Math.max(240, row.clientWidth * 0.6);
+    var target = want <= 0 ? 0 : want >= max ? max : null;
+    if (target === null) {
+      var origin = row.getBoundingClientRect().left - from;
+      for (var i = 0; i < row.children.length; i++) {
+        var at = row.children[i].getBoundingClientRect().left - origin;
+        if (at <= want && (dir < 0 || at > from)) target = at;
+      }
+    }
+    row.scrollTo({
+      // An entry wider than the step leaves no start to land on going forward.
+      left: target === null ? want : target,
       behavior: reduced ? 'auto' : 'smooth',
     });
   }
