@@ -2405,6 +2405,122 @@
     a.raf = requestAnimationFrame(step);
   }
 
+  // ── Curl page-turn ─────────────────────────────────────────────────
+  // Under the Curl setting the host draws the turn: UIKit curls snapshots of
+  // this page and its neighbours, which `peek` shows in place one at a time
+  // for the host to capture (`PageCurlHost.swift`). A swipe toward a neighbour
+  // the host holds is the host's; any other swipe is still this file's slide.
+  // Gutter taps all go to the host, which falls back to `turnSlide`.
+  var curlOn = false;
+  var curlReady = { next: false, prev: false };
+  var peekInFlight = false;
+
+  function setCurlReady(on, next, prev) {
+    curlOn = !!on;
+    curlReady = { next: !!next, prev: !!prev };
+  }
+
+  function curlOwns(dir) {
+    return curlOn && (dir > 0 ? curlReady.next : curlReady.prev);
+  }
+
+  // "page" in this section, "section" across a spine boundary, or "none".
+  function neighbourKind(dir) {
+    var c = pageContainer();
+    var d = pageDelta();
+    if (!c || !d || bookIsRTL()) return "none";
+    var target = c.scrollLeft + dir * d;
+    if (target >= -0.5 && target <= maxScroll(c) + 0.5) return "page";
+    var m = rendition && rendition.manager;
+    return m && hasAdjacentSection(m, dir) ? "section" : "none";
+  }
+
+  // Resolves once nothing is moving the page — a section turn, a slide, a
+  // resize correction — so a snapshot taken after it shows a settled page,
+  // with what the host decides by: the column count (it curls a single column
+  // only) and what lies either side. Fails open after 1.5s.
+  function whenSettled() {
+    return new Promise(function (resolve) {
+      var tries = 0;
+      (function check() {
+        var moving = sectionTurnInFlight || turnAnim || resizeSettling;
+        if (!moving || ++tries > 30) {
+          afterPaint().then(function () {
+            resolve({
+              columns: pageColumns(),
+              next: neighbourKind(1),
+              prev: neighbourKind(-1),
+            });
+          });
+          return;
+        }
+        setTimeout(check, 50);
+      })();
+    });
+  }
+
+  // Shift the neighbouring page into view without moving epub.js's scroll;
+  // `peek(0)` puts the page back. Resolves once the shift has painted.
+  function peek(dir) {
+    var c = pageContainer();
+    var d = pageDelta();
+    if (!c || !d) return Promise.resolve(false);
+    if (dir !== 0 && neighbourKind(dir) !== "page") return Promise.resolve(false);
+    finishTurnAnim();
+    peekInFlight = dir !== 0;
+    armViews(c, dir !== 0);
+    setViewOffset(c, -dir * d);
+    return afterPaint().then(function () { return true; });
+  }
+
+  // Land a turn the host has already shown, with no motion of our own.
+  // Resolves once the destination has painted.
+  function turnInstant(dir) {
+    peekInFlight = false;
+    var kind = neighbourKind(dir);
+    if (kind === "page") {
+      var c = pageContainer();
+      finishTurnAnim();
+      commitOffset(c, c.scrollLeft, -dir * pageDelta());
+      return afterPaint().then(function () { return true; });
+    }
+    if (kind !== "section") return Promise.resolve(false);
+    var manager = rendition.manager;
+    cancelResizeCorrection();
+    var release = beginSectionTurn();
+    var result = dir > 0 ? manager.next() : manager.prev();
+    // The host holds its cover up until this answers, so it is bounded like
+    // `beginSectionTurn`: a manager promise that never settles reads as a
+    // failed turn, which the host recaptures from.
+    var STALLED = {};
+    var stalled = new Promise(function (resolve) {
+      setTimeout(function () { resolve(STALLED); }, 1500);
+    });
+    return Promise.race([Promise.resolve(result), stalled])
+      .then(function (won) {
+        if (won === STALLED) return false;
+        return afterPaint().then(function () {
+          reportTurnCommitted();
+          return true;
+        });
+      }, function () {
+        return false;
+      })
+      .then(function (turned) {
+        release();
+        return turned;
+      });
+  }
+
+  // A gutter tap: the host's to draw when it is curling, else the slide.
+  function turnTap(dir) {
+    if (curlOn && typeof window.__omnibusOnTurnRequest === "function") {
+      window.__omnibusOnTurnRequest(String(dir));
+      return;
+    }
+    turnAnimated(dir);
+  }
+
   // Animate one page forward/back when the neighbouring page is rendered
   // in this section; use the atomic section hand-off at a boundary.
   function turnAnimated(dir) {
@@ -2465,6 +2581,9 @@
     var selecting = false;
     // This touch lands while a selection is up, so its job is to dismiss it.
     var dismissing = false;
+    // This touch began on a page shifted for a snapshot: it may tap, but what
+    // is under it is the neighbouring page, so nothing may be hit-tested.
+    var peekTouch = false;
     // A second finger joined this sequence, and this stays true until the last
     // one lifts. Every page gesture is single-finger and decides itself from
     // state captured for the *first* touch — `sx` and `dragBase` — so a later
@@ -2571,9 +2690,24 @@
       // A section turn is still laying out (or its View Transition is
       // holding the screen): a gesture started now would capture a stale
       // scroll base and fight the hand-off. Ignore the touch entirely.
+      peekTouch = false;
       if (sectionTurnInFlight) {
         dragAxis = "none";
         skipTap = true;
+        return;
+      }
+      // A peek is up for a snapshot: no drag or press may start on the shifted
+      // page, but a tap still turns or toggles the chrome once it lifts.
+      if (peekInFlight) {
+        dragAxis = "none";
+        skipTap = false;
+        peekTouch = true;
+        if (e.touches && e.touches.length === 1) {
+          var pt0 = e.touches[0];
+          sx = stableX(pt0);
+          sy = pt0.clientY;
+          st = nowMs();
+        }
         return;
       }
       // A live selection owns the screen. Its handles and menu are host
@@ -2666,6 +2800,12 @@
         // paginated, so late horizontal intent may engage despite vertical
         // finger drift.
         if (Math.abs(dx) < 8) return;
+        // The host's pan recognizer takes this one and curls the page.
+        if (curlOwns(dx < 0 ? 1 : -1)) {
+          dragAxis = "none";
+          cancelPress();
+          return;
+        }
         dragAxis = "x";
         cancelPress();
         sx = x;
@@ -2832,14 +2972,14 @@
       // page, and anything else toggles the chrome.
       if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && dt < 500) {
         var tap = hostPoint(t);
-        var hit = annotationAtHostPoint(tap.x, tap.y);
+        var hit = peekTouch ? null : annotationAtHostPoint(tap.x, tap.y);
         if (hit) {
           emitAnnotationTap(hit);
           return;
         }
         var w = window.innerWidth || 360;
-        if (tap.x > w * 0.8) turnAnimated(1);
-        else if (tap.x < w * 0.2) turnAnimated(-1);
+        if (tap.x > w * 0.8) turnTap(1);
+        else if (tap.x < w * 0.2) turnTap(-1);
         // A centre tap toggles the reader chrome for distraction-free reading.
         else emitToggleChrome();
       }
@@ -3852,6 +3992,12 @@
     init: init,
     next: next,
     prev: prev,
+    turnSlide: turnAnimated,
+    setCurlReady: setCurlReady,
+    neighbourKind: neighbourKind,
+    whenSettled: whenSettled,
+    peek: peek,
+    turnInstant: turnInstant,
     setFontSize: setFontSize,
     setTheme: setTheme,
     setFont: setFont,

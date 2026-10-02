@@ -307,6 +307,22 @@ touch those depend on — page turns still worked because the overlay called
 `next()` itself, which masked the fact that swipe was dead. The host now layers
 nothing interactive over the page.
 
+**Curl is the one turn the host draws.** With Themes & Settings → Curl,
+`PageCurlHost` puts a `UIPageViewController` curl over the web view. UIKit
+curls view controllers and the reader is one web view laying a chapter out as
+columns, so what curls is snapshots: after each turn the glue's `peek` shows a
+neighbouring page in place, under a cover of the current one, long enough to
+`takeSnapshot` it, and `turnInstant` lands a turn in the web view once the curl
+has drawn it. The pager's pan recognizer lives on the stage rather than over
+it, so it sees the same touches the glue does. The glue gives up a swipe toward
+a page the host holds (`setCurlReady`) and hands over every gutter tap
+(`__omnibusOnTurnRequest`). At a chapter boundary the next chapter isn't laid
+out, so there is nothing to snapshot or drag: a tap or a swipe there crosses
+first, under the cover, and then curls on its own. What stays the glue's slide
+is a selection handle held at the page edge and a two-column spread, which
+waits for a curl about a centre spine. The back of each page is the theme's paper with the print showing
+through mirrored. Reduce Motion turns the curl off.
+
 **Reading chrome follows Apple Books.** A book opens bare — no buttons at all,
 just the page between two centred labels. A centre tap brings up a `✕`
 top-right and one menu button bottom-right; another puts them away.
