@@ -6,12 +6,13 @@ import {
   type GlueWindow,
   openGlue,
   relocates,
+  type Settled,
 } from "../utils/ios_glue";
 
 // The glue's half of the iOS page curl: `peek` puts a neighbouring page in
 // front for the host to snapshot without moving the reader, `turnInstant`
-// lands a turn the host has already drawn, and a swipe or gutter tap the host
-// can curl is left to it.
+// lands a turn the host has already drawn, `whenSettled` says where a spread's
+// spine is, and a swipe or gutter tap the host can curl is left to it.
 
 const PROSE = Array.from(
   { length: 30 },
@@ -64,9 +65,7 @@ function neighbourKind(page: Page, dir: number): Promise<string> {
   );
 }
 
-function whenSettled(
-  page: Page,
-): Promise<{ columns: number; next: string; prev: string }> {
+function whenSettled(page: Page): Promise<Settled> {
   return page.evaluate(() =>
     (window as unknown as GlueWindow).OmnibusReader.whenSettled(),
   );
@@ -202,6 +201,8 @@ test.describe("iOS reader page curl: peeking and landing", () => {
 
     expect(await whenSettled(page), "what the host decides by").toEqual({
       columns: 1,
+      // The stage is inset 10px a side, so its middle is the window's.
+      spine: 201,
       next: "section",
       prev: "none",
     });
@@ -213,6 +214,26 @@ test.describe("iOS reader page curl: peeking and landing", () => {
       .poll(async () => (await relocates(page)).at(-1)?.chapterTitle)
       .toBe("Two");
     expect(await neighbourKind(page, -1)).toBe("section");
+  });
+});
+
+test.describe("iOS reader page curl: a two-page spread", () => {
+  test.use({ viewport: { width: 1000, height: 700 } });
+
+  test("a spread's spine is where its columns meet, and a peek shows the whole next spread", async ({
+    page,
+  }) => {
+    await openGlue(page, await buildChapterEpub(PROSE), { spread: "auto" });
+
+    const settled = await whenSettled(page);
+    expect(settled.columns).toBe(2);
+    expect(settled.spine, "the middle of a stage inset 10px a side").toBe(500);
+
+    expect(await peek(page, 1)).toBe(true);
+    expect(
+      -shiftOf((await position(page)).offset),
+      "both columns move, so the snapshot is the next spread",
+    ).toBe(980);
   });
 });
 

@@ -1,7 +1,7 @@
 //  PageCurlTests.swift
 //  The page curl's model: the order UIKit turns through a page's two sides,
-//  the snapshot ring a landed turn leaves, what each side draws, and where a
-//  tap the curl can't draw goes.
+//  the snapshot ring a landed turn leaves, where a spread's spine falls, what
+//  each side draws, and where a tap the curl can't draw goes.
 
 import SwiftUI
 import Testing
@@ -17,8 +17,36 @@ private func snapshot(_ color: UIColor) -> UIImage {
     }
 }
 
-private func front(_ offset: Int) -> CurlSide { CurlSide(offset: offset, isBack: false) }
-private func back(_ offset: Int) -> CurlSide { CurlSide(offset: offset, isBack: true) }
+/// A two-point snapshot of a spread, one colour a page, at one pixel a point.
+private func spread(_ left: UIColor, _ right: UIColor) -> UIImage {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    return UIGraphicsImageRenderer(size: CGSize(width: 2, height: 1), format: format).image {
+        context in
+        left.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        right.setFill()
+        context.fill(CGRect(x: 1, y: 0, width: 1, height: 1))
+    }
+}
+
+/// An image's colour, averaged down to one RGBA pixel.
+private func rgba(_ image: UIImage?) throws -> [UInt8] {
+    let cgImage = try #require(image?.cgImage)
+    var pixel = [UInt8](repeating: 0, count: 4)
+    let context = try #require(
+        CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    )
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+    return pixel
+}
+
+private func front(_ offset: Int) -> CurlSide { CurlSide(offset: offset, isSecond: false) }
+private func back(_ offset: Int) -> CurlSide { CurlSide(offset: offset, isSecond: true) }
 
 @Suite("Page curl")
 struct PageCurlTests {
@@ -83,18 +111,41 @@ struct PageCurlTests {
         #expect(landed[-1] === current)
     }
 
-    @Test("only a single column curls; a spread or an unknown layout slides")
-    func layoutCurlsASingleColumnOnly() {
-        #expect(CurlLayout(columns: 1) == .single)
-        #expect(CurlLayout(columns: 2) == .spread)
-        #expect(CurlLayout(columns: nil) == .spread)
+    @Test("a single column turns about its edge and a spread about its middle; nothing else curls")
+    func layoutTurnsAColumnAboutItsEdgeAndASpreadAboutItsMiddle() {
+        #expect(CurlLayout(columns: 1)?.spineLocation == .min)
+        #expect(CurlLayout(columns: 2)?.spineLocation == .mid)
+        #expect(CurlLayout(columns: 3) == nil)
+        #expect(CurlLayout(columns: nil) == nil)
+    }
+
+    @Test("a spread curls over the widest band its spine is the middle of")
+    func spreadFrameIsCentredOnTheSpine() {
+        let stage = CGRect(x: 0, y: 0, width: 900, height: 600)
+
+        #expect(CurlLayout.spread.frame(in: stage, spine: 450) == stage)
+        #expect(
+            CurlLayout.spread.frame(in: stage, spine: 460)
+                == CGRect(x: 20, y: 0, width: 880, height: 600)
+        )
+    }
+
+    @Test("a single column, or a spread whose spine is unknown, curls over the whole stage")
+    func frameIsTheStageWithoutASpine() {
+        let stage = CGRect(x: 0, y: 0, width: 900, height: 600)
+
+        #expect(CurlLayout.single.frame(in: stage, spine: 460) == stage)
+        #expect(CurlLayout.spread.frame(in: stage, spine: nil) == stage)
+        #expect(CurlLayout.spread.frame(in: stage, spine: 900) == stage)
     }
 
     @MainActor
     @Test("a page's back is its paper, with the print mirrored through it")
     func backDrawsThePaperWithTheMirroredPrint() throws {
         let paper = UIColor(ReaderTheme.pageColor("sepia"))
-        let page = CurlPageController(image: snapshot(.black), side: back(0), paper: paper)
+        let page = CurlPageController(
+            image: snapshot(.black), side: back(0), layout: .single, paper: paper
+        )
 
         let print = try #require(page.view.subviews.first as? UIImageView)
 
@@ -108,13 +159,36 @@ struct PageCurlTests {
     @Test("a page's front is the snapshot as captured")
     func frontDrawsTheSnapshotUnchanged() throws {
         let page = CurlPageController(
-            image: snapshot(.black), side: front(0), paper: .white
+            image: snapshot(.black), side: front(0), layout: .single, paper: .white
         )
 
         let print = try #require(page.view.subviews.first as? UIImageView)
 
         #expect(print.alpha == 1)
         #expect(print.image?.imageOrientation == .up)
+    }
+
+    /// The back of a sheet turning in a spread is the next spread's left page,
+    /// which UIKit puts there itself — so neither half is a mirrored back.
+    @MainActor
+    @Test("a spread's sides are its snapshot's halves, either side of the spine")
+    func spreadSidesDrawTheHalvesOfTheSnapshot() throws {
+        let image = spread(.red, .blue)
+        let left = CurlPageController(
+            image: image, side: front(0), layout: .spread, paper: .white
+        )
+        let right = CurlPageController(
+            image: image, side: back(0), layout: .spread, paper: .white
+        )
+
+        let leftPrint = try #require(left.view.subviews.first as? UIImageView)
+        let rightPrint = try #require(right.view.subviews.first as? UIImageView)
+
+        #expect(try rgba(leftPrint.image) == [255, 0, 0, 255])
+        #expect(try rgba(rightPrint.image) == [0, 0, 255, 255])
+        #expect(leftPrint.image?.size == CGSize(width: 1, height: 1))
+        #expect(rightPrint.alpha == 1)
+        #expect(rightPrint.image?.imageOrientation == .up)
     }
 }
 
