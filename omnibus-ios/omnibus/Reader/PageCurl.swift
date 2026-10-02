@@ -5,41 +5,64 @@
 
 import UIKit
 
-/// How the reader lays its pages out, as far as the curl is concerned.
-///
-/// Only a single column curls. A spread — two columns on a landscape phone, or
-/// one per screen on a two-screen device — keeps the slide until it has a curl
-/// of its own, which turns two-page sheets about a spine at `.mid`.
+/// How the reader lays its pages out, as far as the curl is concerned. A single
+/// column turns about its left edge; a spread — two columns on a landscape
+/// phone, or one per screen on a two-screen device — turns a sheet about the
+/// spine between them, as a book does. Any other layout slides.
 enum CurlLayout: Equatable {
     case single
     case spread
 
-    init(columns: Int?) {
-        self = columns == 1 ? .single : .spread
+    init?(columns: Int?) {
+        switch columns {
+        case 1: self = .single
+        case 2: self = .spread
+        default: return nil
+        }
+    }
+
+    var spineLocation: UIPageViewController.SpineLocation {
+        self == .single ? .min : .mid
+    }
+
+    /// Where the curl is drawn over a stage of `bounds`. UIKit puts a `.mid`
+    /// spine in the middle of its view, so a spread's is the widest band
+    /// centred on `spine`, where its columns meet.
+    func frame(in bounds: CGRect, spine: CGFloat?) -> CGRect {
+        guard self == .spread, let spine, spine > bounds.minX, spine < bounds.maxX else {
+            return bounds
+        }
+        let half = min(spine - bounds.minX, bounds.maxX - spine)
+        return CGRect(x: spine - half, y: bounds.minY, width: half * 2, height: bounds.height)
     }
 }
 
-/// One side of one page in the curl, by offset from the page in front.
+/// One of a page's two sides, by offset from the page in front: a single
+/// column's front and back, or a spread's left and right halves, which UIKit
+/// reads in the same order.
 struct CurlSide: Equatable {
     let offset: Int
-    let isBack: Bool
+    /// The back, or the right half.
+    let isSecond: Bool
 }
 
 /// UIKit's double-sided reading order over the pages it has: each page's
-/// front, then its back, then the next page's front.
+/// first side, then its second, then the next page's first.
 struct CurlSequence {
     let offsets: Set<Int>
 
     func after(_ side: CurlSide) -> CurlSide? {
-        side.isBack ? self.side(side.offset + 1, back: false) : self.side(side.offset, back: true)
+        side.isSecond
+            ? self.side(side.offset + 1, second: false) : self.side(side.offset, second: true)
     }
 
     func before(_ side: CurlSide) -> CurlSide? {
-        side.isBack ? self.side(side.offset, back: false) : self.side(side.offset - 1, back: true)
+        side.isSecond
+            ? self.side(side.offset, second: false) : self.side(side.offset - 1, second: true)
     }
 
-    private func side(_ offset: Int, back: Bool) -> CurlSide? {
-        offsets.contains(offset) ? CurlSide(offset: offset, isBack: back) : nil
+    private func side(_ offset: Int, second: Bool) -> CurlSide? {
+        offsets.contains(offset) ? CurlSide(offset: offset, isSecond: second) : nil
     }
 }
 
@@ -71,38 +94,61 @@ struct CurlPages {
     }
 }
 
-/// One side of a page in the curl. The front is the snapshot; the back is
-/// the paper, with the print showing through mirrored as it does on a page.
+/// One side of a page in the curl. A single column's front is the snapshot and
+/// its back the paper, with the print showing through mirrored as it does on a
+/// page; a spread's sides are the halves of its snapshot.
 final class CurlPageController: UIViewController {
     /// How much of the front shows through the back.
     static let showThrough: CGFloat = 0.14
 
     let side: CurlSide
     private let image: UIImage
+    private let layout: CurlLayout
     private let paper: UIColor
 
-    init(image: UIImage, side: CurlSide, paper: UIColor) {
+    init(image: UIImage, side: CurlSide, layout: CurlLayout, paper: UIColor) {
         self.image = image
         self.side = side
+        self.layout = layout
         self.paper = paper
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    private var isBack: Bool { layout == .single && side.isSecond }
+
     override func loadView() {
         let view = UIView()
         view.backgroundColor = paper
-        let print = UIImageView(
-            image: side.isBack ? image.withHorizontallyFlippedOrientation() : image
-        )
+        let print = UIImageView(image: printed)
         print.contentMode = .scaleToFill
         // `init(image:)` sizes the view to the image; autoresizing grows it
         // from the superview's frame, so both have to start at the same size.
         print.frame = view.bounds
         print.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        print.alpha = side.isBack ? Self.showThrough : 1
+        print.alpha = isBack ? Self.showThrough : 1
         view.addSubview(print)
         self.view = view
+    }
+
+    private var printed: UIImage {
+        switch layout {
+        case .single: isBack ? image.withHorizontallyFlippedOrientation() : image
+        case .spread: image.half(right: side.isSecond)
+        }
+    }
+}
+
+private extension UIImage {
+    /// The left or right half, cut down the middle where the spine is.
+    func half(right: Bool) -> UIImage {
+        guard let cgImage else { return self }
+        let width = cgImage.width / 2
+        let rect = CGRect(
+            x: right ? cgImage.width - width : 0, y: 0, width: width, height: cgImage.height
+        )
+        guard let half = cgImage.cropping(to: rect) else { return self }
+        return UIImage(cgImage: half, scale: scale, orientation: imageOrientation)
     }
 }

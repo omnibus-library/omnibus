@@ -26,17 +26,10 @@ final class PageCurlHost: NSObject {
         }
     }
 
-    var view: UIView { pager.view }
-
-    private let pager: UIPageViewController = {
-        let pager = UIPageViewController(
-            transitionStyle: .pageCurl, navigationOrientation: .horizontal
-        )
-        pager.isDoubleSided = true
-        return pager
-    }()
+    private var pager = PageCurlHost.makePager(spine: .min)
     private var pages = CurlPages()
-    private var layout = CurlLayout.single
+    /// What the page was laid out as at the last capture; nil slides.
+    private var layout: CurlLayout?
     /// Directions whose next page is in a chapter not yet laid out: nothing to
     /// snapshot, so a turn there crosses first and curls on its own.
     private var crossings: Set<Int> = []
@@ -60,6 +53,27 @@ final class PageCurlHost: NSObject {
 
     func install(on stage: UIView) {
         self.stage = stage
+        attachPager(to: stage)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reduceMotionChanged),
+            name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil
+        )
+    }
+
+    /// A pager's spine is fixed when it is made, so a spread and a single
+    /// column each need their own.
+    private static func makePager(
+        spine: UIPageViewController.SpineLocation
+    ) -> UIPageViewController {
+        let pager = UIPageViewController(
+            transitionStyle: .pageCurl, navigationOrientation: .horizontal,
+            options: [.spineLocation: NSNumber(value: spine.rawValue)]
+        )
+        pager.isDoubleSided = true
+        return pager
+    }
+
+    private func attachPager(to stage: UIView) {
         pager.dataSource = self
         pager.delegate = self
         pager.view.isHidden = true
@@ -78,10 +92,22 @@ final class PageCurlHost: NSObject {
             stage.addGestureRecognizer(pan)
             self.pan = pan
         }
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reduceMotionChanged),
-            name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil
-        )
+    }
+
+    /// Swap in a pager with the spine `layout` turns about, and lay it over
+    /// the band that spine is the middle of.
+    private func fit(_ layout: CurlLayout, spine: CGFloat?) {
+        guard let stage else { return }
+        if pager.spineLocation != layout.spineLocation {
+            let parent = pager.parent
+            adopt(by: nil)
+            pager.view.removeFromSuperview()
+            if let pan { stage.removeGestureRecognizer(pan) }
+            pager = Self.makePager(spine: layout.spineLocation)
+            attachPager(to: stage)
+            adopt(by: parent)
+        }
+        pager.view.frame = layout.frame(in: stage.bounds, spine: spine)
     }
 
     func adopt(by parent: UIViewController?) {
@@ -132,7 +158,7 @@ final class PageCurlHost: NSObject {
     }
 
     private var curlsAtAll: Bool {
-        isEnabled && layout == .single && !UIAccessibility.isReduceMotionEnabled
+        isEnabled && layout != nil && !UIAccessibility.isReduceMotionEnabled
     }
 
     private var canCurl: Bool {
@@ -161,7 +187,8 @@ final class PageCurlHost: NSObject {
         layout = CurlLayout(columns: settled?["columns"] as? Int)
         crossings = Set([1, -1].filter { settled?[$0 > 0 ? "next" : "prev"] as? String == "section" })
         let settledAt = controller.location?.cfi
-        if curlsAtAll {
+        if curlsAtAll, let layout {
+            fit(layout, spine: (settled?["spine"] as? NSNumber).map { CGFloat($0.doubleValue) })
             await fill(webView)
         } else {
             pages = CurlPages()
@@ -321,20 +348,32 @@ final class PageCurlHost: NSObject {
 
     private func coverWithCurrent() {
         guard let image = pages[0] else { return }
-        pager.setViewControllers([side(image, offset: 0)], direction: .forward, animated: false)
+        pager.setViewControllers(shown(image, offset: 0), direction: .forward, animated: false)
         pager.view.isHidden = false
+    }
+
+    /// What a set shows: a single column's front, or a spread's two halves.
+    private func shown(_ image: UIImage, offset: Int) -> [UIViewController] {
+        layout == .spread
+            ? [side(image, offset: offset), side(image, offset: offset, second: true)]
+            : [side(image, offset: offset)]
     }
 
     /// An animated double-sided set takes the front it lands on and the back of
     /// the page that turns over: the current page going forward, the incoming
-    /// one coming back.
+    /// one coming back. A spread's set is the spread it lands on, whose left
+    /// half UIKit puts on the back of the sheet that turns.
     private func turn(_ dir: Int, to image: UIImage) -> [UIViewController] {
+        guard layout == .single else { return shown(image, offset: dir) }
         let turning = dir > 0 ? (pages[0] ?? image, 0) : (image, dir)
-        return [side(image, offset: dir), side(turning.0, offset: turning.1, back: true)]
+        return [side(image, offset: dir), side(turning.0, offset: turning.1, second: true)]
     }
 
-    private func side(_ image: UIImage, offset: Int, back: Bool = false) -> UIViewController {
-        CurlPageController(image: image, side: CurlSide(offset: offset, isBack: back), paper: paper)
+    private func side(_ image: UIImage, offset: Int, second: Bool = false) -> UIViewController {
+        CurlPageController(
+            image: image, side: CurlSide(offset: offset, isSecond: second),
+            layout: layout ?? .single, paper: paper
+        )
     }
 
     // MARK: - Glue
@@ -355,9 +394,12 @@ final class PageCurlHost: NSObject {
         )
     }
 
+    /// What the web view shows under the curl. Taken in its coordinates, which
+    /// are the stage's.
     private func snapshot(_ webView: WKWebView) async -> UIImage? {
         let configuration = WKSnapshotConfiguration()
         configuration.afterScreenUpdates = true
+        configuration.rect = pager.view.frame
         return await withCheckedContinuation { continuation in
             webView.takeSnapshot(with: configuration) { image, _ in
                 continuation.resume(returning: image)
@@ -384,7 +426,7 @@ extension PageCurlHost: UIPageViewControllerDataSource {
     }
 
     private func page(_ side: CurlSide) -> UIViewController? {
-        pages[side.offset].map { self.side($0, offset: side.offset, back: side.isBack) }
+        pages[side.offset].map { self.side($0, offset: side.offset, second: side.isSecond) }
     }
 }
 

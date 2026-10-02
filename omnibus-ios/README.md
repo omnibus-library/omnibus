@@ -319,9 +319,13 @@ a page the host holds (`setCurlReady`) and hands over every gutter tap
 (`__omnibusOnTurnRequest`). At a chapter boundary the next chapter isn't laid
 out, so there is nothing to snapshot or drag: a tap or a swipe there crosses
 first, under the cover, and then curls on its own. What stays the glue's slide
-is a selection handle held at the page edge and a two-column spread, which
-waits for a curl about a centre spine. The back of each page is the theme's paper with the print showing
-through mirrored. Reduce Motion turns the curl off.
+is a selection handle held at the page edge. A single page's back is the
+theme's paper with the print showing through mirrored. A two-column spread
+turns a sheet about its spine, as a book does: the pager is remade with a
+`.mid` spine and laid over the widest band centred where the columns meet
+(`whenSettled` reports it), each spread's snapshot is cut into its two pages,
+and the back of the sheet that turns is the facing page it lands on. Reduce
+Motion turns the curl off.
 
 **Reading chrome follows Apple Books.** A book opens bare — no buttons at all,
 just the page between two centred labels. A centre tap brings up a `✕`
