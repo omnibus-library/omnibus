@@ -476,8 +476,9 @@ test("the shelves row pages horizontally and arms only the end with more", async
   request,
 }) => {
   // Enough shelves to overflow the row at any sane viewport. They are this
-  // test's own, created per-run, so nothing else reads them.
-  const stamp = Date.now();
+  // test's own, created per-run, so nothing else reads them. Names are unique
+  // per owner, and two workers can start this test in the same millisecond.
+  const stamp = `${Date.now()}-${test.info().workerIndex}`;
   for (let i = 0; i < 8; i++) {
     await createManualShelf(request, `E2E Paging ${stamp}-${i}`, []);
   }
