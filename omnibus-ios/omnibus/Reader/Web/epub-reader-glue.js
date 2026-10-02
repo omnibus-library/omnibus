@@ -2435,15 +2435,16 @@
     return m && hasAdjacentSection(m, dir) ? "section" : "none";
   }
 
-  // Resolves once no section turn is laying out or holding a View Transition,
-  // so a snapshot taken after it shows a settled page, with what the host
-  // decides by: the column count (it curls a single column only) and what
-  // lies either side. Fails open after 1.5s.
+  // Resolves once nothing is moving the page — a section turn, a slide, a
+  // resize correction — so a snapshot taken after it shows a settled page,
+  // with what the host decides by: the column count (it curls a single column
+  // only) and what lies either side. Fails open after 1.5s.
   function whenSettled() {
     return new Promise(function (resolve) {
       var tries = 0;
       (function check() {
-        if (!sectionTurnInFlight || ++tries > 30) {
+        var moving = sectionTurnInFlight || turnAnim || resizeSettling;
+        if (!moving || ++tries > 30) {
           afterPaint().then(function () {
             resolve({
               columns: pageColumns(),
@@ -2488,15 +2489,26 @@
     cancelResizeCorrection();
     var release = beginSectionTurn();
     var result = dir > 0 ? manager.next() : manager.prev();
-    return Promise.resolve(result)
-      .then(afterPaint)
-      .then(function () {
-        reportTurnCommitted();
-        release();
-        return true;
+    // The host holds its cover up until this answers, so it is bounded like
+    // `beginSectionTurn`: a manager promise that never settles reads as a
+    // failed turn, which the host recaptures from.
+    var STALLED = {};
+    var stalled = new Promise(function (resolve) {
+      setTimeout(function () { resolve(STALLED); }, 1500);
+    });
+    return Promise.race([Promise.resolve(result), stalled])
+      .then(function (won) {
+        if (won === STALLED) return false;
+        return afterPaint().then(function () {
+          reportTurnCommitted();
+          return true;
+        });
       }, function () {
-        release();
         return false;
+      })
+      .then(function (turned) {
+        release();
+        return turned;
       });
   }
 
@@ -2569,6 +2581,9 @@
     var selecting = false;
     // This touch lands while a selection is up, so its job is to dismiss it.
     var dismissing = false;
+    // This touch began on a page shifted for a snapshot: it may tap, but what
+    // is under it is the neighbouring page, so nothing may be hit-tested.
+    var peekTouch = false;
     // A second finger joined this sequence, and this stays true until the last
     // one lifts. Every page gesture is single-finger and decides itself from
     // state captured for the *first* touch — `sx` and `dragBase` — so a later
@@ -2675,9 +2690,24 @@
       // A section turn is still laying out (or its View Transition is
       // holding the screen): a gesture started now would capture a stale
       // scroll base and fight the hand-off. Ignore the touch entirely.
-      if (sectionTurnInFlight || peekInFlight) {
+      peekTouch = false;
+      if (sectionTurnInFlight) {
         dragAxis = "none";
         skipTap = true;
+        return;
+      }
+      // A peek is up for a snapshot: no drag or press may start on the shifted
+      // page, but a tap still turns or toggles the chrome once it lifts.
+      if (peekInFlight) {
+        dragAxis = "none";
+        skipTap = false;
+        peekTouch = true;
+        if (e.touches && e.touches.length === 1) {
+          var pt0 = e.touches[0];
+          sx = stableX(pt0);
+          sy = pt0.clientY;
+          st = nowMs();
+        }
         return;
       }
       // A live selection owns the screen. Its handles and menu are host
@@ -2942,7 +2972,7 @@
       // page, and anything else toggles the chrome.
       if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && dt < 500) {
         var tap = hostPoint(t);
-        var hit = annotationAtHostPoint(tap.x, tap.y);
+        var hit = peekTouch ? null : annotationAtHostPoint(tap.x, tap.y);
         if (hit) {
           emitAnnotationTap(hit);
           return;

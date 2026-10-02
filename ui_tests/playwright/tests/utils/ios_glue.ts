@@ -58,6 +58,7 @@ export interface GlueWindow {
     beginSelectionAt(x: number, y: number): boolean;
     extendSelectionTo(x: number, y: number): void;
     endSelectionDrag(): void;
+    turnSlide(dir: number): void;
     setCurlReady(on: boolean, next: boolean, prev: boolean): void;
     neighbourKind(dir: number): "page" | "section" | "none";
     whenSettled(): Promise<{ columns: number; next: string; prev: string }>;

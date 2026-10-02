@@ -160,6 +160,22 @@ test.describe("iOS reader page curl: peeking and landing", () => {
     expect(last?.echo, "a landed turn is movement").toBe(false);
   });
 
+  test("a capture waits out a slide still drawing, so it never snapshots a page mid-turn", async ({
+    page,
+  }) => {
+    await openGlue(page, await buildChapterEpub(PROSE));
+    const before = await position(page);
+
+    await page.evaluate(() =>
+      (window as unknown as GlueWindow).OmnibusReader.turnSlide(1),
+    );
+    expect((await whenSettled(page)).columns).toBe(1);
+
+    const settled = await position(page);
+    expect(settled.offset, "no slide is still drawing").toBe("");
+    expect(settled.scroll).toBeGreaterThan(before.scroll);
+  });
+
   test("before the book's first page there is nothing to peek at or turn to", async ({
     page,
   }) => {
@@ -221,6 +237,23 @@ test.describe("iOS reader page curl: who turns the page", () => {
     await expect
       .poll(async () => (await position(page)).scroll)
       .toBeGreaterThan(before.scroll);
+  });
+
+  test("a touch during a peek can't drag the shifted page, but a tap still reaches the host", async ({
+    page,
+  }) => {
+    // Swipes are the glue's here, so only the peek can be what holds one off.
+    await setCurlReady(page, { on: true, next: false, prev: false });
+    expect(await peek(page, 1)).toBe(true);
+    const peeked = await position(page);
+
+    expect(await swipeLeft(page), "the peek's shift stands").toBe(
+      peeked.offset,
+    );
+    expect(await position(page)).toEqual(peeked);
+
+    await page.touchscreen.tap(380, MIDDLE.y);
+    await expect.poll(() => turnRequests(page)).toEqual(["1"]);
   });
 
   test("a gutter tap is the host's to draw while it curls, and the glue's slide otherwise", async ({

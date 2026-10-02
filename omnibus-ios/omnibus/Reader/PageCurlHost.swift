@@ -40,6 +40,8 @@ final class PageCurlHost: NSObject {
     /// Directions whose next page is in a chapter not yet laid out: nothing to
     /// snapshot, so a turn there crosses first and curls on its own.
     private var crossings: Set<Int> = []
+    /// The directions the glue was last told are ours; it gives those swipes up.
+    private var announced: Set<Int> = []
     /// A capture, curl or landing is under way; nothing else may start.
     private var busy = false
     /// What the page shows changed since the snapshots were taken.
@@ -158,11 +160,15 @@ final class PageCurlHost: NSObject {
         let settled = await call("return await OmnibusReader.whenSettled();") as? [String: Any]
         layout = CurlLayout(columns: settled?["columns"] as? Int)
         crossings = Set([1, -1].filter { settled?[$0 > 0 ? "next" : "prev"] as? String == "section" })
+        let settledAt = controller.location?.cfi
         if curlsAtAll {
             await fill(webView)
         } else {
             pages = CurlPages()
         }
+        // A move that overlapped the capture arrived as a relocate while busy,
+        // which `pageChanged` drops; the snapshots may straddle it.
+        if controller.location?.cfi != settledAt { stale = true }
         capturedCFI = controller.location?.cfi
         busy = false
         pager.view.isHidden = true
@@ -206,6 +212,7 @@ final class PageCurlHost: NSObject {
         let ready = curlsAtAll && !stale
         let next = ready && (pages[1] != nil || crossings.contains(1))
         let prev = ready && (pages[-1] != nil || crossings.contains(-1))
+        announced = Set([1, -1].filter { $0 > 0 ? next : prev })
         webView?.evaluateJavaScript(
             "OmnibusReader.setCurlReady(\(curlsAtAll), \(next), \(prev))"
         )
@@ -236,9 +243,23 @@ final class PageCurlHost: NSObject {
         pager.view.isHidden = false
         pager.setViewControllers(
             turn(dir, to: image), direction: dir > 0 ? .forward : .reverse, animated: true
-        ) { _ in
-            Task { await landing() }
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.finishCurl(dir, landing: landing) }
         }
+    }
+
+    /// UIKit can cut an animated set short, so land only if the page in front
+    /// is the one the curl turned to. Otherwise start over from whatever the
+    /// web view shows, which a chapter crossing has already moved.
+    private func finishCurl(_ dir: Int, landing: () async -> Void) async {
+        guard (pager.viewControllers?.first as? CurlPageController)?.side.offset == dir else {
+            busy = false
+            stale = true
+            pager.view.isHidden = true
+            settle()
+            return
+        }
+        await landing()
     }
 
     /// The next chapter isn't laid out until the reader crosses into it, so
@@ -393,21 +414,23 @@ extension PageCurlHost: UIPageViewControllerDelegate {
 
 extension PageCurlHost: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
-        guard recognizer === pan, let pan, let stage, canCurl else { return false }
+        guard recognizer === pan, let pan, let stage else { return false }
         // Any horizontal travel, as the glue yields on: a curl follows a
         // diagonal finger, and refusing one here would leave the swipe dead.
         let moved = pan.translation(in: stage)
         guard moved.x != 0 else { return false }
         let dir = moved.x < 0 ? 1 : -1
-        guard pages[dir] != nil else {
-            // The swipe can't drag a page that isn't laid out; it turns the way
-            // a tap there does instead.
-            if crossings.contains(dir) {
+        guard canCurl, pages[dir] != nil,
+              pagerPanDelegate?.gestureRecognizerShouldBegin?(recognizer) ?? true
+        else {
+            // The glue gave this swipe up, so nothing else will turn the page.
+            // When it can't be dragged — a turn in flight, a chapter not laid
+            // out, a highlight's menu up — it turns as a tap there would: queued,
+            // crossed then curled, or slid.
+            if announced.contains(dir), abs(moved.x) > abs(moved.y),
+               controller?.selection == nil {
                 DispatchQueue.main.async { [weak self] in self?.tapTurn(dir) }
             }
-            return false
-        }
-        guard pagerPanDelegate?.gestureRecognizerShouldBegin?(recognizer) ?? true else {
             return false
         }
         busy = true
