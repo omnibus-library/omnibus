@@ -44,9 +44,9 @@
   // settles on whichever entry start is nearest where it lands. A page
   // forward could round up past the step and the same step back then round
   // onto the first shelf: one press short of the start, All Books hidden and
-  // the left arrow still lit. Land each page on the last entry start it
-  // reaches instead — forward never passes the step, so back always undoes
-  // it — and snapping has nothing left to move.
+  // the left arrow still lit. Land each page on the entry start in reach
+  // nearest the step instead — never past it, either way, so a page back
+  // undoes a page forward — and snapping has nothing left to move.
   function nudge(dir) {
     if (!row) return;
     var from = row.scrollLeft;
@@ -55,13 +55,18 @@
     var target = want <= 0 ? 0 : want >= max ? max : null;
     if (target === null) {
       var origin = row.getBoundingClientRect().left - from;
+      // Entries run left to right: forward keeps the last start in reach,
+      // back takes the first.
       for (var i = 0; i < row.children.length; i++) {
         var at = row.children[i].getBoundingClientRect().left - origin;
-        if (at <= want && (dir < 0 || at > from)) target = at;
+        if (dir > 0 ? at > from && at <= want : at < from && at >= want) {
+          target = at;
+          if (dir < 0) break;
+        }
       }
     }
     row.scrollTo({
-      // An entry wider than the step leaves no start to land on going forward.
+      // An entry wider than the step leaves no start in reach.
       left: target === null ? want : target,
       behavior: reduced ? 'auto' : 'smooth',
     });
