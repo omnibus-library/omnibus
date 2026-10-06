@@ -50,6 +50,14 @@ export interface SelectionPayload {
   dragging: boolean;
 }
 
+/** What `whenSettled` resolves: what the host decides a curl by. */
+export interface Settled {
+  columns: number;
+  spine: number | null;
+  next: string;
+  prev: string;
+}
+
 /** The page's globals a glue spec reads and writes. */
 export interface GlueWindow {
   OmnibusReader: {
@@ -61,7 +69,7 @@ export interface GlueWindow {
     turnSlide(dir: number): void;
     setCurlReady(on: boolean, next: boolean, prev: boolean): void;
     neighbourKind(dir: number): "page" | "section" | "none";
-    whenSettled(): Promise<{ columns: number; next: string; prev: string }>;
+    whenSettled(): Promise<Settled>;
     peek(dir: number): Promise<boolean>;
     turnInstant(dir: number): Promise<boolean>;
   };

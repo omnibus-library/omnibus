@@ -2437,8 +2437,9 @@
 
   // Resolves once nothing is moving the page — a section turn, a slide, a
   // resize correction — so a snapshot taken after it shows a settled page,
-  // with what the host decides by: the column count (it curls a single column
-  // only) and what lies either side. Fails open after 1.5s.
+  // with what the host decides by: the column count, the host-window x where
+  // a spread's columns meet (the curl's spine), and what lies either side.
+  // Fails open after 1.5s.
   function whenSettled() {
     return new Promise(function (resolve) {
       var tries = 0;
@@ -2446,8 +2447,10 @@
         var moving = sectionTurnInFlight || turnAnim || resizeSettling;
         if (!moving || ++tries > 30) {
           afterPaint().then(function () {
+            var box = pageBox();
             resolve({
               columns: pageColumns(),
+              spine: box ? box.left + box.width / 2 : null,
               next: neighbourKind(1),
               prev: neighbourKind(-1),
             });

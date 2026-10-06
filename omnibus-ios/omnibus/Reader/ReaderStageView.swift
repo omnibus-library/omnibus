@@ -23,8 +23,8 @@ final class ReaderStageView: UIView {
         super.layoutSubviews()
         let resized = webView.frame.size != bounds.size
         webView.frame = bounds
-        curl.view.frame = bounds
-        // The glue re-paginates to the new size, so every snapshot is stale.
+        // The glue re-paginates to the new size, so every snapshot is stale;
+        // the curl is laid over the new page when it is next captured.
         if resized { curl.pageChanged() }
     }
 
