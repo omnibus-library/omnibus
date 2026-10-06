@@ -35,6 +35,26 @@ enum CurlLayout: Equatable {
         let half = min(spine - bounds.minX, bounds.maxX - spine)
         return CGRect(x: spine - half, y: bounds.minY, width: half * 2, height: bounds.height)
     }
+
+    /// What a set shows at `offset`: a single column's front, or a spread's
+    /// two halves.
+    func shown(at offset: Int) -> [CurlSide] {
+        let first = CurlSide(offset: offset, isSecond: false)
+        switch self {
+        case .single: return [first]
+        case .spread: return [first, CurlSide(offset: offset, isSecond: true)]
+        }
+    }
+
+    /// What an animated set turning `dir` takes. A single column takes the
+    /// front it lands on and the back of the page that turns over: the current
+    /// page going forward, the incoming one coming back. A spread takes the
+    /// spread it lands on, whose left half UIKit puts on the back of the sheet.
+    func turn(_ dir: Int) -> [CurlSide] {
+        guard self == .single else { return shown(at: dir) }
+        let turning = CurlSide(offset: dir > 0 ? 0 : dir, isSecond: true)
+        return [CurlSide(offset: dir, isSecond: false), turning]
+    }
 }
 
 /// One of a page's two sides, by offset from the page in front: a single

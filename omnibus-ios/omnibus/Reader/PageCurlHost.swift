@@ -26,7 +26,7 @@ final class PageCurlHost: NSObject {
         }
     }
 
-    private var pager = PageCurlHost.makePager(spine: .min)
+    private(set) var pager = PageCurlHost.makePager(spine: .min)
     private var pages = CurlPages()
     /// What the page was laid out as at the last capture; nil slides.
     private var layout: CurlLayout?
@@ -96,7 +96,7 @@ final class PageCurlHost: NSObject {
 
     /// Swap in a pager with the spine `layout` turns about, and lay it over
     /// the band that spine is the middle of.
-    private func fit(_ layout: CurlLayout, spine: CGFloat?) {
+    func fit(_ layout: CurlLayout, spine: CGFloat?) {
         guard let stage else { return }
         if pager.spineLocation != layout.spineLocation {
             let parent = pager.parent
@@ -352,28 +352,19 @@ final class PageCurlHost: NSObject {
         pager.view.isHidden = false
     }
 
-    /// What a set shows: a single column's front, or a spread's two halves.
     private func shown(_ image: UIImage, offset: Int) -> [UIViewController] {
-        layout == .spread
-            ? [side(image, offset: offset), side(image, offset: offset, second: true)]
-            : [side(image, offset: offset)]
+        (layout ?? .single).shown(at: offset).map { side(image, $0) }
     }
 
-    /// An animated double-sided set takes the front it lands on and the back of
-    /// the page that turns over: the current page going forward, the incoming
-    /// one coming back. A spread's set is the spread it lands on, whose left
-    /// half UIKit puts on the back of the sheet that turns.
+    /// `image` is the page turned to; the page turned from is in the ring.
     private func turn(_ dir: Int, to image: UIImage) -> [UIViewController] {
-        guard layout == .single else { return shown(image, offset: dir) }
-        let turning = dir > 0 ? (pages[0] ?? image, 0) : (image, dir)
-        return [side(image, offset: dir), side(turning.0, offset: turning.1, second: true)]
+        (layout ?? .single).turn(dir).map {
+            side($0.offset == dir ? image : pages[$0.offset] ?? image, $0)
+        }
     }
 
-    private func side(_ image: UIImage, offset: Int, second: Bool = false) -> UIViewController {
-        CurlPageController(
-            image: image, side: CurlSide(offset: offset, isSecond: second),
-            layout: layout ?? .single, paper: paper
-        )
+    private func side(_ image: UIImage, _ side: CurlSide) -> UIViewController {
+        CurlPageController(image: image, side: side, layout: layout ?? .single, paper: paper)
     }
 
     // MARK: - Glue
@@ -426,7 +417,7 @@ extension PageCurlHost: UIPageViewControllerDataSource {
     }
 
     private func page(_ side: CurlSide) -> UIViewController? {
-        pages[side.offset].map { self.side($0, offset: side.offset, second: side.isSecond) }
+        pages[side.offset].map { self.side($0, side) }
     }
 }
 

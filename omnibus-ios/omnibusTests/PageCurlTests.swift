@@ -130,6 +130,24 @@ struct PageCurlTests {
         )
     }
 
+    @Test("a single column shows its front, and a spread both its halves")
+    func shownIsTheFrontOrBothHalves() {
+        #expect(CurlLayout.single.shown(at: 1) == [front(1)])
+        #expect(CurlLayout.spread.shown(at: 1) == [front(1), back(1)])
+    }
+
+    @Test("a single column turns over the current page going forward, the incoming one coming back")
+    func singleTurnTakesTheLandingFrontAndTheTurningBack() {
+        #expect(CurlLayout.single.turn(1) == [front(1), back(0)])
+        #expect(CurlLayout.single.turn(-1) == [front(-1), back(-1)])
+    }
+
+    @Test("a spread turns to the whole spread it lands on, either way")
+    func spreadTurnTakesTheLandingSpread() {
+        #expect(CurlLayout.spread.turn(1) == [front(1), back(1)])
+        #expect(CurlLayout.spread.turn(-1) == [front(-1), back(-1)])
+    }
+
     @Test("a single column, or a spread whose spine is unknown, curls over the whole stage")
     func frameIsTheStageWithoutASpine() {
         let stage = CGRect(x: 0, y: 0, width: 900, height: 600)
@@ -189,6 +207,49 @@ struct PageCurlTests {
         #expect(leftPrint.image?.size == CGSize(width: 1, height: 1))
         #expect(rightPrint.alpha == 1)
         #expect(rightPrint.image?.imageOrientation == .up)
+    }
+}
+
+@Suite("Page curl pager")
+@MainActor
+struct PageCurlPagerTests {
+    private func installed() -> (UIView, PageCurlHost) {
+        let stage = UIView(frame: CGRect(x: 0, y: 0, width: 900, height: 600))
+        let curl = PageCurlHost()
+        curl.install(on: stage)
+        return (stage, curl)
+    }
+
+    /// The pager's pan lives on the stage; a swap must not leave the old one.
+    private func pans(on stage: UIView) -> Int {
+        (stage.gestureRecognizers ?? []).filter { $0 is UIPanGestureRecognizer }.count
+    }
+
+    @Test("a spread swaps in a pager spined in the middle, over the band about the spine")
+    func fitSpreadSwapsInAMidSpinePager() {
+        let (stage, curl) = installed()
+        let single = curl.pager
+
+        curl.fit(.spread, spine: 460)
+
+        #expect(curl.pager !== single)
+        #expect(curl.pager.spineLocation == .mid)
+        #expect(curl.pager.view.superview === stage)
+        #expect(single.view.superview == nil)
+        #expect(curl.pager.view.frame == CGRect(x: 20, y: 0, width: 880, height: 600))
+        #expect(pans(on: stage) == 1)
+    }
+
+    @Test("back to a single column swaps an edge-spined pager in over the whole stage")
+    func fitSingleSwapsBackToAnEdgeSpinePager() {
+        let (stage, curl) = installed()
+        curl.fit(.spread, spine: 460)
+
+        curl.fit(.single, spine: nil)
+
+        #expect(curl.pager.spineLocation == .min)
+        #expect(curl.pager.view.frame == stage.bounds)
+        #expect(pans(on: stage) == 1)
     }
 }
 
