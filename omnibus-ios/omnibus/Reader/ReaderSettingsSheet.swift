@@ -64,11 +64,7 @@ struct ReaderSettingsSheet: View {
                             selection: $controller.settings.margins
                         )
 
-                        PillSelector(
-                            options: ReaderSpread.allCases,
-                            label: \.label,
-                            selection: $controller.settings.spread
-                        )
+                        spreadChoice
 
                         PillSelector(
                             options: ReaderPageTurn.allCases,
@@ -111,6 +107,30 @@ struct ReaderSettingsSheet: View {
         // system caps it at `.large` on a phone too short to fit it.
         .presentationDetents([restingDetent, .large], selection: detent)
         .tint(palette.accentColor)
+    }
+
+    /// Single vs Two Pages, offered only where epub.js can lay out two columns.
+    /// Hidden is presentation alone: the stored choice is left as it is.
+    @ViewBuilder
+    private var spreadChoice: some View {
+        let fit = controller.spreadFit
+        if fit != .never {
+            VStack(alignment: .leading, spacing: 6) {
+                PillSelector(
+                    options: ReaderSpread.allCases,
+                    label: \.label,
+                    selection: $controller.settings.spread
+                )
+
+                if let note = fit.note {
+                    Text(note)
+                        .font(.ui(12))
+                        .foregroundStyle(palette.ink3Color)
+                        .lineLimit(1)
+                        .padding(.horizontal, 4)
+                }
+            }
+        }
     }
 
     /// `.medium` only for the frame before the first layout reports.

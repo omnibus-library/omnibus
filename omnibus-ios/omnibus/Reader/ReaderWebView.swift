@@ -47,13 +47,17 @@ enum ReaderMargins: String, Codable, CaseIterable {
 
 /// Single vs two-page layout. `OmnibusReader.init`'s `spread` option and
 /// `setSpread` take this literally: "none" forces a single column, "auto"
-/// lets epub.js pair columns once the stage crosses its `minSpreadWidth` —
-/// which a landscape phone or an iPad routinely does. Without an explicit
-/// value the reader silently inherited "auto" (issue #2081, finding 3);
+/// pairs columns once the stage reaches `minSpreadWidth`, which the host hands
+/// epub.js at boot; `SpreadFit` decides where that can happen. Without an
+/// explicit value the reader silently inherited "auto" (issue #2081, finding 3);
 /// mirrors the web reader's `Spread` in
 /// `frontend/src/pages/reader/typography.rs`.
 enum ReaderSpread: String, Codable, CaseIterable {
     case single, double
+
+    /// The stage width epub.js pairs columns at, handed to it at boot so the
+    /// sheet's rule and the layout's can't drift.
+    static let minSpreadWidth: CGFloat = 800
 
     var css: String {
         switch self {
@@ -387,6 +391,39 @@ final class ReaderController: NSObject {
 
     /// The curl drawn over the page, when the stage has one.
     @ObservationIgnored weak var pageCurl: PageCurlHost?
+
+    /// The window the stage is in; `nil` until it has laid out.
+    var screen: ReaderScreen?
+
+    /// Whether a hinged phone is folded, which a build without the hinge API
+    /// never learns.
+    var isFolded = false
+
+    /// Where Two Pages fits on that screen. Offered until the screen is known,
+    /// as it was before the sheet looked.
+    var spreadFit: SpreadFit {
+        screen.map { SpreadFit(screen: $0, folded: isFolded) } ?? .now
+    }
+
+    /// Whether a sensor housing held the status bar's room when last read with the bar hidden.
+    private var statusBarFitsInTopInset = false
+
+    /// Whether the status bar is hidden: it joins the chrome only where that can't move the page.
+    ///
+    /// Learnt from reports taken with the bar hidden alone; with it showing, another screen's
+    /// bar (the audio player's) can raise the top inset and keep the decision up.
+    func hidesStatusBar(chromeVisible: Bool) -> Bool {
+        !(chromeVisible && statusBarFitsInTopInset)
+    }
+
+    /// Listens to the window and hinge the stage reports.
+    func observe(_ stage: ReaderStageView) {
+        stage.onScreenChange = { [weak self] screen, statusBarHidden in
+            self?.screen = screen
+            if statusBarHidden { self?.statusBarFitsInTopInset = screen.insets.top > 0 }
+        }
+        stage.onFoldChange = { [weak self] folded in self?.isFolded = folded }
+    }
 
     var settings: ReaderSettings {
         didSet {
@@ -768,6 +805,7 @@ final class ReaderController: NSObject {
             "maxWidth": settings.margins.css,
             "justify": settings.justify,
             "spread": settings.spread.css,
+            "minSpreadWidth": ReaderSpread.minSpreadWidth,
             // Without allow-scripts on the section iframe WebKit dispatches no
             // events into it — selection and gestures are dead on iOS.
             "allowScriptedContent": true,
@@ -951,6 +989,7 @@ struct ReaderWebView: UIViewRepresentable {
         curl.isEnabled = controller.settings.pageTurn == .curl
         controller.pageCurl = curl
         let stage = ReaderStageView(webView: webView, curl: curl)
+        controller.observe(stage)
 
         guard let url = Self.entryURL else { return stage }
         webView.load(URLRequest(url: url))

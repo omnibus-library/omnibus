@@ -382,7 +382,7 @@ private func bootFixtureReader() async throws -> BootedReader {
 /// The host app launches its own UI around these tests, but not necessarily
 /// before the first one runs — so this waits rather than assuming.
 @MainActor
-private func firstWindowScene() async -> UIWindowScene? {
+func firstWindowScene() async -> UIWindowScene? {
     var scene: UIWindowScene?
     _ = await waitUntil(timeout: .seconds(10)) {
         scene = UIApplication.shared.connectedScenes

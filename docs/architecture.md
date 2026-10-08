@@ -663,8 +663,10 @@ Reader/             — SwiftUI reader chrome, the host-drawn selection layer,
                       readers' automatic read-status transitions — unread
                       marks reading on open, the book's end marks finished,
                       never a downgrade; the comic pager drives the same
-                      tracker), over Web/ (vendored epub.js + JSZip + glue,
-                      hosted in a WKWebView)
+                      tracker), SpreadFit (where the Two Pages choice can lay
+                      out two columns on the screen in use, so the typography
+                      sheet offers it only there), over Web/ (vendored epub.js
+                      + JSZip + glue, hosted in a WKWebView)
 Comic/              — the native CBZ pager: ComicReaderView (paged TabView +
                       UIScrollView zoom per page), ComicPages (per-page server
                       reads online, ZIPFoundation over the downloaded archive
@@ -926,10 +928,11 @@ reading theme.
 
 **The glue is forked.** `omnibus-ios/omnibus/Reader/Web/epub-reader-glue.js` is a
 copy of `frontend/assets/vendor/epub-reader-glue.js`, and the two have diverged:
-the iOS copy carries `sectionRanges` / `pagesLeftInSection` plus the whole
-selection engine above, and the web copy has since moved its pagination onto
-`location.start.displayed` and still uses WebKit's own selection. Changing one
-does not change the other — check both when touching reader behaviour. The
+the iOS copy carries `sectionRanges` / `pagesLeftInSection`, the host's
+`minSpreadWidth` init option, plus the whole selection engine above, and the web
+copy has since moved its pagination onto `location.start.displayed` and still
+uses WebKit's own selection. Changing one does not change the other — check both
+when touching reader behaviour. The
 annotation repaint (`repaintAnnotations` / `scheduleAnnotationRepaint`, re-measuring
 marks after a typography or webfont reflow that epub.js does not reframe for) was
 one such gap: it existed on web only until #2193 ported it, and the iOS copy also

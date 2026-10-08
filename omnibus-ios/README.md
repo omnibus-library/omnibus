@@ -327,6 +327,15 @@ turns a sheet about its spine, as a book does: the pager is remade with a
 and the back of the sheet that turns is the facing page it lands on. Reduce
 Motion turns the curl off.
 
+**Two Pages is offered only where two columns can fit.** epub.js pairs columns
+once the stage reaches 800px, and the host hands it that number at boot
+(`ReaderSpread.minSpreadWidth`) so the settings sheet and the layout share one
+rule. `SpreadFit` reads the window's size and safe areas (reported by
+`ReaderStageView`, which also watches the hinge on the iOS 27.1 SDK) and hides
+the Single Page / Two Pages row where the stage never gets that wide, with a
+note where it will — in landscape, or when a folded phone is unfolded. The
+stored choice is left as it is, so it is there again on a screen that fits.
+
 **Reading chrome follows Apple Books.** A book opens bare — no buttons at all,
 just the page between two centred labels. A centre tap brings up a `✕`
 top-right and one menu button bottom-right; another puts them away.
@@ -368,7 +377,8 @@ All of it sits in bands `#stage` reserves via `env(safe-area-inset-*)`, so
 prose never runs under the notch, the home indicator, or the chrome itself.
 Those bands are sized to clear the floating controls: the chrome is laid *over*
 the page, and re-paginating every time the bars toggle would cost a reflow per
-tap.
+tap. For the same reason the status bar only joins the chrome where a notch
+already reserves its room, so a toggle never moves the page.
 
 > `.glassEffect` goes **under** a button, never around it. Wrapped around one
 > (especially as `.interactive()`) the glass takes the touch and the button's

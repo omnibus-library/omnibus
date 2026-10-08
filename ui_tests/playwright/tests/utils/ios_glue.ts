@@ -63,6 +63,7 @@ export interface GlueWindow {
   OmnibusReader: {
     init(elementId: string, fileUrl: string, opts: object): void;
     next(): void;
+    setSpread(mode: "none" | "auto"): void;
     beginSelectionAt(x: number, y: number): boolean;
     extendSelectionTo(x: number, y: number): void;
     endSelectionDrag(): void;

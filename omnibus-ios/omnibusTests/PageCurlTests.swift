@@ -251,6 +251,61 @@ struct PageCurlPagerTests {
         #expect(curl.pager.view.frame == stage.bounds)
         #expect(pans(on: stage) == 1)
     }
+
+    @Test("a pager is never empty, as installed or after either swap")
+    func pagerHoldsAPageForItsSpineFromTheStart() {
+        let (stage, curl) = installed()
+        // The host holds its stage weakly, and a dropped one makes `fit` a no-op.
+        withExtendedLifetime(stage) {
+            #expect(curl.pager.viewControllers?.count == 1)
+
+            curl.fit(.spread, spine: 460)
+            #expect(curl.pager.viewControllers?.count == 2)
+
+            curl.fit(.single, spine: nil)
+            #expect(curl.pager.viewControllers?.count == 1)
+        }
+    }
+
+    @Test("the stand-ins can neither start a curl nor read as a landing")
+    func standInsAreInertToTheDataSource() throws {
+        let (stage, curl) = installed()
+        try withExtendedLifetime(stage) {
+            var standIns = try #require(curl.pager.viewControllers)
+            curl.fit(.spread, spine: 460)
+            standIns += try #require(curl.pager.viewControllers)
+            #expect(standIns.count == 3)
+
+            for standIn in standIns {
+                #expect(!(standIn is CurlPageController))
+                #expect(curl.pageViewController(curl.pager, viewControllerBefore: standIn) == nil)
+                #expect(curl.pageViewController(curl.pager, viewControllerAfter: standIn) == nil)
+            }
+        }
+    }
+
+    /// The rotation a window forwards to a child pager; UIKit throws mid-way when it holds none.
+    private func forwardRotation(to pager: UIPageViewController) {
+        pager.willRotate(to: .landscapeLeft, duration: 0.3)
+        pager.willAnimateRotation(to: .landscapeLeft, duration: 0.3)
+        pager.didRotate(from: .portrait)
+    }
+
+    @Test("a window rotating while the pager is adopted does not throw, before and after a swap")
+    func rotatingAnAdoptedPagerSurvives() throws {
+        let parent = UIViewController()
+        let (stage, curl) = installed()
+        parent.view.addSubview(stage)
+        curl.adopt(by: parent)
+
+        // Rotating an empty pager aborts the runner, so check the invariant first.
+        try #require(!(curl.pager.viewControllers ?? []).isEmpty)
+        forwardRotation(to: curl.pager)
+
+        curl.fit(.spread, spine: 460)
+        try #require(!(curl.pager.viewControllers ?? []).isEmpty)
+        forwardRotation(to: curl.pager)
+    }
 }
 
 @Suite("Page curl taps")
