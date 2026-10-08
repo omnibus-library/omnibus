@@ -327,6 +327,15 @@ turns a sheet about its spine, as a book does: the pager is remade with a
 and the back of the sheet that turns is the facing page it lands on. Reduce
 Motion turns the curl off.
 
+**Two Pages is offered only where two columns can fit.** epub.js pairs columns
+once the stage reaches 800px, and the host hands it that number at boot
+(`ReaderSpread.minSpreadWidth`) so the settings sheet and the layout share one
+rule. `SpreadFit` reads the window's size and safe areas (reported by
+`ReaderStageView`, which also watches the hinge on the iOS 27.1 SDK) and hides
+the Single Page / Two Pages row where the stage never gets that wide, with a
+note where it will — in landscape, or when a folded phone is unfolded. The
+stored choice is left as it is, so it is there again on a screen that fits.
+
 **Reading chrome follows Apple Books.** A book opens bare — no buttons at all,
 just the page between two centred labels. A centre tap brings up a `✕`
 top-right and one menu button bottom-right; another puts them away.

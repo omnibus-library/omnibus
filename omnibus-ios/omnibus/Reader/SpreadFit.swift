@@ -33,14 +33,17 @@ extension ReaderScreen {
 
 /// Where Two Pages can lay out two columns on the screen in use.
 enum SpreadFit: Equatable {
-    case never, inLandscape, now
+    case never, inLandscape, whenUnfolded, now
 
-    init(screen: ReaderScreen) {
+    /// Fits now beats fits sideways, which beats fits once unfolded.
+    init(screen: ReaderScreen, folded: Bool = false) {
         let needed = ReaderSpread.minSpreadWidth
         if screen.stageWidth >= needed {
             self = .now
         } else if screen.landscapeStageWidth >= needed {
             self = .inLandscape
+        } else if folded {
+            self = .whenUnfolded
         } else {
             self = .never
         }
@@ -50,6 +53,7 @@ enum SpreadFit: Equatable {
     var note: String? {
         switch self {
         case .inLandscape: "Two pages appear in landscape."
+        case .whenUnfolded: "Two pages appear when the phone is unfolded."
         case .never, .now: nil
         }
     }

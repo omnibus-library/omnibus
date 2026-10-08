@@ -395,9 +395,15 @@ final class ReaderController: NSObject {
     /// The window the stage is in; `nil` until it has laid out.
     var screen: ReaderScreen?
 
+    /// Whether a hinged phone is folded, which a build without the hinge API
+    /// never learns.
+    var isFolded = false
+
     /// Where Two Pages fits on that screen. Offered until the screen is known,
     /// as it was before the sheet looked.
-    var spreadFit: SpreadFit { screen.map(SpreadFit.init) ?? .now }
+    var spreadFit: SpreadFit {
+        screen.map { SpreadFit(screen: $0, folded: isFolded) } ?? .now
+    }
 
     var settings: ReaderSettings {
         didSet {
@@ -964,6 +970,7 @@ struct ReaderWebView: UIViewRepresentable {
         controller.pageCurl = curl
         let stage = ReaderStageView(webView: webView, curl: curl)
         stage.onScreenChange = { [weak controller] screen in controller?.screen = screen }
+        stage.onFoldChange = { [weak controller] folded in controller?.isFolded = folded }
 
         guard let url = Self.entryURL else { return stage }
         webView.load(URLRequest(url: url))

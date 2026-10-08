@@ -31,6 +31,8 @@ private func sideways(_ width: CGFloat, _ height: CGFloat) -> ReaderScreen {
 
 private let iPhone18Pro = (upright: upright(402, 874), sideways: sideways(874, 402))
 private let iPhone18ProMax = (upright: upright(440, 956), sideways: sideways(956, 440))
+private let iPhoneDuoOuter = (upright: upright(466, 678), sideways: sideways(678, 466))
+private let iPhoneDuoInner = (upright: upright(669, 951), sideways: sideways(951, 669))
 
 @Suite("Where Two Pages fits")
 struct SpreadFitTests {
@@ -82,6 +84,35 @@ struct SpreadFitTests {
         #expect(SpreadFit(screen: pad).note == nil)
     }
 
+    @Test("a folded Duo says two pages appear when it is unfolded, held either way")
+    func foldedPhoneSaysUnfold() {
+        let upright = SpreadFit(screen: iPhoneDuoOuter.upright, folded: true)
+        let sideways = SpreadFit(screen: iPhoneDuoOuter.sideways, folded: true)
+
+        #expect(upright == .whenUnfolded)
+        #expect(sideways == .whenUnfolded)
+        #expect(upright.note == "Two pages appear when the phone is unfolded.")
+    }
+
+    @Test("an unfolded Duo upright notes landscape, and on its side lays out two columns")
+    func unfoldedDuoFollowsItsInnerScreen() {
+        #expect(iPhoneDuoInner.upright.stageWidth == 649)
+        #expect(SpreadFit(screen: iPhoneDuoInner.upright) == .inLandscape)
+        #expect(SpreadFit(screen: iPhoneDuoInner.sideways) == .now)
+        #expect(SpreadFit(screen: iPhoneDuoInner.sideways).note == nil)
+    }
+
+    @Test("a phone that fits two columns sideways says so before it says to unfold")
+    func foldedDoesNotOutrankWhatFits() {
+        #expect(SpreadFit(screen: iPhone18ProMax.upright, folded: true) == .inLandscape)
+        #expect(SpreadFit(screen: iPhone18ProMax.sideways, folded: true) == .now)
+    }
+
+    @Test("the Duo's outer screen with no fold reported never fits")
+    func outerScreenWithoutAFoldNeverFits() {
+        #expect(SpreadFit(screen: iPhoneDuoOuter.upright) == .never)
+    }
+
     /// epub.js pairs at `>=`, so 800 is two columns and 799 is one.
     @Test("a stage of exactly 800 fits and one of 799 does not")
     func thresholdIsInclusive() {
@@ -117,5 +148,17 @@ struct ReaderSpreadFitTests {
 
         controller.screen = iPhone18ProMax.sideways
         #expect(controller.spreadFit == .now)
+    }
+
+    @Test("a controller re-decides as the phone folds and unfolds")
+    func fitFollowsTheFold() {
+        let controller = ReaderController(settings: ReaderSettings())
+        controller.screen = iPhoneDuoOuter.upright
+
+        controller.isFolded = true
+        #expect(controller.spreadFit == .whenUnfolded)
+
+        controller.isFolded = false
+        #expect(controller.spreadFit == .never)
     }
 }
