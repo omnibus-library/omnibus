@@ -29,6 +29,9 @@ extension ReaderScreen {
         let sensor = max(insets.top, insets.left, insets.right)
         return max(size.width, size.height) - 2 * sensor - 2 * Self.stageGutter
     }
+
+    /// Whether a sensor housing already reserves the status bar's room, read with the bar hidden.
+    var statusBarFitsInTopInset: Bool { insets.top > 0 }
 }
 
 /// Where Two Pages can lay out two columns on the screen in use.

@@ -185,7 +185,7 @@ struct ReaderView: View {
         // too (#2220). On the modified view, never the inset's content, which
         // the keyboard has already shrunk (#2102).
         .ignoresSafeArea(.keyboard, edges: .bottom)
-        .statusBarHidden(!chromeVisible)
+        .statusBarHidden(!(chromeVisible && controller.showsStatusBarWithChrome))
         .persistentSystemOverlays(chromeVisible ? .automatic : .hidden)
         // The status bar sits on the page, so it has to read against the
         // reading theme — white-on-white otherwise. Sheets opt back out below.

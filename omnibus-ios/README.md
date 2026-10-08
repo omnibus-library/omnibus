@@ -377,7 +377,8 @@ All of it sits in bands `#stage` reserves via `env(safe-area-inset-*)`, so
 prose never runs under the notch, the home indicator, or the chrome itself.
 Those bands are sized to clear the floating controls: the chrome is laid *over*
 the page, and re-paginating every time the bars toggle would cost a reflow per
-tap.
+tap. For the same reason the status bar only joins the chrome where a notch
+already reserves its room, so a toggle never moves the page.
 
 > `.glassEffect` goes **under** a button, never around it. Wrapped around one
 > (especially as `.interactive()`) the glass takes the touch and the button's

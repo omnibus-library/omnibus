@@ -405,6 +405,14 @@ final class ReaderController: NSObject {
         screen.map { SpreadFit(screen: $0, folded: isFolded) } ?? .now
     }
 
+    /// Whether the status bar may join the chrome; hidden until the screen is known.
+    ///
+    /// Only where `insets.top` is already above zero, so showing the bar can't move the
+    /// page or change the inset the next screen report reads.
+    var showsStatusBarWithChrome: Bool {
+        screen?.statusBarFitsInTopInset ?? false
+    }
+
     /// Listens to the window and hinge the stage reports.
     func observe(_ stage: ReaderStageView) {
         stage.onScreenChange = { [weak self] screen in self?.screen = screen }
