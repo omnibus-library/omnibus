@@ -25,10 +25,6 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
   `endSelectionDrag`, the same calls `ReaderWebView.swift` evaluates. Never
   reach into the glue's closure: a test-only export on `OmnibusReader` is API
   the app ships.
-- **Emulate a safe-area change with CDP**, not a style override. The status bar
-  showing is `top` 0 → 24 on an iPad: `Emulation.setSafeAreaInsetsOverride` on
-  `page.context().newCDPSession(page)`, set before `openGlue` so the book first
-  lays out under the insets the reader opens with. Sides left out stay `0px`.
 - **Wait on what the glue reports** — `expect.poll` on the recorded status
   until `"ready"` — never on a timeout. The one exception is asserting an
   absence (no relocate reported movement), which needs a window.
@@ -46,8 +42,7 @@ of its own to lay out. It needs no server, but it runs under the suite's
 It is Chromium, not WebKit. It pins the glue's DOM logic — which text nodes a
 walk keeps, what range a token covers, what a payload carries — and nothing
 WebKit does differently: touch dispatch, WKWebView's own text interaction
-(#2655), `-webkit-` rendering. A safe-area spec emulates `env()`, not which
-insets UIKit hands the web view.
+(#2655), `-webkit-` rendering.
 
 ## CI
 

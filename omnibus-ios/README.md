@@ -377,9 +377,7 @@ All of it sits in bands `#stage` reserves via `env(safe-area-inset-*)`, so
 prose never runs under the notch, the home indicator, or the chrome itself.
 Those bands are sized to clear the floating controls: the chrome is laid *over*
 the page, and re-paginating every time the bars toggle would cost a reflow per
-tap. The status bar toggles with the chrome and, on an iPad or Home-button
-iPhone, sits inside the safe area only while it shows, so the top band is
-floored at its height everywhere but a phone on its side, which never shows one.
+tap.
 
 > `.glassEffect` goes **under** a button, never around it. Wrapped around one
 > (especially as `.interactive()`) the glass takes the touch and the button's

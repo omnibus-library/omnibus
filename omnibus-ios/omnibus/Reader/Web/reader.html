@@ -31,17 +31,10 @@
          every time the bars toggle would cost a reflow per tap. */
       #stage {
         position: absolute;
-        /* Floored at the status bar, which only joins the safe area while shown. */
-        top: calc(max(env(safe-area-inset-top, 0px), 24px) + 58px);
+        top: calc(env(safe-area-inset-top, 0px) + 58px);
         bottom: calc(env(safe-area-inset-bottom, 0px) + 58px);
         left: calc(env(safe-area-inset-left, 0px) + 10px);
         right: calc(env(safe-area-inset-right, 0px) + 10px);
-      }
-      /* A phone on its side never shows the status bar. */
-      @media (max-height: 500px) {
-        #stage {
-          top: calc(env(safe-area-inset-top, 0px) + 58px);
-        }
       }
       /* epub.js sizes its iframe from the container, so the container has to
          be a definite box — not an auto-height flow element. */
