@@ -47,9 +47,9 @@ enum ReaderMargins: String, Codable, CaseIterable {
 
 /// Single vs two-page layout. `OmnibusReader.init`'s `spread` option and
 /// `setSpread` take this literally: "none" forces a single column, "auto"
-/// lets epub.js pair columns once the stage crosses its `minSpreadWidth` —
-/// which a landscape phone or an iPad routinely does. Without an explicit
-/// value the reader silently inherited "auto" (issue #2081, finding 3);
+/// pairs columns once the stage reaches `minSpreadWidth`, which the host hands
+/// epub.js at boot; `SpreadFit` decides where that can happen. Without an
+/// explicit value the reader silently inherited "auto" (issue #2081, finding 3);
 /// mirrors the web reader's `Spread` in
 /// `frontend/src/pages/reader/typography.rs`.
 enum ReaderSpread: String, Codable, CaseIterable {
