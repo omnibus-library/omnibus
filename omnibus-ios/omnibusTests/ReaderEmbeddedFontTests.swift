@@ -430,6 +430,14 @@ private struct SectionFontState {
     /// `FontFaceSet.check` for the named face at a real size. Weaker than it
     /// looks — see the note in the named-face test.
     var namedFaceUsable: Bool
+
+    /// The first family in `paragraphFamily`, unquoted. WebKit serializes a
+    /// multi-word name quoted on iOS 26 and bare on iOS 27; the name is the claim.
+    var leadingParagraphFamily: String {
+        let first = paragraphFamily.split(separator: ",", maxSplits: 1).first ?? ""
+        return first.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+    }
 }
 
 @MainActor
@@ -509,7 +517,7 @@ struct ReaderEmbeddedFontTests {
 
         // The book's own face, under the reader's default. Original declares no
         // `font-family` at all, so this is the publisher's `p` rule winning.
-        #expect(font.paragraphFamily.hasPrefix("\"\(embeddedFamily)\""))
+        #expect(font.leadingParagraphFamily == embeddedFamily, "stack: \(font.paragraphFamily)")
 
         // The archive's bytes reached the section as a data: URI …
         #expect(
@@ -575,7 +583,7 @@ struct ReaderEmbeddedFontTests {
             "\(namedFamily) never loaded, so the bundled woff2 did not resolve through the scheme handler: \(font); \(reader.phases)"
         )
         #expect(font.namedFaceUsable)
-        #expect(font.paragraphFamily.hasPrefix("\"\(namedFamily)\""))
+        #expect(font.leadingParagraphFamily == namedFamily, "stack: \(font.paragraphFamily)")
         #expect(font.erroredEmbedded == 0)
     }
 }
