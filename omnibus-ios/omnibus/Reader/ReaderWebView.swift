@@ -392,6 +392,13 @@ final class ReaderController: NSObject {
     /// The curl drawn over the page, when the stage has one.
     @ObservationIgnored weak var pageCurl: PageCurlHost?
 
+    /// The window the stage is in; `nil` until it has laid out.
+    var screen: ReaderScreen?
+
+    /// Where Two Pages fits on that screen. Offered until the screen is known,
+    /// as it was before the sheet looked.
+    var spreadFit: SpreadFit { screen.map(SpreadFit.init) ?? .now }
+
     var settings: ReaderSettings {
         didSet {
             guard settings != oldValue else { return }
@@ -956,6 +963,7 @@ struct ReaderWebView: UIViewRepresentable {
         curl.isEnabled = controller.settings.pageTurn == .curl
         controller.pageCurl = curl
         let stage = ReaderStageView(webView: webView, curl: curl)
+        stage.onScreenChange = { [weak controller] screen in controller?.screen = screen }
 
         guard let url = Self.entryURL else { return stage }
         webView.load(URLRequest(url: url))

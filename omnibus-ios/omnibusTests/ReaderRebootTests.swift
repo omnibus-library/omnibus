@@ -368,6 +368,26 @@ struct ReaderRebootTests {
         )
     }
 
+    /// Hiding the row is presentation: the choice the reader made on a screen
+    /// that fits two columns is theirs, and is there when one does again.
+    @Test("a screen too small for two pages hides the choice without changing it")
+    func hiddenSpreadChoiceIsKept() throws {
+        try withCleanReaderSettings {
+            let controller = openReader(at: openedAt)
+            controller.settings.spread = .double
+
+            controller.screen = ReaderScreen(
+                size: CGSize(width: 402, height: 874),
+                insets: UIEdgeInsets(top: 62, left: 0, bottom: 34, right: 0)
+            )
+
+            #expect(controller.spreadFit == .never)
+            #expect(controller.settings.spread == .double)
+            let options = try bootOptions(controller)
+            #expect(options["spread"] as? String == "auto")
+        }
+    }
+
     @Test("a torn-down page stops being a diff base")
     func teardownDropsTheDiffBase() {
         withCleanReaderSettings {
