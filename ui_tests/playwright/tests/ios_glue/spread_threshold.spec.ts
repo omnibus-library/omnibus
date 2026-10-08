@@ -25,13 +25,6 @@ async function columns(page: Page): Promise<number> {
   return settled.columns;
 }
 
-function setSpread(page: Page, mode: "none" | "auto"): Promise<void> {
-  return page.evaluate(
-    (m) => (window as unknown as GlueWindow).OmnibusReader.setSpread(m),
-    mode,
-  );
-}
-
 test.describe("iOS reader glue: the two-page threshold", () => {
   // `#stage` is the viewport less 10px a side, so 920 wide is a 900 stage.
   test.describe("a stage exactly at the threshold", () => {
@@ -67,7 +60,9 @@ test.describe("iOS reader glue: the two-page threshold", () => {
         minSpreadWidth: THRESHOLD,
       });
 
-      await setSpread(page, "auto");
+      await page.evaluate(() =>
+        (window as unknown as GlueWindow).OmnibusReader.setSpread("auto"),
+      );
       expect(
         await columns(page),
         "turning pairing on is not the threshold",
