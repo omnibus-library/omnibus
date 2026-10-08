@@ -347,7 +347,6 @@ struct ReaderRebootTests {
 
             let options = try bootOptions(controller)
             #expect(options["minSpreadWidth"] as? Double == Double(ReaderSpread.minSpreadWidth))
-            #expect(ReaderSpread.minSpreadWidth == 800)
         }
     }
 

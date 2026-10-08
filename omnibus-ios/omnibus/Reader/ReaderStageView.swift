@@ -13,11 +13,7 @@ final class ReaderStageView: UIView {
     /// Told when the window's size or safe areas change.
     var onScreenChange: ((ReaderScreen) -> Void)?
     /// Told whether a hinged phone is folded, as the hinge moves.
-    var onFoldChange: ((Bool) -> Void)? {
-        // The hinge's first update can land before anyone is listening.
-        didSet { onFoldChange?(isFolded) }
-    }
-    private var isFolded = false
+    var onFoldChange: ((Bool) -> Void)?
     private var reportedScreen: ReaderScreen?
 
     init(webView: WKWebView, curl: PageCurlHost) {
@@ -57,8 +53,7 @@ final class ReaderStageView: UIView {
                 UIHingeInteraction { [weak self] _, update in
                     guard let self else { return }
                     let status = update.hinge?.status
-                    isFolded = status == .closed || status == .partiallyOpen
-                    onFoldChange?(isFolded)
+                    onFoldChange?(status == .closed || status == .partiallyOpen)
                 })
         }
         #endif
