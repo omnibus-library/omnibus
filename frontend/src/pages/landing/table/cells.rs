@@ -8,7 +8,6 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{Contributor, EbookMetadata, MetadataOverrides};
 
-use super::super::filtering::format_badge_label;
 use super::EditField;
 use crate::components::chip_editor::{ChipEditor, ChipEditorOptions, SuggestionItem};
 use crate::{data, Route};
@@ -350,6 +349,12 @@ pub(super) fn EbookRowCoverCell(
             }
         }
     }
+}
+
+/// Short badge text for the Formats column. Stays compact so a row with two
+/// formats doesn't overflow the cell.
+fn format_badge_label(raw: &str) -> String {
+    raw.trim().to_ascii_uppercase()
 }
 
 /// Formats `<td>` — one badge span per format, em-dash when empty.

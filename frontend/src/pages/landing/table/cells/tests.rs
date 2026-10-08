@@ -55,3 +55,9 @@ fn field_override_is_noop_for_tags_field() {
     let ov = field_override(EditField::Tags, "fiction");
     assert_eq!(ov, MetadataOverrides::default());
 }
+
+#[test]
+fn format_badge_label_uppercases() {
+    assert_eq!(format_badge_label(" epub "), "EPUB");
+    assert_eq!(format_badge_label("m4b"), "M4B");
+}
