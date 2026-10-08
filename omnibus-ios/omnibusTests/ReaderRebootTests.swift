@@ -340,6 +340,34 @@ struct ReaderRebootTests {
         }
     }
 
+    @Test("a boot hands the glue the width its two pages need")
+    func bootCarriesTheTwoPageThreshold() throws {
+        try withCleanReaderSettings {
+            let controller = openReader(at: openedAt)
+
+            let options = try bootOptions(controller)
+            #expect(options["minSpreadWidth"] as? Double == Double(ReaderSpread.minSpreadWidth))
+            #expect(ReaderSpread.minSpreadWidth == 800)
+        }
+    }
+
+    @Test("a spread change still sends the mode alone, so the page keeps its threshold")
+    func spreadSyncSendsTheModeAlone() {
+        var single = ReaderSettings()
+        single.spread = .single
+        var double = ReaderSettings()
+        double.spread = .double
+
+        #expect(
+            ReaderController.settingsScripts(from: single, to: double)
+                == ["OmnibusReader.setSpread(\"auto\")"]
+        )
+        #expect(
+            ReaderController.settingsScripts(from: double, to: single)
+                == ["OmnibusReader.setSpread(\"none\")"]
+        )
+    }
+
     @Test("a torn-down page stops being a diff base")
     func teardownDropsTheDiffBase() {
         withCleanReaderSettings {

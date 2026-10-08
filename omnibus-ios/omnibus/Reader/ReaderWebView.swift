@@ -55,6 +55,10 @@ enum ReaderMargins: String, Codable, CaseIterable {
 enum ReaderSpread: String, Codable, CaseIterable {
     case single, double
 
+    /// The stage width epub.js pairs columns at, handed to it at boot so the
+    /// sheet's rule and the layout's can't drift.
+    static let minSpreadWidth: CGFloat = 800
+
     var css: String {
         switch self {
         case .single: "none"
@@ -768,6 +772,7 @@ final class ReaderController: NSObject {
             "maxWidth": settings.margins.css,
             "justify": settings.justify,
             "spread": settings.spread.css,
+            "minSpreadWidth": ReaderSpread.minSpreadWidth,
             // Without allow-scripts on the section iframe WebKit dispatches no
             // events into it — selection and gestures are dead on iOS.
             "allowScriptedContent": true,

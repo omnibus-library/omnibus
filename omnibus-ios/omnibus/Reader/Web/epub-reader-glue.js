@@ -20,6 +20,7 @@
  *                                           fontFamily?, fontsHref?,
  *                                           lineHeight?,
  *                                           maxWidth?, justify?, spread?,
+ *                                           minSpreadWidth?,
  *                                           allowScriptedContent?,
  *                                           locationsKey? }
  *                                   fontsHref is the reader's self-hosted
@@ -36,7 +37,7 @@
  *   setJustify(on)
  *   setSpread(mode)                 "none" (single column) or "auto"
  *                                   (epub.js pairs columns once the stage
- *                                   crosses its minSpreadWidth)
+ *                                   reaches the threshold init was given)
  *   addAnnotation(cfiRange, color)
  *   removeAnnotation(cfiRange)
  *   clearAnnotations()
@@ -424,7 +425,7 @@
       );
       installFontSerializeHook(patchedBook, fontsPatched);
 
-      rendition = book.renderTo(elementId, {
+      var renderOpts = {
         width: "100%",
         height: "100%",
         flow: "paginated",
@@ -435,7 +436,12 @@
         // library); the web build keeps the stricter sandbox since desktop
         // engines still fire parent-attached listeners.
         allowScriptedContent: !!opts.allowScriptedContent,
-      });
+      };
+      // Only when given, so a host that doesn't care keeps epub.js's default.
+      if (typeof opts.minSpreadWidth === "number" && opts.minSpreadWidth > 0) {
+        renderOpts.minSpreadWidth = opts.minSpreadWidth;
+      }
+      rendition = book.renderTo(elementId, renderOpts);
 
       installGestureNav();
       installContentEnhancements();
