@@ -26,7 +26,7 @@ final class PageCurlHost: NSObject {
         }
     }
 
-    private(set) var pager = PageCurlHost.makePager(spine: .min)
+    private(set) var pager = PageCurlHost.makePager(for: .single)
     private var pages = CurlPages()
     /// What the page was laid out as at the last capture; nil slides.
     private var layout: CurlLayout?
@@ -60,16 +60,18 @@ final class PageCurlHost: NSObject {
         )
     }
 
-    /// A pager's spine is fixed when it is made, so a spread and a single
-    /// column each need their own.
-    private static func makePager(
-        spine: UIPageViewController.SpineLocation
-    ) -> UIPageViewController {
+    /// A pager's spine is fixed when it is made, and UIKit throws on rotating one
+    /// that holds no pages, so it starts on stand-ins.
+    private static func makePager(for layout: CurlLayout) -> UIPageViewController {
         let pager = UIPageViewController(
             transitionStyle: .pageCurl, navigationOrientation: .horizontal,
-            options: [.spineLocation: NSNumber(value: spine.rawValue)]
+            options: [.spineLocation: NSNumber(value: layout.spineLocation.rawValue)]
         )
         pager.isDoubleSided = true
+        pager.setViewControllers(
+            layout.shown(at: 0).map { _ in UIViewController() }, direction: .forward,
+            animated: false
+        )
         return pager
     }
 
@@ -103,7 +105,7 @@ final class PageCurlHost: NSObject {
             adopt(by: nil)
             pager.view.removeFromSuperview()
             if let pan { stage.removeGestureRecognizer(pan) }
-            pager = Self.makePager(spine: layout.spineLocation)
+            pager = Self.makePager(for: layout)
             attachPager(to: stage)
             adopt(by: parent)
         }
