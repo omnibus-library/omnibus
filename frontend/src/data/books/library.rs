@@ -38,11 +38,11 @@ pub(crate) async fn get_ebooks_online(server_url: &str) -> Result<EbookLibrary, 
 
 /// GET `/api/ebooks?sort=&dir=&cursor=&limit=&formats=` — one keyset page.
 ///
-/// Of the sidebar facets only `filters.formats` rides the REST query (the
-/// mobile Sort & filter sheet's chips); the rest are ignored and `facets`
-/// comes back `None` (a web concern). `total` is read from `X-Total-Count`
-/// on the first page only; `next_cursor` from `X-Next-Cursor`. `_stack_series`
-/// is ignored: the REST page carries no stacks.
+/// Of the filter groups only `filters.formats` rides the REST query (the
+/// mobile Sort & filter sheet's chips); the rest are ignored. `facets` is
+/// always `None`. `total` is read from `X-Total-Count` on the first page only;
+/// `next_cursor` from `X-Next-Cursor`. `_stack_series` is ignored: the REST
+/// page carries no stacks.
 #[cfg(feature = "mobile")]
 #[allow(clippy::too_many_arguments)] // the shared signature
 pub async fn get_ebooks_page(
