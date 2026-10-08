@@ -15,6 +15,13 @@ struct ReaderSettingsSheet: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
 
+    /// What the resting detent is cut from: the navigation bar and the scroll
+    /// content under it, as last laid out. Zero until the first layout reports.
+    @State private var barHeight: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+    /// Whether the reader has dragged the sheet up to `.large`.
+    @State private var isExpanded = false
+
     private let themes: [(token: String, label: String)] = [
         ("light", "Light"), ("sepia", "Sepia"), ("dark", "Dark"), ("black", "Black"),
     ]
@@ -81,6 +88,12 @@ struct ReaderSettingsSheet: View {
                 .screenPadding()
                 .padding(.top, Spacing.md)
                 .padding(.bottom, 32)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    contentHeight = $0
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: {
+                barHeight = $0
             }
             .scrollIndicators(.hidden)
             .background(ScreenBackground())
@@ -92,12 +105,26 @@ struct ReaderSettingsSheet: View {
                 }
             }
         }
-        // Tall enough that every control is on screen at rest — a `.medium`
-        // detent cut the layout group off, so half the settings needed a drag
-        // to discover — while still leaving page enough of the page visible to
-        // watch a change land.
-        .presentationDetents([.height(600), .large])
+        // Rests at its content's height, so every control is on screen without
+        // a drag — at the cost of most of the page behind it. Measured, because
+        // a fixed height goes stale the moment a row is added below it. The
+        // system caps it at `.large` on a phone too short to fit it.
+        .presentationDetents([restingDetent, .large], selection: detent)
         .tint(palette.accentColor)
+    }
+
+    /// `.medium` only for the frame before the first layout reports.
+    private var restingDetent: PresentationDetent {
+        contentHeight > 0 ? .height(barHeight + contentHeight) : .medium
+    }
+
+    /// Derived rather than stored, so the selection always names a detent in
+    /// the current set — the resting one moves whenever the content does.
+    private var detent: Binding<PresentationDetent> {
+        Binding(
+            get: { isExpanded ? .large : restingDetent },
+            set: { isExpanded = $0 == .large }
+        )
     }
 
     /// The size is set in the face it controls, so the control previews itself.
