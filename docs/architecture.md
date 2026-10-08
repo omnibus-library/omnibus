@@ -929,9 +929,10 @@ reading theme.
 **The glue is forked.** `omnibus-ios/omnibus/Reader/Web/epub-reader-glue.js` is a
 copy of `frontend/assets/vendor/epub-reader-glue.js`, and the two have diverged:
 the iOS copy carries `sectionRanges` / `pagesLeftInSection`, the host's
-`minSpreadWidth` init option, plus the whole selection engine above, and the web copy has since moved its pagination onto
-`location.start.displayed` and still uses WebKit's own selection. Changing one
-does not change the other — check both when touching reader behaviour. The
+`minSpreadWidth` init option, plus the whole selection engine above, and the web
+copy has since moved its pagination onto `location.start.displayed` and still
+uses WebKit's own selection. Changing one does not change the other — check both
+when touching reader behaviour. The
 annotation repaint (`repaintAnnotations` / `scheduleAnnotationRepaint`, re-measuring
 marks after a typography or webfont reflow that epub.js does not reframe for) was
 one such gap: it existed on web only until #2193 ported it, and the iOS copy also
