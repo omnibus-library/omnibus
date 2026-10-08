@@ -405,6 +405,12 @@ final class ReaderController: NSObject {
         screen.map { SpreadFit(screen: $0, folded: isFolded) } ?? .now
     }
 
+    /// Listens to the window and hinge the stage reports.
+    func observe(_ stage: ReaderStageView) {
+        stage.onScreenChange = { [weak self] screen in self?.screen = screen }
+        stage.onFoldChange = { [weak self] folded in self?.isFolded = folded }
+    }
+
     var settings: ReaderSettings {
         didSet {
             guard settings != oldValue else { return }
@@ -969,8 +975,7 @@ struct ReaderWebView: UIViewRepresentable {
         curl.isEnabled = controller.settings.pageTurn == .curl
         controller.pageCurl = curl
         let stage = ReaderStageView(webView: webView, curl: curl)
-        stage.onScreenChange = { [weak controller] screen in controller?.screen = screen }
-        stage.onFoldChange = { [weak controller] folded in controller?.isFolded = folded }
+        controller.observe(stage)
 
         guard let url = Self.entryURL else { return stage }
         webView.load(URLRequest(url: url))
