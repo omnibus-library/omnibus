@@ -405,17 +405,23 @@ final class ReaderController: NSObject {
         screen.map { SpreadFit(screen: $0, folded: isFolded) } ?? .now
     }
 
-    /// Whether the status bar may join the chrome; hidden until the screen is known.
+    /// Whether a sensor housing held the status bar's room when last read with the bar hidden.
+    private var statusBarFitsInTopInset = false
+
+    /// Whether the status bar is hidden: it joins the chrome only where that can't move the page.
     ///
-    /// Only where `insets.top` is already above zero, so showing the bar can't move the
-    /// page or change the inset the next screen report reads.
-    var showsStatusBarWithChrome: Bool {
-        screen?.statusBarFitsInTopInset ?? false
+    /// Learnt from reports taken with the bar hidden alone; with it showing, another screen's
+    /// bar (the audio player's) can raise the top inset and keep the decision up.
+    func hidesStatusBar(chromeVisible: Bool) -> Bool {
+        !(chromeVisible && statusBarFitsInTopInset)
     }
 
     /// Listens to the window and hinge the stage reports.
     func observe(_ stage: ReaderStageView) {
-        stage.onScreenChange = { [weak self] screen in self?.screen = screen }
+        stage.onScreenChange = { [weak self] screen, statusBarHidden in
+            self?.screen = screen
+            if statusBarHidden { self?.statusBarFitsInTopInset = screen.insets.top > 0 }
+        }
         stage.onFoldChange = { [weak self] folded in self?.isFolded = folded }
     }
 

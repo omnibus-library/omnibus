@@ -10,11 +10,13 @@ final class ReaderStageView: UIView {
     let webView: WKWebView
     let curl: PageCurlHost
 
-    /// Told when the window's size or safe areas change.
-    var onScreenChange: ((ReaderScreen) -> Void)?
+    /// Told when the window's size or safe areas change, and whether the status bar was
+    /// hidden when they were read.
+    var onScreenChange: ((ReaderScreen, _ statusBarHidden: Bool) -> Void)?
     /// Told whether a hinged phone is folded, as the hinge moves.
     var onFoldChange: ((Bool) -> Void)?
     private var reportedScreen: ReaderScreen?
+    private var reportedStatusBarHidden: Bool?
 
     init(webView: WKWebView, curl: PageCurlHost) {
         self.webView = webView
@@ -64,9 +66,11 @@ final class ReaderStageView: UIView {
     private func reportScreen() {
         guard let window else { return }
         let screen = ReaderScreen(size: window.bounds.size, insets: window.safeAreaInsets)
-        guard screen != reportedScreen else { return }
+        let statusBarHidden = window.windowScene?.statusBarManager?.isStatusBarHidden ?? false
+        guard screen != reportedScreen || statusBarHidden != reportedStatusBarHidden else { return }
         reportedScreen = screen
-        onScreenChange?(screen)
+        reportedStatusBarHidden = statusBarHidden
+        onScreenChange?(screen, statusBarHidden)
     }
 
     override func didMoveToWindow() {

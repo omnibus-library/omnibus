@@ -10,6 +10,7 @@
 import Foundation
 import Testing
 import UIKit
+import WebKit
 
 @testable import omnibus
 
@@ -128,41 +129,6 @@ struct SpreadFitTests {
     }
 }
 
-@Suite("Where the status bar joins the reader's chrome")
-struct StatusBarFitTests {
-    private let padMini = (
-        upright: ReaderScreen(
-            size: CGSize(width: 744, height: 1133),
-            insets: UIEdgeInsets(top: 0, left: 0, bottom: 20, right: 0)
-        ),
-        sideways: ReaderScreen(
-            size: CGSize(width: 1133, height: 744),
-            insets: UIEdgeInsets(top: 0, left: 0, bottom: 20, right: 0)
-        )
-    )
-    private let iPhoneSE = ReaderScreen(
-        size: CGSize(width: 375, height: 667),
-        insets: UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-    )
-
-    @Test("an iPad has no inset to hold the status bar, upright or on its side")
-    func padHasNoRoomForTheStatusBar() {
-        #expect(!padMini.upright.statusBarFitsInTopInset)
-        #expect(!padMini.sideways.statusBarFitsInTopInset)
-    }
-
-    @Test("a Dynamic Island phone's sensor inset holds the status bar upright, not on its side")
-    func islandPhoneHoldsItUprightOnly() {
-        #expect(iPhone18Pro.upright.statusBarFitsInTopInset)
-        #expect(!iPhone18Pro.sideways.statusBarFitsInTopInset)
-    }
-
-    @Test("a Home-button phone has no inset for the status bar to sit in")
-    func homeButtonPhoneHasNoRoom() {
-        #expect(!iPhoneSE.statusBarFitsInTopInset)
-    }
-}
-
 @Suite("Reader controller spread fit")
 @MainActor
 struct ReaderSpreadFitTests {
@@ -196,23 +162,70 @@ struct ReaderSpreadFitTests {
         controller.isFolded = false
         #expect(controller.spreadFit == .never)
     }
+}
+
+/// The stage's reports as the controller's `observe` wiring receives them.
+@Suite("Reader controller status bar")
+@MainActor
+struct ReaderStatusBarTests {
+    private let controller = ReaderController(settings: ReaderSettings())
+    private let stage = ReaderStageView(webView: WKWebView(), curl: PageCurlHost())
+    private let padMini = ReaderScreen(
+        size: CGSize(width: 744, height: 1133),
+        insets: UIEdgeInsets(top: 0, left: 0, bottom: 20, right: 0)
+    )
+
+    init() {
+        controller.observe(stage)
+    }
+
+    private func report(_ screen: ReaderScreen, statusBarHidden: Bool) {
+        stage.onScreenChange?(screen, statusBarHidden)
+    }
 
     @Test("a controller keeps the status bar hidden until it has been told what screen it is on")
     func unknownScreenKeepsTheStatusBarHidden() {
-        let controller = ReaderController(settings: ReaderSettings())
-
         #expect(controller.screen == nil)
-        #expect(!controller.showsStatusBarWithChrome)
+        #expect(controller.hidesStatusBar(chromeVisible: true))
     }
 
-    @Test("a controller shows the status bar with the chrome as the screen turns")
-    func statusBarFollowsTheScreen() {
-        let controller = ReaderController(settings: ReaderSettings())
+    @Test("an iPad with no inset under the hidden bar keeps it hidden, chrome up or down")
+    func padKeepsTheStatusBarHidden() {
+        report(padMini, statusBarHidden: true)
 
-        controller.screen = iPhone18Pro.upright
-        #expect(controller.showsStatusBarWithChrome)
+        #expect(controller.hidesStatusBar(chromeVisible: true))
+        #expect(controller.hidesStatusBar(chromeVisible: false))
+    }
 
-        controller.screen = iPhone18Pro.sideways
-        #expect(!controller.showsStatusBarWithChrome)
+    @Test("a Dynamic Island phone upright shows the status bar with the chrome only")
+    func islandPhoneShowsTheStatusBarWithTheChrome() {
+        report(iPhone18Pro.upright, statusBarHidden: true)
+
+        #expect(!controller.hidesStatusBar(chromeVisible: true))
+        #expect(controller.hidesStatusBar(chromeVisible: false))
+    }
+
+    @Test("a report taken with the status bar showing updates the screen, not the decision")
+    func reportWithTheBarShowingLeavesTheDecisionAlone() {
+        report(padMini, statusBarHidden: true)
+        let raised = ReaderScreen(
+            size: padMini.size,
+            insets: UIEdgeInsets(top: 32, left: 0, bottom: 20, right: 0)
+        )
+
+        report(raised, statusBarHidden: false)
+
+        #expect(controller.screen == raised)
+        #expect(controller.hidesStatusBar(chromeVisible: true))
+    }
+
+    @Test("a phone turned on its side stops showing the status bar with the chrome")
+    func turningSidewaysHidesTheStatusBarAgain() {
+        report(iPhone18Pro.upright, statusBarHidden: true)
+        #expect(!controller.hidesStatusBar(chromeVisible: true))
+
+        report(iPhone18Pro.sideways, statusBarHidden: true)
+
+        #expect(controller.hidesStatusBar(chromeVisible: true))
     }
 }

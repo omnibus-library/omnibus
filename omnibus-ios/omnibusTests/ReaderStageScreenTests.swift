@@ -50,7 +50,7 @@ struct ReaderStageScreenTests {
     func stageReportsTheWindowNotItsBounds() async throws {
         var reports: [ReaderScreen] = []
         let rig = try await StageRig.show { stage in
-            stage.onScreenChange = { reports.append($0) }
+            stage.onScreenChange = { screen, _ in reports.append(screen) }
         }
         defer { rig.close() }
 
@@ -62,7 +62,7 @@ struct ReaderStageScreenTests {
     func stageStaysQuietWhenOnlyItResizes() async throws {
         var reports: [ReaderScreen] = []
         let rig = try await StageRig.show { stage in
-            stage.onScreenChange = { reports.append($0) }
+            stage.onScreenChange = { screen, _ in reports.append(screen) }
         }
         defer { rig.close() }
 
@@ -77,7 +77,7 @@ struct ReaderStageScreenTests {
     func stageReportsAgainWhenTheWindowChanges() async throws {
         var reports: [ReaderScreen] = []
         let rig = try await StageRig.show { stage in
-            stage.onScreenChange = { reports.append($0) }
+            stage.onScreenChange = { screen, _ in reports.append(screen) }
         }
         defer { rig.close() }
 
