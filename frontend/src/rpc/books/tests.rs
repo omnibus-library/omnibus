@@ -311,3 +311,85 @@ async fn ebooks_page_without_a_stack_viewer_lists_every_book_and_no_stacks() {
     assert_eq!(page.books.len(), 3);
     assert!(page.stacks.is_empty());
 }
+
+const BLURB: &str = "<p>A <b>long</b> blurb.</p>";
+
+/// `seed_series`' books, each carrying a description.
+async fn seed_described_series(pool: &sqlx::SqlitePool) {
+    let described = |filename, title, series| {
+        let mut book = indexed(filename, Some(title), &["Ann Author"], &[], series, None);
+        book.metadata.description = Some(BLURB.into());
+        book
+    };
+    omnibus_db::replace_books(
+        pool,
+        "/ebooks",
+        vec![
+            described("saga-1.epub", "Saga One", Some(("Saga", "1"))),
+            described("saga-2.epub", "Saga Two", Some(("Saga", "2"))),
+            described("lone.epub", "Lone Book", None),
+        ],
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ebooks_page_rows_carry_no_description_but_the_detail_read_keeps_it() {
+    let pool = configured_pool(None).await;
+    seed_described_series(&pool).await;
+
+    let page = ebooks_page(
+        &pool,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        50,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.books.len(), 3);
+    assert!(page.books.iter().all(|b| b.description.is_none()));
+    let uuid = page.books[0].unique_identifier.as_deref().unwrap();
+    let detail = omnibus_db::get_book_by_uuid(&pool, uuid)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(detail.description.as_deref(), Some(BLURB));
+}
+
+#[tokio::test]
+async fn ebooks_page_with_a_stack_viewer_carries_no_description_on_rows_or_members() {
+    let pool = configured_pool(None).await;
+    seed_described_series(&pool).await;
+    let viewer = seed_user(&pool, "reader").await;
+
+    let page = ebooks_page(
+        &pool,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        50,
+        Some(viewer),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        page.books.len(),
+        2,
+        "the series folds to one row plus the lone book"
+    );
+    assert!(page.books.iter().all(|b| b.description.is_none()));
+    assert_eq!(page.stacks[0].members.len(), 2);
+    assert!(page.stacks[0]
+        .members
+        .iter()
+        .all(|m| m.description.is_none()));
+}

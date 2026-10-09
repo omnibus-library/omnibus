@@ -145,14 +145,14 @@ async fn ebooks_page(
                 decoded.as_ref(),
                 limit,
                 viewer_id,
-                db::books::Projection::Full,
+                db::books::Projection::List,
             )
             .await
             .map_err(|e| internal_rpc_error("list stacked books page", e))?;
             (page.books, page.next, page.stacks)
         }
         None => {
-            let page = db::list_books_page(
+            let page = db::books::list_books_page_projected(
                 pool,
                 &paths,
                 sort_key,
@@ -161,6 +161,7 @@ async fn ebooks_page(
                 exclude_formats,
                 decoded.as_ref(),
                 limit,
+                db::books::Projection::List,
             )
             .await
             .map_err(|e| internal_rpc_error("list books page", e))?;
