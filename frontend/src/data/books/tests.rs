@@ -128,3 +128,54 @@ async fn get_ebooks_page_falls_back_to_replica_when_the_first_fetch_dies() {
     assert_eq!(titles(&page), vec!["Beloved"]);
     crate::offline::sync::note_online();
 }
+
+/// Serve `/api/ebooks` answering one book titled with the `omit_description`
+/// query value it received (`absent` when the request carried none).
+async fn spawn_omit_description_echo() -> String {
+    use axum::extract::Query;
+    use axum::routing::get;
+    use axum::Json;
+    use omnibus_shared::EbookLibrary;
+
+    use crate::offline::test_support::spawn_router;
+
+    let app = axum::Router::new().route(
+        "/api/ebooks",
+        get(
+            |Query(params): Query<std::collections::HashMap<String, String>>| async move {
+                let echoed = params
+                    .get("omit_description")
+                    .cloned()
+                    .unwrap_or_else(|| "absent".to_string());
+                Json(EbookLibrary {
+                    path: None,
+                    books: vec![book(&echoed)],
+                    error: None,
+                    total: None,
+                })
+            },
+        ),
+    );
+    spawn_router(app).await
+}
+
+#[tokio::test]
+async fn get_ebooks_page_online_asks_the_server_to_omit_descriptions() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let base = spawn_omit_description_echo().await;
+
+    let page = get_ebooks_page_online(
+        &base,
+        SortKey::Title,
+        SortDir::Asc,
+        ViewFilters::default(),
+        Vec::new(),
+        None,
+        10,
+    )
+    .await
+    .expect("page");
+
+    assert_eq!(titles(&page), vec!["true"]);
+}

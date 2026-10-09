@@ -55,6 +55,10 @@ pub(super) struct EbooksQuery {
     exclude_formats: Option<String>,
     /// Fold 2+-book series into one row plus `stacks` (keyset form only).
     stack_series: Option<bool>,
+    /// `?omit_description=true`: read keyset rows (plain and stacked) through
+    /// `Projection::List`. Keyset form only; absent/false keeps full rows,
+    /// which the iOS offline mirror and MCP rely on.
+    omit_description: Option<bool>,
 }
 
 /// Split the `?formats=` wire value into filter entries, dropping empties.
@@ -284,6 +288,11 @@ async fn keyset_rows(
     let sort = q.sort.unwrap_or_default();
     let dir = q.dir.unwrap_or_default();
     let limit = q.limit.unwrap_or(DEFAULT_PAGE_LIMIT);
+    let projection = if q.omit_description.unwrap_or(false) {
+        db::books::Projection::List
+    } else {
+        db::books::Projection::Full
+    };
     match viewer {
         Some(viewer_id) => {
             db::list_books_page_stacked(
@@ -296,11 +305,12 @@ async fn keyset_rows(
                 cursor,
                 limit,
                 viewer_id,
+                projection,
             )
             .await
         }
         None => {
-            let page = db::list_books_page(
+            let page = db::books::list_books_page_projected(
                 &state.pool,
                 paths,
                 sort,
@@ -309,6 +319,7 @@ async fn keyset_rows(
                 exclude,
                 cursor,
                 limit,
+                projection,
             )
             .await?;
             Ok(db::StackedBookPage {

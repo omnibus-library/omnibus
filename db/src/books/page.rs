@@ -16,8 +16,7 @@ use crate::metadata_overrides::sql::{
 };
 
 use super::projection::{
-    backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
-    MAX_BOOKS_RETURNED,
+    backfill_creator_ids, merge_overrides_projected, row_to_ebook, Projection, MAX_BOOKS_RETURNED,
 };
 
 mod stacked;
@@ -112,7 +111,8 @@ enum KeyVal {
 /// `limit` is clamped to `[1, MAX_BOOKS_RETURNED]`. Fetches one extra row to
 /// decide whether a further page exists: a full `limit` page yields a
 /// `next` cursor built from the last returned row; a short page yields
-/// `next == None`. Empty `library_paths` returns an empty page.
+/// `next == None`. Empty `library_paths` returns an empty page. Rows carry
+/// every column, `description` included (see [`list_books_page_projected`]).
 #[allow(clippy::too_many_arguments)] // orthogonal query knobs; a params struct would just rename them
 pub async fn list_books_page(
     pool: &SqlitePool,
@@ -124,6 +124,34 @@ pub async fn list_books_page(
     cursor: Option<&PageCursor>,
     limit: i64,
 ) -> Result<BookPage, super::BooksError> {
+    list_books_page_projected(
+        pool,
+        library_paths,
+        sort,
+        dir,
+        filters,
+        exclude_formats,
+        cursor,
+        limit,
+        Projection::Full,
+    )
+    .await
+}
+
+/// [`list_books_page`] reading the columns `projection` names; browse
+/// callers pass [`Projection::List`] to leave `description` off every row.
+#[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the projection
+pub async fn list_books_page_projected(
+    pool: &SqlitePool,
+    library_paths: &[&str],
+    sort: SortKey,
+    dir: SortDir,
+    filters: &ViewFilters,
+    exclude_formats: &[String],
+    cursor: Option<&PageCursor>,
+    limit: i64,
+    projection: Projection,
+) -> Result<BookPage, super::BooksError> {
     fetch_page(
         pool,
         library_paths,
@@ -134,12 +162,13 @@ pub async fn list_books_page(
         cursor,
         limit,
         false,
+        projection,
     )
     .await
 }
 
-/// Shared body of [`list_books_page`] and [`list_books_page_stacked`].
-#[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the stacking switch
+/// Shared body of [`list_books_page_projected`] and [`list_books_page_stacked`].
+#[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the stacking switch and projection
 async fn fetch_page(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -150,6 +179,7 @@ async fn fetch_page(
     cursor: Option<&PageCursor>,
     limit: i64,
     stacked: bool,
+    projection: Projection,
 ) -> Result<BookPage, super::BooksError> {
     if library_paths.is_empty() {
         return Ok(BookPage {
@@ -167,6 +197,7 @@ async fn fetch_page(
         exclude_formats,
         cursor,
         stacked,
+        projection,
     );
     // Fetch one beyond the page so a full page can advertise a `next` cursor
     // without a trailing empty round-trip.
@@ -184,7 +215,7 @@ async fn fetch_page(
     for r in &rows[..take] {
         books.push(row_to_ebook(r)?);
     }
-    merge_overrides_into_books(pool, &mut books).await?;
+    merge_overrides_projected(pool, &mut books, projection).await?;
     backfill_creator_ids(pool, &mut books).await?;
 
     Ok(BookPage { books, next })
@@ -194,7 +225,8 @@ async fn fetch_page(
 /// over `library_paths`, filtered by `filters` and seeked past `cursor`.
 /// Split out of [`list_books_page`] so the SQL-construction stage is
 /// independently testable from the fetch/decode stage. `stacked` narrows it
-/// to each series' representative row.
+/// to each series' representative row; `projection` picks the column list.
+#[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the stacking switch and projection
 fn build_page_sql(
     sort: SortKey,
     dir: SortDir,
@@ -203,6 +235,7 @@ fn build_page_sql(
     exclude_formats: &[String],
     cursor: Option<&PageCursor>,
     stacked: bool,
+    projection: Projection,
 ) -> (String, Vec<SqlVal>) {
     let (primary, secondary) = axis_sort_columns(sort);
     let dir_sql = dir_keyword(dir);
@@ -253,9 +286,10 @@ fn build_page_sql(
         None => format!("{order_col} {dir_sql}, b.id {dir_sql}"),
     };
 
+    let columns = projection.columns();
     let sql = format!(
         r"
-        SELECT {BOOK_COLUMNS},
+        SELECT {columns},
                {cursor_sort_sql}
                {cursor_idx_sql} AS cursor_idx
           FROM books b

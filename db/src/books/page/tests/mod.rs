@@ -6,6 +6,7 @@ mod dictionary;
 mod filters;
 mod overrides;
 mod paging;
+mod projection;
 mod stacked;
 
 use std::sync::atomic::{AtomicU64, Ordering};

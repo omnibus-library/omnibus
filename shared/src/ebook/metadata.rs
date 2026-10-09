@@ -50,6 +50,10 @@ pub struct EbookMetadata {
 
     // Dublin Core core.
     pub title: Option<String>,
+    /// Sanitized HTML. `None` on browse rows — `LibraryPage.books`, their stack
+    /// members, and keyset `/api/ebooks` pages sent `omit_description=true` —
+    /// which never carry it: absent there is not empty, so read the book's
+    /// detail for it.
     pub description: Option<String>,
     pub publisher: Option<String>,
     pub published: Option<String>,

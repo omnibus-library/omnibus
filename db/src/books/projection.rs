@@ -9,7 +9,9 @@ use sqlx::{Row, SqlitePool};
 
 use crate::helpers::format_series_index;
 use crate::interaction::interacted_at_iso_sql;
-use crate::metadata_overrides::{apply_overrides, load_overrides_bulk};
+use crate::metadata_overrides::{
+    apply_overrides, load_overrides_bulk, load_overrides_bulk_without_description,
+};
 
 use super::BooksError;
 
@@ -25,21 +27,34 @@ use super::BooksError;
 /// the capped vec. Cursor-based pagination is intentionally deferred.
 pub const MAX_BOOKS_RETURNED: i64 = 50_000;
 
-/// The shared book-column SELECT for read-path queries. Same scalar-subquery
-/// pattern as `list_books` / `search_books` — one row per `books.id` with
-/// all m2m relations inlined as JSON aggregates. Re-used by the discovery
-/// read paths (`get_author`, `get_series`) via `pub(crate)`.
-///
-/// Single-valued joins that need two columns from the *same* picked row
-/// (the primary `book_files` row, the primary `books_series_link` row) are
-/// pulled as one `json_object` subquery rather than two correlated scalar
-/// subqueries scanning the same table twice — mirroring the `json_object`
-/// shape already used for creators/identifiers. `row_to_ebook` decodes
-/// these blobs.
-pub(crate) const BOOK_COLUMNS: &str = concat!(
-    r"
+/// Which book columns a list read hydrates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Projection {
+    /// Every column — OPDS feeds and anything that renders `description`.
+    Full,
+    /// Browse rows: `description` is never selected, sanitized, or merged
+    /// from an override, so it is always `None`.
+    List,
+}
+
+impl Projection {
+    /// The column list this projection selects.
+    pub(crate) fn columns(self) -> &'static str {
+        match self {
+            Projection::Full => BOOK_COLUMNS,
+            Projection::List => BOOK_LIST_COLUMNS,
+        }
+    }
+}
+
+/// The column body both projections share; they differ only in the
+/// `description` column the caller prepends.
+macro_rules! book_columns_body {
+    () => {
+        concat!(
+            r"
     b.id, b.uuid,
-    b.title, b.description, b.series_index, b.has_cover,
+    b.title, b.series_index, b.has_cover,
     b.pubdate,
     -- `last_modified`/`timestamp` are INTEGER unix-seconds (migration 0038);
     -- format back to fixed-width ISO so the wire `EbookMetadata.modified` /
@@ -102,14 +117,33 @@ pub(crate) const BOOK_COLUMNS: &str = concat!(
     b.page_count                                   AS page_count,
 
     ",
-    // Projected on every listing, not just the Recently Interacted one: the
-    // mobile offline replica sorts its cached rows client-side, and a row
-    // whose key is missing falls back to the id tiebreak and scrambles the
-    // server order.
-    interacted_at_iso_sql!(),
-    " AS last_interacted_at
+            // Projected on every listing, not just the Recently Interacted one:
+            // the mobile offline replica sorts its cached rows client-side, and
+            // a row whose key is missing falls back to the id tiebreak and
+            // scrambles the server order.
+            interacted_at_iso_sql!(),
+            " AS last_interacted_at
 "
-);
+        )
+    };
+}
+
+/// The shared book-column SELECT for read-path queries. Same scalar-subquery
+/// pattern as `list_books` / `search_books` — one row per `books.id` with
+/// all m2m relations inlined as JSON aggregates. Re-used by the discovery
+/// read paths (`get_author`, `get_series`) via `pub(crate)`.
+///
+/// Single-valued joins that need two columns from the *same* picked row
+/// (the primary `book_files` row, the primary `books_series_link` row) are
+/// pulled as one `json_object` subquery rather than two correlated scalar
+/// subqueries scanning the same table twice — mirroring the `json_object`
+/// shape already used for creators/identifiers. `row_to_ebook` decodes
+/// these blobs.
+pub(crate) const BOOK_COLUMNS: &str = concat!("b.description, ", book_columns_body!());
+
+/// [`BOOK_COLUMNS`] with `description` replaced by `NULL`, so the text is
+/// never read off the row. `row_to_ebook` maps the `NULL` to `None`.
+pub(crate) const BOOK_LIST_COLUMNS: &str = concat!("NULL AS description, ", book_columns_body!());
 
 #[derive(serde::Deserialize)]
 pub(crate) struct CreatorRow {
@@ -359,11 +393,24 @@ pub(crate) async fn merge_overrides_into_books(
     pool: &SqlitePool,
     books: &mut [EbookMetadata],
 ) -> Result<(), BooksError> {
+    merge_overrides_projected(pool, books, Projection::Full).await
+}
+
+/// [`merge_overrides_into_books`] for a `projection`: `List` loads overrides
+/// without their `description`, so an edited book carries none either.
+pub(crate) async fn merge_overrides_projected(
+    pool: &SqlitePool,
+    books: &mut [EbookMetadata],
+    projection: Projection,
+) -> Result<(), BooksError> {
     let uuids: Vec<String> = books
         .iter()
         .filter_map(|b| b.unique_identifier.clone())
         .collect();
-    let overrides_map = load_overrides_bulk(pool, &uuids).await?;
+    let overrides_map = match projection {
+        Projection::Full => load_overrides_bulk(pool, &uuids).await?,
+        Projection::List => load_overrides_bulk_without_description(pool, &uuids).await?,
+    };
     let precedence_map = crate::settings::metadata_precedence_by_uuid(pool, &uuids).await?;
     for book in books.iter_mut() {
         // Snapshot uuid first so the overrides_map lookup is independent

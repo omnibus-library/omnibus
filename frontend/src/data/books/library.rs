@@ -255,6 +255,8 @@ pub(crate) async fn get_ebooks_page_online(
         url.push_str("&cursor=");
         url.push_str(c);
     }
+    // Browse rows and the replica never render a description; detail reads supply it.
+    url.push_str("&omit_description=true");
     let response = with_bearer(http_client().get(&url)).send().await?;
     let status = note_status(response.status());
     if !status.is_success() {
