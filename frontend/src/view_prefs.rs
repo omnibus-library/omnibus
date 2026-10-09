@@ -80,27 +80,23 @@ pub fn load_last() -> Option<ViewPrefs> {
 #[cfg(all(test, feature = "mobile"))]
 mod mobile_tests {
     use super::*;
+    use omnibus_db::test_support::EnvVarGuard;
     use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode};
     use std::sync::Mutex;
 
     static TEST_GUARD: Mutex<()> = Mutex::new(());
 
-    /// RAII guard that restores `$HOME` and resets the mobile store on drop —
-    /// including on an unwind from a failed assertion inside `f`. Without
-    /// this, a panicking test would skip the restore and leave `$HOME`
-    /// pointed at a deleted tempdir plus a dirty process-global mobile store
-    /// for every later test in the same process.
-    struct IsolatedStoreGuard {
-        prior_home: Option<std::ffi::OsString>,
-    }
+    /// RAII guard that resets the mobile store on drop — including on an
+    /// unwind from a failed assertion inside `f`. Without this, a panicking
+    /// test would leave a dirty process-global mobile store for every later
+    /// test in the same process. Declared after the `$HOME` guard in
+    /// [`with_isolated_store`], so it drops first: the reset runs while
+    /// `$HOME` still points at the scratch dir.
+    struct IsolatedStoreGuard;
 
     impl Drop for IsolatedStoreGuard {
         fn drop(&mut self) {
             crate::client_store::reset_for_test();
-            match self.prior_home.take() {
-                Some(home) => std::env::set_var("HOME", home),
-                None => std::env::remove_var("HOME"),
-            }
         }
     }
 
@@ -108,21 +104,18 @@ mod mobile_tests {
     /// reset, so the mobile backend's disk flush (`client_store.rs`) lands in
     /// a throwaway location instead of a developer's real `~/.omnibus`.
     /// `$HOME` is process-global and also read by `crate::data::app_dirs::data_dir`,
-    /// and tests can run in parallel within one process — callers must hold
-    /// `TEST_GUARD` for the duration. Cleanup runs via `IsolatedStoreGuard`'s
+    /// so it is held through [`EnvVarGuard`] (the process-wide `ENV_LOCK`,
+    /// shared with the other `$HOME` tests); callers must also hold
+    /// `TEST_GUARD`, which serializes the store reset. Cleanup runs via
     /// `Drop`, so it fires even if `f` panics — the panic still propagates
-    /// once unwinding drops the guard.
+    /// once unwinding drops the guards.
     fn with_isolated_store(f: impl FnOnce()) {
         let scratch = tempfile::tempdir().expect("tempdir for isolated client_store");
-        let guard = IsolatedStoreGuard {
-            prior_home: std::env::var_os("HOME"),
-        };
-        std::env::set_var("HOME", scratch.path());
+        let _home = EnvVarGuard::set_os("HOME", Some(scratch.path().as_os_str()));
+        let _store = IsolatedStoreGuard;
         crate::client_store::reset_for_test();
 
         f();
-
-        drop(guard);
     }
 
     fn sample_prefs() -> ViewPrefs {

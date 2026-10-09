@@ -99,6 +99,7 @@ Per [03-unit-testing.md](../../rules/03-unit-testing.md):
 - **DB:** sibling `<mod>/tests.rs` in the relevant module (inline `#[cfg(test)]` only for 1-2 trivial cases). Happy path + not-found + constraint violation. Run with `cargo test -p omnibus-db`.
 - **REST handler:** sibling `<module>/tests.rs` next to the handler module (e.g. `server/src/backend/progress/tests.rs`); inline `#[cfg(test)]` only for routes still in `server/src/backend.rs` itself. Drive with `tower::ServiceExt::oneshot` against `rest_router(AppState::new(in-memory pool))`. Bootstrap a session via the helpers in [server/src/auth/test_support.rs](../../../server/src/auth/test_support.rs) (`create_user` / `create_admin` / `bearer_token`) and attach the bearer header. Cover the full matrix per [03-unit-testing.md](../../rules/03-unit-testing.md): 200 (authed) + 401 (anon) + 403 (wrong role, for admin-gated routes) + relevant 4xx/5xx. Run with `cargo test -p omnibus`.
 - **Server function:** covered indirectly by the DB tests (the function body is a thin wrapper). Add an integration test only if the wrapper does non-trivial composition.
+- **`data/` wrapper:** exempt when it only dispatches; if it branches (404 → `None`, a temp-id short-circuit, a status classifier), add a sibling `data/<mod>/tests.rs` per [03-unit-testing.md](../../rules/03-unit-testing.md).
 
 ## 8. Add Playwright coverage (user-facing changes)
 

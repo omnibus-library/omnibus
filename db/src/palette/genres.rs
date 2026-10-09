@@ -23,8 +23,7 @@ use super::PaletteError;
 /// effective read. Its join to `genres` is what makes the reported name
 /// canonical: `materialize_genre_rows` deduplicates into a `NOCASE`-unique
 /// row, so a library holding both "sci-fi" and "Sci-Fi" shows one palette
-/// row under whichever spelling was coined first, matching `get_genre_cloud`
-/// and the landing facets.
+/// row under whichever spelling was coined first, matching `get_genre_cloud`.
 ///
 /// `COUNT(DISTINCT b.id)` guards a duplicate entry inside a single book's
 /// array (`["Horror","Horror"]` counts once).
