@@ -30,7 +30,6 @@ pub(super) fn StackToggle(view: StackToggleView, on_toggle: EventHandler<()>) ->
     let class = if on {
         "ss-tog on"
     } else if !view.ready {
-        // The viewer hasn't resolved yet; inert until `/me` answers.
         "ss-tog pending"
     } else {
         "ss-tog"

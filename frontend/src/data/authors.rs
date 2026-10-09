@@ -266,3 +266,6 @@ pub async fn list_authors(_server_url: &str) -> Result<Vec<AuthorSummary>, DataE
         .await
         .map_err(note_server_fn_err)
 }
+
+#[cfg(all(test, feature = "mobile"))]
+mod tests;

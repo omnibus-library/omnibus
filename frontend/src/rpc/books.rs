@@ -59,9 +59,9 @@ pub async fn rpc_get_ebooks() -> Result<EbookLibrary> {
 ///
 /// The server owns the sort order, so the client drives `sort_key`/`sort_dir`
 /// and appends pages by feeding `next_cursor` back as `cursor`. The first page
-/// (`cursor == None`) also returns the full-library `total` (header count) and
-/// the sidebar `facets`; later pages omit both so an infinite scroll doesn't
-/// re-pay the aggregate cost — the client caches them.
+/// (`cursor == None`) also returns the full-library `total` (header count);
+/// later pages omit it so an infinite scroll doesn't re-pay the aggregate
+/// cost — the client caches it. `LibraryPage.facets` is always `None`.
 ///
 /// `exclude_formats` is the caller's hidden-formats preference (from
 /// `UserSummary::hidden_formats`) — client-passed so only the landing surface
@@ -169,10 +169,10 @@ async fn ebooks_page(
         }
     };
 
-    let (total, facets, hidden_count) = if decoded.is_none() {
+    let (total, hidden_count) = if decoded.is_none() {
         first_page_aggregates(pool, &paths, exclude_formats).await?
     } else {
-        (None, None, None)
+        (None, None)
     };
 
     Ok(LibraryPage {
@@ -180,32 +180,22 @@ async fn ebooks_page(
         books,
         next_cursor: next.map(|c| c.encode()),
         total,
-        facets,
+        facets: None,
         hidden_count,
         stacks,
     })
 }
 
-/// `(total, facets, hidden_count)` — the shape `ebooks_page` folds straight
-/// into `LibraryPage`.
-#[cfg(feature = "server")]
-type FirstPageAggregates = (
-    Option<i64>,
-    Option<omnibus_shared::FacetCounts>,
-    Option<i64>,
-);
-
-/// First-page-only aggregates: the library-wide total (and, when an
-/// exclusion is active, the hidden-count receipt beside it) plus the sidebar
-/// facets. Both diff counts use default filters and differ only in the
-/// exclusion, so with no exclusion this stays the single
-/// `count_books_for_paths` query.
+/// First-page-only aggregates as `(total, hidden_count)`: the library-wide
+/// total and, when an exclusion is active, the hidden-count receipt beside it.
+/// Both counts use default filters and differ only in the exclusion, so with
+/// no exclusion this stays the single `count_books_for_paths` query.
 #[cfg(feature = "server")]
 async fn first_page_aggregates(
     pool: &sqlx::SqlitePool,
     paths: &[&str],
     exclude_formats: &[String],
-) -> Result<FirstPageAggregates, ServerFnError> {
+) -> Result<(Option<i64>, Option<i64>), ServerFnError> {
     let all = db::count_books_for_paths(pool, paths)
         .await
         .map_err(|e| internal_rpc_error("count books", e))?;
@@ -217,10 +207,7 @@ async fn first_page_aggregates(
             .map_err(|e| internal_rpc_error("count visible books", e))?;
         (visible, Some(all - visible))
     };
-    let facets = db::library_facets(pool, paths)
-        .await
-        .map_err(|e| internal_rpc_error("library facets", e))?;
-    Ok((Some(total), Some(facets), hidden))
+    Ok((Some(total), hidden))
 }
 
 /// POST (not GET) for the same reason as `rpc_search`: Dioxus `#[get]`

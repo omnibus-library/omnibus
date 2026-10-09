@@ -574,3 +574,6 @@ pub async fn upload_audiobook(
         "upload not available in this build".into(),
     ))
 }
+
+#[cfg(all(test, any(feature = "web", feature = "mobile")))]
+mod tests;

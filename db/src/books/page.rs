@@ -385,7 +385,7 @@ fn cursor_from_row(row: &sqlx::sqlite::SqliteRow, sort: SortKey) -> PageCursor {
 }
 
 /// `?, ?, …` of length `n`.
-pub(super) fn placeholders(n: usize) -> String {
+fn placeholders(n: usize) -> String {
     std::iter::repeat_n("?", n).collect::<Vec<_>>().join(", ")
 }
 

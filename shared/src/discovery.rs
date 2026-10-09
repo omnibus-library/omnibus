@@ -35,11 +35,10 @@ pub struct FacetCount {
     pub count: i64,
 }
 
-/// Per-facet book counts for the landing sidebar, computed server-side over
-/// the full library so the counts stay correct under keyset pagination (the
-/// client only ever holds one page). Each list is ordered by count descending,
-/// then value ascending — the order the sidebar renders. Formats are keyed by
-/// their lowercased extension (`"epub"`, `"m4b"`).
+/// Per-facet book counts, the type of `LibraryPage.facets`; no server path
+/// populates it. Each list is ordered by count descending, then value
+/// ascending. Formats are keyed by their lowercased extension (`"epub"`,
+/// `"m4b"`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FacetCounts {
     pub authors: Vec<FacetCount>,
@@ -54,11 +53,10 @@ pub struct FacetCounts {
 /// (`rpc_get_ebooks_page`). One page of books plus the opaque cursor to fetch
 /// the next page (`None` at end of stream).
 ///
-/// `total` (full unfiltered library count) and `facets` (sidebar counts) are
-/// populated only on the **first** page — a cursor-less request — so the
-/// client sizes the header and renders the sidebar once instead of recomputing
-/// them on every scroll. The cursor is opaque: the client stores `next_cursor`
-/// and hands it back verbatim; it never inspects it.
+/// `total` (full unfiltered library count) is populated only on the **first**
+/// page — a cursor-less request — so the client sizes the header once instead
+/// of recomputing it on every scroll. The cursor is opaque: the client stores
+/// `next_cursor` and hands it back verbatim; it never inspects it.
 ///
 /// The mobile REST `GET /api/ebooks` paginated form does **not** use this type:
 /// it keeps the `EbookLibrary` body and carries the cursor in the
@@ -72,6 +70,7 @@ pub struct LibraryPage {
     pub next_cursor: Option<String>,
     #[serde(default)]
     pub total: Option<i64>,
+    /// Always `None`; kept so the wire shape stays compatible.
     #[serde(default)]
     pub facets: Option<FacetCounts>,
     /// How many books the caller's `exclude_formats` hid — the landing

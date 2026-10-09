@@ -4,7 +4,6 @@
 //! [`get`], and [`search`] sub-modules (each self-documented), re-exported
 //! here as `omnibus_db::books::*`.
 
-mod facets;
 mod get;
 mod list;
 mod page;
@@ -14,7 +13,6 @@ mod search;
 #[cfg(test)]
 mod tests;
 
-pub use facets::library_facets;
 pub use get::{
     book_display_title, book_display_title_by_uuid, book_file_path, book_file_path_by_id,
     book_file_path_by_id_exec, book_file_paths, book_file_relative_dir, book_file_with_id,

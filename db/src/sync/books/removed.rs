@@ -20,7 +20,7 @@ fn placeholders(n: usize) -> String {
 /// row(s) are dropped (parts and chapters cascading) — a row still recorded
 /// in `merged_uuids` is a cross-format attachment in a different format and
 /// survives — so the book stays in author/series/tag browse and
-/// search while the grid/facets hide it via their `EXISTS book_files` filter. A
+/// search while the grid hides it via its `EXISTS book_files` filter. A
 /// returning file re-attaches via the Changed path, preserving the uuid.
 /// Idempotent: a re-run on an already-fileless row deletes zero `book_files`
 /// and the flag UPDATE is a no-op via the `is_missing_files = 0` guard.

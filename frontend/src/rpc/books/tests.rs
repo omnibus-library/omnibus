@@ -18,7 +18,7 @@ async fn configured_pool(audiobook_path: Option<&str>) -> sqlx::SqlitePool {
 }
 
 #[tokio::test]
-async fn ebooks_page_first_page_carries_total_and_facets() {
+async fn ebooks_page_first_page_carries_total_but_no_facets() {
     let pool = configured_pool(None).await;
     seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
     seed_synced_ebook(&pool, "b.epub", "Beta", "Bob Author").await;
@@ -39,7 +39,7 @@ async fn ebooks_page_first_page_carries_total_and_facets() {
     assert_eq!(first.books.len(), 1);
     assert_eq!(first.books[0].title.as_deref(), Some("Alpha"));
     assert_eq!(first.total, Some(2));
-    assert!(first.facets.is_some());
+    assert_eq!(first.facets, None);
     assert!(first.next_cursor.is_some());
 }
 
@@ -79,7 +79,6 @@ async fn ebooks_page_later_page_continues_after_cursor_and_omits_aggregates() {
     assert_eq!(second.books.len(), 1);
     assert_eq!(second.books[0].title.as_deref(), Some("Beta"));
     assert_eq!(second.total, None, "later pages must omit the total");
-    assert!(second.facets.is_none(), "later pages must omit the facets");
 }
 
 #[tokio::test]
