@@ -79,9 +79,11 @@ hand-roll a set/restore guard.
   covers them transitively. Test the branching, not the dispatch: a
   wrapper with logic of its own (status/error classification,
   response shaping such as a 404 read as `None`, temp-id
-  short-circuits, platform fallbacks, retries, cache policy) gets a
-  happy path plus one failure path. A pure pass-through — a `#[cfg]`
-  split, or `note_status` → `drain_error` → `.json()` — is exempt.
+  short-circuits, platform fallbacks, retries, a conditional cache
+  bypass) gets a happy path plus one failure path. A pure
+  pass-through — a `#[cfg]` split, a plain
+  `read_through`/`write_through` wrap, or `note_status` →
+  `drain_error` → `.json()` — is exempt.
   Drive mobile arms against an in-process stub
   (`offline::test_support::spawn_router`), never a live server. A
   web-only `gloo-net` branch can't run natively: move the decision
