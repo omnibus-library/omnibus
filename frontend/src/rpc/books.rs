@@ -145,6 +145,7 @@ async fn ebooks_page(
                 decoded.as_ref(),
                 limit,
                 viewer_id,
+                db::books::Projection::Full,
             )
             .await
             .map_err(|e| internal_rpc_error("list stacked books page", e))?;

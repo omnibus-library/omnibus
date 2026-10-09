@@ -9,7 +9,7 @@ use omnibus_shared::{EbookMetadata, SeriesStack, SortDir, SortKey, StackMemberSt
 use sqlx::{Row, SqlitePool};
 
 use crate::books::projection::{
-    backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
+    backfill_creator_ids, merge_overrides_projected, row_to_ebook, Projection,
 };
 use crate::books::BooksError;
 use crate::metadata_overrides::sql::{
@@ -47,8 +47,8 @@ pub struct StackedBookPage {
     pub stacks: Vec<SeriesStack>,
 }
 
-/// [`super::list_books_page`] with series folded into one stacked row; `stacks` holds members + viewer state.
-#[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the viewer
+/// [`super::list_books_page_projected`] with series folded into one stacked row; `stacks` holds members + viewer state.
+#[allow(clippy::too_many_arguments)] // list_books_page's knobs plus the viewer and projection
 pub async fn list_books_page_stacked(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -59,6 +59,7 @@ pub async fn list_books_page_stacked(
     cursor: Option<&PageCursor>,
     limit: i64,
     viewer_id: i64,
+    projection: Projection,
 ) -> Result<StackedBookPage, BooksError> {
     let page = fetch_page(
         pool,
@@ -70,6 +71,7 @@ pub async fn list_books_page_stacked(
         cursor,
         limit,
         true,
+        projection,
     )
     .await?;
     let stacks = if page.books.is_empty() {
@@ -82,6 +84,7 @@ pub async fn list_books_page_stacked(
             exclude_formats,
             &page.books,
             viewer_id,
+            projection,
         )
         .await?
     };
@@ -133,10 +136,18 @@ async fn build_stacks(
     exclude_formats: &[String],
     page: &[EbookMetadata],
     viewer_id: i64,
+    projection: Projection,
 ) -> Result<Vec<SeriesStack>, BooksError> {
     let rep_ids: Vec<i64> = page.iter().map(|b| b.id).collect();
-    let groups =
-        fetch_member_groups(pool, library_paths, filters, exclude_formats, &rep_ids).await?;
+    let groups = fetch_member_groups(
+        pool,
+        library_paths,
+        filters,
+        exclude_formats,
+        &rep_ids,
+        projection,
+    )
+    .await?;
     let reps: HashMap<i64, &EbookMetadata> = page.iter().map(|b| (b.id, b)).collect();
     let mut stacks = Vec::new();
     for members in groups.into_iter().filter(|g| g.len() >= 2) {
@@ -164,7 +175,9 @@ async fn fetch_member_groups(
     filters: &ViewFilters,
     exclude_formats: &[String],
     rep_ids: &[i64],
+    projection: Projection,
 ) -> Result<Vec<Vec<EbookMetadata>>, BooksError> {
+    let columns = projection.columns();
     let series_index = axis_sort_columns(SortKey::Series)
         .1
         .unwrap_or("b.series_index");
@@ -179,7 +192,7 @@ async fn fetch_member_groups(
         binds.extend(chunk.iter().map(|id| SqlVal::Int(*id)));
         let sql = format!(
             r"
-            SELECT {BOOK_COLUMNS}, {GROUP_KEY} AS stack_key
+            SELECT {columns}, {GROUP_KEY} AS stack_key
               FROM books b
               JOIN scan_roots l ON l.id = b.library_id
               LEFT JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
@@ -199,7 +212,7 @@ async fn fetch_member_groups(
             books.push(row_to_ebook(r)?);
         }
     }
-    merge_overrides_into_books(pool, &mut books).await?;
+    merge_overrides_projected(pool, &mut books, projection).await?;
     backfill_creator_ids(pool, &mut books).await?;
     Ok(group_runs(keys, books))
 }

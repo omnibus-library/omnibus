@@ -296,6 +296,7 @@ async fn keyset_rows(
                 cursor,
                 limit,
                 viewer_id,
+                db::books::Projection::Full,
             )
             .await
         }

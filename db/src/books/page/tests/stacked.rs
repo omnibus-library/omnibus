@@ -30,6 +30,7 @@ async fn stacked_page(
         cursor,
         limit,
         0,
+        Projection::Full,
     )
     .await
     .unwrap()
@@ -61,7 +62,7 @@ async fn link_series(pool: &SqlitePool, book_id: i64, name: &str) -> i64 {
 }
 
 /// A titled book in `series` at `index`, linked the way the indexer links it.
-async fn series_book(
+pub(super) async fn series_book(
     pool: &SqlitePool,
     lib: i64,
     title: &str,
@@ -246,6 +247,7 @@ async fn list_books_page_stacked_unstacks_a_series_an_exclusion_cuts_to_one_book
         None,
         50,
         0,
+        Projection::Full,
     )
     .await
     .unwrap();
@@ -411,6 +413,7 @@ async fn list_books_page_stacked_reports_reading_state_for_the_viewer_only() {
         None,
         50,
         viewer,
+        Projection::Full,
     )
     .await
     .unwrap();
@@ -462,6 +465,7 @@ async fn list_books_page_stacked_counts_a_cfi_only_position_as_started() {
         None,
         50,
         viewer,
+        Projection::Full,
     )
     .await
     .unwrap();
@@ -491,6 +495,7 @@ async fn list_books_page_stacked_surfaces_a_db_error_when_the_pool_is_closed() {
         None,
         50,
         0,
+        Projection::Full,
     )
     .await;
 
