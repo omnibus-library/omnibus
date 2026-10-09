@@ -9,7 +9,9 @@ use sqlx::{Row, SqlitePool};
 
 use crate::helpers::format_series_index;
 use crate::interaction::interacted_at_iso_sql;
-use crate::metadata_overrides::{apply_overrides, load_overrides_bulk};
+use crate::metadata_overrides::{
+    apply_overrides, load_overrides_bulk, load_overrides_bulk_without_description,
+};
 
 use super::BooksError;
 
@@ -394,8 +396,8 @@ pub(crate) async fn merge_overrides_into_books(
     merge_overrides_projected(pool, books, Projection::Full).await
 }
 
-/// [`merge_overrides_into_books`] for a `projection`: `List` drops each
-/// override's `description` first, so an edited book carries none either.
+/// [`merge_overrides_into_books`] for a `projection`: `List` loads overrides
+/// without their `description`, so an edited book carries none either.
 pub(crate) async fn merge_overrides_projected(
     pool: &SqlitePool,
     books: &mut [EbookMetadata],
@@ -405,12 +407,10 @@ pub(crate) async fn merge_overrides_projected(
         .iter()
         .filter_map(|b| b.unique_identifier.clone())
         .collect();
-    let mut overrides_map = load_overrides_bulk(pool, &uuids).await?;
-    if projection == Projection::List {
-        for (ov, _) in overrides_map.values_mut() {
-            ov.description = None;
-        }
-    }
+    let overrides_map = match projection {
+        Projection::Full => load_overrides_bulk(pool, &uuids).await?,
+        Projection::List => load_overrides_bulk_without_description(pool, &uuids).await?,
+    };
     let precedence_map = crate::settings::metadata_precedence_by_uuid(pool, &uuids).await?;
     for book in books.iter_mut() {
         // Snapshot uuid first so the overrides_map lookup is independent

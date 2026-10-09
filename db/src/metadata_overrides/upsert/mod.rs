@@ -426,6 +426,23 @@ pub(crate) async fn load_overrides_bulk(
     pool: &SqlitePool,
     uuids: &[String],
 ) -> Result<HashMap<String, (MetadataOverrides, bool)>, MetadataOverridesError> {
+    load_overrides_bulk_selecting(pool, uuids, "overrides").await
+}
+
+/// [`load_overrides_bulk`] with each override's `description` stripped in
+/// SQL, for list reads that never carry one.
+pub(crate) async fn load_overrides_bulk_without_description(
+    pool: &SqlitePool,
+    uuids: &[String],
+) -> Result<HashMap<String, (MetadataOverrides, bool)>, MetadataOverridesError> {
+    load_overrides_bulk_selecting(pool, uuids, "json_remove(overrides, '$.description')").await
+}
+
+async fn load_overrides_bulk_selecting(
+    pool: &SqlitePool,
+    uuids: &[String],
+    overrides_expr: &str,
+) -> Result<HashMap<String, (MetadataOverrides, bool)>, MetadataOverridesError> {
     if uuids.is_empty() {
         return Ok(HashMap::new());
     }
@@ -437,7 +454,7 @@ pub(crate) async fn load_overrides_bulk(
     for chunk in uuids.chunks(500) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
-            "SELECT book_uuid, overrides, has_cover_override FROM metadata_overrides WHERE book_uuid IN ({placeholders})"
+            "SELECT book_uuid, {overrides_expr}, has_cover_override FROM metadata_overrides WHERE book_uuid IN ({placeholders})"
         );
         let mut q = sqlx::query_as::<_, (String, String, i64)>(&sql);
         for uuid in chunk {
