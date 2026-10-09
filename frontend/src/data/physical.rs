@@ -192,3 +192,6 @@ pub async fn delete_fileless_book(_server_url: &str, uuid: &str) -> Result<(), D
         .await
         .map_err(note_server_fn_err)
 }
+
+#[cfg(all(test, feature = "mobile"))]
+mod tests;

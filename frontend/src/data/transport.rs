@@ -155,7 +155,10 @@ pub(crate) async fn drain_error(
     }
 }
 
-#[cfg(feature = "web")]
+#[cfg(any(
+    feature = "web",
+    all(test, feature = "server", not(feature = "mobile"))
+))]
 pub mod web_auth_state {
     //! Reactive web-side auth-state channel used by `ScreenLayout` to
     //! redirect to `/login` whenever a data call surfaces a 401.
@@ -209,14 +212,15 @@ pub mod web_auth_state {
 /// [`DataError::Unauthorized`] (so the web side can pattern-match the auth
 /// path the same way mobile does), and any other failure is preserved as a
 /// stringified [`DataError::Other`]. SSR builds (cfg(not(feature = "web")))
-/// skip the redirect ping — there's no client to redirect.
+/// skip the redirect ping — there's no client to redirect. Server test builds
+/// compile the channel anyway so the 401 ping is unit-testable.
 #[cfg(not(feature = "mobile"))]
 pub(crate) fn note_server_fn_err(e: dioxus::CapturedError) -> DataError {
     if let Some(dioxus::fullstack::ServerFnError::ServerError { code, message, .. }) =
         e.0.downcast_ref::<dioxus::fullstack::ServerFnError>()
     {
         if *code == 401 {
-            #[cfg(feature = "web")]
+            #[cfg(any(feature = "web", all(test, feature = "server")))]
             web_auth_state::notify_unauthorized();
             return DataError::Unauthorized;
         }
@@ -227,3 +231,6 @@ pub(crate) fn note_server_fn_err(e: dioxus::CapturedError) -> DataError {
     }
     DataError::Other(e.to_string())
 }
+
+#[cfg(test)]
+mod tests;
