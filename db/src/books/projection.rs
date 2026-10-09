@@ -103,8 +103,9 @@ pub(crate) const BOOK_COLUMNS: &str = concat!(
 
     ",
     // Projected on every listing, not just the Recently Interacted one: the
-    // landing re-sorts each fetched page client-side, and a row whose key is
-    // missing falls back to the id tiebreak and scrambles the server order.
+    // mobile offline replica sorts its cached rows client-side, and a row
+    // whose key is missing falls back to the id tiebreak and scrambles the
+    // server order.
     interacted_at_iso_sql!(),
     " AS last_interacted_at
 "

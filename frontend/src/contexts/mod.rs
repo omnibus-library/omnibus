@@ -2,7 +2,7 @@
 //!
 //! Holds the small set of values every page reads: the API base URL (mobile
 //! injects, web is relative) and the app-wide signals [`crate::App`]
-//! provides — page title, cache-bust counters, and the current user.
+//! provides.
 
 use dioxus::prelude::*;
 
