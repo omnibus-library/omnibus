@@ -157,14 +157,14 @@ fn thumb_url_builds_the_sized_thumbnail_path() {
     );
 }
 
-// `use_search_query`/`use_cover_cache_bust`/`use_current_user`/
-// `use_playback` are one-line `use_context` accessors; the meaningful
-// behaviour they expose (`cover_bust_for`/`bump_cover_cache_bust`,
-// `PlaybackState::new`'s defaults) already has direct coverage above and
-// in the `PlaybackState` doc example. This test pins the accessors
-// themselves: each must resolve to the exact value the provider handed
-// it, so a future refactor that reaches for the wrong context type still
-// fails loudly here rather than only inside a much larger page test.
+// `use_cover_cache_bust`/`use_current_user`/`use_playback` are one-line
+// `use_context` accessors; the meaningful behaviour they expose
+// (`cover_bust_for`/`bump_cover_cache_bust`, `PlaybackState::new`'s
+// defaults) already has direct coverage above and in the `PlaybackState`
+// doc example. This test pins the accessors themselves: each must resolve
+// to the exact value the provider handed it, so a future refactor that
+// reaches for the wrong context type still fails loudly here rather than
+// only inside a much larger page test.
 // `CurrentUser`/`PlaybackState`/`use_current_user`/`use_playback` are
 // themselves `#[cfg(not(feature = "mobile"))]`, so this test must match.
 #[cfg(not(feature = "mobile"))]
@@ -172,14 +172,12 @@ fn thumb_url_builds_the_sized_thumbnail_path() {
 fn context_accessors_resolve_to_the_values_their_providers_set() {
     #[component]
     fn AssertAccessors() -> Element {
-        use_context_provider(|| SearchQuery(Signal::new("dune".to_string())));
         use_context_provider(|| {
             CoverCacheBust(Signal::new(HashMap::from([("book-1".to_string(), 3u32)])))
         });
         use_context_provider(|| CurrentUser(Signal::new(None)));
         use_context_provider(PlaybackState::new);
 
-        assert_eq!(use_search_query().0(), "dune");
         assert_eq!(cover_bust_for(use_cover_cache_bust().0, "book-1"), 3);
         assert_eq!(use_current_user().0(), None);
         assert_eq!((use_playback().rate)(), 1.0);

@@ -1,8 +1,8 @@
 //! App-wide Dioxus contexts and their typed accessors.
 //!
 //! Holds the small set of values every page reads: the API base URL (mobile
-//! injects, web is relative) and the cross-route search-query signal owned
-//! by [`crate::App`] and consumed by the nav and landing page.
+//! injects, web is relative) and the app-wide signals [`crate::App`]
+//! provides — page title, cache-bust counters, and the current user.
 
 use dioxus::prelude::*;
 
@@ -73,18 +73,6 @@ pub fn media_url(server_url: &str, path: &str) -> String {
 /// it once per `srcset` entry so each candidate carries the mobile token.
 pub fn thumb_url(server_url: &str, uuid: &str, size: &str) -> String {
     media_url(server_url, &format!("/api/thumbs/{uuid}/{size}"))
-}
-
-/// Cross-route search query. Owned by [`App`] via `use_context_provider`
-/// so the [`Nav`]-hosted search box and the [`LandingPage`] read/write the
-/// same signal — typing in the nav from any route updates the landing
-/// results without a route-param round-trip.
-#[derive(Copy, Clone)]
-pub struct SearchQuery(pub Signal<String>);
-
-/// Convenience accessor for the search-query context.
-pub fn use_search_query() -> SearchQuery {
-    use_context::<SearchQuery>()
 }
 
 /// Browser-tab title. Owned by [`crate::App`] via `use_context_provider` and
