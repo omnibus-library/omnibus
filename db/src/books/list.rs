@@ -27,8 +27,7 @@ pub async fn list_books(
 ///
 /// Empty `library_paths` returns an empty vec. The library filter uses
 /// `l.path IN (?, …)` so the unified landing path (ebook + audiobook)
-/// stays one query instead of two — `book_files.format` joins through
-/// unchanged, so per-format facet counts on the landing page still work.
+/// stays one query instead of two.
 pub async fn list_books_for_paths(
     pool: &SqlitePool,
     library_paths: &[&str],
