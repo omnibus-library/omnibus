@@ -90,9 +90,9 @@ async fn search_genres_returns_matching_genre_with_scoped_count() {
 
 #[tokio::test]
 async fn search_genres_reports_one_row_under_the_canonical_spelling() {
-    // The palette row has to agree with `get_genre_cloud` and the landing
-    // facets: two rows splitting the same genre would each carry half the
-    // count, and refining on one would answer only half the question.
+    // The palette row has to agree with `get_genre_cloud`: two rows splitting
+    // the same genre would each carry half the count, and refining on one
+    // would answer only half the question.
     let _covers = CoversTempDir::new("arm_genres_canonical");
     let pool = init_db("sqlite::memory:").await.unwrap();
     seed_genres(

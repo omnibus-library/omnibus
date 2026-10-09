@@ -10,8 +10,8 @@ use crate::test_support::{indexed, CoversTempDir};
 
 /// Removing a file (F2) drops only the book's `book_files` row; the `books`
 /// row, its taxonomy/author links, FTS row, and soft-ref user data are all
-/// retained, so the book stays in browse/search — only the grid/facets hide it
-/// via their own `EXISTS book_files` filter.
+/// retained, so the book stays in browse/search — only the grid hides it
+/// via its own `EXISTS book_files` filter.
 #[tokio::test]
 async fn removing_a_books_file_keeps_its_links_and_fts() {
     let _covers = CoversTempDir::new("sync_removed_cascade");
