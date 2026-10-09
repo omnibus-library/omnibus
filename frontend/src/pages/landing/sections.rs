@@ -254,10 +254,9 @@ pub(super) struct BooksView {
     pub is_shelf: bool,
 }
 
-/// What an empty book area says. A shelf with no members is empty, not a
-/// failed search — and shelves hold audiobooks too, so its wording names no
-/// format. "No ebooks found." is kept for the case it describes: the
-/// library or search that turned nothing up.
+/// What an empty book area says. Shelves hold audiobooks too, so a shelf's
+/// wording names no format; "No ebooks found." is kept for the case it
+/// describes: a library that turned nothing up.
 pub(super) fn empty_books_message(is_shelf: bool) -> &'static str {
     if is_shelf {
         "No books in this shelf."
@@ -420,8 +419,8 @@ fn LandingBooksArea(
             }
             // Browse pagination sentinel — the button is the deterministic
             // (mobile + Playwright) trigger; on web an IntersectionObserver
-            // auto-bumps it as it nears the viewport. Absent in search mode
-            // (no `next_cursor`).
+            // auto-bumps it as it nears the viewport. Absent on a shelf pick
+            // (`has_more` is browse-only).
             if has_more {
                 div { class: "lib-load-more-row",
                     button {

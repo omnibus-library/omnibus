@@ -22,19 +22,12 @@ fn shelf(id: i64, name: &str, book_count: i64) -> ShelfSummary {
 }
 
 #[test]
-fn visible_source_ranks_search_over_a_shelf_pick_over_browse() {
+fn visible_source_ranks_a_shelf_pick_over_browse() {
     assert_eq!(
-        visible_source(true, ShelfSelection::Shelf(7)),
-        VisibleSource::Search
-    );
-    assert_eq!(
-        visible_source(false, ShelfSelection::Shelf(7)),
+        visible_source(ShelfSelection::Shelf(7)),
         VisibleSource::Shelf
     );
-    assert_eq!(
-        visible_source(false, ShelfSelection::All),
-        VisibleSource::Browse
-    );
+    assert_eq!(visible_source(ShelfSelection::All), VisibleSource::Browse);
 }
 
 #[test]

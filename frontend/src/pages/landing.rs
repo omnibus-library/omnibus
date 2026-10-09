@@ -1,12 +1,12 @@
-//! Landing page (`/`) — the primary library surface. See [`LandingPage`]
-//! for the browse-paginates / search-stays-client-side split. View mode +
-//! sort + filters persist per library path via [`crate::view_prefs`]. Split
-//! into [`signals`] (reactive state + fetch wiring), [`view`] (per-render
-//! derived state + handlers), and [`body`] (mobile/web presentation).
+//! Landing page (`/`) — the primary library surface. See [`LandingPage`] for
+//! the keyset-browse + shelf-lens split. View mode + sort + filters persist
+//! per library path via [`crate::view_prefs`]. Split into [`signals`]
+//! (reactive state + fetch wiring), [`view`] (per-render derived state +
+//! handlers), and [`body`] (mobile/web presentation).
 
 use dioxus::prelude::*;
 
-use crate::{use_search_query, use_server_url};
+use crate::use_server_url;
 
 mod effects;
 mod filtering;
@@ -68,19 +68,16 @@ pub(super) const PAGE_SIZE: i64 = 100;
 
 /// Landing page — primary library surface.
 ///
-/// Browse (no search query) is keyset-paginated server-side: the first page
-/// carries the sidebar facets + the full-library count, and further pages
-/// are appended from a "Load more" sentinel (auto-triggered on web by an
-/// `IntersectionObserver`). Sort and filter are owned by the server —
-/// changing either refetches page 1. Search (non-empty query) keeps the
-/// legacy path: the capped result set is sorted/filtered client-side.
+/// Browse is keyset-paginated server-side: the first page carries the
+/// full-library total, and further pages are appended from a "Load more"
+/// sentinel (auto-triggered on web by an `IntersectionObserver`). Sort and
+/// filter are owned by the server — changing either refetches page 1. A
+/// gallery pick swaps in that shelf's member list, filtered client-side.
 #[component]
 pub fn LandingPage() -> Element {
     let server_url = use_server_url();
-    // Search box lives in the top nav; the query is shared via context.
-    let query = use_search_query().0;
-    let sigs = setup_landing_signals(&server_url, query);
-    let view = derive_view_state(&sigs, query);
+    let sigs = setup_landing_signals(&server_url);
+    let view = derive_view_state(&sigs);
     let handlers = view::build_handlers(&sigs);
 
     // Restore scroll on back-navigation once page 1 has loaded. The paginated
@@ -123,24 +120,6 @@ mod tests {
         assert_eq!(short_path("/Users/ek/books"), "books");
         assert_eq!(short_path("/Users/ek/books/"), "books");
         assert_eq!(short_path("relative"), "relative");
-    }
-
-    #[test]
-    fn visible_source_prefers_search_then_shelf_then_browse() {
-        use view::VisibleSource;
-
-        assert_eq!(
-            view::visible_source(true, ShelfSelection::Shelf(1)),
-            VisibleSource::Search
-        );
-        assert_eq!(
-            view::visible_source(false, ShelfSelection::Shelf(1)),
-            VisibleSource::Shelf
-        );
-        assert_eq!(
-            view::visible_source(false, ShelfSelection::All),
-            VisibleSource::Browse
-        );
     }
 
     #[cfg(not(feature = "mobile"))]

@@ -18,34 +18,24 @@ pub(super) struct StackToggleView {
     pub(super) saved: bool,
     /// `/me` has resolved; until then `saved` is only the default.
     pub(super) ready: bool,
-    /// Why the switch is inert here (the saved value stays put); `None` leaves it live.
-    pub(super) note: Option<&'static str>,
     /// The last save's failure, cleared by the next click.
     pub(super) error: Option<String>,
 }
 
-/// Why Stack series can't apply in the grid: a search shows every match.
-pub(super) fn stack_toggle_note(is_search: bool) -> Option<&'static str> {
-    is_search.then_some("Unstacked while searching")
-}
-
-/// The switch: an `aria-pressed` button between the inert view's note and a failed save's alert.
+/// The switch: an `aria-pressed` button, followed by a failed save's alert.
 #[component]
 pub(super) fn StackToggle(view: StackToggleView, on_toggle: EventHandler<()>) -> Element {
-    let disabled = !view.ready || view.note.is_some();
+    let disabled = !view.ready;
     let on = view.saved && !disabled;
     let class = if on {
         "ss-tog on"
-    } else if !view.ready && view.note.is_none() {
-        // Undimmed only where it will go live, so nothing flashes live-then-dim.
+    } else if !view.ready {
+        // The viewer hasn't resolved yet; inert until `/me` answers.
         "ss-tog pending"
     } else {
         "ss-tog"
     };
     rsx! {
-        if let Some(note) = view.note {
-            span { class: "ss-tnote", "data-testid": "lib-stack-note", "{note}" }
-        }
         button {
             r#type: "button",
             class: "{class}",
@@ -63,7 +53,7 @@ pub(super) fn StackToggle(view: StackToggleView, on_toggle: EventHandler<()>) ->
 }
 
 /// The switch's state and click handler: flip the cached viewer, save, and revert on failure.
-pub(super) fn use_stack_toggle(note: Option<&'static str>) -> (StackToggleView, EventHandler<()>) {
+pub(super) fn use_stack_toggle() -> (StackToggleView, EventHandler<()>) {
     let error = use_signal(|| None::<String>);
     let saving = use_signal(|| false);
     let viewer_slot = crate::use_current_user().0;
@@ -74,7 +64,6 @@ pub(super) fn use_stack_toggle(note: Option<&'static str>) -> (StackToggleView, 
     let view = StackToggleView {
         saved: saved.unwrap_or(false),
         ready: saved.is_some(),
-        note,
         error: error(),
     };
     let on_toggle = EventHandler::new(move |_: ()| {
@@ -107,15 +96,4 @@ fn set_viewer_stack_series(mut slot: Signal<Option<Option<UserSummary>>>, value:
             user.stack_series = value;
         }
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stack_toggle_note_says_why_the_switch_is_inert_only_while_searching() {
-        assert_eq!(stack_toggle_note(false), None);
-        assert_eq!(stack_toggle_note(true), Some("Unstacked while searching"));
-    }
 }
