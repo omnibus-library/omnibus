@@ -1,6 +1,6 @@
 //! The one dictionary order every sort surface shares: the SQLite collations
 //! `db` registers on each pooled connection, and the browser's client-side
-//! sorts (the Authors index, the search result set, the offline replica).
+//! sorts (the Authors index and the offline replica).
 //! Keeping the comparator here is what stops the server and the page from
 //! disagreeing about where `Pérez` files.
 

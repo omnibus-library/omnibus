@@ -84,18 +84,17 @@ pub(super) struct LandingSignals {
 /// call here is a Dioxus hook, so the call order is stable across renders.
 /// The signals themselves are assembled by per-bundle constructor helpers
 /// below rather than inline, since none of this is rsx (AC3).
-pub(super) fn setup_landing_signals(server_url: &str, query: Signal<String>) -> LandingSignals {
+pub(super) fn setup_landing_signals(server_url: &str) -> LandingSignals {
     let fetch_sigs = use_fetch_signals();
     let is_admin = crate::use_is_admin();
     let pools = use_suggestion_pools();
     let shelf_wiring = use_shelf_wiring();
     let misc = use_misc_signals();
     let viewer = crate::use_current_user_summary();
-    let stack_series = use_stack_series(viewer, query, misc.prefs);
+    let stack_series = use_stack_series(viewer, misc.prefs);
 
     wire_landing_effects(
         server_url,
-        query,
         misc.prefs,
         misc.want_more,
         is_admin,
@@ -139,7 +138,7 @@ pub(super) fn setup_landing_signals(server_url: &str, query: Signal<String>) -> 
     }
 }
 
-/// Construct the core browse/search fetch signals (accumulated result rows,
+/// Construct the core browse fetch signals (accumulated result rows,
 /// paging cursor, loading/error state) and the monotonic fetch epoch that
 /// lets an in-flight fetch detect it's been superseded.
 fn use_fetch_signals() -> FetchSignals {
@@ -228,17 +227,15 @@ fn use_misc_signals() -> MiscSignals {
     }
 }
 
-/// Whether Stack series applies (saved on, grid, no search); off until `/me` resolves (rule 07).
+/// Whether Stack series applies (saved on, grid); off until `/me` resolves (rule 07).
 fn use_stack_series(
     viewer: ReadSignal<Option<UserSummary>>,
-    query: Signal<String>,
     prefs: Signal<ViewPrefs>,
 ) -> Memo<bool> {
     use_memo(move || {
         cfg!(not(feature = "mobile"))
             && viewer().is_some_and(|u| u.stack_series)
             && prefs.read().view_mode == ViewMode::Grid
-            && query().trim().is_empty()
     })
 }
 
@@ -257,7 +254,7 @@ struct ShelfWiring {
 }
 
 /// Arm every reactive side-effect the landing page needs: admin-gated
-/// suggestion-pool refetch, page-1 fetch on sort/filter/query change, the
+/// suggestion-pool refetch, page-1 fetch on sort/filter change, the
 /// load-more append + web scroll observer, and the two-stage prefs hydration
 /// (last-browsed library on mount, then the authoritative path once a fetch
 /// resolves it). Each stage is a named helper below so this stays a plain
@@ -265,7 +262,6 @@ struct ShelfWiring {
 #[allow(clippy::too_many_arguments)] // one bundle per pipeline; splitting further hides the wiring
 fn wire_landing_effects(
     server_url: &str,
-    query: Signal<String>,
     prefs: Signal<ViewPrefs>,
     want_more: Signal<u32>,
     is_admin: ReadSignal<bool>,
@@ -280,7 +276,6 @@ fn wire_landing_effects(
 
     let fetch_key = wire_page_fetch_effects(
         server_url,
-        query,
         prefs,
         want_more,
         fetch_sigs,
@@ -292,13 +287,12 @@ fn wire_landing_effects(
     wire_shelf_effects(server_url, prefs, fetch_sigs.generation, shelf_wiring);
 }
 
-/// Refetches page 1 on query/sort/filter/hidden-formats/Stack series change
+/// Refetches page 1 on sort/filter/hidden-formats/Stack series change
 /// and arms the load-more append (plus the web scroll observer). Returns the
 /// `fetch_key` memo so the caller can also key the bulk-selection-clear
 /// effect on it.
 fn wire_page_fetch_effects(
     server_url: &str,
-    query: Signal<String>,
     prefs: Signal<ViewPrefs>,
     want_more: Signal<u32>,
     fetch_sigs: FetchSignals,
@@ -318,11 +312,10 @@ fn wire_page_fetch_effects(
             .unwrap_or_default()
     });
 
-    // Page 1 refetches on query, sort, filters, hidden formats, or Stack series starting to apply.
+    // Page 1 refetches on sort, filters, hidden formats, or Stack series starting to apply.
     let fetch_key = use_memo(move || {
         let p = prefs();
         (
-            query().trim().to_string(),
             p.sort_key,
             p.sort_dir,
             p.filters.clone(),
@@ -346,7 +339,7 @@ fn wire_page_fetch_effects(
 }
 
 /// Drops the bulk-edit selection whenever the visible list changes wholesale
-/// — a refetch (query/sort/filter change) or a gallery pick. Checked rows
+/// — a refetch (sort/filter change) or a gallery pick. Checked rows
 /// that are no longer rendered would otherwise be edited invisibly from a
 /// stale selection.
 fn wire_bulk_selection_clear(

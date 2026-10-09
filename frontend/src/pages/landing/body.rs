@@ -27,7 +27,7 @@ use super::signals::LandingSignals;
 #[cfg(not(feature = "mobile"))]
 use super::stack::{lead_accent_style, stack_entries, EdgeResume, ResumeStack, ResumeStackPending};
 #[cfg(not(feature = "mobile"))]
-use super::stack_toggle::{stack_toggle_note, use_stack_toggle, StackToggleView};
+use super::stack_toggle::{use_stack_toggle, StackToggleView};
 #[cfg(not(feature = "mobile"))]
 use super::table::BookTableContext;
 use super::view::{LandingHandlers, LandingViewState};
@@ -112,7 +112,7 @@ pub(super) fn web_landing_body(
     // the web build's only render path.
     let lead = use_signal(|| 0usize);
     // The Stack series switch; hook order is fixed like `lead` above.
-    let (stack_view, on_stack_toggle) = use_stack_toggle(stack_toggle_note(view.is_search));
+    let (stack_view, on_stack_toggle) = use_stack_toggle();
     // Borrowed inside its own scope, so the guard is dropped before the rsx
     // below (never held across other signal reads) without copying the map.
     // Reading it here is what re-renders the stack with a fresh thumb URL
@@ -134,13 +134,13 @@ pub(super) fn web_landing_body(
         show_add_books,
     );
     let accent_style = lead_accent_style(&entries, lead());
-    let show_stack = !view.is_search && !entries.is_empty();
+    let show_stack = !entries.is_empty();
     // Hold the stack's place until the open books are known, so the page
     // below doesn't jump when it lands.
-    let stack_pending = !view.is_search && hero_points.is_none();
+    let stack_pending = hero_points.is_none();
     // The glue binds elements the shelves row and the stack only mount once
     // their fetches land, so it re-runs when either appears or disappears.
-    let glue_key = (show_stack, !view.is_search, (sigs.shelves)().len());
+    let glue_key = (show_stack, (sigs.shelves)().len());
     use_effect(use_reactive!(|glue_key| {
         let _ = glue_key;
         let _ = dioxus::document::eval(MARQUEE_JS);
@@ -152,7 +152,7 @@ pub(super) fn web_landing_body(
             } else if stack_pending {
                 ResumeStackPending {}
             }
-            {render_gallery(sigs, view.is_search, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
+            {render_gallery(sigs, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
             {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), lens, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters, on_add_tile: lens.add_tile() }, on_prefs_change_header, stack_view, on_stack_toggle)}
             {render_bulk_overlay(bulk, bulk_modal_open, bulk_selected, books_sig, shelf_books_sig, author_pool, tag_pool, genre_pool)}
             {render_add_books_overlay(show_add_books, selected_shelf.clone(), &shelf_books_sig.read(), shelves_tick)}
@@ -295,30 +295,26 @@ fn render_header_and_content(
     }
 }
 
-/// The shelves row for [`web_landing_body`], hidden entirely while a search
-/// is active. See [`render_bulk_overlay`] for why this is a plain helper, not
-/// a component.
+/// The shelves row for [`web_landing_body`]. See [`render_bulk_overlay`] for
+/// why this is a plain helper, not a component.
 #[cfg(not(feature = "mobile"))]
 fn render_gallery(
     sigs: &LandingSignals,
-    is_search: bool,
     all_cover_uuids: Vec<String>,
     server_url: String,
     on_select_shelf: EventHandler<crate::shelf_selection::ShelfSelection>,
     on_shelf_created: EventHandler<()>,
 ) -> Element {
     rsx! {
-        if !is_search {
-            ShelfGallery {
-                shelves: (sigs.shelves)(),
-                loaded: (sigs.shelves_answered)(),
-                selection: (sigs.selection)(),
-                all_count: (sigs.total)(),
-                all_cover_uuids,
-                server_url,
-                on_select: on_select_shelf,
-                on_created: on_shelf_created,
-            }
+        ShelfGallery {
+            shelves: (sigs.shelves)(),
+            loaded: (sigs.shelves_answered)(),
+            selection: (sigs.selection)(),
+            all_count: (sigs.total)(),
+            all_cover_uuids,
+            server_url,
+            on_select: on_select_shelf,
+            on_created: on_shelf_created,
         }
     }
 }

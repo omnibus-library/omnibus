@@ -17,8 +17,8 @@ use super::PAGE_SIZE;
 /// How many resume points the continue-reading hero carousel shows.
 pub(super) const HERO_POINTS: i64 = 5;
 
-/// `(query, sort, dir, filters, hidden formats, Stack series)` — every input that refetches page 1.
-pub(super) type FetchKey = (String, SortKey, SortDir, ViewFilters, Vec<String>, bool);
+/// `(sort, dir, filters, hidden formats, Stack series)` — every input that refetches page 1.
+pub(super) type FetchKey = (SortKey, SortDir, ViewFilters, Vec<String>, bool);
 
 /// Stable per-page handle on the chip-editor suggestion pool signals
 /// (authors, tags, genres).
@@ -98,7 +98,7 @@ pub(super) fn spawn_suggestion_pools_effect(
     });
 }
 
-/// Refetch page 1 on query/sort/filter changes; epoch-guarded so stale
+/// Refetch page 1 on sort/filter changes; epoch-guarded so stale
 /// in-flight requests drop, and held until `prefs_ready` so the first request
 /// out carries the viewer's persisted sort rather than the defaults.
 pub(super) fn spawn_page_fetch_effect(
@@ -107,8 +107,8 @@ pub(super) fn spawn_page_fetch_effect(
     sigs: FetchSignals,
 ) {
     // `sigs` is `Copy`; the result-application signals are set inside
-    // `apply_browse_result` / `apply_search_result`. Only the fetch-lifecycle
-    // signals are driven from this body.
+    // `apply_browse_result`. Only the fetch-lifecycle signals are driven from
+    // this body.
     let mut next_cursor = sigs.next_cursor;
     let mut loading = sigs.loading;
     let mut error = sigs.error;
@@ -119,7 +119,7 @@ pub(super) fn spawn_page_fetch_effect(
         // Re-run when a background cache revalidation lands changed data;
         // the refetch below is then a fresh cache hit (zero network).
         let _ = generation();
-        let (q, sort_key, sort_dir, filters, exclude_formats, stack_series) = fetch_key();
+        let (sort_key, sort_dir, filters, exclude_formats, stack_series) = fetch_key();
         // Read every dependency *before* the gate so the subscription set is
         // identical on the held run and the real one — bailing early on an
         // unread signal would drop `fetch_key` from this effect's deps.
@@ -140,32 +140,23 @@ pub(super) fn spawn_page_fetch_effect(
             }
             error.set(None);
             next_cursor.set(None);
-            if q.is_empty() {
-                // Browse: server keyset page 1 (server-side sort + filter,
-                // facets + total ride along on the first page).
-                let result = data::get_ebooks_page(
-                    &url,
-                    sort_key,
-                    sort_dir,
-                    filters,
-                    exclude_formats,
-                    None,
-                    PAGE_SIZE,
-                    stack_series,
-                )
-                .await;
-                if *fetch_epoch.peek() != epoch {
-                    return; // a newer fetch superseded us — drop this result
-                }
-                apply_browse_result(sigs, result);
-            } else {
-                // Search: capped full result set, sorted/filtered client-side.
-                let result = data::search_ebooks(&url, &q).await;
-                if *fetch_epoch.peek() != epoch {
-                    return;
-                }
-                apply_search_result(sigs, result);
+            // Server keyset page 1 (server-side sort + filter; the
+            // full-library total rides along on the first page).
+            let result = data::get_ebooks_page(
+                &url,
+                sort_key,
+                sort_dir,
+                filters,
+                exclude_formats,
+                None,
+                PAGE_SIZE,
+                stack_series,
+            )
+            .await;
+            if *fetch_epoch.peek() != epoch {
+                return; // a newer fetch superseded us — drop this result
             }
+            apply_browse_result(sigs, result);
             loading.set(false);
         });
     });
@@ -212,42 +203,6 @@ fn apply_browse_result(
     }
 }
 
-/// Apply a search (capped full result set) fetch outcome to the page signals.
-/// On error, the derived signals are cleared to avoid a stale header count.
-fn apply_search_result(
-    sigs: FetchSignals,
-    result: Result<omnibus_shared::EbookLibrary, data::DataError>,
-) {
-    let FetchSignals {
-        mut books,
-        mut stacks,
-        mut total,
-        mut lib_path,
-        mut lib_error,
-        mut error,
-        mut hidden,
-        ..
-    } = sigs;
-    match result {
-        Ok(lib) => {
-            lib_path.set(lib.path);
-            lib_error.set(lib.error);
-            total.set(lib.total);
-            // Search never excludes (landing-only scope) — no receipt.
-            hidden.set(None);
-            stacks.set(Vec::new());
-            books.set(lib.books);
-        }
-        Err(e) => {
-            error.set(Some(e.to_string()));
-            books.set(Vec::new());
-            stacks.set(Vec::new());
-            total.set(None);
-            lib_error.set(None);
-        }
-    }
-}
-
 /// Append the next page and its stacks on `want_more`, unless a page-1 refetch superseded it.
 pub(super) fn spawn_load_more_effect(
     server_url: String,
@@ -288,7 +243,7 @@ pub(super) fn spawn_load_more_effect(
                 *stack_series.peek(),
             )
             .await;
-            // Drop the append if a page-1 refetch (sort/filter/query change)
+            // Drop the append if a page-1 refetch (sort/filter change)
             // superseded us mid-flight — otherwise we'd splice an old result
             // stream onto the new list and overwrite its cursor.
             if *fetch_epoch.peek() != epoch {

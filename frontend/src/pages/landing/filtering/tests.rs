@@ -234,9 +234,3 @@ fn empty_filters_returns_full_list_unchanged_in_original_order() {
         vec![1, 2, 3]
     );
 }
-
-#[test]
-fn format_badge_label_uppercases() {
-    assert_eq!(format_badge_label(" epub "), "EPUB");
-    assert_eq!(format_badge_label("m4b"), "M4B");
-}

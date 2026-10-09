@@ -1,8 +1,7 @@
 //! "Empty after filtering" placeholder for the landing grid.
 //!
 //! The facet sidebar + format chips were retired when shelves became the
-//! library's primary lens; only the empty-state affordance the
-//! search path still hits remains here.
+//! library's primary lens; only the empty-state affordance remains here.
 
 use dioxus::prelude::*;
 

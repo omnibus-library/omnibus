@@ -12514,14 +12514,11 @@ html {
 .lmq .ss-tog.on { color: var(--ink-0); border-color: color-mix(in oklch, var(--accent) 45%, transparent); }
 .lmq .ss-tog.on .ss-sw { background: color-mix(in oklch, var(--accent) 75%, transparent); }
 .lmq .ss-tog.on .ss-sw::after { transform: translateX(12px); background: #fff; }
-/* Pending (viewer not yet resolved) skips the dim — no faded-then-live flash. */
-.lmq .ss-tog:disabled:not(.pending) { opacity: .42; cursor: not-allowed; }
-.lmq .ss-tnote, .lmq .ss-terr {
+.lmq .ss-terr {
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
   text-transform: uppercase; white-space: nowrap;
+  color: var(--bad);
 }
-.lmq .ss-tnote { color: var(--ink-3); }
-.lmq .ss-terr { color: var(--bad); }
 @media (prefers-reduced-motion: reduce) {
   .lmq .ss-leaf, .lmq .ss-count, .lmq .ss-sw, .lmq .ss-sw::after { transition: none; }
 }

@@ -152,7 +152,7 @@ mod tests {
     use super::*;
     use crate::test_support::render;
 
-    use super::super::stack_toggle::{stack_toggle_note, StackToggleView, STACK_SAVE_ERROR};
+    use super::super::stack_toggle::{StackToggleView, STACK_SAVE_ERROR};
 
     #[component]
     fn ToolbarHarness(
@@ -270,7 +270,6 @@ mod tests {
         assert!(html.contains("data-testid=\"lib-stack-toggle\""));
         assert!(html.contains("Stack series"));
         assert!(html.contains("class=\"ss-tog\""));
-        assert!(!html.contains("data-testid=\"lib-stack-note\""));
         assert!(!html.contains("data-testid=\"lib-stack-error\""));
     }
 
@@ -281,7 +280,6 @@ mod tests {
         assert!(html.contains("data-testid=\"lib-stack-toggle\""));
         assert!(html.contains("disabled"));
         assert!(html.contains("class=\"ss-tog pending\""));
-        assert!(!html.contains("data-testid=\"lib-stack-note\""));
     }
 
     #[test]
@@ -308,7 +306,6 @@ mod tests {
         let html = render_toolbar_with(prefs, None, stack);
 
         assert!(!html.contains("data-testid=\"lib-stack-toggle\""));
-        assert!(!html.contains("data-testid=\"lib-stack-note\""));
     }
 
     #[test]
@@ -323,17 +320,5 @@ mod tests {
         assert!(html.contains("role=\"alert\""));
         // SSR escapes the apostrophe, so match the HTML-entity form.
         assert!(html.contains("Couldn&#39;t save Stack series."));
-    }
-
-    #[test]
-    fn toolbar_dims_an_unresolved_stack_toggle_at_once_while_searching() {
-        let stack = StackToggleView {
-            note: stack_toggle_note(true),
-            ..StackToggleView::default()
-        };
-        let html = render_toolbar_with(ViewPrefs::default(), None, stack);
-
-        assert!(html.contains("class=\"ss-tog\""), "{html}");
-        assert!(!html.contains("pending"), "{html}");
     }
 }

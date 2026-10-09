@@ -567,7 +567,6 @@ fn use_mobile_edge_swipe_back(nav: dioxus_router::Navigator) {
 /// Root app component. Renders global styles and the router.
 #[component]
 pub fn App() -> Element {
-    use_context_provider(|| SearchQuery(Signal::new(String::new())));
     // Browser-tab title, defaulting to the bare app name. Each route refines it
     // via `use_page_title`; rendered once as `document::Title` below.
     let page_title = use_signal(|| "Omnibus".to_string());

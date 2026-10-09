@@ -218,7 +218,6 @@ test("table view hides the switch and the grid brings it back on", async () => {
   await switchToTableView(stacker);
 
   await expect(stackToggle(stacker)).toHaveCount(0);
-  await expect(stacker.getByTestId("lib-stack-note")).toHaveCount(0);
 
   // Hidden, not off: the saved choice comes back with the grid.
   await stacker.getByTestId("view-toggle-grid").click();

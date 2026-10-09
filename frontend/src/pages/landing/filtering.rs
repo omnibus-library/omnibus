@@ -1,10 +1,8 @@
-//! Client-side filter helpers for the landing page's search path.
+//! Client-side filter predicate for the landing page's shelf lens.
 //!
-//! Applies the user's [`ViewFilters`] over the (capped) search result set.
-//! Browse is filtered server-side and the facet sidebar was retired in favor of shelves,
-//! so only the filter predicate + table format-badge label remain here.
-// `format_badge_label` feeds the web table only — dead on the mobile build.
-#![cfg_attr(feature = "mobile", allow(dead_code))]
+//! Applies the user's [`ViewFilters`] over a shelf pick's member list (see
+//! `view::shelf_lens`). Browse is filtered server-side, so only the shelf
+//! lens needs this.
 
 use omnibus_shared::{EbookMetadata, ViewFilters};
 
@@ -53,8 +51,8 @@ fn matches_filters(book: &EbookMetadata, filters: &ViewFilters) -> bool {
     true
 }
 
-/// Keep only the books matching every active sidebar facet. An empty filter
-/// set clones the input through unchanged.
+/// Keep only the books matching every active filter. An empty filter set
+/// clones the input through unchanged.
 pub(crate) fn apply_filters(books: &[EbookMetadata], filters: &ViewFilters) -> Vec<EbookMetadata> {
     if filters.is_empty() {
         return books.to_vec();
@@ -64,12 +62,6 @@ pub(crate) fn apply_filters(books: &[EbookMetadata], filters: &ViewFilters) -> V
         .filter(|b| matches_filters(b, filters))
         .cloned()
         .collect()
-}
-
-/// Short badge text for the table's Formats column. Stays compact so a row
-/// with two formats doesn't overflow the cell.
-pub(crate) fn format_badge_label(raw: &str) -> String {
-    raw.trim().to_ascii_uppercase()
 }
 
 #[cfg(test)]
