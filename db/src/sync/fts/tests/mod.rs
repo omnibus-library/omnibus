@@ -40,8 +40,8 @@ fn indexed_with_isbn(filename: &str, title: &str, author: &str, isbn: &str) -> I
 /// orphaned (no backing `books` row).
 async fn assert_fts_invariant(pool: &sqlx::SqlitePool) {
     // Every `books` row — file-backed or fileless (F2) — keeps exactly one
-    // `books_fts` row, so a fileless book stays searchable; the grid/facets
-    // hide it via their own `EXISTS book_files` filter.
+    // `books_fts` row, so a fileless book stays searchable; the grid
+    // hides it via its own `EXISTS book_files` filter.
     let books = count_rows(pool, "SELECT COUNT(*) FROM books").await;
     let fts = count_rows(pool, "SELECT COUNT(*) FROM books_fts").await;
     assert_eq!(books, fts, "books_fts row count must equal books count");
