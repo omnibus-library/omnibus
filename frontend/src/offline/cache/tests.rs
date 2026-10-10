@@ -389,10 +389,29 @@ fn keys_are_stable_and_distinct_per_entity() {
     assert_eq!(keys::manifest("u1", None), "manifest:u1:-1");
     assert_eq!(keys::progress("u1", "epub"), "progress:u1:epub");
     assert_eq!(
-        keys::shelf_page(3, "title", "asc"),
-        "shelf_page:3:title:asc"
+        keys::shelf_page(3, "title", "asc", ""),
+        "shelf_page:3:title:asc:f="
     );
     assert_eq!(keys::audio_rate(7, "u1"), "audio_rate:7:u1");
     assert_eq!(keys::recent_progress(4), "recent_progress:4");
     assert_ne!(keys::highlights("u1"), keys::bookmarks("u1"));
+}
+
+const TAG_FILTER: &str = r#"[{"field":"tag","mode":"include","values":["horror"]}]"#;
+
+#[test]
+fn ebooks_first_key_differs_by_filter() {
+    let unfiltered = keys::ebooks_first("title", "asc", "", "cbz");
+    let filtered = keys::ebooks_first("title", "asc", TAG_FILTER, "cbz");
+
+    assert_eq!(unfiltered, "ebooks_first:title:asc:f=:x=cbz");
+    assert_ne!(unfiltered, filtered);
+}
+
+#[test]
+fn shelf_page_key_keeps_the_shelf_prefix_with_a_filter() {
+    let key = keys::shelf_page(3, "title", "asc", TAG_FILTER);
+
+    assert!(key.starts_with("shelf_page:3:"), "{key}");
+    assert_ne!(key, keys::shelf_page(3, "title", "asc", ""));
 }

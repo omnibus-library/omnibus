@@ -480,7 +480,7 @@ async fn shelf_delete_removes_the_list_detail_and_page_rows() {
     );
     cache::put_json(&cache::keys::shelf(30), &test_shelf(30, "Gone Soon", 1));
     cache::put_json(
-        &cache::keys::shelf_page(30, "title", "asc"),
+        &cache::keys::shelf_page(30, "title", "asc", ""),
         &omnibus_shared::ShelfPage { books: vec![] },
     );
 
@@ -517,7 +517,7 @@ async fn shelf_books_added_appends_matching_replica_books_and_bumps_counts() {
         }],
     );
     cache::put_json(
-        &cache::keys::shelf_page(40, "title", "asc"),
+        &cache::keys::shelf_page(40, "title", "asc", ""),
         &omnibus_shared::ShelfPage { books: vec![] },
     );
 
@@ -532,7 +532,7 @@ async fn shelf_books_added_appends_matching_replica_books_and_bumps_counts() {
         .expect("cached detail");
     assert_eq!(detail.book_count, 1);
     let page: omnibus_shared::ShelfPage =
-        cache::get_json(&cache::keys::shelf_page(40, "title", "asc"))
+        cache::get_json(&cache::keys::shelf_page(40, "title", "asc", ""))
             .await
             .expect("cached page");
     assert_eq!(page.books.len(), 1);
@@ -552,7 +552,7 @@ async fn shelf_book_removed_drops_the_book_from_cached_pages_and_decrements_coun
     );
     cache::put_json(&cache::keys::shelf(50), &test_shelf(50, "Reading", 1));
     cache::put_json(
-        &cache::keys::shelf_page(50, "title", "asc"),
+        &cache::keys::shelf_page(50, "title", "asc", ""),
         &omnibus_shared::ShelfPage {
             books: vec![omnibus_shared::EbookMetadata {
                 id: 1,
@@ -573,11 +573,83 @@ async fn shelf_book_removed_drops_the_book_from_cached_pages_and_decrements_coun
         .expect("cached detail");
     assert_eq!(detail.book_count, 0);
     let page: omnibus_shared::ShelfPage =
-        cache::get_json(&cache::keys::shelf_page(50, "title", "asc"))
+        cache::get_json(&cache::keys::shelf_page(50, "title", "asc", ""))
             .await
             .expect("cached page");
     assert!(page.books.is_empty());
     clear_ops().await;
+}
+
+const HORROR_FILTER: &str = r#"[{"field":"tag","mode":"include","values":["horror"]}]"#;
+
+fn shelf_member(uuid: &str) -> omnibus_shared::EbookMetadata {
+    omnibus_shared::EbookMetadata {
+        id: 1,
+        unique_identifier: Some(uuid.into()),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn shelf_books_added_drops_filtered_shelf_page_variants() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let unfiltered = cache::keys::shelf_page(41, "title", "asc", "");
+    let filtered = cache::keys::shelf_page(41, "title", "asc", HORROR_FILTER);
+    cache::put_json(&cache::keys::ebooks_all(), &vec![shelf_member("uuid-a")]);
+    cache::put_json(&unfiltered, &omnibus_shared::ShelfPage { books: vec![] });
+    cache::put_json(&filtered, &omnibus_shared::ShelfPage { books: vec![] });
+
+    apply::shelf_books_added(41, &["uuid-a".to_string()]).await;
+
+    let patched: omnibus_shared::ShelfPage =
+        cache::get_json(&unfiltered).await.expect("unfiltered page");
+    assert_eq!(patched.books.len(), 1);
+    let dropped: Option<omnibus_shared::ShelfPage> = cache::get_json(&filtered).await;
+    assert!(dropped.is_none(), "an add can't be shown under a filter");
+}
+
+#[tokio::test]
+async fn shelf_books_added_drops_filtered_variants_when_the_replica_lacks_the_books() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let filtered = cache::keys::shelf_page(42, "title", "asc", HORROR_FILTER);
+    cache::put_json(
+        &cache::keys::ebooks_all(),
+        &Vec::<omnibus_shared::EbookMetadata>::new(),
+    );
+    cache::put_json(&filtered, &omnibus_shared::ShelfPage { books: vec![] });
+
+    apply::shelf_books_added(42, &["uuid-unknown".to_string()]).await;
+
+    let dropped: Option<omnibus_shared::ShelfPage> = cache::get_json(&filtered).await;
+    assert!(
+        dropped.is_none(),
+        "a stale filtered page must not outlive the add"
+    );
+}
+
+#[tokio::test]
+async fn shelf_book_removed_patches_filtered_shelf_page_variants_too() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let filtered = cache::keys::shelf_page(51, "title", "asc", HORROR_FILTER);
+    cache::put_json(
+        &filtered,
+        &omnibus_shared::ShelfPage {
+            books: vec![shelf_member("uuid-a"), shelf_member("uuid-b")],
+        },
+    );
+
+    apply::shelf_book_removed(51, "uuid-a").await;
+
+    let page: omnibus_shared::ShelfPage = cache::get_json(&filtered).await.expect("filtered page");
+    let uuids: Vec<_> = page
+        .books
+        .iter()
+        .filter_map(|b| b.unique_identifier.as_deref())
+        .collect();
+    assert_eq!(uuids, vec!["uuid-b"]);
 }
 
 #[tokio::test]
@@ -592,7 +664,7 @@ async fn shelf_remapped_moves_the_detail_and_page_rows_to_the_real_id() {
     );
     cache::put_json(&cache::keys::shelf(-9), &test_shelf(-9, "Cozy", 1));
     cache::put_json(
-        &cache::keys::shelf_page(-9, "title", "asc"),
+        &cache::keys::shelf_page(-9, "title", "asc", ""),
         &omnibus_shared::ShelfPage { books: vec![] },
     );
 

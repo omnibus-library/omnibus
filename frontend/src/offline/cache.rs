@@ -28,10 +28,10 @@ pub mod keys {
         "library".into()
     }
     /// First page of `GET /api/ebooks` (landing's initial fetch).
-    pub fn ebooks_first(sort: &str, dir: &str, formats: &str, exclude: &str) -> String {
+    pub fn ebooks_first(sort: &str, dir: &str, filter: &str, exclude: &str) -> String {
         // `exclude` keys the viewer's hidden-formats pref: a pref change must
         // miss the cached first page or a stale page serves after a toggle.
-        format!("ebooks_first:{sort}:{dir}:{formats}:x={exclude}")
+        format!("ebooks_first:{sort}:{dir}:f={filter}:x={exclude}")
     }
     /// The full-library replica (every row, background-synced).
     pub fn ebooks_all() -> String {
@@ -85,9 +85,10 @@ pub mod keys {
     pub fn shelf(id: i64) -> String {
         format!("shelf:{id}")
     }
-    /// `GET /api/shelves/{id}/page?sort=&dir=`.
-    pub fn shelf_page(id: i64, sort: &str, dir: &str) -> String {
-        format!("shelf_page:{id}:{sort}:{dir}")
+    /// `GET /api/shelves/{id}/page?sort=&dir=&filter=`; `filter` is the
+    /// `?filter=` value, empty for the whole shelf.
+    pub fn shelf_page(id: i64, sort: &str, dir: &str, filter: &str) -> String {
+        format!("shelf_page:{id}:{sort}:{dir}:f={filter}")
     }
     /// `GET /api/authors`.
     pub fn authors() -> String {

@@ -7,7 +7,10 @@
 // its own thread + runtime, so there is no interleaving to deadlock on.
 #![allow(clippy::await_holding_lock)]
 
-use omnibus_shared::{Contributor, EbookMetadata, LibraryPage, SortDir, SortKey, ViewFilters};
+use omnibus_shared::{
+    Contributor, EbookMetadata, FilterClause, FilterField, FilterMode, LibraryPage, SortDir,
+    SortKey, ViewFilters,
+};
 
 use crate::offline::cache;
 use crate::offline::store;
@@ -178,4 +181,99 @@ async fn get_ebooks_page_online_asks_the_server_to_omit_descriptions() {
     .expect("page");
 
     assert_eq!(titles(&page), vec!["true"]);
+}
+
+/// Serve `/api/ebooks` answering two books titled with the `filter` and
+/// `formats` query values it received (`absent` when the request carried none).
+async fn spawn_filter_echo() -> String {
+    use axum::extract::Query;
+    use axum::routing::get;
+    use axum::Json;
+    use omnibus_shared::EbookLibrary;
+
+    use crate::offline::test_support::spawn_router;
+
+    let app = axum::Router::new().route(
+        "/api/ebooks",
+        get(
+            |Query(params): Query<std::collections::HashMap<String, String>>| async move {
+                let echo =
+                    |name: &str| book(params.get(name).map(String::as_str).unwrap_or("absent"));
+                Json(EbookLibrary {
+                    path: None,
+                    books: vec![echo("filter"), echo("formats")],
+                    error: None,
+                    total: None,
+                })
+            },
+        ),
+    );
+    spawn_router(app).await
+}
+
+#[tokio::test]
+async fn get_ebooks_page_online_sends_the_filter_as_one_json_query_param() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let base = spawn_filter_echo().await;
+    let filters = ViewFilters {
+        clauses: vec![FilterClause {
+            field: FilterField::Tag,
+            mode: FilterMode::Exclude,
+            values: vec!["a,b".into(), "c&d".into()],
+        }],
+        formats: vec!["epub".into()],
+        ..Default::default()
+    };
+
+    let page = get_ebooks_page_online(
+        &base,
+        SortKey::Title,
+        SortDir::Asc,
+        filters,
+        Vec::new(),
+        None,
+        10,
+    )
+    .await
+    .expect("page");
+
+    let sent: Vec<FilterClause> = serde_json::from_str(&titles(&page)[0]).expect("filter json");
+    assert_eq!(
+        sent,
+        vec![
+            FilterClause {
+                field: FilterField::Format,
+                mode: FilterMode::Include,
+                values: vec!["epub".into()],
+            },
+            FilterClause {
+                field: FilterField::Tag,
+                mode: FilterMode::Exclude,
+                values: vec!["a,b".into(), "c&d".into()],
+            },
+        ]
+    );
+    assert_eq!(titles(&page)[1], "absent", "no separate formats param");
+}
+
+#[tokio::test]
+async fn get_ebooks_page_online_omits_the_filter_param_without_a_filter() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let base = spawn_filter_echo().await;
+
+    let page = get_ebooks_page_online(
+        &base,
+        SortKey::Title,
+        SortDir::Asc,
+        ViewFilters::default(),
+        Vec::new(),
+        None,
+        10,
+    )
+    .await
+    .expect("page");
+
+    assert_eq!(titles(&page), vec!["absent", "absent"]);
 }

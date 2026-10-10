@@ -168,10 +168,19 @@ pub(crate) async fn shelf_deleted(id: i64) {
 }
 
 /// Add books to a shelf's cached pages and bump its counts. Member rows
-/// are reconstructed from the library replica when available.
+/// are reconstructed from the library replica when available. A filtered page
+/// is dropped instead: whether the new books match its filter isn't knowable.
 pub(crate) async fn shelf_books_added(shelf_id: i64, book_uuids: &[String]) {
     bump_shelf_count(shelf_id, book_uuids.len() as i64).await;
     let Some(st) = store::store() else { return };
+    let mut whole_pages = Vec::new();
+    for (key, _) in st.kv_prefix(&format!("shelf_page:{shelf_id}:")).await {
+        if is_filtered_shelf_page(&key) {
+            st.kv_delete(&key);
+        } else {
+            whole_pages.push(key);
+        }
+    }
     let replica: Option<Vec<omnibus_shared::EbookMetadata>> =
         cache::get_json(&cache::keys::ebooks_all()).await;
     let added: Vec<omnibus_shared::EbookMetadata> = replica
@@ -189,7 +198,7 @@ pub(crate) async fn shelf_books_added(shelf_id: i64, book_uuids: &[String]) {
     if added.is_empty() {
         return;
     }
-    for (key, _) in st.kv_prefix(&format!("shelf_page:{shelf_id}:")).await {
+    for key in whole_pages {
         cache::mutate_json::<ShelfPage, _>(&key, |page| {
             for book in &added {
                 let uuid = book.unique_identifier.as_deref().unwrap_or_default();
@@ -204,6 +213,12 @@ pub(crate) async fn shelf_books_added(shelf_id: i64, book_uuids: &[String]) {
         })
         .await;
     }
+}
+
+/// Whether a `shelf_page:` cache key holds a filtered view of the shelf.
+fn is_filtered_shelf_page(key: &str) -> bool {
+    key.split_once(":f=")
+        .is_some_and(|(_, filter)| !filter.is_empty())
 }
 
 /// Remove a book from a shelf's cached pages and drop its counts.
