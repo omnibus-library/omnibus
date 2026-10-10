@@ -11399,21 +11399,12 @@ html {
 /* ── Content panel ── */
 .bdmq-panel {
   position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
-  /* No filter here: it would pin fixed overlays to the panel (see `.bdmq-flowscrim`). */
+  /* No filter here: it would pin fixed overlays to the panel (see `.bdmq-panelscrim`). */
   padding: 56px 60px;
   display: flex; flex-direction: column;
   z-index: 1;
   overflow: hidden auto;
   scrollbar-width: thin;
-}
-/* The design's scrim on its own layer behind the panel: bg-0 at 70%, so the
-   cover's right edge reads dissolved rather than cut off at the seam. */
-.bdmq-panelscrim {
-  position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
-  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
-  backdrop-filter: blur(12px);
-  pointer-events: none;
-  z-index: 0;
 }
 /* Centers short content, lets tall content scroll from its top. */
 .bdmq-panel-inner { margin: auto 0; position: relative; min-height: 0; }
@@ -11480,24 +11471,21 @@ html {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--accent) 60%, var(--bg-3)) transparent;
 }
-/* The blur behind the flow column, on its own non-scrolling layer.
-   `backdrop-filter` makes an element the containing block for its
-   `position: fixed` descendants, so while it lived on the scroller the
-   journal overlay was laid out against the scroller's *scrolled* content and
-   rendered `scrollTop` pixels above the viewport — far enough up, by the time
-   a reader reached the journal stop, that an entry could not be read at all
-   (#2529). Keep every filter off `.bdmq-flowscroll` for that reason; this
-   layer sits behind it and blurs the cover just the same. */
-.bdmq-flowscrim {
+/* The scrim behind the snapped panel and the flow column: bg-0 at 70%, so the
+   cover's right edge reads dissolved rather than cut off at the seam. It is a
+   layer of its own because `backdrop-filter` makes an element the containing
+   block for its `position: fixed` descendants: on the scroller, the journal
+   overlay was laid out against the scroller's *scrolled* content and rendered
+   `scrollTop` pixels above the viewport (#2529). Keep every filter off
+   `.bdmq-panel` and `.bdmq-flowscroll`. */
+.bdmq-panelscrim, .bdmq-flowscrim {
   position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
-  /* Same scrim as `.bdmq-panel`: the cover's right edge reads dissolved
-     behind the column rather than cut off at the seam. */
   background: color-mix(in oklch, var(--bg-0) 70%, transparent);
   backdrop-filter: blur(12px);
-  border-left: 1px solid var(--line-2);
   pointer-events: none;
   z-index: 0;
 }
+.bdmq-flowscrim { border-left: 1px solid var(--line-2); }
 .bdmq-flowscroll::-webkit-scrollbar { width: 6px; }
 .bdmq-flowscroll::-webkit-scrollbar-thumb {
   background: color-mix(in oklch, var(--accent) 60%, var(--bg-3));
