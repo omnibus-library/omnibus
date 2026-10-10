@@ -1,6 +1,9 @@
 use super::{ebooks_page, merge_candidates, search_ebooks};
 use omnibus_db::test_support::{indexed, seed_synced_ebook, seed_user};
-use omnibus_shared::{Settings, SortDir, SortKey, ViewFilters, SEARCH_QUERY_MAX_LEN};
+use omnibus_shared::{
+    FilterClause, FilterField, FilterMode, Settings, SortDir, SortKey, ViewFilters,
+    MAX_FILTER_CLAUSES, SEARCH_QUERY_MAX_LEN,
+};
 
 async fn configured_pool(audiobook_path: Option<&str>) -> sqlx::SqlitePool {
     let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
@@ -98,6 +101,50 @@ async fn ebooks_page_surfaces_error_for_malformed_cursor() {
     .await;
 
     assert!(result.is_err(), "malformed cursor must surface an error");
+}
+
+fn tag_filters(clauses: usize) -> ViewFilters {
+    ViewFilters {
+        clauses: (0..clauses)
+            .map(|i| FilterClause {
+                field: FilterField::Tag,
+                mode: FilterMode::Include,
+                values: vec![format!("tag-{i}")],
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn ebooks_page_rejects_more_than_max_filter_clauses() {
+    let pool = configured_pool(None).await;
+
+    let over = ebooks_page(
+        &pool,
+        SortKey::Title,
+        SortDir::Asc,
+        &tag_filters(MAX_FILTER_CLAUSES + 1),
+        &[],
+        None,
+        10,
+        None,
+    )
+    .await;
+    let at_cap = ebooks_page(
+        &pool,
+        SortKey::Title,
+        SortDir::Asc,
+        &tag_filters(MAX_FILTER_CLAUSES),
+        &[],
+        None,
+        10,
+        None,
+    )
+    .await;
+
+    assert!(over.is_err(), "17 clauses must be rejected");
+    assert!(at_cap.is_ok(), "16 clauses must still be served");
 }
 
 #[tokio::test]

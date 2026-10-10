@@ -6,6 +6,7 @@
 
 use crate::books::BooksError;
 
+pub(crate) mod filter;
 pub(crate) mod provision;
 mod read;
 mod rules;

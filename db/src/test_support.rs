@@ -10,7 +10,9 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use omnibus_shared::{Contributor, EbookMetadata, ProgressFormat, ProgressUpdate};
+use omnibus_shared::{
+    Contributor, EbookMetadata, MetadataOverrides, ProgressFormat, ProgressUpdate,
+};
 use sqlx::SqlitePool;
 
 use crate::ebook::IndexedBook;
@@ -985,6 +987,23 @@ pub async fn uuid_by_scan_key(pool: &SqlitePool, scan_key: &str) -> String {
         .fetch_one(pool)
         .await
         .unwrap()
+}
+
+/// Save `overrides` on the book titled `title`, as `editor`. Panics on a missing title.
+pub async fn set_overrides_by_title(
+    pool: &SqlitePool,
+    title: &str,
+    overrides: &MetadataOverrides,
+    editor: i64,
+) {
+    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE title = ?")
+        .bind(title)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    crate::upsert_metadata_overrides(pool, &uuid, overrides, false, editor)
+        .await
+        .unwrap();
 }
 
 /// One-scalar COUNT helper for table-shape assertions.

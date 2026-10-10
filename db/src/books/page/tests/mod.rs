@@ -2,6 +2,7 @@
 //! the sibling modules below; the library, book, override and
 //! physical-copy insert fixtures they share live here.
 
+mod clauses;
 mod dictionary;
 mod filters;
 mod overrides;
@@ -92,6 +93,57 @@ async fn set_overrides_json(pool: &SqlitePool, book_id: i64, json: &str) {
     sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES (?, ?)")
         .bind(uuid)
         .bind(json)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Like [`insert_book`], but with an explicit set of `book_files` formats
+/// (stored-case, e.g. `"CBZ"`). An empty slice inserts no file rows — pair it
+/// with [`insert_physical_copy`] or the fileless gate hides the book.
+async fn insert_book_with_formats(
+    pool: &SqlitePool,
+    lib_id: i64,
+    title: &str,
+    formats: &[&str],
+) -> i64 {
+    let key = uniq();
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO books (uuid, scan_key, library_id, path, title)
+         VALUES (?, ?, ?, '/p', ?) RETURNING id",
+    )
+    .bind(&key)
+    .bind(&key)
+    .bind(lib_id)
+    .bind(title)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    for (i, fmt) in formats.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO book_files (book_id, format, filename, size_bytes, mtime_epoch, ordinal)
+             VALUES (?, ?, ?, 1, 1, ?)",
+        )
+        .bind(id)
+        .bind(fmt)
+        .bind(format!("{title}.{}", fmt.to_lowercase()))
+        .bind(i as i64)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    id
+}
+
+/// Attach a physical copy to a book so the physical OR-arm keeps it visible.
+async fn insert_physical_copy(pool: &SqlitePool, book_id: i64) {
+    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
+        .bind(book_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO physical_copies (book_uuid) VALUES (?)")
+        .bind(uuid)
         .execute(pool)
         .await
         .unwrap();

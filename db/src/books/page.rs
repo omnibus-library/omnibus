@@ -14,6 +14,7 @@ use crate::metadata_overrides::sql::{
     creator_sort_sql, effective_author_sql, effective_text_sql, effective_value_sql,
     override_present_sql, override_sql, overrides_win_sql,
 };
+use crate::shelves::filter::{filter_predicate, Bind, MATCH_ALL};
 
 use super::projection::{
     backfill_creator_ids, merge_overrides_projected, row_to_ebook, Projection, MAX_BOOKS_RETURNED,
@@ -546,66 +547,19 @@ pub async fn count_books_page(
     Ok(q.fetch_one(pool).await?)
 }
 
-/// Build the ` AND EXISTS(…)` server-side filter conjuncts. Each non-empty
-/// facet group ANDs across groups and ORs within (an `IN (…)` list), matching
-/// the former client-side `matches_filters`.
+/// The ` AND (<clauses>)` server-side filter conjunct, or `""` when no clause
+/// applies. Clauses come from [`filter_predicate`], so the page and smart
+/// shelves share one membership engine.
 fn filter_predicates(filters: &ViewFilters, binds: &mut Vec<SqlVal>) -> String {
-    let mut out = String::new();
-    if !filters.authors.is_empty() {
-        out.push_str(&exists_in(
-            "books_authors_link bal JOIN authors a ON a.id = bal.author",
-            "bal.book = b.id",
-            "a.name",
-            &filters.authors,
-            binds,
-        ));
+    let predicate = filter_predicate(filters);
+    if predicate.sql == MATCH_ALL {
+        return String::new();
     }
-    if !filters.series.is_empty() {
-        out.push_str(&exists_in(
-            "books_series_link bsl JOIN series s ON s.id = bsl.series",
-            "bsl.book = b.id",
-            "s.name",
-            &filters.series,
-            binds,
-        ));
-    }
-    if !filters.formats.is_empty() {
-        // `book_files.format` is COLLATE NOCASE, so the lowercase chip keys
-        // (`"epub"`) match the stored uppercase (`"EPUB"`) without folding.
-        out.push_str(&exists_in(
-            "book_files bf",
-            "bf.book_id = b.id",
-            "bf.format",
-            &filters.formats,
-            binds,
-        ));
-    }
-    if !filters.tags.is_empty() {
-        out.push_str(&exists_in(
-            "books_tags_link btl JOIN tags t ON t.id = btl.tag",
-            "btl.book = b.id",
-            "t.name",
-            &filters.tags,
-            binds,
-        ));
-    }
-    out
-}
-
-/// ` AND EXISTS (SELECT 1 FROM <from> WHERE <join> AND <col> IN (?, …))`,
-/// pushing each value as a bind.
-fn exists_in(
-    from: &str,
-    join: &str,
-    col: &str,
-    values: &[String],
-    binds: &mut Vec<SqlVal>,
-) -> String {
-    let ph = placeholders(values.len());
-    for v in values {
-        binds.push(SqlVal::Text(v.clone()));
-    }
-    format!(" AND EXISTS (SELECT 1 FROM {from} WHERE {join} AND {col} IN ({ph}))")
+    binds.extend(predicate.binds.into_iter().map(|bind| match bind {
+        Bind::Text(s) => SqlVal::Text(s),
+        Bind::Int(i) => SqlVal::Int(i),
+    }));
+    format!(" AND ({})", predicate.sql)
 }
 
 /// The landing hidden-formats exclusion: a book stays visible while it has at

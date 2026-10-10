@@ -42,6 +42,7 @@ pub mod summary;
 pub mod text_fold;
 pub mod timestamp;
 pub mod upload;
+pub mod view_filters;
 pub mod view_prefs;
 pub mod worker;
 
@@ -134,6 +135,7 @@ pub use suggestion::*;
 pub use summary::*;
 pub use timestamp::{to_iso8601, to_iso8601_opt};
 pub use upload::*;
+pub use view_filters::*;
 pub use view_prefs::*;
 pub use worker::*;
 
