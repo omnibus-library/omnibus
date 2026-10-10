@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { APIRequestContext, Browser, Page } from "@playwright/test";
 
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
@@ -7,6 +7,7 @@ import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 import { withManualShelf } from "../utils/shelves";
+import { logInThroughUi, provisionUser } from "../utils/users";
 
 // The book page's More stop: "Add to shelf" opens a picker that files this
 // book on a hand-picked shelf, or takes it off, without leaving the page.
@@ -15,6 +16,10 @@ import { withManualShelf } from "../utils/shelves";
 // fixtures/epubs.ts). The suite is fullyParallel, so tests here may hold the
 // book on different shelves at once: each one makes a shelf of its own and
 // asserts only about that shelf, never about the book's whole shelf list.
+//
+// Scroll stops is a per-account preference that changes the page's layout (see
+// 04a), so the tests that depend on it run as readers of their own, one per
+// layout, and never touch the shared admin's switch.
 
 test.beforeAll(async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
@@ -24,6 +29,54 @@ const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-forest")!;
 
 // Only read: the series test opens its More stop and writes nothing.
 const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
+
+const READER_PASSWORD = "shelf-reader-pw-00";
+const SNAP_READER = "shelfsnap";
+
+/** Set the reader's Use book details scroll stops switch through Settings. */
+async function setScrollStops(page: Page, on: boolean) {
+  await gotoReady(page, "/settings?section=account");
+  const toggle = page.getByRole("switch", {
+    name: "Use book details scroll stops",
+  });
+  await expect(toggle).toBeEnabled();
+  if ((await toggle.isChecked()) === on) return;
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/account/book-detail-scroll-stops",
+      expectedBody: { enabled: on },
+      expectedStatus: 200,
+    },
+    async () => toggle.click(),
+  );
+  await expect(toggle).toBeChecked({ checked: on });
+}
+
+/**
+ * Run `body` as a non-admin reader of their own on a cookie-less context, with
+ * scroll stops set as asked. Every run sets the switch, so none needs resetting.
+ */
+async function asReader(
+  { browser, request }: { browser: Browser; request: APIRequestContext },
+  username: string,
+  scrollStops: boolean,
+  body: (page: Page) => Promise<void>,
+) {
+  await provisionUser(request, username, READER_PASSWORD);
+  const context = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+  });
+  const page = await context.newPage();
+  try {
+    await logInThroughUi(page, username, READER_PASSWORD);
+    await setScrollStops(page, scrollStops);
+    await body(page);
+  } finally {
+    await context.close();
+  }
+}
 
 /** Open the picker from the More stop and wait for it to list shelves. */
 async function openPicker(page: Page) {
@@ -169,4 +222,27 @@ test("dismisses the picker with Escape, its close button, or the backdrop", asyn
     position: { x: viewport.width / 2, y: viewport.height - 4 },
   });
   await expect(picker).toHaveCount(0);
+});
+
+test("opens the picker over the whole window when the page snaps between stops", async ({
+  browser,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await asReader({ browser, request }, SNAP_READER, true, async (page) => {
+    await gotoReady(page, `/books/${uuid}`);
+    // The mode is only known once the viewer resolves, so wait for the swap.
+    await expect(page.locator("#bdmq-snap")).toBeAttached();
+    await page.getByTestId("bdmq-dot-5").click();
+    await expect(page.getByTestId("bdmq-dot-5")).toHaveClass(/\bon\b/);
+
+    const picker = await openPicker(page);
+
+    // A filter on the panel would make it the overlay's containing block and
+    // pin the scrim to the panel's 57% rather than the window.
+    const viewport = page.viewportSize()!;
+    await expect
+      .poll(async () => (await picker.boundingBox())?.width)
+      .toBe(viewport.width);
+  });
 });

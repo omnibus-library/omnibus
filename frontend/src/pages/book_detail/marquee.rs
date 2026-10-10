@@ -283,6 +283,8 @@ pub(super) fn MarqueeStage(
                             class: "bdmq-sec",
                             "data-testid": "bdmq-sec-{i}",
                             div { class: "bdmq-seclab", "{no} / 06 \u{2014} " b { "{name}" } }
+                            // A filter on the panel would capture every fixed overlay inside it.
+                            div { class: "bdmq-panelscrim", aria_hidden: "true" }
                             div { class: "bdmq-panel",
                                 div { class: "bdmq-panel-inner", {stops[i].clone()} }
                             }

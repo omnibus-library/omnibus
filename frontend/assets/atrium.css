@@ -11397,15 +11397,21 @@ html {
 /* ── Content panel ── */
 .bdmq-panel {
   position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
-  /* The design's scrim: bg-0 at 70%, so the cover's right edge reads
-     dissolved behind the panel rather than being cut off at the seam. */
-  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
-  backdrop-filter: blur(12px);
+  /* No filter here: it would pin fixed overlays to the panel (see `.bdmq-flowscrim`). */
   padding: 56px 60px;
   display: flex; flex-direction: column;
   z-index: 1;
   overflow: hidden auto;
   scrollbar-width: thin;
+}
+/* The design's scrim on its own layer behind the panel: bg-0 at 70%, so the
+   cover's right edge reads dissolved rather than cut off at the seam. */
+.bdmq-panelscrim {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
+  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+  z-index: 0;
 }
 /* Centers short content, lets tall content scroll from its top. */
 .bdmq-panel-inner { margin: auto 0; position: relative; min-height: 0; }
@@ -11994,6 +12000,7 @@ html {
      than the subject, so it wants the stage-height sizing with no gutter. */
   .bdmq-coverpx { width: auto; height: 125%; max-width: 100%; }
   .bdmq-panel { width: 100%; border-left: 0; padding: 40px 28px; }
+  .bdmq-panelscrim { width: 100%; }
   .bdmq-seclab { left: 28px; }
   .bdmq-next { right: 28px; }
 }
