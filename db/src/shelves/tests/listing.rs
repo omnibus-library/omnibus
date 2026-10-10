@@ -8,10 +8,10 @@ use omnibus_shared::{
 };
 
 use super::super::*;
-use super::{make_user, manual_req, smart_req, tag_rule, uuid_by_title, wishlist_shelf_id};
+use super::{make_user, manual_req, smart_req, tag_rule, uuid_by_title};
 use crate::physical::add_wishlist_entry;
 use crate::pool::init_db;
-use crate::test_support::{seed_discovery_fixture, seed_minimal_books};
+use crate::test_support::{seed_discovery_fixture, seed_minimal_books, wishlist_shelf_id};
 use omnibus_shared::physical::WishlistSource;
 
 #[tokio::test]

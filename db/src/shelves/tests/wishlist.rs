@@ -9,10 +9,10 @@ use omnibus_shared::{
 };
 
 use super::super::*;
-use super::{make_user, wishlist_shelf_id};
+use super::make_user;
 use crate::physical::add_wishlist_entry;
 use crate::pool::init_db;
-use crate::test_support::seed_minimal_books;
+use crate::test_support::{seed_minimal_books, wishlist_shelf_id};
 
 #[tokio::test]
 async fn provision_wishlist_shelf_is_idempotent() {

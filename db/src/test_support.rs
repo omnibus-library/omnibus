@@ -1084,6 +1084,18 @@ pub async fn seed_user(pool: &SqlitePool, username: &str) -> i64 {
     .unwrap()
 }
 
+/// `owner`'s built-in wishlist shelf id, provisioning it first (raw user inserts skip `create_user`).
+pub async fn wishlist_shelf_id(pool: &SqlitePool, owner: i64) -> i64 {
+    crate::provision_wishlist_shelf(pool, owner).await.unwrap();
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM shelves WHERE owner_user_id = ? AND kind = 'wishlist'",
+    )
+    .bind(owner)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
 /// Put `user_id` into a live lockout window, written directly rather than
 /// through failed logins, returning the `locked_until` it wrote.
 pub async fn lock_account(pool: &SqlitePool, user_id: i64) -> i64 {

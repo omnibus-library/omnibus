@@ -17,7 +17,7 @@ use super::{clause, insert_book, insert_lib, sorted_titles, uuid_of};
 use crate::books::Projection;
 use crate::physical::add_wishlist_entry;
 use crate::pool::init_db;
-use crate::test_support::seed_user;
+use crate::test_support::{seed_user, wishlist_shelf_id};
 
 /// A fresh database holding one visible book per title under `/lib`; returns
 /// the pool and the books' uuids in title order.
@@ -73,16 +73,6 @@ async fn smart_shelf(pool: &SqlitePool, owner: i64) -> i64 {
         book_uuids: Vec::new(),
     };
     crate::create_shelf(pool, owner, &req).await.unwrap().id
-}
-
-/// `owner`'s built-in wishlist shelf id, provisioned on demand.
-async fn wishlist_shelf(pool: &SqlitePool, owner: i64) -> i64 {
-    crate::provision_wishlist_shelf(pool, owner).await.unwrap();
-    sqlx::query_scalar("SELECT id FROM shelves WHERE owner_user_id = ? AND kind = 'wishlist'")
-        .bind(owner)
-        .fetch_one(pool)
-        .await
-        .unwrap()
 }
 
 fn shelf_clause(mode: FilterMode, shelf_ids: &[i64]) -> FilterClause {
@@ -155,7 +145,7 @@ async fn list_books_page_exclude_shelf_keeps_books_on_no_listed_shelf() {
 async fn list_books_page_include_shelf_keeps_the_viewers_wishlist_books() {
     let (pool, uuids) = library_of(&["Alpha", "Bravo", "Charlie"]).await;
     let owner = seed_user(&pool, "owner").await;
-    let wishlist = wishlist_shelf(&pool, owner).await;
+    let wishlist = wishlist_shelf_id(&pool, owner).await;
     add_wishlist_entry(&pool, owner, &uuids[1], WishlistSource::Detail)
         .await
         .unwrap();

@@ -10,11 +10,11 @@ use omnibus_shared::{
 use sqlx::SqlitePool;
 
 use super::super::*;
-use super::{make_user, manual_req, smart_req, uuid_by_title, wishlist_shelf_id};
+use super::{make_user, manual_req, smart_req, uuid_by_title};
 use crate::physical::add_wishlist_entry;
 use crate::pool::init_db;
 use crate::sync::replace_books;
-use crate::test_support::{indexed, CoversTempDir};
+use crate::test_support::{indexed, wishlist_shelf_id, CoversTempDir};
 
 /// Four visible books under `/lib`: Alpha and Charlie tagged `red`, Bravo
 /// tagged `blue`, Delta untagged.
