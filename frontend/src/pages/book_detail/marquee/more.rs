@@ -37,8 +37,9 @@ pub(super) struct MoreStopCtx {
 }
 
 /// The More stop: the series shelf (when there is one) and the shelves holding
-/// this book, the author's other work, then suggestions. The series is fetched once by the stage and threaded in, so
-/// this stop and the Home kicker read the same record.
+/// this book, the author's other work, then suggestions. The series is fetched
+/// once by the stage and threaded in, so this stop and the Home kicker read the
+/// same record.
 ///
 /// These were two stops until the running order collapsed to six — the shelf
 /// is not a subject of its own, it is one of the three ways this page points
