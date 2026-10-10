@@ -196,6 +196,14 @@ pub use edit_shelf_modal::EditShelfModal;
 pub mod add_books_modal;
 pub use add_books_modal::AddBooksModal;
 
+// The "Add to shelf" picker: lists the hand-picked shelves a reader may change
+// and reports the row they pick. Web-only — the mobile apps queue their own
+// shelf writes through the offline outbox.
+#[cfg(not(feature = "mobile"))]
+pub mod shelf_picker;
+#[cfg(not(feature = "mobile"))]
+pub use shelf_picker::ShelfPickerModal;
+
 // Facet row (kind / visibility / rule chips) shown under shelf titles on the
 // landing header and the shelf detail header.
 pub mod shelf_facets;
