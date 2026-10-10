@@ -833,6 +833,21 @@ class ReportFilesTests(unittest.TestCase):
         self.assertEqual(str(raised.exception.code),
                          "groups.json: 'Covers' lists L2, which is not a defect")
 
+    def test_report_exits_naming_an_issue_when_groups_json_omits_its_side(self):  # AC4
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+                row("2026-08-28T10:00:11Z", "agent-1", "anomaly", seq=2,
+                    params={"severity": "low", "kind": "issue"}, note="the picker was slow"),
+            ])
+            write_groups(d, defects=[{"title": "Covers", "lines": [1]}])
+            with self.assertRaises(SystemExit) as raised:
+                render("r-tmp", "--journal-dir", tmp, "--no-server-log")
+        self.assertEqual(str(raised.exception.code),
+                         "groups.json: execution issue L2 is in no group")
+
     def test_report_lists_every_defect_under_ungrouped_without_a_groups_file(self):  # AC5
         with tempfile.TemporaryDirectory() as tmp:
             write_journal(Path(tmp) / "r-tmp", "r-tmp", [

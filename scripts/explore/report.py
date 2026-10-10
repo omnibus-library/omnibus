@@ -125,12 +125,12 @@ class Group:
 
 
 def load_groups(path: Path) -> dict[str, list[Group]]:
-    """Read `groups.json` into its `defects` / `execution` sides — each only if present."""
+    """Read `groups.json` into its `defects` / `execution` sides; a missing side has none."""
     data = json.loads(path.read_text())
     return {
         side: [Group(g["title"], g.get("root_cause", ""), bool(g.get("checked")),
-                     tuple(g["lines"])) for g in data[side]]
-        for side in ("defects", "execution") if side in data
+                     tuple(g["lines"])) for g in data.get(side, [])]
+        for side in ("defects", "execution")
     }
 
 
@@ -302,6 +302,8 @@ class Report:
     def rows_file(self, what: str, label: str, rows: list, groups: list[Group] | None) -> None:
         """A detail file: its groups first when the runner wrote them, then every row."""
         self.title(what)
+        if not rows:
+            return
         if groups is None:
             self.anomaly_table("Ungrouped", rows)
         else:
