@@ -24,6 +24,20 @@ pub fn add_targets(shelves: &[ShelfSummary], viewer: &UserSummary) -> Vec<ShelfS
         .collect()
 }
 
+/// The picker's `targets` for a shelves read and the viewer: loading until the
+/// viewer is known, the failure as soon as the read has failed, otherwise
+/// [`add_targets`].
+pub fn picker_targets(
+    read: Option<Result<&[ShelfSummary], ()>>,
+    viewer: Option<&UserSummary>,
+) -> Option<Result<Vec<ShelfSummary>, ()>> {
+    match (read, viewer) {
+        (Some(Ok(all)), Some(viewer)) => Some(Ok(add_targets(all, viewer))),
+        (Some(Err(())), _) => Some(Err(())),
+        _ => None,
+    }
+}
+
 /// What a [`ShelfPickerModal`] draws. The default is the loading state.
 #[derive(Clone, Default, PartialEq)]
 pub struct ShelfPickerList {

@@ -12,7 +12,7 @@ use omnibus_shared::{
 };
 
 use crate::components::atrium::Cover;
-use crate::components::shelf_picker::{add_targets, ShelfPickerList, ShelfPickerModal};
+use crate::components::shelf_picker::{picker_targets, ShelfPickerList, ShelfPickerModal};
 use crate::components::{Loading, LoadingKind};
 use crate::contexts::use_current_user_summary;
 use crate::{data, use_server_url, Route};
@@ -295,11 +295,13 @@ fn shelf_picker_list(
         Some(Ok((_, ids))) => Some(ids.clone()),
         _ => None,
     };
-    let targets = match (read, viewer) {
-        (Some(Ok((all, _))), Some(viewer)) => Some(Ok(add_targets(all, viewer))),
-        (Some(Err(())), _) => Some(Err(())),
-        _ => None,
-    };
+    let shelves = read.as_ref().map(|answer| {
+        answer
+            .as_ref()
+            .map(|(all, _)| all.as_slice())
+            .map_err(|_| ())
+    });
+    let targets = picker_targets(shelves, viewer);
     ShelfPickerList {
         targets,
         viewer_id: viewer.map(|u| u.id),

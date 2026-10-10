@@ -62,6 +62,44 @@ fn add_targets_keeps_another_readers_hand_picked_shelf_for_an_admin() {
     assert_eq!(ids(&add_targets(&shelves, &admin())), vec![1, 2]);
 }
 
+/// `picker_targets` with the shelves as ids, so the answer compares and prints.
+fn target_ids(
+    read: Option<Result<&[ShelfSummary], ()>>,
+    viewer: Option<&UserSummary>,
+) -> Option<Result<Vec<i64>, ()>> {
+    picker_targets(read, viewer).map(|answer| answer.map(|shelves| ids(&shelves)))
+}
+
+#[test]
+fn picker_targets_keeps_the_shelves_the_viewer_may_change_when_both_are_known() {
+    let shelves = [
+        test_shelf_summary(1, OTHER_READER_ID, ShelfKind::Manual, "Theirs"),
+        own(2, "Mine"),
+    ];
+    let viewer = reader();
+    assert_eq!(
+        target_ids(Some(Ok(&shelves)), Some(&viewer)),
+        Some(Ok(vec![2]))
+    );
+}
+
+#[test]
+fn picker_targets_stays_loading_when_the_viewer_is_not_known_yet() {
+    let shelves = [own(1, "Mine")];
+    assert_eq!(target_ids(Some(Ok(&shelves)), None), None);
+}
+
+#[test]
+fn picker_targets_reports_a_failed_read_when_the_shelves_did_not_load() {
+    let viewer = reader();
+    assert_eq!(target_ids(Some(Err(())), Some(&viewer)), Some(Err(())));
+}
+
+#[test]
+fn picker_targets_reports_a_failed_read_before_the_viewer_is_known() {
+    assert_eq!(target_ids(Some(Err(())), None), Some(Err(())));
+}
+
 #[component]
 fn Harness(list: ShelfPickerList) -> Element {
     rsx! {

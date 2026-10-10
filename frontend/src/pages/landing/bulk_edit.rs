@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 use omnibus_shared::{BulkMetadataEdit, EbookMetadata, ShelfSummary};
 
 use crate::components::chip_editor::{ChipEditor, ChipEditorOptions, SuggestionItem};
-use crate::components::shelf_picker::{add_targets, ShelfPickerList, ShelfPickerModal};
+use crate::components::shelf_picker::{picker_targets, ShelfPickerList, ShelfPickerModal};
 use crate::components::{BusyLabel, ConfirmModal};
 use crate::{data, use_current_user_summary, use_server_url};
 
@@ -103,11 +103,12 @@ pub(super) fn BulkShelfPicker(
     });
 
     let me = viewer();
-    let targets = match (shelves(), me.as_ref()) {
-        (Some(Ok(all)), Some(me)) => Some(Ok(add_targets(&all, me))),
-        (Some(Err(())), _) => Some(Err(())),
-        _ => None,
-    };
+    let read = shelves();
+    let targets = picker_targets(
+        read.as_ref()
+            .map(|answer| answer.as_deref().map_err(|_| ())),
+        me.as_ref(),
+    );
     let count = selected.read().len();
     let noun = if count == 1 { "book" } else { "books" };
     rsx! {
