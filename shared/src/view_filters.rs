@@ -18,6 +18,9 @@ pub enum FilterField {
     Format,
 }
 
+/// Most clauses a [`ViewFilters`] may carry, legacy facets included.
+pub const MAX_FILTER_CLAUSES: usize = 16;
+
 /// Whether a clause keeps the books that match it or drops them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

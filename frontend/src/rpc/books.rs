@@ -18,6 +18,9 @@ use omnibus_db as db;
 use omnibus_shared::{BookDeletionImpact, BookSuggestion, RawSuggestion};
 
 #[cfg(feature = "server")]
+use omnibus_shared::MAX_FILTER_CLAUSES;
+
+#[cfg(feature = "server")]
 use super::{internal_rpc_error, AdminUser, AuthUser, PoolExt, WorkerExt};
 
 /// Return the full indexed library (ebooks and audiobooks combined) for the
@@ -111,6 +114,9 @@ async fn ebooks_page(
     limit: i64,
     stack_viewer: Option<i64>,
 ) -> Result<LibraryPage, ServerFnError> {
+    if filters.effective_clauses().len() > MAX_FILTER_CLAUSES {
+        return Err(ServerFnError::new("too many filter clauses"));
+    }
     let settings = db::get_settings(pool)
         .await
         .map_err(|e| internal_rpc_error("get settings", e))?;
