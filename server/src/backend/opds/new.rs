@@ -38,6 +38,7 @@ pub(super) async fn load_new_arrivals(
             SortKey::NewestAdded,
             SortDir::Desc,
             &ViewFilters::default(),
+            db::Viewer::default(),
             &[],
             None,
             NEW_LIMIT,

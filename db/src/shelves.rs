@@ -15,6 +15,7 @@ mod write;
 #[cfg(test)]
 mod tests;
 
+pub use filter::Viewer;
 pub use provision::{provision_wishlist_shelf, provision_wishlist_shelves};
 pub use read::{
     get_shelf, kobo_synced_book_uuids, list_visible_shelves, manual_shelves_containing,

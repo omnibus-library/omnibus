@@ -497,6 +497,7 @@ async fn shelf_page_orders_the_metadata_axes_like_the_library() {
                 sort,
                 dir,
                 &omnibus_shared::ViewFilters::default(),
+                Viewer::default(),
                 &[],
                 None,
                 50,

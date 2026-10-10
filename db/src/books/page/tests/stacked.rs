@@ -26,10 +26,10 @@ async fn stacked_page(
         sort,
         dir,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         cursor,
         limit,
-        0,
         Projection::Full,
     )
     .await
@@ -243,10 +243,10 @@ async fn list_books_page_stacked_unstacks_a_series_an_exclusion_cuts_to_one_book
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &hidden,
         None,
         50,
-        0,
         Projection::Full,
     )
     .await
@@ -409,10 +409,13 @@ async fn list_books_page_stacked_reports_reading_state_for_the_viewer_only() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer {
+            user_id: viewer,
+            ..Viewer::default()
+        },
         &[],
         None,
         50,
-        viewer,
         Projection::Full,
     )
     .await
@@ -461,10 +464,13 @@ async fn list_books_page_stacked_counts_a_cfi_only_position_as_started() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer {
+            user_id: viewer,
+            ..Viewer::default()
+        },
         &[],
         None,
         50,
-        viewer,
         Projection::Full,
     )
     .await
@@ -491,10 +497,10 @@ async fn list_books_page_stacked_surfaces_a_db_error_when_the_pool_is_closed() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         50,
-        0,
         Projection::Full,
     )
     .await;

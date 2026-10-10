@@ -4,12 +4,13 @@
 use super::*;
 use crate::{SortDir, SortKey, ViewMode, ViewPrefs};
 
-const ALL_FIELDS: [FilterField; 5] = [
+const ALL_FIELDS: [FilterField; 6] = [
     FilterField::Tag,
     FilterField::Genre,
     FilterField::Author,
     FilterField::Series,
     FilterField::Format,
+    FilterField::Shelf,
 ];
 
 const ALL_MODES: [FilterMode; 2] = [FilterMode::Include, FilterMode::Exclude];
@@ -34,6 +35,12 @@ fn filter_clause_serializes_to_the_snake_case_wire_tokens() {
         wire,
         r#"{"field":"genre","mode":"exclude","values":["Fantasy"]}"#
     );
+}
+
+#[test]
+fn filter_field_shelf_serializes_to_its_snake_case_token() {
+    let wire = serde_json::to_string(&FilterField::Shelf).expect("serialize");
+    assert_eq!(wire, r#""shelf""#);
 }
 
 #[test]

@@ -37,6 +37,7 @@ async fn list_books_page_respects_library_path_filter() {
             SortKey::Title,
             SortDir::Asc,
             &f,
+            Viewer::default(),
             &[],
             cursor.as_ref(),
             2,
@@ -70,6 +71,7 @@ async fn list_books_page_applies_author_filter_server_side() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &[],
         None,
         50,
@@ -96,6 +98,7 @@ async fn list_books_page_applies_format_filter_case_insensitively() {
         SortKey::Title,
         SortDir::Asc,
         &epub,
+        Viewer::default(),
         &[],
         None,
         50,
@@ -114,6 +117,7 @@ async fn list_books_page_applies_format_filter_case_insensitively() {
         SortKey::Title,
         SortDir::Asc,
         &m4b,
+        Viewer::default(),
         &[],
         None,
         50,
@@ -127,9 +131,19 @@ async fn list_books_page_applies_format_filter_case_insensitively() {
 async fn list_books_page_returns_empty_for_no_paths() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let f = ViewFilters::default();
-    let page = list_books_page(&pool, &[], SortKey::Title, SortDir::Asc, &f, &[], None, 50)
-        .await
-        .unwrap();
+    let page = list_books_page(
+        &pool,
+        &[],
+        SortKey::Title,
+        SortDir::Asc,
+        &f,
+        Viewer::default(),
+        &[],
+        None,
+        50,
+    )
+    .await
+    .unwrap();
     assert!(page.books.is_empty());
     assert!(page.next.is_none());
 }
@@ -173,6 +187,7 @@ async fn list_books_page_shows_physical_only_book_but_hides_wishlist_only() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &[],
         None,
         50,
@@ -213,9 +228,15 @@ async fn count_books_page_counts_physical_only_book_but_not_wishlist_only() {
     seed_fileless(&pool, "Wishlist Only Title", vec![]).await;
 
     // 1 normal book + 1 physical-only book; the wishlist-only book is excluded.
-    let count = count_books_page(&pool, &["/lib"], &ViewFilters::default(), &[])
-        .await
-        .unwrap();
+    let count = count_books_page(
+        &pool,
+        &["/lib"],
+        &ViewFilters::default(),
+        Viewer::default(),
+        &[],
+    )
+    .await
+    .unwrap();
     assert_eq!(
         count, 2,
         "count includes physical-only but not wishlist-only"
@@ -225,9 +246,15 @@ async fn count_books_page_counts_physical_only_book_but_not_wishlist_only() {
 #[tokio::test]
 async fn count_books_page_matches_unfiltered_count_and_applies_format_filter() {
     let (pool, _guard) = seed_discovery_fixture().await; // all EPUB
-    let all = count_books_page(&pool, &["/lib"], &ViewFilters::default(), &[])
-        .await
-        .unwrap();
+    let all = count_books_page(
+        &pool,
+        &["/lib"],
+        &ViewFilters::default(),
+        Viewer::default(),
+        &[],
+    )
+    .await
+    .unwrap();
     assert_eq!(all, 4, "empty filters count the whole library");
 
     let epub = ViewFilters {
@@ -235,7 +262,7 @@ async fn count_books_page_matches_unfiltered_count_and_applies_format_filter() {
         ..Default::default()
     };
     assert_eq!(
-        count_books_page(&pool, &["/lib"], &epub, &[])
+        count_books_page(&pool, &["/lib"], &epub, Viewer::default(), &[])
             .await
             .unwrap(),
         4
@@ -246,13 +273,15 @@ async fn count_books_page_matches_unfiltered_count_and_applies_format_filter() {
         ..Default::default()
     };
     assert_eq!(
-        count_books_page(&pool, &["/lib"], &m4b, &[]).await.unwrap(),
+        count_books_page(&pool, &["/lib"], &m4b, Viewer::default(), &[])
+            .await
+            .unwrap(),
         0
     );
 
     // No library paths → zero without touching the db.
     assert_eq!(
-        count_books_page(&pool, &[], &ViewFilters::default(), &[])
+        count_books_page(&pool, &[], &ViewFilters::default(), Viewer::default(), &[])
             .await
             .unwrap(),
         0
@@ -275,6 +304,7 @@ async fn list_books_page_excludes_books_whose_every_format_is_hidden() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -299,6 +329,7 @@ async fn list_books_page_keeps_dual_format_book_while_any_format_stays_visible()
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -319,6 +350,7 @@ async fn list_books_page_keeps_dual_format_book_while_any_format_stays_visible()
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide_both,
         None,
         50,
@@ -347,6 +379,7 @@ async fn list_books_page_never_hides_physical_only_books() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -373,6 +406,7 @@ async fn list_books_page_exclusion_matches_stored_uppercase_formats_case_insensi
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -406,6 +440,7 @@ async fn list_books_page_exclusion_composes_with_include_format_filter() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -432,17 +467,22 @@ async fn count_books_page_exclusion_matches_list_books_page() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
     )
     .await
     .unwrap();
-    let count = count_books_page(&pool, &["/lib"], &f, &hide).await.unwrap();
+    let count = count_books_page(&pool, &["/lib"], &f, Viewer::default(), &hide)
+        .await
+        .unwrap();
     assert_eq!(page.books.len() as i64, count);
     assert_eq!(count, 2, "Dual + Novel");
 
     // The receipt arithmetic: same filters, exclusion diff only.
-    let all = count_books_page(&pool, &["/lib"], &f, &[]).await.unwrap();
+    let all = count_books_page(&pool, &["/lib"], &f, Viewer::default(), &[])
+        .await
+        .unwrap();
     assert_eq!(all - count, 2, "two comic-only books hidden");
 }

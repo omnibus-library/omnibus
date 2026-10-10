@@ -318,6 +318,7 @@ async fn physical_only_books_are_excluded_from_new_and_search_feeds() {
         omnibus_shared::SortKey::NewestAdded,
         omnibus_shared::SortDir::Desc,
         &omnibus_shared::ViewFilters::default(),
+        db::Viewer::default(),
         &[],
         None,
         50,
