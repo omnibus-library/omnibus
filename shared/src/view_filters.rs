@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 mod tests;
 
-/// The book attribute a [`FilterClause`] matches against.
+/// The book attribute a [`FilterClause`] matches against. A `Shelf` value is a
+/// shelf id as a decimal string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterField {
@@ -16,6 +17,7 @@ pub enum FilterField {
     Author,
     Series,
     Format,
+    Shelf,
 }
 
 /// Most clauses a [`ViewFilters`] may carry, legacy facets included.

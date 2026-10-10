@@ -5,7 +5,8 @@
 use std::collections::HashSet;
 
 use omnibus_shared::{
-    EbookMetadata, MatchMode, RulePreview, Shelf, ShelfKind, ShelfPage, ShelfRule, SortDir, SortKey,
+    EbookMetadata, MatchMode, RulePreview, Shelf, ShelfKind, ShelfPage, ShelfRule, SortDir,
+    SortKey, ViewFilters,
 };
 use sqlx::{Row, SqlitePool};
 
@@ -18,7 +19,8 @@ use crate::books::{
     MAX_BOOKS_RETURNED,
 };
 use crate::metadata_overrides::sql::override_join_sql;
-use crate::shelves::rules::{membership_predicate, Bind};
+use crate::shelves::filter::{filter_predicate, Viewer};
+use crate::shelves::rules::{membership_predicate, Bind, Predicate};
 
 /// Ids of the hand-picked shelves `viewer_id` can see that hold `uuid`.
 ///
@@ -219,14 +221,18 @@ pub async fn kobo_synced_book_uuids(
 }
 
 /// One page of a shelf's books (v1: capped at [`MAX_BOOKS_RETURNED`], no
-/// cursor). Smart shelves honor `sort`/`dir`; manual shelves ignore them and
-/// return `shelf_books.position` order.
+/// cursor), narrowed by `filters` as `viewer` sees them. Smart shelves honor
+/// `sort`/`dir`; manual shelves ignore them and return `shelf_books.position`
+/// order.
 pub async fn shelf_page(
     pool: &SqlitePool,
     shelf: &Shelf,
     sort: SortKey,
     dir: SortDir,
+    filters: &ViewFilters,
+    viewer: Viewer,
 ) -> Result<ShelfPage, ShelfError> {
+    let filter = filter_predicate(filters, viewer);
     let books = match shelf.kind {
         ShelfKind::Smart => {
             fetch_smart(
@@ -234,14 +240,15 @@ pub async fn shelf_page(
                 shelf.owner_user_id,
                 shelf.match_mode.unwrap_or(MatchMode::Any),
                 &shelf.rules,
+                &filter,
                 &order_by_sql(sort, dir),
                 MAX_BOOKS_RETURNED,
             )
             .await?
         }
-        ShelfKind::Manual => fetch_manual(pool, shelf.id, MAX_BOOKS_RETURNED).await?,
+        ShelfKind::Manual => fetch_manual(pool, shelf.id, &filter, MAX_BOOKS_RETURNED).await?,
         ShelfKind::Wishlist => {
-            fetch_wishlist(pool, shelf.owner_user_id, MAX_BOOKS_RETURNED).await?
+            fetch_wishlist(pool, shelf.owner_user_id, &filter, MAX_BOOKS_RETURNED).await?
         }
     };
     Ok(ShelfPage { books })
@@ -266,6 +273,7 @@ pub async fn preview_rule(
         owner_id,
         match_mode,
         rules,
+        &filter_predicate(&ViewFilters::default(), Viewer::default()),
         &order_by_sql(SortKey::RecentlyInteracted, SortDir::Desc),
         PREVIEW_SAMPLE,
     )
@@ -318,15 +326,16 @@ async fn count_wishlist(pool: &SqlitePool, owner_id: i64) -> Result<i64, ShelfEr
 async fn fetch_wishlist(
     pool: &SqlitePool,
     owner_id: i64,
+    filter: &Predicate,
     limit: i64,
 ) -> Result<Vec<EbookMetadata>, ShelfError> {
     let sql = format!(
         "SELECT {BOOK_COLUMNS} FROM books b \
          JOIN wishlist_entries we ON we.book_uuid = b.uuid \
-         WHERE we.user_id = ? ORDER BY we.added_at DESC, we.id DESC LIMIT ?"
+         WHERE we.user_id = ? AND {} ORDER BY we.added_at DESC, we.id DESC LIMIT ?",
+        filter.sql
     );
-    let rows = sqlx::query(&sql)
-        .bind(owner_id)
+    let rows = bind_all(sqlx::query(&sql).bind(owner_id), &filter.binds)
         .bind(limit)
         .fetch_all(pool)
         .await?;
@@ -338,6 +347,7 @@ async fn fetch_smart(
     owner_id: i64,
     match_mode: MatchMode,
     rules: &[ShelfRule],
+    filter: &Predicate,
     order_by: &str,
     limit: i64,
 ) -> Result<Vec<EbookMetadata>, ShelfError> {
@@ -347,37 +357,48 @@ async fn fetch_smart(
         concat!(
             "SELECT {} FROM books b ",
             override_join_sql!(),
-            "WHERE {} AND {} ORDER BY {} LIMIT ?"
+            "WHERE {} AND {} AND {} ORDER BY {} LIMIT ?"
         ),
-        BOOK_COLUMNS, SMART_VISIBLE, pred.sql, order_by
+        BOOK_COLUMNS, SMART_VISIBLE, pred.sql, filter.sql, order_by
     );
-    let mut q = sqlx::query(&sql);
-    for b in &pred.binds {
-        q = match b {
-            Bind::Text(s) => q.bind(s.clone()),
-            Bind::Int(i) => q.bind(*i),
-        };
-    }
-    let rows = q.bind(limit).fetch_all(pool).await?;
+    let rows = bind_all(bind_all(sqlx::query(&sql), &pred.binds), &filter.binds)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
     hydrate(pool, &rows).await
 }
 
 async fn fetch_manual(
     pool: &SqlitePool,
     shelf_id: i64,
+    filter: &Predicate,
     limit: i64,
 ) -> Result<Vec<EbookMetadata>, ShelfError> {
     let sql = format!(
         "SELECT {BOOK_COLUMNS} FROM books b \
          JOIN shelf_books sb ON sb.book_uuid = b.uuid \
-         WHERE sb.shelf_id = ? ORDER BY sb.position, sb.added_at LIMIT ?"
+         WHERE sb.shelf_id = ? AND {} ORDER BY sb.position, sb.added_at LIMIT ?",
+        filter.sql
     );
-    let rows = sqlx::query(&sql)
-        .bind(shelf_id)
+    let rows = bind_all(sqlx::query(&sql).bind(shelf_id), &filter.binds)
         .bind(limit)
         .fetch_all(pool)
         .await?;
     hydrate(pool, &rows).await
+}
+
+/// Bind a predicate's `binds` onto `q`, in order.
+fn bind_all<'q>(
+    mut q: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    binds: &[Bind],
+) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
+    for b in binds {
+        q = match b {
+            Bind::Text(s) => q.bind(s.clone()),
+            Bind::Int(i) => q.bind(*i),
+        };
+    }
+    q
 }
 
 // --- uuid-only membership, for Kobo sync (#924) -----------------------------

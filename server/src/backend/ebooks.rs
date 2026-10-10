@@ -101,7 +101,11 @@ pub(super) async fn get_ebooks(
         return respond_full_library(&state, ebook.as_deref(), audiobook.as_deref()).await;
     }
 
-    respond_keyset_page(&state, &q, user.id, ebook.as_deref(), audiobook.as_deref()).await
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    respond_keyset_page(&state, &q, viewer, ebook.as_deref(), audiobook.as_deref()).await
 }
 
 /// Full (capped) combined library, with `X-Total-Count` / `X-Total-Cap`
@@ -160,12 +164,13 @@ async fn page_totals(
     state: &AppState,
     paths: &[&str],
     filters: &ViewFilters,
+    viewer: db::Viewer,
     exclude: &[String],
     cursor_is_none: bool,
 ) -> Result<(i64, Option<i64>), db::BooksError> {
-    let total = db::count_books_page(&state.pool, paths, filters, exclude).await?;
+    let total = db::count_books_page(&state.pool, paths, filters, viewer, exclude).await?;
     let hidden = if !exclude.is_empty() && cursor_is_none {
-        let all = db::count_books_page(&state.pool, paths, filters, &[]).await?;
+        let all = db::count_books_page(&state.pool, paths, filters, viewer, &[]).await?;
         Some(all - total)
     } else {
         None
@@ -217,7 +222,7 @@ fn keyset_page_response(
 async fn respond_keyset_page(
     state: &AppState,
     q: &EbooksQuery,
-    user_id: i64,
+    viewer: db::Viewer,
     ebook: Option<&str>,
     audiobook: Option<&str>,
 ) -> Response {
@@ -239,7 +244,6 @@ async fn respond_keyset_page(
             .map(parse_formats)
             .unwrap_or_default(),
     );
-    let viewer = q.stack_series.unwrap_or(false).then_some(user_id);
     let page = match keyset_rows(
         state,
         q,
@@ -258,7 +262,7 @@ async fn respond_keyset_page(
     // chips (and the exclusion — it counts what pagination will actually
     // yield); identical to the unfiltered count when neither is set.
     let (total, hidden) =
-        match page_totals(state, &paths, &filters, &exclude, cursor.is_none()).await {
+        match page_totals(state, &paths, &filters, viewer, &exclude, cursor.is_none()).await {
             Ok(t) => t,
             Err(error) => return internal("count books", error),
         };
@@ -275,7 +279,7 @@ async fn respond_keyset_page(
     keyset_page_response(body, total, hidden, page.next)
 }
 
-/// The page's rows: series-stacked for `viewer` when set, else plain with no stacks.
+/// The page's rows: series-stacked when the request asks for it, else plain with no stacks.
 async fn keyset_rows(
     state: &AppState,
     q: &EbooksQuery,
@@ -283,7 +287,7 @@ async fn keyset_rows(
     filters: &ViewFilters,
     exclude: &[String],
     cursor: Option<&db::PageCursor>,
-    viewer: Option<i64>,
+    viewer: db::Viewer,
 ) -> Result<db::StackedBookPage, db::BooksError> {
     let sort = q.sort.unwrap_or_default();
     let dir = q.dir.unwrap_or_default();
@@ -293,41 +297,39 @@ async fn keyset_rows(
     } else {
         db::books::Projection::Full
     };
-    match viewer {
-        Some(viewer_id) => {
-            db::list_books_page_stacked(
-                &state.pool,
-                paths,
-                sort,
-                dir,
-                filters,
-                exclude,
-                cursor,
-                limit,
-                viewer_id,
-                projection,
-            )
-            .await
-        }
-        None => {
-            let page = db::books::list_books_page_projected(
-                &state.pool,
-                paths,
-                sort,
-                dir,
-                filters,
-                exclude,
-                cursor,
-                limit,
-                projection,
-            )
-            .await?;
-            Ok(db::StackedBookPage {
-                books: page.books,
-                next: page.next,
-                stacks: Vec::new(),
-            })
-        }
+    if q.stack_series.unwrap_or(false) {
+        db::list_books_page_stacked(
+            &state.pool,
+            paths,
+            sort,
+            dir,
+            filters,
+            viewer,
+            exclude,
+            cursor,
+            limit,
+            projection,
+        )
+        .await
+    } else {
+        let page = db::books::list_books_page_projected(
+            &state.pool,
+            paths,
+            sort,
+            dir,
+            filters,
+            viewer,
+            exclude,
+            cursor,
+            limit,
+            projection,
+        )
+        .await?;
+        Ok(db::StackedBookPage {
+            books: page.books,
+            next: page.next,
+            stacks: Vec::new(),
+        })
     }
 }
 

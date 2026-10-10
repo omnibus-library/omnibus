@@ -1,5 +1,6 @@
 use super::{ebooks_page, merge_candidates, search_ebooks};
 use omnibus_db::test_support::{indexed, seed_synced_ebook, seed_user};
+use omnibus_db::Viewer;
 use omnibus_shared::{
     FilterClause, FilterField, FilterMode, Settings, SortDir, SortKey, ViewFilters,
     MAX_FILTER_CLAUSES, SEARCH_QUERY_MAX_LEN,
@@ -31,10 +32,11 @@ async fn ebooks_page_first_page_carries_total_but_no_facets() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         1,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -57,10 +59,11 @@ async fn ebooks_page_later_page_continues_after_cursor_and_omits_aggregates() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         1,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -71,10 +74,11 @@ async fn ebooks_page_later_page_continues_after_cursor_and_omits_aggregates() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         Some(&cursor),
         1,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -93,10 +97,11 @@ async fn ebooks_page_surfaces_error_for_malformed_cursor() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         Some("not-a-server-issued-cursor"),
         10,
-        None,
+        false,
     )
     .await;
 
@@ -125,10 +130,11 @@ async fn ebooks_page_rejects_more_than_max_filter_clauses() {
         SortKey::Title,
         SortDir::Asc,
         &tag_filters(MAX_FILTER_CLAUSES + 1),
+        Viewer::default(),
         &[],
         None,
         10,
-        None,
+        false,
     )
     .await;
     let at_cap = ebooks_page(
@@ -136,10 +142,11 @@ async fn ebooks_page_rejects_more_than_max_filter_clauses() {
         SortKey::Title,
         SortDir::Asc,
         &tag_filters(MAX_FILTER_CLAUSES),
+        Viewer::default(),
         &[],
         None,
         10,
-        None,
+        false,
     )
     .await;
 
@@ -204,10 +211,11 @@ async fn ebooks_page_with_exclusion_omits_hidden_books_and_reports_hidden_count(
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &["cbz".to_string()],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -232,10 +240,11 @@ async fn ebooks_page_with_exclusion_reports_visible_total() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &["cbz".to_string()],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -254,10 +263,11 @@ async fn ebooks_page_without_exclusion_keeps_current_total_and_no_hidden_count()
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -303,7 +313,7 @@ async fn seed_series(pool: &sqlx::SqlitePool) {
 }
 
 #[tokio::test]
-async fn ebooks_page_with_a_stack_viewer_folds_a_series_and_carries_its_stack() {
+async fn ebooks_page_with_stacking_folds_a_series_and_carries_its_stack() {
     let pool = configured_pool(None).await;
     seed_series(&pool).await;
     let viewer = seed_user(&pool, "reader").await;
@@ -313,10 +323,14 @@ async fn ebooks_page_with_a_stack_viewer_folds_a_series_and_carries_its_stack() 
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer {
+            user_id: viewer,
+            ..Viewer::default()
+        },
         &[],
         None,
         50,
-        Some(viewer),
+        true,
     )
     .await
     .unwrap();
@@ -337,7 +351,7 @@ async fn ebooks_page_with_a_stack_viewer_folds_a_series_and_carries_its_stack() 
 }
 
 #[tokio::test]
-async fn ebooks_page_without_a_stack_viewer_lists_every_book_and_no_stacks() {
+async fn ebooks_page_without_stacking_lists_every_book_and_no_stacks() {
     let pool = configured_pool(None).await;
     seed_series(&pool).await;
 
@@ -346,10 +360,11 @@ async fn ebooks_page_without_a_stack_viewer_lists_every_book_and_no_stacks() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -390,10 +405,11 @@ async fn ebooks_page_rows_carry_no_description_but_the_detail_read_keeps_it() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -409,7 +425,7 @@ async fn ebooks_page_rows_carry_no_description_but_the_detail_read_keeps_it() {
 }
 
 #[tokio::test]
-async fn ebooks_page_with_a_stack_viewer_carries_no_description_on_rows_or_members() {
+async fn ebooks_page_with_stacking_carries_no_description_on_rows_or_members() {
     let pool = configured_pool(None).await;
     seed_described_series(&pool).await;
     let viewer = seed_user(&pool, "reader").await;
@@ -419,10 +435,14 @@ async fn ebooks_page_with_a_stack_viewer_carries_no_description_on_rows_or_membe
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer {
+            user_id: viewer,
+            ..Viewer::default()
+        },
         &[],
         None,
         50,
-        Some(viewer),
+        true,
     )
     .await
     .unwrap();

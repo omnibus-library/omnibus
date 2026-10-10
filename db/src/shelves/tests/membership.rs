@@ -2,7 +2,7 @@
 //! add/remove, survival of a ghosted file, the chunked batch inserts for
 //! books and rules, and `manual_shelves_containing`.
 
-use omnibus_shared::{MatchMode, ShelfRule, SortDir, SortKey};
+use omnibus_shared::{MatchMode, ShelfRule, SortDir, SortKey, ViewFilters};
 
 use super::super::*;
 use super::{make_user, manual_req, smart_req, tag_rule, uuid_by_title};
@@ -24,9 +24,16 @@ async fn create_manual_shelf_keeps_added_order() {
     .unwrap();
     assert_eq!(shelf.book_count, 2);
 
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
     assert_eq!(titles, vec!["Title 3", "Title 1"]); // position order, not sort
 }
@@ -100,9 +107,16 @@ async fn manual_membership_survives_a_ghosted_file() {
 
     let reloaded = get_shelf(&pool, shelf.id).await.unwrap().unwrap();
     assert_eq!(reloaded.book_count, 1, "ghosted book stays on the shelf");
-    let page = shelf_page(&pool, &reloaded, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &reloaded,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.books.len(), 1);
 }
 
@@ -121,9 +135,16 @@ async fn create_manual_shelf_batches_book_inserts_across_the_chunk_boundary() {
         .unwrap();
     assert_eq!(shelf.book_count, N);
 
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
     let expected: Vec<_> = (1..=N).map(|i| format!("Title {i}")).collect();
     assert_eq!(

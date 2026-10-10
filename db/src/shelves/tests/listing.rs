@@ -3,13 +3,15 @@
 //! the mosaic cover uuids, owner attribution by display name, the
 //! recently-interacted ordering, and the Author axis over edited books.
 
-use omnibus_shared::{MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, Visibility};
+use omnibus_shared::{
+    MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, ViewFilters, Visibility,
+};
 
 use super::super::*;
-use super::{make_user, manual_req, smart_req, tag_rule, uuid_by_title, wishlist_shelf_id};
+use super::{make_user, manual_req, smart_req, tag_rule, uuid_by_title};
 use crate::physical::add_wishlist_entry;
 use crate::pool::init_db;
-use crate::test_support::{seed_discovery_fixture, seed_minimal_books};
+use crate::test_support::{seed_discovery_fixture, seed_minimal_books, wishlist_shelf_id};
 use omnibus_shared::physical::WishlistSource;
 
 #[tokio::test]
@@ -439,9 +441,16 @@ async fn shelf_page_recently_interacted_orders_the_latest_signal_first() {
         .execute(&pool)
         .await
         .unwrap();
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     let last_by_title = page
         .books
         .last()
@@ -460,9 +469,16 @@ async fn shelf_page_recently_interacted_orders_the_latest_signal_first() {
     .await
     .unwrap();
 
-    let page = shelf_page(&pool, &shelf, SortKey::RecentlyInteracted, SortDir::Desc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::RecentlyInteracted,
+        SortDir::Desc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         page.books.first().unwrap().unique_identifier.as_deref(),
         Some(last_by_title.as_str()),
@@ -497,9 +513,16 @@ async fn shelf_page_sorts_a_smart_shelf_by_the_edited_author() {
         .await
         .unwrap();
 
-    let page = shelf_page(&pool, &shelf, SortKey::Author, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Author,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
     assert_eq!(titles, ["Saga: Book Two", "Saga: Book One"]);
 }
@@ -529,9 +552,16 @@ async fn shelf_page_files_an_emptied_creators_override_as_authorless() {
         .await
         .unwrap();
 
-    let page = shelf_page(&pool, &shelf, SortKey::Author, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Author,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
     assert_eq!(titles, ["Saga: Book Two", "Saga: Book One"]);
 }

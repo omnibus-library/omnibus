@@ -7,13 +7,13 @@ use std::collections::BTreeSet;
 use omnibus_shared::FilterField::{Author, Format, Genre, Series, Tag};
 use omnibus_shared::FilterMode::{Exclude, Include};
 use omnibus_shared::{
-    FilterClause, FilterField, FilterMode, MatchMode, MetadataOverrides, RuleField, RuleOp,
-    ShelfRule, SortDir, SortKey, ViewFilters,
+    FilterClause, MatchMode, MetadataOverrides, RuleField, RuleOp, ShelfRule, SortDir, SortKey,
+    ViewFilters,
 };
 use sqlx::SqlitePool;
 
 use super::super::*;
-use super::{insert_book_with_formats, insert_physical_copy, titles};
+use super::{clause, insert_book_with_formats, insert_physical_copy, sorted_titles, titles};
 use crate::pool::init_db;
 use crate::sync::replace_books;
 use crate::test_support::{indexed, seed_user, set_overrides_by_title, CoversTempDir};
@@ -87,14 +87,6 @@ async fn seed_filter_library() -> (SqlitePool, CoversTempDir) {
     (pool, covers)
 }
 
-fn clause(field: FilterField, mode: FilterMode, values: &[&str]) -> FilterClause {
-    FilterClause {
-        field,
-        mode,
-        values: values.iter().map(|v| (*v).to_string()).collect(),
-    }
-}
-
 async fn first_page(pool: &SqlitePool, filters: &ViewFilters) -> BookPage {
     list_books_page(
         pool,
@@ -102,18 +94,13 @@ async fn first_page(pool: &SqlitePool, filters: &ViewFilters) -> BookPage {
         SortKey::Title,
         SortDir::Asc,
         filters,
+        Viewer::default(),
         &[],
         None,
         50,
     )
     .await
     .unwrap()
-}
-
-fn sorted_titles(page: &BookPage) -> Vec<String> {
-    let mut found = titles(page);
-    found.sort();
-    found
 }
 
 /// Titles of the first page under `clauses`, sorted for set comparison.
@@ -159,7 +146,7 @@ async fn page_match(pool: &SqlitePool, clause: FilterClause) -> PageMatch {
         ..Default::default()
     };
     let page = first_page(pool, &filters).await;
-    let count = count_books_page(pool, &["/lib"], &filters, &[])
+    let count = count_books_page(pool, &["/lib"], &filters, Viewer::default(), &[])
         .await
         .unwrap();
     PageMatch {
@@ -390,6 +377,7 @@ async fn list_books_page_keeps_the_filter_past_the_first_page() {
             SortKey::Title,
             SortDir::Asc,
             &filters,
+            Viewer::default(),
             &[],
             cursor.as_ref(),
             2,
@@ -425,7 +413,7 @@ async fn count_books_page_counts_only_books_matching_the_clauses() {
         ..Default::default()
     };
 
-    let count = count_books_page(&pool, &["/lib"], &filters, &[])
+    let count = count_books_page(&pool, &["/lib"], &filters, Viewer::default(), &[])
         .await
         .unwrap();
 
@@ -446,10 +434,10 @@ async fn list_books_page_stacked_stacks_only_members_matching_the_filter() {
         SortKey::Title,
         SortDir::Asc,
         &filters,
+        Viewer::default(),
         &[],
         None,
         50,
-        0,
         Projection::Full,
     )
     .await

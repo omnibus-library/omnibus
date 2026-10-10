@@ -9,7 +9,7 @@ use omnibus_shared::{
 };
 
 #[cfg(feature = "server")]
-use omnibus_shared::{validate_book_uuids, validate_rule_count};
+use omnibus_shared::{validate_book_uuids, validate_rule_count, ViewFilters};
 
 #[cfg(feature = "server")]
 use omnibus_db as db;
@@ -124,9 +124,20 @@ pub async fn rpc_get_shelf_page(
     sort_dir: SortDir,
 ) -> Result<ShelfPage> {
     let shelf = shelf_for_view(&pool.0, id, &user).await?;
-    Ok(db::shelf_page(&pool.0, &shelf, sort_key, sort_dir)
-        .await
-        .map_err(|e| map_shelf_error("shelf page", e))?)
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    Ok(db::shelf_page(
+        &pool.0,
+        &shelf,
+        sort_key,
+        sort_dir,
+        &ViewFilters::default(),
+        viewer,
+    )
+    .await
+    .map_err(|e| map_shelf_error("shelf page", e))?)
 }
 
 /// Append books to a hand-picked shelf (owner or admin).

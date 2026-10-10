@@ -3,7 +3,7 @@
 //! appear, the rating and read-status rules resolving against the shelf
 //! owner, and `preview_rule`'s matched/total report.
 
-use omnibus_shared::{MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey};
+use omnibus_shared::{MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, ViewFilters};
 
 use super::super::*;
 use super::{make_user, smart_req, tag_rule, uuid_by_title};
@@ -203,9 +203,16 @@ async fn rating_rule_resolves_against_shelf_owner() {
     .unwrap();
     // Only the owner's 5★ book qualifies — the other user's rating is invisible.
     assert_eq!(shelf.book_count, 1);
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.books[0].title.as_deref(), Some("Saga: Book One"));
 }
 
@@ -249,9 +256,16 @@ async fn status_rule_resolves_against_shelf_owner() {
     .unwrap();
     // Only the owner's finished book qualifies — the other user's is invisible.
     assert_eq!(shelf.book_count, 1);
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.books[0].title.as_deref(), Some("Saga: Book One"));
 }
 
@@ -284,9 +298,16 @@ async fn unread_status_rule_matches_books_with_no_row() {
     )
     .await
     .unwrap();
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     // The finished book is excluded; the rest (no row) all count as unread.
     assert!(shelf.book_count >= 1);
     assert!(
@@ -430,9 +451,16 @@ async fn smart_shelf_series_rule_matches_the_series_an_override_names() {
     )
     .await
     .unwrap();
-    let page = shelf_page(&pool, &saga, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &saga,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     let titles: Vec<_> = page.books.iter().filter_map(|b| b.title.clone()).collect();
     assert_eq!(titles, ["Other Story", "Saga: Book One"]);
 
@@ -484,19 +512,27 @@ async fn shelf_page_orders_the_metadata_axes_like_the_library() {
 
     for sort in [SortKey::Title, SortKey::Author, SortKey::Series] {
         for dir in [SortDir::Asc, SortDir::Desc] {
-            let shelf_ids: Vec<i64> = shelf_page(&pool, &shelf, sort, dir)
-                .await
-                .unwrap()
-                .books
-                .iter()
-                .map(|b| b.id)
-                .collect();
+            let shelf_ids: Vec<i64> = shelf_page(
+                &pool,
+                &shelf,
+                sort,
+                dir,
+                &ViewFilters::default(),
+                Viewer::default(),
+            )
+            .await
+            .unwrap()
+            .books
+            .iter()
+            .map(|b| b.id)
+            .collect();
             let library_ids: Vec<i64> = crate::books::list_books_page(
                 &pool,
                 &["/lib"],
                 sort,
                 dir,
-                &omnibus_shared::ViewFilters::default(),
+                &ViewFilters::default(),
+                Viewer::default(),
                 &[],
                 None,
                 50,

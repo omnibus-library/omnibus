@@ -68,6 +68,7 @@ pub(super) async fn load_page(
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        db::Viewer::default(),
         &[],
         cursor,
         ALL_LIMIT,
