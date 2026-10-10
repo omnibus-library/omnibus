@@ -1,4 +1,9 @@
-import type { APIRequestContext, Browser, Page } from "@playwright/test";
+import type {
+  APIRequestContext,
+  Browser,
+  Locator,
+  Page,
+} from "@playwright/test";
 
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
@@ -29,6 +34,10 @@ const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-forest")!;
 
 // Only read: the series test opens its More stop and writes nothing.
 const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
+
+// One unbroken run far wider than the picker card: it fits only by breaking
+// mid-word.
+const LONG_SHELF_LABEL = "W".repeat(90);
 
 const READER_PASSWORD = "shelf-reader-pw-00";
 const SNAP_READER = "shelfsnap";
@@ -79,6 +88,13 @@ async function asReader(
   }
 }
 
+/** The row's content stays inside its box rather than spilling out of the list. */
+async function expectRowFits(row: Locator) {
+  await expect
+    .poll(() => row.evaluate((el) => el.scrollWidth - el.clientWidth))
+    .toBeLessThanOrEqual(0);
+}
+
 /** Open the picker from the More stop and wait for it to list shelves. */
 async function openPicker(page: Page) {
   await page.getByTestId("bdmq-add-to-shelf").click();
@@ -117,7 +133,7 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
   request,
 }) => {
   const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await withManualShelf(request, "E2E Book Shelf", async ({ id, name }) => {
+  await withManualShelf(request, LONG_SHELF_LABEL, async ({ id, name }) => {
     await gotoReady(page, `/books/${uuid}`);
     const picker = await openPicker(page);
     await expect(
@@ -128,6 +144,7 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
     const chip = page.getByTestId("bdmq-shelves").filter({ hasText: name });
     await expect(row).not.toBeChecked();
     await expect(chip).toHaveCount(0);
+    await expectRowFits(row);
 
     await expectMutation(
       page,
@@ -141,6 +158,7 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
     );
     await expect(row).toBeChecked();
     await expect(chip).toHaveCount(1);
+    await expectRowFits(row);
 
     await expectMutation(
       page,

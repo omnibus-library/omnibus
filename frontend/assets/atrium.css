@@ -7939,6 +7939,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .shelf-picker-row[aria-checked="true"] .shelf-picker-check { background: var(--accent); border-color: transparent; }
 .shelf-picker-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .shelf-picker-name { font-size: 14px; font-weight: 500; color: var(--ink-0); overflow-wrap: anywhere; }
+/* `BusyLabel` never wraps so a button can't jump; a shelf name has to. */
+.shelf-picker-name .ld-busy-face, .shelf-picker-name .ld-busy::after { white-space: normal; }
 .shelf-picker-owner { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; color: var(--ink-3); }
 
 /* Shared shelf chrome: badges, the landing header's edit pencil and facet
