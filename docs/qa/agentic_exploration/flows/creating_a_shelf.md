@@ -4,33 +4,43 @@
 |---|---|
 | **Runs** | on its own |
 | **Owner-only** | no; shelves are per-user |
-| **Surfaces** | web (create, select, edit), iOS (create, fill, edit, delete) |
-| **Actions** | `shelf.create`, `shelf.select`, `shelf.edit`, `shelf.delete` |
+| **Surfaces** | web (create, select, edit, fill), iOS (create, fill, edit, delete) |
+| **Actions** | `shelf.create`, `shelf.select`, `shelf.edit`, `shelf.delete`, `shelf.add`, `shelf.remove` |
 
 Make a shelf and confirm it exists, is yours, and behaves when selected. Then
 change it, and — on iOS, for a shelf you made in this flow — take it away
-again. **The web has no shelf delete**, the same way it has no add-to-shelf:
-a web-made shelf stays on the rail until an iOS reader removes it, so choose
-its name as something you would be content to leave behind.
+again. **The web has no shelf delete**: a web-made shelf stays on the rail
+until an iOS reader removes it, so choose its name as something you would be
+content to leave behind.
 
 ## ⚠️ Read this before you start
 
-**On the web, membership is set at creation and never afterwards.** Choosing
-**Hand-picked** in the New-shelf form replaces the rule builder with a picker —
-a "Search your library…" box, a selectable cover grid, an "On this shelf · N"
-counter, and a Create button that becomes `Create · N`. Fill it there if you
-make a hand-picked shelf.
+**On the web, a hand-picked shelf is filled at creation and can be added to
+afterwards.** Choosing **Hand-picked** in the New-shelf form replaces the rule
+builder with a picker — a "Search your library…" box, a selectable cover grid,
+an "On this shelf · N" counter, and a Create button that becomes `Create · N`.
+Fill it there if you make a hand-picked shelf. Membership can then change from
+four places:
 
-What genuinely does not exist on the web is a way to change membership *later*:
-**Edit shelf** has no picker, and there is no add-to-shelf control on a grid
-tile, in the table's bulk bar (its "Edit" is metadata only), on a book's detail
-page, or in the command palette. So a hand-picked web shelf can be filled once
-and never edited, and **you must not spend the flow hunting for the missing
-later-add control.** Shelf membership *editing* lives only on the iOS shelf
-screen.
+- **A book's own page.** Its **More** stop has an **Add to shelf** button that
+  opens a picker of your hand-picked shelves, one checkbox each: ticking a shelf
+  adds the book, unticking it takes the book off.
+- **The landing table's bulk bar.** Tick rows and the bar offers **Add to
+  shelf**, which puts every ticked row on the shelf you pick. It is admin-only,
+  because the bar is.
+- **The landing shelf view.** Selecting a hand-picked shelf in the rail offers
+  **Add books**.
+- **The shelf's own page**, reached from the rail's **All shelves →** link and
+  then the shelf's card, which has **Add books** too.
 
-**On iOS, membership is where the web's missing control went.** You are the
-agent expected to fill a shelf, so here is exactly where it lives:
+A **Smart** shelf and the wishlist are never a target of any of these, and
+neither is a shelf you may not change. There is still no add-to-shelf control
+on a grid tile or in the command palette, and **Edit shelf** edits no
+membership — name, visibility, rules and the Kobo opt-in only. **Do not spend
+the flow hunting for a control on those surfaces.**
+
+**On iOS, membership has its own home.** You are the agent expected to fill a
+shelf there, so here is exactly where it lives:
 
 - Shelves are at **You → Shelves**, a grid of shelf cards. The **Library tab
   also carries a Shelves rail** — an "All ›" link, shelf cards, and a **New
@@ -52,7 +62,7 @@ agent expected to fill a shelf, so here is exactly where it lives:
 ## Steps
 
 Steps 1–2 and 6–8 below describe **the web surface**. The iOS equivalent of
-each is in the box above; take that path instead, and do not report the web
+each is in the box above; take that path instead, and do not report a web
 control as missing when you are on iOS.
 
 1. **(web)** Go to the library. The shelves rail sits above the book list,
@@ -65,10 +75,11 @@ control as missing when you are on iOS.
    the two must agree exactly. Do not reuse a name you have already used.
 4. Choose its visibility — **Private** or **Public** — and note whether you are
    making a hand-picked shelf or a **Smart** one (a smart shelf fills itself
-   from a rule; a hand-picked one is filled from the picker at creation). **Make it Smart at least every
-   other time on the web**, because that is the only shelf the web can fill:
-   write a rule a reader would — an author you saw in the index, a genre from
-   a book page — and read the **preview** the form shows before you create.
+   from a rule; a hand-picked one is filled from the picker, at creation or
+   later). **Make it Smart at least every other time on the web**, so the rule
+   builder and its preview are exercised: write a rule a reader would — an
+   author you saw in the index, a genre from a book page — and read the
+   **preview** the form shows before you create.
    The preview is a count ("3 of 28 match"), not a list; the titles are
    checkable only by selecting the shelf afterwards. Journal the rule and the
    count; the shelf must hold exactly the matching books once created, and a
@@ -102,10 +113,14 @@ control as missing when you are on iOS.
    and confirm the library is untouched.
 9. Reload and confirm the shelf is still there. **(iOS)** Pull to refresh —
    both the Shelves grid and a shelf's own screen support it.
-10. **On iOS only:** on the shelf's own screen, add two or three books with the
-    `+` (or **Add the first book**), and confirm they appear. Then long-press
-    one, choose **Remove from shelf**, and confirm it leaves the shelf but
-    **not** the library.
+10. **(iOS)** On the shelf's own screen, add two or three books with the `+`
+    (or **Add the first book**), and confirm they appear. Then long-press one,
+    choose **Remove from shelf**, and confirm it leaves the shelf but **not**
+    the library. **(web, hand-picked shelves only)** Open a book's page, go to
+    its **More** section, click **Add to shelf**, and tick the shelf; confirm
+    the book now shows the shelf as a chip and appears when you select the
+    shelf in the rail. Untick it and confirm it leaves the shelf but **not**
+    the library.
 11. **(web) Edit it.** Open **Edit shelf** (the pencil beside the facets) and
     change **one** thing — the name, or the visibility, or on a Smart shelf
     the rule. **iOS has no Edit shelf control** — a shelf's name and
@@ -139,9 +154,9 @@ control as missing when you are on iOS.
 `shelf.create` with the name, visibility, and kind — and for a Smart shelf the
 rule and the preview count. `shelf.select` with the name and the resulting
 count. `shelf.edit` with the field, before and after — and on a rename,
-`old_name` beside `name`. `shelf.delete` with the name. On iOS, `shelf.add` /
-`shelf.remove` with the shelf and the book uuids — those, the create, the
-edit, and the delete are what the audit reconciles.
+`old_name` beside `name`. `shelf.delete` with the name. `shelf.add` /
+`shelf.remove` with the shelf name and the book uuid, on iOS and on the web —
+those, the create, the edit, and the delete are what the audit reconciles.
 
 ## Pass
 
@@ -156,8 +171,8 @@ edit, and the delete are what the audit reconciles.
 - **(web only)** Selecting All Books restores the full library.
 - **(iOS)** In place of those two: tapping the shelf pushes its own screen,
   and that screen lists exactly the shelf's books.
-- On iOS, added books appear and a removed book leaves the shelf but stays in
-  the library.
+- Added books appear and a removed book leaves the shelf but stays in the
+  library — on iOS from the shelf screen, on the web from the book's page.
 - A Smart shelf holds exactly the books its rule previewed.
 - An edit sticks, and on iOS a delete removes the shelf and nothing else.
 
@@ -174,7 +189,7 @@ edit, and the delete are what the audit reconciles.
   either way: whether every other reader's shelf carries its "BY <owner>"
   line — the web rail did in the last run; iOS cards carry none, so nothing
   there says whose shelf is whose.)
-- **On iOS:** removing a book from a shelf deletes the book. High severity.
+- Removing a book from a shelf deletes the book. High severity.
 - Deleting a shelf (iOS) deletes a book. High severity.
 - A Smart shelf's preview and its contents disagree.
 
