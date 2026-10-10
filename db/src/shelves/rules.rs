@@ -18,13 +18,13 @@ use super::ShelfError;
 /// A positional bind for a membership query. Owned so callers can `.bind()` by
 /// value without lifetime gymnastics.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum Bind {
+pub(crate) enum Bind {
     Text(String),
     Int(i64),
 }
 
 /// A WHERE fragment over the `books b` alias plus its ordered binds.
-pub(super) struct Predicate {
+pub(crate) struct Predicate {
     pub sql: String,
     pub binds: Vec<Bind>,
 }
@@ -67,51 +67,11 @@ fn condition_sql(rule: &ShelfRule, owner_id: i64) -> Result<(String, Vec<Bind>),
     }
     let v = rule.value.trim();
     match rule.field {
-        // Text fields resolve against the normalized taxonomy `name` columns
-        // (all `COLLATE NOCASE`), so the user types a name, not an id. Each
-        // reads the shared effective membership the indexes and the palette
-        // count, so an override moves a book on every surface at once.
-        RuleField::Tag => text_condition(
-            rule,
-            concat!(
-                "SELECT et.book_id FROM (",
-                effective_tags_sql!(),
-                ") et JOIN tags t ON t.id = et.tag_id WHERE "
-            ),
-            "t.name",
-        ),
-        RuleField::Genre => text_condition(
-            rule,
-            concat!(
-                "SELECT eg.book_id FROM (",
-                effective_genres_sql!(),
-                ") eg JOIN genres g ON g.id = eg.genre_id WHERE "
-            ),
-            "g.name",
-        ),
-        RuleField::Author => text_condition(
-            rule,
-            concat!(
-                "SELECT ea.book_id FROM (",
-                effective_authors_sql!(),
-                ") ea JOIN authors a ON a.id = ea.author_id WHERE "
-            ),
-            "a.name",
-        ),
-        RuleField::Series => text_condition(
-            rule,
-            concat!(
-                "SELECT es.book_id FROM (",
-                effective_series_sql!(),
-                ") es JOIN series s ON s.id = es.series_id WHERE "
-            ),
-            "s.name",
-        ),
-        RuleField::Format => text_condition(
-            rule,
-            "SELECT bf.book_id FROM book_files bf WHERE ",
-            "bf.format",
-        ),
+        RuleField::Tag
+        | RuleField::Genre
+        | RuleField::Author
+        | RuleField::Series
+        | RuleField::Format => text_condition(rule),
         RuleField::Rating => {
             let cmp = match rule.op {
                 RuleOp::Is => "=",
@@ -203,21 +163,65 @@ fn date_condition(rule: &ShelfRule, v: &str) -> Result<(String, Vec<Bind>), Shel
     }
 }
 
-/// Build a case-insensitive `IN`/`NOT IN` text predicate for a joined name
-/// column.
+/// Members-select prefix (ending in `WHERE `) and compared name column for a
+/// name-matched field; `None` for fields that don't match by name.
 ///
-/// `members` selects the `book_id`s up to (but not including) the column
-/// comparison, e.g. `"SELECT bf.book_id FROM book_files bf WHERE "`; `col` is
-/// the compared column (`"bf.format"`). Uncorrelated, so a membership union is
-/// built once per query rather than once per book. Equality
-/// (`is`/`is_not`/`includes`) uses `COLLATE NOCASE`; `contains`/`starts_with`
-/// use `LIKE` (case-insensitive for ASCII) with metacharacters escaped so user
-/// text matches literally.
-fn text_condition(
-    rule: &ShelfRule,
-    members: &str,
-    col: &str,
-) -> Result<(String, Vec<Bind>), ShelfError> {
+/// Names resolve against the normalized taxonomy `name` columns (all `COLLATE
+/// NOCASE`), so the user types a name, not an id. Each reads the shared
+/// effective membership the indexes and the palette count, so an override
+/// moves a book on every surface at once. Uncorrelated, so the union is built
+/// once per query rather than once per book.
+pub(crate) fn name_membership(field: RuleField) -> Option<(&'static str, &'static str)> {
+    Some(match field {
+        RuleField::Tag => (
+            concat!(
+                "SELECT et.book_id FROM (",
+                effective_tags_sql!(),
+                ") et JOIN tags t ON t.id = et.tag_id WHERE "
+            ),
+            "t.name",
+        ),
+        RuleField::Genre => (
+            concat!(
+                "SELECT eg.book_id FROM (",
+                effective_genres_sql!(),
+                ") eg JOIN genres g ON g.id = eg.genre_id WHERE "
+            ),
+            "g.name",
+        ),
+        RuleField::Author => (
+            concat!(
+                "SELECT ea.book_id FROM (",
+                effective_authors_sql!(),
+                ") ea JOIN authors a ON a.id = ea.author_id WHERE "
+            ),
+            "a.name",
+        ),
+        RuleField::Series => (
+            concat!(
+                "SELECT es.book_id FROM (",
+                effective_series_sql!(),
+                ") es JOIN series s ON s.id = es.series_id WHERE "
+            ),
+            "s.name",
+        ),
+        RuleField::Format => ("SELECT bf.book_id FROM book_files bf WHERE ", "bf.format"),
+        RuleField::Rating
+        | RuleField::Year
+        | RuleField::DateAdded
+        | RuleField::DateUpdated
+        | RuleField::Status => return None,
+    })
+}
+
+/// Build a case-insensitive `IN`/`NOT IN` text predicate for a name-matched
+/// field (see [`name_membership`]).
+///
+/// Equality (`is`/`is_not`/`includes`) uses `COLLATE NOCASE`;
+/// `contains`/`starts_with` use `LIKE` (case-insensitive for ASCII) with
+/// metacharacters escaped so user text matches literally.
+fn text_condition(rule: &ShelfRule) -> Result<(String, Vec<Bind>), ShelfError> {
+    let (members, col) = name_membership(rule.field).ok_or_else(|| unsupported(rule))?;
     let v = rule.value.trim();
     let (cmp, bind, negate) = match rule.op {
         RuleOp::Is | RuleOp::Includes => (
