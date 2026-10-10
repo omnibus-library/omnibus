@@ -292,6 +292,15 @@ test("opens the picker over the whole window when the page snaps between stops",
     await expect
       .poll(async () => (await picker.boundingBox())?.width)
       .toBe(viewport.width);
+
+    // The section label and next cue sit above the panel's stacking layer, so
+    // they would paint over the scrim and take clicks meant for the backdrop.
+    const label = page.getByTestId("bdmq-sec-5").locator(".bdmq-seclab");
+    await expect(label).toHaveCSS("pointer-events", "none");
+    await expect(label).toHaveCSS("opacity", "0");
+    await expect(
+      page.getByTestId("bdmq-sec-4").locator(".bdmq-next"),
+    ).toHaveCSS("opacity", "0");
   });
 });
 

@@ -11574,15 +11574,11 @@ html {
   border-radius: 14px; padding: 10px;
   background: color-mix(in oklch, var(--bg-0) 82%, transparent);
 }
-/* The rail and the back-to-the-book pill live in a higher stacking layer than
-   the panel-hosted overlays, so they would float over (and take clicks
-   through) the dimmed scrim — step them aside while one is up. */
-.bdmq-stage:has(.bdmq-overlay) .bdmq-dots,
-.bdmq-stage:has(.author-photo-modal-backdrop) .bdmq-dots,
-.bdmq-stage:has(.shelf-modal-overlay) .bdmq-dots,
-.bdmq-stage:has(.bdmq-overlay) .bdmq-flowtop,
-.bdmq-stage:has(.author-photo-modal-backdrop) .bdmq-flowtop,
-.bdmq-stage:has(.shelf-modal-overlay) .bdmq-flowtop {
+/* Everything the stage draws outside the panel's stacking layer would float
+   over (and take clicks through) a panel-hosted overlay's dimmed scrim, so it
+   steps aside while one is up. */
+.bdmq-stage:has(:is(.bdmq-overlay, .author-photo-modal-backdrop, .shelf-modal-overlay))
+  :is(.bdmq-dots, .bdmq-flowtop, .bdmq-seclab, .bdmq-next) {
   opacity: 0; pointer-events: none;
 }
 .bdmq-dotrow {
