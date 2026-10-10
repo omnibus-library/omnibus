@@ -5,11 +5,11 @@ use dioxus::fullstack::{get, post};
 use dioxus::prelude::*;
 use omnibus_shared::{
     CreateShelfRequest, MatchMode, RulePreview, Shelf, ShelfPage, ShelfRule, ShelfSummary, SortDir,
-    SortKey, UpdateShelfRequest, ViewFilters,
+    SortKey, UpdateShelfRequest,
 };
 
 #[cfg(feature = "server")]
-use omnibus_shared::{validate_book_uuids, validate_rule_count};
+use omnibus_shared::{validate_book_uuids, validate_rule_count, ViewFilters};
 
 #[cfg(feature = "server")]
 use omnibus_db as db;
