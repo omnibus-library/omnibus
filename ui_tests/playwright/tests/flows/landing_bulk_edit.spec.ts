@@ -6,6 +6,7 @@ import { expectMutation } from "../utils/api";
 import { fetchBookIdByTitle, switchToTableView } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
+import { galleryTile, withManualShelf } from "../utils/shelves";
 
 // Table-view bulk edit: row checkboxes → floating action bar → modal →
 // one `rpc_bulk_save_overrides` call for every selected book.
@@ -13,7 +14,7 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // The two `bulk-target-*` fixtures are reserved for this spec (see the
 // comment in fixtures/epubs.ts) — the happy-path test bulk-writes overrides
 // to BOTH and reverts them at the end, and the suite is fullyParallel, so
-// nothing else may read them.
+// nothing else may read them. The shelf tests file both on shelves they make.
 
 test.beforeAll(async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
@@ -188,4 +189,84 @@ test("bulk edit save error keeps the modal open and the rows unchanged", async (
         .getByTestId("ebook-cell-tags"),
     ).not.toContainText("should-not-persist");
   }
+});
+
+test("add the selected books to a hand-picked shelf in one request", async ({
+  page,
+  request,
+}) => {
+  const uuids = await Promise.all(
+    [PRIMARY, SECONDARY].map((t) => fetchBookIdByTitle(request, t.title)),
+  );
+  await withManualShelf(request, "E2E Bulk Shelf", async ({ id }) => {
+    await gotoReady(page, "/");
+    await switchToTableView(page);
+    await selectTargets(page);
+    await page.getByTestId("bulk-add-to-shelf").click();
+
+    const picker = page.getByTestId("shelf-picker");
+    await expect(
+      picker.getByRole("heading", { name: "Add 2 books to a shelf" }),
+    ).toBeVisible();
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/shelves/add-books",
+        expectedBody: { id, book_uuids: [...uuids].sort() },
+        expectedStatus: 200,
+      },
+      async () => picker.getByTestId(`shelf-picker-row-${id}`).click(),
+    );
+
+    // Picker and bar close, the selection is gone, and the gallery's count
+    // follows without a reload.
+    await expect(picker).toHaveCount(0);
+    await expect(page.getByTestId("bulk-edit-bar")).toHaveCount(0);
+    await expect(galleryTile(page, id)).toContainText("2 books");
+    await expect(page.getByTestId("ebook-select").first()).not.toBeChecked();
+  });
+});
+
+test("keep the selection when adding to a shelf fails", async ({
+  page,
+  request,
+}) => {
+  await withManualShelf(request, "E2E Bulk Shelf", async ({ id }) => {
+    await gotoReady(page, "/");
+    await switchToTableView(page);
+    await selectTargets(page);
+    await page.getByTestId("bulk-add-to-shelf").click();
+
+    await page.route("**/api/rpc/shelves/add-books", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "forced failure",
+      }),
+    );
+    const picker = page.getByTestId("shelf-picker");
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/shelves/add-books",
+        expectedStatus: 500,
+      },
+      async () => picker.getByTestId(`shelf-picker-row-${id}`).click(),
+    );
+    await page.unroute("**/api/rpc/shelves/add-books");
+
+    await expect(page.getByTestId("shelf-picker-error")).toBeVisible();
+    await expect(picker).toBeVisible();
+    await expect(page.getByTestId("bulk-edit-bar")).toContainText(
+      "2 books selected",
+    );
+
+    await page.getByTestId("shelf-picker-close").click();
+    await expect(picker).toHaveCount(0);
+    await expect(page.getByTestId("bulk-edit-bar")).toContainText(
+      "2 books selected",
+    );
+  });
 });

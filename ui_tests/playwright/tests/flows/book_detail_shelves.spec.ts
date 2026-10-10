@@ -1,4 +1,4 @@
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
@@ -6,7 +6,7 @@ import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { createShelf } from "../utils/shelves";
+import { withManualShelf } from "../utils/shelves";
 
 // The book page's More stop: "Add to shelf" opens a picker that files this
 // book on a hand-picked shelf, or takes it off, without leaving the page.
@@ -24,28 +24,6 @@ const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-forest")!;
 
 // Only read: the series test opens its More stop and writes nothing.
 const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
-
-/**
- * Run `body` against a fresh private hand-picked shelf with a name no other
- * test shares, and delete the shelf afterwards even when `body` throws.
- */
-async function withShelf(
-  request: APIRequestContext,
-  body: (shelf: { id: number; name: string }) => Promise<void>,
-): Promise<void> {
-  const name = `E2E Book Shelf ${Date.now()}-${test.info().workerIndex}`;
-  const id = await createShelf(request, { kind: "manual", name });
-  try {
-    await body({ id, name });
-  } finally {
-    const resp = await request.post("/api/rpc/shelves/delete", {
-      data: { id },
-    });
-    expect(resp.status(), `cleanup delete of shelf ${id} must succeed`).toBe(
-      200,
-    );
-  }
-}
 
 /** Open the picker from the More stop and wait for it to list shelves. */
 async function openPicker(page: Page) {
@@ -85,7 +63,7 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
   request,
 }) => {
   const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await withShelf(request, async ({ id, name }) => {
+  await withManualShelf(request, "E2E Book Shelf", async ({ id, name }) => {
     await gotoReady(page, `/books/${uuid}`);
     const picker = await openPicker(page);
     await expect(
@@ -130,7 +108,7 @@ test("keeps the shelf unchanged when the add fails", async ({
   request,
 }) => {
   const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await withShelf(request, async ({ id, name }) => {
+  await withManualShelf(request, "E2E Book Shelf", async ({ id, name }) => {
     await gotoReady(page, `/books/${uuid}`);
     const picker = await openPicker(page);
     const row = picker.getByRole("checkbox", { name, exact: true });

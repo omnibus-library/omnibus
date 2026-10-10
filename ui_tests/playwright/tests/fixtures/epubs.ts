@@ -485,7 +485,8 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
 
   // Reserved for landing_bulk_edit.spec.ts — it bulk-writes publisher/tag
   // overrides to BOTH books (reverted at test end, but the suite is
-  // fullyParallel, so no other spec may read them). `tags` is deliberately
+  // fullyParallel, so no other spec may read them) and files both on shelves
+  // it makes, which only its own tests read. `tags` is deliberately
   // omitted (like standalone-ocean) so the landing spec skips the tags-cell
   // assertion these mutations would race. "Katherine Johnson" is unique
   // across ALL fixtures (ebook + audiobook) — shelves.spec.ts asserts exact

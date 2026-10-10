@@ -77,6 +77,8 @@ pub(super) struct LandingSignals {
     pub(super) bulk_selected: Signal<BTreeSet<String>>,
     /// True while the bulk-edit modal is open.
     pub(super) bulk_modal_open: Signal<bool>,
+    /// True while the bulk "Add to shelf" picker is open.
+    pub(super) bulk_shelf_open: Signal<bool>,
 }
 
 /// Construct every signal the landing page owns and arm the effects that
@@ -135,6 +137,7 @@ pub(super) fn setup_landing_signals(server_url: &str) -> LandingSignals {
         hero_points: shelf_wiring.hero_points,
         bulk_selected: misc.bulk_selected,
         bulk_modal_open: misc.bulk_modal_open,
+        bulk_shelf_open: misc.bulk_shelf_open,
     }
 }
 
@@ -214,6 +217,8 @@ struct MiscSignals {
     bulk_selected: Signal<BTreeSet<String>>,
     /// True while the bulk-edit modal is open.
     bulk_modal_open: Signal<bool>,
+    /// True while the bulk "Add to shelf" picker is open.
+    bulk_shelf_open: Signal<bool>,
 }
 
 fn use_misc_signals() -> MiscSignals {
@@ -224,6 +229,7 @@ fn use_misc_signals() -> MiscSignals {
         show_add_books: use_signal(|| false),
         bulk_selected: use_signal(BTreeSet::<String>::new),
         bulk_modal_open: use_signal(|| false),
+        bulk_shelf_open: use_signal(|| false),
     }
 }
 

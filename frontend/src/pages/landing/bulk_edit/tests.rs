@@ -110,3 +110,35 @@ fn removable_tags_counts_across_books_and_sorts_by_frequency_then_name() {
         ]
     );
 }
+
+// SSR render coverage for the action bar. Gated on `server` (needs
+// `dioxus::ssr`), unlike this file's other tests, which need no runtime.
+#[cfg(feature = "server")]
+mod render {
+    use super::*;
+    use crate::test_support::render;
+
+    #[component]
+    fn BarHarness() -> Element {
+        rsx! {
+            BulkEditBar {
+                count: 2,
+                on_edit: move |_| {},
+                on_add_to_shelf: move |_| {},
+                on_clear: move |_| {},
+            }
+        }
+    }
+
+    #[test]
+    fn bulk_edit_bar_offers_add_to_shelf_between_edit_and_clear_selection() {
+        let html = render(rsx! { BarHarness {} });
+        let position = |testid: &str| {
+            html.find(&format!("data-testid=\"{testid}\""))
+                .unwrap_or_else(|| panic!("no {testid} in {html}"))
+        };
+        assert!(position("bulk-edit-open") < position("bulk-add-to-shelf"));
+        assert!(position("bulk-add-to-shelf") < position("bulk-edit-clear"));
+        assert!(html.contains("Add to shelf"), "{html}");
+    }
+}
