@@ -16,7 +16,7 @@ use super::super::*;
 use super::{insert_book_with_formats, insert_physical_copy, titles};
 use crate::pool::init_db;
 use crate::sync::replace_books;
-use crate::test_support::{indexed, seed_user, CoversTempDir};
+use crate::test_support::{indexed, seed_user, set_overrides_by_title, CoversTempDir};
 
 /// Seven visible books under `/lib`:
 /// - Saga One/Two/Three: Ada Lovelace, series Saga, EPUB, tag `sci-fi`
@@ -82,8 +82,8 @@ async fn seed_filter_library() -> (SqlitePool, CoversTempDir) {
     insert_physical_copy(&pool, shelf_copy).await;
 
     let editor = seed_user(&pool, "editor").await;
-    set_genres(&pool, "Saga One", &["Fantasy"], editor).await;
-    set_genres(&pool, "Other Story", &["Mystery"], editor).await;
+    set_overrides_by_title(&pool, "Saga One", &genres_override(&["Fantasy"]), editor).await;
+    set_overrides_by_title(&pool, "Other Story", &genres_override(&["Mystery"]), editor).await;
     (pool, covers)
 }
 
@@ -95,27 +95,34 @@ fn clause(field: FilterField, mode: FilterMode, values: &[&str]) -> FilterClause
     }
 }
 
+async fn first_page(pool: &SqlitePool, filters: &ViewFilters) -> BookPage {
+    list_books_page(
+        pool,
+        &["/lib"],
+        SortKey::Title,
+        SortDir::Asc,
+        filters,
+        &[],
+        None,
+        50,
+    )
+    .await
+    .unwrap()
+}
+
+fn sorted_titles(page: &BookPage) -> Vec<String> {
+    let mut found = titles(page);
+    found.sort();
+    found
+}
+
 /// Titles of the first page under `clauses`, sorted for set comparison.
 async fn titles_matching(pool: &SqlitePool, clauses: Vec<FilterClause>) -> Vec<String> {
     let filters = ViewFilters {
         clauses,
         ..Default::default()
     };
-    let page = list_books_page(
-        pool,
-        &["/lib"],
-        SortKey::Title,
-        SortDir::Asc,
-        &filters,
-        &[],
-        None,
-        50,
-    )
-    .await
-    .unwrap();
-    let mut found = titles(&page);
-    found.sort();
-    found
+    sorted_titles(&first_page(pool, &filters).await)
 }
 
 async fn lib_id(pool: &SqlitePool) -> i64 {
@@ -125,74 +132,45 @@ async fn lib_id(pool: &SqlitePool) -> i64 {
         .unwrap()
 }
 
-async fn uuid_of_title(pool: &SqlitePool, title: &str) -> String {
-    sqlx::query_scalar("SELECT uuid FROM books WHERE title = ?")
-        .bind(title)
-        .fetch_one(pool)
-        .await
-        .unwrap()
-}
-
-/// Replace a book's scanned tags with `subjects` through an override.
-async fn set_subjects(pool: &SqlitePool, title: &str, subjects: &[&str], editor: i64) {
-    let overrides = MetadataOverrides {
+fn subjects_override(subjects: &[&str]) -> MetadataOverrides {
+    MetadataOverrides {
         subjects: Some(subjects.iter().map(|s| (*s).to_string()).collect()),
         ..Default::default()
-    };
-    crate::upsert_metadata_overrides(
-        pool,
-        &uuid_of_title(pool, title).await,
-        &overrides,
-        false,
-        editor,
-    )
-    .await
-    .unwrap();
+    }
 }
 
-async fn set_genres(pool: &SqlitePool, title: &str, genres: &[&str], editor: i64) {
-    let overrides = MetadataOverrides {
+fn genres_override(genres: &[&str]) -> MetadataOverrides {
+    MetadataOverrides {
         genres: Some(genres.iter().map(|g| (*g).to_string()).collect()),
         ..Default::default()
-    };
-    crate::upsert_metadata_overrides(
-        pool,
-        &uuid_of_title(pool, title).await,
-        &overrides,
-        false,
-        editor,
-    )
-    .await
-    .unwrap();
+    }
 }
 
-/// The first page's uuids under `clause`, plus the filtered count.
-async fn page_uuids_and_count(pool: &SqlitePool, clause: FilterClause) -> (BTreeSet<String>, i64) {
+/// What the first page and its count report under one clause.
+struct PageMatch {
+    titles: Vec<String>,
+    uuids: BTreeSet<String>,
+    count: i64,
+}
+
+async fn page_match(pool: &SqlitePool, clause: FilterClause) -> PageMatch {
     let filters = ViewFilters {
         clauses: vec![clause],
         ..Default::default()
     };
-    let page = list_books_page(
-        pool,
-        &["/lib"],
-        SortKey::Title,
-        SortDir::Asc,
-        &filters,
-        &[],
-        None,
-        50,
-    )
-    .await
-    .unwrap();
-    let uuids = page
-        .books
-        .iter()
-        .filter_map(|b| b.unique_identifier.clone())
-        .collect();
+    let page = first_page(pool, &filters).await;
     let count = count_books_page(pool, &["/lib"], &filters, &[])
         .await
         .unwrap();
-    (uuids, count)
+    PageMatch {
+        titles: sorted_titles(&page),
+        uuids: page
+            .books
+            .iter()
+            .filter_map(|b| b.unique_identifier.clone())
+            .collect(),
+        count,
+    }
 }
 
 /// The uuids and match count the smart-rule engine reports for one rule.
@@ -361,40 +339,38 @@ async fn list_books_page_matches_clause_values_case_insensitively() {
 async fn list_books_page_include_tag_matches_the_smart_rule_on_that_tag() {
     let (pool, _covers) = seed_filter_library().await;
     let editor = seed_user(&pool, "tagger").await;
-    set_subjects(&pool, "Audio Tale", &["sci-fi"], editor).await;
-    set_subjects(&pool, "Saga Two", &["classic"], editor).await;
+    set_overrides_by_title(&pool, "Audio Tale", &subjects_override(&["sci-fi"]), editor).await;
+    set_overrides_by_title(&pool, "Saga Two", &subjects_override(&["classic"]), editor).await;
 
-    let page = titles_matching(&pool, vec![clause(Tag, Include, &["sci-fi"])]).await;
-    let from_page = page_uuids_and_count(&pool, clause(Tag, Include, &["sci-fi"])).await;
+    let from_page = page_match(&pool, clause(Tag, Include, &["sci-fi"])).await;
     let from_rule = rule_uuids_and_matched(&pool, rule(RuleField::Tag, RuleOp::Is, "sci-fi")).await;
 
-    assert_eq!(page, ["Audio Tale", "Saga One", "Saga Three"]);
-    assert_eq!(from_page, from_rule);
+    assert_eq!(from_page.titles, ["Audio Tale", "Saga One", "Saga Three"]);
+    assert_eq!((from_page.uuids, from_page.count), from_rule);
 }
 
 #[tokio::test]
 async fn list_books_page_include_genre_matches_the_smart_rule_on_that_genre() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let page = titles_matching(&pool, vec![clause(Genre, Include, &["Fantasy"])]).await;
-    let from_page = page_uuids_and_count(&pool, clause(Genre, Include, &["Fantasy"])).await;
+    let from_page = page_match(&pool, clause(Genre, Include, &["Fantasy"])).await;
     let from_rule =
         rule_uuids_and_matched(&pool, rule(RuleField::Genre, RuleOp::Is, "Fantasy")).await;
 
-    assert_eq!(page, ["Saga One"]);
-    assert_eq!(from_page, from_rule);
+    assert_eq!(from_page.titles, ["Saga One"]);
+    assert_eq!((from_page.uuids, from_page.count), from_rule);
 }
 
 #[tokio::test]
 async fn list_books_page_exclude_genre_matches_the_is_not_smart_rule() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let from_page = page_uuids_and_count(&pool, clause(Genre, Exclude, &["Fantasy"])).await;
+    let from_page = page_match(&pool, clause(Genre, Exclude, &["Fantasy"])).await;
     let from_rule =
         rule_uuids_and_matched(&pool, rule(RuleField::Genre, RuleOp::IsNot, "Fantasy")).await;
 
-    assert_eq!(from_page.1, 6);
-    assert_eq!(from_page, from_rule);
+    assert_eq!(from_page.count, 6);
+    assert_eq!((from_page.uuids, from_page.count), from_rule);
 }
 
 #[tokio::test]
