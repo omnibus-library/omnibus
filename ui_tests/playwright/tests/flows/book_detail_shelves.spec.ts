@@ -22,6 +22,9 @@ test.beforeAll(async ({ request }) => {
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-forest")!;
 
+// Only read: the series test opens its More stop and writes nothing.
+const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
+
 /**
  * Run `body` against a fresh private hand-picked shelf with a name no other
  * test shares, and delete the shelf afterwards even when `body` throws.
@@ -59,6 +62,22 @@ test("renders the book detail shelves layout", async ({ page, request }) => {
   await expectNavVisible(page);
   await expect(page.getByTestId("bdmq-more")).toBeAttached();
   await expect(page.getByTestId("bdmq-add-to-shelf")).toBeVisible();
+});
+
+test("renders Add to shelf beneath a series book's own shelf", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, SERIES_BOOK.title);
+  await gotoReady(page, `/books/${uuid}`);
+
+  await expect(page.getByTestId("bdmq-series-shelf")).toBeVisible();
+  await expect(page.getByTestId("bdmq-add-to-shelf")).toBeVisible();
+  // The series shelf already fills the stop, so a book on no shelf gets the
+  // button alone rather than a big "Not on a shelf yet." under the covers.
+  const more = page.getByTestId("bdmq-more");
+  await expect(more).toContainText("On your shelves");
+  await expect(more).not.toContainText("Not on a shelf yet.");
 });
 
 test("adds a book to a hand-picked shelf and takes it off again", async ({

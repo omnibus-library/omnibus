@@ -11928,6 +11928,8 @@ html {
 .bdmq-shelfchips { margin-bottom: 8px; }
 .bdmq-shelfchip.first { border-color: var(--accent); }
 .bdmq-shelf-actions { margin-top: 14px; }
+/* Under the series shelf, whose own hint already ends the block above. */
+.bdmq-k-below { margin-top: 34px; }
 
 /* ── Recommendations stop (tightened, per the design) ── */
 /* Fixed 98px tiles: `min-width: 0` kills the flex min-content floor (a wide

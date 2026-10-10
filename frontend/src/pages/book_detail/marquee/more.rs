@@ -1,6 +1,6 @@
 //! Stop 06 · More — everything that points away from this book, in one
-//! place: the shelf it sits on (its series, or the shelves holding a
-//! standalone), the rest of the author's work, then what to read next.
+//! place: the shelves it sits on (its series' shelf, then the reader's own
+//! shelves), the rest of the author's work, then what to read next.
 //! Fetches post-mount (rule 07: SSR and the first WASM paint render the
 //! same quiet shell).
 
@@ -36,8 +36,8 @@ pub(super) struct MoreStopCtx {
     pub wishlist: Signal<Option<WishlistEntry>>,
 }
 
-/// The More stop: the shelf beside this book, the author's other work, then
-/// suggestions. The series is fetched once by the stage and threaded in, so
+/// The More stop: the series shelf (when there is one) and the shelves holding
+/// this book, the author's other work, then suggestions. The series is fetched once by the stage and threaded in, so
 /// this stop and the Home kicker read the same record.
 ///
 /// These were two stops until the running order collapsed to six — the shelf
@@ -67,11 +67,11 @@ pub(super) fn MarqueeMoreStop(
                     detail: series,
                     loaded: series_loaded,
                 }
-            } else {
-                MarqueeStandaloneShelves {
-                    uuid: b.unique_identifier.clone().unwrap_or_default(),
-                    wishlist,
-                }
+            }
+            MarqueeShelfMembership {
+                uuid: b.unique_identifier.clone().unwrap_or_default(),
+                wishlist,
+                in_series: b.series_id.is_some(),
             }
             div { class: "bdmq-morerule" }
             BdSameHand {
@@ -197,9 +197,10 @@ struct PickerState {
     error: Signal<Option<String>>,
 }
 
-/// Standalone: the shelves holding this book, as chips — the hand-picked ones
-/// plus the viewer's own Wishlist when the book is on it — and the picker that
-/// adds the book to a hand-picked shelf or takes it off again.
+/// The shelves holding this book, as chips — the hand-picked ones plus the
+/// viewer's own Wishlist when the book is on it — and the picker that adds the
+/// book to a hand-picked shelf or takes it off again. `in_series` sits the block
+/// under the series shelf, which already says what the book is part of.
 ///
 /// The wishlist shelf's membership derives from `wishlist_entries`, not
 /// `shelf_books`, so the per-book membership read never names it; the landing
@@ -207,7 +208,11 @@ struct PickerState {
 /// own wishlist signal instead, so it appears the moment the Add button lands
 /// and goes with Remove.
 #[component]
-fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>>) -> Element {
+fn MarqueeShelfMembership(
+    uuid: String,
+    wishlist: Signal<Option<WishlistEntry>>,
+    in_series: bool,
+) -> Element {
     let server_url = use_server_url();
     let me = use_current_user_summary();
     let mut shelves = use_signal(ShelvesRead::default);
@@ -262,8 +267,7 @@ fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>
     let mut open = picker.open;
 
     rsx! {
-        div { class: "bdmq-k", "Standalone \u{b7} on your shelves" }
-        {membership_body(held.as_ref(), EventHandler::new(move |_| open.set(true)))}
+        {membership_body(held.as_ref(), in_series, EventHandler::new(move |_| open.set(true)))}
         if open() {
             ShelfPickerModal {
                 heading: "Add to shelf".to_string(),
@@ -380,44 +384,57 @@ fn with_membership(ids: &[i64], shelf_id: i64, on: bool) -> Vec<i64> {
     next
 }
 
-/// The membership block's body for the given shelves read: chips and the empty
-/// state, each with the Add-to-shelf button, or a failure note, or a loader.
+/// The membership block for the given shelves read: its kicker, then chips and
+/// the empty state, each with the Add-to-shelf button, or a failure note, or a
+/// loader. A series book on no shelf gets only the button — the series shelf
+/// above it already fills the stop.
 fn membership_body(
     held: Option<&Result<Vec<ShelfSummary>, ()>>,
+    in_series: bool,
     on_add: EventHandler<()>,
 ) -> Element {
-    match held {
-        Some(Ok(held)) if !held.is_empty() => rsx! {
-            div { class: "bdmq-chips bdmq-shelfchips", "data-testid": "bdmq-shelves",
-                for (i, s) in held.iter().enumerate() {
-                    span {
-                        key: "{s.id}",
-                        class: if i == 0 { "chip bdmq-shelfchip first" } else { "chip bdmq-shelfchip" },
-                        style: if let Some(a) = s.accent.clone() { format!("--accent:{a};") } else { String::new() },
-                        "{s.name}"
+    let (kicker_class, kicker) = if in_series {
+        ("bdmq-k bdmq-k-below", "On your shelves")
+    } else {
+        ("bdmq-k", "Standalone \u{b7} on your shelves")
+    };
+    rsx! {
+        div { class: kicker_class, "{kicker}" }
+        match held {
+            Some(Ok(held)) if !held.is_empty() => rsx! {
+                div { class: "bdmq-chips bdmq-shelfchips", "data-testid": "bdmq-shelves",
+                    for (i, s) in held.iter().enumerate() {
+                        span {
+                            key: "{s.id}",
+                            class: if i == 0 { "chip bdmq-shelfchip first" } else { "chip bdmq-shelfchip" },
+                            style: if let Some(a) = s.accent.clone() { format!("--accent:{a};") } else { String::new() },
+                            "{s.name}"
+                        }
                     }
                 }
-            }
-            {add_to_shelf_button(on_add)}
-        },
-        Some(Ok(_)) => rsx! {
-            div { class: "bdmq-bigquiet", "Not on a shelf yet." }
-            {add_to_shelf_button(on_add)}
-        },
-        Some(Err(())) => rsx! {
-            p { class: "mono bdmq-quiet-hint", "data-testid": "bdmq-shelves-unavailable",
-                "your shelves didn\u{2019}t load \u{2014} see them on the "
-                Link { to: Route::Landing {}, class: "bdmq-k-link", "library page \u{2192}" }
-            }
-        },
-        None => rsx! {
-            Loading {
-                kind: LoadingKind::Section,
-                class: "start",
-                testid: "bdmq-shelves-loading",
-                label: "Checking your shelves",
-            }
-        },
+                {add_to_shelf_button(on_add)}
+            },
+            Some(Ok(_)) => rsx! {
+                if !in_series {
+                    div { class: "bdmq-bigquiet", "Not on a shelf yet." }
+                }
+                {add_to_shelf_button(on_add)}
+            },
+            Some(Err(())) => rsx! {
+                p { class: "mono bdmq-quiet-hint", "data-testid": "bdmq-shelves-unavailable",
+                    "your shelves didn\u{2019}t load \u{2014} see them on the "
+                    Link { to: Route::Landing {}, class: "bdmq-k-link", "library page \u{2192}" }
+                }
+            },
+            None => rsx! {
+                Loading {
+                    kind: LoadingKind::Section,
+                    class: "start",
+                    testid: "bdmq-shelves-loading",
+                    label: "Checking your shelves",
+                }
+            },
+        }
     }
 }
 

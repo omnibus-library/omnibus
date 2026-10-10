@@ -20,12 +20,18 @@ fn with_membership_removes_a_shelf_and_keeps_the_rest_in_order() {
 }
 
 #[component]
-fn Harness(held: Option<Result<Vec<ShelfSummary>, ()>>) -> Element {
-    membership_body(held.as_ref(), EventHandler::new(|_| {}))
+fn Harness(held: Option<Result<Vec<ShelfSummary>, ()>>, in_series: bool) -> Element {
+    membership_body(held.as_ref(), in_series, EventHandler::new(|_| {}))
 }
 
+/// The block for a standalone book.
 fn block_html(held: Option<Result<Vec<ShelfSummary>, ()>>) -> String {
-    render(rsx! { Harness { held } })
+    render(rsx! { Harness { held, in_series: false } })
+}
+
+/// The block for a book that sits in a series.
+fn series_block_html(held: Option<Result<Vec<ShelfSummary>, ()>>) -> String {
+    render(rsx! { Harness { held, in_series: true } })
 }
 
 fn on_shelves(names: &[&str]) -> Option<Result<Vec<ShelfSummary>, ()>> {
@@ -94,4 +100,33 @@ fn membership_body_says_the_read_failed_and_offers_no_button() {
     );
     assert!(!html.contains("bdmq-add-to-shelf"), "{html}");
     assert!(!html.contains("Not on a shelf yet."), "{html}");
+}
+
+#[test]
+fn membership_body_titles_a_standalone_books_block_standalone_on_your_shelves() {
+    let html = block_html(on_shelves(&[]));
+    assert!(html.contains("Standalone \u{b7} on your shelves"), "{html}");
+}
+
+#[test]
+fn membership_body_titles_a_series_books_block_on_your_shelves() {
+    let html = series_block_html(on_shelves(&[]));
+    assert!(html.contains("On your shelves"), "{html}");
+    assert!(!html.contains("Standalone"), "{html}");
+}
+
+#[test]
+fn membership_body_offers_only_the_button_to_a_series_book_on_no_shelf() {
+    let html = series_block_html(on_shelves(&[]));
+    assert!(html.contains("data-testid=\"bdmq-add-to-shelf\""), "{html}");
+    assert!(!html.contains("Not on a shelf yet."), "{html}");
+    assert!(!html.contains("bdmq-bigquiet"), "{html}");
+}
+
+#[test]
+fn membership_body_shows_a_series_books_chips_beside_the_button() {
+    let html = series_block_html(on_shelves(&["Beach"]));
+    assert!(html.contains("data-testid=\"bdmq-shelves\""), "{html}");
+    assert!(html.contains("Beach"), "{html}");
+    assert!(html.contains("data-testid=\"bdmq-add-to-shelf\""), "{html}");
 }
