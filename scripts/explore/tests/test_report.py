@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -48,9 +49,8 @@ def ts(text: str) -> datetime:
     return correlate.parse_ts(text)
 
 
-def render(run_id: str, *extra: str) -> str:
-    """Run the CLI end to end, exactly as an operator would, and capture it."""
-    argv = ["report.py", run_id, "--journal-dir", str(FIXTURES), "--out", "-", *extra]
+def run_cli(argv: list[str]) -> str:
+    """Run `report.main` with `argv`, returning whatever it printed."""
     buf = io.StringIO()
     old = sys.argv
     sys.argv = argv
@@ -60,6 +60,23 @@ def render(run_id: str, *extra: str) -> str:
     finally:
         sys.argv = old
     return buf.getvalue()
+
+
+def render(run_id: str, *extra: str) -> str:
+    """Run the CLI end to end, exactly as an operator would, and capture it."""
+    return run_cli(["report.py", run_id, "--journal-dir", str(FIXTURES), "--out", "-", *extra])
+
+
+def doc(text: str, name: str) -> str:
+    """One file out of `--out -` output, which prints each under `==> name <==`."""
+    parts = re.split(r"^==> (\S+) <==\n", text, flags=re.M)
+    return dict(zip(parts[1::2], parts[2::2]))[name]
+
+
+def render_files(journal_dir: str, run_id: str, *extra: str) -> dict[str, str]:
+    """Run the CLI with its default output, then read back every file it wrote."""
+    run_cli(["report.py", run_id, "--journal-dir", journal_dir, *extra])
+    return {p.name: p.read_text() for p in (Path(journal_dir) / run_id).glob("*.md")}
 
 
 def verdict_of(text: str) -> str:
@@ -84,6 +101,13 @@ def write_journal(dir_: Path, run_id: str, rows: list[dict]) -> Path:
     path = dir_ / "journal.jsonl"
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
     return path
+
+
+def write_groups(dir_: Path, defects: list[dict] | None = None,
+                 execution: list[dict] | None = None) -> None:
+    """The runner's `groups.json`: each side present only when given."""
+    data = {k: v for k, v in (("defects", defects), ("execution", execution)) if v is not None}
+    (dir_ / "groups.json").write_text(json.dumps(data))
 
 
 def row(ts_text: str, actor: str, action: str, run: str = "r-tmp", **kw) -> dict:
@@ -400,7 +424,7 @@ class ReportTests(unittest.TestCase):
                 row("2026-08-28T10:00:20Z", "agent-1", "flow.end", seq=4,
                     params={"verdict": "fail", "reason": "r"}),
             ])
-            text = render("r-tmp", "--journal-dir", tmp, "--no-server-log")
+            text = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"), "defects.md")
         # Every row carries its line, whether or not it earns a detail block.
         self.assertIn("| 1 | high | the thing went wrong (`L2`) | agent-1 |", text)
         self.assertIn("| 2 | low | cosmetic (`L3`) | agent-1 |", text)
@@ -421,14 +445,13 @@ class ReportTests(unittest.TestCase):
                     params={"verdict": "fail", "reason": "r"}),
             ])
             text = render("r-tmp", "--journal-dir", tmp, "--no-server-log")
-        self.assertIn("## Defects\n\n| # | Priority | Description | Agent |", text)
-        self.assertIn("| 1 | high | the cover never loaded (`L2`) | agent-1 |", text)
-        self.assertIn("## Execution issues\n\n| # | Priority | Description | Agent |", text)
+        defects, issues = doc(text, "defects.md"), doc(text, "execution-defects.md")
+        self.assertIn("| 1 | high | the cover never loaded (`L2`) | agent-1 |", defects)
+        self.assertNotIn("the shelf picker", defects)
         self.assertIn("| 1 | medium | the shelf picker took 20s to respond (`L3`) | agent-2 |",
-                      text)
-        # Each table restarts at 1, so the detail block says which list it is in.
-        self.assertIn("#### Defect 1.", text)
-        self.assertIn("#### Issue 1.", text)
+                      issues)
+        self.assertIn("#### Defect 1.", defects)
+        self.assertIn("#### Issue 1.", issues)
 
     def test_an_anomaly_with_no_kind_or_an_unknown_one_is_reported_as_a_defect(self):
         """Misfiling friction costs a row; misfiling a defect loses it.
@@ -446,9 +469,10 @@ class ReportTests(unittest.TestCase):
                     note="a kind nobody defined"),
             ])
             text = render("r-tmp", "--journal-dir", tmp, "--no-server-log")
-        self.assertIn("| 1 | high | no kind at all (`L1`) | agent-1 |", text)
-        self.assertIn("| 2 | low | a kind nobody defined (`L2`) | agent-1 |", text)
-        self.assertNotIn("## Execution issues", text)
+        self.assertIn("| 1 | high | no kind at all (`L1`) | agent-1 |", doc(text, "defects.md"))
+        self.assertIn("| 2 | low | a kind nobody defined (`L2`) | agent-1 |",
+                      doc(text, "defects.md"))
+        self.assertNotIn("(`L", doc(text, "execution-defects.md"))
 
     def test_report_ends_with_the_journal_file_locations(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -466,7 +490,8 @@ class ReportTests(unittest.TestCase):
             self.assertIn("- Audit — not written", text)
 
     def test_clean_run_says_so_in_its_first_paragraph(self):  # AC3
-        text = render(CLEAN, "--server-log", str(FIXTURES / CLEAN / "server.log"))
+        text = doc(render(CLEAN, "--server-log", str(FIXTURES / CLEAN / "server.log")),
+                   "report.md")
         paragraph = verdict_of(text)
         # It is the first paragraph, not merely present somewhere.
         self.assertEqual(text.split("\n\n")[2].strip(), paragraph)
@@ -475,11 +500,12 @@ class ReportTests(unittest.TestCase):
         self.assertIn("no non-2xx response", paragraph)
 
     def test_clean_run_omits_every_section_that_would_say_nothing(self):  # AC3
-        text = render(CLEAN, "--server-log", str(FIXTURES / CLEAN / "server.log"))
+        text = doc(render(CLEAN, "--server-log", str(FIXTURES / CLEAN / "server.log")),
+                   "report.md")
         headings = [l for l in text.splitlines() if l.startswith("## ")]
         # "Journal files" is the one section that always renders: it is never
         # empty, and every citation above it is useless without the path.
-        self.assertEqual(headings, ["## Coverage", "## Timeline", "## Journal files"])
+        self.assertEqual(headings, ["## Coverage", "## Journal files"])
 
     def test_clean_run_verdict_states_the_caveat_when_an_input_was_not_read(self):
         text = render(CLEAN, "--no-server-log")
@@ -488,7 +514,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("The server log was **not read** (`--no-server-log`)", paragraph)
 
     def test_report_attributes_a_server_log_finding_to_the_action_that_caused_it(self):  # AC4
-        text = render(CROSS, "--server-log", str(FIXTURES / CROSS / "server.log"))
+        text = doc(render(CROSS, "--server-log", str(FIXTURES / CROSS / "server.log")),
+                   "timeline.md")
         self.assertIn("## Server log", text)
         self.assertIn("**Attributed to** L4 · agent-2 seq 2 · player.seek "
                       "(+30.0s, by target uuid)", text)
@@ -497,7 +524,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("**Other actors nearby** agent-1 `L3` `merge.confirm` +10.0s", text)
 
     def test_report_says_a_process_level_line_cannot_be_attributed(self):
-        text = render(CROSS, "--server-log", str(FIXTURES / CROSS / "server.log"))
+        text = doc(render(CROSS, "--server-log", str(FIXTURES / CROSS / "server.log")),
+                   "timeline.md")
         self.assertIn("no request span", text)
 
     def test_report_marks_a_run_that_aborted_rather_than_one_that_was_quiet(self):
@@ -556,7 +584,7 @@ class ReportTests(unittest.TestCase):
                       "`20260828T100000Z-pre`", text)
         self.assertIn("| missing | agent-1 | highlight |", text)
         self.assertIn("`L2` (seq 2) |", text)
-        self.assertIn("agent-1 `L2` — metadata override", text)
+        self.assertIn("agent-1 `L2` — metadata override", doc(text, "timeline.md"))
 
     def test_audit_naming_a_different_run_is_flagged_not_silently_used(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -590,14 +618,15 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("**Clean run.**", text)
 
     def test_timeline_carries_every_entry_and_is_collapsed_by_default(self):
-        text = render(CLEAN, "--server-log", str(FIXTURES / CLEAN / "server.log"))
+        text = doc(render(CLEAN, "--server-log", str(FIXTURES / CLEAN / "server.log")),
+                   "timeline.md")
         self.assertIn("<details><summary>Merged, all agents in clock order "
                       "(8 entries)</summary>", text)
         for line in range(1, 9):
             self.assertIn(f"| `L{line}` |", text)
 
     def test_no_timeline_drops_the_section_entirely(self):
-        text = render(CLEAN, "--no-server-log", "--no-timeline")
+        text = doc(render(CLEAN, "--no-server-log", "--no-timeline"), "timeline.md")
         self.assertNotIn("## Timeline", text)
 
     def test_detail_severity_controls_which_anomalies_are_expanded(self):
@@ -608,9 +637,10 @@ class ReportTests(unittest.TestCase):
                 row("2026-08-28T10:00:20Z", "agent-1", "flow.end", seq=2,
                     params={"verdict": "pass"}),
             ])
-            default = render("r-tmp", "--journal-dir", tmp, "--no-server-log")
-            widened = render("r-tmp", "--journal-dir", tmp, "--no-server-log",
-                             "--detail-severity", "low")
+            default = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"),
+                          "defects.md")
+            widened = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log",
+                                 "--detail-severity", "low"), "defects.md")
         self.assertNotIn("### Detail", default)
         self.assertIn("### Detail — low and above", widened)
 
@@ -634,7 +664,7 @@ class ReportTests(unittest.TestCase):
                 row("2026-08-28T10:00:20Z", "agent-1", "flow.end", seq=2,
                     params={"verdict": "pass"}),
             ])
-            text = render("r-tmp", "--journal-dir", tmp, "--no-server-log")
+            text = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"), "defects.md")
         self.assertIn("**Repro** click it twice", text)
         self.assertIn("**Where** the player", text)
         self.assertIn("**Impact** the reader loses their place", text)
@@ -646,6 +676,234 @@ class ReportTests(unittest.TestCase):
     def test_missing_journal_exits_with_a_pointer_to_the_path(self):
         with self.assertRaises(SystemExit):
             render("r-does-not-exist")
+
+
+class ReportFilesTests(unittest.TestCase):
+    """The run's output split into a summary and its detail files (#2709)."""
+
+    def test_report_writes_the_summary_defects_execution_and_timeline_files(self):  # AC1
+        with tempfile.TemporaryDirectory() as tmp:
+            write_journal(Path(tmp) / "r-tmp", "r-tmp", [
+                row("2026-08-28T10:00:00Z", "agent-1", "flow.start", seq=1),
+                row("2026-08-28T10:00:20Z", "agent-1", "flow.end", seq=2,
+                    params={"verdict": "pass"}),
+            ])
+            files = render_files(tmp, "r-tmp", "--no-server-log")
+        self.assertEqual(sorted(files),
+                         ["defects.md", "execution-defects.md", "report.md", "timeline.md"])
+
+    def test_report_leaves_the_timeline_out_of_the_summary(self):  # AC2
+        text = render(CLEAN, "--server-log", str(FIXTURES / CLEAN / "server.log"))
+        self.assertNotIn("## Timeline", doc(text, "report.md"))
+        self.assertIn("## Timeline", doc(text, "timeline.md"))
+
+    def test_report_leaves_every_row_table_out_of_the_summary(self):  # AC2
+        with tempfile.TemporaryDirectory() as tmp:
+            write_journal(Path(tmp) / "r-tmp", "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+                row("2026-08-28T10:00:15Z", "agent-2", "anomaly", seq=1,
+                    params={"severity": "low", "kind": "issue"}, note="the picker was slow"),
+            ])
+            text = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"), "report.md")
+        self.assertNotIn("| # | Priority | Description | Agent |", text)
+        self.assertNotIn("the cover never loaded", text)
+        self.assertNotIn("the picker was slow", text)
+
+    def test_report_summary_says_the_rows_were_not_grouped_without_a_groups_file(self):  # AC5
+        with tempfile.TemporaryDirectory() as tmp:
+            write_journal(Path(tmp) / "r-tmp", "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+                row("2026-08-28T10:00:15Z", "agent-2", "anomaly", seq=1,
+                    params={"severity": "low", "kind": "issue"}, note="the picker was slow"),
+            ])
+            text = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"), "report.md")
+        self.assertIn("## Defects\n\n1 defect (1 high), **not grouped** — no `groups.json` "
+                      "beside the journal. Every row is in `defects.md`.", text)
+        self.assertIn("## Execution issues\n\n1 execution issue (1 low), **not grouped** — no "
+                      "`groups.json` beside the journal. Every row is in "
+                      "`execution-defects.md`.", text)
+
+    def test_report_lists_the_groups_before_every_defect_row(self):  # AC3
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+                row("2026-08-28T10:00:11Z", "agent-1", "anomaly", seq=2,
+                    params={"severity": "low"}, note="the cover was blurry"),
+                row("2026-08-28T10:00:12Z", "agent-1", "anomaly", seq=3,
+                    params={"severity": "medium"}, note="the shelf name was wrong"),
+            ])
+            write_groups(d, defects=[
+                {"title": "Shelves", "root_cause": "stale name", "checked": False, "lines": [3]},
+                {"title": "Covers", "root_cause": "thumb cache", "checked": True, "lines": [1, 2]},
+            ])
+            text = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"), "defects.md")
+        self.assertIn(
+            "## Groups\n\n| G | Group | Priority | Rows | Root cause | Checked |\n"
+            "|---:|---|---|---|---|---|\n"
+            "| 1 | Covers | high | 1, 3 | thumb cache | ✅ |\n"
+            "| 2 | Shelves | medium | 2 | stale name | — |\n\n"
+            "## All defects\n\n| # | Priority | Description | Agent | Group |\n"
+            "|---:|---|---|---|---|\n"
+            "| 1 | high | the cover never loaded (`L1`) | agent-1 | G1 |\n"
+            "| 2 | medium | the shelf name was wrong (`L3`) | agent-1 | G2 |\n"
+            "| 3 | low | the cover was blurry (`L2`) | agent-1 | G1 |", text)
+
+    def test_report_summary_lists_each_defect_group_with_its_priority_and_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+                row("2026-08-28T10:00:11Z", "agent-1", "anomaly", seq=2,
+                    params={"severity": "low"}, note="the cover was blurry"),
+                row("2026-08-28T10:00:12Z", "agent-1", "anomaly", seq=3,
+                    params={"severity": "medium"}, note="the shelf name was wrong"),
+            ])
+            write_groups(d, defects=[
+                {"title": "Shelves", "root_cause": "stale name", "lines": [3]},
+                {"title": "Covers", "root_cause": "thumb cache", "lines": [1, 2]},
+            ])
+            text = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"), "report.md")
+        self.assertIn(
+            "## Defects\n\n3 defects (1 high, 1 medium, 1 low) in 2 groups. "
+            "Every row is in `defects.md`.\n\n"
+            "| G | Group | Priority | Rows |\n|---:|---|---|---:|\n"
+            "| 1 | Covers | high | 2 |\n| 2 | Shelves | medium | 1 |", text)
+
+    def test_report_groups_execution_issues_the_same_way_as_defects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:15Z", "agent-2", "anomaly", seq=1,
+                    params={"severity": "low", "kind": "issue"}, note="the picker was slow"),
+            ])
+            write_groups(d, execution=[
+                {"title": "Slow controls", "root_cause": "shared instance load", "lines": [1]},
+            ])
+            text = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"),
+                       "execution-defects.md")
+        self.assertIn("| 1 | Slow controls | low | 1 | shared instance load | — |", text)
+        self.assertIn("| 1 | low | the picker was slow (`L1`) | agent-2 | G1 |", text)
+
+    def test_report_exits_naming_a_defect_left_out_of_every_group(self):  # AC4
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+                row("2026-08-28T10:00:11Z", "agent-1", "anomaly", seq=2,
+                    params={"severity": "low"}, note="the cover was blurry"),
+            ])
+            write_groups(d, defects=[{"title": "Covers", "lines": [1]}])
+            with self.assertRaises(SystemExit) as raised:
+                render("r-tmp", "--journal-dir", tmp, "--no-server-log")
+        self.assertEqual(str(raised.exception.code),
+                         "groups.json: defect L2 is in no group")
+
+    def test_report_exits_naming_a_defect_placed_in_two_groups(self):  # AC4
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+            ])
+            write_groups(d, defects=[{"title": "Covers", "lines": [1]},
+                                     {"title": "Thumbnails", "lines": [1]}])
+            with self.assertRaises(SystemExit) as raised:
+                render("r-tmp", "--journal-dir", tmp, "--no-server-log")
+        self.assertEqual(str(raised.exception.code),
+                         "groups.json: defect L1 is in both 'Covers' and 'Thumbnails'")
+
+    def test_report_exits_naming_a_grouped_line_that_is_not_a_defect(self):  # AC4
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+                row("2026-08-28T10:00:11Z", "agent-1", "anomaly", seq=2,
+                    params={"severity": "low", "kind": "issue"}, note="the picker was slow"),
+            ])
+            write_groups(d, defects=[{"title": "Covers", "lines": [1, 2]}])
+            with self.assertRaises(SystemExit) as raised:
+                render("r-tmp", "--journal-dir", tmp, "--no-server-log")
+        self.assertEqual(str(raised.exception.code),
+                         "groups.json: 'Covers' lists L2, which is not a defect")
+
+    def test_report_exits_naming_an_issue_when_groups_json_omits_its_side(self):  # AC4
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+                row("2026-08-28T10:00:11Z", "agent-1", "anomaly", seq=2,
+                    params={"severity": "low", "kind": "issue"}, note="the picker was slow"),
+            ])
+            write_groups(d, defects=[{"title": "Covers", "lines": [1]}])
+            with self.assertRaises(SystemExit) as raised:
+                render("r-tmp", "--journal-dir", tmp, "--no-server-log")
+        self.assertEqual(str(raised.exception.code),
+                         "groups.json: execution issue L2 is in no group")
+
+    def test_report_lists_every_defect_under_ungrouped_without_a_groups_file(self):  # AC5
+        with tempfile.TemporaryDirectory() as tmp:
+            write_journal(Path(tmp) / "r-tmp", "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "anomaly", seq=1,
+                    params={"severity": "high"}, note="the cover never loaded"),
+            ])
+            text = doc(render("r-tmp", "--journal-dir", tmp, "--no-server-log"), "defects.md")
+        self.assertIn("## Ungrouped\n\n| # | Priority | Description | Agent |\n|---:|---|---|---|\n"
+                      "| 1 | high | the cover never loaded (`L1`) | agent-1 |", text)
+
+    def test_report_summary_gives_each_server_log_shape_one_line(self):
+        text = doc(render(CROSS, "--server-log", str(FIXTURES / CROSS / "server.log")),
+                   "report.md")
+        self.assertIn("- `ERROR` 500 POST /api/rpc/merge-books/undo — 1 occurrence", text)
+        self.assertNotIn("**Attributed to**", text)
+
+    def test_report_summary_links_to_every_file_it_wrote(self):  # AC2
+        with tempfile.TemporaryDirectory() as tmp:
+            write_journal(Path(tmp) / "r-tmp", "r-tmp", [
+                row("2026-08-28T10:00:00Z", "agent-1", "flow.start", seq=1),
+                row("2026-08-28T10:00:20Z", "agent-1", "flow.end", seq=2,
+                    params={"verdict": "pass"}),
+            ])
+            summary = render_files(tmp, "r-tmp", "--no-server-log")["report.md"]
+            run_dir = Path(tmp) / "r-tmp"
+        self.assertIn(f"- Summary — `{run_dir / 'report.md'}`\n"
+                      f"- Defects — `{run_dir / 'defects.md'}`\n"
+                      f"- Execution defects — `{run_dir / 'execution-defects.md'}`\n"
+                      f"- Timeline — `{run_dir / 'timeline.md'}`", summary)
+
+    def test_report_summary_counts_unverifiable_writes_by_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "r-tmp"
+            write_journal(d, "r-tmp", [
+                row("2026-08-28T10:00:10Z", "agent-1", "player.seek", seq=1, target=AUDIO),
+                row("2026-08-28T10:00:11Z", "agent-1", "reader.close", seq=2, target=AUDIO),
+                row("2026-08-28T10:00:12Z", "agent-1", "genre.edit", seq=3, target=AUDIO),
+            ])
+            (d / "audit.json").write_text(json.dumps({"run": "r-tmp", "checked": 0,
+                "findings": [], "unverifiable": [
+                    {"actor": "agent-1", "seq": 1, "why": "player.seek: no position recorded"},
+                    {"actor": "agent-1", "seq": 2, "why": "reader.close: no position recorded"},
+                    {"actor": "agent-1", "seq": 3, "why": "genre.edit: out of audit scope"},
+                ]}))
+            text = render("r-tmp", "--journal-dir", tmp, "--no-server-log")
+        self.assertIn("3 writes the audit could not check, by reason:\n\n"
+                      "- 2 × no position recorded (`player.seek`, `reader.close`)\n"
+                      "- 1 × out of audit scope (`genre.edit`)", doc(text, "report.md"))
+        self.assertIn("agent-1 `L1` — player.seek: no position recorded",
+                      doc(text, "timeline.md"))
+
+    def test_report_prints_every_file_under_its_own_header_to_stdout(self):
+        text = render(CLEAN, "--no-server-log")
+        headers = [line for line in text.splitlines() if line.startswith("==> ")]
+        self.assertEqual(headers, ["==> report.md <==", "==> defects.md <==",
+                                   "==> execution-defects.md <==", "==> timeline.md <=="])
 
 
 class FormattingTests(unittest.TestCase):
