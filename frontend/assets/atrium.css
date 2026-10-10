@@ -7906,6 +7906,43 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   border-top: 1px solid var(--line-2); padding-top: 12px;
 }
 
+/* ── Shelf picker — "Add to shelf" from a book page and the bulk bar ───
+   Rides the Add books modal's overlay and head; the card is narrower and the
+   list scrolls inside it. */
+.shelf-picker-card { width: min(440px, 100%); }
+.atrium .shelf-picker-card .pick-title { font-size: 24px; }
+.shelf-picker-list {
+  flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.shelf-picker-row {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 10px 12px; text-align: left; border-radius: 12px;
+  font: inherit; color: inherit;
+  background: var(--bg-2); border: 1px solid var(--line-2); cursor: pointer;
+}
+@media (hover: hover) {
+  .shelf-picker-row:hover:not(:disabled) { border-color: var(--line); background: var(--bg-3); }
+}
+.shelf-picker-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shelf-picker-row[aria-checked="true"] {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, var(--bg-2));
+}
+.shelf-picker-row:disabled { cursor: default; opacity: .7; }
+.shelf-picker-row[aria-busy="true"] { opacity: 1; }
+.shelf-picker-check {
+  flex: none; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px;
+  border: 1px solid var(--line); color: var(--accent-ink);
+}
+.shelf-picker-row[aria-checked="true"] .shelf-picker-check { background: var(--accent); border-color: transparent; }
+.shelf-picker-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.shelf-picker-name { font-size: 14px; font-weight: 500; color: var(--ink-0); overflow-wrap: anywhere; }
+/* `BusyLabel` never wraps so a button can't jump; a shelf name has to. */
+.shelf-picker-name .ld-busy-face, .shelf-picker-name .ld-busy::after { white-space: normal; }
+.shelf-picker-owner { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; color: var(--ink-3); }
+
 /* Shared shelf chrome: badges, the landing header's edit pencil and facet
    row, the ⋯ menu, rule chips, and the member grid's add tile. */
 .shelf-badge {
@@ -11300,10 +11337,12 @@ html {
    down by the measured topbar height and the card's height budget shrinks to
    match. Without this a tall modal's top controls sit under the topbar and
    are unclickable. */
-.bdmq .author-photo-modal-backdrop {
+.bdmq .author-photo-modal-backdrop,
+.bdmq .shelf-modal-overlay {
   padding-top: calc(var(--bdmq-top, 61px) + 12px);
 }
-.bdmq .mg-modal {
+.bdmq .mg-modal,
+.bdmq .shelf-picker-card {
   max-height: calc(100vh - var(--bdmq-top, 61px) - 52px);
 }
 
@@ -11360,10 +11399,7 @@ html {
 /* ── Content panel ── */
 .bdmq-panel {
   position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
-  /* The design's scrim: bg-0 at 70%, so the cover's right edge reads
-     dissolved behind the panel rather than being cut off at the seam. */
-  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
-  backdrop-filter: blur(12px);
+  /* No filter here: it would pin fixed overlays to the panel (see `.bdmq-panelscrim`). */
   padding: 56px 60px;
   display: flex; flex-direction: column;
   z-index: 1;
@@ -11435,24 +11471,21 @@ html {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--accent) 60%, var(--bg-3)) transparent;
 }
-/* The blur behind the flow column, on its own non-scrolling layer.
-   `backdrop-filter` makes an element the containing block for its
-   `position: fixed` descendants, so while it lived on the scroller the
-   journal overlay was laid out against the scroller's *scrolled* content and
-   rendered `scrollTop` pixels above the viewport — far enough up, by the time
-   a reader reached the journal stop, that an entry could not be read at all
-   (#2529). Keep every filter off `.bdmq-flowscroll` for that reason; this
-   layer sits behind it and blurs the cover just the same. */
-.bdmq-flowscrim {
+/* The scrim behind the snapped panel and the flow column: bg-0 at 70%, so the
+   cover's right edge reads dissolved rather than cut off at the seam. It is a
+   layer of its own because `backdrop-filter` makes an element the containing
+   block for its `position: fixed` descendants: on the scroller, the journal
+   overlay was laid out against the scroller's *scrolled* content and rendered
+   `scrollTop` pixels above the viewport (#2529). Keep every filter off
+   `.bdmq-panel` and `.bdmq-flowscroll`. */
+.bdmq-panelscrim, .bdmq-flowscrim {
   position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
-  /* Same scrim as `.bdmq-panel`: the cover's right edge reads dissolved
-     behind the column rather than cut off at the seam. */
   background: color-mix(in oklch, var(--bg-0) 70%, transparent);
   backdrop-filter: blur(12px);
-  border-left: 1px solid var(--line-2);
   pointer-events: none;
   z-index: 0;
 }
+.bdmq-flowscrim { border-left: 1px solid var(--line-2); }
 .bdmq-flowscroll::-webkit-scrollbar { width: 6px; }
 .bdmq-flowscroll::-webkit-scrollbar-thumb {
   background: color-mix(in oklch, var(--accent) 60%, var(--bg-3));
@@ -11531,10 +11564,11 @@ html {
   border-radius: 14px; padding: 10px;
   background: color-mix(in oklch, var(--bg-0) 82%, transparent);
 }
-/* The rail lives in a higher stacking layer than the panel-hosted overlays,
-   so it would float over their dimmed scrim — step it aside while one is up. */
-.bdmq-stage:has(.bdmq-overlay) .bdmq-dots,
-.bdmq-stage:has(.author-photo-modal-backdrop) .bdmq-dots {
+/* Everything the stage draws outside the panel's stacking layer would float
+   over (and take clicks through) a panel-hosted overlay's dimmed scrim, so it
+   steps aside while one is up. */
+.bdmq-stage:has(:is(.bdmq-overlay, .author-photo-modal-backdrop, .shelf-modal-overlay))
+  :is(.bdmq-dots, .bdmq-flowtop, .bdmq-seclab, .bdmq-next) {
   opacity: 0; pointer-events: none;
 }
 .bdmq-dotrow {
@@ -11889,6 +11923,9 @@ html {
 .rx-shelf-cap .u { font-family: var(--mono); font-size: 10px; color: var(--ink-3); margin-top: 3px; letter-spacing: .03em; }
 .bdmq-shelfchips { margin-bottom: 8px; }
 .bdmq-shelfchip.first { border-color: var(--accent); }
+.bdmq-shelf-actions { margin-top: 14px; }
+/* Under the series shelf, whose own hint already ends the block above. */
+.bdmq-k-below { margin-top: 34px; }
 
 /* ── Recommendations stop (tightened, per the design) ── */
 /* Fixed 98px tiles: `min-width: 0` kills the flex min-content floor (a wide
@@ -11953,6 +11990,7 @@ html {
      than the subject, so it wants the stage-height sizing with no gutter. */
   .bdmq-coverpx { width: auto; height: 125%; max-width: 100%; }
   .bdmq-panel { width: 100%; border-left: 0; padding: 40px 28px; }
+  .bdmq-panelscrim { width: 100%; }
   .bdmq-seclab { left: 28px; }
   .bdmq-next { right: 28px; }
 }

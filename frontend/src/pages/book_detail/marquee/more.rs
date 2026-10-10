@@ -1,15 +1,18 @@
 //! Stop 06 · More — everything that points away from this book, in one
-//! place: the shelf it sits on (its series, or the shelves holding a
-//! standalone), the rest of the author's work, then what to read next.
+//! place: the shelves it sits on (its series' shelf, then the reader's own
+//! shelves), the rest of the author's work, then what to read next.
 //! Fetches post-mount (rule 07: SSR and the first WASM paint render the
 //! same quiet shell).
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::physical::WishlistEntry;
-use omnibus_shared::{EbookMetadata, SeriesDetail, ShelfKind, ShelfSummary, SuggestionsResponse};
+use omnibus_shared::{
+    EbookMetadata, SeriesDetail, ShelfKind, ShelfSummary, SuggestionsResponse, UserSummary,
+};
 
 use crate::components::atrium::Cover;
+use crate::components::shelf_picker::{picker_targets, ShelfPickerList, ShelfPickerModal};
 use crate::components::{Loading, LoadingKind};
 use crate::contexts::use_current_user_summary;
 use crate::{data, use_server_url, Route};
@@ -33,9 +36,10 @@ pub(super) struct MoreStopCtx {
     pub wishlist: Signal<Option<WishlistEntry>>,
 }
 
-/// The More stop: the shelf beside this book, the author's other work, then
-/// suggestions. The series is fetched once by the stage and threaded in, so
-/// this stop and the Home kicker read the same record.
+/// The More stop: the series shelf (when there is one) and the shelves holding
+/// this book, the author's other work, then suggestions. The series is fetched
+/// once by the stage and threaded in, so this stop and the Home kicker read the
+/// same record.
 ///
 /// These were two stops until the running order collapsed to six — the shelf
 /// is not a subject of its own, it is one of the three ways this page points
@@ -64,11 +68,11 @@ pub(super) fn MarqueeMoreStop(
                     detail: series,
                     loaded: series_loaded,
                 }
-            } else {
-                MarqueeStandaloneShelves {
-                    uuid: b.unique_identifier.clone().unwrap_or_default(),
-                    wishlist,
-                }
+            }
+            MarqueeShelfMembership {
+                uuid: b.unique_identifier.clone().unwrap_or_default(),
+                wishlist,
+                in_series: b.series_id.is_some(),
             }
             div { class: "bdmq-morerule" }
             BdSameHand {
@@ -180,8 +184,24 @@ fn render_series_item(x: &EbookMetadata, current_uuid: &str, next_uuid: Option<&
     }
 }
 
-/// Standalone: the shelves holding this book, as chips — the hand-picked ones
-/// plus the viewer's own Wishlist when the book is on it.
+/// The shelves read behind the membership block: every visible shelf and the
+/// ids of those holding this book. `None` while asking; `Err` when either read
+/// failed, so the stop never claims "not on a shelf" off a fetch that didn't
+/// answer.
+type ShelvesRead = Option<Result<(Vec<ShelfSummary>, Vec<i64>), ()>>;
+
+/// The Add-to-shelf picker's open flag and its write's in-flight / failed state.
+#[derive(Clone, Copy)]
+struct PickerState {
+    open: Signal<bool>,
+    busy: Signal<Option<i64>>,
+    error: Signal<Option<String>>,
+}
+
+/// The shelves holding this book, as chips — the hand-picked ones plus the
+/// viewer's own Wishlist when the book is on it — and the picker that adds the
+/// book to a hand-picked shelf or takes it off again. `in_series` sits the block
+/// under the series shelf, which already says what the book is part of.
 ///
 /// The wishlist shelf's membership derives from `wishlist_entries`, not
 /// `shelf_books`, so the per-book membership read never names it; the landing
@@ -189,21 +209,32 @@ fn render_series_item(x: &EbookMetadata, current_uuid: &str, next_uuid: Option<&
 /// own wishlist signal instead, so it appears the moment the Add button lands
 /// and goes with Remove.
 #[component]
-fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>>) -> Element {
+fn MarqueeShelfMembership(
+    uuid: String,
+    wishlist: Signal<Option<WishlistEntry>>,
+    in_series: bool,
+) -> Element {
     let server_url = use_server_url();
     let me = use_current_user_summary();
-    // `None` while asking; `Some(Err)` when either read failed, so the stop
-    // never claims "not on a shelf" off a fetch that didn't answer.
-    let mut shelves = use_signal(|| None::<Result<(Vec<ShelfSummary>, Vec<i64>), ()>>);
+    let mut shelves = use_signal(ShelvesRead::default);
     // A fast SPA hop between books can leave the previous book's shelf fetch
     // in flight; drop its result rather than showing it under the new book.
     let mut load_seq = use_signal(|| 0u64);
+    let picker = PickerState {
+        open: use_signal(|| false),
+        busy: use_signal(|| None::<i64>),
+        error: use_signal(|| None::<String>),
+    };
     {
         let server_url = server_url.clone();
+        let (mut open, mut busy, mut error) = (picker.open, picker.busy, picker.error);
         use_effect(use_reactive!(|uuid| {
             let my_load = *load_seq.peek() + 1;
             load_seq.set(my_load);
             shelves.set(None);
+            open.set(false);
+            busy.set(None);
+            error.set(None);
             let url = server_url.clone();
             let uuid = uuid.clone();
             spawn(async move {
@@ -232,9 +263,150 @@ fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>
                 .collect::<Vec<ShelfSummary>>()
         })
     });
+    let toggle = build_shelf_toggle(server_url, uuid, shelves, load_seq, picker);
+    let list = shelf_picker_list(&shelves(), me().as_ref(), picker);
+    let (mut open, mut error) = (picker.open, picker.error);
+    let on_add = EventHandler::new(move |_| {
+        error.set(None);
+        open.set(true);
+    });
 
     rsx! {
-        div { class: "bdmq-k", "Standalone \u{b7} on your shelves" }
+        {membership_body(held.as_ref(), in_series, on_add)}
+        if open() {
+            ShelfPickerModal {
+                heading: "Add to shelf".to_string(),
+                list,
+                on_pick: toggle,
+                on_close: move |_| open.set(false),
+            }
+        }
+    }
+}
+
+/// What the picker shows: the shelves the viewer may change, ticked for the
+/// ones holding this book. Loading until both the shelves and the viewer are
+/// known.
+fn shelf_picker_list(
+    read: &ShelvesRead,
+    viewer: Option<&UserSummary>,
+    picker: PickerState,
+) -> ShelfPickerList {
+    let checked = match read {
+        Some(Ok((_, ids))) => Some(ids.clone()),
+        _ => None,
+    };
+    let shelves = read.as_ref().map(|answer| {
+        answer
+            .as_ref()
+            .map(|(all, _)| all.as_slice())
+            .map_err(|_| ())
+    });
+    let targets = picker_targets(shelves, viewer);
+    ShelfPickerList {
+        targets,
+        viewer_id: viewer.map(|u| u.id),
+        checked,
+        busy: (picker.busy)(),
+        error: (picker.error)(),
+    }
+}
+
+/// Builds the picker's row handler: add this book to the shelf, or take it off
+/// when it is already there, then patch the block's membership so the row and
+/// the chips follow without a refetch. A failure leaves both as they were.
+fn build_shelf_toggle(
+    server_url: String,
+    uuid: String,
+    shelves: Signal<ShelvesRead>,
+    load_seq: Signal<u64>,
+    picker: PickerState,
+) -> EventHandler<i64> {
+    EventHandler::new(move |shelf_id: i64| {
+        let (mut shelves, mut busy, mut error) = (shelves, picker.busy, picker.error);
+        if busy.peek().is_some() {
+            return;
+        }
+        let Some(Ok((all, ids))) = shelves.peek().clone() else {
+            return;
+        };
+        let adding = !ids.contains(&shelf_id);
+        let name = all
+            .iter()
+            .find(|s| s.id == shelf_id)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        let my_load = *load_seq.peek();
+        let (url, uuid) = (server_url.clone(), uuid.clone());
+        busy.set(Some(shelf_id));
+        error.set(None);
+        spawn(async move {
+            let written = if adding {
+                data::add_shelf_books(&url, shelf_id, vec![uuid.clone()]).await
+            } else {
+                data::remove_shelf_book(&url, shelf_id, &uuid).await
+            };
+            // A hop to another book resets the block; its write must not land there.
+            if *load_seq.peek() != my_load {
+                return;
+            }
+            match written {
+                Ok(()) => shelves.with_mut(|read| {
+                    if let Some(Ok((_, ids))) = read {
+                        *ids = with_membership(ids, shelf_id, adding);
+                    }
+                }),
+                Err(e) => error.set(Some(format!("Couldn\u{2019}t update {name}: {e}"))),
+            }
+            busy.set(None);
+        });
+    })
+}
+
+/// The button that opens the shelf picker.
+fn add_to_shelf_button(on_add: EventHandler<()>) -> Element {
+    rsx! {
+        div { class: "bdmq-shelf-actions",
+            button {
+                r#type: "button",
+                class: "btn sm",
+                "data-testid": "bdmq-add-to-shelf",
+                onclick: move |_| on_add.call(()),
+                "Add to shelf"
+            }
+        }
+    }
+}
+
+/// `ids` with `shelf_id` added (`on`) or removed, never duplicated.
+fn with_membership(ids: &[i64], shelf_id: i64, on: bool) -> Vec<i64> {
+    let mut next = ids.to_vec();
+    if on {
+        if !next.contains(&shelf_id) {
+            next.push(shelf_id);
+        }
+    } else {
+        next.retain(|id| *id != shelf_id);
+    }
+    next
+}
+
+/// The membership block for the given shelves read: its kicker, then chips and
+/// the empty state, each with the Add-to-shelf button, or a failure note, or a
+/// loader. A series book on no shelf gets only the button — the series shelf
+/// above it already fills the stop.
+fn membership_body(
+    held: Option<&Result<Vec<ShelfSummary>, ()>>,
+    in_series: bool,
+    on_add: EventHandler<()>,
+) -> Element {
+    let (kicker_class, kicker) = if in_series {
+        ("bdmq-k bdmq-k-below", "On your shelves")
+    } else {
+        ("bdmq-k", "Standalone \u{b7} on your shelves")
+    };
+    rsx! {
+        div { class: kicker_class, "{kicker}" }
         match held {
             Some(Ok(held)) if !held.is_empty() => rsx! {
                 div { class: "bdmq-chips bdmq-shelfchips", "data-testid": "bdmq-shelves",
@@ -247,17 +419,13 @@ fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>
                         }
                     }
                 }
-                p { class: "mono bdmq-quiet-hint",
-                    "open a shelf from the "
-                    Link { to: Route::Landing {}, class: "bdmq-k-link", "library page \u{2192}" }
-                }
+                {add_to_shelf_button(on_add)}
             },
             Some(Ok(_)) => rsx! {
-                div { class: "bdmq-bigquiet", "Not on a shelf yet." }
-                p { class: "mono bdmq-quiet-hint",
-                    "shelves are made on the "
-                    Link { to: Route::Landing {}, class: "bdmq-k-link", "library page \u{2192}" }
+                if !in_series {
+                    div { class: "bdmq-bigquiet", "Not on a shelf yet." }
                 }
+                {add_to_shelf_button(on_add)}
             },
             Some(Err(())) => rsx! {
                 p { class: "mono bdmq-quiet-hint", "data-testid": "bdmq-shelves-unavailable",
@@ -276,3 +444,6 @@ fn MarqueeStandaloneShelves(uuid: String, wishlist: Signal<Option<WishlistEntry>
         }
     }
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests;

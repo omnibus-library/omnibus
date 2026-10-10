@@ -1,21 +1,25 @@
-//! Bulk-edit surface for the landing table: the floating action bar shown
-//! while rows are checked, and the modal that applies one
-//! `BulkMetadataEdit` to every selected book via `rpc_bulk_save_overrides`.
+//! Bulk surface for the landing table: the floating action bar shown while rows
+//! are checked, the modal that applies one `BulkMetadataEdit` to every selected
+//! book via `rpc_bulk_save_overrides`, and the picker that files them all on a
+//! hand-picked shelf in one request.
 
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use omnibus_shared::{BulkMetadataEdit, EbookMetadata};
+use omnibus_shared::{BulkMetadataEdit, EbookMetadata, ShelfSummary};
 
 use crate::components::chip_editor::{ChipEditor, ChipEditorOptions, SuggestionItem};
+use crate::components::shelf_picker::{picker_targets, ShelfPickerList, ShelfPickerModal};
 use crate::components::{BusyLabel, ConfirmModal};
-use crate::{data, use_server_url};
+use crate::{data, use_current_user_summary, use_server_url};
 
 /// Floating action bar shown while at least one table row is selected.
 #[component]
 pub(super) fn BulkEditBar(
     count: usize,
     on_edit: EventHandler<()>,
+    on_add_to_shelf: EventHandler<()>,
     on_clear: EventHandler<()>,
 ) -> Element {
     let noun = if count == 1 { "book" } else { "books" };
@@ -32,10 +36,93 @@ pub(super) fn BulkEditBar(
             button {
                 r#type: "button",
                 class: "btn shelf-btn-ghost",
+                "data-testid": "bulk-add-to-shelf",
+                onclick: move |_| on_add_to_shelf.call(()),
+                "Add to shelf"
+            }
+            button {
+                r#type: "button",
+                class: "btn shelf-btn-ghost",
                 "data-testid": "bulk-edit-clear",
                 onclick: move |_| on_clear.call(()),
                 "Clear selection"
             }
+        }
+    }
+}
+
+/// The "Add to shelf" picker over the checked rows: lists the hand-picked
+/// shelves the viewer may change and, on a pick, files every selected book on
+/// it in one request. Reads `selected` at pick time — the overlay blocks
+/// checkbox toggles while it is open. A failure keeps the picker, the
+/// selection and the bar as they were.
+#[component]
+pub(super) fn BulkShelfPicker(
+    selected: Signal<BTreeSet<String>>,
+    on_close: EventHandler<()>,
+    on_added: EventHandler<()>,
+) -> Element {
+    let server_url = use_server_url();
+    let viewer = use_current_user_summary();
+    // `None` until the shelves answer; `Err` when the read failed.
+    let mut shelves = use_signal(|| None::<Result<Vec<ShelfSummary>, ()>>);
+    let mut busy = use_signal(|| None::<i64>);
+    let mut error = use_signal(|| None::<String>);
+    {
+        let url = server_url.clone();
+        use_effect(move || {
+            let url = url.clone();
+            spawn(async move {
+                shelves.set(Some(data::list_shelves(&url).await.map_err(|_| ())));
+            });
+        });
+    }
+
+    let on_pick = EventHandler::new(move |shelf_id: i64| {
+        if busy.peek().is_some() {
+            return;
+        }
+        let uuids: Vec<String> = selected.peek().iter().cloned().collect();
+        let name = shelves
+            .peek()
+            .as_ref()
+            .and_then(|read| read.as_ref().ok())
+            .and_then(|all| all.iter().find(|s| s.id == shelf_id))
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        let url = server_url.clone();
+        busy.set(Some(shelf_id));
+        error.set(None);
+        spawn(async move {
+            match data::add_shelf_books(&url, shelf_id, uuids).await {
+                Ok(()) => on_added.call(()),
+                Err(e) => error.set(Some(format!("Couldn\u{2019}t add to {name}: {e}"))),
+            }
+            busy.set(None);
+        });
+    });
+
+    let me = viewer();
+    let read = shelves();
+    let targets = picker_targets(
+        read.as_ref()
+            .map(|answer| answer.as_deref().map_err(|_| ())),
+        me.as_ref(),
+    );
+    let count = selected.read().len();
+    let noun = if count == 1 { "book" } else { "books" };
+    rsx! {
+        ShelfPickerModal {
+            heading: format!("Add {count} {noun} to a shelf"),
+            list: ShelfPickerList {
+                targets,
+                viewer_id: me.as_ref().map(|u| u.id),
+                checked: None,
+                busy: busy(),
+                error: error(),
+            },
+            on_pick,
+            on_close,
         }
     }
 }

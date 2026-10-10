@@ -97,6 +97,7 @@ pub(super) fn web_landing_body(
     let shelves_tick = sigs.shelves_tick;
     let bulk_selected = sigs.bulk_selected;
     let bulk_modal_open = sigs.bulk_modal_open;
+    let bulk_shelf_open = sigs.bulk_shelf_open;
     let bulk = snapshot_bulk_selection(sigs, (sigs.is_admin)(), bulk_modal_open());
     let books_sig = sigs.books;
     let shelf_books_sig = sigs.shelf_books;
@@ -154,7 +155,7 @@ pub(super) fn web_landing_body(
             }
             {render_gallery(sigs, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
             {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), lens, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters, on_add_tile: lens.add_tile() }, on_prefs_change_header, stack_view, on_stack_toggle)}
-            {render_bulk_overlay(bulk, bulk_modal_open, bulk_selected, books_sig, shelf_books_sig, author_pool, tag_pool, genre_pool)}
+            {render_bulk_overlay(bulk, bulk_modal_open, bulk_shelf_open, shelves_tick, bulk_selected, books_sig, shelf_books_sig, author_pool, tag_pool, genre_pool)}
             {render_add_books_overlay(show_add_books, selected_shelf.clone(), &shelf_books_sig.read(), shelves_tick)}
             {render_edit_shelf_overlay(edit_shelf, selected_shelf, shelves_tick)}
             if show_stack {
@@ -319,15 +320,18 @@ fn render_gallery(
     }
 }
 
-/// Bulk-edit bar + modal overlay for [`web_landing_body`], split out so the
-/// parent's rsx! reads as one page layout rather than page-plus-modals. A
-/// plain `Element`-returning helper (not a `#[component]`) since it shares
-/// `web_landing_body`'s signals directly rather than re-deriving props.
+/// Bulk-edit bar + modal + shelf-picker overlay for [`web_landing_body`], split
+/// out so the parent's rsx! reads as one page layout rather than
+/// page-plus-modals. A plain `Element`-returning helper (not a `#[component]`)
+/// since it shares `web_landing_body`'s signals directly rather than
+/// re-deriving props.
 #[cfg(not(feature = "mobile"))]
 #[allow(clippy::too_many_arguments)]
 fn render_bulk_overlay(
     bulk: BulkSelectionSnapshot,
     mut bulk_modal_open: Signal<bool>,
+    mut bulk_shelf_open: Signal<bool>,
+    mut shelves_tick: Signal<u32>,
     mut bulk_selected: Signal<BTreeSet<String>>,
     mut books_sig: Signal<Vec<EbookMetadata>>,
     mut shelf_books_sig: Signal<Option<Vec<EbookMetadata>>>,
@@ -340,7 +344,20 @@ fn render_bulk_overlay(
             bulk_edit::BulkEditBar {
                 count: bulk.count,
                 on_edit: move |_| bulk_modal_open.set(true),
+                on_add_to_shelf: move |_| bulk_shelf_open.set(true),
                 on_clear: move |_| bulk_selected.write().clear(),
+            }
+        }
+        if bulk_shelf_open() {
+            bulk_edit::BulkShelfPicker {
+                selected: bulk_selected,
+                on_close: move |_| bulk_shelf_open.set(false),
+                on_added: move |_| {
+                    bulk_shelf_open.set(false);
+                    bulk_selected.write().clear();
+                    // Refetches the gallery's counts and an open shelf lens.
+                    shelves_tick.with_mut(|n| *n += 1);
+                },
             }
         }
         if bulk_modal_open() {
