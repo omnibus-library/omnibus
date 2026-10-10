@@ -53,13 +53,17 @@ fn clause_sql(clause: &FilterClause, viewer: Viewer) -> Option<(String, Vec<Bind
     };
     match clause.field {
         FilterField::Shelf => shelf_sql(not, &values, viewer),
-        field => name_sql(not, field, &values),
+        FilterField::Tag => name_sql(not, RuleField::Tag, &values),
+        FilterField::Genre => name_sql(not, RuleField::Genre, &values),
+        FilterField::Author => name_sql(not, RuleField::Author, &values),
+        FilterField::Series => name_sql(not, RuleField::Series, &values),
+        FilterField::Format => name_sql(not, RuleField::Format, &values),
     }
 }
 
 /// `IN`/`NOT IN` over the smart-rule membership for a name-matched field.
-fn name_sql(not: &str, field: FilterField, values: &[&str]) -> Option<(String, Vec<Bind>)> {
-    let (members, col) = name_membership(rule_field(field)?)?;
+fn name_sql(not: &str, field: RuleField, values: &[&str]) -> Option<(String, Vec<Bind>)> {
+    let (members, col) = name_membership(field)?;
     let placeholders = vec!["?"; values.len()].join(", ");
     let sql = format!("b.id {not}IN ({members}{col} COLLATE NOCASE IN ({placeholders}))");
     let binds = values
@@ -95,16 +99,4 @@ fn shelf_sql(not: &str, values: &[&str], viewer: Viewer) -> Option<(String, Vec<
         ])
     };
     Some((sql, arm_binds().chain(arm_binds()).collect()))
-}
-
-/// The smart-rule field a name-matched filter field shares membership with.
-fn rule_field(field: FilterField) -> Option<RuleField> {
-    match field {
-        FilterField::Tag => Some(RuleField::Tag),
-        FilterField::Genre => Some(RuleField::Genre),
-        FilterField::Author => Some(RuleField::Author),
-        FilterField::Series => Some(RuleField::Series),
-        FilterField::Format => Some(RuleField::Format),
-        FilterField::Shelf => None,
-    }
 }
