@@ -1,7 +1,7 @@
 //! Library filter clauses → SQL: each [`FilterClause`] becomes an `IN`/`NOT IN`
 //! over the smart-rule engine's per-field membership, so a filtered page and a
 //! smart shelf rule on the same value always agree. A shelf clause resolves
-//! only to shelves its [`Viewer`] can see. Used by the keyset page.
+//! only to shelves its [`Viewer`] can see. Used by the keyset page and `shelf_page`.
 
 use omnibus_shared::{FilterClause, FilterField, FilterMode, RuleField, ViewFilters};
 
