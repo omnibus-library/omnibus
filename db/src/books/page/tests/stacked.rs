@@ -36,7 +36,7 @@ async fn stacked_page(
     .unwrap()
 }
 
-fn titles_of(books: &[EbookMetadata]) -> Vec<String> {
+pub(super) fn titles_of(books: &[EbookMetadata]) -> Vec<String> {
     books
         .iter()
         .map(|b| b.title.clone().unwrap_or_default())

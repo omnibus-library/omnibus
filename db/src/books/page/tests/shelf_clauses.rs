@@ -6,13 +6,13 @@ use omnibus_shared::physical::WishlistSource;
 use omnibus_shared::FilterField::Shelf;
 use omnibus_shared::FilterMode::{Exclude, Include};
 use omnibus_shared::{
-    CreateShelfRequest, EbookMetadata, FilterClause, FilterMode, MatchMode, RuleField, RuleOp,
-    ShelfKind, ShelfRule, SortDir, SortKey, ViewFilters, Visibility,
+    CreateShelfRequest, FilterClause, FilterMode, MatchMode, RuleField, RuleOp, ShelfKind,
+    ShelfRule, SortDir, SortKey, ViewFilters, Visibility,
 };
 use sqlx::SqlitePool;
 
 use super::super::*;
-use super::stacked::series_book;
+use super::stacked::{series_book, titles_of};
 use super::{clause, insert_book, insert_lib, sorted_titles, uuid_of};
 use crate::books::Projection;
 use crate::physical::add_wishlist_entry;
@@ -79,15 +79,6 @@ fn shelf_clause(mode: FilterMode, shelf_ids: &[i64]) -> FilterClause {
     let values: Vec<String> = shelf_ids.iter().map(i64::to_string).collect();
     let values: Vec<&str> = values.iter().map(String::as_str).collect();
     clause(Shelf, mode, &values)
-}
-
-fn sorted_titles_of(books: &[EbookMetadata]) -> Vec<String> {
-    let mut found: Vec<String> = books
-        .iter()
-        .map(|b| b.title.clone().unwrap_or_default())
-        .collect();
-    found.sort();
-    found
 }
 
 /// Titles on the first page of `/lib` under `clauses`, as `viewer` sees them.
@@ -285,12 +276,9 @@ async fn list_books_page_stacked_stacks_only_the_members_on_the_listed_shelf() {
     .await
     .unwrap();
 
-    assert_eq!(sorted_titles_of(&page.books), ["Saga One"]);
+    assert_eq!(titles_of(&page.books), ["Saga One"]);
     assert_eq!(page.stacks.len(), 1);
-    assert_eq!(
-        sorted_titles_of(&page.stacks[0].members),
-        ["Saga One", "Saga Two"]
-    );
+    assert_eq!(titles_of(&page.stacks[0].members), ["Saga One", "Saga Two"]);
 }
 
 #[tokio::test]
