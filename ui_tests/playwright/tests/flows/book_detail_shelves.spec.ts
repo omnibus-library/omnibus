@@ -32,6 +32,7 @@ const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
 
 const READER_PASSWORD = "shelf-reader-pw-00";
 const SNAP_READER = "shelfsnap";
+const FLOW_READER = "shelfflow";
 
 /** Set the reader's Use book details scroll stops switch through Settings. */
 async function setScrollStops(page: Page, on: boolean) {
@@ -291,5 +292,25 @@ test("opens the picker over the whole window when the page snaps between stops",
     await expect
       .poll(async () => (await picker.boundingBox())?.width)
       .toBe(viewport.width);
+  });
+});
+
+test("hides the back-to-the-book pill while the picker is open", async ({
+  browser,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await asReader({ browser, request }, FLOW_READER, false, async (page) => {
+    await gotoReady(page, `/books/${uuid}`);
+    await expect(page.locator("#bdmq-flow")).toBeAttached();
+    await page.getByTestId("bdmq-dot-5").click();
+    const backToBook = page.getByTestId("bdmq-flowtop");
+    await expect(backToBook).toHaveClass(/\bon\b/);
+
+    await openPicker(page);
+
+    // The pill sits above the scrim, so it must not stay clickable through it.
+    await expect(backToBook).toHaveCSS("pointer-events", "none");
+    await expect(backToBook).toHaveCSS("opacity", "0");
   });
 });
