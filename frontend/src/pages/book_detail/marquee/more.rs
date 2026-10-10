@@ -264,10 +264,14 @@ fn MarqueeShelfMembership(
     });
     let toggle = build_shelf_toggle(server_url, uuid, shelves, load_seq, picker);
     let list = shelf_picker_list(&shelves(), me().as_ref(), picker);
-    let mut open = picker.open;
+    let (mut open, mut error) = (picker.open, picker.error);
+    let on_add = EventHandler::new(move |_| {
+        error.set(None);
+        open.set(true);
+    });
 
     rsx! {
-        {membership_body(held.as_ref(), in_series, EventHandler::new(move |_| open.set(true)))}
+        {membership_body(held.as_ref(), in_series, on_add)}
         if open() {
             ShelfPickerModal {
                 heading: "Add to shelf".to_string(),

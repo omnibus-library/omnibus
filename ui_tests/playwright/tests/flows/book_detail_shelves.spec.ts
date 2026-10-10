@@ -191,6 +191,53 @@ test("keeps the shelf unchanged when the add fails", async ({
     await expect(
       page.getByTestId("bdmq-shelves").filter({ hasText: name }),
     ).toHaveCount(0);
+
+    // The failure belongs to that visit: a reopened picker starts clean.
+    await page.getByTestId("shelf-picker-close").click();
+    await expect(picker).toHaveCount(0);
+    await openPicker(page);
+    await expect(page.getByTestId("shelf-picker-error")).toHaveCount(0);
+  });
+});
+
+test("keeps the shelf unchanged when the remove fails", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  await withManualShelf(request, "E2E Book Shelf", async ({ id, name }) => {
+    const filed = await request.post("/api/rpc/shelves/add-books", {
+      data: { id, book_uuids: [uuid] },
+    });
+    expect(filed.status(), "filing the book on the shelf failed").toBe(200);
+
+    await gotoReady(page, `/books/${uuid}`);
+    const picker = await openPicker(page);
+    const row = picker.getByRole("checkbox", { name, exact: true });
+    await expect(row).toBeChecked();
+
+    await page.route("**/api/rpc/shelves/remove-book", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "forced failure",
+      }),
+    );
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/shelves/remove-book",
+        expectedBody: { id, book_uuid: uuid },
+        expectedStatus: 500,
+      },
+      async () => row.click(),
+    );
+    await page.unroute("**/api/rpc/shelves/remove-book");
+
+    await expect(page.getByTestId("shelf-picker-error")).toContainText(name);
+    await expect(row).toBeChecked();
+    await expect(page.getByTestId("bdmq-shelves")).toContainText(name);
   });
 });
 
