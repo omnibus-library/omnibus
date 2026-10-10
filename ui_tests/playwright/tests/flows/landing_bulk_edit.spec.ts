@@ -232,6 +232,9 @@ test("keep the selection when adding to a shelf fails", async ({
   page,
   request,
 }) => {
+  const uuids = await Promise.all(
+    [PRIMARY, SECONDARY].map((t) => fetchBookIdByTitle(request, t.title)),
+  );
   await withManualShelf(request, "E2E Bulk Shelf", async ({ id }) => {
     await gotoReady(page, "/");
     await switchToTableView(page);
@@ -251,6 +254,7 @@ test("keep the selection when adding to a shelf fails", async ({
       {
         method: "POST",
         url: "/api/rpc/shelves/add-books",
+        expectedBody: { id, book_uuids: [...uuids].sort() },
         expectedStatus: 500,
       },
       async () => picker.getByTestId(`shelf-picker-row-${id}`).click(),
