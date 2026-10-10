@@ -5,7 +5,7 @@
 
 use omnibus_shared::physical::WishlistSource;
 use omnibus_shared::{
-    CreateShelfRequest, ShelfKind, SortDir, SortKey, UpdateShelfRequest, Visibility,
+    CreateShelfRequest, ShelfKind, SortDir, SortKey, UpdateShelfRequest, ViewFilters, Visibility,
 };
 
 use super::super::*;
@@ -95,9 +95,16 @@ async fn wishlist_shelf_count_and_page_come_from_wishlist_entries() {
     let shelf = get_shelf(&pool, id).await.unwrap().unwrap();
     assert_eq!(shelf.book_count, 2);
 
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.books.len(), 2);
 }
 
@@ -127,9 +134,16 @@ async fn wishlist_shelf_shows_fileless_entries_hidden_from_all_books() {
         .unwrap();
 
     let shelf = get_shelf(&pool, id).await.unwrap().unwrap();
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.books.len(), 1);
     assert_eq!(page.books[0].title.as_deref(), Some("Someday"));
 }

@@ -6,6 +6,7 @@
 
 use omnibus_shared::{
     MatchMode, RuleField, RuleOp, ShelfKind, ShelfRule, SortDir, SortKey, UpdateShelfRequest,
+    ViewFilters,
 };
 
 use super::super::*;
@@ -29,9 +30,16 @@ async fn create_smart_shelf_membership_matches_tag_rule() {
     assert_eq!(shelf.kind, ShelfKind::Smart);
     assert_eq!(shelf.book_count, 2);
 
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.books.len(), 2);
     assert!(page
         .books
@@ -221,9 +229,16 @@ async fn smart_shelf_tag_rule_matches_physical_only_book_with_copy() {
     .unwrap();
     assert_eq!(shelf.book_count, 1);
 
-    let page = shelf_page(&pool, &shelf, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.books.len(), 1);
     assert_eq!(page.books[0].title.as_deref(), Some("Paper Only"));
 }

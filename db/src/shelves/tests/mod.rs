@@ -5,6 +5,7 @@
 //! shelf-exclusive hidden set.
 
 mod crud;
+mod filtered_page;
 mod hidden_uuids;
 mod listing;
 mod membership;

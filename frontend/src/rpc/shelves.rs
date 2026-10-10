@@ -5,7 +5,7 @@ use dioxus::fullstack::{get, post};
 use dioxus::prelude::*;
 use omnibus_shared::{
     CreateShelfRequest, MatchMode, RulePreview, Shelf, ShelfPage, ShelfRule, ShelfSummary, SortDir,
-    SortKey, UpdateShelfRequest,
+    SortKey, UpdateShelfRequest, ViewFilters,
 };
 
 #[cfg(feature = "server")]
@@ -124,9 +124,20 @@ pub async fn rpc_get_shelf_page(
     sort_dir: SortDir,
 ) -> Result<ShelfPage> {
     let shelf = shelf_for_view(&pool.0, id, &user).await?;
-    Ok(db::shelf_page(&pool.0, &shelf, sort_key, sort_dir)
-        .await
-        .map_err(|e| map_shelf_error("shelf page", e))?)
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    Ok(db::shelf_page(
+        &pool.0,
+        &shelf,
+        sort_key,
+        sort_dir,
+        &ViewFilters::default(),
+        viewer,
+    )
+    .await
+    .map_err(|e| map_shelf_error("shelf page", e))?)
 }
 
 /// Append books to a hand-picked shelf (owner or admin).

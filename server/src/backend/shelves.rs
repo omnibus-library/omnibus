@@ -13,7 +13,7 @@ use axum::{
 use omnibus_db::{self as db, shelves::ShelfError};
 use omnibus_shared::{
     validate_book_uuids, CreateShelfRequest, RulePreviewRequest, Shelf, SortDir, SortKey,
-    UpdateShelfRequest,
+    UpdateShelfRequest, ViewFilters,
 };
 
 use super::{internal, AppState};
@@ -81,7 +81,21 @@ pub(super) async fn get_shelf_page(
         Ok(s) => s,
         Err(resp) => return resp,
     };
-    match db::shelf_page(&state.pool, &shelf, q.sort_key(), q.sort_dir()).await {
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    let filters = ViewFilters::default();
+    match db::shelf_page(
+        &state.pool,
+        &shelf,
+        q.sort_key(),
+        q.sort_dir(),
+        &filters,
+        viewer,
+    )
+    .await
+    {
         Ok(page) => Json(page).into_response(),
         Err(e) => map_err(e),
     }
