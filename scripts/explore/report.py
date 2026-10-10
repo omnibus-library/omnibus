@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Render one exploration run as a markdown report.
+"""Render one exploration run as a summary and the files it points to.
 
 Usage:
-  report.py <run-id> [--out PATH] [--server-log PATH ...] [--no-server-log]
+  report.py <run-id> [--out DIR|-] [--groups PATH] [--server-log PATH ...] [--no-server-log]
+
+Writes four files into the run directory: `report.md` (the summary a human reads
+first), `defects.md` and `execution-defects.md` (the runner's groups from
+`groups.json`, then every row), and `timeline.md` (the server-log joins and the
+merged journal). Without `groups.json` every row is listed as ungrouped.
 
 The report is the run's only output — nothing here files a bug, opens an issue,
 or gates anything. That makes terseness the whole design constraint: a document
@@ -30,6 +35,7 @@ instance over ssh. Correlation lives in correlate.py.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -56,6 +62,8 @@ from correlate import (  # noqa: E402
 )
 
 DETAIL_DEFAULT = "medium"
+OUTPUT_FILES = (("Summary", "report.md"), ("Defects", "defects.md"),
+                ("Execution defects", "execution-defects.md"), ("Timeline", "timeline.md"))
 TABLE_CLIP = 140
 DETAIL_CLIP = 1200
 # A summary row is a pointer to the detail block, not a substitute for it —
@@ -106,6 +114,57 @@ class Source:
     caveat: str | None = None
 
 
+@dataclass(frozen=True)
+class Group:
+    """One group of anomaly rows the runner judged to share a cause (`groups.json`)."""
+
+    title: str
+    root_cause: str
+    checked: bool
+    lines: tuple[int, ...]
+
+
+def load_groups(path: Path) -> dict[str, list[Group]]:
+    """Read `groups.json` into its `defects` / `execution` sides — each only if present."""
+    data = json.loads(path.read_text())
+    return {
+        side: [Group(g["title"], g.get("root_cause", ""), bool(g.get("checked")),
+                     tuple(g["lines"])) for g in data[side]]
+        for side in ("defects", "execution") if side in data
+    }
+
+
+def worst_severity(group: Group, rows: list) -> str:
+    """The most severe severity among a group's rows."""
+    members = [a for a in rows if a.line in group.lines]
+    return min(members, key=lambda a: severity_rank(a.severity)).severity
+
+
+def split_why(why: str) -> tuple[str | None, str]:
+    """`player.seek: no position recorded` → (`player.seek`, `no position recorded`)."""
+    action, sep, reason = why.partition(": ")
+    if sep and reason and " " not in action:
+        return action, reason
+    return None, why
+
+
+def check_groups(groups: list[Group], rows: list, noun: str) -> None:
+    """Exit naming the first row the grouping misplaces: each belongs to exactly one group."""
+    lines = {a.line for a in rows}
+    grouped: dict[int, str] = {}
+    for g in groups:
+        for line in g.lines:
+            if line not in lines:
+                sys.exit(f"groups.json: '{g.title}' lists L{line}, which is not a {noun}")
+            if line in grouped:
+                sys.exit(f"groups.json: {noun} L{line} is in both "
+                         f"'{grouped[line]}' and '{g.title}'")
+            grouped[line] = g.title
+    for a in rows:
+        if a.line not in grouped:
+            sys.exit(f"groups.json: {noun} L{a.line} is in no group")
+
+
 def when_same(group) -> bool:
     return group.count == 1 or group.first.ts.replace(microsecond=0) == group.findings[-1].ts.replace(microsecond=0)
 
@@ -131,6 +190,15 @@ def upper_first(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+def severity_breakdown(rows) -> str:
+    """`2 high, 1 low` — each severity's count, worst first."""
+    counts: dict[str, int] = {}
+    for a in rows:
+        counts[a.severity] = counts.get(a.severity, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: severity_rank(kv[0]))
+    return ", ".join(f"{n} {k}" for k, n in ranked)
+
+
 # Worst first, so the verdict leads with the flows that went wrong.
 VERDICT_ORDER = ["fail", "uncertain", "unclosed", "unstated", "pass"]
 
@@ -139,8 +207,10 @@ class Report:
     """Assembles the markdown. Sections append themselves only when non-empty."""
 
     def __init__(self, run: Run, args, audit: Audit | None, audit_src: Source,
-                 groups: list[LogGroup], log_src: Source):
+                 groups: list[LogGroup], log_src: Source,
+                 row_groups: dict[str, list[Group]] | None = None):
         self.run = run
+        self.row_groups = row_groups or {}
         self.args = args
         self.audit = audit
         self.audit_src = audit_src
@@ -154,15 +224,13 @@ class Report:
         # list buries the first kind under the second on a friction-heavy run.
         self.defect_rows = [a for a in self.anomalies if a.kind == "defect"]
         self.issue_rows = [a for a in self.anomalies if a.kind == "issue"]
+        for side, noun, rows in (("defects", "defect", self.defect_rows),
+                                 ("execution", "execution issue", self.issue_rows)):
+            if side in self.row_groups:
+                check_groups(self.row_groups[side], rows, noun)
         self.out: list[str] = []
 
     # ---------- facts the verdict and the sections both need ----------
-
-    def severity_counts(self) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for a in self.anomalies:
-            counts[a.severity] = counts.get(a.severity, 0) + 1
-        return dict(sorted(counts.items(), key=lambda kv: severity_rank(kv[0])))
 
     def verdict_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -216,20 +284,65 @@ class Report:
     def add(self, *lines: str) -> None:
         self.out.extend(lines)
 
-    def render(self) -> str:
-        self.header()
-        self.verdict()
-        self.citations()
-        self.coverage()
-        self.defects()
-        self.execution_issues()
-        self.detail()
-        self.server_log()
-        self.audit_section()
-        self.integrity()
-        self.timeline()
-        self.journal_files()
+    def documents(self) -> dict[str, str]:
+        """Every file the run's output is split into, keyed by file name."""
+        return {
+            "report.md": self.compose(
+                self.header, self.verdict, self.citations, self.coverage, self.defects,
+                self.execution_issues, self.server_log_summary, self.audit_section,
+                self.integrity, self.journal_files),
+            "defects.md": self.compose(lambda: self.rows_file(
+                "Defects", "Defect", self.defect_rows, self.row_groups.get("defects"))),
+            "execution-defects.md": self.compose(lambda: self.rows_file(
+                "Execution issues", "Issue", self.issue_rows, self.row_groups.get("execution"))),
+            "timeline.md": self.compose(lambda: self.title("Timeline"), self.server_log,
+                                        self.unverifiable_list, self.timeline),
+        }
+
+    def rows_file(self, what: str, label: str, rows: list, groups: list[Group] | None) -> None:
+        """A detail file: its groups first when the runner wrote them, then every row."""
+        self.title(what)
+        if groups is None:
+            self.anomaly_table("Ungrouped", rows)
+        else:
+            numbers = {a.line: i for i, a in enumerate(rows, start=1)}
+            ranked = self.rank_groups(groups, rows)
+            self.group_table(ranked, rows, numbers)
+            self.grouped_row_table(f"All {what[:1].lower()}{what[1:]}", rows, ranked)
+        self.detail(label, rows)
+
+    @staticmethod
+    def rank_groups(groups: list[Group], rows: list) -> list[Group]:
+        """Worst member first, then the larger group — the order a reader triages in."""
+        return sorted(groups, key=lambda g: (severity_rank(worst_severity(g, rows)),
+                                             -len(g.lines), g.title))
+
+    def group_table(self, groups: list[Group], rows: list, numbers: dict[int, int]) -> None:
+        self.add("## Groups", "", "| G | Group | Priority | Rows | Root cause | Checked |",
+                 "|---:|---|---|---|---|---|")
+        for gi, g in enumerate(groups, start=1):
+            members = ", ".join(str(n) for n in sorted(numbers[line] for line in g.lines))
+            self.add(f"| {gi} | {clip(g.title, TABLE_CLIP)} | {worst_severity(g, rows)} | "
+                     f"{members} | {clip(g.root_cause, DETAIL_CLIP)} | "
+                     f"{'✅' if g.checked else '—'} |")
+        self.add("")
+
+    def grouped_row_table(self, title: str, rows: list, groups: list[Group]) -> None:
+        group_of = {line: gi for gi, g in enumerate(groups, start=1) for line in g.lines}
+        self.add(f"## {title}", "", "| # | Priority | Description | Agent | Group |",
+                 "|---:|---|---|---|---|")
+        for i, a in enumerate(rows, start=1):
+            self.add(f"{self.row_cells(i, a)} G{group_of[a.line]} |")
+        self.add("")
+
+    def compose(self, *sections) -> str:
+        self.out = []
+        for section in sections:
+            section()
         return "\n".join(self.out).rstrip() + "\n"
+
+    def title(self, what: str) -> None:
+        self.add(f"# {what} — run {self.run.run_id}", "")
 
     def header(self) -> None:
         run = self.run
@@ -312,8 +425,8 @@ class Report:
         )
 
     def anomaly_phrase(self) -> str:
-        breakdown = ", ".join(f"{n} {k}" for k, n in self.severity_counts().items())
-        return f"{plural(len(self.anomalies), 'anomaly', 'anomalies')} ({breakdown})"
+        return (f"{plural(len(self.anomalies), 'anomaly', 'anomalies')} "
+                f"({severity_breakdown(self.anomalies)})")
 
     def coverage(self) -> None:
         """What the run actually covered — the evidence behind the verdict."""
@@ -333,14 +446,34 @@ class Report:
 
     def defects(self) -> None:
         """What the agents say is wrong with the app."""
-        self.anomaly_table("Defects", self.defect_rows)
+        self.row_summary("Defects", "defect", self.defect_rows, "defects.md",
+                         self.row_groups.get("defects"))
 
     def execution_issues(self) -> None:
         """Friction the agents hit while running — a control that responded
         slowly, a step they could not validate, a step that took far longer
         than it should. Reportable, but not a claim that the app is wrong.
         """
-        self.anomaly_table("Execution issues", self.issue_rows)
+        self.row_summary("Execution issues", "execution issue", self.issue_rows,
+                         "execution-defects.md", self.row_groups.get("execution"))
+
+    def row_summary(self, title: str, noun: str, rows: list, file: str,
+                    groups: list[Group] | None) -> None:
+        """The summary's pointer to a detail file: its groups, never the rows themselves."""
+        if not rows:
+            return
+        counted = f"{plural(len(rows), noun)} ({severity_breakdown(rows)})"
+        if groups is None:
+            self.add(f"## {title}", "", f"{counted}, **not grouped** — no `groups.json` beside "
+                                        f"the journal. Every row is in `{file}`.", "")
+            return
+        self.add(f"## {title}", "",
+                 f"{counted} in {plural(len(groups), 'group')}. Every row is in `{file}`.", "",
+                 "| G | Group | Priority | Rows |", "|---:|---|---|---:|")
+        for gi, g in enumerate(self.rank_groups(groups, rows), start=1):
+            self.add(f"| {gi} | {clip(g.title, TABLE_CLIP)} | {worst_severity(g, rows)} | "
+                     f"{len(g.lines)} |")
+        self.add("")
 
     def anomaly_table(self, title: str, rows: list) -> None:
         """AC2: every row cites the journal line needed to reproduce it."""
@@ -350,34 +483,48 @@ class Report:
                  "| # | Priority | Description | Agent |",
                  "|---:|---|---|---|")
         for i, a in enumerate(rows, start=1):
-            summary = a.note or a.params.get("observed") or a.params.get("expected") or ""
-            self.add(f"| {i} | {a.severity} | {clip(summary, DESCRIPTION_CLIP)} "
-                     f"(`L{a.line}`) | {a.actor} |")
+            self.add(self.row_cells(i, a))
         self.add("")
 
-    def detail(self) -> None:
-        # Numbered per table, and labelled with which one — a bare "3." would
-        # be ambiguous the moment there are two numbered lists above it.
+    @staticmethod
+    def row_cells(i: int, a) -> str:
+        """`| # | Priority | Description | Agent |` — the description cites its journal line."""
+        summary = a.note or a.params.get("observed") or a.params.get("expected") or ""
+        return (f"| {i} | {a.severity} | {clip(summary, DESCRIPTION_CLIP)} "
+                f"(`L{a.line}`) | {a.actor} |")
+
+    def detail(self, label: str, rows: list) -> None:
+        """Expand each row at or above `--detail-severity`, numbered as in its table."""
         cut = severity_rank(self.args.detail_severity)
-        shown = [(label, i, a)
-                 for label, rows in (("Defect", self.defect_rows), ("Issue", self.issue_rows))
-                 for i, a in enumerate(rows, start=1)
-                 if severity_rank(a.severity) <= cut]
+        shown = [(i, a) for i, a in enumerate(rows, start=1) if severity_rank(a.severity) <= cut]
         if not shown:
             return
         self.add(f"### Detail — {self.args.detail_severity} and above", "")
-        for label, i, a in shown:
+        for i, a in shown:
             self.add(f"#### {label} {i}. `{a.severity}` · {a.actor} · {a.flow} · "
                      f"{hhmmss(a)} · `L{a.line}`", "")
             if a.target:
                 self.add(f"- **Target** `{a.target}`")
-            for label, keys in DETAIL_FIELDS:
+            for field, keys in DETAIL_FIELDS:
                 value = next((a.params[k] for k in keys if a.params.get(k)), None)
                 if value:
-                    self.add(f"- **{label}** {clip(value, DETAIL_CLIP)}")
+                    self.add(f"- **{field}** {clip(value, DETAIL_CLIP)}")
             if a.note:
                 self.add(f"- **Note** {clip(a.note, DETAIL_CLIP)}")
             self.add(f"- **Replay** `sed -n '{a.line}p' {self.run.path}`", "")
+
+    def server_log_summary(self) -> None:
+        """One line per log shape; the joins to agent actions live in timeline.md."""
+        if not self.groups:
+            return
+        self.add("## Server log", "",
+                 f"{plural(self.log_findings, 'finding')} in "
+                 f"{plural(len(self.groups), 'distinct shape')}. Each is joined to the action "
+                 "that caused it in `timeline.md`.", "")
+        for g in self.groups:
+            self.add(f"- `{g.first.level}` {clip(g.first.headline, 110)} — "
+                     f"{plural(g.count, 'occurrence')}")
+        self.add("")
 
     def server_log(self) -> None:
         """AC4: each finding is joined to an agent action, not appended in a heap."""
@@ -444,13 +591,32 @@ class Report:
                 )
             self.add("")
         if a.unverifiable:
-            self.add(f"{plural(len(a.unverifiable), 'write')} the audit could not check:", "")
+            self.add(f"{plural(len(a.unverifiable), 'write')} the audit could not check, "
+                     "by reason:", "")
+            tally: dict[str, tuple[int, list[str]]] = {}
             for u in a.unverifiable:
-                seq = u.get("seq")
-                line = self.run.line_of(str(u.get("actor")), seq) if isinstance(seq, int) else None
-                cite = f"`L{line}`" if line else f"seq {seq}"
-                self.add(f"- {u.get('actor')} {cite} — {clip(u.get('why'), 200)}")
+                action, reason = split_why(str(u.get("why") or ""))
+                count, actions = tally.get(reason, (0, []))
+                if action and action not in actions:
+                    actions.append(action)
+                tally[reason] = (count + 1, actions)
+            for reason, (count, actions) in sorted(tally.items(), key=lambda kv: -kv[1][0]):
+                listed = f" ({', '.join(f'`{x}`' for x in actions)})" if actions else ""
+                self.add(f"- {count} × {clip(reason, 200)}{listed}")
             self.add("")
+
+    def unverifiable_list(self) -> None:
+        """Every write the audit declined to judge, one line each, cited by journal line."""
+        a = self.audit
+        if a is None or not a.unverifiable:
+            return
+        self.add("## Audit — writes not checked", "")
+        for u in a.unverifiable:
+            seq = u.get("seq")
+            line = self.run.line_of(str(u.get("actor")), seq) if isinstance(seq, int) else None
+            cite = f"`L{line}`" if line else f"seq {seq}"
+            self.add(f"- {u.get('actor')} {cite} — {clip(u.get('why'), 200)}")
+        self.add("")
 
     def integrity(self) -> None:
         """Flows that never opened, never closed, or closed badly."""
@@ -525,8 +691,9 @@ class Report:
                  else f"- Audit — not written ({self.audit_src.headline})")
 
         if self.args.out != "-":
-            out = Path(self.args.out) if self.args.out else run_dir / "report.md"
-            self.add(f"- This report — `{out}`")
+            out_dir = Path(self.args.out) if self.args.out else run_dir
+            for label, name in OUTPUT_FILES:
+                self.add(f"- {label} — `{out_dir / name}`")
         for path in self.args.server_log or []:
             self.add(f"- Server log — `{path}`")
         self.add("")
@@ -576,10 +743,12 @@ def main() -> None:
     ap.add_argument("run", help="run id, e.g. r-20260828-02")
     ap.add_argument("--journal-dir", default=None,
                     help="defaults to $OMNIBUS_EXPLORE_JOURNAL_DIR")
-    ap.add_argument("--out", default=None, help="output path, or - for stdout "
-                                                "(default <run dir>/report.md)")
+    ap.add_argument("--out", default=None, help="output directory, or - to print every "
+                                                "file to stdout (default <run dir>)")
     ap.add_argument("--audit", type=Path, default=None,
                     help="audit.json to reconcile against (default <run dir>/audit.json)")
+    ap.add_argument("--groups", type=Path, default=None,
+                    help="the runner's groups.json (default <run dir>/groups.json)")
     ap.add_argument("--server-log", type=Path, action="append", default=[],
                     help="read a local JSON log file instead of fetching over ssh; repeatable")
     ap.add_argument("--no-server-log", action="store_true",
@@ -635,14 +804,17 @@ def main() -> None:
         log_src = Source(status, f"the server log was **not read** ({status})"
                          if status.startswith("unavailable") else None)
     groups = group_and_attribute(findings, run, args.window)
+    groups_path = args.groups or run_dir / "groups.json"
+    row_groups = load_groups(groups_path) if groups_path.is_file() else {}
 
-    text = Report(run, args, audit, audit_src, groups, log_src).render()
+    docs = Report(run, args, audit, audit_src, groups, log_src, row_groups).documents()
     if args.out == "-":
-        sys.stdout.write(text)
+        sys.stdout.write("\n".join(f"==> {name} <==\n{text}" for name, text in docs.items()))
         return
-    out = Path(args.out) if args.out else run_dir / "report.md"
-    out.write_text(text)
-    print(f"wrote {out} ({len(text.splitlines())} lines)")
+    out_dir = Path(args.out) if args.out else run_dir
+    for name, text in docs.items():
+        (out_dir / name).write_text(text)
+        print(f"wrote {out_dir / name} ({len(text.splitlines())} lines)")
 
 
 if __name__ == "__main__":
