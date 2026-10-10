@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
@@ -23,13 +23,17 @@ test.beforeAll(async ({ request }) => {
 const TARGETS = FIXTURE_BOOKS.filter((b) => b.slug.startsWith("bulk-target-"));
 const [PRIMARY, SECONDARY] = [TARGETS[0]!, TARGETS[1]!];
 
+/** The selection checkbox in a target's table row. */
+function selectBox(page: Page, target: (typeof TARGETS)[number]): Locator {
+  return page
+    .getByTestId(`ebook-row-${target.slug}`)
+    .getByTestId("ebook-select");
+}
+
 /** Check both target rows' selection checkboxes. */
 async function selectTargets(page: Page) {
   for (const target of [PRIMARY, SECONDARY]) {
-    await page
-      .getByTestId(`ebook-row-${target.slug}`)
-      .getByTestId("ebook-select")
-      .check();
+    await selectBox(page, target).check();
   }
 }
 
@@ -224,7 +228,9 @@ test("add the selected books to a hand-picked shelf in one request", async ({
     await expect(picker).toHaveCount(0);
     await expect(page.getByTestId("bulk-edit-bar")).toHaveCount(0);
     await expect(galleryTile(page, id)).toContainText("2 books");
-    await expect(page.getByTestId("ebook-select").first()).not.toBeChecked();
+    for (const target of [PRIMARY, SECONDARY]) {
+      await expect(selectBox(page, target)).not.toBeChecked();
+    }
   });
 });
 
