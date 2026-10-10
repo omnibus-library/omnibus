@@ -11335,10 +11335,12 @@ html {
    down by the measured topbar height and the card's height budget shrinks to
    match. Without this a tall modal's top controls sit under the topbar and
    are unclickable. */
-.bdmq .author-photo-modal-backdrop {
+.bdmq .author-photo-modal-backdrop,
+.bdmq .shelf-modal-overlay {
   padding-top: calc(var(--bdmq-top, 61px) + 12px);
 }
-.bdmq .mg-modal {
+.bdmq .mg-modal,
+.bdmq .shelf-picker-card {
   max-height: calc(100vh - var(--bdmq-top, 61px) - 52px);
 }
 
@@ -11569,7 +11571,8 @@ html {
 /* The rail lives in a higher stacking layer than the panel-hosted overlays,
    so it would float over their dimmed scrim — step it aside while one is up. */
 .bdmq-stage:has(.bdmq-overlay) .bdmq-dots,
-.bdmq-stage:has(.author-photo-modal-backdrop) .bdmq-dots {
+.bdmq-stage:has(.author-photo-modal-backdrop) .bdmq-dots,
+.bdmq-stage:has(.shelf-modal-overlay) .bdmq-dots {
   opacity: 0; pointer-events: none;
 }
 .bdmq-dotrow {
@@ -11924,6 +11927,7 @@ html {
 .rx-shelf-cap .u { font-family: var(--mono); font-size: 10px; color: var(--ink-3); margin-top: 3px; letter-spacing: .03em; }
 .bdmq-shelfchips { margin-bottom: 8px; }
 .bdmq-shelfchip.first { border-color: var(--accent); }
+.bdmq-shelf-actions { margin-top: 14px; }
 
 /* ── Recommendations stop (tightened, per the design) ── */
 /* Fixed 98px tiles: `min-width: 0` kills the flex min-content floor (a wide

@@ -356,6 +356,8 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     hasCover: true,
   },
   {
+    // Reserved for book_detail_shelves.spec.ts: its tests file this book on
+    // (and off) shelves of their own, so no other spec may read its shelves.
     slug: "standalone-forest",
     filename: "standalone-forest.epub",
     title: "La Foret des Algorithmes",
