@@ -5,7 +5,7 @@
 use omnibus_shared::physical::WishlistSource;
 use omnibus_shared::{
     FilterClause, FilterField, FilterMode, MatchMode, RuleField, RuleOp, ShelfRule, SortDir,
-    SortKey, ViewFilters,
+    SortKey, ViewFilters, Visibility,
 };
 use sqlx::SqlitePool;
 
@@ -216,4 +216,62 @@ async fn shelf_page_intersects_with_a_shelf_clause_naming_another_shelf() {
     .await;
 
     assert_eq!(found, ["Charlie", "Bravo"]);
+}
+
+#[tokio::test]
+async fn shelf_page_shelf_clause_matches_nothing_for_another_readers_private_shelf() {
+    let (pool, _covers) = tagged_library().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let outsider = make_user(&pool, "outsider", false).await;
+    let mut public_req = manual_req(
+        "Public",
+        vec![
+            uuid_by_title(&pool, "Charlie").await,
+            uuid_by_title(&pool, "Alpha").await,
+            uuid_by_title(&pool, "Bravo").await,
+        ],
+    );
+    public_req.visibility = Visibility::Public;
+    let public = create_shelf(&pool, owner, &public_req).await.unwrap();
+    let private = create_shelf(
+        &pool,
+        owner,
+        &manual_req(
+            "Private",
+            vec![
+                uuid_by_title(&pool, "Delta").await,
+                uuid_by_title(&pool, "Bravo").await,
+                uuid_by_title(&pool, "Charlie").await,
+            ],
+        ),
+    )
+    .await
+    .unwrap();
+    let viewer = Viewer {
+        user_id: outsider,
+        is_admin: false,
+    };
+    let private_id = private.id.to_string();
+
+    let included = titles_on(
+        &pool,
+        &public,
+        SortKey::Title,
+        SortDir::Asc,
+        &filter_of(FilterField::Shelf, FilterMode::Include, &[&private_id]),
+        viewer,
+    )
+    .await;
+    let excluded = titles_on(
+        &pool,
+        &public,
+        SortKey::Title,
+        SortDir::Asc,
+        &filter_of(FilterField::Shelf, FilterMode::Exclude, &[&private_id]),
+        viewer,
+    )
+    .await;
+
+    assert!(included.is_empty(), "leaked {included:?}");
+    assert_eq!(excluded, ["Charlie", "Alpha", "Bravo"]);
 }
