@@ -2,8 +2,8 @@ use super::{ebooks_page, merge_candidates, search_ebooks};
 use omnibus_db::test_support::{indexed, seed_synced_ebook, seed_user};
 use omnibus_db::Viewer;
 use omnibus_shared::{
-    FilterClause, FilterField, FilterMode, Settings, SortDir, SortKey, ViewFilters,
-    MAX_FILTER_CLAUSES, SEARCH_QUERY_MAX_LEN,
+    CreateShelfRequest, FilterClause, FilterField, FilterMode, LibraryPage, Settings, ShelfKind,
+    SortDir, SortKey, ViewFilters, Visibility, MAX_FILTER_CLAUSES, SEARCH_QUERY_MAX_LEN,
 };
 
 async fn configured_pool(audiobook_path: Option<&str>) -> sqlx::SqlitePool {
@@ -276,6 +276,121 @@ async fn ebooks_page_without_exclusion_keeps_current_total_and_no_hidden_count()
     assert_eq!(page.hidden_count, None);
 }
 
+fn clause(field: FilterField, mode: FilterMode, values: &[&str]) -> FilterClause {
+    FilterClause {
+        field,
+        mode,
+        values: values.iter().map(|v| v.to_string()).collect(),
+    }
+}
+
+fn filters_of(clauses: Vec<FilterClause>) -> ViewFilters {
+    ViewFilters {
+        clauses,
+        ..Default::default()
+    }
+}
+
+fn titles_of(page: &LibraryPage) -> Vec<&str> {
+    page.books
+        .iter()
+        .filter_map(|b| b.title.as_deref())
+        .collect()
+}
+
+/// A filtered first page of up to 50 books sorted by title, hiding `exclude_formats`.
+async fn filtered_first_page(
+    pool: &sqlx::SqlitePool,
+    filters: &ViewFilters,
+    exclude_formats: &[String],
+) -> LibraryPage {
+    ebooks_page(
+        pool,
+        SortKey::Title,
+        SortDir::Asc,
+        filters,
+        Viewer::default(),
+        exclude_formats,
+        None,
+        50,
+        false,
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn ebooks_page_first_page_total_counts_only_books_matching_the_filter() {
+    let pool = configured_pool(None).await;
+    seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
+    seed_synced_ebook(&pool, "b.epub", "Beta", "Bob Author").await;
+    seed_synced_ebook(&pool, "c.cbz", "Comic", "Ann Author").await;
+    let filters = filters_of(vec![clause(
+        FilterField::Author,
+        FilterMode::Exclude,
+        &["Bob Author"],
+    )]);
+
+    let page = filtered_first_page(&pool, &filters, &[]).await;
+
+    assert_eq!(titles_of(&page), vec!["Alpha", "Comic"]);
+    assert_eq!(page.total, Some(2));
+    assert_eq!(page.hidden_count, None);
+}
+
+#[tokio::test]
+async fn ebooks_page_hidden_count_compares_under_the_same_filter() {
+    let pool = configured_pool(None).await;
+    seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
+    seed_synced_ebook(&pool, "b.cbz", "Bravo", "Ann Author").await;
+    seed_synced_ebook(&pool, "c.cbz", "Charlie", "Bob Author").await;
+    seed_synced_ebook(&pool, "d.epub", "Delta", "Bob Author").await;
+    let filters = filters_of(vec![clause(
+        FilterField::Author,
+        FilterMode::Include,
+        &["Ann Author"],
+    )]);
+
+    let page = filtered_first_page(&pool, &filters, &["cbz".to_string()]).await;
+
+    assert_eq!(titles_of(&page), vec!["Alpha"]);
+    assert_eq!(page.total, Some(1));
+    assert_eq!(
+        page.hidden_count,
+        Some(1),
+        "only Ann's comic is hidden, not Bob's"
+    );
+}
+
+#[tokio::test]
+async fn ebooks_page_rejects_an_invalid_filter() {
+    let pool = configured_pool(None).await;
+    seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
+    let filters = filters_of(vec![clause(
+        FilterField::Shelf,
+        FilterMode::Include,
+        &["favourites"],
+    )]);
+
+    let result = ebooks_page(
+        &pool,
+        SortKey::Title,
+        SortDir::Asc,
+        &filters,
+        Viewer::default(),
+        &[],
+        None,
+        50,
+        false,
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "a non-numeric shelf value must be rejected"
+    );
+}
+
 /// Index a two-book series and a standalone book under `/ebooks`.
 async fn seed_series(pool: &sqlx::SqlitePool) {
     omnibus_db::replace_books(
@@ -371,6 +486,85 @@ async fn ebooks_page_without_stacking_lists_every_book_and_no_stacks() {
 
     assert_eq!(page.books.len(), 3);
     assert!(page.stacks.is_empty());
+}
+
+#[tokio::test]
+async fn ebooks_page_shelf_clause_ignores_another_readers_private_shelf() {
+    let pool = configured_pool(None).await;
+    seed_series(&pool).await;
+    let owner = seed_user(&pool, "owner").await;
+    let outsider = seed_user(&pool, "outsider").await;
+    let lone = omnibus_db::list_books(&pool, "/ebooks")
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|b| b.title.as_deref() == Some("Lone Book"))
+        .and_then(|b| b.unique_identifier)
+        .unwrap();
+    let shelf = omnibus_db::create_shelf(
+        &pool,
+        owner,
+        &CreateShelfRequest {
+            kind: ShelfKind::Manual,
+            name: "Secret".into(),
+            description: None,
+            visibility: Visibility::Private,
+            match_mode: None,
+            rules: vec![],
+            book_uuids: vec![lone],
+        },
+    )
+    .await
+    .unwrap()
+    .id
+    .to_string();
+    let on_shelf = filters_of(vec![clause(
+        FilterField::Shelf,
+        FilterMode::Include,
+        &[&shelf],
+    )]);
+    let off_shelf = filters_of(vec![clause(
+        FilterField::Shelf,
+        FilterMode::Exclude,
+        &[&shelf],
+    )]);
+    let page_for = |user_id, filters: ViewFilters, stack| {
+        let pool = pool.clone();
+        async move {
+            let viewer = Viewer {
+                user_id,
+                is_admin: false,
+            };
+            ebooks_page(
+                &pool,
+                SortKey::Title,
+                SortDir::Asc,
+                &filters,
+                viewer,
+                &[],
+                None,
+                50,
+                stack,
+            )
+            .await
+            .unwrap()
+        }
+    };
+
+    for (stack, whole_library) in [
+        (false, vec!["Lone Book", "Saga One", "Saga Two"]),
+        (true, vec!["Lone Book", "Saga One"]),
+    ] {
+        let owners = page_for(owner, on_shelf.clone(), stack).await;
+        let included = page_for(outsider, on_shelf.clone(), stack).await;
+        let excluded = page_for(outsider, off_shelf.clone(), stack).await;
+
+        assert_eq!(titles_of(&owners), vec!["Lone Book"], "stack={stack}");
+        assert!(titles_of(&included).is_empty(), "stack={stack}");
+        assert_eq!(included.total, Some(0), "stack={stack}");
+        assert_eq!(titles_of(&excluded), whole_library, "stack={stack}");
+        assert_eq!(excluded.total, Some(3), "stack={stack}");
+    }
 }
 
 const BLURB: &str = "<p>A <b>long</b> blurb.</p>";

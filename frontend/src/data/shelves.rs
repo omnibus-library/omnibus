@@ -5,7 +5,7 @@
 
 use omnibus_shared::{
     CreateShelfRequest, MatchMode, RulePreview, Shelf, ShelfPage, ShelfRule, ShelfSummary, SortDir,
-    SortKey, UpdateShelfRequest,
+    SortKey, UpdateShelfRequest, ViewFilters,
 };
 
 #[cfg(not(feature = "mobile"))]
@@ -370,7 +370,7 @@ pub async fn shelf_page(
     sort_key: SortKey,
     sort_dir: SortDir,
 ) -> Result<ShelfPage, DataError> {
-    crate::rpc::rpc_get_shelf_page(id, sort_key, sort_dir)
+    crate::rpc::rpc_get_shelf_page(id, sort_key, sort_dir, ViewFilters::default())
         .await
         .map_err(note_server_fn_err)
 }
