@@ -8074,6 +8074,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .shd-books-count { font-size: 11px; color: var(--ink-3); }
 .shd-sort { display: inline-flex; align-items: center; gap: 8px; }
 .atrium .shd-alert { margin-bottom: 16px; }
+/* The filter bar sits between the heading rule and the grid. */
+.shd-books > .fb { margin-bottom: 22px; }
 .shd-grid .shelf-add-tile { min-height: 0; aspect-ratio: 2 / 3; }
 
 .shd-tile { position: relative; transition: opacity .2s; }

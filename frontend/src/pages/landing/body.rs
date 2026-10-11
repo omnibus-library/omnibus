@@ -100,6 +100,7 @@ pub(super) fn web_landing_body(
     let bulk = snapshot_bulk_selection(sigs, (sigs.is_admin)(), bulk_modal_open());
     let books_sig = sigs.books;
     let shelf_books_sig = sigs.shelf_books;
+    let shelf_view_sig = sigs.shelf_view_books;
     // Annotated outside the rsx props — a bare `.into()` there is ambiguous
     // between the dioxus_core and dioxus_stores `SuperInto` impls.
     let author_pool: ReadSignal<Vec<SuggestionItem>> = sigs.pools.authors.into();
@@ -154,7 +155,7 @@ pub(super) fn web_landing_body(
             }
             {render_gallery(sigs, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
             {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), lens, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters, on_add_tile: lens.add_tile() }, on_prefs_change_header, stack_view, on_stack_toggle)}
-            {render_bulk_overlay(bulk, bulk_modal_open, bulk_selected, books_sig, shelf_books_sig, author_pool, tag_pool, genre_pool)}
+            {render_bulk_overlay(bulk, bulk_modal_open, bulk_selected, BookLists { books: books_sig, shelf_books: shelf_books_sig, shelf_view: shelf_view_sig }, author_pool, tag_pool, genre_pool)}
             {render_add_books_overlay(show_add_books, selected_shelf.clone(), &shelf_books_sig.read(), shelves_tick)}
             {render_edit_shelf_overlay(edit_shelf, selected_shelf, shelves_tick)}
             if show_stack {
@@ -325,6 +326,16 @@ fn render_gallery(
     }
 }
 
+/// The book lists a bulk save installs its returned metadata into: the browse
+/// page, and a shelf's full and filtered member lists.
+#[cfg(not(feature = "mobile"))]
+#[derive(Clone, Copy)]
+struct BookLists {
+    books: Signal<Vec<EbookMetadata>>,
+    shelf_books: Signal<Option<Vec<EbookMetadata>>>,
+    shelf_view: Signal<Option<Vec<EbookMetadata>>>,
+}
+
 /// Bulk-edit bar + modal overlay for [`web_landing_body`], split out so the
 /// parent's rsx! reads as one page layout rather than page-plus-modals. A
 /// plain `Element`-returning helper (not a `#[component]`) since it shares
@@ -335,8 +346,7 @@ fn render_bulk_overlay(
     bulk: BulkSelectionSnapshot,
     mut bulk_modal_open: Signal<bool>,
     mut bulk_selected: Signal<BTreeSet<String>>,
-    mut books_sig: Signal<Vec<EbookMetadata>>,
-    mut shelf_books_sig: Signal<Option<Vec<EbookMetadata>>>,
+    lists: BookLists,
     author_pool: ReadSignal<Vec<SuggestionItem>>,
     tag_pool: ReadSignal<Vec<SuggestionItem>>,
     genre_pool: ReadSignal<Vec<SuggestionItem>>,
@@ -360,7 +370,7 @@ fn render_bulk_overlay(
                 },
                 on_close: move |_| bulk_modal_open.set(false),
                 on_saved: move |updated: Vec<EbookMetadata>| {
-                    install_updated_books(&mut books_sig, &mut shelf_books_sig, &updated);
+                    install_updated_books(lists, &updated);
                     bulk_selected.write().clear();
                     bulk_modal_open.set(false);
                 },
@@ -527,17 +537,21 @@ pub(super) fn replace_updated_books(list: &mut [EbookMetadata], updated: &[Ebook
 
 /// Install the bulk save's returned metadata into the browse and shelf list
 /// signals — the same optimistic-install idiom the inline cell editors use,
-/// so no refetch is needed.
+/// so no refetch is needed. A shelf has two lists, the full one and the
+/// filtered one on screen.
 #[cfg(not(feature = "mobile"))]
-fn install_updated_books(
-    books: &mut Signal<Vec<EbookMetadata>>,
-    shelf_books: &mut Signal<Option<Vec<EbookMetadata>>>,
-    updated: &[EbookMetadata],
-) {
+fn install_updated_books(lists: BookLists, updated: &[EbookMetadata]) {
+    let BookLists {
+        mut books,
+        shelf_books,
+        shelf_view,
+    } = lists;
     books.with_mut(|list| replace_updated_books(list, updated));
-    shelf_books.with_mut(|maybe| {
-        if let Some(list) = maybe.as_mut() {
-            replace_updated_books(list, updated);
-        }
-    });
+    for mut shelf_list in [shelf_books, shelf_view] {
+        shelf_list.with_mut(|maybe| {
+            if let Some(list) = maybe.as_mut() {
+                replace_updated_books(list, updated);
+            }
+        });
+    }
 }

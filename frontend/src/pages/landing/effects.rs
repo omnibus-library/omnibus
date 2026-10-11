@@ -360,22 +360,36 @@ pub(super) fn spawn_hero_effect(
     });
 }
 
-/// Signals the shelf-overlay fetch drives (see [`spawn_shelf_books_effect`]).
+/// Signals the shelf-overlay fetches drive (see [`spawn_shelf_books_effect`]
+/// and [`spawn_shelf_view_effect`]).
 #[derive(Copy, Clone)]
 pub(super) struct ShelfFetchSignals {
-    /// `None` = no shelf selected / not loaded yet; `Some` = member list.
+    /// `None` = no shelf selected / not loaded yet; `Some` = the shelf's full
+    /// member list, which no filter narrows. It marks what the add-books
+    /// picker already holds and tells an empty shelf from a filtered-out one.
     pub(super) shelf_books: Signal<Option<Vec<EbookMetadata>>>,
     pub(super) shelf_loading: Signal<bool>,
     pub(super) shelf_error: Signal<Option<String>>,
     pub(super) shelf_epoch: Signal<u64>,
+    /// The members matching the active filters, as the server answered. `None`
+    /// while no filter applies (the full list is then what the lens draws) and
+    /// until the first narrowed answer lands.
+    pub(super) shelf_view_books: Signal<Option<Vec<EbookMetadata>>>,
+    pub(super) shelf_view_error: Signal<Option<String>>,
+    pub(super) shelf_view_epoch: Signal<u64>,
 }
 
-/// Fetch the selected shelf's members whenever the selection or sort axis
-/// changes, or the shelves list refetches (the `u32` tick — an edit-shelf
+/// `(pick, sort, dir, filters, shelves tick)` — every input that refetches the
+/// selected shelf's members under the active filters.
+pub(super) type ShelfViewKey = (ShelfSelection, SortKey, SortDir, ViewFilters, u32);
+
+/// Fetch the selected shelf's full member list whenever the selection or sort
+/// axis changes, or the shelves list refetches (the `u32` tick — an edit-shelf
 /// save can change smart membership, an add-books save manual membership).
 /// Layered over the browse pipeline rather than replacing it — the
 /// always-warm browse page keeps `lib_path`, the header subtitle, and the All
-/// Books mosaic working, and makes switching back to All instant.
+/// Books mosaic working, and makes switching back to All instant. The filtered
+/// view of these members is [`spawn_shelf_view_effect`]'s.
 pub(super) fn spawn_shelf_books_effect(
     server_url: String,
     key: Memo<(ShelfSelection, SortKey, SortDir, u32)>,
@@ -386,6 +400,7 @@ pub(super) fn spawn_shelf_books_effect(
         mut shelf_loading,
         mut shelf_error,
         mut shelf_epoch,
+        ..
     } = sigs;
     // The shelf whose members `shelf_books` holds or is fetching. Hook state,
     // not a closure local: `use_effect` swaps in a fresh closure each render.
@@ -434,6 +449,67 @@ pub(super) fn spawn_shelf_books_effect(
                 }
             }
             shelf_loading.set(false);
+        });
+    });
+}
+
+/// Fetch the selected shelf's members narrowed by the active filters, which
+/// the server evaluates — a shelf clause needs the viewer's shelves, which no
+/// client can decide. With no filter there is nothing to fetch: the full list
+/// from [`spawn_shelf_books_effect`] is what the lens draws, and this clears.
+pub(super) fn spawn_shelf_view_effect(
+    server_url: String,
+    key: Memo<ShelfViewKey>,
+    sigs: ShelfFetchSignals,
+) {
+    let ShelfFetchSignals {
+        mut shelf_view_books,
+        mut shelf_view_error,
+        mut shelf_view_epoch,
+        ..
+    } = sigs;
+    // The shelf the narrowed list belongs to; see `spawn_shelf_books_effect`.
+    let mut last_pick = use_signal(|| None::<i64>);
+    use_effect(move || {
+        let (selection, sort_key, sort_dir, filters, _tick) = key();
+        let epoch = {
+            shelf_view_epoch.with_mut(|e| *e += 1);
+            *shelf_view_epoch.peek()
+        };
+        let ShelfSelection::Shelf(id) = selection else {
+            last_pick.set(None);
+            shelf_view_books.set(None);
+            shelf_view_error.set(None);
+            return;
+        };
+        if filters.is_empty() {
+            last_pick.set(None);
+            shelf_view_books.set(None);
+            shelf_view_error.set(None);
+            return;
+        }
+        // A new shelf must not paint the last one's narrowed rows; a refetch
+        // under a changed filter keeps its rows on screen until the answer.
+        if *last_pick.peek() != Some(id) {
+            last_pick.set(Some(id));
+            shelf_view_books.set(None);
+        }
+        let url = server_url.clone();
+        spawn(async move {
+            let result = data::shelf_page(&url, id, sort_key, sort_dir, filters).await;
+            if *shelf_view_epoch.peek() != epoch {
+                return;
+            }
+            match result {
+                Ok(page) => {
+                    shelf_view_error.set(None);
+                    shelf_view_books.set(Some(page.books));
+                }
+                Err(e) => {
+                    shelf_view_error.set(Some(e.to_string()));
+                    shelf_view_books.set(Some(Vec::new()));
+                }
+            }
         });
     });
 }

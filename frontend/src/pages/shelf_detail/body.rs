@@ -7,13 +7,14 @@
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
-use omnibus_shared::{EbookMetadata, Shelf, ShelfKind, SortKey};
+use omnibus_shared::{EbookMetadata, Shelf, ShelfKind, SortKey, ViewFilters};
 
 use super::header::ShelfHero;
+use super::narrow::{use_narrowing, FullList};
 use crate::components::atrium::fallback_title;
 use crate::components::loading::CoverSkeletons;
 use crate::components::shelf_glyphs::{plus_icon, x_icon};
-use crate::components::{CoverTile, CoverTileKind, Loading, LoadingKind};
+use crate::components::{CoverTile, CoverTileKind, FilterBar, Loading, LoadingKind, ShelfList};
 use crate::shelf_access::ShelfAccess;
 use crate::{data, Route};
 
@@ -27,7 +28,8 @@ pub(super) struct ShelfBodySignals {
     pub reload: Signal<u32>,
 }
 
-/// The web shelf page — see the module doc.
+/// The web shelf page — see the module doc. `books` is the shelf's full member
+/// list; the rows drawn are that list narrowed by the saved library filter.
 #[component]
 pub(super) fn WebShelfBody(
     shelf: Shelf,
@@ -43,6 +45,7 @@ pub(super) fn WebShelfBody(
         mut edit_shelf,
         mut reload,
     } = signals;
+    let narrowing = use_narrowing(shelf.id, server_url.clone(), sort_key, reload);
     let viewer_probe = crate::use_current_user().0;
     // Books whose removal is in flight, or has landed but not yet been
     // refetched away: dimmed and inert until the next member list arrives.
@@ -94,17 +97,24 @@ pub(super) fn WebShelfBody(
             }
         });
     });
+    let rows = narrowing.rows(FullList {
+        books: &books,
+        ready: members_ready,
+        errored,
+    });
     let view = BooksView {
         kind: shelf.kind,
-        // A refetch keeps the books on screen; only a list never answered is
-        // unknown.
-        pending: !members_ready && books.is_empty() && !errored,
-        books,
-        errored,
+        pending: rows.pending,
+        books: rows.books,
+        errored: rows.errored,
+        filtered_out: rows.filtered_out,
         server_url,
         can_edit: access.can_edit(),
         leaving: leaving(),
         remove_error: remove_error(),
+        filters: (narrowing.filters)(),
+        shelves: (narrowing.shelves)(),
+        viewer_id: viewer.as_ref().map(|u| u.id),
     };
 
     rsx! {
@@ -127,6 +137,7 @@ pub(super) fn WebShelfBody(
                 on_add: move |_| show_add.set(true),
                 on_edit: move |_| edit_shelf.set(true),
                 on_remove,
+                on_filters: move |next| narrowing.set_filters(next),
             }
         }
     }
@@ -157,10 +168,17 @@ struct BooksView {
     /// Uuids of books being taken off the shelf.
     leaving: Vec<String>,
     remove_error: Option<String>,
+    /// The shelf holds books, but the filter rules every one out.
+    filtered_out: bool,
+    /// The library filter the books were narrowed by, and what its chips name.
+    filters: ViewFilters,
+    shelves: ShelfList,
+    viewer_id: Option<i64>,
 }
 
-/// The member books: heading and count, the smart-shelf sort, any fetch or
-/// removal failure, then the grid — or an empty state in the kind's terms.
+/// The member books: heading and count, the smart-shelf sort, the filter bar,
+/// any fetch or removal failure, then the grid — or an empty state in the
+/// kind's terms.
 #[component]
 fn ShelfBooks(
     view: BooksView,
@@ -168,6 +186,7 @@ fn ShelfBooks(
     on_add: EventHandler<()>,
     on_edit: EventHandler<()>,
     on_remove: EventHandler<(String, String)>,
+    on_filters: EventHandler<ViewFilters>,
 ) -> Element {
     let removable = view.can_edit && view.kind == ShelfKind::Manual;
     let count = view.books.len();
@@ -186,6 +205,12 @@ fn ShelfBooks(
                     {sort_control(sort_key)}
                 }
             }
+            FilterBar {
+                filters: view.filters.clone(),
+                shelves: view.shelves.clone(),
+                viewer_id: view.viewer_id,
+                on_change: on_filters,
+            }
             if view.errored {
                 p { role: "alert", class: "error shd-alert", "data-testid": "shelf-refetch-error",
                     "Couldn\u{2019}t refresh this shelf. Check your connection and try again."
@@ -199,6 +224,8 @@ fn ShelfBooks(
                     span { class: "ld-sr", "Taking the books off the shelf" }
                     CoverSkeletons { count: 6 }
                 }
+            } else if view.filtered_out {
+                {filtered_empty_state(on_filters)}
             } else if view.books.is_empty() && !view.errored {
                 {empty_state(view.kind, view.can_edit, on_add, on_edit)}
             } else {
@@ -289,6 +316,23 @@ fn member_tile(
     }
 }
 
+/// What a shelf says when the filter rules out every book it holds, with the
+/// way back to all of them.
+fn filtered_empty_state(on_filters: EventHandler<ViewFilters>) -> Element {
+    rsx! {
+        div { class: "shd-empty", "data-testid": "shelf-filtered-empty",
+            p { class: "shd-empty-msg", "No books on this shelf match these filters." }
+            button {
+                r#type: "button",
+                class: "btn",
+                "data-testid": "shelf-filtered-clear",
+                onclick: move |_| on_filters.call(ViewFilters::default()),
+                "Clear filters"
+            }
+        }
+    }
+}
+
 /// What an empty shelf says, in its kind's terms, with the one action that
 /// would fill it when the viewer may take it.
 fn empty_state(
@@ -329,29 +373,45 @@ fn empty_state(
 
 #[cfg(all(test, feature = "server"))]
 mod tests {
+    use omnibus_shared::{FilterClause, FilterField, FilterMode};
+
     use super::*;
     use crate::test_support::render_in_vdom;
 
-    fn books(pending: bool) -> Element {
+    fn view(pending: bool, filtered_out: bool) -> BooksView {
+        BooksView {
+            kind: ShelfKind::Manual,
+            pending,
+            books: Vec::new(),
+            errored: false,
+            filtered_out,
+            server_url: String::new(),
+            can_edit: false,
+            leaving: Vec::new(),
+            remove_error: None,
+            filters: ViewFilters::default(),
+            shelves: ShelfList::Pending,
+            viewer_id: None,
+        }
+    }
+
+    #[component]
+    fn BooksHarness(view: BooksView) -> Element {
         let sort_key = use_signal(|| SortKey::Title);
         rsx! {
             ShelfBooks {
-                view: BooksView {
-                    kind: ShelfKind::Manual,
-                    pending,
-                    books: Vec::new(),
-                    errored: false,
-                    server_url: String::new(),
-                    can_edit: false,
-                    leaving: Vec::new(),
-                    remove_error: None,
-                },
+                view,
                 sort_key,
                 on_add: EventHandler::new(|_| {}),
                 on_edit: EventHandler::new(|_| {}),
                 on_remove: EventHandler::new(|_| {}),
+                on_filters: EventHandler::new(|_| {}),
             }
         }
+    }
+
+    fn books(pending: bool) -> Element {
+        rsx! { BooksHarness { view: view(pending, false) } }
     }
 
     #[test]
@@ -367,5 +427,46 @@ mod tests {
         let html = render_in_vdom(|| books(false));
         assert!(html.contains("shelf-empty"), "{html}");
         assert!(!html.contains("shelf-loading"), "{html}");
+    }
+
+    #[test]
+    fn shelf_books_render_the_filter_bar_beside_the_member_count() {
+        let html = render_in_vdom(|| books(false));
+        assert!(html.contains("data-testid=\"lib-filter-bar\""), "{html}");
+        assert!(html.contains("data-testid=\"filter-add\""), "{html}");
+    }
+
+    #[test]
+    fn shelf_books_draw_a_chip_for_a_filter_the_landing_page_saved() {
+        let html = render_in_vdom(|| {
+            let mut filtered = view(false, false);
+            filtered.filters = ViewFilters {
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Exclude,
+                    &["pdf"],
+                )],
+            };
+            rsx! { BooksHarness { view: filtered } }
+        });
+        assert!(html.contains("Format excludes any of PDF"), "{html}");
+        assert!(html.contains("data-testid=\"filter-clear-all\""), "{html}");
+    }
+
+    #[test]
+    fn shelf_books_say_the_filter_ruled_every_member_out_rather_than_that_the_shelf_is_empty() {
+        let html = render_in_vdom(|| rsx! { BooksHarness { view: view(false, true) } });
+        assert!(html.contains("shelf-filtered-empty"), "{html}");
+        assert!(
+            html.contains("No books on this shelf match these filters."),
+            "{html}"
+        );
+        assert!(!html.contains("data-testid=\"shelf-empty\""), "{html}");
+    }
+
+    #[test]
+    fn shelf_books_hold_skeletons_rather_than_the_filtered_message_before_members_answer() {
+        let html = render_in_vdom(|| rsx! { BooksHarness { view: view(true, false) } });
+        assert!(!html.contains("shelf-filtered-empty"), "{html}");
     }
 }

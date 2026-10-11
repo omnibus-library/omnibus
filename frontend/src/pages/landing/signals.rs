@@ -16,8 +16,9 @@ use omnibus_shared::{
 use super::effects::spawn_load_more_observer;
 use super::effects::{
     spawn_hero_effect, spawn_load_more_effect, spawn_page_fetch_effect,
-    spawn_selected_shelf_effect, spawn_shelf_books_effect, spawn_shelves_list_effect,
-    spawn_suggestion_pools_effect, FetchKey, FetchSignals, ShelfFetchSignals, SuggestionPools,
+    spawn_selected_shelf_effect, spawn_shelf_books_effect, spawn_shelf_view_effect,
+    spawn_shelves_list_effect, spawn_suggestion_pools_effect, FetchKey, FetchSignals,
+    ShelfFetchSignals, ShelfViewKey, SuggestionPools,
 };
 use crate::components::chip_editor::SuggestionItem;
 use crate::shelf_selection::{self, ShelfSelection};
@@ -66,10 +67,14 @@ pub(super) struct LandingSignals {
     pub(super) shelves_answered: Signal<bool>,
     /// Bumped after a shelf create so the gallery refetches its list.
     pub(super) shelves_tick: Signal<u32>,
-    /// Selected shelf's member list (`None` = All Books / not yet loaded).
+    /// Selected shelf's full member list (`None` = All Books / not yet loaded).
     pub(super) shelf_books: Signal<Option<Vec<EbookMetadata>>>,
     pub(super) shelf_loading: Signal<bool>,
     pub(super) shelf_error: Signal<Option<String>>,
+    /// The selected shelf's members matching the active filters; see
+    /// [`ShelfFetchSignals::shelf_view_books`].
+    pub(super) shelf_view_books: Signal<Option<Vec<EbookMetadata>>>,
+    pub(super) shelf_view_error: Signal<Option<String>>,
     /// Full detail for the selected shelf (`None` on All Books / while it
     /// loads) — feeds the header facet row and the edit-shelf modal.
     pub(super) selected_shelf: Signal<Option<Shelf>>,
@@ -140,6 +145,8 @@ pub(super) fn setup_landing_signals(server_url: &str) -> LandingSignals {
         shelf_books: shelf_wiring.shelf_sigs.shelf_books,
         shelf_loading: shelf_wiring.shelf_sigs.shelf_loading,
         shelf_error: shelf_wiring.shelf_sigs.shelf_error,
+        shelf_view_books: shelf_wiring.shelf_sigs.shelf_view_books,
+        shelf_view_error: shelf_wiring.shelf_sigs.shelf_view_error,
         selected_shelf: shelf_wiring.selected_shelf,
         edit_shelf: misc.edit_shelf,
         show_add_books: misc.show_add_books,
@@ -192,6 +199,9 @@ fn use_shelf_fetch_signals() -> ShelfFetchSignals {
         shelf_loading: use_signal(|| false),
         shelf_error: use_signal(|| None::<String>),
         shelf_epoch: use_signal(|| 0u64),
+        shelf_view_books: use_signal(|| None::<Vec<EbookMetadata>>),
+        shelf_view_error: use_signal(|| None::<String>),
+        shelf_view_epoch: use_signal(|| 0u64),
     }
 }
 
@@ -467,15 +477,26 @@ fn wire_shelf_effects(
     let selected_key = use_memo(move || (selection(), shelves_tick()));
     spawn_selected_shelf_effect(server_url.to_string(), selected_key, selected_shelf);
 
-    // Refetch the selected shelf's members when the gallery pick or the sort
-    // axis changes, or after an edit-shelf save (`shelves_tick` bump — a rules
-    // edit changes membership). Mirrors `fetch_key` deliberately: view-mode
-    // toggles and filters stay client-side and must not refetch.
+    // Refetch the selected shelf's full member list when the gallery pick or
+    // the sort axis changes, or after an edit-shelf save (`shelves_tick` bump —
+    // a rules edit changes membership). View-mode toggles and filters must not
+    // refetch it; a filter change refetches only the narrowed view below.
     let shelf_key = use_memo(move || {
         let p = prefs();
         (selection(), p.sort_key, p.sort_dir, shelves_tick())
     });
     spawn_shelf_books_effect(server_url.to_string(), shelf_key, shelf_sigs);
+    let shelf_view_key: Memo<ShelfViewKey> = use_memo(move || {
+        let p = prefs();
+        (
+            selection(),
+            p.sort_key,
+            p.sort_dir,
+            p.filters.clone(),
+            shelves_tick(),
+        )
+    });
+    spawn_shelf_view_effect(server_url.to_string(), shelf_view_key, shelf_sigs);
 
     // Reconcile the persisted gallery pick once after mount (no reactive
     // reads, so this runs exactly once). SSR's client_store is inert, so SSR
