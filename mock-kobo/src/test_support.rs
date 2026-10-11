@@ -33,6 +33,8 @@ pub struct Stub {
     pub sync_pages: Vec<Value>,
     /// Say `continue` on every `library_sync` page, forever.
     pub sync_never_ends: bool,
+    /// Leave `library_sync` requests open without ever answering.
+    pub sync_never_answers: bool,
 }
 
 impl Default for Stub {
@@ -44,6 +46,7 @@ impl Default for Stub {
             resources_under: "",
             sync_pages: vec![json!([])],
             sync_never_ends: false,
+            sync_never_answers: false,
         }
     }
 }
@@ -116,7 +119,7 @@ async fn handle(
         | "/v1/products/books/subscriptions"
         | "/v1/deals" => store_path(&state),
         _ => match rest.strip_prefix(state.stub.resources_under) {
-            Some(resource) => answer_resource(&state, &method, resource),
+            Some(resource) => answer_resource(&state, &method, resource).await,
             None => StatusCode::NOT_FOUND.into_response(),
         },
     }
@@ -135,19 +138,22 @@ fn store_path(state: &StubState) -> Response {
 }
 
 /// The routes the device reaches through the resources map.
-fn answer_resource(state: &StubState, method: &Method, resource: &str) -> Response {
+async fn answer_resource(state: &StubState, method: &Method, resource: &str) -> Response {
     match resource {
         "/v1/analytics/gettests" if method == Method::POST && !state.stub.gettests_accepts_post => {
             StatusCode::METHOD_NOT_ALLOWED.into_response()
         }
         "/v1/analytics/gettests" => Json(json!({ "Result": "Success" })).into_response(),
-        "/v1/library/sync" => library_sync(state),
+        "/v1/library/sync" => library_sync(state).await,
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
 /// The next sync page, with an `x-kobo-synctoken` naming it.
-fn library_sync(state: &StubState) -> Response {
+async fn library_sync(state: &StubState) -> Response {
+    if state.stub.sync_never_answers {
+        std::future::pending::<()>().await;
+    }
     let call = state.sync_calls.fetch_add(1, Ordering::SeqCst);
     let pages = &state.stub.sync_pages;
     let mut response = Json(pages[call.min(pages.len() - 1)].clone()).into_response();

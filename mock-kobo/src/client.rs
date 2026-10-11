@@ -2,6 +2,8 @@
 //! answered request is recorded for the sync report with the device's path
 //! token redacted, since the token is the device's only credential.
 
+use std::time::Duration;
+
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 
@@ -10,6 +12,9 @@ use crate::session::SyncFailure;
 
 /// What stands in for the path token in anything the device reports.
 const REDACTED: &str = "<token>";
+
+/// How long one request may take before the device gives up on it.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One request the device made and the status it got back.
 #[derive(Clone, Debug, PartialEq)]
@@ -35,6 +40,7 @@ impl Client {
         // A 3xx is an answer, not a detour: following one would pass a moved path as 200.
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .timeout(REQUEST_TIMEOUT)
             .build()
             .map_err(|e| SyncFailure::Transport(e.to_string()))?;
         Ok(Self {

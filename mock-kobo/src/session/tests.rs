@@ -1,4 +1,5 @@
 use super::*;
+use crate::client::REQUEST_TIMEOUT;
 use crate::device::Device;
 use crate::firmware::Quirk;
 use axum::http::StatusCode;
@@ -126,6 +127,26 @@ async fn sync_now_fails_when_store_path_redirects() {
             ..
         }
     ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn sync_now_fails_when_server_never_answers() {
+    let stub = spawn_stub(Stub {
+        sync_never_answers: true,
+        ..Stub::default()
+    })
+    .await;
+
+    let outcome = tokio::time::timeout(
+        REQUEST_TIMEOUT * 2,
+        sync_now(&mut Device::new("HW-1"), &stub.endpoint),
+    )
+    .await;
+
+    let failure = outcome
+        .expect("sync_now should give up on the silent server before the deadline")
+        .unwrap_err();
+    assert!(matches!(failure, SyncFailure::Transport(_)));
 }
 
 #[tokio::test]
