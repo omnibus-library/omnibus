@@ -3,6 +3,8 @@
 //! behaviours behind past Kobo regressions, so a test sees what a device would.
 
 pub mod client;
+#[cfg(feature = "cli")]
+pub mod config;
 pub mod device;
 pub mod firmware;
 pub mod session;
