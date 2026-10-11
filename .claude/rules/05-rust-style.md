@@ -12,7 +12,9 @@ covered by [04-playwright.md](04-playwright.md).
 - **Module `//!`** is required on every file. Keep it to one short
   paragraph (≤ 5 lines): what this module is for, who calls it. No
   references to roadmap phases or issue numbers — those belong in commit
-  messages and PR bodies, where they don't rot.
+  messages and PR bodies, where they don't rot. The first sentence is the
+  module's line in `just modules <dir>`, the only module map there is, so
+  make it stand on its own.
 - **Function `///`** is required on every `pub` item: one-line summary.
   Add a longer rustdoc block (params, errors, invariants) only when the
   behaviour is genuinely surprising — locks, retries, side effects, or

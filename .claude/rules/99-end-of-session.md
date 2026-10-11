@@ -3,7 +3,7 @@
 Before ending a session where code changed, run this checklist:
 
 1. **Docs sync.** Update the right file for the change:
-   - New module or subdirectory → add it to [docs/architecture.md](../../docs/architecture.md) (per-crate module map). If it adds a new top-level crate or top-level concept worth listing in the index, also link it from [CLAUDE.md](../../CLAUDE.md).
+   - New module or subdirectory → its own `//!` doc says what it is for ([05-rust-style.md](05-rust-style.md)); a new Swift file gets the `//  Name.swift` header. There is no hand-kept module map — `just modules <dir>` builds one — so nothing goes in [docs/architecture.md](../../docs/architecture.md) unless how the pieces fit together changed: a new crate, a request flow, or a design decision that spans modules (iOS: [docs/ios.md](../../docs/ios.md)). If it adds a new top-level crate or top-level concept worth listing in the index, also link it from [CLAUDE.md](../../CLAUDE.md).
    - New dependency in `Cargo.toml` → call it out wherever it's relevant (CLAUDE.md if it affects build commands, the matching rule file if it shifts a convention).
    - New environment variable or configuration key → [.claude/rules/01-dev-environment.md](01-dev-environment.md) and [.env.example](../../.env.example).
    - New or changed convention (error handling, test patterns, etc.) → the matching rule file under [.claude/rules/](.) and the [CLAUDE.md](../../CLAUDE.md) rules index if it's a new file.

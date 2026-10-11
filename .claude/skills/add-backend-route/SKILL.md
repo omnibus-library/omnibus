@@ -111,4 +111,4 @@ If this route is hit by a UI page, drive that page via [`ui-validate`](../ui-val
 
 ## 10. End-of-session
 
-Run [99-end-of-session.md](../../rules/99-end-of-session.md). If a new module was introduced, update [docs/architecture.md](../../../docs/architecture.md) (per-crate module maps), and add a link to it from [CLAUDE.md](../../../CLAUDE.md) if it's a top-level crate or concept worth listing in the index.
+Run [99-end-of-session.md](../../rules/99-end-of-session.md). If a new module was introduced, give it a `//!` doc ([05-rust-style.md](../../rules/05-rust-style.md)) — there is no module map to update — and add a link to it from [CLAUDE.md](../../../CLAUDE.md) if it's a top-level crate or concept worth listing in the index.
