@@ -15,7 +15,7 @@ use super::toolbar::Toolbar;
 use crate::components::loading::{CoverSkeletons, RowSkeletons};
 use crate::components::shelf_facets::pencil_glyph;
 use crate::components::shelf_glyphs::plus_icon;
-use crate::components::{BusyLabel, ShelfFacets};
+use crate::components::{BusyLabel, ShelfFacets, ShelfList};
 use crate::shelf_selection::ShelfSelection;
 
 /// Header banner fields sourced from the page's derived view state.
@@ -44,6 +44,8 @@ pub(super) struct LandingHeaderView {
     pub sort_lock: Option<&'static str>,
     /// The Stack series switch's state for this render.
     pub stack: StackToggleView,
+    /// The viewer's shelves — the filter bar names its shelf chips from them.
+    pub shelves: ShelfList,
 }
 
 /// The shelf lens's Add books control: absent unless the pick is a
@@ -104,6 +106,7 @@ pub(super) fn LandingHeader(
         add_books,
         sort_lock,
         stack,
+        shelves,
     } = view;
     rsx! {
         header { class: "lib-header", "data-testid": "lib-header",
@@ -124,6 +127,7 @@ pub(super) fn LandingHeader(
                 }
                 Toolbar {
                     prefs: prefs,
+                    shelves,
                     sort_lock,
                     stack,
                     on_change: move |next: ViewPrefs| on_prefs_change.call(next),

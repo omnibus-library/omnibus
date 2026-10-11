@@ -34,7 +34,7 @@ use super::view::{LandingHandlers, LandingViewState};
 #[cfg(not(feature = "mobile"))]
 use crate::components::chip_editor::SuggestionItem;
 #[cfg(not(feature = "mobile"))]
-use crate::components::{AddBooksModal, EditShelfModal};
+use crate::components::{AddBooksModal, EditShelfModal, ShelfList};
 #[cfg(not(feature = "mobile"))]
 use crate::shelf_access::ShelfAccess;
 
@@ -256,6 +256,11 @@ fn render_header_and_content(
                 add_books,
                 sort_lock,
                 stack,
+                shelves: ShelfList::from_fetch(
+                    (sigs.shelves_loaded)(),
+                    (sigs.shelves_answered)(),
+                    (sigs.shelves)(),
+                ),
             },
             prefs: prefs.clone(),
             on_prefs_change: on_prefs_change_header,
@@ -309,6 +314,7 @@ fn render_gallery(
         ShelfGallery {
             shelves: (sigs.shelves)(),
             loaded: (sigs.shelves_answered)(),
+            filtered: !sigs.prefs.read().filters.is_empty(),
             selection: (sigs.selection)(),
             all_count: (sigs.total)(),
             all_cover_uuids,

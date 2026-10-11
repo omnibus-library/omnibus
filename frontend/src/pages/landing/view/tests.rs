@@ -2,7 +2,7 @@
 //! the grid, what the section header is titled, and where its count comes
 //! from.
 
-use omnibus_shared::{ShelfKind, ShelfSummary, Visibility};
+use omnibus_shared::{FilterClause, FilterField, FilterMode, ShelfKind, ShelfSummary, Visibility};
 
 use super::*;
 
@@ -104,4 +104,71 @@ fn shelf_lens_stacks_the_filtered_members_only_with_stacking_on() {
     let (rows, stacks) = shelf_lens(&members, &ViewFilters::default(), false);
     assert_eq!(rows.len(), 3);
     assert!(stacks.is_empty());
+}
+
+fn one_clause() -> ViewFilters {
+    ViewFilters {
+        clauses: vec![FilterClause::new(
+            FilterField::Format,
+            FilterMode::Include,
+            &["pdf"],
+        )],
+    }
+}
+
+#[test]
+fn books_empty_is_true_for_an_empty_browse_list_fetched_with_no_filter() {
+    assert!(books_empty(
+        VisibleSource::Browse,
+        true,
+        false,
+        &ViewFilters::default()
+    ));
+}
+
+#[test]
+fn books_empty_is_false_for_an_empty_browse_list_fetched_under_a_filter() {
+    assert!(!books_empty(
+        VisibleSource::Browse,
+        true,
+        false,
+        &one_clause()
+    ));
+}
+
+#[test]
+fn books_empty_is_false_when_browse_books_are_visible() {
+    assert!(!books_empty(
+        VisibleSource::Browse,
+        false,
+        false,
+        &ViewFilters::default()
+    ));
+    assert!(!books_empty(
+        VisibleSource::Browse,
+        false,
+        false,
+        &one_clause()
+    ));
+}
+
+#[test]
+fn books_empty_is_true_for_an_empty_shelf_even_with_a_filter() {
+    assert!(books_empty(VisibleSource::Shelf, true, true, &one_clause()));
+    assert!(books_empty(
+        VisibleSource::Shelf,
+        true,
+        true,
+        &ViewFilters::default()
+    ));
+}
+
+#[test]
+fn books_empty_is_false_when_a_filter_ruled_every_shelf_member_out() {
+    assert!(!books_empty(
+        VisibleSource::Shelf,
+        true,
+        false,
+        &one_clause()
+    ));
 }

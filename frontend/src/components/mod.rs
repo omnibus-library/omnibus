@@ -201,6 +201,11 @@ pub use add_books_modal::AddBooksModal;
 pub mod shelf_facets;
 pub use shelf_facets::ShelfFacets;
 
+// The library filter chip bar (chips, add-filter picker, Clear all) and the
+// candidate-value mappers the mobile sheet shares. Platform-agnostic markup.
+pub mod filter_bar;
+pub use filter_bar::{FilterBar, ShelfList};
+
 // "Fetch Summary" button — pulls a book blurb from Hardcover/OpenLibrary on
 // demand. Mounted by the metadata editor (always) and the web book-detail hero
 // (when the current summary is sparse). Platform-agnostic so its rsx stays

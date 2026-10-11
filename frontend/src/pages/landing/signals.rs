@@ -8,7 +8,8 @@ use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
 use omnibus_shared::{
-    EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, UserSummary, ViewMode, ViewPrefs,
+    EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, UserSummary, ViewFilters,
+    ViewMode, ViewPrefs,
 };
 
 #[cfg(feature = "web")]
@@ -46,6 +47,10 @@ pub(super) struct LandingSignals {
     pub(super) loading_more: Signal<bool>,
     pub(super) error: Signal<Option<String>>,
     pub(super) prefs: Signal<ViewPrefs>,
+    /// See [`FetchSignals::prefs_unsaved`].
+    pub(super) prefs_unsaved: Signal<bool>,
+    /// See [`FetchSignals::fetched_filters`].
+    pub(super) fetched_filters: Signal<ViewFilters>,
     pub(super) want_more: Signal<u32>,
     pub(super) is_admin: ReadSignal<bool>,
     pub(super) pools: SuggestionPools,
@@ -53,6 +58,9 @@ pub(super) struct LandingSignals {
     pub(super) selection: Signal<ShelfSelection>,
     /// Gallery feed. Starts empty so the first WASM paint matches SSR.
     pub(super) shelves: Signal<Vec<ShelfSummary>>,
+    /// True once `shelves` holds a fetched list — unlike `shelves_answered`,
+    /// a failed fetch leaves it false.
+    pub(super) shelves_loaded: Signal<bool>,
     /// True once the shelves fetch has returned, success or not — what the
     /// gallery's placeholders wait on.
     pub(super) shelves_answered: Signal<bool>,
@@ -119,11 +127,14 @@ pub(super) fn setup_landing_signals(server_url: &str) -> LandingSignals {
         loading_more: fetch_sigs.loading_more,
         error: fetch_sigs.error,
         prefs: misc.prefs,
+        prefs_unsaved: fetch_sigs.prefs_unsaved,
+        fetched_filters: fetch_sigs.fetched_filters,
         want_more: misc.want_more,
         is_admin,
         pools,
         selection: shelf_wiring.selection,
         shelves: shelf_wiring.shelves,
+        shelves_loaded: shelf_wiring.shelves_loaded,
         shelves_answered: shelf_wiring.shelves_answered,
         shelves_tick: shelf_wiring.shelves_tick,
         shelf_books: shelf_wiring.shelf_sigs.shelf_books,
@@ -159,6 +170,8 @@ fn use_fetch_signals() -> FetchSignals {
         // Seeds false on every target: SSR never runs the hydration effect, so
         // it renders the same empty grid it always did (rule 07).
         prefs_ready: use_signal(|| false),
+        prefs_unsaved: use_signal(|| false),
+        fetched_filters: use_signal(ViewFilters::default),
     }
 }
 
@@ -375,17 +388,32 @@ fn wire_prefs_hydration(mut prefs: Signal<ViewPrefs>, fetch_sigs: FetchSignals) 
 
     // Reconcile against the authoritative library path once a fetch reveals it,
     // covering the case the pointer above guessed wrong (the viewer switched
-    // libraries since their last save). The `!=` guard makes this idempotent:
-    // re-running it after a page-1 refetch (which re-sets `lib_path`) is a no-op
-    // once prefs match, so it can't loop with the fetch effect.
+    // libraries since their last save). `lib_path` is re-set on every page-1
+    // answer, so `reconcile_action` acts only on a path not yet reconciled (or
+    // on edits made before it was known) and never reloads over live prefs.
     let lib_path = fetch_sigs.lib_path;
+    let mut unsaved = fetch_sigs.prefs_unsaved;
+    let mut reconciled = use_signal(|| None::<String>);
     use_effect(move || {
-        if let Some(path) = lib_path.read().clone() {
-            let stored = view_prefs::load(&path);
-            if stored != *prefs.peek() {
-                prefs.set(stored);
+        let Some(path) = lib_path.read().clone() else {
+            return;
+        };
+        let action =
+            view_prefs::reconcile_action(reconciled.peek().as_deref(), &path, *unsaved.peek());
+        match action {
+            view_prefs::Reconcile::Keep => {}
+            view_prefs::Reconcile::Adopt => {
+                let stored = view_prefs::load(&path);
+                if stored != *prefs.peek() {
+                    prefs.set(stored);
+                }
+            }
+            view_prefs::Reconcile::SaveEdits => {
+                view_prefs::save(&path, &prefs.peek());
+                unsaved.set(false);
             }
         }
+        reconciled.set(Some(path));
     });
 }
 

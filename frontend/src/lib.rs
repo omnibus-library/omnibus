@@ -13,6 +13,7 @@ pub mod contexts;
 pub mod data;
 pub mod date_fmt;
 pub mod focus_after_paint;
+pub mod focus_trap;
 pub mod format;
 pub mod index_prefs;
 pub mod js_interop;
@@ -227,6 +228,9 @@ const ATRIUM_CSS: Asset = asset!("/assets/atrium.css");
 /// The loading vocabulary's stylesheet (boot screen, marks, skeletons) — kept
 /// apart from Atrium so every loading visual lives in one reviewable file.
 const LOADING_CSS: Asset = asset!("/assets/loading.css");
+
+/// The library filter bar's stylesheet (chips and the add-filter popover).
+const FILTER_BAR_CSS: Asset = asset!("/assets/filter_bar.css");
 
 /// Browser-tab favicon — the Omnibus brand mark, served as a hashed static
 /// asset via Manganis. 128² PNG; browsers downscale it to the tab size.
@@ -613,6 +617,7 @@ pub fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Stylesheet { href: ATRIUM_CSS }
         document::Stylesheet { href: LOADING_CSS }
+        document::Stylesheet { href: FILTER_BAR_CSS }
         components::atrium::AtriumRoot {
             // First child: its pre-paint script must run before the page
             // paints, and finds the `.atrium` root around it.

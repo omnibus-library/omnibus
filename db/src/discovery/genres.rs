@@ -12,7 +12,7 @@ use super::DiscoveryError;
 /// Maximum number of genres returned from [`get_genre_cloud`]. Mirrors
 /// `TAG_CLOUD_LIMIT` — a genre vocabulary is realistically far smaller, but
 /// nothing stops a user from coining one per book.
-const GENRE_CLOUD_LIMIT: i64 = 500;
+const GENRE_CLOUD_LIMIT: i64 = omnibus_shared::GENRE_CLOUD_LIMIT as i64;
 
 /// Return up to [`GENRE_CLOUD_LIMIT`] genres with their book counts, ordered
 /// by count descending then name ascending. Backs `/api/genres` and the

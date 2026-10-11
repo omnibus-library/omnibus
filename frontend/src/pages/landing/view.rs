@@ -65,6 +65,23 @@ pub(super) fn shelf_book_count(
     }
 }
 
+/// Whether the pick holds no books at all. A filter that rules every book out
+/// is not that: it gets the "clear filters" state instead. A shelf's members
+/// load unfiltered, so its emptiness is read off them rather than inferred.
+/// `fetched_with` is what the browse list was fetched under, not the current
+/// filters: right after a clear, an empty list still answers the old ones.
+pub(super) fn books_empty(
+    source: VisibleSource,
+    visible_is_empty: bool,
+    shelf_members_empty: bool,
+    fetched_with: &ViewFilters,
+) -> bool {
+    match source {
+        VisibleSource::Shelf => shelf_members_empty,
+        VisibleSource::Browse => visible_is_empty && fetched_with.is_empty(),
+    }
+}
+
 // Limitation: a stack links its lead book's `series_id`, which can be stale after an override rename.
 /// The shelf lens's rows: members filtered, then stacked client-side when Stack series is on.
 pub(super) fn shelf_lens(
@@ -163,6 +180,17 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
     };
     let (visible_books, visible_stacks) = visible();
     let visible_is_empty = visible_books.is_empty();
+    let shelf_members_empty = sigs
+        .shelf_books
+        .read()
+        .as_ref()
+        .is_none_or(|members| members.is_empty());
+    let empty_pick = books_empty(
+        source,
+        visible_is_empty,
+        shelf_members_empty,
+        &sigs.fetched_filters.read(),
+    );
     let path_subtitle = path_value
         .as_ref()
         .map(|p| super::short_path(p))
@@ -210,10 +238,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
         visible_books,
         visible_stacks,
         visible_is_empty,
-        books_empty: match source {
-            VisibleSource::Shelf => visible_is_empty,
-            _ => sigs.books.read().is_empty(),
-        },
+        books_empty: empty_pick,
         // Keyset pagination is browse-only; its cursor stays warm under a
         // shelf pick, so the source guard keeps load-more off the shelf lens.
         has_more: source == VisibleSource::Browse && (sigs.next_cursor)().is_some(),
@@ -244,16 +269,26 @@ pub(super) struct LandingHandlers {
 }
 
 /// Build the UI-event handlers from the landing signals. `save` is `Copy`
-/// because every capture (`prefs`, `lib_path` — both `Signal`) is `Copy`,
-/// so each handler can take its own reference to the same persisted-prefs
-/// update path without cloning closure state.
+/// because every capture (`prefs`, `lib_path`, `page_error`, `unsaved` — all
+/// `Signal`) is `Copy`, so each handler can take its own reference to the same
+/// persisted-prefs update path without cloning closure state.
 pub(super) fn build_handlers(sigs: &LandingSignals) -> LandingHandlers {
     let mut prefs = sigs.prefs;
     let lib_path = sigs.lib_path;
     let mut want_more = sigs.want_more;
+    let page_error = sigs.error;
+    let mut unsaved = sigs.prefs_unsaved;
     let save = move |new_prefs: ViewPrefs| {
-        if let Some(path) = lib_path.peek().as_ref() {
+        let plan = view_prefs::save_plan(
+            lib_path.peek().as_deref(),
+            page_error.peek().is_some(),
+            view_prefs::last_library(),
+        );
+        if let Some(path) = &plan.write_to {
             view_prefs::save(path, &new_prefs);
+        }
+        if plan.unsaved {
+            unsaved.set(true);
         }
         prefs.set(new_prefs);
     };

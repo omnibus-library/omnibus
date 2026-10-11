@@ -103,9 +103,27 @@ fn shelf_aria_label_speaks_the_owner_of_someone_elses_shelf() {
 }
 
 #[test]
-fn slab_line_reports_whether_the_pick_is_filtering_the_list_below() {
-    assert_eq!(slab_line(false), "Shelves \u{2014} showing everything");
-    assert_eq!(slab_line(true), "Shelves \u{2014} filtering the list below");
+fn slab_line_reports_showing_everything_with_no_pick_and_no_filter() {
+    assert_eq!(
+        slab_line(false, false),
+        "Shelves \u{2014} showing everything"
+    );
+}
+
+#[test]
+fn slab_line_reports_filtering_when_a_shelf_is_picked() {
+    assert_eq!(
+        slab_line(true, false),
+        "Shelves \u{2014} filtering the list below"
+    );
+}
+
+#[test]
+fn slab_line_reports_filtering_when_a_filter_is_set_on_all_books() {
+    assert_eq!(
+        slab_line(false, true),
+        "Shelves \u{2014} filtering the list below"
+    );
 }
 
 // ── Which shelves the row carries (mirrors the iOS rail's `railShelves`) ──
@@ -211,6 +229,7 @@ mod render {
             ShelfGallery {
                 shelves: Vec::new(),
                 loaded: false,
+                filtered: false,
                 selection: ShelfSelection::All,
                 all_count: None,
                 all_cover_uuids: Vec::new(),
@@ -219,6 +238,36 @@ mod render {
                 on_created: EventHandler::new(|_| {}),
             }
         }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum FilteredRoute {
+        #[route("/")]
+        FilteredGallery {},
+    }
+
+    #[component]
+    fn FilteredGallery() -> Element {
+        rsx! {
+            ShelfGallery {
+                shelves: Vec::new(),
+                loaded: true,
+                filtered: true,
+                selection: ShelfSelection::All,
+                all_count: Some(2),
+                all_cover_uuids: Vec::new(),
+                server_url: String::new(),
+                on_select: EventHandler::new(|_| {}),
+                on_created: EventHandler::new(|_| {}),
+            }
+        }
+    }
+
+    #[test]
+    fn shelf_gallery_says_it_is_filtering_while_a_filter_is_set_on_all_books() {
+        let html = render_in_vdom(|| rsx! { Router::<FilteredRoute> {} });
+        assert!(html.contains("filtering the list below"), "{html}");
+        assert!(!html.contains("showing everything"), "{html}");
     }
 
     #[test]
