@@ -218,7 +218,7 @@ fn assemble_shelf_summaries(
 /// order (`ORDER BY ... position, id`); the map itself has no iteration
 /// order. Avoids the per-row `load_rules` call `list_visible_shelves` used to
 /// make for each smart shelf.
-async fn load_rules_batch(
+pub(super) async fn load_rules_batch(
     pool: &SqlitePool,
     shelf_ids: &[i64],
 ) -> Result<HashMap<i64, Vec<ShelfRule>>, ShelfError> {

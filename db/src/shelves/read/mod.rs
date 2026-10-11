@@ -20,7 +20,7 @@ mod summary;
 
 pub use detail::{
     get_shelf, kobo_synced_book_uuids, manual_shelves_containing, preview_rule,
-    shelf_exclusive_hidden_uuids, shelf_page,
+    shelf_exclusive_hidden_uuids, shelf_page, smart_shelves_containing,
 };
 pub use summary::list_visible_shelves;
 

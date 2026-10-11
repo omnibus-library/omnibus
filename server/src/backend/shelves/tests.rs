@@ -495,6 +495,83 @@ async fn api_shelves_containing_requires_authentication() {
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+async fn api_smart_shelves_containing_lists_the_smart_shelves_matching_the_book() {
+    let (app, _s, pool) = fixture().await;
+    seed_book(&pool, "bk1").await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let create = |body: serde_json::Value| {
+        app.clone()
+            .oneshot(req("POST", "/api/shelves", Some(&token), Some(body)))
+    };
+    let matching = shelf_from(
+        create(serde_json::json!({
+            "kind": "smart", "name": "Epubs", "visibility": "private",
+            "match_mode": "any",
+            "rules": [{ "field": "format", "op": "includes", "value": "epub" }],
+        }))
+        .await
+        .unwrap(),
+    )
+    .await;
+    create(serde_json::json!({
+        "kind": "manual", "name": "Picks", "visibility": "private",
+        "book_uuids": ["bk1"],
+    }))
+    .await
+    .unwrap();
+
+    let res = app
+        .oneshot(req(
+            "GET",
+            "/api/shelves/containing/bk1/smart",
+            Some(&token),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let ids: Vec<i64> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(ids, vec![matching.id]);
+}
+
+#[tokio::test]
+async fn api_smart_shelves_containing_answers_empty_for_a_book_no_smart_shelf_matches() {
+    let (app, _s, pool) = fixture().await;
+    seed_book(&pool, "bk1").await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let res = app
+        .oneshot(req(
+            "GET",
+            "/api/shelves/containing/bk1/smart",
+            Some(&token),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let ids: Vec<i64> = serde_json::from_slice(&bytes).unwrap();
+    assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn api_smart_shelves_containing_requires_authentication() {
+    let (app, _s, pool) = fixture().await;
+    seed_book(&pool, "bk1").await;
+
+    let res = app
+        .oneshot(req("GET", "/api/shelves/containing/bk1/smart", None, None))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
 #[test]
 fn page_query_defaults_to_recently_interacted_descending() {
     let q: super::PageQuery = serde_json::from_value(serde_json::json!({})).unwrap();
