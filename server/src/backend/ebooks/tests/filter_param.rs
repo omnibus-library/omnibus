@@ -189,6 +189,28 @@ async fn api_get_ebooks_filter_param_rejects_too_many_clauses_with_400() {
 }
 
 #[tokio::test]
+async fn api_get_ebooks_formats_param_counts_toward_the_clause_cap() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    seed_tagged_library(&pool).await;
+    let clauses = vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["fantasy"]);
+        omnibus_shared::MAX_FILTER_CLAUSES
+    ];
+
+    let (status, body) = get_status(
+        &app,
+        &token,
+        &format!("formats=epub&filter={}", filter_param(&clauses)),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("at most 16 clauses"), "{body}");
+}
+
+#[tokio::test]
 async fn api_get_ebooks_formats_param_still_applies_beside_a_filter_param() {
     let (app, _state, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "alice").await;
