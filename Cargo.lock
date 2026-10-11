@@ -5038,6 +5038,7 @@ dependencies = [
 name = "omnibus-mock-kobo"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "reqwest 0.13.4",
  "serde",
@@ -5045,6 +5046,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

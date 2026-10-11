@@ -101,7 +101,7 @@ wiremock = "0.6"
 epub = "2"
 # A fake Kobo that syncs against the real Kobo routes over TCP, so the device
 # tests see what a reader would see, not just the response the server sends.
-omnibus-mock-kobo = { path = "../mock-kobo" }
+omnibus-mock-kobo = { path = "../mock-kobo", default-features = false }
 # Encode `Authorization: Basic` credentials in the OPDS Basic-auth tests.
 # Same version as `db`'s dependency, so cargo unifies on one build.
 base64 = "0.22"

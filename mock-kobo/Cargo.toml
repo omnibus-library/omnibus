@@ -8,21 +8,29 @@ version = "0.1.0"
 edition = "2021"
 license.workspace = true
 
+[[bin]]
+name = "mock-kobo"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [dependencies]
+anyhow = { version = "1", optional = true }
 # The control API. Same version as `server/`'s axum so cargo unifies on one build.
 axum = { version = "0.8", optional = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync"], optional = true }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync"], optional = true }
+# A random hardware id for a device with no state file yet.
+uuid = { version = "1", features = ["v4"], optional = true }
 
 [features]
 default = ["cli"]
-# The long-running device and everything only it needs: its state file,
+# The `mock-kobo` binary and everything only it needs: the state file,
 # settings and control API. The server's device tests take the library
 # without it (`default-features = false`).
-cli = ["dep:axum", "dep:tokio"]
+cli = ["dep:anyhow", "dep:axum", "dep:tokio", "dep:uuid"]
 
 [dev-dependencies]
 # Stub Omnibus instances for the firmware tests. Same version as `server/`'s
