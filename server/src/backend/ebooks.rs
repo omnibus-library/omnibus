@@ -46,9 +46,9 @@ pub(super) struct EbooksQuery {
     dir: Option<SortDir>,
     cursor: Option<String>,
     limit: Option<i64>,
-    /// Comma-separated `book_files.format` filter values (lowercase wire
-    /// form, e.g. `?formats=m4b,m4a,mp3`). The mobile Sort & filter sheet's
-    /// format chips; the other web sidebar facets stay RPC-only.
+    /// Comma-separated `book_files.format` values (lowercase wire form, e.g.
+    /// `?formats=m4b,m4a,mp3`). The legacy list older clients (iOS builds, MCP)
+    /// still send; merged as an include-format clause.
     formats: Option<String>,
     /// Percent-encoded JSON array of `FilterClause` (`?filter=`); see
     /// `ViewFilters::from_query_param`. Alone it selects the keyset form.

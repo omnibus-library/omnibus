@@ -44,6 +44,17 @@ pub struct FilterClause {
     pub values: Vec<String>,
 }
 
+impl FilterClause {
+    /// A clause matching `field` against `values` in the given `mode`.
+    pub fn new(field: FilterField, mode: FilterMode, values: &[&str]) -> Self {
+        Self {
+            field,
+            mode,
+            values: values.iter().map(|v| v.to_string()).collect(),
+        }
+    }
+}
+
 /// Active library filter. The legacy facet lists are include-only and stay
 /// readable so a record persisted before `clauses` existed still loads.
 ///

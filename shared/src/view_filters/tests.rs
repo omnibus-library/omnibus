@@ -15,17 +15,9 @@ const ALL_FIELDS: [FilterField; 6] = [
 
 const ALL_MODES: [FilterMode; 2] = [FilterMode::Include, FilterMode::Exclude];
 
-fn clause(field: FilterField, mode: FilterMode, values: &[&str]) -> FilterClause {
-    FilterClause {
-        field,
-        mode,
-        values: values.iter().map(|v| v.to_string()).collect(),
-    }
-}
-
 #[test]
 fn filter_clause_serializes_to_the_snake_case_wire_tokens() {
-    let wire = serde_json::to_string(&clause(
+    let wire = serde_json::to_string(&FilterClause::new(
         FilterField::Genre,
         FilterMode::Exclude,
         &["Fantasy"],
@@ -47,7 +39,7 @@ fn filter_field_shelf_serializes_to_its_snake_case_token() {
 fn filter_clause_round_trips_every_field_and_mode() {
     for field in ALL_FIELDS {
         for mode in ALL_MODES {
-            let original = clause(field, mode, &["a", "b"]);
+            let original = FilterClause::new(field, mode, &["a", "b"]);
             let wire = serde_json::to_string(&original).expect("serialize");
             let parsed: FilterClause = serde_json::from_str(&wire).expect("deserialize");
             assert_eq!(parsed, original, "{field:?}/{mode:?} must round-trip");
@@ -91,7 +83,11 @@ fn view_filters_is_empty_false_when_any_facet_has_a_value() {
 #[test]
 fn view_filters_is_empty_false_when_only_clauses_is_non_empty() {
     let filters = ViewFilters {
-        clauses: vec![clause(FilterField::Tag, FilterMode::Exclude, &["horror"])],
+        clauses: vec![FilterClause::new(
+            FilterField::Tag,
+            FilterMode::Exclude,
+            &["horror"],
+        )],
         ..Default::default()
     };
     assert!(!filters.is_empty());
@@ -105,7 +101,11 @@ fn effective_clauses_is_empty_for_default_filters() {
 #[test]
 fn effective_clauses_lists_legacy_facets_as_include_clauses_before_the_clauses() {
     let filters = ViewFilters {
-        clauses: vec![clause(FilterField::Tag, FilterMode::Exclude, &["horror"])],
+        clauses: vec![FilterClause::new(
+            FilterField::Tag,
+            FilterMode::Exclude,
+            &["horror"],
+        )],
         genres: vec!["Fantasy".into()],
         tags: vec!["sci-fi".into(), "space".into()],
         formats: vec!["epub".into()],
@@ -115,12 +115,12 @@ fn effective_clauses_lists_legacy_facets_as_include_clauses_before_the_clauses()
     assert_eq!(
         filters.effective_clauses(),
         vec![
-            clause(FilterField::Author, FilterMode::Include, &["Tolkien"]),
-            clause(FilterField::Series, FilterMode::Include, &["Poppy War"]),
-            clause(FilterField::Format, FilterMode::Include, &["epub"]),
-            clause(FilterField::Tag, FilterMode::Include, &["sci-fi", "space"]),
-            clause(FilterField::Genre, FilterMode::Include, &["Fantasy"]),
-            clause(FilterField::Tag, FilterMode::Exclude, &["horror"]),
+            FilterClause::new(FilterField::Author, FilterMode::Include, &["Tolkien"]),
+            FilterClause::new(FilterField::Series, FilterMode::Include, &["Poppy War"]),
+            FilterClause::new(FilterField::Format, FilterMode::Include, &["epub"]),
+            FilterClause::new(FilterField::Tag, FilterMode::Include, &["sci-fi", "space"]),
+            FilterClause::new(FilterField::Genre, FilterMode::Include, &["Fantasy"]),
+            FilterClause::new(FilterField::Tag, FilterMode::Exclude, &["horror"]),
         ]
     );
 }
@@ -133,7 +133,7 @@ fn effective_clauses_skips_legacy_facets_with_no_values() {
     };
     assert_eq!(
         filters.effective_clauses(),
-        vec![clause(
+        vec![FilterClause::new(
             FilterField::Series,
             FilterMode::Include,
             &["Poppy War"]
@@ -204,7 +204,11 @@ fn view_filters_validate_accepts_the_default() {
 fn view_filters_validate_accepts_a_filter_at_every_cap() {
     let widest = "é".repeat(SHELF_RULE_VALUE_MAX_LEN);
     let mut clauses = vec![clause_with_values(MAX_FILTER_VALUES); MAX_FILTER_CLAUSES - 1];
-    clauses.push(clause(FilterField::Author, FilterMode::Exclude, &[&widest]));
+    clauses.push(FilterClause::new(
+        FilterField::Author,
+        FilterMode::Exclude,
+        &[&widest],
+    ));
 
     assert_eq!(filters_with(clauses).validate(), Ok(()));
 }
@@ -249,7 +253,7 @@ fn view_filters_validate_rejects_a_clause_with_too_many_values() {
 
 #[test]
 fn view_filters_validate_rejects_a_blank_value() {
-    let filters = filters_with(vec![clause(
+    let filters = filters_with(vec![FilterClause::new(
         FilterField::Genre,
         FilterMode::Include,
         &["Fantasy", "   "],
@@ -261,7 +265,7 @@ fn view_filters_validate_rejects_a_blank_value() {
 #[test]
 fn view_filters_validate_rejects_a_value_over_the_rule_value_limit() {
     let too_long = "a".repeat(SHELF_RULE_VALUE_MAX_LEN + 1);
-    let filters = filters_with(vec![clause(
+    let filters = filters_with(vec![FilterClause::new(
         FilterField::Series,
         FilterMode::Exclude,
         &[&too_long],
@@ -275,7 +279,7 @@ fn view_filters_validate_rejects_a_value_over_the_rule_value_limit() {
 
 #[test]
 fn view_filters_validate_rejects_a_non_numeric_shelf_value() {
-    let filters = filters_with(vec![clause(
+    let filters = filters_with(vec![FilterClause::new(
         FilterField::Shelf,
         FilterMode::Include,
         &["12", "favourites"],
@@ -295,12 +299,12 @@ fn view_filters_to_query_param_is_none_for_empty_filters() {
 #[test]
 fn view_filters_to_query_param_emits_the_clauses_as_a_json_array() {
     let filters = filters_with(vec![
-        clause(
+        FilterClause::new(
             FilterField::Genre,
             FilterMode::Include,
             &["Fantasy", "Sci-Fi"],
         ),
-        clause(FilterField::Shelf, FilterMode::Exclude, &["12"]),
+        FilterClause::new(FilterField::Shelf, FilterMode::Exclude, &["12"]),
     ]);
 
     assert_eq!(
@@ -327,7 +331,11 @@ fn view_filters_to_query_param_carries_legacy_facets_as_include_clauses() {
 #[test]
 fn view_filters_from_query_param_round_trips_to_the_clause_only_form() {
     let filters = ViewFilters {
-        clauses: vec![clause(FilterField::Tag, FilterMode::Exclude, &["a,b", "c"])],
+        clauses: vec![FilterClause::new(
+            FilterField::Tag,
+            FilterMode::Exclude,
+            &["a,b", "c"],
+        )],
         authors: vec!["Tolkien".into()],
         ..Default::default()
     };
@@ -338,8 +346,8 @@ fn view_filters_from_query_param_round_trips_to_the_clause_only_form() {
     assert_eq!(
         parsed,
         filters_with(vec![
-            clause(FilterField::Author, FilterMode::Include, &["Tolkien"]),
-            clause(FilterField::Tag, FilterMode::Exclude, &["a,b", "c"]),
+            FilterClause::new(FilterField::Author, FilterMode::Include, &["Tolkien"]),
+            FilterClause::new(FilterField::Tag, FilterMode::Exclude, &["a,b", "c"]),
         ])
     );
 }

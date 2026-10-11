@@ -16,14 +16,6 @@ use super::super::*;
 
 const ALL_TITLES: [&str; 4] = ["Alpha", "Bravo", "Charlie", "Delta"];
 
-fn clause(field: FilterField, mode: FilterMode, values: &[&str]) -> FilterClause {
-    FilterClause {
-        field,
-        mode,
-        values: values.iter().map(|v| v.to_string()).collect(),
-    }
-}
-
 /// The `filter=` query value for `clauses`, percent-encoded.
 fn filter_param(clauses: &[FilterClause]) -> String {
     urlencoding::encode(&serde_json::to_string(clauses).unwrap()).into_owned()
@@ -114,8 +106,8 @@ async fn api_get_ebooks_filter_param_applies_include_and_exclude_clauses() {
     let token = auth_test_support::bearer_token(&pool, user.id).await;
     seed_tagged_library(&pool).await;
     let filter = filter_param(&[
-        clause(FilterField::Format, FilterMode::Include, &["epub"]),
-        clause(FilterField::Tag, FilterMode::Exclude, &["horror"]),
+        FilterClause::new(FilterField::Format, FilterMode::Include, &["epub"]),
+        FilterClause::new(FilterField::Tag, FilterMode::Exclude, &["horror"]),
     ]);
 
     let page = get_page(&app, &token, &format!("sort=title&dir=asc&filter={filter}")).await;
@@ -130,7 +122,11 @@ async fn api_get_ebooks_filter_param_keeps_later_pages_filtered() {
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
     seed_tagged_library(&pool).await;
-    let filter = filter_param(&[clause(FilterField::Tag, FilterMode::Exclude, &["horror"])]);
+    let filter = filter_param(&[FilterClause::new(
+        FilterField::Tag,
+        FilterMode::Exclude,
+        &["horror"],
+    )]);
 
     let mut titles = Vec::new();
     let mut cursor: Option<String> = None;
@@ -156,7 +152,11 @@ async fn api_get_ebooks_filter_param_alone_switches_to_the_keyset_form() {
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
     seed_tagged_library(&pool).await;
-    let filter = filter_param(&[clause(FilterField::Tag, FilterMode::Include, &["fantasy"])]);
+    let filter = filter_param(&[FilterClause::new(
+        FilterField::Tag,
+        FilterMode::Include,
+        &["fantasy"],
+    )]);
 
     let page = get_page(&app, &token, &format!("filter={filter}")).await;
 
@@ -186,7 +186,7 @@ async fn api_get_ebooks_filter_param_rejects_too_many_clauses_with_400() {
     let token = auth_test_support::bearer_token(&pool, user.id).await;
     seed_tagged_library(&pool).await;
     let clauses = vec![
-        clause(FilterField::Tag, FilterMode::Include, &["fantasy"]);
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["fantasy"]);
         omnibus_shared::MAX_FILTER_CLAUSES + 1
     ];
 
@@ -203,7 +203,11 @@ async fn api_get_ebooks_formats_param_still_applies_beside_a_filter_param() {
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
     seed_tagged_library(&pool).await;
-    let filter = filter_param(&[clause(FilterField::Tag, FilterMode::Include, &["fantasy"])]);
+    let filter = filter_param(&[FilterClause::new(
+        FilterField::Tag,
+        FilterMode::Include,
+        &["fantasy"],
+    )]);
 
     let page = get_page(&app, &token, &format!("formats=epub&filter={filter}")).await;
 
@@ -236,8 +240,16 @@ async fn api_get_ebooks_filter_param_ignores_another_readers_private_shelf() {
     .unwrap()
     .id
     .to_string();
-    let on_shelf = filter_param(&[clause(FilterField::Shelf, FilterMode::Include, &[&shelf])]);
-    let off_shelf = filter_param(&[clause(FilterField::Shelf, FilterMode::Exclude, &[&shelf])]);
+    let on_shelf = filter_param(&[FilterClause::new(
+        FilterField::Shelf,
+        FilterMode::Include,
+        &[&shelf],
+    )]);
+    let off_shelf = filter_param(&[FilterClause::new(
+        FilterField::Shelf,
+        FilterMode::Exclude,
+        &[&shelf],
+    )]);
 
     let owners = get_page(&app, &alice_token, &format!("filter={on_shelf}")).await;
     let included = get_page(&app, &bob_token, &format!("filter={on_shelf}")).await;

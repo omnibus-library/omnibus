@@ -132,9 +132,9 @@ async fn get_ebooks_page_falls_back_to_replica_when_the_first_fetch_dies() {
     crate::offline::sync::note_online();
 }
 
-/// Serve `/api/ebooks` answering one book titled with the `omit_description`
-/// query value it received (`absent` when the request carried none).
-async fn spawn_omit_description_echo() -> String {
+/// Serve `/api/ebooks` answering one book per name in `names`, titled with
+/// that query value (`absent` when the request carried none).
+async fn spawn_query_echo(names: &'static [&'static str]) -> String {
     use axum::extract::Query;
     use axum::routing::get;
     use axum::Json;
@@ -145,14 +145,14 @@ async fn spawn_omit_description_echo() -> String {
     let app = axum::Router::new().route(
         "/api/ebooks",
         get(
-            |Query(params): Query<std::collections::HashMap<String, String>>| async move {
-                let echoed = params
-                    .get("omit_description")
-                    .cloned()
-                    .unwrap_or_else(|| "absent".to_string());
+            move |Query(params): Query<std::collections::HashMap<String, String>>| async move {
+                let books = names
+                    .iter()
+                    .map(|name| book(params.get(*name).map(String::as_str).unwrap_or("absent")))
+                    .collect();
                 Json(EbookLibrary {
                     path: None,
-                    books: vec![book(&echoed)],
+                    books,
                     error: None,
                     total: None,
                 })
@@ -166,7 +166,7 @@ async fn spawn_omit_description_echo() -> String {
 async fn get_ebooks_page_online_asks_the_server_to_omit_descriptions() {
     store::init_global_for_tests();
     let _guard = test_state_lock().lock().unwrap();
-    let base = spawn_omit_description_echo().await;
+    let base = spawn_query_echo(&["omit_description"]).await;
 
     let page = get_ebooks_page_online(
         &base,
@@ -183,39 +183,11 @@ async fn get_ebooks_page_online_asks_the_server_to_omit_descriptions() {
     assert_eq!(titles(&page), vec!["true"]);
 }
 
-/// Serve `/api/ebooks` answering two books titled with the `filter` and
-/// `formats` query values it received (`absent` when the request carried none).
-async fn spawn_filter_echo() -> String {
-    use axum::extract::Query;
-    use axum::routing::get;
-    use axum::Json;
-    use omnibus_shared::EbookLibrary;
-
-    use crate::offline::test_support::spawn_router;
-
-    let app = axum::Router::new().route(
-        "/api/ebooks",
-        get(
-            |Query(params): Query<std::collections::HashMap<String, String>>| async move {
-                let echo =
-                    |name: &str| book(params.get(name).map(String::as_str).unwrap_or("absent"));
-                Json(EbookLibrary {
-                    path: None,
-                    books: vec![echo("filter"), echo("formats")],
-                    error: None,
-                    total: None,
-                })
-            },
-        ),
-    );
-    spawn_router(app).await
-}
-
 #[tokio::test]
 async fn get_ebooks_page_online_sends_the_filter_as_one_json_query_param() {
     store::init_global_for_tests();
     let _guard = test_state_lock().lock().unwrap();
-    let base = spawn_filter_echo().await;
+    let base = spawn_query_echo(&["filter", "formats"]).await;
     let filters = ViewFilters {
         clauses: vec![FilterClause {
             field: FilterField::Tag,
@@ -261,7 +233,7 @@ async fn get_ebooks_page_online_sends_the_filter_as_one_json_query_param() {
 async fn get_ebooks_page_online_omits_the_filter_param_without_a_filter() {
     store::init_global_for_tests();
     let _guard = test_state_lock().lock().unwrap();
-    let base = spawn_filter_echo().await;
+    let base = spawn_query_echo(&["filter", "formats"]).await;
 
     let page = get_ebooks_page_online(
         &base,
@@ -282,13 +254,13 @@ async fn get_ebooks_page_online_omits_the_filter_param_without_a_filter() {
 async fn get_ebooks_page_serves_the_cached_first_page_only_for_the_filter_it_was_cached_under() {
     store::init_global_for_tests();
     let _guard = test_state_lock().lock().unwrap();
-    let base = spawn_filter_echo().await;
+    let base = spawn_query_echo(&["filter"]).await;
     let filters = ViewFilters {
-        clauses: vec![FilterClause {
-            field: FilterField::Tag,
-            mode: FilterMode::Include,
-            values: vec!["horror".into()],
-        }],
+        clauses: vec![FilterClause::new(
+            FilterField::Tag,
+            FilterMode::Include,
+            &["horror"],
+        )],
         ..Default::default()
     };
     // Series is an axis no other test caches, so the unfiltered key starts cold.
@@ -338,7 +310,7 @@ async fn get_ebooks_page_serves_the_cached_first_page_only_for_the_filter_it_was
     assert_eq!(titles(&filtered), vec!["Cached Under Filter"]);
     assert_eq!(
         titles(&unfiltered),
-        vec!["absent", "absent"],
+        vec!["absent"],
         "the whole-library key was never cached, so the server answered"
     );
 }

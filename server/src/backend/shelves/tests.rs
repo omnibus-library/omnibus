@@ -518,12 +518,7 @@ async fn seed_epub_and_m4b(pool: &sqlx::SqlitePool) -> (String, String) {
     )
 }
 
-async fn create_manual_shelf(
-    app: &axum::Router,
-    token: &str,
-    visibility: &str,
-    book_uuids: &[&str],
-) -> i64 {
+async fn create_manual_shelf(app: &axum::Router, token: &str, book_uuids: &[&str]) -> i64 {
     let created = app
         .clone()
         .oneshot(req(
@@ -531,7 +526,7 @@ async fn create_manual_shelf(
             "/api/shelves",
             Some(token),
             Some(serde_json::json!({
-                "kind": "manual", "name": "Picks", "visibility": visibility,
+                "kind": "manual", "name": "Picks", "visibility": "private",
                 "book_uuids": book_uuids,
             })),
         ))
@@ -551,7 +546,7 @@ async fn api_shelf_page_filter_param_narrows_members() {
     let (alpha, bravo) = seed_epub_and_m4b(&pool).await;
     let alice = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, alice.id).await;
-    let id = create_manual_shelf(&app, &token, "private", &[&alpha, &bravo]).await;
+    let id = create_manual_shelf(&app, &token, &[&alpha, &bravo]).await;
 
     let res = app
         .oneshot(req(
@@ -581,7 +576,7 @@ async fn api_shelf_page_filter_param_rejects_malformed_json_with_400() {
     let alice_token = auth_test_support::bearer_token(&pool, alice.id).await;
     let bob = auth_test_support::create_user(&pool, "bob").await;
     let bob_token = auth_test_support::bearer_token(&pool, bob.id).await;
-    let id = create_manual_shelf(&app, &alice_token, "private", &[]).await;
+    let id = create_manual_shelf(&app, &alice_token, &[]).await;
 
     let res = app
         .oneshot(req(
@@ -604,7 +599,7 @@ async fn api_shelf_page_returns_404_for_an_unseen_shelf_when_filtered() {
     let alice_token = auth_test_support::bearer_token(&pool, alice.id).await;
     let bob = auth_test_support::create_user(&pool, "bob").await;
     let bob_token = auth_test_support::bearer_token(&pool, bob.id).await;
-    let id = create_manual_shelf(&app, &alice_token, "private", &[]).await;
+    let id = create_manual_shelf(&app, &alice_token, &[]).await;
 
     let res = app
         .oneshot(req(

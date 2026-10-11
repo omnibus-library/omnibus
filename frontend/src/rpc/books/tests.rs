@@ -276,14 +276,6 @@ async fn ebooks_page_without_exclusion_keeps_current_total_and_no_hidden_count()
     assert_eq!(page.hidden_count, None);
 }
 
-fn clause(field: FilterField, mode: FilterMode, values: &[&str]) -> FilterClause {
-    FilterClause {
-        field,
-        mode,
-        values: values.iter().map(|v| v.to_string()).collect(),
-    }
-}
-
 fn filters_of(clauses: Vec<FilterClause>) -> ViewFilters {
     ViewFilters {
         clauses,
@@ -325,7 +317,7 @@ async fn ebooks_page_first_page_total_counts_only_books_matching_the_filter() {
     seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
     seed_synced_ebook(&pool, "b.epub", "Beta", "Bob Author").await;
     seed_synced_ebook(&pool, "c.cbz", "Comic", "Ann Author").await;
-    let filters = filters_of(vec![clause(
+    let filters = filters_of(vec![FilterClause::new(
         FilterField::Author,
         FilterMode::Exclude,
         &["Bob Author"],
@@ -345,7 +337,7 @@ async fn ebooks_page_hidden_count_compares_under_the_same_filter() {
     seed_synced_ebook(&pool, "b.cbz", "Bravo", "Ann Author").await;
     seed_synced_ebook(&pool, "c.cbz", "Charlie", "Bob Author").await;
     seed_synced_ebook(&pool, "d.epub", "Delta", "Bob Author").await;
-    let filters = filters_of(vec![clause(
+    let filters = filters_of(vec![FilterClause::new(
         FilterField::Author,
         FilterMode::Include,
         &["Ann Author"],
@@ -366,7 +358,7 @@ async fn ebooks_page_hidden_count_compares_under_the_same_filter() {
 async fn ebooks_page_rejects_an_invalid_filter() {
     let pool = configured_pool(None).await;
     seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
-    let filters = filters_of(vec![clause(
+    let filters = filters_of(vec![FilterClause::new(
         FilterField::Shelf,
         FilterMode::Include,
         &["favourites"],
@@ -518,12 +510,12 @@ async fn ebooks_page_shelf_clause_ignores_another_readers_private_shelf() {
     .unwrap()
     .id
     .to_string();
-    let on_shelf = filters_of(vec![clause(
+    let on_shelf = filters_of(vec![FilterClause::new(
         FilterField::Shelf,
         FilterMode::Include,
         &[&shelf],
     )]);
-    let off_shelf = filters_of(vec![clause(
+    let off_shelf = filters_of(vec![FilterClause::new(
         FilterField::Shelf,
         FilterMode::Exclude,
         &[&shelf],
