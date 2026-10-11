@@ -58,6 +58,14 @@ enum FilterMode: String, CaseIterable, Codable, Hashable, Sendable {
     }
 }
 
+/// The shelves a shelf chip is named from, as far as their read has got.
+enum ShelfList {
+    case loading
+    /// The read failed, which says nothing about whether a shelf still exists.
+    case failed
+    case loaded([ShelfSummary])
+}
+
 /// One clause of the library filter.
 struct FilterClause: Codable, Hashable, Sendable {
     var field: FilterField
@@ -69,10 +77,10 @@ struct FilterClause: Codable, Hashable, Sendable {
     static let maxClauses = 16
     static let maxValues = 64
 
-    /// "Genre includes any of Fantasy, Sci-Fi". A shelf reads as its name:
-    /// "…" while `shelves` is still loading (`nil`), and "unavailable shelf"
-    /// for an id the list doesn't hold.
-    func chipLabel(shelves: [ShelfSummary]?, viewerId: Int64?) -> String {
+    /// "Genre includes any of Fantasy, Sci-Fi". A shelf reads as its name: "…"
+    /// while the shelves load, its id if they couldn't be read, and
+    /// "unavailable shelf" for an id a loaded list doesn't hold.
+    func chipLabel(shelves: ShelfList, viewerId: Int64?) -> String {
         let names = values.map { value -> String in
             switch field {
             case .format: return value.uppercased()
@@ -83,11 +91,17 @@ struct FilterClause: Codable, Hashable, Sendable {
         return "\(field.label) \(mode.phrase) \(names.joined(separator: ", "))"
     }
 
-    private func shelfName(_ value: String, in shelves: [ShelfSummary]?, viewerId: Int64?) -> String {
-        guard let shelves else { return "…" }
-        let id = Int64(value.trimmingCharacters(in: .whitespaces))
-        guard let shelf = shelves.first(where: { $0.id == id }) else { return "unavailable shelf" }
-        return FilterOption.shelfLabel(shelf, viewerId: viewerId)
+    private func shelfName(_ value: String, in shelves: ShelfList, viewerId: Int64?) -> String {
+        let id = value.trimmingCharacters(in: .whitespaces)
+        switch shelves {
+        case .loading:
+            return "…"
+        case .failed:
+            return "shelf #\(id)"
+        case .loaded(let list):
+            guard let shelf = list.first(where: { $0.id == Int64(id) }) else { return "unavailable shelf" }
+            return FilterOption.shelfLabel(shelf, viewerId: viewerId)
+        }
     }
 
     /// The `?filter=` value: the clauses as the server's compact JSON array, or

@@ -17,8 +17,8 @@ struct LibraryFilterBar: View {
     var reservesFormatClause = false
 
     @Environment(\.palette) private var palette
-    /// The shelves a shelf chip is named from; `nil` while they load.
-    @State private var shelves: [ShelfSummary]? = nil
+    /// The shelves a shelf chip is named from.
+    @State private var shelves: ShelfList = .loading
     @State private var showPicker = false
 
     var body: some View {
@@ -110,16 +110,16 @@ struct LibraryFilterBar: View {
         .accessibilityIdentifier("library-filter-clear")
     }
 
-    /// Only a shelf chip needs the list. A failed read still settles, so an id
-    /// no list can name reads "unavailable shelf" rather than waiting forever.
+    /// Only a shelf chip needs the list. A failed read still settles, so a
+    /// chip names its id rather than waiting forever.
     private func loadShelves() async {
         guard store.clauses.contains(where: { $0.field == .shelf }) else { return }
         do {
             for try await read in UserDataService.shelves() {
-                shelves = read.value
+                shelves = .loaded(read.value)
             }
         } catch {
-            if shelves == nil { shelves = [] }
+            if case .loading = shelves { shelves = .failed }
         }
     }
 }

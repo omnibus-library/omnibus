@@ -568,42 +568,50 @@ struct FilterChipLabelTests {
 
     @Test func chipReadsTheFieldTheModeAndEveryValue() {
         #expect(
-            genreClause.chipLabel(shelves: shelves, viewerId: 1)
+            genreClause.chipLabel(shelves: .loaded(shelves), viewerId: 1)
                 == "Genre includes any of Fantasy, Sci-Fi"
         )
     }
 
     @Test func anExcludeChipSaysExcludes() {
         let clause = FilterClause(field: .author, mode: .exclude, values: ["Jane Austen"])
-        #expect(clause.chipLabel(shelves: shelves, viewerId: 1) == "Author excludes any of Jane Austen")
+        #expect(clause.chipLabel(shelves: .loaded(shelves), viewerId: 1) == "Author excludes any of Jane Austen")
     }
 
     @Test func formatValuesReadInCapitals() {
         let clause = FilterClause(field: .format, mode: .include, values: ["epub", "m4b"])
-        #expect(clause.chipLabel(shelves: shelves, viewerId: 1) == "Format includes any of EPUB, M4B")
+        #expect(clause.chipLabel(shelves: .loaded(shelves), viewerId: 1) == "Format includes any of EPUB, M4B")
     }
 
     @Test func aShelfChipNamesTheShelfRatherThanItsId() {
         let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
-        #expect(clause.chipLabel(shelves: shelves, viewerId: 1) == "Shelf includes any of Faves")
+        #expect(clause.chipLabel(shelves: .loaded(shelves), viewerId: 1) == "Shelf includes any of Faves")
     }
 
     @Test func aShelfChipNamesTheOwnerOfAnotherReadersShelf() {
         let clause = FilterClause(field: .shelf, mode: .include, values: ["13"])
-        #expect(clause.chipLabel(shelves: shelves, viewerId: 1) == "Shelf includes any of Beach · bob")
+        #expect(clause.chipLabel(shelves: .loaded(shelves), viewerId: 1) == "Shelf includes any of Beach · bob")
     }
 
     @Test func aShelfChipSaysWhenTheShelfIsNotThere() {
         let clause = FilterClause(field: .shelf, mode: .exclude, values: ["99"])
         #expect(
-            clause.chipLabel(shelves: shelves, viewerId: 1)
+            clause.chipLabel(shelves: .loaded(shelves), viewerId: 1)
                 == "Shelf excludes any of unavailable shelf"
+        )
+    }
+
+    @Test func aShelfChipNamesTheIdWhenTheShelvesCouldNotBeRead() {
+        let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
+        #expect(
+            clause.chipLabel(shelves: .failed, viewerId: 1) == "Shelf includes any of shelf #12",
+            "a failed read is not proof the shelf is gone"
         )
     }
 
     @Test func aShelfChipWaitsWithAnEllipsisWhileShelvesLoad() {
         let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
-        #expect(clause.chipLabel(shelves: nil, viewerId: 1) == "Shelf includes any of …")
+        #expect(clause.chipLabel(shelves: .loading, viewerId: 1) == "Shelf includes any of …")
     }
 }
 
