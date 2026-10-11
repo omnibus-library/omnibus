@@ -32,6 +32,7 @@ pub struct Stub {
     /// `get_tests_request`; the default `/v1/...` paths answer 404 once moved.
     pub resources_under: &'static str,
     /// The `library_sync` bodies, served in turn; all but the last say `continue`.
+    /// Empty means the server has no books: one `[]` page.
     pub sync_pages: Vec<Value>,
     /// The status every `library_sync` page answers with, its body and headers unchanged.
     pub sync_status: StatusCode,
@@ -49,7 +50,7 @@ impl Default for Stub {
             gettests_accepts_post: true,
             store_path_status: StatusCode::OK,
             resources_under: "",
-            sync_pages: vec![json!([])],
+            sync_pages: Vec::new(),
             sync_status: StatusCode::OK,
             sync_never_ends: false,
             sync_never_answers: false,
