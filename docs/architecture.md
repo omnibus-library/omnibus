@@ -514,6 +514,15 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       (rule 08). Offline pages stack too:
                       `LibraryIndex.stackedRead` windows the mirror onto each
                       series' first-sorting member, without reading state.
+                      Library/ also holds the include/exclude filter: one
+                      `LibraryFilterStore` clause list (`LibraryFilterClause`),
+                      kept in `UserDefaults` and shared by the grid and every
+                      `ShelfDetailView`, edited through `LibraryFilterBar`'s
+                      chips and the `FilterClauseSheet` picker, and sent as
+                      `?filter=` on `GET /api/ebooks` and the shelf page.
+                      Offline, `LibraryIndex` evaluates metadata clauses over
+                      the mirrored payload and declines a shelf clause with
+                      `LibraryFilterError` rather than serve unfiltered rows.
                       Stats/ is the redesigned reading-stats tab, split so the
                       screen's one load-bearing decision is visible in the file
                       names: the period switcher governs **part** of the page

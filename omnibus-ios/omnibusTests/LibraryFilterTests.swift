@@ -335,3 +335,230 @@ struct LibraryFilterMirrorTests {
         #expect(try await titles([tag, shelf]) == nil)
     }
 }
+
+// MARK: - The shared clause list
+
+@MainActor
+struct LibraryFilterStoreTests {
+    @Test func storeStartsWithTheSavedClauses() {
+        let defaults = scratchDefaults()
+        LibraryFilterPreference(clauses: [genreClause]).save(to: defaults)
+        #expect(LibraryFilterStore(defaults: defaults).clauses == [genreClause])
+    }
+
+    @Test func addWritesTheClauseThrough() {
+        let defaults = scratchDefaults()
+        let store = LibraryFilterStore(defaults: defaults)
+        store.add(genreClause)
+        #expect(store.clauses == [genreClause])
+        #expect(LibraryFilterPreference.load(from: defaults).clauses == [genreClause])
+    }
+
+    @Test func addRefusesAClauseWithNoValues() {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        store.add(FilterClause(field: .tag, mode: .include, values: []))
+        #expect(store.clauses.isEmpty)
+    }
+
+    @Test func addTakesSixteenClausesAndRefusesTheSeventeenth() {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        for index in 0..<17 {
+            store.add(FilterClause(field: .tag, mode: .include, values: ["t\(index)"]))
+        }
+        #expect(store.clauses.count == 16)
+        #expect(!store.canAdd)
+    }
+
+    @Test func addTakesSixtyFourValuesAndRefusesSixtyFive() {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        let full = (0..<64).map { "v\($0)" }
+        store.add(FilterClause(field: .tag, mode: .include, values: full))
+        store.add(FilterClause(field: .tag, mode: .include, values: full + ["v64"]))
+        #expect(store.clauses.map(\.values.count) == [64])
+    }
+
+    @Test func removeDropsOnlyTheClauseAtThatIndex() {
+        let defaults = scratchDefaults()
+        let store = LibraryFilterStore(defaults: defaults)
+        store.add(genreClause)
+        store.add(shelfClause)
+        store.remove(at: 0)
+        #expect(store.clauses == [shelfClause])
+        #expect(LibraryFilterPreference.load(from: defaults).clauses == [shelfClause])
+    }
+
+    @Test func removeIgnoresAnIndexOutOfRange() {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        store.add(genreClause)
+        store.remove(at: 1)
+        #expect(store.clauses == [genreClause])
+    }
+
+    @Test func clearRemovesEveryClauseInOneAction() {
+        let defaults = scratchDefaults()
+        let store = LibraryFilterStore(defaults: defaults)
+        store.add(genreClause)
+        store.add(shelfClause)
+        store.clear()
+        #expect(store.clauses.isEmpty)
+        #expect(LibraryFilterPreference.load(from: defaults).clauses.isEmpty)
+    }
+}
+
+@MainActor
+struct LibraryModelFilterTests {
+    private func model(_ store: LibraryFilterStore) -> LibraryModel {
+        LibraryModel(defaults: scratchDefaults(), filters: store)
+    }
+
+    @Test func theGridIsReadUnderTheSharedClauses() {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        let model = model(store)
+        store.add(genreClause)
+        #expect(model.activeFilter.clauses == [genreClause])
+    }
+
+    @Test func reloadingForAFilterChangeDropsTheGridDrawnUnderTheOldOne() async {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        store.add(FilterClause(field: .tag, mode: .include, values: ["no-such-tag-\(UUID().uuidString)"]))
+        let model = model(store)
+        model.books = [Book(id: 1, filename: "stale.epub", title: "Stale", uniqueIdentifier: "stale")]
+        await model.reload(clearingGrid: true)
+        #expect(model.books.isEmpty, "rows from another filter must never stand in for this one's")
+    }
+
+    @Test func filteredPhaseIsLoadingWhileTheReadIsInFlight() {
+        let model = model(LibraryFilterStore(defaults: scratchDefaults()))
+        model.isLoading = true
+        #expect(model.filteredPhase == .loading)
+    }
+
+    @Test func filteredPhaseCarriesTheFailure() {
+        let model = model(LibraryFilterStore(defaults: scratchDefaults()))
+        model.error = "You're offline."
+        #expect(model.filteredPhase == .failed("You're offline."))
+    }
+
+    @Test func filteredPhaseIsNoMatchesWhenTheReadSettlesEmpty() {
+        let model = model(LibraryFilterStore(defaults: scratchDefaults()))
+        #expect(model.filteredPhase == .noMatches)
+    }
+}
+
+// MARK: - Chips and picker options
+
+private func shelf(
+    _ id: Int64, _ name: String, owner: Int64 = 1, username: String = "ana",
+    kind: ShelfKind = .manual
+) -> ShelfSummary {
+    ShelfSummary(
+        id: id, ownerUserId: owner, ownerUsername: username, kind: kind, name: name,
+        visibility: .private, accent: nil, bookCount: 3
+    )
+}
+
+struct FilterChipLabelTests {
+    private let shelves = [shelf(12, "Faves"), shelf(13, "Beach", owner: 2, username: "bob")]
+
+    @Test func chipReadsTheFieldTheModeAndEveryValue() {
+        #expect(
+            genreClause.chipLabel(shelves: shelves, viewerId: 1)
+                == "Genre includes any of Fantasy, Sci-Fi"
+        )
+    }
+
+    @Test func anExcludeChipSaysExcludes() {
+        let clause = FilterClause(field: .author, mode: .exclude, values: ["Jane Austen"])
+        #expect(clause.chipLabel(shelves: shelves, viewerId: 1) == "Author excludes any of Jane Austen")
+    }
+
+    @Test func formatValuesReadInCapitals() {
+        let clause = FilterClause(field: .format, mode: .include, values: ["epub", "m4b"])
+        #expect(clause.chipLabel(shelves: shelves, viewerId: 1) == "Format includes any of EPUB, M4B")
+    }
+
+    @Test func aShelfChipNamesTheShelfRatherThanItsId() {
+        let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
+        #expect(clause.chipLabel(shelves: shelves, viewerId: 1) == "Shelf includes any of Faves")
+    }
+
+    @Test func aShelfChipNamesTheOwnerOfAnotherReadersShelf() {
+        let clause = FilterClause(field: .shelf, mode: .include, values: ["13"])
+        #expect(clause.chipLabel(shelves: shelves, viewerId: 1) == "Shelf includes any of Beach · bob")
+    }
+
+    @Test func aShelfChipSaysWhenTheShelfIsNotThere() {
+        let clause = FilterClause(field: .shelf, mode: .exclude, values: ["99"])
+        #expect(
+            clause.chipLabel(shelves: shelves, viewerId: 1)
+                == "Shelf excludes any of unavailable shelf"
+        )
+    }
+
+    @Test func aShelfChipWaitsWithAnEllipsisWhileShelvesLoad() {
+        let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
+        #expect(clause.chipLabel(shelves: nil, viewerId: 1) == "Shelf includes any of …")
+    }
+}
+
+struct FilterOptionTests {
+    @Test func shelfOptionsOfferHandPickedShelvesAndWishlistsButNoSmartOnes() {
+        let options = FilterOption.shelves(
+            [shelf(12, "Faves"), shelf(14, "ana's wishlist", kind: .wishlist), shelf(15, "Rule", kind: .smart)],
+            viewerId: 1
+        )
+        #expect(options.map(\.value) == ["12", "14"])
+    }
+
+    @Test func shelfOptionsNameAnotherReadersShelfWithItsOwner() {
+        let options = FilterOption.shelves([shelf(13, "Beach", owner: 2, username: "bob")], viewerId: 1)
+        #expect(options.map(\.label) == ["Beach · bob"])
+    }
+
+    @Test func namedOptionsMergeSpellingsThatDifferOnlyByCase() {
+        let options = FilterOption.named([
+            (name: "Fantasy", count: 2), (name: "fantasy", count: 3), (name: "Horror", count: 1),
+        ])
+        #expect(options == [
+            FilterOption(value: "Fantasy", label: "Fantasy", count: 5),
+            FilterOption(value: "Horror", label: "Horror", count: 1),
+        ])
+    }
+
+    @Test func namedOptionsTrimNamesAndDropBlankOnes() {
+        let options = FilterOption.named([(name: "  ", count: 1), (name: " Horror ", count: 2)])
+        #expect(options.map(\.value) == ["Horror"])
+    }
+
+    @Test func namedOptionsKeepANameAtTheLengthCapAndDropOnePastIt() {
+        let atCap = String(repeating: "x", count: 512)
+        let pastCap = String(repeating: "y", count: 513)
+        let options = FilterOption.named([(name: atCap, count: 1), (name: pastCap, count: 1)])
+        #expect(options.map(\.value) == [atCap])
+    }
+
+    @Test func formatOptionsOfferEveryCategoryFormatOnceInCapitals() {
+        #expect(
+            FilterOption.formats.map(\.value)
+                == ["epub", "pdf", "mobi", "azw3", "cbz", "cbr", "m4b", "m4a", "mp3", "aac", "flac", "ogg", "opus"]
+        )
+        #expect(FilterOption.formats.first?.label == "EPUB")
+    }
+}
+
+struct LibraryFilterErrorTests {
+    @Test func anUnreachableServerReadsAsFiltersNeedingAConnection() {
+        #expect(LibraryFilterError.message(for: APIError.offline).hasPrefix("Filters need a connection"))
+        #expect(
+            LibraryFilterError.message(for: APIError.transport("timed out"))
+                .hasPrefix("Filters need a connection")
+        )
+    }
+
+    @Test func anyOtherFailureIsSaidAsTheServerSaidIt() {
+        #expect(
+            LibraryFilterError.message(for: APIError.http(status: 500, message: ""))
+                == "Server error (500)."
+        )
+    }
+}

@@ -30,9 +30,12 @@ final class LibraryModel {
         }
     }
     private let defaults: UserDefaults
+    /// The library filter, one list shared with every shelf page.
+    let filterStore: LibraryFilterStore
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, filters: LibraryFilterStore? = nil) {
         self.defaults = defaults
+        filterStore = filters ?? .shared
         let pref = LibrarySortPreference.load(from: defaults)
         sort = pref.sort
         direction = pref.direction
@@ -84,10 +87,11 @@ final class LibraryModel {
     var visibleBooks: [Book] { books }
 
     /// The category's filter plus the viewer's hidden-formats and Stack series prefs.
-    private var activeFilter: LibraryFilter {
+    var activeFilter: LibraryFilter {
         var filter = category.filter
         filter.hiddenFormats = hiddenFormats
         filter.stackSeries = stackSeries
+        filter.clauses = filterStore.clauses
         return filter
     }
 
@@ -106,11 +110,13 @@ final class LibraryModel {
         await reload()
     }
 
-    func reload() async {
+    /// `clearingGrid` drops rows read under a filter that no longer applies.
+    func reload(clearingGrid: Bool = false) async {
         // New data can lead a series with another volume, so the open run folds.
         openSeries = nil
         let token = UUID()
         loadToken = token
+        if clearingGrid { books = [] }
         isLoading = true
         error = nil
         cursor = nil
@@ -338,11 +344,11 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if model.isLoading && model.books.isEmpty {
+                if model.isLoading && model.books.isEmpty && !model.hasFilterClauses {
                     LoadingView(label: "Loading your library")
-                } else if let error = model.error, model.books.isEmpty {
+                } else if let error = model.error, model.books.isEmpty, !model.hasFilterClauses {
                     ErrorStateView(message: error) { Task { await model.reload() } }
-                } else if model.books.isEmpty {
+                } else if model.books.isEmpty && !model.hasFilterClauses {
                     EmptyStateView(
                         icon: "books.vertical",
                         title: "No books yet",
@@ -394,6 +400,9 @@ struct LibraryView: View {
         }
         .onChange(of: app.user?.stackSeries) { _, on in
             model.stackSeries = on ?? false
+        }
+        .onChange(of: model.filterStore.clauses) { _, _ in
+            Task { await model.reload(clearingGrid: true) }
         }
         // Background poll, mirroring the web client's sync tick. Tied to the
         // view's lifetime, so it pauses whenever the library isn't on screen.
@@ -465,13 +474,18 @@ struct LibraryView: View {
 
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     sectionHeading
+                    LibraryFilterBar(store: model.filterStore, viewerId: app.user?.id).screenPadding()
                     if let error = model.stackSeriesError {
                         Text(error)
                             .font(.ui(12))
                             .foregroundStyle(palette.badColor)
                             .screenPadding()
                     }
-                    grid
+                    if model.books.isEmpty {
+                        FilteredResultsState(phase: model.filteredPhase) { model.filterStore.clear() }
+                    } else {
+                        grid
+                    }
                 }
             }
             .padding(.bottom, 40)

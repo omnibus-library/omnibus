@@ -6,16 +6,56 @@
 //  Port of `shared/src/view_filters.rs`; the JSON shape is the server's.
 
 import Foundation
+import Observation
 
 /// The book attribute a clause matches. Raw values are the shared wire tokens;
 /// declaration order is the picker's. A `shelf` value is a shelf id.
 enum FilterField: String, CaseIterable, Codable, Hashable, Sendable {
     case shelf, tag, genre, author, series, format
+
+    var label: String {
+        switch self {
+        case .shelf: "Shelf"
+        case .tag: "Tag"
+        case .genre: "Genre"
+        case .author: "Author"
+        case .series: "Series"
+        case .format: "Format"
+        }
+    }
+
+    /// Named so a test can prove it resolves — a misspelt SF Symbol draws nothing.
+    var glyph: String {
+        switch self {
+        case .shelf: "square.stack"
+        case .tag: "tag"
+        case .genre: "theatermasks"
+        case .author: "person"
+        case .series: "books.vertical"
+        case .format: "doc"
+        }
+    }
 }
 
 /// Whether a clause keeps the books that match it or drops them.
 enum FilterMode: String, CaseIterable, Codable, Hashable, Sendable {
     case include, exclude
+
+    /// The picker's name for the mode.
+    var label: String {
+        switch self {
+        case .include: "Includes any"
+        case .exclude: "Excludes any"
+        }
+    }
+
+    /// The mode as a chip reads it, the web's wording.
+    var phrase: String {
+        switch self {
+        case .include: "includes any of"
+        case .exclude: "excludes any of"
+        }
+    }
 }
 
 /// One clause of the library filter.
@@ -23,6 +63,32 @@ struct FilterClause: Codable, Hashable, Sendable {
     var field: FilterField
     var mode: FilterMode
     var values: [String]
+
+    /// The server's caps (`MAX_FILTER_CLAUSES`, `MAX_FILTER_VALUES`); past
+    /// either it answers 400.
+    static let maxClauses = 16
+    static let maxValues = 64
+
+    /// "Genre includes any of Fantasy, Sci-Fi". A shelf reads as its name:
+    /// "…" while `shelves` is still loading (`nil`), and "unavailable shelf"
+    /// for an id the list doesn't hold.
+    func chipLabel(shelves: [ShelfSummary]?, viewerId: Int64?) -> String {
+        let names = values.map { value -> String in
+            switch field {
+            case .format: return value.uppercased()
+            case .shelf: return shelfName(value, in: shelves, viewerId: viewerId)
+            default: return value
+            }
+        }
+        return "\(field.label) \(mode.phrase) \(names.joined(separator: ", "))"
+    }
+
+    private func shelfName(_ value: String, in shelves: [ShelfSummary]?, viewerId: Int64?) -> String {
+        guard let shelves else { return "…" }
+        let id = Int64(value.trimmingCharacters(in: .whitespaces))
+        guard let shelf = shelves.first(where: { $0.id == id }) else { return "unavailable shelf" }
+        return FilterOption.shelfLabel(shelf, viewerId: viewerId)
+    }
 
     /// The `?filter=` value: the clauses as the server's compact JSON array, or
     /// `nil` when there are none. Not percent-encoded.
@@ -86,4 +152,52 @@ enum LibraryFilterError: LocalizedError {
         "Filters need a connection to the server. Clear them to browse what's on this device."
 
     var errorDescription: String? { Self.connectionNotice }
+
+    /// What a filtered read that failed with nothing to show should say: an
+    /// unreachable server means the filter can't be answered here.
+    static func message(for error: Error) -> String {
+        if let api = error as? APIError, api.isRecoverableOffline { return connectionNotice }
+        return error.localizedDescription
+    }
+}
+
+/// The library filter's one in-memory copy, shared by the library and every
+/// shelf page, and written through to `LibraryFilterPreference` on each change.
+@Observable
+@MainActor
+final class LibraryFilterStore {
+    static let shared = LibraryFilterStore()
+
+    private(set) var clauses: [FilterClause]
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        clauses = LibraryFilterPreference.load(from: defaults).clauses
+    }
+
+    var canAdd: Bool { clauses.count < FilterClause.maxClauses }
+
+    /// Appends `clause`, unless it is one the server would refuse.
+    func add(_ clause: FilterClause) {
+        guard canAdd, !clause.values.isEmpty, clause.values.count <= FilterClause.maxValues
+        else { return }
+        replace(with: clauses + [clause])
+    }
+
+    func remove(at index: Int) {
+        guard clauses.indices.contains(index) else { return }
+        var next = clauses
+        next.remove(at: index)
+        replace(with: next)
+    }
+
+    func clear() {
+        replace(with: [])
+    }
+
+    private func replace(with next: [FilterClause]) {
+        clauses = next
+        LibraryFilterPreference(clauses: next).save(to: defaults)
+    }
 }
