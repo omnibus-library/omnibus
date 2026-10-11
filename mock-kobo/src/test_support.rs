@@ -19,8 +19,8 @@ pub const STUB_TOKEN: &str = "stub-device-token";
 /// How a stub answers. `Stub::default()` behaves like a healthy Omnibus.
 #[derive(Clone)]
 pub struct Stub {
-    /// The `x-kobo-apitoken` sent on `v1/initialization`; `None` leaves it off.
-    pub api_token: Option<&'static str>,
+    /// Whether `v1/initialization` carries an `x-kobo-apitoken`.
+    pub sends_api_token: bool,
     /// Whether `gettests` takes a POST; `false` answers 405, as before #1499.
     pub gettests_accepts_post: bool,
     /// The status every firmware store path answers with; a 3xx points at a
@@ -40,7 +40,7 @@ pub struct Stub {
 impl Default for Stub {
     fn default() -> Self {
         Self {
-            api_token: Some("e30="),
+            sends_api_token: true,
             gettests_accepts_post: true,
             store_path_status: StatusCode::OK,
             resources_under: "",
@@ -199,10 +199,10 @@ fn initialization(state: &StubState) -> Response {
         "get_tests_request": format!("{prefix}/v1/analytics/gettests"),
     });
     let mut response = Json(json!({ "Resources": resources })).into_response();
-    if let Some(token) = state.stub.api_token {
+    if state.stub.sends_api_token {
         response.headers_mut().insert(
             HeaderName::from_static("x-kobo-apitoken"),
-            HeaderValue::from_static(token),
+            HeaderValue::from_static("e30="),
         );
     }
     response

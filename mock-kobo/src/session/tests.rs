@@ -41,7 +41,7 @@ async fn sync_now_completes_handshake_against_healthy_stub() {
 #[tokio::test]
 async fn sync_now_fails_when_initialization_lacks_api_token() {
     let stub = spawn_stub(Stub {
-        api_token: None,
+        sends_api_token: false,
         ..Stub::default()
     })
     .await;
