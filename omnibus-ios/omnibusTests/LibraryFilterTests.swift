@@ -26,6 +26,24 @@ private func formDecoded(_ url: URL, _ name: String) -> String? {
         .removingPercentEncoding
 }
 
+/// An empty scratch replica and its path, for tests that read or wipe keys.
+private func scratchStore() async -> (OfflineStore, String) {
+    let path = FileManager.default.temporaryDirectory
+        .appendingPathComponent("filter-store-\(UUID().uuidString).sqlite").path
+    let store = OfflineStore(path: path)
+    await store.open()
+    return (store, path)
+}
+
+/// The first library page key read under `clauses`.
+private func libraryKey(_ clauses: [FilterClause]) -> String {
+    var filter = LibraryFilter()
+    filter.clauses = clauses
+    return CacheKey.libraryPage(
+        LibraryService.pageSignature(sort: .title, direction: .asc, filter: filter)
+    )
+}
+
 private let genreClause = FilterClause(field: .genre, mode: .include, values: ["Fantasy", "Sci-Fi"])
 private let shelfClause = FilterClause(field: .shelf, mode: .exclude, values: ["12"])
 
@@ -566,14 +584,6 @@ struct LibraryFilterErrorTests {
 // MARK: - Pages a shelf clause reads
 
 struct ShelfClausePageInvalidationTests {
-    private func libraryKey(_ clauses: [FilterClause]) -> String {
-        var filter = LibraryFilter()
-        filter.clauses = clauses
-        return CacheKey.libraryPage(
-            LibraryService.pageSignature(sort: .title, direction: .asc, filter: filter)
-        )
-    }
-
     @Test func aQueuedMembershipWriteHoldsOffALibraryPageFilteredByShelf() {
         let key = libraryKey([genreClause, shelfClause])
         #expect(OutboxScope.isBlocked(key, by: [OpKind.shelfMembership]))
@@ -604,5 +614,52 @@ struct ShelfClausePageInvalidationTests {
         #expect(await store.cacheGet(byGenre) != nil)
         #expect(await store.cacheGet(unfiltered) != nil)
         #expect(await store.cacheGet(otherShelfByShelf) != nil, "only keys under the prefix go")
+    }
+}
+
+// MARK: - Another account on the device
+
+@MainActor
+struct AccountSwitchFilterTests {
+    @Test func anotherAccountSigningInDropsTheLibraryPagesAShelfClauseKeyed() async {
+        let (store, path) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        await store.noteUser("ana")
+        let byShelf = libraryKey([shelfClause])
+        let unfiltered = libraryKey([])
+        for key in [byShelf, unfiltered] {
+            await store.cachePut(key, Data("{}".utf8))
+        }
+
+        await store.noteUser("bob")
+
+        #expect(await store.cacheGet(byShelf) == nil, "the server resolved ana's shelves into this page")
+        #expect(await store.cacheGet(unfiltered) != nil)
+    }
+
+    @Test func anotherAccountSigningInForgetsTheClauses() async {
+        let (store, path) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let defaults = scratchDefaults()
+        let filters = LibraryFilterStore(defaults: defaults)
+        filters.add(shelfClause)
+        await AuthService.noteUser("ana", in: store, filters: filters)
+
+        await AuthService.noteUser("bob", in: store, filters: filters)
+
+        #expect(filters.clauses.isEmpty, "a shelf id names ana's shelf, not bob's")
+        #expect(LibraryFilterPreference.load(from: defaults).clauses.isEmpty)
+    }
+
+    @Test func theSameAccountSigningInAgainKeepsTheClauses() async {
+        let (store, path) = await scratchStore()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let filters = LibraryFilterStore(defaults: scratchDefaults())
+        filters.add(genreClause)
+        await AuthService.noteUser("ana", in: store, filters: filters)
+
+        await AuthService.noteUser("ana", in: store, filters: filters)
+
+        #expect(filters.clauses == [genreClause])
     }
 }

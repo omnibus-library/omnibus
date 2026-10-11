@@ -163,6 +163,7 @@ enum LibraryFilterError: LocalizedError {
 
 /// The library filter's one in-memory copy, shared by the library and every
 /// shelf page, and written through to `LibraryFilterPreference` on each change.
+/// Cleared on a sign-out, an account switch and a server change.
 @Observable
 @MainActor
 final class LibraryFilterStore {

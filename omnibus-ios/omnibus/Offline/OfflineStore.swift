@@ -1317,7 +1317,7 @@ actor OfflineStore {
     /// shelf names and cover artwork stayed on the Library landing rail after
     /// someone else signed in — indefinitely, on a device with no route to the
     /// server. `userScopedKeysAreCovered` in the test suite pins every key
-    /// `CacheKey` can mint against this list so the next one can't slip
+    /// `CacheKey` can mint against `isUserScoped` so the next one can't slip
     /// through the same gap.
     ///
     /// A near-copy of `USER_SCOPED_PREFIXES` in `frontend/src/offline.rs` but
@@ -1332,20 +1332,31 @@ actor OfflineStore {
         "read_status:", "shelves_with:", "syncprompt:",
     ]
 
+    /// Whether the account-switch wipe removes `key`: a user-scoped prefix, or
+    /// a library page narrowed by a shelf clause — the server resolves a shelf
+    /// against the viewer, so that page is one reader's answer.
+    static func isUserScoped(_ key: String) -> Bool {
+        userScopedPrefixes.contains { key.hasPrefix($0) }
+            || (key.hasPrefix(CacheKey.libraryPagePrefix) && key.contains(CacheKey.shelfClauseMarker))
+    }
+
     /// Record which account this device's replica belongs to; when a different
     /// user signs in, wipe the previous user's data so nothing leaks across
-    /// accounts.
-    func noteUser(_ username: String) {
-        guard isOpen else { return }
+    /// accounts. Answers whether it wiped another account's data.
+    @discardableResult
+    func noteUser(_ username: String) -> Bool {
+        guard isOpen else { return false }
         let previous = metaGet("last_user")
-        if previous == username { return }
+        if previous == username { return false }
         if previous != nil {
             for prefix in Self.userScopedPrefixes {
                 cacheDeletePrefix(prefix)
             }
+            cacheDeletePrefix(CacheKey.libraryPagePrefix, containing: CacheKey.shelfClauseMarker)
             clearOps()
         }
         metaPut("last_user", username)
+        return previous != nil
     }
 
     /// Wipe everything this device holds, for a repoint at a different server.

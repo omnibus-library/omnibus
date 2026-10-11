@@ -516,7 +516,8 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       series' first-sorting member, without reading state.
                       Library/ also holds the include/exclude filter: one
                       `LibraryFilterStore` clause list (`LibraryFilterClause`),
-                      kept in `UserDefaults` and shared by the grid and every
+                      kept in `UserDefaults` until a sign-out, an account
+                      switch or a server change, shared by the grid and every
                       `ShelfDetailView`, edited through `LibraryFilterBar`'s
                       chips and the `FilterClauseSheet` picker, and sent as
                       `?filter=` on `GET /api/ebooks` and the shelf page.

@@ -734,8 +734,17 @@ struct OfflineWriteStampTests {
 struct UserScopedPrefixTests {
     private let uuid = "11111111-2222-3333-4444-555555555555"
 
+    /// The first library page read under `clauses`.
+    private func libraryPage(filteredBy clauses: [FilterClause]) -> String {
+        var filter = LibraryFilter()
+        filter.clauses = clauses
+        return CacheKey.libraryPage(
+            LibraryService.pageSignature(sort: .title, direction: .asc, filter: filter)
+        )
+    }
+
     /// Every key `CacheKey` can mint that belongs to one account. A key added
-    /// here without a matching prefix is a key the next user inherits.
+    /// here without a matching wipe rule is a key the next user inherits.
     private var userScopedKeys: [String] {
         [
             CacheKey.me,
@@ -745,6 +754,8 @@ struct UserScopedPrefixTests {
             CacheKey.shelf(7),
             CacheKey.shelfPage(7),
             CacheKey.shelfPage(7, filter: [FilterClause(field: .tag, mode: .include, values: ["x"])]),
+            // The server resolves a shelf against the viewer, so this page is theirs.
+            libraryPage(filteredBy: [FilterClause(field: .shelf, mode: .include, values: ["7"])]),
             CacheKey.shelvesContaining(uuid),
             CacheKey.progress(uuid, .epub),
             CacheKey.progress(uuid, .audio),
@@ -759,7 +770,7 @@ struct UserScopedPrefixTests {
         ]
     }
 
-    @Test("every user-scoped cache key is covered by a wipe prefix")
+    @Test("every user-scoped cache key is covered by a wipe rule")
     func userScopedKeysAreCovered() {
         // `shelf_previews` was not, for exactly the reason this test exists:
         // the list is matched by prefix and reads as though "shelves" covers
@@ -767,8 +778,7 @@ struct UserScopedPrefixTests {
         // signed in on the same device, the Library landing rail went on
         // showing the first user's shelf names and cover artwork.
         for key in userScopedKeys {
-            let covered = OfflineStore.userScopedPrefixes.contains { key.hasPrefix($0) }
-            #expect(covered, "no wipe prefix covers the user-scoped key \"\(key)\"")
+            #expect(OfflineStore.isUserScoped(key), "no wipe rule covers the user-scoped key \"\(key)\"")
         }
     }
 
@@ -780,9 +790,10 @@ struct UserScopedPrefixTests {
             CacheKey.library, CacheKey.authors, CacheKey.series, CacheKey.tags,
             CacheKey.book(uuid), CacheKey.manifest(uuid), CacheKey.manifest(uuid, fileID: 9),
             CacheKey.suggestions(uuid), CacheKey.libraryPage("title.asc."),
+            libraryPage(filteredBy: []),
+            libraryPage(filteredBy: [FilterClause(field: .genre, mode: .include, values: ["Fantasy"])]),
         ] {
-            let covered = OfflineStore.userScopedPrefixes.contains { key.hasPrefix($0) }
-            #expect(!covered, "library-wide key \"\(key)\" is being wiped on account switch")
+            #expect(!OfflineStore.isUserScoped(key), "library-wide key \"\(key)\" is being wiped on account switch")
         }
     }
 }
