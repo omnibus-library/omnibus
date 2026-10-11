@@ -61,6 +61,9 @@ fn prior_value(from: &ChartResult, series: &ChartSeries, key: &str) -> Option<f6
 /// A mark with no counterpart in `from` — a new bucket, a measure just
 /// ticked on — grows in from the baseline rather than appearing at full
 /// height, which is the same motion a first paint plays.
+///
+/// Known gaps: a mark absent from `to` just vanishes (no exit motion), and a
+/// zoom-in, which changes only the snapped scale, has nothing to tween.
 pub fn blend(from: &ChartResult, to: &ChartResult, t: f64) -> ChartResult {
     let e = ease_out(t);
     let mut out = to.clone();

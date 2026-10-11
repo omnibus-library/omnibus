@@ -103,8 +103,8 @@ pub fn latency_ms(d: Duration) -> String {
 }
 
 /// Redact the `<TOKEN>` segment of a `/kobo/<TOKEN>/…` path before it
-/// reaches the trace span. Kobo devices carry a long-lived (90-day)
-/// session token directly in the URL path (see
+/// reaches the trace span. Kobo devices carry their persistent per-device
+/// `kobo_devices` token directly in the URL path (see
 /// `backend::kobo::extractor::kobo_path_token`), so logging the raw path
 /// would leak a durable credential to stderr and the on-disk JSON sink.
 /// Every other path is returned unchanged, borrowed rather than

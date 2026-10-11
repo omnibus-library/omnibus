@@ -299,6 +299,9 @@ pub fn purge_stale_scheme_thumbs_once() -> usize {
 /// customary photographic setting — visually indistinguishable from lossless
 /// on cover art at thumbnail dimensions, at roughly a tenth of the bytes.
 /// Changing it means bumping [`THUMB_ENCODER_VERSION`].
+///
+/// libwebp (the `webp` crate) rather than `image`'s own WebP encoder, which
+/// is lossless-only.
 const THUMB_QUALITY: f32 = 80.0;
 
 /// Resize a pre-decoded cover and write the WebP to disk for one size.

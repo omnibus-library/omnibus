@@ -80,6 +80,8 @@ pub enum RuleField {
     Author,
     Series,
     Rating,
+    /// The shelf owner's read state (`unread` / `reading` / `finished`); a
+    /// book with no `book_read_status` row counts as `unread`.
     Status,
     Format,
     Year,
@@ -194,8 +196,8 @@ impl RuleField {
 
 /// One smart-shelf condition. `value` interpretation is per-field:
 /// tag/genre/author/series/format → name (case-insensitive); year/rating → int;
-/// date fields → ISO date, `START..END`, or `30d`/`3m`/`1y`. (`status` is
-/// reserved but not yet supported — the rule engine rejects it.) Migration
+/// date fields → ISO date, `START..END`, or `30d`/`3m`/`1y`;
+/// status → `unread`/`reading`/`finished`. Migration
 /// `0034`'s comment predates the author/series id→name switch and is frozen once
 /// applied; this doc is the source of truth.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -8,7 +8,7 @@
 //! them is the bug this module has already had once:
 //!
 //! * [`pages_read`] is ground *covered* in the window, so it windows on the
-//!   forward-progress ledger (migration `0083`). Summing the length of the
+//!   forward-progress ledger (the `0095` slots). Summing the length of the
 //!   books finished in the window — what it used to do — reported an em-dash to
 //!   a reader who finished nothing and attributed a whole book to whichever
 //!   window its status flip landed in, which is the Finished tile weighted by

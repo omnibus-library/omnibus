@@ -78,9 +78,9 @@ pub(crate) fn visible_book_sql(book: &str, root: &str, paths_param: &str) -> Str
     )
 }
 
-/// Deterministic UUIDv5 derived from `(library_path, filename)` so reindexing
-/// the same file produces the same uuid. Keeps `/api/covers/{uuid}` URLs
-/// stable across reindex cycles even as the primary `books.id` renumbers.
+/// Deterministic UUIDv5 derived from `(library_path, filename)`, used only as
+/// the handle on a `merged_uuids` attach-ledger row — book identity is
+/// [`mint_uuid`], and the reindex matches attachments on `scan_key`.
 /// UUIDv5 (SHA-1 over a namespace + name, per RFC 4122 §4.3) is fixed
 /// across Rust toolchains — a previous `DefaultHasher` derivation rotated
 /// every cover UUID on toolchain bumps and orphaned cover files on disk.

@@ -65,8 +65,8 @@ impl StatsRange {
     }
 }
 
-/// One heatmap cell: a calendar day (UTC `YYYY-MM-DD`) and the total active
-/// seconds recorded that day across reading and listening.
+/// One heatmap cell: a calendar day (`YYYY-MM-DD` on the reader's calendar)
+/// and the total active seconds recorded that day across reading and listening.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DayActivity {
@@ -120,10 +120,10 @@ pub struct BookInsights {
     /// Unix seconds when that longest sitting started.
     pub longest_started_at: i64,
     /// Per-day activity on this book (active days only, ascending). Days use
-    /// the same UTC `YYYY-MM-DD` bucketing as [`DayActivity`] elsewhere;
-    /// callers fill calendar gaps against [`Self::as_of_day`].
+    /// the same reader's-calendar `YYYY-MM-DD` bucketing as [`DayActivity`]
+    /// elsewhere; callers fill calendar gaps against [`Self::as_of_day`].
     pub daily: Vec<DayActivity>,
-    /// The server's current UTC day (`YYYY-MM-DD`) — the right edge of the
+    /// Today on the reader's calendar (`YYYY-MM-DD`) — the right edge of the
     /// `daily` window, so clients don't have to guess the server's "today".
     pub as_of_day: String,
 }
@@ -171,7 +171,7 @@ pub struct FinishedBook {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MonthCount {
-    /// UTC calendar month, `YYYY-MM`.
+    /// Calendar month on the reader's calendar, `YYYY-MM`.
     pub month: String,
     pub books: i64,
 }
@@ -432,8 +432,8 @@ pub struct PagesReadDetail {
     /// pages by design; this is what separates "listened, so zero pages" from
     /// "nothing happened".
     pub audio_books: i64,
-    /// Pages per UTC day within the window, active days only, ascending — the
-    /// tile's drill-in trend.
+    /// Pages per day on the reader's calendar within the window, active days
+    /// only, ascending — the tile's drill-in trend.
     #[serde(default)]
     pub daily: Vec<TrendPoint>,
     /// Whether this window opens before [`Self::since_day`], so part of it is
@@ -476,8 +476,9 @@ pub struct PeriodComparison {
     pub avg_stars: Option<f64>,
     pub listening_seconds: i64,
     /// Pages read over the baseline window. Day-grained, unlike its siblings
-    /// here — the ledger buckets by UTC day — so the baseline includes the whole
-    /// of its boundary day, matching the current window's own partial today.
+    /// here — the ledger is resolved to days on the reader's calendar — so the
+    /// baseline includes the whole of its boundary day, matching the current
+    /// window's own partial today.
     #[serde(default)]
     pub pages_read: i64,
 }
@@ -525,9 +526,9 @@ pub struct StatsSummary {
     /// stop clients disagreeing.
     #[serde(default)]
     pub current_streak_days: i64,
-    /// Monday (UTC `YYYY-MM-DD`) of the busiest ISO week, if any — the week's
-    /// own start, so a surface can label it "Week of …" whether or not the
-    /// reader happened to read on the Monday.
+    /// Monday (`YYYY-MM-DD`, reader's calendar) of the busiest ISO week, if any
+    /// — the week's own start, so a surface can label it "Week of …" whether or
+    /// not the reader happened to read on the Monday.
     pub busiest_week_start: Option<String>,
     pub busiest_week_seconds: i64,
     pub books_finished: i64,
@@ -541,7 +542,7 @@ pub struct StatsSummary {
     /// into a total that would overstate what the slices cover.
     #[serde(default)]
     pub genre_tagged_books: i64,
-    /// The server's current UTC day (`YYYY-MM-DD`) when the summary was
+    /// Today on the reader's calendar (`YYYY-MM-DD`) when the summary was
     /// computed. Anchors the heatmap's trailing-year grid so the client
     /// never bakes its own clock into render (rule 07).
     #[serde(default)]
@@ -783,7 +784,8 @@ pub struct ReadingGoal {
     /// Progress toward `target` within `year`. May exceed it — a reader past
     /// their goal is the good case, and clamping it here would hide it.
     pub current: i64,
-    /// The calendar year (UTC) this goal and its `current` count belong to.
+    /// The calendar year (reader's calendar) this goal and its `current`
+    /// count belong to.
     pub year: i64,
 }
 
@@ -819,16 +821,10 @@ impl ReadingGoal {
 ///
 /// # Which day
 ///
-/// **Kind-dependent, and deliberately so.** A minutes goal is measured over the
-/// reader's *local* day, from the capture-time offset each session recorded
-/// (migration `0080`) — the same treatment
-/// [`StatsSummary::hour_of_day`] gets, and the only honest one for a target
-/// that resets at midnight. A pages goal is measured over the **UTC** day,
-/// because the forward-progress ledger buckets to a UTC `YYYY-MM-DD` and keeps
-/// no timestamp to re-bucket from. So the two can name different days for the
-/// same moment, by up to the reader's offset. `day` is per-goal rather than
-/// shared for exactly that reason — a single day string on the parent would
-/// have to be wrong for one of them.
+/// **The same for both kinds**: today on the reader's calendar — the offset
+/// the asking client declared, else that of their latest session, else UTC.
+/// Every session counts toward minutes, and pages re-bucket from the ledger's
+/// quarter-hour slots (migration `0095`), so both kinds carry the same `day`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DailyGoal {
@@ -841,7 +837,7 @@ pub struct DailyGoal {
     /// [`ReadingGoal::current`] may.
     pub current: i64,
     /// The day `current` was measured over, `YYYY-MM-DD`. See the type docs
-    /// for which calendar that is — it is not the same for both kinds.
+    /// for which calendar that is.
     pub day: String,
 }
 
@@ -881,7 +877,7 @@ pub struct DailyGoals {
     ///
     /// The figure a surface can show *before* a reader commits to a goal —
     /// what iOS renders in the ring's slot when there is no ring to draw. It is
-    /// the same measurement [`DailyGoal::current`] carries, over the same UTC
+    /// the same measurement [`DailyGoal::current`] carries, over the same
     /// day, computed once and shared: the number must not change the moment a
     /// target is set, or the goal appears to move the ground it measures.
     ///
@@ -894,22 +890,14 @@ pub struct DailyGoals {
     /// [`Self::pages_today`], and measured exactly as the minutes goal's own
     /// `current` is — truncating, so 59 seconds is not yet a minute.
     ///
-    /// Note this is the local day where `pages_today` is the UTC one, for the
-    /// same reason the two goals differ: see [`crate::stats`]'s
-    /// `daily_goals` docs.
+    /// Measured over the same day as `pages_today`; see [`DailyGoal`]'s
+    /// "Which day".
     #[serde(default)]
     pub minutes_today: Option<i64>,
-    /// Seconds recorded today by sessions carrying no capture-time offset,
-    /// which the minutes goal therefore could not place on a local day.
-    ///
-    /// The same disclosure [`StatsSummary::unzoned_seconds`] makes, narrowed to
-    /// the day: those seconds are real reading that neither `minutes` nor
-    /// [`Self::minutes_today`] includes, and a figure that silently
-    /// under-reports is worse than one that says what it could not see.
-    ///
-    /// Reported whether or not a minutes target is set, because
-    /// `minutes_today` is shown either way — there is always something to
-    /// disclose against.
+    /// Always `0`, kept so a client built against the earlier shape still
+    /// decodes. The day is placed by the reader's current offset, not each
+    /// session's, so every session counts toward [`Self::minutes_today`] and
+    /// nothing is left unplaced to disclose.
     #[serde(default)]
     pub unzoned_seconds: i64,
 }

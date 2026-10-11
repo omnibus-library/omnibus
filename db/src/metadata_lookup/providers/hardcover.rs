@@ -288,6 +288,9 @@ pub async fn by_ref(
 ///
 /// `Ok(empty)` when nothing matches or no key is configured.
 ///
+/// Not a `books(where: {title: …})` filter: Hardcover blocks `_ilike`
+/// server-side, so a filter can only match a title typed exactly.
+///
 /// The response is a Typesense payload behind an untyped `results` scalar, so
 /// it is read defensively: a hit whose document has no title or no id is
 /// skipped rather than failing the search.

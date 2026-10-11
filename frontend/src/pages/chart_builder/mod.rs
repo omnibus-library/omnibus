@@ -114,8 +114,6 @@ pub fn ChartBuilderPage() -> Element {
 
 /// The picker. Each control writes one field of the spec; the effect above
 /// turns any write into a refetch.
-/// The picker. Each control writes one field of the spec; the effect above
-/// turns any write into a refetch.
 ///
 /// Measures are a checkbox group rather than a fixed pair of dropdowns,
 /// because the real constraint is the number of **scales** a chart can label,
@@ -124,6 +122,9 @@ pub fn ChartBuilderPage() -> Element {
 /// claimed by other units — and by the same `ChartSpec::can_add` the server
 /// validates with, so a control that looks available can never produce a spec
 /// the server then rejects.
+///
+/// Each `<select>` marks its choice with `selected` on the `option`: a `value`
+/// on the `<select>` picks nothing in SSR markup, which shows the first option.
 #[component]
 fn ChartControls(spec: Signal<ChartSpec>) -> Element {
     let current = spec.read().clone();

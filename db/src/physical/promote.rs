@@ -47,6 +47,10 @@ fn promote_sql(single_book: bool) -> String {
 /// it. No-op (and cheap) for a book already under a real root or still
 /// genuinely fileless, so attach/merge writers call it unconditionally.
 /// Returns whether the row moved.
+///
+/// Needed because the pseudo-root is never a configured library path: a
+/// filed book left under it stays visible only through a physical copy, if
+/// it has one.
 pub(crate) async fn promote_filed_physical_book(
     conn: &mut SqliteConnection,
     book_id: i64,

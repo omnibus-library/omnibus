@@ -6,12 +6,15 @@
 //  header, whose control pins while you are inside it and releases the moment
 //  the standing rule reaches the top. Everything else — the streak, the goals,
 //  the heatmap, the trailing twelve months, the library's own scale — sits
-//  outside it, because `shared/src/stats.rs` says those fields are not
-//  windowed and a page that interleaved the two left a reader unable to tell
-//  what a period switch would move.
+//  outside it, because those figures are not windowed (the heatmap on the
+//  wire is, so it is read off the all-time summary; see `standingSummary`),
+//  and a page that interleaved the two left a reader unable to tell what a
+//  period switch would move.
 
 import SwiftUI
 
+/// No session log, unlike the web's `/stats`, on purpose: a keyset-paged list
+/// of every sitting is a different kind of surface from a page of aggregates.
 struct StatsView: View {
     /// Owned by `MainTabView` (see `isImmersiveDetail` there) and read here so
     /// the tab can tell a pop apart from a tab switch: the goals are edited on

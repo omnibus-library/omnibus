@@ -57,6 +57,13 @@ pub const SLOT_SECS: i64 = 900;
 /// stretch drains as one coalesced write long after the fact, and it is real
 /// reading, not a gap.
 ///
+/// The accepted cost: a backtrack that spans a sitting boundary is credited
+/// again, since a per-sitting clamp cannot net across sittings — closing it
+/// needs signed deltas or an explicit re-read boundary.
+///
+/// Gains are stored as percent, not pages, so a later `print_pages` override
+/// re-prices history the ledger already holds.
+///
 /// Two cases accrue nothing on purpose:
 ///
 /// * A book with no mark yet is *baselined* — a device syncing a book it is

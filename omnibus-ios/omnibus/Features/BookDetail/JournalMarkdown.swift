@@ -36,6 +36,9 @@ enum JournalBlock: Equatable {
 /// parser: the server owns the canonical render, and this only has to agree
 /// with it on the constructs a phone actually shows. Images, tables and task
 /// lists are not among them — their source falls through as prose.
+///
+/// Works from `body_md` because the web's route, setting the server's
+/// `body_html` as raw HTML, has no SwiftUI equivalent.
 enum JournalMarkdown {
     /// URL scheme the spoiler reveal rides on. `Text` has no per-run gesture,
     /// but it does route link taps through `OpenURLAction` — so a masked span
