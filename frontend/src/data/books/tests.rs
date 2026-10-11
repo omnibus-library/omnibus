@@ -277,3 +277,68 @@ async fn get_ebooks_page_online_omits_the_filter_param_without_a_filter() {
 
     assert_eq!(titles(&page), vec!["absent", "absent"]);
 }
+
+#[tokio::test]
+async fn get_ebooks_page_serves_the_cached_first_page_only_for_the_filter_it_was_cached_under() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let base = spawn_filter_echo().await;
+    let filters = ViewFilters {
+        clauses: vec![FilterClause {
+            field: FilterField::Tag,
+            mode: FilterMode::Include,
+            values: vec!["horror".into()],
+        }],
+        ..Default::default()
+    };
+    // Series is an axis no other test caches, so the unfiltered key starts cold.
+    let (sort, dir) = (SortKey::Series, SortDir::Asc);
+    cache::put_json(
+        &cache::keys::ebooks_first(
+            sort.as_wire(),
+            dir.as_wire(),
+            &filters.to_query_param().unwrap(),
+            "",
+        ),
+        &LibraryPage {
+            path: None,
+            books: vec![book("Cached Under Filter")],
+            next_cursor: None,
+            total: Some(1),
+            facets: None,
+            hidden_count: None,
+            stacks: Vec::new(),
+        },
+    );
+    store::store()
+        .expect("store")
+        .kv_delete(&cache::keys::ebooks_first(
+            sort.as_wire(),
+            dir.as_wire(),
+            "",
+            "",
+        ));
+
+    let filtered = get_ebooks_page(&base, sort, dir, filters, Vec::new(), None, 10, false)
+        .await
+        .expect("cached filtered page");
+    let unfiltered = get_ebooks_page(
+        &base,
+        sort,
+        dir,
+        ViewFilters::default(),
+        Vec::new(),
+        None,
+        10,
+        false,
+    )
+    .await
+    .expect("unfiltered page");
+
+    assert_eq!(titles(&filtered), vec!["Cached Under Filter"]);
+    assert_eq!(
+        titles(&unfiltered),
+        vec!["absent", "absent"],
+        "the whole-library key was never cached, so the server answered"
+    );
+}
