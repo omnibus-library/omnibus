@@ -26,6 +26,9 @@ pub enum SyncFailure {
     /// The server answered with a body the device can't read.
     #[error("sync failed: unreadable response: {0}")]
     BadResponse(String),
+    /// The server answered a request no firmware quirk names with a non-2xx status.
+    #[error("sync failed: {0}")]
+    Rejected(String),
     /// The request got no answer at all.
     #[error("sync failed: no answer from the server: {0}")]
     Transport(String),
@@ -35,6 +38,7 @@ pub enum SyncFailure {
 pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncReport, SyncFailure> {
     let mut client = Client::new(api_endpoint, &device.hardware_id)?;
     let initialization = client.initialization().await?;
+    require_not_rejected(&client, &initialization)?;
     if !initialization.headers().contains_key(API_TOKEN_HEADER) {
         return Err(tripped(
             Quirk::ApiToken,
@@ -68,6 +72,7 @@ async fn sync_library(
     let mut sync_token = None;
     for fetched in 1..=MAX_SYNC_PAGES {
         let page = client.library_sync(url, sync_token.as_deref()).await?;
+        require_not_rejected(client, &page)?;
         let headers = page.headers();
         let more = headers
             .get(SYNC_CONTINUE_HEADER)
@@ -96,9 +101,21 @@ fn require_success(
     if response.status().is_success() {
         return Ok(());
     }
+    Err(tripped(quirk, rejection(client, response)))
+}
+
+/// A non-2xx answer fails the sync even where no firmware quirk names the request.
+fn require_not_rejected(client: &Client, response: &reqwest::Response) -> Result<(), SyncFailure> {
+    if response.status().is_success() {
+        return Ok(());
+    }
+    Err(SyncFailure::Rejected(rejection(client, response)))
+}
+
+/// What a non-2xx answer says, safe to report.
+fn rejection(client: &Client, response: &reqwest::Response) -> String {
     let path = client.redact(response.url().path());
-    let detail = format!("{path} answered {}", response.status());
-    Err(tripped(quirk, detail))
+    format!("{path} answered {}", response.status())
 }
 
 fn tripped(quirk: Quirk, detail: impl Into<String>) -> SyncFailure {

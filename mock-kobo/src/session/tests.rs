@@ -60,6 +60,45 @@ async fn sync_now_fails_when_initialization_lacks_api_token() {
 }
 
 #[tokio::test]
+async fn sync_now_reports_status_when_initialization_is_rejected() {
+    let stub = spawn_stub(Stub {
+        initialization_status: StatusCode::UNAUTHORIZED,
+        ..Stub::default()
+    })
+    .await;
+
+    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(failure, SyncFailure::Rejected(_)));
+    assert_eq!(
+        failure.to_string(),
+        "sync failed: /kobo/<token>/v1/initialization answered 401 Unauthorized"
+    );
+    assert!(!format!("{failure:?}").contains(STUB_TOKEN));
+}
+
+#[tokio::test]
+async fn sync_now_fails_when_library_sync_answers_server_error() {
+    let stub = spawn_stub(Stub {
+        sync_status: StatusCode::INTERNAL_SERVER_ERROR,
+        ..Stub::default()
+    })
+    .await;
+
+    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(failure, SyncFailure::Rejected(_)));
+    assert_eq!(
+        failure.to_string(),
+        "sync failed: /kobo/<token>/v1/library/sync answered 500 Internal Server Error"
+    );
+}
+
+#[tokio::test]
 async fn sync_now_fails_when_gettests_rejects_post() {
     let stub = spawn_stub(Stub {
         gettests_accepts_post: false,
