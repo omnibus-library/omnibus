@@ -691,6 +691,60 @@ struct ShelfClausePageInvalidationTests {
     }
 }
 
+// MARK: - Which pages a shelf write forgets
+
+struct ShelfPageDropTests {
+    /// A scratch replica holding `keys`, and its path.
+    private func replica(holding keys: [String]) async -> (OfflineStore, String) {
+        let (store, path) = await scratchStore()
+        for key in keys {
+            await store.cachePut(key, Data("{}".utf8))
+        }
+        return (store, path)
+    }
+
+    @Test func dropShelfPagesForgetsOnlyThatShelfsPages() async {
+        let unfiltered = CacheKey.shelfPage(7)
+        let filtered = CacheKey.shelfPage(7, filter: [genreClause])
+        let anotherShelf = CacheKey.shelfPage(70, filter: [genreClause])
+        let libraryByShelf = libraryKey([shelfClause])
+        let anotherShelfByShelf = CacheKey.shelfPage(9, filter: [shelfClause])
+        let (store, path) = await replica(
+            holding: [unfiltered, filtered, anotherShelf, libraryByShelf, anotherShelfByShelf]
+        )
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        await UserDataService.dropShelfPages(7, in: store)
+
+        #expect(await store.cacheGet(unfiltered) == nil)
+        #expect(await store.cacheGet(filtered) == nil)
+        #expect(await store.cacheGet(anotherShelf) != nil, "shelf 70 is not shelf 7")
+        #expect(await store.cacheGet(libraryByShelf) != nil, "a refresh or rename moves no membership")
+        #expect(await store.cacheGet(anotherShelfByShelf) != nil)
+    }
+
+    @Test func dropShelfClausePagesForgetsEveryPageAShelfClauseKeyed() async {
+        let libraryByShelf = libraryKey([genreClause, shelfClause])
+        let shelfByShelf = CacheKey.shelfPage(9, filter: [shelfClause])
+        let libraryByGenre = libraryKey([genreClause])
+        let library = libraryKey([])
+        let shelfByGenre = CacheKey.shelfPage(9, filter: [genreClause])
+        let shelf = CacheKey.shelfPage(9)
+        let (store, path) = await replica(
+            holding: [libraryByShelf, shelfByShelf, libraryByGenre, library, shelfByGenre, shelf]
+        )
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        await UserDataService.dropShelfClausePages(in: store)
+
+        #expect(await store.cacheGet(libraryByShelf) == nil)
+        #expect(await store.cacheGet(shelfByShelf) == nil)
+        for kept in [libraryByGenre, library, shelfByGenre, shelf] {
+            #expect(await store.cacheGet(kept) != nil, "\(kept) reads no shelf's membership")
+        }
+    }
+}
+
 // MARK: - Another account on the device
 
 @MainActor
