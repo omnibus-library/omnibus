@@ -8,7 +8,8 @@ use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
 use omnibus_shared::{
-    EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, UserSummary, ViewMode, ViewPrefs,
+    EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, UserSummary, ViewFilters,
+    ViewMode, ViewPrefs,
 };
 
 #[cfg(feature = "web")]
@@ -48,6 +49,8 @@ pub(super) struct LandingSignals {
     pub(super) prefs: Signal<ViewPrefs>,
     /// See [`FetchSignals::prefs_unsaved`].
     pub(super) prefs_unsaved: Signal<bool>,
+    /// See [`FetchSignals::fetched_filters`].
+    pub(super) fetched_filters: Signal<ViewFilters>,
     pub(super) want_more: Signal<u32>,
     pub(super) is_admin: ReadSignal<bool>,
     pub(super) pools: SuggestionPools,
@@ -125,6 +128,7 @@ pub(super) fn setup_landing_signals(server_url: &str) -> LandingSignals {
         error: fetch_sigs.error,
         prefs: misc.prefs,
         prefs_unsaved: fetch_sigs.prefs_unsaved,
+        fetched_filters: fetch_sigs.fetched_filters,
         want_more: misc.want_more,
         is_admin,
         pools,
@@ -167,6 +171,7 @@ fn use_fetch_signals() -> FetchSignals {
         // it renders the same empty grid it always did (rule 07).
         prefs_ready: use_signal(|| false),
         prefs_unsaved: use_signal(|| false),
+        fetched_filters: use_signal(ViewFilters::default),
     }
 }
 

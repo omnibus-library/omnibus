@@ -90,6 +90,33 @@ async function headerCount(page: Page): Promise<number> {
   return Number(/·\s*(\d+)\s+books?/.exec(text)?.[1]);
 }
 
+/** Count every "No ebooks found." node the page inserts from now on. */
+async function recordEmptyLibraryInsertions(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const seen = { count: 0 };
+    Object.assign(window, { __emptyLibrarySeen: seen });
+    new MutationObserver((mutations) => {
+      for (const added of mutations.flatMap((m) => [...m.addedNodes])) {
+        if (
+          added instanceof Element &&
+          (added.matches('[data-testid="lib-empty"]') ||
+            added.querySelector('[data-testid="lib-empty"]'))
+        ) {
+          seen.count += 1;
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+}
+
+async function emptyLibraryInsertions(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __emptyLibrarySeen: { count: number } })
+        .__emptyLibrarySeen.count,
+  );
+}
+
 /** Build one clause in the picker and apply it, waiting on the page-1 refetch. */
 async function addClause(page: Page, spec: ClauseSpec) {
   await page.getByTestId("filter-add").click();
@@ -235,6 +262,7 @@ test("explains an empty result and clears from it", async ({ page }) => {
   );
   await expect(page.getByText("No books match these filters.")).toBeVisible();
   await expect(page.getByTestId("lib-empty")).toHaveCount(0);
+  await recordEmptyLibraryInsertions(page);
 
   await expectMutation(
     page,
@@ -243,6 +271,7 @@ test("explains an empty result and clears from it", async ({ page }) => {
   );
 
   await expect(chips(page)).toHaveCount(0);
+  expect(await emptyLibraryInsertions(page)).toBe(0);
   expect(await headerCount(page)).toBe(everything);
 });
 

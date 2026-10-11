@@ -57,6 +57,9 @@ pub(super) struct FetchSignals {
     /// The reader edited the prefs before a page-1 response named the library,
     /// so no authoritative key holds those edits yet.
     pub(super) prefs_unsaved: Signal<bool>,
+    /// The filters the current `books` answer was fetched under. The list lags
+    /// the prefs by one fetch, so only these say what an empty `books` means.
+    pub(super) fetched_filters: Signal<ViewFilters>,
 }
 
 /// Refetch the admin-only author/tag/genre suggestion pools whenever `is_admin` changes.
@@ -134,6 +137,7 @@ pub(super) fn spawn_page_fetch_effect(
             *fetch_epoch.peek()
         };
         let url = server_url.clone();
+        let fetched_with = filters.clone();
         let has_books = !sigs.books.peek().is_empty();
         spawn(async move {
             // Keep the populated grid on screen during a revalidation
@@ -159,7 +163,7 @@ pub(super) fn spawn_page_fetch_effect(
             if *fetch_epoch.peek() != epoch {
                 return; // a newer fetch superseded us — drop this result
             }
-            apply_browse_result(sigs, result);
+            apply_browse_result(sigs, fetched_with, result);
             loading.set(false);
         });
     });
@@ -170,9 +174,11 @@ pub(super) fn spawn_page_fetch_effect(
 /// header count.
 fn apply_browse_result(
     sigs: FetchSignals,
+    fetched_with: ViewFilters,
     result: Result<omnibus_shared::LibraryPage, data::DataError>,
 ) {
     let FetchSignals {
+        mut fetched_filters,
         mut books,
         mut stacks,
         mut next_cursor,
@@ -183,6 +189,7 @@ fn apply_browse_result(
         mut hidden,
         ..
     } = sigs;
+    fetched_filters.set(fetched_with);
     match result {
         Ok(page) => {
             lib_path.set(page.path);

@@ -117,7 +117,7 @@ fn one_clause() -> ViewFilters {
 }
 
 #[test]
-fn books_empty_is_true_for_an_empty_browse_list_with_no_filter() {
+fn books_empty_is_true_for_an_empty_browse_list_fetched_with_no_filter() {
     assert!(books_empty(
         VisibleSource::Browse,
         true,
@@ -127,7 +127,7 @@ fn books_empty_is_true_for_an_empty_browse_list_with_no_filter() {
 }
 
 #[test]
-fn books_empty_is_false_when_a_filter_ruled_everything_out_of_browse() {
+fn books_empty_is_false_for_an_empty_browse_list_fetched_under_a_filter() {
     assert!(!books_empty(
         VisibleSource::Browse,
         true,

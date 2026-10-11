@@ -68,15 +68,17 @@ pub(super) fn shelf_book_count(
 /// Whether the pick holds no books at all. A filter that rules every book out
 /// is not that: it gets the "clear filters" state instead. A shelf's members
 /// load unfiltered, so its emptiness is read off them rather than inferred.
+/// `fetched_with` is what the browse list was fetched under, not the current
+/// filters: right after a clear, an empty list still answers the old ones.
 pub(super) fn books_empty(
     source: VisibleSource,
     visible_is_empty: bool,
     shelf_members_empty: bool,
-    filters: &ViewFilters,
+    fetched_with: &ViewFilters,
 ) -> bool {
     match source {
         VisibleSource::Shelf => shelf_members_empty,
-        VisibleSource::Browse => visible_is_empty && filters.is_empty(),
+        VisibleSource::Browse => visible_is_empty && fetched_with.is_empty(),
     }
 }
 
@@ -187,7 +189,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
         source,
         visible_is_empty,
         shelf_members_empty,
-        &prefs_sig.read().filters,
+        &sigs.fetched_filters.read(),
     );
     let path_subtitle = path_value
         .as_ref()
