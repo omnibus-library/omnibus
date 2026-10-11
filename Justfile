@@ -82,7 +82,8 @@ test: fixtures explore-test
         cargo nextest run -p omnibus-frontend --features server && \
         cargo nextest run -p omnibus-frontend --features mobile && \
         cargo nextest run -p omnibus-shared && \
-        cargo nextest run -p omnibus-mcp'
+        cargo nextest run -p omnibus-mcp && \
+        cargo nextest run -p omnibus-mock-kobo'
 
 # Line/region coverage over the same crate matrix as `just test`, via
 # cargo-llvm-cov driving cargo-nextest (matches the CI `test` job). Each crate
@@ -102,6 +103,7 @@ coverage: fixtures
         cargo llvm-cov nextest --no-report -p omnibus-frontend --features mobile && \
         cargo llvm-cov nextest --no-report -p omnibus-shared && \
         cargo llvm-cov nextest --no-report -p omnibus-mcp && \
+        cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
         cargo llvm-cov report --lcov --output-path lcov.info && \
         cargo llvm-cov report'
 
@@ -117,6 +119,7 @@ coverage-html: fixtures
         cargo llvm-cov nextest --no-report -p omnibus-frontend --features mobile && \
         cargo llvm-cov nextest --no-report -p omnibus-shared && \
         cargo llvm-cov nextest --no-report -p omnibus-mcp && \
+        cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
         cargo llvm-cov report --html --open'
 
 # Structural CSS lint — stylelint over frontend/assets, scoped to parse /
@@ -151,7 +154,8 @@ lint: lint-css
         cargo clippy --all-targets -- -D warnings && \
         cargo clippy -p omnibus-frontend --features server --all-targets -- -D warnings && \
         cargo clippy -p omnibus-mobile --all-targets -- -D warnings && \
-        cargo clippy -p omnibus-mcp --all-targets -- -D warnings'
+        cargo clippy -p omnibus-mcp --all-targets -- -D warnings && \
+        cargo clippy -p omnibus-mock-kobo --all-targets -- -D warnings'
     scripts/with-dev-env.sh web cargo clippy -p omnibus-frontend --features web --all-targets --target wasm32-unknown-unknown -- -D warnings
 
 # Lint then test — the pre-push gate referenced by rule 99.

@@ -36,6 +36,7 @@ flags:
       - shared/
       - frontend/
       - mcp/
+      - mock-kobo/
   ios:
     carryforward: true
     paths:

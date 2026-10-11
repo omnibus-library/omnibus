@@ -1,6 +1,6 @@
 # Architecture
 
-Cargo workspace with six crates:
+Cargo workspace with seven crates:
 
 - **`shared/`** (`omnibus-shared`) — serde types shared across every target (`Settings`, `ValueResponse`, `LibraryContents`, `LibrarySection`). No Dioxus / axum / sqlx deps.
 - **`db/`** (`omnibus-db`) — server-side data layer: SQL migrations, SQLite pool init, the normalized query layer, and the indexing pipeline (scanner → ebook metadata extraction → atomic per-library upsert). Consumed by both `server/` (REST handlers) and `frontend/` (server-function bodies). Holds all sqlx / tokio / epub / anyhow dependencies on the server side.
@@ -11,8 +11,9 @@ Cargo workspace with six crates:
 - **`server/`** (`omnibus`) — **unified Dioxus fullstack binary**. Built twice by `dx serve`: once native (feature `server`) for the axum backend + SSR, once WASM (feature `web`) for the hydrated client. Hosts the hand-written `/api/*` REST router for mobile. Depends directly on `omnibus-db`.
 - **`mobile/`** (`omnibus-mobile`) — thin Dioxus Native shell that seeds the reactive `ServerUrl` context from `data::server_url_store` and launches `omnibus_frontend::App`. Android-only: nothing builds this crate for iOS anymore — the iOS surface is the native `omnibus-ios/` app below.
 - **`mcp/`** (`omnibus-mcp`) — standalone **read-only MCP stdio server**: logs in to any Omnibus instance over `POST /api/auth/login` (bearer session, `--url`/`--username`/`--password` or `OMNIBUS_MCP_*` env vars, transparent re-login on idle expiry) and exposes the library/search/discovery/shelf/stats/progress/annotation reads as MCP tools. Depends only on `omnibus-shared` (with its `schemars` feature, so tool result schemas derive from the wire types) plus `rmcp`/`reqwest`; the ISO 8601 stamps the tool boundary emits beside each raw epoch come from `omnibus_shared::to_iso8601`, the same conversion the wire types' own `_iso` siblings use, so the two surfaces cannot render one instant differently. The write policy lives as `WRITE_ALLOWLIST` in `mcp/src/client.rs`; new tool families are added as `#[tool_router(router = …)]` impl blocks under `mcp/src/tools/` and combined in `OmnibusMcp::new`. The same tool layer is also served **hosted** at `/mcp` (#2314): `server/` depends on this crate's library half (`http` feature → rmcp's streamable-HTTP server transport) and mounts it behind an admin settings toggle, default **off** — see `server/`'s `mcp_http.rs` entry. Connect a client with `claude mcp add --transport http omnibus https://<host>/mcp --header "Authorization: Bearer <api-token>"` (API tokens are the documented credential; session bearers work but idle-expire). The hosted path builds the client with `OmnibusClient::with_bearer` — the caller's token passed through verbatim, no credentials held, a 401 surfacing as `TokenRejected` rather than a re-login.
+- **`mock-kobo/`** (`omnibus-mock-kobo`) — a **fake Kobo e-reader** for testing wireless sync: speaks the firmware's side of `/kobo/<token>/v1/*` (handshake, store paths, paged `library_sync`) and enforces the firmware behaviours behind past Kobo regressions, each a named `firmware::Quirk` citing its evidence. A failed sync names the quirk that tripped. Dev tooling only — it ships in neither the server binary nor the Docker image — and it depends on no `omnibus-*` crate, so its wire types can catch a server-side shape change that a shared DTO would hide.
 
-Default `cargo build` / `clippy` covers `server`, `shared`, `frontend` only. Mobile is excluded via workspace `default-members` because its `mobile` feature is mutually exclusive with `web`; build it explicitly: `cargo build -p omnibus-mobile`. `mcp` is likewise excluded (a client binary daily server work never compiles): `cargo build -p omnibus-mcp`.
+Default `cargo build` / `clippy` covers `server`, `shared`, `frontend` only. Mobile is excluded via workspace `default-members` because its `mobile` feature is mutually exclusive with `web`; build it explicitly: `cargo build -p omnibus-mobile`. `mcp` is likewise excluded (a client binary daily server work never compiles): `cargo build -p omnibus-mcp`. So is `mock-kobo`: `cargo test -p omnibus-mock-kobo`.
 
 **Web request flow (fullstack):** browser → axum serves SSR'd HTML + WASM bundle → hydration → signal effects call Dioxus server functions (`#[get]`/`#[post]` in `frontend/src/rpc/`) at `/api/rpc/*` → same handlers execute server-side against the SQLite pool via an `axum::Extension<SqlitePool>` layer.
 
@@ -341,6 +342,23 @@ MCP sessions are separable everywhere: `User-Agent: omnibus-mcp/<ver>` on every
 request (logged by the server's request span), and login sends
 `client_kind: "bearer"` + `device_name: "omnibus-mcp"` so a dedicated device
 row shows in `/api/auth/sessions`.
+
+## mock-kobo/src/
+
+```
+lib.rs          — crate docs
+firmware.rs     — Quirk: every firmware behaviour the fake enforces, with its
+                  evidence and status; the protocol constants they name
+wire.rs         — the firmware's own view of the wire (initialization, sync
+                  items), never the server's DTOs
+client.rs       — Client: one function per device request; every request
+                  carries x-kobo-deviceid and is logged with the token redacted
+device.rs       — Device + Book: the library a reader would see; apply()
+                  runs one sync item through the firmware's rules
+session.rs      — sync_now: one "Sync now" press, returning a SyncReport or
+                  the SyncFailure the device would show
+test_support.rs — a stub Omnibus that reproduces old server bugs on request
+```
 
 ## omnibus-ios/
 
