@@ -73,17 +73,16 @@ pub fn load_last() -> Option<ViewPrefs> {
 
 /// Save `filters` as the filter of the last-browsed library, leaving its sort
 /// and view mode as they were — the write for a page that has no prefs of its
-/// own but shares the landing's filter. Returns whether anything was saved: with
-/// no library ever browsed (and under SSR) there is no key to file it under, so
-/// the caller holds the filter in memory only.
-pub fn save_filters(filters: &ViewFilters) -> bool {
+/// own but shares the landing's filter. With no library ever browsed (and under
+/// SSR) there is no key to file it under, so nothing is saved and the caller
+/// holds the filter in memory only.
+pub fn save_filters(filters: &ViewFilters) {
     let Some(path) = last_library() else {
-        return false;
+        return;
     };
     let mut prefs = load(&path);
     prefs.filters = filters.clone();
     save(&path, &prefs);
-    true
 }
 
 /// Where one edit to the prefs is saved, and whether it still owes the
@@ -239,7 +238,7 @@ mod mobile_tests {
                 )],
             };
 
-            assert!(save_filters(&next));
+            save_filters(&next);
 
             let stored = load("/library/a");
             assert_eq!(stored.filters, next);
@@ -256,7 +255,7 @@ mod mobile_tests {
         with_isolated_store(|| {
             let filters = sample_prefs().filters;
 
-            assert!(!save_filters(&filters));
+            save_filters(&filters);
 
             assert_eq!(last_library(), None);
             assert_eq!(load_last(), None);

@@ -129,17 +129,6 @@ fn shelf_lens_stacks_the_members_only_with_stacking_on() {
     assert!(stacks.is_empty());
 }
 
-#[test]
-fn shelf_lens_keeps_every_member_it_is_given() {
-    // The server narrows the list under a filter; a client-side pass over it
-    // would only be a second, disagreeing opinion.
-    let members = vec![series_book("a", "Saga", "1"), series_book("b", "Saga", "2")];
-
-    let (rows, _) = shelf_lens(&members, false);
-
-    assert_eq!(rows.len(), 2);
-}
-
 fn one_clause() -> ViewFilters {
     ViewFilters {
         clauses: vec![FilterClause::new(

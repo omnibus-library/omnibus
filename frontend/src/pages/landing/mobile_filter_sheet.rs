@@ -9,7 +9,6 @@
 use dioxus::prelude::*;
 use omnibus_shared::{
     FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewPrefs,
-    MAX_FILTER_CLAUSES, MAX_FILTER_VALUES,
 };
 
 use crate::components::filter_bar::{field_token, ShelfList};
@@ -145,9 +144,7 @@ fn picked_values(filters: &ViewFilters, field: FilterField, mode: FilterMode) ->
 
 /// Flip `value` in or out of the `field`/`mode` clause. A picked value (compared
 /// ignoring ASCII case, as the engine does) is removed and an emptied clause
-/// dropped; an unpicked one joins the first such clause, or opens one. A pick
-/// past the caps the server enforces is refused: a second clause for the same
-/// pair would AND with the first, not extend it.
+/// dropped; an unpicked one joins the first such clause, or opens one.
 fn toggle_value(filters: &mut ViewFilters, field: FilterField, mode: FilterMode, value: &str) {
     let names_pair = |c: &FilterClause| c.field == field && c.mode == mode;
     let picked = filters
@@ -163,10 +160,8 @@ fn toggle_value(filters: &mut ViewFilters, field: FilterField, mode: FilterMode,
             .clauses
             .retain(|c| !(names_pair(c) && c.values.is_empty()));
     } else if let Some(clause) = filters.clauses.iter_mut().find(|c| names_pair(c)) {
-        if clause.values.len() < MAX_FILTER_VALUES {
-            clause.values.push(value.to_string());
-        }
-    } else if filters.clauses.len() < MAX_FILTER_CLAUSES {
+        clause.values.push(value.to_string());
+    } else {
         filters
             .clauses
             .push(FilterClause::new(field, mode, &[value]));

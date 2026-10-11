@@ -229,40 +229,6 @@ fn toggle_value_keeps_the_include_and_exclude_clauses_of_a_field_apart() {
 }
 
 #[test]
-fn toggle_value_refuses_a_value_past_the_per_clause_cap() {
-    let values: Vec<String> = (0..MAX_FILTER_VALUES).map(|i| format!("t{i}")).collect();
-    let refs: Vec<&str> = values.iter().map(String::as_str).collect();
-    let mut filters = filters_of(vec![clause(FilterField::Tag, FilterMode::Include, &refs)]);
-
-    toggle_value(
-        &mut filters,
-        FilterField::Tag,
-        FilterMode::Include,
-        "one-more",
-    );
-
-    assert_eq!(filters.clauses[0].values.len(), MAX_FILTER_VALUES);
-    assert!(filters.validate().is_ok());
-}
-
-#[test]
-fn toggle_value_refuses_a_new_clause_past_the_clause_cap() {
-    let others: Vec<FilterClause> = (0..MAX_FILTER_CLAUSES)
-        .map(|i| clause(FilterField::Tag, FilterMode::Include, &[&format!("t{i}")]))
-        .collect();
-    let mut filters = filters_of(others.clone());
-
-    toggle_value(
-        &mut filters,
-        FilterField::Author,
-        FilterMode::Include,
-        "Ada",
-    );
-
-    assert_eq!(filters.clauses, others);
-}
-
-#[test]
 fn picked_values_collects_a_field_and_mode_across_clauses() {
     let filters = filters_of(vec![
         clause(FilterField::Tag, FilterMode::Include, &["a"]),

@@ -115,7 +115,8 @@ fn shelf_books_say_the_filter_ruled_every_member_out_rather_than_that_the_shelf_
 
 #[test]
 fn shelf_books_hold_skeletons_rather_than_the_filtered_message_before_members_answer() {
-    let html = render_in_vdom(|| rsx! { BooksHarness { view: view(true, false) } });
+    let html = render_in_vdom(|| rsx! { BooksHarness { view: view(true, true) } });
+    assert!(html.contains("shelf-loading"), "{html}");
     assert!(!html.contains("shelf-filtered-empty"), "{html}");
 }
 
