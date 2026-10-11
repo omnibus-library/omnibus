@@ -167,7 +167,7 @@ pub(crate) async fn shelf_deleted(id: i64) {
     if let Some(st) = store::store() {
         st.kv_delete(&cache::keys::shelf(id));
         st.kv_delete_prefix(&format!("shelf_page:{id}:"));
-        drop_shelf_filtered_pages(st).await;
+        drop_shelf_filtered_pages(st);
     }
 }
 
@@ -177,7 +177,7 @@ pub(crate) async fn shelf_deleted(id: i64) {
 pub(crate) async fn shelf_books_added(shelf_id: i64, book_uuids: &[String]) {
     bump_shelf_count(shelf_id, book_uuids.len() as i64).await;
     let Some(st) = store::store() else { return };
-    drop_shelf_filtered_pages(st).await;
+    drop_shelf_filtered_pages(st);
     let mut whole_pages = Vec::new();
     for (key, _) in st.kv_prefix(&format!("shelf_page:{shelf_id}:")).await {
         if is_filtered_shelf_page(&key) {
@@ -228,21 +228,15 @@ fn is_filtered_shelf_page(key: &str) -> bool {
 
 /// Drop every cached browse or shelf page whose filter has a shelf clause: a
 /// membership write can change what it holds, and the replica can't recompute it.
-async fn drop_shelf_filtered_pages(st: &store::Store) {
-    for prefix in ["ebooks_first:", "shelf_page:"] {
-        for (key, _) in st.kv_prefix(prefix).await {
-            if key.contains(SHELF_CLAUSE) {
-                st.kv_delete(&key);
-            }
-        }
-    }
+fn drop_shelf_filtered_pages(st: &store::Store) {
+    st.kv_delete_prefixes_containing(&["ebooks_first:", "shelf_page:"], SHELF_CLAUSE);
 }
 
 /// Remove a book from a shelf's cached pages and drop its counts.
 pub(crate) async fn shelf_book_removed(shelf_id: i64, book_uuid: &str) {
     bump_shelf_count(shelf_id, -1).await;
     let Some(st) = store::store() else { return };
-    drop_shelf_filtered_pages(st).await;
+    drop_shelf_filtered_pages(st);
     for (key, _) in st.kv_prefix(&format!("shelf_page:{shelf_id}:")).await {
         cache::mutate_json::<ShelfPage, _>(&key, |page| {
             page.books

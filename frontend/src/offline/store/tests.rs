@@ -54,6 +54,34 @@ async fn kv_delete_prefix_removes_only_matching_keys() {
 }
 
 #[tokio::test]
+async fn kv_delete_prefixes_containing_removes_only_keys_with_a_prefix_and_the_needle() {
+    let (_dir, store) = open_temp();
+    let needle = r#""field":"shelf""#;
+    let doomed = [
+        format!("ebooks_first:title:asc:f=[{{{needle}}}]:x="),
+        format!("shelf_page:3:title:asc:f=[{{{needle}}}]"),
+    ];
+    let kept = [
+        r#"ebooks_first:title:asc:f=[{"field":"tag"}]:x="#.to_string(),
+        format!("journals:[{{{needle}}}]"),
+        // `_` is a LIKE wildcard: this prefix must be matched literally.
+        format!("ebooksXfirst:title:asc:f=[{{{needle}}}]:x="),
+    ];
+    for key in doomed.iter().chain(&kept) {
+        store.kv_put(key, "1".to_string());
+    }
+
+    store.kv_delete_prefixes_containing(&["ebooks_first:", "shelf_page:"], needle);
+
+    for key in &doomed {
+        assert!(store.kv_get(key).await.is_none(), "{key} must be dropped");
+    }
+    for key in &kept {
+        assert!(store.kv_get(key).await.is_some(), "{key} must be kept");
+    }
+}
+
+#[tokio::test]
 async fn kv_rename_moves_payload_and_replaces_target() {
     let (_dir, store) = open_temp();
     store.kv_put("shelf:-1", "temp".to_string());
