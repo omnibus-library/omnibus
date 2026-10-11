@@ -110,9 +110,18 @@ fn toggle_formats(filters: &mut ViewFilters, values: &[&str]) {
     }
 }
 
-/// Drop every include-format clause, leaving the other clauses be.
+fn is_format(clause: &FilterClause) -> bool {
+    clause.field == FilterField::Format
+}
+
+/// Whether no format clause of either mode is set, which is what "All" shows.
+fn all_chip_on(filters: &ViewFilters) -> bool {
+    !filters.clauses.iter().any(is_format)
+}
+
+/// Drop every format clause, include or exclude, leaving the other clauses be.
 fn clear_formats(filters: &mut ViewFilters) {
-    filters.clauses.retain(|c| !is_include_format(c));
+    filters.clauses.retain(|c| !is_format(c));
 }
 
 /// The bottom sheet. Fires `on_change` with a whole updated [`ViewPrefs`] on
@@ -227,9 +236,9 @@ fn sort_row(
     }
 }
 
-/// The "All" chip — active when no format filter is set; tapping clears them.
+/// The "All" chip — active when no format clause is set; tapping clears them.
 fn all_chip(prefs: &ViewPrefs, on_change: &EventHandler<ViewPrefs>) -> Element {
-    let on = !prefs.filters.clauses.iter().any(is_include_format);
+    let on = all_chip_on(&prefs.filters);
     let next_base = prefs.clone();
     let handler = *on_change;
     rsx! {

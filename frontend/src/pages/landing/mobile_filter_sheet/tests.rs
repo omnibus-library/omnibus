@@ -100,3 +100,35 @@ fn clear_formats_removes_the_include_format_clause_and_keeps_the_rest() {
     clear_formats(&mut filters);
     assert_eq!(filters.clauses, vec![tag]);
 }
+
+#[test]
+fn clear_formats_removes_exclude_format_clauses_too() {
+    let tag = FilterClause::new(FilterField::Tag, FilterMode::Include, &["horror"]);
+    let mut filters = filters_of(vec![
+        FilterClause::new(FilterField::Format, FilterMode::Exclude, &["pdf"]),
+        include_format(&["epub"]),
+        tag.clone(),
+    ]);
+    clear_formats(&mut filters);
+    assert_eq!(filters.clauses, vec![tag]);
+}
+
+#[test]
+fn all_chip_on_is_off_while_an_exclude_format_clause_is_set() {
+    let filters = filters_of(vec![FilterClause::new(
+        FilterField::Format,
+        FilterMode::Exclude,
+        &["pdf"],
+    )]);
+    assert!(!all_chip_on(&filters));
+}
+
+#[test]
+fn all_chip_on_is_on_when_only_non_format_clauses_are_set() {
+    let filters = filters_of(vec![FilterClause::new(
+        FilterField::Tag,
+        FilterMode::Include,
+        &["horror"],
+    )]);
+    assert!(all_chip_on(&filters));
+}
