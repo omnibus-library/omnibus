@@ -22,6 +22,7 @@ use crate::contexts::use_current_user_summary;
 use crate::{data, use_server_url, AvatarCacheBust, Route};
 
 use super::super::body::{BdAuthorCluster, BdPageCtx, BdSameHand, BdSuggestionsStrip};
+use super::super::rule_facts::use_rule_facts_saved;
 use super::MarqueeViewFacts;
 
 /// Everything the More stop needs beyond the book, bundled to keep the
@@ -38,6 +39,8 @@ pub(super) struct MoreStopCtx {
     /// The viewer's wishlist entry for this book, shared with the hero so the
     /// shelf list follows the Add / Remove buttons without a refetch.
     pub wishlist: Signal<Option<WishlistEntry>>,
+    /// True once `wishlist` holds the server's answer rather than its seed.
+    pub wishlist_loaded: Signal<bool>,
 }
 
 /// The More stop: the series shelf (when there is one) and the shelves holding
@@ -61,6 +64,7 @@ pub(super) fn MarqueeMoreStop(
         suggestions,
         page,
         wishlist,
+        wishlist_loaded,
     } = ctx;
     rsx! {
         div { class: "bdmq-tight bdmq-more", "data-testid": "bdmq-more",
@@ -77,6 +81,7 @@ pub(super) fn MarqueeMoreStop(
                 uuid: b.unique_identifier.clone().unwrap_or_default(),
                 has_cover: b.cover_url.is_some(),
                 wishlist,
+                wishlist_loaded,
                 in_series: b.series_id.is_some(),
             }
             div { class: "bdmq-morerule" }
@@ -196,12 +201,32 @@ struct ShelvesFacts {
     all: Vec<ShelfSummary>,
     manual_ids: Vec<i64>,
     smart_ids: Vec<i64>,
+    /// Whether this book was on the viewer's Wishlist when `all` was read, so a
+    /// wish made since can be counted into that shelf's tile. `None` when the
+    /// wishlist hadn't answered yet and so it can't be told.
+    wished_at_read: Option<bool>,
 }
 
 impl ShelvesFacts {
     /// The shelves among `all` whose id is in `ids`, in `all`'s order.
     fn named<'a>(&'a self, ids: &'a [i64]) -> impl Iterator<Item = &'a ShelfSummary> {
         self.all.iter().filter(|s| ids.contains(&s.id))
+    }
+
+    /// These facts with the shelf list, the smart matches and the wishlist
+    /// baseline re-read. The hand-picked ids stay: no save on this page moves them.
+    fn refreshed(
+        &self,
+        all: Vec<ShelfSummary>,
+        smart_ids: Vec<i64>,
+        wished_at_read: Option<bool>,
+    ) -> Self {
+        Self {
+            all,
+            manual_ids: self.manual_ids.clone(),
+            smart_ids,
+            wished_at_read,
+        }
     }
 }
 
@@ -215,14 +240,34 @@ fn shelves_facts<E>(
     all: Result<Vec<ShelfSummary>, E>,
     manual: Result<Vec<i64>, E>,
     smart: Result<Vec<i64>, E>,
+    wished_at_read: Option<bool>,
 ) -> Result<ShelvesFacts, ()> {
     match (all, manual, smart) {
         (Ok(all), Ok(manual_ids), Ok(smart_ids)) => Ok(ShelvesFacts {
             all,
             manual_ids,
             smart_ids,
+            wished_at_read,
         }),
         _ => Err(()),
+    }
+}
+
+/// How the membership effect reads when it fires.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ShelvesLoad {
+    /// A book not read yet, or no usable answer to keep: start over from the loader.
+    Fresh,
+    /// The same book with its answer in hand: a save on the page may have moved
+    /// a rule's verdict, so re-read the lists in place.
+    Refresh,
+}
+
+/// Which read the effect makes, given the book `loaded` last started for.
+fn shelves_load(loaded: Option<&str>, uuid: &str, read: &ShelvesRead) -> ShelvesLoad {
+    match read {
+        Some(Ok(_)) if loaded == Some(uuid) => ShelvesLoad::Refresh,
+        _ => ShelvesLoad::Fresh,
     }
 }
 
@@ -234,17 +279,27 @@ fn shelves_facts<E>(
 /// `shelf_books`, so neither membership read names it; the landing gallery
 /// counts the book under it all the same. It is read off the page's own
 /// wishlist signal instead, so it appears the moment the Add button lands and
-/// goes with Remove.
-fn held_shelves(facts: &ShelvesFacts, viewer_id: Option<i64>, wished: bool) -> Vec<ShelfSummary> {
+/// goes with Remove — counted in when the read predates the wish.
+fn held_shelves(
+    facts: &ShelvesFacts,
+    viewer_id: Option<i64>,
+    wished: bool,
+    uuid: &str,
+    has_cover: bool,
+) -> Vec<ShelfSummary> {
     let wishlist = facts
         .all
         .iter()
-        .filter(|s| wished && s.kind == ShelfKind::Wishlist && Some(s.owner_user_id) == viewer_id);
+        .filter(|s| wished && s.kind == ShelfKind::Wishlist && Some(s.owner_user_id) == viewer_id)
+        .map(|s| match facts.wished_at_read {
+            Some(false) => with_wished_book(s, uuid, has_cover),
+            _ => s.clone(),
+        });
     facts
         .named(&facts.manual_ids)
         .chain(facts.named(&facts.smart_ids))
-        .chain(wishlist)
         .cloned()
+        .chain(wishlist)
         .collect()
 }
 
@@ -254,6 +309,20 @@ struct PickerState {
     open: Signal<bool>,
     busy: Signal<Option<i64>>,
     error: Signal<Option<String>>,
+}
+
+impl PickerState {
+    /// Close the picker and forget its write.
+    fn reset(self) {
+        let Self {
+            mut open,
+            mut busy,
+            mut error,
+        } = self;
+        open.set(false);
+        busy.set(None);
+        error.set(None);
+    }
 }
 
 /// What the membership block draws its tiles with.
@@ -266,26 +335,59 @@ struct BlockCtx {
     avatar_bust: u32,
 }
 
+/// The block's reads: what they found, which book they started for, and the
+/// counters that let an answer to a superseded read be dropped.
+#[derive(Clone, Copy)]
+struct ReadState {
+    shelves: Signal<ShelvesRead>,
+    /// The book the last fresh read was for.
+    book: Signal<Option<String>>,
+    /// Bumped by each fresh read, and by a hop to another book.
+    load_seq: Signal<u64>,
+    /// Bumped by each in-place refresh.
+    refresh_seq: Signal<u64>,
+    wishlist: Signal<Option<WishlistEntry>>,
+    wishlist_loaded: Signal<bool>,
+}
+
+impl ReadState {
+    /// Whether the book is on the Wishlist right now, or `None` while that
+    /// answer hasn't come in. What a read that lands now is measured against.
+    fn wished_at_read(self) -> Option<bool> {
+        (*self.wishlist_loaded.peek()).then(|| self.wishlist.peek().is_some())
+    }
+}
+
 /// Every shelf holding this book, as tiles — the hand-picked ones, the smart
 /// ones whose rules match it, and the viewer's own Wishlist when the book is on
 /// it — and the picker that adds the book to a hand-picked shelf or takes it
 /// off again. `in_series` sits the block under the series shelf, which already
 /// says what the book is part of; `has_cover` is whether the book can stand on
-/// a shelf's ledge.
+/// a shelf's ledge. The block re-reads when a save on the page may have moved a
+/// smart shelf's verdict.
 #[component]
 fn MarqueeShelfMembership(
     uuid: String,
     has_cover: bool,
     wishlist: Signal<Option<WishlistEntry>>,
+    wishlist_loaded: Signal<bool>,
     in_series: bool,
 ) -> Element {
     let server_url = use_server_url();
     let avatar_bust = try_use_context::<AvatarCacheBust>().map_or(0, |b| (b.0)());
     let me = use_current_user_summary();
-    let mut shelves = use_signal(ShelvesRead::default);
+    let saved = use_rule_facts_saved();
     // A fast SPA hop between books can leave the previous book's shelf fetch
-    // in flight; drop its result rather than showing it under the new book.
-    let mut load_seq = use_signal(|| 0u64);
+    // in flight; `load_seq` drops its result rather than showing it under the
+    // new book.
+    let read = ReadState {
+        shelves: use_signal(ShelvesRead::default),
+        book: use_signal(|| None::<String>),
+        load_seq: use_signal(|| 0u64),
+        refresh_seq: use_signal(|| 0u64),
+        wishlist,
+        wishlist_loaded,
+    };
     let picker = PickerState {
         open: use_signal(|| false),
         busy: use_signal(|| None::<i64>),
@@ -293,35 +395,29 @@ fn MarqueeShelfMembership(
     };
     {
         let server_url = server_url.clone();
-        let (mut open, mut busy, mut error) = (picker.open, picker.busy, picker.error);
         use_effect(use_reactive!(|uuid| {
-            let my_load = *load_seq.peek() + 1;
-            load_seq.set(my_load);
-            shelves.set(None);
-            open.set(false);
-            busy.set(None);
-            error.set(None);
-            let url = server_url.clone();
-            let uuid = uuid.clone();
-            spawn(async move {
-                let all = data::list_shelves(&url).await;
-                let manual = data::shelves_containing(&url, &uuid).await;
-                let smart = data::smart_shelves_containing(&url, &uuid).await;
-                if *load_seq.peek() == my_load {
-                    shelves.set(Some(shelves_facts(all, manual, smart)));
-                }
-            });
+            // Subscribes: each save on the page re-runs this effect.
+            let _ = saved.count();
+            // Bound first: a `peek` guard held across the arms would still be
+            // borrowing `shelves` when a read writes it.
+            let load = shelves_load(read.book.peek().as_deref(), &uuid, &read.shelves.peek());
+            match load {
+                ShelvesLoad::Fresh => read_fresh(read, picker, server_url.clone(), uuid.clone()),
+                ShelvesLoad::Refresh => read_refresh(read, server_url.clone(), uuid.clone()),
+            }
         }));
     }
+    let shelves = read.shelves;
     let viewer_id = me().map(|u| u.id);
-    let held = shelves()
-        .map(|answer| answer.map(|facts| held_shelves(&facts, viewer_id, wishlist().is_some())));
+    let held = shelves().map(|answer| {
+        answer.map(|facts| held_shelves(&facts, viewer_id, wishlist().is_some(), &uuid, has_cover))
+    });
     let toggle = build_shelf_toggle(
         server_url.clone(),
         uuid,
         has_cover,
         shelves,
-        load_seq,
+        read.load_seq,
         picker,
     );
     let list = shelf_picker_list(&shelves(), me().as_ref(), picker);
@@ -348,6 +444,61 @@ fn MarqueeShelfMembership(
             }
         }
     }
+}
+
+/// Start over for `uuid`: the loader, a closed picker, then all three reads.
+fn read_fresh(read: ReadState, picker: PickerState, url: String, uuid: String) {
+    let ReadState {
+        mut shelves,
+        mut book,
+        mut load_seq,
+        ..
+    } = read;
+    let my_load = *load_seq.peek() + 1;
+    load_seq.set(my_load);
+    book.set(Some(uuid.clone()));
+    shelves.set(None);
+    picker.reset();
+    spawn(async move {
+        let all = data::list_shelves(&url).await;
+        let manual = data::shelves_containing(&url, &uuid).await;
+        let smart = data::smart_shelves_containing(&url, &uuid).await;
+        if *load_seq.peek() == my_load {
+            let wished = read.wished_at_read();
+            shelves.set(Some(shelves_facts(all, manual, smart, wished)));
+        }
+    });
+}
+
+/// Re-read the shelf list and the smart matches behind the tiles already
+/// drawn, so a shelf the book just started to match appears with its true count.
+fn read_refresh(read: ReadState, url: String, uuid: String) {
+    let ReadState {
+        mut shelves,
+        load_seq,
+        mut refresh_seq,
+        ..
+    } = read;
+    let my_load = *load_seq.peek();
+    let my_refresh = *refresh_seq.peek() + 1;
+    refresh_seq.set(my_refresh);
+    spawn(async move {
+        let all = data::list_shelves(&url).await;
+        let smart = data::smart_shelves_containing(&url, &uuid).await;
+        if *load_seq.peek() != my_load || *refresh_seq.peek() != my_refresh {
+            return;
+        }
+        // A background read that failed leaves the tiles as they were.
+        let (Ok(all), Ok(smart_ids)) = (all, smart) else {
+            return;
+        };
+        let wished = read.wished_at_read();
+        shelves.with_mut(|current| {
+            if let Some(Ok(facts)) = current {
+                *facts = facts.refreshed(all, smart_ids, wished);
+            }
+        });
+    });
 }
 
 /// What the picker shows: the shelves the viewer may change, ticked for the
@@ -476,8 +627,9 @@ fn with_membership(ids: &[i64], shelf_id: i64, on: bool) -> Vec<i64> {
 }
 
 /// `shelves` with `shelf_id`'s count and ledge following this book going onto
-/// it (`on`) or coming off. A cover joins at the front, capped at the ledge's
-/// width; every other shelf is left as it was.
+/// it (`on`) or coming off. A hand-picked shelf files new books last, so a
+/// cover joins at the back, and only while the ledge has room; every other
+/// shelf is left as it was.
 fn with_member_summary(
     shelves: &[ShelfSummary],
     shelf_id: i64,
@@ -490,13 +642,25 @@ fn with_member_summary(
         shelf.cover_uuids.retain(|c| c != uuid);
         if on {
             shelf.book_count += 1;
-            if has_cover {
-                shelf.cover_uuids.insert(0, uuid.to_string());
-                shelf.cover_uuids.truncate(LEDGE_BOOKS);
+            if has_cover && shelf.cover_uuids.len() < LEDGE_BOOKS {
+                shelf.cover_uuids.push(uuid.to_string());
             }
         } else {
             shelf.book_count = (shelf.book_count - 1).max(0);
         }
+    }
+    next
+}
+
+/// `shelf`, a Wishlist read before the book was wished for, with the book
+/// counted in. A Wishlist lists newest first, so its cover leads the ledge.
+fn with_wished_book(shelf: &ShelfSummary, uuid: &str, has_cover: bool) -> ShelfSummary {
+    let mut next = shelf.clone();
+    next.book_count += 1;
+    if has_cover {
+        next.cover_uuids.retain(|c| c != uuid);
+        next.cover_uuids.insert(0, uuid.to_string());
+        next.cover_uuids.truncate(LEDGE_BOOKS);
     }
     next
 }
@@ -510,12 +674,14 @@ fn shelf_link_tile(shelf: &ShelfSummary, ctx: &BlockCtx) -> Element {
             to: Route::ShelfDetail { id },
             class: tile_class(true),
             style: accent_style(shelf),
+            "aria-labelledby": "bdmq-shelf-name-{id}",
             "data-testid": "bdmq-shelf-{id}",
             ShelfTileFace {
                 shelf: shelf.clone(),
                 owner_label: viewer_owner_label(ctx.viewer_id, shelf),
                 server_url: ctx.server_url.clone(),
                 avatar_bust: ctx.avatar_bust,
+                name_id: "bdmq-shelf-name-{id}",
             }
         }
     }

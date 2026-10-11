@@ -197,7 +197,7 @@ pub mod add_books_modal;
 pub use add_books_modal::AddBooksModal;
 
 // The "Add to shelf" picker: lists the hand-picked shelves a reader may change
-// and reports the row they pick. Web-only — the mobile apps queue their own
+// and reports the tile they pick. Web-only — the mobile apps queue their own
 // shelf writes through the offline outbox.
 #[cfg(not(feature = "mobile"))]
 pub mod shelf_picker;

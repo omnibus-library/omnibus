@@ -28,6 +28,7 @@ mod journal_editor;
 mod merge;
 mod rating;
 mod read_status;
+mod rule_facts;
 #[cfg(not(feature = "mobile"))]
 mod sync_link;
 mod view;

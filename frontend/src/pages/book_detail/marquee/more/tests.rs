@@ -32,11 +32,11 @@ fn counted(id: i64, count: i64, covers: &[&str]) -> ShelfSummary {
 }
 
 #[test]
-fn with_member_summary_counts_the_book_in_and_stands_its_cover_first_when_added() {
+fn with_member_summary_counts_the_book_in_and_stands_its_cover_last_when_added() {
     let shelves = [counted(5, 2, &["a", "b"])];
     let next = with_member_summary(&shelves, 5, "new", true, true);
     assert_eq!(next[0].book_count, 3);
-    assert_eq!(next[0].cover_uuids, vec!["new", "a", "b"]);
+    assert_eq!(next[0].cover_uuids, vec!["a", "b", "new"]);
 }
 
 #[test]
@@ -48,10 +48,11 @@ fn with_member_summary_counts_a_coverless_book_in_without_touching_the_ledge() {
 }
 
 #[test]
-fn with_member_summary_keeps_the_ledge_to_its_width_when_a_cover_joins_a_full_one() {
+fn with_member_summary_leaves_a_full_ledge_alone_when_a_cover_joins_it() {
     let shelves = [counted(5, 9, &["a", "b", "c", "d"])];
     let next = with_member_summary(&shelves, 5, "new", true, true);
-    assert_eq!(next[0].cover_uuids, vec!["new", "a", "b", "c"]);
+    assert_eq!(next[0].book_count, 10);
+    assert_eq!(next[0].cover_uuids, vec!["a", "b", "c", "d"]);
 }
 
 #[test]
@@ -85,6 +86,7 @@ fn facts(all: Vec<ShelfSummary>, manual_ids: &[i64], smart_ids: &[i64]) -> Shelv
         all,
         manual_ids: manual_ids.to_vec(),
         smart_ids: smart_ids.to_vec(),
+        wished_at_read: None,
     }
 }
 
@@ -95,25 +97,13 @@ fn names(shelves: &[ShelfSummary]) -> Vec<&str> {
 #[test]
 fn shelves_facts_joins_the_three_reads_when_all_of_them_answer() {
     let all = vec![shelf(1, VIEWER_ID, ShelfKind::Manual, "Beach")];
-    let joined = shelves_facts(Ok(all.clone()), Ok::<_, &str>(vec![1]), Ok(vec![2]));
+    let joined = shelves_facts(Ok(all.clone()), Ok::<_, &str>(vec![1]), Ok(vec![2]), None);
     assert_eq!(joined, Ok(facts(all, &[1], &[2])));
 }
 
 #[test]
-fn shelves_facts_fails_when_the_shelf_list_read_fails() {
-    let joined = shelves_facts(Err("boom"), Ok(vec![1]), Ok(vec![2]));
-    assert_eq!(joined, Err(()));
-}
-
-#[test]
-fn shelves_facts_fails_when_the_hand_picked_read_fails() {
-    let joined = shelves_facts(Ok(Vec::new()), Err("boom"), Ok(vec![2]));
-    assert_eq!(joined, Err(()));
-}
-
-#[test]
 fn shelves_facts_fails_when_the_smart_read_fails() {
-    let joined = shelves_facts(Ok(Vec::new()), Ok(vec![1]), Err("boom"));
+    let joined = shelves_facts(Ok(Vec::new()), Ok(vec![1]), Err("boom"), None);
     assert_eq!(joined, Err(()));
 }
 
@@ -125,7 +115,7 @@ fn held_shelves_lists_the_hand_picked_then_the_smart_then_the_viewers_wishlist()
         shelf(2, VIEWER_ID, ShelfKind::Manual, "Commute"),
         shelf(1, VIEWER_ID, ShelfKind::Manual, "Beach"),
     ];
-    let held = held_shelves(&facts(all, &[1, 2], &[3]), Some(VIEWER_ID), true);
+    let held = held_shelves(&facts(all, &[1, 2], &[3]), Some(VIEWER_ID), true, "b", true);
     assert_eq!(
         names(&held),
         vec!["Commute", "Beach", "Austen", "reader's wishlist"]
@@ -140,22 +130,132 @@ fn held_shelves_leaves_out_the_wishlist_until_the_book_is_wished_for() {
         ShelfKind::Wishlist,
         "reader's wishlist",
     )];
-    let held = held_shelves(&facts(all, &[], &[]), Some(VIEWER_ID), false);
+    let held = held_shelves(&facts(all, &[], &[]), Some(VIEWER_ID), false, "b", true);
     assert!(held.is_empty());
 }
 
 #[test]
 fn held_shelves_never_names_another_readers_wishlist() {
     let all = vec![shelf(4, 9, ShelfKind::Wishlist, "user-9's wishlist")];
-    let held = held_shelves(&facts(all, &[], &[]), Some(VIEWER_ID), true);
+    let held = held_shelves(&facts(all, &[], &[]), Some(VIEWER_ID), true, "b", true);
     assert!(held.is_empty());
 }
 
 #[test]
 fn held_shelves_skips_a_member_id_the_shelf_list_does_not_carry() {
     let all = vec![shelf(1, VIEWER_ID, ShelfKind::Manual, "Beach")];
-    let held = held_shelves(&facts(all, &[1, 99], &[98]), Some(VIEWER_ID), false);
+    let held = held_shelves(
+        &facts(all, &[1, 99], &[98]),
+        Some(VIEWER_ID),
+        false,
+        "b",
+        true,
+    );
     assert_eq!(names(&held), vec!["Beach"]);
+}
+
+fn wishlist_of(count: i64, covers: &[&str]) -> ShelfSummary {
+    let mut wishlist = shelf(4, VIEWER_ID, ShelfKind::Wishlist, "reader's wishlist");
+    wishlist.book_count = count;
+    wishlist.cover_uuids = covers.iter().map(|c| c.to_string()).collect();
+    wishlist
+}
+
+fn wished_after_the_read(wishlist: ShelfSummary) -> ShelvesFacts {
+    ShelvesFacts {
+        wished_at_read: Some(false),
+        ..facts(vec![wishlist], &[], &[])
+    }
+}
+
+#[test]
+fn held_shelves_counts_a_book_wished_after_the_read_and_stands_its_cover_first() {
+    let facts = wished_after_the_read(wishlist_of(2, &["a", "b"]));
+    let held = held_shelves(&facts, Some(VIEWER_ID), true, "new", true);
+    assert_eq!(held[0].book_count, 3);
+    assert_eq!(held[0].cover_uuids, vec!["new", "a", "b"]);
+}
+
+#[test]
+fn held_shelves_counts_a_coverless_book_wished_after_the_read_without_touching_the_ledge() {
+    let facts = wished_after_the_read(wishlist_of(2, &["a", "b"]));
+    let held = held_shelves(&facts, Some(VIEWER_ID), true, "new", false);
+    assert_eq!(held[0].book_count, 3);
+    assert_eq!(held[0].cover_uuids, vec!["a", "b"]);
+}
+
+#[test]
+fn held_shelves_keeps_the_wishlist_ledge_to_its_width_when_a_wished_cover_joins_a_full_one() {
+    let facts = wished_after_the_read(wishlist_of(9, &["a", "b", "c", "d"]));
+    let held = held_shelves(&facts, Some(VIEWER_ID), true, "new", true);
+    assert_eq!(held[0].cover_uuids, vec!["new", "a", "b", "c"]);
+}
+
+#[test]
+fn held_shelves_shows_the_wishlist_as_read_when_the_book_was_already_wished_at_the_read() {
+    let facts = ShelvesFacts {
+        wished_at_read: Some(true),
+        ..facts(vec![wishlist_of(2, &["a", "new"])], &[], &[])
+    };
+    let held = held_shelves(&facts, Some(VIEWER_ID), true, "new", true);
+    assert_eq!(held[0].book_count, 2);
+    assert_eq!(held[0].cover_uuids, vec!["a", "new"]);
+}
+
+#[test]
+fn held_shelves_shows_the_wishlist_as_read_when_it_was_unknown_whether_the_book_was_wished() {
+    let facts = facts(vec![wishlist_of(2, &["a", "b"])], &[], &[]);
+    let held = held_shelves(&facts, Some(VIEWER_ID), true, "new", true);
+    assert_eq!(held[0].book_count, 2);
+    assert_eq!(held[0].cover_uuids, vec!["a", "b"]);
+}
+
+#[test]
+fn shelves_load_refreshes_in_place_when_the_same_book_has_its_facts() {
+    let read: ShelvesRead = Some(Ok(facts(Vec::new(), &[], &[])));
+    assert_eq!(shelves_load(Some("b1"), "b1", &read), ShelvesLoad::Refresh);
+}
+
+#[test]
+fn shelves_load_starts_over_for_a_different_book() {
+    let read: ShelvesRead = Some(Ok(facts(Vec::new(), &[], &[])));
+    assert_eq!(shelves_load(Some("b1"), "b2", &read), ShelvesLoad::Fresh);
+}
+
+#[test]
+fn shelves_load_starts_over_for_a_book_not_read_yet() {
+    let read: ShelvesRead = Some(Ok(facts(Vec::new(), &[], &[])));
+    assert_eq!(shelves_load(None, "b1", &read), ShelvesLoad::Fresh);
+}
+
+#[test]
+fn shelves_load_starts_over_when_the_last_read_is_still_in_flight_or_failed() {
+    assert_eq!(shelves_load(Some("b1"), "b1", &None), ShelvesLoad::Fresh);
+    assert_eq!(
+        shelves_load(Some("b1"), "b1", &Some(Err(()))),
+        ShelvesLoad::Fresh
+    );
+}
+
+#[test]
+fn refreshed_takes_the_new_lists_and_baseline_and_keeps_the_hand_picked_ids() {
+    let before = facts(
+        vec![shelf(1, VIEWER_ID, ShelfKind::Manual, "Beach")],
+        &[1],
+        &[],
+    );
+    let all = vec![
+        shelf(1, VIEWER_ID, ShelfKind::Manual, "Beach"),
+        shelf(2, VIEWER_ID, ShelfKind::Smart, "Finished"),
+    ];
+    let after = before.refreshed(all.clone(), vec![2], Some(true));
+    assert_eq!(
+        after,
+        ShelvesFacts {
+            wished_at_read: Some(true),
+            ..facts(all, &[1], &[2])
+        }
+    );
 }
 
 /// What the router host below draws. A `Router` route cannot carry props, and
@@ -251,6 +351,20 @@ fn membership_body_draws_each_held_shelf_as_a_tile_linking_to_its_page() {
 }
 
 #[test]
+fn membership_body_names_each_tile_link_by_its_shelf_alone() {
+    let html = block_html(on_shelves(&["Beach"]));
+    let beach = tile_html(&html, 1);
+    assert!(
+        beach.contains("aria-labelledby=\"bdmq-shelf-name-1\""),
+        "{beach}"
+    );
+    assert!(
+        beach.contains("id=\"bdmq-shelf-name-1\"") && beach.contains(">Beach<"),
+        "{beach}"
+    );
+}
+
+#[test]
 fn membership_body_ends_the_tiles_with_the_add_to_shelf_tile() {
     let html = block_html(on_shelves(&["Beach", "Commute"]));
     let grid = position(&html, "data-testid=\"bdmq-shelves\"");
@@ -268,20 +382,6 @@ fn membership_body_draws_a_matching_smart_shelf_as_a_tile_and_never_says_not_on_
     assert!(tile.contains("Smart"), "{tile}");
     assert!(!html.contains("Not on a shelf yet."), "{html}");
     assert!(html.contains("data-testid=\"bdmq-shelves\""), "{html}");
-}
-
-#[test]
-fn membership_body_names_the_viewers_wishlist_with_its_kind() {
-    let held = Some(Ok(vec![shelf(
-        6,
-        VIEWER_ID,
-        ShelfKind::Wishlist,
-        "reader's wishlist",
-    )]));
-    let html = block_html(held);
-    let tile = tile_html(&html, 6);
-    assert!(tile.contains("Wishlist"), "{tile}");
-    assert!(tile.contains(">You<"), "{tile}");
 }
 
 #[test]

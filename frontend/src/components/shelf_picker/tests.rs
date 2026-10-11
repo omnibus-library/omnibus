@@ -309,21 +309,29 @@ fn shelf_picker_modal_tells_the_reader_only_hand_picked_shelves_are_listed() {
 }
 
 #[test]
-fn shelf_picker_modal_draws_each_shelf_as_a_tile_with_its_covers_count_and_accent() {
+fn shelf_picker_modal_sets_each_tiles_accent_on_its_button() {
     let mut beach = own(1, "Beach");
     beach.accent = Some("oklch(0.7 0.1 40)".to_string());
-    beach.book_count = 5;
-    beach.cover_uuids = vec!["c1".to_string()];
     let html = picker_html(ready(vec![beach]));
     let tile = tile_html(&html, 1);
     assert!(
         tile.contains("--shelf-accent: oklch(0.7 0.1 40);"),
         "{tile}"
     );
-    assert!(tile.contains("/api/thumbs/c1/sm"), "{tile}");
-    assert!(tile.contains("5 books"), "{tile}");
-    assert!(tile.contains("Hand-picked"), "{tile}");
-    assert!(tile.contains(">You<"), "{tile}");
+}
+
+#[test]
+fn shelf_picker_modal_names_each_tile_by_its_shelf_alone() {
+    let html = picker_html(ready(vec![own(1, "Beach")]));
+    let tile = tile_html(&html, 1);
+    assert!(
+        tile.contains("aria-labelledby=\"shelf-picker-name-1\""),
+        "{tile}"
+    );
+    assert!(
+        tile.contains("id=\"shelf-picker-name-1\"") && tile.contains(">Beach<"),
+        "{tile}"
+    );
 }
 
 #[test]

@@ -228,6 +228,8 @@ fn picker_tile(
             role,
             "aria-checked": aria_checked,
             "aria-busy": if is_busy { "true" } else { "false" },
+            // The face also carries count and owner; the shelf's name alone names the tile.
+            "aria-labelledby": "shelf-picker-name-{id}",
             "data-testid": "shelf-picker-tile-{id}",
             disabled: list.busy.is_some(),
             onclick: move |_| on_pick.call(id),
@@ -245,6 +247,7 @@ fn picker_tile(
                 owner_label: viewer_owner_label(list.viewer_id, shelf),
                 server_url: env.server_url.clone(),
                 avatar_bust: env.avatar_bust,
+                name_id: "shelf-picker-name-{id}",
             }
         }
     }

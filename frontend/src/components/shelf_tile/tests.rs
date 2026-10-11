@@ -2,7 +2,7 @@
 //! viewer reads, its accent and size classes, and what its face draws.
 //! Needs the `server` feature (`dioxus::ssr`).
 
-use omnibus_shared::{ShelfKind, Visibility};
+use omnibus_shared::ShelfKind;
 
 use super::*;
 use crate::test_support::{render_in_vdom, test_shelf_summary};
@@ -14,12 +14,6 @@ fn kind_label_names_each_kind_in_a_word() {
     assert_eq!(kind_label(ShelfKind::Smart), "Smart");
     assert_eq!(kind_label(ShelfKind::Manual), "Hand-picked");
     assert_eq!(kind_label(ShelfKind::Wishlist), "Wishlist");
-}
-
-#[test]
-fn visibility_label_names_each_visibility_in_a_word() {
-    assert_eq!(visibility_label(Visibility::Private), "Private");
-    assert_eq!(visibility_label(Visibility::Public), "Public");
 }
 
 #[test]
@@ -122,4 +116,26 @@ fn shelf_tile_face_tags_the_owner_only_when_given_a_testid() {
     );
     let plain = render_in_vdom(face_with_covers);
     assert!(!plain.contains("data-testid"), "{plain}");
+}
+
+#[test]
+fn shelf_tile_face_ids_the_name_only_when_given_one() {
+    let named = render_in_vdom(|| {
+        let shelf = test_shelf_summary(3, 9, ShelfKind::Manual, "Austen");
+        rsx! {
+            ShelfTileFace {
+                shelf,
+                owner_label: "by user-9".to_string(),
+                server_url: String::new(),
+                avatar_bust: 0,
+                name_id: "tile-name-3",
+            }
+        }
+    });
+    assert!(
+        named.contains("id=\"tile-name-3\"") && named.contains(">Austen<"),
+        "{named}"
+    );
+    let plain = render_in_vdom(face_with_covers);
+    assert!(!plain.contains("id=\""), "{plain}");
 }

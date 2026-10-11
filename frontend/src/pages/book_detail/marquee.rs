@@ -16,6 +16,7 @@ use crate::data;
 use super::body::BdPageCtx;
 use super::highlights::{BdHighlightsSection, BdQuoteMeta};
 use super::journal::MarqueeJournalStop;
+use super::rule_facts::RuleFactsSaved;
 use super::view::LoadedBookView;
 use super::PhysSignals;
 
@@ -83,6 +84,9 @@ pub(super) fn MarqueeStage(
     ctx: MarqueeStageCtx,
 ) -> Element {
     let uuid = b.unique_identifier.clone().unwrap_or_default();
+    // The page's writers count each save on it here; the More stop's shelves
+    // re-read on the count.
+    use_context_provider(RuleFactsSaved::new);
 
     // Page-wide data: newest saved position per format + session insights.
     // Seeded `None` on SSR and the first WASM paint (rule 07); post-mount
@@ -250,6 +254,7 @@ pub(super) fn MarqueeStage(
                         is_admin: ctx.is_admin,
                     },
                     wishlist: phys.wishlist,
+                    wishlist_loaded: phys.loaded,
                 },
             }
         },

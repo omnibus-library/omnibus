@@ -4,8 +4,9 @@
 //! shelf" picker, which each wrap [`ShelfTileFace`] in the element they need.
 
 use dioxus::prelude::*;
-use omnibus_shared::{ShelfKind, ShelfSummary, Visibility};
+use omnibus_shared::{ShelfKind, ShelfSummary};
 
+use crate::components::shelf_facets::visibility_label;
 use crate::components::shelf_glyphs::{kind_icon, visibility_icon};
 use crate::components::user_avatar::UserAvatar;
 use crate::shelf_access::shows_owner_attribution;
@@ -45,7 +46,8 @@ pub fn viewer_owner_label(viewer_id: Option<i64>, shelf: &ShelfSummary) -> Strin
 /// The tile's inner markup — ledge, then name, facets and foot. The caller
 /// supplies the element around it (a link, a button, a plain block) carrying
 /// [`tile_class`] and [`accent_style`]. `owner_label` is what the foot says;
-/// `owner_testid` tags it, for the one surface that selects on it.
+/// `owner_testid` tags it, for the one surface that selects on it; `name_id`
+/// ids the name, for a wrapper that is named by the shelf alone.
 #[component]
 pub fn ShelfTileFace(
     shelf: ShelfSummary,
@@ -53,11 +55,12 @@ pub fn ShelfTileFace(
     server_url: String,
     avatar_bust: u32,
     #[props(into, default)] owner_testid: Option<String>,
+    #[props(into, default)] name_id: Option<String>,
 ) -> Element {
     rsx! {
         {ledge(&shelf, &server_url)}
         div { class: "shv-card-body",
-            div { class: "shv-card-name", "{shelf.name}" }
+            div { class: "shv-card-name", id: name_id, "{shelf.name}" }
             div { class: "shv-card-facets",
                 span { class: "shv-facet shv-facet--kind",
                     {kind_icon(shelf.kind)}
@@ -130,14 +133,6 @@ pub fn kind_label(kind: ShelfKind) -> &'static str {
         ShelfKind::Smart => "Smart",
         ShelfKind::Manual => "Hand-picked",
         ShelfKind::Wishlist => "Wishlist",
-    }
-}
-
-/// Visibility word on a tile.
-pub fn visibility_label(visibility: Visibility) -> &'static str {
-    match visibility {
-        Visibility::Private => "Private",
-        Visibility::Public => "Public",
     }
 }
 
