@@ -4902,6 +4902,7 @@ dependencies = [
  "omnibus-db",
  "omnibus-frontend",
  "omnibus-mcp",
+ "omnibus-mock-kobo",
  "omnibus-shared",
  "rmcp",
  "serde",
