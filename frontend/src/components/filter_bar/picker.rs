@@ -184,7 +184,9 @@ pub fn toggle_pick(picked: &mut Vec<String>, value: &str) {
     }
 }
 
-/// Everything under the field row once a field is chosen.
+/// Everything under the field row once a field is chosen. With `footer` off the
+/// Cancel / Apply row is left out, for a caller that applies each tick as it
+/// happens (the mobile sheet) and so has nothing to confirm.
 #[component]
 pub fn PickerBody(
     field: FilterField,
@@ -196,8 +198,9 @@ pub fn PickerBody(
     on_query: EventHandler<String>,
     on_toggle: EventHandler<String>,
     on_retry: EventHandler<()>,
-    on_apply: EventHandler<()>,
-    on_cancel: EventHandler<()>,
+    #[props(default)] on_apply: EventHandler<()>,
+    #[props(default)] on_cancel: EventHandler<()>,
+    #[props(default = true)] footer: bool,
 ) -> Element {
     let plural = field_plural(field);
     let apply_label = match picked.len() {
@@ -227,21 +230,23 @@ pub fn PickerBody(
             div { class: "fb-list",
                 {option_list(plural, &query, &picked, &state, &found.read(), on_toggle, on_retry)}
             }
-            div { class: "fb-foot",
-                button {
-                    r#type: "button",
-                    class: "btn ghost sm",
-                    "data-testid": "filter-picker-cancel",
-                    onclick: move |_| on_cancel.call(()),
-                    "Cancel"
-                }
-                button {
-                    r#type: "button",
-                    class: "btn primary sm",
-                    "data-testid": "filter-picker-apply",
-                    disabled: picked.is_empty(),
-                    onclick: move |_| on_apply.call(()),
-                    "{apply_label}"
+            if footer {
+                div { class: "fb-foot",
+                    button {
+                        r#type: "button",
+                        class: "btn ghost sm",
+                        "data-testid": "filter-picker-cancel",
+                        onclick: move |_| on_cancel.call(()),
+                        "Cancel"
+                    }
+                    button {
+                        r#type: "button",
+                        class: "btn primary sm",
+                        "data-testid": "filter-picker-apply",
+                        disabled: picked.is_empty(),
+                        onclick: move |_| on_apply.call(()),
+                        "{apply_label}"
+                    }
                 }
             }
         }

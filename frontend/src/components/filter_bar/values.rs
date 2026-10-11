@@ -62,6 +62,38 @@ impl OptionList {
         self.options.is_empty()
     }
 
+    /// This list with each of `picked` that no option carries put first, named by
+    /// `label` — a pick the source no longer offers has to stay visible to be
+    /// unticked. `None` when every pick is offered, so the caller keeps the list.
+    pub fn with_stranded(
+        &self,
+        picked: &[String],
+        label: impl Fn(&str) -> String,
+    ) -> Option<OptionList> {
+        let mut options: Vec<FilterOption> = picked
+            .iter()
+            .filter(|value| !self.holds(value))
+            .map(|value| FilterOption {
+                value: value.clone(),
+                label: label(value),
+                count: None,
+            })
+            .collect();
+        if options.is_empty() {
+            return None;
+        }
+        options.extend(self.options.iter().cloned());
+        Some(OptionList::new(options).with_cap(self.cap))
+    }
+
+    /// Whether some option carries `value`, compared ignoring ASCII case as the
+    /// engine does — so a stored pick the list no longer offers can be told apart.
+    pub fn holds(&self, value: &str) -> bool {
+        self.options
+            .iter()
+            .any(|option| option.value.eq_ignore_ascii_case(value))
+    }
+
     /// The options whose label contains `query`, at most `limit` of them.
     pub fn matching(&self, query: &str, limit: usize) -> Matches {
         let needle = query.trim().to_lowercase();

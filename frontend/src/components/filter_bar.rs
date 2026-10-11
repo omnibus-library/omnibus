@@ -12,6 +12,8 @@ use omnibus_shared::{
 mod picker;
 pub mod values;
 
+pub use picker::{LoadState, PickerBody};
+
 #[cfg(all(test, feature = "server"))]
 mod tests;
 

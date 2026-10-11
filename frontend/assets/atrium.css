@@ -4934,6 +4934,26 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   border-color: var(--accent); color: var(--ink-0);
   background: color-mix(in oklch, var(--accent) 12%, transparent);
 }
+/* One filter field in the sheet: a header that opens the filter bar's picker body. */
+.m-fsec { border-bottom: 1px solid var(--line-2); }
+.m-fsec-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 13px 4px; background: transparent; border: 0; cursor: pointer;
+  font: inherit; font-size: 14.5px; text-align: left; color: var(--ink-1);
+}
+.m-fsec-head[aria-expanded="true"] { color: var(--ink-0); font-weight: 500; }
+.m-fsec-name { flex: 1 1 auto; }
+.m-fsec-badge {
+  min-width: 20px; padding: 1px 7px; border-radius: 999px; text-align: center;
+  font-size: 10.5px; color: var(--ink-0);
+  background: color-mix(in oklch, var(--accent) 22%, transparent);
+}
+.m-fsec-chev { flex: 0 0 auto; color: var(--ink-3); font-size: 16px; line-height: 1; }
+.m-fsec .fb-body { padding: 2px 4px 14px; }
+.m-fsec .fb-mode { height: 34px; padding: 0 14px; font-size: 12.5px; }
+.m-fsec .fb-search { height: 38px; font-size: 14px; }
+.m-fsec .fb-opt { padding: 10px 4px; font-size: 14px; }
+.m-fsec .fb-list { max-height: 240px; }
 .m-sheet-foot { flex: 0 0 auto; padding: 12px 2px 4px; border-top: 1px solid var(--line-2); margin-top: 8px; }
 .m-sheet-show { width: 100%; height: 46px; justify-content: center; font-size: 14px; }
 .m-shelves-entry {

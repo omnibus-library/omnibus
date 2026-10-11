@@ -447,3 +447,34 @@ fn toggle_pick_refuses_a_new_value_past_the_value_cap_but_still_removes_one() {
     picker::toggle_pick(&mut picked, "p0");
     assert_eq!(picked.len(), MAX_FILTER_VALUES - 1);
 }
+
+#[component]
+fn FooterlessBodyHarness() -> Element {
+    rsx! {
+        picker::PickerBody {
+            field: FilterField::Tag,
+            mode: FilterMode::Include,
+            query: String::new(),
+            picked: vec!["a".to_string()],
+            state: ready(&["a"]),
+            footer: false,
+            on_mode: move |_| {},
+            on_query: move |_| {},
+            on_toggle: move |_| {},
+            on_retry: move |_| {},
+        }
+    }
+}
+
+#[test]
+fn picker_body_leaves_out_cancel_and_apply_when_its_footer_is_off() {
+    let html = render(rsx! { FooterlessBodyHarness {} });
+
+    assert!(!html.contains("filter-picker-apply"), "{html}");
+    assert!(!html.contains("filter-picker-cancel"), "{html}");
+    assert!(
+        html.contains("data-testid=\"filter-mode-include\""),
+        "{html}"
+    );
+    assert!(html.contains("aria-label=\"a\""), "{html}");
+}

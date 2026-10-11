@@ -3,11 +3,19 @@
 //! Writes straight into the shared [`ViewPrefs`] (each tap fires
 //! `on_change`, which persists + refetches page 1 server-side), so the
 //! footer's "Show N books" is just a close affordance over live results.
+//! Beside the format chips, every filter field gets a section ([`fields`])
+//! with an Includes any / Excludes any toggle over its values.
 
 use dioxus::prelude::*;
 use omnibus_shared::{
     FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewPrefs,
+    MAX_FILTER_CLAUSES, MAX_FILTER_VALUES,
 };
+
+use crate::components::filter_bar::FILTER_FIELDS;
+
+mod fields;
+use fields::FieldSection;
 
 /// Sort axes offered on mobile, in sheet order, with their row labels.
 const SORT_ROWS: &[(SortKey, &str)] = &[
@@ -124,28 +132,87 @@ fn clear_formats(filters: &mut ViewFilters) {
     filters.clauses.retain(|c| !is_format(c));
 }
 
+/// The values `filters` holds for `field` in `mode`, across every clause that
+/// names that pair.
+fn picked_values(filters: &ViewFilters, field: FilterField, mode: FilterMode) -> Vec<String> {
+    filters
+        .clauses
+        .iter()
+        .filter(|c| c.field == field && c.mode == mode)
+        .flat_map(|c| c.values.iter().cloned())
+        .collect()
+}
+
+/// How many values `field` holds across both modes — the section's badge.
+fn field_count(filters: &ViewFilters, field: FilterField) -> usize {
+    filters
+        .clauses
+        .iter()
+        .filter(|c| c.field == field)
+        .map(|c| c.values.len())
+        .sum()
+}
+
+/// Flip `value` in or out of the `field`/`mode` clause. A picked value (compared
+/// ignoring ASCII case, as the engine does) is removed and an emptied clause
+/// dropped; an unpicked one joins the first such clause, or opens one. A pick
+/// past the caps the server enforces is refused: a second clause for the same
+/// pair would AND with the first, not extend it.
+fn toggle_value(filters: &mut ViewFilters, field: FilterField, mode: FilterMode, value: &str) {
+    let names_pair = |c: &FilterClause| c.field == field && c.mode == mode;
+    let picked = filters
+        .clauses
+        .iter()
+        .filter(|c| names_pair(c))
+        .any(|c| c.values.iter().any(|v| v.eq_ignore_ascii_case(value)));
+    if picked {
+        for clause in filters.clauses.iter_mut().filter(|c| names_pair(c)) {
+            clause.values.retain(|v| !v.eq_ignore_ascii_case(value));
+        }
+        filters
+            .clauses
+            .retain(|c| !(names_pair(c) && c.values.is_empty()));
+    } else if let Some(clause) = filters.clauses.iter_mut().find(|c| names_pair(c)) {
+        if clause.values.len() < MAX_FILTER_VALUES {
+            clause.values.push(value.to_string());
+        }
+    } else if filters.clauses.len() < MAX_FILTER_CLAUSES {
+        filters
+            .clauses
+            .push(FilterClause::new(field, mode, &[value]));
+    }
+}
+
+/// `prefs` with the sort and every clause back at their defaults; the view mode
+/// is not part of what the sheet resets.
+fn reset_prefs(prefs: &ViewPrefs) -> ViewPrefs {
+    ViewPrefs {
+        sort_key: SortKey::default(),
+        sort_dir: SortDir::default(),
+        filters: ViewFilters::default(),
+        ..prefs.clone()
+    }
+}
+
 /// The bottom sheet. Fires `on_change` with a whole updated [`ViewPrefs`] on
-/// every tap and `on_close` from the scrim / footer button.
+/// every tap and `on_close` from the scrim / footer button. `server_url` and
+/// `viewer_id` let each field section load its values.
 #[component]
 pub(super) fn MobileSortFilterSheet(
     prefs: ViewPrefs,
     book_count: Option<usize>,
+    server_url: String,
     on_change: EventHandler<ViewPrefs>,
     on_close: EventHandler<MouseEvent>,
 ) -> Element {
+    let viewer_id = crate::use_current_user_summary()().map(|u| u.id);
     let show_label = match book_count {
         Some(1) => "Show 1 book".to_string(),
         Some(n) => format!("Show {n} books"),
         None => "Show books".to_string(),
     };
-    let reset_prefs = prefs.clone();
-    let on_reset = move |_| {
-        let mut next = reset_prefs.clone();
-        next.sort_key = SortKey::default();
-        next.sort_dir = SortDir::default();
-        next.filters = ViewFilters::default();
-        on_change.call(next);
-    };
+    let reset_from = prefs.clone();
+    let on_reset = move |_| on_change.call(reset_prefs(&reset_from));
     rsx! {
         div {
             class: "m-sheet-scrim",
@@ -174,6 +241,17 @@ pub(super) fn MobileSortFilterSheet(
                         {all_chip(&prefs, &on_change)}
                         for &(label, values) in FORMAT_CHIPS {
                             {format_chip(label, values, &prefs, &on_change)}
+                        }
+                    }
+                    div { class: "label m-filter-label", "Filter by" }
+                    for field in FILTER_FIELDS {
+                        FieldSection {
+                            key: "{crate::components::filter_bar::field_token(field)}",
+                            field,
+                            prefs: prefs.clone(),
+                            server_url: server_url.clone(),
+                            viewer_id,
+                            on_change,
                         }
                     }
                 }

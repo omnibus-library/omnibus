@@ -167,6 +167,49 @@ fn option_list_matching_keeps_options_whose_label_contains_the_query_ignoring_ca
 }
 
 #[test]
+fn option_list_holds_a_value_ignoring_ascii_case() {
+    let list = OptionList::new(vec![option("sci-fi", "Sci-Fi", Some(2))]);
+    assert!(list.holds("SCI-FI"));
+    assert!(!list.holds("fantasy"));
+}
+
+#[test]
+fn option_list_with_stranded_puts_picks_the_list_lacks_first_under_the_given_label() {
+    let list = OptionList::new(vec![option("a", "A", Some(1))]);
+    let picked = vec!["a".to_string(), "gone".to_string()];
+
+    let extended = list
+        .with_stranded(&picked, |v| format!("{v}!"))
+        .expect("one pick is stranded");
+
+    let found = extended.matching("", 10);
+    assert_eq!(
+        found.shown,
+        vec![option("gone", "gone!", None), option("a", "A", Some(1))]
+    );
+}
+
+#[test]
+fn option_list_with_stranded_is_none_when_every_pick_is_offered() {
+    let list = OptionList::new(vec![option("Sci-Fi", "Sci-Fi", Some(1))]);
+
+    assert!(list
+        .with_stranded(&["sci-fi".to_string()], str::to_string)
+        .is_none());
+}
+
+#[test]
+fn option_list_with_stranded_keeps_the_cap_of_the_source() {
+    let list = OptionList::new(vec![option("a", "A", Some(1))]).with_cap(Some(500));
+
+    let extended = list
+        .with_stranded(&["gone".to_string()], str::to_string)
+        .expect("one pick is stranded");
+
+    assert_eq!(extended.cap(), Some(500));
+}
+
+#[test]
 fn option_list_matching_ignores_case_beyond_ascii() {
     let options = tag_options(vec![tag("\u{d8}rsted", 1), tag("Cozy", 1)]);
 

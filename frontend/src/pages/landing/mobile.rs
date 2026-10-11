@@ -301,6 +301,7 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
                 MobileSortFilterSheet {
                     prefs: prefs.clone(),
                     book_count,
+                    server_url: server_url.clone(),
                     on_change: on_prefs_change,
                     on_close: move |_| sheet_open.set(false),
                 }
