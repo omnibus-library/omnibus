@@ -153,7 +153,10 @@ enum LibraryService {
     ) async throws -> LibraryPageResult {
         guard let page = await LibraryIndex.shared.page(
             sort: sort, direction: direction, filter: filter, limit: pageSize, offset: offset
-        ) else { throw LibraryFilterError.needsConnection }
+        ) else {
+            // The Offline view never asks the server, so reconnecting can't answer it.
+            throw filter.downloadedOnly ? LibraryFilterError.shelfOnDevice : LibraryFilterError.needsConnection
+        }
         return page
     }
 

@@ -573,6 +573,13 @@ struct LibraryFilterErrorTests {
         )
     }
 
+    @Test func aShelfFilterOnTheOfflineViewSaysTheyCantBeCombined() {
+        #expect(
+            LibraryFilterError.message(for: LibraryFilterError.shelfOnDevice)
+                == "Shelf filters can't be combined with the Offline view: it only knows what's on this device. Clear them to browse your downloads."
+        )
+    }
+
     @Test func anyOtherFailureIsSaidAsTheServerSaidIt() {
         #expect(
             LibraryFilterError.message(for: APIError.http(status: 500, message: ""))
@@ -603,6 +610,14 @@ struct LibraryFilterDeclineTests {
         )
         let error = await failure(of: reads)
         #expect(error as? LibraryFilterError == .needsConnection)
+    }
+
+    @Test func theOfflineViewDeclinesAShelfClauseWithoutAskingForAConnection() async {
+        var filter = LibraryCategory.downloaded.filter
+        filter.clauses = [shelfClause]
+        let reads = LibraryService.page(sort: .title, direction: .asc, filter: filter, cursor: nil)
+        let error = await failure(of: reads)
+        #expect(error as? LibraryFilterError == .shelfOnDevice, "a connection can't make this answerable")
     }
 
     @Test func firstPageReportsAServerErrorRatherThanTheMirrorsDecline() async {

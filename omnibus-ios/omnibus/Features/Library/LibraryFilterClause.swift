@@ -144,14 +144,23 @@ struct LibraryFilterPreference: Equatable, Sendable {
 }
 
 /// Why a filtered library read had no answer: the mirror can't evaluate a
-/// shelf clause, and the server didn't answer.
+/// shelf clause, and the server didn't answer — or the read was the Offline
+/// view, which only the mirror answers.
 enum LibraryFilterError: LocalizedError {
     case needsConnection
+    case shelfOnDevice
 
     static let connectionNotice =
         "Filters need a connection to the server. Clear them to browse what's on this device."
 
-    var errorDescription: String? { Self.connectionNotice }
+    var errorDescription: String? {
+        switch self {
+        case .needsConnection:
+            Self.connectionNotice
+        case .shelfOnDevice:
+            "Shelf filters can't be combined with the Offline view: it only knows what's on this device. Clear them to browse your downloads."
+        }
+    }
 
     /// What a filtered read that failed with nothing to show should say: an
     /// unreachable server means the filter can't be answered here.
