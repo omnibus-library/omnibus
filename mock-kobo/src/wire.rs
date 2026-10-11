@@ -48,7 +48,6 @@ pub struct Entitlement {
 #[serde(rename_all = "PascalCase")]
 pub struct BookEntitlement {
     pub id: String,
-    #[serde(default)]
     pub is_removed: bool,
 }
 
@@ -58,11 +57,10 @@ pub struct BookEntitlement {
 pub struct BookMetadata {
     pub entitlement_id: String,
     pub title: String,
-    #[serde(default)]
     pub description: String,
+    // The server sent no `Contributors` before #2684, and the device must still read that shape.
     #[serde(default)]
     pub contributors: Vec<String>,
-    #[serde(default)]
     pub series: Option<Series>,
 }
 
@@ -71,7 +69,6 @@ pub struct BookMetadata {
 #[serde(rename_all = "PascalCase")]
 pub struct Series {
     pub name: String,
-    #[serde(default)]
     pub number: Option<f64>,
     pub id: String,
 }

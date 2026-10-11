@@ -40,8 +40,14 @@ fn apply_adds_new_entitlement_as_undownloaded_book() {
 fn apply_shows_unknown_author_when_only_contributor_roles_sent() {
     let mut device = Device::new("HW-1");
     let mut entitlement = new_entitlement("book-1", "Dune");
-    entitlement["NewEntitlement"]["BookMetadata"]["ContributorRoles"] =
-        json!([{ "Name": "Frank Herbert", "Role": "Author" }]);
+    let metadata = entitlement["NewEntitlement"]["BookMetadata"]
+        .as_object_mut()
+        .unwrap();
+    metadata.remove("Contributors");
+    metadata.insert(
+        "ContributorRoles".into(),
+        json!([{ "Name": "Frank Herbert", "Role": "Author" }]),
+    );
 
     device.apply(item(entitlement));
 
