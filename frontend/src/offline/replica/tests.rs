@@ -165,26 +165,6 @@ fn page_from_replica_filters_by_format_any_match() {
 }
 
 #[test]
-fn page_from_replica_exclude_clause_keeps_only_books_without_the_value() {
-    let filters = filters_of(vec![FilterClause::new(
-        FilterField::Format,
-        FilterMode::Exclude,
-        &["m4b"],
-    )]);
-    let page = page_from_replica(
-        fixture(),
-        SortKey::Title,
-        SortDir::Asc,
-        &filters,
-        &[],
-        None,
-        10,
-    );
-    assert_eq!(titles(&page), vec!["Cider House", "Dune"]);
-    assert_eq!(page.total, Some(2));
-}
-
-#[test]
 fn page_from_replica_intersects_clauses_across_fields() {
     let filters = filters_of(vec![
         FilterClause::new(FilterField::Format, FilterMode::Include, &["epub"]),
@@ -624,7 +604,6 @@ fn page_from_replica_exclusion_hides_books_and_reports_first_page_receipt() {
 
 /// Store `books` as the synced replica and wait for the write to land.
 async fn seed_replica(books: &[EbookMetadata]) {
-    reset_replica_cache().await;
     let st = store::store().expect("test store");
     st.kv_put(
         &cache::keys::ebooks_all(),

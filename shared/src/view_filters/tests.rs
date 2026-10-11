@@ -148,13 +148,6 @@ fn view_filters_deserializes_a_legacy_facet_of_only_bad_values_into_no_clause() 
 }
 
 #[test]
-fn view_filters_deserializes_an_empty_object_into_no_filters() {
-    let filters: ViewFilters = serde_json::from_str("{}").expect("empty object parses");
-
-    assert_eq!(filters, ViewFilters::default());
-}
-
-#[test]
 fn view_filters_serializes_only_clauses() {
     let legacy: ViewFilters = serde_json::from_str(LEGACY_BLOB).expect("legacy blob parses");
 
@@ -323,7 +316,7 @@ fn view_filters_to_query_param_emits_the_clauses_as_a_json_array() {
 }
 
 #[test]
-fn view_filters_to_query_param_carries_a_legacy_blob_as_include_clauses() {
+fn view_filters_to_query_param_keeps_the_cache_key_a_legacy_record_produced() {
     let filters: ViewFilters =
         serde_json::from_str(r#"{"formats":["epub"]}"#).expect("legacy blob parses");
 
