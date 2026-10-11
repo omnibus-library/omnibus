@@ -9,6 +9,7 @@ use omnibus_shared::{
 };
 
 use crate::data::{self, DataError};
+use crate::shelf_access::shows_owner_attribution;
 
 /// One selectable value: what the filter stores, what the reader sees, and how
 /// many books carry it when the source says.
@@ -58,14 +59,24 @@ pub fn series_options(series: Vec<SeriesSummary>) -> Vec<FilterOption> {
     )
 }
 
+/// A shelf's name, followed by its owner's when it is another reader's, so
+/// two shelves with one name stay apart.
+pub fn shelf_label(shelf: &ShelfSummary, viewer_id: Option<i64>) -> String {
+    if shows_owner_attribution(viewer_id, shelf.owner_user_id, shelf.kind) {
+        format!("{} \u{b7} {}", shelf.name, shelf.owner_username)
+    } else {
+        shelf.name.clone()
+    }
+}
+
 /// Hand-picked and wishlist shelves as options, valued by shelf id.
-pub fn shelf_options(shelves: Vec<ShelfSummary>) -> Vec<FilterOption> {
+pub fn shelf_options(shelves: &[ShelfSummary], viewer_id: Option<i64>) -> Vec<FilterOption> {
     shelves
-        .into_iter()
+        .iter()
         .filter(|s| s.kind != ShelfKind::Smart)
         .map(|s| FilterOption {
             value: s.id.to_string(),
-            label: s.name,
+            label: shelf_label(s, viewer_id),
             count: usize::try_from(s.book_count).ok(),
         })
         .collect()
@@ -142,13 +153,16 @@ fn is_accepted(field: FilterField, value: &str) -> bool {
 pub async fn load_options(
     server_url: &str,
     field: FilterField,
+    viewer_id: Option<i64>,
 ) -> Result<Vec<FilterOption>, DataError> {
     match field {
         FilterField::Tag => data::get_tag_cloud(server_url).await.map(tag_options),
         FilterField::Genre => data::get_genre_cloud(server_url).await.map(genre_options),
         FilterField::Author => data::list_authors(server_url).await.map(author_options),
         FilterField::Series => data::list_series(server_url).await.map(series_options),
-        FilterField::Shelf => data::list_shelves(server_url).await.map(shelf_options),
+        FilterField::Shelf => data::list_shelves(server_url)
+            .await
+            .map(|shelves| shelf_options(&shelves, viewer_id)),
         FilterField::Format => Ok(format_options()),
     }
 }

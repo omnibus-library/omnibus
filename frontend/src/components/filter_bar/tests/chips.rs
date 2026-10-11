@@ -1,10 +1,24 @@
 use super::*;
 
+const VIEWER: i64 = 1;
+
+fn labelled(clause: FilterClause, shelves: &ShelfList) -> String {
+    chip_label(&clause, shelves, Some(VIEWER))
+}
+
+fn other_readers_shelf(id: i64, name: &str, owner: &str) -> ShelfSummary {
+    ShelfSummary {
+        owner_user_id: VIEWER + 1,
+        owner_username: owner.to_string(),
+        ..shelf(id, name, ShelfKind::Manual, 2)
+    }
+}
+
 #[test]
 fn chip_label_reads_field_mode_and_every_value() {
-    let label = chip_label(
-        &clause(FilterField::Author, FilterMode::Include, &["Ada", "Grace"]),
-        None,
+    let label = labelled(
+        clause(FilterField::Author, FilterMode::Include, &["Ada", "Grace"]),
+        &ShelfList::Pending,
     );
 
     assert_eq!(label, "Author includes any of Ada, Grace");
@@ -12,9 +26,9 @@ fn chip_label_reads_field_mode_and_every_value() {
 
 #[test]
 fn chip_label_says_excludes_for_an_exclude_clause() {
-    let label = chip_label(
-        &clause(FilterField::Genre, FilterMode::Exclude, &["Horror"]),
-        None,
+    let label = labelled(
+        clause(FilterField::Genre, FilterMode::Exclude, &["Horror"]),
+        &ShelfList::Pending,
     );
 
     assert_eq!(label, "Genre excludes any of Horror");
@@ -22,9 +36,9 @@ fn chip_label_says_excludes_for_an_exclude_clause() {
 
 #[test]
 fn chip_label_uppercases_format_values() {
-    let label = chip_label(
-        &clause(FilterField::Format, FilterMode::Include, &["epub", "m4b"]),
-        None,
+    let label = labelled(
+        clause(FilterField::Format, FilterMode::Include, &["epub", "m4b"]),
+        &ShelfList::Pending,
     );
 
     assert_eq!(label, "Format includes any of EPUB, M4B");
@@ -32,36 +46,126 @@ fn chip_label_uppercases_format_values() {
 
 #[test]
 fn chip_label_names_a_shelf_by_its_name_not_its_id() {
-    let shelves = vec![shelf(12, "Favourites", ShelfKind::Manual, 3)];
+    let shelves = ShelfList::Loaded(vec![shelf(12, "Favourites", ShelfKind::Manual, 3)]);
 
-    let label = chip_label(
-        &clause(FilterField::Shelf, FilterMode::Include, &["12"]),
-        Some(&shelves),
+    let label = labelled(
+        clause(FilterField::Shelf, FilterMode::Include, &["12"]),
+        &shelves,
     );
 
     assert_eq!(label, "Shelf includes any of Favourites");
 }
 
 #[test]
-fn chip_label_calls_a_shelf_missing_from_a_loaded_list_unavailable() {
-    let shelves = vec![shelf(12, "Favourites", ShelfKind::Manual, 3)];
+fn chip_label_names_the_owner_of_another_readers_shelf() {
+    let shelves = ShelfList::Loaded(vec![
+        shelf(12, "Favourites", ShelfKind::Manual, 3),
+        other_readers_shelf(13, "Favourites", "alice"),
+    ]);
 
-    let label = chip_label(
-        &clause(FilterField::Shelf, FilterMode::Exclude, &["99", "12"]),
-        Some(&shelves),
+    let label = labelled(
+        clause(FilterField::Shelf, FilterMode::Include, &["12", "13"]),
+        &shelves,
+    );
+
+    assert_eq!(
+        label,
+        "Shelf includes any of Favourites, Favourites \u{b7} alice"
+    );
+}
+
+#[test]
+fn chip_label_calls_a_shelf_missing_from_a_loaded_list_unavailable() {
+    let shelves = ShelfList::Loaded(vec![shelf(12, "Favourites", ShelfKind::Manual, 3)]);
+
+    let label = labelled(
+        clause(FilterField::Shelf, FilterMode::Exclude, &["99", "12"]),
+        &shelves,
     );
 
     assert_eq!(label, "Shelf excludes any of unavailable shelf, Favourites");
 }
 
 #[test]
-fn chip_label_holds_a_placeholder_for_a_shelf_until_the_list_loads() {
-    let label = chip_label(
-        &clause(FilterField::Shelf, FilterMode::Include, &["12"]),
-        None,
+fn chip_label_holds_a_placeholder_for_a_shelf_until_the_list_answers() {
+    let label = labelled(
+        clause(FilterField::Shelf, FilterMode::Include, &["12"]),
+        &ShelfList::Pending,
     );
 
     assert_eq!(label, "Shelf includes any of \u{2026}");
+}
+
+#[test]
+fn chip_label_calls_a_shelf_unavailable_once_the_shelves_fetch_failed() {
+    let label = labelled(
+        clause(FilterField::Shelf, FilterMode::Include, &["12", "13"]),
+        &ShelfList::Failed,
+    );
+
+    assert_eq!(
+        label,
+        "Shelf includes any of unavailable shelf, unavailable shelf"
+    );
+}
+
+#[test]
+fn chip_parts_set_each_pending_shelf_apart_from_the_text_around_it() {
+    let parts = chip_parts(
+        &clause(FilterField::Shelf, FilterMode::Include, &["12", "13"]),
+        &ShelfList::Pending,
+        Some(VIEWER),
+    );
+
+    assert_eq!(
+        parts,
+        vec![
+            ChipPart::Text("Shelf includes any of ".to_string()),
+            ChipPart::Pending,
+            ChipPart::Text(", ".to_string()),
+            ChipPart::Pending,
+        ]
+    );
+}
+
+#[test]
+fn chip_parts_are_one_text_when_no_value_is_pending() {
+    let parts = chip_parts(
+        &clause(FilterField::Tag, FilterMode::Include, &["a", "b"]),
+        &ShelfList::Pending,
+        Some(VIEWER),
+    );
+
+    assert_eq!(
+        parts,
+        vec![ChipPart::Text("Tag includes any of a, b".to_string())]
+    );
+}
+
+#[test]
+fn shelf_list_is_pending_until_the_shelves_fetch_answers() {
+    assert_eq!(
+        ShelfList::from_fetch(false, false, Vec::new()),
+        ShelfList::Pending
+    );
+}
+
+#[test]
+fn shelf_list_is_failed_when_the_fetch_answered_without_a_list() {
+    assert_eq!(
+        ShelfList::from_fetch(false, true, Vec::new()),
+        ShelfList::Failed
+    );
+}
+
+#[test]
+fn shelf_list_holds_the_shelves_once_they_loaded() {
+    let shelves = vec![shelf(12, "Favourites", ShelfKind::Manual, 3)];
+
+    assert_eq!(
+        ShelfList::from_fetch(true, true, shelves.clone()),
+        ShelfList::Loaded(shelves)
+    );
 }
 
 #[test]
@@ -104,13 +208,13 @@ fn without_clause_leaves_the_filters_alone_for_an_out_of_range_index() {
 // ---- the bar --------------------------------------------------------------
 
 #[component]
-fn BarHarness(filters: ViewFilters, shelves: Option<Vec<ShelfSummary>>) -> Element {
+fn BarHarness(filters: ViewFilters, shelves: ShelfList) -> Element {
     rsx! {
-        FilterBar { filters, shelves, on_change: move |_| {} }
+        FilterBar { filters, shelves, viewer_id: Some(VIEWER), on_change: move |_| {} }
     }
 }
 
-fn render_bar(filters: ViewFilters, shelves: Option<Vec<ShelfSummary>>) -> String {
+fn render_bar(filters: ViewFilters, shelves: ShelfList) -> String {
     render(rsx! {
         BarHarness { filters, shelves }
     })
@@ -124,7 +228,7 @@ fn one_clause() -> ViewFilters {
 
 #[test]
 fn filter_bar_renders_only_the_add_button_when_there_is_no_clause() {
-    let html = render_bar(ViewFilters::default(), None);
+    let html = render_bar(ViewFilters::default(), ShelfList::Pending);
 
     assert!(html.contains("data-testid=\"lib-filter-bar\""), "{html}");
     assert!(html.contains("data-testid=\"filter-add\""));
@@ -134,7 +238,7 @@ fn filter_bar_renders_only_the_add_button_when_there_is_no_clause() {
 
 #[test]
 fn filter_bar_renders_no_picker_until_it_is_opened() {
-    let html = render_bar(one_clause(), None);
+    let html = render_bar(one_clause(), ShelfList::Pending);
 
     assert!(html.contains("data-testid=\"filter-chip-0\""), "{html}");
     assert!(!html.contains("data-testid=\"filter-picker\""), "{html}");
@@ -149,7 +253,7 @@ fn filter_bar_renders_a_labelled_chip_with_a_remove_button_per_clause() {
         ],
     };
 
-    let html = render_bar(filters, None);
+    let html = render_bar(filters, ShelfList::Pending);
 
     assert!(html.contains("data-testid=\"filter-chip-0\""), "{html}");
     assert!(html.contains("Author includes any of Ada"));
@@ -162,7 +266,7 @@ fn filter_bar_renders_a_labelled_chip_with_a_remove_button_per_clause() {
 
 #[test]
 fn filter_bar_offers_clear_all_once_a_clause_exists() {
-    let html = render_bar(one_clause(), None);
+    let html = render_bar(one_clause(), ShelfList::Pending);
 
     assert!(html.contains("data-testid=\"filter-clear-all\""), "{html}");
 }
@@ -172,11 +276,50 @@ fn filter_bar_names_a_shelf_chip_from_the_shelves_list() {
     let filters = ViewFilters {
         clauses: vec![clause(FilterField::Shelf, FilterMode::Include, &["12"])],
     };
-    let shelves = vec![shelf(12, "Favourites", ShelfKind::Manual, 3)];
+    let shelves = ShelfList::Loaded(vec![shelf(12, "Favourites", ShelfKind::Manual, 3)]);
 
-    let html = render_bar(filters, Some(shelves));
+    let html = render_bar(filters, shelves);
 
     assert!(html.contains("Shelf includes any of Favourites"), "{html}");
+}
+
+fn shelf_clause() -> ViewFilters {
+    ViewFilters {
+        clauses: vec![clause(FilterField::Shelf, FilterMode::Include, &["12"])],
+    }
+}
+
+#[test]
+fn filter_bar_draws_a_pending_shelf_name_as_a_sheen() {
+    let html = render_bar(shelf_clause(), ShelfList::Pending);
+
+    assert!(
+        html.contains("<span class=\"ld-sheen\">\u{2026}</span>"),
+        "{html}"
+    );
+}
+
+#[test]
+fn filter_bar_resolves_a_shelf_chip_once_the_shelves_fetch_failed() {
+    let html = render_bar(shelf_clause(), ShelfList::Failed);
+
+    assert!(
+        html.contains("Shelf includes any of unavailable shelf"),
+        "{html}"
+    );
+    assert!(!html.contains("ld-sheen"), "{html}");
+}
+
+#[test]
+fn filter_bar_names_the_owner_on_a_shelf_chip_for_another_readers_shelf() {
+    let shelves = ShelfList::Loaded(vec![other_readers_shelf(12, "Favourites", "alice")]);
+
+    let html = render_bar(shelf_clause(), shelves);
+
+    assert!(
+        html.contains("Shelf includes any of Favourites \u{b7} alice"),
+        "{html}"
+    );
 }
 
 fn clauses_up_to(count: usize) -> ViewFilters {
@@ -189,7 +332,7 @@ fn clauses_up_to(count: usize) -> ViewFilters {
 
 #[test]
 fn filter_bar_disables_add_at_the_clause_cap() {
-    let html = render_bar(clauses_up_to(MAX_FILTER_CLAUSES), None);
+    let html = render_bar(clauses_up_to(MAX_FILTER_CLAUSES), ShelfList::Pending);
 
     assert!(
         button_tag(&html, "filter-add").contains("disabled"),

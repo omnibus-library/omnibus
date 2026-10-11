@@ -54,11 +54,14 @@ fn author_options_merge_authors_sharing_a_name_ignoring_case() {
 
 #[test]
 fn shelf_options_offer_manual_and_wishlist_shelves_valued_by_id() {
-    let options = shelf_options(vec![
-        shelf(4, "Favourites", ShelfKind::Manual, 3),
-        shelf(5, "Unread sci-fi", ShelfKind::Smart, 9),
-        shelf(6, "Wishlist", ShelfKind::Wishlist, 1),
-    ]);
+    let options = shelf_options(
+        &[
+            shelf(4, "Favourites", ShelfKind::Manual, 3),
+            shelf(5, "Unread sci-fi", ShelfKind::Smart, 9),
+            shelf(6, "Wishlist", ShelfKind::Wishlist, 1),
+        ],
+        Some(1),
+    );
 
     assert_eq!(
         options,
@@ -66,6 +69,57 @@ fn shelf_options_offer_manual_and_wishlist_shelves_valued_by_id() {
             option("4", "Favourites", Some(3)),
             option("6", "Wishlist", Some(1)),
         ]
+    );
+}
+
+fn alices_shelf(id: i64, name: &str, kind: ShelfKind) -> ShelfSummary {
+    ShelfSummary {
+        owner_user_id: 2,
+        owner_username: "alice".to_string(),
+        ..shelf(id, name, kind, 2)
+    }
+}
+
+#[test]
+fn shelf_options_name_the_owner_of_a_shelf_the_viewer_does_not_own() {
+    let options = shelf_options(
+        &[
+            shelf(4, "Favourites", ShelfKind::Manual, 3),
+            alices_shelf(5, "Favourites", ShelfKind::Manual),
+        ],
+        Some(1),
+    );
+
+    assert_eq!(
+        options,
+        vec![
+            option("4", "Favourites", Some(3)),
+            option("5", "Favourites \u{b7} alice", Some(2)),
+        ]
+    );
+}
+
+#[test]
+fn shelf_options_leave_names_bare_until_the_viewer_resolves() {
+    let options = shelf_options(&[alices_shelf(5, "Favourites", ShelfKind::Manual)], None);
+
+    assert_eq!(options, vec![option("5", "Favourites", Some(2))]);
+}
+
+#[test]
+fn shelf_options_do_not_name_the_owner_of_a_wishlist() {
+    let options = shelf_options(
+        &[alices_shelf(
+            6,
+            "alice\u{2019}s Wishlist",
+            ShelfKind::Wishlist,
+        )],
+        Some(1),
+    );
+
+    assert_eq!(
+        options,
+        vec![option("6", "alice\u{2019}s Wishlist", Some(2))]
     );
 }
 

@@ -4,9 +4,7 @@
 //! `prefs` signal and the data pipeline.
 
 use dioxus::prelude::*;
-use omnibus_shared::{
-    EbookMetadata, SeriesStack, Shelf, ShelfKind, ShelfSummary, SortKey, ViewMode, ViewPrefs,
-};
+use omnibus_shared::{EbookMetadata, SeriesStack, Shelf, ShelfKind, SortKey, ViewMode, ViewPrefs};
 
 use super::filters::EmptyFiltered;
 use super::grid::BookGrid;
@@ -17,7 +15,7 @@ use super::toolbar::Toolbar;
 use crate::components::loading::{CoverSkeletons, RowSkeletons};
 use crate::components::shelf_facets::pencil_glyph;
 use crate::components::shelf_glyphs::plus_icon;
-use crate::components::{BusyLabel, ShelfFacets};
+use crate::components::{BusyLabel, ShelfFacets, ShelfList};
 use crate::shelf_selection::ShelfSelection;
 
 /// Header banner fields sourced from the page's derived view state.
@@ -46,9 +44,8 @@ pub(super) struct LandingHeaderView {
     pub sort_lock: Option<&'static str>,
     /// The Stack series switch's state for this render.
     pub stack: StackToggleView,
-    /// The viewer's shelves, `None` until the list has loaded — the filter
-    /// bar names its shelf chips from it.
-    pub shelves: Option<Vec<ShelfSummary>>,
+    /// The viewer's shelves — the filter bar names its shelf chips from them.
+    pub shelves: ShelfList,
 }
 
 /// The shelf lens's Add books control: absent unless the pick is a

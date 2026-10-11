@@ -27,6 +27,7 @@ pub(super) type Loaded = Option<(FilterField, Result<Vec<FilterOption>, String>)
 /// The popover. Emits the finished clause through `on_apply`.
 #[component]
 pub(super) fn FilterPicker(
+    viewer_id: Option<i64>,
     on_apply: EventHandler<FilterClause>,
     on_close: EventHandler<()>,
 ) -> Element {
@@ -35,7 +36,7 @@ pub(super) fn FilterPicker(
     let mut query = use_signal(String::new);
     let mut picked = use_signal(Vec::<String>::new);
     let mut retry = use_signal(|| 0u32);
-    let mut loaded = use_loaded_options(field, retry);
+    let mut loaded = use_loaded_options(field, retry, viewer_id);
 
     let mut choose = move |next: FilterField| {
         if *field.peek() == Some(next) {
@@ -109,7 +110,11 @@ pub(super) fn FilterPicker(
 
 /// Fetch the chosen field's values whenever the field changes or a retry is
 /// asked for; a superseded fetch drops its answer.
-fn use_loaded_options(field: Signal<Option<FilterField>>, retry: Signal<u32>) -> Signal<Loaded> {
+fn use_loaded_options(
+    field: Signal<Option<FilterField>>,
+    retry: Signal<u32>,
+    viewer_id: Option<i64>,
+) -> Signal<Loaded> {
     let server_url = crate::use_server_url();
     let mut loaded: Signal<Loaded> = use_signal(|| None);
     let mut epoch = use_signal(|| 0u32);
@@ -123,7 +128,7 @@ fn use_loaded_options(field: Signal<Option<FilterField>>, retry: Signal<u32>) ->
         };
         let url = server_url.clone();
         spawn(async move {
-            let result = values::load_options(&url, wanted)
+            let result = values::load_options(&url, wanted, viewer_id)
                 .await
                 .map_err(|e| e.to_string());
             if *epoch.peek() == mine {

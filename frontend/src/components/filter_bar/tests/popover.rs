@@ -3,7 +3,7 @@ use super::*;
 #[component]
 fn PickerHarness() -> Element {
     rsx! {
-        picker::FilterPicker { on_apply: move |_| {}, on_close: move |_| {} }
+        picker::FilterPicker { viewer_id: None, on_apply: move |_| {}, on_close: move |_| {} }
     }
 }
 

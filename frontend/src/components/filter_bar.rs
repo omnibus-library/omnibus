@@ -67,43 +67,108 @@ pub fn mode_phrase(mode: FilterMode) -> &'static str {
     }
 }
 
-/// The chip text for `clause`. `shelves` is `None` until the shelves list has
-/// loaded, so a shelf id is never shown as a name it does not have.
-pub fn chip_label(clause: &FilterClause, shelves: Option<&[ShelfSummary]>) -> String {
-    let values: Vec<String> = clause
-        .values
-        .iter()
-        .map(|value| value_label(clause.field, value, shelves))
-        .collect();
-    format!(
-        "{} {} {}",
-        field_label(clause.field),
-        mode_phrase(clause.mode),
-        values.join(", ")
-    )
+/// What the filter bar knows of the viewer's shelves: a shelf chip names its
+/// shelf from the list, so it must say when it cannot.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ShelfList {
+    /// The shelves fetch has not answered yet.
+    Pending,
+    /// The shelves fetch answered with an error, so no id can be named.
+    Failed,
+    /// The viewer's shelves.
+    Loaded(Vec<ShelfSummary>),
 }
 
-fn value_label(field: FilterField, value: &str, shelves: Option<&[ShelfSummary]>) -> String {
-    match field {
-        FilterField::Shelf => shelf_name(value, shelves),
-        FilterField::Format => value.to_ascii_uppercase(),
-        _ => value.to_string(),
+impl ShelfList {
+    /// The list for a landing page whose shelves fetch has `loaded` a list or,
+    /// failing that, `answered` with an error.
+    pub fn from_fetch(loaded: bool, answered: bool, shelves: Vec<ShelfSummary>) -> Self {
+        if loaded {
+            Self::Loaded(shelves)
+        } else if answered {
+            Self::Failed
+        } else {
+            Self::Pending
+        }
     }
 }
 
-fn shelf_name(value: &str, shelves: Option<&[ShelfSummary]>) -> String {
-    let Some(shelves) = shelves else {
-        return "\u{2026}".to_string();
-    };
-    value
-        .trim()
-        .parse::<i64>()
-        .ok()
-        .and_then(|id| shelves.iter().find(|shelf| shelf.id == id))
-        .map_or_else(
-            || "unavailable shelf".to_string(),
-            |shelf| shelf.name.clone(),
-        )
+/// One run of a chip's text: plain text, or a name still being worked out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChipPart {
+    Text(String),
+    Pending,
+}
+
+/// The chip's text split so each pending name can be drawn as a sheen.
+pub fn chip_parts(
+    clause: &FilterClause,
+    shelves: &ShelfList,
+    viewer_id: Option<i64>,
+) -> Vec<ChipPart> {
+    let mut parts = Vec::new();
+    let mut text = format!(
+        "{} {} ",
+        field_label(clause.field),
+        mode_phrase(clause.mode)
+    );
+    for (i, value) in clause.values.iter().enumerate() {
+        if i > 0 {
+            text.push_str(", ");
+        }
+        match value_label(clause.field, value, shelves, viewer_id) {
+            Some(name) => text.push_str(&name),
+            None => {
+                parts.push(ChipPart::Text(std::mem::take(&mut text)));
+                parts.push(ChipPart::Pending);
+            }
+        }
+    }
+    if !text.is_empty() {
+        parts.push(ChipPart::Text(text));
+    }
+    parts
+}
+
+/// The chip text for `clause` as plain text; a pending name reads as an ellipsis.
+pub fn chip_label(clause: &FilterClause, shelves: &ShelfList, viewer_id: Option<i64>) -> String {
+    chip_parts(clause, shelves, viewer_id)
+        .into_iter()
+        .map(|part| match part {
+            ChipPart::Text(text) => text,
+            ChipPart::Pending => "\u{2026}".to_string(),
+        })
+        .collect()
+}
+
+/// A value's name, or `None` while it is still being worked out.
+fn value_label(
+    field: FilterField,
+    value: &str,
+    shelves: &ShelfList,
+    viewer_id: Option<i64>,
+) -> Option<String> {
+    match field {
+        FilterField::Shelf => shelf_name(value, shelves, viewer_id),
+        FilterField::Format => Some(value.to_ascii_uppercase()),
+        _ => Some(value.to_string()),
+    }
+}
+
+fn shelf_name(value: &str, shelves: &ShelfList, viewer_id: Option<i64>) -> Option<String> {
+    let unavailable = || Some("unavailable shelf".to_string());
+    match shelves {
+        ShelfList::Pending => None,
+        ShelfList::Failed => unavailable(),
+        ShelfList::Loaded(list) => value
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .and_then(|id| list.iter().find(|shelf| shelf.id == id))
+            .map_or_else(unavailable, |shelf| {
+                Some(values::shelf_label(shelf, viewer_id))
+            }),
+    }
 }
 
 /// `filters` with `clause` appended.
@@ -122,23 +187,36 @@ pub fn without_clause(filters: &ViewFilters, index: usize) -> ViewFilters {
     ViewFilters { clauses }
 }
 
+/// A pending name draws as a sheen, per the loading vocabulary; text as itself.
+fn chip_part(part: ChipPart) -> Element {
+    match part {
+        ChipPart::Text(text) => rsx! { "{text}" },
+        ChipPart::Pending => rsx! {
+            span { class: "ld-sheen", "\u{2026}" }
+        },
+    }
+}
+
 /// The chip row for the library toolbar.
 #[component]
 pub fn FilterBar(
     filters: ViewFilters,
-    shelves: Option<Vec<ShelfSummary>>,
+    shelves: ShelfList,
+    viewer_id: Option<i64>,
     on_change: EventHandler<ViewFilters>,
 ) -> Element {
     let mut open = use_signal(|| false);
     let at_cap = filters.clauses.len() >= MAX_FILTER_CLAUSES;
-    let chips: Vec<(usize, String, ViewFilters)> = filters
+    let chips: Vec<(usize, Vec<ChipPart>, String, ViewFilters)> = filters
         .clauses
         .iter()
         .enumerate()
         .map(|(i, clause)| {
+            let parts = chip_parts(clause, &shelves, viewer_id);
             (
                 i,
-                chip_label(clause, shelves.as_deref()),
+                parts,
+                chip_label(clause, &shelves, viewer_id),
                 without_clause(&filters, i),
             )
         })
@@ -151,9 +229,13 @@ pub fn FilterBar(
             role: "group",
             "aria-label": "Library filters",
             "data-testid": "lib-filter-bar",
-            for (i , label , without) in chips {
+            for (i , parts , label , without) in chips {
                 span { key: "{i}", class: "fb-chip", "data-testid": "filter-chip-{i}",
-                    span { class: "fb-chip-text", "{label}" }
+                    span { class: "fb-chip-text",
+                        for part in parts {
+                            {chip_part(part)}
+                        }
+                    }
                     button {
                         r#type: "button",
                         class: "fb-chip-x",
@@ -178,6 +260,7 @@ pub fn FilterBar(
                 }
                 if open() {
                     picker::FilterPicker {
+                        viewer_id,
                         on_apply: move |clause| {
                             on_change.call(with_clause(&with_applied, clause));
                             open.set(false);

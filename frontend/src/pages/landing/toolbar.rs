@@ -5,21 +5,20 @@
 //! handler so [`super::LandingPage`] owns the canonical signal.
 
 use dioxus::prelude::*;
-use omnibus_shared::{ShelfSummary, SortDir, SortKey, ViewFilters, ViewMode, ViewPrefs};
+use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode, ViewPrefs};
 
-use crate::components::FilterBar;
+use crate::components::{FilterBar, ShelfList};
 
 use super::sorting::{
     default_dir_for, sort_key_from_value, sort_key_label, sort_key_value, toggle_dir, SORT_KEYS,
 };
 use super::stack_toggle::{StackToggle, StackToggleView};
 
-/// `shelves` is `None` until the shelves list has loaded; the filter bar names
-/// its shelf chips from it.
+/// `shelves` is what the filter bar names its shelf chips from.
 #[component]
 pub(super) fn Toolbar(
     prefs: ViewPrefs,
-    shelves: Option<Vec<ShelfSummary>>,
+    shelves: ShelfList,
     sort_lock: Option<&'static str>,
     stack: StackToggleView,
     on_change: EventHandler<ViewPrefs>,
@@ -27,6 +26,7 @@ pub(super) fn Toolbar(
 ) -> Element {
     let view_mode = prefs.view_mode;
     let filters = prefs.filters.clone();
+    let viewer_id = crate::use_current_user_summary()().map(|u| u.id);
     let set_filters = {
         let prefs = prefs.clone();
         move |filters: ViewFilters| {
@@ -58,7 +58,7 @@ pub(super) fn Toolbar(
             }
         }
         // A sibling of the toolbar so the header row wraps it onto its own line.
-        FilterBar { filters, shelves, on_change: set_filters }
+        FilterBar { filters, shelves, viewer_id, on_change: set_filters }
     }
 }
 
@@ -177,7 +177,7 @@ mod tests {
     #[component]
     fn ToolbarHarness(
         prefs: ViewPrefs,
-        shelves: Option<Vec<ShelfSummary>>,
+        shelves: ShelfList,
         sort_lock: Option<&'static str>,
         stack: StackToggleView,
     ) -> Element {
@@ -215,7 +215,7 @@ mod tests {
         stack: StackToggleView,
     ) -> String {
         render(rsx! {
-            ToolbarHarness { prefs, shelves: None, sort_lock, stack }
+            ToolbarHarness { prefs, shelves: ShelfList::Pending, sort_lock, stack }
         })
     }
 
