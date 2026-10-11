@@ -1,14 +1,7 @@
 //! Reading-stats aggregation over the `reading_sessions` /
 //! `listening_sessions` tables plus `journal_entries` / `book_read_status`
-//! for completion; no new query-time schema. See the `book`, `compute`,
-//! `pages`, `patterns`, `ratings`, `streak`, and `superlatives` submodules
-//! for the per-scope aggregation bodies this module's cache wraps,
-//! `sessionize` for how checkpoint rows become sittings, `library` /
-//! `composition` for the two aggregates here that describe the collection
-//! rather than a reader, and `sessions` for the uncached per-sitting log
-//! those aggregates summarize. `household` lists which readers share their
-//! stats and gates a viewer's read of another reader's summary, session log,
-//! or in-progress list.
+//! for completion; no new query-time schema. This module owns the cache; the
+//! per-scope aggregation bodies it wraps live in the submodules.
 //!
 //! # Which calendar
 //!

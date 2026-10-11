@@ -4,15 +4,12 @@
 //! the one ladder in [`book_pages_source`] — every input is persisted at index
 //! time, so no EPUB or archive is opened at query time.
 //!
-//! They are scoped to **three different questions**, and conflating any two of
-//! them is the bug this module has already had once:
+//! They answer **three different questions**; conflating any two is a bug:
 //!
 //! * [`pages_read`] is ground *covered* in the window, so it windows on the
-//!   forward-progress ledger (the `0095` slots). Summing the length of the
-//!   books finished in the window — what it used to do — reported an em-dash to
-//!   a reader who finished nothing and attributed a whole book to whichever
-//!   window its status flip landed in, which is the Finished tile weighted by
-//!   length, not pages read.
+//!   forward-progress ledger (the `0095` slots). Summing the lengths of books
+//!   finished in the window would credit a whole book to whichever window its
+//!   status flip landed in.
 //! * [`length_buckets`] is about books *finished*, so it windows on completion
 //!   events. That is its subject, not an oversight.
 //! * [`pages_per_hour`] is a reading *speed*, so it pairs the books finished in
