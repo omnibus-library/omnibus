@@ -282,6 +282,27 @@ async fn sync_now_echoes_sync_token_on_continued_pages() {
 }
 
 #[tokio::test]
+async fn sync_now_sends_saved_sync_token_on_next_sync() {
+    let stub = spawn_stub(Stub::default()).await;
+    let mut device = Device::new("HW-1");
+    sync_now(&mut device, &stub.endpoint).await.unwrap();
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap();
+
+    let requests = stub.requests.lock().unwrap();
+    let tokens: Vec<Option<&str>> = requests
+        .iter()
+        .filter(|r| r.path.ends_with("/v1/library/sync"))
+        .map(|r| {
+            r.headers
+                .get("x-kobo-synctoken")
+                .and_then(|v| v.to_str().ok())
+        })
+        .collect();
+    assert_eq!(tokens, [None, Some("page-1")]);
+}
+
+#[tokio::test]
 async fn sync_now_fails_when_sync_never_stops_continuing() {
     let stub = spawn_stub(Stub {
         sync_never_ends: true,

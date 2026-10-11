@@ -13,6 +13,8 @@ const UNKNOWN_AUTHOR: &str = "Unknown";
 pub struct Device {
     /// The serial the firmware sends as `x-kobo-deviceid`.
     pub hardware_id: String,
+    /// The last `x-kobo-synctoken` the server sent; the next sync starts from it.
+    pub sync_token: Option<String>,
     /// The books on the device, keyed by entitlement id.
     pub library: BTreeMap<String, Book>,
 }
@@ -35,6 +37,7 @@ impl Device {
     pub fn new(hardware_id: &str) -> Self {
         Self {
             hardware_id: hardware_id.to_owned(),
+            sync_token: None,
             library: BTreeMap::new(),
         }
     }

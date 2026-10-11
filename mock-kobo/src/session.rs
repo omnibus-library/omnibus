@@ -62,28 +62,31 @@ pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncRep
     })
 }
 
-/// Fetch and apply `library_sync` pages until the server stops asking for more,
-/// returning how many it took.
+/// Fetch and apply `library_sync` pages from the device's saved sync token
+/// until the server stops asking for more, returning how many it took.
 async fn sync_library(
     client: &mut Client,
     url: &str,
     device: &mut Device,
 ) -> Result<usize, SyncFailure> {
-    let mut sync_token = None;
     for fetched in 1..=MAX_SYNC_PAGES {
-        let page = client.library_sync(url, sync_token.as_deref()).await?;
+        let page = client
+            .library_sync(url, device.sync_token.as_deref())
+            .await?;
         require_not_rejected(client, &page)?;
         let headers = page.headers();
         let more = headers
             .get(SYNC_CONTINUE_HEADER)
             .is_some_and(|v| v == "continue");
-        sync_token = headers
+        let sync_token = headers
             .get(SYNC_TOKEN_HEADER)
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
         for item in client.decode::<Vec<SyncItem>>(page).await? {
             device.apply(item);
         }
+        // Advanced only once the page is applied, so a page that fails to decode is fetched again.
+        device.sync_token = sync_token;
         if !more {
             return Ok(fetched);
         }
