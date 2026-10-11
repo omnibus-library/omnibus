@@ -122,9 +122,6 @@ struct ShelfDetailView: View {
     @State private var booksClauses: [FilterClause] = []
     /// Why the member read failed, for a filtered shelf with nothing to show.
     @State private var booksError: String? = nil
-    /// Every member regardless of the filter, so Add books still marks a book
-    /// the filter hides as already on the shelf.
-    @State private var unfilteredMembers: Set<String>? = nil
     private var filters = LibraryFilterStore.shared
     @State private var isLoading = true
     /// The server answered that this shelf doesn't exist — a card cached
@@ -278,11 +275,7 @@ struct ShelfDetailView: View {
         }
         .sheet(isPresented: $showAddBooks) {
             if let identity {
-                AddBooksToShelfSheet(
-                    shelfId: identity.id,
-                    shelfName: identity.name,
-                    existing: unfilteredMembers ?? Set(books.map(\.uuid))
-                ) {
+                AddBooksToShelfSheet(shelfId: identity.id, shelfName: identity.name) {
                     Task { await load(force: true) }
                 }
             }
@@ -450,7 +443,6 @@ struct ShelfDetailView: View {
             books = []
             booksSettled = false
             booksClauses = clauses
-            unfilteredMembers = nil
         }
         booksError = nil
         await withTaskGroup(of: Void.self) { group in
@@ -492,13 +484,6 @@ struct ShelfDetailView: View {
                 // without ever yielding, which is exactly the case the
                 // unreachable state describes.
                 self.booksSettled = true
-            }
-            if !clauses.isEmpty {
-                group.addTask { @MainActor in
-                    for await page in UserDataService.shelfBooks(id: id).values() {
-                        self.unfilteredMembers = Set(page.books.map(\.uuid))
-                    }
-                }
             }
         }
         isLoading = false
