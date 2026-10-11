@@ -1,3 +1,5 @@
+//! `Device::apply` over each `library_sync` item shape the server sends.
+
 use serde_json::{json, Value};
 
 use super::*;

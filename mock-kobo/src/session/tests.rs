@@ -1,10 +1,12 @@
+//! `sync_now` against a stub Omnibus, one test per firmware rule the device enforces.
+
+use axum::http::StatusCode;
+use serde_json::json;
+
 use super::*;
 use crate::client::REQUEST_TIMEOUT;
 use crate::device::Device;
 use crate::firmware::Quirk;
-use axum::http::StatusCode;
-use serde_json::json;
-
 use crate::test_support::{new_entitlement, spawn_stub, Stub, STUB_TOKEN};
 
 fn request_lines(report: &SyncReport) -> Vec<String> {
