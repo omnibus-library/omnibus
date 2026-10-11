@@ -212,6 +212,8 @@ final class LibraryFilterStore {
     }
 
     private func replace(with next: [FilterClause]) {
+        // Every write is a reload for whoever observes the list, so an unchanged one is skipped.
+        guard next != clauses else { return }
         clauses = next
         LibraryFilterPreference(clauses: next).save(to: defaults)
     }

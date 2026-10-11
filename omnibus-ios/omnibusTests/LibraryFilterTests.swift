@@ -26,6 +26,17 @@ private func formDecoded(_ url: URL, _ name: String) -> String? {
         .removingPercentEncoding
 }
 
+/// Polls `condition` on the main actor until it holds or `timeout` passes.
+@MainActor
+private func eventually(timeout: Duration = .seconds(5), _ condition: () -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return condition()
+}
+
 /// An empty scratch replica and its path, for tests that read or wipe keys.
 private func scratchStore() async -> (OfflineStore, String) {
     let path = FileManager.default.temporaryDirectory
@@ -449,6 +460,8 @@ struct LibraryModelFilterTests {
         LibraryModel(defaults: scratchDefaults(), filters: store)
     }
 
+    private let stale = Book(id: 1, filename: "stale.epub", title: "Stale", uniqueIdentifier: "stale")
+
     @Test func theGridIsReadUnderTheSharedClauses() {
         let store = LibraryFilterStore(defaults: scratchDefaults())
         let model = model(store)
@@ -456,11 +469,38 @@ struct LibraryModelFilterTests {
         #expect(model.activeFilter.clauses == [genreClause])
     }
 
+    @Test func changingTheClausesReloadsTheGrid() async {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        let model = model(store)
+        model.books = [stale]
+        store.add(FilterClause(field: .tag, mode: .include, values: ["no-such-tag-\(UUID().uuidString)"]))
+        let reloaded = await eventually { model.books.isEmpty }
+        #expect(reloaded, "a clause change re-reads the grid under the new filter")
+    }
+
+    @Test func aShelfChangeReloadsAGridFilteredByShelf() async {
+        let defaults = scratchDefaults()
+        LibraryFilterPreference(clauses: [shelfClause]).save(to: defaults)
+        let model = model(LibraryFilterStore(defaults: defaults))
+        model.books = [stale]
+        await model.shelvesMoved()
+        #expect(model.books.isEmpty, "rows read before the membership moved answer an old question")
+    }
+
+    @Test func aShelfChangeLeavesAGridWithNoShelfClause() async {
+        let defaults = scratchDefaults()
+        LibraryFilterPreference(clauses: [genreClause]).save(to: defaults)
+        let model = model(LibraryFilterStore(defaults: defaults))
+        model.books = [stale]
+        await model.shelvesMoved()
+        #expect(model.books.map(\.uuid) == ["stale"])
+    }
+
     @Test func reloadingForAFilterChangeDropsTheGridDrawnUnderTheOldOne() async {
         let store = LibraryFilterStore(defaults: scratchDefaults())
         store.add(FilterClause(field: .tag, mode: .include, values: ["no-such-tag-\(UUID().uuidString)"]))
         let model = model(store)
-        model.books = [Book(id: 1, filename: "stale.epub", title: "Stale", uniqueIdentifier: "stale")]
+        model.books = [stale]
         await model.reload(clearingGrid: true)
         #expect(model.books.isEmpty, "rows from another filter must never stand in for this one's")
     }

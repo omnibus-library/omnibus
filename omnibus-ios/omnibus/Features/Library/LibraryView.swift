@@ -39,6 +39,7 @@ final class LibraryModel {
         let pref = LibrarySortPreference.load(from: defaults)
         sort = pref.sort
         direction = pref.direction
+        watchClauses()
     }
 
     private func persistSort() {
@@ -401,9 +402,6 @@ struct LibraryView: View {
         .onChange(of: app.user?.stackSeries) { _, on in
             model.stackSeries = on ?? false
         }
-        .onChange(of: model.filterStore.clauses) { _, _ in
-            Task { await model.reload(clearingGrid: true) }
-        }
         // Background poll, mirroring the web client's sync tick. Tied to the
         // view's lifetime, so it pauses whenever the library isn't on screen.
         .task {
@@ -424,7 +422,7 @@ struct LibraryView: View {
             Task { await model.refreshResume() }
         }
         .onChange(of: invalidations.generation(of: CacheKey.shelfPreviews)) { _, _ in
-            Task { await model.refreshShelves() }
+            Task { await model.shelvesMoved() }
         }
     }
 

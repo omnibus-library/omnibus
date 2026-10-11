@@ -1,8 +1,10 @@
 //  LibraryFilterBar.swift
 //  The library filter on screen: a chip per clause, Add filter and Clear
-//  filters over the shared `LibraryFilterStore`, and what a filtered grid says
-//  while it has no books to show. Hosted by the library and every shelf page.
+//  filters over the shared `LibraryFilterStore`, what a filtered grid says
+//  while it has no books to show, and how the library grid follows the filter.
+//  Hosted by the library and every shelf page.
 
+import Observation
 import SwiftUI
 
 /// The chips, each removable, then Add filter, then Clear filters once any
@@ -167,6 +169,30 @@ struct FilteredResultsState: View {
 
 extension LibraryModel {
     var hasFilterClauses: Bool { !filterStore.clauses.isEmpty }
+
+    /// Re-reads the grid each time the shared clause list changes, whichever
+    /// screen made the edit. Observation fires once, so each change re-arms it.
+    func watchClauses() {
+        withObservationTracking {
+            _ = filterStore.clauses
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.watchClauses()
+                await self.reload(clearingGrid: true)
+            }
+        }
+    }
+
+    /// The shelves moved under the rail. A grid narrowed by a shelf clause moved
+    /// with them: its rows answer a membership that no longer holds.
+    func shelvesMoved() async {
+        if filterStore.clauses.contains(where: { $0.field == .shelf }) {
+            await reload(clearingGrid: true)
+        } else {
+            await refreshShelves()
+        }
+    }
 
     /// The filtered grid's state while it holds no books.
     var filteredPhase: FilteredPhase {
