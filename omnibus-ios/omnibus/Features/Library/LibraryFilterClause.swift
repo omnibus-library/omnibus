@@ -76,3 +76,14 @@ struct LibraryFilterPreference: Equatable, Sendable {
         defaults.set(stored, forKey: Self.key)
     }
 }
+
+/// Why a filtered library read had no answer: the mirror can't evaluate a
+/// shelf clause, and the server didn't answer.
+enum LibraryFilterError: LocalizedError {
+    case needsConnection
+
+    static let connectionNotice =
+        "Filters need a connection to the server. Clear them to browse what's on this device."
+
+    var errorDescription: String? { Self.connectionNotice }
+}

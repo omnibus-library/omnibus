@@ -23,6 +23,11 @@ struct LibraryFilter: Equatable, Sendable {
     /// The reader's library filter, ANDed with everything above.
     var clauses: [FilterClause] = []
 
+    /// Whether the mirror can answer this filter. A shelf clause it can't: who
+    /// is on which shelf is the server's to say, and guessing would serve
+    /// unfiltered rows as if they were filtered.
+    var isMirrorAnswerable: Bool { !clauses.contains { $0.field == .shelf } }
+
     static let none = LibraryFilter()
 }
 
@@ -292,36 +297,51 @@ actor LibraryIndex {
     // MARK: - Reads
 
     /// One page out of the local mirror, ordered to match the server's sorts as
-    /// closely as a local table can.
+    /// closely as a local table can; `nil` when the filter is one the mirror
+    /// can't answer.
     func page(
         sort: SortKey,
         direction: SortDirection,
         filter: LibraryFilter,
         limit: Int,
         offset: Int
-    ) async -> LibraryPageResult {
+    ) async -> LibraryPageResult? {
+        await Self.page(
+            from: OfflineStore.shared, sort: sort, direction: direction, filter: filter,
+            limit: limit, offset: offset
+        )
+    }
+
+    /// `page` over any store, so the read is testable against a scratch mirror.
+    static func page(
+        from store: OfflineStore,
+        sort: SortKey,
+        direction: SortDirection,
+        filter: LibraryFilter,
+        limit: Int,
+        offset: Int
+    ) async -> LibraryPageResult? {
+        guard filter.isMirrorAnswerable else { return nil }
         let (clause, bindings) = Self.predicate(for: filter)
         let order = Self.order(sort: sort, direction: direction)
         let books: [Book]
         let stacks: [SeriesStack]?
         if filter.stackSeries {
             let read = await Self.stackedRead(
-                from: OfflineStore.shared, clause: clause, bindings: bindings,
+                from: store, clause: clause, bindings: bindings,
                 order: order, limit: limit, offset: offset
             )
             books = read.books
             stacks = read.stacks
         } else {
-            let payloads = await OfflineStore.shared.bookPayloads(
+            let payloads = await store.bookPayloads(
                 whereClause: clause, orderClause: order, bindings: bindings,
                 limit: limit, offset: offset
             )
             books = Self.decode(payloads)
             stacks = nil
         }
-        let total = await OfflineStore.shared.bookMatchCount(
-            whereClause: clause, bindings: bindings
-        )
+        let total = await store.bookMatchCount(whereClause: clause, bindings: bindings)
         // The receipt, computed the server's way: same filter with the
         // exclusion lifted, diffed. First page only, like the wire header.
         var hiddenCount: Int64?
@@ -329,9 +349,7 @@ actor LibraryIndex {
             var unhidden = filter
             unhidden.hiddenFormats = []
             let (allClause, allBindings) = Self.predicate(for: unhidden)
-            let all = await OfflineStore.shared.bookMatchCount(
-                whereClause: allClause, bindings: allBindings
-            )
+            let all = await store.bookMatchCount(whereClause: allClause, bindings: allBindings)
             hiddenCount = all - total
         }
         // A short page is the end of the library; anything else can be paged
@@ -542,7 +560,42 @@ actor LibraryIndex {
             )
         }
 
+        for clause in filter.clauses {
+            guard let match = clauseSQL(clause) else { continue }
+            clauses.append(match.sql)
+            bindings += match.bindings
+        }
+
         return (clauses.joined(separator: " AND "), bindings)
+    }
+
+    /// One filter clause over the mirrored `Book` payload, matched the way the
+    /// server matches: whole values, ASCII case folded, values ORed, and an
+    /// exclude keeping the books that carry no value at all. `nil` for a clause
+    /// with no usable value, which filters nothing, and for a shelf clause,
+    /// which the payload can't answer.
+    static func clauseSQL(_ clause: FilterClause) -> (sql: String, bindings: [String])? {
+        let values = clause.values
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !values.isEmpty else { return nil }
+        let list = "(\(values.map { _ in "?" }.joined(separator: ", ")))"
+        let member: String
+        switch clause.field {
+        case .tag: member = "\(eachElement(of: SearchFacet.tag.payloadKey)) value"
+        case .genre: member = "\(eachElement(of: SearchFacet.genre.payloadKey)) value"
+        case .format: member = "\(eachElement(of: "formats")) value"
+        case .author: member = "\(eachElement(of: "creators")) json_extract(value, '$.name')"
+        case .series: member = "WHERE json_extract(CAST(payload AS TEXT), '$.series')"
+        case .shelf: return nil
+        }
+        let not = clause.mode == .exclude ? "NOT " : ""
+        return (sql: "\(not)EXISTS (SELECT 1 \(member) COLLATE NOCASE IN \(list))", bindings: values)
+    }
+
+    /// The rows of one list in the mirrored payload, ready for a `WHERE` on each element.
+    private static func eachElement(of key: String) -> String {
+        "FROM json_each(CAST(payload AS TEXT), '$.\(key)') WHERE"
     }
 
     /// `ORDER BY` fragment for one sort axis. `internal` (not private) on the

@@ -129,10 +129,7 @@ enum LibraryService {
         // one shot at the server, then the mirror.
         guard cursor == nil else {
             return remotePage(query: query) {
-                await LibraryIndex.shared.page(
-                    sort: sort, direction: direction, filter: filter,
-                    limit: pageSize, offset: 0
-                )
+                try await mirrorPage(sort: sort, direction: direction, filter: filter, offset: 0)
             }
         }
 
@@ -145,10 +142,19 @@ enum LibraryService {
                 stacks: library.stacks
             )
         } fallback: {
-            await LibraryIndex.shared.page(
-                sort: sort, direction: direction, filter: filter, limit: pageSize, offset: 0
-            )
+            try await mirrorPage(sort: sort, direction: direction, filter: filter, offset: 0)
         }
+    }
+
+    /// A page out of the local mirror, or `LibraryFilterError` when the filter
+    /// holds a clause only the server can answer.
+    private static func mirrorPage(
+        sort: SortKey, direction: SortDirection, filter: LibraryFilter, offset: Int
+    ) async throws -> LibraryPageResult {
+        guard let page = await LibraryIndex.shared.page(
+            sort: sort, direction: direction, filter: filter, limit: pageSize, offset: offset
+        ) else { throw LibraryFilterError.needsConnection }
+        return page
     }
 
     /// A page straight out of the local mirror.
@@ -157,12 +163,15 @@ enum LibraryService {
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                let page = await LibraryIndex.shared.page(
-                    sort: sort, direction: direction, filter: filter,
-                    limit: pageSize, offset: offset
-                )
-                continuation.yield(CacheRead(value: page, isFresh: false))
-                continuation.finish()
+                do {
+                    let page = try await mirrorPage(
+                        sort: sort, direction: direction, filter: filter, offset: offset
+                    )
+                    continuation.yield(CacheRead(value: page, isFresh: false))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
             continuation.onTermination = { _ in task.cancel() }
         }
@@ -173,7 +182,7 @@ enum LibraryService {
     /// can't resume from it — it restarts at the top, which still beats a wall.
     private static func remotePage(
         query: [String: String?],
-        fallback: @escaping @Sendable () async -> LibraryPageResult
+        fallback: @escaping @Sendable () async throws -> LibraryPageResult
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -192,16 +201,31 @@ enum LibraryService {
                     )
                     continuation.finish()
                 } catch {
-                    let page = await fallback()
-                    if page.books.isEmpty {
-                        continuation.finish(throwing: error)
-                    } else {
-                        continuation.yield(CacheRead(value: page, isFresh: false))
-                        continuation.finish()
-                    }
+                    await settle(after: error, with: fallback, into: continuation)
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// The mirror's answer once the server has failed: its page when it has
+    /// books, the server's failure when it has none, and its own decline when
+    /// it can't answer the filter at all.
+    private static func settle(
+        after serverError: Error,
+        with fallback: @Sendable () async throws -> LibraryPageResult,
+        into continuation: AsyncThrowingStream<CacheRead<LibraryPageResult>, Error>.Continuation
+    ) async {
+        do {
+            let page = try await fallback()
+            if page.books.isEmpty {
+                continuation.finish(throwing: serverError)
+            } else {
+                continuation.yield(CacheRead(value: page, isFresh: false))
+                continuation.finish()
+            }
+        } catch {
+            continuation.finish(throwing: error)
         }
     }
 
@@ -211,7 +235,7 @@ enum LibraryService {
     static func firstPage(
         signature: String,
         fetch: @escaping @Sendable () async throws -> LibraryPageResult,
-        fallback: @escaping @Sendable () async -> LibraryPageResult
+        fallback: @escaping @Sendable () async throws -> LibraryPageResult
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -231,13 +255,7 @@ enum LibraryService {
                         continuation.finish()
                         return
                     }
-                    let page = await fallback()
-                    if page.books.isEmpty {
-                        continuation.finish(throwing: error)
-                    } else {
-                        continuation.yield(CacheRead(value: page, isFresh: false))
-                        continuation.finish()
-                    }
+                    await settle(after: error, with: fallback, into: continuation)
                 }
             }
             continuation.onTermination = { _ in task.cancel() }

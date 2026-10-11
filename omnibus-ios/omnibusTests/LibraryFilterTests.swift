@@ -199,3 +199,139 @@ struct LibraryFilterPreferenceTests {
         #expect(LibraryFilterPreference.load(from: defaults).clauses == [genreClause])
     }
 }
+
+// MARK: - Offline mirror
+
+private func book(
+    _ id: Int64, _ title: String, tags: [String] = [], genres: [String] = [],
+    authors: [String] = [], series: String? = nil, formats: [String] = []
+) -> Book {
+    var b = Book(id: id, filename: "\(id).epub", title: title, uniqueIdentifier: "u\(id)")
+    b.subjects = tags
+    b.genres = genres
+    b.creators = authors.map { Contributor(name: $0) }
+    b.series = series
+    b.formats = formats
+    return b
+}
+
+/// A scratch mirror holding `books`, promoted the way a sync pass does; returns it and its path.
+private func mirror(_ books: [Book]) async throws -> (OfflineStore, String) {
+    let path = FileManager.default.temporaryDirectory
+        .appendingPathComponent("filter-mirror-\(UUID().uuidString).sqlite").path
+    let store = OfflineStore(path: path)
+    await store.open()
+    let encoder = JSONEncoder()
+    let rows = try books.map { LibraryIndex.row(for: $0, payload: try encoder.encode($0)) }
+    await store.appendStagedBooks(rows)
+    await store.promoteCompletedStaging()
+    return (store, path)
+}
+
+struct LibraryFilterMirrorTests {
+    private let library = [
+        book(
+            1, "Dune", tags: ["Science Fiction"], genres: ["Classics"],
+            authors: ["Frank Herbert"], series: "Dune", formats: ["epub"]
+        ),
+        book(2, "Emma", tags: ["Romance"], authors: ["Jane Austen"], formats: ["m4b"]),
+        book(3, "Notes"),
+    ]
+
+    /// The titles the mirror serves under `clauses`, or `nil` when it declines.
+    private func titles(_ clauses: [FilterClause]) async throws -> [String]? {
+        let (store, path) = try await mirror(library)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        var filter = LibraryFilter()
+        filter.clauses = clauses
+        let page = await LibraryIndex.page(
+            from: store, sort: .title, direction: .asc, filter: filter, limit: 60, offset: 0
+        )
+        return page?.books.map(\.displayTitle)
+    }
+
+    @Test func includeTagKeepsOnlyBooksFiledUnderIt() async throws {
+        let clause = FilterClause(field: .tag, mode: .include, values: ["Science Fiction"])
+        #expect(try await titles([clause]) == ["Dune"])
+    }
+
+    @Test func excludeTagKeepsBooksWithNoTagsAtAll() async throws {
+        let clause = FilterClause(field: .tag, mode: .exclude, values: ["Science Fiction"])
+        #expect(try await titles([clause]) == ["Emma", "Notes"])
+    }
+
+    @Test func includeMatchesAnyOfItsValuesIgnoringCase() async throws {
+        let clause = FilterClause(field: .tag, mode: .include, values: ["science fiction", "ROMANCE"])
+        #expect(try await titles([clause]) == ["Dune", "Emma"])
+    }
+
+    @Test func genreReadsTheGenresListNotTheTags() async throws {
+        let classics = FilterClause(field: .genre, mode: .include, values: ["classics"])
+        let romance = FilterClause(field: .genre, mode: .include, values: ["Romance"])
+        #expect(try await titles([classics]) == ["Dune"])
+        #expect(try await titles([romance])?.isEmpty == true)
+    }
+
+    @Test func authorMatchesACreatorsName() async throws {
+        let clause = FilterClause(field: .author, mode: .include, values: ["jane austen"])
+        #expect(try await titles([clause]) == ["Emma"])
+    }
+
+    @Test func excludeAuthorKeepsBooksWithNoCreators() async throws {
+        let clause = FilterClause(field: .author, mode: .exclude, values: ["Jane Austen"])
+        #expect(try await titles([clause]) == ["Dune", "Notes"])
+    }
+
+    @Test func includeSeriesKeepsOnlyThatSeries() async throws {
+        let clause = FilterClause(field: .series, mode: .include, values: ["dune"])
+        #expect(try await titles([clause]) == ["Dune"])
+    }
+
+    @Test func excludeSeriesKeepsBooksInNoSeries() async throws {
+        let clause = FilterClause(field: .series, mode: .exclude, values: ["Dune"])
+        #expect(try await titles([clause]) == ["Emma", "Notes"])
+    }
+
+    @Test func includeFormatDropsABookWithNoFiles() async throws {
+        let clause = FilterClause(field: .format, mode: .include, values: ["epub", "m4b"])
+        #expect(try await titles([clause]) == ["Dune", "Emma"])
+    }
+
+    @Test func excludeFormatKeepsABookWithNoFiles() async throws {
+        let clause = FilterClause(field: .format, mode: .exclude, values: ["epub"])
+        #expect(try await titles([clause]) == ["Emma", "Notes"])
+    }
+
+    @Test func clausesCombineWithAnd() async throws {
+        let formats = FilterClause(field: .format, mode: .include, values: ["epub", "m4b"])
+        let notRomance = FilterClause(field: .tag, mode: .exclude, values: ["Romance"])
+        #expect(try await titles([formats, notRomance]) == ["Dune"])
+    }
+
+    @Test func aClauseOfOnlyBlankValuesFiltersNothing() async throws {
+        let clause = FilterClause(field: .tag, mode: .include, values: ["  "])
+        #expect(try await titles([clause]) == ["Dune", "Emma", "Notes"])
+    }
+
+    @Test func totalCountsOnlyTheMatchingBooks() async throws {
+        let (store, path) = try await mirror(library)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        var filter = LibraryFilter()
+        filter.clauses = [FilterClause(field: .tag, mode: .exclude, values: ["Romance"])]
+        let page = await LibraryIndex.page(
+            from: store, sort: .title, direction: .asc, filter: filter, limit: 60, offset: 0
+        )
+        #expect(page?.total == 2)
+    }
+
+    @Test func aShelfClauseDeclinesRatherThanServingUnfilteredRows() async throws {
+        let clause = FilterClause(field: .shelf, mode: .include, values: ["12"])
+        #expect(try await titles([clause]) == nil)
+    }
+
+    @Test func aShelfClauseDeclinesBesideClausesTheMirrorCouldAnswer() async throws {
+        let shelf = FilterClause(field: .shelf, mode: .exclude, values: ["12"])
+        let tag = FilterClause(field: .tag, mode: .include, values: ["Romance"])
+        #expect(try await titles([tag, shelf]) == nil)
+    }
+}
