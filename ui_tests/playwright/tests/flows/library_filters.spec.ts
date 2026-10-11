@@ -753,6 +753,9 @@ test.describe("on a shelf", () => {
 
       await expect(reader.getByTestId("shelf-refetch-error")).toBeVisible();
       await expect(chips(reader)).toHaveCount(1);
+      // The failed fetch left no rows to count, so no count beats "0".
+      await expect(reader.getByTestId("shelf-count")).toHaveCount(0);
+      await expect(reader.getByTestId("shelf-count-pending")).toHaveCount(0);
       await clearAll(reader).click();
 
       await expect(reader.getByTestId("shelf-refetch-error")).toHaveCount(0);
