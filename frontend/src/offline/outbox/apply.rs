@@ -229,7 +229,8 @@ fn is_filtered_shelf_page(key: &str) -> bool {
 /// Drop every cached browse or shelf page whose filter has a shelf clause: a
 /// membership write can change what it holds, and the replica can't recompute it.
 fn drop_shelf_filtered_pages(st: &store::Store) {
-    st.kv_delete_prefixes_containing(&["ebooks_first:", "shelf_page:"], SHELF_CLAUSE);
+    st.kv_delete_prefix_containing("ebooks_first:", SHELF_CLAUSE);
+    st.kv_delete_prefix_containing("shelf_page:", SHELF_CLAUSE);
 }
 
 /// Remove a book from a shelf's cached pages and drop its counts.
