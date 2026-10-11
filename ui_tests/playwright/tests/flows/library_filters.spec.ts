@@ -157,9 +157,14 @@ async function emptyLibraryInsertions(page: Page): Promise<number> {
 
 /**
  * Build one clause in the picker and apply it, waiting on the refetch the
- * surface makes: page 1 of All Books, or the shelf's members (`url`).
+ * surface makes: page 1 of All Books, or the shelf's members (`url`), which
+ * answers `status` (200 unless the spec forces a failure).
  */
-async function addClause(page: Page, spec: ClauseSpec, url = PAGE_RPC) {
+async function addClause(
+  page: Page,
+  spec: ClauseSpec,
+  { url = PAGE_RPC, status = 200 } = {},
+) {
   await addFilter(page).click();
   await fieldButton(page, spec.field).click();
   await modeButton(page, spec.mode).click();
@@ -172,7 +177,7 @@ async function addClause(page: Page, spec: ClauseSpec, url = PAGE_RPC) {
   }
   return expectMutation(
     page,
-    { method: "POST", url, expectedStatus: 200 },
+    { method: "POST", url, expectedStatus: status },
     async () => applyButton(page).click(),
   );
 }
@@ -534,8 +539,11 @@ test.describe("on a shelf", () => {
   });
 
   test.afterAll(async ({ request }) => {
-    await reader.context().close();
-    await request.delete(`/api/admin/users/${readerId}`);
+    // A failed beforeAll leaves these unset; cleaning up must not mask it.
+    await reader?.context().close();
+    if (readerId !== undefined) {
+      await request.delete(`/api/admin/users/${readerId}`);
+    }
   });
 
   // Each case starts from nothing saved: no filter, no shelf picked.
@@ -581,7 +589,7 @@ test.describe("on a shelf", () => {
         mode: "include",
         picks: [{ label: "Monica Lam", search: "Lam" }],
       },
-      SHELF_PAGE_RPC,
+      { url: SHELF_PAGE_RPC },
     );
 
     expect(request.postDataJSON()).toMatchObject({
@@ -631,7 +639,7 @@ test.describe("on a shelf", () => {
         mode: "exclude",
         picks: [{ label: "Ravi Sethi", search: "Sethi" }],
       },
-      SHELF_PAGE_RPC,
+      { url: SHELF_PAGE_RPC },
     );
 
     expect(request.postDataJSON()).toMatchObject({
@@ -671,7 +679,7 @@ test.describe("on a shelf", () => {
     await addClause(
       reader,
       { field: "format", mode: "include", picks: [{ label: "PDF" }] },
-      SHELF_PAGE_RPC,
+      { url: SHELF_PAGE_RPC },
     );
 
     await expect(reader.getByTestId("shelf-filtered-empty")).toContainText(
@@ -686,6 +694,73 @@ test.describe("on a shelf", () => {
     await expect(chips(reader)).toHaveCount(0);
     await expect(reader.getByTestId("shelf-filtered-empty")).toHaveCount(0);
     await expectShelfPageShows(reader, SHELF_SLUGS);
+  });
+
+  /** Fail the shelf member reads that carry a filter; the unfiltered ones answer. */
+  async function failFilteredShelfReads(page: Page) {
+    await page.route(`**${SHELF_PAGE_RPC}`, async (route) => {
+      const { filters } = route.request().postDataJSON();
+      if (filters.clauses.length > 0) {
+        await route.fulfill({ status: 500, body: "boom" });
+      } else {
+        await route.continue();
+      }
+    });
+  }
+
+  test("keeps the filter bar when a shelf's narrowed fetch fails on the landing page", async () => {
+    await gotoReady(reader, "/");
+    await selectShelfInGallery(reader, shelfId, shelfName);
+    await failFilteredShelfReads(reader);
+    try {
+      await addClause(
+        reader,
+        {
+          field: "author",
+          mode: "include",
+          picks: [{ label: "Monica Lam", search: "Lam" }],
+        },
+        { url: SHELF_PAGE_RPC, status: 500 },
+      );
+
+      await expect(reader.getByTestId("lib-page-error")).toBeVisible();
+      await expect(chips(reader)).toHaveCount(1);
+      // A filter the server refuses must not trap the reader: the shelf's own
+      // members are already loaded, so clearing needs no further request.
+      await clearAll(reader).click();
+
+      await expect(reader.getByTestId("lib-page-error")).toHaveCount(0);
+      await expect(chips(reader)).toHaveCount(0);
+      await expectShown(reader, [...SHELF_SLUGS].sort());
+    } finally {
+      await reader.unroute(`**${SHELF_PAGE_RPC}`);
+    }
+  });
+
+  test("keeps the filter bar when a shelf's narrowed fetch fails on its own page", async () => {
+    await openShelfFromIndex(reader, shelfId);
+    await failFilteredShelfReads(reader);
+    try {
+      await addClause(
+        reader,
+        {
+          field: "author",
+          mode: "include",
+          picks: [{ label: "Monica Lam", search: "Lam" }],
+        },
+        { url: SHELF_PAGE_RPC, status: 500 },
+      );
+
+      await expect(reader.getByTestId("shelf-refetch-error")).toBeVisible();
+      await expect(chips(reader)).toHaveCount(1);
+      await clearAll(reader).click();
+
+      await expect(reader.getByTestId("shelf-refetch-error")).toHaveCount(0);
+      await expect(chips(reader)).toHaveCount(0);
+      await expectShelfPageShows(reader, SHELF_SLUGS);
+    } finally {
+      await reader.unroute(`**${SHELF_PAGE_RPC}`);
+    }
   });
 
   test("excludes books on a shelf from All Books", async () => {

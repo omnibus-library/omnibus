@@ -30,26 +30,20 @@ fn list_with_picks(field: FilterField, list: Rc<OptionList>, picked: &[String]) 
     }
 }
 
-/// The section for `field`. Every tick emits the whole next [`ViewPrefs`].
-#[component]
-pub(super) fn FieldSection(
+/// `field`'s values, fetched the first time `open` turns true and again on each
+/// `retry`; `None` until they have answered. An answer is kept for the rest of
+/// the sheet — only a failure refetches.
+fn use_field_values(
     field: FilterField,
-    prefs: ViewPrefs,
+    open: Signal<bool>,
+    retry: Signal<u32>,
     server_url: String,
     viewer_id: Option<i64>,
-    on_change: EventHandler<ViewPrefs>,
-) -> Element {
-    let mut open = use_signal(|| false);
-    let mut mode = use_signal(|| FilterMode::Include);
-    let mut query = use_signal(String::new);
-    // `None` until the field's values have answered.
+) -> Signal<Option<Result<Rc<OptionList>, String>>> {
     let mut loaded = use_signal(|| None::<Result<Rc<OptionList>, String>>);
-    let mut retry = use_signal(|| 0u32);
-
     use_effect(move || {
         let wanted = open();
         let _ = retry();
-        // An answer is kept for the rest of the sheet; only a failure refetches.
         if !wanted || loaded.peek().as_ref().is_some_and(Result::is_ok) {
             return;
         }
@@ -62,6 +56,23 @@ pub(super) fn FieldSection(
             loaded.set(Some(result));
         });
     });
+    loaded
+}
+
+/// The section for `field`. Every tick emits the whole next [`ViewPrefs`].
+#[component]
+pub(super) fn FieldSection(
+    field: FilterField,
+    prefs: ViewPrefs,
+    server_url: String,
+    viewer_id: Option<i64>,
+    on_change: EventHandler<ViewPrefs>,
+) -> Element {
+    let mut open = use_signal(|| false);
+    let mut mode = use_signal(|| FilterMode::Include);
+    let mut query = use_signal(String::new);
+    let mut retry = use_signal(|| 0u32);
+    let mut loaded = use_field_values(field, open, retry, server_url, viewer_id);
 
     let token = field_token(field);
     let count = field_count(&prefs.filters, field);

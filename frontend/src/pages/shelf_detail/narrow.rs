@@ -99,11 +99,6 @@ pub(super) fn use_narrowing(
     let mut filters = use_signal(ViewFilters::default);
     let mut ready = use_signal(|| false);
     let mut shelves = use_signal(|| ShelfList::Pending);
-    let mut narrowed = use_signal(|| None::<Vec<EbookMetadata>>);
-    let mut failed = use_signal(|| false);
-    let mut epoch = use_signal(|| 0u32);
-    let mut narrowed_for = use_signal(|| None::<i64>);
-    let generation = crate::use_cache_generation();
 
     // Post-mount, so SSR and the first WASM paint both start unfiltered (rule
     // 07). It reads nothing reactive, so it runs once; `ready` flips either way
@@ -127,6 +122,31 @@ pub(super) fn use_narrowing(
             });
         });
     });
+
+    let (narrowed, failed) =
+        use_narrowed_members((shelf_id, server_url), (filters, ready), sort_key, reload);
+    Narrowing {
+        filters,
+        shelves,
+        narrowed,
+        failed,
+    }
+}
+
+/// The members matching `filters`, fetched from the server whenever the shelf,
+/// sort, filter or a membership edit changes; `None` while no filter applies or
+/// the answer is out. The second signal is whether the last fetch failed.
+fn use_narrowed_members(
+    (shelf_id, server_url): (i64, String),
+    (filters, ready): (Signal<ViewFilters>, Signal<bool>),
+    sort_key: Signal<SortKey>,
+    reload: Signal<u32>,
+) -> (Signal<Option<Vec<EbookMetadata>>>, Signal<bool>) {
+    let mut narrowed = use_signal(|| None::<Vec<EbookMetadata>>);
+    let mut failed = use_signal(|| false);
+    let mut epoch = use_signal(|| 0u32);
+    let mut narrowed_for = use_signal(|| None::<i64>);
+    let generation = crate::use_cache_generation();
 
     use_effect(use_reactive!(|shelf_id| {
         let key = sort_key();
@@ -165,13 +185,7 @@ pub(super) fn use_narrowing(
             }
         });
     }));
-
-    Narrowing {
-        filters,
-        shelves,
-        narrowed,
-        failed,
-    }
+    (narrowed, failed)
 }
 
 #[cfg(test)]

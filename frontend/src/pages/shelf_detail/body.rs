@@ -50,7 +50,7 @@ pub(super) fn WebShelfBody(
     // Books whose removal is in flight, or has landed but not yet been
     // refetched away: dimmed and inert until the next member list arrives.
     let mut leaving = use_signal(Vec::<String>::new);
-    let mut remove_error = use_signal(|| None::<String>);
+    let remove_error = use_signal(|| None::<String>);
     use_effect(use_reactive!(|books| {
         let _ = books;
         if !leaving.peek().is_empty() {
@@ -76,27 +76,12 @@ pub(super) fn WebShelfBody(
         .accent
         .clone()
         .unwrap_or_else(|| "var(--accent)".into());
-    let shelf_id = shelf.id;
-    let remove_url = server_url.clone();
-    let on_remove = EventHandler::new(move |(uuid, title): (String, String)| {
-        if leaving.peek().contains(&uuid) {
-            return;
-        }
-        leaving.write().push(uuid.clone());
-        remove_error.set(None);
-        let url = remove_url.clone();
-        spawn(async move {
-            match data::remove_shelf_book(&url, shelf_id, &uuid).await {
-                Ok(()) => reload.with_mut(|n| *n += 1),
-                Err(e) => {
-                    leaving.write().retain(|u| *u != uuid);
-                    remove_error.set(Some(format!(
-                        "Couldn\u{2019}t remove \u{201c}{title}\u{201d} from this shelf: {e}"
-                    )));
-                }
-            }
-        });
-    });
+    let on_remove = remove_handler(
+        shelf.id,
+        server_url.clone(),
+        (leaving, remove_error),
+        reload,
+    );
     let rows = narrowing.rows(FullList {
         books: &books,
         ready: members_ready,
@@ -141,6 +126,35 @@ pub(super) fn WebShelfBody(
             }
         }
     }
+}
+
+/// Takes a book off the shelf: marks it leaving, then refetches the members on
+/// success or puts the book back and says why on failure.
+fn remove_handler(
+    shelf_id: i64,
+    server_url: String,
+    (mut leaving, mut remove_error): (Signal<Vec<String>>, Signal<Option<String>>),
+    mut reload: Signal<u32>,
+) -> EventHandler<(String, String)> {
+    EventHandler::new(move |(uuid, title): (String, String)| {
+        if leaving.peek().contains(&uuid) {
+            return;
+        }
+        leaving.write().push(uuid.clone());
+        remove_error.set(None);
+        let url = server_url.clone();
+        spawn(async move {
+            match data::remove_shelf_book(&url, shelf_id, &uuid).await {
+                Ok(()) => reload.with_mut(|n| *n += 1),
+                Err(e) => {
+                    leaving.write().retain(|u| *u != uuid);
+                    remove_error.set(Some(format!(
+                        "Couldn\u{2019}t remove \u{201c}{title}\u{201d} from this shelf: {e}"
+                    )));
+                }
+            }
+        });
+    })
 }
 
 /// The way back to the index, above every state of the page.
@@ -450,6 +464,26 @@ mod tests {
             rsx! { BooksHarness { view: filtered } }
         });
         assert!(html.contains("Format excludes any of PDF"), "{html}");
+        assert!(html.contains("data-testid=\"filter-clear-all\""), "{html}");
+    }
+
+    #[test]
+    fn shelf_books_keep_the_filter_bar_and_clear_all_beside_a_fetch_error() {
+        // A filter the server refuses must never trap the reader.
+        let html = render_in_vdom(|| {
+            let mut failed = view(false, false);
+            failed.errored = true;
+            failed.filters = ViewFilters {
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Include,
+                    &["pdf"],
+                )],
+            };
+            rsx! { BooksHarness { view: failed } }
+        });
+        assert!(html.contains("shelf-refetch-error"), "{html}");
+        assert!(html.contains("data-testid=\"lib-filter-bar\""), "{html}");
         assert!(html.contains("data-testid=\"filter-clear-all\""), "{html}");
     }
 
