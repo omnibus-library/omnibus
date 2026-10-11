@@ -1,4 +1,9 @@
-import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import type {
+  APIRequest,
+  APIRequestContext,
+  Locator,
+  Page,
+} from "@playwright/test";
 import { expect } from "../fixtures/test";
 import { gotoReady } from "./nav";
 
@@ -27,6 +32,45 @@ export async function createShelf(
     `POST /api/rpc/shelves/create failed for ${body.name}`,
   ).toBe(200);
   return ((await resp.json()) as { id: number }).id;
+}
+
+/**
+ * Create a shelf owned by `username`, on a bearer session of its own, and
+ * return its id — for a reader who signs in on a cookie-less browser context
+ * and so has no admin request fixture to create with.
+ */
+export async function createShelfAs(
+  api: APIRequest,
+  baseURL: string,
+  username: string,
+  password: string,
+  body: Record<string, unknown>,
+): Promise<number> {
+  const ctx = await api.newContext({ baseURL });
+  try {
+    const login = await ctx.post("/api/auth/login", {
+      data: { username, password, client_kind: "bearer" },
+    });
+    expect(login.status(), `bearer login failed for ${username}`).toBe(200);
+    const { token } = (await login.json()) as { token: string };
+    const resp = await ctx.post("/api/rpc/shelves/create", {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        req: {
+          description: null,
+          visibility: "private",
+          match_mode: null,
+          rules: [],
+          book_uuids: [],
+          ...body,
+        },
+      },
+    });
+    expect(resp.status(), `shelf create failed for ${username}`).toBe(200);
+    return ((await resp.json()) as { id: number }).id;
+  } finally {
+    await ctx.dispose();
+  }
 }
 
 // A shelf opens two ways on web, and they are different surfaces. Both start

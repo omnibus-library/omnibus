@@ -198,7 +198,7 @@ fn ShelfBooks(
                     if view.pending {
                         span { class: "mono shd-books-count ld-sheen", "data-testid": "shelf-count-pending", "counting" }
                     } else {
-                        span { class: "mono shd-books-count", "{count}" }
+                        span { class: "mono shd-books-count", "data-testid": "shelf-count", "{count}" }
                     }
                 }
                 if view.kind == ShelfKind::Smart {

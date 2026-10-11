@@ -3,9 +3,15 @@ import { AUDIOBOOK_BOOKS } from "../fixtures/audiobooks";
 import { type ExpectedBook, FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
-import { switchToTableView } from "../utils/ebooks";
+import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
 import { expectNavVisible, gotoReady, waitForHydration } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
+import {
+  createShelfAs,
+  openShelfFromIndex,
+  selectShelfInGallery,
+} from "../utils/shelves";
+import { createReader, logInThroughUi } from "../utils/users";
 
 // The filter is client-side view state, saved per library path in
 // localStorage, and a Playwright context starts with none — so these tests run
@@ -13,6 +19,7 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // public-domain PDFs and the Compiler Compendium books: no other spec edits
 // either, and (unlike tags and genres) nothing holds an override on them.
 const PAGE_RPC = "/api/rpc/ebooks/page";
+const SHELF_PAGE_RPC = "/api/rpc/shelves/page";
 const FIELD_NAMES = {
   shelf: "Shelf",
   tag: "Tag",
@@ -148,8 +155,11 @@ async function emptyLibraryInsertions(page: Page): Promise<number> {
   );
 }
 
-/** Build one clause in the picker and apply it, waiting on the page-1 refetch. */
-async function addClause(page: Page, spec: ClauseSpec) {
+/**
+ * Build one clause in the picker and apply it, waiting on the refetch the
+ * surface makes: page 1 of All Books, or the shelf's members (`url`).
+ */
+async function addClause(page: Page, spec: ClauseSpec, url = PAGE_RPC) {
   await addFilter(page).click();
   await fieldButton(page, spec.field).click();
   await modeButton(page, spec.mode).click();
@@ -162,7 +172,7 @@ async function addClause(page: Page, spec: ClauseSpec) {
   }
   return expectMutation(
     page,
-    { method: "POST", url: PAGE_RPC, expectedStatus: 200 },
+    { method: "POST", url, expectedStatus: 200 },
     async () => applyButton(page).click(),
   );
 }
@@ -465,4 +475,247 @@ test("keeps the filter bar when the page fetch fails", async ({ page }) => {
   await waitForHydration(page);
   await expect(chips(page)).toHaveCount(0);
   await expect(page.getByTestId("lib-page-error")).toHaveCount(0);
+});
+
+// The shelf cases run as a reader of their own on a cookie-less context, with a
+// hand-picked shelf that reader creates: the filter is saved per browser
+// context, but the shelf is server state, and a shelf on the shared admin would
+// move every other spec's shelf counts. The shelf holds three EPUBs by Aho and
+// the Wells PDF — fixtures nothing else edits (see the notes at the top).
+const SHELF_SLUGS = [
+  "compiler-compendium-1",
+  "compiler-compendium-2",
+  "compiler-compendium-3",
+  "time-machine",
+];
+const SHELF_PASSWORD = "library-filters-pw-00";
+const memberBook = (slug: string): ExpectedBook => {
+  const book = FIXTURE_BOOKS.find((b) => b.slug === slug);
+  if (!book) throw new Error(`no fixture ${slug}`);
+  return book;
+};
+const titlesOf = (slugs: string[]) => slugs.map((s) => memberBook(s).title);
+
+test.describe("on a shelf", () => {
+  // One reader's saved filter walks through the cases, so they run in order.
+  test.describe.configure({ mode: "serial" });
+
+  const shelfName = `E2E Library Filters ${Date.now()}`;
+  const memberUuids = new Map<string, string>();
+  let reader: Page;
+  let readerId: number;
+  let shelfId: number;
+
+  test.beforeAll(async ({ browser, request, playwright, baseURL }) => {
+    const username = `e2e_library_filters_${Date.now()}`;
+    for (const slug of SHELF_SLUGS) {
+      memberUuids.set(
+        slug,
+        await fetchBookUuidByTitle(request, memberBook(slug).title),
+      );
+    }
+    readerId = await createReader(request, username, SHELF_PASSWORD);
+    shelfId = await createShelfAs(
+      playwright.request,
+      baseURL ?? "",
+      username,
+      SHELF_PASSWORD,
+      {
+        kind: "manual",
+        name: shelfName,
+        book_uuids: [...memberUuids.values()],
+      },
+    );
+    const context = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+    reader = await context.newPage();
+    await logInThroughUi(reader, username, SHELF_PASSWORD);
+  });
+
+  test.afterAll(async ({ request }) => {
+    await reader.context().close();
+    await request.delete(`/api/admin/users/${readerId}`);
+  });
+
+  // Each case starts from nothing saved: no filter, no shelf picked.
+  test.beforeEach(async () => {
+    await reader.evaluate(() => localStorage.clear());
+  });
+
+  /** The member titles on the shelf page's grid, sorted. */
+  async function shelfPageTitles(page: Page): Promise<string[]> {
+    return page
+      .getByTestId("shelf-tile")
+      .evaluateAll((tiles) =>
+        tiles
+          .map((t) =>
+            (t.getAttribute("aria-label") ?? "").replace(
+              /^Open details for /,
+              "",
+            ),
+          )
+          .sort(),
+      );
+  }
+
+  async function expectShelfPageShows(page: Page, slugs: string[]) {
+    const titles = titlesOf(slugs).sort();
+    await expect
+      .poll(() => shelfPageTitles(page), { message: "tiles on the shelf page" })
+      .toEqual(titles);
+    await expect(page.getByTestId("shelf-count")).toHaveText(
+      String(titles.length),
+    );
+  }
+
+  test("narrows a selected shelf on the landing page", async () => {
+    await gotoReady(reader, "/");
+    await selectShelfInGallery(reader, shelfId, shelfName);
+    await expectShown(reader, [...SHELF_SLUGS].sort());
+
+    const { request } = await addClause(
+      reader,
+      {
+        field: "author",
+        mode: "include",
+        picks: [{ label: "Monica Lam", search: "Lam" }],
+      },
+      SHELF_PAGE_RPC,
+    );
+
+    expect(request.postDataJSON()).toMatchObject({
+      id: shelfId,
+      filters: {
+        clauses: [{ field: "author", mode: "include", values: ["Monica Lam"] }],
+      },
+    });
+    await expectShown(reader, ["compiler-compendium-2"]);
+    // The header counts the narrowed members, not the shelf's four.
+    await expect(reader.getByTestId("lib-section-title")).toContainText(
+      "· 1 book",
+    );
+
+    // Narrowing must not shrink what Add books treats as already on the shelf.
+    await reader.getByTestId("shelf-add-books").click();
+    const modal = reader.getByTestId("add-books-modal");
+    await modal.getByTestId("add-books-search").fill("Compendium of Compilers");
+    const ruledOut = memberUuids.get("compiler-compendium-1");
+    await expect(modal.getByTestId(`picker-tile-${ruledOut}`)).toContainText(
+      "On this shelf",
+    );
+  });
+
+  test("narrows a shelf on its own page", async () => {
+    await gotoReady(reader, "/");
+    await addClause(reader, {
+      field: "author",
+      mode: "include",
+      picks: [{ label: "Jeffrey Ullman", search: "Ullman" }],
+    });
+    await openShelfFromIndex(reader, shelfId);
+
+    // The filter set on All Books is the one this page reads.
+    await expect(reader.getByTestId("filter-chip-0")).toContainText(
+      "Author includes any of Jeffrey Ullman",
+    );
+    await expectShelfPageShows(reader, [
+      "compiler-compendium-1",
+      "compiler-compendium-3",
+    ]);
+
+    const { request } = await addClause(
+      reader,
+      {
+        field: "author",
+        mode: "exclude",
+        picks: [{ label: "Ravi Sethi", search: "Sethi" }],
+      },
+      SHELF_PAGE_RPC,
+    );
+
+    expect(request.postDataJSON()).toMatchObject({
+      id: shelfId,
+      filters: {
+        clauses: [
+          { field: "author", mode: "include", values: ["Jeffrey Ullman"] },
+          { field: "author", mode: "exclude", values: ["Ravi Sethi"] },
+        ],
+      },
+    });
+    await expectShelfPageShows(reader, ["compiler-compendium-1"]);
+
+    // Saved where the landing page reads it: both survive a reload, and All
+    // Books shows the same two chips.
+    await reader.reload();
+    await waitForHydration(reader);
+    await expect(chips(reader)).toHaveCount(2);
+    await expectShelfPageShows(reader, ["compiler-compendium-1"]);
+    await gotoReady(reader, "/");
+    await expect(chips(reader)).toHaveCount(2);
+    await expect(reader.getByTestId("filter-chip-1")).toContainText(
+      "Author excludes any of Ravi Sethi",
+    );
+  });
+
+  test("explains a filter that rules out every book on a shelf and clears from it", async () => {
+    await gotoReady(reader, "/");
+    await addClause(reader, {
+      field: "author",
+      mode: "include",
+      picks: [{ label: "Monica Lam", search: "Lam" }],
+    });
+    await openShelfFromIndex(reader, shelfId);
+    await expectShelfPageShows(reader, ["compiler-compendium-2"]);
+
+    await addClause(
+      reader,
+      { field: "format", mode: "include", picks: [{ label: "PDF" }] },
+      SHELF_PAGE_RPC,
+    );
+
+    await expect(reader.getByTestId("shelf-filtered-empty")).toContainText(
+      "No books on this shelf match these filters.",
+    );
+    await expect(reader.getByTestId("shelf-empty")).toHaveCount(0);
+    await expect(reader.getByTestId("shelf-count")).toHaveText("0");
+
+    // The full member list is already loaded, so clearing asks the server nothing.
+    await reader.getByTestId("shelf-filtered-clear").click();
+
+    await expect(chips(reader)).toHaveCount(0);
+    await expect(reader.getByTestId("shelf-filtered-empty")).toHaveCount(0);
+    await expectShelfPageShows(reader, SHELF_SLUGS);
+  });
+
+  test("excludes books on a shelf from All Books", async () => {
+    await gotoReady(reader, "/");
+    // PDFs only, so the expected set is exact whatever else the library holds.
+    await addClause(reader, {
+      field: "format",
+      mode: "include",
+      picks: [{ label: "PDF" }],
+    });
+
+    const { request } = await addClause(reader, {
+      field: "shelf",
+      mode: "exclude",
+      picks: [{ label: shelfName }],
+    });
+
+    expect(request.postDataJSON().filters.clauses[1]).toEqual({
+      field: "shelf",
+      mode: "exclude",
+      values: [String(shelfId)],
+    });
+    await expect(reader.getByTestId("filter-chip-1")).toContainText(
+      `Shelf excludes any of ${shelfName}`,
+    );
+    await expectShown(
+      reader,
+      expectedSlugs(
+        (b) => hasFormat(b, "pdf") && !SHELF_SLUGS.includes(b.slug),
+      ),
+    );
+  });
 });
