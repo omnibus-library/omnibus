@@ -129,3 +129,32 @@ async fn sync_now_delivers_series_before_download() {
     };
     assert_eq!(device.library[&uuid].series, Some(expected));
 }
+
+#[tokio::test]
+async fn sync_now_refreshes_metadata_without_redownload_when_book_changes() {
+    let omnibus = spawn_omnibus().await;
+    let uuid = seed_synced_ebook(&omnibus.pool, "dune.epub", "Dune", "Frank Herbert").await;
+    // `last_modified` is second-granular, so pin it below any real write.
+    sqlx::query("UPDATE books SET last_modified = 1 WHERE uuid = ?")
+        .bind(&uuid)
+        .execute(&omnibus.pool)
+        .await
+        .unwrap();
+    opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
+    let mut device = Device::new("HW-1");
+    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    device.library.get_mut(&uuid).unwrap().downloaded = true;
+    let description = MetadataOverrides {
+        description: Some("Arrakis, desert planet.".into()),
+        ..Default::default()
+    };
+    set_overrides(&omnibus, &uuid, description).await;
+
+    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+
+    let book = &device.library[&uuid];
+    assert_eq!(
+        (book.description.as_str(), book.downloaded),
+        ("Arrakis, desert planet.", true)
+    );
+}
