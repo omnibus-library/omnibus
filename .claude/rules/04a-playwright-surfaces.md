@@ -191,9 +191,6 @@ POSTs nothing for position (the ready report is treated as already saved) but
 does write read status `reading` on an unread book — pre-set `flatland` to
 `reading` in `beforeAll` (the comic spec's pattern) or assert that write.
 
-**The filter bar is a popover with lazy value lists.** `lib-filter-bar` holds the chips
-(`filter-chip-<i>`, `-remove-<i>`), `+ Add filter` and `Clear all`. Add opens the modal `Add
-filter` dialog (Tab wraps; closing refocuses the button): field and mode buttons, a searchbox,
-checkboxes labelled by display label (formats uppercase) and Apply, which refetches what the
-surface shows: `POST /api/rpc/ebooks/page` on All Books, `/api/rpc/shelves/page` on a shelf
-(`/shelves/:id` shares the landing's saved filter and adds `shelf-count`, `shelf-filtered-empty`).
+**The filter bar and what reads its saved filter** (chips, the Add filter
+dialog, the shelf lens and `/shelves/:id` states) have their own file:
+[04c-playwright-filters.md](04c-playwright-filters.md).

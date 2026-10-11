@@ -3,8 +3,9 @@
 
 use omnibus_shared::{FilterClause, FilterField, FilterMode};
 
-use super::*;
 use crate::test_support::render_in_vdom;
+
+use super::*;
 
 fn view(pending: bool, filtered_out: bool) -> BooksView {
     BooksView {

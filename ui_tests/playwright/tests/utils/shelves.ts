@@ -7,6 +7,15 @@ import type {
 import { expect } from "../fixtures/test";
 import { gotoReady } from "./nav";
 
+/** The empty private hand-picked shelf a create request starts from. */
+const SHELF_DEFAULTS = {
+  description: null,
+  visibility: "private",
+  match_mode: null,
+  rules: [],
+  book_uuids: [],
+};
+
 /**
  * Create a shelf owned by the suite's admin straight through the API and
  * return its id. `body` overrides the empty-private-manual defaults.
@@ -16,16 +25,7 @@ export async function createShelf(
   body: Record<string, unknown>,
 ): Promise<number> {
   const resp = await request.post("/api/rpc/shelves/create", {
-    data: {
-      req: {
-        description: null,
-        visibility: "private",
-        match_mode: null,
-        rules: [],
-        book_uuids: [],
-        ...body,
-      },
-    },
+    data: { req: { ...SHELF_DEFAULTS, ...body } },
   });
   expect(
     resp.status(),
@@ -55,16 +55,7 @@ export async function createShelfAs(
     const { token } = (await login.json()) as { token: string };
     const resp = await ctx.post("/api/rpc/shelves/create", {
       headers: { Authorization: `Bearer ${token}` },
-      data: {
-        req: {
-          description: null,
-          visibility: "private",
-          match_mode: null,
-          rules: [],
-          book_uuids: [],
-          ...body,
-        },
-      },
+      data: { req: { ...SHELF_DEFAULTS, ...body } },
     });
     expect(resp.status(), `shelf create failed for ${username}`).toBe(200);
     return ((await resp.json()) as { id: number }).id;

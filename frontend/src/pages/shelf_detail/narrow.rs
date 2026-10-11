@@ -6,9 +6,10 @@
 use dioxus::prelude::*;
 use omnibus_shared::{EbookMetadata, SortKey, ViewFilters};
 
-use super::default_dir_for;
 use crate::components::ShelfList;
 use crate::{data, view_prefs};
+
+use super::default_dir_for;
 
 /// The page's full member list and how far its fetch has got.
 pub(super) struct FullList<'a> {

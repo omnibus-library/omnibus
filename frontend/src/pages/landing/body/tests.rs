@@ -3,9 +3,10 @@
 
 use omnibus_shared::{FilterClause, FilterField, FilterMode, ViewFilters};
 
-use super::*;
 use crate::shelf_selection::ShelfSelection;
 use crate::test_support::render_in_vdom;
+
+use super::*;
 
 fn book(uuid: &str, publisher: &str) -> EbookMetadata {
     EbookMetadata {
