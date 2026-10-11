@@ -4,10 +4,11 @@
 use dioxus::prelude::*;
 use omnibus_shared::{FilterClause, FilterField, FilterMode, MAX_FILTER_VALUES};
 
-use super::values::{self, FilterOption};
-use super::{field_label, field_plural, field_token, FILTER_FIELDS};
 use crate::components::loading::{Loading, LoadingKind};
 use crate::focus_after_paint::focus_after_paint;
+
+use super::values::{self, FilterOption};
+use super::{field_label, field_plural, field_token, FILTER_FIELDS};
 
 /// Most value rows drawn at once; a longer match list is narrowed by search.
 pub(super) const MAX_SHOWN_OPTIONS: usize = 200;
@@ -110,7 +111,7 @@ pub(super) fn FilterPicker(
 /// asked for; a superseded fetch drops its answer.
 fn use_loaded_options(field: Signal<Option<FilterField>>, retry: Signal<u32>) -> Signal<Loaded> {
     let server_url = crate::use_server_url();
-    let mut loaded = use_signal(|| None::<(FilterField, Result<Vec<FilterOption>, String>)>);
+    let mut loaded: Signal<Loaded> = use_signal(|| None);
     let mut epoch = use_signal(|| 0u32);
     use_effect(move || {
         let wanted = field();

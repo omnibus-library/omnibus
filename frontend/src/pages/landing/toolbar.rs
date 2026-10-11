@@ -7,11 +7,12 @@
 use dioxus::prelude::*;
 use omnibus_shared::{ShelfSummary, SortDir, SortKey, ViewFilters, ViewMode, ViewPrefs};
 
+use crate::components::FilterBar;
+
 use super::sorting::{
     default_dir_for, sort_key_from_value, sort_key_label, sort_key_value, toggle_dir, SORT_KEYS,
 };
 use super::stack_toggle::{StackToggle, StackToggleView};
-use crate::components::FilterBar;
 
 /// `shelves` is `None` until the shelves list has loaded; the filter bar names
 /// its shelf chips from it.
