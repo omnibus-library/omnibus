@@ -314,6 +314,7 @@ fn render_gallery(
         ShelfGallery {
             shelves: (sigs.shelves)(),
             loaded: (sigs.shelves_answered)(),
+            filtered: !sigs.prefs.read().filters.is_empty(),
             selection: (sigs.selection)(),
             all_count: (sigs.total)(),
             all_cover_uuids,
