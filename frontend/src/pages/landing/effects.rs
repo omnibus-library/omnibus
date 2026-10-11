@@ -54,6 +54,9 @@ pub(super) struct FetchSignals {
     /// until it flips, so the first request carries the viewer's own sort
     /// instead of [`omnibus_shared::ViewPrefs::default`].
     pub(super) prefs_ready: Signal<bool>,
+    /// The reader edited the prefs before a page-1 response named the library,
+    /// so no authoritative key holds those edits yet.
+    pub(super) prefs_unsaved: Signal<bool>,
 }
 
 /// Refetch the admin-only author/tag/genre suggestion pools whenever `is_admin` changes.

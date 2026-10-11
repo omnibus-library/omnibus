@@ -71,6 +71,65 @@ pub fn load_last() -> Option<ViewPrefs> {
     last_library().map(|path| load(&path))
 }
 
+/// Where one edit to the prefs is saved, and whether it still owes the
+/// authoritative library a write once that library is known.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavePlan {
+    /// The library key to write under now, if any.
+    pub write_to: Option<String>,
+    /// The edit has not reached the authoritative library's key.
+    pub unsaved: bool,
+}
+
+/// Plan the save of an edit made while the page's library path is
+/// `lib_path`. Until a page-1 response names the library, the pointer is only
+/// a guess, so an edit is written under it solely when that fetch has failed
+/// and may never answer — otherwise a guess that was wrong would file the edit
+/// under another library and the reconcile would then load that one over it.
+pub fn save_plan(
+    lib_path: Option<&str>,
+    page_failed: bool,
+    last_library: Option<String>,
+) -> SavePlan {
+    match lib_path {
+        Some(path) => SavePlan {
+            write_to: Some(path.to_string()),
+            unsaved: false,
+        },
+        None => SavePlan {
+            write_to: last_library.filter(|_| page_failed),
+            unsaved: true,
+        },
+    }
+}
+
+/// What a page-1 response naming the library does to the prefs in memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reconcile {
+    /// Nothing new was learned: the memory copy stands.
+    Keep,
+    /// A library not seen before: its stored prefs replace the memory copy.
+    Adopt,
+    /// The reader edited before the library was known: save those edits under it.
+    SaveEdits,
+}
+
+/// Decide the [`Reconcile`] for `path`, the library the latest response named.
+/// `reconciled` is the path last acted on; a re-set to the same path teaches
+/// nothing, so it must not reload a copy a failed write left behind memory.
+pub fn reconcile_action(reconciled: Option<&str>, path: &str, unsaved: bool) -> Reconcile {
+    if unsaved {
+        Reconcile::SaveEdits
+    } else if reconciled == Some(path) {
+        Reconcile::Keep
+    } else {
+        Reconcile::Adopt
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
 // Mobile tests — the only non-wasm target where `client_store` actually
 // persists, so it's the only place `load_last`'s positive path and `save`'s
 // dedup-write skip can be exercised without a browser. The mobile backend is

@@ -267,17 +267,26 @@ pub(super) struct LandingHandlers {
 }
 
 /// Build the UI-event handlers from the landing signals. `save` is `Copy`
-/// because every capture (`prefs`, `lib_path` — both `Signal`) is `Copy`,
-/// so each handler can take its own reference to the same persisted-prefs
-/// update path without cloning closure state.
+/// because every capture (`prefs`, `lib_path`, `page_error`, `unsaved` — all
+/// `Signal`) is `Copy`, so each handler can take its own reference to the same
+/// persisted-prefs update path without cloning closure state.
 pub(super) fn build_handlers(sigs: &LandingSignals) -> LandingHandlers {
     let mut prefs = sigs.prefs;
     let lib_path = sigs.lib_path;
     let mut want_more = sigs.want_more;
+    let page_error = sigs.error;
+    let mut unsaved = sigs.prefs_unsaved;
     let save = move |new_prefs: ViewPrefs| {
-        // A failed page fetch leaves `lib_path` unset; the pointer still names the library the prefs came from.
-        if let Some(path) = lib_path.peek().clone().or_else(view_prefs::last_library) {
-            view_prefs::save(&path, &new_prefs);
+        let plan = view_prefs::save_plan(
+            lib_path.peek().as_deref(),
+            page_error.peek().is_some(),
+            view_prefs::last_library(),
+        );
+        if let Some(path) = &plan.write_to {
+            view_prefs::save(path, &new_prefs);
+        }
+        if plan.unsaved {
+            unsaved.set(true);
         }
         prefs.set(new_prefs);
     };
