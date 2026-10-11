@@ -505,21 +505,49 @@ struct LibraryModelFilterTests {
         #expect(model.books.isEmpty, "rows from another filter must never stand in for this one's")
     }
 
-    @Test func filteredPhaseIsLoadingWhileTheReadIsInFlight() {
+    @Test func aSavedFilterReadsAsLoadingBeforeTheFirstRead() {
+        let defaults = scratchDefaults()
+        LibraryFilterPreference(clauses: [genreClause]).save(to: defaults)
+        let model = model(LibraryFilterStore(defaults: defaults))
+        #expect(model.tabState == .content)
+        #expect(model.filteredPhase == .loading, "nothing has been asked, so nothing can be said to match")
+    }
+
+    @Test func aFilterChangeReloadStopsHoldingTheContentOnceItAnswers() async {
         let model = model(LibraryFilterStore(defaults: scratchDefaults()))
-        model.isLoading = true
-        #expect(model.filteredPhase == .loading)
+        await model.reload(clearingGrid: true)
+        #expect(!model.isApplyingFilters, "an unfiltered tab with no books must reach its own empty state")
+        #expect(model.hasAnswered)
+    }
+
+    @Test func filteredPhaseIsLoadingBeforeTheFirstAnswer() {
+        #expect(LibraryModel.filteredPhase(isLoading: false, hasAnswered: false, error: nil) == .loading)
+    }
+
+    @Test func filteredPhaseIsLoadingWhileTheReadIsInFlight() {
+        #expect(LibraryModel.filteredPhase(isLoading: true, hasAnswered: true, error: nil) == .loading)
     }
 
     @Test func filteredPhaseCarriesTheFailure() {
-        let model = model(LibraryFilterStore(defaults: scratchDefaults()))
-        model.error = "You're offline."
-        #expect(model.filteredPhase == .failed("You're offline."))
+        #expect(
+            LibraryModel.filteredPhase(isLoading: false, hasAnswered: true, error: "You're offline.")
+                == .failed("You're offline.")
+        )
     }
 
     @Test func filteredPhaseIsNoMatchesWhenTheReadSettlesEmpty() {
-        let model = model(LibraryFilterStore(defaults: scratchDefaults()))
-        #expect(model.filteredPhase == .noMatches)
+        #expect(LibraryModel.filteredPhase(isLoading: false, hasAnswered: true, error: nil) == .noMatches)
+    }
+
+    @Test func tabStateKeepsTheContentUpWhileAFilterChangeReloads() {
+        #expect(
+            LibraryModel.tabState(hasBooks: false, isLoading: true, error: nil, keepsContent: true) == .content,
+            "clearing the last filter must not blank the tab to a loader"
+        )
+    }
+
+    @Test func tabStateFillsTheTabWithTheLoaderOnAnUnfilteredFirstRead() {
+        #expect(LibraryModel.tabState(hasBooks: false, isLoading: true, error: nil, keepsContent: false) == .loading)
     }
 }
 

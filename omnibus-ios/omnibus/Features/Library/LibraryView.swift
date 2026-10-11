@@ -12,6 +12,12 @@ final class LibraryModel {
     var isLoading = false
     var isLoadingMore = false
     var error: String?
+    /// Whether a first-page read has answered yet; until one has, nothing on
+    /// screen may say the library, or a filter, has no books.
+    var hasAnswered = false
+    /// Rows were cleared for a filter or shelf change and nothing has answered
+    /// since, so the tab keeps its content up rather than swapping to a loader.
+    var isApplyingFilters = false
 
     /// Restored from `defaults` at init and written back on every change, so
     /// the menu's checkmark and the grid order survive a relaunch (#2347).
@@ -117,7 +123,10 @@ final class LibraryModel {
         openSeries = nil
         let token = UUID()
         loadToken = token
-        if clearingGrid { books = [] }
+        if clearingGrid {
+            books = []
+            isApplyingFilters = true
+        }
         isLoading = true
         error = nil
         cursor = nil
@@ -141,13 +150,13 @@ final class LibraryModel {
                         self.hiddenCount = read.value.hiddenCount
                         self.stacks = Self.stackIndex(read.value.stacks)
                         self.error = nil
-                        self.isLoading = false
+                        self.noteAnswered()
                     }
                 } catch {
                     guard self.loadToken == token, self.books.isEmpty else { return }
                     self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
                 }
-                if self.loadToken == token { self.isLoading = false }
+                if self.loadToken == token { self.noteAnswered() }
             }
             group.addTask { @MainActor in
                 for await points in UserDataService.recentProgress().values() {
@@ -165,6 +174,13 @@ final class LibraryModel {
                 }
             }
         }
+    }
+
+    /// The current read answered, with rows or without.
+    private func noteAnswered() {
+        isLoading = false
+        isApplyingFilters = false
+        hasAnswered = true
     }
 
     /// Resume points only. Re-running the whole `reload` would refetch the
@@ -345,11 +361,12 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if model.isLoading && model.books.isEmpty && !model.hasFilterClauses {
+                switch model.tabState {
+                case .loading:
                     LoadingView(label: "Loading your library")
-                } else if let error = model.error, model.books.isEmpty, !model.hasFilterClauses {
+                case .failed(let error):
                     ErrorStateView(message: error) { Task { await model.reload() } }
-                } else if model.books.isEmpty && !model.hasFilterClauses {
+                case .empty:
                     EmptyStateView(
                         icon: "books.vertical",
                         title: "No books yet",
@@ -357,7 +374,7 @@ struct LibraryView: View {
                         kicker: "Your library",
                         fanned: true
                     )
-                } else {
+                case .content:
                     content
                 }
             }

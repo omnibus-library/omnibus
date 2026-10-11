@@ -167,6 +167,14 @@ struct FilteredResultsState: View {
     }
 }
 
+/// What fills the library tab: its content, or one whole-tab state while it has none.
+enum LibraryTabState: Equatable {
+    case loading
+    case failed(String)
+    case empty
+    case content
+}
+
 extension LibraryModel {
     var hasFilterClauses: Bool { !filterStore.clauses.isEmpty }
 
@@ -194,9 +202,31 @@ extension LibraryModel {
         }
     }
 
+    var tabState: LibraryTabState {
+        Self.tabState(
+            hasBooks: !books.isEmpty, isLoading: isLoading || !hasAnswered, error: error,
+            keepsContent: hasFilterClauses || isApplyingFilters
+        )
+    }
+
+    /// A filtered tab, or one a filter change just cleared, keeps its content:
+    /// the grid's own state says why it holds no books.
+    nonisolated static func tabState(
+        hasBooks: Bool, isLoading: Bool, error: String?, keepsContent: Bool
+    ) -> LibraryTabState {
+        if hasBooks || keepsContent { return .content }
+        if isLoading { return .loading }
+        if let error { return .failed(error) }
+        return .empty
+    }
+
     /// The filtered grid's state while it holds no books.
     var filteredPhase: FilteredPhase {
-        if isLoading { return .loading }
+        Self.filteredPhase(isLoading: isLoading, hasAnswered: hasAnswered, error: error)
+    }
+
+    nonisolated static func filteredPhase(isLoading: Bool, hasAnswered: Bool, error: String?) -> FilteredPhase {
+        if isLoading || !hasAnswered { return .loading }
         if let error { return .failed(error) }
         return .noMatches
     }
