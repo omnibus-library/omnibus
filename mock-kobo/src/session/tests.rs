@@ -108,6 +108,27 @@ async fn sync_now_fails_before_library_sync_when_store_path_returns_404() {
 }
 
 #[tokio::test]
+async fn sync_now_fails_when_store_path_redirects() {
+    let stub = spawn_stub(Stub {
+        store_path_status: StatusCode::FOUND,
+        ..Stub::default()
+    })
+    .await;
+
+    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        failure,
+        SyncFailure::Quirk {
+            quirk: Quirk::StorePaths,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
 async fn sync_now_failure_omits_device_token_when_store_path_returns_404() {
     let stub = spawn_stub(Stub {
         store_path_status: StatusCode::NOT_FOUND,

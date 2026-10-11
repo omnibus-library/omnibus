@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::State,
-    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
+    http::{header::LOCATION, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     Json, Router,
 };
@@ -23,7 +23,8 @@ pub struct Stub {
     pub api_token: Option<&'static str>,
     /// Whether `gettests` takes a POST; `false` answers 405, as before #1499.
     pub gettests_accepts_post: bool,
-    /// The status every firmware store path answers with.
+    /// The status every firmware store path answers with; a 3xx points at a
+    /// stub path that answers 200.
     pub store_path_status: StatusCode,
     /// Where under `/kobo/<token>` the resources map puts `library_sync` and
     /// `get_tests_request`; the default `/v1/...` paths answer 404 once moved.
@@ -113,12 +114,24 @@ async fn handle(
         "/v1/user/profile"
         | "/v1/user/loyalty/benefits"
         | "/v1/products/books/subscriptions"
-        | "/v1/deals" => (state.stub.store_path_status, Json(json!({}))).into_response(),
+        | "/v1/deals" => store_path(&state),
         _ => match rest.strip_prefix(state.stub.resources_under) {
             Some(resource) => answer_resource(&state, &method, resource),
             None => StatusCode::NOT_FOUND.into_response(),
         },
     }
+}
+
+/// A firmware store path's answer, redirecting to a healthy path when `store_path_status` is a 3xx.
+fn store_path(state: &StubState) -> Response {
+    let status = state.stub.store_path_status;
+    let mut response = (status, Json(json!({}))).into_response();
+    if status.is_redirection() {
+        let target = format!("{}/kobo/{STUB_TOKEN}/v1/analytics/gettests", state.base);
+        let location = HeaderValue::from_str(&target).unwrap();
+        response.headers_mut().insert(LOCATION, location);
+    }
+    response
 }
 
 /// The routes the device reaches through the resources map.

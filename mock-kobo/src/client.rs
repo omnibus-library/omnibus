@@ -31,14 +31,19 @@ pub struct Client {
 
 impl Client {
     /// A client for the device `hardware_id`, configured with `api_endpoint`.
-    pub fn new(api_endpoint: &str, hardware_id: &str) -> Self {
-        Self {
-            http: reqwest::Client::new(),
+    pub fn new(api_endpoint: &str, hardware_id: &str) -> Result<Self, SyncFailure> {
+        // A 3xx is an answer, not a detour: following one would pass a moved path as 200.
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|e| SyncFailure::Transport(e.to_string()))?;
+        Ok(Self {
+            http,
             api_endpoint: api_endpoint.trim_end_matches('/').to_owned(),
             hardware_id: hardware_id.to_owned(),
             token: path_token(api_endpoint),
             requests: Vec::new(),
-        }
+        })
     }
 
     /// `GET v1/initialization`, the handshake.

@@ -31,7 +31,7 @@ pub enum SyncFailure {
 
 /// Press "Sync now" on `device`, configured with `api_endpoint`.
 pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncReport, SyncFailure> {
-    let mut client = Client::new(api_endpoint, &device.hardware_id);
+    let mut client = Client::new(api_endpoint, &device.hardware_id)?;
     let initialization = client.initialization().await?;
     if !initialization.headers().contains_key(API_TOKEN_HEADER) {
         return Err(tripped(
