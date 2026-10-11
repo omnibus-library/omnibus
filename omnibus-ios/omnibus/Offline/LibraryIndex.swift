@@ -8,8 +8,8 @@
 
 import Foundation
 
-/// Which books a query is restricted to. Mirrors the server's `formats`
-/// filter, plus the client-only "on this device" bucket.
+/// Which books a query is restricted to. Mirrors the server's `formats` and
+/// `filter` params, plus the client-only "on this device" bucket.
 struct LibraryFilter: Equatable, Sendable {
     var formats: [String] = []
     var downloadedOnly = false
@@ -20,6 +20,8 @@ struct LibraryFilter: Equatable, Sendable {
     var hiddenFormats: [String] = []
     /// The viewer's Stack series preference: fold each series into one tile.
     var stackSeries = false
+    /// The reader's library filter, ANDed with everything above.
+    var clauses: [FilterClause] = []
 
     static let none = LibraryFilter()
 }

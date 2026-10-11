@@ -744,6 +744,7 @@ struct UserScopedPrefixTests {
             CacheKey.shelfPreviews,
             CacheKey.shelf(7),
             CacheKey.shelfPage(7),
+            CacheKey.shelfPage(7, filter: [FilterClause(field: .tag, mode: .include, values: ["x"])]),
             CacheKey.shelvesContaining(uuid),
             CacheKey.progress(uuid, .epub),
             CacheKey.progress(uuid, .audio),

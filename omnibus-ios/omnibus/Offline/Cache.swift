@@ -23,6 +23,12 @@ enum CacheKey {
     static func seriesDetail(_ id: Int64) -> String { "series:\(id)" }
     static func shelf(_ id: Int64) -> String { "shelf:\(id)" }
     static func shelfPage(_ id: Int64) -> String { "shelf_page:\(id)" }
+    /// A shelf's members under a filter; no clauses is the unfiltered page.
+    static func shelfPage(_ id: Int64, filter: [FilterClause]) -> String {
+        filter.isEmpty ? shelfPage(id) : "\(shelfPageFilteredPrefix(id))\(FilterClause.signature(filter))"
+    }
+    /// Every filtered copy of one shelf's members carries this; the unfiltered page does not.
+    static func shelfPageFilteredPrefix(_ id: Int64) -> String { "shelf_page:\(id)|" }
     /// Scoped by format as well as book: a dual-format book has two positions
     /// and they are not interchangeable. Sharing one slot meant the reader and
     /// the player overwrote each other's place in the same book.

@@ -112,7 +112,7 @@ enum LibraryService {
         let query = pageQuery(
             sort: sort, direction: direction, formats: filter.formats,
             excludeFormats: filter.hiddenFormats, stackSeries: filter.stackSeries,
-            cursor: cursor
+            cursor: cursor, filter: filter.clauses
         )
         let signature = pageSignature(sort: sort, direction: direction, filter: filter)
 
@@ -246,7 +246,8 @@ enum LibraryService {
 
     static func pageQuery(
         sort: SortKey, direction: SortDirection, formats: [String],
-        excludeFormats: [String], stackSeries: Bool, cursor: String?
+        excludeFormats: [String], stackSeries: Bool, cursor: String?,
+        filter: [FilterClause] = []
     ) -> [String: String?] {
         var query: [String: String?] = [
             "sort": sort.rawValue,
@@ -259,6 +260,7 @@ enum LibraryService {
         }
         if stackSeries { query["stack_series"] = "true" }
         if let cursor { query["cursor"] = cursor }
+        if let clauses = FilterClause.queryValue(filter) { query["filter"] = clauses }
         return query
     }
 
@@ -270,7 +272,8 @@ enum LibraryService {
         // must miss the cache or a stale page serves right after a toggle.
         let hidden = filter.hiddenFormats.sorted().joined(separator: "-")
         let stacked = filter.stackSeries ? "|stack" : ""
-        return "\(sort.rawValue).\(direction.rawValue).\(formats)|hide:\(hidden)\(stacked)"
+        let clauses = filter.clauses.isEmpty ? "" : "|f:\(FilterClause.signature(filter.clauses))"
+        return "\(sort.rawValue).\(direction.rawValue).\(formats)|hide:\(hidden)\(stacked)\(clauses)"
     }
 
     /// One book: replica, then the server, then the local mirror.
