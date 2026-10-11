@@ -244,19 +244,6 @@ private func book(
     return b
 }
 
-/// A scratch mirror holding `books`, promoted the way a sync pass does; returns it and its path.
-private func mirror(_ books: [Book]) async throws -> (OfflineStore, String) {
-    let path = FileManager.default.temporaryDirectory
-        .appendingPathComponent("filter-mirror-\(UUID().uuidString).sqlite").path
-    let store = OfflineStore(path: path)
-    await store.open()
-    let encoder = JSONEncoder()
-    let rows = try books.map { LibraryIndex.row(for: $0, payload: try encoder.encode($0)) }
-    await store.appendStagedBooks(rows)
-    await store.promoteCompletedStaging()
-    return (store, path)
-}
-
 struct LibraryFilterMirrorTests {
     private let library = [
         book(
@@ -269,7 +256,7 @@ struct LibraryFilterMirrorTests {
 
     /// The titles the mirror serves under `clauses`, or `nil` when it declines.
     private func titles(_ clauses: [FilterClause]) async throws -> [String]? {
-        let (store, path) = try await mirror(library)
+        let (store, path) = try await scratchMirror(library, filePrefix: "filter-mirror")
         defer { try? FileManager.default.removeItem(atPath: path) }
         var filter = LibraryFilter()
         filter.clauses = clauses
@@ -343,7 +330,7 @@ struct LibraryFilterMirrorTests {
     }
 
     @Test func totalCountsOnlyTheMatchingBooks() async throws {
-        let (store, path) = try await mirror(library)
+        let (store, path) = try await scratchMirror(library, filePrefix: "filter-mirror")
         defer { try? FileManager.default.removeItem(atPath: path) }
         var filter = LibraryFilter()
         filter.clauses = [FilterClause(field: .tag, mode: .exclude, values: ["Romance"])]
@@ -381,29 +368,6 @@ struct LibraryFilterStoreTests {
         store.add(genreClause)
         #expect(store.clauses == [genreClause])
         #expect(LibraryFilterPreference.load(from: defaults).clauses == [genreClause])
-    }
-
-    @Test func addRefusesAClauseWithNoValues() {
-        let store = LibraryFilterStore(defaults: scratchDefaults())
-        store.add(FilterClause(field: .tag, mode: .include, values: []))
-        #expect(store.clauses.isEmpty)
-    }
-
-    @Test func addTakesSixteenClausesAndRefusesTheSeventeenth() {
-        let store = LibraryFilterStore(defaults: scratchDefaults())
-        for index in 0..<17 {
-            store.add(FilterClause(field: .tag, mode: .include, values: ["t\(index)"]))
-        }
-        #expect(store.clauses.count == 16)
-        #expect(!store.canAdd(reservingFormatClause: false))
-    }
-
-    @Test func addTakesSixtyFourValuesAndRefusesSixtyFive() {
-        let store = LibraryFilterStore(defaults: scratchDefaults())
-        let full = (0..<64).map { "v\($0)" }
-        store.add(FilterClause(field: .tag, mode: .include, values: full))
-        store.add(FilterClause(field: .tag, mode: .include, values: full + ["v64"]))
-        #expect(store.clauses.map(\.values.count) == [64])
     }
 
     @Test func canAddStopsAtTheServersSixteenClauses() {

@@ -58,14 +58,10 @@ struct FilterOption: Hashable, Sendable, Identifiable {
             : shelf.name
     }
 
-    /// Every format the category strip knows, once each.
-    static let formats: [FilterOption] = {
-        var seen: Set<String> = []
-        return LibraryCategory.allCases
-            .flatMap(\.serverFormats)
-            .filter { seen.insert($0).inserted }
-            .map { FilterOption(value: $0, label: $0.uppercased(), count: nil) }
-    }()
+    /// Every format the category strip knows.
+    static let formats: [FilterOption] = LibraryCategory.allCases
+        .flatMap(\.serverFormats)
+        .map { FilterOption(value: $0, label: $0.uppercased(), count: nil) }
 
     private static func asciiFolded(_ name: String) -> String {
         String(name.map { $0.isASCII ? Character($0.lowercased()) : $0 })
