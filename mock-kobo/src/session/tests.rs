@@ -195,6 +195,38 @@ async fn sync_now_failure_omits_device_token_when_server_unreachable() {
 }
 
 #[tokio::test]
+async fn run_sync_keeps_requests_made_before_failure() {
+    let stub = spawn_stub(Stub {
+        store_path_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+
+    let run = run_sync(&mut Device::new("HW-1"), &stub.endpoint).await;
+
+    let lines: Vec<String> = run
+        .requests
+        .iter()
+        .map(|r| format!("{} {} {}", r.method, r.path, r.status))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "GET /kobo/<token>/v1/initialization 200",
+            "POST /kobo/<token>/v1/analytics/gettests 200",
+            "GET /kobo/<token>/v1/user/profile 404",
+        ]
+    );
+    assert!(matches!(
+        run.result,
+        Err(SyncFailure::Quirk {
+            quirk: Quirk::StorePaths,
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
 async fn sync_now_sends_hardware_id_on_every_request() {
     let stub = spawn_stub(Stub::default()).await;
 
