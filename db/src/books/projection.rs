@@ -119,7 +119,7 @@ macro_rules! book_columns_body {
     ",
             // Projected on every listing, not just the Recently Interacted one:
             // the mobile offline replica sorts its cached rows client-side, and
-            // a row whose key is missing falls back to the id tiebreak and
+            // a row whose key is missing falls back to the title tiebreak and
             // scrambles the server order.
             interacted_at_iso_sql!(),
             " AS last_interacted_at
