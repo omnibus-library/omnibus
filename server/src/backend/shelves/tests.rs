@@ -3,12 +3,15 @@
 
 use axum::{
     body::{to_bytes, Body},
+    extract::{Path, State},
     http::{header::AUTHORIZATION, Request, StatusCode},
 };
+use omnibus_db::auth::SessionKind;
 use omnibus_shared::{Shelf, ShelfSummary, SortDir, SortKey};
 use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
+use crate::auth::AuthUser;
 use crate::backend::test_support::*;
 
 fn req(
@@ -570,6 +573,34 @@ async fn api_smart_shelves_containing_requires_authentication() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+// Invoked directly: a closed pool would fail the bearer extractor before the handler ran.
+#[tokio::test]
+async fn api_smart_shelves_containing_returns_500_when_the_db_is_unavailable() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+    let user = AuthUser {
+        id: 1,
+        username: "reader".to_string(),
+        is_admin: false,
+        can_upload: false,
+        can_edit: false,
+        can_download: false,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+        share_stats: true,
+        session_id: 1,
+        session_kind: SessionKind::Bearer,
+    };
+
+    let res = super::smart_shelves_containing(user, State(state), Path("bk1".to_string())).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
 #[test]
