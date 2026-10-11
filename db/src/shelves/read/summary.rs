@@ -153,7 +153,7 @@ async fn load_shelf_batches(
         }
     }
     let smart_covers = covers_smart_fan_out(pool, &smart_inputs).await?;
-    let smart_counts = count_smart_fan_out(pool, smart_inputs).await?;
+    let smart_counts = count_smart_fan_out(pool, smart_inputs, None).await?;
 
     Ok((
         ShelfCounts {
@@ -399,21 +399,22 @@ async fn covers_smart_fan_out(
 /// Run [`count_smart`] for every `(shelf_id, owner_id, match_mode, rules)`
 /// tuple in `inputs`, fanning out [`SMART_COUNT_CONCURRENCY`] at a time,
 /// keyed by shelf id in the returned map. Replaces the sequential per-shelf
-/// await `list_visible_shelves` used to make (see its doc comment).
-async fn count_smart_fan_out(
+/// await `list_visible_shelves` used to make (see its doc comment). `uuid`
+/// narrows each count to that one book.
+pub(super) async fn count_smart_fan_out(
     pool: &SqlitePool,
     inputs: Vec<(i64, i64, MatchMode, Vec<ShelfRule>)>,
+    uuid: Option<&str>,
 ) -> Result<HashMap<i64, i64>, ShelfError> {
     let mut out = HashMap::with_capacity(inputs.len());
     for chunk in inputs.chunks(SMART_COUNT_CONCURRENCY) {
         // `try_join_all` (not `join_all`) so one failing count short-circuits
         // the rest of the chunk instead of waiting out every in-flight query.
-        let counts = try_join_all(
-            chunk
-                .iter()
-                .map(|(_, owner_id, mode, rules)| count_smart(pool, *owner_id, *mode, rules)),
-        )
-        .await?;
+        let counts =
+            try_join_all(chunk.iter().map(|(_, owner_id, mode, rules)| {
+                count_smart(pool, *owner_id, *mode, rules, uuid)
+            }))
+            .await?;
         for ((shelf_id, ..), count) in chunk.iter().zip(counts) {
             out.insert(*shelf_id, count);
         }

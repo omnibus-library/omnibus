@@ -4,16 +4,15 @@
 
 use std::collections::HashSet;
 
-use futures::future::try_join_all;
 use omnibus_shared::{
     EbookMetadata, MatchMode, RulePreview, Shelf, ShelfKind, ShelfPage, ShelfRule, SortDir, SortKey,
 };
 use sqlx::{Row, SqlitePool};
 
-use super::summary::load_rules_batch;
+use super::summary::{count_smart_fan_out, load_rules_batch};
 use super::{
     count_smart, order_by_sql, parse_kind, parse_mode, parse_visibility, row_to_rule, ShelfError,
-    FILE_EXISTS, LIST_SHELVES_LIMIT, PREVIEW_SAMPLE, SMART_COUNT_CONCURRENCY, SMART_VISIBLE,
+    FILE_EXISTS, LIST_SHELVES_LIMIT, PREVIEW_SAMPLE, SMART_VISIBLE,
 };
 use crate::books::{
     backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
@@ -63,14 +62,6 @@ pub async fn manual_shelves_containing(
         .collect()
 }
 
-/// A visible smart shelf and what decides whether a book is on it.
-struct SmartCandidate {
-    id: i64,
-    owner_user_id: i64,
-    mode: MatchMode,
-    rules: Vec<ShelfRule>,
-}
-
 /// Ids of the smart shelves `viewer_id` can see that currently hold `uuid`.
 ///
 /// The counterpart of [`manual_shelves_containing`] for the shelves that fill
@@ -89,35 +80,32 @@ pub async fn smart_shelves_containing(
         return Ok(Vec::new());
     };
     let candidates = visible_smart_candidates(pool, viewer_id, is_admin).await?;
-    let mut held = Vec::new();
-    for chunk in candidates.chunks(SMART_COUNT_CONCURRENCY) {
-        let verdicts = try_join_all(chunk.iter().map(|c| smart_holds(pool, c, &canonical))).await?;
-        held.extend(
-            chunk
-                .iter()
-                .zip(verdicts)
-                .filter_map(|(c, holds)| holds.then_some(c.id)),
-        );
-    }
-    Ok(held)
+    let ids: Vec<i64> = candidates.iter().map(|(id, ..)| *id).collect();
+    let counts = count_smart_fan_out(pool, candidates, Some(&canonical)).await?;
+    Ok(ids
+        .into_iter()
+        .filter(|id| counts.get(id).is_some_and(|n| *n > 0))
+        .collect())
 }
 
-/// The smart shelves `viewer_id` can see, in rail order, with their rules.
+/// The smart shelves `viewer_id` can see, in rail order (their own first, so a
+/// full window never drops one), as `(id, owner_user_id, mode, rules)`.
 async fn visible_smart_candidates(
     pool: &SqlitePool,
     viewer_id: i64,
     is_admin: bool,
-) -> Result<Vec<SmartCandidate>, ShelfError> {
+) -> Result<Vec<(i64, i64, MatchMode, Vec<ShelfRule>)>, ShelfError> {
     let rows = sqlx::query(
         "SELECT s.id, s.owner_user_id, s.match_mode
            FROM shelves s
           WHERE s.kind = 'smart'
             AND (s.owner_user_id = ? OR s.visibility = 'public' OR ?)
-          ORDER BY s.position, s.id
+          ORDER BY s.owner_user_id <> ?, s.position, s.id
           LIMIT ?",
     )
     .bind(viewer_id)
     .bind(is_admin)
+    .bind(viewer_id)
     .bind(LIST_SHELVES_LIMIT)
     .fetch_all(pool)
     .await?;
@@ -129,35 +117,14 @@ async fn visible_smart_candidates(
     rows.iter()
         .map(|r| {
             let id: i64 = r.try_get("id")?;
-            Ok(SmartCandidate {
+            Ok((
                 id,
-                owner_user_id: r.try_get("owner_user_id")?,
-                mode: parse_mode(r.try_get::<Option<String>, _>("match_mode")?),
-                rules: rules.remove(&id).unwrap_or_default(),
-            })
+                r.try_get("owner_user_id")?,
+                parse_mode(r.try_get::<Option<String>, _>("match_mode")?),
+                rules.remove(&id).unwrap_or_default(),
+            ))
         })
         .collect()
-}
-
-/// Whether `candidate`'s rules match the book with canonical uuid `uuid`.
-async fn smart_holds(
-    pool: &SqlitePool,
-    candidate: &SmartCandidate,
-    uuid: &str,
-) -> Result<bool, ShelfError> {
-    let pred = membership_predicate(&candidate.rules, candidate.mode, candidate.owner_user_id)?;
-    let sql = format!(
-        "SELECT 1 FROM books b WHERE b.uuid = ? AND {SMART_VISIBLE} AND {}",
-        pred.sql
-    );
-    let mut q = sqlx::query(&sql).bind(uuid);
-    for b in &pred.binds {
-        q = match b {
-            Bind::Text(s) => q.bind(s.clone()),
-            Bind::Int(i) => q.bind(*i),
-        };
-    }
-    Ok(q.fetch_optional(pool).await?.is_some())
 }
 
 /// Book uuids in `candidates` that are confined to a manual shelf `viewer_id`
@@ -244,6 +211,7 @@ pub async fn get_shelf(pool: &SqlitePool, id: i64) -> Result<Option<Shelf>, Shel
                 owner_user_id,
                 match_mode.unwrap_or(MatchMode::Any),
                 &rules,
+                None,
             )
             .await?
         }
@@ -354,7 +322,7 @@ pub async fn preview_rule(
     match_mode: MatchMode,
     rules: &[ShelfRule],
 ) -> Result<RulePreview, ShelfError> {
-    let matched = count_smart(pool, owner_id, match_mode, rules).await?;
+    let matched = count_smart(pool, owner_id, match_mode, rules, None).await?;
     let total: i64 = sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM books b WHERE {SMART_VISIBLE}"
     ))
