@@ -11,6 +11,8 @@ struct LibraryFilterBar: View {
     let store: LibraryFilterStore
     /// Who is looking, for naming another reader's shelf on its chip.
     var viewerId: Int64?
+    /// Whether the host's read also sends `?formats=`, which the server counts as a clause.
+    var reservesFormatClause = false
 
     @Environment(\.palette) private var palette
     /// The shelves a shelf chip is named from; `nil` while they load.
@@ -85,10 +87,12 @@ struct LibraryFilterBar: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(PressableStyle())
-        .disabled(!store.canAdd)
-        .opacity(store.canAdd ? 1 : 0.4)
+        .disabled(!canAdd)
+        .opacity(canAdd ? 1 : 0.4)
         .accessibilityIdentifier("library-filter-add")
     }
+
+    private var canAdd: Bool { store.canAdd(reservingFormatClause: reservesFormatClause) }
 
     private var clearButton: some View {
         Button {

@@ -384,7 +384,7 @@ struct LibraryFilterStoreTests {
             store.add(FilterClause(field: .tag, mode: .include, values: ["t\(index)"]))
         }
         #expect(store.clauses.count == 16)
-        #expect(!store.canAdd)
+        #expect(!store.canAdd(reservingFormatClause: false))
     }
 
     @Test func addTakesSixtyFourValuesAndRefusesSixtyFive() {
@@ -393,6 +393,26 @@ struct LibraryFilterStoreTests {
         store.add(FilterClause(field: .tag, mode: .include, values: full))
         store.add(FilterClause(field: .tag, mode: .include, values: full + ["v64"]))
         #expect(store.clauses.map(\.values.count) == [64])
+    }
+
+    @Test func canAddStopsAtTheServersSixteenClauses() {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        for index in 0..<15 {
+            store.add(FilterClause(field: .tag, mode: .include, values: ["t\(index)"]))
+        }
+        #expect(store.canAdd(reservingFormatClause: false))
+        store.add(FilterClause(field: .tag, mode: .include, values: ["t15"]))
+        #expect(!store.canAdd(reservingFormatClause: false))
+    }
+
+    @Test func canAddLeavesRoomForTheCategorysFormatsAsASixteenthClause() {
+        let store = LibraryFilterStore(defaults: scratchDefaults())
+        for index in 0..<14 {
+            store.add(FilterClause(field: .tag, mode: .include, values: ["t\(index)"]))
+        }
+        #expect(store.canAdd(reservingFormatClause: true))
+        store.add(FilterClause(field: .tag, mode: .include, values: ["t14"]))
+        #expect(!store.canAdd(reservingFormatClause: true), "the server counts ?formats= as one more clause")
     }
 
     @Test func removeDropsOnlyTheClauseAtThatIndex() {

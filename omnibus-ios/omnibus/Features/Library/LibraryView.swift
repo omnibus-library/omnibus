@@ -474,7 +474,11 @@ struct LibraryView: View {
 
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     sectionHeading
-                    LibraryFilterBar(store: model.filterStore, viewerId: app.user?.id).screenPadding()
+                    LibraryFilterBar(
+                        store: model.filterStore, viewerId: app.user?.id,
+                        reservesFormatClause: !model.category.serverFormats.isEmpty
+                    )
+                    .screenPadding()
                     if let error = model.stackSeriesError {
                         Text(error)
                             .font(.ui(12))

@@ -186,11 +186,16 @@ final class LibraryFilterStore {
         clauses = LibraryFilterPreference.load(from: defaults).clauses
     }
 
-    var canAdd: Bool { clauses.count < FilterClause.maxClauses }
+    /// Whether another clause fits under the server's cap. A category's
+    /// `?formats=` reaches the server as one more clause, so it needs room too.
+    func canAdd(reservingFormatClause: Bool) -> Bool {
+        clauses.count < FilterClause.maxClauses - (reservingFormatClause ? 1 : 0)
+    }
 
     /// Appends `clause`, unless it is one the server would refuse.
     func add(_ clause: FilterClause) {
-        guard canAdd, !clause.values.isEmpty, clause.values.count <= FilterClause.maxValues
+        guard canAdd(reservingFormatClause: false), !clause.values.isEmpty,
+              clause.values.count <= FilterClause.maxValues
         else { return }
         replace(with: clauses + [clause])
     }
