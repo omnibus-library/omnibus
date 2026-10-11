@@ -156,7 +156,8 @@ async fn library_sync(state: &StubState) -> Response {
     }
     let call = state.sync_calls.fetch_add(1, Ordering::SeqCst);
     let pages = &state.stub.sync_pages;
-    let mut response = Json(pages[call.min(pages.len() - 1)].clone()).into_response();
+    let page = pages.get(call).or(pages.last());
+    let mut response = Json(page.cloned().unwrap_or_else(|| json!([]))).into_response();
     let headers = response.headers_mut();
     let token = HeaderValue::from_str(&format!("page-{}", call + 1)).unwrap();
     headers.insert(HeaderName::from_static("x-kobo-synctoken"), token);
