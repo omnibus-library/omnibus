@@ -66,9 +66,18 @@ pub(super) fn shelf_book_count(
 }
 
 /// Whether the pick holds no books at all. A filter that rules every book out
-/// is not that: it gets the "clear filters" state instead.
-pub(super) fn books_empty(visible_is_empty: bool, filters: &ViewFilters) -> bool {
-    visible_is_empty && filters.is_empty()
+/// is not that: it gets the "clear filters" state instead. A shelf's members
+/// load unfiltered, so its emptiness is read off them rather than inferred.
+pub(super) fn books_empty(
+    source: VisibleSource,
+    visible_is_empty: bool,
+    shelf_members_empty: bool,
+    filters: &ViewFilters,
+) -> bool {
+    match source {
+        VisibleSource::Shelf => shelf_members_empty,
+        VisibleSource::Browse => visible_is_empty && filters.is_empty(),
+    }
 }
 
 // Limitation: a stack links its lead book's `series_id`, which can be stale after an override rename.
@@ -169,7 +178,17 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
     };
     let (visible_books, visible_stacks) = visible();
     let visible_is_empty = visible_books.is_empty();
-    let empty_pick = books_empty(visible_is_empty, &prefs_sig.read().filters);
+    let shelf_members_empty = sigs
+        .shelf_books
+        .read()
+        .as_ref()
+        .is_none_or(|members| members.is_empty());
+    let empty_pick = books_empty(
+        source,
+        visible_is_empty,
+        shelf_members_empty,
+        &prefs_sig.read().filters,
+    );
     let path_subtitle = path_value
         .as_ref()
         .map(|p| super::short_path(p))

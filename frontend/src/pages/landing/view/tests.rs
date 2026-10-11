@@ -117,17 +117,58 @@ fn one_clause() -> ViewFilters {
 }
 
 #[test]
-fn books_empty_is_true_for_an_empty_list_with_no_filter() {
-    assert!(books_empty(true, &ViewFilters::default()));
+fn books_empty_is_true_for_an_empty_browse_list_with_no_filter() {
+    assert!(books_empty(
+        VisibleSource::Browse,
+        true,
+        false,
+        &ViewFilters::default()
+    ));
 }
 
 #[test]
-fn books_empty_is_false_when_a_filter_ruled_everything_out() {
-    assert!(!books_empty(true, &one_clause()));
+fn books_empty_is_false_when_a_filter_ruled_everything_out_of_browse() {
+    assert!(!books_empty(
+        VisibleSource::Browse,
+        true,
+        false,
+        &one_clause()
+    ));
 }
 
 #[test]
-fn books_empty_is_false_when_books_are_visible() {
-    assert!(!books_empty(false, &ViewFilters::default()));
-    assert!(!books_empty(false, &one_clause()));
+fn books_empty_is_false_when_browse_books_are_visible() {
+    assert!(!books_empty(
+        VisibleSource::Browse,
+        false,
+        false,
+        &ViewFilters::default()
+    ));
+    assert!(!books_empty(
+        VisibleSource::Browse,
+        false,
+        false,
+        &one_clause()
+    ));
+}
+
+#[test]
+fn books_empty_is_true_for_an_empty_shelf_even_with_a_filter() {
+    assert!(books_empty(VisibleSource::Shelf, true, true, &one_clause()));
+    assert!(books_empty(
+        VisibleSource::Shelf,
+        true,
+        true,
+        &ViewFilters::default()
+    ));
+}
+
+#[test]
+fn books_empty_is_false_when_a_filter_ruled_every_shelf_member_out() {
+    assert!(!books_empty(
+        VisibleSource::Shelf,
+        true,
+        false,
+        &one_clause()
+    ));
 }
