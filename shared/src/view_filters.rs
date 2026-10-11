@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ebook::EbookMetadata;
 use crate::shelves::SHELF_RULE_VALUE_MAX_LEN;
 
 #[cfg(test)]
@@ -109,6 +110,17 @@ impl ViewFilters {
             .collect()
     }
 
+    /// Whether `book` passes every clause, over metadata with overrides already
+    /// merged. `None` when a shelf clause is present: membership is the server's
+    /// to answer, and a guess would read as fact.
+    pub fn matches(&self, book: &EbookMetadata) -> Option<bool> {
+        self.effective_clauses()
+            .iter()
+            .try_fold(true, |kept, clause| {
+                Some(clause_matches(clause, book)? && kept)
+            })
+    }
+
     /// Reject filters over the clause or value caps, or a clause no book could
     /// be matched by. Reads [`Self::effective_clauses`], so legacy facets count.
     pub fn validate(&self) -> Result<(), String> {
@@ -140,6 +152,40 @@ impl ViewFilters {
         filters.validate()?;
         Ok(filters)
     }
+}
+
+/// Mirrors the db engine: values are trimmed, compared ASCII-case-insensitively,
+/// and a clause with no usable value matches every book.
+fn clause_matches(clause: &FilterClause, book: &EbookMetadata) -> Option<bool> {
+    let held = book_values(book, clause.field)?;
+    let wanted: Vec<&str> = clause
+        .values
+        .iter()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .collect();
+    if wanted.is_empty() {
+        return Some(true);
+    }
+    let carries_one = held
+        .iter()
+        .any(|h| wanted.iter().any(|w| h.eq_ignore_ascii_case(w)));
+    Some(carries_one == (clause.mode == FilterMode::Include))
+}
+
+/// The values `book` holds for `field`; `None` for a field the book alone can't answer.
+fn book_values(book: &EbookMetadata, field: FilterField) -> Option<Vec<&str>> {
+    fn names(values: &[String]) -> Vec<&str> {
+        values.iter().map(String::as_str).collect()
+    }
+    Some(match field {
+        FilterField::Tag => names(&book.subjects),
+        FilterField::Genre => names(&book.genres),
+        FilterField::Format => names(&book.formats),
+        FilterField::Author => book.creators.iter().map(|c| c.name.as_str()).collect(),
+        FilterField::Series => book.series.as_deref().into_iter().collect(),
+        FilterField::Shelf => return None,
+    })
 }
 
 fn validate_clause(clause: &FilterClause) -> Result<(), String> {

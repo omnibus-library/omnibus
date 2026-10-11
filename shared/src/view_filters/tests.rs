@@ -2,6 +2,7 @@
 //! `ViewFilters` predicates, and the legacy-facet bridge into clauses.
 
 use super::*;
+use crate::ebook::Contributor;
 use crate::{SortDir, SortKey, ViewMode, ViewPrefs};
 
 const ALL_FIELDS: [FilterField; 6] = [
@@ -375,4 +376,229 @@ fn view_filters_from_query_param_validates_the_parsed_clauses() {
         .expect_err("empty clause");
 
     assert_eq!(error, "a filter clause needs at least one value");
+}
+
+fn novel() -> EbookMetadata {
+    EbookMetadata {
+        subjects: vec!["Horror".into(), "gothic".into()],
+        genres: vec!["Fantasy".into()],
+        creators: vec![Contributor {
+            name: "Mary Shelley".into(),
+            ..Default::default()
+        }],
+        series: Some("Frankenstein Cycle".into()),
+        formats: vec!["EPUB".into()],
+        ..Default::default()
+    }
+}
+
+/// A physical-only book: no value for any filterable field.
+fn bare() -> EbookMetadata {
+    EbookMetadata::default()
+}
+
+fn verdict(
+    field: FilterField,
+    mode: FilterMode,
+    values: &[&str],
+    book: &EbookMetadata,
+) -> Option<bool> {
+    filters_with(vec![FilterClause::new(field, mode, values)]).matches(book)
+}
+
+#[test]
+fn view_filters_matches_include_tag_keeps_books_with_any_listed_value() {
+    let values = ["horror", "romance"];
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_tag_keeps_only_books_without_a_listed_value() {
+    let values = ["horror", "romance"];
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_include_genre_keeps_books_with_any_listed_value() {
+    let values = ["Fantasy", "Sci-Fi"];
+    assert_eq!(
+        verdict(FilterField::Genre, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Genre, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_genre_keeps_only_books_without_a_listed_value() {
+    let values = ["Fantasy", "Sci-Fi"];
+    assert_eq!(
+        verdict(FilterField::Genre, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Genre, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_include_author_keeps_books_with_any_listed_creator() {
+    let values = ["Mary Shelley", "Bram Stoker"];
+    assert_eq!(
+        verdict(FilterField::Author, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Author, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_author_keeps_only_books_without_a_listed_creator() {
+    let values = ["Mary Shelley", "Bram Stoker"];
+    assert_eq!(
+        verdict(FilterField::Author, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Author, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_include_series_keeps_books_in_any_listed_series() {
+    let values = ["Frankenstein Cycle", "Foundation"];
+    assert_eq!(
+        verdict(FilterField::Series, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Series, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_series_keeps_only_books_outside_every_listed_series() {
+    let values = ["Frankenstein Cycle", "Foundation"];
+    assert_eq!(
+        verdict(FilterField::Series, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Series, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_include_format_keeps_books_with_any_listed_format() {
+    let values = ["epub", "m4b"];
+    assert_eq!(
+        verdict(FilterField::Format, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Format, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_format_keeps_only_books_without_a_listed_format() {
+    let values = ["epub", "m4b"];
+    assert_eq!(
+        verdict(FilterField::Format, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Format, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_compares_values_ascii_case_insensitively() {
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &["HORROR"], &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Format,
+            FilterMode::Include,
+            &["epub"],
+            &novel()
+        ),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_trims_clause_values() {
+    assert_eq!(
+        verdict(
+            FilterField::Tag,
+            FilterMode::Include,
+            &["  horror "],
+            &novel()
+        ),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_skips_a_clause_with_no_usable_value() {
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &["  "], &novel()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_everything_when_there_are_no_clauses() {
+    assert_eq!(ViewFilters::default().matches(&bare()), Some(true));
+}
+
+#[test]
+fn view_filters_matches_intersects_clauses_across_fields() {
+    let tagged_and_by_shelley = filters_with(vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["horror"]),
+        FilterClause::new(FilterField::Author, FilterMode::Include, &["Mary Shelley"]),
+    ]);
+    assert_eq!(tagged_and_by_shelley.matches(&novel()), Some(true));
+
+    let tagged_but_not_epub = filters_with(vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["horror"]),
+        FilterClause::new(FilterField::Format, FilterMode::Exclude, &["epub"]),
+    ]);
+    assert_eq!(tagged_but_not_epub.matches(&novel()), Some(false));
+}
+
+#[test]
+fn view_filters_matches_is_undecided_when_a_shelf_clause_is_present() {
+    let ruled_out_by_tag = filters_with(vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["romance"]),
+        FilterClause::new(FilterField::Shelf, FilterMode::Include, &["7"]),
+    ]);
+    assert_eq!(ruled_out_by_tag.matches(&novel()), None);
 }
