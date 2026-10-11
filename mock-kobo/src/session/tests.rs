@@ -256,4 +256,8 @@ async fn sync_now_fails_when_library_sync_body_is_malformed() {
         .unwrap_err();
 
     assert!(matches!(failure, SyncFailure::BadResponse(_)));
+    assert!(failure
+        .to_string()
+        .contains("invalid type: map, expected a sequence"));
+    assert!(!format!("{failure:?}").contains(STUB_TOKEN));
 }

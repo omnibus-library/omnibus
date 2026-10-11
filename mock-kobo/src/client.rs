@@ -74,10 +74,10 @@ impl Client {
 
     /// Decode a JSON body the device needs, as a [`SyncFailure::BadResponse`] when it can't.
     pub async fn decode<T: DeserializeOwned>(&self, response: Response) -> Result<T, SyncFailure> {
-        response
-            .json()
-            .await
-            .map_err(|e| SyncFailure::BadResponse(self.redact(&e.to_string())))
+        let path = response.url().path().to_owned();
+        let body = response.bytes().await.map_err(|e| self.transport(e))?;
+        serde_json::from_slice(&body)
+            .map_err(|e| SyncFailure::BadResponse(self.redact(&format!("{path}: {e}"))))
     }
 
     /// `text` with the device token replaced, safe to report.
