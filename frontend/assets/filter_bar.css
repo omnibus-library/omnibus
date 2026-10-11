@@ -6,9 +6,9 @@
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   flex: 1 0 100%; min-width: 0;
 }
-/* `.lmq` lifts each section to z-index 1 in turn, which buries an open popover
-   under the cover wall below the header. */
-.lmq > .lib-header:has(.fb-pop) { z-index: 2; }
+/* `.lmq` lifts each section to z-index 1, which buries an open popover under the
+   cover wall, the edge ribbon (7) and the sticky top bar (5): rise above them all. */
+.lmq > *:has(.fb-pop) { z-index: 8; }
 
 .fb-chip {
   display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
