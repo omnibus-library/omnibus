@@ -506,13 +506,13 @@ test.describe("on a shelf", () => {
   test.describe.configure({ mode: "serial" });
 
   const shelfName = `E2E Library Filters ${Date.now()}`;
+  const username = `e2e_library_filters_${Date.now()}`;
   const memberUuids = new Map<string, string>();
   let reader: Page;
   let readerId: number;
   let shelfId: number;
 
   test.beforeAll(async ({ browser, request, playwright, baseURL }) => {
-    const username = `e2e_library_filters_${Date.now()}`;
     for (const slug of SHELF_SLUGS) {
       memberUuids.set(
         slug,
@@ -689,7 +689,7 @@ test.describe("on a shelf", () => {
     await expect(reader.getByTestId("shelf-count")).toHaveText("0");
 
     // The full member list is already loaded, so clearing asks the server nothing.
-    await reader.getByTestId("shelf-filtered-clear").click();
+    await reader.getByRole("button", { name: "Clear filters" }).click();
 
     await expect(chips(reader)).toHaveCount(0);
     await expect(reader.getByTestId("shelf-filtered-empty")).toHaveCount(0);
@@ -761,6 +761,253 @@ test.describe("on a shelf", () => {
     } finally {
       await reader.unroute(`**${SHELF_PAGE_RPC}`);
     }
+  });
+
+  /**
+   * Park the shelf member reads that carry exactly `clauses` filter clauses;
+   * `arrived` counts how many reached the route, and `release` lets them
+   * through and stops parking.
+   */
+  async function holdShelfReads(page: Page, clauses: number) {
+    let open = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let arrived = 0;
+    await page.route(`**${SHELF_PAGE_RPC}`, async (route) => {
+      const { filters } = route.request().postDataJSON();
+      if (filters.clauses.length === clauses) {
+        arrived += 1;
+        await gate;
+      }
+      await route.continue();
+    });
+    return {
+      arrived: () => arrived,
+      release: async () => {
+        open();
+        await page.unrouteAll({ behavior: "wait" });
+      },
+    };
+  }
+
+  /**
+   * Record whether `testid` is disabled on every DOM change from its first
+   * disabled paint on; the returned function reads what was seen.
+   */
+  async function recordButtonStates(page: Page, testid: string) {
+    await page.evaluate((id) => {
+      const seen: boolean[] = [];
+      let started = false;
+      Object.assign(window, { __buttonStates: seen });
+      new MutationObserver(() => {
+        const button = document.querySelector<HTMLButtonElement>(
+          `[data-testid="${id}"]`,
+        );
+        if (!button) return;
+        started ||= button.disabled;
+        if (started) seen.push(button.disabled);
+      }).observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+      });
+    }, testid);
+    return () =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __buttonStates: boolean[] }).__buttonStates,
+      );
+  }
+
+  const removeChip = (page: Page, field: Field) =>
+    page.getByRole("button", {
+      name: new RegExp(`^Remove filter: ${FIELD_NAMES[field]}`),
+    });
+
+  test("does not call a shelf empty on its own page while a changed filter is out", async () => {
+    await gotoReady(reader, "/");
+    await addClause(reader, {
+      field: "author",
+      mode: "include",
+      picks: [{ label: "Monica Lam", search: "Lam" }],
+    });
+    await addClause(reader, {
+      field: "format",
+      mode: "include",
+      picks: [{ label: "PDF" }],
+    });
+    await openShelfFromIndex(reader, shelfId);
+    await expect(reader.getByTestId("shelf-filtered-empty")).toBeVisible();
+    await expect(reader.getByTestId("shelf-count")).toHaveText("0");
+    const hold = await holdShelfReads(reader, 1);
+    try {
+      await removeChip(reader, "format").click();
+      await expect.poll(hold.arrived).toBeGreaterThan(0);
+
+      // The answer on screen belongs to the filters the reader just dropped.
+      await expect(reader.getByTestId("shelf-filtered-empty")).toHaveCount(0);
+      await expect(reader.getByTestId("shelf-count")).toHaveCount(0);
+      await expect(reader.getByTestId("shelf-loading")).toBeVisible();
+    } finally {
+      await hold.release();
+    }
+
+    await expectShelfPageShows(reader, ["compiler-compendium-2"]);
+  });
+
+  test("drops a shelf page's refetch error once the filter that failed is changed", async () => {
+    await gotoReady(reader, "/");
+    await addClause(reader, {
+      field: "author",
+      mode: "include",
+      picks: [{ label: "Monica Lam", search: "Lam" }],
+    });
+    await addClause(reader, {
+      field: "format",
+      mode: "include",
+      picks: [{ label: "PDF" }],
+    });
+    await failFilteredShelfReads(reader);
+    await openShelfFromIndex(reader, shelfId);
+    await expect(reader.getByTestId("shelf-refetch-error")).toBeVisible();
+    await reader.unroute(`**${SHELF_PAGE_RPC}`);
+    const hold = await holdShelfReads(reader, 1);
+    try {
+      await removeChip(reader, "format").click();
+      await expect.poll(hold.arrived).toBeGreaterThan(0);
+
+      await expect(reader.getByTestId("shelf-refetch-error")).toHaveCount(0);
+    } finally {
+      await hold.release();
+    }
+
+    await expectShelfPageShows(reader, ["compiler-compendium-2"]);
+    await expect(reader.getByTestId("shelf-refetch-error")).toHaveCount(0);
+  });
+
+  test("does not call a selected shelf empty on the landing page while a changed filter is out", async () => {
+    await gotoReady(reader, "/");
+    await addClause(reader, {
+      field: "author",
+      mode: "include",
+      picks: [{ label: "Monica Lam", search: "Lam" }],
+    });
+    await addClause(reader, {
+      field: "format",
+      mode: "include",
+      picks: [{ label: "PDF" }],
+    });
+    await selectShelfInGallery(reader, shelfId, shelfName);
+    await expect(reader.getByTestId("lib-clear-filters-empty")).toBeVisible();
+    const hold = await holdShelfReads(reader, 1);
+    try {
+      await removeChip(reader, "format").click();
+      await expect.poll(hold.arrived).toBeGreaterThan(0);
+
+      await expect(reader.getByTestId("lib-clear-filters-empty")).toHaveCount(
+        0,
+      );
+      await expect(reader.getByTestId("lib-loading")).toBeVisible();
+      await expect(reader.getByTestId("lib-section-title")).not.toContainText(
+        "0 books",
+      );
+    } finally {
+      await hold.release();
+    }
+
+    await expectShown(reader, ["compiler-compendium-2"]);
+  });
+
+  test("keeps the narrowed count when the shelf's full list fails and retries it on Clear all", async () => {
+    await gotoReady(reader, "/");
+    await addClause(reader, {
+      field: "author",
+      mode: "include",
+      picks: [{ label: "Monica Lam", search: "Lam" }],
+    });
+    await reader.route(`**${SHELF_PAGE_RPC}`, async (route) => {
+      const { filters } = route.request().postDataJSON();
+      if (filters.clauses.length === 0) {
+        await route.fulfill({ status: 500, body: "boom" });
+      } else {
+        await route.continue();
+      }
+    });
+    try {
+      await selectShelfInGallery(reader, shelfId, shelfName);
+
+      // The rows on screen answer the filter; only Add books needs the full list.
+      await expectShown(reader, ["compiler-compendium-2"]);
+      await expect(reader.getByTestId("lib-page-error")).toHaveCount(0);
+      await expect(reader.getByTestId("shelf-add-books")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      await reader.unroute(`**${SHELF_PAGE_RPC}`);
+
+      await expectMutation(
+        reader,
+        { method: "POST", url: SHELF_PAGE_RPC, expectedStatus: 200 },
+        async () => clearAll(reader).click(),
+      );
+    } finally {
+      await reader.unroute(`**${SHELF_PAGE_RPC}`);
+    }
+
+    await expectShown(reader, [...SHELF_SLUGS].sort());
+    await expect(reader.getByTestId("lib-page-error")).toHaveCount(0);
+  });
+
+  test("keeps a removed book greyed until the filtered list it was drawn in lands", async ({
+    request,
+  }) => {
+    const target = memberUuids.get("compiler-compendium-3") ?? "";
+    await gotoReady(reader, "/");
+    await addClause(reader, {
+      field: "author",
+      mode: "include",
+      picks: [{ label: "Alfred Aho", search: "Aho" }],
+    });
+    await openShelfFromIndex(reader, shelfId);
+    await expectShelfPageShows(reader, [
+      "compiler-compendium-1",
+      "compiler-compendium-2",
+      "compiler-compendium-3",
+    ]);
+    const states = await recordButtonStates(reader, `shelf-remove-${target}`);
+    const hold = await holdShelfReads(reader, 1);
+    try {
+      // The members refetch answers before the narrowed one is released.
+      const fullListLanded = reader.waitForResponse(
+        (r) =>
+          r.url().includes(SHELF_PAGE_RPC) &&
+          r.request().postDataJSON().filters.clauses.length === 0,
+      );
+      await expectMutation(
+        reader,
+        {
+          method: "POST",
+          url: "/api/rpc/shelves/remove-book",
+          expectedStatus: 200,
+        },
+        async () => reader.getByTestId(`shelf-remove-${target}`).click(),
+      );
+      await fullListLanded;
+      await expect.poll(hold.arrived).toBeGreaterThan(0);
+    } finally {
+      await hold.release();
+      // Put it back: the shelf's other cases count four members.
+      await request.post("/api/rpc/shelves/add-books", {
+        data: { id: shelfId, book_uuids: [target] },
+      });
+    }
+
+    await expect(reader.getByTestId(`shelf-remove-${target}`)).toHaveCount(0);
+    // Never enabled again between the click and the tile leaving.
+    const seen = await states();
+    expect(seen).toContain(true);
+    expect(seen).not.toContain(false);
   });
 
   test("excludes books on a shelf from All Books", async () => {

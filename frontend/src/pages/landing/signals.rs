@@ -16,9 +16,9 @@ use omnibus_shared::{
 use super::effects::spawn_load_more_observer;
 use super::effects::{
     spawn_hero_effect, spawn_load_more_effect, spawn_page_fetch_effect,
-    spawn_selected_shelf_effect, spawn_shelf_books_effect, spawn_shelf_view_effect,
-    spawn_shelves_list_effect, spawn_suggestion_pools_effect, FetchKey, FetchSignals,
-    ShelfFetchSignals, ShelfViewKey, SuggestionPools,
+    spawn_selected_shelf_effect, spawn_shelf_members_effect, spawn_shelves_list_effect,
+    spawn_suggestion_pools_effect, FetchKey, FetchSignals, ShelfFetchSignals, ShelfMembersKey,
+    SuggestionPools,
 };
 use crate::components::chip_editor::SuggestionItem;
 use crate::shelf_selection::{self, ShelfSelection};
@@ -75,6 +75,8 @@ pub(super) struct LandingSignals {
     /// [`ShelfFetchSignals::shelf_view_books`].
     pub(super) shelf_view_books: Signal<Option<Vec<EbookMetadata>>>,
     pub(super) shelf_view_error: Signal<Option<String>>,
+    /// See [`ShelfFetchSignals::shelf_view_filters`].
+    pub(super) shelf_view_filters: Signal<ViewFilters>,
     /// Full detail for the selected shelf (`None` on All Books / while it
     /// loads) — feeds the header facet row and the edit-shelf modal.
     pub(super) selected_shelf: Signal<Option<Shelf>>,
@@ -147,6 +149,7 @@ pub(super) fn setup_landing_signals(server_url: &str) -> LandingSignals {
         shelf_error: shelf_wiring.shelf_sigs.shelf_error,
         shelf_view_books: shelf_wiring.shelf_sigs.shelf_view_books,
         shelf_view_error: shelf_wiring.shelf_sigs.shelf_view_error,
+        shelf_view_filters: shelf_wiring.shelf_sigs.shelf_view_filters,
         selected_shelf: shelf_wiring.selected_shelf,
         edit_shelf: misc.edit_shelf,
         show_add_books: misc.show_add_books,
@@ -202,6 +205,7 @@ fn use_shelf_fetch_signals() -> ShelfFetchSignals {
         shelf_view_books: use_signal(|| None::<Vec<EbookMetadata>>),
         shelf_view_error: use_signal(|| None::<String>),
         shelf_view_epoch: use_signal(|| 0u64),
+        shelf_view_filters: use_signal(ViewFilters::default),
     }
 }
 
@@ -442,6 +446,23 @@ fn refetch_shelves_after_check_in(mut shelves_tick: Signal<u32>) {
     });
 }
 
+/// A counter that moves when the filters clear while the full member list is in
+/// error. The lens then falls back to that list, which would otherwise sit on
+/// its failure with nothing left to ask for a retry.
+fn use_full_list_retry(
+    prefs: Signal<ViewPrefs>,
+    full_error: Signal<Option<String>>,
+) -> Signal<u32> {
+    let mut retry = use_signal(|| 0u32);
+    let cleared = use_memo(move || prefs.read().filters.is_empty());
+    use_effect(move || {
+        if cleared() && full_error.peek().is_some() {
+            retry.with_mut(|n| *n += 1);
+        }
+    });
+    retry
+}
+
 /// Arms the shelf-gallery + hero effects: the shelves list, the hero feed,
 /// the selected shelf's full detail, its member list, and the one-time
 /// reconcile of a persisted gallery pick.
@@ -480,13 +501,22 @@ fn wire_shelf_effects(
     // Refetch the selected shelf's full member list when the gallery pick or
     // the sort axis changes, or after an edit-shelf save (`shelves_tick` bump —
     // a rules edit changes membership). View-mode toggles and filters must not
-    // refetch it; a filter change refetches only the narrowed view below.
-    let shelf_key = use_memo(move || {
+    // refetch it; a filter change refetches only the narrowed list below.
+    let full_retry = use_full_list_retry(prefs, shelf_sigs.shelf_error);
+    let full_key = use_memo(move || {
         let p = prefs();
-        (selection(), p.sort_key, p.sort_dir, shelves_tick())
+        // Either counter moving refetches; both only grow.
+        let tick = shelves_tick() + full_retry();
+        (
+            selection(),
+            p.sort_key,
+            p.sort_dir,
+            ViewFilters::default(),
+            tick,
+        )
     });
-    spawn_shelf_books_effect(server_url.to_string(), shelf_key, shelf_sigs);
-    let shelf_view_key: Memo<ShelfViewKey> = use_memo(move || {
+    spawn_shelf_members_effect(server_url.to_string(), full_key, shelf_sigs.full());
+    let narrowed_key: Memo<ShelfMembersKey> = use_memo(move || {
         let p = prefs();
         (
             selection(),
@@ -496,7 +526,7 @@ fn wire_shelf_effects(
             shelves_tick(),
         )
     });
-    spawn_shelf_view_effect(server_url.to_string(), shelf_view_key, shelf_sigs);
+    spawn_shelf_members_effect(server_url.to_string(), narrowed_key, shelf_sigs.narrowed());
 
     // Reconcile the persisted gallery pick once after mount (no reactive
     // reads, so this runs exactly once). SSR's client_store is inert, so SSR

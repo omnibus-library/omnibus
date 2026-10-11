@@ -30,6 +30,8 @@ use super::stack::{lead_accent_style, stack_entries, EdgeResume, ResumeStack, Re
 use super::stack_toggle::{use_stack_toggle, StackToggleView};
 #[cfg(not(feature = "mobile"))]
 use super::table::BookTableContext;
+#[cfg(not(feature = "mobile"))]
+use super::view::Members;
 use super::view::{LandingHandlers, LandingViewState};
 #[cfg(not(feature = "mobile"))]
 use crate::components::chip_editor::SuggestionItem;
@@ -130,7 +132,7 @@ pub(super) fn web_landing_body(
     let lens = use_shelf_lens_actions(
         selected_shelf.as_ref(),
         (sigs.selection)(),
-        view.shelf_members_ready,
+        view.shelf_members,
         edit_shelf,
         show_add_books,
     );
@@ -201,7 +203,7 @@ impl ShelfLensActions {
 fn use_shelf_lens_actions(
     shelf: Option<&omnibus_shared::Shelf>,
     selection: crate::shelf_selection::ShelfSelection,
-    members_ready: bool,
+    members: Members,
     edit_shelf: Signal<bool>,
     show_add: Signal<bool>,
 ) -> ShelfLensActions {
@@ -211,7 +213,7 @@ fn use_shelf_lens_actions(
     });
     ShelfLensActions {
         can_edit,
-        add_books: add_books_state(shelf, selection, can_edit, members_ready),
+        add_books: add_books_state(shelf, selection, can_edit, members),
         edit_shelf,
         show_add,
     }

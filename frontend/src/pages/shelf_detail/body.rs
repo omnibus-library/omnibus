@@ -10,7 +10,7 @@ use dioxus_router::Link;
 use omnibus_shared::{EbookMetadata, Shelf, ShelfKind, SortKey, ViewFilters};
 
 use super::header::ShelfHero;
-use super::narrow::{use_narrowing, FullList};
+use super::narrow::{use_narrowing, FullList, Rows};
 use crate::components::atrium::fallback_title;
 use crate::components::loading::CoverSkeletons;
 use crate::components::shelf_glyphs::{plus_icon, x_icon};
@@ -47,12 +47,18 @@ pub(super) fn WebShelfBody(
     } = signals;
     let narrowing = use_narrowing(shelf.id, server_url.clone(), sort_key, reload);
     let viewer_probe = crate::use_current_user().0;
+    let rows = narrowing.rows(FullList {
+        books: &books,
+        ready: members_ready,
+        errored,
+    });
     // Books whose removal is in flight, or has landed but not yet been
-    // refetched away: dimmed and inert until the next member list arrives.
+    // refetched away: dimmed and inert until the list they are drawn in changes.
     let mut leaving = use_signal(Vec::<String>::new);
     let remove_error = use_signal(|| None::<String>);
-    use_effect(use_reactive!(|books| {
-        let _ = books;
+    let drawn = drawn_uuids(&rows);
+    use_effect(use_reactive!(|drawn| {
+        let _ = drawn;
         if !leaving.peek().is_empty() {
             leaving.set(Vec::new());
         }
@@ -82,17 +88,13 @@ pub(super) fn WebShelfBody(
         (leaving, remove_error),
         reload,
     );
-    let rows = narrowing.rows(FullList {
-        books: &books,
-        ready: members_ready,
-        errored,
-    });
     let view = BooksView {
         kind: shelf.kind,
         pending: rows.pending,
         books: rows.books,
         errored: rows.errored,
         filtered_out: rows.filtered_out,
+        unavailable: rows.unavailable,
         server_url,
         can_edit: access.can_edit(),
         leaving: leaving(),
@@ -126,6 +128,14 @@ pub(super) fn WebShelfBody(
             }
         }
     }
+}
+
+/// The uuids of the books the rows draw, in order.
+fn drawn_uuids(rows: &Rows) -> Vec<String> {
+    rows.books
+        .iter()
+        .filter_map(|b| b.unique_identifier.clone())
+        .collect()
 }
 
 /// Takes a book off the shelf: marks it leaving, then refetches the members on
@@ -184,6 +194,9 @@ struct BooksView {
     remove_error: Option<String>,
     /// The shelf holds books, but the filter rules every one out.
     filtered_out: bool,
+    /// `books` is the empty placeholder of a failed fetch, so counting it would
+    /// report a shelf of nothing.
+    unavailable: bool,
     /// The library filter the books were narrowed by, and what its chips name.
     filters: ViewFilters,
     shelves: ShelfList,
@@ -211,7 +224,7 @@ fn ShelfBooks(
                     "Books"
                     if view.pending {
                         span { class: "mono shd-books-count ld-sheen", "data-testid": "shelf-count-pending", "counting" }
-                    } else {
+                    } else if !view.unavailable {
                         span { class: "mono shd-books-count", "data-testid": "shelf-count", "{count}" }
                     }
                 }

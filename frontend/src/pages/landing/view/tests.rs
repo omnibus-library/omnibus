@@ -252,16 +252,89 @@ fn shelf_rows_is_unanswered_under_a_filter_until_the_narrowed_list_lands() {
 
 #[test]
 fn shelf_members_empty_reads_the_full_list() {
-    assert!(shelf_members_empty(members(&[]).as_ref(), false));
-    assert!(!shelf_members_empty(members(&["a"]).as_ref(), false));
+    assert!(shelf_members_empty(members(&[]).as_ref(), false, false));
+    assert!(!shelf_members_empty(members(&["a"]).as_ref(), false, false));
     // A filter that rules everything out does not empty the shelf itself.
-    assert!(!shelf_members_empty(members(&["a"]).as_ref(), true));
-    assert!(shelf_members_empty(members(&[]).as_ref(), true));
+    assert!(!shelf_members_empty(members(&["a"]).as_ref(), true, false));
+    assert!(shelf_members_empty(members(&[]).as_ref(), true, false));
 }
 
 #[test]
 fn shelf_members_empty_is_false_while_the_full_list_is_unanswered_under_a_filter() {
     // The narrowed list can land first; an empty one is then "nothing matches",
     // not "the shelf holds nothing".
-    assert!(!shelf_members_empty(None, true));
+    assert!(!shelf_members_empty(None, true, false));
+}
+
+#[test]
+fn narrowed_for_withholds_an_answer_fetched_under_other_filters() {
+    let kept = members(&[]);
+
+    let got = narrowed_for(&kept, &one_clause(), &ViewFilters::default());
+
+    assert!(got.is_none());
+}
+
+#[test]
+fn narrowed_for_returns_the_answer_fetched_under_the_filters_asked_for() {
+    let kept = members(&["a"]);
+
+    let got = narrowed_for(&kept, &one_clause(), &one_clause());
+
+    assert_eq!(uuids_of(got), vec!["a"]);
+}
+
+fn failed(message: &str) -> Option<String> {
+    Some(message.to_string())
+}
+
+#[test]
+fn shelf_error_reads_the_full_list_failure_when_no_filter_is_set() {
+    let got = shelf_error(false, failed("full"), failed("narrowed"), true);
+
+    assert_eq!(got.as_deref(), Some("full"));
+}
+
+#[test]
+fn shelf_error_reads_the_narrowed_failure_under_a_filter() {
+    let got = shelf_error(true, None, failed("narrowed"), true);
+
+    assert_eq!(got.as_deref(), Some("narrowed"));
+}
+
+#[test]
+fn shelf_error_ignores_a_narrowed_failure_fetched_under_other_filters() {
+    let got = shelf_error(true, None, failed("narrowed"), false);
+
+    assert_eq!(got, None);
+}
+
+#[test]
+fn shelf_error_leaves_a_full_list_failure_off_a_narrowed_answer_that_landed() {
+    // The rows on screen answer the filter; the failed list only matters to Add books.
+    let got = shelf_error(true, failed("full"), None, true);
+
+    assert_eq!(got, None);
+}
+
+#[test]
+fn shelf_members_empty_is_false_for_the_placeholder_a_failed_full_list_leaves() {
+    // Its empty list is not a claim that the shelf holds nothing.
+    assert!(!shelf_members_empty(members(&[]).as_ref(), true, true));
+}
+
+#[test]
+fn shelf_members_state_reads_a_failure_over_a_kept_answer() {
+    assert_eq!(shelf_members_state(true, true, true), Members::Unavailable);
+}
+
+#[test]
+fn shelf_members_state_is_ready_once_the_full_list_answered_without_error() {
+    assert_eq!(shelf_members_state(true, false, true), Members::Ready);
+}
+
+#[test]
+fn shelf_members_state_is_pending_until_the_full_list_answers_and_off_a_shelf() {
+    assert_eq!(shelf_members_state(true, false, false), Members::Pending);
+    assert_eq!(shelf_members_state(false, true, true), Members::Pending);
 }

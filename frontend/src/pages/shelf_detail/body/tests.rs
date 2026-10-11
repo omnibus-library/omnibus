@@ -13,6 +13,7 @@ fn view(pending: bool, filtered_out: bool) -> BooksView {
         books: Vec::new(),
         errored: false,
         filtered_out,
+        unavailable: false,
         server_url: String::new(),
         can_edit: false,
         leaving: Vec::new(),
@@ -116,4 +117,26 @@ fn shelf_books_say_the_filter_ruled_every_member_out_rather_than_that_the_shelf_
 fn shelf_books_hold_skeletons_rather_than_the_filtered_message_before_members_answer() {
     let html = render_in_vdom(|| rsx! { BooksHarness { view: view(true, false) } });
     assert!(!html.contains("shelf-filtered-empty"), "{html}");
+}
+
+#[test]
+fn shelf_books_count_zero_for_a_shelf_that_answered_empty() {
+    let html = render_in_vdom(|| books(false));
+    assert!(
+        html.contains("data-testid=\"shelf-count\"") && html.contains(">0<"),
+        "{html}"
+    );
+}
+
+#[test]
+fn shelf_books_show_no_count_for_the_placeholder_rows_of_a_failed_fetch() {
+    let html = render_in_vdom(|| {
+        let mut failed = view(false, false);
+        failed.errored = true;
+        failed.unavailable = true;
+        rsx! { BooksHarness { view: failed } }
+    });
+    assert!(html.contains("shelf-refetch-error"), "{html}");
+    assert!(!html.contains("data-testid=\"shelf-count\""), "{html}");
+    assert!(!html.contains("shelf-count-pending"), "{html}");
 }

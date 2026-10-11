@@ -18,6 +18,16 @@ pub(super) struct FullList<'a> {
     pub errored: bool,
 }
 
+/// The server's narrowed answer and how far its fetch has got.
+pub(super) struct NarrowedList<'a> {
+    /// `None` until a narrowed fetch has answered.
+    pub books: Option<&'a [EbookMetadata]>,
+    pub failed: bool,
+    /// The answer was fetched under the filters now set. A kept one fetched
+    /// under others is neither rows nor a failure to report for these.
+    pub current: bool,
+}
+
 /// What the member section draws, and which message an empty one gets.
 #[derive(Debug, PartialEq)]
 pub(super) struct Rows {
@@ -27,16 +37,14 @@ pub(super) struct Rows {
     pub errored: bool,
     /// The shelf holds books but the filter rules every one out.
     pub filtered_out: bool,
+    /// The rows are the empty placeholder of a failed fetch, so their length
+    /// is no count of anything.
+    pub unavailable: bool,
 }
 
 /// Choose the list to draw. Under a filter that is the server's narrowed answer
 /// and nothing else: the full list on hand is not a stand-in while it is out.
-pub(super) fn rows(
-    filtered: bool,
-    full: FullList<'_>,
-    narrowed: Option<&[EbookMetadata]>,
-    narrowed_failed: bool,
-) -> Rows {
+pub(super) fn rows(filtered: bool, full: FullList<'_>, narrowed: NarrowedList<'_>) -> Rows {
     if !filtered {
         return Rows {
             books: full.books.to_vec(),
@@ -44,17 +52,30 @@ pub(super) fn rows(
             pending: !full.ready && full.books.is_empty() && !full.errored,
             errored: full.errored,
             filtered_out: false,
+            unavailable: full.errored,
         };
     }
-    let books = narrowed.unwrap_or_default().to_vec();
-    let pending = narrowed.is_none();
+    let answer = narrowed.books.filter(|_| narrowed.current);
+    let narrowed_failed = narrowed.failed && narrowed.current;
+    let books = answer.unwrap_or_default().to_vec();
+    let pending = answer.is_none();
     let shelf_is_empty = full.ready && full.books.is_empty();
     Rows {
         filtered_out: !pending && !narrowed_failed && books.is_empty() && !shelf_is_empty,
         books,
         pending,
         errored: full.errored || narrowed_failed,
+        unavailable: narrowed_failed,
     }
+}
+
+/// The signals the narrowed fetch drives.
+#[derive(Clone, Copy)]
+struct NarrowedSignals {
+    books: Signal<Option<Vec<EbookMetadata>>>,
+    failed: Signal<bool>,
+    /// The filters `books` was fetched under; the list lags the filters by one fetch.
+    fetched_under: Signal<ViewFilters>,
 }
 
 /// The page's filter state. `Copy` (Dioxus signals), so it travels as one value.
@@ -62,8 +83,7 @@ pub(super) fn rows(
 pub(super) struct Narrowing {
     pub filters: Signal<ViewFilters>,
     pub shelves: Signal<ShelfList>,
-    narrowed: Signal<Option<Vec<EbookMetadata>>>,
-    failed: Signal<bool>,
+    narrowed: NarrowedSignals,
 }
 
 impl Narrowing {
@@ -77,12 +97,15 @@ impl Narrowing {
 
     /// The rows to draw given the page's full member list.
     pub(super) fn rows(self, full: FullList<'_>) -> Rows {
-        let filtered = !self.filters.read().is_empty();
+        let wanted = self.filters.read();
         rows(
-            filtered,
+            !wanted.is_empty(),
             full,
-            self.narrowed.read().as_deref(),
-            (self.failed)(),
+            NarrowedList {
+                books: self.narrowed.books.read().as_deref(),
+                failed: (self.narrowed.failed)(),
+                current: *self.narrowed.fetched_under.read() == *wanted,
+            },
         )
     }
 }
@@ -97,19 +120,16 @@ pub(super) fn use_narrowing(
     reload: Signal<u32>,
 ) -> Narrowing {
     let mut filters = use_signal(ViewFilters::default);
-    let mut ready = use_signal(|| false);
     let mut shelves = use_signal(|| ShelfList::Pending);
 
     // Post-mount, so SSR and the first WASM paint both start unfiltered (rule
-    // 07). It reads nothing reactive, so it runs once; `ready` flips either way
-    // so a first visit with nothing saved still proceeds.
+    // 07). It reads nothing reactive, so it runs once.
     use_effect(move || {
         if let Some(saved) = view_prefs::load_last() {
             if saved.filters != *filters.peek() {
                 filters.set(saved.filters);
             }
         }
-        ready.set(true);
     });
 
     let list_url = server_url.clone();
@@ -123,27 +143,26 @@ pub(super) fn use_narrowing(
         });
     });
 
-    let (narrowed, failed) =
-        use_narrowed_members((shelf_id, server_url), (filters, ready), sort_key, reload);
+    let narrowed = use_narrowed_members((shelf_id, server_url), filters, sort_key, reload);
     Narrowing {
         filters,
         shelves,
         narrowed,
-        failed,
     }
 }
 
 /// The members matching `filters`, fetched from the server whenever the shelf,
 /// sort, filter or a membership edit changes; `None` while no filter applies or
-/// the answer is out. The second signal is whether the last fetch failed.
+/// the answer is out.
 fn use_narrowed_members(
     (shelf_id, server_url): (i64, String),
-    (filters, ready): (Signal<ViewFilters>, Signal<bool>),
+    filters: Signal<ViewFilters>,
     sort_key: Signal<SortKey>,
     reload: Signal<u32>,
-) -> (Signal<Option<Vec<EbookMetadata>>>, Signal<bool>) {
+) -> NarrowedSignals {
     let mut narrowed = use_signal(|| None::<Vec<EbookMetadata>>);
     let mut failed = use_signal(|| false);
+    let mut fetched_under = use_signal(ViewFilters::default);
     let mut epoch = use_signal(|| 0u32);
     let mut narrowed_for = use_signal(|| None::<i64>);
     let generation = crate::use_cache_generation();
@@ -156,7 +175,7 @@ fn use_narrowed_members(
             epoch.with_mut(|e| *e += 1);
             *epoch.peek()
         };
-        if !ready() || wanted.is_empty() {
+        if wanted.is_empty() {
             narrowed_for.set(None);
             narrowed.set(None);
             failed.set(false);
@@ -167,9 +186,14 @@ fn use_narrowed_members(
             narrowed_for.set(Some(shelf_id));
             narrowed.set(None);
         }
+        // The last answer's failure belongs to the filters it was fetched under.
+        if *fetched_under.peek() != wanted {
+            failed.set(false);
+        }
         let url = server_url.clone();
         spawn(async move {
-            let result = data::shelf_page(&url, shelf_id, key, default_dir_for(key), wanted).await;
+            let result =
+                data::shelf_page(&url, shelf_id, key, default_dir_for(key), wanted.clone()).await;
             if *epoch.peek() != this_fetch {
                 return;
             }
@@ -183,9 +207,14 @@ fn use_narrowed_members(
                     failed.set(true);
                 }
             }
+            fetched_under.set(wanted);
         });
     }));
-    (narrowed, failed)
+    NarrowedSignals {
+        books: narrowed,
+        failed,
+        fetched_under,
+    }
 }
 
 #[cfg(test)]
