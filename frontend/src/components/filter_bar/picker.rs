@@ -125,7 +125,7 @@ fn use_loaded_options(
 ) -> Signal<Loaded> {
     let server_url = crate::use_server_url();
     let mut loaded: Signal<Loaded> = use_signal(|| None);
-    let mut epoch = use_signal(|| 0u32);
+    let epoch = use_signal(|| 0u32);
     use_effect(move || {
         let wanted = field();
         let _ = retry();
@@ -133,22 +133,54 @@ fn use_loaded_options(
         if wanted == FilterField::Shelf && skip_shelf_fetch {
             return;
         }
-        let mine = {
-            epoch.with_mut(|e| *e += 1);
-            *epoch.peek()
-        };
-        let url = server_url.clone();
-        spawn(async move {
-            let result = values::load_options(&url, wanted, viewer_id)
-                .await
-                .map(Rc::new)
-                .map_err(|e| e.to_string());
-            if *epoch.peek() == mine {
+        fetch_options(
+            server_url.clone(),
+            wanted,
+            viewer_id,
+            epoch,
+            move |result| {
                 loaded.set(Some((wanted, result)));
-            }
-        });
+            },
+        );
     });
     loaded
+}
+
+/// Start fetching `field`'s values and hand the answer to `commit`, unless a
+/// later fetch on the same `epoch` has started since.
+pub fn fetch_options(
+    server_url: String,
+    field: FilterField,
+    viewer_id: Option<i64>,
+    mut epoch: Signal<u32>,
+    commit: impl FnOnce(Result<Rc<OptionList>, String>) + 'static,
+) {
+    let mine = {
+        epoch.with_mut(|e| *e += 1);
+        *epoch.peek()
+    };
+    spawn(async move {
+        let result = values::load_options(&server_url, field, viewer_id)
+            .await
+            .map(Rc::new)
+            .map_err(|e| e.to_string());
+        commit_if_current(epoch, mine, result, commit);
+    });
+}
+
+/// Run `commit` on `answer` only while fetch `mine` is still the latest on
+/// `epoch`; reports whether it ran.
+pub fn commit_if_current<T>(
+    epoch: Signal<u32>,
+    mine: u32,
+    answer: T,
+    commit: impl FnOnce(T),
+) -> bool {
+    if *epoch.peek() != mine {
+        return false;
+    }
+    commit(answer);
+    true
 }
 
 /// Whether choosing `field` must fetch its values: the shelf field reads the
@@ -363,7 +395,7 @@ fn ready_rows(
     rsx! {
         div { class: "fb-options", role: "group", "aria-label": "{plural}",
             for option in found.shown.iter() {
-                {option_row(option, picked.contains(&option.value), at_cap, on_toggle)}
+                {option_row(option, is_picked(picked, &option.value), at_cap, on_toggle)}
             }
         }
         if let Some(line) = status {
@@ -375,6 +407,12 @@ fn ready_rows(
             }
         }
     }
+}
+
+/// Whether `value` is among `picked`, compared ignoring ASCII case as the
+/// engine does, so a stored pick still marks its differently-cased row.
+fn is_picked(picked: &[String], value: &str) -> bool {
+    picked.iter().any(|p| p.eq_ignore_ascii_case(value))
 }
 
 fn option_row(

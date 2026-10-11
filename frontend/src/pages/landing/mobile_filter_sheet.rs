@@ -12,10 +12,10 @@ use omnibus_shared::{
     MAX_FILTER_CLAUSES, MAX_FILTER_VALUES,
 };
 
-use crate::components::filter_bar::FILTER_FIELDS;
+use crate::components::filter_bar::{field_token, ShelfList};
 
 mod fields;
-use fields::FieldSection;
+use fields::{sections, FieldSection};
 
 /// Sort axes offered on mobile, in sheet order, with their row labels.
 const SORT_ROWS: &[(SortKey, &str)] = &[
@@ -143,16 +143,6 @@ fn picked_values(filters: &ViewFilters, field: FilterField, mode: FilterMode) ->
         .collect()
 }
 
-/// How many values `field` holds across both modes — the section's badge.
-fn field_count(filters: &ViewFilters, field: FilterField) -> usize {
-    filters
-        .clauses
-        .iter()
-        .filter(|c| c.field == field)
-        .map(|c| c.values.len())
-        .sum()
-}
-
 /// Flip `value` in or out of the `field`/`mode` clause. A picked value (compared
 /// ignoring ASCII case, as the engine does) is removed and an emptied clause
 /// dropped; an unpicked one joins the first such clause, or opens one. A pick
@@ -195,23 +185,26 @@ fn reset_prefs(prefs: &ViewPrefs) -> ViewPrefs {
 }
 
 /// The bottom sheet. Fires `on_change` with a whole updated [`ViewPrefs`] on
-/// every tap and `on_close` from the scrim / footer button. `server_url` and
-/// `viewer_id` let each field section load its values.
+/// every tap and `on_close` from the scrim / footer button. `server_url`,
+/// `shelves` and `viewer_id` let each field section load and name its values;
+/// `prefs` is the live signal, which the sections build their ticks from.
 #[component]
 pub(super) fn MobileSortFilterSheet(
-    prefs: ViewPrefs,
+    prefs: Signal<ViewPrefs>,
     book_count: Option<usize>,
     server_url: String,
+    shelves: ShelfList,
+    viewer_id: Option<i64>,
     on_change: EventHandler<ViewPrefs>,
     on_close: EventHandler<MouseEvent>,
 ) -> Element {
-    let viewer_id = crate::use_current_user_summary()().map(|u| u.id);
+    let current = prefs();
     let show_label = match book_count {
         Some(1) => "Show 1 book".to_string(),
         Some(n) => format!("Show {n} books"),
         None => "Show books".to_string(),
     };
-    let reset_from = prefs.clone();
+    let reset_from = current.clone();
     let on_reset = move |_| on_change.call(reset_prefs(&reset_from));
     rsx! {
         div {
@@ -233,22 +226,23 @@ pub(super) fn MobileSortFilterSheet(
                     div { class: "label m-filter-label", "Sort by" }
                     div { class: "m-sort-list",
                         for &(key, label) in SORT_ROWS {
-                            {sort_row(key, label, &prefs, &on_change)}
+                            {sort_row(key, label, &current, &on_change)}
                         }
                     }
                     div { class: "label m-filter-label", "Format" }
                     div { class: "m-filter-chips",
-                        {all_chip(&prefs, &on_change)}
+                        {all_chip(&current, &on_change)}
                         for &(label, values) in FORMAT_CHIPS {
-                            {format_chip(label, values, &prefs, &on_change)}
+                            {format_chip(label, values, &current, &on_change)}
                         }
                     }
                     div { class: "label m-filter-label", "Filter by" }
-                    for field in FILTER_FIELDS {
+                    for view in sections(&current.filters) {
                         FieldSection {
-                            key: "{crate::components::filter_bar::field_token(field)}",
-                            field,
-                            prefs: prefs.clone(),
+                            key: "{field_token(view.field)}",
+                            view,
+                            prefs,
+                            shelves: shelves.clone(),
                             server_url: server_url.clone(),
                             viewer_id,
                             on_change,

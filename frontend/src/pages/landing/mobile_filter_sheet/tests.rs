@@ -277,18 +277,6 @@ fn picked_values_collects_a_field_and_mode_across_clauses() {
 }
 
 #[test]
-fn field_count_adds_the_values_of_both_modes() {
-    let filters = filters_of(vec![
-        clause(FilterField::Tag, FilterMode::Include, &["a", "b"]),
-        clause(FilterField::Tag, FilterMode::Exclude, &["x"]),
-        clause(FilterField::Series, FilterMode::Include, &["s"]),
-    ]);
-
-    assert_eq!(field_count(&filters, FilterField::Tag), 3);
-    assert_eq!(field_count(&filters, FilterField::Genre), 0);
-}
-
-#[test]
 fn reset_prefs_clears_the_sort_and_every_clause_in_one_step() {
     let prefs = ViewPrefs {
         sort_key: SortKey::Author,

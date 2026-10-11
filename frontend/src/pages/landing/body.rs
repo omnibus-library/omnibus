@@ -35,6 +35,8 @@ use super::view::Members;
 use super::view::{LandingHandlers, LandingViewState};
 #[cfg(not(feature = "mobile"))]
 use crate::components::chip_editor::SuggestionItem;
+#[cfg(feature = "mobile")]
+use crate::components::ShelfList;
 #[cfg(not(feature = "mobile"))]
 use crate::components::{AddBooksModal, EditShelfModal, ShelfList};
 #[cfg(not(feature = "mobile"))]
@@ -53,6 +55,12 @@ pub(super) fn mobile_landing_body(
     // Hooks stay unconditional within the mobile build: this helper is on
     // LandingPage's only render path there.
     pull_refresh::use_pull_to_refresh(server_url.clone(), sigs.prefs);
+    let viewer_id = crate::use_current_user_summary()().map(|u| u.id);
+    let notice = mobile::mobile_notice(
+        view.page_error.as_deref(),
+        &sigs.prefs.read().filters,
+        crate::offline::sync::is_offline(),
+    );
     rsx! {
         mobile::MobileLanding {
             book_count: view.book_count,
@@ -65,8 +73,15 @@ pub(super) fn mobile_landing_body(
                 is_loading_more: view.is_loading_more,
                 on_load_more: handlers.on_load_more,
             },
-            prefs: (sigs.prefs)(),
+            prefs: sigs.prefs,
             on_prefs_change: handlers.on_prefs_change_header,
+            shelves: ShelfList::from_fetch(
+                (sigs.shelves_loaded)(),
+                (sigs.shelves_answered)(),
+                (sigs.shelves)(),
+            ),
+            viewer_id,
+            notice,
             server_url,
         }
     }

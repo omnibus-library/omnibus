@@ -12,7 +12,7 @@ use omnibus_shared::{
 mod picker;
 pub mod values;
 
-pub use picker::{LoadState, PickerBody};
+pub use picker::{fetch_options, needs_fetch, state_for, LoadState, Loaded, PickerBody};
 
 #[cfg(all(test, feature = "server"))]
 mod tests;

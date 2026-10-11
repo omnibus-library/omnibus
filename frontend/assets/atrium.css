@@ -4993,6 +4993,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 .m-load-more { margin: 20px auto 0; display: flex; }
 .m-lib-loading { margin-top: 4px; }
+.m-lib-notice { margin: 0 0 16px; }
 /* Skeletons stand where the covers will, at the grid's own column count. */
 .m-lib-loading .ld-covers { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 12px; }
 @media (min-width: 700px) { .m-lib-loading .ld-covers { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
