@@ -51,15 +51,6 @@ async fn seed_tagged_library(pool: &sqlx::SqlitePool) {
     .unwrap();
 }
 
-async fn book_uuid(pool: &sqlx::SqlitePool, title: &str) -> String {
-    let books = db::list_books(pool, "/lib").await.unwrap();
-    let book = books
-        .iter()
-        .find(|b| b.title.as_deref() == Some(title))
-        .unwrap();
-    book.unique_identifier.clone().unwrap()
-}
-
 struct Page {
     titles: Vec<String>,
     total: Option<String>,
@@ -246,7 +237,7 @@ async fn api_get_ebooks_filter_param_ignores_another_readers_private_shelf() {
             visibility: Visibility::Private,
             match_mode: None,
             rules: vec![],
-            book_uuids: vec![book_uuid(&pool, "Alpha").await],
+            book_uuids: vec![db::test_support::uuid_by_scan_key(&pool, "alpha.epub").await],
         },
     )
     .await
