@@ -1,0 +1,21 @@
+# A fake Kobo e-reader that speaks the firmware's side of `/kobo/<token>/v1/*`.
+# Dev tooling only, out of default-members like `mcp/`. It takes no `omnibus-*`
+# dependency on purpose: a type shared with the server can't catch its drift.
+
+[package]
+name = "omnibus-mock-kobo"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# Stub Omnibus instances for the firmware tests. Same version as `server/`'s
+# axum so cargo unifies on one build.
+axum = "0.8"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
