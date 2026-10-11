@@ -96,8 +96,8 @@ struct ViewFiltersWire {
 }
 
 impl From<ViewFiltersWire> for ViewFilters {
-    /// One include clause per non-empty legacy facet (author, series, format,
-    /// tag, genre), then `clauses` verbatim.
+    /// One include clause per legacy facet (author, series, format, tag, genre)
+    /// that keeps a usable value, then `clauses` verbatim.
     fn from(wire: ViewFiltersWire) -> Self {
         let legacy = [
             (FilterField::Author, wire.authors),
@@ -108,16 +108,26 @@ impl From<ViewFiltersWire> for ViewFilters {
         ];
         let clauses = legacy
             .into_iter()
-            .filter(|(_, values)| !values.is_empty())
-            .map(|(field, values)| FilterClause {
-                field,
-                mode: FilterMode::Include,
-                values,
-            })
+            .filter_map(|(field, values)| legacy_clause(field, values))
             .chain(wire.clauses)
             .collect();
         Self { clauses }
     }
+}
+
+/// An include clause over the values of a stored facet that [`ViewFilters::validate`]
+/// would accept, so an old record never loads into a filter the API rejects.
+fn legacy_clause(field: FilterField, values: Vec<String>) -> Option<FilterClause> {
+    let values: Vec<String> = values
+        .into_iter()
+        .filter(|v| !v.trim().is_empty() && v.chars().count() <= SHELF_RULE_VALUE_MAX_LEN)
+        .take(MAX_FILTER_VALUES)
+        .collect();
+    (!values.is_empty()).then_some(FilterClause {
+        field,
+        mode: FilterMode::Include,
+        values,
+    })
 }
 
 impl ViewFilters {

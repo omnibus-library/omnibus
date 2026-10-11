@@ -107,6 +107,46 @@ fn view_filters_deserializes_a_mixed_era_blob_keeping_legacy_facets_and_clauses(
 }
 
 #[test]
+fn view_filters_deserializes_a_legacy_facet_with_bad_values_into_a_valid_filter() {
+    let authors: Vec<String> = (0..65).map(|i| format!("author-{i}")).collect();
+    let longest_allowed = "y".repeat(SHELF_RULE_VALUE_MAX_LEN);
+    let blob = serde_json::json!({
+        "tags": ["   ", "x".repeat(SHELF_RULE_VALUE_MAX_LEN + 1), longest_allowed, "ok"],
+        "authors": authors,
+    });
+
+    let filters: ViewFilters = serde_json::from_value(blob).expect("legacy blob parses");
+
+    let kept_authors = FilterClause {
+        field: FilterField::Author,
+        mode: FilterMode::Include,
+        values: (0..MAX_FILTER_VALUES)
+            .map(|i| format!("author-{i}"))
+            .collect(),
+    };
+    assert_eq!(
+        filters,
+        filters_with(vec![
+            kept_authors,
+            FilterClause::new(
+                FilterField::Tag,
+                FilterMode::Include,
+                &[&longest_allowed, "ok"],
+            ),
+        ])
+    );
+    assert_eq!(filters.validate(), Ok(()));
+}
+
+#[test]
+fn view_filters_deserializes_a_legacy_facet_of_only_bad_values_into_no_clause() {
+    let filters: ViewFilters =
+        serde_json::from_str(r#"{"formats":["  "]}"#).expect("legacy blob parses");
+
+    assert_eq!(filters, ViewFilters::default());
+}
+
+#[test]
 fn view_filters_deserializes_an_empty_object_into_no_filters() {
     let filters: ViewFilters = serde_json::from_str("{}").expect("empty object parses");
 
