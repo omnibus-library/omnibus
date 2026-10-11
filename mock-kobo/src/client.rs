@@ -13,7 +13,7 @@ use crate::session::SyncFailure;
 /// What stands in for the path token in anything the device reports.
 const REDACTED: &str = "<token>";
 
-/// How long one request may take before the device gives up on it.
+/// A harness safeguard, not a measured firmware timeout: a stalled server fails the test instead of hanging it.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One request the device made and the status it got back.
@@ -37,10 +37,19 @@ pub struct Client {
 impl Client {
     /// A client for the device `hardware_id`, configured with `api_endpoint`.
     pub fn new(api_endpoint: &str, hardware_id: &str) -> Result<Self, SyncFailure> {
-        // A 3xx is an answer, not a detour: following one would pass a moved path as 200.
+        Self::with_timeout(api_endpoint, hardware_id, REQUEST_TIMEOUT)
+    }
+
+    /// [`Client::new`] giving up on a request after `timeout` instead of [`REQUEST_TIMEOUT`].
+    pub fn with_timeout(
+        api_endpoint: &str,
+        hardware_id: &str,
+        timeout: Duration,
+    ) -> Result<Self, SyncFailure> {
+        // A harness choice, not measured firmware behaviour: a 3xx reaches the quirk checks as a non-2xx.
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(timeout)
             .build()
             .map_err(|e| SyncFailure::Transport(e.to_string()))?;
         Ok(Self {
@@ -140,3 +149,6 @@ fn path_token(api_endpoint: &str) -> Option<String> {
         .filter(|token| !token.is_empty())
         .map(str::to_owned)
 }
+
+#[cfg(test)]
+mod tests;

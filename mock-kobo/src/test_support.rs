@@ -19,6 +19,8 @@ pub const STUB_TOKEN: &str = "stub-device-token";
 /// How a stub answers. `Stub::default()` behaves like a healthy Omnibus.
 #[derive(Clone)]
 pub struct Stub {
+    /// The status `v1/initialization` answers with; a non-2xx comes bare, with no `x-kobo-apitoken`.
+    pub initialization_status: StatusCode,
     /// Whether `v1/initialization` carries an `x-kobo-apitoken`.
     pub sends_api_token: bool,
     /// Whether `gettests` takes a POST; `false` answers 405, as before #1499.
@@ -30,7 +32,10 @@ pub struct Stub {
     /// `get_tests_request`; the default `/v1/...` paths answer 404 once moved.
     pub resources_under: &'static str,
     /// The `library_sync` bodies, served in turn; all but the last say `continue`.
+    /// Empty means the server has no books: one `[]` page.
     pub sync_pages: Vec<Value>,
+    /// The status every `library_sync` page answers with, its body and headers unchanged.
+    pub sync_status: StatusCode,
     /// Say `continue` on every `library_sync` page, forever.
     pub sync_never_ends: bool,
     /// Leave `library_sync` requests open without ever answering.
@@ -40,11 +45,13 @@ pub struct Stub {
 impl Default for Stub {
     fn default() -> Self {
         Self {
+            initialization_status: StatusCode::OK,
             sends_api_token: true,
             gettests_accepts_post: true,
             store_path_status: StatusCode::OK,
             resources_under: "",
-            sync_pages: vec![json!([])],
+            sync_pages: Vec::new(),
+            sync_status: StatusCode::OK,
             sync_never_ends: false,
             sync_never_answers: false,
         }
@@ -157,7 +164,8 @@ async fn library_sync(state: &StubState) -> Response {
     let call = state.sync_calls.fetch_add(1, Ordering::SeqCst);
     let pages = &state.stub.sync_pages;
     let page = pages.get(call).or(pages.last());
-    let mut response = Json(page.cloned().unwrap_or_else(|| json!([]))).into_response();
+    let body = Json(page.cloned().unwrap_or_else(|| json!([])));
+    let mut response = (state.stub.sync_status, body).into_response();
     let headers = response.headers_mut();
     let token = HeaderValue::from_str(&format!("page-{}", call + 1)).unwrap();
     headers.insert(HeaderName::from_static("x-kobo-synctoken"), token);
@@ -190,6 +198,10 @@ pub fn book_metadata(id: &str, title: &str) -> Value {
 }
 
 fn initialization(state: &StubState) -> Response {
+    let status = state.stub.initialization_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
     let prefix = format!(
         "{}/kobo/{STUB_TOKEN}{}",
         state.base, state.stub.resources_under
@@ -198,7 +210,7 @@ fn initialization(state: &StubState) -> Response {
         "library_sync": format!("{prefix}/v1/library/sync"),
         "get_tests_request": format!("{prefix}/v1/analytics/gettests"),
     });
-    let mut response = Json(json!({ "Resources": resources })).into_response();
+    let mut response = (status, Json(json!({ "Resources": resources }))).into_response();
     if state.stub.sends_api_token {
         response.headers_mut().insert(
             HeaderName::from_static("x-kobo-apitoken"),
