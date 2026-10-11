@@ -82,6 +82,19 @@ async fn kv_delete_prefixes_containing_removes_only_keys_with_a_prefix_and_the_n
 }
 
 #[tokio::test]
+async fn kv_delete_prefixes_containing_removes_nothing_when_given_no_prefixes() {
+    let (_dir, store) = open_temp();
+    store.kv_put(r#"shelf_page:3:f=[{"field":"shelf"}]"#, "1".to_string());
+
+    store.kv_delete_prefixes_containing(&[], r#""field":"shelf""#);
+
+    assert!(store
+        .kv_get(r#"shelf_page:3:f=[{"field":"shelf"}]"#)
+        .await
+        .is_some());
+}
+
+#[tokio::test]
 async fn kv_rename_moves_payload_and_replaces_target() {
     let (_dir, store) = open_temp();
     store.kv_put("shelf:-1", "temp".to_string());

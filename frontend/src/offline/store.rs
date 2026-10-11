@@ -287,15 +287,13 @@ impl Store {
     /// Delete every cache row whose key starts with one of `prefixes` and
     /// contains `needle` — the filter runs in SQL so no payload is read back.
     pub fn kv_delete_prefixes_containing(&self, prefixes: &[&str], needle: &str) {
-        if prefixes.is_empty() {
-            return;
-        }
         let mut binds: Vec<String> = prefixes.iter().map(|p| like_prefix(p)).collect();
-        let any_prefix = vec!["key LIKE ? ESCAPE '\\'"; binds.len()].join(" OR ");
+        // The leading `0` keeps an empty `prefixes` a valid, match-nothing clause.
+        let any_prefix = " OR key LIKE ? ESCAPE '\\'".repeat(binds.len());
         binds.push(needle.to_string());
         self.run_detached(move |conn| {
             log_err(conn.execute(
-                &format!("DELETE FROM cache WHERE ({any_prefix}) AND instr(key, ?) > 0"),
+                &format!("DELETE FROM cache WHERE (0{any_prefix}) AND instr(key, ?) > 0"),
                 rusqlite::params_from_iter(binds),
             ));
         });
