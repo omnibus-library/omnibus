@@ -1,9 +1,10 @@
 //! Unit tests for the library filter clauses: their wire tokens, the
 //! `ViewFilters` predicates, and the legacy-facet fallback into clauses.
 
-use super::*;
 use crate::ebook::Contributor;
 use crate::{SortDir, SortKey, ViewMode, ViewPrefs};
+
+use super::*;
 
 const ALL_FIELDS: [FilterField; 6] = [
     FilterField::Tag,

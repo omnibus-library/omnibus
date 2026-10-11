@@ -2,8 +2,9 @@
 //! passthrough, every clause applied, and a shelf clause ruling nothing out.
 //! Per-field and per-mode matching is pinned in `omnibus_shared::view_filters`.
 
-use super::*;
 use omnibus_shared::{FilterClause, FilterField, FilterMode};
+
+use super::*;
 
 fn book(id: i64, subjects: &[&str], formats: &[&str]) -> EbookMetadata {
     EbookMetadata {
