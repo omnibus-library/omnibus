@@ -210,7 +210,7 @@ enum LibraryService {
 
     /// The mirror's answer once the server has failed: its page when it has
     /// books, the server's failure when it has none, and its own decline when
-    /// it can't answer the filter at all.
+    /// it can't answer the filter and the server was only unreachable.
     private static func settle(
         after serverError: Error,
         with fallback: @Sendable () async throws -> LibraryPageResult,
@@ -225,7 +225,9 @@ enum LibraryService {
                 continuation.finish()
             }
         } catch {
-            continuation.finish(throwing: error)
+            // A server that answered with a failure said something a connection won't fix.
+            let unreachable = (serverError as? APIError)?.isRecoverableOffline ?? false
+            continuation.finish(throwing: unreachable ? error : serverError)
         }
     }
 

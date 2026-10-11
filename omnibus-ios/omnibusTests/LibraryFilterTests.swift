@@ -581,6 +581,45 @@ struct LibraryFilterErrorTests {
     }
 }
 
+// MARK: - A filter the mirror can't answer
+
+/// The error a library read finished with, or `nil` when it settled.
+private func failure(of reads: AsyncThrowingStream<CacheRead<LibraryPageResult>, Error>) async -> Error? {
+    do {
+        for try await _ in reads {}
+    } catch {
+        return error
+    }
+    return nil
+}
+
+struct LibraryFilterDeclineTests {
+    @Test func firstPageSaysFiltersNeedAConnectionWhenTheServerIsUnreachable() async {
+        await OfflineStore.shared.open()
+        let reads = LibraryService.firstPage(
+            signature: "test-\(UUID().uuidString)",
+            fetch: { throw APIError.offline },
+            fallback: { throw LibraryFilterError.needsConnection }
+        )
+        let error = await failure(of: reads)
+        #expect(error as? LibraryFilterError == .needsConnection)
+    }
+
+    @Test func firstPageReportsAServerErrorRatherThanTheMirrorsDecline() async {
+        await OfflineStore.shared.open()
+        let reads = LibraryService.firstPage(
+            signature: "test-\(UUID().uuidString)",
+            fetch: { throw APIError.http(status: 500, message: "") },
+            fallback: { throw LibraryFilterError.needsConnection }
+        )
+        let error = await failure(of: reads)
+        guard case .http(status: 500, _)? = error as? APIError else {
+            Issue.record("expected the server's 500, got \(String(describing: error))")
+            return
+        }
+    }
+}
+
 // MARK: - Pages a shelf clause reads
 
 struct ShelfClausePageInvalidationTests {
