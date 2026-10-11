@@ -22,9 +22,12 @@ an "On this shelf · N" counter, and a Create button that becomes `Create · N`.
 Fill it there if you make a hand-picked shelf. Membership can then change from
 four places:
 
-- **A book's own page.** Its **More** stop has an **Add to shelf** button that
-  opens a picker of your hand-picked shelves, one checkbox each: ticking a shelf
-  adds the book, unticking it takes the book off.
+- **A book's own page.** Its **More** stop shows every shelf holding the book as
+  a tile (a Smart shelf whose rule matches it too, marked Smart) and ends in an
+  **Add to shelf** tile that opens a picker of your hand-picked shelves, one
+  checkbox tile each: ticking a shelf adds the book, unticking it takes the
+  book off. The smart shelves already holding it sit apart under **Automatic**,
+  read-only.
 - **The landing table's bulk bar.** Tick rows and the bar offers **Add to
   shelf**, which puts every ticked row on the shelf you pick. It is admin-only,
   because the bar is.
@@ -118,7 +121,7 @@ control as missing when you are on iOS.
     choose **Remove from shelf**, and confirm it leaves the shelf but **not**
     the library. **(web, hand-picked shelves only)** Open a book's page, go to
     its **More** section, click **Add to shelf**, and tick the shelf; confirm
-    the book now shows the shelf as a chip and appears when you select the
+    the book now shows the shelf as a tile and appears when you select the
     shelf in the rail. Untick it and confirm it leaves the shelf but **not**
     the library.
 11. **(web) Edit it.** Open **Edit shelf** (the pencil beside the facets) and

@@ -11,7 +11,7 @@ import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { withManualShelf } from "../utils/shelves";
+import { withManualShelf, withSmartShelf } from "../utils/shelves";
 import { logInThroughUi, provisionUser } from "../utils/users";
 
 // The book page's More stop shows every shelf holding the book as a tile, and
@@ -192,6 +192,37 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
     await expect(tile).not.toBeChecked();
     await expect(tile).toContainText("0 books");
     await expect(onPage).toHaveCount(0);
+  });
+});
+
+test("shows a smart shelf holding the book as a tile and lists it as automatic", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  // Henri Poincare wrote no other fixture, so the rule matches this book only.
+  const rules = [{ field: "author", op: "is", value: TARGET.authors[0]! }];
+  await withSmartShelf(request, "E2E Smart Shelf", rules, async (shelf) => {
+    await gotoReady(page, `/books/${uuid}`);
+
+    const onPage = shelfTile(page, shelf.id);
+    await expect(onPage).toContainText(shelf.name);
+    await expect(onPage).toContainText("Smart");
+    await expect(page.getByTestId("bdmq-more")).not.toContainText(
+      "Not on a shelf yet.",
+    );
+
+    const picker = await openPicker(page);
+    await expect(picker.getByTestId("shelf-picker-hint")).toHaveText(
+      "Only shelves you fill by hand are listed; smart shelves add books by their rules.",
+    );
+    const automatic = picker.getByTestId("shelf-picker-automatic");
+    await expect(automatic).toContainText("Automatic");
+    await expect(
+      automatic.getByTestId(`shelf-picker-auto-${shelf.id}`),
+    ).toContainText(shelf.name);
+    // A rule fills it, so there is nothing to tick.
+    await expect(pickerTile(picker, shelf.id)).toHaveCount(0);
   });
 });
 

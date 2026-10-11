@@ -30,17 +30,18 @@ export async function createShelf(
 }
 
 /**
- * Run `body` against a fresh private hand-picked shelf whose name starts with
- * `label` and is unique to this test, then delete the shelf — even when `body`
- * throws — so a parallel spec never sees it left behind.
+ * Run `body` against a fresh private shelf built from `shelf`, named `label`
+ * plus a suffix unique to this test, then delete it — even when `body` throws —
+ * so a parallel spec never sees it left behind.
  */
-export async function withManualShelf(
+async function withOwnShelf(
   request: APIRequestContext,
   label: string,
+  shelf: Record<string, unknown>,
   body: (shelf: { id: number; name: string }) => Promise<void>,
 ): Promise<void> {
   const name = `${label} ${Date.now()}-${test.info().workerIndex}`;
-  const id = await createShelf(request, { kind: "manual", name });
+  const id = await createShelf(request, { ...shelf, name });
   try {
     await body({ id, name });
   } finally {
@@ -51,6 +52,33 @@ export async function withManualShelf(
       200,
     );
   }
+}
+
+/** Run `body` against a fresh private hand-picked shelf (see `withOwnShelf`). */
+export function withManualShelf(
+  request: APIRequestContext,
+  label: string,
+  body: (shelf: { id: number; name: string }) => Promise<void>,
+): Promise<void> {
+  return withOwnShelf(request, label, { kind: "manual" }, body);
+}
+
+/**
+ * Run `body` against a fresh private smart shelf matching any of `rules` (see
+ * `withOwnShelf`). Pick rules no other spec's books match.
+ */
+export function withSmartShelf(
+  request: APIRequestContext,
+  label: string,
+  rules: { field: string; op: string; value: string }[],
+  body: (shelf: { id: number; name: string }) => Promise<void>,
+): Promise<void> {
+  return withOwnShelf(
+    request,
+    label,
+    { kind: "smart", match_mode: "any", rules },
+    body,
+  );
 }
 
 // A shelf opens two ways on web, and they are different surfaces. Both start
