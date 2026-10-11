@@ -8,7 +8,9 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{ShelfKind, ShelfSummary, UserSummary};
 
-use crate::components::shelf_tile::{accent_style, tile_class, viewer_owner_label, ShelfTileFace};
+use crate::components::shelf_tile::{
+    accent_style, tile_class, tile_labelled_by, viewer_owner_label, ShelfTileFace,
+};
 use crate::components::{Loading, LoadingKind, MarkSize, Ring};
 use crate::shelf_access::ShelfAccess;
 use crate::{use_server_url, AvatarCacheBust, Route};
@@ -219,6 +221,9 @@ fn picker_tile(
     let is_on = list.checked.as_ref().map(|ids| ids.contains(&id));
     let role = is_on.map(|_| "checkbox");
     let aria_checked = is_on.map(|on| if on { "true" } else { "false" });
+    let name_id = format!("shelf-picker-name-{id}");
+    let owner_id = format!("shelf-picker-owner-{id}");
+    let labelled_by = tile_labelled_by(list.viewer_id, shelf, &name_id, &owner_id);
     rsx! {
         button {
             key: "{id}",
@@ -228,8 +233,8 @@ fn picker_tile(
             role,
             "aria-checked": aria_checked,
             "aria-busy": if is_busy { "true" } else { "false" },
-            // The face also carries count and owner; the shelf's name alone names the tile.
-            "aria-labelledby": "shelf-picker-name-{id}",
+            // Count and kind stay out of the name; the owner joins it when not the viewer's.
+            "aria-labelledby": labelled_by,
             "data-testid": "shelf-picker-tile-{id}",
             disabled: list.busy.is_some(),
             onclick: move |_| on_pick.call(id),
@@ -247,7 +252,8 @@ fn picker_tile(
                 owner_label: viewer_owner_label(list.viewer_id, shelf),
                 server_url: env.server_url.clone(),
                 avatar_bust: env.avatar_bust,
-                name_id: "shelf-picker-name-{id}",
+                name_id,
+                owner_id,
             }
         }
     }

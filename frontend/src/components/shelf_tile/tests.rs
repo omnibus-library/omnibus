@@ -68,6 +68,42 @@ fn viewer_owner_label_names_the_owner_plainly_before_the_viewer_is_known() {
     assert_eq!(viewer_owner_label(None, &shelf), "user-9");
 }
 
+#[test]
+fn tile_labelled_by_names_only_the_shelf_for_the_viewers_own_shelf() {
+    let shelf = test_shelf_summary(1, VIEWER_ID, ShelfKind::Manual, "Beach");
+    assert_eq!(
+        tile_labelled_by(Some(VIEWER_ID), &shelf, "tile-name-1", "tile-owner-1"),
+        "tile-name-1"
+    );
+}
+
+#[test]
+fn tile_labelled_by_adds_the_owner_for_another_readers_shelf() {
+    let shelf = test_shelf_summary(1, 9, ShelfKind::Manual, "Beach");
+    assert_eq!(
+        tile_labelled_by(Some(VIEWER_ID), &shelf, "tile-name-1", "tile-owner-1"),
+        "tile-name-1 tile-owner-1"
+    );
+}
+
+#[test]
+fn tile_labelled_by_names_only_another_readers_wishlist_whose_name_carries_its_owner() {
+    let shelf = test_shelf_summary(1, 9, ShelfKind::Wishlist, "user-9's wishlist");
+    assert_eq!(
+        tile_labelled_by(Some(VIEWER_ID), &shelf, "tile-name-1", "tile-owner-1"),
+        "tile-name-1"
+    );
+}
+
+#[test]
+fn tile_labelled_by_names_only_the_shelf_before_the_viewer_is_known() {
+    let shelf = test_shelf_summary(1, 9, ShelfKind::Manual, "Beach");
+    assert_eq!(
+        tile_labelled_by(None, &shelf, "tile-name-1", "tile-owner-1"),
+        "tile-name-1"
+    );
+}
+
 fn face_with_owner_testid() -> Element {
     let shelf = test_shelf_summary(3, 9, ShelfKind::Manual, "Austen");
     rsx! {
@@ -136,6 +172,28 @@ fn shelf_tile_face_ids_the_name_only_when_given_one() {
         named.contains("id=\"tile-name-3\"") && named.contains(">Austen<"),
         "{named}"
     );
+    let plain = render_in_vdom(face_with_covers);
+    assert!(!plain.contains("id=\""), "{plain}");
+}
+
+#[test]
+fn shelf_tile_face_ids_the_owner_name_only_when_given_one() {
+    let owned = render_in_vdom(|| {
+        let shelf = test_shelf_summary(3, 9, ShelfKind::Manual, "Austen");
+        rsx! {
+            ShelfTileFace {
+                shelf,
+                owner_label: "by user-9".to_string(),
+                server_url: String::new(),
+                avatar_bust: 0,
+                owner_id: "tile-owner-3",
+            }
+        }
+    });
+    let at = owned
+        .find("id=\"tile-owner-3\"")
+        .unwrap_or_else(|| panic!("no owner id in {owned}"));
+    assert!(owned[at..].contains(">by user-9<"), "{owned}");
     let plain = render_in_vdom(face_with_covers);
     assert!(!plain.contains("id=\""), "{plain}");
 }

@@ -321,7 +321,7 @@ fn shelf_picker_modal_sets_each_tiles_accent_on_its_button() {
 }
 
 #[test]
-fn shelf_picker_modal_names_each_tile_by_its_shelf_alone() {
+fn shelf_picker_modal_names_the_viewers_own_tile_by_its_shelf_alone() {
     let html = picker_html(ready(vec![own(1, "Beach")]));
     let tile = tile_html(&html, 1);
     assert!(
@@ -332,6 +332,21 @@ fn shelf_picker_modal_names_each_tile_by_its_shelf_alone() {
         tile.contains("id=\"shelf-picker-name-1\"") && tile.contains(">Beach<"),
         "{tile}"
     );
+}
+
+#[test]
+fn shelf_picker_modal_names_another_readers_tile_by_its_shelf_and_its_owner() {
+    let theirs = test_shelf_summary(2, OTHER_READER_ID, ShelfKind::Manual, "Beach");
+    let html = picker_html(ready(vec![own(1, "Beach"), theirs]));
+    let tile = tile_html(&html, 2);
+    assert!(
+        tile.contains("aria-labelledby=\"shelf-picker-name-2 shelf-picker-owner-2\""),
+        "{tile}"
+    );
+    let owner_at = tile
+        .find("id=\"shelf-picker-owner-2\"")
+        .unwrap_or_else(|| panic!("no owner id in {tile}"));
+    assert!(tile[owner_at..].contains(">by user-9<"), "{tile}");
 }
 
 #[test]

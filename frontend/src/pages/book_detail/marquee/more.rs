@@ -15,7 +15,7 @@ use crate::components::atrium::Cover;
 use crate::components::shelf_glyphs::plus_icon;
 use crate::components::shelf_picker::{picker_targets, ShelfPickerList, ShelfPickerModal};
 use crate::components::shelf_tile::{
-    accent_style, tile_class, viewer_owner_label, ShelfTileFace, LEDGE_BOOKS,
+    accent_style, tile_class, tile_labelled_by, viewer_owner_label, ShelfTileFace, LEDGE_BOOKS,
 };
 use crate::components::{Loading, LoadingKind};
 use crate::contexts::use_current_user_summary;
@@ -668,20 +668,24 @@ fn with_wished_book(shelf: &ShelfSummary, uuid: &str, has_cover: bool) -> ShelfS
 /// One held shelf: a tile linking to its page.
 fn shelf_link_tile(shelf: &ShelfSummary, ctx: &BlockCtx) -> Element {
     let id = shelf.id;
+    let name_id = format!("bdmq-shelf-name-{id}");
+    let owner_id = format!("bdmq-shelf-owner-{id}");
+    let labelled_by = tile_labelled_by(ctx.viewer_id, shelf, &name_id, &owner_id);
     rsx! {
         Link {
             key: "{id}",
             to: Route::ShelfDetail { id },
             class: tile_class(true),
             style: accent_style(shelf),
-            "aria-labelledby": "bdmq-shelf-name-{id}",
+            "aria-labelledby": labelled_by,
             "data-testid": "bdmq-shelf-{id}",
             ShelfTileFace {
                 shelf: shelf.clone(),
                 owner_label: viewer_owner_label(ctx.viewer_id, shelf),
                 server_url: ctx.server_url.clone(),
                 avatar_bust: ctx.avatar_bust,
-                name_id: "bdmq-shelf-name-{id}",
+                name_id,
+                owner_id,
             }
         }
     }

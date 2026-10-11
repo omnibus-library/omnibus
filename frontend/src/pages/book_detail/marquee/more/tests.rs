@@ -351,7 +351,7 @@ fn membership_body_draws_each_held_shelf_as_a_tile_linking_to_its_page() {
 }
 
 #[test]
-fn membership_body_names_each_tile_link_by_its_shelf_alone() {
+fn membership_body_names_the_viewers_own_tile_link_by_its_shelf_alone() {
     let html = block_html(on_shelves(&["Beach"]));
     let beach = tile_html(&html, 1);
     assert!(
@@ -362,6 +362,24 @@ fn membership_body_names_each_tile_link_by_its_shelf_alone() {
         beach.contains("id=\"bdmq-shelf-name-1\"") && beach.contains(">Beach<"),
         "{beach}"
     );
+}
+
+#[test]
+fn membership_body_names_another_readers_tile_link_by_its_shelf_and_its_owner() {
+    let held = Some(Ok(vec![
+        shelf(1, VIEWER_ID, ShelfKind::Manual, "Beach"),
+        shelf(2, 9, ShelfKind::Manual, "Beach"),
+    ]));
+    let html = block_html(held);
+    let theirs = tile_html(&html, 2);
+    assert!(
+        theirs.contains("aria-labelledby=\"bdmq-shelf-name-2 bdmq-shelf-owner-2\""),
+        "{theirs}"
+    );
+    let owner_at = theirs
+        .find("id=\"bdmq-shelf-owner-2\"")
+        .unwrap_or_else(|| panic!("no owner id in {theirs}"));
+    assert!(theirs[owner_at..].contains(">by user-9<"), "{theirs}");
 }
 
 #[test]

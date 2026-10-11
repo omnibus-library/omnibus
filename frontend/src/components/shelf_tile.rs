@@ -43,11 +43,27 @@ pub fn viewer_owner_label(viewer_id: Option<i64>, shelf: &ShelfSummary) -> Strin
     }
 }
 
+/// The ids a tile's wrapper is named by: the shelf's name, then its owner's
+/// wherever the tile says whose it is, since shelf names repeat across owners.
+pub fn tile_labelled_by(
+    viewer_id: Option<i64>,
+    shelf: &ShelfSummary,
+    name_id: &str,
+    owner_id: &str,
+) -> String {
+    if shows_owner_attribution(viewer_id, shelf.owner_user_id, shelf.kind) {
+        format!("{name_id} {owner_id}")
+    } else {
+        name_id.to_string()
+    }
+}
+
 /// The tile's inner markup — ledge, then name, facets and foot. The caller
 /// supplies the element around it (a link, a button, a plain block) carrying
 /// [`tile_class`] and [`accent_style`]. `owner_label` is what the foot says;
 /// `owner_testid` tags it, for the one surface that selects on it; `name_id`
-/// ids the name, for a wrapper that is named by the shelf alone.
+/// and `owner_id` id the name and the owner's label, for a wrapper named by
+/// them through [`tile_labelled_by`].
 #[component]
 pub fn ShelfTileFace(
     shelf: ShelfSummary,
@@ -56,6 +72,7 @@ pub fn ShelfTileFace(
     avatar_bust: u32,
     #[props(into, default)] owner_testid: Option<String>,
     #[props(into, default)] name_id: Option<String>,
+    #[props(into, default)] owner_id: Option<String>,
 ) -> Element {
     rsx! {
         {ledge(&shelf, &server_url)}
@@ -85,7 +102,7 @@ pub fn ShelfTileFace(
                             bust: avatar_bust,
                         }
                     }
-                    span { class: "shv-card-owner-name", "{owner_label}" }
+                    span { class: "shv-card-owner-name", id: owner_id, "{owner_label}" }
                 }
             }
         }
