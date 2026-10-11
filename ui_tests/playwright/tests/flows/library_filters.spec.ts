@@ -172,6 +172,53 @@ test("closes the picker on Escape without adding a clause", async ({
 
   await expect(picker(page)).toHaveCount(0);
   await expect(chips(page)).toHaveCount(0);
+  await expect(page.getByTestId("filter-add")).toBeFocused();
+});
+
+/** The accessible name of the dialog that holds focus, if any does. */
+async function focusedDialog(page: Page): Promise<string | null | undefined> {
+  return page.evaluate(() =>
+    document.activeElement
+      ?.closest('[role="dialog"]')
+      ?.getAttribute("aria-label"),
+  );
+}
+
+test("keeps Tab and Shift+Tab inside the open picker", async ({ page }) => {
+  await gotoReady(page, "/");
+  await page.getByTestId("filter-add").click();
+  await expect(picker(page)).toHaveAttribute("aria-modal", "true");
+  await picker(page).getByTestId("filter-field-format").click();
+  await expect(picker(page).getByLabel("PDF", { exact: true })).toBeVisible();
+
+  for (const key of ["Tab", "Shift+Tab"]) {
+    for (let press = 0; press < 12; press++) {
+      await page.keyboard.press(key);
+      expect(await focusedDialog(page), `${key} press ${press + 1}`).toBe(
+        "Add filter",
+      );
+    }
+  }
+});
+
+test("returns focus to Add filter when the picker is cancelled or dismissed", async ({
+  page,
+}) => {
+  await gotoReady(page, "/");
+  const add = page.getByTestId("filter-add");
+
+  await add.click();
+  await picker(page).getByTestId("filter-field-format").click();
+  await picker(page).getByTestId("filter-picker-cancel").click();
+  await expect(picker(page)).toHaveCount(0);
+  await expect(add).toBeFocused();
+
+  await add.click();
+  await page.getByTestId("filter-picker-scrim").click({
+    position: { x: 700, y: 600 },
+  });
+  await expect(picker(page)).toHaveCount(0);
+  await expect(add).toBeFocused();
 });
 
 test("adds a format clause and narrows the list and count", async ({
@@ -189,6 +236,7 @@ test("adds a format clause and narrows the list and count", async ({
   expect(request.postDataJSON().filters).toEqual({
     clauses: [{ field: "format", mode: "include", values: ["pdf"] }],
   });
+  await expect(page.getByTestId("filter-add")).toBeFocused();
   await expect(chips(page)).toHaveCount(1);
   await expect(page.getByTestId("filter-chip-0")).toContainText(
     "Format includes any of PDF",

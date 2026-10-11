@@ -13,6 +13,7 @@ pub mod contexts;
 pub mod data;
 pub mod date_fmt;
 pub mod focus_after_paint;
+pub mod focus_trap;
 pub mod format;
 pub mod index_prefs;
 pub mod js_interop;

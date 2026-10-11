@@ -2,6 +2,8 @@
 //! a single Clear all. Stateless about the filter itself: every edit emits the
 //! whole next [`ViewFilters`] through `on_change`.
 
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 use omnibus_shared::{
     FilterClause, FilterField, FilterMode, ShelfSummary, ViewFilters, MAX_FILTER_CLAUSES,
@@ -206,6 +208,17 @@ pub fn FilterBar(
     on_change: EventHandler<ViewFilters>,
 ) -> Element {
     let mut open = use_signal(|| false);
+    let mut add_button = use_signal(|| None::<Rc<MountedData>>);
+    // The popover unmounts with focus inside it; hand focus back to the button
+    // that opened it, whichever way it closed.
+    let mut close = move || {
+        if let Some(button) = add_button.peek().clone() {
+            spawn(async move {
+                let _ = button.set_focus(true).await;
+            });
+        }
+        open.set(false);
+    };
     let at_cap = filters.clauses.len() >= MAX_FILTER_CLAUSES;
     let chips: Vec<(usize, Vec<ChipPart>, String, ViewFilters)> = filters
         .clauses
@@ -253,6 +266,7 @@ pub fn FilterBar(
                     "aria-haspopup": "dialog",
                     "aria-expanded": "{open()}",
                     "data-testid": "filter-add",
+                    onmounted: move |evt: MountedEvent| add_button.set(Some(evt.data())),
                     disabled: at_cap,
                     title: at_cap.then(|| format!("At most {MAX_FILTER_CLAUSES} filters")),
                     onclick: move |_| open.set(!open()),
@@ -264,9 +278,9 @@ pub fn FilterBar(
                         viewer_id,
                         on_apply: move |clause| {
                             on_change.call(with_clause(&with_applied, clause));
-                            open.set(false);
+                            close();
                         },
-                        on_close: move |_| open.set(false),
+                        on_close: move |_| close(),
                     }
                 }
             }

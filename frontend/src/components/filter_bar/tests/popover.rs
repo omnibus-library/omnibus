@@ -87,6 +87,14 @@ fn filter_picker_offers_the_six_fields_in_order_before_any_is_chosen() {
 }
 
 #[test]
+fn filter_picker_declares_itself_a_modal_dialog() {
+    let html = render(rsx! { PickerHarness {} });
+
+    assert!(html.contains("role=\"dialog\""), "{html}");
+    assert!(html.contains("aria-modal=\"true\""), "{html}");
+}
+
+#[test]
 fn picker_body_presses_the_active_mode() {
     let html = render_body(
         FilterField::Tag,

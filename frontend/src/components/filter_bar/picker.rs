@@ -8,6 +8,7 @@ use omnibus_shared::{FilterClause, FilterField, FilterMode, MAX_FILTER_VALUES};
 
 use crate::components::loading::{Loading, LoadingKind};
 use crate::focus_after_paint::focus_after_paint;
+use crate::focus_trap::trap_tab;
 
 use super::values::{self, FilterOption, Matches, OptionList};
 use super::{field_label, field_plural, field_token, ShelfList, FILTER_FIELDS};
@@ -60,6 +61,7 @@ pub(super) fn FilterPicker(
         div {
             class: "fb-pop",
             role: "dialog",
+            "aria-modal": "true",
             "aria-label": "Add filter",
             "data-testid": "filter-picker",
             tabindex: "-1",
@@ -68,6 +70,7 @@ pub(super) fn FilterPicker(
                     evt.prevent_default();
                     on_close.call(());
                 }
+                trap_tab(&evt);
             },
             onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
             div { class: "fb-fields", role: "group", "aria-label": "Filter by",
