@@ -401,8 +401,16 @@ fn verdict(
 #[test]
 fn view_filters_matches_include_tag_keeps_books_with_any_listed_value() {
     let values = ["horror", "romance"];
+    let second_only = EbookMetadata {
+        subjects: vec!["romance".into()],
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Tag, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &values, &second_only),
         Some(true)
     );
     assert_eq!(
@@ -414,8 +422,16 @@ fn view_filters_matches_include_tag_keeps_books_with_any_listed_value() {
 #[test]
 fn view_filters_matches_exclude_tag_keeps_only_books_without_a_listed_value() {
     let values = ["horror", "romance"];
+    let second_only = EbookMetadata {
+        subjects: vec!["romance".into()],
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Tag, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Exclude, &values, &second_only),
         Some(false)
     );
     assert_eq!(
@@ -427,8 +443,21 @@ fn view_filters_matches_exclude_tag_keeps_only_books_without_a_listed_value() {
 #[test]
 fn view_filters_matches_include_genre_keeps_books_with_any_listed_value() {
     let values = ["Fantasy", "Sci-Fi"];
+    let second_only = EbookMetadata {
+        genres: vec!["Sci-Fi".into()],
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Genre, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Genre,
+            FilterMode::Include,
+            &values,
+            &second_only
+        ),
         Some(true)
     );
     assert_eq!(
@@ -440,8 +469,21 @@ fn view_filters_matches_include_genre_keeps_books_with_any_listed_value() {
 #[test]
 fn view_filters_matches_exclude_genre_keeps_only_books_without_a_listed_value() {
     let values = ["Fantasy", "Sci-Fi"];
+    let second_only = EbookMetadata {
+        genres: vec!["Sci-Fi".into()],
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Genre, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Genre,
+            FilterMode::Exclude,
+            &values,
+            &second_only
+        ),
         Some(false)
     );
     assert_eq!(
@@ -453,8 +495,24 @@ fn view_filters_matches_exclude_genre_keeps_only_books_without_a_listed_value() 
 #[test]
 fn view_filters_matches_include_author_keeps_books_with_any_listed_creator() {
     let values = ["Mary Shelley", "Bram Stoker"];
+    let second_only = EbookMetadata {
+        creators: vec![Contributor {
+            name: "Bram Stoker".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Author, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Author,
+            FilterMode::Include,
+            &values,
+            &second_only
+        ),
         Some(true)
     );
     assert_eq!(
@@ -466,8 +524,24 @@ fn view_filters_matches_include_author_keeps_books_with_any_listed_creator() {
 #[test]
 fn view_filters_matches_exclude_author_keeps_only_books_without_a_listed_creator() {
     let values = ["Mary Shelley", "Bram Stoker"];
+    let second_only = EbookMetadata {
+        creators: vec![Contributor {
+            name: "Bram Stoker".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Author, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Author,
+            FilterMode::Exclude,
+            &values,
+            &second_only
+        ),
         Some(false)
     );
     assert_eq!(
@@ -479,8 +553,21 @@ fn view_filters_matches_exclude_author_keeps_only_books_without_a_listed_creator
 #[test]
 fn view_filters_matches_include_series_keeps_books_in_any_listed_series() {
     let values = ["Frankenstein Cycle", "Foundation"];
+    let second_only = EbookMetadata {
+        series: Some("Foundation".into()),
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Series, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Series,
+            FilterMode::Include,
+            &values,
+            &second_only
+        ),
         Some(true)
     );
     assert_eq!(
@@ -492,8 +579,21 @@ fn view_filters_matches_include_series_keeps_books_in_any_listed_series() {
 #[test]
 fn view_filters_matches_exclude_series_keeps_only_books_outside_every_listed_series() {
     let values = ["Frankenstein Cycle", "Foundation"];
+    let second_only = EbookMetadata {
+        series: Some("Foundation".into()),
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Series, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Series,
+            FilterMode::Exclude,
+            &values,
+            &second_only
+        ),
         Some(false)
     );
     assert_eq!(
@@ -505,8 +605,21 @@ fn view_filters_matches_exclude_series_keeps_only_books_outside_every_listed_ser
 #[test]
 fn view_filters_matches_include_format_keeps_books_with_any_listed_format() {
     let values = ["epub", "m4b"];
+    let second_only = EbookMetadata {
+        formats: vec!["M4B".into()],
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Format, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Format,
+            FilterMode::Include,
+            &values,
+            &second_only
+        ),
         Some(true)
     );
     assert_eq!(
@@ -518,8 +631,21 @@ fn view_filters_matches_include_format_keeps_books_with_any_listed_format() {
 #[test]
 fn view_filters_matches_exclude_format_keeps_only_books_without_a_listed_format() {
     let values = ["epub", "m4b"];
+    let second_only = EbookMetadata {
+        formats: vec!["M4B".into()],
+        ..Default::default()
+    };
     assert_eq!(
         verdict(FilterField::Format, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Format,
+            FilterMode::Exclude,
+            &values,
+            &second_only
+        ),
         Some(false)
     );
     assert_eq!(
