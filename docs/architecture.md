@@ -518,9 +518,11 @@ Features/           — one directory per surface: Account, AddBooks, Auth,
                       `LibraryFilterStore` clause list (`LibraryFilterClause`),
                       kept in `UserDefaults` until a sign-out, an account
                       switch or a server change, shared by the grid and every
-                      `ShelfDetailView`, edited through `LibraryFilterBar`'s
-                      chips and the `FilterClauseSheet` picker, and sent as
-                      `?filter=` on `GET /api/ebooks` and the shelf page.
+                      `ShelfDetailView` (whose member read is
+                      `Shelves/ShelfMemberRead`), edited through
+                      `LibraryFilterBar`'s chips and the `FilterClauseSheet`
+                      picker, and sent as `?filter=` on `GET /api/ebooks` and
+                      the shelf page.
                       Offline, `LibraryIndex` evaluates metadata clauses over
                       the mirrored payload and declines a shelf clause with
                       `LibraryFilterError` rather than serve unfiltered rows.

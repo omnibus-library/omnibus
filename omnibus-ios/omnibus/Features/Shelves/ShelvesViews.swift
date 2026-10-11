@@ -110,18 +110,10 @@ struct ShelfDetailView: View {
     /// shelves index is already in the replica and carries every field the
     /// header needs.
     @State private var indexed: ShelfPreview?
-    @State private var books: [Book] = []
-    /// Whether the member read has finished, as opposed to not having answered
-    /// yet. `isLoading` clears on *either* stream's first value, so a cold
-    /// online load where the detail read wins the race left `books` empty with
-    /// the page already showing — and the unreachable state then told a reader
-    /// who was online that the books would arrive when they next were.
-    @State private var booksSettled = false
-    /// The clauses `books` was read under, so a filter change never shows
-    /// another filter's members while its own answer is on the way.
-    @State private var booksClauses: [FilterClause] = []
-    /// Why the member read failed, for a filtered shelf with nothing to show.
-    @State private var booksError: String? = nil
+    /// The member read. Its own `settled`, not `isLoading`, says whether it has
+    /// answered: `isLoading` clears on either stream's first value, so a detail
+    /// read winning the race would otherwise pass for an unreachable shelf.
+    @State private var members = ShelfMemberRead()
     private var filters = LibraryFilterStore.shared
     @State private var isLoading = true
     /// The server answered that this shelf doesn't exist — a card cached
@@ -146,7 +138,7 @@ struct ShelfDetailView: View {
     /// fallback the offline header drew the flat empty plate while the shelves
     /// screen one back was showing that shelf's art from the same replica.
     private var mosaicCovers: [Book] {
-        books.isEmpty ? (indexed?.covers ?? []) : Array(books.prefix(4))
+        members.books.isEmpty ? (indexed?.covers ?? []) : Array(members.books.prefix(4))
     }
 
     /// Only a manual shelf can be filled by hand — a smart shelf's membership
@@ -184,23 +176,18 @@ struct ShelfDetailView: View {
                         LibraryFilterBar(store: filters, viewerId: app.user?.id)
                             .screenPadding()
 
-                        if books.isEmpty {
-                            // The index knows the count; only the member page
-                            // carries the books. Offline with the page uncached
-                            // we know there are some and can't show them, which
-                            // is not the same as the shelf being empty — and
-                            // saying "nothing on this shelf" under a header
-                            // reading "1 book" contradicts itself.
-                            if !filters.clauses.isEmpty {
-                                FilteredResultsState(phase: filteredPhase) { filters.clear() }
-                            } else if booksSettled, let identity, identity.bookCount > 0 {
-                                unreachableState(count: identity.bookCount)
-                            } else {
-                                emptyState
-                            }
-                        } else {
+                        switch members.phase(knownCount: identity?.bookCount) {
+                        case .loading:
+                            LoadingView().frame(minHeight: 380)
+                        case .filtered(let phase):
+                            FilteredResultsState(phase: phase) { filters.clear() }
+                        case .unreachable(let count):
+                            unreachableState(count: count)
+                        case .empty:
+                            emptyState
+                        case .members:
                             LazyVGrid(columns: columns, spacing: 26) {
-                                ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
+                                ForEach(Array(members.books.enumerated()), id: \.element.id) { index, book in
                                     NavigationLink(value: Destination.book(uuid: book.uuid)) {
                                         BookGridCell(book: book)
                                     }
@@ -215,7 +202,7 @@ struct ShelfDetailView: View {
                                                     )
                                                     // A filtered copy is dropped, not patched, so
                                                     // offline the reload can't take the book away.
-                                                    books.removeAll { $0.uuid == book.uuid }
+                                                    members.remove(book.uuid)
                                                     await load()
                                                 }
                                             } label: {
@@ -282,13 +269,6 @@ struct ShelfDetailView: View {
         }
         .refreshTask { await load(force: true) }
         .task(id: filters.clauses) { await load() }
-    }
-
-    /// The filtered member list's state while it holds no books.
-    private var filteredPhase: FilteredPhase {
-        guard booksSettled else { return .loading }
-        if let booksError { return .failed(booksError) }
-        return .noMatches
     }
 
     /// A shelf you can fill asks to be filled; one driven by rules explains
@@ -433,18 +413,8 @@ struct ShelfDetailView: View {
             await OfflineStore.shared.cacheDelete(CacheKey.shelf(id))
             await UserDataService.dropShelfPages(id)
         }
-        // Deliberately not reset on a refresh. `books` keeps its previous
-        // value across one, so un-settling only opens a window where a shelf
-        // showing the unreachable state falls back to "Nothing on this shelf"
-        // — the same false claim this flag was added to stop. A new filter is
-        // different: the members on screen answer a question no longer asked.
         let clauses = filters.clauses
-        if clauses != booksClauses {
-            books = []
-            booksSettled = false
-            booksClauses = clauses
-        }
-        booksError = nil
+        let ticket = members.begin(clauses)
         await withTaskGroup(of: Void.self) { group in
             group.addTask { @MainActor in
                 // Cheap, local, and only ever a fallback — the detail read
@@ -462,7 +432,7 @@ struct ShelfDetailView: View {
                     self.isGone = true
                     self.shelf = nil
                     self.indexed = nil
-                    self.books = []
+                    self.members.removeAll()
                     await UserDataService.forgetShelf(id: self.id)
                 } catch {}
             }
@@ -470,20 +440,17 @@ struct ShelfDetailView: View {
                 do {
                     for try await read in UserDataService.shelfBooks(id: id, filter: clauses) {
                         guard !Task.isCancelled else { return }
-                        self.books = read.value.books
+                        self.members.receive(read.value.books, ticket: ticket)
                         self.isLoading = false
                     }
                 } catch {
                     guard !Task.isCancelled else { return }
-                    self.booksError = LibraryFilterError.message(for: error)
+                    self.members.fail(LibraryFilterError.message(for: error), ticket: ticket)
                 }
                 // A filter change cancels this read; settling then would claim
                 // the next filter's answer before it arrives.
                 guard !Task.isCancelled else { return }
-                // The stream is done — offline with nothing cached it finishes
-                // without ever yielding, which is exactly the case the
-                // unreachable state describes.
-                self.booksSettled = true
+                self.members.settle(ticket: ticket)
             }
         }
         isLoading = false
