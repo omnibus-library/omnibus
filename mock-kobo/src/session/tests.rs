@@ -242,10 +242,11 @@ async fn sync_now_echoes_sync_token_on_continued_pages() {
     })
     .await;
 
-    sync_now(&mut Device::new("HW-1"), &stub.endpoint)
+    let report = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
         .await
         .unwrap();
 
+    assert_eq!(report.pages, 2);
     let requests = stub.requests.lock().unwrap();
     let tokens: Vec<Option<&str>> = requests
         .iter()
