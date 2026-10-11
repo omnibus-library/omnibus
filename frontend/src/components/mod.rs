@@ -204,6 +204,12 @@ pub mod shelf_picker;
 #[cfg(not(feature = "mobile"))]
 pub use shelf_picker::ShelfPickerModal;
 
+// The shelf tile — covers on an accent-lit ledge, then the name, kind,
+// visibility and count — shared by the shelves index, the book page's shelves
+// and the "Add to shelf" picker. Web-only, like the surfaces that draw it.
+#[cfg(not(feature = "mobile"))]
+pub mod shelf_tile;
+
 // Facet row (kind / visibility / rule chips) shown under shelf titles on the
 // landing header and the shelf detail header.
 pub mod shelf_facets;

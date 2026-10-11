@@ -2321,6 +2321,15 @@ a.idx-letter-on:focus-visible {
   .shv-card-name { font-size: 19px; }
 }
 
+/* Compact: the book page's shelves and the "Add to shelf" picker. */
+.shv-card--compact .shv-ledge { height: 92px; gap: 5px; padding: 12px 12px 10px; }
+.shv-card--compact .shv-ledge::after { left: 10px; right: 10px; bottom: 8px; }
+.shv-card--compact .shv-ledge-book { flex-basis: 36px; margin-bottom: 3px; }
+.shv-card--compact .shv-ledge-empty { padding: 8px 12px; gap: 5px; font-size: 9px; }
+.shv-card--compact .shv-card-body { gap: 6px; padding: 10px 12px 11px; }
+.shv-card--compact .shv-card-name { font-size: 16px; }
+.shv-card--compact .shv-card-foot { padding-top: 2px; font-size: 11.5px; }
+
 
 /* ── F5.1 Metadata edit form ────────────────────────────────────────
  *
