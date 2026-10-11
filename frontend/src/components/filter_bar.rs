@@ -260,6 +260,7 @@ pub fn FilterBar(
                 }
                 if open() {
                     picker::FilterPicker {
+                        shelves,
                         viewer_id,
                         on_apply: move |clause| {
                             on_change.call(with_clause(&with_applied, clause));

@@ -3,7 +3,12 @@ use super::*;
 #[component]
 fn PickerHarness() -> Element {
     rsx! {
-        picker::FilterPicker { viewer_id: None, on_apply: move |_| {}, on_close: move |_| {} }
+        picker::FilterPicker {
+            shelves: ShelfList::Pending,
+            viewer_id: None,
+            on_apply: move |_| {},
+            on_close: move |_| {},
+        }
     }
 }
 
@@ -237,11 +242,11 @@ fn state_for_reads_a_loading_state_until_the_chosen_field_has_answered() {
     let tags = Some((FilterField::Tag, Ok(vec![option("a", "a", None)])));
 
     assert_eq!(
-        picker::state_for(FilterField::Author, tags),
+        picker::state_for(FilterField::Author, tags, &ShelfList::Pending, None),
         picker::LoadState::Loading
     );
     assert_eq!(
-        picker::state_for(FilterField::Author, None),
+        picker::state_for(FilterField::Author, None, &ShelfList::Pending, None),
         picker::LoadState::Loading
     );
 }
@@ -253,17 +258,74 @@ fn state_for_returns_the_answer_for_the_chosen_field() {
     assert_eq!(
         picker::state_for(
             FilterField::Tag,
-            Some((FilterField::Tag, Ok(options.clone())))
+            Some((FilterField::Tag, Ok(options.clone()))),
+            &ShelfList::Pending,
+            None
         ),
         picker::LoadState::Ready(options)
     );
     assert_eq!(
         picker::state_for(
             FilterField::Tag,
-            Some((FilterField::Tag, Err("offline".to_string())))
+            Some((FilterField::Tag, Err("offline".to_string()))),
+            &ShelfList::Pending,
+            None
         ),
         picker::LoadState::Failed("offline".to_string())
     );
+}
+
+#[test]
+fn state_for_reads_the_shelf_field_off_the_bars_loaded_list() {
+    let shelves = ShelfList::Loaded(vec![
+        shelf(4, "Favourites", ShelfKind::Manual, 3),
+        shelf(5, "Unread sci-fi", ShelfKind::Smart, 9),
+    ]);
+
+    assert_eq!(
+        picker::state_for(FilterField::Shelf, None, &shelves, Some(1)),
+        picker::LoadState::Ready(vec![option("4", "Favourites", Some(3))])
+    );
+}
+
+#[test]
+fn state_for_waits_on_its_own_fetch_while_the_bars_shelves_are_unknown() {
+    for shelves in [ShelfList::Pending, ShelfList::Failed] {
+        assert_eq!(
+            picker::state_for(FilterField::Shelf, None, &shelves, Some(1)),
+            picker::LoadState::Loading
+        );
+    }
+}
+
+#[test]
+fn state_for_leaves_other_fields_alone_when_the_bars_shelves_are_loaded() {
+    let shelves = ShelfList::Loaded(vec![shelf(4, "Favourites", ShelfKind::Manual, 3)]);
+
+    assert_eq!(
+        picker::state_for(FilterField::Tag, None, &shelves, Some(1)),
+        picker::LoadState::Loading
+    );
+}
+
+#[test]
+fn needs_fetch_skips_the_shelf_field_once_the_bars_list_loaded() {
+    let loaded = ShelfList::Loaded(vec![shelf(4, "Favourites", ShelfKind::Manual, 3)]);
+
+    assert!(!picker::needs_fetch(FilterField::Shelf, &loaded));
+}
+
+#[test]
+fn needs_fetch_asks_for_the_shelf_field_while_the_bars_list_is_unknown() {
+    assert!(picker::needs_fetch(FilterField::Shelf, &ShelfList::Pending));
+    assert!(picker::needs_fetch(FilterField::Shelf, &ShelfList::Failed));
+}
+
+#[test]
+fn needs_fetch_asks_for_every_other_field_even_with_shelves_loaded() {
+    let loaded = ShelfList::Loaded(vec![shelf(4, "Favourites", ShelfKind::Manual, 3)]);
+
+    assert!(picker::needs_fetch(FilterField::Tag, &loaded));
 }
 
 #[test]

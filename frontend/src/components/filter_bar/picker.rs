@@ -8,7 +8,7 @@ use crate::components::loading::{Loading, LoadingKind};
 use crate::focus_after_paint::focus_after_paint;
 
 use super::values::{self, FilterOption};
-use super::{field_label, field_plural, field_token, FILTER_FIELDS};
+use super::{field_label, field_plural, field_token, ShelfList, FILTER_FIELDS};
 
 /// Most value rows drawn at once; a longer match list is narrowed by search.
 pub(super) const MAX_SHOWN_OPTIONS: usize = 200;
@@ -27,6 +27,7 @@ pub(super) type Loaded = Option<(FilterField, Result<Vec<FilterOption>, String>)
 /// The popover. Emits the finished clause through `on_apply`.
 #[component]
 pub(super) fn FilterPicker(
+    shelves: ShelfList,
     viewer_id: Option<i64>,
     on_apply: EventHandler<FilterClause>,
     on_close: EventHandler<()>,
@@ -36,7 +37,8 @@ pub(super) fn FilterPicker(
     let mut query = use_signal(String::new);
     let mut picked = use_signal(Vec::<String>::new);
     let mut retry = use_signal(|| 0u32);
-    let mut loaded = use_loaded_options(field, retry, viewer_id);
+    let skip_shelf_fetch = !needs_fetch(FilterField::Shelf, &shelves);
+    let mut loaded = use_loaded_options(field, retry, viewer_id, skip_shelf_fetch);
 
     let mut choose = move |next: FilterField| {
         if *field.peek() == Some(next) {
@@ -85,7 +87,7 @@ pub(super) fn FilterPicker(
                     mode: mode(),
                     query: query(),
                     picked: picked(),
-                    state: state_for(current, loaded()),
+                    state: state_for(current, loaded(), &shelves, viewer_id),
                     on_mode: move |next| mode.set(next),
                     on_query: move |next| query.set(next),
                     on_toggle: move |value: String| picked.with_mut(|p| toggle_pick(p, &value)),
@@ -114,6 +116,7 @@ fn use_loaded_options(
     field: Signal<Option<FilterField>>,
     retry: Signal<u32>,
     viewer_id: Option<i64>,
+    skip_shelf_fetch: bool,
 ) -> Signal<Loaded> {
     let server_url = crate::use_server_url();
     let mut loaded: Signal<Loaded> = use_signal(|| None);
@@ -122,6 +125,9 @@ fn use_loaded_options(
         let wanted = field();
         let _ = retry();
         let Some(wanted) = wanted else { return };
+        if wanted == FilterField::Shelf && skip_shelf_fetch {
+            return;
+        }
         let mine = {
             epoch.with_mut(|e| *e += 1);
             *epoch.peek()
@@ -139,8 +145,22 @@ fn use_loaded_options(
     loaded
 }
 
+/// Whether choosing `field` must fetch its values: the shelf field reads the
+/// bar's own list once that has loaded, so it asks for nothing.
+pub(super) fn needs_fetch(field: FilterField, shelves: &ShelfList) -> bool {
+    !(field == FilterField::Shelf && matches!(shelves, ShelfList::Loaded(_)))
+}
+
 /// The state to draw for `field`: an answer for another field is not one.
-pub(super) fn state_for(field: FilterField, loaded: Loaded) -> LoadState {
+pub(super) fn state_for(
+    field: FilterField,
+    loaded: Loaded,
+    shelves: &ShelfList,
+    viewer_id: Option<i64>,
+) -> LoadState {
+    if let (FilterField::Shelf, ShelfList::Loaded(list)) = (field, shelves) {
+        return LoadState::Ready(values::shelf_options(list, viewer_id));
+    }
     match loaded {
         Some((answered, Ok(options))) if answered == field => LoadState::Ready(options),
         Some((answered, Err(message))) if answered == field => LoadState::Failed(message),
