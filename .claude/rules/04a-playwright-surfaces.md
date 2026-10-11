@@ -48,12 +48,12 @@ so the publisher's own faces win. So assert on a `p`'s computed `font-family`
 inside `#omnibus-viewer iframe` (same-origin, `contentDocument` is reachable),
 never on a named face being set somewhere.
 
-**The "Add to shelf" picker's tiles are not named by their shelf.** A
-`shelf-picker-tile-<id>` is a `role="checkbox"` button named by its whole face
-(name, kind, count, owner), so `getByRole("checkbox", { name, exact: true })`
-matches nothing: use the testid. The smart shelves a book matches sit apart under
-`shelf-picker-automatic` as inert `shelf-picker-auto-<id>` tiles; the More stop
-draws every held shelf, smart ones included, as a `bdmq-shelf-<id>` link.
+**The "Add to shelf" picker's tiles are named by their shelf alone.** A
+hand-picked shelf is a `role="checkbox"` button (a plain button in the bulk
+bar's picker) labelled by its name, so `getByRole("checkbox", { name, exact:
+true })` selects it. The smart shelves a book matches sit apart under
+`shelf-picker-automatic` as inert `shelf-picker-auto-<id>` tiles, and the More
+stop draws every held shelf, smart ones included, as a `bdmq-shelf-<id>` link.
 
 **The book detail panel reads two ways.** `book_detail_scroll_stops` (off by
 default) chooses between the flow — one continuous scroller, `#bdmq-flow`,

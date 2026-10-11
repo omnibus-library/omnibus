@@ -34,7 +34,7 @@ export async function createShelf(
  * plus a suffix unique to this test, then delete it — even when `body` throws —
  * so a parallel spec never sees it left behind.
  */
-async function withOwnShelf(
+export async function withOwnShelf(
   request: APIRequestContext,
   label: string,
   shelf: Record<string, unknown>,
@@ -61,24 +61,6 @@ export function withManualShelf(
   body: (shelf: { id: number; name: string }) => Promise<void>,
 ): Promise<void> {
   return withOwnShelf(request, label, { kind: "manual" }, body);
-}
-
-/**
- * Run `body` against a fresh private smart shelf matching any of `rules` (see
- * `withOwnShelf`). Pick rules no other spec's books match.
- */
-export function withSmartShelf(
-  request: APIRequestContext,
-  label: string,
-  rules: { field: string; op: string; value: string }[],
-  body: (shelf: { id: number; name: string }) => Promise<void>,
-): Promise<void> {
-  return withOwnShelf(
-    request,
-    label,
-    { kind: "smart", match_mode: "any", rules },
-    body,
-  );
 }
 
 // A shelf opens two ways on web, and they are different surfaces. Both start

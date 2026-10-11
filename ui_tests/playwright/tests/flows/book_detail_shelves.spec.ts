@@ -11,7 +11,7 @@ import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { withManualShelf, withSmartShelf } from "../utils/shelves";
+import { withManualShelf, withOwnShelf } from "../utils/shelves";
 import { logInThroughUi, provisionUser } from "../utils/users";
 
 // The book page's More stop shows every shelf holding the book as a tile, and
@@ -43,6 +43,24 @@ const LONG_SHELF_LABEL = "W".repeat(90);
 const READER_PASSWORD = "shelf-reader-pw-00";
 const SNAP_READER = "shelfsnap";
 const FLOW_READER = "shelfflow";
+
+/**
+ * Run `body` against a fresh private smart shelf matching any of `rules` (see
+ * `withOwnShelf`). Pick rules no other spec's books match.
+ */
+function withSmartShelf(
+  request: APIRequestContext,
+  label: string,
+  rules: { field: string; op: string; value: string }[],
+  body: (shelf: { id: number; name: string }) => Promise<void>,
+): Promise<void> {
+  return withOwnShelf(
+    request,
+    label,
+    { kind: "smart", match_mode: "any", rules },
+    body,
+  );
+}
 
 /** Set the reader's Use book details scroll stops switch through Settings. */
 async function setScrollStops(page: Page, on: boolean) {
@@ -89,25 +107,38 @@ async function asReader(
   }
 }
 
+/** Set the suite admin's read status for `uuid` straight through the API. */
+async function setReadStatus(
+  request: APIRequestContext,
+  uuid: string,
+  status: "unread" | "reading" | "finished",
+) {
+  const resp = await request.put("/api/read-status", {
+    data: { book_uuid: uuid, status },
+  });
+  expect(resp.status(), `PUT /api/read-status ${status} failed`).toBe(200);
+}
+
 /** The More stop's tile for the shelf holding the book. */
 function shelfTile(page: Page, shelfId: number): Locator {
   return page.getByTestId(`bdmq-shelf-${shelfId}`);
 }
 
-/** The picker's tile for `shelfId`; a hand-picked shelf is a checkbox tile. */
-function pickerTile(picker: Locator, shelfId: number): Locator {
-  return picker.getByTestId(`shelf-picker-tile-${shelfId}`);
+/** The picker's checkbox tile for the hand-picked shelf called `name`. */
+function pickerTile(picker: Locator, name: string): Locator {
+  return picker.getByRole("checkbox", { name, exact: true });
 }
 
-/** The shelf's name wraps inside its tile rather than spilling out of it. */
+/** The shelf's name wraps inside its tile: not spilling out, not cut short. */
 async function expectNameFits(tile: Locator, name: string) {
+  const label = tile.getByText(name, { exact: true });
   await expect
-    .poll(() =>
-      tile
-        .getByText(name, { exact: true })
-        .evaluate((el) => el.scrollWidth - el.clientWidth),
-    )
+    .poll(() => label.evaluate((el) => el.scrollWidth - el.clientWidth))
     .toBeLessThanOrEqual(0);
+  // A line is ~17px; one pixel is the rounding of fractional line heights.
+  await expect
+    .poll(() => label.evaluate((el) => el.scrollHeight - el.clientHeight))
+    .toBeLessThanOrEqual(1);
 }
 
 /** Open the picker from the More stop and wait for it to list shelves. */
@@ -155,7 +186,7 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
       picker.getByRole("heading", { name: "Add to shelf" }),
     ).toBeVisible();
 
-    const tile = pickerTile(picker, id);
+    const tile = pickerTile(picker, name);
     const onPage = shelfTile(page, id);
     await expect(tile).not.toBeChecked();
     await expect(tile).toContainText("0 books");
@@ -202,12 +233,12 @@ test("shows a smart shelf holding the book as a tile and lists it as automatic",
   const uuid = await fetchBookUuidByTitle(request, TARGET.title);
   // Henri Poincare wrote no other fixture, so the rule matches this book only.
   const rules = [{ field: "author", op: "is", value: TARGET.authors[0]! }];
-  await withSmartShelf(request, "E2E Smart Shelf", rules, async (shelf) => {
+  await withSmartShelf(request, "E2E Rule Shelf", rules, async (shelf) => {
     await gotoReady(page, `/books/${uuid}`);
 
     const onPage = shelfTile(page, shelf.id);
     await expect(onPage).toContainText(shelf.name);
-    await expect(onPage).toContainText("Smart");
+    await expect(onPage.locator(".shv-facet--kind")).toHaveText("Smart");
     await expect(page.getByTestId("bdmq-more")).not.toContainText(
       "Not on a shelf yet.",
     );
@@ -222,7 +253,44 @@ test("shows a smart shelf holding the book as a tile and lists it as automatic",
       automatic.getByTestId(`shelf-picker-auto-${shelf.id}`),
     ).toContainText(shelf.name);
     // A rule fills it, so there is nothing to tick.
-    await expect(pickerTile(picker, shelf.id)).toHaveCount(0);
+    await expect(pickerTile(picker, shelf.name)).toHaveCount(0);
+  });
+});
+
+test("lists a smart shelf the moment marking the book finished makes it match", async ({
+  page,
+  request,
+}) => {
+  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+  const finished = [{ field: "status", op: "is", value: "finished" }];
+  await withSmartShelf(request, "E2E Rule Shelf", finished, async (shelf) => {
+    // Read status is per-user and global, and this spec owns the book's.
+    await setReadStatus(request, uuid, "unread");
+    try {
+      await gotoReady(page, `/books/${uuid}`);
+      const onPage = shelfTile(page, shelf.id);
+      await expect(page.getByTestId("bdmq-shelves-loading")).toHaveCount(0);
+      await expect(onPage).toHaveCount(0);
+
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: "/api/rpc/read-status/set",
+          expectedStatus: 200,
+        },
+        async () => page.getByTestId("read-status-finished").click(),
+      );
+
+      // No reload: the page re-reads which shelves hold the book.
+      await expect(onPage).toBeVisible();
+      await expect(onPage).not.toContainText("0 books");
+      await expect(page.getByTestId("bdmq-more")).not.toContainText(
+        "Not on a shelf yet.",
+      );
+    } finally {
+      await setReadStatus(request, uuid, "unread");
+    }
   });
 });
 
@@ -234,7 +302,7 @@ test("keeps the shelf unchanged when the add fails", async ({
   await withManualShelf(request, "E2E Book Shelf", async ({ id, name }) => {
     await gotoReady(page, `/books/${uuid}`);
     const picker = await openPicker(page);
-    const tile = pickerTile(picker, id);
+    const tile = pickerTile(picker, name);
 
     await page.route("**/api/rpc/shelves/add-books", (route) =>
       route.fulfill({
@@ -281,7 +349,7 @@ test("keeps the shelf unchanged when the remove fails", async ({
 
     await gotoReady(page, `/books/${uuid}`);
     const picker = await openPicker(page);
-    const tile = pickerTile(picker, id);
+    const tile = pickerTile(picker, name);
     await expect(tile).toBeChecked();
 
     await page.route("**/api/rpc/shelves/remove-book", (route) =>
