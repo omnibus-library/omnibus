@@ -13,7 +13,18 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // public-domain PDFs and the Compiler Compendium books: no other spec edits
 // either, and (unlike tags and genres) nothing holds an override on them.
 const PAGE_RPC = "/api/rpc/ebooks/page";
-const FIELDS = ["shelf", "tag", "genre", "author", "series", "format"] as const;
+const FIELD_NAMES = {
+  shelf: "Shelf",
+  tag: "Tag",
+  genre: "Genre",
+  author: "Author",
+  series: "Series",
+  format: "Format",
+} as const;
+const MODE_NAMES = {
+  include: "Includes any",
+  exclude: "Excludes any",
+} as const;
 const FILTERED_AUTHORS = [
   "Alfred Aho",
   "Jeffrey Ullman",
@@ -22,8 +33,8 @@ const FILTERED_AUTHORS = [
   "H. G. Wells",
 ];
 
-type Field = (typeof FIELDS)[number];
-type Mode = "include" | "exclude";
+type Field = keyof typeof FIELD_NAMES;
+type Mode = keyof typeof MODE_NAMES;
 interface Pick {
   label: string;
   search?: string;
@@ -46,10 +57,20 @@ test.beforeAll(async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
 });
 
-const bar = (page: Page) => page.getByTestId("lib-filter-bar");
+const bar = (page: Page) =>
+  page.getByRole("group", { name: "Library filters" });
+const addFilter = (page: Page) =>
+  page.getByRole("button", { name: "+ Add filter" });
+const clearAll = (page: Page) =>
+  page.getByRole("button", { name: "Clear all" });
+const picker = (page: Page) => page.getByRole("dialog", { name: "Add filter" });
+const fieldButton = (page: Page, field: Field) =>
+  picker(page).getByRole("button", { name: FIELD_NAMES[field], exact: true });
+const modeButton = (page: Page, mode: Mode, pressed?: boolean) =>
+  picker(page).getByRole("button", { name: MODE_NAMES[mode], pressed });
+const applyButton = (page: Page) =>
+  picker(page).getByRole("button", { name: /^Apply/ });
 const chips = (page: Page) => page.getByTestId(/^filter-chip-\d+$/);
-const clearAll = (page: Page) => page.getByTestId("filter-clear-all");
-const picker = (page: Page) => page.getByTestId("filter-picker");
 
 /** The fixtures `matches` selects, as the tile slugs the grid should show. */
 function expectedSlugs(matches: (book: ExpectedBook) => boolean): string[] {
@@ -83,11 +104,21 @@ async function expectShown(page: Page, slugs: string[]): Promise<void> {
   );
 }
 
-async function headerCount(page: Page): Promise<number> {
-  const title = page.getByTestId("lib-section-title");
-  await expect(title).toContainText(/·\s*\d+\s+books?/);
-  const text = (await title.textContent()) ?? "";
-  return Number(/·\s*(\d+)\s+books?/.exec(text)?.[1]);
+/** Every fixture in `slugs` is on the grid, whatever else the library holds. */
+async function expectShownIncludes(page: Page, slugs: string[]) {
+  await expect
+    .poll(() => shownSlugs(page), { message: "tiles on the grid" })
+    .toEqual(expect.arrayContaining(slugs));
+}
+
+/** The header counts at least `least` books (NaN while it still has none). */
+async function expectCountAtLeast(page: Page, least: number) {
+  await expect
+    .poll(async () => {
+      const text = await page.getByTestId("lib-section-title").textContent();
+      return Number(/·\s*(\d+)\s+books?/.exec(text ?? "")?.[1]);
+    })
+    .toBeGreaterThanOrEqual(least);
 }
 
 /** Count every "No ebooks found." node the page inserts from now on. */
@@ -119,22 +150,20 @@ async function emptyLibraryInsertions(page: Page): Promise<number> {
 
 /** Build one clause in the picker and apply it, waiting on the page-1 refetch. */
 async function addClause(page: Page, spec: ClauseSpec) {
-  await page.getByTestId("filter-add").click();
-  const popover = picker(page);
-  await popover.getByTestId(`filter-field-${spec.field}`).click();
-  await popover.getByTestId(`filter-mode-${spec.mode}`).click();
-  await expect(popover.getByTestId(`filter-mode-${spec.mode}`)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await addFilter(page).click();
+  await fieldButton(page, spec.field).click();
+  await modeButton(page, spec.mode).click();
+  await expect(modeButton(page, spec.mode, true)).toBeVisible();
   for (const pick of spec.picks) {
-    await popover.getByTestId("filter-picker-search").fill(pick.search ?? "");
-    await popover.getByLabel(pick.label, { exact: true }).check();
+    await picker(page)
+      .getByRole("searchbox")
+      .fill(pick.search ?? "");
+    await picker(page).getByLabel(pick.label, { exact: true }).check();
   }
   return expectMutation(
     page,
     { method: "POST", url: PAGE_RPC, expectedStatus: 200 },
-    async () => popover.getByTestId("filter-picker-apply").click(),
+    async () => applyButton(page).click(),
   );
 }
 
@@ -142,37 +171,48 @@ test("renders the library filter bar layout", async ({ page }) => {
   await gotoReady(page, "/");
 
   await expect(bar(page)).toBeVisible();
-  await expect(page.getByTestId("filter-add")).toBeEnabled();
+  await expect(addFilter(page)).toBeEnabled();
   await expect(chips(page)).toHaveCount(0);
   await expect(clearAll(page)).toHaveCount(0);
   await expect(picker(page)).toHaveCount(0);
   await expectNavVisible(page);
+});
+
+test("opens the picker listing every filter field", async ({ page }) => {
+  await gotoReady(page, "/");
+
+  await addFilter(page).click();
+
+  await expect(picker(page)).toBeVisible();
+  for (const field of Object.keys(FIELD_NAMES) as Field[]) {
+    await expect(fieldButton(page, field)).toBeVisible();
+  }
+  await expect(applyButton(page)).toHaveCount(0);
+});
+
+test("switches to table view with the filter bar still in place", async ({
+  page,
+}) => {
+  await gotoReady(page, "/");
 
   await switchToTableView(page);
-  await expect(bar(page)).toBeVisible();
 
-  await page.getByTestId("filter-add").click();
-  await expect(picker(page)).toBeVisible();
-  for (const field of FIELDS) {
-    await expect(
-      picker(page).getByTestId(`filter-field-${field}`),
-    ).toBeVisible();
-  }
-  await expect(page.getByTestId("filter-picker-apply")).toHaveCount(0);
+  await expect(bar(page)).toBeVisible();
+  await expect(addFilter(page)).toBeEnabled();
 });
 
 test("closes the picker on Escape without adding a clause", async ({
   page,
 }) => {
   await gotoReady(page, "/");
-  await page.getByTestId("filter-add").click();
+  await addFilter(page).click();
   await expect(picker(page)).toBeFocused();
 
   await page.keyboard.press("Escape");
 
   await expect(picker(page)).toHaveCount(0);
   await expect(chips(page)).toHaveCount(0);
-  await expect(page.getByTestId("filter-add")).toBeFocused();
+  await expect(addFilter(page)).toBeFocused();
 });
 
 /** The accessible name of the dialog that holds focus, if any does. */
@@ -186,9 +226,9 @@ async function focusedDialog(page: Page): Promise<string | null | undefined> {
 
 test("keeps Tab and Shift+Tab inside the open picker", async ({ page }) => {
   await gotoReady(page, "/");
-  await page.getByTestId("filter-add").click();
+  await addFilter(page).click();
   await expect(picker(page)).toHaveAttribute("aria-modal", "true");
-  await picker(page).getByTestId("filter-field-format").click();
+  await fieldButton(page, "format").click();
   await expect(picker(page).getByLabel("PDF", { exact: true })).toBeVisible();
 
   for (const key of ["Tab", "Shift+Tab"]) {
@@ -205,11 +245,11 @@ test("returns focus to Add filter when the picker is cancelled or dismissed", as
   page,
 }) => {
   await gotoReady(page, "/");
-  const add = page.getByTestId("filter-add");
+  const add = addFilter(page);
 
   await add.click();
-  await picker(page).getByTestId("filter-field-format").click();
-  await picker(page).getByTestId("filter-picker-cancel").click();
+  await fieldButton(page, "format").click();
+  await picker(page).getByRole("button", { name: "Cancel" }).click();
   await expect(picker(page)).toHaveCount(0);
   await expect(add).toBeFocused();
 
@@ -236,7 +276,7 @@ test("adds a format clause and narrows the list and count", async ({
   expect(request.postDataJSON().filters).toEqual({
     clauses: [{ field: "format", mode: "include", values: ["pdf"] }],
   });
-  await expect(page.getByTestId("filter-add")).toBeFocused();
+  await expect(addFilter(page)).toBeFocused();
   await expect(chips(page)).toHaveCount(1);
   await expect(page.getByTestId("filter-chip-0")).toContainText(
     "Format includes any of PDF",
@@ -292,7 +332,7 @@ test("combines an exclude clause with an include clause", async ({ page }) => {
 
 test("explains an empty result and clears from it", async ({ page }) => {
   await gotoReady(page, "/");
-  const everything = await headerCount(page);
+  const hidden = expectedSlugs((b) => authoredBy(b, "Alfred Aho"));
   await addClause(page, {
     field: "author",
     mode: "include",
@@ -312,15 +352,18 @@ test("explains an empty result and clears from it", async ({ page }) => {
   await expect(page.getByTestId("lib-empty")).toHaveCount(0);
   await recordEmptyLibraryInsertions(page);
 
-  await expectMutation(
+  const { request } = await expectMutation(
     page,
     { method: "POST", url: PAGE_RPC, expectedStatus: 200 },
-    async () => page.getByTestId("lib-clear-filters-empty").click(),
+    async () => page.getByRole("button", { name: "Clear filters" }).click(),
   );
 
+  expect(request.postDataJSON().filters).toEqual({ clauses: [] });
   await expect(chips(page)).toHaveCount(0);
+  await expectShownIncludes(page, hidden);
+  await expectCountAtLeast(page, hidden.length);
+  await expect(page.getByText("No books match these filters.")).toHaveCount(0);
   expect(await emptyLibraryInsertions(page)).toBe(0);
-  expect(await headerCount(page)).toBe(everything);
 });
 
 test("restores the filter after a reload", async ({ page }) => {
@@ -344,7 +387,7 @@ test("restores the filter after a reload", async ({ page }) => {
 
 test("clears every clause in one action", async ({ page }) => {
   await gotoReady(page, "/");
-  const everything = await headerCount(page);
+  const hidden = ["time-machine", "compiler-compendium-1"];
   await addClause(page, {
     field: "format",
     mode: "include",
@@ -361,20 +404,27 @@ test("clears every clause in one action", async ({ page }) => {
     expectedSlugs((b) => hasFormat(b, "pdf") && !authoredBy(b, "H. G. Wells")),
   );
 
-  await expectMutation(
+  const cleared = await expectMutation(
     page,
     { method: "POST", url: PAGE_RPC, expectedStatus: 200 },
     async () => clearAll(page).click(),
   );
 
+  expect(cleared.request.postDataJSON().filters).toEqual({ clauses: [] });
   await expect(chips(page)).toHaveCount(0);
   await expect(clearAll(page)).toHaveCount(0);
-  expect(await headerCount(page)).toBe(everything);
+  await expectShownIncludes(page, hidden);
 
-  await page.reload();
+  const reloaded = await expectMutation(
+    page,
+    { method: "POST", url: PAGE_RPC, expectedStatus: 200 },
+    async () => page.reload(),
+  );
   await waitForHydration(page);
+
+  expect(reloaded.request.postDataJSON().filters).toEqual({ clauses: [] });
   await expect(chips(page)).toHaveCount(0);
-  expect(await headerCount(page)).toBe(everything);
+  await expectShownIncludes(page, hidden);
 });
 
 test("keeps the filter bar when the page fetch fails", async ({ page }) => {

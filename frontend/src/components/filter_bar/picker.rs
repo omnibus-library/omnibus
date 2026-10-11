@@ -14,22 +14,22 @@ use super::values::{self, FilterOption, Matches, OptionList};
 use super::{field_label, field_plural, field_token, ShelfList, FILTER_FIELDS};
 
 /// Most value rows drawn at once; a longer match list is narrowed by search.
-pub(super) const MAX_SHOWN_OPTIONS: usize = 200;
+pub const MAX_SHOWN_OPTIONS: usize = 200;
 
 /// Where the chosen field's values stand.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum LoadState {
+pub enum LoadState {
     Loading,
     Ready(Rc<OptionList>),
     Failed(String),
 }
 
 /// The field a fetch answered for, and what it answered with.
-pub(super) type Loaded = Option<(FilterField, Result<Rc<OptionList>, String>)>;
+pub type Loaded = Option<(FilterField, Result<Rc<OptionList>, String>)>;
 
 /// The popover. Emits the finished clause through `on_apply`.
 #[component]
-pub(super) fn FilterPicker(
+pub fn FilterPicker(
     shelves: ShelfList,
     viewer_id: Option<i64>,
     on_apply: EventHandler<FilterClause>,
@@ -153,12 +153,12 @@ fn use_loaded_options(
 
 /// Whether choosing `field` must fetch its values: the shelf field reads the
 /// bar's own list once that has loaded, so it asks for nothing.
-pub(super) fn needs_fetch(field: FilterField, shelves: &ShelfList) -> bool {
+pub fn needs_fetch(field: FilterField, shelves: &ShelfList) -> bool {
     !(field == FilterField::Shelf && matches!(shelves, ShelfList::Loaded(_)))
 }
 
 /// The state to draw for `field`: an answer for another field is not one.
-pub(super) fn state_for(
+pub fn state_for(
     field: FilterField,
     loaded: Loaded,
     shelves: &ShelfList,
@@ -176,7 +176,7 @@ pub(super) fn state_for(
 }
 
 /// Flip `value` in the pick list; a new pick past the value cap is refused.
-pub(super) fn toggle_pick(picked: &mut Vec<String>, value: &str) {
+pub fn toggle_pick(picked: &mut Vec<String>, value: &str) {
     if let Some(at) = picked.iter().position(|p| p == value) {
         picked.remove(at);
     } else if picked.len() < MAX_FILTER_VALUES {
@@ -186,7 +186,7 @@ pub(super) fn toggle_pick(picked: &mut Vec<String>, value: &str) {
 
 /// Everything under the field row once a field is chosen.
 #[component]
-pub(super) fn PickerBody(
+pub fn PickerBody(
     field: FilterField,
     mode: FilterMode,
     query: String,
@@ -306,7 +306,7 @@ fn option_list(
 /// The line under the rows: how many matched when the row cap cut them, and
 /// that a capped source holds only its most-used values — never a bare total
 /// that reads as the whole vocabulary.
-pub(super) fn status_line(
+pub fn status_line(
     plural: &str,
     shown: usize,
     total: usize,
@@ -324,7 +324,7 @@ pub(super) fn status_line(
 }
 
 /// What an unmatched search says; a capped source may still hold the value.
-pub(super) fn no_match_line(plural: &str, query: &str, source_cap: Option<usize>) -> String {
+pub fn no_match_line(plural: &str, query: &str, source_cap: Option<usize>) -> String {
     let query = query.trim();
     match source_cap {
         Some(cap) => {
