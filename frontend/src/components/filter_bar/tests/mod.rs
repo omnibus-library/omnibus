@@ -1,6 +1,8 @@
 //! Coverage for the filter bar: option mappers, chip text, clause edits, and
 //! the markup the bar and its picker render.
 
+use std::rc::Rc;
+
 use omnibus_shared::{
     AuthorSummary, FilterClause, FilterField, FilterMode, GenreWeight, SeriesSummary, ShelfKind,
     ShelfSummary, TagWeight, ViewFilters, Visibility, MAX_FILTER_CLAUSES, MAX_FILTER_VALUES,
@@ -17,6 +19,10 @@ fn option(value: &str, label: &str, count: Option<usize>) -> FilterOption {
         label: label.to_string(),
         count,
     }
+}
+
+fn list(options: Vec<FilterOption>) -> Rc<OptionList> {
+    Rc::new(OptionList::new(options))
 }
 
 fn tag(name: &str, count: usize) -> TagWeight {

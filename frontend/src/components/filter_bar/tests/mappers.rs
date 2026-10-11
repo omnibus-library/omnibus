@@ -154,25 +154,76 @@ fn options_drop_blank_and_over_long_values_the_filter_would_reject() {
 }
 
 #[test]
-fn matching_keeps_options_whose_label_contains_the_query_ignoring_case() {
+fn option_list_matching_keeps_options_whose_label_contains_the_query_ignoring_case() {
     let options = tag_options(vec![
         tag("Sci-Fi", 1),
         tag("Cozy", 1),
         tag("Space Opera", 1),
     ]);
+    let found = OptionList::new(options.clone()).matching("SCI", 10);
 
-    let found = matching(&options, "SCI", 10);
-
-    assert_eq!(found.shown, vec![&options[0]]);
+    assert_eq!(found.shown, vec![options[0].clone()]);
     assert_eq!(found.total, 1);
 }
 
 #[test]
-fn matching_caps_the_shown_options_but_reports_the_total() {
+fn option_list_matching_ignores_case_beyond_ascii() {
+    let options = tag_options(vec![tag("\u{d8}rsted", 1), tag("Cozy", 1)]);
+
+    let found = OptionList::new(options.clone()).matching("\u{f8}RSTED", 10);
+
+    assert_eq!(found.shown, vec![options[0].clone()]);
+}
+
+#[test]
+fn option_list_matching_caps_the_shown_options_but_reports_the_total() {
     let options = tag_options(vec![tag("a1", 1), tag("a2", 1), tag("a3", 1)]);
 
-    let found = matching(&options, "a", 2);
+    let found = OptionList::new(options.clone()).matching("a", 2);
 
-    assert_eq!(found.shown, vec![&options[0], &options[1]]);
+    assert_eq!(found.shown, vec![options[0].clone(), options[1].clone()]);
     assert_eq!(found.total, 3);
+}
+
+fn tags_named(count: usize) -> Vec<TagWeight> {
+    (0..count).map(|i| tag(&format!("tag-{i}"), 1)).collect()
+}
+
+#[test]
+fn tag_list_records_the_cloud_cap_when_the_cloud_was_full() {
+    let list = tag_list(tags_named(omnibus_shared::TAG_CLOUD_LIMIT));
+
+    assert_eq!(list.cap(), Some(omnibus_shared::TAG_CLOUD_LIMIT));
+}
+
+#[test]
+fn tag_list_records_no_cap_one_tag_below_the_cloud_limit() {
+    let list = tag_list(tags_named(omnibus_shared::TAG_CLOUD_LIMIT - 1));
+
+    assert_eq!(list.cap(), None);
+}
+
+#[test]
+fn genre_list_records_the_cloud_cap_when_the_cloud_was_full() {
+    let genres = (0..omnibus_shared::GENRE_CLOUD_LIMIT)
+        .map(|i| GenreWeight {
+            name: format!("genre-{i}"),
+            count: 1,
+        })
+        .collect();
+
+    assert_eq!(
+        genre_list(genres).cap(),
+        Some(omnibus_shared::GENRE_CLOUD_LIMIT)
+    );
+}
+
+#[test]
+fn genre_list_records_no_cap_for_a_short_cloud() {
+    let genres = vec![GenreWeight {
+        name: "Fantasy".to_string(),
+        count: 7,
+    }];
+
+    assert_eq!(genre_list(genres).cap(), None);
 }

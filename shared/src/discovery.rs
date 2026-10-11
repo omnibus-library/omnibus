@@ -124,6 +124,12 @@ pub struct SeriesDetail {
     pub books: Vec<EbookMetadata>,
 }
 
+/// Most rows the tag cloud returns; a longer vocabulary is cut to its most-used tags.
+pub const TAG_CLOUD_LIMIT: usize = 500;
+
+/// Most rows the genre cloud returns, cut to the most-used the same way.
+pub const GENRE_CLOUD_LIMIT: usize = 500;
+
 /// Single tag with its book count, for the tag cloud.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]

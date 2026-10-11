@@ -52,12 +52,20 @@ fn render_body(
 }
 
 fn ready(labels: &[&str]) -> picker::LoadState {
-    picker::LoadState::Ready(
+    picker::LoadState::Ready(list(
         labels
             .iter()
             .map(|label| option(label, label, Some(1)))
             .collect(),
-    )
+    ))
+}
+
+fn ready_capped(labels: &[&str], cap: usize) -> picker::LoadState {
+    let options = labels
+        .iter()
+        .map(|label| option(label, label, Some(1)))
+        .collect();
+    picker::LoadState::Ready(Rc::new(OptionList::new(options).with_cap(Some(cap))))
 }
 
 #[test]
@@ -239,7 +247,7 @@ fn picker_body_disables_unpicked_boxes_once_the_value_cap_is_reached() {
 
 #[test]
 fn state_for_reads_a_loading_state_until_the_chosen_field_has_answered() {
-    let tags = Some((FilterField::Tag, Ok(vec![option("a", "a", None)])));
+    let tags = Some((FilterField::Tag, Ok(list(vec![option("a", "a", None)]))));
 
     assert_eq!(
         picker::state_for(FilterField::Author, tags, &ShelfList::Pending, None),
@@ -253,7 +261,7 @@ fn state_for_reads_a_loading_state_until_the_chosen_field_has_answered() {
 
 #[test]
 fn state_for_returns_the_answer_for_the_chosen_field() {
-    let options = vec![option("a", "a", None)];
+    let options = list(vec![option("a", "a", None)]);
 
     assert_eq!(
         picker::state_for(
@@ -284,7 +292,7 @@ fn state_for_reads_the_shelf_field_off_the_bars_loaded_list() {
 
     assert_eq!(
         picker::state_for(FilterField::Shelf, None, &shelves, Some(1)),
-        picker::LoadState::Ready(vec![option("4", "Favourites", Some(3))])
+        picker::LoadState::Ready(list(vec![option("4", "Favourites", Some(3))]))
     );
 }
 
@@ -326,6 +334,87 @@ fn needs_fetch_asks_for_every_other_field_even_with_shelves_loaded() {
     let loaded = ShelfList::Loaded(vec![shelf(4, "Favourites", ShelfKind::Manual, 3)]);
 
     assert!(picker::needs_fetch(FilterField::Tag, &loaded));
+}
+
+#[test]
+fn status_line_says_how_many_matched_when_the_row_cap_cut_the_list() {
+    let line = picker::status_line("tags", 200, 205, None);
+
+    assert_eq!(
+        line.as_deref(),
+        Some("Showing 200 of 205 \u{b7} search to narrow")
+    );
+}
+
+#[test]
+fn status_line_is_absent_when_every_match_is_shown() {
+    assert_eq!(picker::status_line("tags", 5, 5, None), None);
+}
+
+#[test]
+fn status_line_says_the_list_holds_only_the_most_used_values_when_the_source_was_cut() {
+    let line = picker::status_line("tags", 200, 500, Some(500));
+
+    assert_eq!(
+        line.as_deref(),
+        Some("Showing 200 of the 500 most-used tags \u{b7} search narrows within them")
+    );
+}
+
+#[test]
+fn status_line_still_names_the_source_cap_when_every_match_is_shown() {
+    let line = picker::status_line("genres", 3, 3, Some(500));
+
+    assert_eq!(
+        line.as_deref(),
+        Some("Showing 3 of the 500 most-used genres \u{b7} search narrows within them")
+    );
+}
+
+#[test]
+fn no_match_line_names_the_query() {
+    assert_eq!(
+        picker::no_match_line("tags", " zzz ", None),
+        "No tags match \u{201c}zzz\u{201d}."
+    );
+}
+
+#[test]
+fn no_match_line_says_the_search_covered_only_the_most_used_values() {
+    assert_eq!(
+        picker::no_match_line("tags", "zzz", Some(500)),
+        "No tags match \u{201c}zzz\u{201d} among the 500 most-used."
+    );
+}
+
+#[test]
+fn picker_body_says_the_list_holds_only_the_most_used_when_the_source_was_cut() {
+    let html = render_body(
+        FilterField::Tag,
+        FilterMode::Include,
+        "",
+        &[],
+        ready_capped(&["Sci-Fi", "Cozy"], 500),
+    );
+
+    assert!(
+        html.contains("data-testid=\"filter-picker-status\""),
+        "{html}"
+    );
+    assert!(html.contains("the 500 most-used tags"), "{html}");
+}
+
+#[test]
+fn picker_body_names_the_source_cap_when_a_search_finds_nothing() {
+    let html = render_body(
+        FilterField::Tag,
+        FilterMode::Include,
+        "zzz",
+        &[],
+        ready_capped(&["Sci-Fi"], 500),
+    );
+
+    assert!(html.contains("among the 500 most-used"), "{html}");
 }
 
 #[test]

@@ -1,13 +1,15 @@
 //! The add-filter popover: field, then mode, then a searchable multi-select of
 //! values drawn from the existing reads.
 
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 use omnibus_shared::{FilterClause, FilterField, FilterMode, MAX_FILTER_VALUES};
 
 use crate::components::loading::{Loading, LoadingKind};
 use crate::focus_after_paint::focus_after_paint;
 
-use super::values::{self, FilterOption};
+use super::values::{self, FilterOption, Matches, OptionList};
 use super::{field_label, field_plural, field_token, ShelfList, FILTER_FIELDS};
 
 /// Most value rows drawn at once; a longer match list is narrowed by search.
@@ -17,12 +19,12 @@ pub(super) const MAX_SHOWN_OPTIONS: usize = 200;
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum LoadState {
     Loading,
-    Ready(Vec<FilterOption>),
+    Ready(Rc<OptionList>),
     Failed(String),
 }
 
 /// The field a fetch answered for, and what it answered with.
-pub(super) type Loaded = Option<(FilterField, Result<Vec<FilterOption>, String>)>;
+pub(super) type Loaded = Option<(FilterField, Result<Rc<OptionList>, String>)>;
 
 /// The popover. Emits the finished clause through `on_apply`.
 #[component]
@@ -136,6 +138,7 @@ fn use_loaded_options(
         spawn(async move {
             let result = values::load_options(&url, wanted, viewer_id)
                 .await
+                .map(Rc::new)
                 .map_err(|e| e.to_string());
             if *epoch.peek() == mine {
                 loaded.set(Some((wanted, result)));
@@ -159,7 +162,8 @@ pub(super) fn state_for(
     viewer_id: Option<i64>,
 ) -> LoadState {
     if let (FilterField::Shelf, ShelfList::Loaded(list)) = (field, shelves) {
-        return LoadState::Ready(values::shelf_options(list, viewer_id));
+        let options = values::shelf_options(list, viewer_id);
+        return LoadState::Ready(Rc::new(OptionList::new(options)));
     }
     match loaded {
         Some((answered, Ok(options))) if answered == field => LoadState::Ready(options),
@@ -197,6 +201,11 @@ pub(super) fn PickerBody(
         0 => "Apply".to_string(),
         n => format!("Apply ({n})"),
     };
+    // Rescanned when the list or the query changes, not when a box is toggled.
+    let found = use_memo(use_reactive!(|state, query| match &state {
+        LoadState::Ready(list) => list.matching(&query, MAX_SHOWN_OPTIONS),
+        _ => Matches::default(),
+    }));
     rsx! {
         div { class: "fb-body",
             div { class: "fb-modes", role: "group", "aria-label": "Match mode",
@@ -213,7 +222,7 @@ pub(super) fn PickerBody(
                 oninput: move |evt: Event<FormData>| on_query.call(evt.value()),
             }
             div { class: "fb-list",
-                {option_list(plural, &query, &picked, state, on_toggle, on_retry)}
+                {option_list(plural, &query, &picked, &state, &found.read(), on_toggle, on_retry)}
             }
             div { class: "fb-foot",
                 button {
@@ -261,7 +270,8 @@ fn option_list(
     plural: &str,
     query: &str,
     picked: &[String],
-    state: LoadState,
+    state: &LoadState,
+    found: &Matches,
     on_toggle: EventHandler<String>,
     on_retry: EventHandler<()>,
 ) -> Element {
@@ -286,7 +296,38 @@ fn option_list(
                 }
             }
         },
-        LoadState::Ready(options) => ready_rows(plural, query, picked, &options, on_toggle),
+        LoadState::Ready(list) => ready_rows(plural, query, picked, list, found, on_toggle),
+    }
+}
+
+/// The line under the rows: how many matched when the row cap cut them, and
+/// that a capped source holds only its most-used values — never a bare total
+/// that reads as the whole vocabulary.
+pub(super) fn status_line(
+    plural: &str,
+    shown: usize,
+    total: usize,
+    source_cap: Option<usize>,
+) -> Option<String> {
+    match source_cap {
+        Some(cap) => Some(format!(
+            "Showing {shown} of the {cap} most-used {plural} \u{b7} search narrows within them"
+        )),
+        None if total > shown => Some(format!(
+            "Showing {shown} of {total} \u{b7} search to narrow"
+        )),
+        None => None,
+    }
+}
+
+/// What an unmatched search says; a capped source may still hold the value.
+pub(super) fn no_match_line(plural: &str, query: &str, source_cap: Option<usize>) -> String {
+    let query = query.trim();
+    match source_cap {
+        Some(cap) => {
+            format!("No {plural} match \u{201c}{query}\u{201d} among the {cap} most-used.")
+        }
+        None => format!("No {plural} match \u{201c}{query}\u{201d}."),
     }
 }
 
@@ -294,33 +335,31 @@ fn ready_rows(
     plural: &str,
     query: &str,
     picked: &[String],
-    options: &[FilterOption],
+    list: &OptionList,
+    found: &Matches,
     on_toggle: EventHandler<String>,
 ) -> Element {
-    if options.is_empty() {
+    if list.is_empty() {
         return rsx! {
             p { class: "fb-empty", "data-testid": "filter-picker-empty", "No {plural} yet." }
         };
     }
-    let found = values::matching(options, query, MAX_SHOWN_OPTIONS);
     if found.total == 0 {
+        let line = no_match_line(plural, query, list.cap());
         return rsx! {
-            p { class: "fb-empty", "data-testid": "filter-picker-empty",
-                "No {plural} match \u{201c}{query.trim()}\u{201d}."
-            }
+            p { class: "fb-empty", "data-testid": "filter-picker-empty", "{line}" }
         };
     }
     let at_cap = picked.len() >= MAX_FILTER_VALUES;
+    let status = status_line(plural, found.shown.len(), found.total, list.cap());
     rsx! {
         div { class: "fb-options", role: "group", "aria-label": "{plural}",
             for option in found.shown.iter() {
                 {option_row(option, picked.contains(&option.value), at_cap, on_toggle)}
             }
         }
-        if found.total > found.shown.len() {
-            p { class: "fb-status", "data-testid": "filter-picker-status",
-                "Showing {found.shown.len()} of {found.total} \u{b7} search to narrow"
-            }
+        if let Some(line) = status {
+            p { class: "fb-status", "data-testid": "filter-picker-status", "{line}" }
         }
         if at_cap {
             p { class: "fb-status", "data-testid": "filter-picker-limit",
