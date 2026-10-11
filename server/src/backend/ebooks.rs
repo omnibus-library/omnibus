@@ -20,8 +20,11 @@ use serde::{Deserialize, Serialize};
 use super::conditional::{self, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 
 pub(super) mod chapters;
+mod query;
+use self::query::{decode_page_cursor, parse_formats, request_filters};
 use super::{internal, with_pagination_headers, AppState};
 use crate::auth::{AuthUser, MediaAuthUser};
+use crate::http_errors::invalid_filter;
 
 /// Default keyset page size for the paginated `GET /api/ebooks` form. A grid
 /// renders ~30–60 cards above the fold and the table more; 100 covers both
@@ -43,10 +46,13 @@ pub(super) struct EbooksQuery {
     dir: Option<SortDir>,
     cursor: Option<String>,
     limit: Option<i64>,
-    /// Comma-separated `book_files.format` filter values (lowercase wire
-    /// form, e.g. `?formats=m4b,m4a,mp3`). The mobile Sort & filter sheet's
-    /// format chips; the other web sidebar facets stay RPC-only.
+    /// Comma-separated `book_files.format` values (lowercase wire form, e.g.
+    /// `?formats=m4b,m4a,mp3`). The legacy list older clients (iOS builds, MCP)
+    /// still send; merged as an include-format clause.
     formats: Option<String>,
+    /// Percent-encoded JSON array of `FilterClause` (`?filter=`); see
+    /// `ViewFilters::from_query_param`. Alone it selects the keyset form.
+    filter: Option<String>,
     /// Comma-separated formats the caller's user hides from their landing
     /// view (`?exclude_formats=cbz`). Client-passed by design: the mirror
     /// syncs send nothing here and stay full-library (rule: exclusion is a
@@ -59,15 +65,6 @@ pub(super) struct EbooksQuery {
     /// `Projection::List`. Keyset form only; absent/false keeps full rows,
     /// which the iOS offline mirror and MCP rely on.
     omit_description: Option<bool>,
-}
-
-/// Split the `?formats=` wire value into filter entries, dropping empties.
-fn parse_formats(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_lowercase)
-        .collect()
 }
 
 /// Query parameters for `GET /api/ebooks/{uuid}/file`.
@@ -96,6 +93,7 @@ pub(super) async fn get_ebooks(
         && q.cursor.is_none()
         && q.limit.is_none()
         && q.formats.is_none()
+        && q.filter.is_none()
         && q.exclude_formats.is_none()
     {
         return respond_full_library(&state, ebook.as_deref(), audiobook.as_deref()).await;
@@ -118,41 +116,6 @@ async fn respond_full_library(
     match db::library_from_db_with_total_combined(&state.pool, ebook, audiobook).await {
         Ok((library, total)) => with_pagination_headers(Json(library).into_response(), total),
         Err(error) => internal("read books", error),
-    }
-}
-
-/// Client-input error for a malformed or under-specified keyset-page
-/// request. Kept lean rather than a full `Response` — clippy's
-/// `result_large_err` — with the caller rendering the actual 400 (mirrors
-/// `parse_thumb_size` in `covers.rs`).
-enum CursorRequestError {
-    RequiresSortAndDir,
-    Malformed,
-}
-
-impl CursorRequestError {
-    fn into_response(self) -> Response {
-        let msg = match self {
-            CursorRequestError::RequiresSortAndDir => "cursor requires sort and dir",
-            CursorRequestError::Malformed => "malformed cursor",
-        };
-        (axum::http::StatusCode::BAD_REQUEST, msg).into_response()
-    }
-}
-
-/// Decode `q.cursor` relative to `q.sort`/`q.dir`. A cursor without an
-/// explicit `sort` **and** `dir`, or a malformed cursor, is a 400 rather than
-/// a silently mis-positioned page or a 500 — returned as `Err` for the caller
-/// to short-circuit on.
-fn decode_page_cursor(q: &EbooksQuery) -> Result<Option<db::PageCursor>, CursorRequestError> {
-    if q.cursor.is_some() && (q.sort.is_none() || q.dir.is_none()) {
-        return Err(CursorRequestError::RequiresSortAndDir);
-    }
-    match q.cursor.as_deref() {
-        Some(c) => db::PageCursor::decode(c)
-            .map(Some)
-            .map_err(|_| CursorRequestError::Malformed),
-        None => Ok(None),
     }
 }
 
@@ -230,14 +193,12 @@ async fn respond_keyset_page(
         Ok(c) => c,
         Err(e) => return e.into_response(),
     };
+    let filters = match request_filters(q) {
+        Ok(f) => f,
+        Err(reason) => return invalid_filter(&reason),
+    };
     let path = ebook.or(audiobook).map(str::to_string);
     let paths = db::collect_paths(ebook, audiobook);
-    // Format chips are the only REST-exposed facet (the mobile sheet); the
-    // remaining sidebar facets stay a web/RPC concern.
-    let filters = ViewFilters {
-        formats: q.formats.as_deref().map(parse_formats).unwrap_or_default(),
-        ..ViewFilters::default()
-    };
     let exclude = omnibus_shared::sanitize_exclude_formats(
         q.exclude_formats
             .as_deref()

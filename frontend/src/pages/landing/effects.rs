@@ -408,7 +408,8 @@ pub(super) fn spawn_shelf_books_effect(
         shelf_loading.set(true);
         let url = server_url.clone();
         spawn(async move {
-            let result = data::shelf_page(&url, id, sort_key, sort_dir).await;
+            let result =
+                data::shelf_page(&url, id, sort_key, sort_dir, ViewFilters::default()).await;
             if *shelf_epoch.peek() != epoch {
                 return;
             }

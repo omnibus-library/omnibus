@@ -18,9 +18,6 @@ use omnibus_db as db;
 use omnibus_shared::{BookDeletionImpact, BookSuggestion, RawSuggestion};
 
 #[cfg(feature = "server")]
-use omnibus_shared::MAX_FILTER_CLAUSES;
-
-#[cfg(feature = "server")]
 use super::{internal_rpc_error, AdminUser, AuthUser, PoolExt, WorkerExt};
 
 /// Return the full indexed library (ebooks and audiobooks combined) for the
@@ -120,9 +117,7 @@ async fn ebooks_page(
     limit: i64,
     stack: bool,
 ) -> Result<LibraryPage, ServerFnError> {
-    if filters.effective_clauses().len() > MAX_FILTER_CLAUSES {
-        return Err(ServerFnError::new("too many filter clauses"));
-    }
+    filters.validate().map_err(ServerFnError::new)?;
     let settings = db::get_settings(pool)
         .await
         .map_err(|e| internal_rpc_error("get settings", e))?;
@@ -180,7 +175,7 @@ async fn ebooks_page(
     };
 
     let (total, hidden_count) = if decoded.is_none() {
-        first_page_aggregates(pool, &paths, viewer, exclude_formats).await?
+        first_page_aggregates(pool, &paths, filters, viewer, exclude_formats).await?
     } else {
         (None, None)
     };
@@ -196,35 +191,34 @@ async fn ebooks_page(
     })
 }
 
-/// First-page-only aggregates as `(total, hidden_count)`: the library-wide
-/// total and, when an exclusion is active, the hidden-count receipt beside it.
-/// Both counts use default filters and differ only in the exclusion, so with
-/// no exclusion this stays the single `count_books_for_paths` query.
+/// First-page-only aggregates as `(total, hidden_count)`: the total under the
+/// filter and exclusion and, when an exclusion is active, the hidden-count
+/// receipt beside it. Both counts share the filter and differ only in the
+/// exclusion; with neither set this stays the single `count_books_for_paths`.
 #[cfg(feature = "server")]
 async fn first_page_aggregates(
     pool: &sqlx::SqlitePool,
     paths: &[&str],
+    filters: &ViewFilters,
     viewer: db::Viewer,
     exclude_formats: &[String],
 ) -> Result<(Option<i64>, Option<i64>), ServerFnError> {
-    let all = db::count_books_for_paths(pool, paths)
+    if filters.is_empty() && exclude_formats.is_empty() {
+        let all = db::count_books_for_paths(pool, paths)
+            .await
+            .map_err(|e| internal_rpc_error("count books", e))?;
+        return Ok((Some(all), None));
+    }
+    let total = db::count_books_page(pool, paths, filters, viewer, exclude_formats)
         .await
-        .map_err(|e| internal_rpc_error("count books", e))?;
-    let (total, hidden) = if exclude_formats.is_empty() {
-        (all, None)
-    } else {
-        let visible = db::count_books_page(
-            pool,
-            paths,
-            &ViewFilters::default(),
-            viewer,
-            exclude_formats,
-        )
+        .map_err(|e| internal_rpc_error("count matching books", e))?;
+    if exclude_formats.is_empty() {
+        return Ok((Some(total), None));
+    }
+    let unhidden = db::count_books_page(pool, paths, filters, viewer, &[])
         .await
-        .map_err(|e| internal_rpc_error("count visible books", e))?;
-        (visible, Some(all - visible))
-    };
-    Ok((Some(total), hidden))
+        .map_err(|e| internal_rpc_error("count unhidden books", e))?;
+    Ok((Some(total), Some(unhidden - total)))
 }
 
 /// POST (not GET) for the same reason as `rpc_search`: Dioxus `#[get]`

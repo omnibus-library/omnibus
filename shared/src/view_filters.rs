@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::shelves::SHELF_RULE_VALUE_MAX_LEN;
+
 #[cfg(test)]
 mod tests;
 
@@ -23,6 +25,9 @@ pub enum FilterField {
 /// Most clauses a [`ViewFilters`] may carry, legacy facets included.
 pub const MAX_FILTER_CLAUSES: usize = 16;
 
+/// Most values one [`FilterClause`] may list.
+pub const MAX_FILTER_VALUES: usize = 64;
+
 /// Whether a clause keeps the books that match it or drops them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -37,6 +42,17 @@ pub struct FilterClause {
     pub field: FilterField,
     pub mode: FilterMode,
     pub values: Vec<String>,
+}
+
+impl FilterClause {
+    /// A clause matching `field` against `values` in the given `mode`.
+    pub fn new(field: FilterField, mode: FilterMode, values: &[&str]) -> Self {
+        Self {
+            field,
+            mode,
+            values: values.iter().map(|v| v.to_string()).collect(),
+        }
+    }
 }
 
 /// Active library filter. The legacy facet lists are include-only and stay
@@ -92,4 +108,66 @@ impl ViewFilters {
             .chain(self.clauses.iter().cloned())
             .collect()
     }
+
+    /// Reject filters over the clause or value caps, or a clause no book could
+    /// be matched by. Reads [`Self::effective_clauses`], so legacy facets count.
+    pub fn validate(&self) -> Result<(), String> {
+        let clauses = self.effective_clauses();
+        if clauses.len() > MAX_FILTER_CLAUSES {
+            return Err(format!(
+                "a filter may have at most {MAX_FILTER_CLAUSES} clauses"
+            ));
+        }
+        clauses.iter().try_for_each(validate_clause)
+    }
+
+    /// The `?filter=` value: a JSON array of [`FilterClause`], `None` when empty.
+    /// Legacy facets ride as include clauses. Not percent-encoded.
+    pub fn to_query_param(&self) -> Option<String> {
+        if self.is_empty() {
+            return None;
+        }
+        serde_json::to_string(&self.effective_clauses()).ok()
+    }
+
+    /// Parse and validate a `?filter=` value into clause-only filters.
+    pub fn from_query_param(raw: &str) -> Result<ViewFilters, String> {
+        let clauses: Vec<FilterClause> = serde_json::from_str(raw).map_err(|e| e.to_string())?;
+        let filters = ViewFilters {
+            clauses,
+            ..Default::default()
+        };
+        filters.validate()?;
+        Ok(filters)
+    }
+}
+
+fn validate_clause(clause: &FilterClause) -> Result<(), String> {
+    if clause.values.is_empty() {
+        return Err("a filter clause needs at least one value".into());
+    }
+    if clause.values.len() > MAX_FILTER_VALUES {
+        return Err(format!(
+            "a filter clause may have at most {MAX_FILTER_VALUES} values"
+        ));
+    }
+    clause
+        .values
+        .iter()
+        .try_for_each(|value| validate_value(clause.field, value))
+}
+
+fn validate_value(field: FilterField, value: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err("a filter value must not be blank".into());
+    }
+    if value.chars().count() > SHELF_RULE_VALUE_MAX_LEN {
+        return Err(format!(
+            "a filter value must be ≤ {SHELF_RULE_VALUE_MAX_LEN} characters"
+        ));
+    }
+    if field == FilterField::Shelf && value.trim().parse::<i64>().is_err() {
+        return Err("a shelf filter value must be a shelf id".into());
+    }
+    Ok(())
 }

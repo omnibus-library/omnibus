@@ -5,7 +5,7 @@ use axum::{
     body::{to_bytes, Body},
     http::{header::AUTHORIZATION, Request, StatusCode},
 };
-use omnibus_shared::{Shelf, ShelfSummary, SortDir, SortKey};
+use omnibus_shared::{Shelf, ShelfPage, ShelfSummary, SortDir, SortKey};
 use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
@@ -493,6 +493,125 @@ async fn api_shelves_containing_requires_authentication() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Index an EPUB ("Alpha") and an M4B ("Bravo") and return their uuids, in that order.
+async fn seed_epub_and_m4b(pool: &sqlx::SqlitePool) -> (String, String) {
+    let book = |filename, title| {
+        omnibus_db::test_support::indexed(filename, Some(title), &[], &[], None, None)
+    };
+    omnibus_db::replace_books(
+        pool,
+        "/lib",
+        vec![book("alpha.epub", "Alpha"), book("bravo.m4b", "Bravo")],
+    )
+    .await
+    .unwrap();
+    let uuid_of = |title: &'static str| {
+        sqlx::query_scalar::<_, String>("SELECT uuid FROM books WHERE title = ?")
+            .bind(title)
+            .fetch_one(pool)
+    };
+    (
+        uuid_of("Alpha").await.unwrap(),
+        uuid_of("Bravo").await.unwrap(),
+    )
+}
+
+async fn create_manual_shelf(app: &axum::Router, token: &str, book_uuids: &[&str]) -> i64 {
+    let created = app
+        .clone()
+        .oneshot(req(
+            "POST",
+            "/api/shelves",
+            Some(token),
+            Some(serde_json::json!({
+                "kind": "manual", "name": "Picks", "visibility": "private",
+                "book_uuids": book_uuids,
+            })),
+        ))
+        .await
+        .unwrap();
+    shelf_from(created).await.id
+}
+
+fn epub_filter_param() -> String {
+    let clauses = r#"[{"field":"format","mode":"include","values":["epub"]}]"#;
+    urlencoding::encode(clauses).into_owned()
+}
+
+#[tokio::test]
+async fn api_shelf_page_filter_param_narrows_members() {
+    let (app, _s, pool) = fixture().await;
+    let (alpha, bravo) = seed_epub_and_m4b(&pool).await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+    let id = create_manual_shelf(&app, &token, &[&alpha, &bravo]).await;
+
+    let res = app
+        .oneshot(req(
+            "GET",
+            &format!("/api/shelves/{id}/page?filter={}", epub_filter_param()),
+            Some(&token),
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let page: ShelfPage = serde_json::from_slice(&bytes).unwrap();
+    let titles: Vec<_> = page
+        .books
+        .iter()
+        .filter_map(|b| b.title.as_deref())
+        .collect();
+    assert_eq!(titles, vec!["Alpha"]);
+}
+
+#[tokio::test]
+async fn api_shelf_page_filter_param_rejects_malformed_json_with_400() {
+    let (app, _s, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let alice_token = auth_test_support::bearer_token(&pool, alice.id).await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+    let bob_token = auth_test_support::bearer_token(&pool, bob.id).await;
+    let id = create_manual_shelf(&app, &alice_token, &[]).await;
+
+    let res = app
+        .oneshot(req(
+            "GET",
+            &format!("/api/shelves/{id}/page?filter=%5B%7B"),
+            Some(&bob_token),
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    assert!(body_text(res).await.starts_with("invalid filter: "));
+}
+
+#[tokio::test]
+async fn api_shelf_page_returns_404_for_an_unseen_shelf_when_filtered() {
+    let (app, _s, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let alice_token = auth_test_support::bearer_token(&pool, alice.id).await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+    let bob_token = auth_test_support::bearer_token(&pool, bob.id).await;
+    let id = create_manual_shelf(&app, &alice_token, &[]).await;
+
+    let res = app
+        .oneshot(req(
+            "GET",
+            &format!("/api/shelves/{id}/page?filter={}", epub_filter_param()),
+            Some(&bob_token),
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 #[test]

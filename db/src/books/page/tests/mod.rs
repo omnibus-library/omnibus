@@ -13,7 +13,6 @@ mod stacked;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use omnibus_shared::{FilterClause, FilterField, FilterMode};
 use sqlx::SqlitePool;
 
 use super::*;
@@ -85,14 +84,6 @@ fn sorted_titles(page: &BookPage) -> Vec<String> {
     let mut found = titles(page);
     found.sort();
     found
-}
-
-fn clause(field: FilterField, mode: FilterMode, values: &[&str]) -> FilterClause {
-    FilterClause {
-        field,
-        mode,
-        values: values.iter().map(|v| (*v).to_string()).collect(),
-    }
 }
 
 async fn uuid_of(pool: &SqlitePool, id: i64) -> String {
