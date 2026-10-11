@@ -5,8 +5,12 @@
 pub mod client;
 #[cfg(feature = "cli")]
 pub mod config;
+#[cfg(feature = "cli")]
+pub mod control;
 pub mod device;
 pub mod firmware;
+#[cfg(feature = "cli")]
+pub mod host;
 pub mod session;
 #[cfg(feature = "cli")]
 pub mod store;
