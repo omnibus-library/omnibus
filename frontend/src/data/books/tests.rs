@@ -194,8 +194,6 @@ async fn get_ebooks_page_online_sends_the_filter_as_one_json_query_param() {
             mode: FilterMode::Exclude,
             values: vec!["a,b".into(), "c&d".into()],
         }],
-        formats: vec!["epub".into()],
-        ..Default::default()
     };
 
     let page = get_ebooks_page_online(
@@ -213,18 +211,11 @@ async fn get_ebooks_page_online_sends_the_filter_as_one_json_query_param() {
     let sent: Vec<FilterClause> = serde_json::from_str(&titles(&page)[0]).expect("filter json");
     assert_eq!(
         sent,
-        vec![
-            FilterClause {
-                field: FilterField::Format,
-                mode: FilterMode::Include,
-                values: vec!["epub".into()],
-            },
-            FilterClause {
-                field: FilterField::Tag,
-                mode: FilterMode::Exclude,
-                values: vec!["a,b".into(), "c&d".into()],
-            },
-        ]
+        vec![FilterClause {
+            field: FilterField::Tag,
+            mode: FilterMode::Exclude,
+            values: vec!["a,b".into(), "c&d".into()],
+        }]
     );
     assert_eq!(titles(&page)[1], "absent", "no separate formats param");
 }
@@ -261,7 +252,6 @@ async fn get_ebooks_page_serves_the_cached_first_page_only_for_the_filter_it_was
             FilterMode::Include,
             &["horror"],
         )],
-        ..Default::default()
     };
     // Series is an axis no other test caches, so the unfiltered key starts cold.
     let (sort, dir) = (SortKey::Series, SortDir::Asc);

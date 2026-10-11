@@ -105,10 +105,7 @@ async fn first_page(pool: &SqlitePool, filters: &ViewFilters) -> BookPage {
 
 /// Titles of the first page under `clauses`, sorted for set comparison.
 async fn titles_matching(pool: &SqlitePool, clauses: Vec<FilterClause>) -> Vec<String> {
-    let filters = ViewFilters {
-        clauses,
-        ..Default::default()
-    };
+    let filters = ViewFilters { clauses };
     sorted_titles(&first_page(pool, &filters).await)
 }
 
@@ -143,7 +140,6 @@ struct PageMatch {
 async fn page_match(pool: &SqlitePool, clause: FilterClause) -> PageMatch {
     let filters = ViewFilters {
         clauses: vec![clause],
-        ..Default::default()
     };
     let page = first_page(pool, &filters).await;
     let count = count_books_page(pool, &["/lib"], &filters, Viewer::default(), &[])
@@ -398,7 +394,6 @@ async fn list_books_page_keeps_the_filter_past_the_first_page() {
     let (pool, _covers) = seed_filter_library().await;
     let filters = ViewFilters {
         clauses: vec![FilterClause::new(Tag, Exclude, &["essay"])],
-        ..Default::default()
     };
 
     let mut walked = Vec::new();
@@ -443,7 +438,6 @@ async fn count_books_page_counts_only_books_matching_the_clauses() {
     let (pool, _covers) = seed_filter_library().await;
     let filters = ViewFilters {
         clauses: vec![FilterClause::new(Tag, Exclude, &["sci-fi"])],
-        ..Default::default()
     };
 
     let count = count_books_page(&pool, &["/lib"], &filters, Viewer::default(), &[])
@@ -458,7 +452,6 @@ async fn list_books_page_stacked_stacks_only_members_matching_the_filter() {
     let (pool, _covers) = seed_filter_library().await;
     let filters = ViewFilters {
         clauses: vec![FilterClause::new(Tag, Exclude, &["classic"])],
-        ..Default::default()
     };
 
     let page = list_books_page_stacked(

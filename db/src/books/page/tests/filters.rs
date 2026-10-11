@@ -3,13 +3,19 @@
 //! wishlist-only stay hidden (list and count agreeing), and the
 //! hidden-formats exclusion composing with the include filter.
 
-use omnibus_shared::{SortDir, SortKey, ViewFilters};
+use omnibus_shared::{FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters};
 use sqlx::SqlitePool;
 
 use super::super::*;
 use super::{ids, insert_book, insert_book_with_formats, insert_lib, insert_physical_copy, titles};
 use crate::pool::init_db;
 use crate::test_support::{seed_discovery_fixture, seed_minimal_books};
+
+fn include(field: FilterField, values: &[&str]) -> ViewFilters {
+    ViewFilters {
+        clauses: vec![FilterClause::new(field, FilterMode::Include, values)],
+    }
+}
 
 #[tokio::test]
 async fn list_books_page_respects_library_path_filter() {
@@ -61,10 +67,7 @@ async fn list_books_page_respects_library_path_filter() {
 #[tokio::test]
 async fn list_books_page_applies_author_filter_server_side() {
     let (pool, _guard) = seed_discovery_fixture().await;
-    let f = ViewFilters {
-        authors: vec!["Ada Lovelace".into()],
-        ..Default::default()
-    };
+    let f = include(FilterField::Author, &["Ada Lovelace"]);
     let page = list_books_page(
         &pool,
         &["/lib"],
@@ -88,10 +91,7 @@ async fn list_books_page_applies_author_filter_server_side() {
 #[tokio::test]
 async fn list_books_page_applies_format_filter_case_insensitively() {
     let (pool, _guard) = seed_discovery_fixture().await; // all EPUB
-    let epub = ViewFilters {
-        formats: vec!["epub".into()],
-        ..Default::default()
-    };
+    let epub = include(FilterField::Format, &["epub"]);
     let page = list_books_page(
         &pool,
         &["/lib"],
@@ -107,10 +107,7 @@ async fn list_books_page_applies_format_filter_case_insensitively() {
     .unwrap();
     assert_eq!(page.books.len(), 4, "lowercase chip matches stored EPUB");
 
-    let m4b = ViewFilters {
-        formats: vec!["m4b".into()],
-        ..Default::default()
-    };
+    let m4b = include(FilterField::Format, &["m4b"]);
     let none = list_books_page(
         &pool,
         &["/lib"],
@@ -257,10 +254,7 @@ async fn count_books_page_matches_unfiltered_count_and_applies_format_filter() {
     .unwrap();
     assert_eq!(all, 4, "empty filters count the whole library");
 
-    let epub = ViewFilters {
-        formats: vec!["epub".into()],
-        ..Default::default()
-    };
+    let epub = include(FilterField::Format, &["epub"]);
     assert_eq!(
         count_books_page(&pool, &["/lib"], &epub, Viewer::default(), &[])
             .await
@@ -268,10 +262,7 @@ async fn count_books_page_matches_unfiltered_count_and_applies_format_filter() {
         4
     );
 
-    let m4b = ViewFilters {
-        formats: vec!["m4b".into()],
-        ..Default::default()
-    };
+    let m4b = include(FilterField::Format, &["m4b"]);
     assert_eq!(
         count_books_page(&pool, &["/lib"], &m4b, Viewer::default(), &[])
             .await
@@ -429,10 +420,7 @@ async fn list_books_page_exclusion_composes_with_include_format_filter() {
 
     // Include-filter selects cbz+epub; exclusion hides cbz. The include list
     // must not resurrect a hidden book ("All" chip semantics).
-    let f = ViewFilters {
-        formats: vec!["cbz".into(), "epub".into()],
-        ..Default::default()
-    };
+    let f = include(FilterField::Format, &["cbz", "epub"]);
     let hide = vec!["cbz".to_string()];
     let page = list_books_page(
         &pool,

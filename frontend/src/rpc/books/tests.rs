@@ -117,7 +117,6 @@ fn tag_filters(clauses: usize) -> ViewFilters {
                 values: vec![format!("tag-{i}")],
             })
             .collect(),
-        ..Default::default()
     }
 }
 
@@ -277,10 +276,7 @@ async fn ebooks_page_without_exclusion_keeps_current_total_and_no_hidden_count()
 }
 
 fn filters_of(clauses: Vec<FilterClause>) -> ViewFilters {
-    ViewFilters {
-        clauses,
-        ..Default::default()
-    }
+    ViewFilters { clauses }
 }
 
 fn titles_of(page: &LibraryPage) -> Vec<&str> {

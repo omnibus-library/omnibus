@@ -141,10 +141,7 @@ fn page_from_replica_sorts_authors_surname_first_in_dictionary_order() {
 }
 
 fn filters_of(clauses: Vec<FilterClause>) -> ViewFilters {
-    ViewFilters {
-        clauses,
-        ..Default::default()
-    }
+    ViewFilters { clauses }
 }
 
 #[test]

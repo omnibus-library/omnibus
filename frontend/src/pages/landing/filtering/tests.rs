@@ -27,10 +27,7 @@ fn sample() -> Vec<EbookMetadata> {
 }
 
 fn filters_of(clauses: Vec<FilterClause>) -> ViewFilters {
-    ViewFilters {
-        clauses,
-        ..Default::default()
-    }
+    ViewFilters { clauses }
 }
 
 #[test]

@@ -23,8 +23,8 @@ pub struct Viewer {
 pub(crate) fn filter_predicate(filters: &ViewFilters, viewer: Viewer) -> Predicate {
     let mut parts = Vec::new();
     let mut binds = Vec::new();
-    for clause in filters.effective_clauses() {
-        if let Some((sql, mut clause_binds)) = clause_sql(&clause, viewer) {
+    for clause in &filters.clauses {
+        if let Some((sql, mut clause_binds)) = clause_sql(clause, viewer) {
             parts.push(sql);
             binds.append(&mut clause_binds);
         }

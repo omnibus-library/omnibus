@@ -23,7 +23,7 @@ pub enum FilterField {
     Shelf,
 }
 
-/// Most clauses a [`ViewFilters`] may carry, legacy facets included.
+/// Most clauses a [`ViewFilters`] may carry.
 pub const MAX_FILTER_CLAUSES: usize = 16;
 
 /// Most values one [`FilterClause`] may list.
@@ -56,99 +56,101 @@ impl FilterClause {
     }
 }
 
-/// Active library filter. The legacy facet lists are include-only and stay
-/// readable so a record persisted before `clauses` existed still loads.
+/// Active library filter: a clause list whose clauses AND together.
+///
+/// A record persisted before `clauses` existed carried one include-only facet
+/// list per field; deserializing folds those into include clauses so it still
+/// loads. Serializing writes `clauses` alone.
 ///
 /// Format values are stored lowercase (`"epub"`, `"m4b"`) since the underlying
 /// `EbookMetadata.formats` strings vary in case across sources.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "ViewFiltersWire")]
 pub struct ViewFilters {
-    #[serde(default)]
     pub clauses: Vec<FilterClause>,
-    #[serde(default)]
-    pub authors: Vec<String>,
-    #[serde(default)]
-    pub series: Vec<String>,
-    #[serde(default)]
-    pub formats: Vec<String>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub genres: Vec<String>,
 }
 
-impl ViewFilters {
-    /// `true` when neither a clause nor a legacy facet has a value.
-    pub fn is_empty(&self) -> bool {
-        self.clauses.is_empty()
-            && self.authors.is_empty()
-            && self.series.is_empty()
-            && self.formats.is_empty()
-            && self.tags.is_empty()
-            && self.genres.is_empty()
-    }
+/// Every key a stored or posted filter has ever carried.
+#[derive(Deserialize)]
+struct ViewFiltersWire {
+    #[serde(default)]
+    clauses: Vec<FilterClause>,
+    #[serde(default)]
+    authors: Vec<String>,
+    #[serde(default)]
+    series: Vec<String>,
+    #[serde(default)]
+    formats: Vec<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    genres: Vec<String>,
+}
 
-    /// Legacy facets as include clauses (author, series, format, tag, genre),
-    /// then `clauses` verbatim.
-    pub fn effective_clauses(&self) -> Vec<FilterClause> {
+impl From<ViewFiltersWire> for ViewFilters {
+    /// One include clause per non-empty legacy facet (author, series, format,
+    /// tag, genre), then `clauses` verbatim.
+    fn from(wire: ViewFiltersWire) -> Self {
         let legacy = [
-            (FilterField::Author, &self.authors),
-            (FilterField::Series, &self.series),
-            (FilterField::Format, &self.formats),
-            (FilterField::Tag, &self.tags),
-            (FilterField::Genre, &self.genres),
+            (FilterField::Author, wire.authors),
+            (FilterField::Series, wire.series),
+            (FilterField::Format, wire.formats),
+            (FilterField::Tag, wire.tags),
+            (FilterField::Genre, wire.genres),
         ];
-        legacy
+        let clauses = legacy
             .into_iter()
             .filter(|(_, values)| !values.is_empty())
             .map(|(field, values)| FilterClause {
                 field,
                 mode: FilterMode::Include,
-                values: values.clone(),
+                values,
             })
-            .chain(self.clauses.iter().cloned())
-            .collect()
+            .chain(wire.clauses)
+            .collect();
+        Self { clauses }
+    }
+}
+
+impl ViewFilters {
+    /// `true` when there is no clause.
+    pub fn is_empty(&self) -> bool {
+        self.clauses.is_empty()
     }
 
     /// Whether `book` passes every clause, over metadata with overrides already
     /// merged. `None` when a shelf clause is present: membership is the server's
     /// to answer, and a guess would read as fact.
     pub fn matches(&self, book: &EbookMetadata) -> Option<bool> {
-        self.effective_clauses()
-            .iter()
-            .try_fold(true, |kept, clause| {
-                Some(clause_matches(clause, book)? && kept)
-            })
+        self.clauses.iter().try_fold(true, |kept, clause| {
+            Some(clause_matches(clause, book)? && kept)
+        })
     }
 
     /// Reject filters over the clause or value caps, or a clause no book could
-    /// be matched by. Reads [`Self::effective_clauses`], so legacy facets count.
+    /// be matched by.
     pub fn validate(&self) -> Result<(), String> {
-        let clauses = self.effective_clauses();
-        if clauses.len() > MAX_FILTER_CLAUSES {
+        if self.clauses.len() > MAX_FILTER_CLAUSES {
             return Err(format!(
                 "a filter may have at most {MAX_FILTER_CLAUSES} clauses"
             ));
         }
-        clauses.iter().try_for_each(validate_clause)
+        self.clauses.iter().try_for_each(validate_clause)
     }
 
     /// The `?filter=` value: a JSON array of [`FilterClause`], `None` when empty.
-    /// Legacy facets ride as include clauses. Not percent-encoded.
+    /// Not percent-encoded.
     pub fn to_query_param(&self) -> Option<String> {
         if self.is_empty() {
             return None;
         }
-        serde_json::to_string(&self.effective_clauses()).ok()
+        serde_json::to_string(&self.clauses).ok()
     }
 
-    /// Parse and validate a `?filter=` value into clause-only filters.
+    /// Parse and validate a `?filter=` value.
     pub fn from_query_param(raw: &str) -> Result<ViewFilters, String> {
         let clauses: Vec<FilterClause> = serde_json::from_str(raw).map_err(|e| e.to_string())?;
-        let filters = ViewFilters {
-            clauses,
-            ..Default::default()
-        };
+        let filters = ViewFilters { clauses };
         filters.validate()?;
         Ok(filters)
     }

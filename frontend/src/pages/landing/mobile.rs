@@ -256,7 +256,7 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
 
     let pill_label = sort_pill_label(prefs.sort_key);
     let pill_arrow = dir_arrow(prefs.sort_dir);
-    let filter_count = prefs.filters.formats.len();
+    let filter_count = prefs.filters.clauses.len();
 
     let books_empty = books.is_empty();
     let settled = use_settled_reveal(is_loading, books_empty);
