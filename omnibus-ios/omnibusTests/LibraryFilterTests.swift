@@ -562,3 +562,47 @@ struct LibraryFilterErrorTests {
         )
     }
 }
+
+// MARK: - Pages a shelf clause reads
+
+struct ShelfClausePageInvalidationTests {
+    private func libraryKey(_ clauses: [FilterClause]) -> String {
+        var filter = LibraryFilter()
+        filter.clauses = clauses
+        return CacheKey.libraryPage(
+            LibraryService.pageSignature(sort: .title, direction: .asc, filter: filter)
+        )
+    }
+
+    @Test func aQueuedMembershipWriteHoldsOffALibraryPageFilteredByShelf() {
+        let key = libraryKey([genreClause, shelfClause])
+        #expect(OutboxScope.isBlocked(key, by: [OpKind.shelfMembership]))
+    }
+
+    @Test func aQueuedMembershipWriteLeavesALibraryPageWithNoShelfClause() {
+        #expect(!OutboxScope.isBlocked(libraryKey([genreClause]), by: [OpKind.shelfMembership]))
+        #expect(!OutboxScope.isBlocked(libraryKey([]), by: [OpKind.shelfMembership]))
+    }
+
+    @Test func deletingByShelfClauseDropsOnlyThePagesAShelfClauseKeyed() async throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shelf-clause-\(UUID().uuidString).sqlite").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let store = OfflineStore(path: path)
+        await store.open()
+        let byShelf = libraryKey([shelfClause])
+        let byGenre = libraryKey([genreClause])
+        let unfiltered = libraryKey([])
+        let otherShelfByShelf = CacheKey.shelfPage(9, filter: [shelfClause])
+        for key in [byShelf, byGenre, unfiltered, otherShelfByShelf] {
+            await store.cachePut(key, Data("{}".utf8))
+        }
+
+        await store.cacheDeletePrefix(CacheKey.libraryPagePrefix, containing: CacheKey.shelfClauseMarker)
+
+        #expect(await store.cacheGet(byShelf) == nil)
+        #expect(await store.cacheGet(byGenre) != nil)
+        #expect(await store.cacheGet(unfiltered) != nil)
+        #expect(await store.cacheGet(otherShelfByShelf) != nil, "only keys under the prefix go")
+    }
+}

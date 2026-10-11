@@ -546,6 +546,18 @@ actor OfflineStore {
         sqlite3_step(stmt)
     }
 
+    /// Delete the keys starting with `prefix` that also contain `marker`.
+    func cacheDeletePrefix(_ prefix: String, containing marker: String) {
+        guard isOpen else { return }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "DELETE FROM kv WHERE instr(key, ?) = 1 AND instr(key, ?) > 0"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        bind(stmt, 1, prefix)
+        bind(stmt, 2, marker)
+        sqlite3_step(stmt)
+    }
+
     // MARK: - Meta
 
     func metaGet(_ key: String) -> String? {

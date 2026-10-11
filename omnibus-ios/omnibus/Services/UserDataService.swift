@@ -661,9 +661,13 @@ enum UserDataService {
 
     /// Forget the filtered copies alone. A membership change can't be patched
     /// into them truthfully: whether a book belongs under a filter is the
-    /// server's to say.
+    /// server's to say. Any page keyed on a shelf clause goes too, on the
+    /// library or another shelf, since that clause reads this membership.
     private static func dropFilteredShelfPages(_ id: Int64) async {
-        await OfflineStore.shared.cacheDeletePrefix(CacheKey.shelfPageFilteredPrefix(id))
+        let store = OfflineStore.shared
+        await store.cacheDeletePrefix(CacheKey.shelfPageFilteredPrefix(id))
+        await store.cacheDeletePrefix(CacheKey.libraryPagePrefix, containing: CacheKey.shelfClauseMarker)
+        await store.cacheDeletePrefix("shelf_page:", containing: CacheKey.shelfClauseMarker)
     }
 
     /// Create a shelf. The one write here that genuinely needs the server.
