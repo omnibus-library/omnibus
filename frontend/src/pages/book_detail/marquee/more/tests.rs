@@ -19,6 +19,58 @@ fn with_membership_removes_a_shelf_and_keeps_the_rest_in_order() {
     assert_eq!(with_membership(&[4, 2], 7, false), vec![4, 2]);
 }
 
+fn counted(id: i64, count: i64, covers: &[&str]) -> ShelfSummary {
+    let mut shelf = test_shelf_summary(id, 7, ShelfKind::Manual, "Beach");
+    shelf.book_count = count;
+    shelf.cover_uuids = covers.iter().map(|c| c.to_string()).collect();
+    shelf
+}
+
+#[test]
+fn with_member_summary_counts_the_book_in_and_stands_its_cover_first_when_added() {
+    let shelves = [counted(5, 2, &["a", "b"])];
+    let next = with_member_summary(&shelves, 5, "new", true, true);
+    assert_eq!(next[0].book_count, 3);
+    assert_eq!(next[0].cover_uuids, vec!["new", "a", "b"]);
+}
+
+#[test]
+fn with_member_summary_counts_a_coverless_book_in_without_touching_the_ledge() {
+    let shelves = [counted(5, 2, &["a", "b"])];
+    let next = with_member_summary(&shelves, 5, "new", false, true);
+    assert_eq!(next[0].book_count, 3);
+    assert_eq!(next[0].cover_uuids, vec!["a", "b"]);
+}
+
+#[test]
+fn with_member_summary_keeps_the_ledge_to_its_width_when_a_cover_joins_a_full_one() {
+    let shelves = [counted(5, 9, &["a", "b", "c", "d"])];
+    let next = with_member_summary(&shelves, 5, "new", true, true);
+    assert_eq!(next[0].cover_uuids, vec!["new", "a", "b", "c"]);
+}
+
+#[test]
+fn with_member_summary_counts_the_book_out_and_drops_its_cover_when_removed() {
+    let shelves = [counted(5, 3, &["a", "new", "b"])];
+    let next = with_member_summary(&shelves, 5, "new", true, false);
+    assert_eq!(next[0].book_count, 2);
+    assert_eq!(next[0].cover_uuids, vec!["a", "b"]);
+}
+
+#[test]
+fn with_member_summary_never_counts_below_zero() {
+    let shelves = [counted(5, 0, &[])];
+    let next = with_member_summary(&shelves, 5, "new", true, false);
+    assert_eq!(next[0].book_count, 0);
+}
+
+#[test]
+fn with_member_summary_leaves_every_other_shelf_as_it_was() {
+    let shelves = [counted(4, 1, &["x"]), counted(5, 2, &["a"])];
+    let next = with_member_summary(&shelves, 5, "new", true, true);
+    assert_eq!(next[0], shelves[0]);
+}
+
 #[component]
 fn Harness(held: Option<Result<Vec<ShelfSummary>, ()>>, in_series: bool) -> Element {
     membership_body(held.as_ref(), in_series, EventHandler::new(|_| {}))

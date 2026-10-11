@@ -220,7 +220,7 @@ test("add the selected books to a hand-picked shelf in one request", async ({
         expectedBody: { id, book_uuids: [...uuids].sort() },
         expectedStatus: 200,
       },
-      async () => picker.getByTestId(`shelf-picker-row-${id}`).click(),
+      async () => picker.getByTestId(`shelf-picker-tile-${id}`).click(),
     );
 
     // Picker and bar close, the selection is gone, and the gallery's count
@@ -263,7 +263,7 @@ test("keep the selection when adding to a shelf fails", async ({
         expectedBody: { id, book_uuids: [...uuids].sort() },
         expectedStatus: 500,
       },
-      async () => picker.getByTestId(`shelf-picker-row-${id}`).click(),
+      async () => picker.getByTestId(`shelf-picker-tile-${id}`).click(),
     );
     await page.unroute("**/api/rpc/shelves/add-books");
 

@@ -120,6 +120,7 @@ pub(super) fn BulkShelfPicker(
                 checked: None,
                 busy: busy(),
                 error: error(),
+                ..Default::default()
             },
             on_pick,
             on_close,

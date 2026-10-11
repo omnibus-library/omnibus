@@ -35,7 +35,7 @@ const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-forest")!;
 // Only read: the series test opens its More stop and writes nothing.
 const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
 
-// One unbroken run far wider than the picker card: it fits only by breaking
+// One unbroken run far wider than a picker tile: it fits only by breaking
 // mid-word.
 const LONG_SHELF_LABEL = "W".repeat(90);
 
@@ -88,10 +88,19 @@ async function asReader(
   }
 }
 
-/** The row's content stays inside its box rather than spilling out of the list. */
-async function expectRowFits(row: Locator) {
+/** The picker's tile for `shelfId`; a hand-picked shelf is a checkbox tile. */
+function pickerTile(picker: Locator, shelfId: number): Locator {
+  return picker.getByTestId(`shelf-picker-tile-${shelfId}`);
+}
+
+/** The shelf's name wraps inside its tile rather than spilling out of it. */
+async function expectNameFits(tile: Locator, name: string) {
   await expect
-    .poll(() => row.evaluate((el) => el.scrollWidth - el.clientWidth))
+    .poll(() =>
+      tile
+        .getByText(name, { exact: true })
+        .evaluate((el) => el.scrollWidth - el.clientWidth),
+    )
     .toBeLessThanOrEqual(0);
 }
 
@@ -140,11 +149,11 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
       picker.getByRole("heading", { name: "Add to shelf" }),
     ).toBeVisible();
 
-    const row = picker.getByRole("checkbox", { name, exact: true });
+    const tile = pickerTile(picker, id);
     const chip = page.getByTestId("bdmq-shelves").filter({ hasText: name });
-    await expect(row).not.toBeChecked();
+    await expect(tile).not.toBeChecked();
     await expect(chip).toHaveCount(0);
-    await expectRowFits(row);
+    await expectNameFits(tile, name);
 
     await expectMutation(
       page,
@@ -154,11 +163,11 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
         expectedBody: { id, book_uuids: [uuid] },
         expectedStatus: 200,
       },
-      async () => row.click(),
+      async () => tile.click(),
     );
-    await expect(row).toBeChecked();
+    await expect(tile).toBeChecked();
     await expect(chip).toHaveCount(1);
-    await expectRowFits(row);
+    await expectNameFits(tile, name);
 
     await expectMutation(
       page,
@@ -168,9 +177,9 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
         expectedBody: { id, book_uuid: uuid },
         expectedStatus: 200,
       },
-      async () => row.click(),
+      async () => tile.click(),
     );
-    await expect(row).not.toBeChecked();
+    await expect(tile).not.toBeChecked();
     await expect(chip).toHaveCount(0);
   });
 });
@@ -183,7 +192,7 @@ test("keeps the shelf unchanged when the add fails", async ({
   await withManualShelf(request, "E2E Book Shelf", async ({ id, name }) => {
     await gotoReady(page, `/books/${uuid}`);
     const picker = await openPicker(page);
-    const row = picker.getByRole("checkbox", { name, exact: true });
+    const tile = pickerTile(picker, id);
 
     await page.route("**/api/rpc/shelves/add-books", (route) =>
       route.fulfill({
@@ -200,13 +209,13 @@ test("keeps the shelf unchanged when the add fails", async ({
         expectedBody: { id, book_uuids: [uuid] },
         expectedStatus: 500,
       },
-      async () => row.click(),
+      async () => tile.click(),
     );
     await page.unroute("**/api/rpc/shelves/add-books");
 
     await expect(page.getByTestId("shelf-picker-error")).toContainText(name);
     await expect(picker).toBeVisible();
-    await expect(row).not.toBeChecked();
+    await expect(tile).not.toBeChecked();
     await expect(
       page.getByTestId("bdmq-shelves").filter({ hasText: name }),
     ).toHaveCount(0);
@@ -232,8 +241,8 @@ test("keeps the shelf unchanged when the remove fails", async ({
 
     await gotoReady(page, `/books/${uuid}`);
     const picker = await openPicker(page);
-    const row = picker.getByRole("checkbox", { name, exact: true });
-    await expect(row).toBeChecked();
+    const tile = pickerTile(picker, id);
+    await expect(tile).toBeChecked();
 
     await page.route("**/api/rpc/shelves/remove-book", (route) =>
       route.fulfill({
@@ -250,12 +259,12 @@ test("keeps the shelf unchanged when the remove fails", async ({
         expectedBody: { id, book_uuid: uuid },
         expectedStatus: 500,
       },
-      async () => row.click(),
+      async () => tile.click(),
     );
     await page.unroute("**/api/rpc/shelves/remove-book");
 
     await expect(page.getByTestId("shelf-picker-error")).toContainText(name);
-    await expect(row).toBeChecked();
+    await expect(tile).toBeChecked();
     await expect(page.getByTestId("bdmq-shelves")).toContainText(name);
   });
 });

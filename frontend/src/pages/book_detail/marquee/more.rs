@@ -13,6 +13,7 @@ use omnibus_shared::{
 
 use crate::components::atrium::Cover;
 use crate::components::shelf_picker::{picker_targets, ShelfPickerList, ShelfPickerModal};
+use crate::components::shelf_tile::LEDGE_BOOKS;
 use crate::components::{Loading, LoadingKind};
 use crate::contexts::use_current_user_summary;
 use crate::{data, use_server_url, Route};
@@ -71,6 +72,7 @@ pub(super) fn MarqueeMoreStop(
             }
             MarqueeShelfMembership {
                 uuid: b.unique_identifier.clone().unwrap_or_default(),
+                has_cover: b.cover_url.is_some(),
                 wishlist,
                 in_series: b.series_id.is_some(),
             }
@@ -211,6 +213,7 @@ struct PickerState {
 #[component]
 fn MarqueeShelfMembership(
     uuid: String,
+    has_cover: bool,
     wishlist: Signal<Option<WishlistEntry>>,
     in_series: bool,
 ) -> Element {
@@ -263,7 +266,7 @@ fn MarqueeShelfMembership(
                 .collect::<Vec<ShelfSummary>>()
         })
     });
-    let toggle = build_shelf_toggle(server_url, uuid, shelves, load_seq, picker);
+    let toggle = build_shelf_toggle(server_url, uuid, has_cover, shelves, load_seq, picker);
     let list = shelf_picker_list(&shelves(), me().as_ref(), picker);
     let (mut open, mut error) = (picker.open, picker.error);
     let on_add = EventHandler::new(move |_| {
@@ -309,15 +312,18 @@ fn shelf_picker_list(
         checked,
         busy: (picker.busy)(),
         error: (picker.error)(),
+        ..Default::default()
     }
 }
 
-/// Builds the picker's row handler: add this book to the shelf, or take it off
-/// when it is already there, then patch the block's membership so the row and
-/// the chips follow without a refetch. A failure leaves both as they were.
+/// Builds the picker's tile handler: add this book to the shelf, or take it off
+/// when it is already there, then patch the block's membership and the shelf's
+/// count and ledge so the tile and the chips follow without a refetch. A
+/// failure leaves both as they were.
 fn build_shelf_toggle(
     server_url: String,
     uuid: String,
+    has_cover: bool,
     shelves: Signal<ShelvesRead>,
     load_seq: Signal<u64>,
     picker: PickerState,
@@ -352,8 +358,9 @@ fn build_shelf_toggle(
             }
             match written {
                 Ok(()) => shelves.with_mut(|read| {
-                    if let Some(Ok((_, ids))) = read {
+                    if let Some(Ok((all, ids))) = read {
                         *ids = with_membership(ids, shelf_id, adding);
+                        *all = with_member_summary(all, shelf_id, &uuid, has_cover, adding);
                     }
                 }),
                 Err(e) => error.set(Some(format!("Couldn\u{2019}t update {name}: {e}"))),
@@ -387,6 +394,32 @@ fn with_membership(ids: &[i64], shelf_id: i64, on: bool) -> Vec<i64> {
         }
     } else {
         next.retain(|id| *id != shelf_id);
+    }
+    next
+}
+
+/// `shelves` with `shelf_id`'s count and ledge following this book going onto
+/// it (`on`) or coming off. A cover joins at the front, capped at the ledge's
+/// width; every other shelf is left as it was.
+fn with_member_summary(
+    shelves: &[ShelfSummary],
+    shelf_id: i64,
+    uuid: &str,
+    has_cover: bool,
+    on: bool,
+) -> Vec<ShelfSummary> {
+    let mut next = shelves.to_vec();
+    if let Some(shelf) = next.iter_mut().find(|s| s.id == shelf_id) {
+        shelf.cover_uuids.retain(|c| c != uuid);
+        if on {
+            shelf.book_count += 1;
+            if has_cover {
+                shelf.cover_uuids.insert(0, uuid.to_string());
+                shelf.cover_uuids.truncate(LEDGE_BOOKS);
+            }
+        } else {
+            shelf.book_count = (shelf.book_count - 1).max(0);
+        }
     }
     next
 }

@@ -2216,7 +2216,7 @@ a.idx-letter-on:focus-visible {
   transition: border-color .15s, background .15s;
 }
 @media (hover: hover) {
-  .shv-card:hover {
+  .shv-card:is(a, button:enabled):hover {
     border-color: color-mix(in oklch, var(--shelf-accent) 55%, var(--line));
     background: var(--bg-2);
   }
@@ -2258,10 +2258,10 @@ a.idx-letter-on:focus-visible {
 /* The last book leans on its neighbour, the way it does on a shelf that isn't full. */
 .shv-ledge-book:last-child:not(:only-child) { transform: rotate(-6deg); transform-origin: 100% 100%; }
 @media (hover: hover) {
-  .shv-card:hover .shv-ledge-book { transform: translateY(-4px); }
-  .shv-card:hover .shv-ledge-book:nth-child(2) { transition-delay: .03s; }
-  .shv-card:hover .shv-ledge-book:nth-child(3) { transition-delay: .06s; }
-  .shv-card:hover .shv-ledge-book:last-child:not(:only-child) {
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book { transform: translateY(-4px); }
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book:nth-child(2) { transition-delay: .03s; }
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book:nth-child(3) { transition-delay: .06s; }
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book:last-child:not(:only-child) {
     transform: translateY(-4px) rotate(-6deg); transition-delay: .09s;
   }
 }
@@ -7916,41 +7916,48 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 
 /* ── Shelf picker — "Add to shelf" from a book page and the bulk bar ───
-   Rides the Add books modal's overlay and head; the card is narrower and the
-   list scrolls inside it. */
-.shelf-picker-card { width: min(440px, 100%); }
+   Rides the Add books modal's overlay and head; the shelves are compact shelf
+   tiles (`.shv-card--compact`) in a grid that scrolls inside the card. */
+.shelf-picker-card { width: min(760px, 100%); }
 .atrium .shelf-picker-card .pick-title { font-size: 24px; }
+.shelf-picker-hint { margin: -4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
 .shelf-picker-list {
   flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 18px;
 }
-.shelf-picker-row {
-  display: flex; align-items: center; gap: 12px;
-  width: 100%; padding: 10px 12px; text-align: left; border-radius: 12px;
-  font: inherit; color: inherit;
-  background: var(--bg-2); border: 1px solid var(--line-2); cursor: pointer;
+.shelf-picker-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
 }
-@media (hover: hover) {
-  .shelf-picker-row:hover:not(:disabled) { border-color: var(--line); background: var(--bg-3); }
+.shelf-picker-tile {
+  position: relative; width: 100%; padding: 0;
+  font: inherit; text-align: left; cursor: pointer;
 }
-.shelf-picker-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.shelf-picker-row[aria-checked="true"] {
-  border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 12%, var(--bg-2));
+.shelf-picker-tile[aria-checked="true"] {
+  border-color: var(--shelf-accent); box-shadow: 0 0 0 1px var(--shelf-accent);
 }
-.shelf-picker-row:disabled { cursor: default; opacity: .7; }
-.shelf-picker-row[aria-busy="true"] { opacity: 1; }
+.shelf-picker-tile:disabled { cursor: default; opacity: .7; }
+.shelf-picker-tile[aria-busy="true"] { opacity: 1; }
 .shelf-picker-check {
-  flex: none; width: 20px; height: 20px; border-radius: 50%;
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 22px; height: 22px; border-radius: 50%;
   display: grid; place-items: center; font-size: 12px;
-  border: 1px solid var(--line); color: var(--accent-ink);
+  background: color-mix(in oklch, var(--bg-1) 80%, transparent);
+  border: 1.5px solid var(--line); color: var(--accent-ink);
 }
-.shelf-picker-row[aria-checked="true"] .shelf-picker-check { background: var(--accent); border-color: transparent; }
-.shelf-picker-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.shelf-picker-name { font-size: 14px; font-weight: 500; color: var(--ink-0); overflow-wrap: anywhere; }
-/* `BusyLabel` never wraps so a button can't jump; a shelf name has to. */
-.shelf-picker-name .ld-busy-face, .shelf-picker-name .ld-busy::after { white-space: normal; }
-.shelf-picker-owner { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; color: var(--ink-3); }
+.shelf-picker-tile[aria-checked="true"] .shelf-picker-check {
+  background: var(--shelf-accent); border-color: transparent;
+}
+.shelf-picker-automatic {
+  display: flex; flex-direction: column; gap: 10px;
+  padding-top: 14px; border-top: 1px solid var(--line-2);
+}
+/* `.atrium` scope: outranks the base `.atrium h3` display size. */
+.atrium .shelf-picker-auto-title {
+  padding: 0; font-family: var(--mono); font-size: 10px; font-weight: 500;
+  line-height: 1.4; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
+}
+.shelf-picker-auto-tile { cursor: default; }
 
 /* Shared shelf chrome: badges, the landing header's edit pencil and facet
    row, the ⋯ menu, rule chips, and the member grid's add tile. */

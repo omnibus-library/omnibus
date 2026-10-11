@@ -11,7 +11,7 @@ use crate::components::user_avatar::UserAvatar;
 use crate::shelf_access::shows_owner_attribution;
 
 /// How many books stand on a tile's ledge.
-const LEDGE_BOOKS: usize = 4;
+pub const LEDGE_BOOKS: usize = 4;
 
 /// The classes of the element wrapping a [`ShelfTileFace`]; `compact` is the
 /// smaller size the book page and the picker draw.

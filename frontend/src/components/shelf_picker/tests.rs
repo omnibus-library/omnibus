@@ -1,6 +1,7 @@
 //! Tests for the shelf picker: which shelves a viewer may add books to, and
 //! what the modal draws while the shelves load, fail, are empty, or are being
-//! written. Needs the `server` feature (`dioxus::ssr`).
+//! written, and the read-only automatic section. Needs the `server` feature
+//! (`dioxus::ssr`).
 
 use omnibus_shared::ShelfKind;
 
@@ -124,14 +125,33 @@ fn ready(targets: Vec<ShelfSummary>) -> ShelfPickerList {
     }
 }
 
-/// The picker row for `shelf_id`, from its opening `<button` to `</button>`.
-fn row_html(html: &str, shelf_id: i64) -> &str {
-    let marker = format!("data-testid=\"shelf-picker-row-{shelf_id}\"");
+/// The picker tile for `shelf_id`, from its opening `<button` to `</button>`.
+fn tile_html(html: &str, shelf_id: i64) -> &str {
+    let marker = format!("data-testid=\"shelf-picker-tile-{shelf_id}\"");
     let at = html
         .find(&marker)
-        .unwrap_or_else(|| panic!("no row for shelf {shelf_id} in {html}"));
-    let start = html[..at].rfind("<button").expect("a row is a button");
-    let end = at + html[at..].find("</button>").expect("the row closes");
+        .unwrap_or_else(|| panic!("no tile for shelf {shelf_id} in {html}"));
+    let start = html[..at].rfind("<button").expect("a tile is a button");
+    let end = at + html[at..].find("</button>").expect("the tile closes");
+    &html[start..end]
+}
+
+/// The read-only automatic tile for `shelf_id`: from the element carrying its
+/// testid to the next automatic tile, or the end of the section.
+fn auto_tile_html(html: &str, shelf_id: i64) -> &str {
+    let marker = format!("data-testid=\"shelf-picker-auto-{shelf_id}\"");
+    let at = html
+        .find(&marker)
+        .unwrap_or_else(|| panic!("no automatic tile for shelf {shelf_id} in {html}"));
+    let start = html[..at]
+        .rfind("<div")
+        .expect("an automatic tile is a block");
+    let after = at + marker.len();
+    let end = ["data-testid=\"shelf-picker-auto-", "</section>"]
+        .iter()
+        .filter_map(|stop| html[after..].find(stop))
+        .min()
+        .map_or(html.len(), |stop| after + stop);
     &html[start..end]
 }
 
@@ -142,7 +162,7 @@ fn shelf_picker_modal_draws_a_loader_and_no_verdict_while_the_shelves_load() {
         html.contains("data-testid=\"shelf-picker-loading\""),
         "{html}"
     );
-    assert!(!html.contains("shelf-picker-row"), "{html}");
+    assert!(!html.contains("shelf-picker-tile-"), "{html}");
     assert!(!html.contains("shelf-picker-empty"), "{html}");
     assert!(!html.contains("no hand-picked shelves"), "{html}");
 }
@@ -175,17 +195,17 @@ fn shelf_picker_modal_explains_there_are_no_hand_picked_shelves_when_none_qualif
         html.contains("You have no hand-picked shelves yet."),
         "{html}"
     );
-    assert!(!html.contains("shelf-picker-row"), "{html}");
+    assert!(!html.contains("shelf-picker-tile-"), "{html}");
 }
 
 #[test]
-fn shelf_picker_modal_draws_checkbox_rows_that_are_checked_only_for_member_shelves() {
+fn shelf_picker_modal_draws_checkbox_tiles_that_are_checked_only_for_member_shelves() {
     let html = picker_html(ShelfPickerList {
         checked: Some(vec![2]),
         ..ready(vec![own(1, "Beach"), own(2, "Commute")])
     });
-    let on_shelf = row_html(&html, 2);
-    let off_shelf = row_html(&html, 1);
+    let on_shelf = tile_html(&html, 2);
+    let off_shelf = tile_html(&html, 1);
     assert!(on_shelf.contains("role=\"checkbox\""), "{on_shelf}");
     assert!(on_shelf.contains("aria-checked=\"true\""), "{on_shelf}");
     assert!(off_shelf.contains("role=\"checkbox\""), "{off_shelf}");
@@ -195,10 +215,11 @@ fn shelf_picker_modal_draws_checkbox_rows_that_are_checked_only_for_member_shelv
 #[test]
 fn shelf_picker_modal_draws_plain_buttons_without_checked_state_when_picking_one_shot() {
     let html = picker_html(ready(vec![own(1, "Beach")]));
-    let row = row_html(&html, 1);
-    assert!(row.contains("Beach"), "{row}");
-    assert!(!row.contains("role=\"checkbox\""), "{row}");
-    assert!(!row.contains("aria-checked"), "{row}");
+    let tile = tile_html(&html, 1);
+    assert!(tile.contains("Beach"), "{tile}");
+    assert!(!tile.contains("role=\"checkbox\""), "{tile}");
+    assert!(!tile.contains("aria-checked"), "{tile}");
+    assert!(!tile.contains("shelf-picker-check"), "{tile}");
 }
 
 #[test]
@@ -207,18 +228,18 @@ fn shelf_picker_modal_attributes_a_shelf_the_viewer_does_not_own() {
         own(1, "Mine"),
         test_shelf_summary(2, OTHER_READER_ID, ShelfKind::Manual, "Theirs"),
     ]));
-    assert!(row_html(&html, 2).contains("by user-9"), "{html}");
-    assert!(!row_html(&html, 1).contains("by "), "{html}");
+    assert!(tile_html(&html, 2).contains("by user-9"), "{html}");
+    assert!(!tile_html(&html, 1).contains("by "), "{html}");
 }
 
 #[test]
-fn shelf_picker_modal_makes_every_row_inert_and_marks_the_busy_one_while_writing() {
+fn shelf_picker_modal_makes_every_tile_inert_and_marks_the_busy_one_while_writing() {
     let html = picker_html(ShelfPickerList {
         busy: Some(2),
         ..ready(vec![own(1, "Beach"), own(2, "Commute")])
     });
-    let idle = row_html(&html, 1);
-    let working = row_html(&html, 2);
+    let idle = tile_html(&html, 1);
+    let working = tile_html(&html, 2);
     assert!(idle.contains("disabled"), "{idle}");
     assert!(!idle.contains("ld-ring"), "{idle}");
     assert!(working.contains("disabled"), "{working}");
@@ -227,13 +248,13 @@ fn shelf_picker_modal_makes_every_row_inert_and_marks_the_busy_one_while_writing
 }
 
 #[test]
-fn shelf_picker_modal_leaves_rows_enabled_when_nothing_is_being_written() {
+fn shelf_picker_modal_leaves_tiles_enabled_when_nothing_is_being_written() {
     let html = picker_html(ready(vec![own(1, "Beach")]));
-    assert!(!row_html(&html, 1).contains("disabled"), "{html}");
+    assert!(!tile_html(&html, 1).contains("disabled"), "{html}");
 }
 
 #[test]
-fn shelf_picker_modal_announces_the_last_failure_as_an_alert_and_keeps_the_rows() {
+fn shelf_picker_modal_announces_the_last_failure_as_an_alert_and_keeps_the_tiles() {
     let html = picker_html(ShelfPickerList {
         error: Some("Couldn\u{2019}t update Beach: boom".to_string()),
         ..ready(vec![own(1, "Beach")])
@@ -247,7 +268,7 @@ fn shelf_picker_modal_announces_the_last_failure_as_an_alert_and_keeps_the_rows(
         line.contains("Couldn\u{2019}t update Beach: boom"),
         "{line}"
     );
-    assert!(html.contains("shelf-picker-row-1"), "{html}");
+    assert!(html.contains("shelf-picker-tile-1"), "{html}");
 }
 
 #[test]
@@ -268,4 +289,119 @@ fn shelf_picker_modal_labels_its_dialog_by_its_heading() {
         html.contains("data-testid=\"shelf-picker-close\""),
         "{html}"
     );
+}
+
+#[test]
+fn shelf_picker_modal_tells_the_reader_only_hand_picked_shelves_are_listed() {
+    for list in [ShelfPickerList::default(), ready(vec![own(1, "Beach")])] {
+        let html = picker_html(list);
+        let at = html
+            .find("data-testid=\"shelf-picker-hint\"")
+            .unwrap_or_else(|| panic!("no hint in {html}"));
+        let hint = &html[at..at + html[at..].find("</p>").expect("the hint closes")];
+        assert!(
+            hint.contains(
+                "Only shelves you fill by hand are listed; smart shelves add books by their rules."
+            ),
+            "{hint}"
+        );
+    }
+}
+
+#[test]
+fn shelf_picker_modal_draws_each_shelf_as_a_tile_with_its_covers_count_and_accent() {
+    let mut beach = own(1, "Beach");
+    beach.accent = Some("oklch(0.7 0.1 40)".to_string());
+    beach.book_count = 5;
+    beach.cover_uuids = vec!["c1".to_string()];
+    let html = picker_html(ready(vec![beach]));
+    let tile = tile_html(&html, 1);
+    assert!(
+        tile.contains("--shelf-accent: oklch(0.7 0.1 40);"),
+        "{tile}"
+    );
+    assert!(tile.contains("/api/thumbs/c1/sm"), "{tile}");
+    assert!(tile.contains("5 books"), "{tile}");
+    assert!(tile.contains("Hand-picked"), "{tile}");
+    assert!(tile.contains(">You<"), "{tile}");
+}
+
+#[test]
+fn shelf_picker_modal_marks_a_checkbox_tile_with_a_badge_filled_only_when_checked() {
+    let html = picker_html(ShelfPickerList {
+        checked: Some(vec![2]),
+        ..ready(vec![own(1, "Beach"), own(2, "Commute")])
+    });
+    let on_shelf = tile_html(&html, 2);
+    let off_shelf = tile_html(&html, 1);
+    assert!(on_shelf.contains("shelf-picker-check"), "{on_shelf}");
+    assert!(on_shelf.contains("\u{2713}"), "{on_shelf}");
+    assert!(off_shelf.contains("shelf-picker-check"), "{off_shelf}");
+    assert!(!off_shelf.contains("\u{2713}"), "{off_shelf}");
+}
+
+fn smart(id: i64, name: &str) -> ShelfSummary {
+    test_shelf_summary(id, VIEWER_ID, ShelfKind::Smart, name)
+}
+
+#[test]
+fn shelf_picker_modal_lists_the_smart_shelves_a_book_matches_as_read_only_tiles() {
+    let html = picker_html(ShelfPickerList {
+        checked: Some(Vec::new()),
+        automatic: vec![smart(8, "Austen"), smart(9, "Unread")],
+        ..ready(vec![own(1, "Beach")])
+    });
+    let at = html
+        .find("data-testid=\"shelf-picker-automatic\"")
+        .unwrap_or_else(|| panic!("no automatic section in {html}"));
+    let section = &html[at..];
+    assert!(
+        section.contains("Automatic \u{b7} follows each shelf&#39;s rules"),
+        "{section}"
+    );
+    for (id, name) in [(8, "Austen"), (9, "Unread")] {
+        let tile = auto_tile_html(&html, id);
+        assert!(tile.contains(name), "{tile}");
+        assert!(tile.contains("Smart"), "{tile}");
+        assert!(!tile.contains("<button"), "{tile}");
+        assert!(!tile.contains("role="), "{tile}");
+        assert!(!tile.contains("tabindex"), "{tile}");
+        assert!(!tile.contains("shelf-picker-check"), "{tile}");
+        assert!(
+            !html.contains(&format!("shelf-picker-tile-{id}")),
+            "an automatic shelf must not be toggleable: {html}"
+        );
+    }
+}
+
+#[test]
+fn shelf_picker_modal_omits_the_automatic_section_when_no_smart_shelf_matches() {
+    let html = picker_html(ready(vec![own(1, "Beach")]));
+    assert!(!html.contains("shelf-picker-automatic"), "{html}");
+    assert!(!html.contains("Automatic"), "{html}");
+}
+
+#[test]
+fn shelf_picker_modal_keeps_the_automatic_section_when_the_reader_has_no_hand_picked_shelves() {
+    let html = picker_html(ShelfPickerList {
+        automatic: vec![smart(8, "Austen")],
+        ..ready(Vec::new())
+    });
+    assert!(
+        html.contains("data-testid=\"shelf-picker-empty\""),
+        "{html}"
+    );
+    assert!(html.contains("shelf-picker-auto-8"), "{html}");
+}
+
+#[test]
+fn shelf_picker_modal_draws_no_automatic_section_while_the_shelves_load_or_fail() {
+    for targets in [None, Some(Err(()))] {
+        let html = picker_html(ShelfPickerList {
+            targets,
+            automatic: vec![smart(8, "Austen")],
+            ..Default::default()
+        });
+        assert!(!html.contains("shelf-picker-automatic"), "{html}");
+    }
 }
