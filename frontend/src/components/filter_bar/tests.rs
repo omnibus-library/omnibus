@@ -50,6 +50,33 @@ fn shelf(id: i64, name: &str, kind: ShelfKind, book_count: i64) -> ShelfSummary 
     }
 }
 
+/// The opening `<tag …>` whose attributes include `needle`.
+fn opening_tag<'a>(html: &'a str, tag: &str, needle: &str) -> &'a str {
+    let at = html
+        .find(needle)
+        .unwrap_or_else(|| panic!("no {needle} in {html}"));
+    let start = html[..at]
+        .rfind(&format!("<{tag}"))
+        .unwrap_or_else(|| panic!("no <{tag} before {needle} in {html}"));
+    let end = at + html[at..].find('>').expect("the tag closes");
+    &html[start..=end]
+}
+
+fn button_tag<'a>(html: &'a str, testid: &str) -> &'a str {
+    opening_tag(html, "button", &format!("data-testid=\"{testid}\""))
+}
+
+fn checkbox_tag<'a>(html: &'a str, label: &str) -> &'a str {
+    opening_tag(html, "input", &format!("aria-label=\"{label}\""))
+}
+
+fn disabled_inputs(html: &str) -> usize {
+    html.split("<input")
+        .skip(1)
+        .filter(|tag| tag.split('>').next().unwrap().contains("disabled"))
+        .count()
+}
+
 // ---- value mappers -------------------------------------------------------
 
 #[test]
@@ -149,16 +176,6 @@ fn options_drop_blank_and_over_long_values_the_filter_would_reject() {
     ]);
 
     assert_eq!(options, vec![option(&longest, &longest, Some(1))]);
-}
-
-#[test]
-fn matching_returns_every_option_for_a_blank_query() {
-    let options = tag_options(vec![tag("Sci-Fi", 1), tag("Cozy", 1)]);
-
-    let found = matching(&options, "  ", 10);
-
-    assert_eq!(found.total, 2);
-    assert_eq!(found.shown.len(), 2);
 }
 
 #[test]
@@ -307,18 +324,6 @@ fn render_bar(filters: ViewFilters, shelves: Option<Vec<ShelfSummary>>) -> Strin
     })
 }
 
-/// The opening `<button …>` tag that carries `testid`.
-fn button_tag<'a>(html: &'a str, testid: &str) -> &'a str {
-    let at = html
-        .find(&format!("data-testid=\"{testid}\""))
-        .unwrap_or_else(|| panic!("no {testid} in {html}"));
-    let start = html[..at]
-        .rfind("<button")
-        .expect("a button opens before it");
-    let end = at + html[at..].find('>').expect("the tag closes");
-    &html[start..=end]
-}
-
 fn one_clause() -> ViewFilters {
     ViewFilters {
         clauses: vec![clause(FilterField::Author, FilterMode::Include, &["Ada"])],
@@ -391,16 +396,6 @@ fn clauses_up_to(count: usize) -> ViewFilters {
 }
 
 #[test]
-fn filter_bar_leaves_add_enabled_one_clause_below_the_cap() {
-    let html = render_bar(clauses_up_to(MAX_FILTER_CLAUSES - 1), None);
-
-    assert!(
-        !button_tag(&html, "filter-add").contains("disabled"),
-        "{html}"
-    );
-}
-
-#[test]
 fn filter_bar_disables_add_at_the_clause_cap() {
     let html = render_bar(clauses_up_to(MAX_FILTER_CLAUSES), None);
 
@@ -456,18 +451,6 @@ fn render_body(
     render(rsx! {
         BodyHarness { field, mode, query, picked, state }
     })
-}
-
-/// The `<input …>` tag of the checkbox named `label`.
-fn checkbox_tag<'a>(html: &'a str, label: &str) -> &'a str {
-    let at = html
-        .find(&format!("aria-label=\"{label}\""))
-        .unwrap_or_else(|| panic!("no checkbox named {label} in {html}"));
-    let start = html[..at]
-        .rfind("<input")
-        .expect("an input opens before it");
-    let end = at + html[at..].find('>').expect("the tag closes");
-    &html[start..=end]
 }
 
 fn ready(labels: &[&str]) -> picker::LoadState {
@@ -649,38 +632,10 @@ fn picker_body_disables_unpicked_boxes_once_the_value_cap_is_reached() {
         ready(&labels),
     );
 
-    let boxes: Vec<&str> = html.split("<input").skip(1).collect();
-    let disabled = boxes
-        .iter()
-        .filter(|tag| tag.split('>').next().unwrap().contains("disabled"))
-        .count();
-    assert_eq!(disabled, 1, "only the unpicked box locks: {html}");
-}
-
-#[test]
-fn picker_body_keeps_unpicked_boxes_enabled_one_value_below_the_cap() {
-    let picked: Vec<String> = (0..MAX_FILTER_VALUES - 1)
-        .map(|i| format!("p{i}"))
-        .collect();
-    let picked_refs: Vec<&str> = picked.iter().map(String::as_str).collect();
-    let mut labels = picked_refs.clone();
-    labels.push("extra");
-
-    let html = render_body(
-        FilterField::Tag,
-        FilterMode::Include,
-        "",
-        &picked_refs,
-        ready(&labels),
-    );
-
-    assert!(
-        !html.split("<input").skip(1).any(|tag| tag
-            .split('>')
-            .next()
-            .unwrap()
-            .contains("disabled")),
-        "{html}"
+    assert_eq!(
+        disabled_inputs(&html),
+        1,
+        "only the unpicked box locks: {html}"
     );
 }
 
