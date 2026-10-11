@@ -6,6 +6,8 @@ pub mod client;
 pub mod device;
 pub mod firmware;
 pub mod session;
+#[cfg(feature = "cli")]
+pub mod store;
 #[cfg(test)]
 mod test_support;
 pub mod wire;

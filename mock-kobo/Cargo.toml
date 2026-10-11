@@ -14,8 +14,17 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
+[features]
+default = ["cli"]
+# The long-running device and everything only it needs: its state file,
+# settings and control API. The server's device tests take the library
+# without it (`default-features = false`).
+cli = []
+
 [dev-dependencies]
 # Stub Omnibus instances for the firmware tests. Same version as `server/`'s
 # axum so cargo unifies on one build.
 axum = "0.8"
+# Real state files for the store tests, deleted on drop.
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }

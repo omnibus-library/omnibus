@@ -3,13 +3,15 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::wire::{BookMetadata, Series, SyncItem};
 
 /// What the device shows for a book with no `Contributors` ([`crate::firmware::Quirk::ContributorsDisplay`]).
 const UNKNOWN_AUTHOR: &str = "Unknown";
 
 /// One fake Kobo.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Device {
     /// The serial the firmware sends as `x-kobo-deviceid`.
     pub hardware_id: String,
@@ -20,7 +22,7 @@ pub struct Device {
 }
 
 /// One book as the device shows it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Book {
     pub title: String,
     pub description: String,

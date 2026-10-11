@@ -2,7 +2,7 @@
 //! as the server sends them. Deliberately not the server's own DTOs, so a
 //! server-side shape change shows up here as a decode failure or a test.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The `v1/initialization` body.
 #[derive(Debug, Deserialize)]
@@ -64,8 +64,8 @@ pub struct BookMetadata {
     pub series: Option<Series>,
 }
 
-/// A book's series.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+/// A book's series, kept in the wire's shape when the device saves it.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Series {
     pub name: String,
