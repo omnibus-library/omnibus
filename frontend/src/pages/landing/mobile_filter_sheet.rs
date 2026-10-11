@@ -5,7 +5,9 @@
 //! footer's "Show N books" is just a close affordance over live results.
 
 use dioxus::prelude::*;
-use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewPrefs};
+use omnibus_shared::{
+    FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewPrefs,
+};
 
 /// Sort axes offered on mobile, in sheet order, with their row labels.
 const SORT_ROWS: &[(SortKey, &str)] = &[
@@ -17,8 +19,8 @@ const SORT_ROWS: &[(SortKey, &str)] = &[
     (SortKey::Series, "Series"),
 ];
 
-/// Format chips: display label → the lowercase `ViewFilters::formats` values
-/// the chip toggles. "Audiobook" covers every direct-play audio container.
+/// Format chips: display label → the lowercase values of the include-format
+/// clause the chip toggles. "Audiobook" covers every direct-play audio container.
 const FORMAT_CHIPS: &[(&str, &[&str])] =
     &[("EPUB", &["epub"]), ("Audiobook", &["m4b", "m4a", "mp3"])];
 
@@ -68,24 +70,58 @@ fn dir_label(key: SortKey, dir: SortDir) -> String {
     format!("{text} {}", dir_arrow(dir))
 }
 
-/// Whether a format chip is active (its first wire value is filtered on).
-fn chip_on(filters: &ViewFilters, values: &[&str]) -> bool {
-    values
-        .first()
-        .is_some_and(|v| filters.formats.iter().any(|f| f == v))
+fn is_include_format(clause: &FilterClause) -> bool {
+    clause.field == FilterField::Format && clause.mode == FilterMode::Include
 }
 
-/// Toggle a chip's format values in/out of the filter set.
+/// Whether a format chip is active (its first wire value is in an include-format clause).
+fn chip_on(filters: &ViewFilters, values: &[&str]) -> bool {
+    values.first().is_some_and(|v| {
+        filters
+            .clauses
+            .iter()
+            .filter(|c| is_include_format(c))
+            .any(|c| c.values.iter().any(|f| f == v))
+    })
+}
+
+/// Toggle a chip's format values in/out of the include-format clause, dropping
+/// the clause once it has no value left.
 fn toggle_formats(filters: &mut ViewFilters, values: &[&str]) {
     if chip_on(filters, values) {
-        filters.formats.retain(|f| !values.contains(&f.as_str()));
-    } else {
+        for clause in filters.clauses.iter_mut().filter(|c| is_include_format(c)) {
+            clause.values.retain(|f| !values.contains(&f.as_str()));
+        }
+        filters
+            .clauses
+            .retain(|c| !(is_include_format(c) && c.values.is_empty()));
+    } else if let Some(clause) = filters.clauses.iter_mut().find(|c| is_include_format(c)) {
         for v in values {
-            if !filters.formats.iter().any(|f| f == v) {
-                filters.formats.push((*v).to_string());
+            if !clause.values.iter().any(|f| f == v) {
+                clause.values.push((*v).to_string());
             }
         }
+    } else {
+        filters.clauses.push(FilterClause::new(
+            FilterField::Format,
+            FilterMode::Include,
+            values,
+        ));
     }
+}
+
+fn is_format(clause: &FilterClause) -> bool {
+    clause.field == FilterField::Format
+}
+
+/// Whether no format clause of either mode is set, which is what "All" shows.
+fn all_chip_on(filters: &ViewFilters) -> bool {
+    !filters.clauses.iter().any(is_format)
+}
+
+/// Drop every format clause, include or exclude, leaving the other clauses be.
+fn clear_formats(filters: &mut ViewFilters) {
+    filters.clauses.retain(|c| !is_format(c));
 }
 
 /// The bottom sheet. Fires `on_change` with a whole updated [`ViewPrefs`] on
@@ -200,9 +236,9 @@ fn sort_row(
     }
 }
 
-/// The "All" chip — active when no format filter is set; tapping clears them.
+/// The "All" chip — active when no format clause is set; tapping clears them.
 fn all_chip(prefs: &ViewPrefs, on_change: &EventHandler<ViewPrefs>) -> Element {
-    let on = prefs.filters.formats.is_empty();
+    let on = all_chip_on(&prefs.filters);
     let next_base = prefs.clone();
     let handler = *on_change;
     rsx! {
@@ -211,7 +247,7 @@ fn all_chip(prefs: &ViewPrefs, on_change: &EventHandler<ViewPrefs>) -> Element {
             class: if on { "m-filter-chip on" } else { "m-filter-chip" },
             onclick: move |_| {
                 let mut next = next_base.clone();
-                next.filters.formats.clear();
+                clear_formats(&mut next.filters);
                 handler.call(next);
             },
             "All"
@@ -245,55 +281,4 @@ fn format_chip(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_dir_for_dates_is_desc_and_text_asc() {
-        assert_eq!(default_dir_for(SortKey::NewestAdded), SortDir::Desc);
-        assert_eq!(default_dir_for(SortKey::LastUpdated), SortDir::Desc);
-        assert_eq!(default_dir_for(SortKey::RecentlyInteracted), SortDir::Desc);
-        assert_eq!(default_dir_for(SortKey::Title), SortDir::Asc);
-    }
-
-    #[test]
-    fn sort_options_offer_recently_interacted() {
-        assert!(
-            SORT_ROWS
-                .iter()
-                .any(|(k, label)| *k == SortKey::RecentlyInteracted
-                    && *label == "Recently interacted")
-        );
-    }
-
-    #[test]
-    fn dir_label_reads_naturally_per_axis() {
-        assert_eq!(
-            dir_label(SortKey::NewestAdded, SortDir::Desc),
-            "Newest first \u{2193}"
-        );
-        assert_eq!(
-            dir_label(SortKey::Title, SortDir::Asc),
-            "A\u{2013}Z \u{2191}"
-        );
-        assert_eq!(
-            dir_label(SortKey::Author, SortDir::Desc),
-            "Z\u{2013}A \u{2193}"
-        );
-    }
-
-    #[test]
-    fn toggle_formats_adds_and_removes_chip_groups() {
-        let mut filters = ViewFilters::default();
-        toggle_formats(&mut filters, &["m4b", "m4a", "mp3"]);
-        assert_eq!(filters.formats, vec!["m4b", "m4a", "mp3"]);
-        assert!(chip_on(&filters, &["m4b", "m4a", "mp3"]));
-        // Adding a second group keeps the first.
-        toggle_formats(&mut filters, &["epub"]);
-        assert!(chip_on(&filters, &["epub"]));
-        assert_eq!(filters.formats.len(), 4);
-        // Toggling off removes only that group's values.
-        toggle_formats(&mut filters, &["m4b", "m4a", "mp3"]);
-        assert_eq!(filters.formats, vec!["epub"]);
-    }
-}
+mod tests;

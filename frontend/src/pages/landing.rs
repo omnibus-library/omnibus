@@ -68,11 +68,11 @@ pub(super) const PAGE_SIZE: i64 = 100;
 
 /// Landing page — primary library surface.
 ///
-/// Browse is keyset-paginated server-side: the first page carries the
-/// full-library total, and further pages are appended from a "Load more"
-/// sentinel (auto-triggered on web by an `IntersectionObserver`). Sort and
-/// filter are owned by the server — changing either refetches page 1. A
-/// gallery pick swaps in that shelf's member list, filtered client-side.
+/// Browse is keyset-paginated server-side: the first page carries the total
+/// under the active filters and exclusion, and further pages are appended from
+/// a "Load more" sentinel (auto-triggered on web by an `IntersectionObserver`).
+/// Sort and filter are owned by the server — changing either refetches page 1.
+/// A gallery pick swaps in that shelf's member list, filtered client-side.
 #[component]
 pub fn LandingPage() -> Element {
     let server_url = use_server_url();

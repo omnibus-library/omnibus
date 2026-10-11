@@ -38,9 +38,9 @@ pub(crate) async fn get_ebooks_online(server_url: &str) -> Result<EbookLibrary, 
 
 /// GET `/api/ebooks?sort=&dir=&cursor=&limit=&filter=` — one keyset page.
 ///
-/// `filters` rides the REST query as one `filter` param (legacy facets as
-/// include clauses); `facets` comes back `None`. `total` is read from
-/// `X-Total-Count` on the first page only; `next_cursor` from `X-Next-Cursor`.
+/// `filters` rides the REST query as one `filter` param; `facets` comes back
+/// `None`. `total` is read from `X-Total-Count` on the first page only;
+/// `next_cursor` from `X-Next-Cursor`.
 /// `_stack_series` is ignored: the REST page carries no stacks.
 #[cfg(feature = "mobile")]
 #[allow(clippy::too_many_arguments)] // the shared signature

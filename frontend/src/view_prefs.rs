@@ -81,7 +81,9 @@ pub fn load_last() -> Option<ViewPrefs> {
 mod mobile_tests {
     use super::*;
     use omnibus_db::test_support::EnvVarGuard;
-    use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode};
+    use omnibus_shared::{
+        FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewMode,
+    };
     use std::sync::Mutex;
 
     static TEST_GUARD: Mutex<()> = Mutex::new(());
@@ -124,8 +126,11 @@ mod mobile_tests {
             sort_key: SortKey::Author,
             sort_dir: SortDir::Desc,
             filters: ViewFilters {
-                formats: vec!["epub".into()],
-                ..Default::default()
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Include,
+                    &["epub"],
+                )],
             },
             filters_open: true,
         }
@@ -181,7 +186,9 @@ mod mobile_tests {
 #[cfg(all(test, not(any(feature = "web", feature = "mobile"))))]
 mod ssr_tests {
     use super::*;
-    use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode};
+    use omnibus_shared::{
+        FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewMode,
+    };
 
     #[test]
     fn load_always_returns_defaults() {
@@ -196,8 +203,11 @@ mod ssr_tests {
             sort_key: SortKey::Author,
             sort_dir: SortDir::Desc,
             filters: ViewFilters {
-                formats: vec!["epub".into()],
-                ..Default::default()
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Include,
+                    &["epub"],
+                )],
             },
             filters_open: true,
         };

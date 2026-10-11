@@ -149,8 +149,8 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
     let shelves = sigs.shelves.read();
     let path_value = (sigs.lib_path)();
     let browse_loading = (sigs.loading)();
-    // Header count: the full library total on browse; the shelf's member
-    // count on a gallery pick.
+    // Header count: the total under the active filters and exclusion on
+    // browse; the shelf's member count on a gallery pick.
     let book_count = match source {
         VisibleSource::Shelf => shelf_book_count(
             selection,

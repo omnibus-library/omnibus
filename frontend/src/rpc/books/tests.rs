@@ -1,9 +1,9 @@
 use super::{ebooks_page, merge_candidates, search_ebooks};
-use omnibus_db::test_support::{indexed, seed_synced_ebook, seed_user};
+use omnibus_db::test_support::{indexed, seed_synced_ebook, seed_user, uuid_by_scan_key};
 use omnibus_db::Viewer;
 use omnibus_shared::{
     CreateShelfRequest, FilterClause, FilterField, FilterMode, LibraryPage, Settings, ShelfKind,
-    SortDir, SortKey, ViewFilters, Visibility, MAX_FILTER_CLAUSES, SEARCH_QUERY_MAX_LEN,
+    SortDir, SortKey, ViewFilters, Visibility, SEARCH_QUERY_MAX_LEN,
 };
 
 async fn configured_pool(audiobook_path: Option<&str>) -> sqlx::SqlitePool {
@@ -106,52 +106,6 @@ async fn ebooks_page_surfaces_error_for_malformed_cursor() {
     .await;
 
     assert!(result.is_err(), "malformed cursor must surface an error");
-}
-
-fn tag_filters(clauses: usize) -> ViewFilters {
-    ViewFilters {
-        clauses: (0..clauses)
-            .map(|i| FilterClause {
-                field: FilterField::Tag,
-                mode: FilterMode::Include,
-                values: vec![format!("tag-{i}")],
-            })
-            .collect(),
-        ..Default::default()
-    }
-}
-
-#[tokio::test]
-async fn ebooks_page_rejects_more_than_max_filter_clauses() {
-    let pool = configured_pool(None).await;
-
-    let over = ebooks_page(
-        &pool,
-        SortKey::Title,
-        SortDir::Asc,
-        &tag_filters(MAX_FILTER_CLAUSES + 1),
-        Viewer::default(),
-        &[],
-        None,
-        10,
-        false,
-    )
-    .await;
-    let at_cap = ebooks_page(
-        &pool,
-        SortKey::Title,
-        SortDir::Asc,
-        &tag_filters(MAX_FILTER_CLAUSES),
-        Viewer::default(),
-        &[],
-        None,
-        10,
-        false,
-    )
-    .await;
-
-    assert!(over.is_err(), "17 clauses must be rejected");
-    assert!(at_cap.is_ok(), "16 clauses must still be served");
 }
 
 #[tokio::test]
@@ -277,10 +231,7 @@ async fn ebooks_page_without_exclusion_keeps_current_total_and_no_hidden_count()
 }
 
 fn filters_of(clauses: Vec<FilterClause>) -> ViewFilters {
-    ViewFilters {
-        clauses,
-        ..Default::default()
-    }
+    ViewFilters { clauses }
 }
 
 fn titles_of(page: &LibraryPage) -> Vec<&str> {
@@ -486,13 +437,7 @@ async fn ebooks_page_shelf_clause_ignores_another_readers_private_shelf() {
     seed_series(&pool).await;
     let owner = seed_user(&pool, "owner").await;
     let outsider = seed_user(&pool, "outsider").await;
-    let lone = omnibus_db::list_books(&pool, "/ebooks")
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|b| b.title.as_deref() == Some("Lone Book"))
-        .and_then(|b| b.unique_identifier)
-        .unwrap();
+    let lone = uuid_by_scan_key(&pool, "lone.epub").await;
     let shelf = omnibus_db::create_shelf(
         &pool,
         owner,

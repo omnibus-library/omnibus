@@ -64,7 +64,6 @@ fn filter_of(field: FilterField, mode: FilterMode, values: &[&str]) -> ViewFilte
             mode,
             values: values.iter().map(|v| (*v).to_string()).collect(),
         }],
-        ..Default::default()
     }
 }
 

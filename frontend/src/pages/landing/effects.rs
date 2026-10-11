@@ -140,8 +140,8 @@ pub(super) fn spawn_page_fetch_effect(
             }
             error.set(None);
             next_cursor.set(None);
-            // Server keyset page 1 (server-side sort + filter; the
-            // full-library total rides along on the first page).
+            // Server keyset page 1 (server-side sort + filter; the total under
+            // the active filters and exclusion rides along on the first page).
             let result = data::get_ebooks_page(
                 &url,
                 sort_key,

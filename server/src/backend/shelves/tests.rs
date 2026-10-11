@@ -507,14 +507,9 @@ async fn seed_epub_and_m4b(pool: &sqlx::SqlitePool) -> (String, String) {
     )
     .await
     .unwrap();
-    let uuid_of = |title: &'static str| {
-        sqlx::query_scalar::<_, String>("SELECT uuid FROM books WHERE title = ?")
-            .bind(title)
-            .fetch_one(pool)
-    };
     (
-        uuid_of("Alpha").await.unwrap(),
-        uuid_of("Bravo").await.unwrap(),
+        omnibus_db::test_support::uuid_by_scan_key(pool, "alpha.epub").await,
+        omnibus_db::test_support::uuid_by_scan_key(pool, "bravo.m4b").await,
     )
 }
 
