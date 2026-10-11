@@ -3,10 +3,11 @@
 use axum::http::StatusCode;
 use serde_json::json;
 
-use super::*;
 use crate::device::Device;
 use crate::firmware::Quirk;
 use crate::test_support::{new_entitlement, spawn_stub, Stub, STUB_TOKEN};
+
+use super::*;
 
 fn request_lines(report: &SyncReport) -> Vec<String> {
     report

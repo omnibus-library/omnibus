@@ -2,9 +2,10 @@
 
 use serde_json::{json, Value};
 
-use super::*;
 use crate::test_support::{book_metadata, new_entitlement};
 use crate::wire::Series;
+
+use super::*;
 
 fn item(value: Value) -> SyncItem {
     serde_json::from_value(value).unwrap()
