@@ -7810,7 +7810,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    above shows what's picked so far. */
 .pick { display: flex; flex-direction: column; gap: 12px; flex: 1 1 auto; min-height: 0; }
 .pick-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.pick-kicker {
+/* `.atrium` on the picker's section title: outranks the base `.atrium h3` size. */
+.pick-kicker,
+.atrium .shelf-picker-auto-title {
   font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
   text-transform: uppercase; color: var(--ink-3);
 }
@@ -7952,12 +7954,13 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   display: flex; flex-direction: column; gap: 10px;
   padding-top: 14px; border-top: 1px solid var(--line-2);
 }
-/* `.atrium` scope: outranks the base `.atrium h3` display size. */
-.atrium .shelf-picker-auto-title {
-  padding: 0; font-family: var(--mono); font-size: 10px; font-weight: 500;
-  line-height: 1.4; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
-}
+.atrium .shelf-picker-auto-title { padding: 0; font-weight: 500; line-height: 1.4; }
 .shelf-picker-auto-tile { cursor: default; }
+/* Two lines of a long name would hide where near-identical names differ. */
+.shelf-picker-tile .shv-card-name,
+.shelf-picker-auto-tile .shv-card-name {
+  display: block; -webkit-line-clamp: unset; overflow: visible;
+}
 
 /* Shared shelf chrome: badges, the landing header's edit pencil and facet
    row, the ⋯ menu, rule chips, and the member grid's add tile. */
