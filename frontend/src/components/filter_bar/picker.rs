@@ -1,0 +1,329 @@
+//! The add-filter popover: field, then mode, then a searchable multi-select of
+//! values drawn from the existing reads.
+
+use dioxus::prelude::*;
+use omnibus_shared::{FilterClause, FilterField, FilterMode, MAX_FILTER_VALUES};
+
+use super::values::{self, FilterOption};
+use super::{field_label, field_plural, field_token, FILTER_FIELDS};
+use crate::components::loading::{Loading, LoadingKind};
+use crate::focus_after_paint::focus_after_paint;
+
+/// Most value rows drawn at once; a longer match list is narrowed by search.
+pub(super) const MAX_SHOWN_OPTIONS: usize = 200;
+
+/// Where the chosen field's values stand.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum LoadState {
+    Loading,
+    Ready(Vec<FilterOption>),
+    Failed(String),
+}
+
+/// The field a fetch answered for, and what it answered with.
+pub(super) type Loaded = Option<(FilterField, Result<Vec<FilterOption>, String>)>;
+
+/// The popover. Emits the finished clause through `on_apply`.
+#[component]
+pub(super) fn FilterPicker(
+    on_apply: EventHandler<FilterClause>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let mut field = use_signal(|| None::<FilterField>);
+    let mut mode = use_signal(|| FilterMode::Include);
+    let mut query = use_signal(String::new);
+    let mut picked = use_signal(Vec::<String>::new);
+    let mut retry = use_signal(|| 0u32);
+    let mut loaded = use_loaded_options(field, retry);
+
+    let mut choose = move |next: FilterField| {
+        if *field.peek() == Some(next) {
+            return;
+        }
+        picked.write().clear();
+        query.set(String::new());
+        field.set(Some(next));
+    };
+
+    rsx! {
+        div {
+            class: "fb-scrim",
+            "data-testid": "filter-picker-scrim",
+            onclick: move |_| on_close.call(()),
+        }
+        div {
+            class: "fb-pop",
+            role: "dialog",
+            "aria-label": "Add filter",
+            "data-testid": "filter-picker",
+            tabindex: "-1",
+            onkeydown: move |evt: Event<KeyboardData>| {
+                if evt.key() == Key::Escape {
+                    evt.prevent_default();
+                    on_close.call(());
+                }
+            },
+            onmounted: move |evt: MountedEvent| focus_after_paint(&evt),
+            div { class: "fb-fields", role: "group", "aria-label": "Filter by",
+                for option in FILTER_FIELDS {
+                    button {
+                        key: "{field_token(option)}",
+                        r#type: "button",
+                        class: "fb-field",
+                        "aria-pressed": "{field() == Some(option)}",
+                        "data-testid": "filter-field-{field_token(option)}",
+                        onclick: move |_| choose(option),
+                        "{field_label(option)}"
+                    }
+                }
+            }
+            if let Some(current) = field() {
+                PickerBody {
+                    field: current,
+                    mode: mode(),
+                    query: query(),
+                    picked: picked(),
+                    state: state_for(current, loaded()),
+                    on_mode: move |next| mode.set(next),
+                    on_query: move |next| query.set(next),
+                    on_toggle: move |value: String| picked.with_mut(|p| toggle_pick(p, &value)),
+                    on_retry: move |_| {
+                        loaded.set(None);
+                        retry.with_mut(|n| *n += 1);
+                    },
+                    on_apply: move |_| {
+                        on_apply
+                            .call(FilterClause {
+                                field: current,
+                                mode: mode(),
+                                values: picked(),
+                            })
+                    },
+                    on_cancel: move |_| on_close.call(()),
+                }
+            }
+        }
+    }
+}
+
+/// Fetch the chosen field's values whenever the field changes or a retry is
+/// asked for; a superseded fetch drops its answer.
+fn use_loaded_options(field: Signal<Option<FilterField>>, retry: Signal<u32>) -> Signal<Loaded> {
+    let server_url = crate::use_server_url();
+    let mut loaded = use_signal(|| None::<(FilterField, Result<Vec<FilterOption>, String>)>);
+    let mut epoch = use_signal(|| 0u32);
+    use_effect(move || {
+        let wanted = field();
+        let _ = retry();
+        let Some(wanted) = wanted else { return };
+        let mine = {
+            epoch.with_mut(|e| *e += 1);
+            *epoch.peek()
+        };
+        let url = server_url.clone();
+        spawn(async move {
+            let result = values::load_options(&url, wanted)
+                .await
+                .map_err(|e| e.to_string());
+            if *epoch.peek() == mine {
+                loaded.set(Some((wanted, result)));
+            }
+        });
+    });
+    loaded
+}
+
+/// The state to draw for `field`: an answer for another field is not one.
+pub(super) fn state_for(field: FilterField, loaded: Loaded) -> LoadState {
+    match loaded {
+        Some((answered, Ok(options))) if answered == field => LoadState::Ready(options),
+        Some((answered, Err(message))) if answered == field => LoadState::Failed(message),
+        _ => LoadState::Loading,
+    }
+}
+
+/// Flip `value` in the pick list; a new pick past the value cap is refused.
+pub(super) fn toggle_pick(picked: &mut Vec<String>, value: &str) {
+    if let Some(at) = picked.iter().position(|p| p == value) {
+        picked.remove(at);
+    } else if picked.len() < MAX_FILTER_VALUES {
+        picked.push(value.to_string());
+    }
+}
+
+/// Everything under the field row once a field is chosen.
+#[component]
+pub(super) fn PickerBody(
+    field: FilterField,
+    mode: FilterMode,
+    query: String,
+    picked: Vec<String>,
+    state: LoadState,
+    on_mode: EventHandler<FilterMode>,
+    on_query: EventHandler<String>,
+    on_toggle: EventHandler<String>,
+    on_retry: EventHandler<()>,
+    on_apply: EventHandler<()>,
+    on_cancel: EventHandler<()>,
+) -> Element {
+    let plural = field_plural(field);
+    let apply_label = match picked.len() {
+        0 => "Apply".to_string(),
+        n => format!("Apply ({n})"),
+    };
+    rsx! {
+        div { class: "fb-body",
+            div { class: "fb-modes", role: "group", "aria-label": "Match mode",
+                {mode_button(FilterMode::Include, "include", "Includes any", mode, on_mode)}
+                {mode_button(FilterMode::Exclude, "exclude", "Excludes any", mode, on_mode)}
+            }
+            input {
+                class: "fb-search",
+                r#type: "search",
+                "data-testid": "filter-picker-search",
+                "aria-label": "Search {plural}",
+                placeholder: "Search {plural}\u{2026}",
+                value: "{query}",
+                oninput: move |evt: Event<FormData>| on_query.call(evt.value()),
+            }
+            div { class: "fb-list",
+                {option_list(plural, &query, &picked, state, on_toggle, on_retry)}
+            }
+            div { class: "fb-foot",
+                button {
+                    r#type: "button",
+                    class: "btn ghost sm",
+                    "data-testid": "filter-picker-cancel",
+                    onclick: move |_| on_cancel.call(()),
+                    "Cancel"
+                }
+                button {
+                    r#type: "button",
+                    class: "btn primary sm",
+                    "data-testid": "filter-picker-apply",
+                    disabled: picked.is_empty(),
+                    onclick: move |_| on_apply.call(()),
+                    "{apply_label}"
+                }
+            }
+        }
+    }
+}
+
+fn mode_button(
+    this: FilterMode,
+    token: &'static str,
+    text: &'static str,
+    current: FilterMode,
+    on_mode: EventHandler<FilterMode>,
+) -> Element {
+    rsx! {
+        button {
+            r#type: "button",
+            class: "fb-mode",
+            "aria-pressed": "{current == this}",
+            "data-testid": "filter-mode-{token}",
+            onclick: move |_| on_mode.call(this),
+            "{text}"
+        }
+    }
+}
+
+/// The loader, the failure, or the value rows — never an empty list in place
+/// of an answer that has not arrived.
+fn option_list(
+    plural: &str,
+    query: &str,
+    picked: &[String],
+    state: LoadState,
+    on_toggle: EventHandler<String>,
+    on_retry: EventHandler<()>,
+) -> Element {
+    match state {
+        LoadState::Loading => rsx! {
+            Loading {
+                kind: LoadingKind::Sheet,
+                testid: "filter-picker-loading",
+                label: "Loading {plural}\u{2026}",
+            }
+        },
+        LoadState::Failed(message) => rsx! {
+            div { class: "fb-error", role: "alert", "data-testid": "filter-picker-error",
+                p { "Couldn\u{2019}t load {plural}." }
+                p { class: "fb-error-detail", "{message}" }
+                button {
+                    r#type: "button",
+                    class: "btn sm",
+                    "data-testid": "filter-picker-retry",
+                    onclick: move |_| on_retry.call(()),
+                    "Try again"
+                }
+            }
+        },
+        LoadState::Ready(options) => ready_rows(plural, query, picked, &options, on_toggle),
+    }
+}
+
+fn ready_rows(
+    plural: &str,
+    query: &str,
+    picked: &[String],
+    options: &[FilterOption],
+    on_toggle: EventHandler<String>,
+) -> Element {
+    if options.is_empty() {
+        return rsx! {
+            p { class: "fb-empty", "data-testid": "filter-picker-empty", "No {plural} yet." }
+        };
+    }
+    let found = values::matching(options, query, MAX_SHOWN_OPTIONS);
+    if found.total == 0 {
+        return rsx! {
+            p { class: "fb-empty", "data-testid": "filter-picker-empty",
+                "No {plural} match \u{201c}{query.trim()}\u{201d}."
+            }
+        };
+    }
+    let at_cap = picked.len() >= MAX_FILTER_VALUES;
+    rsx! {
+        div { class: "fb-options", role: "group", "aria-label": "{plural}",
+            for option in found.shown.iter() {
+                {option_row(option, picked.contains(&option.value), at_cap, on_toggle)}
+            }
+        }
+        if found.total > found.shown.len() {
+            p { class: "fb-status", "data-testid": "filter-picker-status",
+                "Showing {found.shown.len()} of {found.total} \u{b7} search to narrow"
+            }
+        }
+        if at_cap {
+            p { class: "fb-status", "data-testid": "filter-picker-limit",
+                "At most {MAX_FILTER_VALUES} values per filter"
+            }
+        }
+    }
+}
+
+fn option_row(
+    option: &FilterOption,
+    is_picked: bool,
+    at_cap: bool,
+    on_toggle: EventHandler<String>,
+) -> Element {
+    let value = option.value.clone();
+    rsx! {
+        label { key: "{option.value}", class: "fb-opt",
+            input {
+                r#type: "checkbox",
+                "aria-label": "{option.label}",
+                checked: is_picked,
+                disabled: !is_picked && at_cap,
+                onchange: move |_| on_toggle.call(value.clone()),
+            }
+            span { class: "fb-opt-label", "{option.label}" }
+            if let Some(count) = option.count {
+                span { class: "fb-opt-count", "aria-hidden": "true", "{count}" }
+            }
+        }
+    }
+}
