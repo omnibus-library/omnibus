@@ -380,6 +380,9 @@ pub(super) struct ShelfFetchSignals {
     /// prefs by one fetch, so only these say whether it answers the filters
     /// now asked for.
     pub(super) shelf_view_filters: Signal<ViewFilters>,
+    /// Bumped to fetch the narrowed list again after an edit that can change
+    /// which books match, such as a bulk save.
+    pub(super) shelf_view_tick: Signal<u32>,
 }
 
 impl ShelfFetchSignals {

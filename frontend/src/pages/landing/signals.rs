@@ -77,6 +77,8 @@ pub(super) struct LandingSignals {
     pub(super) shelf_view_error: Signal<Option<String>>,
     /// See [`ShelfFetchSignals::shelf_view_filters`].
     pub(super) shelf_view_filters: Signal<ViewFilters>,
+    /// See [`ShelfFetchSignals::shelf_view_tick`].
+    pub(super) shelf_view_tick: Signal<u32>,
     /// Full detail for the selected shelf (`None` on All Books / while it
     /// loads) — feeds the header facet row and the edit-shelf modal.
     pub(super) selected_shelf: Signal<Option<Shelf>>,
@@ -150,6 +152,7 @@ pub(super) fn setup_landing_signals(server_url: &str) -> LandingSignals {
         shelf_view_books: shelf_wiring.shelf_sigs.shelf_view_books,
         shelf_view_error: shelf_wiring.shelf_sigs.shelf_view_error,
         shelf_view_filters: shelf_wiring.shelf_sigs.shelf_view_filters,
+        shelf_view_tick: shelf_wiring.shelf_sigs.shelf_view_tick,
         selected_shelf: shelf_wiring.selected_shelf,
         edit_shelf: misc.edit_shelf,
         show_add_books: misc.show_add_books,
@@ -206,6 +209,7 @@ fn use_shelf_fetch_signals() -> ShelfFetchSignals {
         shelf_view_error: use_signal(|| None::<String>),
         shelf_view_epoch: use_signal(|| 0u64),
         shelf_view_filters: use_signal(ViewFilters::default),
+        shelf_view_tick: use_signal(|| 0u32),
     }
 }
 
@@ -523,7 +527,8 @@ fn wire_shelf_effects(
             p.sort_key,
             p.sort_dir,
             p.filters.clone(),
-            shelves_tick(),
+            // Either counter moving refetches; both only grow.
+            shelves_tick() + (shelf_sigs.shelf_view_tick)(),
         )
     });
     spawn_shelf_members_effect(server_url.to_string(), narrowed_key, shelf_sigs.narrowed());

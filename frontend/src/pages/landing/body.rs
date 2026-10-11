@@ -109,6 +109,8 @@ pub(super) fn web_landing_body(
     let tag_pool: ReadSignal<Vec<SuggestionItem>> = sigs.pools.tags.into();
     let genre_pool: ReadSignal<Vec<SuggestionItem>> = sigs.pools.genres.into();
     let all_cover_uuids = derive_all_cover_uuids(sigs);
+    let refetch_narrowed = narrowed_view_goes_stale((sigs.selection)(), &prefs.read().filters)
+        .then_some(sigs.shelf_view_tick);
     // Which open book the stack has out front. The whole page takes its
     // accent, and the edge ribbon resumes it — so it is owned here rather
     // than inside either of them. Hooks stay unconditional: this helper is on
@@ -157,7 +159,7 @@ pub(super) fn web_landing_body(
             }
             {render_gallery(sigs, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
             {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), lens, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters, on_add_tile: lens.add_tile() }, on_prefs_change_header, stack_view, on_stack_toggle)}
-            {render_bulk_overlay(bulk, bulk_modal_open, bulk_selected, BookLists { books: books_sig, shelf_books: shelf_books_sig, shelf_view: shelf_view_sig }, author_pool, tag_pool, genre_pool)}
+            {render_bulk_overlay(bulk, bulk_modal_open, bulk_selected, BookLists { books: books_sig, shelf_books: shelf_books_sig, shelf_view: shelf_view_sig, refetch_narrowed }, author_pool, tag_pool, genre_pool)}
             {render_add_books_overlay(show_add_books, selected_shelf.clone(), &shelf_books_sig.read(), shelves_tick)}
             {render_edit_shelf_overlay(edit_shelf, selected_shelf, shelves_tick)}
             if show_stack {
@@ -336,6 +338,32 @@ struct BookLists {
     books: Signal<Vec<EbookMetadata>>,
     shelf_books: Signal<Option<Vec<EbookMetadata>>>,
     shelf_view: Signal<Option<Vec<EbookMetadata>>>,
+    /// Bumped after a save to fetch the filtered shelf list again; `None` when
+    /// no such list is on screen.
+    refetch_narrowed: Option<Signal<u32>>,
+}
+
+#[cfg(not(feature = "mobile"))]
+impl BookLists {
+    /// Patch the saved books into every list, then fetch the filtered shelf list
+    /// again: a book whose new metadata no longer matches must leave it.
+    fn apply_bulk_save(self, updated: &[EbookMetadata]) {
+        install_updated_books(self, updated);
+        if let Some(mut tick) = self.refetch_narrowed {
+            tick.with_mut(|n| *n += 1);
+        }
+    }
+}
+
+/// Whether a bulk save can invalidate the filtered shelf list on screen: the
+/// patched rows were the server's answer under filters that their new metadata
+/// may no longer satisfy.
+#[cfg(not(feature = "mobile"))]
+fn narrowed_view_goes_stale(
+    selection: crate::shelf_selection::ShelfSelection,
+    filters: &omnibus_shared::ViewFilters,
+) -> bool {
+    matches!(selection, crate::shelf_selection::ShelfSelection::Shelf(_)) && !filters.is_empty()
 }
 
 /// Bulk-edit bar + modal overlay for [`web_landing_body`], split out so the
@@ -372,7 +400,7 @@ fn render_bulk_overlay(
                 },
                 on_close: move |_| bulk_modal_open.set(false),
                 on_saved: move |updated: Vec<EbookMetadata>| {
-                    install_updated_books(lists, &updated);
+                    lists.apply_bulk_save(&updated);
                     bulk_selected.write().clear();
                     bulk_modal_open.set(false);
                 },
@@ -547,6 +575,7 @@ fn install_updated_books(lists: BookLists, updated: &[EbookMetadata]) {
         mut books,
         shelf_books,
         shelf_view,
+        ..
     } = lists;
     books.with_mut(|list| replace_updated_books(list, updated));
     for mut shelf_list in [shelf_books, shelf_view] {
@@ -557,3 +586,6 @@ fn install_updated_books(lists: BookLists, updated: &[EbookMetadata]) {
         });
     }
 }
+
+#[cfg(all(test, feature = "server", not(feature = "mobile")))]
+mod tests;
