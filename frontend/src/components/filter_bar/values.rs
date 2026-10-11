@@ -221,3 +221,6 @@ pub async fn load_options(
         FilterField::Format => Ok(OptionList::new(format_options())),
     }
 }
+
+#[cfg(all(test, feature = "mobile"))]
+mod tests;
