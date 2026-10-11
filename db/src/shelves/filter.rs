@@ -38,12 +38,7 @@ pub(crate) fn filter_predicate(filters: &ViewFilters, viewer: Viewer) -> Predica
 }
 
 fn clause_sql(clause: &FilterClause, viewer: Viewer) -> Option<(String, Vec<Bind>)> {
-    let values: Vec<&str> = clause
-        .values
-        .iter()
-        .map(|v| v.trim())
-        .filter(|v| !v.is_empty())
-        .collect();
+    let values: Vec<&str> = clause.usable_values().collect();
     if values.is_empty() {
         return None;
     }

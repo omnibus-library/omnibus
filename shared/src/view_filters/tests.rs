@@ -547,10 +547,26 @@ fn view_filters_matches_intersects_clauses_across_fields() {
 }
 
 #[test]
-fn view_filters_matches_is_undecided_when_a_shelf_clause_is_present() {
-    let ruled_out_by_tag = filters_with(vec![
+fn view_filters_matches_rules_a_book_out_when_a_decidable_clause_fails_beside_a_shelf_clause() {
+    let tag_then_shelf = filters_with(vec![
         FilterClause::new(FilterField::Tag, FilterMode::Include, &["romance"]),
         FilterClause::new(FilterField::Shelf, FilterMode::Include, &["7"]),
     ]);
-    assert_eq!(ruled_out_by_tag.matches(&novel()), None);
+    let shelf_then_tag = filters_with(vec![
+        FilterClause::new(FilterField::Shelf, FilterMode::Include, &["7"]),
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["romance"]),
+    ]);
+
+    assert_eq!(tag_then_shelf.matches(&novel()), Some(false));
+    assert_eq!(shelf_then_tag.matches(&novel()), Some(false));
+}
+
+#[test]
+fn view_filters_matches_is_undecided_when_every_decidable_clause_passes_beside_a_shelf_clause() {
+    let filters = filters_with(vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["horror"]),
+        FilterClause::new(FilterField::Shelf, FilterMode::Include, &["7"]),
+    ]);
+
+    assert_eq!(filters.matches(&novel()), None);
 }

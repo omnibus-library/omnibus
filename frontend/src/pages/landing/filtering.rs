@@ -7,7 +7,7 @@
 use omnibus_shared::{EbookMetadata, ViewFilters};
 
 /// Keep every book the filters don't rule out. A shelf clause can't be decided
-/// here, so a filter carrying one rules nothing out.
+/// here, so it rules nothing out itself; the other clauses still apply.
 pub(crate) fn apply_filters(books: &[EbookMetadata], filters: &ViewFilters) -> Vec<EbookMetadata> {
     if filters.is_empty() {
         return books.to_vec();

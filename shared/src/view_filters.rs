@@ -54,6 +54,14 @@ impl FilterClause {
             values: values.iter().map(|v| v.to_string()).collect(),
         }
     }
+
+    /// The values that can match: trimmed, blanks dropped.
+    pub fn usable_values(&self) -> impl Iterator<Item = &str> {
+        self.values
+            .iter()
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+    }
 }
 
 /// Active library filter: a clause list whose clauses AND together.
@@ -119,12 +127,19 @@ impl ViewFilters {
     }
 
     /// Whether `book` passes every clause, over metadata with overrides already
-    /// merged. `None` when a shelf clause is present: membership is the server's
-    /// to answer, and a guess would read as fact.
+    /// merged. A clause it can decide rules a book out even when a shelf clause
+    /// is present; `None` when the rest pass and a shelf clause remains, since
+    /// membership is the server's to answer and a guess would read as fact.
     pub fn matches(&self, book: &EbookMetadata) -> Option<bool> {
-        self.clauses.iter().try_fold(true, |kept, clause| {
-            Some(clause_matches(clause, book)? && kept)
-        })
+        let mut undecided = false;
+        for clause in &self.clauses {
+            match clause_matches(clause, book) {
+                Some(false) => return Some(false),
+                Some(true) => {}
+                None => undecided = true,
+            }
+        }
+        (!undecided).then_some(true)
     }
 
     /// Reject filters over the clause or value caps, or a clause no book could
@@ -159,35 +174,30 @@ impl ViewFilters {
 /// Mirrors the db engine: values are trimmed, compared ASCII-case-insensitively,
 /// and a clause with no usable value matches every book.
 fn clause_matches(clause: &FilterClause, book: &EbookMetadata) -> Option<bool> {
-    let held = book_values(book, clause.field)?;
-    let wanted: Vec<&str> = clause
-        .values
-        .iter()
-        .map(|v| v.trim())
-        .filter(|v| !v.is_empty())
-        .collect();
-    if wanted.is_empty() {
+    if clause.field == FilterField::Shelf {
+        return None;
+    }
+    if clause.usable_values().next().is_none() {
         return Some(true);
     }
-    let carries_one = held
-        .iter()
-        .any(|h| wanted.iter().any(|w| h.eq_ignore_ascii_case(w)));
+    let carries_one = clause
+        .usable_values()
+        .any(|wanted| holds(book, clause.field, wanted));
     Some(carries_one == (clause.mode == FilterMode::Include))
 }
 
-/// The values `book` holds for `field`; `None` for a field the book alone can't answer.
-fn book_values(book: &EbookMetadata, field: FilterField) -> Option<Vec<&str>> {
-    fn names(values: &[String]) -> Vec<&str> {
-        values.iter().map(String::as_str).collect()
+/// Whether `book` carries `wanted` under `field`. Always `false` for a shelf,
+/// which the book alone can't answer; `clause_matches` settles that first.
+fn holds(book: &EbookMetadata, field: FilterField, wanted: &str) -> bool {
+    let is_wanted = |held: &str| held.eq_ignore_ascii_case(wanted);
+    match field {
+        FilterField::Tag => book.subjects.iter().any(|v| is_wanted(v)),
+        FilterField::Genre => book.genres.iter().any(|v| is_wanted(v)),
+        FilterField::Format => book.formats.iter().any(|v| is_wanted(v)),
+        FilterField::Author => book.creators.iter().any(|c| is_wanted(&c.name)),
+        FilterField::Series => book.series.as_deref().is_some_and(is_wanted),
+        FilterField::Shelf => false,
     }
-    Some(match field {
-        FilterField::Tag => names(&book.subjects),
-        FilterField::Genre => names(&book.genres),
-        FilterField::Format => names(&book.formats),
-        FilterField::Author => book.creators.iter().map(|c| c.name.as_str()).collect(),
-        FilterField::Series => book.series.as_deref().into_iter().collect(),
-        FilterField::Shelf => return None,
-    })
 }
 
 fn validate_clause(clause: &FilterClause) -> Result<(), String> {

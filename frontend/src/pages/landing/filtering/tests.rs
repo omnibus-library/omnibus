@@ -47,11 +47,11 @@ fn apply_filters_applies_every_clause() {
 }
 
 #[test]
-fn apply_filters_keeps_every_book_when_a_shelf_clause_cannot_be_decided() {
+fn apply_filters_drops_books_a_decidable_clause_rules_out_when_a_shelf_clause_cannot_be_decided() {
     let filters = filters_of(vec![
         FilterClause::new(FilterField::Tag, FilterMode::Include, &["Fantasy"]),
         FilterClause::new(FilterField::Shelf, FilterMode::Include, &["7"]),
     ]);
     let out = apply_filters(&sample(), &filters);
-    assert_eq!(ids(&out), vec![1, 2, 3]);
+    assert_eq!(ids(&out), vec![1, 3]);
 }
