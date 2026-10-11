@@ -4,7 +4,9 @@
 //! `prefs` signal and the data pipeline.
 
 use dioxus::prelude::*;
-use omnibus_shared::{EbookMetadata, SeriesStack, Shelf, ShelfKind, SortKey, ViewMode, ViewPrefs};
+use omnibus_shared::{
+    EbookMetadata, SeriesStack, Shelf, ShelfKind, ShelfSummary, SortKey, ViewMode, ViewPrefs,
+};
 
 use super::filters::EmptyFiltered;
 use super::grid::BookGrid;
@@ -44,6 +46,9 @@ pub(super) struct LandingHeaderView {
     pub sort_lock: Option<&'static str>,
     /// The Stack series switch's state for this render.
     pub stack: StackToggleView,
+    /// The viewer's shelves, `None` until the list has loaded — the filter
+    /// bar names its shelf chips from it.
+    pub shelves: Option<Vec<ShelfSummary>>,
 }
 
 /// The shelf lens's Add books control: absent unless the pick is a
@@ -104,6 +109,7 @@ pub(super) fn LandingHeader(
         add_books,
         sort_lock,
         stack,
+        shelves,
     } = view;
     rsx! {
         header { class: "lib-header", "data-testid": "lib-header",
@@ -124,6 +130,7 @@ pub(super) fn LandingHeader(
                 }
                 Toolbar {
                     prefs: prefs,
+                    shelves,
                     sort_lock,
                     stack,
                     on_change: move |next: ViewPrefs| on_prefs_change.call(next),

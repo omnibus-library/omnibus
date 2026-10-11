@@ -190,3 +190,10 @@ POSTs `/api/rpc/progress` with `epub_cfi: "pdf-page:N"`; opening the reader
 POSTs nothing for position (the ready report is treated as already saved) but
 does write read status `reading` on an unread book — pre-set `flatland` to
 `reading` in `beforeAll` (the comic spec's pattern) or assert that write.
+
+**The filter bar is a popover with lazy value lists.** `lib-filter-bar` holds the
+chips (`filter-chip-<i>`, `-remove-<i>`), `filter-add` and, once a clause exists,
+`filter-clear-all`. `filter-add` opens `filter-picker`: `filter-field-<field>`,
+`filter-mode-{include,exclude}`, `filter-picker-search`, checkboxes labelled by value
+(`getByLabel(v, { exact: true })`), `filter-picker-apply` (refetches page 1: `POST
+/api/rpc/ebooks/page`). Values load per field (`filter-picker-error`); Escape needs focus.

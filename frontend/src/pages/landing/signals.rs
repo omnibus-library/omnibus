@@ -53,6 +53,9 @@ pub(super) struct LandingSignals {
     pub(super) selection: Signal<ShelfSelection>,
     /// Gallery feed. Starts empty so the first WASM paint matches SSR.
     pub(super) shelves: Signal<Vec<ShelfSummary>>,
+    /// True once `shelves` holds a fetched list — unlike `shelves_answered`,
+    /// a failed fetch leaves it false.
+    pub(super) shelves_loaded: Signal<bool>,
     /// True once the shelves fetch has returned, success or not — what the
     /// gallery's placeholders wait on.
     pub(super) shelves_answered: Signal<bool>,
@@ -124,6 +127,7 @@ pub(super) fn setup_landing_signals(server_url: &str) -> LandingSignals {
         pools,
         selection: shelf_wiring.selection,
         shelves: shelf_wiring.shelves,
+        shelves_loaded: shelf_wiring.shelves_loaded,
         shelves_answered: shelf_wiring.shelves_answered,
         shelves_tick: shelf_wiring.shelves_tick,
         shelf_books: shelf_wiring.shelf_sigs.shelf_books,

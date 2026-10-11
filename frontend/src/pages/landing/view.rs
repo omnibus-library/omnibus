@@ -65,6 +65,12 @@ pub(super) fn shelf_book_count(
     }
 }
 
+/// Whether the pick holds no books at all. A filter that rules every book out
+/// is not that: it gets the "clear filters" state instead.
+pub(super) fn books_empty(visible_is_empty: bool, filters: &ViewFilters) -> bool {
+    visible_is_empty && filters.is_empty()
+}
+
 // Limitation: a stack links its lead book's `series_id`, which can be stale after an override rename.
 /// The shelf lens's rows: members filtered, then stacked client-side when Stack series is on.
 pub(super) fn shelf_lens(
@@ -163,6 +169,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
     };
     let (visible_books, visible_stacks) = visible();
     let visible_is_empty = visible_books.is_empty();
+    let empty_pick = books_empty(visible_is_empty, &prefs_sig.read().filters);
     let path_subtitle = path_value
         .as_ref()
         .map(|p| super::short_path(p))
@@ -210,10 +217,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
         visible_books,
         visible_stacks,
         visible_is_empty,
-        books_empty: match source {
-            VisibleSource::Shelf => visible_is_empty,
-            _ => sigs.books.read().is_empty(),
-        },
+        books_empty: empty_pick,
         // Keyset pagination is browse-only; its cursor stays warm under a
         // shelf pick, so the source guard keeps load-more off the shelf lens.
         has_more: source == VisibleSource::Browse && (sigs.next_cursor)().is_some(),
@@ -252,8 +256,9 @@ pub(super) fn build_handlers(sigs: &LandingSignals) -> LandingHandlers {
     let lib_path = sigs.lib_path;
     let mut want_more = sigs.want_more;
     let save = move |new_prefs: ViewPrefs| {
-        if let Some(path) = lib_path.peek().as_ref() {
-            view_prefs::save(path, &new_prefs);
+        // A failed page fetch leaves `lib_path` unset; the pointer still names the library the prefs came from.
+        if let Some(path) = lib_path.peek().clone().or_else(view_prefs::last_library) {
+            view_prefs::save(&path, &new_prefs);
         }
         prefs.set(new_prefs);
     };
