@@ -7,14 +7,6 @@ use serde_json::json;
 
 use crate::test_support::{new_entitlement, spawn_stub, Stub, STUB_TOKEN};
 
-/// An `api_endpoint` on a local port nothing listens on.
-fn unreachable_endpoint() -> String {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{addr}/kobo/{STUB_TOKEN}")
-}
-
 fn request_lines(report: &SyncReport) -> Vec<String> {
     report
         .requests
@@ -170,7 +162,10 @@ async fn sync_now_failure_omits_device_token_when_store_path_returns_404() {
 
 #[tokio::test]
 async fn sync_now_failure_omits_device_token_when_server_unreachable() {
-    let failure = sync_now(&mut Device::new("HW-1"), &unreachable_endpoint())
+    // Port 1 is privileged, so a parallel stub's `bind("127.0.0.1:0")` is never handed it.
+    let endpoint = format!("http://127.0.0.1:1/kobo/{STUB_TOKEN}");
+
+    let failure = sync_now(&mut Device::new("HW-1"), &endpoint)
         .await
         .unwrap_err();
 
