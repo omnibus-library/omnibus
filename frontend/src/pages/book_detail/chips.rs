@@ -13,6 +13,8 @@ use crate::components::chip_editor::{
 };
 use crate::{data, use_is_admin, use_server_url};
 
+use super::rule_facts::use_rule_facts_saved;
+
 /// Which override-backed chip list a [`BdChipListEditor`] instance edits.
 /// Carries the per-kind labels/testids and dispatches the pool fetch and the
 /// override save — the same tags/genres split as the landing table's
@@ -160,6 +162,7 @@ impl BdChipKind {
 pub(super) fn BdChipListEditor(uuid: String, kind: BdChipKind, values: Vec<String>) -> Element {
     let is_admin = use_is_admin();
     let server_url = use_server_url();
+    let saved = use_rule_facts_saved();
     let mut editing = use_signal(|| false);
     let mut chips: Signal<Vec<String>> = use_signal(|| values.clone());
     // Re-sync the local list when the parent refetches the book (e.g. a
@@ -205,7 +208,10 @@ pub(super) fn BdChipListEditor(uuid: String, kind: BdChipKind, values: Vec<Strin
                 None
             };
             match merged {
-                Some(merged) => chips.set(kind.merged_values(merged)),
+                Some(merged) => {
+                    chips.set(kind.merged_values(merged));
+                    saved.note();
+                }
                 None => {
                     if let Ok(Some(book)) = data::get_ebook(&url, &uuid).await {
                         chips.set(kind.merged_values(book));

@@ -1,13 +1,48 @@
 //! Manual membership: insertion order, the unknown-book rejection,
 //! add/remove, survival of a ghosted file, the chunked batch inserts for
-//! books and rules, and `manual_shelves_containing`.
+//! books and rules, `manual_shelves_containing` and
+//! `smart_shelves_containing`.
 
-use omnibus_shared::{MatchMode, ShelfRule, SortDir, SortKey};
+use omnibus_shared::{
+    CreateShelfRequest, MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, Visibility,
+};
 
 use super::super::*;
 use super::{make_user, manual_req, smart_req, tag_rule, uuid_by_title};
 use crate::pool::init_db;
 use crate::test_support::{seed_discovery_fixture, seed_minimal_books};
+
+async fn finish_book(pool: &sqlx::SqlitePool, user: i64, uuid: &str) {
+    sqlx::query(
+        "INSERT INTO book_read_status (user_id, book_uuid, status, finished_at)
+         VALUES (?, ?, 'finished', strftime('%s','now'))",
+    )
+    .bind(user)
+    .bind(uuid)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// Bulk-insert `count` rule-less smart shelves owned by `owner_id` (they hold
+/// no book) at positions `1..=count`, without `create_shelf` — too slow at
+/// over-cap row counts.
+async fn seed_smart_shelves_raw(pool: &sqlx::SqlitePool, owner_id: i64, count: i64) {
+    sqlx::query(
+        r"
+        WITH RECURSIVE n(i) AS (
+            SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?
+        )
+        INSERT INTO shelves (owner_user_id, kind, name, match_mode, position)
+        SELECT ?, 'smart', 'Smart ' || i, 'any', i FROM n
+        ",
+    )
+    .bind(count)
+    .bind(owner_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
 
 #[tokio::test]
 async fn create_manual_shelf_keeps_added_order() {
@@ -230,4 +265,248 @@ async fn manual_shelves_containing_returns_nothing_for_an_unknown_uuid() {
         .await
         .unwrap();
     assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_names_every_smart_shelf_matching_the_book() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let uuid = uuid_by_title(&pool, "Saga: Book One").await;
+
+    let by_tag = create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+    let by_other_tag = create_shelf(
+        &pool,
+        owner,
+        &smart_req("Classics", MatchMode::Any, vec![tag_rule("classic")]),
+    )
+    .await
+    .unwrap();
+
+    let ids = smart_shelves_containing(&pool, owner, false, &uuid)
+        .await
+        .unwrap();
+    assert_eq!(ids, vec![by_tag.id, by_other_tag.id]);
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_skips_a_smart_shelf_the_book_does_not_match() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let uuid = uuid_by_title(&pool, "Other Story").await;
+
+    create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+
+    let ids = smart_shelves_containing(&pool, owner, false, &uuid)
+        .await
+        .unwrap();
+    assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_never_returns_a_hand_picked_shelf() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let uuid = uuid_by_title(&pool, "Saga: Book One").await;
+
+    create_shelf(&pool, owner, &manual_req("Picks", vec![uuid.clone()]))
+        .await
+        .unwrap();
+
+    let ids = smart_shelves_containing(&pool, owner, false, &uuid)
+        .await
+        .unwrap();
+    assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_hides_another_users_private_smart_shelf_from_a_non_admin() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let stranger = make_user(&pool, "stranger", false).await;
+    let uuid = uuid_by_title(&pool, "Saga: Book One").await;
+
+    create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+
+    let ids = smart_shelves_containing(&pool, stranger, false, &uuid)
+        .await
+        .unwrap();
+    assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_shows_another_users_private_smart_shelf_to_an_admin() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let admin = make_user(&pool, "admin", true).await;
+    let uuid = uuid_by_title(&pool, "Saga: Book One").await;
+
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+
+    let ids = smart_shelves_containing(&pool, admin, true, &uuid)
+        .await
+        .unwrap();
+    assert_eq!(ids, vec![shelf.id]);
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_shows_another_users_public_smart_shelf_to_a_reader() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let reader = make_user(&pool, "reader", false).await;
+    let uuid = uuid_by_title(&pool, "Saga: Book One").await;
+
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &CreateShelfRequest {
+            visibility: Visibility::Public,
+            ..smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")])
+        },
+    )
+    .await
+    .unwrap();
+
+    let ids = smart_shelves_containing(&pool, reader, false, &uuid)
+        .await
+        .unwrap();
+    assert_eq!(ids, vec![shelf.id]);
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_returns_nothing_for_an_unknown_uuid() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+
+    let ids = smart_shelves_containing(&pool, owner, false, "not-a-book")
+        .await
+        .unwrap();
+    assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_evaluates_a_rule_for_the_shelf_owner_not_the_viewer() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let reader = make_user(&pool, "reader", false).await;
+    let saga = uuid_by_title(&pool, "Saga: Book One").await;
+    let standalone = uuid_by_title(&pool, "Standalone").await;
+    finish_book(&pool, owner, &saga).await;
+    finish_book(&pool, reader, &standalone).await;
+    let finished = ShelfRule {
+        field: RuleField::Status,
+        op: RuleOp::Is,
+        value: "finished".into(),
+    };
+    let shelf = create_shelf(
+        &pool,
+        owner,
+        &CreateShelfRequest {
+            visibility: Visibility::Public,
+            ..smart_req("Finished", MatchMode::Any, vec![finished])
+        },
+    )
+    .await
+    .unwrap();
+
+    let owners_book = smart_shelves_containing(&pool, reader, false, &saga)
+        .await
+        .unwrap();
+    let readers_book = smart_shelves_containing(&pool, reader, false, &standalone)
+        .await
+        .unwrap();
+
+    assert_eq!(owners_book, vec![shelf.id]);
+    assert!(readers_book.is_empty());
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_names_the_viewers_own_shelf_past_a_full_window_of_others() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let admin = make_user(&pool, "admin", true).await;
+    let other = make_user(&pool, "other", false).await;
+    let uuid = uuid_by_title(&pool, "Saga: Book One").await;
+    seed_smart_shelves_raw(&pool, other, LIST_SHELVES_LIMIT + 1).await;
+    let mine = create_shelf(
+        &pool,
+        admin,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE shelves SET position = ? WHERE id = ?")
+        .bind(LIST_SHELVES_LIMIT + 10)
+        .bind(mine.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let ids = smart_shelves_containing(&pool, admin, true, &uuid)
+        .await
+        .unwrap();
+
+    assert_eq!(ids, vec![mine.id]);
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_propagates_db_error_when_pool_is_closed() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    pool.close().await;
+    let err = smart_shelves_containing(&pool, 1, false, "any-uuid")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ShelfError::Sqlx(_)));
+}
+
+#[tokio::test]
+async fn smart_shelves_containing_rejects_a_stored_rule_its_field_cannot_take() {
+    let (pool, _covers) = seed_discovery_fixture().await;
+    let owner = make_user(&pool, "owner", false).await;
+    let uuid = uuid_by_title(&pool, "Saga: Book One").await;
+    create_shelf(
+        &pool,
+        owner,
+        &smart_req("Fiction", MatchMode::Any, vec![tag_rule("fiction")]),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE shelf_rules SET op = 'gte'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let err = smart_shelves_containing(&pool, owner, false, &uuid)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ShelfError::InvalidRule(_)));
 }

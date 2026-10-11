@@ -12,6 +12,8 @@ use crate::components::{fmt_stars, StarRating};
 use crate::time::now_unix;
 use crate::{data, use_server_url};
 
+use super::rule_facts::{use_rule_facts_saved, RuleFactsSaved};
+
 /// Live rating signals shared between [`BdRatingWidget`] and each
 /// [`BdStarHalf`] click target: the persisted record, hover preview, failed
 /// flag, and the monotonic op counter. Grouped to keep the half under the cap.
@@ -22,6 +24,7 @@ struct RatingState {
     failed: Signal<bool>,
     op_seq: Signal<u64>,
     other_ratings: Signal<Vec<AttributedRating>>,
+    saved: RuleFactsSaved,
 }
 
 /// Clickable 0.5–5.0 star rating bound to the current user and `uuid`.
@@ -44,6 +47,7 @@ pub(super) fn BdRatingWidget(uuid: String) -> Element {
         failed,
         op_seq,
         other_ratings,
+        saved: use_rule_facts_saved(),
     };
 
     use_rating_hydration(uuid.clone(), server_url.clone(), state);
@@ -244,6 +248,7 @@ fn apply_rating(state: RatingState, uuid: String, server_url: String, target: Op
         mut failed,
         mut op_seq,
         mut other_ratings,
+        saved,
         ..
     } = state;
     let prev = current();
@@ -275,6 +280,7 @@ fn apply_rating(state: RatingState, uuid: String, server_url: String, target: Op
         match result {
             Ok(rec) => {
                 current.set(rec);
+                saved.note();
                 if let Ok(ratings) = data::list_other_ratings(&server_url, &uuid).await {
                     if op_seq() == my_op {
                         other_ratings.set(ratings);
