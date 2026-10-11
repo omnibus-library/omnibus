@@ -24,6 +24,8 @@ pub enum SyncItem {
     NewEntitlement(Entitlement),
     ChangedEntitlement(Entitlement),
     ChangedProductMetadata(ChangedProductMetadata),
+    /// Reading state isn't modelled until StateArbitration lands.
+    ChangedReadingState(serde::de::IgnoredAny),
 }
 
 /// Refreshed metadata for a book the device already has.

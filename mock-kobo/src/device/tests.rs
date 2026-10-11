@@ -76,3 +76,18 @@ fn apply_archives_book_when_entitlement_is_removed() {
     let book = &device.library["book-1"];
     assert_eq!((book.title.as_str(), book.archived), ("Dune", true));
 }
+
+#[test]
+fn apply_leaves_library_unchanged_when_reading_state_changes() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    let before = device.clone();
+
+    device.apply(item(json!({ "ChangedReadingState": { "ReadingState": {
+        "EntitlementId": "book-1",
+        "StatusInfo": { "Status": "Reading" },
+        "CurrentBookmark": { "ProgressPercent": 42 },
+    }}})));
+
+    assert_eq!(device, before);
+}
