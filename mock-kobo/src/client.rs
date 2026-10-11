@@ -2,6 +2,8 @@
 //! answered request is recorded for the sync report with the device's path
 //! token redacted, since the token is the device's only credential.
 
+use std::time::Duration;
+
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 
@@ -10,6 +12,9 @@ use crate::session::SyncFailure;
 
 /// What stands in for the path token in anything the device reports.
 const REDACTED: &str = "<token>";
+
+/// How long one request may take before the device gives up on it.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One request the device made and the status it got back.
 #[derive(Clone, Debug, PartialEq)]
@@ -31,14 +36,20 @@ pub struct Client {
 
 impl Client {
     /// A client for the device `hardware_id`, configured with `api_endpoint`.
-    pub fn new(api_endpoint: &str, hardware_id: &str) -> Self {
-        Self {
-            http: reqwest::Client::new(),
+    pub fn new(api_endpoint: &str, hardware_id: &str) -> Result<Self, SyncFailure> {
+        // A 3xx is an answer, not a detour: following one would pass a moved path as 200.
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            .map_err(|e| SyncFailure::Transport(e.to_string()))?;
+        Ok(Self {
+            http,
             api_endpoint: api_endpoint.trim_end_matches('/').to_owned(),
             hardware_id: hardware_id.to_owned(),
             token: path_token(api_endpoint),
             requests: Vec::new(),
-        }
+        })
     }
 
     /// `GET v1/initialization`, the handshake.
@@ -74,10 +85,10 @@ impl Client {
 
     /// Decode a JSON body the device needs, as a [`SyncFailure::BadResponse`] when it can't.
     pub async fn decode<T: DeserializeOwned>(&self, response: Response) -> Result<T, SyncFailure> {
-        response
-            .json()
-            .await
-            .map_err(|e| SyncFailure::BadResponse(self.redact(&e.to_string())))
+        let path = response.url().path().to_owned();
+        let body = response.bytes().await.map_err(|e| self.transport(e))?;
+        serde_json::from_slice(&body)
+            .map_err(|e| SyncFailure::BadResponse(self.redact(&format!("{path}: {e}"))))
     }
 
     /// `text` with the device token replaced, safe to report.

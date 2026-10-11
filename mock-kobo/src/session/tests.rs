@@ -1,18 +1,13 @@
-use super::*;
-use crate::device::Device;
-use crate::firmware::Quirk;
+//! `sync_now` against a stub Omnibus, one test per firmware rule the device enforces.
+
 use axum::http::StatusCode;
 use serde_json::json;
 
+use super::*;
+use crate::client::REQUEST_TIMEOUT;
+use crate::device::Device;
+use crate::firmware::Quirk;
 use crate::test_support::{new_entitlement, spawn_stub, Stub, STUB_TOKEN};
-
-/// An `api_endpoint` on a local port nothing listens on.
-fn unreachable_endpoint() -> String {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{addr}/kobo/{STUB_TOKEN}")
-}
 
 fn request_lines(report: &SyncReport) -> Vec<String> {
     report
@@ -46,7 +41,7 @@ async fn sync_now_completes_handshake_against_healthy_stub() {
 #[tokio::test]
 async fn sync_now_fails_when_initialization_lacks_api_token() {
     let stub = spawn_stub(Stub {
-        api_token: None,
+        sends_api_token: false,
         ..Stub::default()
     })
     .await;
@@ -108,6 +103,47 @@ async fn sync_now_fails_before_library_sync_when_store_path_returns_404() {
 }
 
 #[tokio::test]
+async fn sync_now_fails_when_store_path_redirects() {
+    let stub = spawn_stub(Stub {
+        store_path_status: StatusCode::FOUND,
+        ..Stub::default()
+    })
+    .await;
+
+    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        failure,
+        SyncFailure::Quirk {
+            quirk: Quirk::StorePaths,
+            ..
+        }
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn sync_now_fails_when_server_never_answers() {
+    let stub = spawn_stub(Stub {
+        sync_never_answers: true,
+        ..Stub::default()
+    })
+    .await;
+
+    let outcome = tokio::time::timeout(
+        REQUEST_TIMEOUT * 2,
+        sync_now(&mut Device::new("HW-1"), &stub.endpoint),
+    )
+    .await;
+
+    let failure = outcome
+        .expect("sync_now should give up on the silent server before the deadline")
+        .unwrap_err();
+    assert!(matches!(failure, SyncFailure::Transport(_)));
+}
+
+#[tokio::test]
 async fn sync_now_failure_omits_device_token_when_store_path_returns_404() {
     let stub = spawn_stub(Stub {
         store_path_status: StatusCode::NOT_FOUND,
@@ -128,7 +164,10 @@ async fn sync_now_failure_omits_device_token_when_store_path_returns_404() {
 
 #[tokio::test]
 async fn sync_now_failure_omits_device_token_when_server_unreachable() {
-    let failure = sync_now(&mut Device::new("HW-1"), &unreachable_endpoint())
+    // Port 1 is privileged, so a parallel stub's `bind("127.0.0.1:0")` is never handed it.
+    let endpoint = format!("http://127.0.0.1:1/kobo/{STUB_TOKEN}");
+
+    let failure = sync_now(&mut Device::new("HW-1"), &endpoint)
         .await
         .unwrap_err();
 
@@ -205,10 +244,11 @@ async fn sync_now_echoes_sync_token_on_continued_pages() {
     })
     .await;
 
-    sync_now(&mut Device::new("HW-1"), &stub.endpoint)
+    let report = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
         .await
         .unwrap();
 
+    assert_eq!(report.pages, 2);
     let requests = stub.requests.lock().unwrap();
     let tokens: Vec<Option<&str>> = requests
         .iter()
@@ -256,4 +296,8 @@ async fn sync_now_fails_when_library_sync_body_is_malformed() {
         .unwrap_err();
 
     assert!(matches!(failure, SyncFailure::BadResponse(_)));
+    assert!(failure
+        .to_string()
+        .contains("invalid type: map, expected a sequence"));
+    assert!(!format!("{failure:?}").contains(STUB_TOKEN));
 }

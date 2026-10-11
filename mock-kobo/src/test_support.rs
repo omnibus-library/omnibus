@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::State,
-    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
+    http::{header::LOCATION, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     Json, Router,
 };
@@ -19,11 +19,12 @@ pub const STUB_TOKEN: &str = "stub-device-token";
 /// How a stub answers. `Stub::default()` behaves like a healthy Omnibus.
 #[derive(Clone)]
 pub struct Stub {
-    /// The `x-kobo-apitoken` sent on `v1/initialization`; `None` leaves it off.
-    pub api_token: Option<&'static str>,
+    /// Whether `v1/initialization` carries an `x-kobo-apitoken`.
+    pub sends_api_token: bool,
     /// Whether `gettests` takes a POST; `false` answers 405, as before #1499.
     pub gettests_accepts_post: bool,
-    /// The status every firmware store path answers with.
+    /// The status every firmware store path answers with; a 3xx points at a
+    /// stub path that answers 200.
     pub store_path_status: StatusCode,
     /// Where under `/kobo/<token>` the resources map puts `library_sync` and
     /// `get_tests_request`; the default `/v1/...` paths answer 404 once moved.
@@ -32,17 +33,20 @@ pub struct Stub {
     pub sync_pages: Vec<Value>,
     /// Say `continue` on every `library_sync` page, forever.
     pub sync_never_ends: bool,
+    /// Leave `library_sync` requests open without ever answering.
+    pub sync_never_answers: bool,
 }
 
 impl Default for Stub {
     fn default() -> Self {
         Self {
-            api_token: Some("e30="),
+            sends_api_token: true,
             gettests_accepts_post: true,
             store_path_status: StatusCode::OK,
             resources_under: "",
             sync_pages: vec![json!([])],
             sync_never_ends: false,
+            sync_never_answers: false,
         }
     }
 }
@@ -113,31 +117,47 @@ async fn handle(
         "/v1/user/profile"
         | "/v1/user/loyalty/benefits"
         | "/v1/products/books/subscriptions"
-        | "/v1/deals" => (state.stub.store_path_status, Json(json!({}))).into_response(),
+        | "/v1/deals" => store_path(&state),
         _ => match rest.strip_prefix(state.stub.resources_under) {
-            Some(resource) => answer_resource(&state, &method, resource),
+            Some(resource) => answer_resource(&state, &method, resource).await,
             None => StatusCode::NOT_FOUND.into_response(),
         },
     }
 }
 
+/// A firmware store path's answer, redirecting to a healthy path when `store_path_status` is a 3xx.
+fn store_path(state: &StubState) -> Response {
+    let status = state.stub.store_path_status;
+    let mut response = (status, Json(json!({}))).into_response();
+    if status.is_redirection() {
+        let target = format!("{}/kobo/{STUB_TOKEN}/v1/analytics/gettests", state.base);
+        let location = HeaderValue::from_str(&target).unwrap();
+        response.headers_mut().insert(LOCATION, location);
+    }
+    response
+}
+
 /// The routes the device reaches through the resources map.
-fn answer_resource(state: &StubState, method: &Method, resource: &str) -> Response {
+async fn answer_resource(state: &StubState, method: &Method, resource: &str) -> Response {
     match resource {
         "/v1/analytics/gettests" if method == Method::POST && !state.stub.gettests_accepts_post => {
             StatusCode::METHOD_NOT_ALLOWED.into_response()
         }
         "/v1/analytics/gettests" => Json(json!({ "Result": "Success" })).into_response(),
-        "/v1/library/sync" => library_sync(state),
+        "/v1/library/sync" => library_sync(state).await,
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
 /// The next sync page, with an `x-kobo-synctoken` naming it.
-fn library_sync(state: &StubState) -> Response {
+async fn library_sync(state: &StubState) -> Response {
+    if state.stub.sync_never_answers {
+        std::future::pending::<()>().await;
+    }
     let call = state.sync_calls.fetch_add(1, Ordering::SeqCst);
     let pages = &state.stub.sync_pages;
-    let mut response = Json(pages[call.min(pages.len() - 1)].clone()).into_response();
+    let page = pages.get(call).or(pages.last());
+    let mut response = Json(page.cloned().unwrap_or_else(|| json!([]))).into_response();
     let headers = response.headers_mut();
     let token = HeaderValue::from_str(&format!("page-{}", call + 1)).unwrap();
     headers.insert(HeaderName::from_static("x-kobo-synctoken"), token);
@@ -179,10 +199,10 @@ fn initialization(state: &StubState) -> Response {
         "get_tests_request": format!("{prefix}/v1/analytics/gettests"),
     });
     let mut response = Json(json!({ "Resources": resources })).into_response();
-    if let Some(token) = state.stub.api_token {
+    if state.stub.sends_api_token {
         response.headers_mut().insert(
             HeaderName::from_static("x-kobo-apitoken"),
-            HeaderValue::from_static(token),
+            HeaderValue::from_static("e30="),
         );
     }
     response

@@ -13,6 +13,8 @@ use crate::wire::{Initialization, SyncItem};
 pub struct SyncReport {
     /// Every request the device made, in order, token redacted.
     pub requests: Vec<RequestRecord>,
+    /// The `library_sync` pages fetched.
+    pub pages: usize,
 }
 
 /// Why a sync failed: what the device would show as "Sync Failed".
@@ -31,7 +33,7 @@ pub enum SyncFailure {
 
 /// Press "Sync now" on `device`, configured with `api_endpoint`.
 pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncReport, SyncFailure> {
-    let mut client = Client::new(api_endpoint, &device.hardware_id);
+    let mut client = Client::new(api_endpoint, &device.hardware_id)?;
     let initialization = client.initialization().await?;
     if !initialization.headers().contains_key(API_TOKEN_HEADER) {
         return Err(tripped(
@@ -49,20 +51,22 @@ pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncRep
         let store = client.store_path(path).await?;
         require_success(&client, &store, Quirk::StorePaths)?;
     }
-    sync_library(&mut client, &resources.library_sync, device).await?;
+    let pages = sync_library(&mut client, &resources.library_sync, device).await?;
     Ok(SyncReport {
         requests: client.into_requests(),
+        pages,
     })
 }
 
-/// Fetch and apply `library_sync` pages until the server stops asking for more.
+/// Fetch and apply `library_sync` pages until the server stops asking for more,
+/// returning how many it took.
 async fn sync_library(
     client: &mut Client,
     url: &str,
     device: &mut Device,
-) -> Result<(), SyncFailure> {
+) -> Result<usize, SyncFailure> {
     let mut sync_token = None;
-    for _ in 0..MAX_SYNC_PAGES {
+    for fetched in 1..=MAX_SYNC_PAGES {
         let page = client.library_sync(url, sync_token.as_deref()).await?;
         let headers = page.headers();
         let more = headers
@@ -76,7 +80,7 @@ async fn sync_library(
             device.apply(item);
         }
         if !more {
-            return Ok(());
+            return Ok(fetched);
         }
     }
     let detail = format!("library_sync still continuing after {MAX_SYNC_PAGES} pages");

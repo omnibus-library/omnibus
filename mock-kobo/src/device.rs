@@ -60,6 +60,7 @@ impl Device {
                     book.refresh(metadata);
                 }
             }
+            SyncItem::ChangedReadingState(_) => {}
         }
     }
 }

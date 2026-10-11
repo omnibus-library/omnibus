@@ -1,3 +1,5 @@
+//! `Device::apply` over each `library_sync` item shape the server sends.
+
 use serde_json::{json, Value};
 
 use super::*;
@@ -38,8 +40,14 @@ fn apply_adds_new_entitlement_as_undownloaded_book() {
 fn apply_shows_unknown_author_when_only_contributor_roles_sent() {
     let mut device = Device::new("HW-1");
     let mut entitlement = new_entitlement("book-1", "Dune");
-    entitlement["NewEntitlement"]["BookMetadata"]["ContributorRoles"] =
-        json!([{ "Name": "Frank Herbert", "Role": "Author" }]);
+    let metadata = entitlement["NewEntitlement"]["BookMetadata"]
+        .as_object_mut()
+        .unwrap();
+    metadata.remove("Contributors");
+    metadata.insert(
+        "ContributorRoles".into(),
+        json!([{ "Name": "Frank Herbert", "Role": "Author" }]),
+    );
 
     device.apply(item(entitlement));
 
@@ -75,4 +83,19 @@ fn apply_archives_book_when_entitlement_is_removed() {
 
     let book = &device.library["book-1"];
     assert_eq!((book.title.as_str(), book.archived), ("Dune", true));
+}
+
+#[test]
+fn apply_leaves_library_unchanged_when_reading_state_changes() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    let before = device.clone();
+
+    device.apply(item(json!({ "ChangedReadingState": { "ReadingState": {
+        "EntitlementId": "book-1",
+        "StatusInfo": { "Status": "Reading" },
+        "CurrentBookmark": { "ProgressPercent": 42 },
+    }}})));
+
+    assert_eq!(device, before);
 }
