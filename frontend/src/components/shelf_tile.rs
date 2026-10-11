@@ -44,15 +44,16 @@ pub fn viewer_owner_label(viewer_id: Option<i64>, shelf: &ShelfSummary) -> Strin
 
 /// The tile's inner markup — ledge, then name, facets and foot. The caller
 /// supplies the element around it (a link, a button, a plain block) carrying
-/// [`tile_class`] and [`accent_style`]. `owner_label` is what the foot says.
+/// [`tile_class`] and [`accent_style`]. `owner_label` is what the foot says;
+/// `owner_testid` tags it, for the one surface that selects on it.
 #[component]
 pub fn ShelfTileFace(
     shelf: ShelfSummary,
     owner_label: String,
     server_url: String,
     avatar_bust: u32,
+    #[props(into, default)] owner_testid: Option<String>,
 ) -> Element {
-    let id = shelf.id;
     rsx! {
         {ledge(&shelf, &server_url)}
         div { class: "shv-card-body",
@@ -69,7 +70,7 @@ pub fn ShelfTileFace(
             }
             div { class: "shv-card-foot",
                 span { class: "shv-card-count", "{book_count_label(shelf.book_count)}" }
-                span { class: "shv-card-owner", "data-testid": "shelf-card-owner-{id}",
+                span { class: "shv-card-owner", "data-testid": owner_testid,
                     // The name sits beside it, so the photo's alt would only
                     // repeat it inside the tile's accessible name.
                     span { class: "shv-card-owner-av", aria_hidden: "true",

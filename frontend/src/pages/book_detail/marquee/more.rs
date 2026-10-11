@@ -1,6 +1,6 @@
 //! Stop 06 · More — everything that points away from this book, in one
-//! place: the shelves it sits on (its series' shelf, then the reader's own
-//! shelves), the rest of the author's work, then what to read next.
+//! place: the shelves it sits on (its series' shelf, then every shelf holding
+//! it as a tile), the rest of the author's work, then what to read next.
 //! Fetches post-mount (rule 07: SSR and the first WASM paint render the
 //! same quiet shell).
 
@@ -12,11 +12,14 @@ use omnibus_shared::{
 };
 
 use crate::components::atrium::Cover;
+use crate::components::shelf_glyphs::plus_icon;
 use crate::components::shelf_picker::{picker_targets, ShelfPickerList, ShelfPickerModal};
-use crate::components::shelf_tile::LEDGE_BOOKS;
+use crate::components::shelf_tile::{
+    accent_style, tile_class, viewer_owner_label, ShelfTileFace, LEDGE_BOOKS,
+};
 use crate::components::{Loading, LoadingKind};
 use crate::contexts::use_current_user_summary;
-use crate::{data, use_server_url, Route};
+use crate::{data, use_server_url, AvatarCacheBust, Route};
 
 use super::super::body::{BdAuthorCluster, BdPageCtx, BdSameHand, BdSuggestionsStrip};
 use super::MarqueeViewFacts;
@@ -186,11 +189,64 @@ fn render_series_item(x: &EbookMetadata, current_uuid: &str, next_uuid: Option<&
     }
 }
 
-/// The shelves read behind the membership block: every visible shelf and the
-/// ids of those holding this book. `None` while asking; `Err` when either read
-/// failed, so the stop never claims "not on a shelf" off a fetch that didn't
-/// answer.
-type ShelvesRead = Option<Result<(Vec<ShelfSummary>, Vec<i64>), ()>>;
+/// What the membership block knows once its reads have answered: every visible
+/// shelf, and the ids of those holding this book by hand and by rule.
+#[derive(Clone, Debug, PartialEq)]
+struct ShelvesFacts {
+    all: Vec<ShelfSummary>,
+    manual_ids: Vec<i64>,
+    smart_ids: Vec<i64>,
+}
+
+impl ShelvesFacts {
+    /// The shelves among `all` whose id is in `ids`, in `all`'s order.
+    fn named<'a>(&'a self, ids: &'a [i64]) -> impl Iterator<Item = &'a ShelfSummary> {
+        self.all.iter().filter(|s| ids.contains(&s.id))
+    }
+}
+
+/// The shelves read behind the membership block. `None` while asking; `Err`
+/// when any read failed, so the stop never claims "not on a shelf" off a fetch
+/// that didn't answer.
+type ShelvesRead = Option<Result<ShelvesFacts, ()>>;
+
+/// The block's three reads as one answer: all of them, or the failure.
+fn shelves_facts<E>(
+    all: Result<Vec<ShelfSummary>, E>,
+    manual: Result<Vec<i64>, E>,
+    smart: Result<Vec<i64>, E>,
+) -> Result<ShelvesFacts, ()> {
+    match (all, manual, smart) {
+        (Ok(all), Ok(manual_ids), Ok(smart_ids)) => Ok(ShelvesFacts {
+            all,
+            manual_ids,
+            smart_ids,
+        }),
+        _ => Err(()),
+    }
+}
+
+/// Every shelf holding the book, in the order the block draws them: the
+/// hand-picked ones, the smart ones whose rules match it, then the viewer's own
+/// Wishlist when the book is on it.
+///
+/// The wishlist shelf's membership derives from `wishlist_entries`, not
+/// `shelf_books`, so neither membership read names it; the landing gallery
+/// counts the book under it all the same. It is read off the page's own
+/// wishlist signal instead, so it appears the moment the Add button lands and
+/// goes with Remove.
+fn held_shelves(facts: &ShelvesFacts, viewer_id: Option<i64>, wished: bool) -> Vec<ShelfSummary> {
+    let wishlist = facts
+        .all
+        .iter()
+        .filter(|s| wished && s.kind == ShelfKind::Wishlist && Some(s.owner_user_id) == viewer_id);
+    facts
+        .named(&facts.manual_ids)
+        .chain(facts.named(&facts.smart_ids))
+        .chain(wishlist)
+        .cloned()
+        .collect()
+}
 
 /// The Add-to-shelf picker's open flag and its write's in-flight / failed state.
 #[derive(Clone, Copy)]
@@ -200,16 +256,22 @@ struct PickerState {
     error: Signal<Option<String>>,
 }
 
-/// The shelves holding this book, as chips — the hand-picked ones plus the
-/// viewer's own Wishlist when the book is on it — and the picker that adds the
-/// book to a hand-picked shelf or takes it off again. `in_series` sits the block
-/// under the series shelf, which already says what the book is part of.
-///
-/// The wishlist shelf's membership derives from `wishlist_entries`, not
-/// `shelf_books`, so the per-book membership read never names it; the landing
-/// gallery counts the book under it all the same. It is read off the page's
-/// own wishlist signal instead, so it appears the moment the Add button lands
-/// and goes with Remove.
+/// What the membership block draws its tiles with.
+struct BlockCtx {
+    /// A series book on no shelf gets only the button: the series shelf above
+    /// it already says what the book is part of.
+    in_series: bool,
+    viewer_id: Option<i64>,
+    server_url: String,
+    avatar_bust: u32,
+}
+
+/// Every shelf holding this book, as tiles — the hand-picked ones, the smart
+/// ones whose rules match it, and the viewer's own Wishlist when the book is on
+/// it — and the picker that adds the book to a hand-picked shelf or takes it
+/// off again. `in_series` sits the block under the series shelf, which already
+/// says what the book is part of; `has_cover` is whether the book can stand on
+/// a shelf's ledge.
 #[component]
 fn MarqueeShelfMembership(
     uuid: String,
@@ -218,6 +280,7 @@ fn MarqueeShelfMembership(
     in_series: bool,
 ) -> Element {
     let server_url = use_server_url();
+    let avatar_bust = try_use_context::<AvatarCacheBust>().map_or(0, |b| (b.0)());
     let me = use_current_user_summary();
     let mut shelves = use_signal(ShelvesRead::default);
     // A fast SPA hop between books can leave the previous book's shelf fetch
@@ -242,32 +305,32 @@ fn MarqueeShelfMembership(
             let uuid = uuid.clone();
             spawn(async move {
                 let all = data::list_shelves(&url).await;
-                let holding = data::shelves_containing(&url, &uuid).await;
+                let manual = data::shelves_containing(&url, &uuid).await;
+                let smart = data::smart_shelves_containing(&url, &uuid).await;
                 if *load_seq.peek() == my_load {
-                    shelves.set(Some(match (all, holding) {
-                        (Ok(all), Ok(ids)) => Ok((all, ids)),
-                        _ => Err(()),
-                    }));
+                    shelves.set(Some(shelves_facts(all, manual, smart)));
                 }
             });
         }));
     }
-    let held = shelves().map(|answer| {
-        answer.map(|(all, ids)| {
-            let my_id = me().map(|u| u.id);
-            let wished = wishlist().is_some();
-            all.into_iter()
-                .filter(|s| {
-                    ids.contains(&s.id)
-                        || (wished
-                            && s.kind == ShelfKind::Wishlist
-                            && Some(s.owner_user_id) == my_id)
-                })
-                .collect::<Vec<ShelfSummary>>()
-        })
-    });
-    let toggle = build_shelf_toggle(server_url, uuid, has_cover, shelves, load_seq, picker);
+    let viewer_id = me().map(|u| u.id);
+    let held = shelves()
+        .map(|answer| answer.map(|facts| held_shelves(&facts, viewer_id, wishlist().is_some())));
+    let toggle = build_shelf_toggle(
+        server_url.clone(),
+        uuid,
+        has_cover,
+        shelves,
+        load_seq,
+        picker,
+    );
     let list = shelf_picker_list(&shelves(), me().as_ref(), picker);
+    let ctx = BlockCtx {
+        in_series,
+        viewer_id,
+        server_url,
+        avatar_bust,
+    };
     let (mut open, mut error) = (picker.open, picker.error);
     let on_add = EventHandler::new(move |_| {
         error.set(None);
@@ -275,7 +338,7 @@ fn MarqueeShelfMembership(
     });
 
     rsx! {
-        {membership_body(held.as_ref(), in_series, on_add)}
+        {membership_body(held.as_ref(), &ctx, on_add)}
         if open() {
             ShelfPickerModal {
                 heading: "Add to shelf".to_string(),
@@ -288,37 +351,35 @@ fn MarqueeShelfMembership(
 }
 
 /// What the picker shows: the shelves the viewer may change, ticked for the
-/// ones holding this book. Loading until both the shelves and the viewer are
-/// known.
+/// ones holding this book, and the smart shelves that hold it by rule. Loading
+/// until both the shelves and the viewer are known.
 fn shelf_picker_list(
     read: &ShelvesRead,
     viewer: Option<&UserSummary>,
     picker: PickerState,
 ) -> ShelfPickerList {
-    let checked = match read {
-        Some(Ok((_, ids))) => Some(ids.clone()),
-        _ => None,
-    };
+    let facts = read.as_ref().and_then(|answer| answer.as_ref().ok());
     let shelves = read.as_ref().map(|answer| {
         answer
             .as_ref()
-            .map(|(all, _)| all.as_slice())
+            .map(|facts| facts.all.as_slice())
             .map_err(|_| ())
     });
-    let targets = picker_targets(shelves, viewer);
     ShelfPickerList {
-        targets,
+        targets: picker_targets(shelves, viewer),
         viewer_id: viewer.map(|u| u.id),
-        checked,
+        checked: facts.map(|f| f.manual_ids.clone()),
         busy: (picker.busy)(),
         error: (picker.error)(),
-        ..Default::default()
+        automatic: facts
+            .map(|f| f.named(&f.smart_ids).cloned().collect())
+            .unwrap_or_default(),
     }
 }
 
 /// Builds the picker's tile handler: add this book to the shelf, or take it off
 /// when it is already there, then patch the block's membership and the shelf's
-/// count and ledge so the tile and the chips follow without a refetch. A
+/// count and ledge so the tile and the grid follow without a refetch. A
 /// failure leaves both as they were.
 fn build_shelf_toggle(
     server_url: String,
@@ -333,11 +394,12 @@ fn build_shelf_toggle(
         if busy.peek().is_some() {
             return;
         }
-        let Some(Ok((all, ids))) = shelves.peek().clone() else {
+        let Some(Ok(facts)) = shelves.peek().clone() else {
             return;
         };
-        let adding = !ids.contains(&shelf_id);
-        let name = all
+        let adding = !facts.manual_ids.contains(&shelf_id);
+        let name = facts
+            .all
             .iter()
             .find(|s| s.id == shelf_id)
             .map(|s| s.name.clone())
@@ -358,9 +420,10 @@ fn build_shelf_toggle(
             }
             match written {
                 Ok(()) => shelves.with_mut(|read| {
-                    if let Some(Ok((all, ids))) = read {
-                        *ids = with_membership(ids, shelf_id, adding);
-                        *all = with_member_summary(all, shelf_id, &uuid, has_cover, adding);
+                    if let Some(Ok(facts)) = read {
+                        facts.manual_ids = with_membership(&facts.manual_ids, shelf_id, adding);
+                        facts.all =
+                            with_member_summary(&facts.all, shelf_id, &uuid, has_cover, adding);
                     }
                 }),
                 Err(e) => error.set(Some(format!("Couldn\u{2019}t update {name}: {e}"))),
@@ -370,7 +433,7 @@ fn build_shelf_toggle(
     })
 }
 
-/// The button that opens the shelf picker.
+/// The button that opens the shelf picker, for a book on no shelf yet.
 fn add_to_shelf_button(on_add: EventHandler<()>) -> Element {
     rsx! {
         div { class: "bdmq-shelf-actions",
@@ -381,6 +444,20 @@ fn add_to_shelf_button(on_add: EventHandler<()>) -> Element {
                 onclick: move |_| on_add.call(()),
                 "Add to shelf"
             }
+        }
+    }
+}
+
+/// The dashed tile that ends the grid and opens the shelf picker.
+fn add_to_shelf_tile(on_add: EventHandler<()>) -> Element {
+    rsx! {
+        button {
+            r#type: "button",
+            class: "shelf-add-tile bdmq-shelf-add",
+            "data-testid": "bdmq-add-to-shelf",
+            onclick: move |_| on_add.call(()),
+            span { class: "shelf-add-tile-plus", {plus_icon()} }
+            "Add to shelf"
         }
     }
 }
@@ -424,16 +501,37 @@ fn with_member_summary(
     next
 }
 
-/// The membership block for the given shelves read: its kicker, then chips and
-/// the empty state, each with the Add-to-shelf button, or a failure note, or a
-/// loader. A series book on no shelf gets only the button — the series shelf
-/// above it already fills the stop.
+/// One held shelf: a tile linking to its page.
+fn shelf_link_tile(shelf: &ShelfSummary, ctx: &BlockCtx) -> Element {
+    let id = shelf.id;
+    rsx! {
+        Link {
+            key: "{id}",
+            to: Route::ShelfDetail { id },
+            class: tile_class(true),
+            style: accent_style(shelf),
+            "data-testid": "bdmq-shelf-{id}",
+            ShelfTileFace {
+                shelf: shelf.clone(),
+                owner_label: viewer_owner_label(ctx.viewer_id, shelf),
+                server_url: ctx.server_url.clone(),
+                avatar_bust: ctx.avatar_bust,
+            }
+        }
+    }
+}
+
+/// The membership block for the given shelves read: its kicker, then the tiles
+/// ending in the Add-to-shelf tile, or the empty state with its button, or a
+/// failure note, or a loader. "Not on a shelf yet." is only ever said of a
+/// book no shelf of any kind holds; a series book on no shelf gets only the
+/// button.
 fn membership_body(
     held: Option<&Result<Vec<ShelfSummary>, ()>>,
-    in_series: bool,
+    ctx: &BlockCtx,
     on_add: EventHandler<()>,
 ) -> Element {
-    let (kicker_class, kicker) = if in_series {
+    let (kicker_class, kicker) = if ctx.in_series {
         ("bdmq-k bdmq-k-below", "On your shelves")
     } else {
         ("bdmq-k", "Standalone \u{b7} on your shelves")
@@ -442,20 +540,15 @@ fn membership_body(
         div { class: kicker_class, "{kicker}" }
         match held {
             Some(Ok(held)) if !held.is_empty() => rsx! {
-                div { class: "bdmq-chips bdmq-shelfchips", "data-testid": "bdmq-shelves",
-                    for (i, s) in held.iter().enumerate() {
-                        span {
-                            key: "{s.id}",
-                            class: if i == 0 { "chip bdmq-shelfchip first" } else { "chip bdmq-shelfchip" },
-                            style: if let Some(a) = s.accent.clone() { format!("--accent:{a};") } else { String::new() },
-                            "{s.name}"
-                        }
+                div { class: "bdmq-shelves", "data-testid": "bdmq-shelves",
+                    for shelf in held.iter() {
+                        {shelf_link_tile(shelf, ctx)}
                     }
+                    {add_to_shelf_tile(on_add)}
                 }
-                {add_to_shelf_button(on_add)}
             },
             Some(Ok(_)) => rsx! {
-                if !in_series {
+                if !ctx.in_series {
                     div { class: "bdmq-bigquiet", "Not on a shelf yet." }
                 }
                 {add_to_shelf_button(on_add)}

@@ -74,6 +74,19 @@ fn viewer_owner_label_names_the_owner_plainly_before_the_viewer_is_known() {
     assert_eq!(viewer_owner_label(None, &shelf), "user-9");
 }
 
+fn face_with_owner_testid() -> Element {
+    let shelf = test_shelf_summary(3, 9, ShelfKind::Manual, "Austen");
+    rsx! {
+        ShelfTileFace {
+            shelf,
+            owner_label: "by user-9".to_string(),
+            server_url: String::new(),
+            avatar_bust: 0,
+            owner_testid: "shelf-card-owner-3",
+        }
+    }
+}
+
 fn face_with_covers() -> Element {
     let mut shelf = test_shelf_summary(3, 9, ShelfKind::Smart, "Austen");
     shelf.book_count = 12;
@@ -98,4 +111,15 @@ fn shelf_tile_face_stands_the_covers_and_names_kind_count_and_owner() {
     assert!(html.contains("Private"), "{html}");
     assert!(html.contains("12 books"), "{html}");
     assert!(html.contains(">by user-9<"), "{html}");
+}
+
+#[test]
+fn shelf_tile_face_tags_the_owner_only_when_given_a_testid() {
+    let tagged = render_in_vdom(face_with_owner_testid);
+    assert!(
+        tagged.contains("data-testid=\"shelf-card-owner-3\""),
+        "{tagged}"
+    );
+    let plain = render_in_vdom(face_with_covers);
+    assert!(!plain.contains("data-testid"), "{plain}");
 }

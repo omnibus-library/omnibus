@@ -31,7 +31,13 @@ pub fn ShelfCard(
                 class: tile_class(false),
                 style,
                 "data-testid": "shelf-card-{id}",
-                ShelfTileFace { shelf, owner_label, server_url, avatar_bust }
+                ShelfTileFace {
+                    shelf,
+                    owner_label,
+                    server_url,
+                    avatar_bust,
+                    owner_testid: format!("shelf-card-owner-{id}"),
+                }
             }
         }
     }

@@ -11937,8 +11937,12 @@ html {
 }
 .rx-shelf-item.current .rx-shelf-cap .t { color: var(--accent); }
 .rx-shelf-cap .u { font-family: var(--mono); font-size: 10px; color: var(--ink-3); margin-top: 3px; letter-spacing: .03em; }
-.bdmq-shelfchips { margin-bottom: 8px; }
-.bdmq-shelfchip.first { border-color: var(--accent); }
+/* Every shelf holding the book as a compact tile, ending in the add tile. */
+.bdmq-shelves {
+  display: grid; gap: 12px; margin-bottom: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+}
+.bdmq-shelves .bdmq-shelf-add { min-height: 120px; }
 .bdmq-shelf-actions { margin-top: 14px; }
 /* Under the series shelf, whose own hint already ends the block above. */
 .bdmq-k-below { margin-top: 34px; }

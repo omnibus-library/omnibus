@@ -14,8 +14,9 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 import { withManualShelf } from "../utils/shelves";
 import { logInThroughUi, provisionUser } from "../utils/users";
 
-// The book page's More stop: "Add to shelf" opens a picker that files this
-// book on a hand-picked shelf, or takes it off, without leaving the page.
+// The book page's More stop shows every shelf holding the book as a tile, and
+// "Add to shelf" opens a picker that files this book on a hand-picked shelf, or
+// takes it off, without leaving the page.
 //
 // `standalone-forest` is reserved for this spec (see the comment in
 // fixtures/epubs.ts). The suite is fullyParallel, so tests here may hold the
@@ -88,6 +89,11 @@ async function asReader(
   }
 }
 
+/** The More stop's tile for the shelf holding the book. */
+function shelfTile(page: Page, shelfId: number): Locator {
+  return page.getByTestId(`bdmq-shelf-${shelfId}`);
+}
+
 /** The picker's tile for `shelfId`; a hand-picked shelf is a checkbox tile. */
 function pickerTile(picker: Locator, shelfId: number): Locator {
   return picker.getByTestId(`shelf-picker-tile-${shelfId}`);
@@ -150,9 +156,10 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
     ).toBeVisible();
 
     const tile = pickerTile(picker, id);
-    const chip = page.getByTestId("bdmq-shelves").filter({ hasText: name });
+    const onPage = shelfTile(page, id);
     await expect(tile).not.toBeChecked();
-    await expect(chip).toHaveCount(0);
+    await expect(tile).toContainText("0 books");
+    await expect(onPage).toHaveCount(0);
     await expectNameFits(tile, name);
 
     await expectMutation(
@@ -166,7 +173,10 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
       async () => tile.click(),
     );
     await expect(tile).toBeChecked();
-    await expect(chip).toHaveCount(1);
+    await expect(tile).toContainText("1 book");
+    await expect(onPage).toHaveCount(1);
+    await expect(onPage).toContainText("1 book");
+    await expect(onPage).toContainText("Hand-picked");
     await expectNameFits(tile, name);
 
     await expectMutation(
@@ -180,7 +190,8 @@ test("adds a book to a hand-picked shelf and takes it off again", async ({
       async () => tile.click(),
     );
     await expect(tile).not.toBeChecked();
-    await expect(chip).toHaveCount(0);
+    await expect(tile).toContainText("0 books");
+    await expect(onPage).toHaveCount(0);
   });
 });
 
@@ -216,9 +227,7 @@ test("keeps the shelf unchanged when the add fails", async ({
     await expect(page.getByTestId("shelf-picker-error")).toContainText(name);
     await expect(picker).toBeVisible();
     await expect(tile).not.toBeChecked();
-    await expect(
-      page.getByTestId("bdmq-shelves").filter({ hasText: name }),
-    ).toHaveCount(0);
+    await expect(shelfTile(page, id)).toHaveCount(0);
 
     // The failure belongs to that visit: a reopened picker starts clean.
     await page.getByTestId("shelf-picker-close").click();
@@ -265,7 +274,7 @@ test("keeps the shelf unchanged when the remove fails", async ({
 
     await expect(page.getByTestId("shelf-picker-error")).toContainText(name);
     await expect(tile).toBeChecked();
-    await expect(page.getByTestId("bdmq-shelves")).toContainText(name);
+    await expect(shelfTile(page, id)).toBeVisible();
   });
 });
 
