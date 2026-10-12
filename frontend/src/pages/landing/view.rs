@@ -42,13 +42,11 @@ pub(super) fn section_title(selection: ShelfSelection, shelves: &[ShelfSummary])
     }
 }
 
-/// The header count for a gallery pick. The member list is the fresher of the
-/// two sources — it refetches with the pick, while the gallery's summary
-/// carries a server-side aggregate that goes stale the moment membership
-/// changes elsewhere — so it wins once it has loaded, and the summary only
-/// stands in while that fetch is still out. Under a filter the summary counts
-/// the whole shelf, so it never stands in: the count waits for the narrowed
-/// list. `None` when nothing that fits has answered.
+/// The header count for a gallery pick. The loaded member list wins: it refetches
+/// with the pick, while the gallery summary's aggregate goes stale when membership
+/// changes elsewhere, so the summary only stands in while that fetch is out. Under
+/// a filter the summary counts the whole shelf, so it never stands in. `None` when
+/// nothing that fits has answered.
 pub(super) fn shelf_book_count(
     selection: ShelfSelection,
     shelves: &[ShelfSummary],
@@ -130,9 +128,8 @@ pub(super) fn shelf_members_empty(
 }
 
 /// Whether the pick holds no books at all. A filter that rules every book out
-/// is not that: it gets the "clear filters" state instead. A shelf's full
-/// member list loads beside its narrowed one, so its emptiness is read off that
-/// list ([`shelf_members_empty`]) rather than inferred.
+/// is not that: it gets the "clear filters" state instead. A shelf's emptiness
+/// is read off its full member list ([`shelf_members_empty`]), not inferred.
 /// `fetched_with` is what the browse list was fetched under, not the current
 /// filters: right after a clear, an empty list still answers the old ones.
 pub(super) fn books_empty(

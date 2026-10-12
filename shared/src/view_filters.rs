@@ -66,12 +66,9 @@ impl FilterClause {
 
 /// Active library filter: a clause list whose clauses AND together.
 ///
-/// A record persisted before `clauses` existed carried one include-only facet
-/// list per field; deserializing folds those into include clauses so it still
-/// loads. Serializing writes `clauses` alone.
-///
-/// Format values are stored lowercase (`"epub"`, `"m4b"`) since the underlying
-/// `EbookMetadata.formats` strings vary in case across sources.
+/// Deserializing also accepts the legacy include-only facet lists, folding them
+/// into include clauses; serializing writes `clauses` alone. Format values are
+/// stored lowercase (`"epub"`, `"m4b"`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "ViewFiltersWire")]
 pub struct ViewFilters {
