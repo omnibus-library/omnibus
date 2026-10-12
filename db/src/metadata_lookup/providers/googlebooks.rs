@@ -24,14 +24,9 @@ use super::http::{
 const RETRY_BACKOFF: [Duration; 2] = [Duration::from_millis(200), Duration::from_millis(600)];
 
 /// The header Google accepts the API key in, and the reason no URL in this
-/// module carries a `key=` parameter.
-///
-/// `reqwest::Error` renders the request URL in its `Display` but never a
-/// header, so a key that is never in a URL cannot reach a log — from any
-/// fallible step, including ones added later. `strip_url` had to be remembered
-/// at each call site to hold the same line, and was missed on all three
-/// `json()` sites; this removes the leak class rather than
-/// patching its instances.
+/// module carries a `key=` parameter: `reqwest::Error` renders the request URL
+/// but never a header, so a key kept out of URLs cannot reach a log from any
+/// fallible step, including ones added later.
 const API_KEY_HEADER: &str = "X-goog-api-key";
 
 #[derive(Debug, Deserialize)]
@@ -98,14 +93,10 @@ fn is_retryable(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
-/// GET, retrying a retryable status a couple of times.
-///
-/// Every request this module makes goes through here, which is what makes
-/// [`API_KEY_HEADER`] the single place the key is attached.
-///
-/// Only a *received status* is retried — a timeout or transport error is not,
-/// since those already cost the full per-request budget and retrying them
-/// would leave the scan flow spinning for half a minute.
+/// GET, retrying a retryable status a couple of times. Every request this
+/// module makes goes through here, so [`API_KEY_HEADER`] is the single place the
+/// key is attached. Only a *received status* is retried; a timeout or transport
+/// error already cost the full per-request budget.
 async fn get(config: &MetadataLookupConfig, url: &str) -> anyhow::Result<reqwest::Response> {
     let mut last: Option<reqwest::StatusCode> = None;
     // `Some(retry_after)` once a 429 has been seen in this call.
@@ -262,9 +253,8 @@ fn volume(item: GbItem) -> Option<(Option<String>, GbVolumeInfo)> {
 /// Map one volume into `ProviderEdition`. `isbn13` is the caller's
 /// authoritative ISBN when it has one (the ISBN-lookup path stores the
 /// *scanned* barcode); a search derives it from the volume's own industry
-/// identifiers instead, and leaves it unset when the volume names none. A
-/// volume without a title, or with no handle to re-fetch it by, maps to
-/// `None`.
+/// identifiers and leaves it unset if none. A volume without a title or a
+/// re-fetch handle maps to `None`.
 fn map_volume(
     id: Option<String>,
     info: GbVolumeInfo,
@@ -333,17 +323,11 @@ fn map_volume(
 
 // ── Title search ─────────────────────────────────────────────────
 
-/// Build the search URL.
-///
-/// An ISBN goes as a field-scoped `isbn:` term, which Google answers with the
-/// one volume. Everything else goes as **bare text** — title and author joined
-/// — because Google's general search ranks that at least as well as
-/// `intitle:`/`inauthor:` (verified against the live API: both put the right
-/// edition first for "Dune Frank Herbert") and tolerates typos far better,
-/// where a field-scoped query with a misspelling returns nothing at all. This
-/// is the one provider for which the flattened query was never the problem.
-///
-/// The query is user text, so it goes through `Url`'s percent-encoding.
+/// Build the search URL. An ISBN goes as a field-scoped `isbn:` term, which
+/// Google answers with the one volume. Everything else goes as **bare text**
+/// (title and author joined), which ranks at least as well as
+/// `intitle:`/`inauthor:` and tolerates typos far better. The query is user
+/// text, so it goes through `Url`'s percent-encoding.
 pub(in crate::metadata_lookup) fn search_url(
     config: &MetadataLookupConfig,
     query: &SearchQuery,
@@ -388,12 +372,10 @@ fn is_status(error: &anyhow::Error, status: reqwest::StatusCode) -> bool {
         .any(|e| e.status() == Some(status))
 }
 
-/// Whether `id` is shaped like a Google Books volume id.
-///
-/// It is interpolated into a URL *path*, and it reaches here from the client
-/// echoing back a `provider_ref` — a claim, not a guarantee — so the shape is
-/// checked rather than trusted, exactly as `openlibrary::is_record_key` does.
-/// Real ids are short base64url-ish tokens ("AQk_EAAAQBAJ").
+/// Whether `id` is shaped like a Google Books volume id. It is interpolated
+/// into a URL *path* and arrives from the client echoing back a `provider_ref`,
+/// so the shape is checked rather than trusted, as `openlibrary::is_record_key`
+/// does. Real ids are short base64url-ish tokens ("AQk_EAAAQBAJ").
 fn is_volume_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
@@ -478,27 +460,17 @@ const COVER_HOST: &str = "books.google.com";
 /// or search URL on the same host is left alone.
 const COVER_PATH: &str = "/books/content";
 
-/// The `zoom` value that asks for the largest rendition Google holds.
-///
-/// The scale is not ordinal, which is why this is a named constant rather than
-/// an inline bump: `imageLinks.thumbnail` is `zoom=1` and `smallThumbnail` is
-/// `zoom=5`, and both are 128px wide. 2/3/4 climb 300 → 575 → 800, and 0
-/// returns the original — measured at 1749x2694 for one volume.
+/// The `zoom` value that asks for the largest rendition Google holds. The scale
+/// is not ordinal: `imageLinks.thumbnail` is `zoom=1` and `smallThumbnail` is
+/// `zoom=5`, both 128px wide; 2/3/4 climb 300 -> 575 -> 800, and 0 returns the
+/// original.
 const COVER_ZOOM_ORIGINAL: &str = "0";
 
-/// Rewrite a Google Books cover URL to ask for full-resolution art.
-///
-/// `imageLinks` only ever offers the two 128px renditions, which is why every
-/// cover this provider contributes is small. The same content URL serves the
-/// original behind a different `zoom`, so the upgrade is a query rewrite on a
-/// host already on the cover allowlist — it opens no new fetch surface.
-///
-/// `None` for anything that is not a Google Books content URL, which leaves
-/// the other providers' covers untouched.
-///
-/// **The bytes this URL returns still have to be checked.** For roughly two
-/// thirds of volumes Google answers it with a placeholder at a 200 rather than
-/// a 404, so the status says nothing — see `super::super::cover`.
+/// Rewrite a Google Books cover URL to ask for full-resolution art: the same
+/// content URL serves the original behind a different `zoom`, on a host already
+/// on the cover allowlist. `None` for any other URL, leaving other providers'
+/// covers untouched. **The bytes still have to be checked**: for most volumes
+/// Google answers a placeholder at 200, not a 404 (see `super::super::cover`).
 pub fn upgrade_cover_url(url: &str) -> Option<String> {
     let parsed = reqwest::Url::parse(url).ok()?;
     if parsed.host_str() != Some(COVER_HOST) || parsed.path() != COVER_PATH {

@@ -36,13 +36,9 @@ pub(super) trait CurationRow {
     fn user_id(&self) -> i64;
 
     /// Whether two rows make the same statement about the book, ignoring
-    /// `updated_at`.
-    ///
-    /// The timestamp is not part of the statement, and treating it as one
-    /// makes undo refuse over nothing: both writers bump `updated_at` on a
-    /// re-affirmation of the value already held, and every reading surface
-    /// auto-writes `reading` on open — so merely *opening* the merged book
-    /// would block its undo.
+    /// `updated_at`. The timestamp is not part of the statement: both writers bump
+    /// it on re-affirmation and every reading surface auto-writes `reading` on
+    /// open, so counting it would make merely opening the merged book block undo.
     fn same_value(&self, other: &Self) -> bool;
 }
 
@@ -67,16 +63,10 @@ impl CurationRow for RatingRow {
 }
 
 /// Both books' curation rows either side of the merge, carried in the
-/// `merge_log` snapshot.
-///
-/// `source_*` / `target_*` are what each book held **before** the merge;
-/// `merged_*` is what the merge left on the target. Undo needs all three: the
-/// first two say where each row belongs, and the third is what undo must still
-/// find on the survivor to know no reader has re-curated it since.
-///
-/// Empty on a `merge_log` row written before the merge recorded any of this —
-/// undo then leaves curation alone, which is the behaviour those merges were
-/// performed under.
+/// `merge_log` snapshot. `source_*` / `target_*` are what each book held
+/// **before** the merge; `merged_*` is what the merge left on the target, which
+/// undo must still find on the survivor to know no reader re-curated it since.
+/// Empty on older `merge_log` rows: undo then leaves curation alone.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(super) struct CurationSnapshot {
     pub source_status: Vec<ReadStatusRow>,
@@ -133,12 +123,11 @@ pub(super) async fn capture_post(
     Ok(())
 }
 
-/// Reverse the merge's per-reader curation move: each book ends up with
-/// exactly the read status and rating it carried before.
-///
-/// The two claimed-reader sets come from the caller because only it knows
-/// which `merge_log` rows are still open against this target, and they are
-/// **per table** — the two collide independently.
+/// Reverse the merge's per-reader curation move: each book ends up with exactly
+/// the read status and rating it carried before. The two claimed-reader sets
+/// come from the caller, which alone knows which `merge_log` rows are still
+/// open against this target; they are **per table**, as the two collide
+/// independently.
 pub(super) async fn restore_curation(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_uuid: &str,
@@ -200,13 +189,11 @@ struct RestorePlan<'a, T> {
     clear_target: Vec<i64>,
 }
 
-/// Plan one table's undo from the three snapshot sides plus the survivor's
-/// rows as they stand now.
-///
-/// Errors rather than guessing when a reader's row cannot be settled — the two
-/// [`Unresolvable`] cases. Both are AC4's "fail loudly": keeping the pre-merge
-/// value would discard a later decision, and keeping the current one would
-/// strand a value that started on the other book.
+/// Plan one table's undo from the three snapshot sides plus the survivor's rows
+/// as they stand now. Errors rather than guessing when a reader's row cannot be
+/// settled (the two [`Unresolvable`] cases): keeping the pre-merge value would
+/// discard a later decision, and keeping the current one would strand a value
+/// that started on the other book.
 fn plan_restore<'a, T>(
     source_pre: &'a [T],
     target_pre: &'a [T],

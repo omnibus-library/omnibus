@@ -11,12 +11,10 @@
 //! `scan_roots l` (on `b.library_id`) and `metadata_overrides mo` (on
 //! `b.uuid`) — see [`OVERRIDE_JOIN`].
 
-/// The two joins every fragment in this module reads from. A macro rather
-/// than a `const` so it composes inside `concat!` with the fragments below.
-///
-/// `LEFT` on both: a book with no overrides row is the common case, and a
-/// query that ranked only the overridden books would answer a different
-/// question entirely.
+/// The two joins every fragment in this module reads from. A macro rather than
+/// a `const` so it composes inside `concat!` with the fragments below. `LEFT` on
+/// both: a book with no overrides row is the common case, and an inner join
+/// would rank only overridden books.
 macro_rules! override_join_sql {
     () => {
         " LEFT JOIN scan_roots l ON l.id = b.library_id \
@@ -39,15 +37,11 @@ macro_rules! safe_overrides_sql {
     };
 }
 
-/// SQL mirror of `apply_overrides`' precedence gate: does this book's scan
-/// root rank `omnibus_overrides` above `embedded_tags`? The stored list is
-/// validated whole on write, so a token's byte offset is its rank; a list
-/// carrying neither token falls back to overrides-win, as the Rust side does.
-///
-/// `COALESCE` on the column for the same reason: `merge_overrides_into_books`
-/// falls back to `DEFAULT_METADATA_PRECEDENCE` when a book has no precedence
-/// of its own, and an unjoined `scan_roots` row must not quietly drop the
-/// override instead.
+/// SQL mirror of `apply_overrides`' precedence gate: does this book's scan root
+/// rank `omnibus_overrides` above `embedded_tags`? The stored list is validated
+/// whole on write, so a token's byte offset is its rank; a list carrying
+/// neither token falls back to overrides-win, as the Rust side does. `COALESCE`
+/// on the column mirrors `merge_overrides_into_books`' default precedence.
 macro_rules! overrides_win_sql {
     () => {
         "(instr(COALESCE(l.metadata_precedence, ''), '\"omnibus_overrides\"') = 0
@@ -139,14 +133,10 @@ macro_rules! creator_sort_sql {
 }
 
 /// The Author sort axis: the author a book is *displayed* under, in
-/// `author_dictionary` order, so an edited book whose name was typed as
-/// `Andy Weir` files beside the scanned `Weir, Andy`.
-///
-/// A creators override replaces the list wholesale, the empty list included,
-/// so while one is present (the key holds an array, the shape serde reads as
-/// `Some`) the axis is its first creator — NULL for an emptied list, filed
-/// with the other authorless books — and the scanned `author_sort` only when
-/// there is none. `effective_tags_sql!`'s presence test, for the same reason.
+/// `author_dictionary` order, so an edited `Andy Weir` files beside `Weir, Andy`.
+/// A creators override replaces the list wholesale, so while one is present (the
+/// key holds an array) the axis is its first creator, NULL for an emptied list;
+/// the scanned `author_sort` applies only when there is none.
 macro_rules! effective_author_sql {
     ($scanned:literal) => {
         concat!(
@@ -165,17 +155,11 @@ macro_rules! effective_author_sql {
     };
 }
 
-/// Effective `(book_id, tag_id)` membership: the canonical link rows for a
-/// book with no subjects override (or whose scan root ranks the override
-/// below the scan), the override's subjects resolved to `tags` rows
-/// otherwise. Mirrors `apply_overrides`: `subjects: Some(_)` replaces the
-/// scanned list wholesale, the empty list included.
-///
-/// An override is *present* exactly when the key holds an array — the one
-/// shape serde will read into `Some(Vec)`. An absent key and an explicit JSON
-/// `null` both deserialize to `None`, so both leave the canonical rows in
-/// place; `IS NOT 'array'` says that in one clause, and is NULL-safe, so an
-/// unreadable blob (coerced to `'{}'`) also keeps the canonical rows.
+/// Effective `(book_id, tag_id)` membership: the canonical link rows for a book
+/// with no subjects override (or whose scan root ranks the override below the
+/// scan), the override's subjects resolved to `tags` rows otherwise. An override
+/// is *present* exactly when the key holds an array: an absent key or JSON
+/// `null` leaves the canonical rows, as does an unreadable blob.
 macro_rules! effective_tags_sql {
     () => {
         concat!(
@@ -229,13 +213,12 @@ macro_rules! effective_genres_sql {
     };
 }
 
-/// Effective `(book_id, author_id)` membership — who a book is *by* on every
-/// surface that credits it: the canonical link rows for a book with no
-/// creators override (or whose scan root ranks it below the scan), the
-/// override's creator names resolved (NOCASE) to `authors` rows otherwise;
-/// `materialize_author_rows` guarantees the row. Same `'array'` presence test
-/// as [`effective_tags_sql`]. The `je.type` guard sits in the argument because
-/// the join may be evaluated before any `WHERE`.
+/// Effective `(book_id, author_id)` membership: who a book is *by* on every
+/// surface that credits it. The canonical link rows for a book with no creators
+/// override (or whose scan root ranks it below the scan), the override's names
+/// resolved (NOCASE) to `authors` rows otherwise; `materialize_author_rows`
+/// guarantees the row. Same `'array'` presence test as [`effective_tags_sql`].
+// The `je.type` guard sits in the argument: the join may run before any `WHERE`.
 macro_rules! effective_authors_sql {
     () => {
         concat!(

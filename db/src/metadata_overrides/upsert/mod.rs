@@ -139,28 +139,21 @@ pub(super) async fn touch_book_last_modified(
     Ok(())
 }
 
-/// Drop the library-composition cache after an override write commits.
-///
-/// Three of the five composition dimensions are override-sourced — genres live
-/// *only* in `metadata_overrides -> '$.genres'` (migration `0066`), and
-/// publisher / language overrides materialize into the link tables the
-/// dimensions read — so `Worker::execute`'s post-scan hook cannot keep them
-/// fresh on its own: no editor's save is a `Task`. Without this, a genre added
-/// on the book-detail page is invisible on `/stats` for the whole 900s TTL.
-///
-/// Called **after** commit, never inside the transaction: a bump before the
-/// write lands lets a concurrent reader recompute from pre-commit state and
-/// re-cache the very value the bump meant to drop.
+/// Drop the library-composition cache after an override write commits. Genres
+/// live *only* in `metadata_overrides`, and publisher / language overrides
+/// materialize into the link tables, so `Worker::execute`'s post-scan hook
+/// can't keep them fresh: without this a new genre is invisible on `/stats` for
+/// the 900s TTL. Call **after** commit, never inside the transaction.
 pub(super) fn invalidate_composition_cache() {
+    // A bump before the write lands lets a concurrent reader re-cache the
+    // pre-commit value.
     crate::stats::invalidate_library_composition();
 }
 
-/// Best-effort removal of a book's cached export-EPUB after its override
-/// state clears entirely. No-op when `book_id` is `None` (the uuid had no
-/// live book row to resolve). Runs on the blocking pool since
-/// `invalidate_export_epub_cache` is a sync `std::fs` call; a join failure
-/// is logged and swallowed — a stray cache file is a disk-space nuisance,
-/// not a correctness problem.
+/// Best-effort removal of a book's cached export-EPUB after its override state
+/// clears entirely. No-op when `book_id` is `None`. Runs on the blocking pool
+/// since `invalidate_export_epub_cache` is a sync `std::fs` call; a join failure
+/// is logged and swallowed (a stray cache file is only a disk-space nuisance).
 pub(super) async fn invalidate_export_epub_cache_for(book_id: Option<i64>) {
     let Some(book_id) = book_id else { return };
     if let Err(e) = tokio::task::spawn_blocking(move || {
@@ -173,11 +166,10 @@ pub(super) async fn invalidate_export_epub_cache_for(book_id: Option<i64>) {
 }
 
 /// Normalized effective (title, author) match keys for a set of overrides,
-/// mirroring how the sync writers derive `books.(title_norm, author_norm)` from
-/// scanned metadata: `normalize_title` of the override title, `normalize_author`
-/// of the first override creator. Either side is `None` when the override
-/// doesn't set that field (or it normalizes to empty), signalling the resolver
-/// to fall back to the scanned norm.
+/// mirroring how the sync writers derive `books.(title_norm, author_norm)`:
+/// `normalize_title` of the override title, `normalize_author` of the first
+/// override creator. Either side is `None` when the override doesn't set that
+/// field (or it normalizes to empty), so the resolver uses the scanned norm.
 pub(super) fn override_match_keys(ov: &MetadataOverrides) -> (Option<String>, Option<String>) {
     let title_norm = ov.title.as_deref().and_then(normalize_title);
     let author_norm = ov
@@ -246,18 +238,11 @@ pub(crate) async fn backfill_override_norm_columns(
     Ok(())
 }
 
-/// Upsert user metadata overrides for a book identified by its stable UUID.
-/// The `overrides` are JSON-serialized into the `metadata_overrides` table.
-///
-/// The override row write, the `books_series_link` materialization, and the
-/// `tags`-row materialization run inside one `BEGIN IMMEDIATE` transaction —
-/// matching the [`merge::merge_metadata_overrides`] pattern — so a failure in a
-/// materialize rolls back the override row instead of leaving the book
-/// detail page reading a fresh override against a stale link.
-///
-/// The `books_fts` rebuild runs best-effort after commit: a stale FTS row
-/// is recoverable (next reindex / next save corrects it) and is far less
-/// user-visible than a stale series association.
+/// Upsert user metadata overrides for a book identified by its stable UUID,
+/// JSON-serialized into `metadata_overrides`. The row write and the series-link
+/// and tag-row materializations share one `BEGIN IMMEDIATE` transaction, so a
+/// failure rolls back the override row. The `books_fts` rebuild runs
+/// best-effort after commit: a stale FTS row is recoverable.
 pub async fn upsert_metadata_overrides(
     pool: &SqlitePool,
     book_uuid: &str,
@@ -281,14 +266,11 @@ pub async fn upsert_metadata_overrides(
     Ok(())
 }
 
-/// Tx-scoped body of [`upsert_metadata_overrides`]: the override row write,
-/// series/tag/genre materialization, `last_modified` touch, and orphan reap
-/// — everything but the transaction's own begin/commit and the post-commit
-/// best-effort FTS rebuild, both left to the caller. `pub(crate)` so a
-/// caller that already holds an open transaction (the library-cleanup
-/// apply/undo primitives in [`crate::cleanup`]) can join it instead of
-/// nesting a second `BEGIN IMMEDIATE`, which SQLite's single-writer model
-/// would otherwise serialize behind the caller's own lock.
+/// Tx-scoped body of [`upsert_metadata_overrides`]: everything but the
+/// transaction's own begin/commit and the post-commit best-effort FTS rebuild,
+/// both left to the caller. `pub(crate)` so a caller already holding an open
+/// transaction (the library-cleanup apply/undo primitives in [`crate::cleanup`])
+/// can join it instead of nesting a second `BEGIN IMMEDIATE`.
 pub(crate) async fn upsert_one_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     book_uuid: &str,
@@ -356,21 +338,11 @@ where
     }
 }
 
-/// Delete overrides for a book UUID (revert to scanned values).
-///
-/// The row DELETE and the `books_fts` restore run inside one
-/// `BEGIN IMMEDIATE` transaction. With the override row removed, the
-/// canonical [`upsert_fts`] write inside the transaction *is* the
-/// revert-to-scanned state — no override overlay is needed, and it reads
-/// the same canonical taxonomy the scan-time index writes.
-///
-/// Unlike [`upsert_metadata_overrides`] / [`merge::merge_metadata_overrides`]
-/// (whose post-commit FTS rebuild is best-effort), the FTS restore here is
-/// **not** best-effort: a failure in the restore aborts the whole call and
-/// rolls the DELETE back, so the overrides can never be dropped while
-/// search still matches the deleted override text. Callers must treat this
-/// as fallible — the delete can fail (surfacing as a 500 at the handler)
-/// even when the row existed, leaving the override intact.
+/// Delete overrides for a book UUID (revert to scanned values). The row DELETE
+/// and the `books_fts` restore share one `BEGIN IMMEDIATE` transaction. Unlike
+/// [`upsert_metadata_overrides`]'s best-effort rebuild, the restore is **not**
+/// best-effort: a failure rolls the DELETE back, so overrides are never dropped
+/// while search still matches their text. Callers must treat it as fallible.
 pub async fn delete_metadata_overrides(
     pool: &SqlitePool,
     book_uuid: &str,
@@ -387,15 +359,11 @@ pub async fn delete_metadata_overrides(
     Ok(())
 }
 
-/// Tx-scoped body of [`delete_metadata_overrides`]: the row DELETE, the
-/// `books_fts` restore, the `last_modified` touch, and orphan reap — all on
-/// the caller's transaction, mirroring [`upsert_one_in_tx`]. Returns the
-/// resolved book id (`None` if the uuid had no live book row) so a
-/// pool-level caller can still run the post-commit export-EPUB cache
-/// invalidation; a caller joining an existing transaction (the
-/// library-cleanup undo primitive) is free to ignore it, since that
-/// eviction is a disk-space nicety rather than a correctness requirement —
-/// the cache is keyed on `books.last_modified`, already bumped here.
+/// Tx-scoped body of [`delete_metadata_overrides`]: row DELETE, `books_fts`
+/// restore, `last_modified` touch, and orphan reap on the caller's transaction.
+/// Returns the resolved book id (`None` if no live book row) for the post-commit
+/// export-EPUB cache invalidation, which a caller joining a transaction may
+/// ignore: the cache is keyed on `books.last_modified`, already bumped here.
 pub(crate) async fn delete_one_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     book_uuid: &str,

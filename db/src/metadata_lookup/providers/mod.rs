@@ -29,22 +29,11 @@ use super::{relevance, MetadataLookupConfig};
 #[cfg(test)]
 mod tests;
 
-/// Ask one provider one question, in that provider's own terms.
-///
-/// Every operation answers with a `Vec` so callers need only one shape: an
-/// ISBN lookup returns at most one entry, and empty means a clean miss either
-/// way. This is the **single** dispatch point — the check-in ladder
-/// ([`super::climb`]) and the editor's fan-out
-/// ([`super::search_all_providers`]) both come through here, so adding a
-/// provider stays one arm rather than two.
-///
-/// A query carrying an ISBN uses each provider's exact-identifier lookup,
-/// which is the strongest signal any of them accepts; otherwise the title and
-/// author go out in whatever form that provider actually understands — a
-/// fielded pair to Open Library, bare text to the two full-text engines.
-///
-/// [`ProviderEdition`] is the richer shape; the ladder narrows it to
-/// `ExternalBookMeta` on its way out.
+/// Ask one provider one question, in that provider's own terms. Every
+/// operation answers with a `Vec` (an ISBN lookup returns at most one entry;
+/// empty is a clean miss). This is the **single** dispatch point for the ladder
+/// ([`super::climb`]) and the fan-out. A query with an ISBN uses the provider's
+/// exact-identifier lookup; otherwise title and author go out in its own form.
 pub async fn run(
     provider: MetadataProvider,
     config: &MetadataLookupConfig,
@@ -92,12 +81,10 @@ async fn dispatch(
     }
 }
 
-/// Re-fetch one candidate by the handle its search handed out.
-///
-/// The counterpart to [`run`]'s ISBN path, for candidates that have no ISBN —
-/// which the `provider_ref` was always the real identifier for anyway. Each
-/// provider validates the handle's shape before addressing it: it arrives as a
-/// claim from the client, not a fact.
+/// Re-fetch one candidate by the handle its search handed out: the counterpart
+/// to [`run`]'s ISBN path, for candidates that have no ISBN. Each provider
+/// validates the handle's shape before addressing it: it arrives as a claim
+/// from the client, not a fact.
 pub async fn by_ref(
     provider: MetadataProvider,
     config: &MetadataLookupConfig,
@@ -119,17 +106,11 @@ pub async fn by_ref(
     found
 }
 
-/// Record a cooldown when a provider failure was a 429.
-///
-/// Read off the error chain rather than the response, so Open Library and
-/// Hardcover need no per-call-site bookkeeping — both surface the underlying
-/// `reqwest::Error` through `.context(...)` and `#[error(transparent)]`
-/// respectively. Google Books does not (its retry loop consumes the status and
-/// bails with a plain string), which is why it records at its own call site.
-///
-/// No `Retry-After` is available here — a `reqwest::Error` carries the status
-/// but not the headers — so these fall back to the schedule, which is the same
-/// thing a provider that sends no such header would get anyway.
+/// Record a cooldown when a provider failure was a 429, read off the error
+/// chain rather than the response so Open Library and Hardcover need no
+/// per-call-site bookkeeping. Google Books does not surface the `reqwest::Error`
+/// (its retry loop bails with a plain string), so it records at its own call
+/// site. No `Retry-After` is available here, so these fall back to the schedule.
 fn note_throttle(config: &MetadataLookupConfig, provider: MetadataProvider, error: &anyhow::Error) {
     let throttled = error
         .chain()
@@ -141,20 +122,10 @@ fn note_throttle(config: &MetadataLookupConfig, provider: MetadataProvider, erro
 }
 
 /// Ask one provider, retrying with a widened query when a narrow one finds
-/// nothing.
-///
-/// Three rungs, each dropping the most specific term that could have been
-/// what excluded an answer:
-///
-/// 1. the query as given;
-/// 2. without the ISBN — a provider that doesn't hold *this printing* may
-///    still hold the work;
-/// 3. without the author — providers disagree on how much of a name to carry,
-///    and one that files "Herbert, Frank" against a query for "Frank Herbert"
-///    would otherwise report a clean miss.
-///
-/// Each rung's results are scored against **that rung's** query, so a
-/// title-only retry is not judged for missing the author it was not given.
+/// nothing: the query as given, then without the ISBN (the provider may hold
+/// the work but not *this printing*), then without the author (providers differ
+/// on how much of a name to carry). Each rung is scored against **its own**
+/// query, so a title-only retry isn't judged for the author it wasn't given.
 pub async fn run_with_fallbacks(
     provider: MetadataProvider,
     config: &MetadataLookupConfig,
@@ -195,23 +166,11 @@ pub struct Rung {
     pub terminal: bool,
 }
 
-/// The rungs to try, in order, for `config`.
-///
-/// **The two catalogs come first**, in a key-dependent order: with a Google
-/// Books key configured Google leads, since keyless it shares an anonymous
-/// quota it quickly exhausts (HTTP 429) but a keyed instance gets richer, more
-/// reliable data. Without a key Open Library leads and Google Books is the
-/// (usually-throttled) fallback — the historical order.
-///
-/// **Hardcover is appended last, and only when keyed.** It costs an extra
-/// round trip, so it earns its place answering what the catalogs couldn't
-/// rather than slowing down the common case. Being non-terminal, a Hardcover
-/// outage can never turn a clean "we couldn't find it" into a user-facing
-/// provider error.
-///
-/// The **terminal** rung is the last catalog: if nothing hit and that rung
-/// failed, we never actually got an answer, and saying "not found" would be a
-/// lie. Every other rung is best-effort.
+/// The rungs to try, in order, for `config`. The two catalogs come first: with
+/// a Google Books key Google leads (keyless it shares an anonymous quota it
+/// quickly exhausts), otherwise Open Library does. Hardcover is appended last,
+/// and only when keyed. The **terminal** rung is the last catalog: if nothing
+/// hit and it failed, no real answer arrived, so its error surfaces.
 pub fn ladder(config: &MetadataLookupConfig) -> Vec<Rung> {
     let [primary, fallback] = if config.keys.googlebooks.is_some() {
         [MetadataProvider::GoogleBooks, MetadataProvider::OpenLibrary]
@@ -228,6 +187,8 @@ pub fn ladder(config: &MetadataLookupConfig) -> Vec<Rung> {
             terminal: true,
         },
     ];
+    // Last and non-terminal: it costs an extra round trip, and its outage must
+    // never turn a clean "not found" into a provider error.
     if config.keys.hardcover.is_some() {
         rungs.push(Rung {
             provider: MetadataProvider::Hardcover,
@@ -238,11 +199,9 @@ pub fn ladder(config: &MetadataLookupConfig) -> Vec<Rung> {
 }
 
 /// What all three providers can do today: both searches, a cover image, and a
-/// genre list — Google Books' `categories`, Open Library's `subjects`, and
-/// Hardcover's `cached_tags`. Ratings are nobody's yet.
-///
-/// One shared constant only holds while the catalog agrees; the moment a
-/// provider differs, give it its own value rather than widening this one.
+/// genre list (Google Books' `categories`, Open Library's `subjects`,
+/// Hardcover's `cached_tags`). Ratings are nobody's yet. A provider that
+/// differs gets its own value rather than widening this one.
 const COMMON_CAPABILITIES: ProviderCapabilities = ProviderCapabilities {
     search_by_title: true,
     search_by_isbn: true,
@@ -251,23 +210,11 @@ const COMMON_CAPABILITIES: ProviderCapabilities = ProviderCapabilities {
     carries_genres: true,
 };
 
-/// The hosts one provider serves its cover images from.
-///
-/// Part of the catalog, not a detail of whoever fetches a cover: the picker
-/// renders these URLs in the page, so the `img-src` CSP has to name them, and
-/// applying one means the server fetching it, which will need the same list
-/// as an allowlist. Two copies of that list would drift, and the failure mode
-/// is silent — a cover that renders but can't be applied, or the reverse.
-///
-/// The redirect targets are in it for the same reason the origins are, and
-/// they are the surprising part. `covers.openlibrary.org` 302s to
-/// `archive.org`, which 302s again to whichever Internet Archive node holds
-/// the file (`ia800505.us.archive.org`) — and browsers apply `img-src` to
-/// every hop's response, not just the request. The node names rotate, so
-/// that last hop can only be expressed as a wildcard.
-///
-/// An entry beginning `*.` matches any subdomain of the rest, the same
-/// meaning CSP gives it.
+/// The hosts one provider serves its cover images from. Both the `img-src` CSP
+/// and the server-side fetch allowlist need this list, so it lives in the
+/// catalog; two copies would drift silently. It includes redirect targets,
+/// since browsers apply `img-src` to every hop, as wildcards where node names
+/// rotate. A `*.` entry matches any subdomain of the rest, as in CSP.
 pub fn cover_hosts(provider: MetadataProvider) -> &'static [&'static str] {
     match provider {
         MetadataProvider::OpenLibrary => {
@@ -295,16 +242,11 @@ pub fn all_cover_hosts() -> Vec<&'static str> {
     hosts
 }
 
-/// The full provider catalog: identity, usability, and capabilities for
-/// every provider this instance knows about — display surface for the
-/// eventual provider-filter UI, and the one place a caller can ask "which
-/// sources exist" without matching on [`MetadataProvider`] itself.
-///
-/// `configured` reuses the exact key-presence check [`ladder`] uses for each
-/// provider, so the two can never disagree about what "configured" means:
-/// Open Library and Google Books are always usable (Google Books is tried
-/// keyless too, just not as the ladder's primary rung — see [`ladder`]'s
-/// docs), and Hardcover only when `config.keys.hardcover` is set.
+/// The full provider catalog: identity, usability, and capabilities for every
+/// provider this instance knows about, the one place a caller can ask "which
+/// sources exist" without matching on [`MetadataProvider`]. `configured` reuses
+/// [`ladder`]'s key-presence check: Open Library and Google Books are always
+/// usable, Hardcover only when `config.keys.hardcover` is set.
 pub fn catalog(config: &MetadataLookupConfig) -> Vec<ProviderInfo> {
     MetadataProvider::ALL
         .iter()

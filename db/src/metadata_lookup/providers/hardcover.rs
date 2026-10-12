@@ -15,14 +15,11 @@ use crate::suggestions::hardcover::{post_graphql, HardcoverConfig, HardcoverErro
 use super::super::{MetadataLookupConfig, SEARCH_LIMIT};
 use super::http::{paired_isbn10, sanitize_genres};
 
-/// One query's worth of fields — the book plus a representative edition,
-/// nested so a candidate list costs one round trip rather than one per row.
-/// Ordering editions by `users_count` mirrors `resolve_book`'s preference for
-/// the canonical edition over knockoffs.
-///
-/// `cached_tags` is Hardcover's denormalized tag bag, whose `Genre` bucket is
-/// the closest thing it publishes to a genre list; `pages` and `isbn_10` are
-/// edition-level, which is where Hardcover models publication.
+/// One query's worth of fields: the book plus a representative edition, nested
+/// so a candidate list costs one round trip. Editions are ordered by
+/// `users_count`, mirroring `resolve_book`'s preference for the canonical one.
+// `Genre` in the denormalized `cached_tags` bag is the closest thing Hardcover
+// publishes to a genre list; `pages` and `isbn_10` are edition-level fields.
 const BOOK_FIELDS: &str = "id title description cached_tags \
      contributions { author { name } } \
      book_series { position series { name } } \
@@ -102,14 +99,13 @@ struct Edition {
 }
 
 /// The `search` response. `results` is an untyped Typesense payload on the
-/// wire, so only the parts we read are described — everything else in it
-/// (facets, timings, request echo) is ignored by serde rather than modelled.
-/// `#[serde(default)]` covers an *absent* key but not a present `null`, and
-/// `search` is a nullable GraphQL field — Hasura answers `{"data":{"search":
-/// null}}` alongside an `errors` array. `Option` at every level so that reads
-/// as "no hits" rather than failing the whole search on a decode error.
+/// wire, so only the parts we read are described; everything else (facets,
+/// timings, request echo) is ignored by serde.
 #[derive(Debug, Default, Deserialize)]
 struct SearchData {
+    // `default` covers an absent key, not a `null`; `search` is nullable (Hasura
+    // sends `{"data":{"search":null}}` beside `errors`), so `Option` at every
+    // level reads that as "no hits" instead of a decode error.
     #[serde(default)]
     search: Option<SearchEnvelope>,
 }
@@ -178,13 +174,10 @@ struct EditionBookId {
     book_id: Option<i64>,
 }
 
-/// POST a query, recording a rate-limit refusal on the way out.
-///
-/// Hardcover has to notice its own 429 rather than leaning on the shared
-/// error-chain sniff in [`super::note_throttle`]: `HardcoverError` wraps the
-/// transport failure with `#[error(transparent)]`, whose generated `source()`
-/// forwards *past* the `reqwest::Error` to that error's own source — so the
-/// status never appears in the chain and a downcast finds nothing. Pinned by
+/// POST a query, recording a rate-limit refusal on the way out. Hardcover must
+/// notice its own 429 rather than lean on [`super::note_throttle`]'s error-chain
+/// sniff: `HardcoverError`'s `#[error(transparent)]` forwards `source()` past
+/// the `reqwest::Error`, so the status never appears in the chain. Pinned by
 /// `hardcover_429_records_a_cooldown`.
 async fn post<T: serde::de::DeserializeOwned>(
     config: &MetadataLookupConfig,
@@ -252,14 +245,11 @@ pub async fn by_isbn(
         .and_then(|b| map_book(b, Some(isbn13))))
 }
 
-/// Re-fetch one candidate by its Hardcover book id — the hydrate path for a
-/// candidate with no ISBN, which is every candidate the `search` endpoint
-/// returns.
-///
+/// Re-fetch one candidate by its Hardcover book id: the hydrate path for a
+/// candidate with no ISBN, which is every candidate `search` returns.
 /// `Ok(None)` when the handle isn't a book id (an `isbn:` fallback ref belongs
 /// on the ISBN path), no key is configured, or Hardcover no longer has the
-/// book. The id rides in `variables` as an `Int`, so it is parsed rather than
-/// interpolated.
+/// book. The id is parsed and sent as an `Int` variable, not interpolated.
 pub async fn by_ref(
     config: &MetadataLookupConfig,
     provider_ref: &str,
@@ -355,14 +345,11 @@ fn map_search_document(doc: SearchDocument) -> Option<ProviderEdition> {
     })
 }
 
-/// Read the `Genre` bucket out of Hardcover's `cached_tags` blob.
-///
-/// The column is jsonb and its buckets are data, so this reads defensively
-/// rather than deriving a type. The live shape is
-/// `{"Tag": [...], "Mood": [...], "Genre": [{"tag": "Programming", "count": 1,
-/// "tagSlug": …}], "Content Warning": [...]}`; a bare array of tags (or of
-/// strings) is accepted too, and anything else yields no genres instead of an
-/// error — a tag bag is never worth failing a lookup over.
+/// Read the `Genre` bucket out of Hardcover's `cached_tags` blob. The column is
+/// jsonb, so this reads defensively: the live shape is
+/// `{"Tag": [...], "Genre": [{"tag": "Programming", ...}], ...}`; a bare array
+/// of tags (or strings) is accepted too, and anything else yields no genres
+/// rather than an error.
 fn genre_tags(cached: Option<serde_json::Value>) -> Vec<String> {
     let bucket = match cached {
         Some(serde_json::Value::Object(mut map)) => map.remove("Genre").unwrap_or_default(),
@@ -385,12 +372,10 @@ fn genre_tags(cached: Option<serde_json::Value>) -> Vec<String> {
         .collect()
 }
 
-/// The first usable `(series name, book number)` pair, read off one row.
-///
-/// Returned as a pair rather than two lookups because a book can belong to
-/// more than one series: taking the name from whichever row happens to have
-/// one and the position from whichever happens to have that would report a
-/// number from a series the book isn't being filed under.
+/// The first usable `(series name, book number)` pair, read off one row. A pair
+/// rather than two lookups because a book can belong to several series: mixing a
+/// name from one row with a position from another would report a number from a
+/// series the book isn't being filed under.
 fn series_statement(rows: Vec<BookSeries>) -> Option<(String, Option<String>)> {
     rows.into_iter().find_map(|bs| {
         let name = bs

@@ -12,12 +12,10 @@ use super::{curation, links, overrides, relocation};
 use super::{MergeError, MergeOutcome};
 
 /// Merge the book identified by `source_uuid` into the one identified by
-/// `target_uuid`. The target's metadata — scanned and overridden — wins;
-/// the source's files, links, identifiers, progress, and history move over;
-/// the source row is deleted and snapshotted into `merge_log` for undo.
-///
-/// Same-format files are allowed: if both books carry M4B files, the
-/// source's files are appended after the target's (ordinal offset).
+/// `target_uuid`. The target's metadata (scanned and overridden) wins; the
+/// source's files, links, identifiers, progress, and history move over; the
+/// source row is deleted and snapshotted into `merge_log` for undo. Same-format
+/// files are allowed: the source's are appended after the target's.
 pub async fn merge_books(
     pool: &SqlitePool,
     source_uuid: &str,
@@ -350,20 +348,10 @@ async fn move_book_files(
 }
 
 /// Every table that soft-references `books.uuid` and must follow the book
-/// across a merge: the per-reader state (positions, sessions, annotations,
-/// journals, curation), the library-wide facts about the book (the shelves
-/// holding it, its checked-in copies, who wants it, its confirmed cross-format
-/// alignment) and the content index cut from its files. `kobo_annotations_sync`
-/// is the one per-device entry, which is why its collision is handled
-/// separately below rather than by [`dedupe_collisions`].
-///
-/// This list is the merge's half of the soft-reference contract: a table keyed
-/// on `book_uuid` but absent from it silently strands its rows on the deleted
-/// source uuid, where they are invisible to anything joining `books` and still
-/// visible to anything that doesn't. Every such table is either here or in
-/// [`MERGE_EXEMPT_TABLES`] with its reason, and
-/// `merge_settles_every_book_uuid_table` fails the moment a new one is in
-/// neither.
+/// across a merge. This list is the merge's half of the soft-reference
+/// contract: a table keyed on `book_uuid` that is in neither it nor
+/// [`MERGE_EXEMPT_TABLES`] strands its rows on the deleted source uuid, and
+/// `merge_settles_every_book_uuid_table` fails on it.
 pub(super) const RETARGET_TABLES: [&str; 18] = [
     "reading_progress",
     "reading_progress_marks",
@@ -430,13 +418,11 @@ pub(super) struct Collision {
     pub keep: Keep,
 }
 
-/// The subset of [`RETARGET_TABLES`] with a `UNIQUE` key to settle, resolved
-/// by [`dedupe_collisions`] before the retarget runs.
-///
-/// **A dedupe is destructive, so it is only reversible if the merge wrote both
-/// sides down first.** `book_read_status` and `user_ratings` are recorded in
-/// [`super::curation`]; every other entry's deleted rows are recorded by
-/// [`super::relocation`], except the content index, which is regenerated.
+/// The subset of [`RETARGET_TABLES`] with a `UNIQUE` key to settle, resolved by
+/// [`dedupe_collisions`] before the retarget runs. A dedupe is destructive, so
+/// it is reversible only if the merge wrote both sides down first: curation in
+/// [`super::curation`], every other entry in [`super::relocation`] (the content
+/// index is regenerated).
 pub(super) const COLLISION_TABLES: [Collision; 9] = [
     Collision {
         table: "reading_progress",
@@ -498,21 +484,18 @@ pub(super) const COLLISION_TABLES: [Collision; 9] = [
     },
 ];
 
-/// Re-parent every row keyed on the source's uuid onto the target: the reader
-/// state, the shelf memberships, copies, wishlist entries and cross-format
-/// links, and the content index. All of it soft-references the durable
-/// `books.uuid`, so re-parenting is an `UPDATE … SET book_uuid = <target> WHERE
-/// book_uuid = <source>` (no FK cascade — a cascade would *delete* the
-/// children). The two canonical uuids are read from `books` while the source
-/// row still exists (it is deleted later in `finalize_merge`).
-///
-/// Tables with a `UNIQUE` key the retarget would violate are deduped first;
-/// see [`COLLISION_TABLES`] and [`dedupe_collisions`].
+/// Re-parent every row keyed on the source's uuid onto the target (reader
+/// state, shelf memberships, copies, wishlist entries, cross-format links, the
+/// content index) with `UPDATE ... SET book_uuid = <target>`. Tables with a
+/// `UNIQUE` key the retarget would violate are deduped first; see
+/// [`COLLISION_TABLES`] and [`dedupe_collisions`].
 async fn move_progress_and_history(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_id: i64,
     target_id: i64,
 ) -> Result<(), sqlx::Error> {
+    // Read both uuids while the source row still exists; `finalize_merge`
+    // deletes it later.
     let source_uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
         .bind(source_id)
         .fetch_one(&mut **tx)
@@ -566,16 +549,10 @@ pub(super) const LEDGER_COUNTER_TABLES: [(&str, &str); 2] = [
 ];
 
 /// Fold the source book's forward-progress buckets into the target's, clearing
-/// the collisions the retarget would otherwise hit.
-///
-/// **Summed, not deduped.** Every other colliding table here holds a snapshot —
-/// a position, a rating, a read status — where keeping the newest row is the
-/// only sensible answer. These hold a *counter*, and a reader who covered ground
-/// in both editions in the same bucket covered all of it; latest-wins would
-/// throw one side's reading away outright.
-///
-/// The source rows the fold consumed are deleted, so the blanket retarget that
-/// follows moves only the buckets the target had nothing in.
+/// the collisions the retarget would otherwise hit. **Summed, not deduped:**
+/// every other colliding table holds a snapshot where newest-wins is right, but
+/// these hold a *counter*, so latest-wins would throw one side's reading away.
+/// Consumed source rows are deleted, so the retarget moves only the rest.
 async fn fold_ledger_counters(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_uuid: &str,
@@ -618,48 +595,19 @@ async fn fold_ledger_counters(
     Ok(())
 }
 
-/// Latest-wins dedupe of the rows in `table` that would collide on its
-/// `UNIQUE (user_id, book_uuid[, extra_key])` once the source's uuid retargets
-/// onto the target's. The surviving row is whichever side has the newer
-/// `updated_at`, ties going to the target.
-///
-/// `extra_key` names the third column of that unique key where there is one:
-/// `reading_progress` needs it because `format` is the coarse `'epub' |
-/// 'audio'`, while the merge's format-collision check uses the real file
-/// formats — an M4B book merging with an MP3 book passes the check but both
-/// carry `'audio'` progress rows.
-///
-/// Two passes are required, and in this order: keeping the newest row means
-/// deleting a loser on whichever side it falls, and pass 2's blanket delete of
-/// colliding target rows is only correct once pass 1 has removed the source
-/// rows the target already beat.
 /// Unset the forward-progress sitting clock for the readers whose surviving
 /// mark the dedupe is about to choose between, so their next observation on the
-/// merged book re-baselines.
-///
-/// `dedupe_collisions` picks that mark by `updated_at` alone, and since
-/// migration `0095` a mark is a *ceiling* on accrual rather than a value the
-/// next write simply replaces. A source book 90% read winning over a target 10%
-/// read would otherwise suppress every gain below 90% on the merged book for a
-/// whole sitting — the reader reads 15%→60% and the tile reports nothing.
-///
-/// Scoped to `(reader, format)` pairs holding a mark on **both** books, which is
-/// exactly the set the dedupe resolves — it keys on `format` too, so an epub
-/// mark and an audio mark never collide and neither one's provenance is in
-/// doubt. That distinction carries the common case rather than an edge one: a
-/// merge is usually cross-format, so the reader most often holds an epub mark on
-/// one book and an audio mark on the other, and a reader-wide clear would
-/// re-baseline both sittings when the dedupe had touched neither. Anything
-/// cleared needlessly lets its mark fall on the next observation and hands back
-/// ground already counted — the over-credit this whole change exists to remove.
-///
-/// Must run *before* the dedupe: afterwards one of the two rows has been
-/// deleted, so the pairs holding both are no longer identifiable.
+/// merged book re-baselines. Scoped to `(reader, format)` pairs holding a mark
+/// on **both** books, and must run *before* the dedupe: afterwards one of the
+/// two rows is gone and those pairs are no longer identifiable.
 async fn clear_sitting_clock(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_uuid: &str,
     target_uuid: &str,
 ) -> Result<(), sqlx::Error> {
+    // A mark is a ceiling on accrual, so a 90%-read source winning over a 10%-read
+    // target would suppress every gain below 90%. Only pairs holding both marks
+    // are cleared; a reader-wide clear would re-baseline sittings left untouched.
     sqlx::query(
         "UPDATE reading_progress_marks SET sitting_observed_at = NULL
           WHERE book_uuid IN (?1, ?2)
@@ -677,12 +625,9 @@ async fn clear_sitting_clock(
 }
 
 /// Settle one table's `UNIQUE` collisions per its [`Keep`] rule, so the blanket
-/// retarget that follows never violates the key.
-///
-/// Two passes, in this order: keeping one row means deleting a loser on
-/// whichever side it falls, and pass 2's blanket delete of colliding target
-/// rows is only correct once pass 1 has removed the source rows the target
-/// already beat.
+/// retarget that follows never violates the key. Two passes, in this order:
+/// pass 2's blanket delete of colliding target rows is only correct once pass 1
+/// has removed the source rows the target already beat.
 async fn dedupe_collisions(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     collision: &Collision,
@@ -733,15 +678,11 @@ async fn dedupe_collisions(
     Ok(())
 }
 
-/// Union identifiers; the target's value wins per `(book_id, scheme)`.
-/// The source's own rows cascade with the source delete.
-///
-/// Returns the `(scheme, value)` tuples the union actually **added** to the
-/// target, so undo can take exactly those back off it. Tuples the target
-/// already carried are excluded — they did not come from the merge, so they
-/// are not the merge's to remove. Without this an undone merge left the
-/// absorbed book's ISBN stamped on the survivor permanently, where the
-/// check-in exact-identifier rung then resolved it to the wrong book.
+/// Union identifiers; the target's value wins per `(book_id, scheme)`. The
+/// source's own rows cascade with the source delete. Returns the
+/// `(scheme, value)` tuples the union actually **added** to the target, so undo
+/// can take exactly those back off it; tuples the target already carried did
+/// not come from the merge, so they are not the merge's to remove.
 async fn move_identifiers(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_id: i64,

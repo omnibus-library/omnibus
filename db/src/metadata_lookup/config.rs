@@ -60,13 +60,10 @@ pub struct MetadataLookupConfig {
     pub hardcover_base: String,
     /// Never logged; see `providers::http::strip_url`.
     pub keys: ProviderKeys,
-    /// Which providers are currently in a rate-limit cooldown.
-    ///
-    /// Carried on the config rather than on the server's `AppState` because
-    /// the two halves of this feature build their configs independently — the
-    /// REST handler from `AppState`, the web server function from a bare pool
-    /// — and neither can see the other's router state. A tracker hung off the
-    /// router would quietly exempt every web request from throttling.
+    /// Which providers are currently in a rate-limit cooldown. Carried on the
+    /// config, not the server's `AppState`: the REST handler and the web server
+    /// function build configs independently, and a tracker on the router would
+    /// quietly exempt every web request from throttling.
     pub throttle: super::throttle::ThrottleTracker,
     /// Per-request timeout applied to each provider HTTP call.
     pub timeout: Duration,

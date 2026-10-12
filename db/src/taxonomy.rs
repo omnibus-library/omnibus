@@ -12,12 +12,10 @@ use sqlx::Transaction;
 use crate::entity_alias::resolve_entity_aliases;
 
 /// Taxonomy resolve-or-insert helpers. Each returns the row id for the given
-/// (case-insensitive) name, inserting a row if one doesn't exist yet.
-///
-/// The shape is identical for every taxonomy table: `INSERT OR IGNORE INTO
-/// <table> (<col>) VALUES (?)` then `SELECT id FROM <table> WHERE <col> = ?`.
-/// We use a macro so the table/column appear as compile-time string literals
-/// inside `sqlx::query` — no runtime SQL construction with user input.
+/// (case-insensitive) name, inserting a row if one doesn't exist yet. The shape
+/// is identical for every taxonomy table (`INSERT OR IGNORE`, then `SELECT id`);
+/// a macro keeps the table/column compile-time string literals, so no SQL is
+/// built at runtime from user input.
 macro_rules! resolve_or_insert_simple {
     ($name:ident, $table:literal, $col:literal) => {
         pub(crate) async fn $name(
@@ -46,19 +44,11 @@ resolve_or_insert_simple!(resolve_or_insert_tag, "tags", "name");
 resolve_or_insert_simple!(resolve_or_insert_publisher, "publishers", "name");
 resolve_or_insert_simple!(resolve_or_insert_language, "languages", "code");
 
-/// Resolve `value` to a `series.id`, consulting the reindex-resurrection
-/// guard first: if `value` was absorbed into another series by a
-/// completed library-cleanup merge, return the surviving canonical id
-/// instead of minting a fresh row for the merged-away name. On a miss,
-/// falls through to the same `INSERT OR IGNORE` / `SELECT` shape the other
-/// taxonomy resolvers use.
-///
-/// Issues its own single-name `resolve_entity_aliases` lookup — the right
-/// shape for its callers (`series_normalize`'s boot backfill, `merge::undo`'s
-/// rare admin restore), each resolving a handful of names outside the
-/// reindex hot path. The reindex write loop instead calls
-/// [`resolve_or_insert_series_with_aliases`] with a lookup pre-resolved once
-/// for the whole batch.
+/// Resolve `value` to a `series.id`, consulting the reindex-resurrection guard
+/// first: if `value` was absorbed into another series by a completed
+/// library-cleanup merge, return the surviving canonical id rather than minting
+/// a fresh row. Does its own single-name alias lookup, so it suits callers off
+/// the hot path; the reindex loop uses [`resolve_or_insert_series_with_aliases`].
 pub(crate) async fn resolve_or_insert_series(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     value: &str,
@@ -103,19 +93,11 @@ async fn insert_or_select_series(
         .await
 }
 
-/// Delete taxonomy rows (`authors`, `series`, `publishers`, `languages`)
-/// no longer referenced by any book, then reap orphaned tags and genres via
+/// Delete taxonomy rows (`authors`, `series`, `publishers`, `languages`) no
+/// longer referenced by any book, then reap orphaned tags and genres via
 /// [`delete_orphan_tags`] and [`delete_orphan_genres`]. Run wherever the last
-/// link to a taxonomy row can disappear — the missing-files GC purge, the
-/// merge source delete, and the indexer's Changed bucket, which wipes a
-/// book's link rows before re-inserting them from the re-parsed file — so an
-/// author or series left with zero books doesn't linger, and a book whose
-/// `metadata_overrides` row is deleted directly (rather than through the
-/// override-editing write paths) doesn't strand a genre it uniquely named.
-/// `author_photos` cascades on the author delete; the link tables have no
-/// taxonomy-side cascade, so a row is only deletable once its last link is
-/// gone, which is exactly the set this targets. Table/column names are
-/// compile-time literals, not caller input.
+/// link to a row can disappear: the missing-files GC purge, the merge source
+/// delete, the indexer's Changed bucket, and a direct override-row delete.
 pub(crate) async fn delete_orphan_taxonomy(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
 ) -> Result<(), sqlx::Error> {
@@ -137,12 +119,9 @@ pub(crate) async fn delete_orphan_taxonomy(
 
 /// Delete `authors` rows with no book left to justify them: no canonical
 /// `books_authors_link` row **and** no creators-override membership on a live
-/// book. The second clause is the authors twin of [`delete_orphan_tags`]'s:
-/// `materialize_author_rows` creates rows-only for override creators, so a
-/// link-only check would reap the row every read resolves those creators by
-/// name. Called from [`delete_orphan_taxonomy`] and directly from the
-/// override write paths, which can orphan an override-only author without
-/// touching a link row (a creators replacement, or an override delete).
+/// book (`materialize_author_rows` creates override-only rows, so a link-only
+/// check would reap them). Called from [`delete_orphan_taxonomy`] and directly
+/// from the override write paths, which can orphan an author without a link.
 pub(crate) async fn delete_orphan_authors(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
 ) -> Result<(), sqlx::Error> {
@@ -164,22 +143,15 @@ pub(crate) async fn delete_orphan_authors(
 }
 
 /// Delete `tags` rows with no book left to justify them: no canonical
-/// `books_tags_link` row **and** no subjects-override membership on a live
-/// book. Tags need the second clause because override memberships live in
-/// `metadata_overrides` JSON rather than the link table (see
-/// `materialize_tag_rows`) — a link-only check would reap a tag an override
-/// still names. Called from [`delete_orphan_taxonomy`] and directly from the
-/// override write paths, which can orphan a tag without touching any link
-/// row (a subjects save dropping the tag's last membership, or an override
-/// delete). The membership match mirrors `get_tag_cloud`'s override arm:
-/// scoped to live `books` rows, filtered to overrides that actually set
-/// `$.subjects`, and compared `COLLATE NOCASE` — equivalent to the cloud's
-/// `lower()` fold (both are ASCII-only) without recomputing `lower()` per
-/// row. A JSON-null or absent `$.subjects` yields no matching `json_each`
-/// rows, so such overrides protect nothing.
+/// `books_tags_link` row **and** no subjects-override membership on a live book
+/// (override memberships live in `metadata_overrides` JSON, so a link-only check
+/// would reap a tag an override still names). Called from
+/// [`delete_orphan_taxonomy`] and directly from the override write paths.
 pub(crate) async fn delete_orphan_tags(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
 ) -> Result<(), sqlx::Error> {
+    // The membership match mirrors `get_tag_cloud`'s override arm; NOCASE equals
+    // its `lower()` fold (both ASCII-only) without recomputing it per row.
     sqlx::query(
         "DELETE FROM tags
           WHERE NOT EXISTS (SELECT 1 FROM books_tags_link WHERE tag = tags.id)
@@ -198,12 +170,10 @@ pub(crate) async fn delete_orphan_tags(
 }
 
 /// Delete `genres` rows no live book's override still names. Genres have no
-/// canonical link table (migration `0066`), so this is the whole visibility
-/// rule rather than the second half of one — the single clause here is the
+/// canonical link table, so this is the whole visibility rule: the
 /// `metadata_overrides` arm of [`delete_orphan_tags`], with `$.genres` for
-/// `$.subjects`. Called from the override write paths (the only way a
-/// `genres` row is ever created) and from [`delete_orphan_taxonomy`], which
-/// covers the paths that delete a book's `metadata_overrides` row directly.
+/// `$.subjects`. Called from the override write paths (the only way a `genres`
+/// row is created) and from [`delete_orphan_taxonomy`].
 pub(crate) async fn delete_orphan_genres(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
 ) -> Result<(), sqlx::Error> {

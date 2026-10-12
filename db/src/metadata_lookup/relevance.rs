@@ -54,11 +54,9 @@ const MIN_TOKEN_OVERLAP_RATIO: f64 = 0.5;
 
 /// Words that appear in so many titles that requiring them ranks nothing.
 /// Listed rather than inferred from length: "The" and "Ida" are both three
-/// letters and only one of them is noise.
-///
-/// Applied to the **query side only**. A stopword left in a candidate can no
-/// longer match anything once the query side is stripped, so filtering both
-/// would only shrink the numerator.
+/// letters and only one of them is noise. Applied to the **query side only**: a
+/// stopword left in a candidate can no longer match once the query side is
+/// stripped, so filtering both would only shrink the numerator.
 const STOPWORDS: &[&str] = &[
     "the", "an", "and", "or", "of", "in", "on", "at", "to", "for", "with", "from", "by", "is",
     "it", "as", "be", "are", "was", "were", "this", "that", "these", "those", "into", "over",
@@ -99,16 +97,10 @@ fn non_word() -> &'static Regex {
 }
 
 /// Fold a title to its comparable form: decomposed, stripped of nonspacing
-/// marks, lowercased, and reduced to letters and digits of any script.
-///
-/// Restricting this to `[a-z0-9]` would empty every title written in a
-/// non-Latin script, making two providers reporting the identical Japanese or
-/// Russian title look like different books.
-///
-/// Spacing combining marks (`\p{Mc}`) are deliberately **kept**, unlike the
-/// nonspacing ones stripped above: dropping both splits every Devanagari,
-/// Bengali, or Tamil word at its vowel signs ("हिन्दी" → "ह नद") and then loses
-/// most of the fragments to the one-character token filter.
+/// marks, lowercased, and reduced to letters and digits of any script (`[a-z0-9]`
+/// would empty every non-Latin title). Spacing combining marks (`\p{Mc}`) are
+/// deliberately **kept**: dropping them splits Devanagari, Bengali, and Tamil
+/// words at their vowel signs and the fragments fall to the token filter.
 pub fn normalize_title_text(value: &str) -> String {
     let decomposed: String = value.nfkd().collect();
     let stripped = nonspacing_marks().replace_all(&decomposed, "");
@@ -180,13 +172,10 @@ fn at_boundary(haystack: &str, at: usize, len: usize) -> bool {
     before && after
 }
 
-/// Plain Levenshtein edit distance over Unicode scalar values.
-///
-/// **Not** Damerau — a transposition costs two edits, not one, which keeps the
-/// distance cheap enough to run over every candidate. Counted in `char`s rather
-/// than UTF-16 code units: the two agree for everything in the Basic
-/// Multilingual Plane and differ only for astral-plane text, where counting
-/// scalar values is the more defensible answer anyway.
+/// Plain Levenshtein edit distance over Unicode scalar values. **Not** Damerau:
+/// a transposition costs two edits, which keeps the distance cheap enough to run
+/// over every candidate. Counted in `char`s, not UTF-16 code units; they differ
+/// only for astral-plane text.
 fn levenshtein(a: &[char], b: &[char]) -> usize {
     if a.is_empty() {
         return b.len();
@@ -218,12 +207,11 @@ fn levenshtein_similarity(a: &str, b: &str) -> f64 {
     1.0 - (levenshtein(&ac, &bc) as f64 / max as f64)
 }
 
-/// How strongly two titles refer to the same work.
-///
-/// Five tiers. The first three are exact-ish and return immediately; when all
-/// three miss, the token-overlap and fuzzy paths are both computed and the
-/// better one wins. Argument order matters only to the token tier, whose
-/// ratio is measured against the *query's* words.
+/// How strongly two titles refer to the same work. Five tiers: the first three
+/// are exact-ish and return immediately; when all three miss, the token-overlap
+/// and fuzzy paths are both computed and the better one wins. Argument order
+/// matters only to the token tier, whose ratio is measured against the *query's*
+/// words.
 pub fn score_title_match(query: &str, candidate: &str) -> f64 {
     let q = normalize_title_text(query);
     let c = normalize_title_text(candidate);
@@ -327,13 +315,10 @@ fn matches_isbn(edition: &ProviderEdition, isbn13: &str) -> bool {
     same(&edition.isbn13) || same(&edition.isbn10)
 }
 
-/// Score one candidate against the query.
-///
-/// An exact ISBN wins outright and short-circuits — it identifies the edition,
-/// so nothing a title says can improve or spoil it. Otherwise the title
-/// carries the score and the author only *adds* to it: a matching author with
-/// no title signal is a different book by the same person, which is precisely
-/// what the picker must not offer.
+/// Score one candidate against the query. An exact ISBN wins outright (it
+/// identifies the edition, so a title can't improve or spoil it). Otherwise the
+/// title carries the score and the author only *adds* to it: a matching author
+/// with no title signal is a different book by the same person.
 pub fn score_candidate(edition: &ProviderEdition, query: &SearchQuery) -> f64 {
     if let Some(isbn13) = query.isbn13.as_deref() {
         if matches_isbn(edition, isbn13) {
@@ -354,15 +339,11 @@ pub fn score_candidate(edition: &ProviderEdition, query: &SearchQuery) -> f64 {
     score
 }
 
-/// Drop the coincidences, order what is left, and cap it.
-///
-/// Returns candidates unchanged (bar the cap) when the query carries neither
-/// a title nor an author: there is nothing to score against, and inventing a
-/// ranking from a bare ISBN query would only shuffle rows arbitrarily.
-///
-/// Each survivor is stamped with its own score, so the client can order by a
-/// number derived from the candidate and the query — never from which
-/// provider answered.
+/// Drop the coincidences, order what is left, and cap it. Returns candidates
+/// unchanged (bar the cap) when the query carries neither a title nor an author,
+/// since there is nothing to score against. Each survivor is stamped with its
+/// own score, so the client orders by a number derived from the candidate and
+/// the query, never from which provider answered.
 pub fn filter_and_rank(
     editions: Vec<ProviderEdition>,
     query: &SearchQuery,

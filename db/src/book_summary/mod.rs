@@ -21,11 +21,8 @@ use openlibrary::OpenLibrarySummaryConfig;
 
 /// The ordered summary-source cascade for the current settings. Hardcover leads
 /// when a key is configured; Google Books is always tried (it answers keyless,
-/// on a shared quota); Open Library is the fallback *only* when no keys exist —
-/// once any provider key is present we trust the keyed providers over it.
-///
-/// The only failure is a settings read, so the typed `SettingsError`
-/// propagates directly rather than being erased into `anyhow`.
+/// on a shared quota); Open Library is the fallback only when no keys exist.
+/// Fails only on a settings read, propagating the typed `SettingsError`.
 pub async fn summary_source_plan(
     pool: &SqlitePool,
 ) -> Result<Vec<SummarySource>, crate::settings::SettingsError> {

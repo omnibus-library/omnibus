@@ -23,22 +23,11 @@ pub(super) fn client() -> reqwest::Result<reqwest::Client> {
     Ok(CLIENT.get_or_init(|| new).clone())
 }
 
-/// Drop the URL from a `reqwest::Error` before it reaches a log.
-///
-/// A `reqwest::Error` renders the full request URL in its `Display`, and the
-/// status and kind are what diagnose a provider failure — the URL is noise in
-/// `omnibus.log` either way. Apply it to **every** fallible step, not just the
-/// send and the status check: `Response::json` attaches the URL to a decode
-/// error too, which is the path a provider answering 200 with an HTML quota
-/// page takes.
-///
-/// It is no longer what keeps a credential out of a log, and must not be
-/// relied on for that again. It was, back when Google's key rode in `?key=`,
-/// and being opt-in per call site is exactly how it came to be missing from
-/// all three `json()` sites in `googlebooks`. The key now travels on
-/// `googlebooks::API_KEY_HEADER`, which a `reqwest::Error` never renders, so no
-/// provider here puts a secret in a URL for this to strip. Anything that adds
-/// one must make the same move rather than adding a call here.
+/// Drop the URL from a `reqwest::Error` before it reaches a log: the status and
+/// kind diagnose a provider failure, the URL is noise. Apply it to **every**
+/// fallible step, including `Response::json`, which attaches the URL to a
+/// decode error too. It does not keep a credential out of a log: send keys in
+/// a header (`googlebooks::API_KEY_HEADER`), never a URL.
 pub(super) fn strip_url(e: reqwest::Error) -> reqwest::Error {
     e.without_url()
 }
@@ -77,14 +66,11 @@ pub(super) fn base_url(base: &str, path: &str, provider: &str) -> anyhow::Result
         .with_context(|| format!("invalid {provider} base url"))
 }
 
-/// Reduce a publication date to its year.
-///
-/// Google Books returns `publishedDate` in whatever precision it holds —
-/// `"2025"`, `"2025-02"`, or `"2025-02-25"` — while Open Library gives a bare
-/// year. The chooser card renders this next to the title ("Dune · 2005"), so
-/// an un-trimmed value makes two providers look like two different fields.
-/// Anything that doesn't start with four digits is passed through untouched
-/// rather than guessed at.
+/// Reduce a publication date to its year. Google Books returns `publishedDate`
+/// at whatever precision it holds (`"2025"`, `"2025-02"`, `"2025-02-25"`) while
+/// Open Library gives a bare year, and the chooser card renders it next to the
+/// title. Anything that doesn't start with four digits is passed through
+/// untouched rather than guessed at.
 pub(crate) fn publication_year(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -98,12 +84,9 @@ pub(crate) fn publication_year(raw: &str) -> Option<String> {
 }
 
 /// Clean one provider's genre labels into what a chip editor can show, capped
-/// at [`ProviderEdition::MAX_GENRES`].
-///
-/// Two rules callers rely on: an over-long label is **dropped, not
-/// truncated** — it is posted back to a write path where `validate` would
-/// reject a mangled one — and order is preserved, since Open Library returns
-/// its subjects roughly most-relevant first, so the cap keeps the useful head.
+/// at [`ProviderEdition::MAX_GENRES`]. An over-long label is **dropped, not
+/// truncated** (it is posted back to a write path where `validate` would reject
+/// a mangled one), and order is preserved so the cap keeps the relevant head.
 pub(super) fn sanitize_genres<I>(raw: I) -> Vec<String>
 where
     I: IntoIterator,
@@ -129,14 +112,11 @@ where
     out
 }
 
-/// The ISBN-10 among `candidates` that names the **same printing** as
-/// `isbn13`, canonicalized (separators stripped, `x` check digit upper-cased)
-/// so it satisfies `MetadataOverrides::validate` as-is.
-///
-/// Surprising on purpose: a perfectly valid ISBN-10 yields `None` unless it
-/// re-derives `isbn13`. Providers list identifiers per *work* as readily as
-/// per edition, so an unpaired one names a different printing. A 979-prefixed
-/// ISBN-13 pairs with nothing — it has no ISBN-10 form.
+/// The ISBN-10 among `candidates` that names the **same printing** as `isbn13`,
+/// canonicalized (separators stripped, `x` upper-cased) so it satisfies
+/// `MetadataOverrides::validate` as-is. A valid ISBN-10 yields `None` unless it
+/// re-derives `isbn13`, since providers list identifiers per *work* as readily
+/// as per edition; a 979-prefixed ISBN-13 pairs with nothing.
 pub(super) fn paired_isbn10<I>(candidates: I, isbn13: &str) -> Option<String>
 where
     I: IntoIterator,

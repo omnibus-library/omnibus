@@ -266,22 +266,13 @@ impl MergeEntity {
         matches!(self, Self::Author)
     }
 
-    /// `(id, name, sort, book_id)` — one row per **effective** linked book,
-    /// `NULL` book_id for an entity with none, `sort` NULL where the table has
-    /// no such column (tags). Left un-aggregated (no `COUNT`/`GROUP BY`) so a
-    /// merge group can later count *distinct* affected books instead of
-    /// summing each entity's count, which would double-count a book linked to
-    /// more than one of the group's members.
-    ///
-    /// "Effective" is the override-aware membership set the rest of the app
-    /// browses by — arm (1) canonical link rows on books carrying no override
-    /// for this field, arm (2) the memberships an override names — mirroring
-    /// `browse::list_authors`/`series_index_sql` and `taxonomy::delete_orphan_tags`.
-    /// Detecting off the canonical link tables alone proposes cleanups for
-    /// authors and tags a reader can no longer see anywhere, because an
-    /// override replaced the book's whole creators/subjects list and left the
-    /// link rows behind.
+    /// `(id, name, sort, book_id)`: one row per **effective** linked book (the
+    /// override-aware membership the app browses by, as in `browse::list_authors`),
+    /// `NULL` book_id for an entity with none, `sort` NULL for tags. Left
+    /// un-aggregated so a merge group can count *distinct* affected books.
     fn sql(self) -> &'static str {
+        // Detecting off the canonical link tables alone would propose cleanups for
+        // authors and tags an override already hid from every reader.
         match self {
             Self::Author => {
                 "SELECT a.id, a.name, a.sort, e.book_id
@@ -360,14 +351,10 @@ impl EntityRow {
 }
 
 /// Fetch every row of `entity`'s table that at least one book effectively
-/// carries, folding the one-row-per-linked-book result of
-/// [`MergeEntity::sql`] into one [`EntityRow`] per distinct id.
-///
-/// Entities with no effective book are dropped rather than returned with an
-/// empty set — the same `book_count > 0` invariant the browse indexes hold.
-/// An author or tag nothing links to is invisible everywhere else in the app,
-/// so offering to merge or delete it reads as being asked to clean up
-/// something that is already gone.
+/// carries, folding the one-row-per-linked-book result of [`MergeEntity::sql`]
+/// into one [`EntityRow`] per distinct id. Entities with no effective book are
+/// dropped, not returned with an empty set (the `book_count > 0` invariant the
+/// browse indexes hold).
 async fn fetch_entity_rows(
     pool: &SqlitePool,
     entity: MergeEntity,
@@ -658,18 +645,12 @@ fn tag_split_suggestion(
 // Book-title cruft detection
 // ---------------------------------------------------------------------------
 
-/// Leading-prefix patterns stripped from a book title, re-tried as a set
-/// until none matches (see [`strip_title_cruft`]). All Tier 0 — unambiguous
-/// filename artifacts.
-///
-/// Each pattern is deliberately strict about its separator, because the cost
-/// of a loose one is a mangled real title rather than a missed suggestion.
-/// The author pattern requires name-shaped characters either side of the
-/// comma and a *spaced* ` - `: an earlier `^[^,]+,\s*[^-]+-\s*` matched "The
-/// Life of Charles Dickens, Vol. I-" and proposed "III, Complete" for it.
-/// The series-index pattern requires the index to be zero-padded or to carry
-/// an explicit `Book`/`#` marker, which is what keeps it off a real title
-/// ending in a number ("Apollo 13 - The Untold Story").
+/// Leading-prefix patterns stripped from a book title, re-tried as a set until
+/// none matches (see [`strip_title_cruft`]). All Tier 0: unambiguous filename
+/// artifacts. Each is strict about its separator: a loose one mangles a real
+/// title rather than just missing a suggestion.
+// The author pattern needs name-shaped text around the comma and a spaced ` - `.
+// The series index needs zero-padding or `Book`/`#`, keeping "Apollo 13 - ..." intact.
 const TITLE_PREFIX_PATTERNS: &[&str] = &[
     // "Maas, Sarah J - "
     r"^\p{Lu}[\p{L}'\u{2019}.\- ]{0,48},\s*[\p{L}'\u{2019}.\- ]{1,48}\s+-\s+",
@@ -702,14 +683,9 @@ const TITLE_STRIP_MAX_ROUNDS: usize = 8;
 /// Apply the leading-prefix (Tier 0) and trailing-parenthetical (Tier 1)
 /// patterns to `title`. Returns the winning tier and the stripped title, or
 /// `None` if neither pattern matched or the result is empty/unchanged.
-///
-/// Both passes run to a fixpoint rather than stopping at the first hit,
-/// because real filename cruft stacks: "Sanderson, Brandon - Mistborn 01 -
-/// The Final Empire" carries an author segment *and* a series segment, and
-/// one round of stripping leaves the series in the proposed title. A scene
-/// release stacks the other way — "Berserk v01 (2003) (Digital)
-/// (danke-Empire)" needs three trailing parentheticals gone, not one.
 fn strip_title_cruft(title: &str, prefixes: &[Regex], suffix: &Regex) -> Option<(Tier, String)> {
+    // Both passes run to a fixpoint because cruft stacks: an author then a series
+    // segment, or several trailing parentheticals.
     let mut stripped = title;
     let mut tier0_hit = false;
     for _ in 0..TITLE_STRIP_MAX_ROUNDS {

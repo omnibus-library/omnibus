@@ -264,11 +264,9 @@ pub(super) fn deleted_ids(
 }
 
 /// Send the moved rows back to the source and reinsert the deleted ones on the
-/// book they were deleted from.
-///
-/// Refuses when a still-open later merge into the same book deleted one of the
-/// rows this merge moved: that row now lives only in the later merge's record,
-/// so undoing that merge first is the only way to get it back.
+/// book they were deleted from. Refuses when a still-open later merge into the
+/// same book deleted a row this merge moved: it now lives only in that merge's
+/// record, so undo that merge first.
 pub(super) async fn restore_relocation(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_uuid: &str,

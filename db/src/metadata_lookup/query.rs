@@ -8,12 +8,10 @@
 
 use omnibus_shared::isbn::normalize_isbn;
 
-/// What a caller knows about the book it is searching for.
-///
-/// Every field is optional and independently useful: the check-in ladder
-/// searches with a title alone, the picker seeds title + author + whatever
-/// ISBN the edit form already holds, and a reader who retypes the box gets a
-/// title-only query because free text cannot honestly be split.
+/// What a caller knows about the book it is searching for. Every field is
+/// optional and independently useful: the check-in ladder searches with a title
+/// alone, the picker seeds title + author + any ISBN the edit form holds, and a
+/// retyped box gives a title-only query because free text can't be split.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchQuery {
     /// The work's title, without the author appended.
@@ -28,11 +26,9 @@ pub struct SearchQuery {
 
 impl SearchQuery {
     /// Build from raw caller input, trimming blanks to `None` and keeping the
-    /// ISBN only if it survives normalization.
-    ///
-    /// A bad ISBN is dropped rather than reported: it is a *hint* here, not
-    /// the thing being looked up, and refusing the whole search because a
-    /// stale field holds a typo would be worse than searching without it.
+    /// ISBN only if it survives normalization. A bad ISBN is dropped rather than
+    /// reported: it is a *hint* here, and refusing the search over a typo would be
+    /// worse than searching without it.
     pub fn new(title: Option<&str>, author: Option<&str>, isbn: Option<&str>) -> Self {
         Self {
             title: clean(title),

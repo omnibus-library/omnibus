@@ -50,13 +50,11 @@ struct Cooldown {
     level: usize,
 }
 
-/// A shared record of which providers are cooling down.
-///
-/// Cloning shares the state — it is a handle, not a copy — which is what lets
-/// it ride along on [`super::MetadataLookupConfig`] and reach both the REST
-/// handler and the web server function. Those two build their configs
-/// independently and neither can see the other's `AppState`, so a tracker
-/// hung off the router would silently exempt half the requests.
+/// A shared record of which providers are cooling down. Cloning shares the
+/// state (it is a handle, not a copy), which lets it ride on
+/// [`super::MetadataLookupConfig`] and reach both the REST handler and the web
+/// server function; a tracker hung off the router would silently exempt half
+/// the requests.
 #[derive(Debug, Clone)]
 pub struct ThrottleTracker(Arc<Mutex<HashMap<MetadataProvider, Cooldown>>>);
 
@@ -82,24 +80,19 @@ impl ThrottleTracker {
         self.remaining_at(provider, Instant::now())
     }
 
-    /// Note that `provider` answered 429.
-    ///
-    /// `retry_after` is the provider's own `Retry-After` when it sent one; it
-    /// overrides the schedule's duration but still advances the level, so a
-    /// provider that keeps saying "one more minute" is eventually taken at
-    /// more than its word.
+    /// Note that `provider` answered 429. `retry_after` is the provider's own
+    /// `Retry-After` when it sent one; it overrides the schedule's duration but still
+    /// advances the level, so a provider that keeps saying "one more minute" is
+    /// eventually taken at more than its word.
     pub fn record(&self, provider: MetadataProvider, retry_after: Option<Duration>) {
         self.record_at(provider, retry_after, Instant::now());
     }
 
-    /// Note that `provider` answered normally, clearing any cooldown and
-    /// resetting its escalation.
-    ///
-    /// This is the only thing that resets the level, which is why it must be
-    /// called on evidence the provider actually served a request — not merely
-    /// because a call returned `Ok`, since a provider client can swallow its
-    /// own failure (`googlebooks::by_isbn` degrades a refused fallback to a
-    /// clean miss) and answer `Ok` with a cooldown freshly recorded.
+    /// Note that `provider` answered normally, clearing any cooldown and resetting
+    /// its escalation. This is the only thing that resets the level, so call it on
+    /// evidence the provider actually served a request, not merely because a call
+    /// returned `Ok`: a provider client can swallow its own failure and answer `Ok`
+    /// with a cooldown freshly recorded.
     pub fn clear(&self, provider: MetadataProvider) {
         self.with(|map| {
             map.remove(&provider);

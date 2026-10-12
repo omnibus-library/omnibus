@@ -42,20 +42,11 @@ pub async fn get_series(
     }))
 }
 
-/// SQL CTE expressing the override-aware effective series membership. Used
-/// by both `fetch_series_books` (with the full `BOOK_COLUMNS` SELECT) and
-/// `count_effective_series_members` (with `COUNT(*)`).
-///
-/// Single-pass UNION over (1) canonical link rows for *this* series whose
-/// book has no `series` override, and (2) override rows whose
-/// `overrides.series` matches this series' name. Both arms are scoped to
-/// the target series up front, so arm (1) drives through the
-/// `books_series_link(series)` index instead of scanning every book.
-///
-/// The empty-string clear-all case is handled naturally: a `Some("")`
-/// override removes the book from arm (1) (override IS NOT NULL) and the
-/// `'' = name` filter excludes it from arm (2). Case-insensitivity is
-/// preserved by the `COLLATE NOCASE` on arm (2)'s name comparison.
+/// SQL CTE of the override-aware effective series membership, shared by
+/// `fetch_series_books` and `count_effective_series_members`. Both arms are
+/// scoped to the target series up front, so arm (1) drives through the
+/// `books_series_link(series)` index. A `Some("")` override clears the series:
+/// it leaves arm (1) and the `'' = name` filter excludes it from arm (2).
 const EFFECTIVE_SERIES_CTE: &str = r#"WITH effective AS (
              -- (1) Canonical members of this series with no series override.
              -- A `series_index` override still drives ordering here even
@@ -160,13 +151,10 @@ async fn count_effective_series_members(
 }
 
 /// Bulk-merge overrides into each book and **unconditionally** pin
-/// `series_id` / `series` to the parent series. A book that was canonically
-/// in series A but overridden into series B would otherwise come back with
-/// `series_id = Some(A)` (from the BOOK_COLUMNS subquery, which only reads
-/// `books_series_link`) — so the card on B's page would link back to
-/// /series/A. We're already on B's page by construction (the WHERE filter
-/// matched the effective series name), so pinning to the requested series
-/// is correct.
+/// `series_id` / `series` to the parent series. A book canonically in series A
+/// but overridden into B would otherwise keep `series_id = Some(A)` (the
+/// `BOOK_COLUMNS` subquery only reads `books_series_link`), so its card on B's
+/// page would link back to /series/A.
 async fn merge_and_pin_series(
     pool: &SqlitePool,
     books: &mut [EbookMetadata],
