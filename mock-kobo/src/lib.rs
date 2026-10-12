@@ -7,6 +7,7 @@ pub mod client;
 pub mod device;
 pub mod firmware;
 pub mod session;
+pub mod state;
 #[cfg(test)]
 mod test_support;
 pub mod wire;
