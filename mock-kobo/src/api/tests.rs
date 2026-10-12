@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::http::StatusCode;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 use tokio::sync::Notify;
@@ -92,6 +93,68 @@ async fn get_device_returns_ok_reply_with_device_view() {
         })
     );
     assert!(!body.to_string().contains(STUB_TOKEN));
+}
+
+#[tokio::test]
+async fn get_device_shows_synced_last_sync_after_sync() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    let client = reqwest::Client::new();
+    client
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+
+    let body: Value = client
+        .get(format!("{base}/device"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        body["details"]["last_sync"],
+        json!({ "result": "synced", "pages": 1 })
+    );
+}
+
+#[tokio::test]
+async fn get_device_shows_failed_last_sync_after_failed_sync() {
+    let stub = spawn_stub(Stub {
+        store_path_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    let client = reqwest::Client::new();
+    client
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+
+    let body: Value = client
+        .get(format!("{base}/device"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        body["details"]["last_sync"],
+        json!({
+            "result": "failed",
+            "quirk": "StorePaths",
+            "message": "sync failed (StorePaths): /kobo/<token>/v1/user/profile answered 404 Not Found",
+        })
+    );
 }
 
 #[tokio::test]
