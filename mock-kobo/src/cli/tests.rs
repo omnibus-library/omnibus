@@ -229,6 +229,46 @@ fn parse_rejects_url_without_http_scheme() {
     assert!(is_invalid(from_env, "server URL"), "as an env var");
 }
 
+fn rejects_server_urls(urls: &[&str]) {
+    for url in urls {
+        let from_flag = parse(args(&["serve", "--url", url]), no_env);
+        assert!(is_invalid(from_flag, "server URL"), "{url:?} as a flag");
+    }
+}
+
+#[test]
+fn parse_rejects_url_with_path() {
+    rejects_server_urls(&[
+        "http://h:9/omnibus",
+        "http://h:9/omnibus/",
+        "http://h:9/kobo/tok",
+        "http://h:9//",
+    ]);
+}
+
+#[test]
+fn parse_rejects_url_with_query_or_fragment() {
+    rejects_server_urls(&[
+        "http://h:9?x=1",
+        "http://h:9/?x=1",
+        "http://h:9#top",
+        "http://h:9/#top",
+    ]);
+}
+
+#[test]
+fn parse_rejects_url_with_credentials() {
+    rejects_server_urls(&["http://user:pw@h:9", "http://user@h:9", "http://:pw@h:9"]);
+}
+
+#[test]
+fn parse_normalizes_url_to_its_origin() {
+    assert_eq!(
+        serve(&["serve", "--url", " http://H:9/ "]).url,
+        Some("http://h:9".to_owned())
+    );
+}
+
 #[test]
 fn parse_rejects_token_outside_url_safe_base64() {
     for token in ["a/b", "a b", "a.b", "tökén", ""] {

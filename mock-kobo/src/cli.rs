@@ -51,7 +51,7 @@ pub enum Command {
 /// The `serve` options after flags, env vars and defaults are merged.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ServeArgs {
-    /// `--url` or `OMNIBUS_MOCK_KOBO_URL`, validated, trailing `/` trimmed.
+    /// `--url` or `OMNIBUS_MOCK_KOBO_URL`, validated and reduced to its origin.
     pub url: Option<String>,
     /// `--token` or `OMNIBUS_MOCK_KOBO_TOKEN`, validated.
     pub token: Option<String>,
@@ -125,16 +125,25 @@ fn parse_serve(
     })
 }
 
-/// `url` with its trailing `/` trimmed, if it is an http(s) URL.
+/// The origin of `url`, if it is a bare http(s) origin: no path, query, fragment or credentials.
 fn valid_url(url: String) -> Result<String, CliError> {
-    let parsed = reqwest::Url::parse(&url).ok();
-    if parsed.is_some_and(|parsed| matches!(parsed.scheme(), "http" | "https")) {
-        return Ok(url.trim_end_matches('/').to_owned());
-    }
-    Err(CliError::Invalid {
+    let invalid = |reason: &str| CliError::Invalid {
         name: "server URL",
-        reason: "expected an http:// or https:// URL".into(),
-    })
+        reason: reason.into(),
+    };
+    let parsed = reqwest::Url::parse(&url)
+        .ok()
+        .filter(|parsed| matches!(parsed.scheme(), "http" | "https"))
+        .ok_or_else(|| invalid("expected an http:// or https:// URL"))?;
+    let bare = parsed.path() == "/"
+        && parsed.query().is_none()
+        && parsed.fragment().is_none()
+        && parsed.username().is_empty()
+        && parsed.password().is_none();
+    if !bare {
+        return Err(invalid("expected an origin like http://host:port"));
+    }
+    Ok(parsed.origin().ascii_serialization())
 }
 
 /// `token` if it is made only of the URL-safe base64 characters Omnibus issues.
