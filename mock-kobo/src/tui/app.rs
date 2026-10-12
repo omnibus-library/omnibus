@@ -99,7 +99,8 @@ impl App {
     }
 
     fn on_normal_key(&mut self, key: KeyEvent, current_url: &str) -> Option<Action> {
-        let job = match typed_char(key)? {
+        // Caps Lock or Shift must not silence a command key.
+        let job = match typed_char(key)?.to_ascii_lowercase() {
             'q' => return Some(Action::Quit),
             'u' => {
                 self.open_edit(Field::Url, current_url);

@@ -78,6 +78,37 @@ fn on_key_returns_quit_when_ctrl_c_pressed_in_any_mode() {
 }
 
 #[test]
+fn on_key_accepts_uppercase_command_keys() {
+    let cases = [
+        ('S', Action::Run(Job::Sync)),
+        ('R', Action::Run(Job::Reset)),
+        ('W', Action::Run(Job::Wire)),
+        ('Q', Action::Quit),
+    ];
+    for (c, expected) in cases {
+        let mut app = App::new(None);
+
+        let action = app.on_key(with_modifiers(c, KeyModifiers::SHIFT), URL);
+
+        assert_eq!(action, Some(expected), "key {c}");
+    }
+}
+
+#[test]
+fn on_key_opens_edits_when_uppercase_u_or_t_pressed() {
+    for (c, field) in [('U', Field::Url), ('T', Field::Token)] {
+        let mut app = App::new(None);
+
+        assert_eq!(app.on_key(key(c), URL), None);
+
+        let Mode::Editing(edit) = &app.mode else {
+            panic!("key {c} should open an edit");
+        };
+        assert_eq!(edit.field, field);
+    }
+}
+
+#[test]
 fn on_key_ignores_unmapped_key() {
     let mut app = App::new(None);
 
