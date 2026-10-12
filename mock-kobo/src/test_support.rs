@@ -158,13 +158,7 @@ pub fn stub_control(stub: &RunningStub, state_path: PathBuf) -> Arc<Control> {
 
 /// [`stub_control`] for a device that already holds what it was given.
 pub fn stub_control_with(stub: &RunningStub, device: Device, state_path: PathBuf) -> Arc<Control> {
-    let saved = SavedState {
-        url: None,
-        token: STUB_TOKEN.to_owned(),
-        wired_url: None,
-        device,
-    };
-    Arc::new(Control::new(saved, stub.origin.clone(), state_path))
+    control_with(&stub.origin, None, device, state_path)
 }
 
 /// A `HW-1` device holding `STUB_TOKEN`, syncing against `url`, whose token was wired against `wired_url`.
@@ -173,11 +167,20 @@ pub fn control_wired_against(
     wired_url: Option<&str>,
     state_path: PathBuf,
 ) -> Arc<Control> {
+    control_with(url, wired_url, Device::new("HW-1"), state_path)
+}
+
+fn control_with(
+    url: &str,
+    wired_url: Option<&str>,
+    device: Device,
+    state_path: PathBuf,
+) -> Arc<Control> {
     let saved = SavedState {
         url: None,
-        token: STUB_TOKEN.into(),
+        token: STUB_TOKEN.to_owned(),
         wired_url: wired_url.map(str::to_owned),
-        device: Device::new("HW-1"),
+        device,
     };
     Arc::new(Control::new(saved, url.to_owned(), state_path))
 }
@@ -199,6 +202,22 @@ pub async fn wait_until(mut condition: impl FnMut() -> bool) {
             "timed out waiting for the condition"
         );
         tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// A server already holding the device auto-wire looks for, under `token`.
+pub fn stub_with_device(token: &str) -> Stub {
+    Stub {
+        devices: vec![("Mock Kobo (kobo)".to_owned(), token.to_owned())],
+        ..Stub::default()
+    }
+}
+
+/// A stub that takes `library_sync` requests and never answers them.
+pub fn never_answers() -> Stub {
+    Stub {
+        sync_never_answers: true,
+        ..Stub::default()
     }
 }
 

@@ -11,8 +11,8 @@ use tokio::sync::Notify;
 use crate::device::Device;
 use crate::state;
 use crate::test_support::{
-    control_wired_against, dune_stub, new_entitlement, request_lines, spawn_stub, spawn_sync,
-    stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
+    control_wired_against, dune_stub, never_answers, new_entitlement, request_lines, spawn_stub,
+    spawn_sync, stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
 };
 
 use super::*;
@@ -154,11 +154,7 @@ async fn sync_appends_requests_of_failed_sync_to_request_log() {
 
 #[tokio::test]
 async fn sync_returns_sync_in_progress_while_another_sync_runs() {
-    let stub = spawn_stub(Stub {
-        sync_never_answers: true,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
     let running = spawn_sync(&control);
@@ -174,11 +170,7 @@ async fn sync_returns_sync_in_progress_while_another_sync_runs() {
 
 #[tokio::test]
 async fn view_shows_syncing_while_sync_runs() {
-    let stub = spawn_stub(Stub {
-        sync_never_answers: true,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
     assert!(!control.view().syncing);
@@ -385,11 +377,7 @@ async fn reset_returns_state_not_saved_when_state_file_cannot_be_written() {
 
 #[tokio::test]
 async fn reset_returns_sync_in_progress_while_sync_runs() {
-    let stub = spawn_stub(Stub {
-        sync_never_answers: true,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control_with(&stub, device_with_dune(), dir.path().join("kobo.json"));
     let running = spawn_sync(&control);
@@ -580,11 +568,7 @@ async fn retarget_wired_reports_needs_wire_when_url_is_not_the_device_url() {
 
 #[tokio::test]
 async fn retarget_returns_sync_in_progress_while_sync_runs() {
-    let stub = spawn_stub(Stub {
-        sync_never_answers: true,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");
     let control = stub_control(&stub, path.clone());

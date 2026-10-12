@@ -10,8 +10,8 @@ use crate::control::{Control, ControlError, LastSync, RESET_MESSAGE};
 use crate::firmware::Quirk;
 use crate::state::{self, StateError};
 use crate::test_support::{
-    control_wired_against, dune_stub, spawn_stub, spawn_sync, stub_control, wait_until, Stub,
-    STUB_TOKEN,
+    control_wired_against, dune_stub, never_answers, spawn_stub, spawn_sync, stub_control,
+    stub_with_device, wait_until, Stub, STUB_TOKEN,
 };
 use crate::tui::app::{Job, Status};
 
@@ -25,21 +25,6 @@ fn wiring() -> Wiring {
     Wiring {
         seed_user: Some(SEED_USER.to_owned()),
         device_name: "Mock Kobo (kobo)".to_owned(),
-    }
-}
-
-/// A stub Omnibus that already lists `token` as the device `Mock Kobo (kobo)`.
-fn stub_listing(token: &str) -> Stub {
-    Stub {
-        devices: vec![("Mock Kobo (kobo)".to_owned(), token.to_owned())],
-        ..Stub::default()
-    }
-}
-
-fn never_answers() -> Stub {
-    Stub {
-        sync_never_answers: true,
-        ..Stub::default()
     }
 }
 
@@ -148,7 +133,7 @@ async fn perform_set_url_syncs_against_new_url() {
 #[tokio::test]
 async fn perform_set_url_rewires_token_wired_against_another_url() {
     let old = spawn_stub(Stub::default()).await;
-    let new = spawn_stub(stub_listing("new-server-token")).await;
+    let new = spawn_stub(stub_with_device("new-server-token")).await;
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");
     let control = control_wired_against(&old.origin, Some(&old.origin), path.clone());
@@ -277,7 +262,7 @@ fn wired_status_reports_state_not_saved_error() {
 
 #[tokio::test]
 async fn perform_wire_retargets_to_existing_device_and_reports_reuse() {
-    let stub = spawn_stub(stub_listing("existing-token")).await;
+    let stub = spawn_stub(stub_with_device("existing-token")).await;
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");
     let control = stub_control(&stub, path.clone());
