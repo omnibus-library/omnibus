@@ -4902,6 +4902,7 @@ dependencies = [
  "omnibus-db",
  "omnibus-frontend",
  "omnibus-mcp",
+ "omnibus-mock-kobo",
  "omnibus-shared",
  "rmcp",
  "serde",
@@ -5031,6 +5032,18 @@ dependencies = [
  "omnibus-shared",
  "reqwest 0.13.4",
  "serde_json",
+]
+
+[[package]]
+name = "omnibus-mock-kobo"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

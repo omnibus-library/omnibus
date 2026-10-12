@@ -2216,7 +2216,7 @@ a.idx-letter-on:focus-visible {
   transition: border-color .15s, background .15s;
 }
 @media (hover: hover) {
-  .shv-card:hover {
+  .shv-card:is(a, button:enabled):hover {
     border-color: color-mix(in oklch, var(--shelf-accent) 55%, var(--line));
     background: var(--bg-2);
   }
@@ -2258,10 +2258,10 @@ a.idx-letter-on:focus-visible {
 /* The last book leans on its neighbour, the way it does on a shelf that isn't full. */
 .shv-ledge-book:last-child:not(:only-child) { transform: rotate(-6deg); transform-origin: 100% 100%; }
 @media (hover: hover) {
-  .shv-card:hover .shv-ledge-book { transform: translateY(-4px); }
-  .shv-card:hover .shv-ledge-book:nth-child(2) { transition-delay: .03s; }
-  .shv-card:hover .shv-ledge-book:nth-child(3) { transition-delay: .06s; }
-  .shv-card:hover .shv-ledge-book:last-child:not(:only-child) {
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book { transform: translateY(-4px); }
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book:nth-child(2) { transition-delay: .03s; }
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book:nth-child(3) { transition-delay: .06s; }
+  .shv-card:is(a, button:enabled):hover .shv-ledge-book:last-child:not(:only-child) {
     transform: translateY(-4px) rotate(-6deg); transition-delay: .09s;
   }
 }
@@ -2320,6 +2320,15 @@ a.idx-letter-on:focus-visible {
   .shv-card-body { padding: 12px 12px 13px; }
   .shv-card-name { font-size: 19px; }
 }
+
+/* Compact: the book page's shelves and the "Add to shelf" picker. */
+.shv-card--compact .shv-ledge { height: 92px; gap: 5px; padding: 12px 12px 10px; }
+.shv-card--compact .shv-ledge::after { left: 10px; right: 10px; bottom: 8px; }
+.shv-card--compact .shv-ledge-book { flex-basis: 36px; margin-bottom: 3px; }
+.shv-card--compact .shv-ledge-empty { padding: 8px 12px; gap: 5px; font-size: 9px; }
+.shv-card--compact .shv-card-body { gap: 6px; padding: 10px 12px 11px; }
+.shv-card--compact .shv-card-name { font-size: 16px; }
+.shv-card--compact .shv-card-foot { padding-top: 2px; font-size: 11.5px; }
 
 
 /* ── F5.1 Metadata edit form ────────────────────────────────────────
@@ -7822,7 +7831,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    above shows what's picked so far. */
 .pick { display: flex; flex-direction: column; gap: 12px; flex: 1 1 auto; min-height: 0; }
 .pick-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.pick-kicker {
+/* `.atrium` on the picker's section title: outranks the base `.atrium h3` size. */
+.pick-kicker,
+.atrium .shelf-picker-auto-title {
   font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
   text-transform: uppercase; color: var(--ink-3);
 }
@@ -7925,6 +7936,51 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .pick-foot {
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
   border-top: 1px solid var(--line-2); padding-top: 12px;
+}
+
+/* ── Shelf picker — "Add to shelf" from a book page and the bulk bar ───
+   Rides the Add books modal's overlay and head; the shelves are compact shelf
+   tiles (`.shv-card--compact`) in a grid that scrolls inside the card. */
+.shelf-picker-card { width: min(760px, 100%); }
+.atrium .shelf-picker-card .pick-title { font-size: 24px; }
+.shelf-picker-hint { margin: -4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.shelf-picker-list {
+  flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.shelf-picker-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+}
+.shelf-picker-tile {
+  position: relative; width: 100%; padding: 0;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.shelf-picker-tile[aria-checked="true"] {
+  border-color: var(--shelf-accent); box-shadow: 0 0 0 1px var(--shelf-accent);
+}
+.shelf-picker-tile:disabled { cursor: default; opacity: .7; }
+.shelf-picker-tile[aria-busy="true"] { opacity: 1; }
+.shelf-picker-check {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px;
+  background: color-mix(in oklch, var(--bg-1) 80%, transparent);
+  border: 1.5px solid var(--line); color: var(--accent-ink);
+}
+.shelf-picker-tile[aria-checked="true"] .shelf-picker-check {
+  background: var(--shelf-accent); border-color: transparent;
+}
+.shelf-picker-automatic {
+  display: flex; flex-direction: column; gap: 10px;
+  padding-top: 14px; border-top: 1px solid var(--line-2);
+}
+.atrium .shelf-picker-auto-title { padding: 0; font-weight: 500; line-height: 1.4; }
+.shelf-picker-auto-tile { cursor: default; }
+/* Two lines of a long name would hide where near-identical names differ. */
+.shelf-picker-tile .shv-card-name,
+.shelf-picker-auto-tile .shv-card-name {
+  display: block; -webkit-line-clamp: unset; overflow: visible;
 }
 
 /* Shared shelf chrome: badges, the landing header's edit pencil and facet
@@ -11323,10 +11379,12 @@ html {
    down by the measured topbar height and the card's height budget shrinks to
    match. Without this a tall modal's top controls sit under the topbar and
    are unclickable. */
-.bdmq .author-photo-modal-backdrop {
+.bdmq .author-photo-modal-backdrop,
+.bdmq .shelf-modal-overlay {
   padding-top: calc(var(--bdmq-top, 61px) + 12px);
 }
-.bdmq .mg-modal {
+.bdmq .mg-modal,
+.bdmq .shelf-picker-card {
   max-height: calc(100vh - var(--bdmq-top, 61px) - 52px);
 }
 
@@ -11383,10 +11441,7 @@ html {
 /* ── Content panel ── */
 .bdmq-panel {
   position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
-  /* The design's scrim: bg-0 at 70%, so the cover's right edge reads
-     dissolved behind the panel rather than being cut off at the seam. */
-  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
-  backdrop-filter: blur(12px);
+  /* No filter here: it would pin fixed overlays to the panel (see `.bdmq-panelscrim`). */
   padding: 56px 60px;
   display: flex; flex-direction: column;
   z-index: 1;
@@ -11458,24 +11513,21 @@ html {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--accent) 60%, var(--bg-3)) transparent;
 }
-/* The blur behind the flow column, on its own non-scrolling layer.
-   `backdrop-filter` makes an element the containing block for its
-   `position: fixed` descendants, so while it lived on the scroller the
-   journal overlay was laid out against the scroller's *scrolled* content and
-   rendered `scrollTop` pixels above the viewport — far enough up, by the time
-   a reader reached the journal stop, that an entry could not be read at all
-   (#2529). Keep every filter off `.bdmq-flowscroll` for that reason; this
-   layer sits behind it and blurs the cover just the same. */
-.bdmq-flowscrim {
+/* The scrim behind the snapped panel and the flow column: bg-0 at 70%, so the
+   cover's right edge reads dissolved rather than cut off at the seam. It is a
+   layer of its own because `backdrop-filter` makes an element the containing
+   block for its `position: fixed` descendants: on the scroller, the journal
+   overlay was laid out against the scroller's *scrolled* content and rendered
+   `scrollTop` pixels above the viewport (#2529). Keep every filter off
+   `.bdmq-panel` and `.bdmq-flowscroll`. */
+.bdmq-panelscrim, .bdmq-flowscrim {
   position: absolute; top: 0; bottom: 0; right: 0; width: 57%;
-  /* Same scrim as `.bdmq-panel`: the cover's right edge reads dissolved
-     behind the column rather than cut off at the seam. */
   background: color-mix(in oklch, var(--bg-0) 70%, transparent);
   backdrop-filter: blur(12px);
-  border-left: 1px solid var(--line-2);
   pointer-events: none;
   z-index: 0;
 }
+.bdmq-flowscrim { border-left: 1px solid var(--line-2); }
 .bdmq-flowscroll::-webkit-scrollbar { width: 6px; }
 .bdmq-flowscroll::-webkit-scrollbar-thumb {
   background: color-mix(in oklch, var(--accent) 60%, var(--bg-3));
@@ -11554,10 +11606,11 @@ html {
   border-radius: 14px; padding: 10px;
   background: color-mix(in oklch, var(--bg-0) 82%, transparent);
 }
-/* The rail lives in a higher stacking layer than the panel-hosted overlays,
-   so it would float over their dimmed scrim — step it aside while one is up. */
-.bdmq-stage:has(.bdmq-overlay) .bdmq-dots,
-.bdmq-stage:has(.author-photo-modal-backdrop) .bdmq-dots {
+/* Everything the stage draws outside the panel's stacking layer would float
+   over (and take clicks through) a panel-hosted overlay's dimmed scrim, so it
+   steps aside while one is up. */
+.bdmq-stage:has(:is(.bdmq-overlay, .author-photo-modal-backdrop, .shelf-modal-overlay))
+  :is(.bdmq-dots, .bdmq-flowtop, .bdmq-seclab, .bdmq-next) {
   opacity: 0; pointer-events: none;
 }
 .bdmq-dotrow {
@@ -11910,8 +11963,15 @@ html {
 }
 .rx-shelf-item.current .rx-shelf-cap .t { color: var(--accent); }
 .rx-shelf-cap .u { font-family: var(--mono); font-size: 10px; color: var(--ink-3); margin-top: 3px; letter-spacing: .03em; }
-.bdmq-shelfchips { margin-bottom: 8px; }
-.bdmq-shelfchip.first { border-color: var(--accent); }
+/* Every shelf holding the book as a compact tile, ending in the add tile. */
+.bdmq-shelves {
+  display: grid; gap: 12px; margin-bottom: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+}
+.bdmq-shelves .bdmq-shelf-add { min-height: 120px; }
+.bdmq-shelf-actions { margin-top: 14px; }
+/* Under the series shelf, whose own hint already ends the block above. */
+.bdmq-k-below { margin-top: 34px; }
 
 /* ── Recommendations stop (tightened, per the design) ── */
 /* Fixed 98px tiles: `min-width: 0` kills the flex min-content floor (a wide
@@ -11976,6 +12036,7 @@ html {
      than the subject, so it wants the stage-height sizing with no gutter. */
   .bdmq-coverpx { width: auto; height: 125%; max-width: 100%; }
   .bdmq-panel { width: 100%; border-left: 0; padding: 40px 28px; }
+  .bdmq-panelscrim { width: 100%; }
   .bdmq-seclab { left: 28px; }
   .bdmq-next { right: 28px; }
 }

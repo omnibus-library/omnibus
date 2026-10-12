@@ -84,6 +84,18 @@ pub async fn rpc_shelves_containing(uuid: String) -> Result<Vec<i64>> {
     )
 }
 
+/// Ids of the caller-visible smart shelves whose rules match this book — the
+/// book page's read-only "follows its rules" memberships (RPC twin of `GET
+/// /api/shelves/containing/{uuid}/smart`).
+#[post("/api/rpc/shelves/containing-smart", pool: PoolExt, user: AuthUser)]
+pub async fn rpc_smart_shelves_containing(uuid: String) -> Result<Vec<i64>> {
+    Ok(
+        db::shelves::smart_shelves_containing(&pool.0, user.id, user.is_admin, &uuid)
+            .await
+            .map_err(|e| map_shelf_error("smart shelves containing", e))?,
+    )
+}
+
 /// Create a shelf owned by the caller.
 #[post("/api/rpc/shelves/create", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_create_shelf(req: CreateShelfRequest) -> Result<Shelf> {

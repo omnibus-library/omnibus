@@ -44,6 +44,22 @@ pub(super) async fn shelves_containing(
     }
 }
 
+/// `GET /api/shelves/containing/{uuid}/smart` — ids of the visible smart shelves
+/// whose rules currently match this book.
+///
+/// A separate route from [`shelves_containing`] on purpose: that answer is a
+/// toggle checklist, and a smart shelf's membership cannot be toggled.
+pub(super) async fn smart_shelves_containing(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path(uuid): Path<String>,
+) -> Response {
+    match db::shelves::smart_shelves_containing(&state.pool, user.id, user.is_admin, &uuid).await {
+        Ok(ids) => Json(ids).into_response(),
+        Err(e) => map_err(e),
+    }
+}
+
 /// `POST /api/shelves` — create a shelf owned by the caller.
 pub(super) async fn create_shelf(
     user: AuthUser,

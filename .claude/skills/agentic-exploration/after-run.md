@@ -24,36 +24,51 @@ The report is generated, not written by hand — agent prose is unverified, and
 the journal plus the server log are the only records that are not.
 
 ```bash
-python3 scripts/explore/report.py $RUN          # -> <journal dir>/$RUN/report.md
-python3 scripts/explore/report.py $RUN --out -  # to stdout
+python3 scripts/explore/report.py $RUN          # -> <journal dir>/$RUN/*.md
+python3 scripts/explore/report.py $RUN --out -  # every file to stdout, under `==> name <==`
 ```
 
-It reads the run's `journal.jsonl`, the `audit.json` beside it, and the
-instance's JSON log sink over ssh, and emits one markdown document: verdict,
-**Defects**, **Execution issues**, server-log findings joined to the causing
-agent action, the audit's unconfirmed writes, a collapsed timeline, and
-**Journal files**. Empty sections are omitted — but an input it could not read
-is always named in the verdict rather than passing as clean.
+It reads the run's `journal.jsonl`, the `audit.json` and `groups.json` beside
+it, and the instance's JSON log sink over ssh, and writes four files:
 
-Three of those sections are the hand-back, and they are the report's words, not
-yours:
+| File | Holds |
+|---|---|
+| `report.md` | the summary: verdict, coverage, one line per defect and execution group, server-log shapes, audit counts, flows that did not pass, **Journal files** |
+| `defects.md` | the defect groups, then every defect row and its detail block |
+| `execution-defects.md` | the same for execution issues |
+| `timeline.md` | server-log findings joined to the causing action, every unchecked write, the merged journal |
 
-- **Defects** and **Execution issues** are both `| # | Priority | Description |
-  Agent |`, numbered from 1 within each table and worst-first inside it. The
-  split is the agent's own `kind` on the anomaly — `defect` when the app is
-  wrong, `issue` when the *run* was (a slow control, a step it could not
-  validate, one that took far longer than it should). An anomaly with no `kind`
-  is reported as a defect: misfiling friction costs a row in the wrong table,
-  misfiling a defect loses it.
-- Each description is the agent's `note`, capped at about two sentences, and
-  carries the journal line that replays it. The expansion is the detail block
-  below, headed `Defect N` / `Issue N` to match.
-- **Journal files** lists every path the run wrote, as bullets. It is the one
-  section rendered even when it is the only thing to say — the report outlives
-  the session, and a reader who cannot find the journal cannot replay a row.
+Empty sections are omitted — but an input it could not read is always named in
+the verdict rather than passing as clean.
 
-Copy all three back to the user verbatim; say a table is empty rather than
-dropping it.
+### Group the rows — required
+
+Ten agents report one bug many times, so the first render lists every row as
+**Ungrouped**. Read `defects.md` and `execution-defects.md`, group the rows that
+share a root cause or would share a fix, write `groups.json` beside the journal,
+and render again:
+
+```json
+{"defects": [{"title": "On your shelves shows others' shelves",
+              "root_cause": "manual_shelves_containing filters visible, not owned",
+              "checked": true, "lines": [136, 181, 415]}],
+ "execution": [{"title": "Runs interrupted by outages", "root_cause": "API limit",
+                "checked": false, "lines": [660, 661]}]}
+```
+
+`lines` are journal lines — the `L<n>` each row cites — so a group survives a
+re-render. Every row belongs to exactly one group of its own kind: `report.py`
+exits naming a row left out, listed twice, or not of that kind. Set `checked`
+only for a root cause you confirmed in code or on the instance.
+
+The split is the agent's own `kind` on the anomaly — `defect` when the app is
+wrong, `issue` when the *run* was. An anomaly with no `kind` is reported as a
+defect: misfiling friction costs a row in the wrong table, misfiling a defect
+loses it.
+
+Hand back from `report.md`, in its words: the **Defects** and **Execution
+issues** group tables, worst first, and **Journal files**. Say a table is empty
+rather than dropping it, and point at `defects.md` for the rows.
 
 Instance unreachable? `--no-server-log` skips the fetch, `--server-log <file>`
 reads one you have; `--window` widens correlation (default 90s).
