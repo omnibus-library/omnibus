@@ -184,10 +184,10 @@ pub async fn listen(port: u16) -> std::io::Result<tokio::net::TcpListener> {
     tokio::net::TcpListener::bind(("127.0.0.1", port)).await
 }
 
-/// The line `serve` prints once listening, for scripts to parse.
-pub fn ready_line(port: u16, hardware_id: &str, state: &Path) -> String {
+/// The line `serve` prints once listening, for scripts to parse; `pid` is what to `kill`.
+pub fn ready_line(port: u16, hardware_id: &str, state: &Path, pid: u32) -> String {
     format!(
-        "MOCK_KOBO_READY port={port} hardware_id={hardware_id} state={}",
+        "MOCK_KOBO_READY port={port} hardware_id={hardware_id} state={} pid={pid}",
         state.display()
     )
 }

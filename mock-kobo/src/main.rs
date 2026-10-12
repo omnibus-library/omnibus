@@ -35,9 +35,10 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
         .local_addr()
         .context("cannot read the control API address")?
         .port();
+    let hardware_id = control.view().hardware_id;
     println!(
         "{}",
-        api::ready_line(port, &control.view().hardware_id, &args.state)
+        api::ready_line(port, &hardware_id, &args.state, std::process::id())
     );
     if let Some(notice) = notice {
         eprintln!("{notice}");

@@ -40,22 +40,33 @@ person does.
 ## Part 2 — the device syncs (runner)
 
 With the endpoint URL from the agent, `$KOBO` below, split it and start the
-device. The temp state file keeps the scenario off this worktree's own device:
+device. Every Bash call is a fresh shell, so pick the scratch dir once and note
+what it prints. The temp state file keeps the scenario off this worktree's own
+device, and the token goes in the environment, never on the command line:
 
 ```bash
 ORIGIN="${KOBO%%/kobo/*}"
 TOKEN="${KOBO##*/kobo/}"
-scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- serve \
-  --url "$ORIGIN" --token "$TOKEN" --port 7741 --state "$(mktemp -d)/kobo.json" &
-until curl -fsS 127.0.0.1:7741/device >/dev/null 2>&1; do sleep 1; done
+STATE_DIR=$(mktemp -d); echo "$STATE_DIR"
+OMNIBUS_MOCK_KOBO_TOKEN="$TOKEN" scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- serve \
+  --url "$ORIGIN" --port 0 --state "$STATE_DIR/kobo.json" > "$STATE_DIR/serve.log" 2>&1 &
+timeout 600 sh -c 'until grep -q MOCK_KOBO_READY "$1"; do sleep 1; done' _ "$STATE_DIR/serve.log"
+PORT=$(sed -n 's/.*MOCK_KOBO_READY port=\([0-9]*\).*/\1/p' "$STATE_DIR/serve.log")
+PID=$(sed -n 's/.*MOCK_KOBO_READY .*pid=\([0-9]*\).*/\1/p' "$STATE_DIR/serve.log")
 ```
+
+If the wait times out, read `$STATE_DIR/serve.log`, journal what it says as a
+failure, and stop: the device never started. Otherwise the line it waits for
+looks like `MOCK_KOBO_READY port=<n> hardware_id=<id> state=<path> pid=<pid>`.
+Later calls set `STATE_DIR` to the printed path again and re-derive `PORT` and
+`PID` from `$STATE_DIR/serve.log` with the same `sed` lines.
 
 Press Sync now, then read what the device holds:
 
 ```bash
-curl -sS -X POST 127.0.0.1:7741/actions/sync
-curl -sS 127.0.0.1:7741/device | python3 -m json.tool | head -80
-curl -sS 127.0.0.1:7741/requests | python3 -m json.tool
+curl -sS -X POST 127.0.0.1:$PORT/actions/sync
+curl -sS 127.0.0.1:$PORT/device | python3 -m json.tool | head -80
+curl -sS 127.0.0.1:$PORT/requests | python3 -m json.tool
 ```
 
 Check three things and journal them under the agent's actor with `surface`
@@ -104,9 +115,9 @@ verbatim when a *device* sends one and derives a CFI from it, and nothing
 synthesises a location in the other direction, so a browser position reaches
 the device as a whole-book percent alone. Do not file its absence. Journal what
 came back. Then sync once more with `POST /actions/sync`: it answers
-`synced`, and `GET /device` still lists each book once. Whether the position
-arrived as a `ChangedReadingState` is a reading-state check, which moves to
-#2725 with the rest of the device's reading state.
+`synced`. Whether the re-sync sends the book as a `ChangedReadingState` and
+**not as a new entitlement** is checked with #2725, with the rest of the
+device's reading state: the mock's library cannot show which kind arrived.
 
 Finally, ask the agent to untick the Kobo opt-in on the shelf and sync once
 more with `POST /actions/sync`: `GET /device` shows each book with
@@ -149,9 +160,10 @@ existing under the name it carries; the opt-in itself is not audited.
   at the top of the right page is agreement.
 - The shelf half sends only opted-in shelves. A book in the library but on no
   synced shelf is correctly absent from the device.
-- Stop the mock-kobo process (`kill %1`) after the final sync of Part 4 and
-  before removing the device: it holds the device's token, and a device that
-  outlives its removal only logs failed syncs.
+- Stop the mock-kobo process (`kill $PID`, the `pid` on its READY line) after
+  the final sync of Part 4 and before removing the device: it holds the
+  device's token, and a device that outlives its removal only logs failed
+  syncs.
 - The device token is per device and persists. Remove the device from the
   account page at the end of the scenario, and journal that you did —
   **after** the final sync of Part 4, never before. The token is the only way

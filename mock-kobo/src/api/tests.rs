@@ -56,12 +56,12 @@ async fn listen_fails_when_port_is_taken() {
 }
 
 #[test]
-fn ready_line_names_port_hardware_id_and_state() {
-    let line = ready_line(4321, "mock-ab", Path::new("x.json"));
+fn ready_line_names_port_hardware_id_state_and_pid() {
+    let line = ready_line(4321, "mock-ab", Path::new("x.json"), 987);
 
     assert_eq!(
         line,
-        "MOCK_KOBO_READY port=4321 hardware_id=mock-ab state=x.json"
+        "MOCK_KOBO_READY port=4321 hardware_id=mock-ab state=x.json pid=987"
     );
 }
 
