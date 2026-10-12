@@ -1,4 +1,4 @@
-//! `cli::parse` over the `mock-kobo serve` flags, env fallbacks, defaults and error paths.
+//! `cli::parse` over the `mock-kobo serve` and `tui` flags, env fallbacks, defaults and error paths.
 
 use super::*;
 
@@ -23,7 +23,7 @@ fn env_of(pairs: &[(&'static str, &'static str)]) -> impl Fn(&str) -> Option<Str
 fn serve(list: &[&str]) -> ServeArgs {
     match parse(args(list), no_env).unwrap() {
         Command::Serve(serve) => serve,
-        Command::Help => panic!("expected a serve command"),
+        Command::Tui(_) | Command::Help => panic!("expected a serve command"),
     }
 }
 
@@ -52,6 +52,56 @@ fn parse_reads_every_serve_flag() {
             token: Some("abc_-1".into()),
             port: 8123,
             state: "x.json".into(),
+        })
+    );
+}
+
+#[test]
+fn parse_reads_every_tui_flag() {
+    let command = parse(
+        args(&[
+            "tui",
+            "--url",
+            "http://h:9/",
+            "--token",
+            "abc_-1",
+            "--port",
+            "8123",
+            "--state",
+            "x.json",
+        ]),
+        no_env,
+    )
+    .unwrap();
+
+    assert_eq!(
+        command,
+        Command::Tui(ServeArgs {
+            url: Some("http://h:9".into()),
+            token: Some("abc_-1".into()),
+            port: 8123,
+            state: "x.json".into(),
+        })
+    );
+}
+
+#[test]
+fn parse_falls_back_to_env_for_tui() {
+    let env = env_of(&[
+        (URL_ENV, "http://env-host:1/"),
+        (TOKEN_ENV, "env-token"),
+        (STATE_ENV, "env.json"),
+    ]);
+
+    let command = parse(args(&["tui"]), env).unwrap();
+
+    assert_eq!(
+        command,
+        Command::Tui(ServeArgs {
+            url: Some("http://env-host:1".into()),
+            token: Some("env-token".into()),
+            port: 0,
+            state: "env.json".into(),
         })
     );
 }
@@ -177,8 +227,8 @@ fn parse_returns_usage_error_when_command_missing() {
 #[test]
 fn parse_returns_usage_error_for_unknown_command() {
     assert_eq!(
-        parse(args(&["tui"]), no_env),
-        Err(CliError::Usage("unknown command: tui".into()))
+        parse(args(&["bogus"]), no_env),
+        Err(CliError::Usage("unknown command: bogus".into()))
     );
 }
 

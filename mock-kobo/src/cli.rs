@@ -23,13 +23,19 @@ mock-kobo: a fake Kobo e-reader that syncs against Omnibus
 
 USAGE:
     mock-kobo serve [--url <origin>] [--token <token>] [--port <n>] [--state <path>]
+    mock-kobo tui   [--url <origin>] [--token <token>] [--port <n>] [--state <path>]
 
-OPTIONS (each flag wins over its env var):
+serve runs the device headless; tui runs it in a terminal UI and serves the same API.
+
+OPTIONS (each flag wins over its env var, for both commands):
     --url <origin>    Omnibus origin to sync against        [env: OMNIBUS_MOCK_KOBO_URL]
     --token <token>   the device's path token               [env: OMNIBUS_MOCK_KOBO_TOKEN]
     --state <path>    the device's JSON state file          [env: OMNIBUS_MOCK_KOBO_STATE]
     --port <n>        control API port on 127.0.0.1         [default: 0, any free port]
     -h, --help        print this text
+
+KEYS IN THE TUI:
+    s sync    r reset    u edit URL    t edit token    w wire a token    q quit
 
 WITH NO ARGUMENTS:
     The device follows this worktree's dev server (.claude/runtime/port, else
@@ -44,11 +50,13 @@ WITH NO ARGUMENTS:
 pub enum Command {
     /// Run one headless device behind its control API.
     Serve(ServeArgs),
+    /// Run one device under a terminal UI, serving the same control API.
+    Tui(ServeArgs),
     /// Print the usage text.
     Help,
 }
 
-/// The `serve` options after flags, env vars and defaults are merged.
+/// The `serve` and `tui` options after flags, env vars and defaults are merged.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ServeArgs {
     /// `--url` or `OMNIBUS_MOCK_KOBO_URL`, validated and reduced to its origin.
@@ -86,11 +94,12 @@ where
     };
     match command.as_str() {
         "serve" => parse_serve(flags, env).map(Command::Serve),
+        "tui" => parse_serve(flags, env).map(Command::Tui),
         other => Err(CliError::Usage(format!("unknown command: {other}"))),
     }
 }
 
-/// The `serve` flags, each falling back to its env var and then its default.
+/// The flags `serve` and `tui` share, each falling back to its env var and then its default.
 fn parse_serve(
     flags: &[String],
     env: impl Fn(&str) -> Option<String>,
@@ -128,7 +137,7 @@ fn parse_serve(
 }
 
 /// The origin of `url`, if it is a bare http(s) origin: no path, query, fragment or credentials.
-fn valid_url(url: String) -> Result<String, CliError> {
+pub fn valid_url(url: String) -> Result<String, CliError> {
     let invalid = |reason: &str| CliError::Invalid {
         name: "server URL",
         reason: reason.into(),
@@ -149,7 +158,7 @@ fn valid_url(url: String) -> Result<String, CliError> {
 }
 
 /// `token` if it is made only of the URL-safe base64 characters Omnibus issues.
-fn valid_token(token: String) -> Result<String, CliError> {
+pub fn valid_token(token: String) -> Result<String, CliError> {
     let url_safe = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
     if !token.is_empty() && token.chars().all(url_safe) {
         return Ok(token);
