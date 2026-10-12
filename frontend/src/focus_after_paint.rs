@@ -4,13 +4,9 @@
 
 use dioxus::prelude::*;
 
-/// Focus the mounted element on the next animation frame.
-///
-/// The `requestAnimationFrame` hop is required: calling `.focus()`
-/// synchronously inside `onmounted` (or from a `spawn`ed future) lands
-/// before the element is laid out, so the caret/focus ring never appears.
-/// Scheduling the focus for the next frame lets the browser finish layout
-/// first.
+/// Focus the mounted element on the next animation frame. The
+/// `requestAnimationFrame` hop is required: focusing synchronously inside
+/// `onmounted` lands before layout, so the caret/focus ring never appears.
 #[cfg(feature = "web")]
 pub fn focus_after_paint(evt: &MountedEvent) {
     use dioxus::web::WebEventExt;

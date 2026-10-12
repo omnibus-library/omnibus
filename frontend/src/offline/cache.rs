@@ -208,11 +208,10 @@ pub(crate) fn notify_changed() {
 }
 
 /// Force an immediate, awaitable server round-trip for `key` (the
-/// pull-to-refresh path): bypasses the freshness window and lands the
-/// result through the same compare-put-notify flow as a background
-/// revalidation. No-ops when offline, when queued mutations are pending
-/// (same guard as [`spawn_revalidation`]), or when a revalidation for the
-/// key is already in flight.
+/// pull-to-refresh path): bypasses the freshness window and lands the result
+/// like a background revalidation. No-ops when offline, when queued mutations
+/// are pending (same guard as [`spawn_revalidation`]), or when a revalidation
+/// for the key is already in flight.
 pub async fn refresh<T, Fut>(key: String, fetch: Fut)
 where
     T: Serialize + DeserializeOwned + Send + 'static,

@@ -10,23 +10,10 @@
 use omnibus_shared::BookFileInfo;
 
 /// Build a `<prefix>:`-scoped search query from a taxonomy name, so clicking
-/// a tag or genre narrows the search to the books carrying it.
-///
-/// **A multi-word name is quoted, not split.** `tag:"Dark academia"` is one
-/// facet; the previous `tag:Dark tag:academia` was one facet *per word*,
-/// AND-ed, which is a different question — "Science Fiction & Fantasy"
-/// became four facets including `tag:&`, and the page then returned a count
-/// that disagreed with the row the reader clicked.
-/// `db::helpers::build_search_query` keeps a quoted run whole, so the value
-/// arrives intact and is matched as one exact tag or genre name against
-/// membership — never as an FTS phrase, which lost the name's boundaries.
-/// Only free text, `author:` and `series:` reach FTS.
-///
-/// A single-word value stays unquoted — it needs no quoting, and the shorter
-/// URL is the one a reader sees and might edit.
-///
-/// One definition for the palette rows, the `/search` chips, and the mobile
-/// rows — three surfaces that each had their own copy and did not agree.
+/// a tag or genre narrows the search to the books carrying it. A multi-word
+/// name is quoted, not split (`tag:"Dark academia"` is one facet), which
+/// `db::helpers::build_search_query` keeps whole and matches as one exact
+/// name. A single-word value stays unquoted.
 pub fn facet_query(prefix: &str, value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -42,13 +29,9 @@ pub fn facet_query(prefix: &str, value: &str) -> String {
 }
 
 /// The reader-facing name behind a query that is exactly one taxonomy facet,
-/// e.g. `tag:"Science Fiction"` → `Science Fiction`.
-///
-/// The inverse of [`facet_query`], and the reason the results heading can
-/// name what was clicked instead of echoing the constructed query string.
-/// `None` for anything else — free text, several facets, a facet
-/// plus text — where the raw query *is* what the reader asked and rewriting
-/// it would hide the query from them.
+/// e.g. `tag:"Science Fiction"` → `Science Fiction`. The inverse of
+/// [`facet_query`]. `None` for anything else (free text, several facets, a
+/// facet plus text), where the raw query is what the reader asked for.
 pub fn single_facet_value(query: &str) -> Option<String> {
     let q = query.trim();
     let (prefix, rest) = q.split_once(':')?;
@@ -116,10 +99,8 @@ pub fn plural(n: u32) -> &'static str {
 
 /// The noun alone, pluralized on `n`: `"day"` at exactly one, `"days"`
 /// otherwise. For surfaces that render the figure and its unit in separate
-/// elements (the streak cards), where [`count_label`] can't be used.
-///
-/// Regular `-s` plurals only — an irregular noun needs its own two-arm
-/// match at the call site.
+/// elements (the streak cards), where [`count_label`] can't be used. Regular
+/// `-s` plurals only.
 pub fn plural_noun(n: i64, singular: &str) -> String {
     if n == 1 {
         singular.to_string()
@@ -161,17 +142,11 @@ struct ParsedDate {
     day: Option<u32>,
 }
 
-/// Parse the leading date out of a stored date string. Handles a full ISO
-/// 8601 timestamp (`2016-05-02T21:00:00+00:00`, `2026-07-31T00:01:35Z`), the
-/// SQLite `datetime()` shape `added_at` uses (`2024-01-02 03:04:05`), a bare
-/// `YYYY-MM-DD`, or a year-only / year-month OPF `dc:date`. Everything from a
-/// `T` or space onward (time-of-day, offset) is dropped — every caller here
-/// renders a calendar date, never a clock time. Returns `None` when the
-/// leading segment isn't a parseable year.
-///
-/// A day outside 1–31 (`YYYY-MM-00`, a stray admin override, …) is treated
-/// the same as an absent day rather than parsed literally — narrowing to
-/// month/year is the graceful failure, not `"Month 0, YYYY"`.
+/// Parse the leading date out of a stored date string: a full ISO 8601
+/// timestamp, the SQLite `datetime()` shape `added_at` uses, a bare
+/// `YYYY-MM-DD`, or a year-only / year-month OPF `dc:date`. Time-of-day and
+/// offset are dropped. `None` when the leading segment isn't a parseable year.
+/// A day outside 1–31 is treated as absent, narrowing to month/year.
 fn parse_date_prefix(raw: &str) -> Option<ParsedDate> {
     let date_part = raw.trim().split(['T', ' ']).next()?;
     let mut segments = date_part.split('-');
@@ -236,21 +211,10 @@ pub fn format_date_short_opt(raw: &str) -> Option<String> {
 }
 
 /// The same short date as [`format_date_short_opt`], but for a stored
-/// *instant* — re-dated onto the calendar `offset_secs` describes.
-///
-/// The distinction is why this is a separate function rather than a parameter
-/// on the one above. `added_at` is a moment in time (`2026-09-08T03:36:00Z`),
-/// so which day it fell on depends on where the reader is: 03:36 UTC is the
-/// previous evening in Detroit, and dating it in UTC put "Added Sep 8th" on a
-/// page whose every other stamp read Sep 7. A *publication* date
-/// carries no time of day and belongs to no zone — shifting it would move a
-/// book's publication a day earlier for half the world — so `published` keeps
-/// [`format_date_short_opt`].
-///
-/// Falls back to the unshifted render when the string carries no time of day
-/// (a bare `YYYY-MM-DD`, or year-only), for the same reason: there is no
-/// instant there to re-date. `offset_secs` of `0` is the SSR / pre-hydration
-/// path and renders identically to [`format_date_short_opt`] (rule 07).
+/// *instant*, re-dated onto the calendar `offset_secs` describes (`added_at`
+/// 03:36 UTC is the previous evening in Detroit). A publication date has no
+/// zone and keeps [`format_date_short_opt`]. A string with no time of day, or
+/// `offset_secs` of `0` (SSR, rule 07), renders identically to it.
 pub fn format_instant_short_opt(raw: &str, offset_secs: i64) -> Option<String> {
     let Some(unix_secs) = instant_secs(raw) else {
         return format_date_short_opt(raw);
@@ -281,13 +245,9 @@ pub fn format_reader_instant_short(raw: &str, dates_ready: bool) -> String {
 
 /// Unix seconds for a stored timestamp that carries a time of day —
 /// `2026-09-08T03:36:00Z` or the SQLite `datetime()` shape
-/// `2024-01-02 03:04:05`. `None` when the string is a bare calendar date (no
-/// `T`/space separator), which has no instant to resolve, or when any segment
-/// fails to parse.
-///
-/// Deliberately ignores a trailing numeric offset: everything the server
-/// writes here is UTC (`strftime(..., 'unixepoch')` in `books::projection`),
-/// and guessing at a zone suffix would be worse than the honest fallback.
+/// `2024-01-02 03:04:05`. `None` for a bare calendar date or any segment that
+/// fails to parse. Ignores a trailing numeric offset: the server writes UTC
+/// (`strftime(..., 'unixepoch')` in `books::projection`).
 pub fn instant_secs(raw: &str) -> Option<i64> {
     let raw = raw.trim();
     let (date_part, time_part) = raw.split_once(['T', ' '])?;

@@ -33,11 +33,9 @@ pub struct LoopbackInfo {
 const IMG_CACHE_CAP_BYTES: u64 = 256 * 1024 * 1024;
 
 /// How stale a cached image may be before the proxy checks back with the
-/// server. Covers change rarely and revalidation is a background 304, but
-/// without a window a grid scroll would fire one conditional request per
-/// visible cover every time it came into view. Five minutes keeps a cover
-/// edited on another device arriving promptly while leaving scrolling free;
-/// the `?v=` cache-bust remains the immediate path for an edit made here.
+/// server. Without a window a grid scroll would fire one conditional request
+/// per visible cover; five minutes keeps a cover edited on another device
+/// arriving promptly. The `?v=` cache-bust is the immediate path for local edits.
 const IMG_REVALIDATE_AFTER_SECS: u64 = 300;
 
 static LOOPBACK: OnceLock<Option<LoopbackInfo>> = OnceLock::new();
@@ -390,28 +388,18 @@ fn base_response(
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
 }
 
-/// `Cache-Control` for every loopback image response.
-///
-/// **Not** a `max-age`. The WebView honours one, and a day-long one meant
-/// re-rendering a cover never reached this handler at all — so the
-/// revalidation below never ran, and on the rare render that did reach it
-/// the *old* bytes went back with another day of freshness. A cover
-/// replaced elsewhere could take two days or an app restart to appear.
-///
-/// `no-cache` makes the WebView ask every time, which costs a loopback
-/// round-trip and, thanks to the `ETag`, usually a bodyless 304 — the
-/// WebView keeps its decoded image. Real network traffic is still governed
-/// by [`IMG_REVALIDATE_AFTER_SECS`].
+/// `Cache-Control` for every loopback image response. **Not** a `max-age`: the
+/// WebView honours one, so a replaced cover would never reach this handler's
+/// revalidation. `no-cache` makes the WebView ask every time (usually a
+/// bodyless 304 via the `ETag`); network traffic is governed by
+/// [`IMG_REVALIDATE_AFTER_SECS`].
 const IMG_CACHE_CONTROL: &str = "private, no-cache";
 
 /// Content-derived `ETag` for a loopback image response, so the WebView's
-/// conditional re-render is answered with a 304 instead of the bytes.
-///
-/// Derived from the bytes rather than the upstream validator: it has to
-/// exist even for an entry cached before validators, or from a server that
-/// publishes none. Not stable across toolchain versions (`DefaultHasher`),
-/// which costs one extra transfer per image after an upgrade and nothing
-/// else — the same trade `backend::covers` makes.
+/// conditional re-render is answered with a 304 instead of the bytes. Derived
+/// from the bytes, not the upstream validator, so it exists even for entries
+/// cached before validators. Not stable across toolchain versions
+/// (`DefaultHasher`): one extra transfer per image after an upgrade.
 fn img_etag(bytes: &[u8]) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -506,13 +494,9 @@ async fn cached_image(img_dir: &Path, path: &str) -> Option<CachedImage> {
     })
 }
 
-/// Restart a cached entry's freshness window without rewriting its bytes.
-///
-/// A 304 is the server confirming the copy on disk is current, which is
-/// exactly as good as having refetched it. Leaving the mtime alone would
-/// make the entry look overdue forever, so every later render would fire
-/// another conditional request — the in-flight guard only collapses
-/// *overlapping* checks, not sequential ones.
+/// Restart a cached entry's freshness window without rewriting its bytes. A 304
+/// confirms the copy on disk is current; leaving the mtime alone would make the
+/// entry look overdue forever, firing a conditional request on every render.
 async fn mark_checked(img_dir: &Path, path: &str) {
     let file = img_dir.join(cache_file_name(path));
     let now = std::time::SystemTime::now();
@@ -527,12 +511,9 @@ async fn mark_checked(img_dir: &Path, path: &str) {
 
 /// Fetch `path` from the upstream server with the bearer token and cache the
 /// bytes + content type + validator on disk. `None` when offline /
-/// unauthorized / error, and — deliberately — when the server answers 304,
-/// which means the caller's cached copy is already current.
-///
-/// Strictly 200-only otherwise: `/api/thumbs/*` answers 202 while a
-/// thumbnail is still being generated, and caching that placeholder would
-/// wedge the thumb offline forever.
+/// unauthorized / error, and when the server answers 304 (the caller's cached
+/// copy is current). Otherwise strictly 200-only: `/api/thumbs/*` answers 202
+/// while generating, and caching that placeholder would wedge the thumb offline.
 async fn fetch_and_cache(img_dir: &Path, path: &str, if_none_match: Option<&str>) -> Fetched {
     let Some(base) = upstream_url() else {
         return Fetched::Failed;

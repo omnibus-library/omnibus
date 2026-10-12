@@ -37,14 +37,9 @@ async fn household_readers(
 
 /// Fetch the caller's stats summary over `range`, or a sharing reader's with
 /// `user_id`. Served from the `db::stats` per-user cache (60s TTL, keyed on
-/// the offset too), so switcher-driven refetches inside the window skip the
-/// SQL. Mobile uses the analogous `GET /api/stats` REST route in
-/// `server::backend::stats`.
-///
-/// `utc_offset_minutes` is where the calling device is, and every day boundary
-/// in the answer is cut on it (rule 10). `None` — an older client, or one with
-/// no browser to ask — falls back to the reader's most recent session offset
-/// and then to UTC.
+/// the offset too). `utc_offset_minutes` is where the calling device is, and
+/// every day boundary is cut on it (rule 10); `None` falls back to the
+/// reader's latest session offset, then UTC. Mobile uses `GET /api/stats`.
 #[post("/api/rpc/stats", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_stats(
     range: StatsRange,
@@ -102,12 +97,10 @@ pub async fn rpc_book_insights(
     )
 }
 
-/// Fetch how big the library is in words, pages, and hours of audio.
-///
-/// Its own call rather than a field on [`rpc_stats`]'s payload: the answer is
-/// library-wide and only moves on a reindex, so hanging it off the per-user
-/// summary would recompute and re-send it on every period switch. Mobile uses
-/// `GET /api/library-size`.
+/// Fetch how big the library is in words, pages, and hours of audio. Its own
+/// call rather than a field on [`rpc_stats`]'s payload: the answer is
+/// library-wide and only moves on a reindex, so it isn't recomputed and re-sent
+/// on every period switch. Mobile uses `GET /api/library-size`.
 #[post("/api/rpc/library-size", pool: PoolExt, _user: AuthUser)]
 pub async fn rpc_library_size() -> Result<LibrarySize> {
     Ok(db::stats::library_size(&pool.0)
@@ -116,11 +109,9 @@ pub async fn rpc_library_size() -> Result<LibrarySize> {
 }
 
 /// Set, change, or clear the current user's annual reading goal, returning the
-/// resulting goal (`None` once cleared) with its progress recomputed.
-///
-/// Account configuration under rule 08 — never queued by the offline outbox.
-/// `db::stats::set_goal` drops this user's cached summaries, so the refetch
-/// that follows a save reads the new target rather than the cached one.
+/// resulting goal (`None` once cleared) with its progress recomputed. Account
+/// configuration under rule 08, never queued offline. `db::stats::set_goal`
+/// drops this user's cached summaries, so the refetch after a save sees it.
 #[post("/api/rpc/stats-goal", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_set_reading_goal(
     update: ReadingGoalUpdate,
@@ -134,14 +125,9 @@ pub async fn rpc_set_reading_goal(
 }
 
 /// Set, change, or clear one of the current user's daily reading goals,
-/// returning **both** afterwards with today's progress recomputed.
-///
-/// Both rather than just the kind written, so the band redraws from one
-/// response — the two are independent, and a follow-up read to fetch the other
-/// could land on a different day. The offset decides *which* day both kinds
-/// are measured over, so a save that omitted it could answer against a
-/// different one than the read it replaces. Account configuration under rule
-/// 08, so never queued by the offline outbox.
+/// returning **both** afterwards with today's progress recomputed, so the band
+/// redraws from one response. The offset decides which day both kinds are
+/// measured over. Account configuration under rule 08, never queued offline.
 #[post("/api/rpc/stats-goal-daily", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_set_daily_goal(
     update: DailyGoalUpdate,
@@ -155,12 +141,9 @@ pub async fn rpc_set_daily_goal(
 }
 
 /// Fetch what the library is made of — its format, language, publisher,
-/// decade, and genre mix.
-///
-/// Its own call rather than a field on [`rpc_stats`]'s payload, for the same
-/// reason [`rpc_library_size`] is: the answer is library-wide and only moves
-/// on a reindex, so hanging it off the per-user summary would recompute and
-/// re-send it on every period switch. Mobile uses `GET /api/library-composition`.
+/// decade, and genre mix. Its own call, for the same reason as
+/// [`rpc_library_size`]: library-wide, moves only on a reindex. Mobile uses
+/// `GET /api/library-composition`.
 #[post("/api/rpc/library-composition", pool: PoolExt, _user: AuthUser)]
 pub async fn rpc_library_composition() -> Result<LibraryComposition> {
     Ok(db::stats::library_composition(&pool.0)
@@ -169,14 +152,10 @@ pub async fn rpc_library_composition() -> Result<LibraryComposition> {
 }
 
 /// Fetch one page of the caller's session log, newest sitting first, or a
-/// sharing reader's with `user_id`. `book` scopes it to a single book (the
-/// book-detail Stats stop); `before` is the previous page's `next_before`,
-/// echoed back verbatim. Mobile uses the analogous `GET /api/stats/sessions`
-/// REST route.
-///
-/// A `before` that doesn't parse is an **error**, matching the REST route's
-/// 400. Returning an empty page instead would end the reader's log early with
-/// no cursor and no message — silently truncating rather than reporting.
+/// sharing reader's with `user_id`. `book` scopes it to a single book; `before`
+/// is the previous page's `next_before`, echoed back verbatim. A `before` that
+/// doesn't parse is an **error** (like the REST route's 400), not an empty
+/// page, which would silently end the log early.
 #[post("/api/rpc/stats/sessions", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_session_log(
     book: Option<String>,
@@ -221,17 +200,11 @@ async fn reader_session_log(
     .map_err(|e| map_viewer_error("session log", e))
 }
 
-/// Run a chart-builder spec and return its aligned series.
-///
-/// Uncached, unlike [`rpc_stats`]: the spec space is open, so there is no
-/// small key to cache on. Web-only — the builder page doesn't compile on
-/// mobile — so there is no REST counterpart in `server::backend`.
-///
-/// A rejected spec surfaces its own message, because it describes the
-/// reader's own selection and is the thing they can act on; a DB failure is
-/// logged and generalized like every other handler here. The spec is
-/// re-validated server-side inside `db::stats::chart_series` — the builder
-/// UI's guards are a convenience, not the contract.
+/// Run a chart-builder spec and return its aligned series. Uncached, unlike
+/// [`rpc_stats`] (the spec space is open). Web-only, so there is no REST
+/// counterpart. A rejected spec surfaces its own message, since it describes
+/// the reader's selection; a DB failure is logged and generalized. The spec is
+/// re-validated server-side inside `db::stats::chart_series`.
 #[post("/api/rpc/chart-series", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_chart_series(
     spec: ChartSpec,

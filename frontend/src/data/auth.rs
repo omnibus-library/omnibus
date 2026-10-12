@@ -142,17 +142,10 @@ pub async fn mobile_logout(server_url: &str) -> Result<(), DataError> {
     Ok(())
 }
 
-/// GET `{server_url}/api/_health` — a simple server-reachability probe used
-/// by the pre-login Connect screen to confirm the entered URL points at a
-/// live server before advancing to login. Any 2xx counts as reachable; the
-/// body is ignored (the endpoint is a general unauthenticated liveness route,
-/// not a mobile-specific one). No bearer — `/api/_health` is whitelisted in
-/// the server's auth gate. A per-request timeout bounds the wait so a URL
-/// that connects but never answers can't hang the screen forever.
-///
-/// Kept transport-generic on purpose (a plain reachability check other flows
-/// could reuse); it currently compiles on the native/reqwest path where
-/// `http_client` lives — a web caller would add a `gloo_net` branch here.
+/// GET `{server_url}/api/_health` — reachability probe for the pre-login Connect
+/// screen. Any 2xx counts as reachable; the body is ignored. No bearer
+/// (`/api/_health` is whitelisted in the server's auth gate). A per-request
+/// timeout keeps a URL that connects but never answers from hanging the screen.
 #[cfg(feature = "mobile")]
 pub async fn check_server(server_url: &str) -> Result<(), DataError> {
     let url = format!("{server_url}/api/_health");
@@ -307,12 +300,9 @@ pub async fn logout() -> Result<(), String> {
     Ok(())
 }
 
-/// Non-web stub for `logout`. Mirrors the `current_user` SSR/mobile
-/// stub: the real REST call is web-only, but exposing a no-op under SSR
-/// (and any non-web build that compiles `UserMenu`) lets the sign-out
-/// closure call `data::logout()` unconditionally — so SSR and WASM emit
-/// identical RSX (rule 07-hydration), without each call site needing a
-/// `#[cfg]` gate inside its closure body.
+/// Non-web stub for `logout`: a no-op so the sign-out closure can call
+/// `data::logout()` unconditionally and SSR and WASM emit identical RSX
+/// (rule 07-hydration), with no `#[cfg]` gate inside the closure body.
 #[cfg(all(any(feature = "server", feature = "mobile"), not(feature = "web")))]
 pub async fn logout() -> Result<(), String> {
     Ok(())
@@ -338,13 +328,9 @@ pub async fn current_user() -> Result<Option<UserSummary>, String> {
     Ok(Some(user))
 }
 
-/// Non-web stub for `current_user`. The real `/api/auth/me` call is
-/// web-only — under SSR (`feature = "server"` without `"web"`) there's no
-/// browser cookie jar to resolve, and the mobile build never renders the
-/// admin-only affordances driven off this signal. Returning `Ok(None)`
-/// lets pages declare the `use_signal` + `use_effect` pair unconditionally
-/// (so SSR and WASM hook counts match) without any admin surface leaking
-/// into the prerendered markup or appearing on mobile.
+/// Non-web stub for `current_user`: returns `Ok(None)` so pages declare the
+/// `use_signal` + `use_effect` pair unconditionally (SSR and WASM hook counts
+/// match), with no admin surface leaking into prerendered markup or mobile.
 #[cfg(all(any(feature = "server", feature = "mobile"), not(feature = "web")))]
 pub async fn current_user() -> Result<Option<UserSummary>, String> {
     Ok(None)
@@ -385,20 +371,11 @@ async fn post_auth_json<T: serde::Serialize>(
     res.json::<LoginResponse>().await.map_err(|e| e.to_string())
 }
 
-/// Reader-facing copy for a refused login or registration.
-///
-/// The status code is a wire detail, never a sentence: it used to be
-/// formatted straight into the banner, so a mistyped password read
-/// "401: invalid credentials". Only the two statuses whose server body is
-/// written for a machine get their own copy; every other refusal
-/// (`username taken`, a password-validation message, `registration
-/// disabled`) already says something a reader can act on, and is passed
-/// through unchanged so the register page's field classifier still sees
-/// the word it routes on.
-///
-/// Compiled on every target — it is string mapping, not transport — so the
-/// copy is covered by the test suite in each feature pass. Only the web
-/// build calls it — mobile maps the same statuses through `DataError`.
+/// Reader-facing copy for a refused login or registration; the status code is
+/// never shown. Only the two statuses with machine-written bodies get their
+/// own copy; any other refusal passes through unchanged so the register page's
+/// field classifier still sees the word it routes on. Compiled on every
+/// target (string mapping); only the web build calls it.
 #[cfg_attr(not(feature = "web"), allow(dead_code))]
 pub(crate) fn auth_failure_message(status: u16, body: &str) -> String {
     match status {

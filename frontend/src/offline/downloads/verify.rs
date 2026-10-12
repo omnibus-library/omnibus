@@ -8,27 +8,11 @@ use std::path::Path;
 
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-/// Outcome of inspecting a downloaded file.
-///
-/// The strength of `Intact` is **not** uniform, and the difference matters
-/// enough to state plainly:
-///
-/// - **EPUB** is a ZIP, and every member carries a CRC-32 in the central
-///   directory. Reading each member to EOF verifies it, so `Intact` means
-///   the bytes are the bytes the archive was built from. Any corruption is
-///   caught, including a splice that preserved the archive's structure.
-/// - **M4B/M4A** has no per-box checksum. The box chain is walked and must
-///   tile the file exactly, which catches truncation, garbage, and any
-///   splice that crosses a box header — but a same-length splice *inside*
-///   `mdat` leaves every header untouched and is **not** detectable here.
-/// - **MP3** is a self-syncing frame stream with no container at all, and
-///   reports [`Verdict::Unverifiable`] rather than guessing.
-///
-/// So this is a real backstop for EPUB and a partial one for audio. What
-/// keeps audio honest is the layer above: a resume always carries
-/// `If-Range`, so the server refuses to splice unless *its* validator was
-/// also fooled — which needs an in-place overwrite preserving length,
-/// mtime and inode all at once (rule 09's documented residual).
+/// Outcome of inspecting a downloaded file. `Intact` is not uniformly strong:
+/// EPUB is CRC-backed (any corruption is caught); M4B/M4A is structural only,
+/// so a same-length splice inside `mdat` is undetectable; MP3 has no container
+/// and reports [`Verdict::Unverifiable`]. The `If-Range` resume layer above
+/// backstops audio (rule 09).
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Verdict {
     /// The file passed every check its format supports.
@@ -54,17 +38,13 @@ pub(super) async fn verify(path: &Path) -> Verdict {
 }
 
 /// Validate an EPUB by reading every member through the archive reader,
-/// which checks each one's recorded CRC-32 as it reaches EOF.
-///
-/// Structure alone is not enough: two archives of equal length spliced at
-/// the same offset keep a perfectly well-formed central directory whose
-/// offsets all resolve, so an offsets-only check calls that intact. The
-/// CRCs do not survive it.
-///
-/// Runs on the blocking pool — inflating a book is CPU work, and this
-/// future shares the loopback runtime with the media server.
+/// which checks each one's recorded CRC-32 as it reaches EOF. Structure alone
+/// is not enough: a same-length splice keeps a well-formed central directory
+/// whose offsets all resolve, but the CRCs do not survive it.
 async fn verify_zip(path: &Path) -> Verdict {
     let path = path.to_path_buf();
+    // Blocking pool: inflating a book is CPU work, and this future shares
+    // the loopback runtime with the media server.
     match tokio::task::spawn_blocking(move || verify_zip_blocking(&path)).await {
         Ok(verdict) => verdict,
         // A panic in the archive reader is not proof the file is bad.
@@ -100,12 +80,9 @@ fn verify_zip_blocking(path: &Path) -> Verdict {
 }
 
 /// Walk an M4B/M4A's flat `[u32 size][4-byte type]` box chain and require it
-/// to tile the file exactly.
-///
-/// This catches truncation, a file that was never MP4, and a splice that
-/// crosses a box header. It cannot catch a same-length splice inside
-/// `mdat` — the format carries no checksum to catch it with. See
-/// [`Verdict`].
+/// to tile the file exactly. Catches truncation, a non-MP4 file and a splice
+/// crossing a box header, but not a same-length splice inside `mdat` (the
+/// format has no checksum). See [`Verdict`].
 async fn verify_mp4(path: &Path) -> Verdict {
     let Ok(mut file) = tokio::fs::File::open(path).await else {
         return Verdict::Damaged;
@@ -166,12 +143,9 @@ async fn verify_mp4(path: &Path) -> Verdict {
     }
 }
 
-/// Whether four bytes look like a box type.
-///
-/// Printable ASCII covers the standard types (`ftyp`, `moov`, `mdat`), plus
-/// `0xA9` for the iTunes metadata atoms every audiobook carries — `©nam`,
-/// `©ART`, `©day`. Rejecting those would call a perfectly good M4B damaged
-/// and delete it.
+/// Whether four bytes look like a box type. Printable ASCII covers the standard
+/// types, plus `0xA9` for the iTunes metadata atoms every audiobook carries
+/// (`©nam`, `©ART`); rejecting those would call a good M4B damaged and delete it.
 fn is_box_type(bytes: &[u8]) -> bool {
     bytes.iter().all(|b| matches!(b, 0x20..=0x7E) || *b == 0xA9)
 }

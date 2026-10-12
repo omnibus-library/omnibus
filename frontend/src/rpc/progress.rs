@@ -19,12 +19,10 @@ use omnibus_shared::SESSION_BATCH_CAP;
 use super::{internal_rpc_error, AuthUser, PoolExt};
 
 /// Progress-sync save. Mobile uses the analogous REST route in
-/// `server::backend::progress`. POST because Dioxus `#[get]` server
-/// functions can't carry an argument body — same rationale as
-/// `rpc_get_ebook`; the next two endpoints follow the same pattern.
-/// An accepted epub CFI write that carries no percent gets one derived and
-/// attached asynchronously (`spawn_epub_percent_derivation`), so the
-/// returned record may predate the percent by one read.
+/// `server::backend::progress`. POST because Dioxus `#[get]` server functions
+/// can't carry an argument body, as for `rpc_get_ebook`. An accepted epub CFI
+/// write with no percent gets one derived asynchronously
+/// (`spawn_epub_percent_derivation`), so the returned record may predate it.
 #[post("/api/rpc/progress", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_save_progress(update: ProgressUpdate) -> Result<ProgressRecord> {
     if let Err(msg) = update.validate() {
@@ -123,13 +121,10 @@ async fn reader_recent_progress(
 }
 
 /// Reject over-cap session batches at the RPC boundary, mirroring the mobile
-/// REST route's 422 rejection in `server::backend::progress::post_sessions`.
-/// Extracted so the length check can be covered by a unit test that doesn't
-/// spin up the fullstack server-function router.
-///
-/// Only the server-side body of `rpc_record_sessions` calls this, so it is
-/// `server`-gated like `validate_author_photo_url` — otherwise it is dead
-/// code in the `mobile`/`web` client builds (caught by clippy).
+/// REST route's 422 in `server::backend::progress::post_sessions`. Extracted
+/// so the length check is unit-testable without the fullstack router.
+// Only the server-side body of `rpc_record_sessions` calls this; ungated it is
+// dead code in the `mobile`/`web` builds (clippy).
 #[cfg(feature = "server")]
 fn check_session_batch_cap(reports: &[SessionReport]) -> Result<(), ServerFnError> {
     if reports.len() > SESSION_BATCH_CAP {
@@ -143,12 +138,10 @@ fn check_session_batch_cap(reports: &[SessionReport]) -> Result<(), ServerFnErro
 }
 
 /// Single-transaction batch insert shared by `rpc_record_sessions` and its
-/// tests. Pre-resolves every `book_uuid` in one bulk query, then loops pure
-/// inserts and commits once — mirroring the mobile REST route
-/// (`server::backend::progress::post_sessions`), so a DB error mid-batch
-/// rolls the whole batch back and the client can safely retry. Reports whose
-/// `book_uuid` is unknown are silently skipped; the returned count reflects
-/// only the rows that landed.
+/// tests, mirroring the mobile REST route (`post_sessions`): a DB error
+/// mid-batch rolls the whole batch back, so the client can safely retry.
+/// Reports whose `book_uuid` is unknown are silently skipped; the returned
+/// count reflects only the rows that landed.
 #[cfg(feature = "server")]
 async fn record_sessions_batch(
     pool: &sqlx::SqlitePool,

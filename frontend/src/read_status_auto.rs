@@ -24,16 +24,11 @@ pub fn auto_transition(current: ReadStatus, at_end: bool) -> Option<ReadStatus> 
     }
 }
 
-/// Apply [`auto_transition`] once, outside a component.
-///
-/// The readers observe `at_end` as reactive state and drive it through
-/// [`use_auto_read_status`]. The audio players have no such signal — they are
-/// driven by media events fired from JS — so they call this directly: `false`
-/// on the first play of a book, `true` when the last part reaches its end.
-///
-/// Best-effort like the readers' writes, and for the same reason a failed
-/// *fetch* decides nothing: writing `Reading` over an unfetched `Finished`
-/// would be a downgrade. The next event retries.
+/// Apply [`auto_transition`] once, outside a component: `false` on the first
+/// play of a book, `true` when the last part reaches its end. For the audio
+/// players, which are driven by JS media events (the readers use
+/// [`use_auto_read_status`]). Best-effort: a failed *fetch* decides nothing,
+/// since writing `Reading` over an unfetched `Finished` would downgrade it.
 pub async fn apply_auto_read_status(server_url: &str, uuid: &str, at_end: bool) {
     let Ok(stored) = data::get_read_status(server_url, uuid).await else {
         return;
@@ -70,12 +65,11 @@ fn apply_fetched_status(
     status.set(Some((uuid, fetched)));
 }
 
-/// Decide the write effect's next move: `None` when nothing has been
-/// fetched yet or [`auto_transition`] has nothing to do (including the
-/// never-downgrade case — opening a `Finished` book with `at_end: false`).
-/// On `Some`, `status` has already been moved to the optimistic next value
-/// (so a re-run settles on it instead of repeating the write while the POST
-/// is in flight) and the returned payload is what the caller persists.
+/// Decide the write effect's next move: `None` when nothing has been fetched
+/// yet or [`auto_transition`] has nothing to do (including the never-downgrade
+/// case). On `Some`, `status` has already moved to the optimistic next value
+/// (so a re-run settles on it instead of repeating the write) and the
+/// returned payload is what the caller persists.
 fn decide_transition_write(
     mut status: Signal<Option<(String, ReadStatus)>>,
     at_end: bool,
@@ -91,10 +85,9 @@ fn decide_transition_write(
 
 /// Drive [`auto_transition`] for the book open in a reader: fetch the stored
 /// status once per book, then re-apply whenever the status or the reader's
-/// `at_end` position changes. Writes are best-effort like the readers'
-/// progress saves — a failed write must not interrupt reading, and the next
-/// open retries. Call unconditionally from the page (rule 07); on SSR the
-/// effects never fire and this is a no-op.
+/// `at_end` position changes. Writes are best-effort (a failed write must not
+/// interrupt reading; the next open retries). Call unconditionally from the
+/// page (rule 07); on SSR the effects never fire.
 pub fn use_auto_read_status(uuid: String, server_url: String, at_end: Memo<bool>) {
     // The fetched status, keyed by the uuid the fetch answered for: the
     // write effect reads the pair together, so it can never decide against

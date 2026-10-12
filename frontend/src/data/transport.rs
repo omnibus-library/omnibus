@@ -19,13 +19,10 @@ pub(crate) fn client_kind() -> &'static str {
     }
 }
 
-/// Shared, lazily-initialized HTTP client. Used for both authenticated
-/// data calls (which thread the bearer through `with_bearer`) and the
-/// pre-auth login/register/logout calls in `post_mobile_auth`. Reusing
-/// one client keeps connection pooling, TLS sessions, and keep-alives
-/// hot — important on mobile where each cold-start handshake hits
-/// battery and latency hard. `Client` is internally `Arc`'d, so
-/// `.clone()` is cheap.
+/// Shared, lazily-initialized HTTP client, used for authenticated data calls
+/// (bearer via `with_bearer`) and the pre-auth login/register/logout calls in
+/// `post_mobile_auth`. One client keeps connection pooling and TLS sessions
+/// hot on mobile; `Client` is internally `Arc`'d, so `.clone()` is cheap.
 #[cfg(feature = "mobile")]
 pub(crate) fn http_client() -> reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
@@ -116,11 +113,9 @@ pub(crate) fn with_bearer(rb: reqwest::RequestBuilder) -> reqwest::RequestBuilde
 
 /// Inspect a response: if it's a 401, clear the stored bearer token so the
 /// next render of the auth-aware UI can route to `/login`. Returns the same
-/// status the caller was about to inspect.
-///
-/// The server is the sole authority on session expiry (bearer TTL is 90 days);
-/// this 401 path is the *only* logout trigger. Do not add a client-side clock
-/// — the persisted token intentionally survives cold starts.
+/// status. The server is the sole authority on session expiry (bearer TTL is
+/// 90 days): this 401 path is the *only* logout trigger, so add no client-side
+/// clock — the persisted token intentionally survives cold starts.
 #[cfg(feature = "mobile")]
 pub(crate) fn note_status(status: reqwest::StatusCode) -> reqwest::StatusCode {
     if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -129,17 +124,11 @@ pub(crate) fn note_status(status: reqwest::StatusCode) -> reqwest::StatusCode {
     status
 }
 
-/// Map a non-success response into a typed [`DataError`]. A 401 becomes
-/// [`DataError::Unauthorized`] (so callers can pattern-match the auth path);
-/// everything else drains the body into [`DataError::Http`]. Always reading
-/// the body — even on the error path — lets reqwest return the underlying TCP
-/// connection to its pool instead of dropping it mid-stream, and folds the
-/// server's diagnostic text into the structured error.
-///
-/// Precondition: only call on a non-success status. The authenticated data
-/// calls run `note_status` first, so the bearer token is already cleared by
-/// the time we land here on a 401. The pre-auth `post_mobile_auth` path does
-/// not call `note_status`, but a pre-auth 401 has no stored token to clear.
+/// Map a non-success response into a typed [`DataError`]: a 401 becomes
+/// [`DataError::Unauthorized`], everything else drains the body into
+/// [`DataError::Http`]. Only call on a non-success status. Authenticated
+/// calls run `note_status` first, which already cleared the token on a 401;
+/// the pre-auth `post_mobile_auth` path has no stored token to clear.
 #[cfg(feature = "mobile")]
 pub(crate) async fn drain_error(
     response: reqwest::Response,
@@ -148,6 +137,8 @@ pub(crate) async fn drain_error(
     if status == reqwest::StatusCode::UNAUTHORIZED {
         return DataError::Unauthorized;
     }
+    // Read the body even on the error path, so reqwest returns the
+    // connection to its pool and the server's diagnostic text is kept.
     let body = response.text().await.unwrap_or_default();
     DataError::Http {
         status: status.as_u16(),
@@ -196,23 +187,17 @@ pub mod web_auth_state {
 
     /// Signal that we've just observed an authenticated state — a fresh
     /// login/register succeeded, or `/api/auth/me` confirmed an existing
-    /// session. Without this, the channel would latch at `false` after
-    /// the first 401 and stay there for the WASM instance's lifetime, so
-    /// a re-login from the redirected-to /login page couldn't reactively
-    /// re-mount protected screens.
+    /// session. Without it the channel latches at `false` after the first 401,
+    /// so a re-login couldn't reactively re-mount protected screens.
     pub fn notify_authorized() {
         channel().0.send_replace(true);
     }
 }
 
-/// Inspect a server-function error (Dioxus wraps it in `CapturedError`,
-/// which holds an `Arc<anyhow::Error>`) and — on the web client — ping
-/// `web_auth_state` if the underlying `ServerFnError` carries a 401
-/// status code. Maps the error into a [`DataError`]: a 401 becomes
-/// [`DataError::Unauthorized`] (so the web side can pattern-match the auth
-/// path the same way mobile does), and any other failure is preserved as a
-/// stringified [`DataError::Other`]. SSR builds (cfg(not(feature = "web")))
-/// skip the redirect ping — there's no client to redirect. Server test builds
+/// Map a server-function error (Dioxus `CapturedError`) into a [`DataError`]:
+/// a 401 becomes [`DataError::Unauthorized`] and, on the web client, pings
+/// `web_auth_state`; any other failure is a stringified [`DataError::Other`].
+/// SSR builds skip the ping (no client to redirect); server test builds
 /// compile the channel anyway so the 401 ping is unit-testable.
 #[cfg(not(feature = "mobile"))]
 pub(crate) fn note_server_fn_err(e: dioxus::CapturedError) -> DataError {

@@ -15,10 +15,8 @@ pub(crate) mod test_support;
 
 /// Initialize the offline layer. Called once from the native shell's
 /// `main()` before `dioxus::launch`, right after `token_store::load_from_disk`.
-///
-/// Best-effort by design: if the app data dir or SQLite open fails, every
-/// offline API degrades to a no-op and the app behaves exactly as the
-/// online-only build did (matching `app_dirs::data_dir() == None` semantics).
+/// Best-effort: if the app data dir or SQLite open fails, every offline API
+/// degrades to a no-op and the app behaves like the online-only build.
 pub fn init() {
     store::init_global();
     downloads::init();
@@ -54,15 +52,8 @@ const USER_SCOPED_PREFIXES: [&str; 16] = [
 /// Record which account this device's replica belongs to; when a *different*
 /// user signs in, wipe the previous user's replicated data and queued
 /// mutations so nothing leaks across accounts (books/covers stay — the
-/// library is server-wide).
-///
-/// Takes the fresh `me` the caller just fetched (rather than a bare
-/// username) so that, on a detected switch, the wipe below — whose
-/// `kv_delete_prefix` over `USER_SCOPED_PREFIXES` matches the `"me"` cache
-/// key — can be followed by re-seeding that same row. Without this, the
-/// prior cache write `get_me` made for the new user's identity would be
-/// deleted by this function's own wipe, forcing a redundant network
-/// re-fetch on the very next read.
+/// library is server-wide). Takes the fresh `me` the caller just fetched so
+/// the wipe can be followed by re-seeding that row instead of re-fetching it.
 pub(crate) async fn note_user(user: &omnibus_shared::UserSummary) {
     let Some(st) = store::store() else { return };
     let previous = st.meta_get("last_user").await;

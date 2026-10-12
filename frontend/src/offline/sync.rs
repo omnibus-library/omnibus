@@ -239,11 +239,10 @@ pub fn use_offline_runtime() {
 }
 
 /// Network-first write policy: try the server; on a connectivity-class
-/// failure (or while already known-offline, skipping a doomed connect
-/// wait), hand the mutation to `queue` — the outbox closure that enqueues,
-/// optimistically applies, and synthesizes the return value. `queue`
-/// yielding `None` means the offline store is unavailable; the original
-/// behavior (surface the error) applies.
+/// failure (or while already known-offline), hand the mutation to `queue`, the
+/// outbox closure that enqueues, optimistically applies, and synthesizes the
+/// return value. `queue` yielding `None` means the offline store is
+/// unavailable, so the original error surfaces.
 pub(crate) async fn write_through<T, OF, Q, QF>(
     online: impl FnOnce() -> OF,
     queue: Q,
