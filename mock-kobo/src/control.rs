@@ -23,6 +23,8 @@ pub struct Control {
     live: Mutex<Live>,
     /// Serializes saves, so the snapshot written last is always the newest.
     save_lock: tokio::sync::Mutex<()>,
+    /// Woken whenever a sync ends.
+    sync_ended: tokio::sync::Notify,
 }
 
 /// The parts of a running device that change.
@@ -98,6 +100,7 @@ impl Control {
         Self {
             state_path,
             save_lock: tokio::sync::Mutex::new(()),
+            sync_ended: tokio::sync::Notify::new(),
             live: Mutex::new(Live {
                 saved,
                 url,
@@ -175,6 +178,20 @@ impl Control {
         }
         self.persist().await?;
         Ok(last_sync)
+    }
+
+    /// Return once no sync is running, so a caller about to exit never cuts one short.
+    pub async fn wait_until_idle(&self) {
+        loop {
+            let ended = self.sync_ended.notified();
+            tokio::pin!(ended);
+            // Registered before the check, so an end between the two is not missed.
+            ended.as_mut().enable();
+            if !self.live().syncing {
+                return;
+            }
+            ended.await;
+        }
     }
 
     /// Wipe what the device holds; keep who it is and where it syncs.
@@ -285,6 +302,7 @@ struct SyncingGuard(Arc<Control>);
 impl Drop for SyncingGuard {
     fn drop(&mut self) {
         self.0.live().syncing = false;
+        self.0.sync_ended.notify_waiters();
     }
 }
 

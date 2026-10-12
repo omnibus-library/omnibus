@@ -226,6 +226,52 @@ async fn sync_completes_when_caller_is_cancelled() {
 }
 
 #[tokio::test]
+async fn wait_until_idle_returns_after_running_sync_commits() {
+    let gate = Arc::new(Notify::new());
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![
+            json!([new_entitlement("book-1", "Dune")]),
+            json!([new_entitlement("book-2", "Dune Messiah")]),
+        ],
+        second_page_gate: Some(Arc::clone(&gate)),
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    let library_sync = format!("/kobo/{STUB_TOKEN}/v1/library/sync");
+    let running = spawn_sync(&control);
+    wait_until(|| stub.requests_to(&library_sync).len() == 2).await;
+    let waiting = {
+        let control = Arc::clone(&control);
+        tokio::spawn(async move { control.wait_until_idle().await })
+    };
+
+    gate.notify_one();
+
+    tokio::time::timeout(Duration::from_secs(5), waiting)
+        .await
+        .expect("it returns once the sync has ended")
+        .unwrap();
+    let view = control.view();
+    assert!(!view.syncing);
+    let titles: Vec<_> = view.library.values().map(|b| b.title.as_str()).collect();
+    assert_eq!(titles, ["Dune", "Dune Messiah"]);
+    running.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn wait_until_idle_returns_at_once_when_no_sync_runs() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+
+    tokio::time::timeout(Duration::from_secs(5), control.wait_until_idle())
+        .await
+        .expect("an idle device has nothing to wait for");
+}
+
+#[tokio::test]
 async fn sync_saves_state_file_after_sync() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();

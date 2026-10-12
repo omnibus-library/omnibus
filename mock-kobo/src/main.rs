@@ -98,6 +98,7 @@ async fn tui(args: ServeArgs, seed_user: Option<String>) -> anyhow::Result<()> {
         seed_user,
         device_name: device_name(&args.state),
     };
+    let running = Arc::clone(&control);
     let ui = Tui {
         control,
         port,
@@ -108,6 +109,11 @@ async fn tui(args: ServeArgs, seed_user: Option<String>) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Handle::current();
     // Terminal input blocks, so it gets its own thread rather than a runtime worker.
     let ended = tokio::task::spawn_blocking(move || tui::run(ui, runtime)).await;
+    // The server has recorded what a sync delivered, so quitting must not drop it unsaved.
+    if running.view().syncing {
+        eprintln!("waiting for the running sync to finish…");
+        running.wait_until_idle().await;
+    }
     api.abort();
     ended
         .context("the terminal UI stopped unexpectedly")?
