@@ -27,7 +27,7 @@ unknown name in any cell, or a doc with no Surfaces row, stops the draw.
 | [viewing_stats](viewing_stats.md) | on its own | no — own account | reading_a_book, listening_to_audiobook |
 | [searching_the_library](searching_the_library.md) | on its own | no | — |
 | [wishlist](wishlist.md) | on its own | no | — |
-| [creating_a_shelf](creating_a_shelf.md) | on its own | no — web can create but not fill | — |
+| [creating_a_shelf](creating_a_shelf.md) | on its own | no | — |
 | [checking_in_a_book](checking_in_a_book.md) | on its own | removing a copy: yes | — |
 | [updating_profile](updating_profile.md) | on its own | own account | — |
 | [adding_highlight](adding_highlight.md) | inside reading_a_book | no | — |
@@ -71,9 +71,9 @@ finds itself on one of them has wandered off a flow.
 - **The Android hybrid shell.** No driver exists for it. Its markup is the web
   frontend's, so web flows cover most of what it renders, but its native
   chrome is unexercised.
-- **Shelf deletion and membership on the web.** Both exist only on the iOS
-  shelf screen; the web can create, select and edit a shelf but never fill or
-  delete one, and `creating_a_shelf.md` says which steps are iOS-only.
+- **Shelf deletion on the web.** The flow drives it on the iOS shelf screen
+  only; the web can create, select, edit and fill a shelf, and
+  `creating_a_shelf.md` says which steps are iOS-only.
 - **Password and Kindle-email changes.** On the account page beside the
   profile, and off-limits for the reasons `updating_profile.md` gives: a
   changed password locks the agent out of the rest of its run.

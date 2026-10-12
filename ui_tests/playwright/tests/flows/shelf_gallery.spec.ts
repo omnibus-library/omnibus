@@ -6,7 +6,7 @@ import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { bookTile } from "../utils/shelves";
+import { bookTile, withManualShelf } from "../utils/shelves";
 
 // The gallery filters the landing book list in place, so it needs the real
 // fixture library plus a manual shelf holding one distinct book. Alpha is
@@ -218,6 +218,58 @@ test("adds books to a hand-picked shelf from the landing header", async ({
   await expect(bookTile(page, "Alpha")).toBeVisible();
   await expect(page.getByTestId("lib-section-title")).toContainText(
     /\b1 book\b/,
+  );
+});
+
+test("keeps the shelf unchanged when adding books from the landing header fails", async ({
+  page,
+  request,
+}) => {
+  // Alpha is only read here: it would only join a shelf this test made.
+  const alpha = await fetchBookUuidByTitle(request, "Alpha");
+  await withManualShelf(
+    request,
+    "E2E Gallery Add Fail",
+    async ({ id: shelfId }) => {
+      await gotoReady(page, "/");
+      await selectShelf(page, shelfId);
+      await expect(page.getByTestId("lib-empty")).toBeVisible();
+
+      await page.getByTestId("shelf-add-books").click();
+      const modal = page.getByTestId("add-books-modal");
+      await modal.getByTestId("add-books-search").fill("Alpha");
+      await modal.getByTestId(`picker-tile-${alpha}`).click();
+
+      await page.route("**/api/rpc/shelves/add-books", (route) =>
+        route.fulfill({
+          status: 500,
+          contentType: "text/plain",
+          body: "forced failure",
+        }),
+      );
+      await expectMutation(
+        page,
+        {
+          method: "POST",
+          url: "/api/rpc/shelves/add-books",
+          expectedBody: { id: shelfId, book_uuids: [alpha] },
+          expectedStatus: 500,
+        },
+        async () => modal.getByTestId("add-books-submit").click(),
+      );
+      await page.unroute("**/api/rpc/shelves/add-books");
+
+      // The modal keeps the pick and says why; the shelf behind it is still empty.
+      await expect(page.getByTestId("add-books-error")).toBeVisible();
+      await expect(modal).toBeVisible();
+
+      await modal.getByTestId("add-books-close").click();
+      await expect(modal).toHaveCount(0);
+      await expect(page.getByTestId("lib-empty")).toBeVisible();
+      await expect(page.getByTestId("lib-section-title")).toContainText(
+        /\b0 books\b/,
+      );
+    },
   );
 });
 

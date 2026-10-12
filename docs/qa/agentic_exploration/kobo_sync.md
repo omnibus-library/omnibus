@@ -27,8 +27,9 @@ person does.
    reader follows; if they do not make sense to you, that is a finding about
    the copy.
 3. Create a **Smart** shelf with a rule that matches three or four books — an
-   author, a genre — and confirm it fills. The web cannot fill a hand-picked
-   shelf, and a Kobo can only be sent a shelf with books on it.
+   author, a genre — and confirm it fills. A hand-picked shelf works too once
+   you have added books to it, and a Kobo can only be sent a shelf with books
+   on it.
 4. Open **Edit shelf** on it and tick the Kobo sync opt-in. Save. Reload and
    confirm the opt-in stuck. A system shelf (the wishlist) must not offer the
    opt-in at all; check that once.
@@ -138,8 +139,8 @@ existing under the name it carries; the opt-in itself is not audited.
   removal as `device.remove`; neither is audited.
 - The **Kobo opt-in is not on the create form**, only on Edit shelf — so a
   shelf made for a Kobo has to be created and then immediately reopened. The
-  opt-in is also offered on a hand-picked shelf, which the web can fill only at
-  creation, so a reader can opt in a shelf they cannot later add to.
+  opt-in is also offered on a hand-picked shelf, which may still be empty, so a
+  reader can opt in a shelf that holds nothing yet.
 - The wishlist offers no opt-in because it has **no edit affordance at all**,
   which is a stronger thing than the form omitting the toggle. Check an empty
   hand-picked shelf of your own to be sure you are seeing system-ness rather

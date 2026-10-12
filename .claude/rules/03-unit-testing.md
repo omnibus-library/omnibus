@@ -118,12 +118,13 @@ async fn get_book_propagates_db_error_when_pool_is_closed() { ... }
 ## Running
 
 ```bash
-just test                                          # full matrix (db + server + frontend(server + mobile) + shared + mcp)
+just test                                          # full matrix (db + server + frontend(server + mobile) + shared + mcp + mock-kobo)
 cargo test -p omnibus                              # /api/* REST integration tests
 cargo test -p omnibus-db                           # db + scanner + sync tests
 cargo test -p omnibus-frontend --features server   # rpc + page tests
 cargo test -p omnibus-frontend --features mobile   # data/ + offline mobile-arm tests
 cargo test -p omnibus-shared                       # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                          # MCP tool-layer tests (out of default-members)
+cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (out of default-members)
 cargo test -p <crate> <test_name>                  # single test by name
 ```

@@ -170,20 +170,20 @@ to replay from, and **anything wrong or ambiguous in the flow documents
 themselves** — the catalog is as much under test as the app, and that has been
 the most valuable output of every run so far.
 
-## 9. Audit the run, then report back
+## 9. Audit, group, then report back
 
-Follow [after-run.md](after-run.md): run `audit.py check`, generate the report
-with `report.py`, then verify anything high-severity yourself before repeating
-it — the difference between a finding and an anecdote has always been the check.
+Follow [after-run.md](after-run.md): run `audit.py check`, render with
+`report.py`, **group the rows into `groups.json`** and render again, then verify
+anything high-severity yourself — the difference between a finding and an
+anecdote has always been the check.
 
-**Hand back the report's own three sections, in this order, on every run** —
+**Hand back the summary's own sections, in this order, on every run** —
 copied from `report.md`, never from agent prose, and an empty one said to be
 empty rather than dropped:
 
-1. **Defects** — `| # | Priority | Description | Agent |`, worst first.
-2. **Execution issues** — the same four columns, for friction rather than
-   defects: a control that responded slowly, a step an agent could not
-   validate, a step that took far longer than it should.
+1. **Defects** — the group table, worst first; every row is in `defects.md`.
+2. **Execution issues** — the same, for friction rather than defects (a slow
+   control, a step an agent could not validate); rows in `execution-defects.md`.
 3. **Journal files** — every path, as bullets.
 
 Then say what was excluded, what was left on the instance, and

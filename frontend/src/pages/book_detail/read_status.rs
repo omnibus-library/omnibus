@@ -10,6 +10,8 @@ use omnibus_shared::{ReadStatus, ReadStatusRecord, SetReadStatus};
 use crate::time::now_unix;
 use crate::{data, use_server_url};
 
+use super::rule_facts::{use_rule_facts_saved, RuleFactsSaved};
+
 /// The three selectable states, in display order, with their labels + testids.
 const SEGMENTS: [(ReadStatus, &str, &str); 3] = [
     (ReadStatus::Unread, "Unread", "read-status-unread"),
@@ -29,6 +31,7 @@ pub(super) fn BdReadStatusControl(uuid: String) -> Element {
     // latest, so a slow (out-of-order) response can't clobber a newer click.
     let mut op_seq = use_signal(|| 0u64);
     let mut load_seq = use_signal(|| 0u64);
+    let saved = use_rule_facts_saved();
 
     let load_url = server_url.clone();
     use_effect(use_reactive!(|uuid| {
@@ -80,7 +83,7 @@ pub(super) fn BdReadStatusControl(uuid: String) -> Element {
                                         return;
                                     }
                                     apply_status(
-                                        current, failed, op_seq, uuid.clone(), server_url.clone(), status,
+                                        current, failed, op_seq, saved, uuid.clone(), server_url.clone(), status,
                                     );
                                 },
                                 "{label}"
@@ -102,10 +105,12 @@ pub(super) fn BdReadStatusControl(uuid: String) -> Element {
 /// Optimistically set `current`, then persist and reconcile with the server
 /// (reverting and flagging on error). `op_seq` is bumped per call and
 /// re-checked after the request so a stale (out-of-order) response is dropped.
+/// A saved status is counted on `saved`: a smart shelf may now hold the book.
 fn apply_status(
     mut current: Signal<Option<ReadStatusRecord>>,
     mut failed: Signal<bool>,
     mut op_seq: Signal<u64>,
+    saved: RuleFactsSaved,
     uuid: String,
     server_url: String,
     status: ReadStatus,
@@ -137,7 +142,10 @@ fn apply_status(
             return;
         }
         match result {
-            Ok(rec) => current.set(Some(rec)),
+            Ok(rec) => {
+                current.set(Some(rec));
+                saved.note();
+            }
             Err(_) => {
                 current.set(prev);
                 failed.set(true);
