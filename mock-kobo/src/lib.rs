@@ -10,6 +10,7 @@ pub mod control;
 pub mod device;
 pub mod firmware;
 pub mod session;
+pub mod startup;
 pub mod state;
 #[cfg(test)]
 mod test_support;

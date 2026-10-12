@@ -5038,6 +5038,7 @@ dependencies = [
 name = "omnibus-mock-kobo"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "getrandom 0.3.4",
  "reqwest 0.13.4",
