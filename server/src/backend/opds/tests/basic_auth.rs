@@ -9,6 +9,7 @@ use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::get_with_bearer;
+use crate::rate_limit::RateLimits;
 
 use super::super::*;
 use super::{author_id_by_name, body_string, fixture};
@@ -102,6 +103,22 @@ async fn basic_auth_rate_limits_repeated_failures_per_ip() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn basic_auth_never_returns_429_when_rate_limits_are_disabled() {
+    // The same unknown-user loop as the test above, one request past the
+    // 10-per-minute budget: with the dev switch on, every one stays a 401.
+    let pool = db::init_db("sqlite::memory:").await.unwrap();
+    let app = opds_router(AppState::new(pool).with_rate_limits(RateLimits::Disabled));
+    for i in 0..11 {
+        let res = app
+            .clone()
+            .oneshot(get_with_basic("/opds", "ghost-user", "whatever"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "request {i}");
+    }
 }
 
 #[tokio::test]

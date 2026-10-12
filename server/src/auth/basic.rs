@@ -19,7 +19,7 @@ use sqlx::SqlitePool;
 use tokio::sync::Mutex;
 
 use crate::http_errors::internal;
-use crate::rate_limit::{client_ip, RateLimiter};
+use crate::rate_limit::{client_ip, RateLimiter, RateLimits};
 
 use super::extractor::resolve_auth_user;
 use super::AuthUser;
@@ -51,9 +51,9 @@ struct VerifiedCred {
 
 impl BasicAuthState {
     /// Fresh state behind an `Arc`, ready to layer as an `Extension`.
-    pub fn new_shared() -> Arc<Self> {
+    pub fn new_shared(limits: RateLimits) -> Arc<Self> {
         Arc::new(Self {
-            limiter: RateLimiter::new(),
+            limiter: RateLimiter::new().with_limits(limits),
             verified: Mutex::new(HashMap::new()),
         })
     }
