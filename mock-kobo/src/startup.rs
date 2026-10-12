@@ -21,11 +21,14 @@ pub struct Target {
     pub pinned_url: Option<String>,
     /// The token given now or saved before; `None` means auto-wire.
     pub token: Option<String>,
+    /// The origin `token` was auto-wired against; `None` for a token the user gave.
+    pub wired_url: Option<String>,
 }
 
 /// Merge the command line, the saved state and the discovered dev server.
 /// A given value beats a saved one; with no URL pinned the dev server, then
-/// [`DEFAULT_URL`], is followed afresh on every start.
+/// [`DEFAULT_URL`], is followed afresh on every start. A saved auto-wired token
+/// is dropped when this run's server is not the one it was minted against.
 pub fn resolve_target(
     args: &ServeArgs,
     saved: Option<&SavedState>,
@@ -39,14 +42,18 @@ pub fn resolve_target(
         .clone()
         .or(dev_server)
         .unwrap_or_else(|| DEFAULT_URL.to_owned());
-    let token = args
-        .token
-        .clone()
-        .or_else(|| saved.map(|saved| saved.token.clone()));
+    let (token, wired_url) = match (&args.token, saved) {
+        (Some(token), _) => (Some(token.clone()), None),
+        (None, Some(saved)) if saved.wired_url.as_ref().is_none_or(|wired| *wired == url) => {
+            (Some(saved.token.clone()), saved.wired_url.clone())
+        }
+        (None, _) => (None, None),
+    };
     Target {
         url,
         pinned_url,
         token,
+        wired_url,
     }
 }
 
@@ -71,11 +78,13 @@ pub async fn start(
     let saved = state::load(&args.state).await?;
     let dev_server = autowire::dev_server_url(runtime_dir).await;
     let target = resolve_target(args, saved.as_ref(), dev_server);
-    let token = match target.token {
-        Some(token) => token,
+    let (token, wired_url) = match target.token {
+        Some(token) => (token, target.wired_url),
         None => {
             let seed = SeedUser::parse(seed_user)?;
-            autowire::wire(&target.url, &seed, &autowire::device_name(&args.state)).await?
+            let name = autowire::device_name(&args.state);
+            let token = autowire::wire(&target.url, &seed, &name).await?;
+            (token, Some(target.url.clone()))
         }
     };
     let device = match saved {
@@ -85,6 +94,7 @@ pub async fn start(
     let saved = SavedState {
         url: target.pinned_url,
         token,
+        wired_url,
         device,
     };
     state::save(&args.state, &saved).await?;

@@ -106,6 +106,7 @@ async fn get_device_returns_each_book_with_its_series() {
     let saved = SavedState {
         url: None,
         token: STUB_TOKEN.into(),
+        wired_url: None,
         device,
     };
     let control = Control::new(saved, stub.origin.clone(), dir.path().join("kobo.json"));

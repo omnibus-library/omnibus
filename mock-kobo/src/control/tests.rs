@@ -87,6 +87,7 @@ async fn sync_records_failed_last_sync_without_quirk_when_server_unreachable() {
     let saved = SavedState {
         url: None,
         token: STUB_TOKEN.into(),
+        wired_url: None,
         device: Device::new("HW-1"),
     };
     let dir = TempDir::new().unwrap();
@@ -294,6 +295,7 @@ async fn reset_returns_sync_in_progress_while_sync_runs() {
     let saved = SavedState {
         url: None,
         token: STUB_TOKEN.into(),
+        wired_url: None,
         device: device_with_dune(),
     };
     let control = Arc::new(Control::new(

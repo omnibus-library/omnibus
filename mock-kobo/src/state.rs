@@ -14,6 +14,9 @@ pub struct SavedState {
     pub url: Option<String>,
     /// The device's path token, its only credential.
     pub token: String,
+    /// The origin an auto-wired token was minted against; `None` for a token the user gave.
+    #[serde(default)]
+    pub wired_url: Option<String>,
     pub device: Device,
 }
 

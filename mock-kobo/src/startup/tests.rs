@@ -1,7 +1,7 @@
 //! How `start` decides where a device points and which token it holds: the
 //! precedence table (unit), then real state files and a stub Omnibus.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::json;
@@ -10,7 +10,7 @@ use tempfile::TempDir;
 use crate::control::LastSync;
 use crate::device::Device;
 use crate::state::{self, StateError};
-use crate::test_support::{new_entitlement, spawn_stub, Stub, STUB_TOKEN};
+use crate::test_support::{new_entitlement, spawn_stub, RunningStub, Stub, STUB_TOKEN};
 
 use super::*;
 
@@ -43,12 +43,36 @@ fn dune_stub() -> Stub {
     }
 }
 
+/// A server already holding the device auto-wire looks for, under `token`.
+fn stub_with_device(token: &str) -> Stub {
+    Stub {
+        devices: vec![("Mock Kobo (kobo)".to_owned(), token.to_owned())],
+        ..Stub::default()
+    }
+}
+
 fn saved(url: Option<&str>, token: &str) -> SavedState {
     SavedState {
         url: url.map(str::to_owned),
         token: token.to_owned(),
+        wired_url: None,
         device: Device::new("mock-ab"),
     }
+}
+
+/// Saved state holding a token auto-wired against `wired_url`.
+fn auto_wired(token: &str, wired_url: &str) -> SavedState {
+    SavedState {
+        wired_url: Some(wired_url.to_owned()),
+        ..saved(None, token)
+    }
+}
+
+/// Publish `stub` as this worktree's dev server, as `just dev-up` does.
+fn publish_dev_server(runtime: &Path, stub: &RunningStub) {
+    std::fs::create_dir_all(runtime).unwrap();
+    let port = stub.origin.rsplit(':').next().unwrap();
+    std::fs::write(runtime.join("port"), format!("{port}\n")).unwrap();
 }
 
 fn dev_server() -> Option<String> {
@@ -143,6 +167,49 @@ fn resolve_target_uses_saved_token_when_none_given() {
 }
 
 #[test]
+fn resolve_target_drops_auto_wired_token_when_url_changed() {
+    let saved = auto_wired("old-server-token", "http://old:1");
+
+    let target = resolve_target(&serve_args(None, None), Some(&saved), dev_server());
+
+    assert_eq!(target.url, "http://dev:1");
+    assert_eq!(target.token, None);
+}
+
+#[test]
+fn resolve_target_keeps_auto_wired_token_when_url_unchanged() {
+    let saved = auto_wired("wired-token", "http://dev:1");
+
+    let target = resolve_target(&serve_args(None, None), Some(&saved), dev_server());
+
+    assert_eq!(target.token, Some("wired-token".to_owned()));
+    assert_eq!(target.wired_url, Some("http://dev:1".to_owned()));
+}
+
+#[test]
+fn resolve_target_keeps_given_token_when_url_changed() {
+    let saved = auto_wired("old-server-token", "http://old:1");
+
+    let target = resolve_target(
+        &serve_args(None, Some("given-token")),
+        Some(&saved),
+        dev_server(),
+    );
+
+    assert_eq!(target.token, Some("given-token".to_owned()));
+    assert_eq!(target.wired_url, None);
+}
+
+#[test]
+fn resolve_target_keeps_saved_token_the_user_gave_when_url_changed() {
+    let saved = saved(None, "user-token");
+
+    let target = resolve_target(&serve_args(None, None), Some(&saved), dev_server());
+
+    assert_eq!(target.token, Some("user-token".to_owned()));
+}
+
+#[test]
 fn resolve_target_leaves_token_unset_when_none_known() {
     let target = resolve_target(&serve_args(None, None), None, None);
 
@@ -201,10 +268,8 @@ async fn start_persists_given_url_and_token_across_restarts() {
 async fn start_follows_dev_server_port_without_saving_it() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
-    let runtime = dir.path().join("runtime");
-    std::fs::create_dir(&runtime).unwrap();
-    let port = stub.origin.rsplit(':').next().unwrap();
-    std::fs::write(runtime.join("port"), format!("{port}\n")).unwrap();
+    let runtime = no_runtime(&dir);
+    publish_dev_server(&runtime, &stub);
     let args = args_in(&dir, None, Some(STUB_TOKEN));
 
     let control = start(&args, None, &runtime).await.unwrap();
@@ -248,6 +313,77 @@ async fn start_auto_wires_seed_admin_device_when_no_token_known() {
     let saved = state::load(&args.state).await.unwrap().unwrap();
     assert_eq!(saved.token, STUB_TOKEN);
     assert_eq!(control.sync().await.unwrap(), LastSync::Synced { pages: 1 });
+}
+
+#[tokio::test]
+async fn start_records_wired_url_with_auto_wired_token() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let args = args_in(&dir, Some(&stub.origin), None);
+
+    start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
+        .await
+        .unwrap();
+
+    let saved = state::load(&args.state).await.unwrap().unwrap();
+    assert_eq!(saved.wired_url, Some(stub.origin.clone()));
+}
+
+#[tokio::test]
+async fn start_clears_wired_url_when_token_is_given() {
+    let dir = TempDir::new().unwrap();
+    let args = args_in(&dir, Some("http://127.0.0.1:1"), Some("given-token"));
+    let earlier = auto_wired("old-server-token", "http://old:1");
+    state::save(&args.state, &earlier).await.unwrap();
+
+    start(&args, None, &no_runtime(&dir)).await.unwrap();
+
+    let saved = state::load(&args.state).await.unwrap().unwrap();
+    assert_eq!(saved.token, "given-token");
+    assert_eq!(saved.wired_url, None);
+}
+
+#[tokio::test]
+async fn start_rewires_when_dev_server_moves_to_another_server() {
+    let server_a = spawn_stub(stub_with_device("tok-a")).await;
+    let server_b = spawn_stub(stub_with_device("tok-b")).await;
+    let dir = TempDir::new().unwrap();
+    let runtime = no_runtime(&dir);
+    let args = args_in(&dir, None, None);
+    publish_dev_server(&runtime, &server_a);
+    start(&args, Some("admin:omnibus-dev"), &runtime)
+        .await
+        .unwrap();
+    publish_dev_server(&runtime, &server_b);
+
+    start(&args, Some("admin:omnibus-dev"), &runtime)
+        .await
+        .unwrap();
+
+    assert_eq!(server_b.requests_to("/api/auth/login").len(), 1);
+    let saved = state::load(&args.state).await.unwrap().unwrap();
+    assert_eq!(saved.token, "tok-b");
+    assert_eq!(saved.wired_url, Some(server_b.origin.clone()));
+}
+
+#[tokio::test]
+async fn start_reuses_auto_wired_token_when_dev_server_is_unchanged() {
+    let server = spawn_stub(stub_with_device("tok-a")).await;
+    let dir = TempDir::new().unwrap();
+    let runtime = no_runtime(&dir);
+    let args = args_in(&dir, None, None);
+    publish_dev_server(&runtime, &server);
+    start(&args, Some("admin:omnibus-dev"), &runtime)
+        .await
+        .unwrap();
+
+    start(&args, Some("admin:omnibus-dev"), &runtime)
+        .await
+        .unwrap();
+
+    assert_eq!(server.requests_to("/api/auth/login").len(), 1);
+    let saved = state::load(&args.state).await.unwrap().unwrap();
+    assert_eq!(saved.token, "tok-a");
 }
 
 #[tokio::test]

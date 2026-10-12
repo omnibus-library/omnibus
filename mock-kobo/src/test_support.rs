@@ -148,6 +148,7 @@ pub fn stub_control(stub: &RunningStub, state_path: PathBuf) -> Arc<Control> {
     let saved = SavedState {
         url: None,
         token: STUB_TOKEN.to_owned(),
+        wired_url: None,
         device: Device::new("HW-1"),
     };
     Arc::new(Control::new(saved, stub.origin.clone(), state_path))

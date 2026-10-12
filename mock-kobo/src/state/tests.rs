@@ -29,6 +29,7 @@ fn synced_state() -> SavedState {
     SavedState {
         url: None,
         token: "tok-1".into(),
+        wired_url: Some("http://dev:1".into()),
         device,
     }
 }
@@ -51,6 +52,20 @@ async fn save_then_load_round_trips_device_and_token() {
     save(&path, &state).await.unwrap();
 
     assert_eq!(load(&path).await.unwrap(), Some(state));
+}
+
+#[tokio::test]
+async fn load_reads_wired_url_as_none_when_state_file_lacks_it() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let device = serde_json::to_value(Device::new("mock-ab")).unwrap();
+    let older = serde_json::json!({ "url": null, "token": "tok-1", "device": device });
+    std::fs::write(&path, older.to_string()).unwrap();
+
+    let loaded = load(&path).await.unwrap().unwrap();
+
+    assert_eq!(loaded.wired_url, None);
+    assert_eq!(loaded.token, "tok-1");
 }
 
 #[tokio::test]
