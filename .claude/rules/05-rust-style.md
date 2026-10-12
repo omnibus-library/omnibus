@@ -9,14 +9,18 @@ covered by [04-playwright.md](04-playwright.md).
 
 ## Comments & docs
 
-- **Module `//!`** is required on every file. Keep it to one short
-  paragraph (≤ 5 lines): what this module is for, who calls it. No
-  references to roadmap phases or issue numbers — those belong in commit
-  messages and PR bodies, where they don't rot.
+- **Module `//!`** is required on every file: what this module is for,
+  who calls it, and why it is shaped that way. Shorter is better; 20
+  lines is the cap. No references to roadmap phases or issue numbers —
+  those belong in commit messages and PR bodies, where they don't rot.
+  The first sentence is the module's line in `just modules <dir>`, the
+  only module map there is, so make it stand on its own.
 - **Function `///`** is required on every `pub` item: one-line summary.
   Add a longer rustdoc block (params, errors, invariants) only when the
   behaviour is genuinely surprising — locks, retries, side effects, or
-  contracts a caller can break by accident.
+  contracts a caller can break by accident. Even then, 5 lines is the
+  cap: an implementation reason goes in an inline `//` at the code it
+  explains, and a design trade-off in the module `//!`.
 - **Inline `//` inside function bodies** is for explaining **why**, never
   **what**. A non-obvious invariant, a workaround for a specific bug, a
   perf trick. If you're narrating the algorithm, the function probably

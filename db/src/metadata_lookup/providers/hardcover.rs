@@ -284,20 +284,11 @@ pub async fn by_ref(
         .and_then(|b| map_book(b, None)))
 }
 
-/// Search by free text through Hardcover's own `search` endpoint.
-///
-/// `Ok(empty)` when nothing matches or no key is configured.
-///
-/// The response is a Typesense payload behind an untyped `results` scalar, so
-/// it is read defensively: a hit whose document has no title or no id is
-/// skipped rather than failing the search.
-///
-/// **A search document describes a *work*, not a printing.** Its `isbns`
-/// array spans every edition Hardcover knows, so there is no ISBN that can
-/// honestly be attributed to the candidate — [`ProviderEdition::isbn13`] is
-/// left `None` and the picker's hydrate step resolves the edition on select.
-/// Inventing one by taking `isbns[0]` would put a specific printing's
-/// identifier on a row describing all of them.
+/// Search by free text through Hardcover's own `search` endpoint; `Ok(empty)`
+/// when nothing matches or no key is configured. Not a `books(where:)` filter:
+/// Hardcover blocks `_ilike`, so a filter only matches a title typed exactly.
+/// A hit describes a *work*, not a printing, so `isbn13` stays `None` and the
+/// picker's hydrate step resolves the edition.
 pub async fn by_text(
     config: &MetadataLookupConfig,
     query: &str,
