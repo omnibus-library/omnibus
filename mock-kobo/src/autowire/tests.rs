@@ -258,6 +258,51 @@ async fn wire_logs_in_as_bearer_client_named_omnibus_mock_kobo() {
 }
 
 #[tokio::test]
+async fn wire_logs_out_after_wiring() {
+    let stub = spawn_stub(Stub::default()).await;
+
+    wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
+
+    let logouts = stub.requests_to("/api/auth/logout");
+    assert_eq!(logouts.len(), 1);
+    assert_eq!(logouts[0].headers["authorization"], "Bearer stub-session");
+    assert_eq!(stub.paths().last().unwrap(), "/api/auth/logout");
+}
+
+#[tokio::test]
+async fn wire_logs_out_when_listing_devices_fails() {
+    let stub = spawn_stub(Stub {
+        devices_status: StatusCode::INTERNAL_SERVER_ERROR,
+        ..Stub::default()
+    })
+    .await;
+
+    let error = wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        AutoWireError::Rejected {
+            step: "POST /api/rpc/kobo/devices",
+            status: 500
+        }
+    ));
+    assert_eq!(stub.requests_to("/api/auth/logout").len(), 1);
+}
+
+#[tokio::test]
+async fn wire_does_not_log_out_when_login_fails() {
+    let stub = spawn_stub(Stub {
+        login_status: StatusCode::UNAUTHORIZED,
+        ..Stub::default()
+    })
+    .await;
+
+    wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap_err();
+
+    assert!(stub.requests_to("/api/auth/logout").is_empty());
+}
+
+#[tokio::test]
 async fn wire_reports_rejected_when_login_fails() {
     let stub = spawn_stub(Stub {
         login_status: StatusCode::UNAUTHORIZED,

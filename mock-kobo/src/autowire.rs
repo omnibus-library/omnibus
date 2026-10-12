@@ -112,8 +112,8 @@ pub struct Wired {
     pub reused: bool,
 }
 
-/// Log in at `url` as `seed`, then reuse or create the device called `name`.
-/// Refuses any `url` that is not a local dev server before sending anything: the seed password goes in the login.
+/// Log in at `url` as `seed`, reuse or create the device called `name`, then log out.
+/// Refuses a non-local `url` before sending anything: the login carries the seed password.
 pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<Wired, AutoWireError> {
     if !is_local_url(url) {
         return Err(AutoWireError::NotLocal {
@@ -125,9 +125,21 @@ pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<Wired, AutoW
         .build()
         .map_err(|error| failed(LOGIN_STEP, error))?;
     let session = login(&http, url, seed).await?;
+    let wired = reuse_or_create(&http, url, &session, name).await;
+    log_out(&http, url, &session).await;
+    wired
+}
+
+/// The token of the device called `name` in the signed-in account, made if there is none.
+async fn reuse_or_create(
+    http: &reqwest::Client,
+    url: &str,
+    session: &str,
+    name: &str,
+) -> Result<Wired, AutoWireError> {
     let list_url = format!("{url}/api/rpc/kobo/devices");
     let devices: Vec<DeviceRow> =
-        post(&http, LIST_STEP, &list_url, Some(&session), &json!({})).await?;
+        post(http, LIST_STEP, &list_url, Some(session), &json!({})).await?;
     if let Some(device) = devices.into_iter().find(|device| device.name == name) {
         return Ok(Wired {
             token: device.token,
@@ -136,10 +148,10 @@ pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<Wired, AutoW
     }
     let create_url = format!("{url}/api/rpc/kobo/devices/create");
     let created: DeviceRow = post(
-        &http,
+        http,
         CREATE_STEP,
         &create_url,
-        Some(&session),
+        Some(session),
         &CreateBody { name },
     )
     .await?;
@@ -147,6 +159,12 @@ pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<Wired, AutoW
         token: created.token,
         reused: false,
     })
+}
+
+/// End the bearer session so no admin session outlives the wiring; a failure leaves it to expire.
+async fn log_out(http: &reqwest::Client, url: &str, session: &str) {
+    let logout_url = format!("{url}/api/auth/logout");
+    let _ = http.post(logout_url).bearer_auth(session).send().await;
 }
 
 /// A bearer session token for `seed`.

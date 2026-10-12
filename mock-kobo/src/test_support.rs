@@ -56,6 +56,8 @@ pub struct Stub {
     pub second_page_gate: Option<Arc<Notify>>,
     /// The `(name, token)` devices `POST /api/rpc/kobo/devices` lists, oldest first.
     pub devices: Vec<(String, String)>,
+    /// The status `POST /api/rpc/kobo/devices` answers a signed-in caller with.
+    pub devices_status: StatusCode,
     /// The status `POST /api/auth/login` answers with.
     pub login_status: StatusCode,
     /// The `token` in a successful login reply; `None` leaves it null.
@@ -77,6 +79,7 @@ impl Default for Stub {
             sync_never_answers: false,
             second_page_gate: None,
             devices: Vec::new(),
+            devices_status: StatusCode::OK,
             login_status: StatusCode::OK,
             login_token: Some(SESSION_TOKEN),
         }
@@ -208,13 +211,14 @@ async fn handle(
     }
 }
 
-/// The Omnibus `/api` routes auto-wire calls: login, then the device list and create.
+/// The Omnibus `/api` routes auto-wire calls: login, the device list and create, then logout.
 fn omnibus_api(state: &StubState, path: &str, headers: &HeaderMap, body: &str) -> Option<Response> {
     let signed_in = headers
         .get("authorization")
         .is_some_and(|value| value == format!("Bearer {SESSION_TOKEN}").as_str());
     match path {
         "/api/auth/login" => Some(login(state)),
+        "/api/auth/logout" => Some(StatusCode::NO_CONTENT.into_response()),
         "/api/rpc/kobo/devices" | "/api/rpc/kobo/devices/create" if !signed_in => {
             Some(StatusCode::UNAUTHORIZED.into_response())
         }
@@ -247,6 +251,9 @@ fn device_row(id: usize, name: &str, token: &str) -> Value {
 }
 
 fn list_devices(state: &StubState) -> Response {
+    if !state.stub.devices_status.is_success() {
+        return state.stub.devices_status.into_response();
+    }
     let rows: Vec<Value> = (1..)
         .zip(&state.stub.devices)
         .map(|(id, (name, token))| device_row(id, name, token))
