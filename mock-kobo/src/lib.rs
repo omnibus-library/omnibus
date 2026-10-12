@@ -2,6 +2,7 @@
 //! firmware's side of `/kobo/<token>/v1/*` and enforces the firmware
 //! behaviours behind past Kobo regressions, so a test sees what a device would.
 
+pub mod cli;
 pub mod client;
 pub mod device;
 pub mod firmware;
