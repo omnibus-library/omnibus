@@ -158,7 +158,8 @@ pub(super) async fn put_stats_daily_goal(
 }
 
 /// What the library is made of — format, language, publisher, publication decade, and
-/// genre. Its own route for the same reason as [`get_library_size`]; the auth extractor still applies.
+/// genre. Its own route for the same reason as [`get_library_size`]; the auth
+/// extractor still applies.
 pub(super) async fn get_library_composition(
     _user: AuthUser,
     State(state): State<AppState>,

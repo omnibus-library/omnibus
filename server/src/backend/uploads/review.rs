@@ -148,11 +148,11 @@ pub(super) async fn resolve_staged_cover(
     Ok(Some((mime, Bytes::from(bytes))))
 }
 
-/// Layer what the reader confirmed onto the freshly indexed book: the legacy fields, the
-/// review diff on top, pruned back to what differs from the indexed row, then the staged
-/// cover. A book accepted as-is ends with no override. If the indexer *attached* the upload
-/// to an existing book, only the reader's form edits apply, not the legacy title/author.
-/// A failure part-way restores the prior override row; the caller then runs `rollback_uploaded_file`.
+/// Layer what the reader confirmed onto the freshly indexed book: the legacy fields, the review
+/// diff on top, pruned back to what differs from the indexed row, then the staged cover. A book
+/// accepted as-is ends with no override. If the indexer *attached* the upload to an existing book,
+/// only the reader's form edits apply, not the legacy title/author. A failure part-way restores the
+/// prior override row; the caller then runs `rollback_uploaded_file`.
 pub(super) async fn finish_upload(
     state: &AppState,
     uuid: &str,
