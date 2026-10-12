@@ -62,3 +62,9 @@ export async function expectMutation<T>(
 
   return { result, request, response };
 }
+
+/** A `waitForResponse` predicate matching the response to a POST to `url`. */
+export function isPostTo(url: RegExp): (response: Response) => boolean {
+  return (response) =>
+    response.request().method() === "POST" && url.test(response.url());
+}

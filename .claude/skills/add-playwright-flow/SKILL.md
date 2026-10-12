@@ -14,48 +14,75 @@ One file per user flow: `ui_tests/playwright/tests/flows/<flow-name>.spec.ts`.
 `tests/ios_glue/` and its own recipe — see
 [04b-playwright-ios-glue.md](../../rules/04b-playwright-ios-glue.md).)
 
-Import `test` and `expect` from the fixtures file, never from `@playwright/test` directly:
+New specs use page objects; see
+[04d-playwright-page-objects.md](../../rules/04d-playwright-page-objects.md) for
+the layout and rules, and `tests/flows/check_in_wishlisted.spec.ts` for a worked
+example. Import `test`
+and `expect` from a fixtures file, never from `@playwright/test`:
 
 ```ts
-import { test, expect } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { expectNavVisible } from "../utils/nav";
+import { scan } from "../contracts/scan";
+import { expect, test } from "../fixtures/pageFixtures";
 ```
 
-## 2. Write a layout test
+## 2. Add the page objects the flow needs
 
-One per spec, no user actions:
+Extend an existing page or component before adding one. A new page extends
+`BasePage`, and its fixture goes in `fixtures/pageFixtures.ts`:
 
 ```ts
-test("renders the <page> layout", async ({ page }) => {
-  await page.goto("/<path>");
-  await expectNavVisible(page);
-  await expect(page.getByRole("heading", { name: "<page title>" })).toBeVisible();
+export class SettingsPage extends BasePage {
+  protected readonly urlPattern = /\/settings$/;
+
+  readonly saveButton: Locator;
+  readonly statusMessage: Locator;
+
+  constructor(page: Page) {
+    super(page);
+    this.saveButton = page.getByRole("button", { name: "Save" });
+    this.statusMessage = page.getByRole("status");
+  }
+
+  protected get readyLocator(): Locator {
+    return this.saveButton;
+  }
+
+  async goto(): Promise<void> {
+    await this.open("/settings");
+  }
+
+  async save(): Promise<void> {
+    const saved = this.page.waitForResponse(isPostTo(/\/api\/rpc\/settings$/));
+    await this.saveButton.click();
+    await saved;
+  }
+}
+```
+
+## 3. Write one test per user action
+
+Happy path and error path each get their own test, and each phase is a
+`test.step`:
+
+```ts
+test.describe("settings page", () => {
+  test("save the library paths", async ({ settingsPage, expectMutation }) => {
+    await test.step("open the settings page", async () => {
+      await settingsPage.goto();
+    });
+
+    await test.step("save the form", async () => {
+      await expectMutation(settings.save(paths), () => settingsPage.save());
+      await expect(settingsPage.statusMessage).toHaveText("Settings saved.");
+    });
+  });
 });
 ```
 
-## 3. Write one action test per user action
-
-Happy path and error path each get their own test.
-
-**Happy path:**
-
-```ts
-test("<verb> <object> and <expected outcome>", async ({ page }) => {
-  await page.goto("/<path>");
-  await page.getByLabel("<input label>").fill("<value>");
-
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/<path>", expectedBody: { ... }, expectedStatus: 200 },
-    async () => page.getByRole("button", { name: "<button>" }).click(),
-  );
-
-  await expect(page.getByRole("status")).toHaveText("<success text>");
-});
-```
-
-**Error path:** intercept the mutating route with `page.route` + `route.fulfill({ status: 500, ... })` before triggering the action. Still wrap in `expectMutation` to verify the request fired. Assert the UI surfaces the error.
+**Error path:** add a stub method to the page object that fulfils the route
+with a 500, call it before the action, and keep the `expectMutation` with
+`expectedStatus: 500` so the request is still proven to fire. Assert the UI
+surfaces the error.
 
 ## 4. Selector preference order
 
@@ -65,9 +92,17 @@ test("<verb> <object> and <expected outcome>", async ({ page }) => {
 4. `getByTestId` — only when nothing else fits. Add `data-testid` alongside `id` in the Dioxus rsx.
 5. `locator` — last resort. Never XPath.
 
-## 5. Flow-specific helpers
+## 5. Where everything else goes
 
-Helpers used only by this spec (e.g. `fillSettingsForm`) live inside the spec file. Only cross-flow helpers go under `utils/`.
+A spec holds tests and nothing else — no helper functions.
+
+| You need | Put it in |
+|---|---|
+| a locator or a UI action | the page or component object |
+| an API call to seed, clean up or read back | an `apiRequests/` class |
+| a mutation's method, URL, body and status | a `contracts/` builder |
+| a payload type or a unique test value | `data/` |
+| data that must be deleted after the test | a fixture that cleans up after `use` |
 
 ## 6. Run
 
