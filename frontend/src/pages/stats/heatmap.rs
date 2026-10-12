@@ -105,12 +105,9 @@ fn trailing_month_labels(anchor: i64) -> Vec<&'static str> {
         .collect()
 }
 
-/// The live streak's inclusive day range, as epoch-day numbers.
-///
-/// Anchored on the **last active day**, not on `anchor`: a run that ended
-/// yesterday still counts (today isn't over), so measuring back from the
-/// anchor would shade one day too far and leave the outlined run disagreeing
-/// with the figure reporting it. `None` when no run is live.
+/// The live streak's inclusive day range, as epoch-day numbers. Anchored on the
+/// **last active day**, not `anchor`: a run that ended yesterday still counts
+/// (today isn't over). `None` when no run is live.
 pub(super) fn streak_span(anchor: i64, active: &[i64], streak_days: i64) -> Option<(i64, i64)> {
     if streak_days <= 0 {
         return None;
@@ -145,12 +142,9 @@ struct HeatCell {
 }
 
 /// Epoch day of the grid's first cell: the Monday of `anchor`'s week, 51 weeks
-/// back. Unix day 0 is a Thursday, so Monday-aligning subtracts `(n + 3) % 7`
-/// — the same convention as `db::stats`' busiest-week bucketing.
-///
-/// Shared with the caller's `by_day` filter so the intensity scale is
-/// normalized over exactly the days the grid draws — a day outside it must not
-/// set the `max` every rendered cell is bucketed against.
+/// back (Unix day 0 is a Thursday, so Monday-aligning subtracts `(n + 3) % 7`).
+/// Shared with the caller's `by_day` filter, so the intensity scale is
+/// normalized over exactly the days the grid draws.
 fn grid_start(anchor: i64) -> i64 {
     let monday = anchor - (anchor + 3).rem_euclid(7);
     monday - (WEEKS - 1) * 7
@@ -181,11 +175,8 @@ fn build_cells(
 
 /// The standing heatmap card: the trailing-year grid with the live run
 /// outlined, the days-read coverage and the streak record in its header, the
-/// month ruler, and the less/more legend.
-///
-/// The run the reader is *on* is not restated here — the hero leads with it,
-/// and a second copy of the same figure two bands apart is where two surfaces
-/// start to disagree. The record stands beside the coverage instead.
+/// month ruler, and the less/more legend. The run the reader is *on* is not
+/// restated here; the hero leads with it.
 #[component]
 pub(super) fn HeatmapCard(summary: StatsSummary) -> Element {
     // Anchor to the server's clock; fall back to the newest active day so a

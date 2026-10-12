@@ -180,12 +180,8 @@ struct Run {
 }
 
 /// Monotone-cubic path through `pts`, the interpolation `d3.curveMonotoneX`
-/// uses.
-///
-/// Chosen over a plain cardinal spline because it **cannot overshoot**: a
-/// curve that bulged past its own data would draw an average higher than any
-/// month actually recorded, which is a chart lying to look smooth. Two points
-/// fall back to a straight segment, where no curve is defined.
+/// uses. It cannot overshoot, so the curve never draws past the data (a plain
+/// cardinal spline would); two points fall back to a straight segment.
 fn monotone_path(pts: &[Pt]) -> String {
     if pts.len() < 2 {
         return String::new();

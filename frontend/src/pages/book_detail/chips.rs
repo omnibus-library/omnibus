@@ -152,12 +152,9 @@ impl BdChipKind {
     }
 }
 
-/// Chip list + inline editor for the hero's cover column.
-///
-/// The "+ genres" / "+ tags" pill is client-only by construction:
-/// `use_is_admin` is `false` on SSR and the first WASM paint, so the pill
-/// appears after the post-mount `CurrentUser` load (rule 07 holds — same
-/// pattern as the hero's wishlist badge).
+/// Chip list + inline editor for the hero's cover column. The "+ genres" /
+/// "+ tags" pill is client-only: `use_is_admin` is `false` on SSR and the first
+/// WASM paint, so it appears after the post-mount `CurrentUser` load.
 #[component]
 pub(super) fn BdChipListEditor(uuid: String, kind: BdChipKind, values: Vec<String>) -> Element {
     let is_admin = use_is_admin();

@@ -380,13 +380,8 @@ fn use_reader_signals(uuid: &str, theme: Signal<Theme>) -> ReaderSignals {
 
 /// Auto read-status wiring for the reader: opening an `Unread` book marks it
 /// `Reading`; the first relocate whose range reaches the book's end marks it
-/// `Finished` (never a downgrade). Also resets `loc` on a same-component book
-/// swap (SPA nav between `/read/:uuid` routes) — otherwise a stale `at_end`
-/// from the previous book could mark the next one finished before its first
-/// relocate arrives. Split out of [`use_reader_signals`] as its own hook
-/// (call-order-stable, so it's still safe to invoke unconditionally from the
-/// component body) — mirrors `use_retarget_playback`/
-/// `use_marquee_title_refresh` in `pages/listen/mobile/effects.rs`.
+/// `Finished` (never a downgrade). Also resets `loc` on a book swap. Split out of
+/// [`use_reader_signals`] as its own hook.
 fn use_auto_read_status_for_reader(uuid: &str, loc: Signal<RelocateData>) {
     let at_end = use_memo(move || loc.read().at_end);
     crate::read_status_auto::use_auto_read_status(
@@ -397,6 +392,8 @@ fn use_auto_read_status_for_reader(uuid: &str, loc: Signal<RelocateData>) {
 
     let mut loc = loc;
     let uuid_dep = uuid.to_string();
+    // Reset on a same-component book swap (SPA nav between `/read/:uuid` routes),
+    // so a stale `at_end` can't mark the next book finished before its first relocate.
     use_effect(use_reactive!(|uuid_dep| {
         let _ = &uuid_dep;
         loc.set(RelocateData::default());
@@ -418,14 +415,11 @@ struct ReaderDisplay {
     book_accent: String,
 }
 
-/// Derive page/chapter labels and book title/author/accent from `loc` and `book_meta`.
-///
-/// `status` gates the top-bar chapter readout: while a TOC/bookmark/search
-/// jump is in flight (`ReaderStatus::Loading`), the header blanks the
-/// previous chapter's title/sub-line rather than showing it alongside the
-/// loading affordance — see [`ReaderStatus`]. The
-/// footer/ribbon strings are left alone; they settle the moment the new
-/// relocate lands, same as `status` itself.
+/// Derive page/chapter labels and book title/author/accent from `loc` and
+/// `book_meta`. While a TOC/bookmark/search jump is in flight (`status` is
+/// `ReaderStatus::Loading`) the top-bar chapter readout is blanked rather than
+/// showing the previous chapter, see [`ReaderStatus`]; the footer/ribbon strings
+/// are left alone.
 fn derive_reader_display(
     loc: Signal<RelocateData>,
     book_meta: Signal<Option<omnibus_shared::EbookMetadata>>,

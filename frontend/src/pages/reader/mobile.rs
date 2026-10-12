@@ -100,11 +100,9 @@ pub(super) fn install_reader_mobile_interop(
 
 /// Resolve the resume CFI, mount epub.js, then drain its events forever. The
 /// starting position is server-authoritative (falling back to the local
-/// in-memory cache), matching the web bootstrap. Persisted typography prefs
-/// are loaded and applied to `prefs`'s signals first, so the glue's init
-/// options (built from those signals just below) mount with the restored
-/// values rather than the target-agnostic defaults `init_reader_prefs`
-/// seeded at signal-construction time.
+/// in-memory cache), matching the web bootstrap. Persisted typography prefs are
+/// applied to `prefs`'s signals first, so the glue's init options mount with the
+/// restored values, not the defaults.
 async fn mount_and_drain(
     uuid: String,
     prefs: ReaderPrefs,
@@ -210,11 +208,9 @@ fn init_opts(uuid: &str, prefs: ReaderPrefs, cfi: Option<String>) -> serde_json:
 }
 
 /// Drain the JS→Rust reader event channel forever, updating the reader signals
-/// and persisting position on relocate. Returns when the channel closes
-/// (surface torn down / navigation). The drain loop itself is
-/// [`crate::js_interop::drain_events`], shared with the barcode scanner and
-/// mobile audio interop. `hold_first_write` is
-/// [`super::start::ReaderStart::hold_first_write`].
+/// and persisting position on relocate. Returns when the channel closes (surface
+/// torn down / navigation). The loop is [`crate::js_interop::drain_events`].
+/// `hold_first_write` is [`super::start::ReaderStart::hold_first_write`].
 async fn drain_reader_events(
     eval: dioxus::document::Eval,
     uuid: String,

@@ -127,17 +127,14 @@ fn journal_feed_notice(feed: FeedState) -> Option<Element> {
     }
 }
 
-/// Binds click- and key-to-reveal spoilers, delegated on `document` so it
-/// covers entries that render after mount and bound once via a window guard.
-/// The sanitizer emits the spoiler as an inline `role="button"` span, which
-/// gets no native activation, so Enter and Space are handled here (Space with
-/// `preventDefault`, or it scrolls the page). A toggle keeps `aria-expanded`,
-/// the "Reveal spoiler" label and the text's `aria-hidden` in step, so the
-/// text reaches assistive tech only once revealed. Web-only: the eval is a
-/// no-op on SSR / native, and gating the body (not the hook) keeps the hook
-/// count identical across targets for hydration. Called unconditionally from
+/// Binds click- and key-to-reveal spoilers, delegated on `document` so entries
+/// rendered after mount are covered; bound once via a window guard. Web-only
+/// (the eval is a no-op on SSR / native). Called unconditionally from
 /// [`BdJournalSection`].
 fn use_spoiler_reveal_binding() {
+    // The body is gated, not the hook, so the hook count matches across targets.
+    // Enter/Space are handled in the JS because the sanitizer emits the spoiler as
+    // an inline `role="button"` span, which has no native activation.
     use_effect(move || {
         #[cfg(feature = "web")]
         {

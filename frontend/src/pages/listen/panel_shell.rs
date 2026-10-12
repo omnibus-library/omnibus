@@ -42,11 +42,8 @@ pub(super) fn ListenDrawerShell(
 /// Scrim + `lp-panel` shell around an overlay panel's body (sleep timer,
 /// playback speed). `extra_class` appends the panel's own modifier class
 /// (`lp-sleep-panel` / `lp-speed-panel`); `label` names the dialog for
-/// assistive tech.
-///
-/// The panel takes focus once painted so Escape dismisses it without a prior
-/// click — it has no close button of its own, and before this the only way
-/// out was an unhinted click on empty space.
+/// assistive tech. The panel takes focus once painted, so Escape dismisses it
+/// without a prior click.
 #[component]
 pub(super) fn ListenPanelShell(
     extra_class: String,

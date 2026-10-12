@@ -38,16 +38,11 @@ fn linked_audio_at(view: &AlignmentView) -> Option<String> {
     Some(fmt_hm(audio_frac * total))
 }
 
-/// The follow switch on a linked book: whether opening one format jumps to
-/// the spot the other reached, or leaves each format where it was. Off
-/// keeps the confirmed alignment — it is not a disguised unlink, which is
-/// why it sits on the sync line rather than in the modal's destructive row.
-///
-/// Configuration-shaped (rule 08 test 1): a direct call that never queues,
-/// with the failure rendered rather than swallowed. `view_seq` counts the
-/// alignment fetches that actually landed, which is what lets the switch
-/// tell "the server has not answered yet" from "the server now says
-/// something else".
+/// The follow switch on a linked book: whether opening one format jumps to the
+/// spot the other reached, or leaves each format where it was. Off keeps the
+/// confirmed alignment (it is not an unlink). A direct call that never queues
+/// (rule 08), with the failure rendered; `view_seq` counts the alignment fetches
+/// that landed, so the switch can tell "no answer yet" from "a different answer".
 #[component]
 fn BdFollowToggle(
     uuid: String,
@@ -196,12 +191,10 @@ fn sync_line(
 }
 
 /// Fetch/refetch the alignment view on mount, on `refresh`'s signal, and on
-/// `epoch` bumps (retry / post-modal-change). Keeps any previously-fetched
-/// state on failure — only flags it when there is nothing better to show,
-/// so the row never vanishes without a way back in (the modal is the retry).
-/// `view_seq` counts the fetches that actually landed — bumped only beside
-/// a `view.set`, never on a bare attempt, so the follow switch can tell a
-/// refetch that failed from one that came back with a different answer.
+/// `epoch` bumps (retry / post-modal-change). Keeps previously-fetched state on
+/// failure, flagging only when there is nothing better to show, so the row never
+/// vanishes (the modal is the retry). `view_seq` is bumped only beside a
+/// `view.set`, so the follow switch can tell a failed refetch from a new answer.
 fn use_fetch_alignment(
     uuid: String,
     refresh: Signal<u32>,

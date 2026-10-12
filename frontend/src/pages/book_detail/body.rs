@@ -24,13 +24,10 @@ pub(super) struct BdPageCtx {
 }
 
 /// The "from the same hand" author cluster: name, id, and the books the
-/// author page credits them with — this one among them only when the library
-/// counts it, so the count here is the author page's own.
-///
-/// `author_books` is `None` until the author fetch settles — not an empty
-/// list. The distinction is the whole point: a settled list is a claim about
-/// what the library holds, and asserting it before asking made a three-book
-/// author read as a one-book author for the first second of every page load.
+/// author page credits them with (this one only when the library counts it),
+/// so the count here is the author page's own.
+/// `author_books` is `None` until the author fetch settles, not an empty list:
+/// a settled list is a claim about what the library holds.
 #[derive(Clone, PartialEq, Props)]
 pub(super) struct BdAuthorCluster {
     pub primary_author: String,

@@ -29,24 +29,19 @@ pub(super) fn file_token_url(server_url: &str, uuid: &str, token: Option<&str>) 
     }
 }
 
-/// Build the install IIFE: define the `__omnibusOn*` → `dioxus.send` shims,
-/// then load the vendored runtime **in order** (`JSZip` → epub.js → glue) and
-/// mount the book. `document::Script` gives no ordering guarantee (the web
-/// bootstrap does the same), so we chain `onload` promises here — epub.js binds
-/// `window.JSZip` at evaluation time, so it must not run before JSZip exists.
-/// Each script is skipped if its global is already present (SPA re-entry), and
-/// each `load` has a 10 s timeout so a stalled request surfaces the error
-/// overlay instead of hanging on "Loading…" forever. `opts` is any
-/// JSON-serializable value shaped like the glue's `init` bag. `native_share`
-/// installs the `__omnibusOnShare*` shims the glue prefers over the Web Share
-/// API — only set where the host actually presents a sheet (iOS), so Android
-/// keeps its in-WebView share path.
+/// Build the install IIFE: define the `__omnibusOn*` → `dioxus.send` shims, then
+/// load the vendored runtime **in order** (`JSZip` → epub.js → glue) and mount
+/// the book. A script is skipped if its global is present (SPA re-entry), and
+/// each `load` times out at 10 s so a stall surfaces the error overlay. `opts` is
+/// the glue's `init` bag; `native_share` (iOS only) installs the share shims.
 pub(super) fn install_surface_js(
     url: &str,
     opts: &serde_json::Value,
     scripts: &ReaderScripts,
     native_share: bool,
 ) -> String {
+    // Chain `onload` promises: `document::Script` gives no ordering guarantee and
+    // epub.js binds `window.JSZip` at evaluation time (as the web bootstrap does).
     let url_lit = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".into());
     let opts_lit = serde_json::to_string(opts).unwrap_or_else(|_| "{}".into());
     let jszip = serde_json::to_string(&scripts.jszip).unwrap_or_else(|_| "\"\"".into());

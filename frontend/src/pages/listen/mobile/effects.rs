@@ -10,14 +10,11 @@ use super::state::MobilePlayback;
 use super::view::PlayerView;
 use crate::Route;
 
-/// Point the app-wide player at `route_uuid`/`file_id` — only when it
-/// differs, so re-entering the currently-playing book (e.g. from the
-/// mini-player) is seamless instead of restarting the surface. Offline with
-/// no completed audio download, retargeting would only stall, so this
-/// bounces back with the app-level offline sheet instead (mirrors the
-/// reader guard); an already-loaded book skips that check. Split out of
-/// [`super::MobilePlayer`] as its own hook (call-order-stable, so it's
-/// still safe to invoke unconditionally from the component body).
+/// Point the app-wide player at `route_uuid`/`file_id`, only when it differs, so
+/// re-entering the playing book (e.g. from the mini-player) is seamless. Offline
+/// with no completed audio download it bounces back with the app-level offline
+/// sheet instead of stalling (as the reader guard does); an already-loaded book
+/// skips that check. A hook of [`super::MobilePlayer`], safe to call unconditionally.
 pub(super) fn use_retarget_playback(
     route_uuid: String,
     file_id: Option<i64>,

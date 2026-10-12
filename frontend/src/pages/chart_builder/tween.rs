@@ -79,13 +79,10 @@ pub fn blend(from: &ChartResult, to: &ChartResult, t: f64) -> ChartResult {
     out
 }
 
-/// A view of `target` that travels to each new value instead of jumping.
-///
-/// Falls back to `target` whenever no frame has been produced yet, which
-/// matters twice: the driving effect does not run during SSR, so the server
-/// renders the real data rather than nothing (rule 07); and on the client the
-/// first paint after a result arrives is the data itself rather than a blank
-/// frame waiting for the effect to catch up.
+/// A view of `target` that travels to each new value instead of jumping. Falls
+/// back to `target` until a frame has been produced, so SSR (where the driving
+/// effect doesn't run) renders the real data and the client's first paint after
+/// a result arrives is the data itself.
 pub fn use_tweened(target: Memo<Option<ChartResult>>) -> Memo<Option<ChartResult>> {
     let mut shown: Signal<Option<ChartResult>> = use_signal(|| None);
     // Supersedes an in-flight tween the way the fetch effect supersedes a

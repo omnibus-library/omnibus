@@ -58,11 +58,9 @@ fn overlap_note(dim: &CompositionDimension) -> Option<String> {
 }
 
 /// The card's footnote for `books` rows with no file on disk. They carry no
-/// format at all, so they'd otherwise vanish from the format bars and leave
-/// the counts quietly failing to reconcile against the library.
-///
-/// Worded for a row that never had files as much as one that lost them: a
-/// paper-only check-in or a wishlist entry is counted here too.
+/// format, so they'd otherwise vanish from the format bars and leave the counts
+/// not reconciling with the library. Worded for rows that never had files too
+/// (paper-only check-ins, wishlist entries).
 fn ghosted_note(ghosted: i64) -> Option<String> {
     if ghosted == 0 {
         return None;
@@ -123,12 +121,9 @@ fn build_panels(c: &LibraryComposition) -> Vec<Panel> {
     ]
 }
 
-/// The composition panels — format, language, publisher, publication decade,
-/// and genre, one card each.
-///
-/// Placeholder panels until the fetch lands (never carrying the card's
-/// testid), and nothing for a library with no live books: five empty panels
-/// describe a collection that doesn't exist.
+/// The composition panels (format, language, publisher, publication decade and
+/// genre, one card each). Placeholder panels until the fetch lands (never
+/// carrying the card's testid), and nothing for a library with no live books.
 #[component]
 pub(super) fn LibraryCompositionPanels(composition: Option<LibraryComposition>) -> Element {
     let Some(composition) = composition else {
@@ -165,12 +160,9 @@ pub(super) fn LibraryCompositionPanels(composition: Option<LibraryComposition>) 
     }
 }
 
-/// One dimension's bars, or its empty state. A dimension nothing in the
-/// library carries renders a sentence rather than an axis with no bars on it.
-///
-/// Every slice the server sent is drawn — the decade histogram in particular
-/// is documented as unfolded and untruncated, since a histogram cut to its
-/// tallest few bars is a bar chart of nothing.
+/// One dimension's bars, or its empty state: a dimension nothing in the library
+/// carries renders a sentence rather than an axis with no bars. Every slice the
+/// server sent is drawn; the decade histogram is unfolded and untruncated.
 #[component]
 fn CompositionPanel(panel: Panel) -> Element {
     let max = panel.slices.iter().map(|s| s.books).max().unwrap_or(0);
@@ -216,15 +208,10 @@ fn CompositionPanel(panel: Panel) -> Element {
     }
 }
 
-/// The bar colour for a slice at `index` — the shared donut ramp, **clamped**
-/// at its faintest step rather than cycled.
-///
-/// Clamped deliberately: the ramp distinguishes a dimension's leaders, and
-/// cycling would hand the fifth row the accent again and imply it ranks with
-/// the first. The tail settling into one quiet colour is the honest reading,
-/// and the bar's own length is what carries the value — which matters most for
-/// the decade histogram, whose rows are chronological rather than ranked and
-/// run to fifteen.
+/// The bar colour for a slice at `index`: the shared donut ramp, **clamped** at
+/// its faintest step rather than cycled, so a fifth row doesn't repeat the
+/// leader's accent and imply it ranks with the first. The bar's length carries
+/// the value.
 fn slice_color(index: usize) -> &'static str {
     const RAMP: [&str; 4] = [
         "var(--st-donut-c0)",

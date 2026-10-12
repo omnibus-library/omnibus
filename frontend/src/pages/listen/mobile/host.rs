@@ -14,12 +14,10 @@ use super::{interop, persist_position};
 use crate::data;
 use crate::pages::listen::helpers::{resolve_boot_file, resolve_boot_position};
 
-/// `book_files.id` of the first audio file, lowest ordinal wins, or `None`.
-///
-/// A book with both an ebook and an audiobook lists the ebook format first
-/// (`get_book_files` orders by format), so `book_files.first()` would hand the
-/// audiobook manifest an EPUB id and 404. Shared with the offline download
-/// engine (`offline::downloads::default_audio_file_id`) so download and
+/// `book_files.id` of the first audio file, lowest ordinal wins, or `None`. Not
+/// `book_files.first()`: `get_book_files` orders by format, so an ebook would
+/// come first and 404 the audiobook manifest. Shared with the offline download
+/// engine (`offline::downloads::default_audio_file_id`), so download and
 /// playback pick the same default file.
 fn first_audio_file_id(files: &[omnibus_shared::BookFileInfo]) -> Option<i64> {
     crate::offline::downloads::default_audio_file_id(files)
@@ -33,12 +31,10 @@ fn resolved_file_id(loaded_file: i64) -> Option<i64> {
     (loaded_file > 0).then_some(loaded_file)
 }
 
-/// Whether a manifest fetch that failed against the resolved boot file
-/// should retry once against the client-computed default: only when the
-/// picker made no explicit choice (a dead `?file_id=` must fail loudly,
-/// never silently substitute another file) and the resolved file actually
-/// differs from the default (nothing to gain retrying the same request).
-/// Covers a stale progress-row `book_file_id` a reindex has since replaced.
+/// Whether a manifest fetch that failed against the resolved boot file should
+/// retry once against the client-computed default: only when the picker made no
+/// explicit choice (a dead `?file_id=` must fail loudly) and the resolved file
+/// differs from the default. Covers a stale progress-row `book_file_id`.
 fn should_retry_manifest_with_default(
     selected_file_id: Option<i64>,
     boot_file: Option<i64>,
@@ -47,24 +43,19 @@ fn should_retry_manifest_with_default(
     selected_file_id.is_none() && boot_file != default_file
 }
 
-/// What a load run is playing: the book, plus the `book_files` id every
-/// position write should carry — the file the manifest actually resolved
-/// (an explicit picker selection, else the progress row's stored
-/// `book_file_id`, else the server's lowest-ordinal default), not the raw
+/// What a load run is playing: the book, plus the `book_files` id every position
+/// write should carry: the file the manifest actually resolved, not the raw
 /// `?file_id=` the route was entered with. Mirrors web's
-/// `PlaybackState::loaded_file_id`. `None` only when the
-/// server predates file-identity fields (`audio_file_count == 0`).
+/// `PlaybackState::loaded_file_id`. `None` only when the server predates
+/// file-identity fields (`audio_file_count == 0`).
 struct LoadTarget {
     uuid: String,
     file_id: Option<i64>,
 }
 
-/// Whether the host must (re)load for a newly-requested `(uuid, file_id)`.
-///
-/// A different book always reloads. The *same* book reloads only on an
-/// explicit, different file selection — so tapping another part in the picker
-/// switches files, while the mini-player (which links with no `file_id`)
-/// resumes the current part instead of restarting from the first file.
+/// Whether the host must (re)load for a newly-requested `(uuid, file_id)`. A
+/// different book always reloads; the *same* book only on an explicit, different
+/// file selection, so the mini-player (no `file_id`) resumes the current part.
 fn needs_reload(loaded: &Option<(String, Option<i64>)>, uuid: &str, file_id: Option<i64>) -> bool {
     match loaded {
         Some((loaded_uuid, loaded_file)) if loaded_uuid == uuid => {
@@ -207,22 +198,11 @@ async fn load_book_metadata(
     }
 }
 
-/// Resolve the boot file the same way the web bootstrap's
-/// `resolve_boot_file` does — an explicit picker selection wins, otherwise
-/// the progress row's stored `book_file_id`, so resume lands in the file
-/// the seconds were recorded in — then fetch its manifest,
-/// surfacing transport errors on `error`/`loading`. If neither names one,
-/// falls back to the first audio file (mirrors the server's own
-/// lowest-ordinal default).
-///
-/// The row's `book_file_id` is a soft reference: a reindex may have
-/// replaced the `book_files` row since the position was saved. A failed
-/// fetch against it retries once against the client-computed default
-/// rather than failing an otherwise-healthy book — never when the picker
-/// made an explicit choice, since a dead `?file_id=` should fail loudly.
-/// Returns the manifest and the progress row consulted (reused by
-/// `init_direct_and_drain` for the resume position, avoiding a second
-/// fetch). `None` on failure — the failure is already reported.
+/// Resolve the boot file as the web bootstrap's `resolve_boot_file` does (picker
+/// selection, else the progress row's `book_file_id`, else the first audio file)
+/// and fetch its manifest, surfacing errors on `error`/`loading`. A failed fetch
+/// against the row's id retries once against the default, never for a picker
+/// choice. Returns the manifest and progress row consulted, or `None` on failure.
 async fn load_manifest(
     server_url: &str,
     uuid: &str,

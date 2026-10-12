@@ -67,12 +67,10 @@ fn ranked_row(label: &'static str, ranked: &[RankedEntity]) -> Option<Row> {
     })
 }
 
-/// Every superlative the window supports, in reading order. Book-length rows
+/// Every superlative the window supports, in reading order: book-length rows
 /// first (they're what a reader quotes), then the time-shaped ones, then the
-/// two rankings.
-///
-/// The last three come off fields the payload has always carried and no web
-/// surface drew: the busiest week, and the top-ranked author and subject.
+/// two rankings. The last three (busiest week, top author and subject) come off
+/// fields outside `Superlatives`.
 fn build_rows(summary: &StatsSummary) -> Vec<Row> {
     let s = &summary.superlatives;
     let busiest_week = summary
@@ -118,17 +116,11 @@ fn fastest_read_note() -> String {
     )
 }
 
-/// "The standouts" — the window's superlatives as a card grid, or nothing at
-/// all.
-///
-/// The grid is omitted rather than emptied: a heading over a friendly "no
-/// standouts yet" line is a row of furniture on a page that already has an
-/// empty state one level up.
-///
-/// The gate is this assembled list, **not** [`omnibus_shared::Superlatives::is_empty`]
-/// — the busiest week and the two rankings come off fields outside that
-/// struct, so a window with only a busiest week is `is_empty()` and still has
-/// something to show.
+/// "The standouts": the window's superlatives as a card grid, or nothing at all
+/// (the page already has an empty state one level up). The gate is the assembled
+/// row list, **not** [`omnibus_shared::Superlatives::is_empty`]: the busiest
+/// week and the two rankings come off fields outside that struct, so a window
+/// with only a busiest week is `is_empty()` and still has something to show.
 #[component]
 pub(super) fn StandoutsGrid(summary: StatsSummary) -> Element {
     let rows = build_rows(&summary);

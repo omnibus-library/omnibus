@@ -139,18 +139,11 @@ pub(crate) fn format_progress_labels(loc: &RelocateData) -> (String, String) {
     (page, chapter)
 }
 
-/// Resolve the displayed chapter index/total from the flat TOC's own array
-/// order rather than the glue's `chapter`/`total_chapters` pair verbatim,
-/// carrying the previous chapter forward instead of regressing to 0 when
-/// the incoming title doesn't match any TOC entry.
-///
-/// The returned chapter is **1-based against a 1-based total** — the reader
-/// opens on `Ch 1 of N` and ends on `Ch N of N`. The glue reports 0 for a
-/// spine item with no TOC entry (front matter) and the first relocate has no
-/// previous chapter to carry forward, so both would otherwise render
-/// `Ch 0 of N` — a counter that can never reach its own total.
-/// A total of 0 means "no TOC at all" and stays `(0, 0)` so the readout
-/// renders empty rather than inventing a chapter.
+/// Resolve the displayed chapter index/total from the flat TOC's own array order,
+/// not the glue's pair verbatim, carrying the previous chapter forward when the
+/// incoming title matches no TOC entry. The chapter is **1-based against a
+/// 1-based total** (never `Ch 0 of N`); a total of 0 means no TOC and stays
+/// `(0, 0)`, so the readout renders empty.
 #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]
 pub(crate) fn resolve_chapter_position(
     toc: &[TocEntry],

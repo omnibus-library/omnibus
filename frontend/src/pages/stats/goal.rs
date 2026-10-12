@@ -24,12 +24,9 @@ fn plural(unit: &str, n: i64) -> String {
     }
 }
 
-/// Progress caption — the honest ratio, not the clamped percentage, so a
-/// reader past their target sees that they are.
-///
-/// Shared by the annual ring and both daily rows: they differ only in their
-/// unit, and a second copy of this would be a second place for the
-/// past-the-target rule to be got wrong.
+/// Progress caption: the honest ratio, not the clamped percentage, so a reader
+/// past their target sees that they are. Shared by the annual ring and both
+/// daily rows, so the past-the-target rule lives in one place.
 fn progress_caption(current: i64, target: i64, unit: &str) -> String {
     format!("{current} of {target} {}", plural(unit, target))
 }
@@ -51,13 +48,10 @@ fn aria_value_now(current: i64, target: i64) -> i64 {
     current.clamp(0, target)
 }
 
-/// How far through its year `day` is, as a fraction 0.0..=1.0 — the pace an
-/// annual target is read against.
-///
-/// Taken off the server's own `as_of_day` rather than a client clock, so the
-/// pace note can't disagree with the figure beside it across a timezone gap,
-/// and so no date reaches the markup that SSR and the first WASM paint could
-/// derive differently (rule 07). `None` for a day the server never sent.
+/// How far through its year `day` is, as a fraction 0.0..=1.0, the pace an
+/// annual target is read against. Taken off the server's `as_of_day`, not a
+/// client clock, so the pace note agrees with the figure beside it and SSR and
+/// hydration match. `None` for a day the server never sent.
 pub(super) fn year_fraction(as_of_day: &str) -> Option<f64> {
     let n = day_number(as_of_day)?;
     let (y, _, _) = civil_from_days(n);
@@ -109,17 +103,10 @@ fn SetGoalsLink(label: &'static str, testid: &'static str) -> Element {
 }
 
 /// The annual books goal: a conic ring carrying the ratio, with the figure and
-/// pace beside it.
-///
-/// With no target it drops the ring and reports `finished` — the year's real
-/// count — under a "so far" qualifier, the same trade the daily rows make: the
-/// figure is worth showing before a reader commits to a target, but the ring
-/// is a claim only a target can support.
-///
-/// `year` and `as_of_day` are both the server's, taken from the summary rather
-/// than a client clock (rule 07). `editable` gates the "Set a goal" link —
-/// `false` on another reader's page, where the figures still follow the
-/// selection but there is nowhere on this page to change them.
+/// pace beside it. With no target it drops the ring and reports `finished` (the
+/// year's real count) under a "so far" qualifier, like the daily rows; a ring is
+/// a claim only a target can support. `year` and `as_of_day` are the server's.
+/// `editable` gates the "Set a goal" link: `false` on another reader's page.
 #[component]
 pub(super) fn AnnualGoalRing(
     goal: Option<ReadingGoal>,
@@ -199,13 +186,9 @@ pub(super) fn AnnualGoalRing(
 }
 
 /// The standing daily goals card: the pages and minutes rows, and the one link
-/// to where they are set.
-///
-/// No unplaceable-sessions disclosure: `DailyGoals::unzoned_seconds` is now
-/// always zero, since every session can be placed on the reader's own day (rule
-/// 10). The wire field stays for older clients; there is nothing left to render.
-///
-/// `editable` gates the "Set goals" link, same as [`AnnualGoalRing`]'s.
+/// to where they are set. `editable` gates the "Set goals" link, same as
+/// [`AnnualGoalRing`]'s. `DailyGoals::unzoned_seconds` is always zero (rule 10),
+/// so there is no unplaceable-sessions disclosure.
 #[component]
 pub(super) fn DailyGoalsCard(
     daily: DailyGoals,
@@ -251,13 +234,9 @@ pub(super) fn DailyGoalsCard(
 }
 
 /// The label for one row: the noun, plus whatever timeframe the row itself has
-/// to supply.
-///
-/// A row with a target says "a day" — that is what the target means. Without
-/// one the noun stands alone when the card's own header already says "Today",
-/// and carries "today" itself when the header has moved on to "Every day" for
-/// the sake of a sibling row that *is* set. The word appears exactly once
-/// either way.
+/// to supply. A row with a target says "a day". Without one, the noun stands
+/// alone when the card's header already says "Today", else it carries "today"
+/// itself, so the word appears exactly once either way.
 fn row_label(noun: &str, has_target: bool, alone: bool) -> String {
     match (has_target, alone) {
         (true, _) => format!("{noun} a day"),
@@ -266,14 +245,10 @@ fn row_label(noun: &str, has_target: bool, alone: bool) -> String {
     }
 }
 
-/// One daily goal's row.
-///
-/// With a target it draws the ratio and the bar. Without one it still draws
-/// today's figure — a bare count, since [`row_label`] has already named what is
-/// being counted — so a reader can see what they have done before deciding what
-/// to aim for. That mirrors the iOS card, where an untargeted kind keeps its
-/// slot and drops only the ring: **a bar, like a ring, is a claim about a
-/// target.**
+/// One daily goal's row. With a target it draws the ratio and the bar. Without
+/// one it still draws today's figure, a bare count (since [`row_label`] names
+/// what is counted), but no bar: **a bar, like a ring, is a claim about a
+/// target.** Mirrors the iOS card.
 #[component]
 fn DailyGoalRow(
     kind: String,

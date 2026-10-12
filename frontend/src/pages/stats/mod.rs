@@ -94,13 +94,9 @@ fn month_name(m: i64) -> &'static str {
 }
 
 /// What the switcher's current window actually covers, spelled out under the
-/// band's label — "August 2026 · month to date".
-///
-/// Anchored to the server's `as_of_day` rather than a client clock, for the
-/// same reason the goal band's year is: a client-derived date in markup is a
-/// hydration hazard (rule 07), and the two sides would disagree across a
-/// timezone gap. Falls back to the range's own label when the summary carries
-/// no day — a server too old to send one.
+/// band's label: "August 2026 · month to date". Anchored to the server's
+/// `as_of_day`, not a client clock, so SSR and hydration agree (rule 07). Falls
+/// back to the range's own label when the summary carries no day.
 fn window_label(range: StatsRange, as_of_day: &str) -> String {
     let Some((y, m, _)) = heatmap::day_number(as_of_day).map(heatmap::civil_from_days) else {
         return range.label().to_string();
@@ -564,15 +560,11 @@ fn use_period_fetch_effect(
     }));
 }
 
-/// One-shot fetch of the all-time summary, re-run when the viewed reader
-/// does — deliberately not keyed on the switcher, since it feeds the standing
-/// hero and the standing band, neither of which a range change may move.
-/// Carries the same `epoch` ticket as [`use_period_fetch_effect`], so a
-/// slower fetch for the reader just switched away from can't overwrite the
-/// new one's summary, error and loading state.
-///
-/// The goals ride this payload and are rendered straight off it — nothing on
-/// this page writes them, so there is no saved answer to fold back in.
+/// One-shot fetch of the all-time summary, re-run when the viewed reader does,
+/// and deliberately not keyed on the switcher: it feeds the standing hero and
+/// band, which a range change may not move. Carries the same `epoch` ticket as
+/// [`use_period_fetch_effect`], so a slower fetch for the reader just switched
+/// away from can't overwrite the new one's summary, error and loading state.
 fn use_all_time_fetch_effect(
     server_url: String,
     user: Option<i64>,
@@ -660,13 +652,10 @@ fn use_library_composition_fetch_effect(
 }
 
 /// One-shot fetch of the books the reader currently has open, re-run when the
-/// viewed reader does. Its own read rather than a `StatsSummary` field: what
-/// is in progress is a fact about now, and hanging it off the windowed
-/// payload would make a period switch appear to change which books are open.
-/// Silent on failure, like the two library fetches — the card renders nothing
-/// rather than blanking the page. Carries the same `epoch` ticket as
-/// [`use_period_fetch_effect`], so a slower fetch for the previous reader
-/// can't land after a switch and overwrite the new one's card.
+/// viewed reader does. Its own read, not a `StatsSummary` field: what is open is
+/// a fact about now, not the window. Silent on failure, like the two library
+/// fetches: the card renders nothing rather than blanking the page. Carries the
+/// same `epoch` ticket as [`use_period_fetch_effect`].
 fn use_in_progress_fetch_effect(
     server_url: String,
     user: Option<i64>,
