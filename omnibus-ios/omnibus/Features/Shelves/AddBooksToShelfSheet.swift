@@ -12,8 +12,6 @@ import SwiftUI
 struct AddBooksToShelfSheet: View {
     let shelfId: Int64
     let shelfName: String
-    /// Books already on the shelf, shown as such rather than offered again.
-    let existing: Set<String>
     var onAdded: () -> Void
 
     @Environment(\.palette) private var palette
@@ -25,11 +23,15 @@ struct AddBooksToShelfSheet: View {
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var searchTask: Task<Void, Never>?
+    /// Books already on the shelf, shown as such rather than offered again.
+    /// Read unfiltered, so one the library filter hides still counts; `nil`
+    /// until that read answers.
+    @State private var existing: Set<String>? = nil
 
     var body: some View {
         NavigationStack {
             Group {
-                if isLoading && books.isEmpty {
+                if existing == nil || (isLoading && books.isEmpty) {
                     LoadingView()
                 } else if books.isEmpty {
                     EmptyStateView(
@@ -59,6 +61,7 @@ struct AddBooksToShelfSheet: View {
         }
         .presentationDetents([.large])
         .task { await loadLibrary() }
+        .task { await loadMembers() }
     }
 
     private var list: some View {
@@ -73,7 +76,7 @@ struct AddBooksToShelfSheet: View {
     }
 
     private func row(_ book: Book) -> some View {
-        let alreadyOn = existing.contains(book.uuid)
+        let alreadyOn = existing?.contains(book.uuid) == true
         let isPicked = selected.contains(book.uuid)
 
         return Button {
@@ -167,6 +170,15 @@ struct AddBooksToShelfSheet: View {
         ).values() {
             books = page.books
         }
+    }
+
+    /// A read that fails still settles: the add is idempotent on the server,
+    /// so an unmarked row offers nothing worse than a no-op.
+    private func loadMembers() async {
+        for await page in UserDataService.shelfBooks(id: shelfId).values() {
+            existing = Set(page.books.map(\.uuid))
+        }
+        if existing == nil { existing = [] }
     }
 
     private func search(_ text: String) async {

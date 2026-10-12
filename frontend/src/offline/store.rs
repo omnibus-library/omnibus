@@ -106,6 +106,12 @@ pub(crate) fn init_global_for_tests() {
     });
 }
 
+/// A `LIKE ... ESCAPE '\'` pattern matching keys that start with `prefix`
+/// literally (`%` and `_` are wildcards otherwise).
+fn like_prefix(prefix: &str) -> String {
+    format!("{}%", prefix.replace('%', "\\%").replace('_', "\\_"))
+}
+
 /// Unix seconds now. Saturates at 0 rather than panicking on a pre-epoch
 /// clock.
 pub(crate) fn now_secs() -> i64 {
@@ -186,7 +192,7 @@ impl Store {
     /// Blocking snapshot of every `(key, payload)` under a key prefix — the
     /// cold-start hydration read for the in-memory progress maps.
     pub(crate) fn kv_prefix_blocking(&self, prefix: &str) -> Vec<(String, String)> {
-        let pattern = format!("{}%", prefix.replace('%', "\\%").replace('_', "\\_"));
+        let pattern = like_prefix(prefix);
         self.run_blocking(move |conn| {
             let mut stmt = match conn
                 .prepare("SELECT key, payload FROM cache WHERE key LIKE ?1 ESCAPE '\\'")
@@ -249,7 +255,7 @@ impl Store {
     /// [`Store::kv_prefix_blocking`]) — powers cache scans like "which
     /// cached highlight list contains id N".
     pub async fn kv_prefix(&self, prefix: &str) -> Vec<(String, String)> {
-        let pattern = format!("{}%", prefix.replace('%', "\\%").replace('_', "\\_"));
+        let pattern = like_prefix(prefix);
         self.run(move |conn| {
             let mut stmt = match conn
                 .prepare("SELECT key, payload FROM cache WHERE key LIKE ?1 ESCAPE '\\'")
@@ -269,11 +275,23 @@ impl Store {
 
     /// Delete every cache row whose key starts with `prefix`.
     pub fn kv_delete_prefix(&self, prefix: &str) {
-        let pattern = format!("{}%", prefix.replace('%', "\\%").replace('_', "\\_"));
+        let pattern = like_prefix(prefix);
         self.run_detached(move |conn| {
             log_err(conn.execute(
                 "DELETE FROM cache WHERE key LIKE ?1 ESCAPE '\\'",
                 params![pattern],
+            ));
+        });
+    }
+
+    /// Delete every cache row whose key starts with `prefix` and contains
+    /// `needle` — the filter runs in SQL so no payload is read back.
+    pub fn kv_delete_prefix_containing(&self, prefix: &str, needle: &str) {
+        let (pattern, needle) = (like_prefix(prefix), needle.to_string());
+        self.run_detached(move |conn| {
+            log_err(conn.execute(
+                "DELETE FROM cache WHERE key LIKE ?1 ESCAPE '\\' AND instr(key, ?2) > 0",
+                params![pattern, needle],
             ));
         });
     }

@@ -197,3 +197,7 @@ POSTs `/api/rpc/progress` with `epub_cfi: "pdf-page:N"`; opening the reader
 POSTs nothing for position (the ready report is treated as already saved) but
 does write read status `reading` on an unread book — pre-set `flatland` to
 `reading` in `beforeAll` (the comic spec's pattern) or assert that write.
+
+**The filter bar and what reads its saved filter** (chips, the Add filter
+dialog, the shelf lens and `/shelves/:id` states) have their own file:
+[04c-playwright-filters.md](04c-playwright-filters.md).

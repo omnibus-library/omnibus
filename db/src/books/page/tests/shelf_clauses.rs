@@ -13,7 +13,7 @@ use sqlx::SqlitePool;
 
 use super::super::*;
 use super::stacked::{series_book, titles_of};
-use super::{clause, insert_book, insert_lib, sorted_titles, uuid_of};
+use super::{insert_book, insert_lib, sorted_titles, uuid_of};
 use crate::books::Projection;
 use crate::physical::add_wishlist_entry;
 use crate::pool::init_db;
@@ -78,15 +78,12 @@ async fn smart_shelf(pool: &SqlitePool, owner: i64) -> i64 {
 fn shelf_clause(mode: FilterMode, shelf_ids: &[i64]) -> FilterClause {
     let values: Vec<String> = shelf_ids.iter().map(i64::to_string).collect();
     let values: Vec<&str> = values.iter().map(String::as_str).collect();
-    clause(Shelf, mode, &values)
+    FilterClause::new(Shelf, mode, &values)
 }
 
 /// Titles on the first page of `/lib` under `clauses`, as `viewer` sees them.
 async fn titles_for(pool: &SqlitePool, viewer: Viewer, clauses: Vec<FilterClause>) -> Vec<String> {
-    let filters = ViewFilters {
-        clauses,
-        ..Default::default()
-    };
+    let filters = ViewFilters { clauses };
     let page = list_books_page(
         pool,
         &["/lib"],
@@ -239,7 +236,7 @@ async fn list_books_page_ignores_a_non_numeric_shelf_value() {
     let found = titles_for(
         &pool,
         reader(owner),
-        vec![clause(Shelf, Include, &["not-a-shelf-id"])],
+        vec![FilterClause::new(Shelf, Include, &["not-a-shelf-id"])],
     )
     .await;
 
@@ -258,7 +255,6 @@ async fn list_books_page_stacked_stacks_only_the_members_on_the_listed_shelf() {
     let private = manual_shelf(&pool, owner, Visibility::Private, &[&one, &two]).await;
     let filters = ViewFilters {
         clauses: vec![shelf_clause(Include, &[private])],
-        ..Default::default()
     };
 
     let page = list_books_page_stacked(
@@ -289,7 +285,6 @@ async fn count_books_page_counts_a_private_shelf_only_for_its_owner() {
     let private = manual_shelf(&pool, owner, Visibility::Private, &[&uuids[0], &uuids[1]]).await;
     let filters = ViewFilters {
         clauses: vec![shelf_clause(Include, &[private])],
-        ..Default::default()
     };
 
     let owners = count_books_page(&pool, &["/lib"], &filters, reader(owner), &[])

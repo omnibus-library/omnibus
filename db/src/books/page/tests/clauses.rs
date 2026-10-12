@@ -13,7 +13,7 @@ use omnibus_shared::{
 use sqlx::SqlitePool;
 
 use super::super::*;
-use super::{clause, insert_book_with_formats, insert_physical_copy, sorted_titles, titles};
+use super::{insert_book_with_formats, insert_physical_copy, sorted_titles, titles};
 use crate::pool::init_db;
 use crate::sync::replace_books;
 use crate::test_support::{indexed, seed_user, set_overrides_by_title, CoversTempDir};
@@ -105,10 +105,7 @@ async fn first_page(pool: &SqlitePool, filters: &ViewFilters) -> BookPage {
 
 /// Titles of the first page under `clauses`, sorted for set comparison.
 async fn titles_matching(pool: &SqlitePool, clauses: Vec<FilterClause>) -> Vec<String> {
-    let filters = ViewFilters {
-        clauses,
-        ..Default::default()
-    };
+    let filters = ViewFilters { clauses };
     sorted_titles(&first_page(pool, &filters).await)
 }
 
@@ -143,7 +140,6 @@ struct PageMatch {
 async fn page_match(pool: &SqlitePool, clause: FilterClause) -> PageMatch {
     let filters = ViewFilters {
         clauses: vec![clause],
-        ..Default::default()
     };
     let page = first_page(pool, &filters).await;
     let count = count_books_page(pool, &["/lib"], &filters, Viewer::default(), &[])
@@ -185,7 +181,11 @@ fn rule(field: RuleField, op: RuleOp, value: &str) -> ShelfRule {
 async fn list_books_page_include_tag_keeps_books_with_any_listed_value() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let found = titles_matching(&pool, vec![clause(Tag, Include, &["classic", "essay"])]).await;
+    let found = titles_matching(
+        &pool,
+        vec![FilterClause::new(Tag, Include, &["classic", "essay"])],
+    )
+    .await;
 
     assert_eq!(found, ["Other Story", "Saga One"]);
 }
@@ -194,7 +194,11 @@ async fn list_books_page_include_tag_keeps_books_with_any_listed_value() {
 async fn list_books_page_exclude_tag_keeps_only_books_without_a_listed_value() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let found = titles_matching(&pool, vec![clause(Tag, Exclude, &["classic", "essay"])]).await;
+    let found = titles_matching(
+        &pool,
+        vec![FilterClause::new(Tag, Exclude, &["classic", "essay"])],
+    )
+    .await;
 
     assert_eq!(
         found,
@@ -206,7 +210,11 @@ async fn list_books_page_exclude_tag_keeps_only_books_without_a_listed_value() {
 async fn list_books_page_include_genre_keeps_books_with_any_listed_value() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let found = titles_matching(&pool, vec![clause(Genre, Include, &["Fantasy", "Mystery"])]).await;
+    let found = titles_matching(
+        &pool,
+        vec![FilterClause::new(Genre, Include, &["Fantasy", "Mystery"])],
+    )
+    .await;
 
     assert_eq!(found, ["Other Story", "Saga One"]);
 }
@@ -215,7 +223,7 @@ async fn list_books_page_include_genre_keeps_books_with_any_listed_value() {
 async fn list_books_page_exclude_genre_keeps_only_books_without_a_listed_value() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let found = titles_matching(&pool, vec![clause(Genre, Exclude, &["Fantasy"])]).await;
+    let found = titles_matching(&pool, vec![FilterClause::new(Genre, Exclude, &["Fantasy"])]).await;
 
     assert_eq!(
         found,
@@ -236,7 +244,11 @@ async fn list_books_page_include_author_keeps_books_with_any_listed_value() {
 
     let found = titles_matching(
         &pool,
-        vec![clause(Author, Include, &["Grace Hopper", "Niklaus Wirth"])],
+        vec![FilterClause::new(
+            Author,
+            Include,
+            &["Grace Hopper", "Niklaus Wirth"],
+        )],
     )
     .await;
 
@@ -249,7 +261,11 @@ async fn list_books_page_exclude_author_keeps_only_books_without_a_listed_value(
 
     let found = titles_matching(
         &pool,
-        vec![clause(Author, Exclude, &["Ada Lovelace", "Grace Hopper"])],
+        vec![FilterClause::new(
+            Author,
+            Exclude,
+            &["Ada Lovelace", "Grace Hopper"],
+        )],
     )
     .await;
 
@@ -260,7 +276,11 @@ async fn list_books_page_exclude_author_keeps_only_books_without_a_listed_value(
 async fn list_books_page_include_series_keeps_books_with_any_listed_value() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let found = titles_matching(&pool, vec![clause(Series, Include, &["Pioneers", "Saga"])]).await;
+    let found = titles_matching(
+        &pool,
+        vec![FilterClause::new(Series, Include, &["Pioneers", "Saga"])],
+    )
+    .await;
 
     assert_eq!(found, ["Other Story", "Saga One", "Saga Three", "Saga Two"]);
 }
@@ -269,7 +289,7 @@ async fn list_books_page_include_series_keeps_books_with_any_listed_value() {
 async fn list_books_page_exclude_series_keeps_only_books_without_a_listed_value() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let found = titles_matching(&pool, vec![clause(Series, Exclude, &["Saga"])]).await;
+    let found = titles_matching(&pool, vec![FilterClause::new(Series, Exclude, &["Saga"])]).await;
 
     assert_eq!(found, ["Audio Tale", "Bare", "Other Story", "Shelf Copy"]);
 }
@@ -278,7 +298,11 @@ async fn list_books_page_exclude_series_keeps_only_books_without_a_listed_value(
 async fn list_books_page_include_format_keeps_books_with_any_listed_value() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let found = titles_matching(&pool, vec![clause(Format, Include, &["m4b", "pdf"])]).await;
+    let found = titles_matching(
+        &pool,
+        vec![FilterClause::new(Format, Include, &["m4b", "pdf"])],
+    )
+    .await;
 
     assert_eq!(found, ["Audio Tale", "Bare"]);
 }
@@ -287,7 +311,11 @@ async fn list_books_page_include_format_keeps_books_with_any_listed_value() {
 async fn list_books_page_exclude_format_keeps_only_books_without_a_listed_value() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let found = titles_matching(&pool, vec![clause(Format, Exclude, &["epub", "m4b"])]).await;
+    let found = titles_matching(
+        &pool,
+        vec![FilterClause::new(Format, Exclude, &["epub", "m4b"])],
+    )
+    .await;
 
     assert_eq!(found, ["Bare", "Shelf Copy"]);
 }
@@ -299,8 +327,8 @@ async fn list_books_page_intersects_clauses_across_fields() {
     let found = titles_matching(
         &pool,
         vec![
-            clause(Author, Include, &["Ada Lovelace"]),
-            clause(Tag, Exclude, &["classic"]),
+            FilterClause::new(Author, Include, &["Ada Lovelace"]),
+            FilterClause::new(Tag, Exclude, &["classic"]),
         ],
     )
     .await;
@@ -312,8 +340,9 @@ async fn list_books_page_intersects_clauses_across_fields() {
 async fn list_books_page_matches_clause_values_case_insensitively() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let by_format = titles_matching(&pool, vec![clause(Format, Include, &["epub"])]).await;
-    let by_tag = titles_matching(&pool, vec![clause(Tag, Include, &["SCI-FI"])]).await;
+    let by_format =
+        titles_matching(&pool, vec![FilterClause::new(Format, Include, &["epub"])]).await;
+    let by_tag = titles_matching(&pool, vec![FilterClause::new(Tag, Include, &["SCI-FI"])]).await;
 
     assert_eq!(
         by_format,
@@ -329,7 +358,7 @@ async fn list_books_page_include_tag_matches_the_smart_rule_on_that_tag() {
     set_overrides_by_title(&pool, "Audio Tale", &subjects_override(&["sci-fi"]), editor).await;
     set_overrides_by_title(&pool, "Saga Two", &subjects_override(&["classic"]), editor).await;
 
-    let from_page = page_match(&pool, clause(Tag, Include, &["sci-fi"])).await;
+    let from_page = page_match(&pool, FilterClause::new(Tag, Include, &["sci-fi"])).await;
     let from_rule = rule_uuids_and_matched(&pool, rule(RuleField::Tag, RuleOp::Is, "sci-fi")).await;
 
     assert_eq!(from_page.titles, ["Audio Tale", "Saga One", "Saga Three"]);
@@ -340,7 +369,7 @@ async fn list_books_page_include_tag_matches_the_smart_rule_on_that_tag() {
 async fn list_books_page_include_genre_matches_the_smart_rule_on_that_genre() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let from_page = page_match(&pool, clause(Genre, Include, &["Fantasy"])).await;
+    let from_page = page_match(&pool, FilterClause::new(Genre, Include, &["Fantasy"])).await;
     let from_rule =
         rule_uuids_and_matched(&pool, rule(RuleField::Genre, RuleOp::Is, "Fantasy")).await;
 
@@ -352,7 +381,7 @@ async fn list_books_page_include_genre_matches_the_smart_rule_on_that_genre() {
 async fn list_books_page_exclude_genre_matches_the_is_not_smart_rule() {
     let (pool, _covers) = seed_filter_library().await;
 
-    let from_page = page_match(&pool, clause(Genre, Exclude, &["Fantasy"])).await;
+    let from_page = page_match(&pool, FilterClause::new(Genre, Exclude, &["Fantasy"])).await;
     let from_rule =
         rule_uuids_and_matched(&pool, rule(RuleField::Genre, RuleOp::IsNot, "Fantasy")).await;
 
@@ -364,8 +393,7 @@ async fn list_books_page_exclude_genre_matches_the_is_not_smart_rule() {
 async fn list_books_page_keeps_the_filter_past_the_first_page() {
     let (pool, _covers) = seed_filter_library().await;
     let filters = ViewFilters {
-        clauses: vec![clause(Tag, Exclude, &["essay"])],
-        ..Default::default()
+        clauses: vec![FilterClause::new(Tag, Exclude, &["essay"])],
     };
 
     let mut walked = Vec::new();
@@ -409,8 +437,7 @@ async fn list_books_page_keeps_the_filter_past_the_first_page() {
 async fn count_books_page_counts_only_books_matching_the_clauses() {
     let (pool, _covers) = seed_filter_library().await;
     let filters = ViewFilters {
-        clauses: vec![clause(Tag, Exclude, &["sci-fi"])],
-        ..Default::default()
+        clauses: vec![FilterClause::new(Tag, Exclude, &["sci-fi"])],
     };
 
     let count = count_books_page(&pool, &["/lib"], &filters, Viewer::default(), &[])
@@ -424,8 +451,7 @@ async fn count_books_page_counts_only_books_matching_the_clauses() {
 async fn list_books_page_stacked_stacks_only_members_matching_the_filter() {
     let (pool, _covers) = seed_filter_library().await;
     let filters = ViewFilters {
-        clauses: vec![clause(Tag, Exclude, &["classic"])],
-        ..Default::default()
+        clauses: vec![FilterClause::new(Tag, Exclude, &["classic"])],
     };
 
     let page = list_books_page_stacked(

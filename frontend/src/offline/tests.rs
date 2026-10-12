@@ -71,3 +71,27 @@ async fn note_user_preserves_fresh_me_row_across_account_switch() {
         Some(new_user.username.as_str())
     );
 }
+
+#[tokio::test]
+async fn note_user_wipes_a_cached_first_page_filtered_by_a_shelf_across_account_switch() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    let st = store::store().expect("test store");
+
+    let old_user = user(3, "note-user-first-page-old");
+    let new_user = user(4, "note-user-first-page-new");
+    let first_page_key = cache::keys::ebooks_first(
+        "title",
+        "asc",
+        r#"[{"field":"shelf","mode":"include","values":["7"]}]"#,
+        "",
+    );
+    st.meta_put("last_user", old_user.username.clone());
+    cache::put_json(&first_page_key, &12.0_f64);
+
+    cache::put_json(&cache::keys::me(), &new_user);
+    note_user(&new_user).await;
+
+    let cached: Option<f64> = cache::get_json(&first_page_key).await;
+    assert_eq!(cached, None);
+}
