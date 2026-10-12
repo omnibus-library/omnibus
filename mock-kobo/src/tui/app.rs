@@ -35,6 +35,8 @@ pub struct App {
     pub status: Option<Status>,
     /// A job is running; another is refused until `finish`.
     pub busy: bool,
+    /// Quit was asked for while a job ran; it happens when the job finishes.
+    pub(super) quit_deferred: bool,
 }
 
 /// Whether keys are commands or text for a field.
@@ -69,6 +71,9 @@ pub enum Status {
 /// Shown when a job key arrives while another job runs.
 pub const BUSY: &str = "still working on the last action; try again when it finishes";
 
+/// Shown when the first quit key arrives while a job runs.
+const QUIT_DEFERRED: &str = "finishing the last action, then quitting; press q again to quit now";
+
 impl App {
     /// A fresh screen; `notice`, if any, is the first status.
     pub fn new(notice: Option<String>) -> Self {
@@ -84,7 +89,7 @@ impl App {
             return None;
         }
         if is_ctrl_c(key) {
-            return Some(Action::Quit);
+            return self.quit();
         }
         match self.mode {
             Mode::Normal => self.on_normal_key(key, current_url),
@@ -98,10 +103,15 @@ impl App {
         self.status = Some(status);
     }
 
+    /// Whether a quit asked for while a job ran can happen now that it has finished.
+    pub fn quit_requested(&self) -> bool {
+        self.quit_deferred && !self.busy
+    }
+
     fn on_normal_key(&mut self, key: KeyEvent, current_url: &str) -> Option<Action> {
         // Caps Lock or Shift must not silence a command key.
         let job = match typed_char(key)?.to_ascii_lowercase() {
-            'q' => return Some(Action::Quit),
+            'q' => return self.quit(),
             'u' => {
                 self.open_edit(Field::Url, current_url);
                 return None;
@@ -183,6 +193,16 @@ impl App {
         self.busy = true;
         self.status = None;
         Some(Action::Run(job))
+    }
+
+    /// Quit now; while a job runs, wait for it unless this is the second ask.
+    fn quit(&mut self) -> Option<Action> {
+        if self.busy && !self.quit_deferred {
+            self.quit_deferred = true;
+            self.status = Some(Status::Info(QUIT_DEFERRED.to_owned()));
+            return None;
+        }
+        Some(Action::Quit)
     }
 
     fn refuse_busy(&mut self) -> Option<Action> {

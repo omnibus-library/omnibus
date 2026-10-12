@@ -42,6 +42,7 @@ pub struct Tui {
 type Finished = Result<Status, JoinError>;
 
 /// Take over the terminal until `q` or Ctrl-C, restoring it on exit and on panic.
+/// While a job runs the first quit waits for it and a second quits at once.
 /// Jobs run on `runtime`, so drawing never waits on the network.
 pub fn run(tui: Tui, runtime: Handle) -> io::Result<()> {
     let mut terminal = match ratatui::try_init() {
@@ -56,7 +57,8 @@ pub fn run(tui: Tui, runtime: Handle) -> io::Result<()> {
     ended
 }
 
-/// Each tick: take in finished jobs, draw the device, then wait up to `TICK` for a key.
+/// Each tick: take in finished jobs, quit if one was awaited, draw the device,
+/// then wait up to `TICK` for a key.
 fn event_loop(terminal: &mut DefaultTerminal, tui: Tui, runtime: &Handle) -> io::Result<()> {
     let Tui {
         control,
@@ -70,6 +72,9 @@ fn event_loop(terminal: &mut DefaultTerminal, tui: Tui, runtime: &Handle) -> io:
     let (finished_tx, finished_rx) = mpsc::channel();
     loop {
         take_finished_jobs(&mut app, &finished_rx)?;
+        if app.quit_requested() {
+            return Ok(());
+        }
         let view = control.view();
         let requests = control.requests();
         let screen = Screen {

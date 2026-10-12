@@ -260,8 +260,10 @@ While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL
 that is not local (`localhost`, `127.0.0.0/8`, `::1`) is never logged in to, so
 give it a token with <kbd>t</kbd>. Until then a sync fails without sending the
-old server's token. Edits are turned away while a sync runs. Quitting during a
-sync waits for it, so the pages Omnibus recorded are saved; a second
+old server's token. Edits are turned away while a sync runs. Quitting while an
+action runs (a sync, reset, edit or wire) waits for it, so nothing is left half
+done; press <kbd>q</kbd> or <kbd>Ctrl-C</kbd> again to quit at once. A running
+sync is always waited for, so the pages Omnibus recorded are saved; one more
 <kbd>Ctrl-C</kbd> kills the process.
 
 > [!NOTE]

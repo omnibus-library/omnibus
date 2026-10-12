@@ -5,6 +5,8 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::*;
 
 const URL: &str = "http://127.0.0.1:3000";
+const QUIT_DEFERRED_MESSAGE: &str =
+    "finishing the last action, then quitting; press q again to quit now";
 
 fn key(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
@@ -16,6 +18,10 @@ fn code(code: KeyCode) -> KeyEvent {
 
 fn with_modifiers(c: char, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), modifiers)
+}
+
+fn ctrl_c() -> KeyEvent {
+    with_modifiers('c', KeyModifiers::CONTROL)
 }
 
 /// Press each character of `text` in turn.
@@ -340,15 +346,67 @@ fn on_key_shows_validation_error_when_invalid_entry_saved_while_busy() {
 }
 
 #[test]
-fn on_key_quits_while_busy() {
+fn on_key_defers_quit_while_busy() {
     let mut app = App::new(None);
     app.on_key(key('s'), URL);
 
-    assert_eq!(app.on_key(key('q'), URL), Some(Action::Quit));
+    assert_eq!(app.on_key(key('q'), URL), None);
+
     assert_eq!(
-        app.on_key(with_modifiers('c', KeyModifiers::CONTROL), URL),
-        Some(Action::Quit)
+        app.status,
+        Some(Status::Info(QUIT_DEFERRED_MESSAGE.to_owned()))
     );
+    assert!(app.busy);
+    assert!(!app.quit_requested());
+}
+
+#[test]
+fn on_key_defers_ctrl_c_while_busy() {
+    let mut app = App::new(None);
+    app.on_key(key('s'), URL);
+
+    assert_eq!(app.on_key(ctrl_c(), URL), None);
+
+    assert_eq!(
+        app.status,
+        Some(Status::Info(QUIT_DEFERRED_MESSAGE.to_owned()))
+    );
+    assert!(app.busy);
+    assert!(!app.quit_requested());
+}
+
+#[test]
+fn on_key_quits_on_second_press_while_busy() {
+    for first in [key('q'), ctrl_c()] {
+        for second in [key('q'), ctrl_c()] {
+            let mut app = App::new(None);
+            app.on_key(key('s'), URL);
+            app.on_key(first, URL);
+
+            assert_eq!(app.on_key(second, URL), Some(Action::Quit));
+        }
+    }
+}
+
+#[test]
+fn finish_requests_deferred_quit() {
+    let mut app = App::new(None);
+    app.on_key(key('s'), URL);
+    app.on_key(key('q'), URL);
+
+    app.finish(Status::Info("sync complete".to_owned()));
+
+    assert!(app.quit_requested());
+}
+
+#[test]
+fn finish_requests_no_quit_without_deferred_quit() {
+    let mut app = App::new(None);
+    app.on_key(key('s'), URL);
+
+    app.finish(Status::Info("sync complete".to_owned()));
+
+    assert!(!app.quit_requested());
 }
 
 #[test]
