@@ -54,6 +54,7 @@ pub(super) struct EbooksQuery {
     /// without a resync).
     exclude_formats: Option<String>,
     /// Fold 2+-book series into one row plus `stacks` (keyset form only).
+    /// `X-Total-Count` still counts books, not the folded rows.
     stack_series: Option<bool>,
     /// `?omit_description=true`: read keyset rows (plain and stacked) through
     /// `Projection::List`. Keyset form only; absent/false keeps full rows,

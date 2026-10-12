@@ -210,8 +210,10 @@ build step).
 
 ## Conventions
 
-Deeper architecture — module maps, request-flow diagrams, mobile auth — is in
-[architecture.md](architecture.md). The rules contributors follow live under
+Deeper architecture — crates, request flows, mobile auth — is in
+[architecture.md](architecture.md), and the iOS app's design in [ios.md](ios.md).
+Per-module detail lives in each file's own `//!` doc; `just modules <dir>`
+prints a directory's map from them. The rules contributors follow live under
 [.claude/rules/](../.claude/rules/):
 
 | Topic | Rule |

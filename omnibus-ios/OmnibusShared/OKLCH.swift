@@ -1,6 +1,9 @@
 //  OKLCH.swift
 //  Exact OKLCH → sRGB conversion so the Swift tokens can be written in the
 //  same notation as `frontend/assets/atrium.css` and never drift from it.
+//
+//  Compiled into the widget too, so a book's accent converts one way and the
+//  widget and the Continue hero cannot draw it in two different colours.
 
 import SwiftUI
 

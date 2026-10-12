@@ -41,7 +41,7 @@ and admin recovery are all in the [Docker guide](docs/docker.md).
 | [**Deploy with Docker**](docs/docker.md) | Volumes, env vars, TLS, PUID/PGID, admin recovery |
 | [**Kobo sync & KEPUB**](docs/kobo.md) | Wired one-click transfer, wireless sync setup, two-way highlights |
 | [**Local development**](docs/local-development.md) | Nix shells, `just` recipes, tests, mobile builds, project layout |
-| [**Architecture**](docs/architecture.md) | Crate and module maps, request flows, mobile auth |
+| [**Architecture**](docs/architecture.md) | Crates, request flows, mobile auth; the [iOS app](docs/ios.md)'s design |
 | [**Configuration reference**](.env.example) | Every supported environment variable, annotated |
 | [**Roadmap**](https://github.com/users/seamus-sloan/projects/2/views/9) | What's shipped and what's next |
 | [**Contributing**](CONTRIBUTING.md) | Issue-first workflow, quality gate, PR conventions |

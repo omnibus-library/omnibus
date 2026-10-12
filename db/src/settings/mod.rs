@@ -1,7 +1,7 @@
 //! Settings KV CRUD, scan-root row upserts, and orphan-scan-root pruning. The
 //! `ebook_library_path` / `audiobook_library_path` keys are read by the UI and
-//! translated into `scan_roots` rows by the indexer; saving settings prunes any
-//! orphan root and its books, FTS rows, and on-disk covers. Also owns
+//! translated into `scan_roots` rows by the indexer; saving settings prunes
+//! only childless orphan roots, never cascading into a root's books. Also owns
 //! per-library metadata-source precedence, keyed by `path` on `scan_roots`.
 
 use std::collections::HashMap;
@@ -123,11 +123,10 @@ pub async fn get_settings(pool: &SqlitePool) -> Result<Settings, SettingsError> 
 }
 
 /// Persist library paths and reconcile dependent state in a single
-/// transaction: upserts each path into `settings`, prunes orphaned
-/// `scan_roots` rows (and their books / FTS rows via cascade), then deletes
-/// the matching cover files from disk *after* commit so filesystem
-/// side-effects don't run inside the DB transaction. Callers should kick
-/// off a reindex afterwards — this function does not touch the indexer.
+/// transaction: upserts each path into `settings`, then prunes orphaned
+/// `scan_roots` rows — only childless ones; a root that still owns books is
+/// kept, never cascade-deleted. Callers should kick off a reindex afterwards
+/// — this function does not touch the indexer.
 pub async fn set_settings(pool: &SqlitePool, settings: &Settings) -> Result<(), SettingsError> {
     // Read the *current* paths before writing so a changed path can be
     // repointed in place (F2) — keeping the `scan_roots` row's id, and thus
