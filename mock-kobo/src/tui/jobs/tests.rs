@@ -182,7 +182,7 @@ async fn perform_set_url_reports_rewire_failure_for_non_local_url() {
     let expected = format!(
         "now syncing against {NOT_LOCAL}, but its token was wired for another server: \
          auto-wire only logs in to a local dev server, not {NOT_LOCAL}: \
-         pass --token (or set OMNIBUS_MOCK_KOBO_TOKEN)"
+         press t to enter a token"
     );
     assert_eq!(status, Status::Error(expected));
     assert_eq!(control.view().url, NOT_LOCAL);
@@ -327,7 +327,7 @@ async fn perform_wire_reports_not_local_without_contacting_server() {
 
     let expected = format!(
         "auto-wire only logs in to a local dev server, not {NOT_LOCAL}: \
-         pass --token (or set OMNIBUS_MOCK_KOBO_TOKEN)"
+         press t to enter a token"
     );
     assert_eq!(status, Status::Error(expected));
     assert_eq!(saved(&path).await, before);
@@ -346,9 +346,7 @@ async fn perform_wire_reports_no_seed_user_when_unset() {
 
     let status = perform(&control, &unset, Job::Wire).await;
 
-    let Status::Error(message) = status else {
-        panic!("expected an error status, got {status:?}");
-    };
-    assert!(message.contains("OMNIBUS_DEV_SEED_USER"), "{message}");
+    let expected = "can't auto-wire: OMNIBUS_DEV_SEED_USER is not set; press t to enter a token";
+    assert_eq!(status, Status::Error(expected.to_owned()));
     assert!(stub.paths().is_empty());
 }

@@ -6,7 +6,7 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
-use crate::autowire::{self, SeedUser};
+use crate::autowire::{self, AutoWireError, SeedUser};
 use crate::control::{Control, ControlError, LastSync, Retarget, Retargeted, RESET_MESSAGE};
 use crate::tui::app::{Job, Status};
 
@@ -79,11 +79,11 @@ async fn wire(control: &Control, wiring: &Wiring) -> Status {
     let url = view.url;
     let seed = match SeedUser::parse(wiring.seed_user.as_deref()) {
         Ok(seed) => seed,
-        Err(error) => return failure(error),
+        Err(error) => return wire_failure(error),
     };
     let wired = match autowire::wire(&url, &seed, &wiring.device_name).await {
         Ok(wired) => wired,
-        Err(error) => return failure(error),
+        Err(error) => return wire_failure(error),
     };
     let to = Retarget::Wired {
         token: wired.token,
@@ -117,6 +117,20 @@ fn wired_message(device_name: &str, reused: bool) -> String {
         )
     } else {
         format!("wired to the new Omnibus device \"{device_name}\"")
+    }
+}
+
+/// A wiring failure in the TUI's terms: its fix is `t`, not a command-line flag.
+fn wire_failure(error: AutoWireError) -> Status {
+    match error {
+        AutoWireError::NotLocal { url } => Status::Error(format!(
+            "auto-wire only logs in to a local dev server, not {url}: press t to enter a token"
+        )),
+        AutoWireError::NoSeedUser => Status::Error(
+            "can't auto-wire: OMNIBUS_DEV_SEED_USER is not set; press t to enter a token"
+                .to_owned(),
+        ),
+        other => failure(other),
     }
 }
 
