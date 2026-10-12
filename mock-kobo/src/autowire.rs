@@ -23,9 +23,9 @@ const LOGIN_STEP: &str = "POST /api/auth/login";
 const LIST_STEP: &str = "POST /api/rpc/kobo/devices";
 const CREATE_STEP: &str = "POST /api/rpc/kobo/devices/create";
 
-/// "Mock Kobo" for the default state file, "Mock Kobo (<stem>)" for any other path.
+/// "Mock Kobo" for the default state file however spelled, "Mock Kobo (<stem>)" for any other path.
 pub fn device_name(state: &Path) -> String {
-    if state == Path::new(DEFAULT_STATE_PATH) {
+    if state.ends_with(DEFAULT_STATE_PATH) {
         return DEVICE_NAME.to_owned();
     }
     match state.file_stem() {

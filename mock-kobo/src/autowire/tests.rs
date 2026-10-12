@@ -31,6 +31,22 @@ fn device_name_is_mock_kobo_for_default_state_path() {
 }
 
 #[test]
+fn device_name_is_mock_kobo_for_default_path_spelled_with_dot_slash() {
+    assert_eq!(
+        device_name(Path::new("./.claude/runtime/mock-kobo.json")),
+        "Mock Kobo"
+    );
+}
+
+#[test]
+fn device_name_is_mock_kobo_for_absolute_default_path() {
+    assert_eq!(
+        device_name(Path::new("/work/omnibus/.claude/runtime/mock-kobo.json")),
+        "Mock Kobo"
+    );
+}
+
+#[test]
 fn device_name_appends_stem_for_other_state_file() {
     assert_eq!(device_name(Path::new("other.json")), "Mock Kobo (other)");
 }
