@@ -139,11 +139,9 @@ pub(super) async fn touch_book_last_modified(
     Ok(())
 }
 
-/// Drop the library-composition cache after an override write commits. Genres
-/// live *only* in `metadata_overrides`, and publisher / language overrides
-/// materialize into the link tables, so `Worker::execute`'s post-scan hook
-/// can't keep them fresh: without this a new genre is invisible on `/stats` for
-/// the 900s TTL. Call **after** commit, never inside the transaction.
+/// Drop the library-composition cache after an override write commits (why
+/// the worker can't: `crate::stats::invalidate_library_composition`). Call
+/// **after** commit, never inside the transaction.
 pub(super) fn invalidate_composition_cache() {
     // A bump before the write lands lets a concurrent reader re-cache the
     // pre-commit value.

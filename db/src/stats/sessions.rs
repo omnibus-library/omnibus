@@ -66,9 +66,9 @@ fn page_sql(book_scoped: bool, cursored: bool) -> String {
 
 /// One page of a user's session log, newest sitting first. `book_uuid` scopes the log
 /// to one book, resolved to the canonical `books.uuid` first; an unresolvable uuid
-/// yields an empty page, not an error. `before` continues a previous page; `limit` is
-/// clamped into `1..=`[`SESSION_LOG_MAX_LIMIT`]. Entries are stitched sittings of at
-/// least [`sessionize::MIN_SITTING_SECS`], the population [`super::book_insights`] counts.
+/// yields an empty page, not an error. `before` continues a previous page (`None`:
+/// newest); `limit` is clamped into `1..=`[`SESSION_LOG_MAX_LIMIT`]. Entries are stitched
+/// sittings of at least [`sessionize::MIN_SITTING_SECS`], as [`super::book_insights`] counts.
 pub async fn session_log(
     pool: &SqlitePool,
     user_id: i64,

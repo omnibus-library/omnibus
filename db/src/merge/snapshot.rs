@@ -42,7 +42,6 @@ pub(super) struct SourceSnapshot {
     /// `books.scan_key`, the library-relative path the reindex diff matches disk
     /// against. Undo must restore it, or the next reindex can't match the on-disk
     /// file to the recreated row and inserts a duplicate. `None` on older snapshots.
-    // Default keeps `merge_log` JSON written before this field replaying.
     #[serde(default)]
     pub scan_key: Option<String>,
     pub path: String,

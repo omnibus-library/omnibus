@@ -308,9 +308,6 @@ pub(super) async fn daily_goals_at(
     user_id: i64,
     offset_minutes: i64,
 ) -> Result<DailyGoals, StatsError> {
-    // Both kinds are measured even without a target, so iOS can show today's figure
-    // with no ring; deriving it client-side would disagree with the minutes goal
-    // (heatmap buckets are UTC and include unzoned seconds).
     let rows =
         sqlx::query("SELECT kind, target FROM reading_goals WHERE user_id = ? AND scope = 'day'")
             .bind(user_id)
@@ -336,6 +333,8 @@ pub(super) async fn daily_goals_at(
     // re-reading the clock, so a request that crosses local midnight cannot
     // report one day's name against another day's total.
     let day = user_offset::today(pool, offset_minutes).await?;
+    // Measured even without a target: deriving today's minutes client-side from the
+    // UTC heatmap (which counts unzoned seconds) would disagree with the minutes goal.
     let pages_today = pages::pages_read_on_day(pool, user_id, &day, offset_minutes).await?;
     // Truncating, not rounding: a reader 59 seconds into their first minute
     // has not read a minute yet, and a goal that rounds up hands out progress

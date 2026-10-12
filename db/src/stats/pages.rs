@@ -138,10 +138,9 @@ fn day_prune(param: &str) -> LedgerPrune {
 }
 
 /// Every forward-progress gain one reader has on record within `prune`'s reach, as
-/// one `(day, uuid, percent_gained)` row per bucket on **their** calendar. Unions the
-/// ledger's two generations: slots are bucketed here against `offset_minutes`, the
-/// frozen daily table contributes its stored day verbatim. Parameters are numbered
-/// (`?1`, `?2` user_id, `?3` the prune bound); a caller's own placeholder must be `?4`.
+/// one `(day, uuid, percent_gained)` row per bucket on **their** calendar.
+/// Parameters are numbered (`?1`, `?2` user_id, `?3` the prune bound); a caller's
+/// own placeholder must be `?4`.
 fn ledger_days(offset_minutes: i64, prune: &LedgerPrune) -> String {
     let slot_day = calendar::local_day(&format!("(s.slot * {SLOT_SECS})"), offset_minutes);
     let LedgerPrune { slots, daily } = prune;

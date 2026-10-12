@@ -197,9 +197,9 @@ async fn fastest_read(
     start: i64,
     offset_minutes: i64,
 ) -> Result<Option<BookSuperlative>, StatsError> {
-    // Both ends use `local_day_number`; the shared shift usually cancels, but not when it
-    // carries one end across a midnight. `s.first_at <= f.finished_at` drops a book whose
-    // sessions all post-date its completion rather than reporting a negative span.
+    // The shared shift usually cancels, but not when it carries one end across a
+    // midnight. `s.first_at <= f.finished_at` drops a book whose sessions all
+    // post-date its completion rather than reporting a negative span.
     let finished_day = calendar::local_day_number("f.finished_at", offset_minutes);
     let first_day = calendar::local_day_number("s.first_at", offset_minutes);
     let sql = format!(

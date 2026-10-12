@@ -218,9 +218,9 @@ macro_rules! effective_genres_sql {
 /// override (or whose scan root ranks it below the scan), the override's names
 /// resolved (NOCASE) to `authors` rows otherwise; `materialize_author_rows`
 /// guarantees the row. Same `'array'` presence test as [`effective_tags_sql`].
-// The `je.type` guard sits in the argument: the join may run before any `WHERE`.
 macro_rules! effective_authors_sql {
     () => {
+        // The `je.type` guard sits in the argument: the join may run before any `WHERE`.
         concat!(
             "SELECT bal.book AS book_id, bal.author AS author_id
                FROM books_authors_link bal

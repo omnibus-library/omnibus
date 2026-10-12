@@ -53,9 +53,8 @@ pub(super) fn local_day(col: &str, offset_minutes: i64) -> String {
 /// the streak is built on. Floors rather than truncates: SQLite's `/` rounds
 /// toward zero, so pre-1970 instants would put two distinct days on one number.
 pub(super) fn local_day_number(col: &str, offset_minutes: i64) -> String {
-    // `%`, not `FLOOR(x / 86400.0)`: `floor` is an optional SQLite math function the
-    // bundled build lacks, and integers keep a day number exact past 2^53.
     let shifted = format!("({col} + {})", shift(offset_minutes));
+    // `%`, not `FLOOR(x / 86400.0)`: bundled SQLite lacks `floor`; integers stay exact past 2^53.
     // Truncating division, corrected down by one whenever it rounded the wrong
     // way — which is exactly when the remainder is negative.
     format!("(({shifted} / 86400) - (CASE WHEN {shifted} % 86400 < 0 THEN 1 ELSE 0 END))")

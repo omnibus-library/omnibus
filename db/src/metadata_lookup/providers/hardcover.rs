@@ -18,8 +18,7 @@ use super::http::{paired_isbn10, sanitize_genres};
 /// One query's worth of fields: the book plus a representative edition, nested
 /// so a candidate list costs one round trip. Editions are ordered by
 /// `users_count`, mirroring `resolve_book`'s preference for the canonical one.
-// `Genre` in the denormalized `cached_tags` bag is the closest thing Hardcover
-// publishes to a genre list; `pages` and `isbn_10` are edition-level fields.
+// `cached_tags`' `Genre` bucket is the closest thing Hardcover has to a genre list.
 const BOOK_FIELDS: &str = "id title description cached_tags \
      contributions { author { name } } \
      book_series { position series { name } } \

@@ -285,8 +285,8 @@ pub(super) async fn busiest_week(
     start: i64,
     offset_minutes: i64,
 ) -> Result<(Option<String>, i64), StatsError> {
-    // Weeks bucket by Monday: `dnum - ((dnum + 3) % 7)`, since unix day 0 is a Thursday.
     let dnum = calendar::local_day_number("started_at", offset_minutes);
+    // + 3: unix day 0 (1970-01-01) is a Thursday.
     let sql = format!(
         "SELECT date(week_start * 86400, 'unixepoch') AS start_day,
                 SUM(secs) AS seconds FROM (

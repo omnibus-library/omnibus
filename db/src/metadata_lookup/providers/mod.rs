@@ -187,8 +187,8 @@ pub fn ladder(config: &MetadataLookupConfig) -> Vec<Rung> {
             terminal: true,
         },
     ];
-    // Last and non-terminal: it costs an extra round trip, and its outage must
-    // never turn a clean "not found" into a provider error.
+    // Hardcover costs an extra round trip, and its outage must never turn a clean
+    // "not found" into a provider error.
     if config.keys.hardcover.is_some() {
         rungs.push(Rung {
             provider: MetadataProvider::Hardcover,

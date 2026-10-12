@@ -348,10 +348,7 @@ async fn move_book_files(
 }
 
 /// Every table that soft-references `books.uuid` and must follow the book
-/// across a merge. This list is the merge's half of the soft-reference
-/// contract: a table keyed on `book_uuid` that is in neither it nor
-/// [`MERGE_EXEMPT_TABLES`] strands its rows on the deleted source uuid, and
-/// `merge_settles_every_book_uuid_table` fails on it.
+/// across a merge; the contract is in `.claude/rules/06-migrations.md`.
 pub(super) const RETARGET_TABLES: [&str; 18] = [
     "reading_progress",
     "reading_progress_marks",
@@ -419,10 +416,8 @@ pub(super) struct Collision {
 }
 
 /// The subset of [`RETARGET_TABLES`] with a `UNIQUE` key to settle, resolved by
-/// [`dedupe_collisions`] before the retarget runs. A dedupe is destructive, so
-/// it is reversible only if the merge wrote both sides down first: curation in
-/// [`super::curation`], every other entry in [`super::relocation`] (the content
-/// index is regenerated).
+/// [`dedupe_collisions`] before the retarget runs. How each deleted row stays
+/// undoable is in `.claude/rules/06-migrations.md`.
 pub(super) const COLLISION_TABLES: [Collision; 9] = [
     Collision {
         table: "reading_progress",
@@ -549,10 +544,9 @@ pub(super) const LEDGER_COUNTER_TABLES: [(&str, &str); 2] = [
 ];
 
 /// Fold the source book's forward-progress buckets into the target's, clearing
-/// the collisions the retarget would otherwise hit. **Summed, not deduped:**
-/// every other colliding table holds a snapshot where newest-wins is right, but
-/// these hold a *counter*, so latest-wins would throw one side's reading away.
-/// Consumed source rows are deleted, so the retarget moves only the rest.
+/// the collisions the retarget would otherwise hit. Colliding buckets are summed,
+/// never deduped (see `.claude/rules/06-migrations.md`); consumed source rows are
+/// deleted, so the retarget moves only the rest.
 async fn fold_ledger_counters(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_uuid: &str,

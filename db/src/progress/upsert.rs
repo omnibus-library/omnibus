@@ -62,10 +62,10 @@ async fn read_progress_row(
 }
 
 /// Upsert a position row for `(user, book, format)` and return the **surviving**
-/// record, keyed on the **canonical** `books.uuid` (`BookNotFound` if never
-/// indexed). A write wins only if its `client_updated_at` (clamped to now; absent
-/// = now) is `>=` the stored one; a rejected write returns the winning row. An
-/// accepted write replaces the whole position, never field-merged.
+/// record, keyed on the **canonical** `books.uuid` (`BookNotFound` if never indexed).
+/// A write wins only if its `client_updated_at` (clamped to now; absent = now) is `>=`
+/// the stored one, and replaces the whole position. A fileless audio write over a row
+/// naming a file of a multi-file book is also rejected; a rejected write returns the winner.
 pub async fn upsert_progress(
     pool: &SqlitePool,
     user_id: i64,

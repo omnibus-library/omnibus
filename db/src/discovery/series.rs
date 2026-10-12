@@ -43,10 +43,11 @@ pub async fn get_series(
 }
 
 /// SQL CTE of the override-aware effective series membership, shared by
-/// `fetch_series_books` and `count_effective_series_members`. Both arms are
-/// scoped to the target series up front, so arm (1) drives through the
-/// `books_series_link(series)` index. A `Some("")` override clears the series:
-/// it leaves arm (1) and the `'' = name` filter excludes it from arm (2).
+/// `fetch_series_books` and `count_effective_series_members`. A `Some("")`
+/// override clears the series: it leaves arm (1) and the `'' = name` filter
+/// excludes it from arm (2).
+// Both arms are scoped to the target series up front, so arm (1) drives through
+// the `books_series_link(series)` index instead of scanning every book.
 const EFFECTIVE_SERIES_CTE: &str = r#"WITH effective AS (
              -- (1) Canonical members of this series with no series override.
              -- A `series_index` override still drives ordering here even

@@ -52,10 +52,8 @@ struct SpanMark {
     norm_start: u64,
 }
 
-/// Everything the four queries need from one content document. Both the kepub
-/// and the source walk must satisfy the module-level invariants (normalized text
-/// stream, epub.js CFI step accounting, anchors on visible characters) or
-/// aligned offsets silently diverge.
+/// Everything the four queries need from one content document; every field
+/// holds the module-level invariants.
 pub(super) struct FileIndex {
     norm: String,
     clusters: Vec<Cluster>,

@@ -43,9 +43,8 @@ const SENTINEL_YEAR_MAX: i64 = 101;
 /// about a book would both look right in isolation.
 const PUB_YEAR: &str = "CAST(substr(b.pubdate, 1, 4) AS INTEGER)";
 
-/// One cache entry plus the generation it was computed against. A compute runs
-/// outside the lock, so an `invalidate` can land mid-flight; the reader stamps the
-/// generation it started from and drops its result if the counter has moved.
+/// One cache entry plus the generation it was computed against; the same
+/// invalidate-race guard as `library`'s `Cache`.
 #[derive(Default)]
 struct Cache {
     entry: Mutex<Option<(i64, LibraryComposition)>>,
@@ -82,8 +81,8 @@ pub async fn library_composition(pool: &SqlitePool) -> Result<LibraryComposition
 }
 
 /// Clock- and cache-injected core of [`library_composition`], so the cache path
-/// is testable without waiting fifteen minutes. The cache is a parameter because
-/// the process-wide entry has nothing to key it on, so tests sharing it race.
+/// is testable without waiting fifteen minutes. The cache is a parameter for the
+/// same reason as `library`'s.
 async fn library_composition_in(
     cache: &Cache,
     pool: &SqlitePool,

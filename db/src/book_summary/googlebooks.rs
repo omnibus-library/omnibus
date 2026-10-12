@@ -20,9 +20,7 @@ const GB_TIMEOUT: Duration = Duration::from_secs(8);
 const GB_RETRY_BACKOFF: [Duration; 2] = [Duration::from_millis(200), Duration::from_millis(600)];
 
 /// The header Google accepts the API key in. Same key and reasoning as
-/// `metadata_lookup::providers::googlebooks::API_KEY_HEADER`: a `reqwest::Error`
-/// renders the request URL but never a header, so a key kept out of URLs cannot
-/// reach a log from any fallible step.
+/// `metadata_lookup::providers::googlebooks::API_KEY_HEADER`.
 const API_KEY_HEADER: &str = "X-goog-api-key";
 
 /// Connection config for the Google Books description fetch. `base_url` is

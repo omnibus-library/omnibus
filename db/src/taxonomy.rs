@@ -97,7 +97,7 @@ async fn insert_or_select_series(
 /// longer referenced by any book, then reap orphaned tags and genres via
 /// [`delete_orphan_tags`] and [`delete_orphan_genres`]. Run wherever the last
 /// link to a row can disappear: the missing-files GC purge, the merge source
-/// delete, the indexer's Changed bucket, and a direct override-row delete.
+/// delete, the indexer's Changed bucket, and a book purge.
 pub(crate) async fn delete_orphan_taxonomy(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
 ) -> Result<(), sqlx::Error> {
