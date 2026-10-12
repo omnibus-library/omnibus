@@ -3,8 +3,9 @@
 A runner-driven scenario, like the iOS lane's offline outbox: it is **not** in
 the catalog's draw, one web agent is handed it when the run is started with
 `--kobo`, and the runner does half the work. A Kobo is a device, and no agent
-has one — so the runner speaks the device's protocol with `curl` while the
-agent watches the app.
+has one — so the runner plays the device with `mock-kobo`, the repo's fake
+e-reader, and with `curl` for the reading-position steps until it models
+reading state (#2725), while the agent watches the app.
 
 Two halves, in this order: the **shelf** half proves a shelf marked for Kobo
 sync reaches the device; the **sync** half proves a position written by the
@@ -38,23 +39,37 @@ person does.
 
 ## Part 2 — the device syncs (runner)
 
-With the endpoint URL from the agent, `$KOBO` below:
+With the endpoint URL from the agent, `$KOBO` below, split it and start the
+device. The temp state file keeps the scenario off this worktree's own device:
 
 ```bash
-curl -sS "$KOBO/v1/library/sync" | python3 -m json.tool | head -80
+ORIGIN="${KOBO%%/kobo/*}"
+TOKEN="${KOBO##*/kobo/}"
+scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- serve \
+  --url "$ORIGIN" --token "$TOKEN" --port 7741 --state "$(mktemp -d)/kobo.json" &
+until curl -fsS 127.0.0.1:7741/device >/dev/null 2>&1; do sleep 1; done
 ```
 
-The first sync returns every book on the opted-in shelf as a `NewEntitlement`,
-each carrying a title, a download URL, and a `ReadingState`. Check three
-things and journal them under the agent's actor with `surface` `kobo`:
+Press Sync now, then read what the device holds:
 
-- every book on the shelf is present, and **no book off it** is;
-- each entitlement's title and author are the book's;
-- the response ends and does not repeat forever — a header `x-kobo-sync:
-  continue` means more pages, and a second call must eventually return
-  none.
+```bash
+curl -sS -X POST 127.0.0.1:7741/actions/sync
+curl -sS 127.0.0.1:7741/device | python3 -m json.tool | head -80
+curl -sS 127.0.0.1:7741/requests | python3 -m json.tool
+```
 
-Then, on one of those books, write a position the way the device does:
+Check three things and journal them under the agent's actor with `surface`
+`kobo`:
+
+- the sync answers `"code":"synced"`, and `details.library` of `GET /device`
+  holds every book on the shelf and **no book off it**;
+- each book carries the right `title` and `authors`;
+- the sync ends and does not page forever — a sync that never ends answers
+  `sync_failed` with quirk `SyncPaging`. `GET /requests` shows what the device
+  asked for.
+
+Then, on one of those books (a key of `details.library` is its uuid), write a
+position the way the device does:
 
 ```bash
 curl -sS -X PUT "$KOBO/v1/library/<uuid>/state" \
@@ -88,11 +103,14 @@ Part 2. It carries **no `Location`**: the server stores a Kobo location
 verbatim when a *device* sends one and derives a CFI from it, and nothing
 synthesises a location in the other direction, so a browser position reaches
 the device as a whole-book percent alone. Do not file its absence. Journal what
-came back. Then run the sync once more: the book
-should come back as a `ChangedReadingState`, not as a new entitlement.
+came back. Then sync once more with `POST /actions/sync`: it answers
+`synced`, and `GET /device` still lists each book once. Whether the position
+arrived as a `ChangedReadingState` is a reading-state check, which moves to
+#2725 with the rest of the device's reading state.
 
 Finally, ask the agent to untick the Kobo opt-in on the shelf and sync once
-more: each book should return as a `ChangedEntitlement` marked removed.
+more with `POST /actions/sync`: `GET /device` shows each book with
+`"archived": true`.
 
 ## Journal
 
@@ -131,6 +149,9 @@ existing under the name it carries; the opt-in itself is not audited.
   at the top of the right page is agreement.
 - The shelf half sends only opted-in shelves. A book in the library but on no
   synced shelf is correctly absent from the device.
+- Stop the mock-kobo process (`kill %1`) after the final sync of Part 4 and
+  before removing the device: it holds the device's token, and a device that
+  outlives its removal only logs failed syncs.
 - The device token is per device and persists. Remove the device from the
   account page at the end of the scenario, and journal that you did —
   **after** the final sync of Part 4, never before. The token is the only way
