@@ -1,6 +1,9 @@
 /*
  * epub-reader-glue.js — Omnibus epub.js bridge.
  *
+ * Forked: `omnibus-ios/omnibus/Reader/Web/epub-reader-glue.js` is a diverged
+ * copy. A change here does not reach iOS — check both.
+ *
  * Depends on two globals that MUST be loaded as siblings BEFORE this file:
  *   - `ePub`  (epubjs@0.3.93)  — vendored at ./epub.min.js
  *   - `JSZip` (jszip@3.10.1)   — vendored at ./jszip.min.js

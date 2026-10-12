@@ -1,4 +1,4 @@
-//! Stop 06 · The files — formats and copies: the per-format rows
+//! Stop 05 · The files — formats and copies: the per-format rows
 //! with their read/listen/send/download actions, the physical copies +
 //! wishlist slot, the metadata mini-table, and the edit / merge / delete
 //! actions.

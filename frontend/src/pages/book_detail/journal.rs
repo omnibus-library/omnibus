@@ -200,7 +200,7 @@ fn journal_kicker(list: &[JournalEntry]) -> String {
     )
 }
 
-/// Stop 05 · Journals for the marquee stage: header (entry/reader counts + the
+/// Stop 04 · Journals for the marquee stage: header (entry/reader counts + the
 /// reader avatar stack), the composer, and the excerpt ladder — a two-line
 /// row per entry that opens the full card over the stop. Wishlist-only books
 /// render the design's empty state instead.

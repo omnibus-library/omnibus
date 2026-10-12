@@ -1,3 +1,6 @@
+//  BookProgressDecodeTests.swift
+//  The wire decode of `GET /api/progress/{uuid}`.
+
 import Foundation
 import Testing
 

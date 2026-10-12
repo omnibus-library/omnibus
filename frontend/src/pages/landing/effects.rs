@@ -214,6 +214,9 @@ fn apply_browse_result(
 }
 
 /// Append the next page and its stacks on `want_more`, unless a page-1 refetch superseded it.
+///
+/// The retained list is deliberately unbounded: list rows were slimmed (no
+/// `description`) instead of evicting trailing pages.
 pub(super) fn spawn_load_more_effect(
     server_url: String,
     want_more: Signal<u32>,

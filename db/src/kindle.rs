@@ -1,8 +1,8 @@
-//! Send-to-Kindle: email a book's EPUB as an attachment over SMTP. Called from
-//! the background worker (`Task::SendToKindle`); resolves the EPUB bytes via
-//! the same on-disk path the download route uses, attaches them as
-//! `application/epub+zip`, and delivers through the admin-configured relay. No
-//! format conversion — Amazon accepts `.epub` directly.
+//! Send-to-Kindle: email a book's EPUB, else its PDF, as an attachment over
+//! SMTP. Called from the background worker (`Task::SendToKindle`); resolves
+//! the bytes via the same on-disk path the download route uses, attaches them
+//! under their own mime, and delivers through the admin-configured relay. No
+//! format conversion — Amazon accepts both directly.
 
 use std::time::Duration;
 
