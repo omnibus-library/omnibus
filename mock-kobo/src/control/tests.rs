@@ -10,7 +10,10 @@ use tokio::sync::Notify;
 
 use crate::device::Device;
 use crate::state;
-use crate::test_support::{new_entitlement, spawn_stub, stub_control, Stub, STUB_TOKEN};
+use crate::test_support::{
+    dune_stub, new_entitlement, request_lines, spawn_stub, stub_control, stub_control_with, Stub,
+    STUB_TOKEN,
+};
 
 use super::*;
 
@@ -37,13 +40,6 @@ fn device_with_dune() -> Device {
 fn spawn_sync(control: &Arc<Control>) -> tokio::task::JoinHandle<Result<LastSync, ControlError>> {
     let control = Arc::clone(control);
     tokio::spawn(async move { control.sync().await })
-}
-
-fn dune_stub() -> Stub {
-    Stub {
-        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
-        ..Stub::default()
-    }
 }
 
 #[tokio::test]
@@ -120,11 +116,7 @@ async fn sync_appends_requests_of_failed_sync_to_request_log() {
     control.sync().await.unwrap();
     control.sync().await.unwrap();
 
-    let lines: Vec<String> = control
-        .requests()
-        .iter()
-        .map(|r| format!("{} {} {}", r.method, r.path, r.status))
-        .collect();
+    let lines = request_lines(&control.requests());
     let one_failed_sync = [
         "GET /kobo/<token>/v1/initialization 200",
         "POST /kobo/<token>/v1/analytics/gettests 200",
@@ -326,17 +318,7 @@ async fn reset_returns_sync_in_progress_while_sync_runs() {
     })
     .await;
     let dir = TempDir::new().unwrap();
-    let saved = SavedState {
-        url: None,
-        token: STUB_TOKEN.into(),
-        wired_url: None,
-        device: device_with_dune(),
-    };
-    let control = Arc::new(Control::new(
-        saved,
-        stub.origin.clone(),
-        dir.path().join("kobo.json"),
-    ));
+    let control = stub_control_with(&stub, device_with_dune(), dir.path().join("kobo.json"));
     let running = spawn_sync(&control);
     wait_until(|| control.view().syncing).await;
 

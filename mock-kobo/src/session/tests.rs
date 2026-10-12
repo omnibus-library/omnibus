@@ -5,17 +5,11 @@ use serde_json::json;
 
 use crate::device::Device;
 use crate::firmware::Quirk;
-use crate::test_support::{new_entitlement, spawn_stub, RunningStub, Stub, STUB_TOKEN};
+use crate::test_support::{
+    new_entitlement, request_lines, spawn_stub, RunningStub, Stub, STUB_TOKEN,
+};
 
 use super::*;
-
-fn request_lines(report: &SyncReport) -> Vec<String> {
-    report
-        .requests
-        .iter()
-        .map(|r| format!("{} {}", r.method, r.path))
-        .collect()
-}
 
 /// The `x-kobo-synctoken` each `library_sync` request carried, in order.
 fn library_sync_tokens(stub: &RunningStub) -> Vec<Option<String>> {
@@ -32,14 +26,6 @@ fn library_sync_tokens(stub: &RunningStub) -> Vec<Option<String>> {
         .collect()
 }
 
-fn attempt_lines(attempt: &SyncAttempt) -> Vec<String> {
-    attempt
-        .requests
-        .iter()
-        .map(|r| format!("{} {} {}", r.method, r.path, r.status))
-        .collect()
-}
-
 #[tokio::test]
 async fn sync_now_completes_handshake_against_healthy_stub() {
     let stub = spawn_stub(Stub::default()).await;
@@ -48,15 +34,15 @@ async fn sync_now_completes_handshake_against_healthy_stub() {
     let report = sync_now(&mut device, &stub.endpoint).await.unwrap();
 
     assert_eq!(
-        request_lines(&report),
+        request_lines(&report.requests),
         [
-            "GET /kobo/<token>/v1/initialization",
-            "POST /kobo/<token>/v1/analytics/gettests",
-            "GET /kobo/<token>/v1/user/profile",
-            "GET /kobo/<token>/v1/user/loyalty/benefits",
-            "GET /kobo/<token>/v1/products/books/subscriptions",
-            "GET /kobo/<token>/v1/deals",
-            "GET /kobo/<token>/v1/library/sync",
+            "GET /kobo/<token>/v1/initialization 200",
+            "POST /kobo/<token>/v1/analytics/gettests 200",
+            "GET /kobo/<token>/v1/user/profile 200",
+            "GET /kobo/<token>/v1/user/loyalty/benefits 200",
+            "GET /kobo/<token>/v1/products/books/subscriptions 200",
+            "GET /kobo/<token>/v1/deals 200",
+            "GET /kobo/<token>/v1/library/sync 200",
         ]
     );
 }
@@ -355,7 +341,7 @@ async fn attempt_sync_keeps_requests_when_sync_fails() {
         })
     ));
     assert_eq!(
-        attempt_lines(&attempt),
+        request_lines(&attempt.requests),
         [
             "GET /kobo/<token>/v1/initialization 200",
             "POST /kobo/<token>/v1/analytics/gettests 200",

@@ -10,7 +10,7 @@ use tempfile::TempDir;
 use crate::control::LastSync;
 use crate::device::Device;
 use crate::state::{self, StateError};
-use crate::test_support::{new_entitlement, spawn_stub, RunningStub, Stub, STUB_TOKEN};
+use crate::test_support::{dune_stub, spawn_stub, RunningStub, Stub, STUB_TOKEN};
 
 use super::*;
 
@@ -34,13 +34,6 @@ fn args_in(dir: &TempDir, url: Option<&str>, token: Option<&str>) -> ServeArgs {
 /// A runtime dir that never holds a dev server's port file.
 fn no_runtime(dir: &TempDir) -> PathBuf {
     dir.path().join("runtime")
-}
-
-fn dune_stub() -> Stub {
-    Stub {
-        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
-        ..Stub::default()
-    }
 }
 
 /// A server already holding the device auto-wire looks for, under `token`.

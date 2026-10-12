@@ -15,6 +15,7 @@ use axum::{
 use serde_json::{json, Value};
 use tokio::sync::Notify;
 
+use crate::client::RequestRecord;
 use crate::control::Control;
 use crate::device::Device;
 use crate::state::SavedState;
@@ -145,13 +146,34 @@ pub async fn spawn_stub(stub: Stub) -> RunningStub {
 
 /// A fresh `HW-1` device holding `STUB_TOKEN`, syncing against `stub`, saving to `state_path`.
 pub fn stub_control(stub: &RunningStub, state_path: PathBuf) -> Arc<Control> {
+    stub_control_with(stub, Device::new("HW-1"), state_path)
+}
+
+/// [`stub_control`] for a device that already holds what it was given.
+pub fn stub_control_with(stub: &RunningStub, device: Device, state_path: PathBuf) -> Arc<Control> {
     let saved = SavedState {
         url: None,
         token: STUB_TOKEN.to_owned(),
         wired_url: None,
-        device: Device::new("HW-1"),
+        device,
     };
     Arc::new(Control::new(saved, stub.origin.clone(), state_path))
+}
+
+/// A stub whose one sync page holds the book "Dune".
+pub fn dune_stub() -> Stub {
+    Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
+        ..Stub::default()
+    }
+}
+
+/// Each request as `METHOD path status`, in order.
+pub fn request_lines(requests: &[RequestRecord]) -> Vec<String> {
+    requests
+        .iter()
+        .map(|r| format!("{} {} {}", r.method, r.path, r.status))
+        .collect()
 }
 
 async fn handle(

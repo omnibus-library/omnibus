@@ -13,8 +13,10 @@ use tokio::sync::Notify;
 use crate::control::{Control, ControlError, DeviceView, LastSync};
 use crate::device::Device;
 use crate::firmware::Quirk;
-use crate::state::{SavedState, StateError};
-use crate::test_support::{new_entitlement, spawn_stub, stub_control, Stub, STUB_TOKEN};
+use crate::state::StateError;
+use crate::test_support::{
+    new_entitlement, spawn_stub, stub_control, stub_control_with, Stub, STUB_TOKEN,
+};
 
 use super::*;
 
@@ -166,14 +168,8 @@ async fn get_device_returns_each_book_with_its_series() {
         json!({ "Name": "Dune", "Number": 1.0, "Id": "s-1" });
     let mut device = Device::new("HW-1");
     device.apply(serde_json::from_value(entitlement).unwrap());
-    let saved = SavedState {
-        url: None,
-        token: STUB_TOKEN.into(),
-        wired_url: None,
-        device,
-    };
-    let control = Control::new(saved, stub.origin.clone(), dir.path().join("kobo.json"));
-    let base = serve(Arc::new(control)).await;
+    let control = stub_control_with(&stub, device, dir.path().join("kobo.json"));
+    let base = serve(control).await;
 
     let body: Value = reqwest::get(format!("{base}/device"))
         .await
