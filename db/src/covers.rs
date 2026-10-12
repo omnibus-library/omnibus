@@ -151,8 +151,8 @@ const OVERRIDE_COVER_JPEG_QUALITY: u8 = 85;
 /// Normalize a user-uploaded override cover for storage, returning the mime and
 /// bytes to write. WebP is transcoded to JPEG and anything taller than
 /// [`MAX_OVERRIDE_COVER_HEIGHT`] is downscaled, both driven by what the Kobo can
-/// read. GIF passes through untouched. Best-effort: an undecodable image, an SVG
-/// or an uncached format passes through untouched. CPU-bound; call from the blocking pool.
+/// read. Best-effort: GIF, an undecodable image, an SVG or an uncached format
+/// passes through untouched. CPU-bound; call from the blocking pool.
 pub(crate) fn normalize_override_cover(mime: &str, bytes: &[u8]) -> (String, Vec<u8>) {
     let passthrough = || (mime.to_owned(), bytes.to_vec());
 
