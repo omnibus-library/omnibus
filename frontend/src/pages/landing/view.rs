@@ -7,7 +7,6 @@
 use dioxus::prelude::*;
 use omnibus_shared::{EbookMetadata, SeriesStack, ShelfSummary, ViewFilters, ViewPrefs};
 
-use super::filtering::apply_filters;
 use super::signals::LandingSignals;
 use crate::shelf_selection::{self, ShelfSelection};
 use crate::view_prefs;
@@ -47,13 +46,16 @@ pub(super) fn section_title(selection: ShelfSelection, shelves: &[ShelfSummary])
 /// two sources — it refetches with the pick, while the gallery's summary
 /// carries a server-side aggregate that goes stale the moment membership
 /// changes elsewhere — so it wins once it has loaded, and the summary only
-/// stands in while that fetch is still out. `None` when neither has answered.
+/// stands in while that fetch is still out. Under a filter the summary counts
+/// the whole shelf, so it never stands in: the count waits for the narrowed
+/// list. `None` when nothing that fits has answered.
 pub(super) fn shelf_book_count(
     selection: ShelfSelection,
     shelves: &[ShelfSummary],
     members: Option<usize>,
+    filtered: bool,
 ) -> Option<usize> {
-    if members.is_some() {
+    if members.is_some() || filtered {
         return members;
     }
     match selection {
@@ -65,18 +67,116 @@ pub(super) fn shelf_book_count(
     }
 }
 
+/// The member list the shelf lens draws its rows from: the server's narrowed
+/// answer under a filter, the full list otherwise. Under a filter the full list
+/// is never a stand-in for a narrowed answer that hasn't landed.
+pub(super) fn shelf_rows<'a>(
+    filtered: bool,
+    members: &'a Option<Vec<EbookMetadata>>,
+    narrowed: &'a Option<Vec<EbookMetadata>>,
+) -> &'a Option<Vec<EbookMetadata>> {
+    if filtered {
+        narrowed
+    } else {
+        members
+    }
+}
+
+/// The narrowed answer, but only when it was fetched under the filters now
+/// asked for. After a filter edit the kept answer still belongs to the old
+/// ones, and reading it as current paints an empty or failed state for a filter
+/// nobody asked about.
+pub(super) fn narrowed_for<'a>(
+    answer: &'a Option<Vec<EbookMetadata>>,
+    fetched_under: &ViewFilters,
+    wanted: &ViewFilters,
+) -> &'a Option<Vec<EbookMetadata>> {
+    if fetched_under == wanted {
+        answer
+    } else {
+        &None
+    }
+}
+
+/// The failure the shelf lens reports on the page. Under a filter that is the
+/// narrowed fetch's, when it answers the current filters: the rows on screen
+/// come from it, and a failed full list only matters to the add-books picker.
+pub(super) fn shelf_error(
+    filtered: bool,
+    members: Option<String>,
+    narrowed: Option<String>,
+    narrowed_current: bool,
+) -> Option<String> {
+    if filtered {
+        narrowed.filter(|_| narrowed_current)
+    } else {
+        members
+    }
+}
+
+/// Whether the shelf is known to hold nothing at all, read off its full member
+/// list. Under a filter the narrowed list may land first, and an empty one then
+/// means nothing matches — so an unanswered full list is not an empty shelf,
+/// and neither is one that failed: its empty placeholder says nothing.
+pub(super) fn shelf_members_empty(
+    members: Option<&Vec<EbookMetadata>>,
+    filtered: bool,
+    failed: bool,
+) -> bool {
+    match members {
+        Some(members) => members.is_empty() && !failed,
+        None => !filtered,
+    }
+}
+
+/// Whether the pick holds no books at all. A filter that rules every book out
+/// is not that: it gets the "clear filters" state instead. A shelf's full
+/// member list loads beside its narrowed one, so its emptiness is read off that
+/// list ([`shelf_members_empty`]) rather than inferred.
+/// `fetched_with` is what the browse list was fetched under, not the current
+/// filters: right after a clear, an empty list still answers the old ones.
+pub(super) fn books_empty(
+    source: VisibleSource,
+    visible_is_empty: bool,
+    shelf_members_empty: bool,
+    fetched_with: &ViewFilters,
+) -> bool {
+    match source {
+        VisibleSource::Shelf => shelf_members_empty,
+        VisibleSource::Browse => visible_is_empty && fetched_with.is_empty(),
+    }
+}
+
 // Limitation: a stack links its lead book's `series_id`, which can be stale after an override rename.
-/// The shelf lens's rows: members filtered, then stacked client-side when Stack series is on.
+/// The shelf lens's rows: the members the server returned, stacked
+/// client-side when Stack series is on.
 pub(super) fn shelf_lens(
     members: &[EbookMetadata],
-    filters: &ViewFilters,
     stack: bool,
 ) -> (Vec<EbookMetadata>, Vec<SeriesStack>) {
-    let filtered = apply_filters(members, filters);
     if stack {
-        omnibus_shared::stack_books(&filtered)
+        omnibus_shared::stack_books(members)
     } else {
-        (filtered, Vec::new())
+        (members.to_vec(), Vec::new())
+    }
+}
+
+/// Where the selected shelf's full member list stands.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Members {
+    Pending,
+    Ready,
+    Unavailable,
+}
+
+/// Where the selected shelf's full member list stands. A failure outranks a
+/// kept answer: the list can hold last time's members beside a refetch error.
+pub(super) fn shelf_members_state(on_shelf: bool, failed: bool, answered: bool) -> Members {
+    match (on_shelf, failed, answered) {
+        (false, _, _) => Members::Pending,
+        (true, true, _) => Members::Unavailable,
+        (true, false, true) => Members::Ready,
+        (true, false, false) => Members::Pending,
     }
 }
 
@@ -112,31 +212,74 @@ pub(super) struct LandingViewState {
     /// True when the gallery pick is a shelf — the book area's empty state
     /// says the shelf is empty.
     pub(super) is_shelf: bool,
-    /// The selected shelf's member list has answered without error, so the
-    /// add-books picker can mark what it already holds.
-    pub(super) shelf_members_ready: bool,
+    /// Where the selected shelf's full member list stands, which the add-books
+    /// picker needs to mark what the shelf already holds.
+    pub(super) shelf_members: Members,
+}
+
+/// What the shelf lens reads off its member lists for one render.
+struct ShelfFacts {
+    /// Rows the lens draws; `None` until the list they come from has answered.
+    rows_len: Option<usize>,
+    /// The shelf is known to hold nothing at all — see [`shelf_members_empty`].
+    members_empty: bool,
+    /// The rows are still on their way.
+    pending: bool,
+    /// The failure the page reports — see [`shelf_error`].
+    error: Option<String>,
+    /// The full member list failed, whatever the rows on screen came from.
+    members_failed: bool,
+}
+
+fn read_shelf_facts(sigs: &LandingSignals, wanted: &ViewFilters) -> ShelfFacts {
+    let filtered = !wanted.is_empty();
+    let members = sigs.shelf_books.read();
+    let narrowed_books = sigs.shelf_view_books.read();
+    let fetched_under = sigs.shelf_view_filters.read();
+    let narrowed = narrowed_for(&narrowed_books, &fetched_under, wanted);
+    let rows = shelf_rows(filtered, &members, narrowed);
+    let members_failed = (sigs.shelf_error)().is_some();
+    ShelfFacts {
+        rows_len: rows.as_ref().map(Vec::len),
+        members_empty: shelf_members_empty(members.as_ref(), filtered, members_failed),
+        // The narrowed list has no loading flag of its own: until it lands it
+        // is pending, so a shelf never reads as empty on the way to an answer.
+        pending: rows.is_none() && (filtered || (sigs.shelf_loading)()),
+        error: shelf_error(
+            filtered,
+            (sigs.shelf_error)(),
+            (sigs.shelf_view_error)(),
+            *fetched_under == *wanted,
+        ),
+        members_failed,
+    }
 }
 
 /// Snapshot every signal the markup needs in one place. Reads are cheap, but
 /// doing them inline in `rsx!` would multiply each `prefs()`/`books()` call
 /// across the three child components.
 pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
-    // Browse is already server-ordered + server-filtered; render `books`
-    // verbatim. A shelf pick renders its (server-sorted) member list,
-    // client-filtered by `shelf_lens`.
+    // Browse and a shelf pick are both server-ordered and server-filtered;
+    // render the list verbatim (a shelf's stacked client-side by `shelf_lens`).
     let books_sig = sigs.books;
     let prefs_sig = sigs.prefs;
     let selection_sig = sigs.selection;
     let shelf_books_sig = sigs.shelf_books;
+    let shelf_view_sig = sigs.shelf_view_books;
+    let shelf_filters_sig = sigs.shelf_view_filters;
     let stacks_sig = sigs.stacks;
     let stack_on = sigs.stack_series;
     let visible = use_memo(move || {
         match visible_source(selection_sig()) {
             VisibleSource::Shelf => {
                 let stack = stack_on();
-                let members = shelf_books_sig.read().clone().unwrap_or_default();
-                let p = prefs_sig.read();
-                shelf_lens(&members, &p.filters, stack)
+                let wanted = prefs_sig.read().filters.clone();
+                let narrowed = shelf_view_sig.read();
+                let narrowed = narrowed_for(&narrowed, &shelf_filters_sig.read(), &wanted);
+                let rows = shelf_rows(!wanted.is_empty(), &shelf_books_sig.read(), narrowed)
+                    .clone()
+                    .unwrap_or_default();
+                shelf_lens(&rows, stack)
             }
             // Browse renders the server-ordered page verbatim, with the
             // stacks the server folded into it.
@@ -149,31 +292,36 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
     let shelves = sigs.shelves.read();
     let path_value = (sigs.lib_path)();
     let browse_loading = (sigs.loading)();
-    // Header count: the full library total on browse; the shelf's member
-    // count on a gallery pick.
+    let wanted = sigs.prefs.read().filters.clone();
+    let filtered = !wanted.is_empty();
+    let shelf = read_shelf_facts(sigs, &wanted);
+    // Header count: the total under the active filters and exclusion on
+    // browse; the shelf's filtered member count on a gallery pick.
     let book_count = match source {
-        VisibleSource::Shelf => shelf_book_count(
-            selection,
-            &shelves,
-            sigs.shelf_books.read().as_ref().map(Vec::len),
-        ),
+        VisibleSource::Shelf => shelf_book_count(selection, &shelves, shelf.rows_len, filtered),
         VisibleSource::Browse => (sigs.total)()
             .map(|t| usize::try_from(t).unwrap_or(0))
             .or_else(|| (!browse_loading).then(|| sigs.books.read().len())),
     };
     let (visible_books, visible_stacks) = visible();
     let visible_is_empty = visible_books.is_empty();
+    let empty_pick = books_empty(
+        source,
+        visible_is_empty,
+        shelf.members_empty,
+        &sigs.fetched_filters.read(),
+    );
     let path_subtitle = path_value
         .as_ref()
         .map(|p| super::short_path(p))
         .unwrap_or_default();
     let is_loading = match source {
         // A same-shelf refetch keeps its members on screen.
-        VisibleSource::Shelf => (sigs.shelf_loading)() && sigs.shelf_books.read().is_none(),
+        VisibleSource::Shelf => shelf.pending,
         _ => browse_loading,
     };
     let page_error = (sigs.error)().or_else(|| match source {
-        VisibleSource::Shelf => (sigs.shelf_error)(),
+        VisibleSource::Shelf => shelf.error.clone(),
         _ => None,
     });
     // A failed fetch has no count to give: never "0 books" from an empty
@@ -181,7 +329,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
     // The active source's own failure: a stale browse error must not hide a
     // shelf's count that loaded fine.
     let failed = match source {
-        VisibleSource::Shelf => (sigs.shelf_error)().is_some(),
+        VisibleSource::Shelf => shelf.error.is_some(),
         _ => (sigs.error)().is_some(),
     };
     let total_known = source == VisibleSource::Browse && (sigs.total)().is_some();
@@ -210,10 +358,7 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
         visible_books,
         visible_stacks,
         visible_is_empty,
-        books_empty: match source {
-            VisibleSource::Shelf => visible_is_empty,
-            _ => sigs.books.read().is_empty(),
-        },
+        books_empty: empty_pick,
         // Keyset pagination is browse-only; its cursor stays warm under a
         // shelf pick, so the source guard keeps load-more off the shelf lens.
         has_more: source == VisibleSource::Browse && (sigs.next_cursor)().is_some(),
@@ -221,10 +366,11 @@ pub(super) fn derive_view_state(sigs: &LandingSignals) -> LandingViewState {
         section_title: section_title(selection, &shelves),
         sweep_key: format!("{selection:?}"),
         is_shelf: source == VisibleSource::Shelf,
-        shelf_members_ready: source == VisibleSource::Shelf
-            && sigs.shelf_books.read().is_some()
-            && !(sigs.shelf_loading)()
-            && (sigs.shelf_error)().is_none(),
+        shelf_members: shelf_members_state(
+            source == VisibleSource::Shelf,
+            shelf.members_failed,
+            sigs.shelf_books.read().is_some() && !(sigs.shelf_loading)(),
+        ),
     }
 }
 
@@ -244,16 +390,26 @@ pub(super) struct LandingHandlers {
 }
 
 /// Build the UI-event handlers from the landing signals. `save` is `Copy`
-/// because every capture (`prefs`, `lib_path` — both `Signal`) is `Copy`,
-/// so each handler can take its own reference to the same persisted-prefs
-/// update path without cloning closure state.
+/// because every capture (`prefs`, `lib_path`, `page_error`, `unsaved` — all
+/// `Signal`) is `Copy`, so each handler can take its own reference to the same
+/// persisted-prefs update path without cloning closure state.
 pub(super) fn build_handlers(sigs: &LandingSignals) -> LandingHandlers {
     let mut prefs = sigs.prefs;
     let lib_path = sigs.lib_path;
     let mut want_more = sigs.want_more;
+    let page_error = sigs.error;
+    let mut unsaved = sigs.prefs_unsaved;
     let save = move |new_prefs: ViewPrefs| {
-        if let Some(path) = lib_path.peek().as_ref() {
+        let plan = view_prefs::save_plan(
+            lib_path.peek().as_deref(),
+            page_error.peek().is_some(),
+            view_prefs::last_library(),
+        );
+        if let Some(path) = &plan.write_to {
             view_prefs::save(path, &new_prefs);
+        }
+        if plan.unsaved {
+            unsaved.set(true);
         }
         prefs.set(new_prefs);
     };

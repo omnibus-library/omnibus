@@ -116,6 +116,6 @@ afterwards.
 [`kobo_sync.md`](../../../docs/qa/agentic_exploration/kobo_sync.md) is
 handed to **one web agent** on top of its draw, and its Parts 2 and 4 are
 yours. The agent gives you the device endpoint out of band — never through the
-journal — and you drive the device with the `curl` calls in that file,
-journalling each under the agent's actor with `surface: kobo`. Remove the
-device from the agent's account page at the end, or it persists.
+journal — and you drive the device with `mock-kobo serve` and the calls in
+that file, journalling each under the agent's actor with `surface: kobo`.
+Remove the device from the agent's account page at the end, or it persists.

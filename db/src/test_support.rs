@@ -10,7 +10,9 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use omnibus_shared::{Contributor, EbookMetadata, ProgressFormat, ProgressUpdate};
+use omnibus_shared::{
+    Contributor, EbookMetadata, MetadataOverrides, ProgressFormat, ProgressUpdate,
+};
 use sqlx::SqlitePool;
 
 use crate::ebook::IndexedBook;
@@ -972,6 +974,23 @@ pub async fn uuid_by_scan_key(pool: &SqlitePool, scan_key: &str) -> String {
         .unwrap()
 }
 
+/// Save `overrides` on the book titled `title`, as `editor`. Panics on a missing title.
+pub async fn set_overrides_by_title(
+    pool: &SqlitePool,
+    title: &str,
+    overrides: &MetadataOverrides,
+    editor: i64,
+) {
+    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE title = ?")
+        .bind(title)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    crate::upsert_metadata_overrides(pool, &uuid, overrides, false, editor)
+        .await
+        .unwrap();
+}
+
 /// One-scalar COUNT helper for table-shape assertions.
 pub async fn count_rows(pool: &SqlitePool, sql: &str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
@@ -1045,6 +1064,18 @@ pub async fn seed_user(pool: &SqlitePool, username: &str) -> i64 {
          VALUES (?, '!x', 0, 0, 0, 1) RETURNING id",
     )
     .bind(username)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// `owner`'s built-in wishlist shelf id, provisioning it first (raw user inserts skip `create_user`).
+pub async fn wishlist_shelf_id(pool: &SqlitePool, owner: i64) -> i64 {
+    crate::provision_wishlist_shelf(pool, owner).await.unwrap();
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM shelves WHERE owner_user_id = ? AND kind = 'wishlist'",
+    )
+    .bind(owner)
     .fetch_one(pool)
     .await
     .unwrap()

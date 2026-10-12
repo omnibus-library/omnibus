@@ -222,6 +222,8 @@ final class AppState {
         // account-switch wipe can't cover this, since it keys on the username
         // and a username says nothing about which server issued it.
         await OfflineStore.shared.resetForServerChange()
+        // Its shelf ids would name the new server's shelves.
+        LibraryFilterStore.shared.clear()
         // `forgetAll`, not `hydrate`: the registry merges what it reads onto
         // what it already holds, so re-reading an emptied table would leave
         // the previous server's downloads sitting in memory.
@@ -266,6 +268,8 @@ final class AppState {
         await SyncEngine.shared.drain()
         await AuthService.logout()
         await Connectivity.shared.refreshPendingCount()
+        // Whoever signs in next must not inherit this reader's chips or shelf ids.
+        LibraryFilterStore.shared.clear()
         user = nil
         phase = .needsLogin
         // Same reason as `changeServer`: the widget survives the sign-out.
