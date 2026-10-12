@@ -55,8 +55,7 @@ impl RateLimits {
             }
             return Self::Enforced;
         }
-        // Same truthy set as `trust_forwarded_for`.
-        if matches!(dev_flag.and_then(OsStr::to_str), Some("1" | "true" | "yes")) {
+        if dev_flag.and_then(OsStr::to_str).is_some_and(is_truthy) {
             tracing::warn!(
                 target: "omnibus::startup",
                 "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set; every per-IP rate limiter is off (dev-only hook)"
@@ -74,10 +73,11 @@ impl RateLimits {
 /// reverse proxy in front of Axum lets any client rotate the header per
 /// request and defeats the per-IP limiter entirely.
 pub fn trust_forwarded_for() -> bool {
-    matches!(
-        std::env::var("OMNIBUS_TRUST_FORWARDED_FOR").as_deref(),
-        Ok("1" | "true" | "yes")
-    )
+    std::env::var("OMNIBUS_TRUST_FORWARDED_FOR").is_ok_and(|v| is_truthy(&v))
+}
+
+fn is_truthy(v: &str) -> bool {
+    matches!(v, "1" | "true" | "yes")
 }
 
 struct Bucket {
