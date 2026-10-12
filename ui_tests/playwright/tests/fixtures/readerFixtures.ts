@@ -109,7 +109,12 @@ export const test = base.extend<ReaderFixtures, ReaderWorkerFixtures>({
   },
 
   wishFor: async (
-    { readerAccount, readerScanRequests, readerShelvesRequests, createdBookUuids },
+    {
+      readerAccount,
+      readerScanRequests,
+      readerShelvesRequests,
+      createdBookUuids,
+    },
     use,
   ) => {
     await use(async (book) => {

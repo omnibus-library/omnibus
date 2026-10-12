@@ -18,7 +18,9 @@ export const scan = {
   checkIn: (book: { uuid: string; isbn13: string }): ExpectMutationOptions => ({
     method: "POST",
     url: scanUrls.checkIn,
-    expectedBody: { req: { book_uuid: book.uuid, isbn: book.isbn13, note: null } },
+    expectedBody: {
+      req: { book_uuid: book.uuid, isbn: book.isbn13, note: null },
+    },
     expectedStatus: 200,
   }),
 
