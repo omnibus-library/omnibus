@@ -520,6 +520,21 @@ fn from_dev_flag_logs_the_release_warn_when_the_flag_is_set_in_a_release_build()
     );
 }
 
+#[test]
+fn from_dev_flag_logs_the_release_warn_when_the_flag_is_zero_in_a_release_build() {
+    let text = logged_by(|| {
+        RateLimits::from_dev_flag(Some(OsStr::new("0")), true);
+    });
+    assert_eq!(
+        text.matches(
+            "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set in a release build; ignoring (dev-only hook)"
+        )
+        .count(),
+        1,
+        "got: {text}"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn from_dev_flag_logs_the_release_warn_when_the_flag_is_not_utf8_in_a_release_build() {
