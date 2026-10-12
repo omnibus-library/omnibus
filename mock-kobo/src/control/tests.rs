@@ -1,6 +1,5 @@
 //! `Control::sync`, `reset`, `retarget`, `view` and `requests` against a stub Omnibus and a real temp state file.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,35 +11,17 @@ use tokio::sync::Notify;
 use crate::device::Device;
 use crate::state;
 use crate::test_support::{
-    dune_stub, new_entitlement, request_lines, spawn_stub, stub_control, stub_control_with, Stub,
-    STUB_TOKEN,
+    control_wired_against, dune_stub, new_entitlement, request_lines, spawn_stub, spawn_sync,
+    stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
 };
 
 use super::*;
-
-/// Poll `condition` until it holds, failing the test at a deadline.
-async fn wait_until(mut condition: impl FnMut() -> bool) {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while !condition() {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "timed out waiting for the condition"
-        );
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-}
 
 /// A device already holding the book "Dune".
 fn device_with_dune() -> Device {
     let mut device = Device::new("HW-1");
     device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
     device
-}
-
-/// Start a sync on its own task, as the control API's handler does.
-fn spawn_sync(control: &Arc<Control>) -> tokio::task::JoinHandle<Result<LastSync, ControlError>> {
-    let control = Arc::clone(control);
-    tokio::spawn(async move { control.sync().await })
 }
 
 #[tokio::test]
@@ -328,17 +309,6 @@ async fn reset_returns_sync_in_progress_while_sync_runs() {
     assert!(matches!(result, Err(ControlError::SyncInProgress)));
     assert_eq!(control.view().library, device_with_dune().library);
     running.abort();
-}
-
-/// A `HW-1` device holding `STUB_TOKEN`, syncing against `url`, whose token was wired against `wired_url`.
-fn control_wired_against(url: &str, wired_url: Option<&str>, state_path: PathBuf) -> Arc<Control> {
-    let saved = SavedState {
-        url: None,
-        token: STUB_TOKEN.into(),
-        wired_url: wired_url.map(str::to_owned),
-        device: Device::new("HW-1"),
-    };
-    Arc::new(Control::new(saved, url.to_owned(), state_path))
 }
 
 #[tokio::test]

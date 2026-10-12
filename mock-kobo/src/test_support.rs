@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::{
     extract::State,
@@ -16,7 +17,7 @@ use serde_json::{json, Value};
 use tokio::sync::Notify;
 
 use crate::client::RequestRecord;
-use crate::control::Control;
+use crate::control::{Control, ControlError, LastSync};
 use crate::device::Device;
 use crate::state::SavedState;
 
@@ -164,6 +165,41 @@ pub fn stub_control_with(stub: &RunningStub, device: Device, state_path: PathBuf
         device,
     };
     Arc::new(Control::new(saved, stub.origin.clone(), state_path))
+}
+
+/// A `HW-1` device holding `STUB_TOKEN`, syncing against `url`, whose token was wired against `wired_url`.
+pub fn control_wired_against(
+    url: &str,
+    wired_url: Option<&str>,
+    state_path: PathBuf,
+) -> Arc<Control> {
+    let saved = SavedState {
+        url: None,
+        token: STUB_TOKEN.into(),
+        wired_url: wired_url.map(str::to_owned),
+        device: Device::new("HW-1"),
+    };
+    Arc::new(Control::new(saved, url.to_owned(), state_path))
+}
+
+/// Start a sync on its own task, as the control API's handler does.
+pub fn spawn_sync(
+    control: &Arc<Control>,
+) -> tokio::task::JoinHandle<Result<LastSync, ControlError>> {
+    let control = Arc::clone(control);
+    tokio::spawn(async move { control.sync().await })
+}
+
+/// Poll `condition` until it holds, failing the test at a deadline.
+pub async fn wait_until(mut condition: impl FnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while !condition() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for the condition"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
 }
 
 /// A stub whose one sync page holds the book "Dune".
