@@ -323,6 +323,27 @@ async fn wire_reports_rejected_when_login_fails() {
 }
 
 #[tokio::test]
+async fn wire_does_not_follow_redirects_from_login() {
+    let elsewhere = spawn_stub(Stub::default()).await;
+    let stub = spawn_stub(Stub {
+        login_redirects_to: Some(format!("{}/api/auth/login", elsewhere.origin)),
+        ..Stub::default()
+    })
+    .await;
+
+    let result = wire(&stub.origin, &admin(), "Mock Kobo").await;
+
+    assert!(elsewhere.paths().is_empty(), "{:?}", elsewhere.paths());
+    assert!(matches!(
+        result,
+        Err(AutoWireError::Rejected {
+            step: "POST /api/auth/login",
+            status: 307
+        })
+    ));
+}
+
+#[tokio::test]
 async fn wire_reports_failed_when_server_unreachable() {
     // Port 1 is privileged, so a parallel stub's `bind("127.0.0.1:0")` is never handed it.
     let error = wire("http://127.0.0.1:1", &admin(), "Mock Kobo")

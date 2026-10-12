@@ -120,7 +120,9 @@ pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<Wired, AutoW
             url: url.to_owned(),
         });
     }
+    // A followed 307/308 would resend the seed password to wherever `Location` points.
     let http = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|error| failed(LOGIN_STEP, error))?;

@@ -60,6 +60,8 @@ pub struct Stub {
     pub devices_status: StatusCode,
     /// The status `POST /api/auth/login` answers with.
     pub login_status: StatusCode,
+    /// A URL `POST /api/auth/login` answers with a 307 redirect to, instead of `login_status`.
+    pub login_redirects_to: Option<String>,
     /// The `token` in a successful login reply; `None` leaves it null.
     pub login_token: Option<&'static str>,
 }
@@ -81,6 +83,7 @@ impl Default for Stub {
             devices: Vec::new(),
             devices_status: StatusCode::OK,
             login_status: StatusCode::OK,
+            login_redirects_to: None,
             login_token: Some(SESSION_TOKEN),
         }
     }
@@ -229,6 +232,10 @@ fn omnibus_api(state: &StubState, path: &str, headers: &HeaderMap, body: &str) -
 }
 
 fn login(state: &StubState) -> Response {
+    if let Some(target) = &state.stub.login_redirects_to {
+        let location = HeaderValue::from_str(target).unwrap();
+        return (StatusCode::TEMPORARY_REDIRECT, [(LOCATION, location)]).into_response();
+    }
     let status = state.stub.login_status;
     if !status.is_success() {
         return status.into_response();
