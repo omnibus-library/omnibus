@@ -398,8 +398,8 @@ fn offset_chapters(
 /// Path-derived `(title, creator)` fallback for groups whose tags carry neither.
 /// Mp3 folder: leaf = title, parent = creator. Single file under
 /// `<Author>/<Title>/<file>`: parent = title, grandparent = creator. Shallower
-/// layouts degrade: `<Author>/<file>` gives the stem as title, a bare `<file>`
-/// has no creator.
+/// layouts degrade: `<Author>/<file>` gives the stem, minus a leading creator
+/// prefix, as title; a bare `<file>` has no creator.
 fn path_fallback(group_path: &str, single_file: bool) -> (String, Option<String>) {
     if !single_file {
         return (leaf_name(group_path), parent_name(group_path));
