@@ -605,8 +605,8 @@ fn upload_router(limits: RateLimits) -> Router<AppState> {
 /// Kept separate from [`upload_router`] because book/audiobook payloads are far
 /// larger than cover/photo images, so these routes carry their own (much
 /// higher) `DefaultBodyLimit` from `OMNIBUS_MAX_UPLOAD_BYTES` rather than
-/// raising the image routes' 11 MiB cap. Shares the same per-IP frequency
-/// budget as the image uploads.
+/// raising the image routes' 11 MiB cap. Has its own per-IP budget, the same
+/// size as the image uploads'.
 ///
 /// Merged outside [`super::REQUEST_TIMEOUT`]: a large audiobook takes minutes
 /// to arrive, and commit then waits for the library scan. `body_idle_timeout`
