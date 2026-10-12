@@ -138,6 +138,19 @@ class ModuleMapCliTests(unittest.TestCase):
             ["auth/ — Auth data layer.", "books/ — Book reads."],
         )
 
+    def test_skips_test_support_modules(self):
+        write(self.root, "lib.rs", "//! Crate root.\n")
+        write(self.root, "test_support.rs", "//! Seed factories.\n")
+        write(self.root, "auth/mod.rs", "//! Auth.\n")
+        write(self.root, "auth/test_support/mod.rs", "//! Auth fixtures.\n")
+        self.assertEqual(self.run_map(), ["auth/ — Auth.", "lib.rs — Crate root."])
+
+    def test_skips_swift_test_targets(self):
+        write(self.root, "omnibus/App.swift", "//  App.swift\n//  The app.\n")
+        write(self.root, "omnibusTests/AppTests.swift", "//  AppTests.swift\n//  Tests.\n")
+        write(self.root, "omnibusUITests/Flow.swift", "//  Flow.swift\n//  UI tests.\n")
+        self.assertEqual(self.run_map(), ["omnibus/", "  App.swift — The app."])
+
     def test_marks_a_module_with_no_doc(self):
         write(self.root, "palette.rs", "pub fn accent() {}\n")
         self.assertEqual(self.run_map(), ["palette.rs — (no module doc)"])

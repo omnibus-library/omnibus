@@ -6,7 +6,8 @@
 One line per module, indented by depth: the first sentence of a Rust file's
 `//!` doc, or of a Swift file's header comment (the lines after
 `//  Name.swift`). A directory module takes its `mod.rs` (or sibling
-`<name>.rs`) doc. Tests and non-source files are skipped.
+`<name>.rs`) doc. Tests, test helpers, Xcode test targets and non-source
+files are skipped.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ DOC_PREFIX = {"rust": "//!", "swift": "//"}
 SWIFT_NAME_LINE = re.compile(r"^//\s*\S+\.swift\s*$")
 SENTENCE_END = re.compile(r"\.(?=$|\s+[^a-z])")
 NO_DOC = "(no module doc)"
+TEST_ONLY_STEMS = {"tests", "test_support"}
 
 
 def doc_paragraph(source: str, language: str) -> str | None:
@@ -62,6 +64,12 @@ def directory_module_file(directory: Path) -> Path | None:
     return None
 
 
+def is_test_only(path: Path) -> bool:
+    """A Rust test module or test helper, or an Xcode test target directory."""
+    is_xcode_test_target = path.is_dir() and path.name.endswith("Tests")
+    return path.stem in TEST_ONLY_STEMS or is_xcode_test_target
+
+
 def is_listed_file(path: Path) -> bool:
     """A source file that is not already listed as its directory's module."""
     return (
@@ -76,7 +84,7 @@ def module_lines(directory: Path, depth: int = 0) -> list[str]:
     lines = []
     indent = "  " * depth
     for path in sorted(directory.iterdir()):
-        if path.stem == "tests":
+        if is_test_only(path):
             continue
         if path.is_dir():
             children = module_lines(path, depth + 1)
