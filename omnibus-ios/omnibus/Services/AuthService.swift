@@ -45,9 +45,21 @@ enum AuthService {
             throw APIError.http(status: 500, message: "Server did not issue a bearer token.")
         }
         await APIClient.shared.setToken(token)
-        await OfflineStore.shared.noteUser(response.user.username)
+        await noteUser(response.user.username)
         await Cache.write(CacheKey.me, response.user)
         return response.user
+    }
+
+    /// Record who is signed in on `store`. Another account than last time also
+    /// loses the previous reader's library filter: its shelf ids name their shelves.
+    static func noteUser(_ username: String, in store: OfflineStore, filters: LibraryFilterStore) async {
+        guard await store.noteUser(username) else { return }
+        await filters.clear()
+    }
+
+    private static func noteUser(_ username: String) async {
+        let filters = await MainActor.run { LibraryFilterStore.shared }
+        await noteUser(username, in: .shared, filters: filters)
     }
 
     /// The signed-in identity, settled against the server when it is reachable.
@@ -62,7 +74,7 @@ enum AuthService {
         let user: UserSummary = try await Cache.settled(CacheKey.me) {
             try await APIClient.shared.get("/api/auth/me")
         }
-        await OfflineStore.shared.noteUser(user.username)
+        await noteUser(user.username)
         return user
     }
 

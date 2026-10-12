@@ -12,6 +12,12 @@ final class LibraryModel {
     var isLoading = false
     var isLoadingMore = false
     var error: String?
+    /// Whether a first-page read has answered yet; until one has, nothing on
+    /// screen may say the library, or a filter, has no books.
+    var hasAnswered = false
+    /// Rows were cleared for a filter or shelf change and nothing has answered
+    /// since, so the tab keeps its content up rather than swapping to a loader.
+    var isApplyingFilters = false
 
     /// Restored from `defaults` at init and written back on every change, so
     /// the menu's checkmark and the grid order survive a relaunch (#2347).
@@ -30,12 +36,16 @@ final class LibraryModel {
         }
     }
     private let defaults: UserDefaults
+    /// The library filter, one list shared with every shelf page.
+    let filterStore: LibraryFilterStore
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, filters: LibraryFilterStore? = nil) {
         self.defaults = defaults
+        filterStore = filters ?? .shared
         let pref = LibrarySortPreference.load(from: defaults)
         sort = pref.sort
         direction = pref.direction
+        watchClauses()
     }
 
     private func persistSort() {
@@ -84,10 +94,11 @@ final class LibraryModel {
     var visibleBooks: [Book] { books }
 
     /// The category's filter plus the viewer's hidden-formats and Stack series prefs.
-    private var activeFilter: LibraryFilter {
+    var activeFilter: LibraryFilter {
         var filter = category.filter
         filter.hiddenFormats = hiddenFormats
         filter.stackSeries = stackSeries
+        filter.clauses = filterStore.clauses
         return filter
     }
 
@@ -106,11 +117,16 @@ final class LibraryModel {
         await reload()
     }
 
-    func reload() async {
+    /// `clearingGrid` drops rows read under a filter that no longer applies.
+    func reload(clearingGrid: Bool = false) async {
         // New data can lead a series with another volume, so the open run folds.
         openSeries = nil
         let token = UUID()
         loadToken = token
+        if clearingGrid {
+            books = []
+            isApplyingFilters = true
+        }
         isLoading = true
         error = nil
         cursor = nil
@@ -134,13 +150,13 @@ final class LibraryModel {
                         self.hiddenCount = read.value.hiddenCount
                         self.stacks = Self.stackIndex(read.value.stacks)
                         self.error = nil
-                        self.isLoading = false
+                        self.noteAnswered()
                     }
                 } catch {
                     guard self.loadToken == token, self.books.isEmpty else { return }
                     self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
                 }
-                if self.loadToken == token { self.isLoading = false }
+                if self.loadToken == token { self.noteAnswered() }
             }
             group.addTask { @MainActor in
                 for await points in UserDataService.recentProgress().values() {
@@ -158,6 +174,13 @@ final class LibraryModel {
                 }
             }
         }
+    }
+
+    /// The current read answered, with rows or without.
+    private func noteAnswered() {
+        isLoading = false
+        isApplyingFilters = false
+        hasAnswered = true
     }
 
     /// Resume points only. Re-running the whole `reload` would refetch the
@@ -338,11 +361,12 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if model.isLoading && model.books.isEmpty {
+                switch model.tabState {
+                case .loading:
                     LoadingView(label: "Loading your library")
-                } else if let error = model.error, model.books.isEmpty {
+                case .failed(let error):
                     ErrorStateView(message: error) { Task { await model.reload() } }
-                } else if model.books.isEmpty {
+                case .empty:
                     EmptyStateView(
                         icon: "books.vertical",
                         title: "No books yet",
@@ -350,7 +374,7 @@ struct LibraryView: View {
                         kicker: "Your library",
                         fanned: true
                     )
-                } else {
+                case .content:
                     content
                 }
             }
@@ -415,7 +439,7 @@ struct LibraryView: View {
             Task { await model.refreshResume() }
         }
         .onChange(of: invalidations.generation(of: CacheKey.shelfPreviews)) { _, _ in
-            Task { await model.refreshShelves() }
+            Task { await model.shelvesMoved() }
         }
     }
 
@@ -465,13 +489,22 @@ struct LibraryView: View {
 
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     sectionHeading
+                    LibraryFilterBar(
+                        store: model.filterStore, viewerId: app.user?.id,
+                        reservesFormatClause: !model.category.serverFormats.isEmpty
+                    )
+                    .screenPadding()
                     if let error = model.stackSeriesError {
                         Text(error)
                             .font(.ui(12))
                             .foregroundStyle(palette.badColor)
                             .screenPadding()
                     }
-                    grid
+                    if model.books.isEmpty {
+                        FilteredResultsState(phase: model.filteredPhase) { model.filterStore.clear() }
+                    } else {
+                        grid
+                    }
                 }
             }
             .padding(.bottom, 40)

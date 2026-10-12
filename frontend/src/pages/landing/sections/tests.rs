@@ -1,6 +1,7 @@
 use omnibus_shared::{Shelf, ShelfKind, Visibility};
 
 use super::{add_books_state, empty_books_message, AddBooks};
+use crate::pages::landing::view::Members;
 use crate::shelf_selection::ShelfSelection;
 
 fn shelf(id: i64, kind: ShelfKind) -> Shelf {
@@ -33,12 +34,26 @@ fn add_books_state_is_ready_for_an_editable_hand_picked_shelf_once_members_load(
     let manual = shelf(3, ShelfKind::Manual);
     let pick = ShelfSelection::Shelf(3);
     assert_eq!(
-        add_books_state(Some(&manual), pick, true, true),
+        add_books_state(Some(&manual), pick, true, Members::Ready),
         AddBooks::Ready
     );
     assert_eq!(
-        add_books_state(Some(&manual), pick, true, false),
+        add_books_state(Some(&manual), pick, true, Members::Pending),
         AddBooks::Waiting
+    );
+}
+
+#[test]
+fn add_books_state_says_the_members_are_unavailable_when_their_fetch_failed() {
+    let manual = shelf(3, ShelfKind::Manual);
+    assert_eq!(
+        add_books_state(
+            Some(&manual),
+            ShelfSelection::Shelf(3),
+            true,
+            Members::Unavailable
+        ),
+        AddBooks::Unavailable
     );
 }
 
@@ -47,16 +62,19 @@ fn add_books_state_hides_unless_the_viewer_may_hand_pick_into_the_shelf() {
     let pick = ShelfSelection::Shelf(3);
     let manual = shelf(3, ShelfKind::Manual);
     assert_eq!(
-        add_books_state(Some(&manual), pick, false, true),
+        add_books_state(Some(&manual), pick, false, Members::Ready),
         AddBooks::Hidden
     );
     for kind in [ShelfKind::Smart, ShelfKind::Wishlist] {
         assert_eq!(
-            add_books_state(Some(&shelf(3, kind)), pick, true, true),
+            add_books_state(Some(&shelf(3, kind)), pick, true, Members::Ready),
             AddBooks::Hidden
         );
     }
-    assert_eq!(add_books_state(None, pick, true, true), AddBooks::Hidden);
+    assert_eq!(
+        add_books_state(None, pick, true, Members::Ready),
+        AddBooks::Hidden
+    );
 }
 
 #[test]
@@ -64,11 +82,16 @@ fn add_books_state_hides_while_the_detail_trails_a_new_pick() {
     // The previous shelf's detail is still loaded after picking shelf 4.
     let previous = shelf(3, ShelfKind::Manual);
     assert_eq!(
-        add_books_state(Some(&previous), ShelfSelection::Shelf(4), true, true),
+        add_books_state(
+            Some(&previous),
+            ShelfSelection::Shelf(4),
+            true,
+            Members::Ready
+        ),
         AddBooks::Hidden
     );
     assert_eq!(
-        add_books_state(Some(&previous), ShelfSelection::All, true, true),
+        add_books_state(Some(&previous), ShelfSelection::All, true, Members::Ready),
         AddBooks::Hidden
     );
 }
@@ -77,7 +100,7 @@ fn add_books_state_hides_while_the_detail_trails_a_new_pick() {
 mod render {
     use dioxus::prelude::*;
 
-    use super::super::{add_books_button, LandingHeaderTitleRow};
+    use super::super::{add_books_button, AddBooks, LandingHeaderTitleRow};
     use crate::test_support::render_in_vdom;
 
     fn title_row(book_count: Option<usize>, count_pending: bool) -> Element {
@@ -116,11 +139,21 @@ mod render {
 
     #[test]
     fn add_books_button_is_inert_until_the_members_are_known() {
-        let waiting = render_in_vdom(|| add_books_button(false, EventHandler::new(|_| {})));
+        let waiting =
+            render_in_vdom(|| add_books_button(AddBooks::Waiting, EventHandler::new(|_| {})));
         assert!(waiting.contains(r#"aria-disabled="true""#), "{waiting}");
         assert!(waiting.contains("Still loading"), "{waiting}");
-        let ready = render_in_vdom(|| add_books_button(true, EventHandler::new(|_| {})));
+        let ready = render_in_vdom(|| add_books_button(AddBooks::Ready, EventHandler::new(|_| {})));
         assert!(ready.contains(r#"aria-disabled="false""#), "{ready}");
         assert!(ready.contains("shelf-add-books"), "{ready}");
+    }
+
+    #[test]
+    fn add_books_button_says_the_members_failed_to_load_rather_than_that_they_are_loading() {
+        let html =
+            render_in_vdom(|| add_books_button(AddBooks::Unavailable, EventHandler::new(|_| {})));
+        assert!(html.contains(r#"aria-disabled="true""#), "{html}");
+        assert!(html.contains("couldn\u{2019}t be loaded"), "{html}");
+        assert!(!html.contains("Still loading"), "{html}");
     }
 }

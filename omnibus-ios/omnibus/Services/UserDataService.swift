@@ -638,10 +638,50 @@ enum UserDataService {
         }
     }
 
-    static func shelfBooks(id: Int64) -> AsyncThrowingStream<CacheRead<ShelfPage>, Error> {
-        Cache.live(CacheKey.shelfPage(id)) {
-            try await APIClient.shared.get("/api/shelves/\(id)/page")
+    /// A shelf's members, narrowed by the library filter when it has clauses.
+    static func shelfBooks(
+        id: Int64, filter: [FilterClause] = []
+    ) -> AsyncThrowingStream<CacheRead<ShelfPage>, Error> {
+        Cache.live(CacheKey.shelfPage(id, filter: filter)) {
+            try await APIClient.shared.get("/api/shelves/\(id)/page", query: shelfPageQuery(filter))
         }
+    }
+
+    /// The shelf page's query: `?filter=` when the filter has clauses, else nothing.
+    static func shelfPageQuery(_ filter: [FilterClause]) -> [String: String?] {
+        guard let clauses = FilterClause.queryValue(filter) else { return [:] }
+        return ["filter": clauses]
+    }
+
+    /// Forget a shelf's cached members, filtered copies included.
+    static func dropShelfPages(_ id: Int64) async {
+        await dropShelfPages(id, in: .shared)
+    }
+
+    /// `dropShelfPages(_:)` over any store, so the drop is testable against a scratch replica.
+    static func dropShelfPages(_ id: Int64, in store: OfflineStore) async {
+        await store.cacheDelete(CacheKey.shelfPage(id))
+        await store.cacheDeletePrefix(CacheKey.shelfPageFilteredPrefix(id))
+    }
+
+    /// Forget every page keyed on a shelf clause, on the library or any shelf:
+    /// the clause reads shelf membership, so a write that moves it stales them.
+    static func dropShelfClausePages() async {
+        await dropShelfClausePages(in: .shared)
+    }
+
+    /// `dropShelfClausePages()` over any store, for the same reason.
+    static func dropShelfClausePages(in store: OfflineStore) async {
+        await store.cacheDeletePrefix(CacheKey.libraryPagePrefix, containing: CacheKey.shelfClauseMarker)
+        await store.cacheDeletePrefix("shelf_page:", containing: CacheKey.shelfClauseMarker)
+    }
+
+    /// Before a membership write: a filtered copy of the shelf can't be patched
+    /// truthfully, since whether a book belongs under a filter is the server's
+    /// to say, and every page keyed on a shelf clause reads this membership.
+    private static func dropPagesAMembershipWriteStales(_ shelfId: Int64) async {
+        await OfflineStore.shared.cacheDeletePrefix(CacheKey.shelfPageFilteredPrefix(shelfId))
+        await dropShelfClausePages()
     }
 
     /// Create a shelf. The one write here that genuinely needs the server.
@@ -669,7 +709,7 @@ enum UserDataService {
         await OfflineStore.shared.cacheDelete(CacheKey.shelf(id))
         // A rule change recomputes membership on the server, and the cached
         // page is the only copy an offline open would show.
-        await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(id))
+        await dropShelfPages(id)
         await shelvesChanged()
         return shelf
     }
@@ -678,7 +718,8 @@ enum UserDataService {
     /// queues like any other write and applies on reconnect.
     static func deleteShelf(id: Int64) async {
         await OfflineStore.shared.cacheDelete(CacheKey.shelf(id))
-        await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(id))
+        await dropShelfPages(id)
+        await dropShelfClausePages()
         // Splice the shelf out of the cached lists rather than dropping them.
         // Dropping was fine online, where a refetch follows immediately, but
         // offline it left the Shelves tab with no replica and nothing to fetch
@@ -714,13 +755,14 @@ enum UserDataService {
             await mutateShelfMembership(uuid) { $0.insert(shelfId) }
         }
         await addBooksLocally(shelfId: shelfId, uuids: uuids)
+        await dropPagesAMembershipWriteStales(shelfId)
         let landed = await SyncEngine.shared.write(
             kind: OpKind.shelfMembership, path: "/api/shelves/\(shelfId)/books",
             body: body, coalesce: false
         )
         if landed {
             await invalidateShelves()
-            await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(shelfId))
+            await dropShelfPages(shelfId)
         }
     }
 
@@ -754,13 +796,14 @@ enum UserDataService {
             removed = page.books.count < before
         }
         if removed { await adjustShelfCount(shelfId, by: -1) }
+        await dropPagesAMembershipWriteStales(shelfId)
         let landed = await SyncEngine.shared.write(
             kind: OpKind.shelfMembership, path: "/api/shelves/\(shelfId)/books/\(uuid)",
             method: "DELETE", body: nil, coalesce: false
         )
         if landed {
             await invalidateShelves()
-            await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(shelfId))
+            await dropShelfPages(shelfId)
         }
     }
 
@@ -859,7 +902,7 @@ enum UserDataService {
     /// offering it.
     static func forgetShelf(id: Int64) async {
         await OfflineStore.shared.cacheDelete(CacheKey.shelf(id))
-        await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(id))
+        await dropShelfPages(id)
         await removeShelfLocally(id)
         await MainActor.run {
             ReplicaInvalidations.shared.note(keys: [CacheKey.shelves, CacheKey.shelfPreviews])
@@ -910,13 +953,15 @@ enum UserDataService {
     }
 
     /// Forget any cached wishlist shelf page, so the shelf doesn't keep showing
-    /// a book that is no longer on it. Deliberately over-broad on an admin's
+    /// a book that is no longer on it, and every page a shelf clause keyed — a
+    /// wishlist can be a clause's shelf. Deliberately over-broad on an admin's
     /// device, whose cached list carries other accounts' wishlist shelves too:
     /// a needless drop there costs one refetch, and this only ever runs online.
     private static func dropCachedWishlistPages() async {
+        await dropShelfClausePages()
         guard let shelves: [ShelfSummary] = await Cache.cachedOnly(CacheKey.shelves) else { return }
         for shelf in shelves where shelf.kind == .wishlist {
-            await OfflineStore.shared.cacheDelete(CacheKey.shelfPage(shelf.id))
+            await dropShelfPages(shelf.id)
         }
     }
 

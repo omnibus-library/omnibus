@@ -9,7 +9,6 @@ use dioxus::prelude::*;
 use crate::use_server_url;
 
 mod effects;
-mod filtering;
 pub(crate) mod resume_meta;
 mod sorting;
 
