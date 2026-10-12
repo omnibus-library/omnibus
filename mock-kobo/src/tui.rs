@@ -121,3 +121,6 @@ fn spawn_job(
         let _ = finished.send(task.await);
     });
 }
+
+#[cfg(test)]
+mod tests;
