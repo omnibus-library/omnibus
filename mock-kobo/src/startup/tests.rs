@@ -234,12 +234,12 @@ async fn start_restores_synced_library_after_restart() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some(&stub.origin), Some(STUB_TOKEN));
-    let first = Arc::new(start(&args, None, &no_runtime(&dir)).await.unwrap());
+    let first = Arc::new(start(&args, None, &no_runtime(&dir)).await.unwrap().control);
     first.sync().await.unwrap();
     let before = first.view();
     drop(first);
 
-    let second = start(&args, None, &no_runtime(&dir)).await.unwrap();
+    let second = start(&args, None, &no_runtime(&dir)).await.unwrap().control;
 
     let after = second.view();
     assert_eq!(after.hardware_id, before.hardware_id);
@@ -257,7 +257,8 @@ async fn start_persists_given_url_and_token_across_restarts() {
     let second = Arc::new(
         start(&args_in(&dir, None, None), None, &no_runtime(&dir))
             .await
-            .unwrap(),
+            .unwrap()
+            .control,
     );
 
     assert_eq!(second.view().url, stub.origin);
@@ -272,7 +273,7 @@ async fn start_follows_dev_server_port_without_saving_it() {
     publish_dev_server(&runtime, &stub);
     let args = args_in(&dir, None, Some(STUB_TOKEN));
 
-    let control = start(&args, None, &runtime).await.unwrap();
+    let control = start(&args, None, &runtime).await.unwrap().control;
 
     assert_eq!(control.view().url, stub.origin);
     let saved = state::load(&args.state).await.unwrap().unwrap();
@@ -303,7 +304,8 @@ async fn start_auto_wires_seed_admin_device_when_no_token_known() {
     let control = Arc::new(
         start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
             .await
-            .unwrap(),
+            .unwrap()
+            .control,
     );
 
     let created = stub.requests_to("/api/rpc/kobo/devices/create");
@@ -384,6 +386,60 @@ async fn start_reuses_auto_wired_token_when_dev_server_is_unchanged() {
     assert_eq!(server.requests_to("/api/auth/login").len(), 1);
     let saved = state::load(&args.state).await.unwrap().unwrap();
     assert_eq!(saved.token, "tok-a");
+}
+
+#[tokio::test]
+async fn start_warns_when_new_device_reuses_server_device() {
+    let stub = spawn_stub(Stub {
+        devices: vec![("Mock Kobo (kobo)".to_owned(), "tok-a".to_owned())],
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let args = args_in(&dir, Some(&stub.origin), None);
+
+    let started = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
+        .await
+        .unwrap();
+
+    let notice = started.notice.unwrap();
+    assert!(notice.contains("Mock Kobo (kobo)"));
+    assert!(notice.contains("only changes"));
+    assert!(notice.contains("#2743"));
+    assert!(notice.contains("remove the device in Account settings"));
+}
+
+#[tokio::test]
+async fn start_does_not_warn_when_auto_wire_creates_device() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let args = args_in(&dir, Some(&stub.origin), None);
+
+    let started = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
+        .await
+        .unwrap();
+
+    assert_eq!(started.notice, None);
+}
+
+#[tokio::test]
+async fn start_does_not_warn_when_existing_device_is_rewired() {
+    let server_a = spawn_stub(stub_with_device("tok-a")).await;
+    let server_b = spawn_stub(stub_with_device("tok-b")).await;
+    let dir = TempDir::new().unwrap();
+    let runtime = no_runtime(&dir);
+    let args = args_in(&dir, None, None);
+    publish_dev_server(&runtime, &server_a);
+    start(&args, Some("admin:omnibus-dev"), &runtime)
+        .await
+        .unwrap();
+    publish_dev_server(&runtime, &server_b);
+
+    let started = start(&args, Some("admin:omnibus-dev"), &runtime)
+        .await
+        .unwrap();
+
+    assert_eq!(started.notice, None);
 }
 
 #[tokio::test]

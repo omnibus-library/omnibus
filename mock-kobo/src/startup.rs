@@ -57,6 +57,14 @@ pub fn resolve_target(
     }
 }
 
+/// A running device, and what the user should be told about how it was set up.
+pub struct Started {
+    pub control: Control,
+    /// Set when a new local device (no state file) was wired to an existing server device:
+    /// its next sync sends only changes until #2743.
+    pub notice: Option<String>,
+}
+
 /// Why a device couldn't be started.
 #[derive(Debug, thiserror::Error)]
 pub enum StartError {
@@ -70,21 +78,26 @@ pub enum StartError {
 
 /// Load the state file, resolve the target, auto-wire if no token is known,
 /// mint a hardware id for a new device, save, and return the running device.
+/// The notice is set only when auto-wire reused a server device for a device with no state file.
 pub async fn start(
     args: &ServeArgs,
     seed_user: Option<&str>,
     runtime_dir: &Path,
-) -> Result<Control, StartError> {
+) -> Result<Started, StartError> {
     let saved = state::load(&args.state).await?;
     let dev_server = autowire::dev_server_url(runtime_dir).await;
     let target = resolve_target(args, saved.as_ref(), dev_server);
+    let mut notice = None;
     let (token, wired_url) = match target.token {
         Some(token) => (token, target.wired_url),
         None => {
             let seed = SeedUser::parse(seed_user)?;
             let name = autowire::device_name(&args.state);
-            let token = autowire::wire(&target.url, &seed, &name).await?;
-            (token, Some(target.url.clone()))
+            let wired = autowire::wire(&target.url, &seed, &name).await?;
+            if wired.reused && saved.is_none() {
+                notice = Some(reuse_notice(&name));
+            }
+            (wired.token, Some(target.url.clone()))
         }
     };
     let device = match saved {
@@ -98,7 +111,17 @@ pub async fn start(
         device,
     };
     state::save(&args.state, &saved).await?;
-    Ok(Control::new(saved, target.url, args.state.clone()))
+    let control = Control::new(saved, target.url, args.state.clone());
+    Ok(Started { control, notice })
+}
+
+/// What a new local device is told when auto-wire hands it a server device that already exists.
+fn reuse_notice(device_name: &str) -> String {
+    format!(
+        "wired a new local device to the existing Omnibus device \"{device_name}\": its next sync \
+         sends only changes until #2743; to get every book, remove the device in Account settings \
+         and start again"
+    )
 }
 
 /// A device with a freshly minted hardware id.

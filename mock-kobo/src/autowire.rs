@@ -91,8 +91,16 @@ struct DeviceRow {
     token: String,
 }
 
-/// Log in at `url` as `seed`, then reuse or create the device called `name`; returns its token.
-pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<String, AutoWireError> {
+/// The device token auto-wire found or made, and which of the two it was.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Wired {
+    pub token: String,
+    /// Whether an Omnibus device with this name already existed.
+    pub reused: bool,
+}
+
+/// Log in at `url` as `seed`, then reuse or create the device called `name`.
+pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<Wired, AutoWireError> {
     let http = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
@@ -102,7 +110,10 @@ pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<String, Auto
     let devices: Vec<DeviceRow> =
         post(&http, LIST_STEP, &list_url, Some(&session), &json!({})).await?;
     if let Some(device) = devices.into_iter().find(|device| device.name == name) {
-        return Ok(device.token);
+        return Ok(Wired {
+            token: device.token,
+            reused: true,
+        });
     }
     let create_url = format!("{url}/api/rpc/kobo/devices/create");
     let created: DeviceRow = post(
@@ -113,7 +124,10 @@ pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<String, Auto
         &CreateBody { name },
     )
     .await?;
-    Ok(created.token)
+    Ok(Wired {
+        token: created.token,
+        reused: false,
+    })
 }
 
 /// A bearer session token for `seed`.

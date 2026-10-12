@@ -121,9 +121,9 @@ async fn dev_server_url_is_none_when_port_file_is_not_a_port() {
 async fn wire_reuses_device_with_matching_name() {
     let stub = spawn_stub(stub_with_devices(&[("Mock Kobo", "tok-a")])).await;
 
-    let token = wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
+    let wired = wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
 
-    assert_eq!(token, "tok-a");
+    assert_eq!(wired.token, "tok-a");
     assert!(!stub
         .paths()
         .contains(&"/api/rpc/kobo/devices/create".to_owned()));
@@ -133,15 +133,35 @@ async fn wire_reuses_device_with_matching_name() {
 async fn wire_creates_device_when_no_name_matches() {
     let stub = spawn_stub(stub_with_devices(&[("Mock Kobo", "tok-a")])).await;
 
-    let token = wire(&stub.origin, &admin(), "Mock Kobo (other)")
+    let wired = wire(&stub.origin, &admin(), "Mock Kobo (other)")
         .await
         .unwrap();
 
-    assert_eq!(token, STUB_TOKEN);
+    assert_eq!(wired.token, STUB_TOKEN);
     let created = stub.requests_to("/api/rpc/kobo/devices/create");
     assert_eq!(created.len(), 1);
     let body: Value = serde_json::from_str(&created[0].body).unwrap();
     assert_eq!(body, json!({ "name": "Mock Kobo (other)" }));
+}
+
+#[tokio::test]
+async fn wire_reports_reused_when_name_matches() {
+    let stub = spawn_stub(stub_with_devices(&[("Mock Kobo", "tok-a")])).await;
+
+    let wired = wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
+
+    assert!(wired.reused);
+}
+
+#[tokio::test]
+async fn wire_reports_created_when_no_name_matches() {
+    let stub = spawn_stub(stub_with_devices(&[("Mock Kobo", "tok-a")])).await;
+
+    let wired = wire(&stub.origin, &admin(), "Mock Kobo (other)")
+        .await
+        .unwrap();
+
+    assert!(!wired.reused);
 }
 
 #[tokio::test]
@@ -152,9 +172,9 @@ async fn wire_reuses_first_listed_device_when_names_repeat() {
     ]))
     .await;
 
-    let token = wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
+    let wired = wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
 
-    assert_eq!(token, "tok-a");
+    assert_eq!(wired.token, "tok-a");
 }
 
 #[tokio::test]
