@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 
@@ -96,9 +96,42 @@ impl Control {
         }
     }
 
-    /// Press "Sync now" against `<url>/kobo/<token>`.
-    pub async fn sync(&self) -> Result<LastSync, ControlError> {
-        let (_syncing, mut device, token) = self.begin_sync()?;
+    /// Press "Sync now" against `<url>/kobo/<token>`. The sync runs on its own
+    /// task, so dropping the caller (a client disconnect) never cancels it.
+    pub async fn sync(self: &Arc<Self>) -> Result<LastSync, ControlError> {
+        let (syncing, device, token) = self.begin_sync()?;
+        let control = Arc::clone(self);
+        let task = tokio::spawn(async move { control.run_sync(syncing, device, token).await });
+        match task.await {
+            Ok(result) => result,
+            Err(error) => std::panic::resume_unwind(
+                error
+                    .try_into_panic()
+                    .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
+            ),
+        }
+    }
+
+    /// Mark a sync as running and hand back what it works on, or turn it away if one already is.
+    fn begin_sync(self: &Arc<Self>) -> Result<(SyncingGuard, Device, String), ControlError> {
+        let (device, token) = {
+            let mut live = self.live();
+            if live.syncing {
+                return Err(ControlError::SyncInProgress);
+            }
+            live.syncing = true;
+            (live.saved.device.clone(), live.saved.token.clone())
+        };
+        Ok((SyncingGuard(Arc::clone(self)), device, token))
+    }
+
+    /// Sync `device`, commit what it learned, and save; `_syncing` clears the flag when this ends.
+    async fn run_sync(
+        &self,
+        _syncing: SyncingGuard,
+        mut device: Device,
+        token: String,
+    ) -> Result<LastSync, ControlError> {
         let endpoint = format!("{}/kobo/{token}", self.url);
         let attempt = attempt_sync(&mut device, &endpoint).await;
         let last_sync = match attempt.outcome {
@@ -116,19 +149,6 @@ impl Control {
         }
         self.persist().await?;
         Ok(last_sync)
-    }
-
-    /// Mark a sync as running and hand back what it works on, or turn it away if one already is.
-    fn begin_sync(&self) -> Result<(SyncingGuard<'_>, Device, String), ControlError> {
-        let (device, token) = {
-            let mut live = self.live();
-            if live.syncing {
-                return Err(ControlError::SyncInProgress);
-            }
-            live.syncing = true;
-            (live.saved.device.clone(), live.saved.token.clone())
-        };
-        Ok((SyncingGuard(self), device, token))
     }
 
     /// Wipe what the device holds; keep who it is and where it syncs.
@@ -165,10 +185,10 @@ impl Control {
     }
 }
 
-/// Clears `syncing` when a sync ends for any reason, including its caller being cancelled.
-struct SyncingGuard<'a>(&'a Control);
+/// Clears `syncing` when a sync ends for any reason, including its task panicking.
+struct SyncingGuard(Arc<Control>);
 
-impl Drop for SyncingGuard<'_> {
+impl Drop for SyncingGuard {
     fn drop(&mut self) {
         self.0.live().syncing = false;
     }

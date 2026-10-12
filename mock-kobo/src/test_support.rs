@@ -13,6 +13,7 @@ use axum::{
     Json, Router,
 };
 use serde_json::{json, Value};
+use tokio::sync::Notify;
 
 use crate::control::Control;
 use crate::device::Device;
@@ -50,6 +51,8 @@ pub struct Stub {
     pub sync_never_ends: bool,
     /// Leave `library_sync` requests open without ever answering.
     pub sync_never_answers: bool,
+    /// Hold the second `library_sync` page, already requested, until this is notified.
+    pub second_page_gate: Option<Arc<Notify>>,
     /// The `(name, token)` devices `POST /api/rpc/kobo/devices` lists, oldest first.
     pub devices: Vec<(String, String)>,
     /// The status `POST /api/auth/login` answers with.
@@ -71,6 +74,7 @@ impl Default for Stub {
             sync_status: StatusCode::OK,
             sync_never_ends: false,
             sync_never_answers: false,
+            second_page_gate: None,
             devices: Vec::new(),
             login_status: StatusCode::OK,
             login_token: Some(SESSION_TOKEN),
@@ -140,13 +144,13 @@ pub async fn spawn_stub(stub: Stub) -> RunningStub {
 }
 
 /// A fresh `HW-1` device holding `STUB_TOKEN`, syncing against `stub`, saving to `state_path`.
-pub fn stub_control(stub: &RunningStub, state_path: PathBuf) -> Control {
+pub fn stub_control(stub: &RunningStub, state_path: PathBuf) -> Arc<Control> {
     let saved = SavedState {
         url: None,
         token: STUB_TOKEN.to_owned(),
         device: Device::new("HW-1"),
     };
-    Control::new(saved, stub.origin.clone(), state_path)
+    Arc::new(Control::new(saved, stub.origin.clone(), state_path))
 }
 
 async fn handle(
@@ -263,6 +267,9 @@ async fn library_sync(state: &StubState) -> Response {
         std::future::pending::<()>().await;
     }
     let call = state.sync_calls.fetch_add(1, Ordering::SeqCst);
+    if let Some(gate) = state.stub.second_page_gate.as_ref().filter(|_| call == 1) {
+        gate.notified().await;
+    }
     let pages = &state.stub.sync_pages;
     let page = pages.get(call).or(pages.last());
     let body = Json(page.cloned().unwrap_or_else(|| json!([])));

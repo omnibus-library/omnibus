@@ -6,6 +6,7 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use serde_json::json;
 use tempfile::TempDir;
+use tokio::sync::Notify;
 
 use crate::device::Device;
 use crate::state;
@@ -90,11 +91,11 @@ async fn sync_records_failed_last_sync_without_quirk_when_server_unreachable() {
     };
     let dir = TempDir::new().unwrap();
     // Port 1 is privileged, so a parallel stub's `bind("127.0.0.1:0")` is never handed it.
-    let control = Control::new(
+    let control = Arc::new(Control::new(
         saved,
         "http://127.0.0.1:1".into(),
         dir.path().join("kobo.json"),
-    );
+    ));
 
     let last_sync = control.sync().await.unwrap();
 
@@ -139,7 +140,7 @@ async fn sync_returns_sync_in_progress_while_another_sync_runs() {
     })
     .await;
     let dir = TempDir::new().unwrap();
-    let control = Arc::new(stub_control(&stub, dir.path().join("kobo.json")));
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
     let running = spawn_sync(&control);
     wait_until(|| control.view().syncing).await;
 
@@ -159,7 +160,7 @@ async fn view_shows_syncing_while_sync_runs() {
     })
     .await;
     let dir = TempDir::new().unwrap();
-    let control = Arc::new(stub_control(&stub, dir.path().join("kobo.json")));
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
     assert!(!control.view().syncing);
 
     let running = spawn_sync(&control);
@@ -170,32 +171,38 @@ async fn view_shows_syncing_while_sync_runs() {
 }
 
 #[tokio::test]
-async fn sync_clears_syncing_when_caller_is_cancelled() {
+async fn sync_completes_when_caller_is_cancelled() {
+    let gate = Arc::new(Notify::new());
     let stub = spawn_stub(Stub {
-        sync_never_answers: true,
+        sync_pages: vec![
+            json!([new_entitlement("book-1", "Dune")]),
+            json!([new_entitlement("book-2", "Dune Messiah")]),
+        ],
+        second_page_gate: Some(Arc::clone(&gate)),
         ..Stub::default()
     })
     .await;
     let dir = TempDir::new().unwrap();
-    let saved = SavedState {
-        url: None,
-        token: STUB_TOKEN.into(),
-        device: device_with_dune(),
-    };
-    let control = Arc::new(Control::new(
-        saved,
-        stub.origin.clone(),
-        dir.path().join("kobo.json"),
-    ));
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    let library_sync = format!("/kobo/{STUB_TOKEN}/v1/library/sync");
     let running = spawn_sync(&control);
-    wait_until(|| control.view().syncing).await;
+    wait_until(|| stub.requests_to(&library_sync).len() == 2).await;
 
     running.abort();
     running.await.unwrap_err();
+    gate.notify_one();
 
+    wait_until(|| !control.view().syncing).await;
     let view = control.view();
-    assert!(!view.syncing);
-    assert_eq!(view.library, device_with_dune().library);
+    assert_eq!(view.last_sync, Some(LastSync::Synced { pages: 2 }));
+    let titles: Vec<_> = view.library.values().map(|b| b.title.as_str()).collect();
+    assert_eq!(titles, ["Dune", "Dune Messiah"]);
+    let sync_requests = control
+        .requests()
+        .iter()
+        .filter(|r| r.path.ends_with("/v1/library/sync"))
+        .count();
+    assert_eq!(sync_requests, 2);
 }
 
 #[tokio::test]

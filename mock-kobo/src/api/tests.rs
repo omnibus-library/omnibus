@@ -3,9 +3,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tempfile::TempDir;
+use tokio::sync::Notify;
 
 use crate::control::{Control, ControlError, DeviceView, LastSync};
 use crate::device::Device;
@@ -26,10 +28,10 @@ fn request(method: &str, path: &str) -> Value {
 }
 
 /// Serve `control` on a free loopback port and return its base URL.
-async fn serve(control: Control) -> String {
+async fn serve(control: Arc<Control>) -> String {
     let listener = listen(0).await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let app = router(Arc::new(control));
+    let app = router(control);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     base
 }
@@ -107,7 +109,7 @@ async fn get_device_returns_each_book_with_its_series() {
         device,
     };
     let control = Control::new(saved, stub.origin.clone(), dir.path().join("kobo.json"));
-    let base = serve(control).await;
+    let base = serve(Arc::new(control)).await;
 
     let body: Value = reqwest::get(format!("{base}/device"))
         .await
@@ -272,6 +274,64 @@ async fn post_actions_sync_returns_synced_reply_against_healthy_stub() {
             "details": { "pages": 1 },
         })
     );
+}
+
+/// `GET /device`'s `details` once the device is no longer syncing, failing at a deadline.
+async fn idle_device(base: &str) -> Value {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let body: Value = reqwest::get(format!("{base}/device"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if body["details"]["syncing"] == false {
+            return body["details"].clone();
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for the sync to end"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+#[tokio::test]
+async fn post_sync_keeps_applied_pages_when_client_disconnects() {
+    let gate = Arc::new(Notify::new());
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![
+            json!([new_entitlement("book-1", "Dune")]),
+            json!([new_entitlement("book-2", "Dune Messiah")]),
+        ],
+        second_page_gate: Some(Arc::clone(&gate)),
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    let impatient = reqwest::Client::builder()
+        .timeout(Duration::from_millis(300))
+        .build()
+        .unwrap();
+
+    let result = impatient.post(format!("{base}/actions/sync")).send().await;
+    gate.notify_one();
+
+    assert!(result.unwrap_err().is_timeout());
+    let device = idle_device(&base).await;
+    assert_eq!(
+        device["last_sync"],
+        json!({ "result": "synced", "pages": 2 })
+    );
+    let titles: Vec<_> = device["library"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|book| book["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles, ["Dune", "Dune Messiah"]);
 }
 
 #[tokio::test]

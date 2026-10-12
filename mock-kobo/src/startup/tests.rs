@@ -2,6 +2,7 @@
 //! precedence table (unit), then real state files and a stub Omnibus.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde_json::json;
 use tempfile::TempDir;
@@ -166,7 +167,7 @@ async fn start_restores_synced_library_after_restart() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some(&stub.origin), Some(STUB_TOKEN));
-    let first = start(&args, None, &no_runtime(&dir)).await.unwrap();
+    let first = Arc::new(start(&args, None, &no_runtime(&dir)).await.unwrap());
     first.sync().await.unwrap();
     let before = first.view();
     drop(first);
@@ -186,9 +187,11 @@ async fn start_persists_given_url_and_token_across_restarts() {
     let given = args_in(&dir, Some(&stub.origin), Some(STUB_TOKEN));
     drop(start(&given, None, &no_runtime(&dir)).await.unwrap());
 
-    let second = start(&args_in(&dir, None, None), None, &no_runtime(&dir))
-        .await
-        .unwrap();
+    let second = Arc::new(
+        start(&args_in(&dir, None, None), None, &no_runtime(&dir))
+            .await
+            .unwrap(),
+    );
 
     assert_eq!(second.view().url, stub.origin);
     assert_eq!(second.sync().await.unwrap(), LastSync::Synced { pages: 1 });
@@ -232,9 +235,11 @@ async fn start_auto_wires_seed_admin_device_when_no_token_known() {
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some(&stub.origin), None);
 
-    let control = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
-        .await
-        .unwrap();
+    let control = Arc::new(
+        start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
+            .await
+            .unwrap(),
+    );
 
     let created = stub.requests_to("/api/rpc/kobo/devices/create");
     assert_eq!(created.len(), 1);
