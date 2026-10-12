@@ -12,6 +12,7 @@ use super::sorting::{default_dir_for, toggle_dir};
 use super::stack_toggle::StackToggleView;
 use super::table::{BookTable, BookTableContext};
 use super::toolbar::Toolbar;
+use super::view::Members;
 use crate::components::loading::{CoverSkeletons, RowSkeletons};
 use crate::components::shelf_facets::pencil_glyph;
 use crate::components::shelf_glyphs::plus_icon;
@@ -55,6 +56,8 @@ pub(super) struct LandingHeaderView {
 pub(super) enum AddBooks {
     Hidden,
     Waiting,
+    /// The members failed to load, so there is nothing to mark.
+    Unavailable,
     Ready,
 }
 
@@ -64,17 +67,15 @@ pub(super) fn add_books_state(
     shelf: Option<&Shelf>,
     selection: ShelfSelection,
     can_edit: bool,
-    members_ready: bool,
+    members: Members,
 ) -> AddBooks {
     let on_screen = shelf.filter(|s| selection == ShelfSelection::Shelf(s.id));
     match on_screen {
-        Some(s) if can_edit && s.kind == ShelfKind::Manual => {
-            if members_ready {
-                AddBooks::Ready
-            } else {
-                AddBooks::Waiting
-            }
-        }
+        Some(s) if can_edit && s.kind == ShelfKind::Manual => match members {
+            Members::Ready => AddBooks::Ready,
+            Members::Pending => AddBooks::Waiting,
+            Members::Unavailable => AddBooks::Unavailable,
+        },
         _ => AddBooks::Hidden,
     }
 }
@@ -138,7 +139,7 @@ pub(super) fn LandingHeader(
                 ShelfFacets { shelf: shelf.clone() }
             }
             if add_books != AddBooks::Hidden {
-                {add_books_button(add_books == AddBooks::Ready, on_add_books)}
+                {add_books_button(add_books, on_add_books)}
             }
             LandingHeaderMessages { path_missing, page_error, lib_err }
         }
@@ -196,16 +197,22 @@ fn LandingHeaderTitleRow(
     }
 }
 
-/// The header's Add books button, greyed and inert while the shelf's members
-/// are still loading.
-fn add_books_button(ready: bool, on_add: EventHandler<()>) -> Element {
+/// The header's Add books button, greyed and inert until the shelf's members
+/// are known.
+fn add_books_button(state: AddBooks, on_add: EventHandler<()>) -> Element {
+    let ready = state == AddBooks::Ready;
+    let why = match state {
+        AddBooks::Waiting => Some("Still loading this shelf\u{2019}s books\u{2026}"),
+        AddBooks::Unavailable => Some("This shelf\u{2019}s books couldn\u{2019}t be loaded."),
+        AddBooks::Hidden | AddBooks::Ready => None,
+    };
     rsx! {
         button {
             r#type: "button",
             class: "btn primary shd-action lib-shelf-add",
             "data-testid": "shelf-add-books",
             "aria-disabled": if ready { "false" } else { "true" },
-            title: (!ready).then_some("Still loading this shelf\u{2019}s books\u{2026}"),
+            title: why,
             onclick: move |_| if ready { on_add.call(()) },
             {plus_icon()}
             "Add books"

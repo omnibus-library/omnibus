@@ -5,6 +5,7 @@ import { expectMutation } from "../utils/api";
 import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 import { bookTile, galleryTile, selectShelfInGallery } from "../utils/shelves";
+import { createReader } from "../utils/users";
 
 // Checking in a book you wished for, and the pages under the check-in overlay
 // that must follow the writes it lands. Every book here is minted by the spec
@@ -39,29 +40,6 @@ function meta(isbn: string, title: string): Record<string, unknown> {
     first_publish_year: null,
     source: "open_library",
   };
-}
-
-/** Create a plain reader through the admin API and return its id. */
-async function createReader(
-  request: APIRequestContext,
-  username: string,
-): Promise<number> {
-  const resp = await request.post("/api/admin/users", {
-    data: {
-      username,
-      password: PASSWORD,
-      permissions: {
-        is_admin: false,
-        can_upload: false,
-        can_edit: false,
-        can_download: true,
-      },
-    },
-  });
-  expect(resp.status(), `POST /api/admin/users failed for ${username}`).toBe(
-    201,
-  );
-  return ((await resp.json()) as { id: number }).id;
 }
 
 /**
@@ -160,7 +138,7 @@ test("checks in a wishlisted book from its own page, then a second copy", async 
   baseURL,
 }) => {
   const username = `e2e_wished_${Date.now()}`;
-  const readerId = await createReader(request, username);
+  const readerId = await createReader(request, username, PASSWORD);
   const isbn = uniqueIsbn();
   const title = `E2E Wished For ${Date.now()}`;
   const { uuid, shelfId } = await wishFor(
@@ -295,7 +273,7 @@ test("a wishlist add over the library refreshes the selected wishlist shelf", as
   baseURL,
 }) => {
   const username = `e2e_wishrail_${Date.now()}`;
-  const readerId = await createReader(request, username);
+  const readerId = await createReader(request, username, PASSWORD);
   const first = await wishFor(
     playwright.request,
     baseURL ?? "",

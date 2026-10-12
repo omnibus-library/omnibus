@@ -4,7 +4,7 @@
 //! library path so each library keeps independent sort/filter state. Shape
 //! lives in `omnibus-shared`.
 
-use omnibus_shared::ViewPrefs;
+use omnibus_shared::{ViewFilters, ViewPrefs};
 
 const STORAGE_PREFIX: &str = "omnibus.view_prefs::";
 
@@ -69,6 +69,20 @@ pub fn last_library() -> Option<String> {
 /// avoid rather than leaving the wrong prefs applied.
 pub fn load_last() -> Option<ViewPrefs> {
     last_library().map(|path| load(&path))
+}
+
+/// Save `filters` as the filter of the last-browsed library, leaving its sort
+/// and view mode as they were — the write for a page that has no prefs of its
+/// own but shares the landing's filter. With no library ever browsed (and under
+/// SSR) there is no key to file it under, so nothing is saved and the caller
+/// holds the filter in memory only.
+pub fn save_filters(filters: &ViewFilters) {
+    let Some(path) = last_library() else {
+        return;
+    };
+    let mut prefs = load(&path);
+    prefs.filters = filters.clone();
+    save(&path, &prefs);
 }
 
 /// Where one edit to the prefs is saved, and whether it still owes the
@@ -207,6 +221,44 @@ mod mobile_tests {
 
             assert_eq!(last_library(), Some("/library/a".to_string()));
             assert_eq!(load_last(), Some(prefs));
+        });
+    }
+
+    #[test]
+    fn save_filters_replaces_only_the_filters_of_the_last_library() {
+        let _guard = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        with_isolated_store(|| {
+            let prefs = sample_prefs();
+            save("/library/a", &prefs);
+            let next = ViewFilters {
+                clauses: vec![FilterClause::new(
+                    FilterField::Author,
+                    FilterMode::Exclude,
+                    &["Ada"],
+                )],
+            };
+
+            save_filters(&next);
+
+            let stored = load("/library/a");
+            assert_eq!(stored.filters, next);
+            assert_eq!(stored.sort_key, prefs.sort_key);
+            assert_eq!(stored.sort_dir, prefs.sort_dir);
+            assert_eq!(stored.view_mode, prefs.view_mode);
+            assert_eq!(load_last(), Some(stored));
+        });
+    }
+
+    #[test]
+    fn save_filters_writes_nothing_when_no_library_was_ever_saved() {
+        let _guard = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        with_isolated_store(|| {
+            let filters = sample_prefs().filters;
+
+            save_filters(&filters);
+
+            assert_eq!(last_library(), None);
+            assert_eq!(load_last(), None);
         });
     }
 

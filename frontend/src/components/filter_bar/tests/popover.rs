@@ -163,6 +163,21 @@ fn picker_body_labels_each_value_checkbox_and_checks_the_picked_ones() {
 }
 
 #[test]
+fn picker_body_checks_a_pick_that_differs_from_its_value_only_by_ascii_case() {
+    // The engine matches names ignoring case, so a stored "sci-fi" is the "Sci-Fi" row.
+    let html = render_body(
+        FilterField::Tag,
+        FilterMode::Include,
+        "",
+        &["sci-fi"],
+        ready(&["Sci-Fi", "Cozy"]),
+    );
+
+    assert!(checkbox_tag(&html, "Sci-Fi").contains("checked"), "{html}");
+    assert!(!checkbox_tag(&html, "Cozy").contains("checked"), "{html}");
+}
+
+#[test]
 fn picker_body_reports_when_nothing_matches_the_search() {
     let html = render_body(
         FilterField::Tag,
@@ -325,6 +340,48 @@ fn state_for_leaves_other_fields_alone_when_the_bars_shelves_are_loaded() {
 }
 
 #[test]
+fn state_for_labels_another_readers_shelf_with_the_viewer_that_is_current() {
+    // The label is cut at render, so a viewer that resolves late relabels it.
+    let mut theirs = shelf(4, "Favourites", ShelfKind::Manual, 3);
+    theirs.owner_user_id = 2;
+    let shelves = ShelfList::Loaded(vec![theirs]);
+
+    assert_eq!(
+        picker::state_for(FilterField::Shelf, None, &shelves, None),
+        picker::LoadState::Ready(list(vec![option("4", "Favourites", Some(3))]))
+    );
+    assert_eq!(
+        picker::state_for(FilterField::Shelf, None, &shelves, Some(1)),
+        picker::LoadState::Ready(list(vec![option("4", "Favourites \u{b7} reader", Some(3))]))
+    );
+}
+
+thread_local! {
+    static COMMITS: std::cell::RefCell<(bool, bool, Vec<&'static str>)> =
+        const { std::cell::RefCell::new((false, false, Vec::new())) };
+}
+
+#[test]
+fn commit_if_current_drops_an_answer_a_newer_fetch_superseded() {
+    // A panic inside a component is swallowed by the vdom, so the outcome
+    // leaves it through a thread-local and is asserted out here.
+    #[component]
+    fn CommitBoth() -> Element {
+        let epoch = Signal::new(2u32);
+        let mut committed = Vec::new();
+
+        let stale = picker::commit_if_current(epoch, 1, "stale", |answer| committed.push(answer));
+        let fresh = picker::commit_if_current(epoch, 2, "fresh", |answer| committed.push(answer));
+
+        COMMITS.with(|seen| *seen.borrow_mut() = (stale, fresh, committed));
+        rsx! {}
+    }
+    VirtualDom::new(CommitBoth).rebuild_in_place();
+
+    COMMITS.with(|seen| assert_eq!(*seen.borrow(), (false, true, vec!["fresh"])));
+}
+
+#[test]
 fn needs_fetch_skips_the_shelf_field_once_the_bars_list_loaded() {
     let loaded = ShelfList::Loaded(vec![shelf(4, "Favourites", ShelfKind::Manual, 3)]);
 
@@ -446,4 +503,35 @@ fn toggle_pick_refuses_a_new_value_past_the_value_cap_but_still_removes_one() {
 
     picker::toggle_pick(&mut picked, "p0");
     assert_eq!(picked.len(), MAX_FILTER_VALUES - 1);
+}
+
+#[component]
+fn FooterlessBodyHarness() -> Element {
+    rsx! {
+        picker::PickerBody {
+            field: FilterField::Tag,
+            mode: FilterMode::Include,
+            query: String::new(),
+            picked: vec!["a".to_string()],
+            state: ready(&["a"]),
+            footer: false,
+            on_mode: move |_| {},
+            on_query: move |_| {},
+            on_toggle: move |_| {},
+            on_retry: move |_| {},
+        }
+    }
+}
+
+#[test]
+fn picker_body_leaves_out_cancel_and_apply_when_its_footer_is_off() {
+    let html = render(rsx! { FooterlessBodyHarness {} });
+
+    assert!(!html.contains("filter-picker-apply"), "{html}");
+    assert!(!html.contains("filter-picker-cancel"), "{html}");
+    assert!(
+        html.contains("data-testid=\"filter-mode-include\""),
+        "{html}"
+    );
+    assert!(html.contains("aria-label=\"a\""), "{html}");
 }
