@@ -3,22 +3,39 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::wire::{BookMetadata, Series, SyncItem};
 
 /// What the device shows for a book with no `Contributors` ([`crate::firmware::Quirk::ContributorsDisplay`]).
 const UNKNOWN_AUTHOR: &str = "Unknown";
 
+/// A fresh hardware id for a new device: `mock-` then 32 random hex digits.
+pub fn mint_hardware_id() -> Result<String, getrandom::Error> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes)?;
+    let mut id = String::from("mock-");
+    for byte in bytes {
+        id.push(char::from(HEX[usize::from(byte >> 4)]));
+        id.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(id)
+}
+
 /// One fake Kobo.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Device {
     /// The serial the firmware sends as `x-kobo-deviceid`.
     pub hardware_id: String,
     /// The books on the device, keyed by entitlement id.
     pub library: BTreeMap<String, Book>,
+    /// The last `x-kobo-synctoken` the server sent, which the device echoes on its next sync.
+    pub sync_token: Option<String>,
 }
 
 /// One book as the device shows it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Book {
     pub title: String,
     pub description: String,
@@ -36,6 +53,7 @@ impl Device {
         Self {
             hardware_id: hardware_id.to_owned(),
             library: BTreeMap::new(),
+            sync_token: None,
         }
     }
 

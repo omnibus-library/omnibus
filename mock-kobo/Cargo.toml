@@ -8,14 +8,23 @@ version = "0.1.0"
 edition = "2021"
 license.workspace = true
 
+[[bin]]
+name = "mock-kobo"
+path = "src/main.rs"
+
 [dependencies]
+# `main.rs` is the only user: the library reports typed errors.
+anyhow = "1"
+# Same version `server/` uses for axum, so cargo unifies on one build.
+axum = "0.8"
+# Same version `db/` uses for its CSPRNG tokens, so cargo unifies on one build.
+getrandom = "0.3"
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
-# Stub Omnibus instances for the firmware tests. Same version as `server/`'s
-# axum so cargo unifies on one build.
-axum = "0.8"
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }
+tokio = { workspace = true, features = ["time"] }
+tempfile = { workspace = true }

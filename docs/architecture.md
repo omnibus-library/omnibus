@@ -44,10 +44,13 @@ Cargo workspace with seven crates:
 - **`mock-kobo/`** (`omnibus-mock-kobo`) — a **fake Kobo e-reader** for testing
   wireless sync: speaks the firmware's side of `/kobo/<token>/v1/*` and enforces
   the firmware behaviours behind past Kobo regressions, each a named
-  `firmware::Quirk` citing its evidence. Dev tooling only — it ships in neither
-  the server binary nor the Docker image — and it depends on no `omnibus-*`
-  crate, so its wire types can catch a server-side shape change that a shared
-  DTO would hide.
+  `firmware::Quirk` citing its evidence. `mock-kobo serve` runs one device
+  behind a loopback control API (`POST /actions/sync`, `GET /device`,
+  `GET /requests`, `PUT /reset`; replies `{status, code, message, details}`),
+  keeps a JSON state file, and auto-wires the dev seed admin's device. Dev
+  tooling only — it ships in neither the server binary nor the Docker image —
+  and it depends on no `omnibus-*` crate, so its wire types can catch a
+  server-side shape change that a shared DTO would hide.
 
 Default `cargo build` / `clippy` covers `server`, `shared`, `frontend` only.
 Mobile is excluded via workspace `default-members` because its `mobile` feature

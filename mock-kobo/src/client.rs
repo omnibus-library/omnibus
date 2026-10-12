@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::firmware::{HARDWARE_ID_HEADER, SYNC_TOKEN_HEADER};
 use crate::session::SyncFailure;
@@ -17,7 +18,7 @@ const REDACTED: &str = "<token>";
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One request the device made and the status it got back.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RequestRecord {
     pub method: String,
     /// The URL path, with the device token redacted.
