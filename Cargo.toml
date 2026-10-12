@@ -1,12 +1,13 @@
 [workspace]
-members = ["server", "mobile", "shared", "frontend", "db", "mcp"]
+members = ["server", "mobile", "shared", "frontend", "db", "mcp", "mock-kobo"]
 # Exclude `mobile` from default workspace-wide commands (`cargo build`,
 # `cargo clippy`, etc.) to avoid unifying the mutually exclusive
 # `omnibus-frontend` feature flags (`web` + `mobile`). Build mobile
 # explicitly with `cargo build -p omnibus-mobile`. `mcp` is likewise
 # out of default-members — it is a standalone client binary that daily
 # server work never needs to compile; build it explicitly with
-# `cargo build -p omnibus-mcp`.
+# `cargo build -p omnibus-mcp`. `mock-kobo` (a fake Kobo for sync tests) is
+# out for the same reason.
 default-members = ["server", "shared", "frontend"]
 resolver = "2"
 

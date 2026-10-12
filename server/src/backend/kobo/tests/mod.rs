@@ -7,6 +7,7 @@
 mod analytics;
 mod auth;
 mod content;
+mod device;
 mod metadata;
 mod resources;
 mod state;
@@ -43,9 +44,9 @@ async fn fixture() -> (Router, SqlitePool, String, i64) {
 }
 
 /// Put `uuids` on a hand-picked shelf owned by `user_id` and flag it for Kobo
-/// sync. Since #924 the sync set is shelf-gated, so any test that expects a
-/// book back from `library/sync` must opt it in first.
-async fn opt_in(pool: &SqlitePool, user_id: i64, uuids: &[String]) {
+/// sync, returning the shelf id. Since #924 the sync set is shelf-gated, so any
+/// test that expects a book back from `library/sync` must opt it in first.
+async fn opt_in(pool: &SqlitePool, user_id: i64, uuids: &[String]) -> i64 {
     let shelf = db::shelves::create_shelf(
         pool,
         user_id,
@@ -71,6 +72,7 @@ async fn opt_in(pool: &SqlitePool, user_id: i64, uuids: &[String]) {
     )
     .await
     .unwrap();
+    shelf.id
 }
 
 async fn body_json(res: Response) -> Value {

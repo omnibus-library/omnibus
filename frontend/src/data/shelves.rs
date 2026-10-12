@@ -334,6 +334,18 @@ pub async fn shelves_containing(_server_url: &str, uuid: &str) -> Result<Vec<i64
         .map_err(note_server_fn_err)
 }
 
+/// Ids of the visible smart shelves whose rules match this book. Web-only
+/// caller, like [`shelves_containing`].
+#[cfg(not(feature = "mobile"))]
+pub async fn smart_shelves_containing(
+    _server_url: &str,
+    uuid: &str,
+) -> Result<Vec<i64>, DataError> {
+    crate::rpc::rpc_smart_shelves_containing(uuid.to_string())
+        .await
+        .map_err(note_server_fn_err)
+}
+
 /// Create a shelf.
 #[cfg(not(feature = "mobile"))]
 pub async fn create_shelf(_server_url: &str, req: CreateShelfRequest) -> Result<Shelf, DataError> {
