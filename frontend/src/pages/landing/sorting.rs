@@ -121,8 +121,8 @@ pub(crate) fn slugify(s: &str) -> String {
 /// Stable per-book testid slug for a row/tile.
 ///
 /// A fileless book (physical-only, or a ghost) has an empty `filename`, so
-/// this falls back to the uuid. **Not a diff key**: books with same-named
-/// files slug alike. Keyed lists take [`row_diff_key`].
+/// this falls back to the uuid. Not a diff key (rule 07): keyed lists take
+/// [`row_diff_key`].
 pub(crate) fn row_ident(book: &EbookMetadata) -> String {
     if book.filename.is_empty() {
         return row_slug(book.unique_identifier.as_deref().unwrap_or_default());
@@ -132,9 +132,7 @@ pub(crate) fn row_ident(book: &EbookMetadata) -> String {
 
 /// Stable per-book key for a keyed list — `books.id`, unique library-wide.
 ///
-/// Deliberately not [`row_ident`], whose basename slug collapses two books
-/// (`vol.epub` under two folders) onto one string; duplicate keyed siblings
-/// take down the page's event handling (rule 07).
+/// Never [`row_ident`], whose slug can collide (rule 07).
 pub(crate) fn row_diff_key(book: &EbookMetadata) -> String {
     book.id.to_string()
 }

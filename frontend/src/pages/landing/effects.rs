@@ -292,9 +292,9 @@ pub(super) fn spawn_shelves_list_effect(
                 answered.set(true);
                 return;
             };
-            // Reset a dangling pick here, with the authoritative list in hand: a reactive
-            // effect over `(loaded, selection)` misfired during hydration and rewrote a
-            // valid persisted pick to All.
+            // Reset a dangling pick here, with the authoritative list in hand: a
+            // reactive effect over `(loaded, selection)` would misfire during
+            // hydration and rewrite a valid persisted pick to All.
             let current = *selection.peek();
             if let ShelfSelection::Shelf(id) = current {
                 if !list.iter().any(|s| s.id == id) {

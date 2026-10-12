@@ -25,10 +25,9 @@ pub(super) enum GridItem {
 
 impl GridItem {
     /// The cell's diff key: a book's own key, or its stack's lead for a stack or
-    /// head card.
-    ///
-    /// Also the cell's `data-flip-key`, shared with the `stack-`/`cap-` keys
-    /// `series_tiles` writes: re-prefixing here alone stops the deal-out animation.
+    /// head card. Also its `data-flip-key`, one value space with the `stack-`/`cap-`
+    /// keys `series_tiles` writes and `grid`'s `data-flip-from`: `series_flip.js`
+    /// matches them across a deal-out, so re-prefixing here alone stops the animation.
     pub(super) fn key(&self) -> String {
         match self {
             GridItem::Book(book) => row_diff_key(book),

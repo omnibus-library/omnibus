@@ -132,12 +132,14 @@ fn journal_feed_notice(feed: FeedState) -> Option<Element> {
 /// (the eval is a no-op on SSR / native). Called unconditionally from
 /// [`BdJournalSection`].
 fn use_spoiler_reveal_binding() {
-    // The body is gated, not the hook, so the hook count matches across targets.
     // Enter/Space are handled in the JS because the sanitizer emits the spoiler as
     // an inline `role="button"` span, which has no native activation.
     use_effect(move || {
         #[cfg(feature = "web")]
         {
+            // Space is `preventDefault`-ed or it scrolls the page. The aria
+            // attributes move in step so the text reaches assistive tech only
+            // once revealed.
             let _ = dioxus::document::eval(
                 r#"
                 if (!window.__omnibusSpoilerBound) {

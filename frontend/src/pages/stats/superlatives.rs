@@ -69,8 +69,7 @@ fn ranked_row(label: &'static str, ranked: &[RankedEntity]) -> Option<Row> {
 
 /// Every superlative the window supports, in reading order: book-length rows
 /// first (they're what a reader quotes), then the time-shaped ones, then the
-/// two rankings. The last three (busiest week, top author and subject) come off
-/// fields outside `Superlatives`.
+/// two rankings.
 fn build_rows(summary: &StatsSummary) -> Vec<Row> {
     let s = &summary.superlatives;
     let busiest_week = summary

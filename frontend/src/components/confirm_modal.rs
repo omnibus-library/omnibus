@@ -42,9 +42,9 @@ fn dismiss_unless_busy(busy: bool, on_dismiss: EventHandler<()>) {
 
 /// Modal backdrop + panel shell shared by every dialog: a backdrop click
 /// dismisses (unless `busy`), a click inside the panel does not bubble to it.
-/// `children` is the body, `head` an optional title/close slot, and
-/// `backdrop_class` overrides the default chrome. Escape dismisses on the same
-/// gate; `focus_on_open` (opt-in) focuses the panel so that works without a click.
+/// `children` is the body, `head` an optional title/close slot, `backdrop_class`
+/// overrides the default chrome. Escape dismisses on the same gate; `focus_on_open`
+/// focuses the panel for it, so leave it off when the body autofocuses a field.
 #[component]
 pub fn ConfirmModal(
     testid: String,

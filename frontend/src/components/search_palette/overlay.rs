@@ -273,9 +273,6 @@ fn SpInputRow(query: Signal<String>, is_loading: bool, on_input: EventHandler<St
         move || remove_prefocus_key_buffer(&buffer)
     });
 
-    // Real focus lands a frame after mount, so `install_prefocus_key_buffer`
-    // folds early keystrokes into `query` until then; `remove_prefocus_key_buffer`
-    // detaches it so ordinary typing goes through `oninput`.
     let mount_buffer = Rc::clone(&buffer);
     let focus_buffer = Rc::clone(&buffer);
     rsx! {

@@ -107,14 +107,12 @@ pub fn set_local_zone(offset_minutes: i64, zone: Option<String>) {
     }
 }
 
-/// This device's current UTC offset in minutes east of UTC — `-420` in Los
-/// Angeles, `330` in Kolkata — or `None` where it cannot be asked (SSR, or an
-/// Android shell that has not reported yet); a claimed UTC would be worse than
-/// the server's session-offset fallback. Asked about **now**, unlike
-/// [`local_utc_offset_secs`]: stats reads declare it for day boundaries (rule 10).
+/// This device's current UTC offset in minutes east of UTC, or `None` where it
+/// cannot be asked (SSR, or an Android shell that has not reported yet); a
+/// claimed UTC would be worse than the server's session-offset fallback. Asked
+/// about **now**, unlike [`local_utc_offset_secs`]: stats reads declare it for
+/// day boundaries (rule 10). Call only in effects or handlers (rule 07).
 pub fn local_utc_offset_minutes() -> Option<i64> {
-    // Read only inside effects and event handlers, never a component body
-    // (rule 07), so no markup depends on it.
     #[cfg(feature = "web")]
     {
         Some(local_utc_offset_secs(now_unix()) / 60)

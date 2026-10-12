@@ -245,11 +245,10 @@ fn use_palette_setup() {
 #[cfg(feature = "mobile")]
 fn use_palette_setup() {}
 
-/// Install the cached-user and playback contexts. Web (and SSR) only;
-/// mobile uses bearer tokens via `token_store` and stubs the listen page.
-/// Called unconditionally from [`App`], with the cfg in the body; the mobile
-/// build is a no-op stub because `CurrentUser`/`PlaybackState` are themselves
-/// `cfg(not(mobile))`. Rule 07's hydration invariant holds within `not(mobile)`.
+/// Install the cached-user and playback contexts. Web (and SSR) only; mobile
+/// uses bearer tokens via `token_store`, and its twin below provides
+/// `MobilePlayback` instead. Called unconditionally from [`App`]; rule 07's
+/// hydration invariant holds because web and SSR share `not(mobile)`.
 #[cfg(not(feature = "mobile"))]
 fn use_user_and_playback_contexts() {
     // Cached `/api/auth/me`. Provided unconditionally on non-mobile builds
@@ -386,8 +385,6 @@ fn use_mobile_zone_capture() {
     use_future(move || async move {
         // Ends when the channel closes; the app root never unmounts in practice.
         while let Ok((offset, zone)) = eval.recv::<(i64, Option<String>)>().await {
-            // Pushed into a cache rather than awaited per call: the sync
-            // `session_tracker::build_report` can't await (`time::set_local_zone`).
             time::set_local_zone(offset, zone);
         }
     });

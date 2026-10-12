@@ -120,7 +120,6 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
             None => rows.push((row, rank)),
         }
     }
-    // Overrides go last so they replace the scanned row they correct.
     apply_isbn_override(&mut rows, "isbn-13", book.isbn13.as_deref());
     apply_isbn_override(&mut rows, "isbn-10", book.isbn10.as_deref());
     rows.into_iter().map(|(row, _)| row).collect()
@@ -148,9 +147,8 @@ fn apply_isbn_override(
         label: label.clone(),
         value: value.to_string(),
     };
-    // Same ISBN first (a rename: `urn:isbn:`, hyphenated and bare forms
-    // collapse), else same label (a correction of a wrong file value), else
-    // the override is a value the file never carried and is appended.
+    // A same-ISBN match is a rename (`urn:isbn:`, hyphenated and bare forms
+    // collapse); a same-label match corrects a wrong file value.
     let slot_index = rows
         .iter()
         .position(|(existing, _)| same_identifier(&existing.value, value))

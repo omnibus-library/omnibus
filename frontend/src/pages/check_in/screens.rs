@@ -105,8 +105,9 @@ pub(super) fn CloseMatchScreen(
     on_yes: EventHandler<ScanBook>,
     on_no: EventHandler<ExternalBookMeta>,
 ) -> Element {
-    // Always a picker, even for one row: an EPUB and its unattached audiobook are
-    // one work in two rows, and declining that pair would offer to create a third.
+    // Always a picker: more than one row can carry the same norm (an EPUB and
+    // its unattached audiobook are one work in two rows), and declining that
+    // pair would offer to create a third.
     let many = books.len() > 1;
     let copy = CloseMatchCopy::for_lookup(many, found_via);
     let fallthrough = scanned.clone();

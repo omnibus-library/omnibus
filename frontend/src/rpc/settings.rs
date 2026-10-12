@@ -126,13 +126,11 @@ pub async fn rpc_set_metadata_precedence(
 }
 
 /// Snapshot of every in-flight and recently-completed background-worker task,
-/// polled at 1 Hz by `WorkerStatusIndicator`. Auth-gated as `AuthUser` (not
-/// `AdminUser`): scans affect the shared library, so every authed user may see
-/// them. Scoped via [`omnibus_db::worker::Worker::owner_scoped_snapshot`], so
-/// a user-owned task never reaches a caller who doesn't own it.
-// POST, not GET: the fullstack macro mounts `#[post]` routes with a `WorkerExt`
-// extractor but the `#[get]` variant 404s at runtime. `_pool` keeps the macro
-// on the path every other `/api/rpc/*` route uses.
+/// polled at 1 Hz by `WorkerStatusIndicator`. `AuthUser`, not `AdminUser`, but
+/// scoped via [`omnibus_db::worker::Worker::owner_scoped_snapshot`] so a
+/// user-owned task never reaches a non-owner. POST, not GET: the fullstack
+/// macro 404s a `#[get]` route whose extractors include `WorkerExt`.
+// `_pool` keeps the macro on the path every other `/api/rpc/*` route uses.
 #[post("/api/rpc/worker_status", _pool: PoolExt, worker: WorkerExt, user: AuthUser)]
 pub async fn rpc_worker_status() -> Result<WorkerStatus> {
     Ok(worker.0.owner_scoped_snapshot(user.id))

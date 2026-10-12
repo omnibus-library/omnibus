@@ -10,9 +10,8 @@ use crate::pages::listen::remaining_at_rate;
 
 /// The point's key in a keyed list of resume points.
 ///
-/// Progress is `UNIQUE(user_id, book_uuid, format)`, so a book open in both
-/// formats is two points. Keyed on the progress row's own `book_uuid`, never
-/// the resolved `point.book`: `merged_uuids` can resolve two rows to one book.
+/// Built from the progress row's own `book_uuid` and format, never the
+/// resolved `point.book` (rule 07).
 pub(crate) fn resume_key(point: &ResumePoint) -> String {
     format!(
         "{}:{}",

@@ -53,7 +53,6 @@ enum OpenSheet {
 /// Renders the mobile audiobook player for `uuid`. Retargets the app-wide
 /// playback context and renders its state; the heavy lifting (fetch, audio
 /// surface, event drain) lives in the app-root [`host::MobileAudioHost`].
-/// Route-driven effects: [`use_retarget_playback`], [`use_marquee_title_refresh`].
 #[component]
 pub fn MobilePlayer(uuid: String, file_id: Option<i64>) -> Element {
     let server_url = use_server_url();

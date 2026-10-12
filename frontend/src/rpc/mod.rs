@@ -101,8 +101,8 @@ pub use server_auth::{AdminUser, AuthUser};
 /// Server-side per-route authorization extractors used by the `#[get]` /
 /// `#[post]` macros in the submodules, scoped here because `frontend` can't
 /// depend on the `server` crate (cycle). Mirrors `server::auth::extractor`'s
-/// `AuthUser` / `AdminUser`: both delegate session validation to
-/// `omnibus_db::auth::validate_session`, keeping the two contracts in lockstep.
+/// `AuthUser` / `AdminUser`: sessions go through `validate_session`, but the
+/// rest is a hand-kept copy the compiler can't check, so change both together.
 #[cfg(feature = "server")]
 mod server_auth {
     use dioxus::fullstack::axum::extract::FromRequestParts;

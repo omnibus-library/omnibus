@@ -64,8 +64,6 @@ fn spawn_admin_health_fetch(
     mut result: Signal<Option<AdminHealthReport>>,
     mut error: Signal<bool>,
 ) {
-    // Always runs: a hook can't be conditional, so `should_poll` gates the fetch
-    // each tick instead.
     use_future(move || async move {
         loop {
             if should_poll(access()) {

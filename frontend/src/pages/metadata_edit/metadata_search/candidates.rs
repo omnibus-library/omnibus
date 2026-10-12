@@ -1,8 +1,8 @@
 //! One candidate row, and the order the rows come in.
 //!
 //! The fan-out answers provider by provider, so a raw list reshuffles whenever
-//! a source is slow, newly configured or down. Ordering is derived from the
-//! candidates alone, never from which provider answered.
+//! a source is slow, newly configured or down. Ordering reads which provider
+//! answered only as the final tiebreak.
 
 use dioxus::prelude::*;
 use omnibus_shared::metadata_lookup::ProviderEdition;

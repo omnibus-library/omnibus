@@ -291,7 +291,7 @@ pub fn use_current_user_summary() -> ReadSignal<Option<omnibus_shared::UserSumma
 /// player and mini-dock share one set of signals and playback survives route
 /// changes. `uuid` is the loaded audiobook (`None` = nothing playing); setting
 /// or clearing it drives the App-level bootstrap to load, swap or tear down.
-/// Provided on `not(mobile)` only, so SSR markup matches the WASM client.
+/// Provided unconditionally on `not(mobile)`, so SSR matches the WASM client.
 #[cfg(not(feature = "mobile"))]
 #[derive(Copy, Clone)]
 pub struct PlaybackState {

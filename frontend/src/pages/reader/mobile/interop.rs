@@ -40,8 +40,6 @@ pub(super) fn install_surface_js(
     scripts: &ReaderScripts,
     native_share: bool,
 ) -> String {
-    // Chain `onload` promises: `document::Script` gives no ordering guarantee and
-    // epub.js binds `window.JSZip` at evaluation time (as the web bootstrap does).
     let url_lit = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".into());
     let opts_lit = serde_json::to_string(opts).unwrap_or_else(|_| "{}".into());
     let jszip = serde_json::to_string(&scripts.jszip).unwrap_or_else(|_| "\"\"".into());
@@ -55,6 +53,9 @@ pub(super) fn install_surface_js(
     } else {
         ""
     };
+    // Chain `onload` promises (the web bootstrap chains the same way):
+    // `document::Script` gives no ordering guarantee, and epub.js binds
+    // `window.JSZip` at evaluation time.
     format!(
         r#"(function(){{
   window.__omnibusOnRelocate=function(j){{dioxus.send({{kind:"Relocate",json:j}});}};

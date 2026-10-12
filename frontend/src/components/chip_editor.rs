@@ -111,8 +111,7 @@ pub struct ChipEditorProps {
     pub options: ChipEditorOptions,
 }
 
-/// Local reactive state for one [`ChipEditor`] instance, built by a
-/// custom-hook-style helper called unconditionally so hook order is stable.
+/// Local reactive state for one [`ChipEditor`] instance.
 /// `focused` seeds from `autofocus` (a freshly-mounted node may not emit
 /// `onfocus`); `suppress_open` is set after a commit and cleared by any
 /// keystroke or fresh focus; `root_el` is captured by the wrapper's `onmounted`.
