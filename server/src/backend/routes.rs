@@ -11,7 +11,7 @@ use axum::{
 };
 use tower_http::timeout::RequestBodyTimeoutLayer;
 
-use crate::rate_limit::{rate_limit_by_ip, RateLimiter};
+use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 
 use super::{
     account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, covers,
@@ -132,7 +132,10 @@ pub(super) fn content_routes() -> Router<AppState> {
 ///
 /// Each helper below owns one feature area (the grouping the route list used
 /// to carry as inline comments); this function just merges them.
-pub(super) fn data_routes(search_limiter: Arc<RateLimiter>) -> Router<AppState> {
+pub(super) fn data_routes(
+    search_limiter: Arc<RateLimiter>,
+    limits: RateLimits,
+) -> Router<AppState> {
     Router::new()
         .merge(metadata_override_routes())
         .merge(progress_routes())
@@ -145,7 +148,7 @@ pub(super) fn data_routes(search_limiter: Arc<RateLimiter>) -> Router<AppState> 
         .merge(physical_collection_routes())
         .merge(shelf_routes())
         .merge(journal_routes())
-        .merge(upload_router())
+        .merge(upload_router(limits))
         .merge(search_router(search_limiter))
         .merge(discovery_routes())
         .merge(suggestion_routes())
@@ -556,11 +559,14 @@ fn search_router(limiter: Arc<RateLimiter>) -> Router<AppState> {
 /// so they share a per-IP budget. The `GET`/`DELETE` author-photo routes
 /// carry no upload body (DELETE mutates but cheaply), so they stay in
 /// `rest_router`, outside this limiter.
-fn upload_router() -> Router<AppState> {
-    let limiter = Arc::new(RateLimiter::with_policy(
-        super::UPLOAD_RATE_LIMIT_WINDOW,
-        super::UPLOAD_RATE_LIMIT_MAX,
-    ));
+fn upload_router(limits: RateLimits) -> Router<AppState> {
+    let limiter = Arc::new(
+        RateLimiter::with_policy(
+            super::UPLOAD_RATE_LIMIT_WINDOW,
+            super::UPLOAD_RATE_LIMIT_MAX,
+        )
+        .with_limits(limits),
+    );
     Router::new()
         .route(
             "/api/ebooks/{uuid}/cover",
@@ -605,11 +611,17 @@ fn upload_router() -> Router<AppState> {
 /// Merged outside [`super::REQUEST_TIMEOUT`]: a large audiobook takes minutes
 /// to arrive, and commit then waits for the library scan. `body_idle_timeout`
 /// is what bounds a client that stops sending instead.
-pub(super) fn book_upload_router(body_idle_timeout: Duration) -> Router<AppState> {
-    let limiter = Arc::new(RateLimiter::with_policy(
-        super::UPLOAD_RATE_LIMIT_WINDOW,
-        super::UPLOAD_RATE_LIMIT_MAX,
-    ));
+pub(super) fn book_upload_router(
+    body_idle_timeout: Duration,
+    limits: RateLimits,
+) -> Router<AppState> {
+    let limiter = Arc::new(
+        RateLimiter::with_policy(
+            super::UPLOAD_RATE_LIMIT_WINDOW,
+            super::UPLOAD_RATE_LIMIT_MAX,
+        )
+        .with_limits(limits),
+    );
     Router::new()
         .route(
             "/api/uploads/ebooks/inspect",

@@ -332,13 +332,9 @@ impl AppState {
 pub fn rest_router(state: AppState) -> Router {
     // Standalone/test entrypoint: a fresh, dedicated search limiter per call.
     // The live server uses `rest_router_with_search_limiter` to share one (#249).
-    rest_router_with_search_limiter(
-        state,
-        std::sync::Arc::new(RateLimiter::with_policy(
-            SEARCH_RATE_LIMIT_WINDOW,
-            SEARCH_RATE_LIMIT_MAX,
-        )),
-    )
+    let search_limiter = RateLimiter::with_policy(SEARCH_RATE_LIMIT_WINDOW, SEARCH_RATE_LIMIT_MAX)
+        .with_limits(state.rate_limits());
+    rest_router_with_search_limiter(state, std::sync::Arc::new(search_limiter))
 }
 
 /// Build the `/api/*` REST router, sharing `search_limiter` with the caller so
@@ -364,13 +360,14 @@ fn rest_router_with_timeouts(
     upload_body_idle_timeout: std::time::Duration,
 ) -> Router {
     let pool = state.pool().clone();
+    let limits = state.rate_limits();
     routes::content_routes()
-        .merge(routes::data_routes(search_limiter))
+        .merge(routes::data_routes(search_limiter, limits))
         // Route-level, so it covers only the routes merged above. A book
         // upload's body alone can outlast it, so those routes are merged
         // after it and bound a stalled client with an idle timeout instead.
         .layer(timeout_layer(request_timeout))
-        .merge(routes::book_upload_router(upload_body_idle_timeout))
+        .merge(routes::book_upload_router(upload_body_idle_timeout, limits))
         .with_state(state)
         // `AuthUser`/`AdminUser` read the pool from `Extension<SqlitePool>`.
         // Layer it here so the router is self-contained for integration

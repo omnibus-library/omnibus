@@ -244,3 +244,119 @@ async fn api_upload_endpoints_share_per_ip_budget_and_exclude_reads() {
         "DELETE author photo must not be rate-limited by the upload limiter",
     );
 }
+
+/// An authed `POST /api/uploads/ebooks/inspect` with an empty body. The limiter
+/// runs before the handler, so its own status never matters here.
+fn book_upload_inspect(token: &str) -> Request<Body> {
+    Request::builder()
+        .uri("/api/uploads/ebooks/inspect")
+        .method("POST")
+        .header(AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn api_book_upload_endpoints_return_429_after_budget_exceeded() {
+    // The book-upload limiter is built apart from the image-upload one, so it
+    // needs its own over-budget check. `oneshot` carries no ConnectInfo, so
+    // every request shares the limiter's 0.0.0.0 fallback bucket.
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    for i in 0..UPLOAD_RATE_LIMIT_MAX {
+        let res = app
+            .clone()
+            .oneshot(book_upload_inspect(&token))
+            .await
+            .expect("request should succeed");
+        assert_ne!(
+            res.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "request #{} should be within the book upload budget",
+            i + 1
+        );
+    }
+
+    let over = app
+        .oneshot(book_upload_inspect(&token))
+        .await
+        .expect("request should succeed");
+    assert_eq!(
+        over.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "request beyond UPLOAD_RATE_LIMIT_MAX must return 429"
+    );
+}
+
+#[tokio::test]
+async fn api_search_palette_never_returns_429_when_rate_limits_are_disabled() {
+    let (app, _state, pool) = fixture_rate_limits_disabled().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    for i in 0..=SEARCH_RATE_LIMIT_MAX {
+        let res = app
+            .clone()
+            .oneshot(get_with_bearer("/api/search/palette?q=hello", &token))
+            .await
+            .expect("request should succeed");
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "request #{} must not be rate-limited",
+            i + 1
+        );
+    }
+}
+
+#[tokio::test]
+async fn api_upload_endpoints_never_return_429_when_rate_limits_are_disabled() {
+    let (app, _state, pool) = fixture_rate_limits_disabled().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    for i in 0..=UPLOAD_RATE_LIMIT_MAX {
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/authors/1/photo/url")
+                    .method("PUT")
+                    .header("content-type", "application/json")
+                    .header(AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(r#"{"url":"http://127.0.0.1:1/x.jpg"}"#))
+                    .unwrap(),
+            )
+            .await
+            .expect("request should succeed");
+        assert_ne!(
+            res.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "request #{} must not be rate-limited",
+            i + 1
+        );
+    }
+}
+
+#[tokio::test]
+async fn api_book_upload_endpoints_never_return_429_when_rate_limits_are_disabled() {
+    let (app, _state, pool) = fixture_rate_limits_disabled().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    for i in 0..=UPLOAD_RATE_LIMIT_MAX {
+        let res = app
+            .clone()
+            .oneshot(book_upload_inspect(&token))
+            .await
+            .expect("request should succeed");
+        assert_ne!(
+            res.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "request #{} must not be rate-limited",
+            i + 1
+        );
+    }
+}
