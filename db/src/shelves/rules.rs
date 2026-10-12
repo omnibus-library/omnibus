@@ -204,20 +204,16 @@ fn date_condition(rule: &ShelfRule, v: &str) -> Result<(String, Vec<Bind>), Shel
 }
 
 /// Build a case-insensitive `IN`/`NOT IN` text predicate for a joined name
-/// column.
-///
-/// `members` selects the `book_id`s up to (but not including) the column
-/// comparison, e.g. `"SELECT bf.book_id FROM book_files bf WHERE "`; `col` is
-/// the compared column (`"bf.format"`). Uncorrelated, so a membership union is
-/// built once per query rather than once per book. Equality
-/// (`is`/`is_not`/`includes`) uses `COLLATE NOCASE`; `contains`/`starts_with`
-/// use `LIKE` (case-insensitive for ASCII) with metacharacters escaped so user
-/// text matches literally.
+/// column. `members` selects the `book_id`s up to the column comparison (e.g.
+/// `"SELECT bf.book_id FROM book_files bf WHERE "`), `col` is the compared
+/// column. Equality ops use `COLLATE NOCASE`; `contains`/`starts_with` use
+/// `LIKE` with metacharacters escaped so user text matches literally.
 fn text_condition(
     rule: &ShelfRule,
     members: &str,
     col: &str,
 ) -> Result<(String, Vec<Bind>), ShelfError> {
+    // Uncorrelated, so a membership union is built once per query, not per book.
     let v = rule.value.trim();
     let (cmp, bind, negate) = match rule.op {
         RuleOp::Is | RuleOp::Includes => (

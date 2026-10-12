@@ -17,12 +17,11 @@ use super::types::{lock_unpoison, Worker};
 /// spread (e.g. min/median/max) without unbounded bookkeeping cost.
 pub(super) const RECENT_COMPLETIONS_CAP: usize = 20;
 
-/// Aggregate, per-task-type snapshot of worker queue state: how many tasks
-/// of each [`TaskKind`] are currently queued or running, and how long the
-/// most recently completed tasks of each kind took. Returned by
-/// [`Worker::metrics`]; unlike [`Worker::progress_snapshot`](super::Worker::progress_snapshot)
-/// (a live per-task feed) this is a coarse summary meant for cheap,
-/// periodic polling.
+/// Aggregate, per-task-type snapshot of worker queue state: how many tasks of
+/// each [`TaskKind`] are queued or running, and how long the most recently
+/// completed ones took. Returned by [`Worker::metrics`]; a coarse summary for
+/// cheap, periodic polling, unlike the live per-task feed of
+/// [`Worker::progress_snapshot`](super::Worker::progress_snapshot).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WorkerMetrics {
     /// Count of non-terminal (queued or running) tasks per [`TaskKind`].

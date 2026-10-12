@@ -101,25 +101,11 @@ pub async fn book_deletion_manifest(
     })
 }
 
-/// Delete the given items: `file_ids` are `book_files` rows (removed from the
-/// DB and unlinked from disk) and `copy_ids` are physical copies (un-recorded
-/// only — nothing on disk to remove). When no item is left afterwards, the
-/// `books` row and everything keyed to its uuid go too (see [`purge`]).
-///
-/// The DB write commits first and the filesystem cleanup follows best-effort:
-/// a failed unlink leaves an orphan file the next scan re-indexes as a new
-/// book, which is recoverable, whereas a deleted file with its row intact is
-/// the ghost state this exists to avoid. By the same token a scan already in
-/// flight can re-insert a file it snapshotted before the unlink (as a fresh
-/// book with a new uuid); the next scan won't, so that's left to resolve
-/// itself rather than locking against the worker.
-///
-/// The item count that decides `total_delete` is read and acted on inside one
-/// `BEGIN IMMEDIATE` transaction (see [`selection_total_delete`]), so two
-/// concurrent calls on the same book with disjoint selections can't both
-/// observe the pre-delete count and both leave a zero-item `books` row
-/// behind: `BEGIN IMMEDIATE` takes the RESERVED write lock up front, so the
-/// second call blocks until the first commits, then counts fresh.
+/// Delete the given items: `file_ids` are `book_files` rows (removed from the DB
+/// and unlinked from disk), `copy_ids` physical copies (un-recorded only). When
+/// no item is left, the `books` row and everything keyed to its uuid go too (see
+/// [`purge`]). The DB write commits first and file cleanup is best-effort: a
+/// failed unlink leaves an orphan file the next scan re-indexes as a new book.
 pub async fn delete_book_items(
     pool: &SqlitePool,
     book_uuid: &str,
@@ -145,6 +131,8 @@ pub async fn delete_book_items(
     // Post-commit, so an image another book's entry still embeds survives.
     let journal_images = purge::orphaned_images(pool, committed.journal_images).await?;
 
+    // File cleanup trails the commit: a failed unlink leaves a recoverable
+    // orphan, whereas a deleted file with its row intact is the ghost state.
     fs::cleanup(fs::Cleanup {
         paths: committed.paths,
         library_roots: committed.library_roots,
@@ -172,17 +160,9 @@ struct CommittedDeletion {
     journal_images: Vec<String>,
 }
 
-/// Open the `BEGIN IMMEDIATE` transaction, decide `total_delete`, resolve
-/// the on-disk state the caller needs after commit, and write the row
-/// deletions. Returns `None` for the no-op case (nothing selected on a book
-/// that still has items).
-///
-/// `BEGIN IMMEDIATE` takes the RESERVED write lock at open time, before the
-/// count inside `selection_total_delete` runs, matching
-/// `auth::users::create_user`'s guard against the same class of race. A
-/// plain `pool.begin()` issues a DEFERRED `BEGIN` that acquires the lock
-/// lazily on first write, which would leave the count read outside the lock
-/// and reopen the TOCTOU window this closes.
+/// Open the `BEGIN IMMEDIATE` transaction, decide `total_delete`, resolve the
+/// on-disk state needed after commit, and write the row deletions. `None` for
+/// the no-op case (nothing selected on a book that still has items).
 async fn run_deletion_tx(
     pool: &SqlitePool,
     book_id: i64,
@@ -190,6 +170,9 @@ async fn run_deletion_tx(
     file_ids: &[i64],
     copy_ids: &[i64],
 ) -> Result<Option<CommittedDeletion>, DeleteError> {
+    // IMMEDIATE takes the write lock before the count is read; a DEFERRED
+    // `BEGIN` would leave that read outside the lock (a TOCTOU), as in
+    // `auth::users::create_user`.
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let Some(total_delete) =
         selection_total_delete(&mut tx, book_id, uuid, file_ids, copy_ids).await?
@@ -228,16 +211,11 @@ async fn run_deletion_tx(
     }))
 }
 
-/// Validate `file_ids`/`copy_ids` against the book's *current* items and
-/// decide whether every item is being removed. Reads on `tx`'s own
-/// connection, so they run under the `BEGIN IMMEDIATE` RESERVED lock the
-/// caller opened — the fix for the TOCTOU where two concurrent deletes with
-/// disjoint selections could each read the pre-transaction item count and
-/// both conclude `total_delete = false`, leaving a zero-item `books` row
-/// neither call purges.
-///
-/// Returns `None` for the no-op case (nothing selected on a book that still
-/// has items); otherwise `Some(total_delete)`.
+/// Validate `file_ids`/`copy_ids` against the book's *current* items and decide
+/// whether every item is being removed. Reads on `tx`'s own connection, under
+/// the `BEGIN IMMEDIATE` lock, so concurrent deletes with disjoint selections
+/// cannot both see the pre-delete count. `None` for the no-op case (nothing
+/// selected on a book that still has items); otherwise `Some(total_delete)`.
 async fn selection_total_delete(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     book_id: i64,

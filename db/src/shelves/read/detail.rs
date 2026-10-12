@@ -21,17 +21,10 @@ use crate::books::{
 use crate::metadata_overrides::sql::override_join_sql;
 use crate::shelves::rules::{membership_predicate, Bind};
 
-/// Ids of the hand-picked shelves `viewer_id` can see that hold `uuid`.
-///
-/// The membership answer for one book in one request. Without it a client has
-/// to fetch every visible shelf's page and scan them — one request per shelf,
-/// on every book it displays — which is what the mobile book screen was doing.
-///
-/// Smart shelves are excluded because their membership is derived from a rule
-/// and cannot be toggled; the only caller is a "which shelves is this on"
-/// checklist. Returns an empty vec for an unknown uuid rather than erroring —
-/// a book the server has never indexed is on no shelf, which is the same
-/// answer.
+/// Ids of the hand-picked shelves `viewer_id` can see that hold `uuid`: the
+/// membership answer for one book in one request, so a client needn't fetch
+/// every visible shelf's page. Smart shelves are excluded (their membership is
+/// rule-derived and cannot be toggled). Empty vec for an unknown uuid.
 pub async fn manual_shelves_containing(
     pool: &SqlitePool,
     viewer_id: i64,
@@ -62,14 +55,11 @@ pub async fn manual_shelves_containing(
         .collect()
 }
 
-/// Ids of the smart shelves `viewer_id` can see that currently hold `uuid`.
-///
-/// The counterpart of [`manual_shelves_containing`] for the shelves that fill
-/// themselves: a book is on one when its rules match it, so this evaluates each
-/// visible smart shelf's rules against the one book. Same visibility rule as
-/// the rail (owner, public, or admin) and the same `SMART_VISIBLE` gate as a
-/// shelf's own page, so a book is only named by a shelf that would list it.
-/// Returns an empty vec for an unknown uuid.
+/// Ids of the smart shelves `viewer_id` can see that currently hold `uuid`: the
+/// counterpart of [`manual_shelves_containing`], evaluating each visible smart
+/// shelf's rules against the one book. Same visibility rule as the rail (owner,
+/// public, or admin) and `SMART_VISIBLE` gate as a shelf's own page. Empty vec
+/// for an unknown uuid.
 pub async fn smart_shelves_containing(
     pool: &SqlitePool,
     viewer_id: i64,
@@ -127,25 +117,18 @@ async fn visible_smart_candidates(
         .collect()
 }
 
-/// Book uuids in `candidates` that are confined to a manual shelf `viewer_id`
-/// cannot see: on at least one manual shelf, and every one of those shelves
-/// is private and owned by someone else. A book on no shelf at all, or on
-/// any shelf the viewer owns, that's public, or `is_admin` covers, is never
-/// in the result — so this only ever *narrows* an already-visible set.
-///
-/// This is the predicate the OPDS catalogs layer on top of their normal
-/// library reads: a book that's reachable only by hand-picking it
-/// onto a private shelf must not surface in a browse/search/new/nav feed —
-/// or a direct cover/file link — for a viewer who can't see that shelf,
-/// even though the file itself is otherwise an ordinary, generally-served
-/// library book. Chunked like [`manual_shelves_containing`]'s siblings so a
-/// large candidate page stays under SQLite's bound-parameter cap.
+/// Book uuids in `candidates` that are confined to manual shelves `viewer_id`
+/// cannot see: on at least one manual shelf, every one private and owned by
+/// someone else. A book on no shelf, or on any shelf the viewer owns, that's
+/// public, or `is_admin` covers, is never returned, so this only *narrows* an
+/// already-visible set. OPDS feeds and cover/file links layer it on library reads.
 pub async fn shelf_exclusive_hidden_uuids(
     pool: &SqlitePool,
     viewer_id: i64,
     is_admin: bool,
     candidates: &[String],
 ) -> Result<HashSet<String>, ShelfError> {
+    // Chunked so a large candidate page stays under SQLite's bound-parameter cap.
     const CHUNK_SIZE: usize = 200;
     let mut hidden = HashSet::new();
     for chunk in candidates.chunks(CHUNK_SIZE) {
@@ -237,15 +220,9 @@ pub async fn get_shelf(pool: &SqlitePool, id: i64) -> Result<Option<Shelf>, Shel
 }
 
 /// Every book uuid the owner's Kobo devices may sync: the union of membership
-/// across `user_id`'s shelves flagged `sync_to_kobo`.
-///
-/// Deliberately **uncapped** — the Kobo sync response streams and must not
-/// inherit a page limit, so this does not go through
-/// `shelf_page`/`MAX_BOOKS_RETURNED`. Scoped to
-/// shelves the user owns, so one user's opt-in can never expose books through
-/// another user's device token.
-///
-/// Returns uuids in no meaningful order; the caller orders the book rows.
+/// across `user_id`'s shelves flagged `sync_to_kobo`. Deliberately **uncapped**
+/// (the sync response streams, so no `MAX_BOOKS_RETURNED`) and scoped to shelves
+/// the user owns. Uuids come in no meaningful order; the caller orders the rows.
 pub async fn kobo_synced_book_uuids(
     pool: &SqlitePool,
     user_id: i64,

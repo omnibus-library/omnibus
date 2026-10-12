@@ -26,34 +26,23 @@ pub enum BrowseError {
 /// while leaving headroom past a 5k+ author library.
 const INDEX_LIMIT: i64 = 10_000;
 
-/// Build a `VALUES (?)` list for a CTE that materializes the library-path
-/// set once. At most two entries (ebook + audiobook), so the bind count
-/// stays trivial.
-///
-/// With no configured scan roots the CTE still needs a row to be valid SQL, so
-/// `n == 0` yields `(NULL)` — a path no book matches, leaving the physical arm
-/// of [`visible`] as the only way in. That's the physical-only library: books
-/// checked in before any ebook/audiobook path was set must still browse.
+/// Build a `VALUES (?)` list for a CTE that materializes the library-path set
+/// once (at most two entries: ebook + audiobook). `n == 0` yields `(NULL)`, a
+/// path no book matches, leaving the physical arm of [`visible`] as the only way
+/// in: the physical-only library must still browse.
 fn placeholders(n: usize) -> String {
     if n == 0 {
+        // A CTE needs at least one row to be valid SQL.
         return "(NULL)".to_string();
     }
     std::iter::repeat_n("(?)", n).collect::<Vec<_>>().join(", ")
 }
 
 /// "In the library" for the browse indexes: under a configured scan root, or
-/// holding at least one physical copy.
-///
-/// Deliberately *not* the landing read path's rule, which also demands a
-/// `book_files` row. Browse counts a ghosted (fileless) book so its author
-/// doesn't vanish while the file is merely missing, and that stays true here.
-/// The physical arm is what surfaces a physical-only book: those live under the
-/// synthetic `physical://local` root, which is never in `lib_paths`. A pure
-/// wishlist entry sits under that same root with no copy, so it matches
-/// neither arm and stays hidden.
-///
-/// `book` / `root` name the `books` / `scan_roots` aliases in the enclosing
-/// query, which differ per subquery here.
+/// holding a physical copy. Deliberately *not* the landing read path's rule:
+/// browse also counts a ghosted (fileless) book, and a pure wishlist entry
+/// stays hidden. `book` / `root` name the enclosing query's `books` /
+/// `scan_roots` aliases.
 fn visible(book: &str, root: &str) -> String {
     format!(
         "({root}.path IN (SELECT p FROM lib_paths) \
@@ -63,14 +52,9 @@ fn visible(book: &str, root: &str) -> String {
 
 /// Return every author with their book count and an optional cover-derived
 /// accent, scoped to books `visible` under `library_paths`, in the Authors
-/// index's own order — surname-first by `creator_sort_key`'s rule, dictionary
-/// collated — and capped at [`INDEX_LIMIT`]. An empty `library_paths` is not an
-/// empty result: physical-only books still browse (see [`placeholders`]).
-///
-/// `book_count > 0` is an invariant of the result: membership is the
-/// `effective` (override-aware) set, so an author whose last book was
-/// reassigned through the edit form drops out rather than rendering a
-/// 0-book card off a canonical link the file still carries.
+/// index's order (surname-first via `creator_sort_key`) and capped at
+/// [`INDEX_LIMIT`]. Empty `library_paths` still browses physical-only books (see
+/// [`placeholders`]). `book_count > 0`: an author edited out of all books drops out.
 pub async fn list_authors(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -86,21 +70,17 @@ pub async fn list_authors(
     Ok(rows.iter().map(map_author_row).collect())
 }
 
-/// Build the `list_authors` query text for an `n`-entry `library_paths`
-/// binding. Split out from [`list_authors`] because the SQL, not the
-/// bind/fetch/map plumbing, is the bulk of that function's length.
-///
-/// `effective(author_id, book_id)` is the shared override-aware membership
-/// set (`effective_authors_sql!`) narrowed to visible books, built once. A
-/// single `GROUP BY author_id` over it replaces the old per-author
-/// correlated `COUNT(*)` subquery, so the books table is scanned once
-/// rather than once per author. The inner `JOIN counts` is also what
-/// enforces the `book_count > 0` invariant.
+/// Build the `list_authors` query text for an `n`-entry `library_paths` binding,
+/// split out because the SQL is the bulk of that function. `effective` is the
+/// shared override-aware membership set narrowed to visible books; the inner
+/// `JOIN counts` enforces the `book_count > 0` invariant.
 fn list_authors_sql(n: usize) -> String {
     let ph = placeholders(n);
     let vis = visible("b", "l");
     let vis2 = visible("b2", "l2");
     let author_key = creator_sort_sql!("a.sort", "a.name");
+    // One `GROUP BY author_id` over `effective` scans `books` once, not once
+    // per author as a correlated `COUNT(*)` would.
     format!(
         r"
         WITH lib_paths(p) AS (VALUES {ph}),
@@ -154,14 +134,11 @@ fn map_author_row(r: &sqlx::sqlite::SqliteRow) -> AuthorSummary {
     }
 }
 
-/// Return every series with book count, primary author, and an optional
-/// accent, scoped to books `visible` under `library_paths`, ordered by name
-/// ascending and capped at [`INDEX_LIMIT`]. An empty `library_paths` is not an
-/// empty result: physical-only books still browse (see [`placeholders`]).
-///
-/// `book_count > 0` is an invariant of the result, same as [`list_authors`]:
-/// a series emptied by an edit-form reassignment drops out instead of
-/// rendering a 0-book card.
+/// Return every series with book count, primary author, and an optional accent,
+/// scoped to books `visible` under `library_paths`, ordered by name ascending
+/// and capped at [`INDEX_LIMIT`]. Empty `library_paths` still browses
+/// physical-only books (see [`placeholders`]). `book_count > 0`, as in
+/// [`list_authors`]: an emptied series drops out.
 pub async fn list_series(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -176,18 +153,16 @@ pub async fn list_series(
     Ok(rows.iter().map(map_series_row).collect())
 }
 
-/// Build the `list_series` SQL for `n` library-path placeholders. Uses a CTE
-/// to materialize the path set once so the correlated subqueries (accent,
-/// primary author) each see the same `lib_paths` without repeated inline
-/// VALUES lists. `book_count` comes from a single `GROUP BY` over the
-/// `effective` membership set rather than a per-series correlated subquery,
-/// so the books table is scanned once instead of once per series. Joining
-/// `counts` inner (not left) is what drops emptied series from the index.
+/// Build the `list_series` SQL for `n` library-path placeholders. A CTE
+/// materializes the path set once for the correlated subqueries (accent,
+/// primary author); joining `counts` inner (not left) drops emptied series.
 fn series_index_sql(n: usize) -> String {
     let ph = placeholders(n);
     let vis = visible("b", "l");
     let vis2 = visible("b2", "l2");
     let vis3 = visible("b3", "l3");
+    // `book_count` is one `GROUP BY` over the `effective` set, so `books` is
+    // scanned once rather than once per series.
     format!(
         r"
         WITH lib_paths(p) AS (VALUES {ph}),

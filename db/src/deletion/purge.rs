@@ -33,12 +33,8 @@ const UUID_KEYED_TABLES: &[&str] = &[
     "wishlist_entries",
 ];
 
-/// Delete the given `book_files` rows (parts and chapters cascade via their
-/// FK) along with any `merged_uuids` guard the files held.
-///
-/// The ledger rows go first: they join on `(book_id, scan_key)`, so once the
-/// file rows are gone there's nothing left to match them by, and a stale guard
-/// would keep replaying the attach on every future scan.
+/// Delete the given `book_files` rows (parts and chapters cascade via their FK)
+/// along with any `merged_uuids` guard the files held.
 pub(super) async fn delete_file_rows(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -54,6 +50,9 @@ pub(super) async fn delete_file_rows(
             .collect::<Vec<_>>()
             .join(", ");
 
+        // Ledger rows go first: they join on `(book_id, scan_key)`, which can't
+        // be matched once the file rows are gone, and a stale guard would keep
+        // replaying the attach on every scan.
         let ledger_sql = format!(
             "DELETE FROM merged_uuids
               WHERE book_id = ?
@@ -105,10 +104,8 @@ pub(super) async fn delete_copy_rows(
 
 /// Hard-delete the book: every uuid-keyed row, any remaining `merged_uuids`
 /// guard, the `books` row, its search twin, and any taxonomy the delete
-/// orphaned. Link tables and identifiers cascade from `books`.
-///
-/// `pub(crate)` so `physical::delete_fileless_book` reuses the same
-/// [`UUID_KEYED_TABLES`] sweep instead of hand-rolling a partial one.
+/// orphaned. `pub(crate)` so `physical::delete_fileless_book` reuses the same
+/// [`UUID_KEYED_TABLES`] sweep.
 pub(crate) async fn purge_book(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,

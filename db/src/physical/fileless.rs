@@ -31,12 +31,10 @@ pub struct FilelessBook {
     pub cover: Option<FilelessCover>,
 }
 
-/// Create a fileless book and return its minted uuid.
-///
-/// Inserts the `books` row under the synthetic Physical scan root, links each
-/// author, writes an `ISBN` identifier when present, and stores the cover via
-/// the covers pipeline — all in one transaction. A cover-write failure rolls
-/// the row back rather than leaving `has_cover` set with no file.
+/// Create a fileless book and return its minted uuid. Inserts the `books` row
+/// under the synthetic Physical scan root, links each author, writes an `ISBN`
+/// identifier when present, and stores the cover, all in one transaction; a
+/// cover-write failure rolls the row back.
 pub async fn create_fileless_book(
     pool: &SqlitePool,
     book: FilelessBook,
@@ -118,20 +116,16 @@ async fn ensure_physical_library(
         .await
 }
 
-/// Resolve-or-insert every author and link them to the book in position order.
-/// Mirrors the batched-insert idiom in `db/src/sync/books/shared.rs`
-/// (`insert_tag_links`/`insert_identifier_links`) and `db/src/sync/authors.rs`:
-/// dedup by first occurrence in Rust *before* querying — SQL row-processing
-/// order for a multi-row `INSERT OR IGNORE` is not guaranteed, so relying on
-/// it to pick which duplicate's position wins would be nondeterministic —
-/// then batch the resolve-or-insert and the link write, chunked to stay under
-/// SQLite's 999-bind-parameter cap even for a pathologically long author list
-/// (fileless lists are normally 1-3 names, but nothing enforces that).
+/// Resolve-or-insert every author and link them to the book in position order,
+/// deduplicated by first occurrence and batched in chunks (mirrors
+/// `db/src/sync/books/shared.rs`).
 async fn link_authors(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
     authors: &[String],
 ) -> Result<(), sqlx::Error> {
+    // Dedup in Rust before querying: row order of a multi-row `INSERT OR
+    // IGNORE` isn't guaranteed, so the winning position would be arbitrary.
     let mut seen = std::collections::HashSet::new();
     let entries: Vec<(&str, i64)> = authors
         .iter()

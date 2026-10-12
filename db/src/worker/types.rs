@@ -13,24 +13,17 @@ use sqlx::SqlitePool;
 use tokio::sync::{watch, Mutex, Semaphore};
 
 /// How long a terminal ([`omnibus_shared::ProgressState::Done`] /
-/// [`omnibus_shared::ProgressState::Failed`]) entry sticks around in
-/// [`Worker::progress_snapshot`] after its `terminal_at` timestamp before
-/// lazy eviction drops it. Long enough that a 1 Hz polling client always
-/// observes the transition; short enough that the in-memory map stays
-/// bounded by current concurrency + a handful of recently-finished tasks.
+/// [`omnibus_shared::ProgressState::Failed`]) entry stays in
+/// [`Worker::progress_snapshot`] after its `terminal_at` before lazy eviction.
+/// Long enough that a 1 Hz polling client always observes the transition, short
+/// enough to keep the in-memory map bounded.
 pub(super) const TERMINAL_RETENTION: Duration = Duration::from_secs(10);
 
-/// A unit of background work handed to [`Worker::post`].
-///
-/// Each variant carries the inputs its handler needs and determines two
-/// scheduling properties via the private `resource_key` / `uses_scan_sem`
-/// helpers: which per-resource keyed mutex (if any) serializes it against
-/// peers, and whether it counts against the scan-concurrency semaphore.
-/// See [`Worker`] for how those interact.
-///
-/// `#[non_exhaustive]` so adding a variant is not a breaking change for
-/// downstream `match`es; new variants must wire up both scheduling helpers
-/// and the `execute` dispatch arm.
+/// A unit of background work handed to [`Worker::post`]. Each variant carries
+/// its handler's inputs and determines, via the private `resource_key` /
+/// `uses_scan_sem` helpers, which per-resource keyed mutex (if any) serializes
+/// it and whether it counts against the scan semaphore (see [`Worker`]).
+/// `#[non_exhaustive]`: a new variant must wire up both helpers and `execute`.
 #[non_exhaustive]
 pub enum Task {
     /// Reindex the library rooted at `library_path` (full scan → DB upsert
@@ -72,63 +65,45 @@ pub enum Task {
     /// fixed resource so concurrent clicks serialize; does not consume the
     /// scan semaphore.
     RefetchAuthorPhotos,
-    /// Backfill `file_chapters` rows for audiobooks that were indexed before
-    /// the chapter pipeline existed. Posted by the [`Task::ScanAudiobooks`]
-    /// handler on success so it always runs after the scan completes. Also
-    /// triggerable manually from the settings page. Keyed on
+    /// Backfill `file_chapters` rows for audiobooks indexed before the chapter
+    /// pipeline existed. Posted by the [`Task::ScanAudiobooks`] handler on
+    /// success, and triggerable manually from the settings page. Keyed on
     /// `audiobooks:{library_path}` (mutual exclusion with scans on the same
-    /// library). Does not consume the scan semaphore (lightweight IO).
+    /// library); does not consume the scan semaphore (lightweight IO).
     BackfillChapters { library_path: String },
-    /// Backfill `books.word_count` for EPUB books indexed before the
-    /// word-count column existed (migration `0049`). Posted by the
-    /// [`Task::Scan`] handler on success so it always runs after the ebook
-    /// scan completes. Keyed on `library_path` (mutual exclusion with the
-    /// scan on the same library); does not consume the scan semaphore
-    /// (light per-file IO, mirrors [`Task::BackfillChapters`]).
+    /// Backfill `books.word_count` for EPUB books indexed before the column
+    /// existed. Posted by the [`Task::Scan`] handler on success. Keyed on
+    /// `library_path` (mutual exclusion with the scan on the same library); does
+    /// not consume the scan semaphore (light per-file IO).
     BackfillWordCounts { library_path: String },
-    /// Backfill `books.page_count` for CBZ books indexed before the
-    /// page-count column existed (migration `0063`). Posted by the
-    /// [`Task::Scan`] handler on success so it always runs after the ebook
-    /// scan completes. Keyed on `library_path` (mutual exclusion with the
-    /// scan on the same library); does not consume the scan semaphore
-    /// (light per-file IO, mirrors [`Task::BackfillWordCounts`]).
+    /// Backfill `books.page_count` for CBZ books indexed before the column
+    /// existed. Posted by the [`Task::Scan`] handler on success. Keyed on
+    /// `library_path` (mutual exclusion with the scan on the same library); does
+    /// not consume the scan semaphore (light per-file IO).
     BackfillPageCounts { library_path: String },
-    /// Backfill `epub_spine_stats` + `ebook_chapters` (migration `0074`)
-    /// for EPUB files with no extracted structure yet. Posted by the
-    /// [`Task::Scan`] handler on success like its sibling backfills; the
-    /// Changed sync path re-creates a file's `book_files` row, so cascade
-    /// clears stale structure and this task re-extracts it. Keyed on
-    /// `library_path`; does not consume the scan semaphore.
+    /// Backfill `epub_spine_stats` + `ebook_chapters` for EPUB files with no
+    /// extracted structure yet. Posted by the [`Task::Scan`] handler on success;
+    /// a Changed file re-creates its `book_files` row, cascade clears stale
+    /// structure, and this re-extracts it. Keyed on `library_path`; does not
+    /// consume the scan semaphore.
     BackfillEpubStructure { library_path: String },
-    /// Re-extract covers for EPUB books the indexer left without one. Posted
-    /// by the [`Task::Scan`] handler on success, *before*
-    /// [`Task::BackfillThumbs`] so a cover this fills is thumbnailed in the
-    /// same pass. Keyed on `library_path`; does not consume the scan
-    /// semaphore. Exists because the reindex diff skips unchanged files, so
-    /// a scanner fix would otherwise never reach a book already in the
-    /// library.
+    /// Re-extract covers for EPUB books the indexer left without one, since the
+    /// reindex diff skips unchanged files and a scanner fix would otherwise never
+    /// reach them. Posted by the [`Task::Scan`] handler on success, *before*
+    /// [`Task::BackfillThumbs`] so a filled cover is thumbnailed in the same
+    /// pass. Keyed on `library_path`; does not consume the scan semaphore.
     BackfillCovers { library_path: String },
     /// Pre-generate WebP thumbnails (all three sizes) for every covered book
-    /// under `library_path`. Posted by the [`Task::Scan`] handler on
-    /// success, alongside [`Task::BackfillWordCounts`] /
-    /// [`Task::BackfillPageCounts`], so the landing grid's first post-scan
-    /// load serves cached thumbnails instead of falling through the lazy
-    /// generation path in `server::backend::covers::thumb_cache_miss_response`.
-    /// Keyed on `library_path` (mutual exclusion with the scan on the same
-    /// library, and with the other scan-follow-up backfills); does not
-    /// consume the scan semaphore. Skips any book whose three sizes are
-    /// already fresh, so a re-scan of an unchanged library does no
-    /// re-encoding.
+    /// under `library_path`, so the landing grid's first post-scan load serves
+    /// cached thumbnails. Posted by the [`Task::Scan`] handler on success. Keyed
+    /// on `library_path` (mutual exclusion with the scan and the other
+    /// scan-follow-up backfills); no scan semaphore. Skips books with fresh sizes.
     BackfillThumbs { library_path: String },
     /// (Re)index EPUB chapter text into `book_content_chapters` /
-    /// `book_content_fts` (migration `0087`) for every book whose stored
-    /// `(mtime_epoch, size_bytes)` snapshot no longer matches its served
-    /// EPUB — Added books have no rows and Changed files a stale snapshot,
-    /// so both fall out of one predicate (rule 09). Posted by the
-    /// [`Task::Scan`] handler on success, *after* [`Task::BackfillThumbs`],
-    /// because text extraction is the heaviest follow-up and the shared
-    /// resource key runs same-library tasks in post order. Keyed on
-    /// `library_path`; does not consume the scan semaphore.
+    /// `book_content_fts` for every book whose `(mtime_epoch, size_bytes)`
+    /// snapshot no longer matches its served EPUB (rule 09). Posted by the
+    /// [`Task::Scan`] handler *after* [`Task::BackfillThumbs`], since extraction
+    /// is the heaviest follow-up. Keyed on `library_path`; no scan semaphore.
     BackfillContentFts { library_path: String },
     /// Rebuild the entire `books_fts` search index from `books` via
     /// `crate::sync::rebuild_all_fts`. Admin-triggered repair for any drift
@@ -146,12 +121,11 @@ pub enum Task {
     /// book collapses onto a single kepubify run; does not consume the scan
     /// semaphore (light single-file work).
     KepubConvert { book_id: i64 },
-    /// Convert one book's `source_format` file to `target_format` via
-    /// Calibre's `ebook-convert`. Acquires the convert semaphore
-    /// (capped at [`WorkerConfig::convert_concurrency`]) and the
-    /// per-`(book_id, source_format, target_format)` keyed mutex, so a
-    /// duplicate request for the same pair serializes behind an in-flight one
-    /// rather than running concurrently; does not consume the scan semaphore.
+    /// Convert one book's `source_format` file to `target_format` via Calibre's
+    /// `ebook-convert`. Acquires the convert semaphore (capped at
+    /// [`WorkerConfig::convert_concurrency`]) and a per-`(book_id,
+    /// source_format, target_format)` keyed mutex, so a duplicate request waits
+    /// behind an in-flight one; does not consume the scan semaphore.
     ConvertFormat {
         book_id: i64,
         source_format: String,
@@ -167,25 +141,16 @@ pub enum Task {
         book_file_id: Option<i64>,
         recipient_email: String,
     },
-    /// Bake every book's active metadata/cover override into its EPUB
-    /// container in one pass, dispatched off the request
-    /// thread so the admin's "Bake Overrides Into EPUBs" action returns as
-    /// soon as the run is queued instead of awaiting it inline. Keyed on a
-    /// fixed resource so concurrent clicks serialize; does not consume the
-    /// scan semaphore (its DB work is a handful of bulk-fetched queries, not
-    /// per-book round trips).
+    /// Bake every book's active metadata/cover override into its EPUB container
+    /// in one pass, dispatched off the request thread so the admin action returns
+    /// once the run is queued. Keyed on a fixed resource so concurrent clicks
+    /// serialize; does not consume the scan semaphore (a handful of bulk queries).
     RewriteAllEpubs,
-    /// Run the library-cleanup dedup detectors and persist any
-    /// newly-found suggestions into `dedup_suggestions` (migration `0069`).
-    /// `kind = None` runs every detector via `cleanup::detect_all`; `Some(k)`
-    /// scopes to just that domain — the admin-triggered "run detection now"
-    /// shape a future settings action will want, even though the only
-    /// current poster ([`crate::indexer::reindex`]'s success path) always
-    /// passes `None`. Keyed on a fixed `cleanup` resource so concurrent
-    /// detection runs serialize against each other rather than racing
-    /// `INSERT OR IGNORE`s; does not consume the scan semaphore (detection
-    /// reads a handful of already-indexed tables, it doesn't walk the
-    /// filesystem).
+    /// Run the library-cleanup dedup detectors and persist newly-found
+    /// suggestions into `dedup_suggestions`. `kind = None` runs every detector
+    /// via `cleanup::detect_all`; `Some(k)` scopes to one domain. Keyed on a
+    /// fixed `cleanup` resource so concurrent runs serialize rather than racing
+    /// `INSERT OR IGNORE`s; does not consume the scan semaphore.
     DetectCleanup { kind: Option<CleanupKind> },
     /// Test-only synthetic task: sleeps `latency_ms` and invokes the
     /// optional `on_run` / `on_done` hooks, with `resource` and
@@ -277,12 +242,10 @@ impl Task {
         matches!(self, Task::ConvertFormat { .. })
     }
 
-    /// Free-text label persisted to the `background_tasks` table (migration
-    /// `0072`). Deliberately finer-grained than
-    /// [`Task::kind`]'s wire-facing [`TaskKind`] — several `Task` variants
-    /// share one `TaskKind` for the live progress UI (see that method's
-    /// per-arm comments), but the admin history view wants to tell e.g. a
-    /// KEPUB conversion apart from a full library scan.
+    /// Free-text label persisted to the `background_tasks` table. Finer-grained
+    /// than [`Task::kind`]'s wire-facing [`TaskKind`]: several `Task` variants
+    /// share one `TaskKind` for the live progress UI, but the admin history view
+    /// wants to tell e.g. a KEPUB conversion from a full library scan.
     pub(super) fn persistence_kind(&self) -> &'static str {
         match self {
             Task::Scan { .. } => "scan",
@@ -400,10 +363,9 @@ pub enum TaskOutcome {
     Ok(Option<TaskSuccessDetail>),
     /// The handler failed. This string is client-facing (served by
     /// `rpc_worker_status` and the owner-scoped Kindle poll), so
-    /// `handlers::execute`'s arms sanitize it before it lands here — never
-    /// the raw underlying error's `Display`. Also produced when the
-    /// spawned task is dropped or panics before reporting (see
-    /// [`Worker::await_completion`]).
+    /// `handlers::execute`'s arms sanitize it, never the raw error's `Display`.
+    /// Also produced when the spawned task is dropped or panics before reporting
+    /// (see [`Worker::await_completion`]).
     Err(String),
 }
 
@@ -445,24 +407,11 @@ fn num_cpus() -> usize {
         .unwrap_or(1)
 }
 
-/// Single-process background-task runner shared behind an `Arc`.
-///
-/// Posting a [`Task`] spawns it on the tokio runtime and returns a
-/// [`TaskId`] immediately ([`post`](Worker::post) returns as soon as the
-/// task is spawned; it does not wait for the task to run to completion).
-/// Two fairness mechanisms shape execution:
-///
-/// * **Per-resource keyed mutex** — tasks reporting the same resource key
-///   (e.g. two scans of the same library path) serialize behind one
-///   another, while tasks on different keys run concurrently.
-/// * **Scan-concurrency semaphore** — scan-class tasks additionally
-///   contend for a fixed pool of permits sized by
-///   [`WorkerConfig::scan_concurrency`], capping how many run at once
-///   regardless of resource key.
-///
-/// The resource lock is always acquired before the scan permit so a task
-/// queued behind a same-resource peer never holds a permit while idle.
-/// Owns the [`SqlitePool`] its handlers run against.
+/// Single-process background-task runner shared behind an `Arc`, owning the
+/// [`SqlitePool`] its handlers run against. [`post`](Worker::post) spawns a
+/// [`Task`] and returns its [`TaskId`] immediately. Tasks sharing a resource key
+/// serialize behind one another; scan-class tasks also contend for
+/// [`WorkerConfig::scan_concurrency`] permits, taken after the resource lock.
 pub struct Worker {
     pub(super) pool: SqlitePool,
     pub(super) scan_sem: Arc<Semaphore>,
@@ -481,14 +430,10 @@ pub struct Worker {
     /// paths are `post` (initial Running) and `run` (terminal Done/Failed,
     /// plus the panic-safety guard).
     pub(super) progress: Arc<StdMutex<BTreeMap<TaskId, ProgressEntry>>>,
-    /// Bounded per-[`TaskKind`] window of recent completion durations,
-    /// backing [`Worker::metrics`]. Written once per terminal transition by
-    /// [`super::progress::write_terminal_progress`]; capped at
-    /// [`super::metrics::RECENT_COMPLETIONS_CAP`] entries per kind. A
-    /// separate `StdMutex` from `progress`, so recording a completion
-    /// releases the `progress` lock first rather than extending its hold
-    /// time — `Worker::metrics` still takes `progress` separately to
-    /// compute queue depth.
+    /// Bounded per-[`TaskKind`] window of recent completion durations, backing
+    /// [`Worker::metrics`], capped at [`super::metrics::RECENT_COMPLETIONS_CAP`]
+    /// entries per kind. A separate `StdMutex` from `progress`, so recording a
+    /// completion releases the `progress` lock first rather than extending its hold.
     pub(super) completion_timings: Arc<StdMutex<HashMap<TaskKind, VecDeque<Duration>>>>,
     pub(super) next_id: std::sync::atomic::AtomicU64,
 }
@@ -508,18 +453,11 @@ pub(super) struct ProgressEntry {
     pub(super) owner: Option<i64>,
 }
 
-/// Recover from a poisoned `std::sync::Mutex` instead of panicking.
-///
-/// The `completions` / `progress` maps are best-effort bookkeeping that
-/// every `Task::Scan` (and every other posted task) touches on its hot
-/// path. If a thread panics while holding one of these locks — e.g. a
-/// `ProgressTerminalGuard::drop` unwinding mid-write — `std::sync::Mutex`
-/// poisons permanently, and a plain `.lock().unwrap()` would then turn that
-/// one-off panic into a process-wide crash on every subsequent task. The
-/// guarded data is just in-memory maps with no invariant left broken by a
-/// partial write, so taking the inner guard and carrying on is strictly
-/// safer than tearing down the worker. Mirrors `frontend::data`'s
-/// `unpoison` helper.
+/// Recover from a poisoned `std::sync::Mutex` instead of panicking. The
+/// `completions` / `progress` maps are best-effort in-memory bookkeeping with no
+/// invariant left broken by a partial write, so taking the inner guard and
+/// carrying on beats turning one panic into a crash on every subsequent task.
+/// Mirrors `frontend::data`'s `unpoison` helper.
 pub(super) fn lock_unpoison<T>(m: &StdMutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }

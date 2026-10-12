@@ -52,9 +52,7 @@ pub async fn get_user_avatar(pool: &SqlitePool, user_id: i64) -> AuthResult<Opti
 /// Read one rendering of a user's avatar, or `None` when they haven't set one.
 ///
 /// [`AvatarVariant::Thumb`] falls back to the original rather than returning
-/// `None`: a row can legitimately carry no thumbnail (uploaded before the
-/// column existed and not yet backfilled, or bytes no decoder accepts), and an
-/// avatar that renders large is better than one that doesn't render.
+/// `None` when the row has no thumbnail.
 pub async fn get_user_avatar_variant(
     pool: &SqlitePool,
     user_id: i64,
@@ -84,11 +82,9 @@ pub async fn get_user_avatar_variant(
 }
 
 /// Store a user's avatar, replacing any existing one, and derive its
-/// thumbnail in the same write.
-///
-/// `mime` must be the *sniffed* type from `image_upload::extract_validated_image`,
-/// not the client's header — it is echoed back as the `Content-Type` on every
-/// later read of the original.
+/// thumbnail in the same write. `mime` must be the *sniffed* type from
+/// `image_upload::extract_validated_image`, not the client's header: it is
+/// echoed as `Content-Type` on every later read of the original.
 pub async fn upsert_user_avatar(
     pool: &SqlitePool,
     user_id: i64,
@@ -122,14 +118,10 @@ pub async fn delete_user_avatar(pool: &SqlitePool, user_id: i64) -> AuthResult<(
     Ok(())
 }
 
-/// Fill `thumb_bytes` for avatars uploaded before the column existed
-/// (migration `0086`).
+/// Fill `thumb_bytes` for avatars uploaded before the column existed.
 ///
-/// Boot backfill, and a no-op once every row either has a thumbnail or has
-/// been shown not to produce one. Bytes no decoder accepts stay NULL and are
-/// retried on the next boot — the endpoint keeps serving the original for
-/// them, so nothing is broken by the retry, and the alternative (a
-/// "tried and failed" sentinel column) is more schema than the case is worth.
+/// Boot backfill. Bytes no decoder accepts stay NULL and are retried on the
+/// next boot; the endpoint keeps serving the original for them.
 pub async fn backfill_avatar_thumbs(pool: &SqlitePool) -> AuthResult<()> {
     let rows: Vec<(i64, Vec<u8>)> =
         sqlx::query_as("SELECT user_id, bytes FROM user_avatars WHERE thumb_bytes IS NULL")
@@ -172,17 +164,15 @@ async fn derive_thumb(bytes: Vec<u8>) -> Option<Vec<u8>> {
         })
 }
 
-/// Resize to fit inside [`THUMB_MAX_EDGE`] and encode as lossy WebP.
-///
-/// `resize` rather than `resize_to_fill`: an avatar is drawn inside a circle
-/// the client already crops with `object-fit: cover`, so cropping here would
-/// only throw away pixels twice. An image already inside the box is still
-/// re-encoded — a 3 MB PNG at 100x100 is exactly the payload this exists to
-/// avoid.
+/// Resize to fit inside [`THUMB_MAX_EDGE`] and encode as lossy WebP. An image
+/// already inside the box is still re-encoded. `None` when no decoder accepts
+/// the bytes.
 fn downscale_avatar(bytes: &[u8]) -> Option<Vec<u8>> {
     use image::imageops::FilterType;
 
     let decoded = image::load_from_memory(bytes).ok()?;
+    // `resize`, not `resize_to_fill`: the client already crops with
+    // `object-fit: cover`, so cropping here would throw pixels away twice.
     let resized = decoded.resize(THUMB_MAX_EDGE, THUMB_MAX_EDGE, FilterType::Lanczos3);
     let rgba = resized.to_rgba8();
     let (w, h) = (rgba.width(), rgba.height());

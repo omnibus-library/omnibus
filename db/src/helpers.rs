@@ -14,11 +14,9 @@ use regex::Regex;
 use crate::metadata_overrides::sql::{effective_genres_sql, effective_tags_sql, overrides_win_sql};
 
 /// Maximum query length (in chars) accepted by the FTS5 search entrypoints
-/// (`search_books`, `count_search_books`, `search_palette`). Inputs beyond
-/// this are truncated before reaching [`build_search_query`] / `LIKE` so the
-/// generated MATCH expression and pattern length stay bounded regardless of
-/// caller payload size. Module-wide so the limit is tunable in one place
-/// across every search path.
+/// (`search_books`, `count_search_books`, `search_palette`). Longer inputs are
+/// truncated before reaching [`build_search_query`] / `LIKE`, bounding the
+/// generated MATCH expression and pattern; the limit is tunable in one place.
 pub(crate) const MAX_QUERY_LEN: usize = 256;
 
 /// Trim surrounding whitespace and cap a user query to [`MAX_QUERY_LEN`]
@@ -40,14 +38,10 @@ pub(crate) fn library_paths_json(library_paths: &[&str]) -> String {
     .to_string()
 }
 
-/// Encode row ids for binding through SQLite's `json_each`.
-///
-/// The `IN (…)` alternative is one bound parameter per id, and SQLite caps
-/// those at `SQLITE_MAX_VARIABLE_NUMBER` — a build-time constant, historically
-/// 999 and 32766 since 3.32, so the ceiling moves with whichever SQLite the
-/// binary links. A set that comes from library data rather than from a caller
-/// — a duplicate-merge group, say — is unbounded by construction, so it must
-/// go through a single JSON array instead of a generated placeholder list.
+/// Encode row ids for binding through SQLite's `json_each`, for id sets from
+/// library data (e.g. a duplicate-merge group) that are unbounded by
+/// construction: an `IN (…)` list binds one parameter per id and would hit
+/// `SQLITE_MAX_VARIABLE_NUMBER`, which varies with the linked SQLite build.
 pub(crate) fn ids_json(ids: &[i64]) -> String {
     serde_json::Value::Array(
         ids.iter()
@@ -57,20 +51,11 @@ pub(crate) fn ids_json(ids: &[i64]) -> String {
     .to_string()
 }
 
-/// SQL fragment for "search may surface this book": it sits under one of the
-/// configured scan roots, or it holds at least one physical copy.
-///
-/// The physical arm is the only way in for a physical-only book — those live
-/// under the synthetic `physical://local` root, which is never a configured
-/// path. A fileless book with *no* copy (a wishlist entry) matches neither arm
-/// and stays hidden. Every search path shares this one definition rather than
-/// spelling it out: the palette arms and `books::search` had already drifted
-/// apart once, leaving physical books that `/api/search` returned
-/// invisible to the palette.
-///
-/// `book` / `root` name the `books` / `scan_roots` aliases in the enclosing
-/// query and `paths_param` the placeholder bound to [`library_paths_json`];
-/// all three differ per call site.
+/// SQL fragment for "search may surface this book": it sits under a configured
+/// scan root, or holds a physical copy. A fileless book with *no* copy (a
+/// wishlist entry) stays hidden. Every search path shares this definition so
+/// the palette and `/api/search` cannot drift. `book` / `root` / `paths_param`
+/// name the call site's aliases and the placeholder bound to [`library_paths_json`].
 pub(crate) fn visible_book_sql(book: &str, root: &str, paths_param: &str) -> String {
     format!(
         "({root}.path IN (SELECT value FROM json_each({paths_param})) \
@@ -92,22 +77,18 @@ pub(crate) fn stable_uuid(library_path: &str, filename: &str) -> String {
         .to_string()
 }
 
-/// Mint a fresh, durable book identity — a random UUIDv4 assigned once at
-/// insert and **never recomputed**. Unlike the retired path-derived
-/// `stable_uuid`, this cannot move when a library root is repointed and
-/// cannot collide for two distinct books that share a title/author or even
-/// identical bytes. The diff no longer reconstructs this value from disk; the
-/// relative-path [`scan_key_for`] does the Phase-A matching instead.
+/// Mint a fresh, durable book identity: a random UUIDv4 assigned once at insert
+/// and **never recomputed**, so it cannot move when a library root is repointed
+/// or collide for two distinct books that share a title/author or bytes. The
+/// diff matches on the relative-path [`scan_key_for`] instead.
 pub(crate) fn mint_uuid() -> String {
     uuid::Uuid::new_v4().hyphenated().to_string()
 }
 
-/// The Phase-A diff key: a book's path *relative to its scan root* (e.g.
-/// `Author/Title.epub`). Stored in `books.scan_key` and matched disk-vs-DB so
-/// a library-root repoint — which leaves relative paths unchanged — preserves
-/// every `books.uuid` instead of re-minting it. Identity today (the relative
-/// path is used verbatim); the single chokepoint should we ever need to fold
-/// separators or casing.
+/// The diff key: a book's path *relative to its scan root* (e.g.
+/// `Author/Title.epub`). Stored in `books.scan_key` and matched disk-vs-DB, so a
+/// library-root repoint preserves every `books.uuid`. Currently the identity
+/// function; the single chokepoint should folding ever be needed.
 pub(crate) fn scan_key_for(relative_path: &str) -> String {
     relative_path.to_string()
 }
@@ -146,17 +127,11 @@ pub(crate) fn parse_series_index(s: &str) -> Option<f64> {
     s.trim().parse::<f64>().ok().filter(|n| n.is_finite())
 }
 
-/// Split a trailing embedded index off a series name — `"#N"` or `", Book
-/// N"` (case-insensitive, optional decimal), e.g. `"Mistborn #2"` or
-/// `"Mistborn, Book 2"`. Returns `Some((cleaned_name, digits))` when the
-/// suffix is present and something survives after stripping it; `None`
-/// otherwise (including when the whole name is consumed by the marker,
-/// which would leave an empty series name).
-///
-/// Shared by the sync writers (fresh scans, via [`cleaned_series_name`] /
-/// [`resolved_series_index`]) and `series_normalize`'s boot backfill
-/// (existing rows) so a library tagged "Name #1"/"Name #2"/"Name #3"
-/// converges on one series row with per-book indexes either way.
+/// Split a trailing embedded index off a series name: `"#N"` or `", Book N"`
+/// (case-insensitive, optional decimal), e.g. `"Mistborn #2"`. Returns
+/// `Some((cleaned_name, digits))` when the suffix is present and something
+/// survives stripping it, else `None`. Shared by the sync writers and
+/// `series_normalize`'s boot backfill so both converge on one series row.
 pub(crate) fn split_embedded_series_index(name: &str) -> Option<(String, String)> {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     let re = PATTERN.get_or_init(|| {
@@ -203,13 +178,10 @@ pub(crate) fn resolved_series_index(m: &EbookMetadata) -> Option<f64> {
         })
 }
 
-/// Defense-in-depth gate on `books.accent_color`. The indexer's
-/// `extract_accent` emits strings of the exact shape `oklch(L C H)` with
-/// three space-separated decimal floats; consumers (Atrium cover tiles,
-/// palette rows, book detail) inline the value into an HTML `style`
-/// attribute. Reject anything that doesn't match that strict shape so a
-/// future override path or imported value can't smuggle CSS / break out
-/// of the attribute, regardless of consumer escaping.
+/// Defense-in-depth gate on `books.accent_color`: accepts only the exact shape
+/// `oklch(L C H)` with three space-separated decimal floats, because consumers
+/// inline the value into an HTML `style` attribute and a future override path
+/// must not be able to smuggle CSS out of it.
 pub(crate) fn sanitize_accent_color(raw: Option<&str>) -> Option<String> {
     let s = raw?.trim();
     let inner = s.strip_prefix("oklch(")?.strip_suffix(')')?;
@@ -255,48 +227,30 @@ pub(crate) fn join_names<'a, I: IntoIterator<Item = &'a str>>(iter: I) -> String
     out
 }
 
-/// The bm25 ranking expression shared by the two FTS5 MATCH scans — the
-/// `/search` read path (`books::search`) and the palette's books arm. One
-/// weight per `books_fts` column in declaration order (title, authors,
-/// series, tags, description, isbn, genres): title dominates, then authors
-/// and series. The rest stay neutral because [`build_search_query`]'s column
-/// filters keep them from contributing to a free-text score.
-///
-/// Hoisted to one constant because a *short* tuple is silent — fts5 defaults
-/// the missing weights to 1.0 — so a column added to the index could leave
-/// one scan ranking on a stale tuple with nothing to signal it.
+/// The bm25 ranking expression shared by the two FTS5 MATCH scans
+/// (`books::search` and the palette's books arm): one weight per `books_fts`
+/// column in declaration order (title, authors, series, tags, description,
+/// isbn, genres). Title dominates, then authors and series.
+// One shared constant: fts5 defaults missing weights to 1.0, so a short tuple
+// would silently go stale when a column is added.
 pub(crate) const FTS_BM25_RANK: &str = "bm25(books_fts, 10.0, 4.0, 3.0, 1.0, 1.0, 1.0, 1.0)";
 
 /// One token of a parsed query, and whether the reader (or a link the app
 /// built) wrote it inside double quotes.
 struct QueryToken {
     text: String,
-    /// A quoted token is an **exact** value, so it gets no trailing `*`.
-    ///
-    /// The prefix star is type-ahead: it exists so `harry pott` finds
-    /// *Potter* while someone is still typing. A facet link carries a name
-    /// the app already knows in full, and prefix-matching it silently widens
-    /// the click — `tag:"Science fiction"` also matched a book tagged
-    /// "Science Fiction & Fantasy", so the page returned two books for a row
-    /// that said one. Quoting is what tells the two apart.
+    /// A quoted token is an **exact** value, so it gets no trailing `*`: the
+    /// prefix star is type-ahead, and a facet link carries a name the app knows
+    /// in full, which prefix-matching would silently widen (`tag:"Science
+    /// fiction"` also matched "Science Fiction & Fantasy").
     quoted: bool,
 }
 
-/// Split a query into logical tokens, keeping a double-quoted run together.
-///
-/// Whitespace separates tokens, except inside `"…"`: `tag:"Science Fiction"`
-/// is one token whose value carries the space, where a plain
-/// `split_whitespace` made it `tag:"Science` plus a stray `Fiction"`. That is
-/// what turned one multi-word tag into one facet per word, AND-ed, and
-/// answered a question the reader never asked.
-///
-/// Quotes are structural and dropped from the text — the value reaches
-/// [`sanitize_fts_tokens`], which does its own quoting and escaping, as the
-/// bare string — but *that it was quoted* is kept, because it is the one
-/// signal separating a name the app constructed from words a reader is
-/// typing. See [`QueryToken::quoted`]. An unclosed quote runs to the end of
-/// the input rather than erroring: the reader is mid-type, and refusing to
-/// search is worse than searching what they have so far.
+/// Split a query into logical tokens, keeping a double-quoted run together:
+/// `tag:"Science Fiction"` is one token, not a facet per word. Quotes are
+/// dropped from the text but *that it was quoted* is kept (see
+/// [`QueryToken::quoted`]). An unclosed quote runs to the end of the input
+/// rather than erroring, since the reader is mid-type.
 fn split_query_tokens(raw: &str) -> Vec<QueryToken> {
     let mut out: Vec<QueryToken> = Vec::new();
     let mut current = String::new();
@@ -366,17 +320,15 @@ impl SearchQuery {
     }
 }
 
-/// One correlated `EXISTS` per facet value, plus the values to bind in the
-/// order the predicates place their placeholders. The caller supplies the
-/// outer `books b` the predicates correlate against.
-///
-/// Per value rather than one `IN` list because facets AND together: a book
-/// must carry every tag named, not any of them. Each predicate wraps the
-/// effective-membership relation in a derived table so its own `books b`
-/// stays scoped to it and `b.id` still resolves to the row being tested.
+/// One correlated `EXISTS` per facet value, plus the values to bind in the order
+/// the predicates place their placeholders. The caller supplies the outer
+/// `books b` the predicates correlate against. Per value rather than one `IN`
+/// list because facets AND together: a book must carry every tag named.
 pub(crate) fn facet_exists_predicates(query: &SearchQuery) -> (String, Vec<String>) {
     let mut sql = String::new();
     let mut binds = Vec::with_capacity(query.tag_facets.len() + query.genre_facets.len());
+    // Each predicate wraps the membership relation in a derived table so its
+    // own `books b` stays scoped and `b.id` still resolves to the tested row.
     for name in &query.tag_facets {
         sql.push_str(concat!(
             " AND EXISTS (SELECT 1 FROM (",
@@ -465,24 +417,18 @@ pub fn build_search_query(raw: &str) -> SearchQuery {
     }
 }
 
-/// Wrap each whitespace-separated token in double-quotes and append `*` to
-/// the last one for prefix matching. This lets the user type plain words
-/// (including FTS5-reserved tokens like `AND`/`NOT` or hyphenated ISBNs)
-/// without triggering a `MATCH` parse error, and gives type-ahead cheaply.
-///
-/// Returns `None` when the sanitized query is empty — callers should treat
-/// that as "don't run the query" rather than passing an empty MATCH.
+/// Wrap each whitespace-separated token in double-quotes and append `*` to the
+/// last for prefix matching, so plain words (including FTS5-reserved tokens
+/// like `AND`/`NOT` or hyphenated ISBNs) cannot cause a `MATCH` parse error.
+/// `None` when the sanitized query is empty: don't run the query.
 pub fn sanitize_fts_query(raw: &str) -> Option<String> {
     let tokens: Vec<&str> = raw.split_whitespace().collect();
     sanitize_fts_tokens(&tokens)
 }
 
 /// Per-token quoting/escaping shared by [`sanitize_fts_query`] and
-/// [`build_search_query`].
-///
-/// A token may carry internal whitespace — [`split_query_tokens`] keeps a
-/// quoted facet value whole — in which case the emitted `"…"` is an FTS5
-/// phrase, which is exactly the match a multi-word tag wants.
+/// [`build_search_query`]. A token with internal whitespace (a quoted facet
+/// value from [`split_query_tokens`]) is emitted as an FTS5 phrase.
 fn sanitize_fts_tokens<S: AsRef<str>>(tokens: &[S]) -> Option<String> {
     quote_tokens(tokens.iter().map(AsRef::as_ref), true)
 }

@@ -30,13 +30,11 @@ fn map_entry(r: WishlistRow) -> WishlistEntry {
     }
 }
 
-/// Add a book to a user's wishlist, returning the entry.
-///
-/// Folds the uuid to canonical `books.uuid` (honoring `merged_uuids`) and
-/// stores that, so uniqueness holds across a merge and the row always resolves
-/// to a live book; an unresolvable uuid returns [`PhysicalError::BookNotFound`].
+/// Add a book to a user's wishlist, returning the entry. The uuid is folded to
+/// canonical `books.uuid` (honoring `merged_uuids`) so uniqueness holds across a
+/// merge; an unresolvable uuid returns [`PhysicalError::BookNotFound`].
 /// Idempotent: a second add for the same `(user_id, canonical uuid)` returns the
-/// existing row unchanged (the original `source`/`added_at` win).
+/// existing row unchanged.
 pub async fn add_wishlist_entry(
     pool: &SqlitePool,
     user_id: i64,
@@ -64,23 +62,11 @@ pub async fn add_wishlist_entry(
     Ok(map_entry(row))
 }
 
-/// Remove a book from a user's wishlist. A no-op (not an error) when absent —
-/// the desired end state (not on the wishlist) already holds.
-///
-/// Folds the uuid to canonical first so a `merged_uuids` ledger key still
-/// deletes the row stored under the surviving book. An unresolvable uuid can
-/// have no entry, so it's a no-op.
-///
-/// A book that existed only to be wanted goes with the last entry that wanted
-/// it: one minted under the physical pseudo-root by a wishlist add, with no
-/// file, no checked-in copy, and no other reader's entry left. Kept, it is a
-/// row no listing shows and no shelf holds, reachable only by its URL and
-/// still announcing itself there as tracked from a collection or wishlist it
-/// is on neither of. The purge is the same sweep as
-/// [`super::delete_fileless_book`], so whatever a reader wrote against the
-/// orphan through that page goes with it. A ghosted library book — file gone,
-/// root real — is never touched here: the reindex owns that row and its
-/// retention.
+/// Remove a book from a user's wishlist. A no-op (not an error) when absent or
+/// when the uuid is unresolvable. The uuid is folded to canonical first, so a
+/// `merged_uuids` key still deletes the surviving book's row. The last entry
+/// also purges a book that existed only to be wanted (fileless, no copy, no
+/// other reader's entry), via [`super::delete_fileless_book`]'s sweep.
 pub async fn remove_wishlist_entry(
     pool: &SqlitePool,
     user_id: i64,
@@ -96,6 +82,8 @@ pub async fn remove_wishlist_entry(
         .execute(&mut *tx)
         .await?;
 
+    // Only a book that existed to be wanted (physical pseudo-root, no file, no
+    // copy, no other entry) is purged; a ghosted library book is the reindex's.
     let orphan: Option<i64> = sqlx::query_scalar(
         "SELECT b.id FROM books b
            JOIN scan_roots l ON l.id = b.library_id
