@@ -67,7 +67,7 @@ pub enum CliError {
     /// The command line doesn't fit the usage text.
     #[error("{0}")]
     Usage(String),
-    /// A value that can't be used; `name` is "server URL", "device token" or "port".
+    /// A value that can't be used; `name` is "server URL", "device token", "state file" or "port".
     #[error("invalid {name}: {reason}")]
     Invalid { name: &'static str, reason: String },
 }
@@ -121,7 +121,9 @@ fn parse_serve(
         token: or_env(token, TOKEN_ENV).map(valid_token).transpose()?,
         port: port.map_or(Ok(0), valid_port)?,
         state: or_env(state, STATE_ENV)
-            .map_or_else(|| PathBuf::from(DEFAULT_STATE_PATH), PathBuf::from),
+            .map(valid_state)
+            .transpose()?
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_STATE_PATH)),
     })
 }
 
@@ -156,6 +158,17 @@ fn valid_token(token: String) -> Result<String, CliError> {
         name: "device token",
         reason: "expected letters, digits, '-' and '_' only".into(),
     })
+}
+
+/// `state` as a path, if it names one.
+fn valid_state(state: String) -> Result<PathBuf, CliError> {
+    if state.is_empty() {
+        return Err(CliError::Invalid {
+            name: "state file",
+            reason: "expected a file path".into(),
+        });
+    }
+    Ok(PathBuf::from(state))
 }
 
 fn valid_port(port: String) -> Result<u16, CliError> {

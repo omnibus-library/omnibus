@@ -270,6 +270,13 @@ fn parse_normalizes_url_to_its_origin() {
 }
 
 #[test]
+fn parse_rejects_empty_state_path() {
+    let from_flag = parse(args(&["serve", "--state", ""]), no_env);
+
+    assert!(is_invalid(from_flag, "state file"));
+}
+
+#[test]
 fn parse_rejects_token_outside_url_safe_base64() {
     for token in ["a/b", "a b", "a.b", "tökén", ""] {
         let from_flag = parse(args(&["serve", "--token", token]), no_env);
