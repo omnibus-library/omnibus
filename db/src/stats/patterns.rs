@@ -8,11 +8,11 @@
 //!
 //! **Local-time**, from the offset each session recorded at capture
 //! (`SessionReport::utc_offset_minutes`, migration 0080), applied to the
-//! timestamp before bucketing; every other rollup in `db::stats` stays UTC.
+//! timestamp before bucketing; `db::stats` cuts days on the reader's offset.
 //! **Rows with no offset are excluded, not defaulted** — a pre-0080 row says
 //! nothing about where the reader was — and come back as
 //! [`TimePatterns::unzoned_seconds`] instead. Rationale in
-//! `docs/architecture.md`.
+//! `.claude/rules/10-reader-calendar.md`.
 
 use omnibus_shared::{HourBucket, WeekdayBucket};
 use sqlx::{Row, SqlitePool};

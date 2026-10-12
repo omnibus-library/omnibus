@@ -64,6 +64,16 @@ fixtures:
 explore-test:
     cd scripts/explore && python3 -m unittest audit_lib.tests && python3 -m unittest discover -s tests -p 'test_*.py'
 
+# Print one directory's module map, built on demand from each file's own `//!`
+# doc (a Swift file's header comment), e.g. `just modules db/src`. Nothing is
+# committed, so the map cannot drift from the code.
+modules dir:
+    @python3 scripts/module_map.py {{dir}}
+
+# Unit tests for scripts/module_map.py. Stdlib unittest, like explore-test.
+module-map-test:
+    python3 scripts/tests/module-map.test.py
+
 # Run the full unit/integration test matrix via cargo-nextest (the same runner
 # CI uses, so local and CI results match; no doctests in the tree, which is all
 # nextest can't run). A bare `--workspace` is a trap here — it silently skips
@@ -75,7 +85,7 @@ explore-test:
 # The `omnibus-mobile` shell crate itself has no tests (lint covers it via
 # `just lint`).
 # Self-wraps in the slim nix shell so it works from a bare checkout too.
-test: fixtures explore-test
+test: fixtures explore-test module-map-test
     scripts/with-dev-env.sh default bash -ec '\
         cargo nextest run -p omnibus-db && \
         cargo nextest run -p omnibus && \

@@ -13,16 +13,18 @@ If the rule file and this file disagree, the rule file wins.
 
 ### Module-level `//!`
 
-**Rule:** every file gets a `//!` block of about 3–5 lines: what the
-module is for, who calls it.
+**Rule:** every file gets a `//!` block: what the module is for, who
+calls it, and why it is shaped that way. Shorter is better; 20 lines is
+the cap.
 
 **Why:** module docs answer the question "do I want to be reading this
 file at all?". A reader scanning crate src/ should be able to skim the
-first paragraph of each file and know which one owns the behaviour they
-care about. Anything longer (multi-section invariants, roadmap context)
-belongs in commit messages and PR bodies — those have an audit trail, a
-review pass, and don't rot when the issue numbers stop being
-meaningful.
+first sentence of each file (`just modules <dir>` prints exactly that)
+and know which one owns the behaviour they care about. The rest of the
+block carries the why a reader of this file needs. Roadmap context and
+issue numbers belong in commit messages and PR bodies — those have an
+audit trail, a review pass, and don't rot when the issue numbers stop
+being meaningful.
 
 **Anti-pattern (since fixed).** `db/src/discovery.rs` once opened with a
 17-line `//!` containing a `# Multi-tenancy invariant` H2 heading and
@@ -35,7 +37,7 @@ that introduces it, not the file.
 **Pattern.** Something like:
 
 ```rust
-//! F1.8 discovery-detail reads: one author or series with their books,
+//! Discovery-detail reads: one author or series with their books,
 //! plus the global tag cloud. Returns DB-wide results; per-user ACL
 //! scoping is not implemented.
 ```
@@ -46,7 +48,7 @@ roadmap, no issues, no H2 sections.
 ### Function `///`
 
 **Rule:** every `pub` item gets a one-line `///` summary. Longer
-rustdoc only when behaviour is surprising.
+rustdoc only when behaviour is surprising, and never past 5 lines.
 
 **Why:** when reading a call site, IDE hover or `cargo doc` should show
 *what the function does* without making you open the source. One line

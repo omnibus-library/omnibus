@@ -1,7 +1,5 @@
-//
 //  omnibusApp.swift
-//  omnibus
-//
+//  The `@main` app: launch-time setup and the scene-phase sync hooks.
 
 import AVFoundation
 import SwiftUI

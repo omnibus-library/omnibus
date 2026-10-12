@@ -1,4 +1,5 @@
-# Runs the TestFlight scripts' test suites.
+# Runs the stdlib-Python script suites: the TestFlight scripts' and the module
+# map's (`just modules`).
 #
 # Those scripts only ever execute against Apple's live API — one during a
 # release dispatch, one on a daily schedule — so a regression is invisible
@@ -7,7 +8,7 @@
 # success. The suites stub HTTP and need no App Store Connect credentials, so
 # they can gate every change to the scripts here instead.
 #
-# Deliberately scoped to this one suite rather than all of scripts/tests/: the
+# Deliberately scoped to these suites rather than all of scripts/tests/: the
 # sibling bash tests expect a Nix dev shell and a worktree layout that this
 # runner does not have.
 name: Script tests
@@ -22,6 +23,8 @@ on:
       - "scripts/testflight_feedback_to_issues.py"
       - "scripts/tests/testflight-distribute.test.py"
       - "scripts/tests/testflight-feedback.test.py"
+      - "scripts/module_map.py"
+      - "scripts/tests/module-map.test.py"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -29,6 +32,8 @@ on:
       - "scripts/testflight_feedback_to_issues.py"
       - "scripts/tests/testflight-distribute.test.py"
       - "scripts/tests/testflight-feedback.test.py"
+      - "scripts/module_map.py"
+      - "scripts/tests/module-map.test.py"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -68,3 +73,16 @@ jobs:
 
       - name: Run suite
         run: python scripts/tests/testflight-feedback.test.py
+
+  module-map:
+    name: module_map.py
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run suite
+        run: python scripts/tests/module-map.test.py
