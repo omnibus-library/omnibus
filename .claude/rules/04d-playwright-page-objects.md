@@ -24,6 +24,15 @@ The suite is moving from functional helpers to page objects, one surface at a ti
 - **Fixtures** construct objects but never navigate. One that creates data deletes it after `use` (`createdBookUuids`), so cleanup runs when a test fails.
 - **Specs** read as `test.describe("<subject>")` → imperative lowercase titles (`check in a wishlisted book from its own page`) → one `test.step` per phase. Hooks are titled: `test.beforeAll("seed the library", …)`.
 
+## Lint
+
+`biome check .` (in `just lint-ts` and CI) runs two GritQL plugins from `ui_tests/playwright/lint/`:
+
+- `awaitWebFirstAssertions.grit`, on every file: a web-first assertion (`expect(locator).toBeVisible()`) must be awaited, or it can never fail the test. This is what keeps `assert*` methods honest.
+- `specsUsePageObjects.grit`, on specs: no `getBy*`, `locator` or `route` call. Those belong to a page or component object.
+
+The `overrides` entry in `biome.json` lists the unmigrated specs the second plugin skips. A PR that migrates a spec deletes its `!` line there, and #2744 closes when the list is empty.
+
 ## Accounts — one per worker, never per test
 
 Sign-in (`/api/auth/login`, `register`, `logout`) allows ten calls a minute per

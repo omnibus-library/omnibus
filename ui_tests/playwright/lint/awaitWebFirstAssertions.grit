@@ -1,0 +1,16 @@
+language js
+
+JsExpressionStatement(expression = $assertion) where {
+  $assertion <: or {
+    `expect($subject).$matcher($args)`,
+    `expect($subject).not.$matcher($args)`,
+    `expect.soft($subject).$matcher($args)`,
+    `expect.soft($subject).not.$matcher($args)`
+  },
+  $matcher <: r"^(?:toBe(?:Attached|Checked|Disabled|Editable|Empty|Enabled|Focused|Hidden|InViewport|OK|Visible)|toContain(?:Class|Text)|toHave(?:Accessible\w+|Attribute|Class|Count|CSS|Id|JSProperty|Role|Screenshot|Text|Title|URL|Value|Values)|toMatchAriaSnapshot|toPass)$",
+  register_diagnostic(
+    span = $assertion,
+    message = "Await this web-first assertion; unawaited, it can never fail the test.",
+    severity = "error"
+  )
+}

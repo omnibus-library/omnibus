@@ -10,7 +10,7 @@ The Playwright project (`ui_tests/playwright`) uses **pnpm** as its package mana
 
 - Install / run: `pnpm install`, `pnpm exec playwright test`, `pnpm exec tsx tools/…`.
 - Lint + typecheck: `pnpm run lint` (Biome), `pnpm run typecheck` (`tsc --noEmit`), or `just lint-ts` for both. Enforced in CI by `.github/workflows/ts-lint.yml` (the `🔒 TS Lint Required` gate).
-- Biome config is [biome.json](../../ui_tests/playwright/biome.json): double quotes, 2-space indent, 80-col, recommended lint rules + organize-imports. `noNonNullAssertion` is **off** — the specs use `!` on indexed access (`FIXTURE_BOOKS[0]!`) because `tsconfig.json` sets `noUncheckedIndexedAccess`; the two would otherwise fight. When Biome offers a `!`→`?.` "fix", reject it: it changes types and breaks the typecheck.
+- Biome config is [biome.json](../../ui_tests/playwright/biome.json): double quotes, 2-space indent, 80-col, recommended lint rules + organize-imports, plus the GritQL plugins in `lint/` (see [04d](04d-playwright-page-objects.md#lint)). `noNonNullAssertion` is **off** — the specs use `!` on indexed access (`FIXTURE_BOOKS[0]!`) because `tsconfig.json` sets `noUncheckedIndexedAccess`; the two would otherwise fight. When Biome offers a `!`→`?.` "fix", reject it: it changes types and breaks the typecheck.
 
 ## Chromium comes from Nix, not npm
 
