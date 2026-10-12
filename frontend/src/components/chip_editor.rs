@@ -58,19 +58,13 @@ pub struct ChipEditorOptions {
     /// "Remove" → "Remove Ada Lovelace" or "Remove tag" → "Remove tag
     /// fiction".
     pub aria_remove_prefix: String,
-    /// Per-instance testid prefix so multiple ChipEditors on one page
-    /// don't collide. The `<input>` gets `<prefix>-input` and the
-    /// suggestions `<ul>` gets `<prefix>-suggestions`. Suggestion
-    /// `<li>`s use `role="option"` with the suggestion as accessible
-    /// name (no per-row testid) so Playwright resolves them via
-    /// `getByRole("option", { name })`.
+    /// Per-instance testid prefix so several ChipEditors on a page don't
+    /// collide: `<prefix>-input` and `<prefix>-suggestions`. Suggestion `<li>`s
+    /// are `role="option"` named by the suggestion (no per-row testid).
     pub testid_prefix: String,
-    /// When `true`, the inline `<input>` receives `autofocus` so the
-    /// dropdown surfaces on first paint. Used by the landing-page
-    /// Authors cell so admins don't have to click twice (once to
-    /// enter edit mode, once to focus the input). Off by default to
-    /// keep the metadata-edit page from stealing focus from the page's
-    /// other fields on mount.
+    /// When `true`, the inline `<input>` receives `autofocus` so the dropdown
+    /// surfaces on first paint. Off by default so the metadata-edit page
+    /// doesn't steal focus from its other fields on mount.
     pub autofocus: bool,
     /// Optional uppercase mini-header rendered at the top of the
     /// suggestion dropdown — "ADD AUTHOR" / "ADD TAG". Empty string (the
@@ -103,20 +97,13 @@ pub struct ChipEditorProps {
     /// the consumer can persist on change (e.g. POST overrides) without
     /// having to re-subscribe to the signal.
     pub on_change: EventHandler<Vec<String>>,
-    /// Candidate pool. Each item carries the canonical name plus the
-    /// number of books currently linked to it, which the dropdown
-    /// renders to the right of the name as a quiet "1 book" / "23
-    /// books" hint (so admins can tell apart "Min Jin Lee" with 1
-    /// book from "Min Kym" with 0). Read by reference each render via
-    /// the wrapping `ReadSignal`; an empty signal suppresses the
-    /// dropdown entirely.
+    /// Candidate pool: each item carries the canonical name and the number of
+    /// books linked to it, shown beside the name as a "1 book" hint. An empty
+    /// signal suppresses the dropdown entirely.
     pub suggestions: ReadSignal<Vec<SuggestionItem>>,
-    /// Fired when the user presses Escape inside the input, or blurs away
-    /// from the editor entirely (a genuine click-away, or Tab past the
-    /// whole subtree — but not Tab onto a chip's own Remove button, nor a
-    /// suggestion-row pick; see [`ChipEditor`]'s blur handling). Useful for
-    /// host components that want to exit a wrapping edit mode in addition
-    /// to clearing the dropdown highlight. Default no-op.
+    /// Fired on Escape inside the input, or when focus leaves the editor
+    /// entirely (not onto a chip's Remove button or a suggestion-row pick; see
+    /// [`ChipEditor`]'s blur handling). Default no-op.
     #[props(default)]
     pub on_close: EventHandler<()>,
     /// Presentational knobs (placeholder, avatar, testids, …).
@@ -124,20 +111,11 @@ pub struct ChipEditorProps {
     pub options: ChipEditorOptions,
 }
 
-/// Local reactive state for one [`ChipEditor`] instance. A custom-hook-style
-/// helper — called unconditionally so Dioxus's per-scope hook-order tracking
-/// sees the same `use_signal` sequence every render — so [`ChipEditor`]
-/// itself starts from the derived selection instead of a wall of signal
-/// declarations.
-///
-/// `focused` seeds from `autofocus`: the browser's autofocus does not always
-/// emit `onfocus` for a freshly-mounted node (e.g. the landing cell's
-/// editor, mounted on click), so without seeding the open-on-focus dropdown
-/// never surfaces. `suppress_open` flips true after a commit so the
-/// just-emptied input does not instantly re-surface the pool; any keystroke
-/// / fresh focus clears it. `root_el` is captured by the wrapper's
-/// `onmounted` in [`ChipEditor`]'s rsx; read by
-/// `close_unless_focus_stayed_inside` on blur.
+/// Local reactive state for one [`ChipEditor`] instance, built by a
+/// custom-hook-style helper called unconditionally so hook order is stable.
+/// `focused` seeds from `autofocus` (a freshly-mounted node may not emit
+/// `onfocus`); `suppress_open` is set after a commit and cleared by any
+/// keystroke or fresh focus; `root_el` is captured by the wrapper's `onmounted`.
 struct ChipEditorState {
     input: Signal<String>,
     highlight: Signal<Option<usize>>,
@@ -335,15 +313,9 @@ fn capture_chip_editor_root(
 }
 
 /// Close the host's wrapping edit mode unless the element gaining focus (the
-/// blur event's `relatedTarget`) is still inside the editor's own root — see
-/// the call site in [`ChipEditor`] for why that distinction matters. A
-/// `relatedTarget` of `None` (focus landed on nothing focusable — the usual
-/// case for clicking a plain heading or block of text) counts as "left the
-/// editor" and closes it, matching real click-away behavior.
-///
-/// Off the web target, there is no `relatedTarget` to inspect, so this
-/// always closes — reproducing the simple pre-fix behavior for mobile's
-/// touch-first interaction model, where a physical Tab key isn't in play.
+/// blur event's `relatedTarget`) is still inside the editor's own root. A
+/// `relatedTarget` of `None` counts as "left the editor". Off the web target
+/// there is no `relatedTarget` to inspect, so this always closes.
 #[cfg(feature = "web")]
 fn close_unless_focus_stayed_inside(
     evt: Event<FocusData>,
@@ -491,11 +463,9 @@ fn compute_selection(
 }
 
 /// Render the "+ Create '<query>'" footer row when the user has typed
-/// something but no entry in the *full* suggestion pool (and no
-/// currently-chosen value) is an exact case-insensitive match. Checking
-/// against the truncated `filtered` view alone would let an exact-match
-/// entry outside the top-5 truncation falsely surface a Create row for a
-/// name that already exists in the library.
+/// something but no entry in the *full* suggestion pool (and no currently-
+/// chosen value) is an exact case-insensitive match; the truncated `filtered`
+/// view alone would miss a match outside the top 5.
 fn should_show_create_row(
     suggestions: &[SuggestionItem],
     current_values: &[String],
@@ -735,12 +705,10 @@ fn ChipList(
     }
 }
 
-/// Helper: dedup a list of `(name, count)` pairs into a sorted
-/// suggestion pool. Case-insensitive on the name (first-seen casing
-/// wins); when duplicates collide, the higher count wins so a
-/// freshly-imported `Sarah J. Maas` with 8 books beats a stale empty
-/// `sarah j. maas` row. Output is alphabetic case-insensitive — feed
-/// straight into [`ChipEditorProps::suggestions`].
+/// Dedup a list of `(name, count)` pairs into a sorted suggestion pool.
+/// Case-insensitive on the name (first-seen casing wins); on a collision the
+/// higher count wins. Output is alphabetic case-insensitive, ready for
+/// [`ChipEditorProps::suggestions`].
 pub fn collect_suggestions<I>(sources: I) -> Vec<SuggestionItem>
 where
     I: IntoIterator<Item = SuggestionItem>,

@@ -19,11 +19,8 @@ use crate::platform_sleep::async_sleep_ms;
 
 /// "Send to Kindle" CTA. Web/SSR renders the interactive
 /// [`SendToKindleButton`]; when the EPUB is over Kindle's email cap
-/// (`size_bytes` provided by the server, so SSR + first WASM paint agree) the
-/// email path can't work, so it becomes a link to Amazon's Send to Kindle page
-/// (up to 200 MB) instead — a real action, not a dead disabled button. Mobile
-/// renders a disabled placeholder. The cfg gate lives at the helper definition
-/// (rule 07: keep cfg out of rsx bodies).
+/// (`size_bytes` from the server) it becomes a link to Amazon's Send to Kindle
+/// page (up to 200 MB) instead. Mobile renders a disabled placeholder.
 #[cfg(not(feature = "mobile"))]
 pub(crate) fn send_to_kindle_action(uuid: &str, file_id: Option<i64>, size_bytes: i64) -> Element {
     // `u64::try_from` over an `as` cast so a negative size can't wrap into a
@@ -64,14 +61,11 @@ pub(crate) fn send_to_kindle_action(
     }
 }
 
-/// Interactive Send-to-Kindle button. On click it enqueues the job (fast, so
-/// it never trips the server's 30s request-timeout guard) and then polls the
-/// worker for the delivery outcome, showing "Sending…" in-place meanwhile. On a
-/// terminal state it raises a bottom-center toast (matching the merge/bookmark
-/// toasts): a success toast auto-dismisses after a few seconds, an error toast
-/// stays until dismissed so the message stays readable. Disabled while in
-/// flight. `class` / `testid` default to the per-format-row styling; the hero
-/// CTA overrides them to render a large ghost button with its own testid.
+/// Interactive Send-to-Kindle button: enqueues the job on click (fast, so it
+/// never trips the server's 30s request timeout), then polls the worker for
+/// the outcome, showing "Sending…". A terminal state raises a toast: success
+/// auto-dismisses, an error stays. `class` / `testid` default to the
+/// per-format-row styling; the hero CTA overrides them.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn SendToKindleButton(
@@ -113,11 +107,9 @@ pub fn SendToKindleButton(
 }
 
 /// Poll the worker until the enqueued send reaches a terminal state, returning
-/// the toast's `(is_error, message)` pair — `false` on delivery, `true` with an
-/// error message otherwise. When the underlying `kindle_send_status` query
-/// itself returns `Ok(None)`, the task id went unknown before we saw a terminal
-/// state (evicted past the worker's retention window) — rare under sub-second
-/// polling, surfaced as a soft error since we can't confirm delivery.
+/// the toast's `(is_error, message)` pair. `Ok(None)` from `kindle_send_status`
+/// means the task id went unknown before a terminal state was seen (evicted
+/// past the worker's retention window): a soft error, as delivery is unconfirmed.
 #[cfg(not(feature = "mobile"))]
 async fn poll_send_result(url: &str, task_id: u64) -> (bool, String) {
     const POLL_INTERVAL_MS: u32 = 700;

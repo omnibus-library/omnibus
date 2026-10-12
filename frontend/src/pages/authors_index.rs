@@ -131,11 +131,9 @@ pub fn AuthorsIndexPage() -> Element {
 }
 
 /// Assembles the alphabet-strip + filter/sort state passed to the header.
-/// The A–Z run (plus a single `#` bucket for any name whose
-/// surname-equivalent doesn't start with an ASCII letter — digits,
-/// punctuation, accented mononyms, … — rendered after Z so the eye lands on
-/// the alpha range first) is built here since it's only needed for this one
-/// struct.
+/// The A–Z run gets a single `#` bucket after Z for names whose
+/// surname-equivalent doesn't start with an ASCII letter (digits,
+/// punctuation, accented mononyms).
 fn build_filter_state(
     filter_text: String,
     sort: IndexSort,
@@ -474,18 +472,11 @@ fn folded_initial(key: &str) -> Option<char> {
         .next()
 }
 
-/// Surname-first key driving both alphabetical ordering and the letter
-/// glyph above each section — `creator_sort_key`, the rule the library's
-/// Author axis keys books by, so the two surfaces file an author alike.
-///
-/// A comma-form `sort` is used verbatim; a comma-less one is ignored. A
-/// few real-world dumps store just a surname (or an unrelated string like
-/// a pseudonym) there, and using it blindly groups authors under the
-/// wrong letter — e.g. "Erin A. Craig" with `sort = "Underwood"`
-/// appearing under the U section. The key is derived from the display
-/// name instead: kept verbatim in "Surname, Given" form, else its last
-/// word becomes the surname. The order/letter stay coupled so cards
-/// within a section sort the same way the section glyph reads.
+/// Surname-first key driving both alphabetical ordering and the letter glyph
+/// above each section: `creator_sort_key`, the rule the library's Author axis
+/// keys books by, so both surfaces file an author alike. A comma-form `sort`
+/// is used verbatim; a comma-less one is ignored (dumps store a bare surname
+/// or pseudonym there) and the key derives from the display name instead.
 fn sort_key(a: &AuthorSummary) -> String {
     creator_sort_key(a.sort.as_deref(), &a.name)
 }

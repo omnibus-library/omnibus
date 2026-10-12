@@ -18,11 +18,9 @@ use super::mobile_filter_sheet::{dir_arrow, sort_pill_label, MobileSortFilterShe
 use super::resume_meta::resume_meta;
 
 /// Wait (bounded) for the above-the-fold cover images to decode, then ping
-/// Rust so the settled reveal doesn't flash placeholder tiles that covers
-/// pop over a few frames later. The 12-image cap keeps the below-the-fold
-/// grid out of the gate; the two timeouts bound the whole wait (imgs that
-/// never appear — an empty library — and covers that are slow to decode)
-/// so this can only delay the reveal, never hold it past the floor.
+/// Rust so the settled reveal doesn't flash placeholder tiles. At most 12
+/// images are awaited and two timeouts bound the wait, so this can only delay
+/// the reveal, never hold it past the floor.
 const COVERS_DECODE_JS: &str = r#"
 (async function(){
   function imgs(){
@@ -102,10 +100,8 @@ fn use_resume_point(server_url: String) -> Signal<Option<Option<ResumePoint>>> {
 }
 
 /// Settled reveal: hold the screen invisible until the first page fetch lands
-/// (the offline cache answers within tens of ms) AND the above-the-fold cover
-/// images have decoded, so the enter transition plays once over finished
-/// content — no cold "Loading" skeleton fading in, no covers popping over
-/// placeholder tiles mid-flight. Every wait is bounded: the decode eval times
+/// and the above-the-fold covers have decoded, so the enter transition plays
+/// once over finished content. Every wait is bounded: the decode eval times
 /// out internally, and the floor reveals unconditionally so a slow first load
 /// falls back to the ordinary Loading state updating in place.
 fn use_settled_reveal(is_loading: bool, books_empty: bool) -> bool {

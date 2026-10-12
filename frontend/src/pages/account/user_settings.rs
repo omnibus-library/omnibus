@@ -87,9 +87,7 @@ impl UserSetting {
 }
 
 /// `onchange` for a row's switch, shared by every [`UserSetting`] and
-/// extracted so its guards and its failure revert are reachable from a test
-/// without a browser. Mirrors the self-registration toggle in
-/// `pages/settings/users/registration.rs`.
+/// extracted so its guards and failure revert are testable without a browser.
 ///
 /// Ignores the event: the click already flipped the DOM checkbox, and the
 /// value this writes comes from `confirmed`, not from the input.
@@ -141,19 +139,16 @@ fn user_setting_toggle_handler(
 }
 
 /// One row of the user-settings table, owning its own
-/// confirmed/shown/error/saving signals.
-///
-/// Both `confirmed` and `shown` start `None` so SSR and the first WASM paint
-/// emit the same markup (rule 07), and the switch stays disabled until the
-/// viewer resolves so it can never be flipped against a value that hasn't
-/// arrived. `confirmed` is what the server has acknowledged and drives the
-/// subtitle; `shown` is what the checkbox renders. They are separate because
-/// a click flips the DOM checkbox natively — if the rendered value never
-/// moved, Dioxus would diff it as unchanged and a rejected save would leave
-/// the box sitting in a state the server refused.
+/// confirmed/shown/error/saving signals. `confirmed` is what the server has
+/// acknowledged and drives the subtitle; `shown` is what the checkbox renders.
+/// Both start `None` and the switch stays disabled until the viewer resolves,
+/// so it can't be flipped against a value that hasn't arrived.
 #[component]
 fn UserSettingRow(setting: UserSetting) -> Element {
     let confirmed = use_signal(|| None::<bool>);
+    // Separate from `confirmed`: a click flips the DOM checkbox natively, so if the
+    // rendered value never moved, Dioxus would diff it as unchanged and a rejected
+    // save would leave the box in a state the server refused.
     let shown = use_signal(|| None::<bool>);
     let error = use_signal(|| None::<String>);
     let saving = use_signal(|| false);

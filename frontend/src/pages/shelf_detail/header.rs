@@ -176,12 +176,8 @@ impl ActionAttrs {
 /// The action bar. Every viewer gets the same controls for the shelf's kind —
 /// Add books (hand-picked only), Edit shelf, the ⋯ menu — and when `access`
 /// can't edit, each is `aria-disabled`, inert, and described by the lock note.
-///
-/// Add books carries one gate the others don't: `members_ready`. The picker
-/// marks the books this shelf already holds, and it reads that from the member
-/// list, which is empty both before the first fetch lands and after one fails.
-/// Offering it then would show a stocked shelf as empty and invite adding a
-/// book that is already on it, so the control waits until membership is known.
+/// Add books also waits on `members_ready`: the picker marks books the shelf
+/// holds from a member list that is empty before a fetch lands or after one fails.
 #[component]
 fn ShelfActions(
     shelf: Shelf,

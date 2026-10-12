@@ -31,12 +31,10 @@ struct LoginFormState {
     on_keydown: EventHandler<Event<KeyboardData>>,
 }
 
-/// Sets up the login form's signals and submission logic, decoupled from
-/// the event source so both the form's `onsubmit` (click) and each
-/// input's `onkeydown` (Enter) drive the same path — Dioxus 0.7's submit
-/// event doesn't reliably fire on implicit form submission from Enter, so
-/// we trigger it explicitly via a shared `use_callback` handle. A successful
-/// sign-in lands on `next` when [`safe_next`] accepts it, else the library.
+/// Sets up the login form's signals and submission logic, decoupled from the
+/// event source so the form's `onsubmit` and each input's `onkeydown` (Enter)
+/// drive the same path. A successful sign-in lands on `next` when
+/// [`safe_next`] accepts it, else the library.
 fn use_login_form_state(next: Option<String>) -> LoginFormState {
     let username = use_signal(String::new);
     let password = use_signal(String::new);
@@ -66,6 +64,8 @@ fn use_login_form_state(next: Option<String>) -> LoginFormState {
         }
     });
 
+    // Dioxus 0.7's submit event doesn't reliably fire on implicit Enter
+    // submission, so Enter triggers this shared callback explicitly.
     let submit_now = use_callback(move |_: ()| {
         if submitting() {
             return;

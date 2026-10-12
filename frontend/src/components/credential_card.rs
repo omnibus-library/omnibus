@@ -9,11 +9,8 @@ use dioxus::prelude::*;
 /// The dot + label line reporting whether a credential is configured, e.g.
 /// "Connected \u{00b7} settings \u{00b7} hc_l\u{2026}ve" or "Not configured".
 /// `testid` becomes the wrapping `data-testid`; `detail` is the full text
-/// shown when `configured` — the caller composes the exact "Connected \u{00b7}
-/// source \u{00b7} masked" / "Configured \u{00b7} source" wording, since it
-/// varies by card. `configured` is `None` while the status read is out, which
-/// reads "Checking" rather than claiming the credential is missing — unless
-/// `read_failed`, when the read is over and the status simply isn't known.
+/// shown when `configured`. `configured` is `None` while the status read is
+/// out ("Checking"), unless `read_failed`, when the status isn't known.
 pub fn credential_status_line(
     testid: &str,
     configured: Option<bool>,

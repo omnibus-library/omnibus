@@ -170,9 +170,8 @@ pub(super) fn CompareScreen(
 /// What the compare screen shows while the record is still arriving: the
 /// shape of the answer, without any of its content.
 ///
-/// Deliberately not a spinner. The reader is about to read a table, and a
-/// placeholder in that table's shape means the real rows land where the eye
-/// is already looking instead of shifting it.
+/// Deliberately not a spinner: a placeholder in the table's shape means the
+/// real rows land where the eye is already looking.
 #[component]
 fn CompareSkeleton() -> Element {
     rsx! {
@@ -192,10 +191,8 @@ fn CompareSkeleton() -> Element {
 /// One field: your value, the arrow that copies the source's into it, and the
 /// source's value.
 ///
-/// The control is a button rather than a checkbox on purpose. The ask is
-/// "move that field into mine", which is an action with immediate feedback —
-/// a checkbox defers it to a second click and leaves the row's state
-/// ambiguous once the value has already been copied.
+/// The control is a button, not a checkbox: "move that field into mine" is an
+/// action with immediate feedback, and a checkbox leaves the row ambiguous.
 #[component]
 fn CompareRow(
     field: MetadataField,

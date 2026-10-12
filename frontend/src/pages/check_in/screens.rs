@@ -97,10 +97,6 @@ pub(super) fn confirm_subtitle(book: &ScanBook, wishlisted: bool) -> &'static st
 /// 2b — the fuzzy (title, author) hits. Never auto-resolved: the reader picks
 /// the book they're holding, seeing both ISBNs, or falls through to the 3c
 /// chooser.
-///
-/// Always a picker, because more than one row can carry the same effective
-/// norm — an EPUB and the audiobook nothing ever attached to it are one work
-/// in two rows, and declining that pair would offer to create a third.
 #[component]
 pub(super) fn CloseMatchScreen(
     books: Vec<ScanBook>,
@@ -109,6 +105,8 @@ pub(super) fn CloseMatchScreen(
     on_yes: EventHandler<ScanBook>,
     on_no: EventHandler<ExternalBookMeta>,
 ) -> Element {
+    // Always a picker, even for one row: an EPUB and its unattached audiobook are
+    // one work in two rows, and declining that pair would offer to create a third.
     let many = books.len() > 1;
     let copy = CloseMatchCopy::for_lookup(many, found_via);
     let fallthrough = scanned.clone();
@@ -180,11 +178,8 @@ impl CloseMatchCopy {
 /// One row of a library-book picker: the library card, that edition's ISBN
 /// when it has one, and the button that checks the scanned copy in against it.
 ///
-/// Shared by the two screens that ask "which of these is the book you're
-/// holding?" — the close-match candidates the ladder proposed, and the
-/// [`super::link::LinkExistingScreen`] results the reader searched for
-/// themselves. Same question, same `ScanBook`, same answer, so the label and
-/// the testid are the only per-screen parts.
+/// Shared by the close-match candidates and the [`super::link::LinkExistingScreen`]
+/// results; only the label and testid differ per screen.
 #[component]
 pub(super) fn LibraryPickOption(
     book: ScanBook,

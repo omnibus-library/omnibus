@@ -17,8 +17,7 @@ fn registration_status_line(enabled: Option<bool>) -> &'static str {
 }
 
 /// `onchange` for the self-registration switch, extracted from
-/// [`RegistrationToggle`] so its guards and its failure revert are reachable
-/// from a test without a browser.
+/// [`RegistrationToggle`] so its guards and failure revert are testable.
 ///
 /// Ignores the event: the click already flipped the DOM checkbox, and the
 /// value this writes comes from `confirmed`, not from the input.
@@ -78,35 +77,17 @@ fn apply_registration_load(
     }
 }
 
-/// Self-registration switch. Renders above the users table because it governs
-/// who may join without an admin creating the account first.
-///
-/// Both signals start `None` so SSR and the first WASM paint emit the same
-/// markup (rule 07); the checkbox is disabled until the load settles, so the
-/// control can never be flipped against a value that hasn't arrived.
-///
-/// `confirmed` is the value the server has acknowledged and drives the
-/// subtitle, which therefore never describes a policy that isn't in force.
-/// `shown` is what the checkbox renders. They are separate because a click
-/// flips the DOM checkbox *natively*: if the rendered value never moved,
-/// Dioxus would diff it as unchanged, emit no patch, and a rejected save would
-/// leave the box sitting in a state the server refused.
-///
-/// A failed initial load must not brick the control forever: `reload` is
-/// read by the effect (so it fires once on mount) and bumped by the "Retry"
-/// affordance shown while `error` is set and `confirmed` never arrived —
-/// clicking it re-runs the same fetch rather than leaving the checkbox
-/// `disabled` until a full page reload.
-///
-/// `reload` doubles as a generation counter: each spawned fetch snapshots
-/// the value it was started with and, on completion, only applies its
-/// result if `reload` still reads the same value. Without that guard a
-/// slow first load and a fast retry can land out of order — the retry's
-/// success would be immediately clobbered by the original request's later
-/// (stale) failure.
+/// Self-registration switch, above the users table because it governs who may
+/// join without an admin creating the account. `confirmed` is what the server
+/// has acknowledged and drives the subtitle; `shown` is what the checkbox
+/// renders. Both start `None` and the checkbox stays disabled until the load
+/// settles; a failed load shows "Retry", which bumps `reload` to refetch.
 #[component]
 pub(super) fn RegistrationToggle() -> Element {
     let confirmed = use_signal(|| Option::<bool>::None);
+    // Separate from `confirmed`: a click flips the DOM checkbox natively, so if the
+    // rendered value never moved, Dioxus would diff it as unchanged and a rejected
+    // save would leave the box in a state the server refused.
     let shown = use_signal(|| Option::<bool>::None);
     let error = use_signal(|| None::<String>);
     let saving = use_signal(|| false);

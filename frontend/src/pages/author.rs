@@ -426,15 +426,11 @@ struct AuthorDeleteState {
     delete_error: Signal<Option<String>>,
 }
 
-/// Confirmation modal for the admin "Delete author" action. On confirm,
-/// hits the `rpc_delete_author` server fn (which un-links every book,
-/// inserts the name into `ignored_authors`, and refreshes FTS) then
-/// navigates back to `/authors`. The blocklist insert is what makes the
-/// delete durable across reindexes — without it the next `Task::Scan`
-/// would silently recreate the row from the OPF metadata. Web-only;
-/// mobile admins fall back to the per-book metadata edit page. Built on
-/// the shared `ConfirmModal` shell (see `components::confirm_modal`)
-/// rather than hand-rolling its own backdrop/busy-gate markup.
+/// Confirmation modal for the admin "Delete author" action. On confirm it
+/// calls `rpc_delete_author` (un-links every book, adds the name to
+/// `ignored_authors`, refreshes FTS) then navigates to `/authors`. The
+/// blocklist insert keeps the delete durable: a later `Task::Scan` would
+/// otherwise recreate the row from OPF metadata. Web-only.
 #[cfg(not(feature = "mobile"))]
 #[component]
 fn AuthorDeleteModal(

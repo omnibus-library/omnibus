@@ -41,15 +41,11 @@ pub(crate) fn send_to_kobo_action(_uuid: &str, _book_author: &str, _book_title: 
     }
 }
 
-/// Interactive "Send to Kobo" button. When the browser supports the File System
-/// Access API (Chrome/Edge), clicking writes the book's KEPUB straight onto a
-/// plugged-in Kobo: the device mounts as a USB drive on the *client* machine
-/// (never the server), so the write happens in the browser. The chosen
-/// directory handle is remembered in IndexedDB, so after the first pick a click
-/// writes silently. Browsers without the API fall back to a plain download.
-/// Shows "Sending…" in-place and raises a toast on the terminal outcome —
-/// success/download auto-dismisses, errors stay until dismissed. `class` /
-/// `testid` default to the per-format-row styling; the hero CTA overrides them.
+/// Interactive "Send to Kobo" button. Where the File System Access API exists
+/// (Chrome/Edge) a click writes the book's KEPUB onto a plugged-in Kobo from
+/// the browser (the drive mounts on the *client*); elsewhere it downloads.
+/// Success/download toasts auto-dismiss, errors stay. `class` / `testid`
+/// default to the per-format-row styling; the hero CTA overrides them.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn SendToKoboButton(
@@ -147,12 +143,11 @@ fn kobo_subdir(book_author: &str, book_title: &str) -> Option<String> {
 }
 
 /// Map the JS write flow's status string to the toast `(is_error, message)`
-/// pair, or `None` when the user cancelled the picker (no toast at all). Pure,
-/// so it's unit-tested without a browser. Only *called* on web (the SSR/native
-/// stub of `write_kepub_to_kobo` never runs it), so the non-web lib build sees
-/// it as dead outside its tests — allow that rather than gate it off `web` and
-/// lose the server-feature test coverage.
+/// pair, or `None` when the user cancelled the picker (no toast). Pure, so
+/// it's unit-tested without a browser.
 #[cfg(not(feature = "mobile"))]
+// Only called on web; the non-web build sees it as dead outside its tests,
+// and gating it off `web` would lose the server-feature test coverage.
 #[cfg_attr(not(feature = "web"), allow(dead_code))]
 fn kobo_outcome(status: &str, message: Option<String>) -> Option<(bool, String)> {
     match status {
@@ -211,13 +206,11 @@ async fn write_kepub_to_kobo(_uuid: &str, _subdir: Option<&str>) -> Option<(bool
     None
 }
 
-/// Browser-side write flow. Reuses a remembered Kobo directory handle
-/// (persisted in IndexedDB) or prompts for one once, fetches the KEPUB, and
-/// writes it under `<Author>/<Title>/` on the device (creating the folders) —
-/// Kobo imports files anywhere on the drive, so this never touches the device's
-/// `KoboReader.sqlite` master DB. Falls back to a plain download when the File
-/// System Access API is absent (Firefox/Safari). `__UUID__` and `__SUBDIR__`
-/// are substituted with quoted JS string literals before eval.
+/// Browser-side write flow: reuses a remembered Kobo directory handle
+/// (persisted in IndexedDB) or prompts once, fetches the KEPUB, and writes it
+/// under `<Author>/<Title>/` on the device, never touching `KoboReader.sqlite`.
+/// Falls back to a plain download without the File System Access API.
+/// `__UUID__` and `__SUBDIR__` are replaced by quoted JS string literals before eval.
 #[cfg(all(not(feature = "mobile"), feature = "web"))]
 const KOBO_WRITE_JS: &str = r#"
 const uuid = __UUID__;

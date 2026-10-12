@@ -65,14 +65,10 @@ pub(super) enum Stage {
 #[derive(Clone, Copy)]
 pub(super) struct PickerState {
     pub(super) stage: Signal<Stage>,
-    /// The three things a provider can be asked for, held apart.
-    ///
-    /// One box would have to be split back into these to be useful, and that
-    /// split cannot be done honestly: "Dune Frank Herbert" typed into a single
-    /// field is indistinguishable from a book whose title happens to contain
-    /// its author's name. Open Library matches `title=` against the title
-    /// field alone, so guessing wrong there returns the books written *about*
-    /// the book instead of the book.
+    /// The three things a provider can be asked for, held apart: one box can't be
+    /// split back honestly ("Dune Frank Herbert" looks like a title containing an
+    /// author's name), and Open Library matches `title=` against the title field
+    /// alone, so a wrong guess returns books written *about* the book.
     pub(super) title: Signal<String>,
     pub(super) author: Signal<String>,
     pub(super) isbn: Signal<String>,
@@ -103,10 +99,8 @@ fn field_slug(label: &str) -> String {
 /// What the overlay's fields are filled in with when it opens: the book's own
 /// title, primary author, and ISBN.
 ///
-/// The ISBN is seeded like the rest, because it is what the book says. It does
-/// narrow the search hard — every provider goes to its exact-identifier lookup
-/// — but that is the honest answer to the question the fields are asking, and
-/// the reader can see it sitting there and clear it before pressing Search.
+/// The ISBN is seeded because it is what the book says. It narrows the search
+/// hard (exact-identifier lookup), but the reader can see and clear it first.
 fn seed_from(fields: FormFields) -> (String, String, String) {
     let author = fields.authors.peek().first().cloned().unwrap_or_default();
     (
@@ -257,10 +251,9 @@ fn SearchOverlay(
 
 /// The request the three fields describe, or `None` when they are all blank.
 ///
-/// No inference: what the reader can see in the fields is exactly what each
-/// provider is asked for. `query` still carries the composed phrase, because
-/// the REST front door accepts free text from clients that have no picker —
-/// but nothing here depends on it round-tripping.
+/// No inference: what the reader sees in the fields is exactly what each
+/// provider is asked for. `query` still carries the composed phrase for REST
+/// clients that have no picker, but nothing here depends on it round-tripping.
 pub(super) fn request_from(state: PickerState) -> Option<EditionSearchRequest> {
     // Read, not `peek`: the results screen calls this to decide whether Search
     // is enabled, and `peek` does not subscribe — the button would keep its
@@ -329,9 +322,8 @@ fn search_handler(state: PickerState, server_url: String) -> EventHandler<()> {
 /// Open the compare screen for one candidate, and re-fetch it in full behind
 /// the reveal.
 ///
-/// The merge is one-directional on purpose: the detail record fills in what
-/// the list row lacked and can never take a field away from it, so the row
-/// the reader clicked is still the row they get.
+/// The merge is one-directional: the detail record fills in what the list row
+/// lacked and never takes a field away from it.
 fn select_handler(state: PickerState, server_url: String) -> EventHandler<ProviderEdition> {
     let mut stage = state.stage;
     let mut hydrating = state.hydrating;

@@ -260,11 +260,9 @@ struct ShelfWiring {
 }
 
 /// Arm every reactive side-effect the landing page needs: admin-gated
-/// suggestion-pool refetch, page-1 fetch on sort/filter change, the
-/// load-more append + web scroll observer, and the two-stage prefs hydration
-/// (last-browsed library on mount, then the authoritative path once a fetch
-/// resolves it). Each stage is a named helper below so this stays a plain
-/// sequence of calls.
+/// suggestion-pool refetch, page-1 fetch on sort/filter change, the load-more
+/// append + web scroll observer, and the two-stage prefs hydration (last-browsed
+/// library on mount, then the authoritative path once a fetch resolves it).
 #[allow(clippy::too_many_arguments)] // one bundle per pipeline; splitting further hides the wiring
 fn wire_landing_effects(
     server_url: &str,

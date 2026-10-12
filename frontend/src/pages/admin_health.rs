@@ -56,18 +56,16 @@ pub fn AdminHealthPage() -> Element {
 }
 
 /// Poll the combined report every [`POLL_INTERVAL_MS`] from a post-mount
-/// `use_future` loop — fetch, apply, sleep, repeat. Dioxus cancels the future
-/// when the page unmounts, the same guarantee
-/// `components::worker_status::WorkerStatusIndicator` relies on for its own
-/// 1 Hz loop, so no explicit `use_drop` teardown is needed. Always runs (the
-/// hook itself can't be conditional without breaking Dioxus's hook-order
-/// rule), but [`should_poll`] gates the fetch each tick so a non-admin
-/// visitor never hits the admin-gated RPC.
+/// `use_future` loop (fetch, apply, sleep). Dioxus cancels it on unmount, so no
+/// `use_drop` is needed. [`should_poll`] gates the fetch each tick so a
+/// non-admin visitor never hits the admin-gated RPC.
 fn spawn_admin_health_fetch(
     access: ReadSignal<Access>,
     mut result: Signal<Option<AdminHealthReport>>,
     mut error: Signal<bool>,
 ) {
+    // Always runs: a hook can't be conditional, so `should_poll` gates the fetch
+    // each tick instead.
     use_future(move || async move {
         loop {
             if should_poll(access()) {
@@ -79,23 +77,18 @@ fn spawn_admin_health_fetch(
     });
 }
 
-/// Whether a poll tick should fetch. The RPC itself already 403s a
-/// non-admin, but the page must not even attempt it — a visitor who isn't
-/// admin (or whose `CurrentUser` hasn't resolved yet) would otherwise
-/// generate a 401/403 every [`POLL_INTERVAL_MS`] for as long as the page
-/// stays open. Re-checked every tick, not just once at mount, so admin
-/// status flipping mid-session starts or stops polling within one interval.
+/// Whether a poll tick should fetch. The RPC already 403s a non-admin, but a
+/// visitor who isn't admin (or whose `CurrentUser` hasn't resolved) shouldn't
+/// even attempt it. Re-checked every tick, so admin status flipping
+/// mid-session starts or stops polling within one interval.
 fn should_poll(access: Access) -> bool {
     access == Access::Allowed
 }
 
 /// Merge one poll's outcome into the `result`/`error` signals. A success
-/// always replaces the report and clears any prior error. A failure only
-/// flips the page to its error state when there is no report to keep
-/// showing yet (the first load) — a later transient blip leaves the last
-/// known-good report on screen rather than flashing the whole page to an
-/// error, mirroring `WorkerStatusIndicator`'s "keep the last known
-/// snapshot" behavior.
+/// always replaces the report and clears any prior error. A failure flips the
+/// page to its error state only when there is no report yet (the first load);
+/// a later blip keeps the last known-good report on screen.
 fn apply_poll_result(
     outcome: Result<AdminHealthReport, DataError>,
     result: &mut Signal<Option<AdminHealthReport>>,
@@ -371,9 +364,7 @@ fn AhKvRow(label: &'static str, value: String) -> Element {
 /// Format a unix-seconds timestamp as `YYYY-MM-DD HH:MM:SS UTC`.
 /// Dependency-free and deterministic (no wall clock, no locale), so SSR and
 /// the first WASM paint render identically (rule 07). Duplicated from
-/// `pages::settings::health::fmt_timestamp` — that helper is scoped
-/// `pub(super)` to its own section, same rationale as
-/// `pages::book_detail::dates::fmt_long_date`'s other duplicate.
+/// `pages::settings::health::fmt_timestamp`, which is `pub(super)`.
 fn fmt_timestamp(unix_secs: i64) -> String {
     let days = unix_secs.div_euclid(86_400);
     let secs_of_day = unix_secs.rem_euclid(86_400);
