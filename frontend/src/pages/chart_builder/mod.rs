@@ -113,17 +113,9 @@ pub fn ChartBuilderPage() -> Element {
 }
 
 /// The picker. Each control writes one field of the spec; the effect above
-/// turns any write into a refetch.
-/// The picker. Each control writes one field of the spec; the effect above
-/// turns any write into a refetch.
-///
-/// Measures are a checkbox group rather than a fixed pair of dropdowns,
-/// because the real constraint is the number of **scales** a chart can label,
-/// not the number of measures: any number sharing a unit sit on one axis and
-/// stay directly comparable. A measure is greyed out only once both scales are
-/// claimed by other units — and by the same `ChartSpec::can_add` the server
-/// validates with, so a control that looks available can never produce a spec
-/// the server then rejects.
+/// turns any write into a refetch. Measures are checkboxes because the limit is
+/// the two **scales** a chart can label, not the measure count; availability
+/// comes from the same `ChartSpec::can_add` the server validates with.
 #[component]
 fn ChartControls(spec: Signal<ChartSpec>) -> Element {
     let current = spec.read().clone();
@@ -203,6 +195,8 @@ fn ChartControls(spec: Signal<ChartSpec>) -> Element {
                                 spec.set(next);
                             }
                         },
+                        // `selected` on each option: a `value` on the select
+                        // picks nothing in SSR markup.
                         for b in ChartBucket::ALL {
                             option {
                                 value: "{b.as_query()}",

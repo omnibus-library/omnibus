@@ -102,14 +102,10 @@ pub fn latency_ms(d: Duration) -> String {
     format!("{} ms", duration_ms(d))
 }
 
-/// Redact the `<TOKEN>` segment of a `/kobo/<TOKEN>/…` path before it
-/// reaches the trace span. Kobo devices carry a long-lived (90-day)
-/// session token directly in the URL path (see
-/// `backend::kobo::extractor::kobo_path_token`), so logging the raw path
-/// would leak a durable credential to stderr and the on-disk JSON sink.
-/// Every other path is returned unchanged, borrowed rather than
-/// allocated — this runs on every request, and only the Kobo case needs
-/// to build a new string.
+/// Redact the `<TOKEN>` segment of a `/kobo/<TOKEN>/…` path before it reaches
+/// the trace span: it is the device's persistent `kobo_devices` credential, and
+/// the raw path would leak it to stderr and the on-disk JSON sink. Any other
+/// path is returned borrowed, since this runs on every request.
 pub fn redact_path(path: &str) -> Cow<'_, str> {
     let mut segs = path.split('/');
     match (segs.next(), segs.next(), segs.next()) {
