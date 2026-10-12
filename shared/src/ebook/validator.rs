@@ -2,27 +2,20 @@
 //! the indexer already records. Produced by the db projection, carried on
 //! [`super::BookFileInfo`], and compared by offline clients to learn that a
 //! downloaded copy is stale.
+//!
+//! The tag is deliberately the same `(mtime_epoch, size_bytes)` pair the reindex
+//! diff keys on, so "the validator moved" and "the indexer classified this
+//! Changed" cannot drift apart. A stored column would be a second copy every write
+//! path must bump, and a content hash would re-read every audiobook on each scan.
+//! Second granularity is enough because it is only compared against itself across
+//! a reindex; the request-time `If-Range` validator on the media endpoints is a
+//! separate, stronger thing.
 
-/// Entity tag for a library file, derived from the `(mtime_epoch,
-/// size_bytes)` pair recorded on `book_files` / `book_file_parts`.
-///
-/// `None` for the indexer's `(0, 0)` never-observed sentinel and for
-/// negative inputs, so a client never reads the one-time stat backfill as a
-/// content change. The returned string includes the surrounding quotes, so
-/// it is a valid `entity-tag` if a caller sends it back as a header.
-///
-/// This is deliberately the *same* pair the reindex diff keys on, so "the
-/// validator moved" and "the indexer classified this Changed" are one
-/// statement rather than two that can drift. A stored column would be a
-/// second copy of the fact that every write path must remember to bump; a
-/// content hash would mean re-reading every audiobook on every scan.
-///
-/// Second granularity is the right precision *here* because this value is
-/// only ever compared against itself across a reindex — it cannot be
-/// stronger than the diff key it mirrors. The stronger, request-time
-/// validator the media endpoints put on the wire is a separate thing with a
-/// separate job (`If-Range`, where a miss corrupts a file rather than
-/// merely missing a notification).
+/// Entity tag for a library file, derived from the `(mtime_epoch, size_bytes)`
+/// pair recorded on `book_files` / `book_file_parts`. `None` for the indexer's
+/// `(0, 0)` never-observed sentinel and for negative inputs, so a client never
+/// reads the one-time stat backfill as a change. The string includes the
+/// surrounding quotes, so it is a valid `entity-tag` as a header.
 pub fn file_etag(size_bytes: i64, mtime_epoch: i64) -> Option<String> {
     if size_bytes < 0 || mtime_epoch < 0 {
         return None;
@@ -43,12 +36,9 @@ pub enum DownloadFormat {
 }
 
 impl DownloadFormat {
-    /// `book_files.format` values this download format is served from, in
-    /// the order the server tries them — `/file` walks EPUB > CBZ > PDF, so a
-    /// validator answer has to walk the same ladder: the first format with a
-    /// row wins, lowest ordinal within it. A flat "lowest ordinal of any"
-    /// would snapshot the CBZ of a dual-format book whose EPUB is what
-    /// downloads.
+    /// `book_files.format` values this download format is served from, in the order
+    /// the server tries them: the first format with a row wins, lowest ordinal within
+    /// it, matching `/file`'s EPUB > CBZ > PDF walk.
     pub fn file_formats(self) -> &'static [&'static str] {
         match self {
             DownloadFormat::Epub => &["EPUB", "CBZ", "PDF"],

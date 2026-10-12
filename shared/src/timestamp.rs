@@ -7,16 +7,10 @@
 #[cfg(test)]
 mod tests;
 
-/// Format unix `seconds` as `YYYY-MM-DDTHH:MM:SSZ` (UTC).
-///
-/// Fixed-width for years `0000..=9999`, which is every timestamp this ever
-/// sees, so the output sorts lexicographically in chronological order — the
-/// same property `books.last_interacted_at` relies on.
-///
-/// Outside that range the year takes ISO 8601's expanded form with an
-/// explicit sign (`+292277026596-…`, `-0001-…`), which parsers accept but
-/// which is no longer fixed-width and no longer sorts. Only a corrupt stamp
-/// reaches it; rendering one honestly beats rendering it as a plausible date.
+/// Format unix `seconds` as `YYYY-MM-DDTHH:MM:SSZ` (UTC), fixed-width for years
+/// `0000..=9999` so the output sorts lexicographically in chronological order.
+/// Outside that range the year takes ISO 8601's signed expanded form
+/// (`+292277026596-…`), which no longer sorts; only a corrupt stamp gets there.
 pub fn to_iso8601(seconds: i64) -> String {
     // Floor division, so a pre-epoch timestamp borrows a day rather than
     // truncating toward zero and landing an hour into the wrong date.
@@ -50,11 +44,9 @@ pub fn to_iso8601_opt(seconds: Option<i64>) -> Option<String> {
 
 /// Days since 1970-01-01 → `(year, month, day)` in the proleptic Gregorian
 /// calendar (Howard Hinnant's `civil_from_days`).
-///
-/// The algorithm shifts the epoch to 0000-03-01 so leap days land at the end
-/// of the era, which is what lets the whole conversion be integer arithmetic
-/// with no lookup tables and no branching on leap years.
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    // Epoch shifted to 0000-03-01 so leap days land at the end of the era, keeping
+    // this integer-only with no leap-year branching.
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);

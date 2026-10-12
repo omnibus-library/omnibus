@@ -23,10 +23,8 @@ pub struct PhysicalCopy {
     pub checked_in_at: i64,
     /// [`Self::checked_in_at`] rendered as ISO 8601 UTC. When the copy was checked in.
     ///
-    /// Both forms travel together: the epoch is what clients compare and
-    /// sort on, the string is what a reader of the API can act on without
-    /// doing calendar arithmetic by hand. Populated by the server's read
-    /// paths; `None` on a payload a client built itself.
+    /// The epoch is what clients compare and sort on; the string saves API readers
+    /// calendar arithmetic. `None` on a payload a client built itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked_in_at_iso: Option<String>,
 
@@ -53,10 +51,9 @@ impl PhysicalCopy {
 
 /// Where a wishlist entry was added from. Persisted as the `source` column.
 ///
-/// The check-in flow has three front doors and they are not interchangeable
-/// to a reader: a barcode read off the cover, an ISBN typed at the keypad,
-/// and a title search whose ISBN came from the *provider* rather than from
-/// the reader at all.
+/// The check-in flow has three front doors a reader tells apart: a barcode read
+/// off the cover, an ISBN typed at the keypad, and a title search whose ISBN
+/// came from the *provider* rather than the reader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]

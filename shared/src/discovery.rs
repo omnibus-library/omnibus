@@ -50,18 +50,10 @@ pub struct FacetCounts {
 }
 
 /// Response payload for the keyset-paginated **web** landing read
-/// (`rpc_get_ebooks_page`). One page of books plus the opaque cursor to fetch
-/// the next page (`None` at end of stream).
-///
-/// `total` (full unfiltered library count) is populated only on the **first**
-/// page — a cursor-less request — so the client sizes the header once instead
-/// of recomputing it on every scroll. The cursor is opaque: the client stores
-/// `next_cursor` and hands it back verbatim; it never inspects it.
-///
-/// The mobile REST `GET /api/ebooks` paginated form does **not** use this type:
-/// it keeps the `EbookLibrary` body and carries the cursor in the
-/// `X-Next-Cursor` header (and has no `facets`), so older clients stay
-/// byte-compatible.
+/// (`rpc_get_ebooks_page`): one page of books plus the opaque `next_cursor`
+/// (`None` at end of stream) the client hands back verbatim. `total` is populated
+/// only on the first, cursor-less page. The mobile REST `GET /api/ebooks` keeps
+/// the `EbookLibrary` body and an `X-Next-Cursor` header instead.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LibraryPage {
     pub path: Option<String>,

@@ -31,12 +31,10 @@ pub enum SettingsError {
 pub struct Settings {
     pub ebook_library_path: Option<String>,
     pub audiobook_library_path: Option<String>,
-    /// Hours between automatic rescans of both libraries. `None` disables
-    /// periodic scanning — the library then only reindexes on server boot
-    /// or a manual "Scan Library" click (today's behavior, unchanged).
-    /// Omitted from the wire payload when unset (rather than serialized as
-    /// `null`) so existing callers that never touch this field see no
-    /// change to the `Settings` JSON shape.
+    /// Hours between automatic rescans of both libraries. `None` disables periodic
+    /// scanning: the library then only reindexes on server boot or a manual "Scan
+    /// Library" click. Omitted from the wire payload when unset, so existing callers
+    /// see no change to the `Settings` JSON shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scan_interval_hours: Option<u32>,
 }
@@ -69,12 +67,10 @@ impl Settings {
     }
 }
 
-/// A named metadata source a scan root's per-library precedence list can
-/// order. Only [`MetadataSource::EmbeddedTags`] (the scanned OPF/tag
-/// metadata) and [`MetadataSource::OmnibusOverrides`] (the manual-override
-/// layer) have a real data provider today — the other three variants are
-/// accepted and stored for forward-compatibility but are no-ops in the
-/// merge path until implemented (see
+/// A named metadata source a scan root's per-library precedence list can order.
+/// Only [`MetadataSource::EmbeddedTags`] (scanned OPF/tag metadata) and
+/// [`MetadataSource::OmnibusOverrides`] (the manual-override layer) have a data
+/// provider; the other variants are stored but are no-ops in the merge path (see
 /// `db::metadata_overrides::upsert::apply_overrides`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -165,10 +161,9 @@ impl SmtpSecurity {
 
 /// Admin request to save (or partially update) the server-wide SMTP config.
 ///
-/// Deliberately does not derive `Debug`: it carries a plaintext SMTP password,
-/// and a stray `tracing::debug!(?req)` would write it to logs. `password` is
-/// `None` to leave the stored password unchanged (so an admin can edit the
-/// host without re-typing the secret); a `Some("")` clears it.
+/// Deliberately does not derive `Debug`: it carries a plaintext SMTP password
+/// that a stray `tracing::debug!(?req)` would log. `password` is `None` to leave
+/// the stored password unchanged; a `Some("")` clears it.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SmtpConfigUpdate {
     pub host: String,
@@ -225,17 +220,11 @@ impl Default for EbookConvertStatus {
     }
 }
 
-/// Amazon Send-to-Kindle size limits — Kindle-imposed and provider-independent.
-/// We deliberately don't model per-SMTP-provider caps (e.g. Gmail's 25 MB),
-/// only Amazon's own: email delivery of a personal document rejects messages
-/// over 50 MB, while the web / app uploader at [`KINDLE_WEB_UPLOAD_URL`] accepts
-/// up to 200 MB. An EPUB over the email cap disables the email button and points
-/// the user at the uploader instead.
-///
-/// Expressed as **decimal** megabytes (50 * 10^6) to match Amazon's documented
-/// "50 MB" / "200 MB" figures and the UI copy — not binary MiB. The decimal
-/// value is also the slightly stricter cap, so we never pass a file the email
-/// path would then reject.
+/// Amazon Send-to-Kindle email size limit: Amazon rejects personal-document
+/// emails over 50 MB, while the web / app uploader at [`KINDLE_WEB_UPLOAD_URL`]
+/// accepts up to 200 MB. An EPUB over the email cap disables the email button
+/// and points at the uploader. Decimal megabytes (50 * 10^6), matching Amazon's
+/// figures and the UI copy; per-SMTP-provider caps are deliberately not modelled.
 pub const KINDLE_EMAIL_MAX_BYTES: u64 = 50_000_000;
 
 /// Upper bound of the Send-to-Kindle web / app uploader, surfaced in the UI hint
@@ -247,12 +236,10 @@ pub const KINDLE_WEB_MAX_BYTES: u64 = 200_000_000;
 pub const KINDLE_WEB_UPLOAD_URL: &str = "https://www.amazon.com/sendtokindle";
 
 /// Whether an EPUB of `size_bytes` is too large to email to Kindle (strictly
-/// over [`KINDLE_EMAIL_MAX_BYTES`]). Shared so the disabled-button gate in the
-/// UI and the worker-side send guard agree on one threshold. Compares the raw
-/// file size against Amazon's documented 50 MB figure — base64 transfer
-/// encoding inflates the on-wire message further, so a file just under the cap
-/// can still bounce; those rare boundary failures fall through to the normal
-/// send-error toast.
+/// over [`KINDLE_EMAIL_MAX_BYTES`]). Shared so the UI's disabled-button gate and
+/// the worker-side send guard agree on one threshold. Base64 encoding inflates
+/// the message, so a file just under the cap can still bounce and falls through
+/// to the normal send-error toast.
 pub fn kindle_email_oversize(size_bytes: u64) -> bool {
     size_bytes > KINDLE_EMAIL_MAX_BYTES
 }
@@ -273,9 +260,7 @@ pub enum KindleSendStatus {
 /// One half of the library listing (either ebooks or audiobooks).
 ///
 /// `counts_by_ext` is an ordered list of `(extension, count)` pairs for the
-/// extensions the caller asked the scanner to track. Order matches the
-/// caller-provided extension list so the UI can render a predictable summary
-/// line.
+/// extensions the caller asked the scanner to track, in the caller's order.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LibrarySection {

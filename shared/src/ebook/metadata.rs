@@ -6,12 +6,11 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A contributor (or creator) with the optional OPF refinements — the MARC
-/// role code (`aut`, `ill`, `edt`, `bkp`, `trl`, …) and the sort-key name.
+/// A contributor (or creator) with the optional OPF refinements: the MARC role
+/// code (`aut`, `ill`, `edt`, `bkp`, `trl`, …) and the sort-key name.
 ///
-/// `id` is the stable `authors.id` primary key from the normalized DB. Set
-/// when the contributor was loaded from a m2m join; `None` for contributors
-/// created by the EPUB parser before indexing.
+/// `id` is the `authors.id` primary key, set when loaded from a m2m join and
+/// `None` for contributors created by the EPUB parser before indexing.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Contributor {
@@ -32,16 +31,9 @@ pub struct Identifier {
 
 /// Parsed metadata for a single ebook file.
 ///
-/// `cover_url` is a relative URL pointing at `/api/covers/:id` when the book
-/// has a cover; clients combine it with their configured server base. This
-/// keeps the list response small — covers are fetched lazily as separate
-/// HTTP requests instead of being embedded as base64 data URLs.
-///
-/// Note: OPF `<dc:contributor>` entries are merged into `creators` at parse
-/// time (creators first, then contributors in source order). The normalized
-/// schema stores them in the same `books_authors_link` table, so they are
-/// indistinguishable on read — a separate wire field would always serialize
-/// as empty.
+/// `cover_url` is a relative URL to `/api/covers/:id` when the book has a cover;
+/// clients combine it with their configured server base. OPF
+/// `<dc:contributor>` entries are merged into `creators` (creators first).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EbookMetadata {
@@ -140,16 +132,11 @@ pub struct EbookMetadata {
     #[serde(default)]
     pub has_cover_override: bool,
 
-    /// Every `book_files` row on this book, one per file on disk.
-    ///
-    /// Populated for every book, including ordinary single-file ones: each
-    /// row carries that file's content validator (`BookFileInfo::etag`),
-    /// which is what an offline client compares against the snapshot it
-    /// took at download time. A surface that wants to distinguish "five
-    /// merged M4B parts" from "one EPUB" counts the rows per format rather
-    /// than reading emptiness as a proxy for it.
-    ///
-    /// Empty only on the list projection, which does not join this table.
+    /// Every `book_files` row on this book, one per file on disk, including ordinary
+    /// single-file books. Each row carries that file's content validator
+    /// (`BookFileInfo::etag`) for offline staleness checks; count rows per format
+    /// rather than reading emptiness as a proxy. Empty only on the list projection,
+    /// which does not join this table.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub book_files: Vec<BookFileInfo>,
 
@@ -168,11 +155,9 @@ pub struct EbookMetadata {
     pub page_count: Option<i64>,
 
     /// User-supplied print edition page count, sourced entirely from
-    /// `metadata_overrides` — distinct from `page_count`, which is the CBZ
-    /// archive's *image* count (migration `0063`). Kept apart deliberately:
-    /// a comic book's `page_count` drives the reader's page slider, while
-    /// `print_pages` is bibliographic metadata about a print edition and
-    /// means something different even on a book that has both.
+    /// `metadata_overrides`. Distinct from `page_count`, the CBZ archive's *image*
+    /// count that drives a comic's page slider: this is bibliographic metadata about
+    /// a print edition and can coexist with it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub print_pages: Option<i64>,
 }
@@ -205,23 +190,17 @@ pub struct BookFileInfo {
     /// predating the `scan_key` backfill.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// Content validator for this file (see
-    /// [`crate::file_etag`]). An offline client snapshots it at download
-    /// time and compares it against a later metadata refresh to learn its
-    /// copy is stale — no extra request, since the refresh already happens.
-    ///
-    /// `None` for rows the scanner has not stat'd yet, so the one-time
-    /// backfill of those columns never reads as a content change.
+    /// Content validator for this file (see [`crate::file_etag`]). An offline client
+    /// snapshots it at download time and compares it with a later metadata refresh to
+    /// learn its copy is stale. `None` for rows the scanner has not stat'd yet, so the
+    /// one-time backfill never reads as a content change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub etag: Option<String>,
-    /// Playing time of this file, summed over its parts. Present for audio
-    /// rows only, so a caller reading `book_files` never has to source an
-    /// audiobook's runtime from anywhere else — guessing one from training
-    /// data is how a listening position becomes a wrong percent.
+    /// Playing time of this file, summed over its parts. Present for audio rows only,
+    /// so never guess an audiobook's runtime from elsewhere.
     ///
-    /// Whole seconds, unlike the fractional `ProgressRecord::total_duration_seconds`
-    /// this rounds: a catalog row is read for "how long is it", not for
-    /// position arithmetic, and an integer keeps this row `Eq`.
+    /// Whole seconds, unlike the fractional `ProgressRecord::total_duration_seconds`:
+    /// a catalog row is read for "how long is it", not for position arithmetic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_seconds: Option<i64>,
 }
