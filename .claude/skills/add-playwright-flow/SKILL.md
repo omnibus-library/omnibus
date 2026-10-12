@@ -34,11 +34,14 @@ Extend an existing page or component before adding one. A new page extends
 export class SettingsPage extends BasePage {
   protected readonly urlPattern = /\/settings$/;
 
+  readonly topNav: TopNavComponent;
+
   readonly saveButton: Locator;
   readonly statusMessage: Locator;
 
   constructor(page: Page) {
     super(page);
+    this.topNav = new TopNavComponent(page);
     this.saveButton = page.getByRole("button", { name: "Save" });
     this.statusMessage = page.getByRole("status");
   }
@@ -59,7 +62,26 @@ export class SettingsPage extends BasePage {
 }
 ```
 
-## 3. Write one test per user action
+## 3. Write the layout test
+
+One per spec, first in the file, with no user actions: open the page, then
+check its URL, the shared nav and the page's key elements.
+
+```ts
+test("show the settings page layout", async ({ settingsPage }) => {
+  await test.step("open the settings page", async () => {
+    await settingsPage.goto();
+  });
+
+  await test.step("check the page and its nav", async () => {
+    await settingsPage.assertDisplayed();
+    await settingsPage.topNav.assertDisplayed();
+    await expect(settingsPage.saveButton).toBeVisible();
+  });
+});
+```
+
+## 4. Write one test per user action
 
 Happy path and error path each get their own test, and each phase is a
 `test.step`:
@@ -84,7 +106,7 @@ with a 500, call it before the action, and keep the `expectMutation` with
 `expectedStatus: 500` so the request is still proven to fire. Assert the UI
 surfaces the error.
 
-## 4. Selector preference order
+## 5. Selector preference order
 
 1. `getByRole` — buttons, headings, links, form landmarks, live regions.
 2. `getByText` — visible text not tied to a role.
@@ -92,9 +114,11 @@ surfaces the error.
 4. `getByTestId` — only when nothing else fits. Add `data-testid` alongside `id` in the Dioxus rsx.
 5. `locator` — last resort. Never XPath.
 
-## 5. Where everything else goes
+## 6. Where everything else goes
 
-A spec holds tests and nothing else — no helper functions.
+A spec holds tests and nothing else — no helper functions. Biome enforces the
+locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint). When
+migrating an existing spec, delete its `!` line from `biome.json`'s `overrides`.
 
 | You need | Put it in |
 |---|---|
@@ -104,7 +128,7 @@ A spec holds tests and nothing else — no helper functions.
 | a payload type or a unique test value | `data/` |
 | data that must be deleted after the test | a fixture that cleans up after `use` |
 
-## 6. Run
+## 7. Run
 
 ```bash
 just dev-up                            # idempotent, identity-checked, fast on reuse
@@ -117,6 +141,6 @@ Before pushing, lint + typecheck the TS: `just lint-ts` (Biome check + `tsc --no
 
 If you need to drive the same page manually (for snapshots / debugging while iterating on the spec), use the [`ui-validate`](../ui-validate/SKILL.md) skill — same server, same login, Claude Preview (`mcp__Claude_Preview__preview_*`) by default.
 
-## 7. End-of-session
+## 8. End-of-session
 
 Run [99-end-of-session.md](../../rules/99-end-of-session.md).

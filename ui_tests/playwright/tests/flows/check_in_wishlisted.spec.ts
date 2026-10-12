@@ -15,6 +15,25 @@ test.describe("wishlist check-in", () => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
+  test("show the wished-for book layout", async ({
+    bookDetailPage,
+    wishFor,
+  }) => {
+    const wish = await wishFor(buildExternalBook());
+
+    await test.step("open the wished-for book", async () => {
+      await bookDetailPage.goto(wish.uuid);
+    });
+
+    await test.step("check the page offers check-in", async () => {
+      await bookDetailPage.assertDisplayed();
+      await bookDetailPage.topNav.assertDisplayed();
+      await expect(bookDetailPage.titleHeading).toHaveText(wish.title);
+      await expect(bookDetailPage.checkInWhenAcquiredButton).toBeVisible();
+      await expect(bookDetailPage.physicalCopyCards).toHaveCount(0);
+    });
+  });
+
   test("check in a wishlisted book from its own page", async ({
     readerAccount,
     bookDetailPage,
