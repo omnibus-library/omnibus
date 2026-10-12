@@ -16,33 +16,11 @@ pub(super) struct Streak {
     pub current_days: i64,
 }
 
-/// Days active, longest consecutive run, and the run still live at `today`.
-///
-/// `today` is the server's own day number (from [`super::compute::as_of`]),
-/// never a client's — the current streak is a statement about the server's
-/// calendar, and the web page, the iOS tab, and any widget must not each
-/// derive their own answer and disagree.
-///
-/// **`active_days` and the longest run are windowed; the current run is
-/// deliberately not.** A streak is a fact about right now, not about a
-/// reporting period: windowing it would make "your current streak" read 2 on
-/// the 2nd of the month for a reader 40 days deep, and 0 on the 1st. The web
-/// card happens to render the all-time summary and the iOS tile the
-/// period-scoped one, so a windowed value would also make the two clients
-/// disagree about a field that exists to stop exactly that.
-///
-/// **On the reader's calendar**, from `offset_minutes` — a session at 21:00 for
-/// a reader at UTC-7 is filed on the day they read it, not the following one.
-/// `today` must come from [`super::compute::as_of`] on the *same* offset: the
-/// run is a walk backwards from today, so a day list and an anchor cut on
-/// different calendars would compare days that aren't the same days.
-///
-/// A consequence worth knowing, and the accepted cost of a single calendar: a
-/// reader who changes zones re-dates their whole history, and a run can shorten
-/// where two days merge onto one or break where one splits in two. Anchoring
-/// each day to the zone it was read in would avoid that, but then today's
-/// reading could land on a day that hasn't happened yet where the reader now is
-/// — counting toward neither the streak nor a daily goal for the whole trip.
+/// Days active, longest consecutive run, and the run still live at `today`. `today`
+/// is the server's own day number from [`super::compute::as_of`] on the *same*
+/// `offset_minutes` (the run walks back from it), never a client's. **`active_days`
+/// and the longest run are windowed; the current run deliberately is not**: a streak
+/// is a fact about right now, so windowing it would read 2 on the 2nd of the month.
 pub(super) async fn streak(
     pool: &SqlitePool,
     user_id: i64,
@@ -102,12 +80,10 @@ fn longest_run(days: &[i64]) -> i64 {
     longest
 }
 
-/// The run still live at `today`, counted backwards from the last active day.
-///
-/// A run ending **yesterday** is still live: a reader who hasn't read *yet*
-/// today keeps their streak until the day is over, and collapsing it the
-/// instant the date rolls over is what makes a naive streak feel broken. A run
-/// ending any earlier is finished, and reports zero.
+/// The run still live at `today`, counted backwards from the last active day. A
+/// run ending **yesterday** is still live: a reader who hasn't read *yet* today
+/// keeps their streak until the day is over. A run ending any earlier is
+/// finished, and reports zero.
 fn current_run(days: &[i64], today: i64) -> i64 {
     // Drop anything dated after today first. `SessionReport::validate` bounds
     // `started_at` below but not above, and the server never restamps it, so a

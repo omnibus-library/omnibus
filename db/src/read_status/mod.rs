@@ -49,13 +49,10 @@ fn record_from_row(
     .with_iso())
 }
 
-/// Upsert the read state for `(user, book)` and return the new
-/// server-authoritative record. Resolves the request uuid to the **canonical**
-/// `books.uuid` (keeping the `BookNotFound` guard — you cannot record a read
-/// state for a book the server has never indexed) and stores/keys on it.
-///
-/// `finished_at` is set to now when transitioning into `finished`, preserved
-/// when re-affirming `finished`, and cleared to NULL for `unread` / `reading`.
+/// Upsert the read state for `(user, book)` and return the new server-authoritative
+/// record, keyed on the **canonical** `books.uuid` (`BookNotFound` if never indexed).
+/// `finished_at` is set to now when transitioning into `finished`, preserved when
+/// re-affirming it, and cleared to NULL for `unread` / `reading`.
 pub async fn set_read_status(
     pool: &SqlitePool,
     user_id: i64,

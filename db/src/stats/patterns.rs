@@ -30,23 +30,14 @@ const WEEKDAYS: usize = 7;
 /// nothing would fail.
 const WEEKDAY_LABELS: [&str; WEEKDAYS] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/// The session union these rollups share: one `(started_at, offset, secs)`
-/// row per reading and listening session in the window, so both formats are
-/// counted the same way every other activity metric counts them. Bind order
-/// is `user_id, start, user_id, start`.
-///
-/// Checkpoint rows are bucketed as they were written, and that is correct
-/// here: the web tracker's `rollover()` restarts a segment every 60s, so a sit
-/// spanning an hour boundary already arrives as two rows and lands its
-/// minutes on both sides of the boundary. A later change that coalesces
-/// checkpoints back into whole sittings must not reattribute a sitting's whole
-/// duration to the hour it *started* in — that would quietly pile a 90-minute
-/// evening onto 21:00 and leave 22:00 empty.
-///
-/// Shared with [`super::goals`], which buckets the same rows into a local
-/// *day* for the daily minutes goal. One union rather than two so the goal and
-/// the time-pattern strips can never come to describe different sets of
-/// sessions.
+/// The session union these rollups share: one `(started_at, offset, secs)` row per
+/// reading and listening session in the window, counted both formats alike. Shared
+/// with [`super::goals`], which buckets the same rows into a local *day*, so the
+/// daily goal and the time-pattern strips describe the same sessions. Bind order is
+/// `user_id, start, user_id, start`.
+// Checkpoint rows are bucketed as written, which is correct: the web tracker's
+// `rollover()` restarts a segment every 60s, so a sit spanning an hour boundary
+// already arrives as two rows. Coalescing must not credit it all to its start hour.
 pub(super) const SESSION_LOCAL_ROWS: &str = "\
     SELECT started_at, utc_offset_minutes, seconds_read AS secs FROM reading_sessions \
         WHERE user_id = ? AND started_at >= ? \
@@ -65,13 +56,10 @@ pub(super) struct TimePatterns {
     pub unzoned_seconds: i64,
 }
 
-/// Roll the window's sessions up by local hour of day and local weekday.
-///
-/// One `GROUP BY` over the shared union produces both: the same rows feed
-/// each, so the two strips can never describe different sets of sessions.
-/// Sessions with no recorded offset are summed separately into
-/// [`TimePatterns::unzoned_seconds`] rather than being bucketed — see the
-/// module docs.
+/// Roll the window's sessions up by local hour of day and local weekday, in one
+/// `GROUP BY` over the shared union so the two strips describe the same sessions.
+/// Sessions with no recorded offset are summed into [`TimePatterns::unzoned_seconds`]
+/// rather than bucketed (see the module docs).
 pub(super) async fn time_patterns(
     pool: &SqlitePool,
     user_id: i64,
@@ -103,18 +91,14 @@ pub(super) async fn time_patterns(
 }
 
 /// The two zero-filled tallies, keyed by local hour and Monday-first weekday.
-///
-/// SQLite does the shift and the calendar work: `started_at + offset * 60`
-/// moved into `'unixepoch'` is the device's own wall clock, and `%H` / `%w`
-/// read the hour and weekday straight off it. Doing the shift on the
-/// *timestamp* rather than rotating an aggregate afterwards is what keeps the
-/// half- and quarter-hour zones (UTC+05:30, UTC+05:45) exact — a rotation of
-/// 24 whole-hour buckets cannot represent them.
 async fn zoned_buckets(
     pool: &SqlitePool,
     user_id: i64,
     start: i64,
 ) -> Result<([i64; HOURS], [i64; WEEKDAYS]), StatsError> {
+    // Shift the timestamp, not the aggregate: `started_at + offset * 60` as `'unixepoch'`
+    // is the device's wall clock, and rotating 24 whole-hour buckets cannot represent
+    // UTC+05:30 or UTC+05:45.
     let sql = format!(
         "SELECT CAST(strftime('%H', started_at + utc_offset_minutes * 60, 'unixepoch')
                      AS INTEGER) AS hour,

@@ -20,19 +20,10 @@ pub const SESSION_LOG_DEFAULT_LIMIT: i64 = 25;
 pub const SESSION_LOG_MAX_LIMIT: i64 = 100;
 
 /// One `(book_uuid, started_at, ended_at, secs, is_audio)` union of every
-/// checkpoint row a user recorded, in either table.
-///
-/// `book_uuid` is read straight off the row rather than resolved through the
-/// merge ledger, which is what keeps this log and the aggregates beside it
-/// counting the same sittings. Two writers guarantee the column is already
-/// canonical: `progress::session::record_session_tx` resolves the reported
-/// uuid before it inserts, and `merge::transaction`'s `RETARGET_TABLES`
-/// carries both session tables onto the surviving book. Resolving again per
-/// row would only ever change rows those two cannot produce — at the cost of
-/// making the scoped filter below unable to use the `(user_id, book_uuid)`
-/// index, and of counting sittings `book_insights` does not.
-///
-/// Bind order is `user_id, user_id`.
+/// checkpoint row a user recorded, in either table. Bind order is `user_id, user_id`.
+// `book_uuid` is read straight off the row, not resolved through the merge ledger:
+// `record_session_tx` and `merge::transaction`'s `RETARGET_TABLES` already keep it
+// canonical, and resolving would defeat the `(user_id, book_uuid)` index.
 const USER_SESSION_ROWS: &str = "\
     SELECT book_uuid, started_at, ended_at, seconds_read AS secs, 0 AS is_audio \
       FROM reading_sessions WHERE user_id = ? \
@@ -73,23 +64,11 @@ fn page_sql(book_scoped: bool, cursored: bool) -> String {
     )
 }
 
-/// One page of a user's session log, newest sitting first.
-///
-/// `book_uuid` scopes the log to a single book and is resolved to the
-/// canonical `books.uuid` first, mirroring [`super::book_insights`] — so a
-/// link into a book that was later merged away still finds the sittings
-/// recorded under the surviving one. An unresolvable uuid yields an empty
-/// page rather than an error: the caller's next move is the same empty state
-/// either way.
-///
-/// `before` continues a previous page; `None` starts at the newest sitting.
-/// `limit` is clamped into `1..=`[`SESSION_LOG_MAX_LIMIT`].
-///
-/// Entries are stitched sittings of at least [`sessionize::MIN_SITTING_SECS`]
-/// — the same population [`super::book_insights`] counts as Pickups, so the
-/// per-book log's length matches the number rendered beside it. A glance is
-/// not hidden data so much as not a sitting; its seconds still reach every
-/// total.
+/// One page of a user's session log, newest sitting first. `book_uuid` scopes the log
+/// to one book, resolved to the canonical `books.uuid` first; an unresolvable uuid
+/// yields an empty page, not an error. `before` continues a previous page; `limit` is
+/// clamped into `1..=`[`SESSION_LOG_MAX_LIMIT`]. Entries are stitched sittings of at
+/// least [`sessionize::MIN_SITTING_SECS`], the population [`super::book_insights`] counts.
 pub async fn session_log(
     pool: &SqlitePool,
     user_id: i64,

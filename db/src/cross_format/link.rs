@@ -63,12 +63,9 @@ pub async fn upsert_link(
     confirm_link(pool, user_id, book_uuid, mode, primary_book_file_id, None).await
 }
 
-/// Confirm a link, atomically applying an audio re-order when one rides
-/// along. One transaction on purpose: the re-order is a library-wide
-/// `book_files.ordinal` mutation, and committing it without the link (or
-/// the link against a half-applied order) leaves state no confirm ever
-/// described — the snapshot must also be taken from the ordinals the same
-/// transaction just wrote.
+/// Confirm a link, atomically applying an audio re-order when one rides along.
+/// One transaction: the re-order is a library-wide `book_files.ordinal`
+/// mutation, and the snapshot must be taken from the ordinals it just wrote.
 pub async fn confirm_link(
     pool: &SqlitePool,
     user_id: i64,

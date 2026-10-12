@@ -16,12 +16,9 @@ use super::{calendar, compute, pages, patterns::SESSION_LOCAL_ROWS, StatsError};
 
 /// How far back the local-day minutes scan reaches before filtering on the
 /// reader's day, in seconds.
-///
-/// A session's local day is its UTC timestamp shifted by up to ±14 hours, so
-/// every row that can land on today sits inside a 48-hour tail — comfortably,
-/// and with room for a device whose clock runs ahead. The bound exists so the
-/// scan can use the `(user_id, started_at)` index instead of reading a
-/// reader's whole session history to find one day's worth.
+// A local day is the UTC timestamp shifted by up to ±14 hours, so every row that
+// can land on today sits inside a 48-hour tail; the bound keeps the scan on the
+// `(user_id, started_at)` index.
 const LOCAL_DAY_SCAN_SECS: i64 = 172_800;
 
 /// Failure space of the goal write paths. Every variant but `Sqlx` is a
@@ -97,16 +94,10 @@ async fn year_bounds(
 }
 
 /// The caller's goal for the current calendar year, and that year's finished
-/// count whether or not a goal exists — the two values `compute` hangs off
-/// [`omnibus_shared::StatsSummary::goal`] and `books_this_year`.
-///
-/// The count runs unconditionally so a surface can report the year before a
-/// reader commits to a target, the same reason `daily_goals` measures both
-/// kinds. It is computed once and handed to both, so a goal's `current` and
-/// the bare figure can never disagree.
-///
-/// The cost is one extra bounded count for a reader with no annual goal, on an
-/// uncached summary only.
+/// count whether or not a goal exists: the two values `compute` hangs off
+/// [`omnibus_shared::StatsSummary::goal`] and `books_this_year`. The count runs
+/// unconditionally so a surface can report the year before a reader commits to a
+/// target, and is computed once so a goal's `current` and the bare figure agree.
 pub(super) async fn current_goal_and_progress(
     pool: &SqlitePool,
     user_id: i64,
@@ -161,12 +152,9 @@ async fn year_count(
     compute::finished_count_bounded(pool, user_id, start, end).await
 }
 
-/// The caller's goal for `year`, paired with that year's completion count.
-///
-/// The count is bounded to `[Jan 1 year, Jan 1 year+1)` via
-/// [`compute::finished_count_bounded`], the same helper the drill-in's
-/// vs-previous delta uses — so a goal filed against a past year reports that
-/// year's real total and setting it changes no count anywhere.
+/// The caller's goal for `year`, paired with that year's completion count,
+/// bounded to `[Jan 1 year, Jan 1 year+1)` via [`compute::finished_count_bounded`],
+/// so a goal filed against a past year reports that year's real total.
 pub async fn goal_for_year(
     pool: &SqlitePool,
     user_id: i64,
@@ -185,16 +173,11 @@ pub async fn goal_for_year(
     }))
 }
 
-/// Set, change, or clear the caller's annual goal.
-///
-/// An absent `target` clears the row — there is no separate delete path, so
-/// "no goal" stays a missing row rather than a zero target the ring would
-/// divide by. `year` defaults to the server's current year so no client bakes
-/// its own clock into the write.
-///
-/// Invalidates this user's cached summaries before returning: the aggregate
-/// cache is keyed `(user_id, range)` with a 60s TTL, and a just-saved goal
-/// reading stale is worse than a stale count.
+/// Set, change, or clear the caller's annual goal. An absent `target` clears the
+/// row (no separate delete path), so "no goal" stays a missing row rather than a
+/// zero target the ring would divide by. `year` defaults to the server's current
+/// year. Invalidates this user's cached summaries before returning, so a
+/// just-saved goal never reads stale.
 pub async fn set_goal(
     pool: &SqlitePool,
     user_id: i64,
@@ -253,16 +236,9 @@ pub async fn set_goal(
 }
 
 /// Set, change, or clear one of the caller's daily goals, returning **both**
-/// afterwards.
-///
-/// Returning the pair rather than the one kind written is what lets a client
-/// render the band from one response: the two goals are independent, so a save
-/// that answered with only its own kind would leave the other's progress to a
-/// second round trip that could observe a different day.
-///
-/// An absent `target` clears that kind, on the same grounds [`set_goal`]'s
-/// does. The other kind is never touched — a reader changing their pages goal
-/// has said nothing about their minutes goal.
+/// afterwards so a client renders the band from one response. An absent `target`
+/// clears that kind, as [`set_goal`]'s does. The other kind is never touched: a
+/// reader changing their pages goal has said nothing about their minutes goal.
 pub async fn set_daily_goal(
     pool: &SqlitePool,
     user_id: i64,
@@ -310,34 +286,11 @@ pub async fn set_daily_goal(
     Ok(daily_goals(pool, user_id, claimed_offset_minutes).await?)
 }
 
-/// The caller's standing daily goals, and today's figure for each kind
-/// whether or not it carries a target.
-///
-/// Both measurements run unconditionally so a surface can show what a reader
-/// has done today *before* they commit to a goal — the figure iOS renders in
-/// the ring's slot when there is no ring to draw. The alternative, deriving it
-/// client-side, was rejected: today's pages happen to be recoverable from
-/// `pages_detail.daily`, but today's minutes are only recoverable from the
-/// heatmap's UTC buckets, which include unzoned seconds and so would disagree
-/// with what the minutes goal reports the moment one is set.
-///
-/// The cost is two day-scoped queries on every uncached summary, including for
-/// readers with no goals at all. They are the same two the goal path already
-/// ran, hoisted rather than added, and the summary sits behind the 60-second
-/// aggregate cache.
-///
-/// A kind's [`DailyGoal::current`] and its `*_today` figure are the same
-/// number by construction — computed once and shared — so setting a target
-/// never appears to move the ground it measures.
-///
-/// # Which day both kinds are measured over
-///
-/// The **same** one: today on the reader's calendar, from
-/// `claimed_offset_minutes`. That is what migration `0095` bought — the ledger
-/// stopped writing a UTC day and started recording a quarter-hour, so pages can
-/// be re-bucketed to the reader's day exactly as minutes always could. Before
-/// it the two kinds answered on different calendars and could name different
-/// days for the same moment.
+/// The caller's standing daily goals, and today's figure for each kind whether or
+/// not it carries a target, so a surface can show what a reader has done today
+/// *before* they commit to a goal. A kind's [`DailyGoal::current`] and its `*_today`
+/// figure are one number, computed once. Both kinds are measured over the **same**
+/// day: today on the reader's calendar, from `claimed_offset_minutes`.
 pub async fn daily_goals(
     pool: &SqlitePool,
     user_id: i64,
@@ -355,6 +308,9 @@ pub(super) async fn daily_goals_at(
     user_id: i64,
     offset_minutes: i64,
 ) -> Result<DailyGoals, StatsError> {
+    // Both kinds are measured even without a target, so iOS can show today's figure
+    // with no ring; deriving it client-side would disagree with the minutes goal
+    // (heatmap buckets are UTC and include unzoned seconds).
     let rows =
         sqlx::query("SELECT kind, target FROM reading_goals WHERE user_id = ? AND scope = 'day'")
             .bind(user_id)
@@ -414,26 +370,11 @@ pub(super) async fn daily_goals_at(
     })
 }
 
-/// Seconds read and listened on `day` (`YYYY-MM-DD`) on the reader's calendar.
-///
-/// The day is bound in rather than re-derived from `now` here: the caller has
-/// already resolved and reported one, and a second clock read can cross local
-/// midnight and measure a day the label does not name.
-///
-/// **Every** session counts, whether or not it recorded a capture-time offset.
-/// That is the difference from `super::patterns`, and it follows from what the
-/// two are measuring: an hour-of-day bucket is a claim about where the reader
-/// *was*, which an offsetless row cannot support, while a day boundary is a
-/// property of where they are *now* — and `started_at` alone is enough to place
-/// any row against it. So there is no unplaceable remainder here to disclose.
-///
-/// Scanned from a bounded tail rather than over the reader's whole history,
-/// which is what lets it ride `(user_id, started_at)` instead of a full scan —
-/// so `day` has to be *today* on that calendar. Whatever the offset, today's
-/// rows start no earlier than 24 hours back, well inside
-/// [`LOCAL_DAY_SCAN_SECS`]; an older day would fall off the back of the tail.
-///
-/// Binds in SQL order: the union's `user_id, start, user_id, start`, then `day`.
+/// Seconds read and listened on `day` (`YYYY-MM-DD`) on the reader's calendar. The
+/// day is bound in, not re-derived from `now`, since a second clock read can cross
+/// local midnight. **Every** session counts, recorded offset or not (unlike
+/// `super::patterns`). `day` must be *today* on that calendar: the scan reaches back
+/// only [`LOCAL_DAY_SCAN_SECS`], so an older day falls off the tail.
 async fn day_seconds(
     pool: &SqlitePool,
     user_id: i64,
@@ -457,14 +398,10 @@ async fn day_seconds(
         .await?)
 }
 
-/// The unix second the local-day scan starts from — see
-/// [`LOCAL_DAY_SCAN_SECS`]. Resolved in SQLite so it shares the clock every
-/// other window boundary is cut on.
-///
-/// Its own clock read is safe where a second read of the *day* would not be: it
-/// only bounds which rows the index walks, and the tail reaches a full day past
-/// the oldest row that can fall on today, so drifting a second across midnight
-/// excludes nothing.
+/// The unix second the local-day scan starts from, see [`LOCAL_DAY_SCAN_SECS`].
+/// Resolved in SQLite so it shares the clock every other window boundary is cut
+/// on. Its own clock read is safe where a second read of the *day* is not: it only
+/// bounds which rows the index walks, so drifting across midnight excludes nothing.
 async fn scan_start(pool: &SqlitePool) -> Result<i64, StatsError> {
     Ok(
         sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER) - ?")

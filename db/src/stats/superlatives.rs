@@ -28,14 +28,9 @@ const AUTHOR_JOIN: &str = concat!(
 );
 
 /// The three columns every book-naming superlative selects, minus its own
-/// `value`.
-///
-/// Both text columns read the **effective** value — the override where the
-/// reader set one, the scanned column otherwise — because a standout that
-/// named a book "Hyperion Cantos 01 - Hyperion" while every other surface
-/// called it "Hyperion" is the same book by two names. Overrides are
-/// the authority. `COALESCE` on the title mirrors `compute::finished_books`:
-/// an untitled row still has to name itself.
+/// `value`. Both text columns read the **effective** value (the override where the
+/// reader set one), so a standout names a book as every other surface does;
+/// `COALESCE` on the title mirrors `compute::finished_books`.
 const BOOK_COLUMNS: &str = concat!(
     "b.uuid AS uuid, COALESCE(",
     effective_value_sql!("$.title"; "b.title"),
@@ -85,15 +80,11 @@ impl Extreme {
     }
 }
 
-/// The longest or shortest book finished in the window, measured by the
-/// shared length ladder. Books the ladder can't measure are excluded rather
-/// than sorted as zero — an audiobook is not the shortest book of the year.
-/// `> 0` rather than `IS NOT NULL` is what enforces that: an image-only EPUB
-/// loads its spine and strips to zero words, so the ladder hands back a real
-/// `0` that would otherwise win "shortest" outright.
-/// Ties break on the *rendered* title — the `COALESCE`d alias rather than
-/// `b.title` — so an untitled book sorts where the reader sees it instead of
-/// ahead of everything on a NULL.
+/// The longest or shortest book finished in the window, measured by the shared
+/// length ladder. Books the ladder can't measure are excluded rather than sorted
+/// as zero, and `> 0` rather than `IS NOT NULL` enforces that (an image-only EPUB
+/// yields a real `0`). Ties break on the *rendered* title, so an untitled book
+/// sorts where the reader sees it.
 async fn extreme_book(
     pool: &SqlitePool,
     user_id: i64,
@@ -122,12 +113,9 @@ async fn extreme_book(
     Ok(row.as_ref().map(book_superlative))
 }
 
-/// Suppress a "shortest book" that only restates the longest one.
-///
-/// Two ways it can: naming the *same* book (the window finished exactly one
-/// measurable book), or carrying the same page count (every finished book is
-/// the same length). Both render as a range the window doesn't have, which is
-/// the noise the all-`Option` shape exists to avoid.
+/// Suppress a "shortest book" that only restates the longest one: the *same* book
+/// (the window finished exactly one measurable book) or the same page count. Both
+/// render as a range the window doesn't have.
 fn drop_degenerate_shortest(
     longest: Option<&BookSuperlative>,
     shortest: Option<BookSuperlative>,
@@ -136,18 +124,11 @@ fn drop_degenerate_shortest(
     (long.book_uuid != short.book_uuid && long.value != short.value).then_some(short)
 }
 
-/// The single busiest day in the window, reading and listening together — a
-/// `MAX` over the same per-day rollup `compute::heatmap` builds, on the same
-/// [`calendar::local_day`] buckets. Ties break to the earliest day.
-///
-/// The two ride one `StatsSummary` onto one page, so a `MAX` cut in UTC
-/// headlines a day the heatmap beside it draws as empty.
-///
-/// A day under [`sessionize::MIN_SITTING_SECS`] is no day at all: the surfaces
-/// render this figure in whole minutes, so a window whose only activity was a
-/// 45-second glance would otherwise headline "Biggest day — 0 m". The same
-/// floor [`longest_sit`] uses, so the card's two time-shaped rows agree on
-/// what counts.
+/// The single busiest day in the window, reading and listening together: a `MAX`
+/// over the same per-day rollup `compute::heatmap` builds, on the same
+/// [`calendar::local_day`] buckets. Ties break to the earliest day. A day under
+/// [`sessionize::MIN_SITTING_SECS`] is no day at all (the floor [`longest_sit`]
+/// uses), or a 45-second glance would headline "Biggest day — 0 m".
 async fn biggest_day(
     pool: &SqlitePool,
     user_id: i64,
@@ -175,11 +156,9 @@ async fn biggest_day(
     }))
 }
 
-/// The longest single sitting in the window — the user-wide twin of
-/// `book::book_insights`'s `longest_seconds`, over the same stitched
-/// checkpoint rows so this reports how long the reader sat rather than how
-/// long a client waited between flushes. Glances under
-/// [`sessionize::MIN_SITTING_SECS`] are excluded, as everywhere else a
+/// The longest single sitting in the window: the user-wide twin of
+/// `book::book_insights`'s `longest_seconds`, over the same stitched checkpoint rows.
+/// Glances under [`sessionize::MIN_SITTING_SECS`] are excluded, as everywhere a
 /// sitting is counted. Ties break to the earliest sitting.
 async fn longest_sit(
     pool: &SqlitePool,
@@ -207,36 +186,20 @@ async fn longest_sit(
     Ok(row.as_ref().map(book_superlative))
 }
 
-/// The book finished in the window in the fewest days from its **first
-/// recorded session**, in whole days on the reader's calendar, with a same-day
-/// read reported as one rather than zero.
-///
-/// Both ends go through [`calendar::local_day_number`]. The shift is common to
-/// them and usually cancels — but not when it carries only one end across a
-/// midnight, which is precisely when the reader counts the days differently.
-///
-/// Three deliberate choices, each of which the naive version gets wrong:
-///
-/// - **Lifetime sessions, not the window's.** The read started when it
-///   started; clipping to the window would report a book begun in March and
-///   finished in April as an April sprint.
-/// - **The earliest in-window completion**, so re-marking an old book
-///   finished can't stretch a read that already ended.
-/// - **A [`FASTEST_READ_MIN_SECS`] floor**, because the figure measures
-///   *tracked* reading. A book read on a Kobo and marked finished here
-///   carries one stray checkpoint, and without the floor that book wins every
-///   time. The floor narrows the lie; it does not remove it, which is why the
-///   surfaces present this as a lower bound.
-///
-/// A book whose only recorded sessions post-date its completion (finished
-/// elsewhere, re-read here) is dropped rather than reported as a negative
-/// span. Ties break on the rendered title, as above.
+/// The book finished in the window in the fewest days from its **first recorded
+/// session**, in whole days on the reader's calendar (a same-day read is one). Uses
+/// lifetime sessions, not the window's, and the earliest in-window completion. A
+/// [`FASTEST_READ_MIN_SECS`] floor narrows, but doesn't remove, the stray-checkpoint
+/// lie, so surfaces present it as a lower bound. Ties break on the rendered title.
 async fn fastest_read(
     pool: &SqlitePool,
     user_id: i64,
     start: i64,
     offset_minutes: i64,
 ) -> Result<Option<BookSuperlative>, StatsError> {
+    // Both ends use `local_day_number`; the shared shift usually cancels, but not when it
+    // carries one end across a midnight. `s.first_at <= f.finished_at` drops a book whose
+    // sessions all post-date its completion rather than reporting a negative span.
     let finished_day = calendar::local_day_number("f.finished_at", offset_minutes);
     let first_day = calendar::local_day_number("s.first_at", offset_minutes);
     let sql = format!(

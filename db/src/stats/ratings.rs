@@ -19,24 +19,18 @@ pub(super) const LIVE_RATINGS: &str = "\
     JOIN books b ON b.uuid = r.book_uuid \
     WHERE r.user_id = ?";
 
-/// Mean star rating over books the user rated within the window, in stars —
-/// `half_stars` is 1..=10, so the SQL mean halves it. `None` when nothing was
-/// rated in the window. Live books only, per [`LIVE_RATINGS`].
-///
-/// **The window key is `user_ratings.updated_at` — when the reader rated the
-/// book, not when they finished it**, and every other function in this module
-/// follows. Keying on the completion event would drop every rating on a book
-/// carrying no completion event at all (abandoned and rated, or rated without
-/// ever being marked finished), which is a worse distortion than the one it
-/// fixes. The consequence to know: re-rating a book read years ago pulls it
-/// into the current window, and a book finished this month but rated last
-/// month falls out. Whichever key is in force, the mean and the distribution
-/// under it must share it or they describe different sets of books.
+/// Mean star rating over books the user rated within the window, in stars
+/// (`half_stars` is 1..=10, so the SQL mean halves it); `None` when nothing was
+/// rated. Live books only, per [`LIVE_RATINGS`]. **The window key, here and in every
+/// sibling, is `user_ratings.updated_at`**: when the reader rated the book, not when
+/// they finished it, so re-rating an old book pulls it into the current window.
 pub(super) async fn avg_stars(
     pool: &SqlitePool,
     user_id: i64,
     start: i64,
 ) -> Result<Option<f64>, StatsError> {
+    // Keyed on the rating, not the completion event, which would drop ratings on books
+    // never marked finished (abandoned and rated): a worse distortion.
     let sql = format!("SELECT AVG(half_stars) / 2.0 FROM ({LIVE_RATINGS}) WHERE updated_at >= ?");
     Ok(sqlx::query_scalar(&sql)
         .bind(user_id)
@@ -64,18 +58,11 @@ pub(super) async fn avg_stars_bounded(
         .await?)
 }
 
-/// How many books sit in each half-star bucket over the window — the shape
-/// [`avg_stars`] flattens away. A reader who rates everything 4 and one who
-/// splits evenly between 2 and 5 both report a mean of 3.5.
-///
-/// All ten buckets come back, zeros included: a histogram with missing bars
-/// reads as a different distribution than the one it describes. The spine is a
-/// recursive CTE `LEFT JOIN`ed against the ratings, same shape as
-/// `compute::books_per_month`'s month spine.
-///
-/// Scoped identically to [`avg_stars`] — same `updated_at` window, same
-/// [`LIVE_RATINGS`] liveness filter — so the bucket counts sum to exactly the
-/// set of ratings the mean is computed over.
+/// How many books sit in each half-star bucket over the window: the shape
+/// [`avg_stars`] flattens away. All ten buckets come back, zeros included, since
+/// missing bars read as a different distribution. Scoped identically to
+/// [`avg_stars`] (same `updated_at` window and [`LIVE_RATINGS`] filter), so the
+/// bucket counts sum to exactly the set the mean is computed over.
 pub(super) async fn rating_histogram(
     pool: &SqlitePool,
     user_id: i64,
@@ -109,14 +96,11 @@ pub(super) async fn rating_histogram(
         .collect())
 }
 
-/// Mean star rating per calendar month over the trailing 12 months (oldest
-/// first, ending at the current month) — the Avg rating tile's drill-in trend
-/// chart. A month with no ratings comes back as `0.0` rather than being omitted.
-///
-/// Spine and join are both cut on the reader's calendar: the spine off
-/// [`calendar::month_spine`], so this trend and `compute::books_per_month` span
-/// the same twelve months, and the join off `updated_at`'s local month, so a
-/// rating lands here where the chart builder's `AvgRating` arm also puts it.
+/// Mean star rating per calendar month over the trailing 12 months (oldest first,
+/// ending at the current month): the Avg rating tile's drill-in trend. A month with
+/// no ratings comes back as `0.0`. Spine ([`calendar::month_spine`]) and join
+/// (`updated_at`'s local month) are cut on the reader's calendar, as the chart
+/// builder's `AvgRating` arm does.
 pub(super) async fn rating_monthly(
     pool: &SqlitePool,
     user_id: i64,

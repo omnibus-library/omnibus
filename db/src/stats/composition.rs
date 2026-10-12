@@ -43,12 +43,9 @@ const SENTINEL_YEAR_MAX: i64 = 101;
 /// about a book would both look right in isolation.
 const PUB_YEAR: &str = "CAST(substr(b.pubdate, 1, 4) AS INTEGER)";
 
-/// One cache entry plus the generation it was computed against, mirroring
-/// `library`'s cache for the same reason: a compute runs outside the lock —
-/// seven aggregates here — so an `invalidate` can land while one is in flight,
-/// and a store that overwrote the cleared cell would republish pre-scan
-/// numbers for the whole TTL. The reader stamps the generation it started from
-/// and drops its result if the counter has moved.
+/// One cache entry plus the generation it was computed against. A compute runs
+/// outside the lock, so an `invalidate` can land mid-flight; the reader stamps the
+/// generation it started from and drops its result if the counter has moved.
 #[derive(Default)]
 struct Cache {
     entry: Mutex<Option<(i64, LibraryComposition)>>,
@@ -62,12 +59,10 @@ fn cache() -> &'static Cache {
     CACHE.get_or_init(Cache::default)
 }
 
-/// Drop the cached composition. Two callers, because two very different
-/// things move these figures: `Worker::execute` after a scan or backfill, and
-/// every `metadata_overrides` write. The second is not optional — genres exist
-/// *only* as an override (migration `0066`) and publisher / language /
-/// `pubdate` overrides materialize into the tables the other dimensions read,
-/// and no editor's save is a `Task` the worker would ever see.
+/// Drop the cached composition. Two callers: `Worker::execute` after a scan or
+/// backfill, and every `metadata_overrides` write, which is not optional since
+/// genre and publisher / language / `pubdate` overrides are not a `Task` the
+/// worker would ever see.
 pub fn invalidate() {
     invalidate_in(cache());
 }
@@ -86,13 +81,9 @@ pub async fn library_composition(pool: &SqlitePool) -> Result<LibraryComposition
     library_composition_in(cache(), pool, super::now_secs()).await
 }
 
-/// Clock- and cache-injected core of [`library_composition`], so the cache
-/// path is testable without waiting fifteen minutes.
-///
-/// The cache is a parameter rather than the `static` for the same reason as
-/// `library`'s: the process-wide entry has nothing to key it on, so two tests
-/// exercising it in one binary race — as does any test running a `Task::Scan`,
-/// which drops the entry on the way out.
+/// Clock- and cache-injected core of [`library_composition`], so the cache path
+/// is testable without waiting fifteen minutes. The cache is a parameter because
+/// the process-wide entry has nothing to key it on, so tests sharing it race.
 async fn library_composition_in(
     cache: &Cache,
     pool: &SqlitePool,
@@ -138,12 +129,10 @@ async fn compute(pool: &SqlitePool) -> Result<LibraryComposition, StatsError> {
     })
 }
 
-/// Books whose files are gone — a `books` row with no surviving `book_files`,
-/// the same population `admin_health::index_status` calls ghosted.
-///
-/// Reported rather than dropped. A ghosted book carries no format at all, so
-/// it would otherwise vanish from the format rollup and leave the per-format
-/// counts quietly failing to reconcile against the library.
+/// Books whose files are gone: a `books` row with no surviving `book_files`, the
+/// population `admin_health::index_status` calls ghosted. Reported rather than
+/// dropped, since a ghosted book has no format and per-format counts would
+/// otherwise quietly fail to reconcile against the library.
 async fn ghosted_book_count(pool: &SqlitePool) -> Result<i64, StatsError> {
     Ok(sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM books b WHERE NOT {LIVE_BOOK}"
@@ -152,22 +141,11 @@ async fn ghosted_book_count(pool: &SqlitePool) -> Result<i64, StatsError> {
     .await?)
 }
 
-/// Format mix by `book_files.format`.
-///
-/// `COUNT(DISTINCT bf.book_id)`, never `COUNT(*)`: migration `0018` keys
-/// `book_files` `UNIQUE(book_id, format, ordinal)`, so a twelve-part M4B is
-/// twelve rows and counting rows would report one audiobook as twelve.
-///
-/// A dual-format book is counted **once in each bucket** — it really is both
-/// an EPUB and an audiobook, and a "Both" bucket would answer "how many
-/// audiobooks do I have?" with a number that excludes half of them. The
-/// overlap is disclosed instead: the coverage pair's `total` is the placement
-/// count the slices sum to, and its `books` is the distinct books behind them,
-/// so `total - books` is exactly how many are held twice.
-///
-/// Not folded: the format vocabulary is bounded by what the indexers write
-/// (`ebook::EBOOK_FORMATS`, `audiobook::AUDIOBOOK_FORMATS`, plus converted
-/// outputs), so every bucket fits. `UPPER` folds case drift into one bucket.
+/// Format mix by `book_files.format`. `COUNT(DISTINCT bf.book_id)`, never
+/// `COUNT(*)` (a twelve-part M4B is twelve rows). A dual-format book is counted
+/// **once in each bucket**, with no "Both" bucket; the overlap is disclosed as
+/// `total - books` in the coverage pair. Not folded: the format vocabulary is
+/// bounded by what the indexers write, and `UPPER` folds case drift.
 async fn formats(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> {
     let slices = read_slices(
         pool,
@@ -186,21 +164,11 @@ async fn formats(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> 
     Ok(CompositionDimension { slices, coverage })
 }
 
-/// Language mix, tail folded into "Other" like every other open-ended
-/// dimension — a library can carry more than [`SLICE_LIMIT`] languages.
-///
-/// Reads `(book, code)` pairs rather than per-code counts, because the fold
-/// is per **book**: a file spells one language several ways (`en`, `en-US`,
-/// `eng`), and counting the spellings reported a 28-book library as holding
-/// three Englishes — while summing them after the fold credited one
-/// book to English twice. The fold happens in Rust rather than SQL
-/// because the alias table is a Rust table.
-///
-/// Books with no language link are **uncovered**, not bucketed as unknown: an
-/// absent link means the file never declared one, which the coverage pair
-/// already says without inventing a bucket for it. A book that declared `und`
-/// *did* answer, and lands in [`UNKNOWN_LABEL`] alongside the other ways of
-/// declining.
+/// Language mix, tail folded into "Other" like every other open-ended dimension.
+/// Reads `(book, code)` pairs because the fold is per **book**: a file spells one
+/// language several ways (`en`, `en-US`, `eng`), and the fold happens in Rust
+/// since the alias table is a Rust table. Books with no language link are
+/// **uncovered**; one that declared `und` lands in [`UNKNOWN_LABEL`].
 async fn languages(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> {
     let rows = sqlx::query(&format!(
         "SELECT l.book AS book, e.code AS code
@@ -221,22 +189,11 @@ async fn languages(pool: &SqlitePool) -> Result<CompositionDimension, StatsError
     })
 }
 
-/// Re-bucket `(book, code)` rows under [`language_label`], counting each book
-/// **once per bucket** however many of its codes fold into that bucket, and
-/// reporting the coverage pair over those same de-duplicated placements so
-/// the slices sum to `coverage.total` by construction.
-///
-/// Placements are de-duplicated, not summed. If they were summed, two books
-/// carrying both `en` and `en-US` would credit English with two books more
-/// than exist. A book in two *different* languages is still two placements —
-/// that is the overlap `CompositionDimension::overlap` discloses, not a
-/// double count.
-///
-/// Slices come back ordered the way the SQL used to order them (count desc,
-/// label asc) so [`fold_tail`] still splits a sorted list. [`UNKNOWN_LABEL`]
-/// sinks to the bottom of an equal-count tie so a real language never sorts
-/// below it, and is the one bucket that may be folded into "Other" like any
-/// other tail slice.
+/// Re-bucket `(book, code)` rows under [`language_label`], counting each book **once
+/// per bucket** however many of its codes fold into it (de-duplicated, not summed),
+/// with the coverage pair over the same placements so slices sum to `coverage.total`.
+/// Slices come back ordered count desc, label asc, [`UNKNOWN_LABEL`] sinking in a
+/// tie, so [`fold_tail`] still splits a sorted list.
 fn fold_language_placements(rows: Vec<(i64, String)>) -> (Vec<CompositionSlice>, MeasuredTotal) {
     let mut books: BTreeSet<i64> = BTreeSet::new();
     let mut placements: BTreeSet<(i64, String)> = BTreeSet::new();
@@ -266,14 +223,10 @@ fn fold_language_placements(rows: Vec<(i64, String)>) -> (Vec<CompositionSlice>,
     (slices, coverage)
 }
 
-/// Publisher spread by `publishers.name`, tail folded into "Other".
-///
-/// `books_publishers_link` is keyed `PRIMARY KEY(book, publisher)` and
-/// `publishers.name` is `UNIQUE COLLATE NOCASE` (migration `0002`), so one row
-/// *is* one placement and no two rows can land in the same bucket — the
-/// de-duplication [`languages`] needs has nothing to do here. A book under two
-/// publishers is one placement in each, which `coverage.total - coverage.books`
-/// discloses exactly as it does for a dual-format book.
+/// Publisher spread by `publishers.name`, tail folded into "Other". One link row
+/// is one placement (`PRIMARY KEY(book, publisher)`, `name` is `UNIQUE COLLATE
+/// NOCASE`), so no de-duplication is needed; a book under two publishers is one
+/// placement in each, disclosed by `coverage.total - coverage.books`.
 async fn publishers(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> {
     let slices = read_slices(
         pool,
@@ -304,16 +257,10 @@ async fn publishers(pool: &SqlitePool) -> Result<CompositionDimension, StatsErro
     })
 }
 
-/// Publication decades, oldest first.
-///
-/// A book whose `pubdate` is absent or unparseable is **unknown**, never
-/// bucketed: `CAST(substr(…, 1, 4) AS INTEGER)` yields 0 for both, and
-/// Calibre's `0101` sentinel yields 101, so anything at or below
-/// [`SENTINEL_YEAR_MAX`] is excluded from the buckets and falls out of the
-/// coverage pair as an uncovered book the surfaces name.
-///
-/// Not folded, and ordered by decade rather than by count: a histogram whose
-/// bars are sorted by height is a bar chart of nothing.
+/// Publication decades, oldest first, not folded and ordered by decade rather than
+/// by count. A book whose `pubdate` is absent or unparseable is **unknown**, never
+/// bucketed: anything at or below [`SENTINEL_YEAR_MAX`] (0 for absent, 101 for
+/// Calibre's `0101`) is excluded and falls out of the coverage pair as uncovered.
 async fn decades(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> {
     let dated = format!("{LIVE_BOOK} AND {PUB_YEAR} > {SENTINEL_YEAR_MAX}");
     let rows = sqlx::query(&format!(
@@ -346,17 +293,11 @@ async fn decades(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> 
     Ok(CompositionDimension { slices, coverage })
 }
 
-/// Genre distribution, tail folded into "Other".
-///
-/// Genres have **no link table**, by design (migration `0066`): nothing the
-/// indexers parse carries one, so a book's genres live only in
-/// `metadata_overrides -> '$.genres'`. This therefore describes exactly the
-/// books someone has hand-edited, which is why its coverage pair is not
-/// optional decoration — a four-percent sample presented as "your library's
-/// genres" is the failure this dimension is most likely to produce.
-///
-/// Joins `genres` rather than grouping the raw JSON value, exactly as
-/// `genre::genre_share` does, so "sci-fi" and "Sci-Fi" are one bucket.
+/// Genre distribution, tail folded into "Other". Genres have **no link table**:
+/// a book's genres live only in `metadata_overrides -> '$.genres'`, so this
+/// describes only hand-edited books and its coverage pair is essential. Joins
+/// `genres` rather than grouping the raw JSON, as `genre::genre_share` does, so
+/// "sci-fi" and "Sci-Fi" are one bucket.
 async fn genres(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> {
     let pairs = format!(
         "SELECT DISTINCT b.uuid AS uuid, g.id AS gid, g.name AS name
@@ -385,15 +326,10 @@ async fn genres(pool: &SqlitePool) -> Result<CompositionDimension, StatsError> {
     })
 }
 
-/// Keep the top [`SLICE_LIMIT`] slices and fold the rest into one "Other" row.
-/// The input is already ordered by count, so this is a split rather than a
-/// sort. The coverage pair is untouched — it still counts the whole tail, so
-/// the folded slices sum to `coverage.total` exactly as the unfolded ones did.
-///
-/// A kept slice that is *itself* named "Other" absorbs the tail rather than
-/// sitting beside a synthetic row of the same name. Two bars reading "Other"
-/// is not just an odd legend: `CompositionSlice` is `Identifiable` by label on
-/// iOS, and a duplicate id makes SwiftUI's `ForEach` render undefined results.
+/// Keep the top [`SLICE_LIMIT`] slices and fold the rest into one "Other" row;
+/// the input is already ordered by count. The coverage pair is untouched, so the
+/// folded slices still sum to `coverage.total`. A kept slice itself named "Other"
+/// absorbs the tail, since a duplicate label breaks iOS's `Identifiable` `ForEach`.
 fn fold_tail(mut slices: Vec<CompositionSlice>) -> Vec<CompositionSlice> {
     if slices.len() <= SLICE_LIMIT {
         return slices;

@@ -3,6 +3,19 @@
 //! needs; its documented invariants are the correctness argument for the whole
 //! translation, so a change to any of them must hold on *both* the kepub and
 //! the source walks or aligned offsets silently diverge.
+//!
+//! Invariants over every `FileIndex` field: (1) the normalized text stream is all
+//! `<body>` character data, entity-decoded, whitespace runs collapsed to one space
+//! and leading whitespace dropped, counted in Unicode scalars; kepubify's injected
+//! markup adds no characters, so the kepub and source streams match whenever the
+//! text does. (2) CFI step accounting mirrors epub.js: element child k (1-based)
+//! is even step `2k`; consecutive character-data nodes coalesce into one text
+//! cluster whose odd index is `2t+1` after t earlier clusters in the same parent
+//! (comments and PIs neither count nor split one); terminal offsets are UTF-16
+//! code units into the cluster's raw text. (3) Anchors land on visible characters:
+//! a span's position is the first non-space normalized character at or after its
+//! start tag, and carries a snippet of the following text so the two walks can
+//! prove they aligned.
 
 use anyhow::Context;
 use quick_xml::events::Event;
@@ -39,30 +52,10 @@ struct SpanMark {
     norm_start: u64,
 }
 
-/// Everything the four queries need from one content document.
-///
-/// Three invariants hold over every field, and both the kepub and the source
-/// walk must satisfy them or aligned offsets silently diverge:
-///
-/// - **Normalized text stream.** All character data under `<body>`,
-///   entity-decoded, with every whitespace run collapsed to one space and
-///   leading whitespace dropped. Offsets count Unicode scalars in this stream.
-///   kepubify's injected markup (`koboSpan` wrappers, the `book-columns` divs)
-///   contributes no characters, so the kepub and source streams are identical
-///   whenever the underlying text is.
-/// - **CFI step accounting** mirrors epub.js, the only consumer: element child
-///   k (1-based) is even step `2k`; consecutive character-data nodes coalesce
-///   into one text cluster whose odd index is `2t+1` after t *earlier text
-///   clusters in the same parent* — epub.js numbers text nodes among text
-///   siblings only, which diverges from the CFI spec's interleaved numbering
-///   whenever an element precedes the cluster (comments/PIs neither count nor
-///   split a cluster). Terminal offsets are UTF-16 code units into the
-///   cluster's raw (uncollapsed) text.
-/// - **Anchors land on visible characters.** A span's position is the first
-///   non-space normalized character at/after its start tag; a normalized offset
-///   falling in collapsed whitespace resolves to the next visible character.
-///   Every anchor carries a snippet of the following normalized text so the two
-///   walks can prove they aligned.
+/// Everything the four queries need from one content document. Both the kepub
+/// and the source walk must satisfy the module-level invariants (normalized text
+/// stream, epub.js CFI step accounting, anchors on visible characters) or
+/// aligned offsets silently diverge.
 pub(super) struct FileIndex {
     norm: String,
     clusters: Vec<Cluster>,
@@ -439,13 +432,11 @@ impl FileIndex {
         self.span_point(t, true)
     }
 
-    /// Shared body of the two span-point queries. Strictly the last span
-    /// starting at/before `t` — none of `span_at`'s first/last-span
-    /// leniency, which suits a resume position but would anchor an
-    /// annotation endpoint to text outside the highlight. `None` when `t`'s
-    /// character lives in a different text node than the span's first
-    /// visible character: kepubify wraps every text node in its own span,
-    /// so that means the two walks disagree about the document.
+    /// Shared body of the two span-point queries. Strictly the last span starting
+    /// at/before `t`, with none of `span_at`'s first/last-span leniency (which would
+    /// anchor an annotation endpoint outside the highlight). `None` when `t` lives
+    /// in a different text node than the span's first visible character, meaning the
+    /// two walks disagree about the document.
     fn span_point(&self, t: u64, exclusive_end: bool) -> Option<SpanPoint> {
         let mut chosen: Option<&SpanMark> = None;
         for s in &self.spans {

@@ -234,17 +234,10 @@ pub async fn delete_journal_entry(
 }
 
 /// Best-effort delete of any `candidates` no longer referenced by any
-/// `journal_entries.body_md`. Called only after the caller's own mutation has
-/// already committed, so no self-exclusion is needed: the caller's row either
-/// no longer contains the name (edit) or no longer exists (delete). Failures —
-/// a DB error on the reference check, or a panic in the filesystem unlink —
-/// are logged and swallowed: this is opportunistic GC of an
-/// orphanable-but-durable file store, not a correctness-critical path, and
-/// must never fail the journal mutation that triggered it (mirrors
-/// `set_settings`'s cover cleanup). [`purge::orphaned_images`] is the sibling
-/// caller that instead propagates the DB error — see [`unreferenced_image_names`].
-///
-/// [`purge::orphaned_images`]: crate::deletion::purge::orphaned_images
+/// `journal_entries.body_md`, called after the caller's own mutation has
+/// committed. Failures (a DB error on the reference check, a panic in the
+/// unlink) are logged and swallowed, never failing that mutation; the sibling
+/// `deletion::purge::orphaned_images` propagates the DB error instead.
 async fn cleanup_orphaned_images(pool: &SqlitePool, candidates: HashSet<String>) {
     let orphaned = match unreferenced_image_names(pool, candidates).await {
         Ok(names) => names,
@@ -267,18 +260,10 @@ async fn cleanup_orphaned_images(pool: &SqlitePool, candidates: HashSet<String>)
     }
 }
 
-/// Narrow `candidates` to the names no `journal_entries.body_md` still embeds
-/// — matched on the full embed path rather than the bare name, since a
-/// bare-name substring match could false-positive on an unrelated file whose
-/// uuid happens to contain this one as a substring, or on stray body text.
-///
-/// Fetches every `body_md` once and matches all candidates in memory, rather
-/// than one `instr()` scan per candidate — `journal_entries` is expected to
-/// stay small enough that a single fetch always wins over N per-candidate
-/// scans. Shared by [`cleanup_orphaned_images`] (swallow-and-log) and
-/// `deletion::purge::orphaned_images` (propagate), which differ only in how
-/// they handle the `Err` case — this helper stays agnostic and returns the
-/// raw `sqlx::Error` for each caller to decide.
+/// Narrow `candidates` to the names no `journal_entries.body_md` still embeds,
+/// matched on the full embed path so a bare-name substring can't false-positive.
+/// Returns the raw `sqlx::Error` for each caller to handle: [`cleanup_orphaned_images`]
+/// swallows and logs, `deletion::purge::orphaned_images` propagates.
 pub(crate) async fn unreferenced_image_names(
     pool: &SqlitePool,
     candidates: impl IntoIterator<Item = String>,
@@ -287,6 +272,8 @@ pub(crate) async fn unreferenced_image_names(
     if candidates.is_empty() {
         return Ok(Vec::new());
     }
+    // One fetch matched in memory beats a per-candidate `instr()` scan while the
+    // table stays small.
     let bodies: Vec<String> = sqlx::query_scalar("SELECT body_md FROM journal_entries")
         .fetch_all(pool)
         .await?;
