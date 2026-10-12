@@ -229,6 +229,8 @@ struct MediaState {
     token: String,
 }
 
+/// Every response carries `Access-Control-Allow-Origin: *`: the WebView page
+/// is served from wry's custom scheme, a different origin from this port.
 fn router(state: Arc<MediaState>) -> Router {
     Router::new()
         .route("/dl/{uuid}/{file}", get(dl_handler))

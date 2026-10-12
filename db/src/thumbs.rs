@@ -295,10 +295,10 @@ pub fn purge_stale_scheme_thumbs_once() -> usize {
     removed
 }
 
-/// Lossy WebP quality passed to libwebp, on its 0-100 scale. 80 is the
-/// customary photographic setting — visually indistinguishable from lossless
-/// on cover art at thumbnail dimensions, at roughly a tenth of the bytes.
-/// Changing it means bumping [`THUMB_ENCODER_VERSION`].
+/// Lossy WebP quality for libwebp (0-100); `image`'s own WebP encoder is
+/// lossless-only. 80 is the customary photographic setting: no visible loss
+/// on covers at thumbnail size, at about a tenth of the bytes. Changing it
+/// means bumping [`THUMB_ENCODER_VERSION`].
 const THUMB_QUALITY: f32 = 80.0;
 
 /// Resize a pre-decoded cover and write the WebP to disk for one size.
