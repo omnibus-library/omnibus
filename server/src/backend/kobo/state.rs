@@ -24,19 +24,11 @@ fn reject_oversized_state_request(body: &dto::StateRequest) -> Option<Response> 
         .then(|| StatusCode::BAD_REQUEST.into_response())
 }
 
-/// `PUT library/<uuid>/state` — persist the device's reading state.
-/// `StatusInfo` routes into `book_read_status`; the `CurrentBookmark`
-/// position lands in `reading_progress` as percent + verbatim `KoboSpan`
-/// plus a server-derived `epub_cfi` when the cached KEPUB allows it,
-/// stamped with the device's own event time when it sends one. A
-/// `Statistics` block is mirrored onto the same row so sync-out can echo it
-/// back unchanged — it is never aggregated into `db::stats`.
-///
-/// The whole batch's read-status and bookmark writes share one transaction
-/// (begun before the loop, committed after it), so a mid-batch DB failure
-/// rolls back every entry rather than leaving the sync half-applied — a
-/// `BookNotFound` for one entry is not such a failure and is logged and
-/// skipped within the same transaction.
+/// `PUT library/<uuid>/state` — persist the device's reading state: `StatusInfo` into
+/// `book_read_status`, the `CurrentBookmark` into `reading_progress` (percent, verbatim
+/// `KoboSpan`, a derived `epub_cfi` when the cached KEPUB allows) at the device's event
+/// time (else server-now), and `Statistics` for echo only (never aggregated into `db::stats`).
+/// One transaction covers the batch: a DB failure rolls back all; `BookNotFound` is skipped.
 pub async fn put_state(
     auth: KoboAuthUser,
     State(state): State<AppState>,
@@ -188,20 +180,11 @@ async fn apply_statistics(
     }
 }
 
-/// Persist a device's `CurrentBookmark` as an epub position.
-///
-/// The `KoboSpan` location rides verbatim in its own column, and — when the
-/// cached KEPUB allows — a CFI derived from it lands in `epub_cfi`, so the
-/// web/iOS readers resume at the same sentence with no client changes. The
-/// percent is the device's own number and is never overwritten by a derived
-/// one. `event_ts` is the device's clock (`None` → server-now); the upsert's
-/// forward clamp bounds a fast device clock. A bookmark carrying neither
-/// percent nor location is a no-op rather than a validation error — the
-/// device sends the field either way.
-///
-/// The final write goes through `tx` so it shares [`put_state`]'s batch
-/// transaction; the CFI derivation above it only reads (via `state.pool()`),
-/// so it stays outside the transaction rather than blocking it.
+/// Persist a device's `CurrentBookmark` as an epub position. The `KoboSpan` location
+/// rides verbatim in its own column, plus a derived CFI in `epub_cfi` when the cached
+/// KEPUB allows. The percent is the device's own and never overwritten by a derived
+/// one; `event_ts` is the device's clock (`None` → server-now). A bookmark with
+/// neither percent nor location is a no-op, not a validation error.
 async fn persist_bookmark(
     state: &AppState,
     tx: &mut Transaction<'_, Sqlite>,
@@ -225,6 +208,8 @@ async fn persist_bookmark(
     if percent.is_none() && location.is_none() {
         return Ok(());
     }
+    // The CFI derivation only reads (via `state.pool()`), so it stays outside the
+    // transaction rather than blocking it; only the final write goes through `tx`.
     let epub_cfi = match &location {
         Some(loc) => derive_cfi_for_location(state, uuid, loc).await,
         None => None,
@@ -253,11 +238,9 @@ async fn persist_bookmark(
     Ok(())
 }
 
-/// Mirror a device's `Statistics` block so sync-out can hand the same numbers
-/// back with the device's own clock.
-///
-/// A negative counter is dropped, not clamped, like an out-of-range percent:
-/// echoed-only values have nothing safe to clamp toward, and the row CHECK
+/// Mirror a device's `Statistics` block so sync-out can hand the same numbers back
+/// with the device's own clock. A negative counter is dropped, not clamped, like an
+/// out-of-range percent: there is nothing safe to clamp toward, and the row CHECK
 /// would abort the whole batch rather than this one entry.
 async fn persist_statistics(
     tx: &mut Transaction<'_, Sqlite>,
@@ -283,12 +266,10 @@ async fn persist_statistics(
     Ok(())
 }
 
-/// Best-effort KoboSpan→CFI derivation for a state PUT. Uses the cached
-/// KEPUB **even when stale** — metadata edits rebuild the cache without
-/// touching content, and the snippet check inside `span_to_cfi` guards the
-/// case where the source file really was replaced. No staleness check, no
-/// worker enqueue: the state PUT stays fast, and a `None` simply means the
-/// row stores percent + span exactly as before.
+/// Best-effort KoboSpan→CFI derivation for a state PUT. Uses the cached KEPUB **even
+/// when stale**: the snippet check inside `span_to_cfi` guards a replaced source. No
+/// staleness check, no worker enqueue, so the state PUT stays fast; a `None` means the
+/// row stores percent + span only.
 async fn derive_cfi_for_location(
     state: &AppState,
     uuid: &str,

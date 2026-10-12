@@ -109,9 +109,8 @@ pub fn SuggestionCardView(
 /// The proposed value: an input the reviewer owns for a book title, a static
 /// field for every other kind.
 ///
-/// Both render the same element type with the same class, so the two states
-/// read as one control rather than swapping layouts — and the static arm is
-/// genuinely static, not a disabled input the reviewer would keep clicking.
+/// Both render the same element type and class, so the states read as one
+/// control; the static arm is genuinely static, not a disabled input.
 #[component]
 fn ProposedValue(
     card: SuggestionCard,

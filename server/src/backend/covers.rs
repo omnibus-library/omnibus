@@ -213,13 +213,8 @@ async fn thumb_cache_hit_response(
 }
 
 /// Fire-and-forget mtime bump so `evict_if_over_cap` treats this thumb as
-/// recently-used (LRU) instead of evicting frequently-viewed thumbs just
-/// because they're old. Detached via `tokio::spawn` (never adds latency to
-/// this response) but still awaits the `spawn_blocking` JoinHandle and
-/// distinguishes panic from cancellation, matching the worker's convention
-/// (`handle_generate_thumbs` in db/src/worker/handlers.rs) instead of
-/// silently dropping it. Called on both the 200 and 304 paths — a
-/// revalidated thumb is still a used one.
+/// recently used (LRU); never adds latency. Called on both the 200 and 304
+/// paths: a revalidated thumb is still a used one.
 fn spawn_touch_thumb(id: i64, size: db::ThumbSize, last_modified_epoch: i64) {
     tokio::spawn(async move {
         if let Err(join_err) = tokio::task::spawn_blocking(move || {
@@ -237,17 +232,9 @@ fn spawn_touch_thumb(id: i64, size: db::ThumbSize, last_modified_epoch: i64) {
     });
 }
 
-/// Cache-miss (or stale) stage: fetch the original cover first so we only
-/// queue generation when there's actually something to thumbnail. Queuing
-/// for a coverless book just produces a guaranteed `no cover for book …`
-/// worker error on every request, polluting the log.
-///
-/// The body is the full cover standing in for a thumbnail that does not exist
-/// yet, and it carries a validator like any other — a cacheable 200 without
-/// one is a dead end for a client that revalidates, because there is nothing
-/// to revalidate *with*. Both offline clients cache what this returns, so a
-/// validator-less answer here left a grid tile pinned to whatever cover was
-/// current at the moment of the miss, indefinitely.
+/// Cache-miss (or stale) stage: serve the full cover, with its own validator,
+/// as a stand-in for the missing thumbnail and queue thumbnail generation;
+/// `202` when the book has no cover.
 async fn thumb_cache_miss_response(
     state: &AppState,
     uuid: &str,
@@ -256,6 +243,8 @@ async fn thumb_cache_miss_response(
     last_modified_epoch: i64,
     headers: &HeaderMap,
 ) -> Response {
+    // Cover first: queuing for a coverless book only logs a guaranteed
+    // `no cover for book …` worker error on every request.
     match db::get_cover(&state.pool, id).await {
         Ok(Some((mime, bytes))) => {
             // Queued before the conditional answer, not after: a client that

@@ -3,9 +3,18 @@
 //! Writes straight into the shared [`ViewPrefs`] (each tap fires
 //! `on_change`, which persists + refetches page 1 server-side), so the
 //! footer's "Show N books" is just a close affordance over live results.
+//! Beside the format chips, every filter field gets a section ([`fields`])
+//! with an Includes any / Excludes any toggle over its values.
 
 use dioxus::prelude::*;
-use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewPrefs};
+use omnibus_shared::{
+    FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewPrefs,
+};
+
+use crate::components::filter_bar::{field_token, ShelfList};
+
+mod fields;
+use fields::{sections, FieldSection};
 
 /// Sort axes offered on mobile, in sheet order, with their row labels.
 const SORT_ROWS: &[(SortKey, &str)] = &[
@@ -17,8 +26,8 @@ const SORT_ROWS: &[(SortKey, &str)] = &[
     (SortKey::Series, "Series"),
 ];
 
-/// Format chips: display label → the lowercase `ViewFilters::formats` values
-/// the chip toggles. "Audiobook" covers every direct-play audio container.
+/// Format chips: display label → the lowercase values of the include-format
+/// clause the chip toggles. "Audiobook" covers every direct-play audio container.
 const FORMAT_CHIPS: &[(&str, &[&str])] =
     &[("EPUB", &["epub"]), ("Audiobook", &["m4b", "m4a", "mp3"])];
 
@@ -68,48 +77,130 @@ fn dir_label(key: SortKey, dir: SortDir) -> String {
     format!("{text} {}", dir_arrow(dir))
 }
 
-/// Whether a format chip is active (its first wire value is filtered on).
-fn chip_on(filters: &ViewFilters, values: &[&str]) -> bool {
-    values
-        .first()
-        .is_some_and(|v| filters.formats.iter().any(|f| f == v))
+fn is_include_format(clause: &FilterClause) -> bool {
+    clause.field == FilterField::Format && clause.mode == FilterMode::Include
 }
 
-/// Toggle a chip's format values in/out of the filter set.
+/// Whether a format chip is active (its first wire value is in an include-format clause).
+fn chip_on(filters: &ViewFilters, values: &[&str]) -> bool {
+    values.first().is_some_and(|v| {
+        filters
+            .clauses
+            .iter()
+            .filter(|c| is_include_format(c))
+            .any(|c| c.values.iter().any(|f| f == v))
+    })
+}
+
+/// Toggle a chip's format values in/out of the include-format clause, dropping
+/// the clause once it has no value left.
 fn toggle_formats(filters: &mut ViewFilters, values: &[&str]) {
     if chip_on(filters, values) {
-        filters.formats.retain(|f| !values.contains(&f.as_str()));
-    } else {
+        for clause in filters.clauses.iter_mut().filter(|c| is_include_format(c)) {
+            clause.values.retain(|f| !values.contains(&f.as_str()));
+        }
+        filters
+            .clauses
+            .retain(|c| !(is_include_format(c) && c.values.is_empty()));
+    } else if let Some(clause) = filters.clauses.iter_mut().find(|c| is_include_format(c)) {
         for v in values {
-            if !filters.formats.iter().any(|f| f == v) {
-                filters.formats.push((*v).to_string());
+            if !clause.values.iter().any(|f| f == v) {
+                clause.values.push((*v).to_string());
             }
         }
+    } else {
+        filters.clauses.push(FilterClause::new(
+            FilterField::Format,
+            FilterMode::Include,
+            values,
+        ));
+    }
+}
+
+fn is_format(clause: &FilterClause) -> bool {
+    clause.field == FilterField::Format
+}
+
+/// Whether no format clause of either mode is set, which is what "All" shows.
+fn all_chip_on(filters: &ViewFilters) -> bool {
+    !filters.clauses.iter().any(is_format)
+}
+
+/// Drop every format clause, include or exclude, leaving the other clauses be.
+fn clear_formats(filters: &mut ViewFilters) {
+    filters.clauses.retain(|c| !is_format(c));
+}
+
+/// The values `filters` holds for `field` in `mode`, across every clause that
+/// names that pair.
+fn picked_values(filters: &ViewFilters, field: FilterField, mode: FilterMode) -> Vec<String> {
+    filters
+        .clauses
+        .iter()
+        .filter(|c| c.field == field && c.mode == mode)
+        .flat_map(|c| c.values.iter().cloned())
+        .collect()
+}
+
+/// Flip `value` in or out of the `field`/`mode` clause. A picked value (compared
+/// ignoring ASCII case, as the engine does) is removed and an emptied clause
+/// dropped; an unpicked one joins the first such clause, or opens one.
+fn toggle_value(filters: &mut ViewFilters, field: FilterField, mode: FilterMode, value: &str) {
+    let names_pair = |c: &FilterClause| c.field == field && c.mode == mode;
+    let picked = filters
+        .clauses
+        .iter()
+        .filter(|c| names_pair(c))
+        .any(|c| c.values.iter().any(|v| v.eq_ignore_ascii_case(value)));
+    if picked {
+        for clause in filters.clauses.iter_mut().filter(|c| names_pair(c)) {
+            clause.values.retain(|v| !v.eq_ignore_ascii_case(value));
+        }
+        filters
+            .clauses
+            .retain(|c| !(names_pair(c) && c.values.is_empty()));
+    } else if let Some(clause) = filters.clauses.iter_mut().find(|c| names_pair(c)) {
+        clause.values.push(value.to_string());
+    } else {
+        filters
+            .clauses
+            .push(FilterClause::new(field, mode, &[value]));
+    }
+}
+
+/// `prefs` with the sort and every clause back at their defaults; the view mode
+/// is not part of what the sheet resets.
+fn reset_prefs(prefs: &ViewPrefs) -> ViewPrefs {
+    ViewPrefs {
+        sort_key: SortKey::default(),
+        sort_dir: SortDir::default(),
+        filters: ViewFilters::default(),
+        ..prefs.clone()
     }
 }
 
 /// The bottom sheet. Fires `on_change` with a whole updated [`ViewPrefs`] on
-/// every tap and `on_close` from the scrim / footer button.
+/// every tap and `on_close` from the scrim / footer button. `server_url`,
+/// `shelves` and `viewer_id` let each field section load and name its values;
+/// `prefs` is the live signal, which the sections build their ticks from.
 #[component]
 pub(super) fn MobileSortFilterSheet(
-    prefs: ViewPrefs,
+    prefs: Signal<ViewPrefs>,
     book_count: Option<usize>,
+    server_url: String,
+    shelves: ShelfList,
+    viewer_id: Option<i64>,
     on_change: EventHandler<ViewPrefs>,
     on_close: EventHandler<MouseEvent>,
 ) -> Element {
+    let current = prefs();
     let show_label = match book_count {
         Some(1) => "Show 1 book".to_string(),
         Some(n) => format!("Show {n} books"),
         None => "Show books".to_string(),
     };
-    let reset_prefs = prefs.clone();
-    let on_reset = move |_| {
-        let mut next = reset_prefs.clone();
-        next.sort_key = SortKey::default();
-        next.sort_dir = SortDir::default();
-        next.filters = ViewFilters::default();
-        on_change.call(next);
-    };
+    let reset_from = current.clone();
+    let on_reset = move |_| on_change.call(reset_prefs(&reset_from));
     rsx! {
         div {
             class: "m-sheet-scrim",
@@ -130,14 +221,26 @@ pub(super) fn MobileSortFilterSheet(
                     div { class: "label m-filter-label", "Sort by" }
                     div { class: "m-sort-list",
                         for &(key, label) in SORT_ROWS {
-                            {sort_row(key, label, &prefs, &on_change)}
+                            {sort_row(key, label, &current, &on_change)}
                         }
                     }
                     div { class: "label m-filter-label", "Format" }
                     div { class: "m-filter-chips",
-                        {all_chip(&prefs, &on_change)}
+                        {all_chip(&current, &on_change)}
                         for &(label, values) in FORMAT_CHIPS {
-                            {format_chip(label, values, &prefs, &on_change)}
+                            {format_chip(label, values, &current, &on_change)}
+                        }
+                    }
+                    div { class: "label m-filter-label", "Filter by" }
+                    for view in sections(&current.filters) {
+                        FieldSection {
+                            key: "{field_token(view.field)}",
+                            view,
+                            prefs,
+                            shelves: shelves.clone(),
+                            server_url: server_url.clone(),
+                            viewer_id,
+                            on_change,
                         }
                     }
                 }
@@ -200,9 +303,9 @@ fn sort_row(
     }
 }
 
-/// The "All" chip — active when no format filter is set; tapping clears them.
+/// The "All" chip — active when no format clause is set; tapping clears them.
 fn all_chip(prefs: &ViewPrefs, on_change: &EventHandler<ViewPrefs>) -> Element {
-    let on = prefs.filters.formats.is_empty();
+    let on = all_chip_on(&prefs.filters);
     let next_base = prefs.clone();
     let handler = *on_change;
     rsx! {
@@ -211,7 +314,7 @@ fn all_chip(prefs: &ViewPrefs, on_change: &EventHandler<ViewPrefs>) -> Element {
             class: if on { "m-filter-chip on" } else { "m-filter-chip" },
             onclick: move |_| {
                 let mut next = next_base.clone();
-                next.filters.formats.clear();
+                clear_formats(&mut next.filters);
                 handler.call(next);
             },
             "All"
@@ -245,55 +348,4 @@ fn format_chip(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_dir_for_dates_is_desc_and_text_asc() {
-        assert_eq!(default_dir_for(SortKey::NewestAdded), SortDir::Desc);
-        assert_eq!(default_dir_for(SortKey::LastUpdated), SortDir::Desc);
-        assert_eq!(default_dir_for(SortKey::RecentlyInteracted), SortDir::Desc);
-        assert_eq!(default_dir_for(SortKey::Title), SortDir::Asc);
-    }
-
-    #[test]
-    fn sort_options_offer_recently_interacted() {
-        assert!(
-            SORT_ROWS
-                .iter()
-                .any(|(k, label)| *k == SortKey::RecentlyInteracted
-                    && *label == "Recently interacted")
-        );
-    }
-
-    #[test]
-    fn dir_label_reads_naturally_per_axis() {
-        assert_eq!(
-            dir_label(SortKey::NewestAdded, SortDir::Desc),
-            "Newest first \u{2193}"
-        );
-        assert_eq!(
-            dir_label(SortKey::Title, SortDir::Asc),
-            "A\u{2013}Z \u{2191}"
-        );
-        assert_eq!(
-            dir_label(SortKey::Author, SortDir::Desc),
-            "Z\u{2013}A \u{2193}"
-        );
-    }
-
-    #[test]
-    fn toggle_formats_adds_and_removes_chip_groups() {
-        let mut filters = ViewFilters::default();
-        toggle_formats(&mut filters, &["m4b", "m4a", "mp3"]);
-        assert_eq!(filters.formats, vec!["m4b", "m4a", "mp3"]);
-        assert!(chip_on(&filters, &["m4b", "m4a", "mp3"]));
-        // Adding a second group keeps the first.
-        toggle_formats(&mut filters, &["epub"]);
-        assert!(chip_on(&filters, &["epub"]));
-        assert_eq!(filters.formats.len(), 4);
-        // Toggling off removes only that group's values.
-        toggle_formats(&mut filters, &["m4b", "m4a", "mp3"]);
-        assert_eq!(filters.formats, vec!["epub"]);
-    }
-}
+mod tests;

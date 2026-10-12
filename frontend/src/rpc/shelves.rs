@@ -5,7 +5,7 @@ use dioxus::fullstack::{get, post};
 use dioxus::prelude::*;
 use omnibus_shared::{
     CreateShelfRequest, MatchMode, RulePreview, Shelf, ShelfPage, ShelfRule, ShelfSummary, SortDir,
-    SortKey, UpdateShelfRequest,
+    SortKey, UpdateShelfRequest, ViewFilters,
 };
 
 #[cfg(feature = "server")]
@@ -128,17 +128,25 @@ pub async fn rpc_delete_shelf(id: i64) -> Result<()> {
         .map_err(|e| map_shelf_error("delete shelf", e))?)
 }
 
-/// The shelf's member books (view check). Smart shelves honor `sort_key`/`dir`.
+/// The shelf's member books narrowed by `filters` (view check). Smart shelves honor `sort_key`/`dir`.
 #[post("/api/rpc/shelves/page", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_get_shelf_page(
     id: i64,
     sort_key: SortKey,
     sort_dir: SortDir,
+    filters: ViewFilters,
 ) -> Result<ShelfPage> {
+    filters.validate().map_err(ServerFnError::new)?;
     let shelf = shelf_for_view(&pool.0, id, &user).await?;
-    Ok(db::shelf_page(&pool.0, &shelf, sort_key, sort_dir)
-        .await
-        .map_err(|e| map_shelf_error("shelf page", e))?)
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    Ok(
+        db::shelf_page(&pool.0, &shelf, sort_key, sort_dir, &filters, viewer)
+            .await
+            .map_err(|e| map_shelf_error("shelf page", e))?,
+    )
 }
 
 /// Append books to a hand-picked shelf (owner or admin).

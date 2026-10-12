@@ -23,13 +23,9 @@ mod tests;
 
 /// The offset held to the range `crate::user_offset::resolve_offset_minutes`
 /// already guarantees, so the invariant this module's SQL rests on is enforced
-/// where it is used rather than only where it is produced.
-///
-/// Applied by both builders below rather than by one of them: a bounded shift
-/// paired with an unbounded modifier would put [`window_start_expr`] nowhere
-/// near anyone's midnight, which is worse than either value alone. Clamped, not
-/// rejected — every caller is a read path, and misdating a day degrades better
-/// than overflowing the multiply in [`shift`].
+/// where it is used. Applied by both builders: a bounded shift paired with an
+/// unbounded modifier would put [`window_start_expr`] nowhere near anyone's
+/// midnight. Clamped, not rejected: every caller is a read path.
 fn bounded(offset_minutes: i64) -> i64 {
     offset_minutes.clamp(
         SessionReport::UTC_OFFSET_MIN_MINUTES,
@@ -54,37 +50,22 @@ pub(super) fn local_day(col: &str, offset_minutes: i64) -> String {
 }
 
 /// The reader's day as a unix day *number*, for the integer-diff consecutiveness
-/// the streak is built on.
-///
-/// Floors rather than truncates. SQLite's `/` rounds toward zero, so for the
-/// pre-1970 instants a bad client clock can produce, plain division would put
-/// two distinct days on the same number and silently weld them into one active
-/// day.
-///
-/// Spelled out with `%` rather than as `FLOOR(x / 86400.0)`: `floor` is one of
-/// SQLite's optional math functions, absent unless the build enabled them, and
-/// the bundled library this runs against does not — so the tidier form is a
-/// runtime "no such function: FLOOR", not a slower query. Staying in integers
-/// also keeps a day number exact past 2^53, which a REAL division would not.
+/// the streak is built on. Floors rather than truncates: SQLite's `/` rounds
+/// toward zero, so pre-1970 instants would put two distinct days on one number.
 pub(super) fn local_day_number(col: &str, offset_minutes: i64) -> String {
     let shifted = format!("({col} + {})", shift(offset_minutes));
+    // `%`, not `FLOOR(x / 86400.0)`: bundled SQLite lacks `floor`; integers stay exact past 2^53.
     // Truncating division, corrected down by one whenever it rounded the wrong
     // way — which is exactly when the remainder is negative.
     format!("(({shifted} / 86400) - (CASE WHEN {shifted} % 86400 < 0 THEN 1 ELSE 0 END))")
 }
 
 /// The trailing-12-month `months(month)` CTE body, on the reader's calendar.
-///
-/// Lives here rather than beside its callers because it is a *shift*, and rule
-/// 10's whole point is that there is one place those are written. It reaches for
-/// a datetime modifier where the rest of this module shifts seconds, because a
-/// spine steps in **months** — which only SQLite's calendar arithmetic can do,
-/// and which a second-count cannot express.
-///
 /// Shared by `compute::books_per_month` and `ratings::rating_monthly` so the two
-/// trend charts cannot come to disagree about which month a completion or a
-/// rating falls in.
+/// trend charts cannot disagree about which month a completion or rating falls in.
 pub(super) fn month_spine(offset_minutes: i64) -> String {
+    // A datetime modifier, unlike this module's second-shifts: a spine steps in
+    // months, which a second-count cannot express.
     let now_local = format!("datetime('now', {})", modifier(offset_minutes));
     format!(
         "months(month) AS (
@@ -105,31 +86,20 @@ pub(super) fn local_month(col: &str, offset_minutes: i64) -> String {
     )
 }
 
-/// Datetime modifiers that move a day back to the Monday of its week.
-///
-/// `weekday 0` advances to the coming Sunday (staying put on one), so backing
-/// up six days lands on that week's Monday. The Week window and the chart
-/// builder's Week bucket both use this, so the week a window opens on is the
-/// week its buckets are keyed on.
+/// Datetime modifiers that move a day back to the Monday of its week. The Week
+/// window and the chart builder's Week bucket both use this, so the week a window
+/// opens on is the week its buckets are keyed on.
+// `weekday 0` advances to the coming Sunday (staying put on one), so backing up
+// six days lands on that week's Monday.
 pub(super) const TO_MONDAY: &str = "'weekday 0', '-6 days'";
 
 /// The live clock, as the SQLite time-value the window builders read.
 const NOW: &str = "'now'";
 
 /// Unix seconds (UTC) of the instant a range's window opens, on the reader's
-/// calendar.
-///
-/// Reads `now` on the reader's clock, snaps it to the start of their week,
-/// month, or year, then converts that wall-clock moment back to the UTC instant
-/// it actually was — the `- shift` at the end. Without that last step the bound
-/// would be a local datetime compared against UTC `started_at` columns, which is
-/// wrong by the offset in the opposite direction.
-///
-/// Every range is period-to-date: a Week opens on the reader's Monday, so on a
-/// Monday it holds one day.
-///
-/// Calendar arithmetic stays in SQLite rather than Rust; each arm is a fixed
-/// literal built from a bounds-checked integer, never user input.
+/// calendar. Every range is period-to-date: a Week opens on the reader's Monday,
+/// so on a Monday it holds one day. Calendar arithmetic stays in SQLite; each arm
+/// is a fixed literal built from a bounds-checked integer, never user input.
 pub(super) fn window_start_expr(range: StatsRange, offset_minutes: i64) -> String {
     window_start_at(range, offset_minutes, NOW)
 }
@@ -138,6 +108,8 @@ pub(super) fn window_start_expr(range: StatsRange, offset_minutes: i64) -> Strin
 /// time-value expression — so a test can pin the weekday it runs on.
 fn window_start_at(range: StatsRange, offset_minutes: i64, now: &str) -> String {
     let (m, s) = (modifier(offset_minutes), shift(offset_minutes));
+    // Snap on the reader's wall clock, then `- shift` back to the UTC instant: the
+    // bound is compared against UTC `started_at` columns.
     let local = format!("datetime({now}, {m})");
     match range {
         StatsRange::Week => {
@@ -150,11 +122,8 @@ fn window_start_at(range: StatsRange, offset_minutes: i64, now: &str) -> String 
 }
 
 /// Unix seconds (UTC) of the instant the *preceding* window opens, or `None` for
-/// [`StatsRange::AllTime`] — there is no window before "all of it".
-///
-/// Shares [`window_start_expr`]'s shape so the current window and the baseline
-/// it is compared against cannot drift onto different definitions of where a
-/// period begins.
+/// [`StatsRange::AllTime`]. Shares [`window_start_expr`]'s shape so the current
+/// window and its baseline cannot drift onto different definitions of a period.
 pub(super) fn prev_window_start_expr(range: StatsRange, offset_minutes: i64) -> Option<String> {
     prev_window_start_at(range, offset_minutes, NOW)
 }

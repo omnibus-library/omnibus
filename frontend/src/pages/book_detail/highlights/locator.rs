@@ -8,23 +8,11 @@ use omnibus_shared::{pdf_anchor_page, AlignmentEbookChapter};
 
 use crate::pages::book_detail::chapter_ref;
 
-/// Human locator for a highlight's CFI.
-///
-/// Names the **chapter's title**, not its ordinal. The two are not the same
-/// number: a TOC counts front matter and part dividers, so the eighteenth
-/// entry of Six of Crows is "Chapter 12: Inej" — and a kicker reading
-/// "Chapter 18" beside a Resume line reading "Ch. 18 · Chapter 12" states a
-/// chapter the book does not have. The ordinal is the reader's
-/// position, which the resume readout already carries; a saved passage wants
-/// the name.
-///
-/// Resolution is the CFI's spine step, then its place among the anchors of
-/// chapters sharing that item — the same `chapter_ref` path the resume
-/// readout uses, so the two can't name different chapters for one location. Falls back to the 1-based
-/// spine "Section N" when no chapter structure is loaded, when the CFI sits
-/// before the first chapter (front matter), or when the matched chapter
-/// carries no title to print. `None` when the string has no readable spine
-/// step — the caller then shows the saved date alone.
+/// Human locator for a highlight's CFI: the **chapter's title**, not its ordinal
+/// (a TOC counts front matter), resolved via `chapter_ref` as the resume readout
+/// does. Falls back to the 1-based spine "Section N" with no chapter structure,
+/// before the first chapter, or on an untitled chapter. `None` when the CFI has
+/// no readable spine step; the caller then shows the saved date alone.
 pub(super) fn highlight_locator(cfi: &str, chapters: &[AlignmentEbookChapter]) -> Option<String> {
     if let Some(page) = pdf_anchor_page(cfi) {
         return Some(pdf_locator(page, chapters));

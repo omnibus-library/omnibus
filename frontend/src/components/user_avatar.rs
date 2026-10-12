@@ -25,16 +25,10 @@ pub fn initials_for(name: &str) -> String {
 }
 
 /// A user's avatar image, or their monogram when they haven't set one.
-///
-/// `class` is the caller's existing site class (`um-initials`,
-/// `bd-journal-avatar`, …); the photo inside it gets `<class>-photo` so each
-/// site can size its own circle. `bust` comes from
-/// [`crate::contexts::AvatarCacheBust`] — the URL is keyed only by user id, so
-/// a replaced avatar produces the same URL and needs the counter to reload.
-///
-/// SSR and the first WASM paint agree because the markup is a pure function of
-/// the props (rule 07): before the user resolves, callers pass `has_avatar:
-/// false` and get the same monogram on both sides.
+/// `class` is the caller's site class; the photo inside gets `<class>-photo`.
+/// `bust` comes from [`crate::contexts::AvatarCacheBust`]: the URL is keyed
+/// only by user id, so a replaced avatar needs the counter to reload. Before
+/// the user resolves, pass `has_avatar: false` (same monogram on SSR and WASM).
 #[component]
 pub fn UserAvatar(
     user_id: i64,

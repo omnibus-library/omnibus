@@ -28,13 +28,10 @@ pub async fn library_tags(_auth: KoboAuthUser) -> Response {
     Json(serde_json::json!([])).into_response()
 }
 
-/// `GET download/<uuid>` — serve the book as KEPUB (converting via the worker,
-/// cached), falling back to plain EPUB when kepubify is absent, conversion
-/// fails, or it exceeds [`KEPUB_CONVERT_BUDGET`]. A CBZ-only or PDF-only
-/// book skips the conversion entirely and streams the file as-is — Kobo
-/// firmware reads both sideloaded formats natively, and the old EPUB-only
-/// path 404'd every attempt, looping the device on retries. Streamed with
-/// range support.
+/// `GET download/<uuid>` — serve the book as KEPUB (converting via the worker, cached),
+/// falling back to plain EPUB when kepubify is absent, conversion fails, or it exceeds
+/// [`KEPUB_CONVERT_BUDGET`]. A CBZ-only or PDF-only book skips conversion and streams
+/// as-is, since Kobo firmware reads both natively. Streamed with range support.
 pub async fn download(
     auth: KoboAuthUser,
     State(state): State<AppState>,
@@ -94,18 +91,11 @@ pub async fn download(
     response
 }
 
-/// Record that `auth`'s device now holds this book — the gate
-/// `ack_served` checks before letting a later `GET .../annotations` advance
-/// its watermark — and give any web-origin annotation still waiting on a
-/// KEPUB cache one more chance to downsync. Only called once the caller has
-/// confirmed the response actually delivered (or already held) the file;
-/// `downsync_book_annotations` itself still derives nothing when the KEPUB
-/// cache (or the source EPUB) isn't on disk, which is routine in the
-/// plain-EPUB fallback path — this call still records the device's download
-/// in that case, and the worker handle leaves a conversion queued so the
-/// derivation lands later instead of never. Awaited by the caller, so it adds
-/// latency to the response; kept best-effort and non-fatal regardless, since
-/// annotation bookkeeping must never turn into an error the device retries.
+/// Record that `auth`'s device now holds this book — the gate `ack_served` checks before
+/// a later `GET .../annotations` may advance its watermark — and give any web-origin
+/// annotation still waiting on a KEPUB cache one more chance to downsync. Call only once
+/// the response delivered the file or a 304 confirmed the device holds it. Best-effort and
+/// non-fatal: annotation bookkeeping must never become an error the device retries.
 async fn record_download_state(
     state: &AppState,
     auth: &KoboAuthUser,

@@ -81,11 +81,9 @@ async fn submit_register(
 
 /// Resolve a registration-open probe into the value the auth pages render.
 ///
-/// A probe that *failed* reads as open. The server's `403` on
-/// `POST /api/auth/register` is the real gate, so a status read that couldn't
-/// complete — offline, a proxy hiccup, an SSR-only build — must never be what
-/// hides the register form or its link. Erring the other way would lock
-/// first-run users out of the only account-creation path the server has.
+/// A *failed* probe reads as open: the server's `403` on `POST /api/auth/register`
+/// is the real gate, so an incomplete status read must never hide the register
+/// form or its link and lock first-run users out.
 fn registration_open_or_default(probe: Result<bool, String>) -> bool {
     probe.unwrap_or(true)
 }
@@ -131,12 +129,9 @@ async fn fetch_registration_open(server_url: &str) -> Result<bool, String> {
 }
 
 /// Flatten a [`crate::data::DataError`] into the user-facing string the auth
-/// pages surface. Delegates to [`crate::data::server_error_message`], which
-/// splices the server's diagnostic body back into an HTTP failure —
-/// `DataError`'s own `Display` deliberately omits it, but the register-error
-/// classifier keys on "username"/"password" substrings, so the mobile path
-/// must keep the body to route field errors correctly (the historical
-/// `"{status}: {body}"` string).
+/// pages surface via [`crate::data::server_error_message`], which keeps the
+/// server's diagnostic body (`DataError`'s `Display` omits it) because the
+/// register-error classifier keys on "username"/"password" substrings.
 #[cfg(feature = "mobile")]
 fn data_error_message(err: crate::data::DataError) -> String {
     crate::data::server_error_message(&err)

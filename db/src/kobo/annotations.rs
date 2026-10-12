@@ -60,11 +60,9 @@ pub async fn mark_adopted(
 }
 
 /// Record that this device has fetched the book's file over the wireless
-/// `download` route. This is the fact [`ack_served`] gates on —
-/// serving annotation bytes is not, by itself, proof a device adopted them —
-/// and it also makes a downloaded-but-not-yet-adopted book a
-/// [`changed_book_uuids`] candidate on its own, without waiting for a PATCH.
-/// Idempotent; a repeat download just refreshes the timestamp.
+/// `download` route, the fact [`ack_served`] gates on. It also makes a
+/// downloaded-but-not-yet-adopted book a [`changed_book_uuids`] candidate
+/// without waiting for a PATCH. Idempotent; a repeat refreshes the timestamp.
 pub async fn mark_downloaded(
     pool: &SqlitePool,
     device_id: i64,
@@ -84,15 +82,11 @@ pub async fn mark_downloaded(
     Ok(())
 }
 
-/// Record the fingerprint of the annotation set this device fully downloaded
-/// — but only for a book this device is on record as holding
-/// ([`mark_downloaded`]). A GET served for a book the device never
-/// fetched is a no-op here rather than an ack: without this gate, delivery of
-/// the response body was treated as proof of adoption, and a device that
-/// never actually saved the file still watermarked past it, stranding the
-/// annotations with no redelivery path. Call only once the response body has
-/// actually drained — an unacked change keeps the book in `checkforchanges`,
-/// which is the protocol's only redelivery mechanism.
+/// Record the fingerprint of the annotation set this device fully downloaded,
+/// but only for a book it is on record as holding ([`mark_downloaded`]); a GET
+/// for a never-fetched book is a no-op, not an ack. Call only once the response
+/// body has drained: an unacked change keeps the book in `checkforchanges`, the
+/// protocol's only redelivery mechanism.
 pub async fn ack_served(
     pool: &SqlitePool,
     device_id: i64,
@@ -113,12 +107,10 @@ pub async fn ack_served(
 }
 
 /// Books whose servable annotation set has moved past what this device last
-/// acked — the `checkforchanges` answer.
-///
-/// Candidates are the union of this device's sync-state rows and the user's
-/// books holding Kobo-anchored annotations. A pair that is unadopted *and*
-/// has nothing to serve is never reported (AC5): reporting it would invite a
-/// GET whose empty answer erases the device's pre-sync backlog.
+/// acked: the `checkforchanges` answer. Candidates are the device's sync-state
+/// rows plus the user's books with Kobo-anchored annotations. A pair that is
+/// unadopted and has nothing to serve is never reported: its GET's empty answer
+/// would erase the device's pre-sync backlog.
 pub async fn changed_book_uuids(
     pool: &SqlitePool,
     user_id: i64,

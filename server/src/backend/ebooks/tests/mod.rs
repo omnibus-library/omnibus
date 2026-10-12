@@ -8,6 +8,7 @@ mod chapters;
 mod conditional;
 mod download;
 mod file;
+mod filter_param;
 mod format_filters;
 mod listing;
 mod pages;

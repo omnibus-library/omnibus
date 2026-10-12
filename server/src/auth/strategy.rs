@@ -2,6 +2,12 @@
 //! `PasswordStrategy` (username + argon2id PHC); OIDC and WebAuthn fit the
 //! same shape so they drop in without reshaping the login flow. Consumed
 //! by the handlers in [`super::handlers`].
+//!
+//! The trait uses native async-fn-in-traits, not `#[async_trait]`, which is sound
+//! only because every consumer holds a concrete strategy (no `dyn AuthStrategy`).
+//! `authenticate` returns `impl Future + Send` rather than being an `async fn` so
+//! the future keeps an explicit `Send` bound for `tokio::spawn`-ed handlers. Storing
+//! a strategy behind `dyn` would mean reintroducing `async-trait` or `trait-variant`.
 
 use omnibus_db::auth::AuthError;
 use sqlx::SqlitePool;
@@ -16,23 +22,9 @@ pub struct AuthenticatedUser {
     pub user_id: UserId,
 }
 
-/// Contract for a pluggable auth backend. Implementations do the crypto +
-/// DB lookup; the session-issuing + cookie/bearer plumbing stays in the
-/// handler layer so every strategy lands sessions the same way.
-///
-/// Uses native async-fn-in-traits (stable since Rust 1.75) instead of the
-/// `#[async_trait]` macro, dropping the per-call `Box`-ing it imposed. Sound
-/// here because every consumer holds a *concrete* strategy type — there is no
-/// `dyn AuthStrategy` dispatch anywhere — so the compiler monomorphizes each
-/// call directly.
-///
-/// `authenticate` is written as `fn(..) -> impl Future<..> + Send` rather than
-/// `async fn` so the returned future keeps an explicit `Send` bound (an
-/// `async fn` in a public trait can't carry one — see the `async_fn_in_trait`
-/// lint). The `+ Send` matches the future `#[async_trait]` produced and keeps
-/// the trait usable from `tokio::spawn`-ed axum handlers. If a future strategy
-/// ever needs to be stored behind `dyn`, reintroduce `async-trait` (or
-/// `trait-variant`) for that path.
+/// Contract for a pluggable auth backend. Implementations do the crypto + DB
+/// lookup; session issuing and cookie/bearer plumbing stay in the handler layer,
+/// so every strategy lands sessions the same way.
 pub trait AuthStrategy: Send + Sync {
     /// Short stable tag for logs and admin UI (`"password"`, `"oidc"`, …).
     fn kind(&self) -> &'static str;

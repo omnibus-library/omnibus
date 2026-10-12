@@ -4,7 +4,7 @@
 // its own thread + runtime, so there is no interleaving to deadlock on.
 #![allow(clippy::await_holding_lock)]
 
-use omnibus_shared::Contributor;
+use omnibus_shared::{Contributor, FilterClause, FilterField, FilterMode};
 
 use super::*;
 
@@ -40,7 +40,15 @@ fn fixture() -> Vec<EbookMetadata> {
 
 #[test]
 fn page_from_replica_sorts_by_title_and_slices_by_cursor() {
-    let first = page_from_replica(fixture(), SortKey::Title, SortDir::Asc, &[], &[], None, 2);
+    let first = page_from_replica(
+        fixture(),
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        2,
+    );
     assert_eq!(titles(&first), vec!["Atonement", "Beloved"]);
     assert_eq!(first.total, Some(4));
     assert_eq!(first.next_cursor.as_deref(), Some("off:2"));
@@ -49,7 +57,7 @@ fn page_from_replica_sorts_by_title_and_slices_by_cursor() {
         fixture(),
         SortKey::Title,
         SortDir::Asc,
-        &[],
+        &ViewFilters::default(),
         &[],
         Some("off:2"),
         2,
@@ -62,7 +70,15 @@ fn page_from_replica_sorts_by_title_and_slices_by_cursor() {
 
 #[test]
 fn page_from_replica_flips_direction() {
-    let page = page_from_replica(fixture(), SortKey::Title, SortDir::Desc, &[], &[], None, 10);
+    let page = page_from_replica(
+        fixture(),
+        SortKey::Title,
+        SortDir::Desc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        10,
+    );
     assert_eq!(
         titles(&page),
         vec!["Dune", "Cider House", "Beloved", "Atonement"]
@@ -73,7 +89,15 @@ fn page_from_replica_flips_direction() {
 fn page_from_replica_sorts_by_author_with_title_tiebreak() {
     let mut books = fixture();
     books.push(book("A Widow for One Year", "Irving", &["EPUB"]));
-    let page = page_from_replica(books, SortKey::Author, SortDir::Asc, &[], &[], None, 10);
+    let page = page_from_replica(
+        books,
+        SortKey::Author,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        10,
+    );
     assert_eq!(
         titles(&page),
         vec![
@@ -96,7 +120,15 @@ fn page_from_replica_sorts_authors_surname_first_in_dictionary_order() {
         book("Fortunata y Jacinta", "Benito Pérez", &["EPUB"]),
         book("The Face of a Stranger", "Anne Perry", &["EPUB"]),
     ];
-    let page = page_from_replica(books, SortKey::Author, SortDir::Asc, &[], &[], None, 10);
+    let page = page_from_replica(
+        books,
+        SortKey::Author,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        &[],
+        None,
+        10,
+    );
     assert_eq!(
         titles(&page),
         vec![
@@ -108,19 +140,46 @@ fn page_from_replica_sorts_authors_surname_first_in_dictionary_order() {
     );
 }
 
+fn filters_of(clauses: Vec<FilterClause>) -> ViewFilters {
+    ViewFilters { clauses }
+}
+
 #[test]
 fn page_from_replica_filters_by_format_any_match() {
+    let filters = filters_of(vec![FilterClause::new(
+        FilterField::Format,
+        FilterMode::Include,
+        &["m4b"],
+    )]);
     let page = page_from_replica(
         fixture(),
         SortKey::Title,
         SortDir::Asc,
-        &["m4b".to_string()],
+        &filters,
         &[],
         None,
         10,
     );
     assert_eq!(titles(&page), vec!["Atonement", "Beloved"]);
     assert_eq!(page.total, Some(2));
+}
+
+#[test]
+fn page_from_replica_intersects_clauses_across_fields() {
+    let filters = filters_of(vec![
+        FilterClause::new(FilterField::Format, FilterMode::Include, &["epub"]),
+        FilterClause::new(FilterField::Author, FilterMode::Exclude, &["Irving"]),
+    ]);
+    let page = page_from_replica(
+        fixture(),
+        SortKey::Title,
+        SortDir::Asc,
+        &filters,
+        &[],
+        None,
+        10,
+    );
+    assert_eq!(titles(&page), vec!["Atonement", "Dune"]);
 }
 
 #[test]
@@ -131,7 +190,7 @@ fn page_from_replica_ends_stream_on_foreign_cursor() {
         fixture(),
         SortKey::Title,
         SortDir::Asc,
-        &[],
+        &ViewFilters::default(),
         &[],
         Some("eyJvbmxpbmUiOiJjdXJzb3IifQ"),
         10,
@@ -146,7 +205,7 @@ fn page_from_replica_returns_empty_page_past_the_end() {
         fixture(),
         SortKey::Title,
         SortDir::Asc,
-        &[],
+        &ViewFilters::default(),
         &[],
         Some("off:99"),
         10,
@@ -521,7 +580,7 @@ fn page_from_replica_exclusion_hides_books_and_reports_first_page_receipt() {
         books.clone(),
         SortKey::Title,
         SortDir::Asc,
-        &[],
+        &ViewFilters::default(),
         &["cbz".to_string()],
         None,
         10,
@@ -535,10 +594,54 @@ fn page_from_replica_exclusion_hides_books_and_reports_first_page_receipt() {
         books,
         SortKey::Title,
         SortDir::Asc,
-        &[],
+        &ViewFilters::default(),
         &["cbz".to_string()],
         Some("off:2"),
         2,
     );
     assert_eq!(later.hidden_count, None);
+}
+
+/// Store `books` as the synced replica and wait for the write to land.
+async fn seed_replica(books: &[EbookMetadata]) {
+    let st = store::store().expect("test store");
+    st.kv_put(
+        &cache::keys::ebooks_all(),
+        serde_json::to_string(books).expect("serialize"),
+    );
+    let _ = st.kv_get(&cache::keys::ebooks_all()).await;
+}
+
+#[tokio::test]
+async fn page_from_cache_pages_the_replica_by_the_filters() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    seed_replica(&fixture()).await;
+    let filters = filters_of(vec![FilterClause::new(
+        FilterField::Format,
+        FilterMode::Include,
+        &["m4b"],
+    )]);
+
+    let page = page_from_cache(SortKey::Title, SortDir::Asc, &filters, &[], None, 10)
+        .await
+        .expect("replica is synced");
+
+    assert_eq!(titles(&page), vec!["Atonement", "Beloved"]);
+}
+
+#[tokio::test]
+async fn page_from_cache_declines_when_a_shelf_clause_is_active() {
+    store::init_global_for_tests();
+    let _guard = test_state_lock().lock().unwrap();
+    seed_replica(&fixture()).await;
+    let filters = filters_of(vec![FilterClause::new(
+        FilterField::Shelf,
+        FilterMode::Include,
+        &["7"],
+    )]);
+
+    let page = page_from_cache(SortKey::Title, SortDir::Asc, &filters, &[], None, 10).await;
+
+    assert!(page.is_none(), "the replica holds no shelf membership");
 }

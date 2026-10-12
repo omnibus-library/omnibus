@@ -118,24 +118,11 @@ pub fn validate_password(password: &str) -> AuthResult<()> {
     Ok(())
 }
 
-/// Validate a username before insert. Rules:
-///
-/// * Non-empty after rejecting leading/trailing whitespace.
-/// * Maximum `MAX_USERNAME_LEN` Unicode scalar values (not bytes), so a
-///   handful of multi-byte characters can't cheaply blow past the cap.
-/// * No leading or trailing whitespace — those are almost always a paste
-///   accident and the lack of normalization would let "alice" and
-///   " alice" coexist as distinct rows under `COLLATE NOCASE`.
-/// * No ASCII control characters (U+0000..=U+001F, U+007F). Null bytes
-///   break C-string-shaped consumers; other controls corrupt log output
-///   and terminal/UI rendering.
-///
-/// Deliberately *not* handled here: Unicode homoglyph confusables
-/// (e.g. Cyrillic `а` vs Latin `a`). That's a normalization/display
-/// concern that belongs alongside the admin UI surfaces that render
-/// user-supplied usernames; case-collision dedup via the existing
-/// `users.username COLLATE NOCASE` index is the only collision guarantee
-/// this layer makes.
+/// Validate a username before insert: non-empty, at most `MAX_USERNAME_LEN`
+/// Unicode scalar values (not bytes), no leading or trailing whitespace, and no
+/// ASCII control characters (U+0000..=U+001F, U+007F). Homoglyph confusables
+/// are not handled; the `users.username COLLATE NOCASE` index is the only
+/// collision guarantee.
 pub fn validate_username(username: &str) -> AuthResult<()> {
     if username.is_empty() {
         return Err(AuthError::Validation(

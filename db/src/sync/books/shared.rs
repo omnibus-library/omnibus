@@ -47,22 +47,11 @@ pub(super) async fn rewrite_book_in_place(
     Ok(())
 }
 
-/// Try to attach a brand-new ebook file to an existing book in another
-/// format instead of inserting a fresh `books` row. Two triggers, in
-/// order: (1) the file's uuid is already in `merged_uuids` (it was
-/// attached or merged before — the "this was merged" path, which works
-/// even when titles no longer match); (2) exactly one existing book
-/// matches on normalized title + author and lacks this format. Returns
-/// `true` when the file was attached (the caller skips its normal
-/// insert). Per-file parse errors never attach — their metadata is a
-/// filename fallback, not a real title.
-///
-/// `removed_this_scan` is the set of uuids this same sync just dropped from
-/// the Removed bucket. When the (2) match lands on one of them, the file
-/// isn't a genuine cross-format attachment — it's that book's own native
-/// file returning under a new path (a relocation) — so it's
-/// rewritten in place (updating `books.scan_key`) instead of minting a
-/// `merged_uuids` row.
+/// Try to attach a brand-new ebook file to an existing book in another format
+/// instead of inserting a fresh `books` row. Two triggers, in order: the file's
+/// uuid is already in `merged_uuids` (attached or merged before, even if titles
+/// no longer match), or exactly one existing book matches on normalized title +
+/// author and lacks this format. `true` when attached; parse-error files never attach.
 pub(super) async fn try_attach_new_ebook(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_path: &str,
@@ -115,6 +104,9 @@ pub(super) async fn try_attach_new_ebook(
     else {
         return Ok(false);
     };
+    // A match on a book this sync just removed is its own native file returning under
+    // a new path (a relocation): rewrite it in place (updating `books.scan_key`)
+    // rather than minting a `merged_uuids` row.
     if removed_this_scan.contains(target_uuid.as_str()) {
         rewrite_book_in_place(tx, target_id, &target_uuid, b, alias_maps, covers).await?;
         return Ok(true);
@@ -128,15 +120,11 @@ pub(super) async fn try_attach_new_ebook(
     attach_ebook_file(tx, target_id, &file_ext, library_path, &uuid, b, covers).await
 }
 
-/// Write (or rewrite) an attached ebook's `book_files` row under
-/// `book_id`, record the attachment, adopt the cover when the target has
-/// none, and union the file's identifiers (target's values win). The
-/// target's `books` scalars and links are deliberately left untouched —
-/// target metadata wins — but the FTS row is refreshed via the door so
-/// the newly-unioned identifiers (incl. an attached-only ISBN) become
-/// searchable immediately.
-///
-/// Returns `Ok(false)` without writing when another file holds the slot.
+/// Write (or rewrite) an attached ebook's `book_files` row under `book_id`,
+/// record the attachment, adopt the cover when the target has none, and union the
+/// file's identifiers (target's values win). The target's `books` scalars and
+/// links stay untouched but its FTS row is refreshed. `Ok(false)`, writing
+/// nothing, when another file holds the slot.
 pub(super) async fn attach_ebook_file(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -233,15 +221,11 @@ pub(in crate::sync) async fn clear_missing_files_flag(
     Ok(())
 }
 
-/// UPDATE the `books` row for a Changed entry in place (preserving id).
-/// All scalar columns that `insert_book_row` writes get refreshed; the
-/// link tables and FTS row are handled by the caller.
-///
-/// Also refreshes `scan_key` from `b`'s own filename. For the Changed bucket
-/// and the New-bucket same-scan_key rewrite this is a no-op (the entry
-/// already matched on that value); it's load-bearing for the New-bucket
-/// relocation rewrite, where the incoming file's path is the book's *new*
-/// scan_key.
+/// UPDATE the `books` row for a Changed entry in place (preserving id),
+/// refreshing every scalar column `insert_book_row` writes; link tables and FTS
+/// are the caller's. Also refreshes `scan_key` from `b`'s filename: a no-op for
+/// Changed and same-scan_key rewrites, but load-bearing for the New-bucket
+/// relocation rewrite, where the incoming path is the book's *new* scan_key.
 async fn update_book_row(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -375,29 +359,17 @@ pub(super) async fn insert_book_row(
     Ok(InsertedBook { book_id, uuid })
 }
 
-/// Insert the per-book metadata join rows (authors + contributors, series,
-/// tags, publisher, language, identifiers).
-///
-/// The multi-valued relations (authors, tags, identifiers) are written in
-/// batches rather than one statement per term: collect the distinct terms
-/// for this book, `INSERT OR IGNORE` them all in one statement, then write
-/// the join rows with one `INSERT ... SELECT ... JOIN` that resolves each id
-/// inline by name (NOCASE) — no separate id-resolution `SELECT`. Each batched
-/// statement is chunked to stay under SQLite's bound-parameter limit. This
-/// collapses the old ~4-queries-per-author / 2-queries-per-tag fan-out into a
-/// constant handful per book, which keeps the SQLite write lock from being
-/// held for the whole of a bulk import. Series / publisher / language are
-/// single-valued per book, so they keep the simple resolve-then-link path.
-///
-/// `alias_maps` is the whole-batch reindex-resurrection guard lookup
-/// built once by `super::collect_entity_alias_maps` before the per-book
-/// write loop starts — not re-resolved here.
+/// Insert the per-book metadata join rows (authors + contributors, series, tags,
+/// publisher, language, identifiers). `alias_maps` is the whole-batch resurrection
+/// guard built once by `super::collect_entity_alias_maps`.
 pub(super) async fn insert_metadata_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
     m: &EbookMetadata,
     alias_maps: &EntityAliasMaps,
 ) -> Result<(), sqlx::Error> {
+    // Authors, tags and identifiers are batch-written (see each callee) so a bulk
+    // import doesn't hold the SQLite write lock for its whole length.
     insert_author_links(tx, book_id, m, &alias_maps.authors).await?;
 
     // Cleaned (trimmed, embedded-index-stripped — #1912) so the linked
@@ -440,17 +412,11 @@ pub(super) async fn insert_metadata_links(
     Ok(())
 }
 
-/// Batch-insert the book's tag (subject) join rows: one `INSERT OR IGNORE`
-/// into `tags` for all distinct non-empty subjects, then one link insert that
-/// resolves ids via a NOCASE join. A subject a completed library-cleanup
-/// merge already absorbed skips the `tags` insert and links straight
-/// to its `entity_aliases` canonical id instead, so reindexing a file that
-/// still names the merged-away tag can't resurrect it.
-///
-/// `tag_aliases` is the whole-batch alias map — filtered down here to
-/// just this book's own tags before being handed to [`link_aliased_tags`],
-/// which links straight to every id it's given; a batch-wide map would wrongly
-/// link this book to another book's aliased tags too.
+/// Batch-insert the book's tag (subject) join rows: one `INSERT OR IGNORE` into
+/// `tags` for all distinct non-empty subjects, then one link insert resolving ids
+/// via a NOCASE join. A subject a library-cleanup merge already absorbed skips the
+/// `tags` insert and links to its `entity_aliases` canonical id, so reindexing a
+/// file still naming the merged-away tag can't resurrect it.
 async fn insert_tag_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -469,6 +435,8 @@ async fn insert_tag_links(
         return Ok(());
     }
 
+    // Filter the batch-wide map to this book's own tags: `link_aliased_tags` links
+    // straight to every id it's given, so the whole map would link other books' tags.
     let aliased: HashMap<String, i64> = tags
         .iter()
         .filter_map(|t| tag_aliases.get(*t).map(|id| ((*t).to_string(), *id)))
@@ -534,13 +502,10 @@ async fn link_aliased_tags(
     Ok(())
 }
 
-/// Batch-insert the book's identifiers in one statement. `INSERT OR IGNORE`
-/// keeps every distinct `(book_id, scheme, value)` tuple — a book carrying
-/// both an ISBN-10 and an ISBN-13 keeps both — and silently drops an exact
-/// duplicate tuple (the same OPF listing one identifier twice). The wider
-/// `(book_id, scheme, value)` PK (migration 0022) makes this lossless; the
-/// cross-format attach path shares this writer, so an attached file's
-/// identifiers union into the target rather than clobbering it.
+/// Batch-insert the book's identifiers in one statement. `INSERT OR IGNORE` keeps
+/// every distinct `(book_id, scheme, value)` tuple (an ISBN-10 and an ISBN-13
+/// both survive) and drops only an exact duplicate. The cross-format attach path
+/// shares this writer, so an attached file's identifiers union into the target.
 async fn insert_identifier_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,

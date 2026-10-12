@@ -14,14 +14,11 @@ use super::{
     MetadataOverridesError,
 };
 
-/// Clear a book's cover override, reverting `cover_url` to the scanned
-/// original while preserving any text-field overrides that remain. A no-op
-/// if the book has no cover override active.
-///
-/// When no text overrides remain either, the whole `metadata_overrides` row
-/// is deleted (mirrors [`super::delete_metadata_overrides`]'s FTS-restore
-/// step) so `has_override` reads false again — otherwise an empty-but-present
-/// row would leave the "Override active" indicator stuck on.
+/// Clear a book's cover override, reverting `cover_url` to the scanned original
+/// while preserving any text-field overrides that remain. A no-op if the book
+/// has no cover override active. When no text overrides remain either, the
+/// whole `metadata_overrides` row is deleted so `has_override` reads false
+/// again (an empty-but-present row would leave "Override active" stuck on).
 pub async fn clear_cover_override(
     pool: &SqlitePool,
     book_uuid: &str,
@@ -73,14 +70,11 @@ pub async fn clear_cover_override(
     Ok(())
 }
 
-/// Apply a `MetadataOverrides` to an `EbookMetadata`, mutating it in place,
-/// gated by whether `precedence` (the owning scan root's configured
-/// metadata-source order) ranks `OmnibusOverrides` above
-/// `EmbeddedTags` — the two sources with a real data provider today (see
-/// [`overrides_outrank_embedded`]). Scalar fields are replaced when `Some`;
-/// m2m fields (`creators`, `subjects`, `genres`) replace entirely when
-/// present. `genres` has no scanned counterpart — this is the only place a
-/// book's genres are ever populated.
+/// Apply a `MetadataOverrides` to an `EbookMetadata` in place, gated by whether
+/// `precedence` (the owning scan root's metadata-source order) ranks
+/// `OmnibusOverrides` above `EmbeddedTags` (see [`overrides_outrank_embedded`]).
+/// Scalar fields are replaced when `Some`; m2m fields (`creators`, `subjects`,
+/// `genres`) replace entirely when present. `genres` is only populated here.
 pub(crate) fn apply_overrides(
     book: &mut EbookMetadata,
     uuid: &str,
@@ -156,15 +150,9 @@ pub(crate) fn apply_overrides(
 
 /// Whether `MetadataSource::OmnibusOverrides` should win over
 /// `MetadataSource::EmbeddedTags` (the scanned baseline) under a library's
-/// configured precedence order. List order is lowest-to-highest priority,
-/// so overrides win when they appear *after* embedded tags.
-/// `FolderStructure`/`OpfSidecar`/`ProviderMatch` have no data provider yet
-/// (see [`apply_overrides`]'s doc comment), so their position in the list
-/// doesn't currently affect this.
-///
-/// A malformed/partial list missing one of the two real sources falls back
-/// to the legacy always-wins behavior rather than silently dropping
-/// overrides.
+/// configured precedence order. List order is lowest-to-highest priority, so
+/// overrides win when they appear *after* embedded tags. A malformed list
+/// missing one of the two real sources falls back to always-wins.
 fn overrides_outrank_embedded(precedence: &[MetadataSource]) -> bool {
     let embedded = precedence
         .iter()
@@ -179,13 +167,10 @@ fn overrides_outrank_embedded(precedence: &[MetadataSource]) -> bool {
 }
 
 /// Write a user-uploaded override cover to disk, normalized for storage by
-/// [`crate::covers::normalize_override_cover`] — WebP is transcoded to JPEG
-/// (Kobo renders no cover for a WebP) and an oversized image is downscaled.
-///
-/// Normalizing here rather than on the read path means the conversion is paid
-/// once per upload instead of once per request, and every client sees the same
-/// bytes. The trade-off is that covers written before this existed keep their
-/// original format until re-uploaded.
+/// [`crate::covers::normalize_override_cover`]: WebP is transcoded to JPEG (Kobo
+/// renders no cover for a WebP) and an oversized image is downscaled. This is
+/// paid once per upload rather than per request; covers written before keep
+/// their original format until re-uploaded.
 pub fn write_override_cover(
     uuid: &str,
     mime: &str,

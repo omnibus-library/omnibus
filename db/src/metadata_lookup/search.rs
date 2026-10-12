@@ -28,25 +28,18 @@ use super::MetadataLookupConfig;
 /// binds on three providers.
 const FANOUT_CONCURRENCY: usize = 6;
 
-/// Max candidates one provider may contribute, so a chatty source can't
-/// crowd the others out of the picker.
-///
-/// Distinct from `super::SEARCH_LIMIT`, which sizes the *check-in* picker to a
-/// phone screen and also caps what each provider is asked for upstream — so in
-/// practice that request limit binds first, and this is the backstop for a
-/// provider that answers with more than it was asked for.
+/// Max candidates one provider may contribute, so a chatty source can't crowd
+/// the others out of the picker. Distinct from `super::SEARCH_LIMIT`, which
+/// sizes the *check-in* picker and also caps what each provider is asked for
+/// upstream, so it usually binds first; this is the backstop for a provider
+/// that answers with more than it was asked for.
 pub const FANOUT_PROVIDER_LIMIT: usize = 10;
 
 /// Search every configured provider concurrently and return their candidates
-/// side by side.
-///
-/// `providers` names the subset to ask; `None` means every configured one.
-/// Unconfigured providers are reported, never requested.
-///
-/// Infallible by design: a provider that fails becomes
-/// [`ProviderSearchStatus::Failed`] on its own row rather than an error for
-/// the whole search, because one source being down says nothing about what the
-/// others found.
+/// side by side. `providers` names the subset to ask; `None` means every
+/// configured one. Unconfigured providers are reported, never requested.
+/// Infallible by design: a failing provider becomes
+/// [`ProviderSearchStatus::Failed`] on its own row, not an error for the search.
 pub async fn search_all_providers(
     config: &MetadataLookupConfig,
     query: &SearchQuery,

@@ -8,16 +8,9 @@ use dioxus::prelude::*;
 
 /// Props for the [`Field`] component.
 ///
-/// The outer element is a `<div>`, and the visible label is a real
-/// `<label for={input_id}>`. **The error / hint message is rendered as a
-/// sibling of the input wrapper, not inside the label** — wrapping the
-/// alert in the `<label>` (as a prior version did) pollutes the input's
-/// accessible name, so `getByLabel("Password", { exact: true })` stops
-/// matching as soon as an error appears.
-///
-/// Callers pass any input element (`input`, `select`, `textarea`) as
-/// `children` and the matching `input_id` so the `<label>` can bind via
-/// `for=`.
+/// The label is a real `<label for={input_id}>` bound to the input passed as
+/// `children`. The error / hint message is a sibling of the input wrapper,
+/// not inside the label, so it never pollutes the input's accessible name.
 #[derive(Props, Clone, PartialEq)]
 pub struct FieldProps {
     /// Visible label text.
@@ -37,12 +30,9 @@ pub struct FieldProps {
     /// + check mark).
     #[props(default = false)]
     pub success: bool,
-    /// Optional slot rendered visually at the top-right of the field
-    /// (e.g. a "Forgot?" link). Lives **after** the input in DOM order
-    /// and is positioned by CSS, so tabbing through the form goes
-    /// label → input → action → next field rather than label → action →
-    /// input (the latter pulls focus to the action between fields and
-    /// traps typed characters the user meant for the input).
+    /// Optional slot at the top-right of the field (e.g. a "Forgot?" link).
+    /// It sits **after** the input in DOM order and is positioned by CSS, so
+    /// tabbing goes label → input → action → next field.
     #[props(default)]
     pub action: Option<Element>,
     /// The input element.

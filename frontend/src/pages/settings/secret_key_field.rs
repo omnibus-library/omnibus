@@ -153,9 +153,8 @@ struct SecretKeyFieldSignals {
 /// Apply a save/clear outcome to the signals: on success, install the new
 /// status, clear the input, and report success; on failure, report it
 /// without touching the stored status. Always clears `in_flight` last.
-/// `verb_infinitive` ("save"/"clear") and `verb_past` ("saved"/"cleared")
-/// are both needed — reusing the past-tense form in the failure message
-/// produces "Failed to saved the key".
+/// `verb_infinitive` ("save"/"clear") and `verb_past` ("saved"/"cleared") are
+/// both needed: the failure message would read "Failed to saved the key".
 fn apply_key_write_outcome(
     mut sigs: SecretKeyFieldSignals,
     kind: SecretKeyKind,

@@ -100,3 +100,17 @@ fn apply_leaves_library_unchanged_when_reading_state_changes() {
 
     assert_eq!(device, before);
 }
+
+#[test]
+fn mint_hardware_id_returns_mock_prefix_and_32_hex_digits() {
+    let id = mint_hardware_id().unwrap();
+
+    let digits = id.strip_prefix("mock-").unwrap();
+    assert_eq!(digits.len(), 32);
+    assert!(digits.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')));
+}
+
+#[test]
+fn mint_hardware_id_differs_between_calls() {
+    assert_ne!(mint_hardware_id().unwrap(), mint_hardware_id().unwrap());
+}

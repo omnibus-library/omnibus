@@ -284,10 +284,9 @@ fn profile_name_form(
 
 /// Display name + profile picture for the signed-in user.
 ///
-/// On a successful write it re-fetches `/api/auth/me` into the app-wide
-/// `CurrentUser` context, so the user menu, journal bylines and the mobile
-/// "You" tab all repaint without a reload, and bumps the avatar cache-bust so
-/// the replaced image (same URL, new bytes) is actually re-fetched.
+/// A successful write re-fetches `/api/auth/me` into the app-wide
+/// `CurrentUser` context (user menu, journal bylines and the "You" tab repaint
+/// without a reload) and bumps the avatar cache-bust so the new image loads.
 #[component]
 pub(crate) fn ProfileCard() -> Element {
     let server_url = use_server_url();

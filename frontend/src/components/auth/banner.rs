@@ -49,10 +49,8 @@ impl BannerKind {
 /// Props for the [`Banner`] component. Use [`BannerKind`] to pick
 /// severity; `title` is required, `message` and `action` are optional.
 ///
-/// `dismissible` renders an inline dismiss button — purely visual here;
-/// callers are responsible for hiding the banner in response to the
-/// click. (The primitive stays stateless so the same component works
-/// under SSR.)
+/// `dismissible` renders a dismiss button only; the caller hides the banner
+/// on click, which keeps the primitive stateless and SSR-safe.
 #[derive(Props, Clone, PartialEq)]
 pub struct BannerProps {
     /// Severity tier — drives color, icon, and ARIA role.

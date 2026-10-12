@@ -159,12 +159,9 @@ pub async fn refetch_author_photos(_server_url: &str) -> Result<(), DataError> {
         .map_err(note_server_fn_err)
 }
 
-/// Admin "Delete author". Removes the author taxonomy row, drops every
-/// `books_authors_link` for it, and adds the name to `ignored_authors`
-/// so the next `indexer::reindex` does not silently resurrect the row.
-/// Returns the number of books that were un-linked (used by the
-/// confirmation modal's "this affects N books" copy). Web-only — mobile
-/// parity is a deliberate follow-up.
+/// Admin "Delete author". Removes the author row and its `books_authors_link`s
+/// and adds the name to `ignored_authors` so the next `indexer::reindex` does
+/// not resurrect it. Returns the number of books un-linked. Web-only.
 #[cfg(not(feature = "mobile"))]
 pub async fn delete_author(_server_url: &str, id: i64) -> Result<u64, DataError> {
     crate::rpc::rpc_delete_author(id)
@@ -186,14 +183,10 @@ pub async fn set_author_photo_url(
         .map_err(note_server_fn_err)
 }
 
-/// Multipart upload of an author photo on the web client.
-///
-/// Server functions can't carry binary file uploads (they JSON-serialize
-/// their arguments), so this bypasses RPC and POSTs the bytes directly to
-/// the REST endpoint via `gloo-net`. The browser auto-attaches the
-/// `omnibus_session` cookie on a same-origin request, so no manual auth
-/// plumbing is needed. SSR doesn't call this — it only fires from a user
-/// `onchange` handler after hydration.
+/// Multipart upload of an author photo on the web client. Bypasses RPC and
+/// POSTs the bytes to the REST endpoint via `gloo-net` (server functions can't
+/// carry binary uploads); the same-origin session cookie authenticates it.
+/// SSR doesn't call this: it only fires from a user `onchange` after hydration.
 #[cfg(feature = "web")]
 pub async fn upload_author_photo(
     _server_url: &str,

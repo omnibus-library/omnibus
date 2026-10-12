@@ -7,22 +7,17 @@ use sqlx::{Executor, Sqlite, SqlitePool};
 
 use super::ShelfError;
 
-/// Appended to the owner's display name — or username, when they haven't set
-/// one — for the Wishlist shelf name (`alice` → `alice's Wishlist`); migration
-/// `0054` renamed the rows seeded before it.
-///
-/// The composed name is denormalized into `shelves.name`, so
-/// `db::auth::set_display_name` re-derives it whenever the display name
-/// changes. Both must keep using the same expression.
+/// Appended to the owner's display name (or username, when unset) for the
+/// Wishlist shelf name (`alice` → `alice's Wishlist`). The composed name is
+/// denormalized into `shelves.name`, so `db::auth::set_display_name` re-derives
+/// it whenever the display name changes; both must use the same expression.
 pub(crate) const WISHLIST_NAME_SUFFIX: &str = "'s Wishlist";
 
-/// Ensure one user has a Wishlist shelf. Idempotent *and* race-safe: the
-/// `WHERE NOT EXISTS` guard skips the common already-provisioned case, and the
-/// `INSERT OR IGNORE` lets the `idx_shelves_owner_wishlist` partial-unique index
-/// absorb a concurrent double-provision (two writers both passing the guard)
-/// without erroring. Runs against any executor so `create_user` can call it
-/// inside its registration transaction — the `FROM users` join reads the row
-/// that transaction just inserted, so the name is available before commit.
+/// Ensure one user has a Wishlist shelf. Idempotent and race-safe: a `WHERE NOT
+/// EXISTS` guard skips the common case, and `INSERT OR IGNORE` lets the
+/// `idx_shelves_owner_wishlist` partial-unique index absorb a concurrent
+/// double-provision. Takes any executor, but the `users` row must be visible to it
+/// (`create_user` passes its registration tx); otherwise it silently inserts nothing.
 pub async fn provision_wishlist_shelf<'e, E>(exec: E, user_id: i64) -> Result<(), ShelfError>
 where
     E: Executor<'e, Database = Sqlite>,

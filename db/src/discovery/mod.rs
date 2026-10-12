@@ -23,18 +23,13 @@ pub use series::get_series;
 pub use tags::get_tag_cloud;
 
 /// The "in the library" predicate the detail reads share with the browse
-/// indexes (`browse::visible`): under a real scan root — ghosted or not, so an
-/// author doesn't vanish while a file is merely missing — or holding a
-/// checked-in physical copy. What it excludes is the wishlist-only book:
-/// minted under the `physical://local` pseudo-root with no copy, hidden from
-/// every grid and index, and until now counted on its author's and series'
-/// pages as "in your library" all the same — one reader's wish, shown to
-/// every other as a book they hold.
-///
-/// `book` / `root` name the `books` / `scan_roots` aliases in the enclosing
-/// query. `IS NOT` keeps a book with no root row at all (there are none, but
-/// a `LEFT JOIN` has to answer for it) on the library side.
+/// indexes (`browse::visible`): under a real scan root (ghosted or not) or
+/// holding a checked-in physical copy. A wishlist-only book under the
+/// `physical://local` pseudo-root is excluded. `book` / `root` name the `books`
+/// / `scan_roots` aliases in the enclosing query.
 fn library_member(book: &str, root: &str) -> String {
+    // `IS NOT` keeps a book with no root row at all (none exist, but a `LEFT JOIN`
+    // must answer for it) on the library side.
     format!(
         "({root}.path IS NOT '{}' \
           OR EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = {book}.uuid))",

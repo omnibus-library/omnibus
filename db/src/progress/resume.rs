@@ -8,32 +8,18 @@ use sqlx::{Row, SqlitePool};
 use super::enrich::{enrich_record, PositionDetail};
 use super::{parse_format, ProgressError};
 
-/// The user's most recent progress rows across both formats, newest first
-/// by **client event time** — `COALESCE(client_updated_at, updated_at)`, so
-/// a queued offline replay landing late doesn't jump a week-old book to the
-/// top. Feeds the "pick up where you left off" surfaces via
-/// [`resume_points`].
-///
-/// Books the user has marked `unread` or `finished` are excluded: both are
-/// statements that they are not mid-book, and a completed book otherwise sat
-/// at the top of the rail until five newer positions pushed it off.
-///
-/// A **missing** `book_read_status` row keeps its position. 0046 treats
-/// absence as `unread` everywhere else, and this is the deliberate exception:
-/// absence here means "nothing has been said", not "not reading". Every
-/// status write is best-effort (`read_status_auto`, the players), so hiding on
-/// absence would drop a book off the rail whenever one of those requests was
-/// lost — and would hide every row written before that auto-transition
-/// existed.
-///
-/// The join is per-book while progress is per-`(book, format)`, so finishing
-/// a dual-format book clears both its reading and its listening card. Read
-/// status is a fact about the book, not about one of its files.
+/// The user's most recent progress rows across both formats, newest first by
+/// **client event time** (`COALESCE(client_updated_at, updated_at)`), so a late
+/// offline replay doesn't jump a week-old book to the top; feeds [`resume_points`].
+/// Excludes books marked `unread` or `finished` (a status is per book, so both
+/// formats go) but keeps a **missing** status row: absence is not "unread" here.
 pub async fn recent_progress(
     pool: &SqlitePool,
     user_id: i64,
     limit: i64,
 ) -> Result<Vec<ProgressRecord>, ProgressError> {
+    // Absence keeps its position: status writes are best-effort, so hiding on a
+    // missing row would drop a book whenever one of those requests was lost.
     let rows = sqlx::query(
         "SELECT rp.book_uuid, rp.format, rp.epub_cfi, rp.audio_position_seconds,
                 rp.progress_percent, rp.kobo_location, rp.book_file_id,

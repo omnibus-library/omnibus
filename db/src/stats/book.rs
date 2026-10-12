@@ -20,27 +20,11 @@ const BOOK_SESSIONS: &str = "\
     SELECT book_uuid, started_at, ended_at, seconds_listened AS secs, 1 AS is_audio \
         FROM listening_sessions WHERE user_id = ? AND book_uuid = ?";
 
-/// Aggregate one user's reading/listening insights for a single book:
-/// earliest session start, total seconds and sitting count across both
-/// formats, the single longest sitting (length + when it started), and
-/// per-day activity for the spark. `uuid` is resolved to the canonical
-/// `books.uuid` first (mirroring `db::progress`'s write path), so a link into
-/// a book that was later merged away still finds the sessions recorded under
-/// the surviving book. Returns `None` when the uuid doesn't resolve to a live
-/// book, or the book resolves but has no sessions yet — both drive the stats
-/// stop's empty state.
-///
-/// Every count here is over [`sessionize::stitched`] sittings rather than raw
-/// checkpoint rows, so the figures don't vary with the reporting client's
-/// flush cadence. The per-day spark stays on the raw rows — a sitting that
-/// crosses midnight belongs to both days.
-///
-/// `sessions` counts only sittings of at least
-/// [`sessionize::MIN_SITTING_SECS`], while `seconds_total` sums every row the
-/// stitch grouped. A book whose only activity is glances therefore reports
-/// zero sessions and takes the empty state, the same as one never opened.
-/// `sitting_seconds` is the counted sittings' own total, so a caller wanting
-/// a per-sitting mean divides two figures drawn from the same population.
+/// Aggregate one user's reading/listening insights for a single book across both
+/// formats, over [`sessionize::stitched`] sittings; `uuid` resolves to the
+/// canonical `books.uuid` first. `sessions` and `sitting_seconds` count only
+/// sittings of at least [`sessionize::MIN_SITTING_SECS`], `seconds_total` every
+/// row. `None` for an unknown book or one with no counted sittings (empty state).
 pub async fn book_insights(
     pool: &SqlitePool,
     user_id: i64,

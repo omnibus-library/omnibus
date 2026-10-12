@@ -279,12 +279,10 @@ fn require_upload(user: &AuthUser) -> Result<(), UploadError> {
     }
 }
 
-/// Magic-byte + size gate for a fully-buffered upload. Intentionally kept
-/// unwired: [`stream_upload_to_tempfile`] enforces the same two invariants
-/// incrementally, chunk-by-chunk, specifically so an upload is never fully
-/// buffered in RAM — swapping this in would mean buffering the whole file
-/// first, defeating that streaming design. Kept as a unit-tested reference
-/// for the two invariants the streaming path must independently uphold.
+/// Magic-byte + size gate for a fully-buffered upload. Intentionally unwired:
+/// [`stream_upload_to_tempfile`] enforces the same two invariants chunk by chunk so an
+/// upload is never fully buffered in RAM. Kept as a unit-tested reference for the
+/// invariants the streaming path must independently uphold.
 #[allow(dead_code)]
 fn validate_file_bytes(bytes: &[u8], cap: usize) -> Result<(), UploadError> {
     if bytes.len() > cap {
@@ -466,13 +464,10 @@ pub(super) async fn post_inspect_ebook(
     Ok(Json(inspection).into_response())
 }
 
-/// The name the parser sees for an inspected upload: the client's own file
-/// name, reduced to its stem, under the sniffed extension. The parsers fall
-/// back to that stem for a title when the file embeds none — a PDF with no
-/// Info dict, a CBZ without `ComicInfo.xml` — so a synthetic name here
-/// would surface as the book's title in the review form. Only the last
-/// path component is kept: the name is never used to place the file, but
-/// a stem is what the reader will see.
+/// The name the parser sees for an inspected upload: the client's own file name, reduced
+/// to its stem, under the sniffed extension. The parsers fall back to that stem for a
+/// title when the file embeds none, so a synthetic name would surface as the book's title
+/// in the review form. Only the last path component is kept; the name never places the file.
 fn upload_filename(original: Option<&str>, ext: &str) -> String {
     let base = original
         .map(|name| name.rsplit(['/', '\\']).next().unwrap_or(name))
@@ -548,29 +543,25 @@ struct CommitForm {
     extras: CommitExtras,
 }
 
-/// The creators to save when the review form's Author differs from the file's
-/// first creator. The form edits the first *name* only: that creator
-/// keeps its role and file-as form, and the others the file declared ride
-/// along unchanged, so correcting a garbled lead author never drops a
-/// co-author or a refinement. The `id` is cleared because the renamed
-/// contributor no longer denotes the author row the file's name resolved to.
+/// The creators to save when the review form's Author differs from the file's first
+/// creator. The form edits the first *name* only: that creator keeps its role and file-as
+/// form and the others ride along unchanged, so correcting a garbled lead author never
+/// drops a co-author or a refinement.
 pub(super) fn edited_creators(first: String, embedded: &[Contributor]) -> Vec<Contributor> {
     let mut lead = embedded.first().cloned().unwrap_or_default();
     lead.name = first;
+    // Renamed, so no longer the author row the file's name resolved to.
     lead.id = None;
     std::iter::once(lead)
         .chain(embedded.iter().skip(1).cloned())
         .collect()
 }
 
-/// File the uploaded EPUB or PDF into the canonical library folder using the
-/// user's confirmed title/author, reindex so the indexer inserts the book,
-/// then layer the review edits and any staged cover onto it. Returns 201
-/// with the new book's uuid.
-///
-/// Everything that can be refused — the overrides diff, a staged cover's
-/// bytes or its provider fetch — is settled *before* the file is placed, so
-/// a rejected review never leaves a file in the library.
+/// File the uploaded EPUB or PDF into the canonical library folder using the user's
+/// confirmed title/author, reindex so the indexer inserts the book, then layer the review
+/// edits and any staged cover onto it. Returns 201 with the new book's uuid. Everything
+/// that can be refused (the overrides diff, a staged cover's bytes or provider fetch) is
+/// settled *before* the file is placed, so a rejected review leaves no file in the library.
 pub(super) async fn post_upload_ebook(
     user: AuthUser,
     State(state): State<AppState>,
@@ -660,14 +651,11 @@ async fn copy_uploaded_ebook_to_library(
     })
 }
 
-/// Run `scan` so the indexer mints the uuid, extracts the cover, and updates
-/// FTS — the single source of truth for inserting books — then map the
-/// upload placed at `placed` back to its row via the durable scan_key.
-///
-/// On failure the upload is taken back out ([`UploadError::NotIndexed`]).
-/// When the scan ran but the file resolved to no book, what the scan recorded
-/// for it is unknown, so `scan` is queued once more to settle it: nothing may
-/// go on claiming a file that is gone.
+/// Run `scan` so the indexer mints the uuid, extracts the cover, and updates FTS — the
+/// single source of truth for inserting books — then map the upload placed at `placed`
+/// back to its row via the durable scan_key. On failure the upload is taken back out
+/// ([`UploadError::NotIndexed`]); if the scan ran but the file resolved to no book, `scan`
+/// is queued once more to settle what it recorded, so nothing claims a gone file.
 async fn reindex_and_resolve_uploaded_uuid(
     state: &AppState,
     scan: impl Fn() -> Task,

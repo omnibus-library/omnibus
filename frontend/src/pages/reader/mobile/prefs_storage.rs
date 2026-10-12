@@ -104,19 +104,11 @@ fn parse_stored(stored: StoredPrefs) -> ParsedPrefs {
     }
 }
 
-/// Load every persisted reader pref from the WebView's `localStorage` and
-/// apply the present ones to `prefs`'s signals in place. Best-effort: an
-/// eval/parse failure, or a `recv` that never resolves within
-/// [`LOAD_TIMEOUT`], just leaves the caller's already-seeded defaults rather
-/// than blocking `mount_and_drain` forever on "Loading…".
-///
-/// Timing tradeoff (AC3): unlike web's synchronous `web_sys` read, this eval
-/// is necessarily async, so `mobile::mount_and_drain` awaits it *before*
-/// building the glue's init options — the reader surface itself always
-/// mounts with the persisted values on the happy path. What can still lag
-/// one frame behind is any reader chrome that reads these signals before
-/// this resolves (e.g. the AA panel, if opened during that window); there is
-/// no synchronous mobile localStorage API to avoid that gap entirely.
+/// Load every persisted reader pref from the WebView's `localStorage` and apply
+/// the present ones to `prefs`'s signals in place. Best-effort: an eval/parse
+/// failure, or a `recv` that doesn't resolve within [`LOAD_TIMEOUT`], leaves the
+/// seeded defaults. Async (unlike web's read), so chrome reading these signals
+/// before it resolves, e.g. the AA panel, can lag one frame.
 pub(crate) async fn load_and_apply_reader_prefs(mut prefs: ReaderPrefs) {
     let mut ev = eval(&load_all_js());
     let Ok(Ok(stored)) = tokio::time::timeout(LOAD_TIMEOUT, ev.recv::<StoredPrefs>()).await else {

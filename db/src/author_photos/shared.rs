@@ -10,26 +10,11 @@ pub(super) fn default_user_agent() -> String {
     crate::http_client::default_user_agent()
 }
 
-/// Process-wide shared `reqwest::Client`.
-///
-/// `reqwest::Client` is designed to be cloned and reused: a clone shares the
-/// underlying connection pool and TLS session cache. Building one per call
-/// (the previous behaviour) paid a fresh TLS handshake on every request and
-/// reused no connections across the search + cover-download pair, or across
-/// the many author-photo resolutions a deployment fires in sequence.
-///
-/// We hand out clones of this single client so cascade resolutions share one
-/// pool. The per-request timeout differs between call sites, so it's applied
-/// on the `RequestBuilder` rather than baked into the client.
-///
-/// Note: the admin "paste image URL" path (`remote::fetch_remote_image_with`)
-/// does **not** use this client — it builds a per-call client pinned to
-/// pre-validated socket addresses to prevent SSRF via DNS rebinding.
-///
-/// Fallible: `reqwest::Client::builder().build()` can fail at runtime (TLS
-/// backend init, platform config). Callers propagate the error via `?`
-/// rather than panicking; a transient failure is then logged the same as
-/// any other HTTP error and the next call retries.
+/// Process-wide shared `reqwest::Client`; callers get clones, so cascade
+/// resolutions share one connection pool. Set per-request timeouts on the
+/// `RequestBuilder`. Never use it for user-supplied URLs: those go through
+/// `remote::fetch_remote_image_with`, which pins validated addresses (SSRF).
+/// Fallible: propagate the build error with `?`; the next call retries.
 pub(super) fn shared_client() -> reqwest::Result<reqwest::Client> {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     if let Some(c) = CLIENT.get() {

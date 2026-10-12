@@ -66,12 +66,10 @@ impl RateLimits {
     }
 }
 
-/// Returns true when the operator has opted in to consulting the client-supplied
-/// `X-Forwarded-For` header as the rate-limit key (via
-/// `OMNIBUS_TRUST_FORWARDED_FOR={1,true,yes}`). Exposed `pub` so the server
-/// entrypoint can emit a startup warning — enabling this without a trusted
-/// reverse proxy in front of Axum lets any client rotate the header per
-/// request and defeats the per-IP limiter entirely.
+/// Returns true when the operator has opted in (via `OMNIBUS_TRUST_FORWARDED_FOR={1,true,yes}`)
+/// to using the client-supplied `X-Forwarded-For` header as the rate-limit key. `pub` so the
+/// entrypoint can warn: enabling it without a trusted reverse proxy lets any client rotate
+/// the header per request and defeat the per-IP limiter.
 pub fn trust_forwarded_for() -> bool {
     std::env::var("OMNIBUS_TRUST_FORWARDED_FOR").is_ok_and(|v| is_truthy(&v))
 }
@@ -96,22 +94,17 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
-    /// Default policy tuned for the auth endpoints: 10 requests per 60 s per IP.
-    ///
-    /// Mount on the auth sub-router via
-    /// `from_fn_with_state((limiter, prefixes), rate_limit_paths)` with a
-    /// prefix allow-list so authenticated reads like `/api/auth/me` are
-    /// exempt — see [`rate_limit_paths`] for the expected `prefixes` shape.
+    /// Default policy tuned for the auth endpoints: 10 requests per 60 s per IP. Mount on the
+    /// auth sub-router via `from_fn_with_state((limiter, prefixes), rate_limit_paths)` with a
+    /// prefix allow-list so authenticated reads like `/api/auth/me` are exempt; see
+    /// [`rate_limit_paths`] for the expected `prefixes` shape.
     pub fn new() -> Self {
         Self::with_policy(Duration::from_secs(WINDOW_SECS), MAX_REQUESTS)
     }
 
-    /// Construct a limiter with an explicit `(window, max requests)` policy.
-    ///
-    /// Used by the search family with a tighter budget (30 / 10s). The
-    /// returned limiter is otherwise identical to [`RateLimiter::new`] —
-    /// the same `Arc` can be shared across REST and RPC routers (via
-    /// [`rate_limit_by_ip`] and [`rate_limit_paths`] respectively) so
+    /// Construct a limiter with an explicit `(window, max requests)` policy, as the search
+    /// family does. Otherwise identical to [`RateLimiter::new`]; the same `Arc` can
+    /// be shared across REST and RPC routers ([`rate_limit_by_ip`], [`rate_limit_paths`]) so
     /// both consume from one per-IP budget.
     pub fn with_policy(window: Duration, max: u32) -> Self {
         Self {
@@ -169,20 +162,11 @@ fn resolve_ip(req: &Request) -> IpAddr {
     client_ip(req.extensions(), req.headers())
 }
 
-/// Resolve the request principal IP.
-///
-/// With `OMNIBUS_TRUST_FORWARDED_FOR=1` the **rightmost** `X-Forwarded-For`
-/// hop wins: that is the one the trusted proxy appended, and everything to
-/// its left is whatever the client chose to send. It has to outrank the TCP
-/// peer too — behind a proxy that peer *is* the proxy, so preferring it
-/// would hand the whole internet one bucket. Without the opt-in the header
-/// is never consulted, because on a directly-reachable deployment a client
-/// could rotate it per request to bypass the limiter and grow the bucket map
-/// without bound.
-///
-/// Used by the OPDS Basic-auth extractor (which meters credential
-/// verification per IP) and by `request_log`'s span, so the log and the
-/// limiter can never disagree about who a request came from.
+/// Resolve the request principal IP. With `OMNIBUS_TRUST_FORWARDED_FOR=1` the **rightmost**
+/// `X-Forwarded-For` hop wins (the one the trusted proxy appended; the rest is client-chosen),
+/// outranking the TCP peer, which behind a proxy *is* the proxy. Without the opt-in the header
+/// is never consulted: a client could rotate it to bypass the limiter. Shared with the OPDS
+/// Basic-auth extractor and `request_log`'s span, so the log and limiter can't disagree.
 pub(crate) fn client_ip(extensions: &http::Extensions, headers: &http::HeaderMap) -> IpAddr {
     if trust_forwarded_for() {
         if let Some(ip) = trusted_forwarded_hop(headers) {
@@ -245,23 +229,11 @@ pub async fn rate_limit_by_ip(
     next.run(req).await
 }
 
-/// Path-prefix wrapper around [`rate_limit_by_ip`]. The middleware ignores
-/// (passes through) any request whose path doesn't match one of the given
-/// prefixes — handy when a top-level router contains a mix of routes and
-/// only a subset should be limited (e.g. the dioxus fullstack RPC router,
-/// where we only want to throttle `/api/rpc/search-*`).
-///
-/// Bucket map is shared with whatever limiter is passed in. `main.rs` passes the
-/// *same* `Arc` here and to the REST `/api/search/*` layer so both search
-/// families share one per-IP budget.
-///
-/// The auth sub-router mounts this with a prefix allow-list of
-/// `/api/auth/login`, `/api/auth/register`, and `/api/auth/logout`.
-/// `/api/auth/me` is deliberately omitted from the allow-list: it is an
-/// authenticated read of the caller's own row and presents no brute-force
-/// surface, so sharing the auth bucket with credential endpoints would
-/// throttle legitimate UI boots (and parallel Playwright workers from the
-/// loopback IP) for no security gain.
+/// Path-prefix wrapper around [`rate_limit_by_ip`]: a request matching none of the given
+/// prefixes passes through, for routers mixing limited and unlimited routes (e.g. the
+/// dioxus RPC router, where only `/api/rpc/search-*` is throttled). The bucket map is the
+/// passed-in limiter's, so `main.rs` shares one `Arc` with the REST `/api/search/*` layer for
+/// one per-IP budget.
 pub async fn rate_limit_paths(
     State((limiter, prefixes)): State<(Arc<RateLimiter>, Arc<Vec<&'static str>>)>,
     req: Request,

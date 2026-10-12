@@ -62,16 +62,10 @@ pub mod app_dirs {
         }
     }
 
-    /// Resolve `Context.getFilesDir()` — the app-private, already-writable
-    /// internal storage dir Android grants every app — via JNI, using the
-    /// ambient `AndroidContext` that tao (dioxus's `mobile` windowing
-    /// backend) registers with `ndk-context` before any app code runs. No
-    /// `create_dir_all` needed: unlike the home-relative dirs above, Android
-    /// guarantees this directory already exists.
-    ///
-    /// Logs and falls back to memory-only on any JNI failure, mirroring the
-    /// `create_dir_all` failure path above — a silent `None` here would be
-    /// exactly the class of bug this module exists to fix.
+    /// Resolve `Context.getFilesDir()` (the app-private, already-writable
+    /// internal storage dir) via JNI, using the ambient `AndroidContext` tao
+    /// registers with `ndk-context`. The directory is guaranteed to exist, so no
+    /// `create_dir_all`. Logs and falls back to memory-only on any JNI failure.
     #[cfg(target_os = "android")]
     fn android_files_dir() -> Option<PathBuf> {
         match android_files_dir_via_jni() {
@@ -215,12 +209,9 @@ pub mod token_store {
         CELL.get_or_init(|| RwLock::new(None))
     }
 
-    /// Single broadcast channel that tells UI components when the
-    /// authenticated state changes. `Sender::send` is a sync, allocation-
-    /// free signal — callable from any thread, with or without an active
-    /// async runtime — so `set` / `clear` / `load_from_disk` can all push
-    /// updates uniformly. Components subscribe via [`subscribe`] and react
-    /// inside a `use_future` loop.
+    /// Single broadcast channel telling UI components when the authenticated
+    /// state changes. `Sender::send` is sync and callable from any thread, with
+    /// or without an async runtime. Components subscribe via [`subscribe`].
     fn channel() -> &'static (watch::Sender<bool>, watch::Receiver<bool>) {
         static CH: OnceLock<(watch::Sender<bool>, watch::Receiver<bool>)> = OnceLock::new();
         CH.get_or_init(|| watch::channel(false))
@@ -247,12 +238,9 @@ pub mod token_store {
         r.unwrap_or_else(|e| e.into_inner())
     }
 
-    /// On-disk path for the persisted bearer token.
-    ///
-    /// Returns `None` when no writable app data dir is available (see
-    /// [`super::app_dirs::data_dir`]); the token then stays in memory only and
-    /// the user re-logs in on next launch — strictly safer than dropping a
-    /// token file in an arbitrary or unwritable location.
+    /// On-disk path for the persisted bearer token. `None` when no writable app
+    /// data dir is available (see [`super::app_dirs::data_dir`]): the token then
+    /// stays in memory only and the user re-logs in on next launch.
     pub fn token_path() -> Option<PathBuf> {
         super::app_dirs::data_dir().map(|d| d.join("token"))
     }
@@ -289,15 +277,10 @@ pub mod token_store {
         unpoison(cell().read()).clone()
     }
 
-    /// `true` when this build persists the bearer token to disk. No longer
-    /// gated on `debug_assertions` — release builds persist too, so users stay
-    /// signed in across a cold start and are only logged out when the server
-    /// rejects the bearer (expiry/revoke). The actual write still depends on a
-    /// writable dir: on iOS/desktop/Android the token lands in the sandboxed
-    /// app data dir (see [`super::app_dirs`]) with `0o600` perms (protected at
-    /// rest by the iOS sandbox + Data Protection, or Android's per-app UID
-    /// sandbox). Neither is encryption-at-rest; iOS Keychain / Android
-    /// Keystore remains a future hardening step.
+    /// `true` when this build persists the bearer token to disk, so users stay
+    /// signed in across a cold start until the server rejects the bearer. The
+    /// write still needs a writable dir (see [`super::app_dirs`]) and lands
+    /// with `0o600` perms, protected at rest by the OS sandbox, not encrypted.
     fn persistence_enabled() -> bool {
         true
     }
@@ -340,12 +323,10 @@ pub mod token_store {
         Ready(mpsc::Sender<Op>),
     }
 
-    /// Lazily start the persistence worker on first use and return a
-    /// sender to its op channel. Returns `None` if either the worker
-    /// thread fails to spawn or there is no on-disk path to persist to;
-    /// callers in those cases simply skip persistence and the in-memory
-    /// state remains authoritative. The decision is cached in `SLOT`
-    /// so that follow-up calls don't re-run the spawn dance.
+    /// Lazily start the persistence worker on first use and return a sender to
+    /// its op channel. `None` if the worker thread fails to spawn or there is no
+    /// on-disk path; callers then skip persistence and the in-memory state stays
+    /// authoritative. The decision is cached in `SLOT`.
     fn persistence_tx() -> Option<mpsc::Sender<Op>> {
         static SLOT: OnceLock<Mutex<Option<TxState>>> = OnceLock::new();
         let slot = SLOT.get_or_init(|| Mutex::new(None));
@@ -398,13 +379,10 @@ pub mod token_store {
         }
     }
 
-    /// Remove the on-disk token, falling back to overwriting with an
-    /// empty file when `remove_file` fails (e.g. a permissions glitch on
-    /// the parent dir, or a sandboxed filesystem that allows write but
-    /// not unlink). Without the fallback a failed unlink would silently
-    /// keep the user logged in across the next launch — `load_from_disk`
-    /// short-circuits on empty content, so an empty file is functionally
-    /// equivalent to an absent one.
+    /// Remove the on-disk token, falling back to overwriting it with an empty
+    /// file when `remove_file` fails (e.g. a sandbox that allows write but not
+    /// unlink). `load_from_disk` short-circuits on empty content, so that is
+    /// equivalent to an absent file and the user isn't left logged in.
     fn delete_token_file(path: &Path) -> std::io::Result<()> {
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),

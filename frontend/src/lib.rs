@@ -13,6 +13,7 @@ pub mod contexts;
 pub mod data;
 pub mod date_fmt;
 pub mod focus_after_paint;
+pub mod focus_trap;
 pub mod format;
 pub mod index_prefs;
 pub mod js_interop;
@@ -52,11 +53,8 @@ pub use routes::*;
 pub use data::ServerUrl;
 
 /// Platform-specific page chrome. Web puts nav at the top of the flow;
-/// mobile puts it at the bottom (via `position: fixed`).
-///
-/// The web variant is the default (compiled both for the WASM client and
-/// for server-side SSR) so the SSR'd markup matches what the WASM client
-/// expects to hydrate.
+/// mobile puts it at the bottom (via `position: fixed`). The web variant is
+/// the default (WASM client and SSR), so SSR'd markup matches what hydrates.
 #[cfg(not(feature = "mobile"))]
 #[component]
 fn ScreenLayout(children: Element) -> Element {
@@ -228,18 +226,17 @@ const ATRIUM_CSS: Asset = asset!("/assets/atrium.css");
 /// apart from Atrium so every loading visual lives in one reviewable file.
 const LOADING_CSS: Asset = asset!("/assets/loading.css");
 
+/// The library filter bar's stylesheet (chips and the add-filter popover).
+const FILTER_BAR_CSS: Asset = asset!("/assets/filter_bar.css");
+
 /// Browser-tab favicon — the Omnibus brand mark, served as a hashed static
 /// asset via Manganis. 128² PNG; browsers downscale it to the tab size.
 const FAVICON: Asset = asset!("/assets/omnibus-stoat.png");
 
-/// Install the search-palette context and the global `⌘K` shortcut.
-///
-/// Called unconditionally from [`App`] so the call site has no
-/// `cfg`-gated hooks — the cfg lives in the helper body. The mobile
-/// build compiles to a no-op stub below; hook-count parity across
-/// targets isn't claimed (the palette + shortcut aren't reachable on
-/// mobile), but rule 07's invariant for SSR-vs-WASM hydration within
-/// the web build is preserved.
+/// Install the search-palette context and the global `⌘K` shortcut. Called
+/// unconditionally from [`App`], with the cfg in the helper body; the mobile
+/// build is a no-op stub. Rule 07's SSR-vs-WASM hydration invariant holds
+/// within the web build.
 #[cfg(not(feature = "mobile"))]
 fn use_palette_setup() {
     use_context_provider(|| components::search_palette::PaletteOpen(Signal::new(false)));
@@ -252,16 +249,10 @@ fn use_palette_setup() {
 #[cfg(feature = "mobile")]
 fn use_palette_setup() {}
 
-/// Install the cached-user and playback contexts. Web (and SSR) only;
-/// mobile uses bearer tokens via `token_store` and stubs the listen page.
-///
-/// Called unconditionally from [`App`] so the cfg lives in the body,
-/// not at the call site. The mobile build compiles to a no-op stub
-/// (the underlying `CurrentUser`/`PlaybackState` types are themselves
-/// `cfg(not(mobile))` in `contexts.rs`, so true hook-count parity
-/// across mobile isn't reachable without lifting those gates — out of
-/// scope here). Rule 07's invariant for SSR-vs-WASM hydration within
-/// the web build is preserved because both targets share `not(mobile)`.
+/// Install the cached-user and playback contexts. Web (and SSR) only; mobile
+/// uses bearer tokens via `token_store`, and its twin below provides
+/// `MobilePlayback` instead. Called unconditionally from [`App`]; rule 07's
+/// hydration invariant holds because web and SSR share `not(mobile)`.
 #[cfg(not(feature = "mobile"))]
 fn use_user_and_playback_contexts() {
     // Cached `/api/auth/me`. Provided unconditionally on non-mobile builds
@@ -289,13 +280,10 @@ fn use_user_and_playback_contexts() {
 }
 
 /// Install the app-root playback shim and the single boot-time `/me` fetch.
-///
 /// Web only: installs the `window.OmnibusAudio` shim (so the `<audio>` element
-/// and playback signals outlive navigation for the persistent mini-dock) and
-/// runs one `current_user()` fetch, then subscribes to `web_auth_state` so a
-/// fresh login refills the cache and a 401 clears it without a hard reload.
-/// Called unconditionally from [`App`]; the cfg lives here so the call site
-/// stays gate-free.
+/// outlives navigation) and runs one `current_user()` fetch, then subscribes
+/// to `web_auth_state` so a fresh login refills the cache and a 401 clears it.
+/// Called unconditionally from [`App`].
 #[cfg(feature = "web")]
 fn use_current_user_boot() {
     // App-root audiobook playback driver: installs the `window.OmnibusAudio`
@@ -357,13 +345,10 @@ fn use_current_user_boot() {
 fn use_current_user_boot() {}
 
 /// Patch the viewport meta on mobile so content fills the screen edge-to-edge.
-///
-/// Mobile (wry WKWebView) only: the Dioxus-generated viewport meta lacks
-/// `viewport-fit=cover`, so the WebView insets its scroll content by the safe
-/// areas (status bar + home indicator) — a phantom ~100px of scroll behind the
-/// fixed full-screen player, and `env(safe-area-inset-*)` reads 0. The patch is
-/// an effect (not markup), so it's free to be target-gated. Non-mobile is a
-/// no-op stub; called unconditionally from [`App`].
+/// Mobile (wry WKWebView) only: without `viewport-fit=cover` the WebView insets
+/// scroll content by the safe areas (a phantom ~100px of scroll behind the
+/// fixed player) and `env(safe-area-inset-*)` reads 0. Non-mobile is a no-op
+/// stub, called unconditionally from [`App`].
 #[cfg(feature = "mobile")]
 fn use_mobile_viewport_fix() {
     use_effect(|| {
@@ -378,13 +363,10 @@ fn use_mobile_viewport_fix() {
 #[cfg(not(feature = "mobile"))]
 fn use_mobile_viewport_fix() {}
 
-/// JS installed on the Android shell to report this device's zone.
-///
-/// Sends on install and again on every `visibilitychange`, which is what makes
-/// the answer survive travel and a DST transition: a reader who flies and then
-/// brings the app forward is re-asked, rather than carrying launch-time state.
-/// `getTimezoneOffset` is (UTC - local) in minutes, so the sign flips here to
-/// match the minutes-east-of-UTC convention the wire uses everywhere else.
+/// JS installed on the Android shell to report this device's zone. Sends on
+/// install and on every `visibilitychange`, so the answer survives travel and
+/// DST. The sign of `getTimezoneOffset` is flipped to the minutes-east-of-UTC
+/// convention the wire uses.
 #[cfg(feature = "mobile")]
 const ZONE_CAPTURE_JS: &str = "\
     const report = () => {\
@@ -398,16 +380,9 @@ const ZONE_CAPTURE_JS: &str = "\
     report();";
 
 /// Keep `time::local_utc_offset_minutes` answering on the Android shell.
-///
-/// The shell builds native — `std` exposes no local offset and the crate
-/// carries no date library — but it renders in a WebView that knows the answer.
-/// Without this the offset is `None` there, the server falls back to UTC, and
-/// an Android reader keeps the UTC day boundary this whole change exists to
-/// remove (rule 10).
-///
-/// Pushed into a cache rather than awaited per call because
-/// `session_tracker::build_report` is sync and cannot await; see
-/// `time::set_local_zone`. Effect-only, so no markup depends on it (rule 07).
+/// The native shell has no local offset, so without this it is `None` and the
+/// server falls back to UTC (rule 10). Effect-only, so no markup depends on
+/// it (rule 07).
 #[cfg(feature = "mobile")]
 fn use_mobile_zone_capture() {
     let mut eval = use_hook(|| dioxus::document::eval(ZONE_CAPTURE_JS));
@@ -467,16 +442,11 @@ pub fn use_cache_generation() -> Signal<u64> {
     generation
 }
 
-/// Capture-phase left-edge back-swipe listener for the mobile WebView.
-///
-/// The wry/WKWebView native edge gesture can't drive app navigation on the
-/// native target: the WebView's back-forward list is only fed by
-/// `history.pushState`, but `dioxus-router` uses an in-memory history off-WASM
-/// that the WebView never sees. So we synthesize the gesture — detect a
-/// left-edge horizontal swipe and go back — rebinding on every screen mount so
-/// the listener targets the live `eval` channel. `id` tags the install so the
-/// matching unmount cleanup only removes its own listener (see
-/// [`edge_swipe_cleanup_js`]).
+/// Capture-phase left-edge back-swipe listener for the mobile WebView. The
+/// native edge gesture can't drive navigation (the WebView's history is fed
+/// only by `history.pushState`, which the in-memory router never calls), so
+/// this synthesizes it on every screen mount. `id` tags the install so the
+/// unmount cleanup removes only its own ([`edge_swipe_cleanup_js`]).
 #[cfg(feature = "mobile")]
 fn edge_swipe_install_js(id: u64) -> String {
     format!(
@@ -516,12 +486,10 @@ fn edge_swipe_install_js(id: u64) -> String {
     )
 }
 
-/// Remove this screen's edge-swipe listener on unmount — but only when it's
-/// still the installed one (`id` match). A `ScreenLayout` → `ScreenLayout` nav
-/// reinstalls with a new id first, so the outgoing screen's cleanup no-ops and
-/// leaves the live listener alone; a `ScreenLayout` → immersive nav has no
-/// reinstall, so this tears the listener down and `/read` + `/listen` stay free
-/// of it.
+/// Remove this screen's edge-swipe listener on unmount, only when it's still
+/// the installed one (`id` match). A `ScreenLayout` → `ScreenLayout` nav
+/// reinstalls with a new id first, so the outgoing cleanup no-ops; an
+/// immersive nav has no reinstall, so the listener is torn down.
 #[cfg(feature = "mobile")]
 fn edge_swipe_cleanup_js(id: u64) -> String {
     format!(
@@ -613,6 +581,7 @@ pub fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Stylesheet { href: ATRIUM_CSS }
         document::Stylesheet { href: LOADING_CSS }
+        document::Stylesheet { href: FILTER_BAR_CSS }
         components::atrium::AtriumRoot {
             // First child: its pre-paint script must run before the page
             // paints, and finds the `.atrium` root around it.

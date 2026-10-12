@@ -237,11 +237,9 @@ fn BdStarHalf(
 }
 
 /// Optimistically set/clear `state.current`, then persist and reconcile with
-/// the server (reverting and flagging on error). Takes the whole
-/// [`RatingState`] bundle rather than its sibling signals as separate
-/// positional params — `Signal` is `Copy`, so the bundle is passed by value.
-/// `op_seq` is bumped per call and re-checked after the request so a stale
-/// (out-of-order) response is dropped instead of clobbering a newer click.
+/// the server (reverting and flagging on error). `op_seq` is bumped per call and
+/// re-checked after the request, so an out-of-order response is dropped instead
+/// of clobbering a newer click.
 fn apply_rating(state: RatingState, uuid: String, server_url: String, target: Option<f32>) {
     let RatingState {
         mut current,

@@ -1,4 +1,7 @@
 //! Token generation + at-rest hashing.
+//!
+//! The parsers take raw header strings, keeping `omnibus-db` free of axum/http
+//! types.
 
 use base64::engine::{general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use sha2::{Digest, Sha256};
@@ -27,12 +30,10 @@ pub fn hash_token(raw: &str) -> Vec<u8> {
 /// equivalent) don't drift apart.
 pub const SESSION_COOKIE_NAME: &str = "omnibus_session";
 
-/// `__Host-` prefixed cookie name used on HTTPS deployments (RFC 6265bis).
-/// The prefix is a browser-enforced contract: the cookie MUST be
-/// `Secure`, MUST NOT have a `Domain` attribute, and MUST have `Path=/`
-/// — together this prevents subdomain-based cookie injection from a
-/// sibling `evil.example.com` against `omnibus.example.com`. The
-/// write-side guarantees those attributes in `server::auth::handlers`.
+/// `__Host-` prefixed cookie name used on HTTPS deployments (RFC 6265bis). The
+/// browser enforces `Secure`, no `Domain` and `Path=/`, which blocks subdomain
+/// cookie injection; the write side in `server::auth::handlers` guarantees
+/// those attributes.
 pub const SESSION_COOKIE_NAME_HOST_PREFIXED: &str = "__Host-omnibus_session";
 
 /// Returns true if `name` is either of the recognized session cookie
@@ -44,17 +45,10 @@ pub fn is_session_cookie_name(name: &str) -> bool {
 }
 
 /// Pull a session token out of HTTP request headers, preferring an
-/// `Authorization: Bearer …` value over the session cookie. Returns
-/// `None` when neither source has a non-empty token.
-///
-/// Recognizes both the plain `omnibus_session` cookie and the
-/// `__Host-omnibus_session` production form — the server picks one to
-/// write based on `OMNIBUS_SECURE_COOKIES`, but the parser stays
-/// permissive so a deploy that flips the flag mid-rollout doesn't
-/// invalidate in-flight cookies on the wrong path.
-///
-/// Pure-string API by design — keeps `omnibus-db` free of an axum/http
-/// type dependency. Callers pass the relevant header values through.
+/// `Authorization: Bearer …` value over the session cookie. Returns `None`
+/// when neither has a non-empty token. Accepts both the plain
+/// `omnibus_session` cookie and the `__Host-` form, so flipping
+/// `OMNIBUS_SECURE_COOKIES` mid-rollout doesn't invalidate in-flight cookies.
 pub fn parse_session_token(
     authorization: Option<&str>,
     cookie_header: Option<&str>,
@@ -99,12 +93,9 @@ pub fn parse_session_token(
 }
 
 /// Parse `Authorization: Basic <base64(user:pass)>` credentials (RFC 7617).
-/// Returns `None` for any other scheme, undecodable base64, non-UTF-8
-/// bytes, or a payload with no `:` separator. The password keeps any `:`
-/// it contains — only the first separator splits.
-///
-/// Pure-string API like [`parse_session_token`], for the same reason: the
-/// server's OPDS Basic-auth extractor passes the header value through.
+/// Returns `None` for any other scheme, undecodable base64, non-UTF-8 bytes, or
+/// a payload with no `:` separator. Only the first `:` splits, so the password
+/// keeps any `:` it contains.
 pub fn parse_basic_credentials(authorization: &str) -> Option<(String, String)> {
     let encoded = authorization.strip_prefix("Basic ")?.trim();
     let decoded = base64::engine::general_purpose::STANDARD

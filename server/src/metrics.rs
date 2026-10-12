@@ -24,17 +24,11 @@ const METRICS_TOKEN_ENV: &str = "OMNIBUS_METRICS_TOKEN";
 /// cannot mint a Prometheus series per path an attacker cares to type.
 pub(crate) const UNMATCHED_ENDPOINT: &str = "/<unmatched>";
 
-/// Build (once) the Prometheus metrics middleware and its `/metrics` scrape
-/// route, returning clones.
-///
-/// The builder installs the process-global metrics recorder and panics on a
-/// second install, so the (layer, route) is memoized in a `OnceLock` and every
-/// call after the first returns clones of it. Apply the returned layer as the
-/// outermost app layer so it observes every request, and merge the returned
-/// router into the app. Series are labeled by method, status, and
-/// `MatchedPath` — so id-bearing routes collapse to their registered pattern
-/// (`/api/ebooks/{uuid}`) — with every unmatched path collapsed to
-/// [`UNMATCHED_ENDPOINT`] so an invented URL cannot mint a series.
+/// Build (once) the Prometheus metrics middleware and its `/metrics` scrape route, returning
+/// clones. The recorder is process-global and panics on a second install, so the (layer,
+/// route) is memoized in a `OnceLock`. Apply the layer as the outermost app layer so it
+/// observes every request, and merge the router into the app. Series are labeled by method,
+/// status and `MatchedPath`, with unmatched paths collapsed to [`UNMATCHED_ENDPOINT`].
 pub fn layer_and_route() -> (PrometheusMetricLayer<'static>, Router) {
     static CELL: OnceLock<(PrometheusMetricLayer<'static>, Router)> = OnceLock::new();
     CELL.get_or_init(|| {

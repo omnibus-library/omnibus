@@ -16,16 +16,10 @@ use row::EbookRow;
 use crate::components::chip_editor::SuggestionItem;
 
 /// Inline-editable field on a power-user-table row. Used by `EbookRow` to
-/// track which of its cells (if any) is in edit mode at any given time —
-/// single-cell-at-a-time keeps the keyboard/blur lifecycle simple and
-/// avoids fighting the row's click-to-navigate handler.
-///
-/// `Series` edits the series *name* only — the series index ("#N") stays
-/// in the full metadata edit page on `/books/:uuid/edit` to avoid adding a
-/// separate Series Index column to the power-user table. Title + Series +
-/// Authors + Tags + Genres covers the stated cleanup pain (stripping
-/// series-prefix cruft from titles, renaming author/series variants,
-/// curating tags, assigning genres).
+/// track which of its cells (if any) is in edit mode: one cell at a time
+/// keeps the keyboard/blur lifecycle simple and avoids fighting the row's
+/// click-to-navigate handler. `Series` edits the series *name* only; the
+/// index ("#N") stays on the full metadata edit page.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum EditField {
     Title,

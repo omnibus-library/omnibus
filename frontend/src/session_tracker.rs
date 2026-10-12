@@ -155,27 +155,10 @@ fn build_report(uuid: &str, format: ProgressFormat, start: i64, end: i64) -> Opt
 }
 
 /// Minutes east of UTC on this device as of `unix_secs` — `-420` in Los
-/// Angeles, `330` in Kolkata.
-///
-/// Named apart from `time::local_utc_offset_minutes` on purpose: that one
-/// answers *where the reader is now*, for the day boundaries, and this one
-/// answers *what the clock read while the reading happened*, for the
-/// time-of-day strips. Rule 10 exists because those are different questions,
-/// so they must not share a name in one crate.
-///
-/// Stamped onto every session so the server can
-/// bucket it on the reader's own clock (`db::stats::patterns`) instead of on
-/// UTC.
-///
-/// Asked about the segment's own start rather than about "now": the two
-/// differ by an hour across a DST transition, and the offset that belongs on
-/// the row is the one that was in effect while the reading happened. It is a
-/// fact about where and when the reading happened, so a reader who later
-/// travels — or reads through the small hours of a transition night — must
-/// not have those sittings relabelled.
-///
-/// Not a hydration concern (rule 07): this runs from the tracker's flush
-/// path, never from a component body, so no markup depends on it.
+/// Angeles, `330` in Kolkata. Named apart from `time::local_utc_offset_minutes`
+/// (where the reader is *now*, for day boundaries) because this is what the
+/// clock read *while reading happened*, for time-of-day strips (rule 10).
+/// Stamped onto every session; asked at the segment's start, never "now".
 fn capture_offset_minutes(unix_secs: i64) -> Option<i64> {
     #[cfg(feature = "web")]
     {
@@ -254,12 +237,10 @@ pub fn use_reading_session(uuid: String, server_url: String) {
 }
 
 /// Track listening sessions off the app-root playback signals: the segment
-/// runs while `playing` is true for a `uuid`, ends on pause/stop/book
-/// swap, with the same heartbeat flush. Both hosts (web `PlaybackState`,
-/// mobile `MobilePlayback`) expose exactly these two signals. `server_url`
-/// is a signal because the hosts mount once at app root — on mobile the
-/// URL is set by the Connect screen *after* mount, so it must be read at
-/// dispatch time, not captured.
+/// runs while `playing` is true for a `uuid`, ends on pause/stop/book swap,
+/// with the same heartbeat flush. Both hosts (web `PlaybackState`, mobile
+/// `MobilePlayback`) expose these two signals. `server_url` is read at
+/// dispatch time: on mobile the Connect screen sets it after mount.
 pub fn use_listening_session(
     uuid: Signal<Option<String>>,
     playing: Signal<bool>,

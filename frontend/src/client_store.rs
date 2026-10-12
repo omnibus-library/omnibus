@@ -72,10 +72,6 @@ mod mobile_store {
     /// Insert/overwrite `key` and flush the whole map to disk (best-effort). A
     /// write failure is logged and ignored — the in-memory copy still serves
     /// this session, so the only cost is losing the value on next launch.
-    ///
-    /// The flush is atomic (write a sibling temp file, then rename over the
-    /// target) so a crash mid-write can't leave a half-written `prefs.json`
-    /// that fails to parse on next launch and drops every stored pref.
     pub fn set(key: &str, value: &str) {
         #[cfg(test)]
         SET_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -87,6 +83,8 @@ mod mobile_store {
             serde_json::to_string(&*m).ok()
         };
         if let (Some(json), Some(path)) = (snapshot, prefs_path()) {
+            // Temp file then rename, so a crash mid-write can't leave a
+            // half-written `prefs.json` that drops every stored pref.
             let tmp = path.with_extension("json.tmp");
             let flush = std::fs::write(&tmp, json).and_then(|()| std::fs::rename(&tmp, &path));
             if let Err(e) = flush {

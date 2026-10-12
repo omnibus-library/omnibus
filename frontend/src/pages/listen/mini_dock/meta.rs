@@ -14,12 +14,10 @@ pub(super) fn progress_pct(elapsed: f64, duration: f64) -> f64 {
     ((elapsed / duration) * 100.0).clamp(0.0, 100.0)
 }
 
-/// Whether the mini-dock has both a loaded book and a resolved uuid — the
-/// two pieces of playback state its active transport bar needs. `None`
-/// means it should render the empty host instead: `book` alone isn't
-/// enough because the Expand link would point at an empty `/listen/` route
-/// (e.g. mid-dismiss, when `book` is set but `uuid` has momentarily
-/// cleared).
+/// Whether the mini-dock has both a loaded book and a resolved uuid, which its
+/// active transport bar needs. `None` means render the empty host: `book` alone
+/// isn't enough, since mid-dismiss the Expand link would point at an empty
+/// `/listen/` route.
 pub(super) fn dock_active_state(
     book: Option<omnibus_shared::EbookMetadata>,
     uuid: Option<String>,

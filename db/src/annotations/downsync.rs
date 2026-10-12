@@ -47,19 +47,11 @@ pub struct DownsyncStats {
     pub unresolved: usize,
 }
 
-/// Materialize `kobo_location` for one (user, book): derive a KoboSpan
-/// range for every candidate row in one batch, minting a `client_id` for
-/// rows created before one existed so the served id is stable.
-/// Deliberately never touches `updated_at`: the wire fingerprint covers
-/// membership, so the device re-pulls without a fabricated edit time.
-///
-/// `worker` is what makes a cold KEPUB cache recoverable: a KoboSpan anchor
-/// can only be derived against the converted file, so without it every
-/// candidate row stays unresolved *forever* — nothing else on this path
-/// rebuilds the cache, and an unmaterialized row never moves the wire
-/// fingerprint, so `checkforchanges` never invites the GET that would retry.
-/// Pass `None` only when a conversion must not be requested: from the
-/// worker's own post-conversion hook, or from a test.
+/// Materialize `kobo_location` for one (user, book): derive a KoboSpan range
+/// for every candidate row in one batch, minting a `client_id` where missing.
+/// Never touches `updated_at`, so the device re-pulls without a fabricated
+/// edit time. `worker` requests a KEPUB conversion on a cold cache (rows stay
+/// unresolved without one); pass `None` only from the post-conversion hook or a test.
 pub async fn downsync_book_annotations(
     pool: &SqlitePool,
     worker: Option<&Arc<Worker>>,
@@ -127,17 +119,10 @@ pub async fn downsync_book_annotations(
 /// statement comfortably under SQLite's 999 bound-parameter cap.
 const APPLY_CHUNK_SIZE: usize = 200;
 
-/// Persist every derived `(id, snapshot_cfi, location)` in one chunked
-/// `UPDATE ... FROM (VALUES ...)` per chunk, in place of one round-trip per
-/// row. Returns the count of rows actually written.
-///
-/// Each row keeps the same optimistic-concurrency guard the old per-row loop
-/// used — `kobo_location IS NULL AND epub_cfi_range = <snapshot>` — so a row
-/// that gained an anchor (a device PATCH adopting the same client_id) or
-/// whose CFI moved since the snapshot is left untouched rather than
-/// overwritten with a stale derivation. `RETURNING id` is what makes the
-/// count exact: a batch statement's `rows_affected` alone can't say *which*
-/// of several rows in the same chunk passed the guard.
+/// Persist every derived `(id, snapshot_cfi, location)` in chunked
+/// `UPDATE ... FROM (VALUES ...)` statements; returns the rows actually written.
+/// A row that gained an anchor or whose CFI moved since the snapshot is left
+/// untouched (`kobo_location IS NULL AND epub_cfi_range = <snapshot>`).
 async fn apply_derived_locations(
     tx: &mut Transaction<'_, Sqlite>,
     candidates: &[(i64, String, String)],
@@ -165,22 +150,18 @@ async fn apply_derived_locations(
                 .bind(uuid::Uuid::new_v4().hyphenated().to_string())
                 .bind(snapshot_cfi);
         }
+        // `RETURNING id` makes the count exact: `rows_affected` can't say which rows
+        // in a chunk passed the guard.
         derived += q.fetch_all(&mut **tx).await?.len();
     }
     Ok(derived)
 }
 
-/// Boot-time pass: materialize every pending (user, book) pair — the retry
-/// for rows whose kepub cache didn't exist (or whose text had diverged)
-/// when they were written, and the backlog conversion for highlights made
-/// before down-sync existed. Cheap once caught up: the worklist query
-/// returns nothing.
-///
-/// Passing `worker` here is what clears a backlog stranded by a cold cache:
-/// the worklist is bounded by "books the user highlighted on the web that
-/// haven't reached a device", so the conversions it requests are few, deduped
-/// per book by the worker's `kepub:{book_id}` resource key, and skipped
-/// outright for any book whose cache is already warm.
+/// Boot-time pass: materialize every pending (user, book) pair, retrying rows
+/// whose kepub cache was missing or diverged and backlog highlights made before
+/// down-sync existed. Cheap once caught up. Passing `worker` requests the
+/// conversions a cold cache needs: few, deduped per book by the worker's
+/// `kepub:{book_id}` key, and skipped for a warm cache.
 pub async fn downsync_all_kobo_annotations(
     pool: &SqlitePool,
     worker: Option<&Arc<Worker>>,
@@ -206,14 +187,11 @@ pub async fn downsync_all_kobo_annotations(
     Ok(stats)
 }
 
-/// Materialize every user's pending rows for one book id — the hook the
-/// worker runs after a successful KEPUB conversion, so the conversion a cold
-/// cache asked for actually lands the highlights it was asked for instead of
-/// waiting on the next write or the next boot. Also covers a cache warmed for
-/// an unrelated reason (a device download, a Send-to-Kobo export).
-///
-/// Requests no conversion of its own: the cache is fresh by construction here,
-/// and a failed derivation must not re-enter the task that called it.
+/// Materialize every user's pending rows for one book id: the hook the worker
+/// runs after a successful KEPUB conversion, so the highlights that conversion
+/// was requested for land now rather than on the next write or boot. Requests
+/// no conversion of its own: the cache is fresh here, and a failed derivation
+/// must not re-enter the task that called it.
 pub async fn downsync_book_id_annotations(
     pool: &SqlitePool,
     book_id: i64,
@@ -242,19 +220,11 @@ pub async fn downsync_book_id_annotations(
     Ok(stats)
 }
 
-/// Fire-and-forget materialization after a highlight write. Callers stay
-/// on their own latency budget — a highlight create never waits on an
-/// EPUB walk.
-///
-/// Coalesced per `(user_id, book_uuid)` via [`inflight_downsyncs`]: several
-/// highlights written on the same book in quick succession would otherwise
-/// each fan out their own full-book recompute, since every call re-walks
-/// every still-unresolved row on the book rather than just its own row. A
-/// call that finds one already running for the same key skips the spawn —
-/// this is a best-effort guard, not a correctness one: a row written after
-/// the in-flight task has already read its worklist stays unresolved until
-/// the *next* highlight write or the boot-time [`downsync_all_kobo_annotations`]
-/// pass, rather than being covered by the task it skipped spawning behind.
+/// Fire-and-forget materialization after a highlight write, so the caller never
+/// waits on an EPUB walk. Coalesced per `(user_id, book_uuid)` via
+/// [`inflight_downsyncs`]: a call that finds one running skips the spawn, so a
+/// row written after that task read its worklist waits for the next highlight
+/// write or the boot-time [`downsync_all_kobo_annotations`] pass.
 pub fn spawn_kobo_downsync(
     pool: SqlitePool,
     worker: Option<Arc<Worker>>,

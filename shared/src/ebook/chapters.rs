@@ -23,11 +23,10 @@ pub struct ChapterListEntry {
     pub spine_index: i64,
 }
 
-/// `GET /api/ebooks/{uuid}/chapters` response. `has_text: false` is the
-/// structured "this book's served format has no extractable text" answer
-/// (comic-only, audiobook-only) — distinct from the 404 an unknown uuid
-/// gets. A TOC-less but readable EPUB reports `has_text: true` with empty
-/// `chapters`; its text is still addressable by spine index up to
+/// `GET /api/ebooks/{uuid}/chapters` response. `has_text: false` means the served
+/// format has no extractable text (comic-only, audiobook-only), distinct from the
+/// 404 for an unknown uuid. A TOC-less but readable EPUB reports `has_text: true`
+/// with empty `chapters`; its text is still addressable by spine index up to
 /// `spine_count`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -40,12 +39,11 @@ pub struct ChapterListResponse {
     pub chapters: Vec<ChapterListEntry>,
 }
 
-/// `GET /api/ebooks/{uuid}/chapters/{spine_index}/text` response: one
-/// bounded slice of a spine document's prose. `truncated` marks a slice
-/// that ends before the document does, and `next_offset` is the char
-/// offset to request next; both are the explicit boundary
-/// [`CHAPTER_TEXT_MAX_CHARS`] promises. `has_text: false` mirrors the
-/// listing's no-text answer (with everything else zeroed).
+/// `GET /api/ebooks/{uuid}/chapters/{spine_index}/text` response: one bounded
+/// slice of a spine document's prose. `truncated` marks a slice that ends before
+/// the document does and `next_offset` is the char offset to request next, per
+/// [`CHAPTER_TEXT_MAX_CHARS`]. `has_text: false` mirrors the listing's no-text
+/// answer, with everything else zeroed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChapterTextResponse {
@@ -59,12 +57,9 @@ pub struct ChapterTextResponse {
     pub total_chars: i64,
     pub truncated: bool,
     pub next_offset: Option<i64>,
-    /// Set when the slice was cut short at the reader's own furthest
-    /// position rather than at [`CHAPTER_TEXT_MAX_CHARS`] — the
-    /// `?stop_at_progress=true` contract. `truncated` stays `false` in that
-    /// case and `next_offset` is absent: paging past the reader's position
-    /// is precisely what the parameter was asked to prevent, so there is no
-    /// cursor to continue from.
+    /// Set when the slice was cut at the reader's own furthest position rather than at
+    /// [`CHAPTER_TEXT_MAX_CHARS`] (the `?stop_at_progress=true` contract). `truncated`
+    /// stays `false` and `next_offset` is absent: there is no cursor to continue from.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated_by_progress: bool,
 }

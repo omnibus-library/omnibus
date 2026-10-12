@@ -125,15 +125,11 @@ pub(super) async fn get_search(
     with_pagination_headers(body, total)
 }
 
-/// `GET /api/search/content` — full-text search over indexed EPUB chapter
-/// text (`book_content_fts`). Hits cite `(book_uuid, spine_index)` plus the
-/// chapter title and an FTS5 `snippet()` excerpt; an unconfigured library or
-/// an empty query yields an empty hit list rather than an error.
-///
-/// `book_uuid` / `book_uuids` scope the search, `limit` caps it, and
-/// `spoiler_filter` places each hit against the caller's own position —
-/// annotating by default, excluding on request. An empty result carries a
-/// `hint` when the query *form* is the likely cause.
+/// `GET /api/search/content` — full-text search over indexed EPUB chapter text
+/// (`book_content_fts`). Hits cite `(book_uuid, spine_index)`, the chapter title and an FTS5
+/// `snippet()`; an unconfigured library or empty query yields an empty list, not an error.
+/// `book_uuid`/`book_uuids` scope it, `limit` caps it, and `spoiler_filter` places each hit
+/// against the caller's position (annotate by default, or exclude); `hint` explains empties.
 pub(super) async fn get_search_content(
     user: AuthUser,
     State(state): State<AppState>,

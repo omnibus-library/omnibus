@@ -61,39 +61,11 @@ async fn read_progress_row(
     })
 }
 
-/// Upsert a position row for `(user, book, format)` and return the
-/// **surviving** server-authoritative record. Resolves the request uuid to
-/// the **canonical** `books.uuid` (keeping the `BookNotFound` guard — you
-/// cannot record progress for a book the server has never indexed) and
-/// stores/keys on it.
-///
-/// The conflict resolution is conditional on `client_updated_at`, not
-/// unconditional last-write-wins on receipt order: the stored
-/// `MIN(update.client_updated_at, now)` — clamping a fast client clock so it
-/// can't pin itself as permanently newest — only overwrites the row when it
-/// is `>=` the value already stored. A write with no `client_updated_at`
-/// (older client) is treated as "now", matching plain last-write-wins. A
-/// rejected (older) write still re-reads and returns the row that won, so
-/// the caller learns it is behind rather than seeing its own rejected
-/// payload echoed back.
-///
-/// An accepted write replaces the **whole position** — `epub_cfi`,
-/// `progress_percent`, and `kobo_location` are one atomic snapshot, never
-/// field-merged across writers. A row therefore always describes a single
-/// position; a field a writer can't supply (a Kobo bookmark with no
-/// derivable CFI, a web CFI with no span) stays NULL as "not known", and
-/// the Kobo sync-out derives the missing half on demand rather than
-/// trusting a stale leftover.
-///
-/// One backstop narrows that rule: an **audio** write naming no
-/// `book_file_id`, landing on a row that names one, for a book carrying
-/// more than one audio file, is rejected wholly — same shape as a
-/// stale-clock rejection, the re-read returns the surviving row. Audio
-/// seconds are only meaningful within one file, so accepting such a write
-/// would turn the row into "N seconds within an unknown file" and destroy a
-/// position another client (e.g. iOS) recorded correctly. On a
-/// single-file book a fileless write still applies — the server resolves
-/// the same default file the manifest serves, so nothing is ambiguous.
+/// Upsert a position row for `(user, book, format)` and return the **surviving**
+/// record, keyed on the **canonical** `books.uuid` (`BookNotFound` if never indexed).
+/// A write wins only if its `client_updated_at` (clamped to now; absent = now) is `>=`
+/// the stored one, and replaces the whole position. A fileless audio write over a row
+/// naming a file of a multi-file book is also rejected; a rejected write returns the winner.
 pub async fn upsert_progress(
     pool: &SqlitePool,
     user_id: i64,
@@ -166,13 +138,10 @@ pub async fn upsert_progress_tx(
     Ok(record)
 }
 
-/// Teardown signature, last line of defense: a dying page's media
-/// element flushes its reset clock — audio position ~0 — with a perfectly
-/// fresh event time, and the client-side gates cannot cover every event
-/// ordering every browser invents. Scoped to the SAME file as the stored
-/// row: a dying element flushes the file it was playing, while a
-/// near-zero write in a *different* file is a real file switch (picker,
-/// mapped offer) that must not be refused.
+/// Teardown signature, last line of defense: a dying page's media element
+/// flushes its reset clock (audio position ~0) with a fresh event time. Scoped
+/// to the SAME file as the stored row: a near-zero write in a *different* file
+/// is a real file switch that must not be refused.
 fn is_audio_teardown_zero_write(
     update: &ProgressUpdate,
     stored_position: Option<f64>,
@@ -192,15 +161,11 @@ fn is_audio_teardown_zero_write(
         && old > AUDIO_TEARDOWN_ZERO_MIN_STORED_SECONDS
 }
 
-/// Run the `INSERT ... ON CONFLICT` upsert. Most-recent-wins conflict
-/// resolution and the audio multi-file guard both live in the `WHERE`
-/// clause, so a rejected write is simply a no-op `DO UPDATE` — the caller
-/// always re-reads the row afterward to learn which write survived.
-///
-/// `strftime('%s','now')` returns TEXT; SQLite's default storage-class
-/// sort order ranks every INTEGER below every TEXT value regardless of
-/// magnitude, so `MIN(<int param>, <text now>)` would always pick the
-/// (unclamped) integer side without an explicit CAST here.
+/// Run the `INSERT ... ON CONFLICT` upsert. Most-recent-wins conflict resolution
+/// and the audio multi-file guard both live in the `WHERE` clause, so a rejected
+/// write is a no-op `DO UPDATE`; the caller re-reads the row to learn which won.
+/// `strftime('%s','now')` is TEXT, which SQLite ranks above every INTEGER, so the
+/// explicit CAST is what lets `MIN` clamp a fast client clock.
 async fn execute_upsert_query(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
@@ -208,6 +173,8 @@ async fn execute_upsert_query(
     fmt: &str,
     update: &ProgressUpdate,
 ) -> Result<(), ProgressError> {
+    // Guard: a fileless audio write over a file-naming row on a multi-file book is
+    // rejected whole, since audio seconds only mean something within one file.
     sqlx::query(
         "INSERT INTO reading_progress
             (user_id, book_uuid, format, epub_cfi, audio_position_seconds,
@@ -290,12 +257,9 @@ async fn existing_progress_snapshot(
     ))
 }
 
-/// Warn when a write is about to lose to the timestamp guard, i.e. when the
-/// offered stamp — clamped forward to server-now, same as the SQL — is
-/// older than the stamp already on the row. Predicted here in Rust rather
-/// than read back from the upsert's own `WHERE`, purely for logging; a
-/// prediction that ever disagreed with the SQL would still change nothing,
-/// since the guard itself is unmodified.
+/// Warn when a write is about to lose to the timestamp guard: the offered stamp
+/// (clamped forward to server-now, as in the SQL) is older than the stamp on the
+/// row. Predicted in Rust purely for logging; the guard itself is unmodified.
 fn warn_if_rejected_by_timestamp_guard(
     book_uuid: &str,
     client_updated_at: Option<i64>,

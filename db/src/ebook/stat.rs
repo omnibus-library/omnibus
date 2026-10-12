@@ -6,15 +6,11 @@
 
 use std::path::{Path, PathBuf};
 
-/// Phase A output: a single filesystem stat row, with no zip open or OPF
-/// parse. The incremental diff compares these against `book_files` to
-/// classify entries as Unchanged / New / Changed / Removed / Backfill.
-///
-/// An entry with an empty `scan_key` is a synthetic placeholder for an
-/// unreadable subdirectory — `error` carries the underlying io message
-/// (e.g. "permission denied" vs. "no such file") so the legacy
-/// [`super::scan_ebook_library_with`] wrapper can surface it verbatim. The
-/// incremental diff ignores empty-`scan_key` entries.
+/// Phase A output: a single filesystem stat row, with no zip open or OPF parse.
+/// The incremental diff compares these against `book_files` to classify entries
+/// as Unchanged / New / Changed / Removed / Backfill. An empty `scan_key` marks a
+/// synthetic placeholder for an unreadable subdirectory, with the io message in
+/// `error`; the incremental diff ignores these.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatEntry {
     /// Path relative to the library root — same shape used everywhere else
@@ -56,15 +52,11 @@ pub struct StatScanResult {
     pub saw_any_file: bool,
 }
 
-/// Phase A: walk the library and `stat` every indexed ebook file (`.epub`
-/// / `.cbz`) without opening the zip. Returns one `StatEntry` per file
-/// plus a synthetic entry (empty `uuid`) for any unreadable subdirectory —
-/// the legacy `scan_ebook_library_with` shape surfaces these as error rows.
-///
-/// `library_path_key` is retained for signature compatibility with the
-/// audiobook walker; the diff key is now the library-relative path, so
-/// it no longer participates in identity. Empty-`scan_key` placeholder rows
-/// mark unreadable subdirs for the legacy wrapper.
+/// Phase A: walk the library and `stat` every indexed ebook file (`.epub` /
+/// `.cbz` / `.pdf`) without opening the zip. Returns one `StatEntry` per file
+/// plus a synthetic empty-`scan_key` entry for any unreadable subdirectory.
+/// `library_path_key` does not take part in identity (the diff key is the
+/// library-relative path); it is kept for parity with the audiobook walker.
 pub fn stat_ebook_library(path: Option<&str>, library_path_key: &str) -> StatScanResult {
     let _ = library_path_key;
     let Some(path_str) = path else {
@@ -161,13 +153,11 @@ fn unreadable_subdir_entry(base: &Path, current: &Path, err: &std::io::Error) ->
     }
 }
 
-/// Process one `read_dir` entry: push subdirectories onto `stack` for the
-/// walk, and append a stat row for each indexed ebook file (an extension in
-/// [`crate::ebook::EBOOK_FORMATS`] — `.epub` / `.cbz`). Other files and
-/// entries whose `file_type()` can't be read are skipped. `saw_any_file` is
-/// set for every regular file regardless of extension (the "root isn't
-/// empty" signal, see the caller). Subdirectories matching
-/// [`crate::helpers::is_skipped_scan_dir`] are not descended into.
+/// Process one `read_dir` entry: push subdirectories onto `stack` (except those
+/// matching [`crate::helpers::is_skipped_scan_dir`]) and append a stat row for
+/// each indexed ebook file (an extension in [`crate::ebook::EBOOK_FORMATS`]).
+/// Other files and entries whose `file_type()` can't be read are skipped.
+/// `saw_any_file` is set for every regular file, whatever its extension.
 fn push_dir_entry(
     base: &Path,
     entry: &std::fs::DirEntry,

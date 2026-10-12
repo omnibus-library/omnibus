@@ -226,13 +226,9 @@ fn short_chapter_title(title: &str) -> String {
 }
 
 /// The 1-based current chapter + its capped title for the resume readout.
-///
-/// Prefers the reading position's CFI spine step — the reader navigates by
-/// spine document, so this names the chapter it actually opens — and falls
-/// back to the rounded whole-book percent only when no CFI is stored. The old
-/// percent-only path picked the last chapter starting at or below the
-/// *rounded* integer percent, landing one chapter ahead whenever a boundary
-/// fell inside the rounding window.
+/// Prefers the reading position's CFI spine step, since the reader navigates by
+/// spine document, and falls back to the rounded whole-book percent only when
+/// no CFI is stored (that path can land one chapter ahead at a boundary).
 fn chapter_now(
     chapters: &[AlignmentEbookChapter],
     reading: Option<&ProgressRecord>,

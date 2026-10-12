@@ -22,18 +22,11 @@ use super::{CrossFormatError, CrossFormatLink};
 // hour apart. Only a true re-declaration of the same spot replaces.
 const SYNC_POINT_REPLACE_SLACK: f64 = 0.005;
 
-/// Record a "synced here" declaration: pair the declaring surface's
-/// position with the counterpart format's stored row and store it as a
-/// user anchor. A single-audio-file book with no link yet is auto-confirmed
-/// as a sequence link (unambiguous, follow on); a multi-file book must
-/// confirm the alignment first — the declaration never guesses an order.
-///
-/// A declaration is **calibration, not a mode switch**: it states that two
-/// spots are the same spot, which is worth recording whether or not the
-/// reader wants the formats chasing each other. So a link that already
-/// exists keeps the follow value it carried. Forcing it back on here would
-/// make the follow toggle cosmetic — one "Sync here" would silently undo a
-/// deliberate off, with nothing on screen saying so.
+/// Record a "synced here" declaration: pair the declaring surface's position
+/// with the counterpart format's stored row and store it as a user anchor. A
+/// single-audio-file book with no link yet is auto-confirmed as a sequence link;
+/// a multi-file book must confirm the alignment first. An existing link keeps
+/// its follow value: a declaration is calibration, not a mode switch.
 pub async fn declare_sync_point(
     pool: &SqlitePool,
     user_id: i64,

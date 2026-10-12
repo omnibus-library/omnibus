@@ -67,18 +67,10 @@ impl JournalComposerState {
     }
 }
 
-/// Non-[`JournalComposerState`] signals used directly by the composer's
-/// child components (`preview_html` for `BdJournalComposerTabs` /
-/// `BdJournalEditorBody`, the three `highlights_*` for
-/// `BdJournalHighlightsPopover`). Kept out of `JournalComposerState` since
-/// those components' own concern (preview text, the highlights cache) isn't
-/// part of the save/reset surface the footer drives.
-///
-/// The `highlights_*` fields are owned here rather than inside
-/// `BdJournalHighlightsPopover` because the popover's markup is
-/// conditionally skipped while `show_preview` is true — if the popover owned
-/// this state itself, toggling to Preview and back would unmount/remount it
-/// and drop the loaded-once cache, forcing a needless highlights refetch.
+/// Non-[`JournalComposerState`] signals the composer's child components use
+/// directly: `preview_html` (tabs, editor body) and the three `highlights_*`
+/// (highlights popover). The `highlights_*` state lives here, not in the
+/// popover, so toggling Preview and back keeps its loaded-once cache.
 #[derive(Clone, Copy)]
 struct ComposerAuxSignals {
     preview_html: Signal<String>,
@@ -114,12 +106,9 @@ fn use_composer_signals(open: Signal<bool>) -> (JournalComposerState, ComposerAu
     (state, aux)
 }
 
-/// Debounced autosave: each body change cancels the pending task and arms a
-/// fresh one (search-palette pattern), so at most one save is queued and a
-/// typing burst produces a single write once the user pauses. A hook (calls
-/// `use_effect`), split out of [`BdJournalComposer`] to keep its body under
-/// the line cap — safe to call unconditionally since it runs in the same
-/// position on every render.
+/// Debounced autosave hook: each body change cancels the pending task and arms
+/// a fresh one, so a typing burst produces a single write once the user pauses.
+/// Split out of [`BdJournalComposer`]; call it unconditionally.
 fn use_composer_autosave(state: JournalComposerState, server_url: &str, uuid: &str) {
     let JournalComposerState {
         body,
@@ -289,10 +278,8 @@ fn BdJournalComposerTabs(
 
 /// "From highlights" toggle + popover, letting the composer insert a saved
 /// highlight as a blockquote at the caret. Highlights load lazily the first
-/// time the popover opens. The loaded-once state is owned by
-/// `BdJournalComposer` (not here) because this component's markup is
-/// conditionally skipped while previewing — owning it locally would drop the
-/// cache and refetch every time the write/preview tabs are toggled.
+/// time the popover opens; the loaded-once state is owned by the composer
+/// (see `ComposerAuxSignals`).
 #[component]
 fn BdJournalHighlightsPopover(
     uuid: String,
@@ -365,14 +352,11 @@ fn BdJournalHighlightsPopover(
     }
 }
 
-/// The write/preview surface. Preview mode renders sanitized server HTML;
-/// write mode pairs a plain textarea (SSR / first-paint source of truth) with
-/// a progressively enhanced contenteditable div — rule 07 hydration parity:
-/// SSR and first-hydration paint both show the plain textarea, and post-mount
-/// JS flips the wrapper's enhancement marker (see `editor_enhance`). The
-/// textarea keeps carrying the `body` signal even after enhancement — the JS
-/// mirrors the editor's markdown back into its `value`, so
-/// publish/validate/preview are unchanged.
+/// The write/preview surface. Preview renders sanitized server HTML; write
+/// pairs a plain textarea (SSR / first-paint source of truth) with a
+/// progressively enhanced contenteditable div that post-mount JS flips on (see
+/// `editor_enhance`). The textarea keeps carrying the `body` signal: the JS
+/// mirrors the editor's markdown back into its `value`.
 #[component]
 fn BdJournalEditorBody(
     show_preview: Signal<bool>,

@@ -44,15 +44,11 @@ pub enum ContentFtsError {
     Db(#[from] sqlx::Error),
 }
 
-/// Search `book_content_fts` across every configured library path, best
-/// bm25 rank first, capped at [`MAX_CONTENT_HITS`].
-///
-/// `q` runs through the same length cap and token sanitisation as the
-/// metadata search ([`sanitize_fts_query`] — no column facets here, the
-/// index has one column), so arbitrary user input is safe to pass through;
-/// an empty or unusable query yields an empty vec. Each hit cites
-/// `(book_uuid, spine_index)` plus a `snippet()` excerpt with matched terms
-/// wrapped in `[`…`]`.
+/// Search `book_content_fts` across every configured library path, best bm25
+/// rank first, capped at [`MAX_CONTENT_HITS`]. `q` gets the same length cap and
+/// token sanitisation as metadata search ([`sanitize_fts_query`]), so arbitrary
+/// user input is safe; an empty or unusable query yields an empty vec. Each hit
+/// cites `(book_uuid, spine_index)` plus a `snippet()` with matches in `[`…`]`.
 pub async fn search_content_for_paths(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -133,17 +129,10 @@ pub async fn search_content_for_paths(
         .collect())
 }
 
-/// Why a query matched nothing, when the query *form* is the likely cause.
-///
-/// The index ANDs every term, so a natural-language phrase
-/// (`"holoCube Cassius whiskey"`) matches nothing while its words each match
-/// plenty — and the caller has no way to tell that from an absent corpus.
-/// Counting each term separately turns "no results" into "these words are in
-/// the book, just never together".
-///
-/// `None` for a single-term query (where the form cannot be the problem) and
-/// when no term matches anything on its own (where the corpus genuinely
-/// lacks them, and a hint would mislead).
+/// Why a query matched nothing, when the query *form* is the likely cause: the
+/// index ANDs every term, so a natural-language phrase matches nothing though its
+/// words each match plenty. `None` for a single-term query, and when no term
+/// matches on its own (the corpus genuinely lacks them, so a hint would mislead).
 pub async fn explain_empty_content_search(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -184,23 +173,10 @@ pub async fn explain_empty_content_search(
 }
 
 /// Place every hit against the reader's own position, and apply `filter`.
-///
-/// Returns how many hits were withheld under
-/// [`SpoilerFilter::Exclude`] — the count is the point of that mode: it lets
-/// a caller say "there is an answer, but it is ahead of you" without having
-/// seen the answer.
-///
-/// A hit is placed at the **start** of its chapter, because that is the
-/// finest granularity the content index records. The comparison is therefore
-/// conservative in the direction that matters: a chapter the reader is
-/// partway through counts as behind them, and the spoiler risk within a
-/// chapter they are already inside is one they took by reading it.
-///
-/// Both sides are three-valued. A book the reader has no position in, or one
-/// whose spine stats have not been extracted, leaves both fields `None` —
-/// *cannot tell*, which is not *not a spoiler*. `Exclude` withholds those
-/// too, since the whole point of that mode is that an unverified hit must
-/// not reach the caller.
+/// Returns how many hits [`SpoilerFilter::Exclude`] withheld, so a caller can say
+/// "there is an answer, but it is ahead of you". No reader position, or no
+/// extracted spine stats, leaves both fields `None` ("cannot tell"), which
+/// `Exclude` withholds too. A hit is placed at its chapter's start (rule 11).
 pub async fn annotate_spoilers(
     pool: &SqlitePool,
     user_id: i64,
@@ -247,21 +223,10 @@ pub async fn annotate_spoilers(
     Ok(Some(before - hits.len() as i64))
 }
 
-/// The reader's furthest recorded position in a book, as a whole-book
-/// percent. `None` when they have no position there, or when no position
-/// they do have can be placed.
-///
-/// Deliberately **not** `progress::book_progress`: that resolves an EPUB
-/// position by opening the book and walking a spine document, and this runs
-/// once per distinct book in a hit list of up to 50 — on the default search
-/// path. Sub-percent precision buys nothing against a hit placed at its
-/// chapter's start, so the cheap figures are the right ones: the stored
-/// percent for reading, seconds over runtime for listening.
-///
-/// A reading row with no stored percent yields `None` rather than a guess.
-/// `progress::spawn_epub_percent_derivation` fills that column off the
-/// request path, so it is normally present; when it is not, "can't tell" is
-/// the honest answer and `Exclude` withholds on it.
+/// The reader's furthest recorded position in a book, as a whole-book percent.
+/// `None` when they have no position there, or no position they do have can be
+/// placed (a reading row with no stored percent yields `None`, not a guess).
+/// Reads the stored figures, not `progress::book_progress` (rule 11).
 async fn reader_position_percent(
     pool: &SqlitePool,
     user_id: i64,
@@ -387,12 +352,9 @@ struct Candidate {
     size_bytes: i64,
 }
 
-/// Every EPUB or PDF book under `library_path` needing (re)extraction. The
-/// compared file is the book's text source — its lowest-ordinal EPUB, else
-/// its PDF (`books::TEXT_SOURCE_FORMAT_ORDER`) — the one the reader gets,
-/// matching rule 09's "the compared file is the one the server would serve".
-/// Other books never join and are skipped silently (audiobooks and comics
-/// have no extractable text).
+/// Every EPUB or PDF book under `library_path` needing (re)extraction, compared
+/// against its text source (`books::TEXT_SOURCE_FORMAT_ORDER`: lowest-ordinal
+/// EPUB, else PDF), the file the reader gets. Other books are skipped silently.
 async fn fetch_candidates(pool: &SqlitePool, library_path: &str) -> anyhow::Result<Vec<Candidate>> {
     /// `(uuid, title, library root, dir, stem, format, mtime_epoch, size_bytes)`.
     type CandidateRow = (String, String, String, String, String, String, i64, i64);
@@ -435,17 +397,10 @@ async fn fetch_candidates(pool: &SqlitePool, library_path: &str) -> anyhow::Resu
 }
 
 /// (Re)index chapter text for every EPUB or PDF book under `library_path` whose
-/// stored snapshot no longer matches the served file, and prune rows whose
-/// uuid no longer resolves to any book (deleted, or merged away — the
-/// cascade-free half of the migration's soft-reference choice).
-///
-/// A Changed file replaces the whole book's rows (delete + reinsert in one
-/// transaction), so a shrunk edition can't leave phantom tail chapters. An
-/// unreadable file is logged and skipped — retried next scan, mirroring the
-/// sibling backfills — and a readable book whose every chapter is navigation
-/// or empty stores no rows, so it re-extracts each scan at the cost of one
-/// zip open (the `backfill_covers` retry semantics). `on_progress(processed,
-/// total, item)` mirrors the sibling backfills.
+/// stored snapshot no longer matches the served file, and prune rows whose uuid
+/// no longer resolves to a book. An unreadable file is logged and skipped
+/// (retried next scan); a book whose every chapter is navigation or empty stores
+/// no rows, so it re-extracts each scan. `on_progress(processed, total, item)`.
 pub async fn backfill_content_fts(
     pool: &SqlitePool,
     library_path: &str,

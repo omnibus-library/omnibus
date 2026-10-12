@@ -7,22 +7,14 @@
 use dioxus::prelude::*;
 
 /// Ensure the `window.__omnibusScroll` manager is installed, then restore the
-/// saved offset for the current path. Idempotent — the installer guards on the
-/// singleton so repeated calls only re-trigger a restore.
-///
-/// Restore retries across animation frames: a page's content arrives after
-/// mount (async fetch, images, and — on the paginated library — further pages
-/// streamed in by the load-more observer as we scroll toward the target), so a
-/// single `scrollTo` would land short. The loop keeps nudging toward the
-/// captured target until it's reached, the user scrolls (cancelling), the
+/// saved offset for the current path. Idempotent: the installer guards on the
+/// singleton, so repeated calls only re-trigger a restore. Restore retries
+/// across animation frames until the target is reached, the user scrolls, the
 /// document stops growing, or a time budget elapses.
-///
-/// Recording is frozen for the duration of a route transition: the `scroll`
-/// events a transition fires are the browser clamping us against a
-/// mid-navigation document (and re-applying its own history restoration), not
-/// the reader moving, so recording them under the incoming path would
-/// overwrite the very offset this restore is about to read.
 #[cfg(any(feature = "web", feature = "mobile"))]
+// A page's content arrives after mount, so one `scrollTo` would land short.
+// Recording is frozen during a route transition: its `scroll` events are the
+// browser clamping, and would overwrite the offset this restore reads.
 const RESTORE_JS: &str = r#"
 (function () {
   if (!window.__omnibusScroll) {
@@ -84,10 +76,8 @@ const RESTORE_JS: &str = r#"
 
 /// Restore scroll for the current route once `ready` first becomes `true`
 /// (i.e. the page's primary content has loaded and the document has height to
-/// scroll into). Fires exactly once per mount.
-///
-/// Call this unconditionally, before any early `return` in the component, so
-/// the hook order stays stable across renders.
+/// scroll into). Fires exactly once per mount. Call unconditionally, before
+/// any early `return`, so the hook order stays stable across renders.
 pub fn use_scroll_restore(ready: Memo<bool>) {
     let mut done = use_signal(|| false);
     use_effect(move || {

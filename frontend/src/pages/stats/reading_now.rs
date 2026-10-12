@@ -17,12 +17,10 @@ use crate::{use_server_url, Route};
 /// forecast — one book by the 5th of January projects seventy-three.
 const PROJECTION_MIN_FRACTION: f64 = 0.15;
 
-/// Finished books so far this calendar year, taken off the trailing-12 series.
-///
-/// `books_per_month` always ends at the current month, so every elapsed month
-/// of this year is in it; filtering on the year prefix is exact. Derived here
-/// rather than read off `goal.current` because the projection is worth showing
-/// to a reader who has set no goal at all.
+/// Finished books so far this calendar year, taken off the trailing-12 series
+/// (which always ends at the current month, so filtering on the year prefix is
+/// exact). Derived here, not read off `goal.current`, so the projection also
+/// shows for a reader who has set no goal.
 fn books_this_year(months: &[MonthCount], year: &str) -> i64 {
     if year.is_empty() {
         return 0;
@@ -55,12 +53,9 @@ fn year_projection(summary: &StatsSummary) -> Option<i64> {
 }
 
 /// The right-hand readout on an open book: how far in, in whatever unit that
-/// book can answer.
-///
-/// A whole-book percent when the book can report one — which now includes
-/// audiobooks, whose position the server divides by the runtime it resolved.
-/// Failing that it names the structural position, and a book that can say
-/// neither says nothing rather than inventing a zero.
+/// book can answer. A whole-book percent when it can report one (audiobooks
+/// included), else its structural position; a book that can say neither says
+/// nothing rather than inventing a zero.
 fn resume_readout(point: &ResumePoint) -> Option<String> {
     if let Some(pct) = point.record.progress_percent {
         return Some(format!("{pct}%"));
@@ -169,12 +164,10 @@ fn open_row(point: &ResumePoint, server_url: &str) -> Element {
     }
 }
 
-/// "Recently finished" — the most recent completions, with the rating each
-/// carries.
-///
-/// Labelled by recency rather than by a count, so the card can never appear to
-/// contradict the Finished tile above it: the tile counts a window, this lists
-/// the latest whatever window is showing.
+/// "Recently finished": the most recent completions, with the rating each
+/// carries. Labelled by recency, not a count, so it can't contradict the
+/// Finished tile above (which counts a window); it lists the latest whatever
+/// window is showing.
 #[component]
 pub(super) fn RecentlyFinishedCard(books: Vec<FinishedBook>) -> Element {
     let server_url = use_server_url();
@@ -225,13 +218,9 @@ fn finished_row(book: &FinishedBook, server_url: &str) -> Element {
     }
 }
 
-/// A finished book's rating as the 0..=5 value the star row draws, or `None`
-/// for an unrated book — which the row renders as an em-dash rather than five
-/// hollow stars it would have to explain.
-///
-/// Halves are preserved: the server sends `half_stars / 2`, so a 4.5 arrives
-/// as 4.5 and must be drawn as four and a half, not rounded to the
-/// nearer whole star the way this card once did.
+/// A finished book's rating as the 0..=5 value the star row draws, or `None` for
+/// an unrated book (rendered as an em-dash). Halves are preserved: the server
+/// sends `half_stars / 2`, so a 4.5 is drawn as four and a half.
 fn clamped_stars(rating: Option<f64>) -> Option<f32> {
     // Ratings are 0.0..=5.0 by construction; the cast is exact over that range.
     #[allow(clippy::cast_possible_truncation)]

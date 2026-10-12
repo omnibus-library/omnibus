@@ -7,12 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use super::metadata::Contributor;
 
-/// User-supplied metadata overrides. JSON-serialized into the
-/// `metadata_overrides.overrides` column. Each field, when `Some`, replaces
-/// the corresponding scanned value at read time.
-///
-/// M2M fields (`creators`, `subjects`, `genres`) replace entirely when
-/// present — a tag list override replaces, not appends.
+/// User-supplied metadata overrides, JSON-serialized into the
+/// `metadata_overrides.overrides` column. Each field, when `Some`, replaces the
+/// scanned value at read time; M2M fields (`creators`, `subjects`, `genres`)
+/// replace the whole list rather than appending.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MetadataOverrides {
@@ -91,12 +89,10 @@ impl MetadataOverrides {
     /// value rather than accepting an unbounded `i64`.
     pub const PRINT_PAGES_MAX: i64 = 20_000;
 
-    /// Validate field lengths. Returns `Err` with a human-readable message if
-    /// any field exceeds its cap. Call at the handler level before persisting.
+    /// Validate field lengths. Returns `Err` with a human-readable message if any
+    /// field exceeds its cap. Call at the handler level before persisting.
     ///
-    /// Length caps are measured in Unicode scalar values (`chars`), not UTF-8
-    /// bytes, so a multibyte (e.g. CJK or emoji) string is held to the same
-    /// visible-character budget as an ASCII one.
+    /// Caps are measured in Unicode scalar values (`chars`), not UTF-8 bytes.
     pub fn validate(&self) -> Result<(), String> {
         let check = |name: &str, val: &Option<String>, max: usize| -> Result<(), String> {
             if let Some(v) = val {
@@ -132,13 +128,9 @@ impl MetadataOverrides {
         Ok(())
     }
 
-    /// ISBN-13 input rule: empty (clears the override) or exactly 13 ASCII
-    /// digits. Hyphens/spaces are rejected rather than stripped — the
-    /// client submits a normalized digit string. Deliberately format-only —
-    /// no mod-10 check-digit verification — since this is user-editable
-    /// free-text metadata, not a barcode-scanned value needing strict
-    /// validation; a malformed-but-13-digit entry just renders as an
-    /// incorrect ISBN, not a corrupted one.
+    /// ISBN-13 input rule: empty (clears the override) or exactly 13 ASCII digits;
+    /// hyphens and spaces are rejected, not stripped. Format-only, with no mod-10
+    /// check digit, because this is user-editable free text.
     fn validate_isbn13(&self) -> Result<(), String> {
         let Some(ref v) = self.isbn13 else {
             return Ok(());
@@ -152,14 +144,10 @@ impl MetadataOverrides {
         Ok(())
     }
 
-    /// ISBN-10 input rule: empty (clears the override) or exactly 10
-    /// characters — 9 ASCII digits plus a check-digit position that is a
-    /// digit or `X`/`x`. Deliberately does **not** delegate to
-    /// [`crate::isbn::validate_isbn10`] (which enforces the mod-11 check digit for
-    /// barcode-scanned input): this field is user-typed free-text metadata,
-    /// so it follows [`Self::validate_isbn13`]'s format-only convention
-    /// instead — a malformed-but-shaped entry just renders as an incorrect
-    /// ISBN, not a corrupted one.
+    /// ISBN-10 input rule: empty (clears the override) or exactly 10 characters, 9
+    /// ASCII digits plus a digit or `X`/`x` check position. Format-only like
+    /// [`Self::validate_isbn13`], so it skips [`crate::isbn::validate_isbn10`]'s
+    /// mod-11 check, which suits barcode-scanned input rather than typed text.
     fn validate_isbn10(&self) -> Result<(), String> {
         let Some(ref v) = self.isbn10 else {
             return Ok(());
@@ -277,13 +265,11 @@ fn validate_name_list(
     Ok(())
 }
 
-/// One edit applied to many books at once from the table view's bulk-edit
-/// modal. Scalar fields: `None` = leave every book unchanged; `Some(v)` = set
-/// on every book (`Some("")` stays reserved for a future explicit-clear
-/// affordance). `authors` replaces each book's full creator list when `Some`
-/// — an empty chip list in the UI maps to `None`, so bulk cannot clear
-/// authors. Tags and genres are add/remove deltas applied per book against
-/// that book's current effective list — never a wholesale replace.
+/// One edit applied to many books at once from the table view's bulk-edit modal.
+/// Scalar fields: `None` leaves every book unchanged, `Some(v)` sets it on every
+/// book (`Some("")` is reserved). `authors` replaces each book's full creator
+/// list when `Some`; an empty chip list maps to `None`, so bulk cannot clear
+/// authors. Tags and genres are add/remove deltas against each book's current list.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BulkMetadataEdit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -319,13 +305,9 @@ impl BulkMetadataEdit {
     }
 
     /// Validate field lengths and counts against the same caps as
-    /// [`MetadataOverrides::validate`]. Call at the handler boundary.
-    ///
-    /// Each delta list is validated *separately*, not concatenated: they are
-    /// deltas, so their combined length is not a per-book count — a large
-    /// remove plus a small add is legal even past `MAX_SUBJECTS` /
-    /// `MAX_GENRES`. The true post-delta cap is enforced per book by the db
-    /// merge, which is the only place that sees the resulting list.
+    /// [`MetadataOverrides::validate`]. Call at the handler boundary. Each delta
+    /// list is validated separately, so a large remove plus a small add can pass even
+    /// past `MAX_SUBJECTS` / `MAX_GENRES`; the db merge enforces the cap per book.
     pub fn validate(&self) -> Result<(), String> {
         // Route through the existing validators so the caps and messages
         // cannot drift from the single-book path.

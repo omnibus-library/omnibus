@@ -55,13 +55,10 @@ struct SuggestionRow {
 /// The column tuple every `dedup_suggestions` read selects.
 type RawRow = (i64, String, String, String, String, i64);
 
-/// Per-kind review-state counts, in [`CleanupKind`]'s own declaration order so
-/// a caller's rows never reshuffle between refreshes.
-///
-/// Retires stale rows first so the pending count can't promise cards
-/// [`review_queue`] would then decline to show. It is the same prune that
-/// function runs, and both are idempotent — the write in a read path is what
-/// keeps the dashboard honest for an admin who has never run detection.
+/// Per-kind review-state counts, in [`CleanupKind`]'s declaration order so a
+/// caller's rows never reshuffle between refreshes. Retires stale rows first
+/// (the same idempotent prune [`review_queue`] runs), so the pending count
+/// can't promise cards the queue would decline to show.
 pub async fn review_counts(
     pool: &SqlitePool,
 ) -> Result<Vec<(CleanupKind, CleanupCounts)>, CleanupStoreError> {
@@ -103,12 +100,8 @@ pub async fn review_counts(
 }
 
 /// The oldest pending suggestions of one kind, hydrated into cards. `limit` is
-/// clamped to `[1, REVIEW_QUEUE_MAX]` — hydration costs one small count query
-/// per card, which is why the queue is paged rather than returning the whole
-/// backlog.
-///
-/// Stale rows are retired before the read, so a card never names an author,
-/// series, or tag that has since been deleted.
+/// clamped to `[1, REVIEW_QUEUE_MAX]`. Stale rows are retired before the read,
+/// so a card never names an author, series, or tag that has since been deleted.
 pub async fn review_queue(
     pool: &SqlitePool,
     kind: CleanupKind,
@@ -135,21 +128,11 @@ pub async fn review_queue(
     Ok(cards)
 }
 
-/// Record a review decision on one pending suggestion.
-///
-/// [`Decision::Accepted`] runs the matching apply primitive *before* the
-/// decision is stamped, so an accept that could not be applied never records
-/// as applied. [`Decision::Rejected`] only stamps (the row stays as the record
-/// that stops detection re-suggesting it). [`Decision::Pending`] is refused —
-/// this path cannot un-decide a row.
-///
-/// `edited_value` is the reviewer's own wording in place of the detector's
-/// proposal, which the review surface offers as an editable field. Only a
-/// book-title rename can honour it today — that apply primitive already takes
-/// an arbitrary title — so an edit on any other kind is *refused* rather than
-/// silently dropped: applying the detector's proposal while reporting success
-/// on the reviewer's would write a value nobody chose. It is ignored on a
-/// reject, which applies nothing.
+/// Record a review decision on one pending suggestion. [`Decision::Accepted`]
+/// applies first and stamps after, so a failed accept never records as applied;
+/// [`Decision::Rejected`] only stamps; [`Decision::Pending`] is refused.
+/// `edited_value` replaces the detector's proposal; only a book-title rename
+/// honours it, any other kind refuses it, and a reject ignores it.
 pub async fn decide_suggestion(
     pool: &SqlitePool,
     id: i64,
@@ -319,13 +302,8 @@ async fn affected_book_count(pool: &SqlitePool, row: &SuggestionRow) -> Result<i
 }
 
 /// `COUNT(DISTINCT book)` over a taxonomy link table for a set of entity ids.
-///
-/// The ids arrive as a single JSON array bound to one placeholder rather than
-/// a generated `IN (?, ?, …)` list: nothing caps a merge group's size (see
-/// `merge_suggestion`), so a large duplicate cluster would otherwise blow
-/// `SQLITE_MAX_VARIABLE_NUMBER` and fail the *whole* queue hydration, not just
-/// that one card. `table` and `column` are module constants chosen by
-/// [`CleanupKind`], never caller text.
+/// `table` and `column` are module constants chosen by [`CleanupKind`], never
+/// caller text.
 async fn count_linked_books(
     pool: &SqlitePool,
     table: &str,
@@ -335,6 +313,8 @@ async fn count_linked_books(
     if ids.is_empty() {
         return Ok(0);
     }
+    // Ids bind as one JSON array: nothing caps a merge group's size, and an
+    // `IN (?, ?, ...)` list would overflow `SQLITE_MAX_VARIABLE_NUMBER`.
     let sql = format!(
         "SELECT COUNT(DISTINCT book) FROM {table} \
           WHERE {column} IN (SELECT value FROM json_each(?))"

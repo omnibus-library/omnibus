@@ -159,10 +159,8 @@ fn kind_class(kind: LoadingKind) -> &'static str {
 /// A block loader: a mark and a caption, announced as a polite status.
 ///
 /// `class` appends modifiers (`start`, `inline` on a section; `in-flow` on a
-/// stage that replaces rather than covers) or a caller's legacy hook class;
-/// `title` sets a serif line between the mark and the caption (a stage that
-/// names what it is preparing); `children` fill the slot under the caption
-/// (a stage's retry, a note).
+/// stage that replaces rather than covers) or a legacy hook class; `title` sets
+/// a serif line above the caption; `children` fill the slot under the caption.
 #[component]
 pub fn Loading(
     #[props(default)] kind: LoadingKind,

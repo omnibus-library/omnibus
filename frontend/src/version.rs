@@ -7,11 +7,9 @@
 use std::sync::OnceLock;
 
 /// This build's own version string, always with a single leading `v` (e.g.
-/// `v0.8.9`; `v0.1.0` for a local dev build with no `OMNIBUS_VERSION` set —
-/// AC6). Docker's build-arg carries the full release tag (already
-/// `v`-prefixed, see `Dockerfile`), while TestFlight's carries the bare
-/// `MARKETING_VERSION` Apple requires (no `v`) — [`normalize`] tolerates
-/// either so callers get one consistent format regardless of source.
+/// `v0.8.9`; `v0.1.0` for a local dev build with no `OMNIBUS_VERSION` set).
+/// Docker's build-arg carries the `v`-prefixed release tag, TestFlight's the
+/// bare `MARKETING_VERSION`; [`normalize`] tolerates either.
 pub fn app_version() -> String {
     // A build-arg supplied without a value (e.g. `docker build` with no
     // `--build-arg OMNIBUS_VERSION=...`) sets the env var to an empty

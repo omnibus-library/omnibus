@@ -145,14 +145,11 @@ async fn persist_task_finish(
 }
 
 impl Worker {
-    /// Spawn `task` and return its [`TaskId`] immediately, without waiting
-    /// for it to run. The id can later be passed to
-    /// [`await_completion`](Worker::await_completion) to retrieve the
-    /// [`TaskOutcome`]. Scheduling (resource lock + scan semaphore) and
-    /// execution happen inside the spawned future, so a posted task may
-    /// queue behind same-resource or scan-capped peers before running. A
-    /// failed task is logged via `tracing` in addition to being reported to
-    /// awaiters.
+    /// Spawn `task` and return its [`TaskId`] immediately; pass it to
+    /// [`await_completion`](Worker::await_completion) for the [`TaskOutcome`].
+    /// Scheduling (resource lock + scan semaphore) happens inside the spawned
+    /// future, so a posted task may queue behind same-resource or scan-capped
+    /// peers. A failed task is logged via `tracing` as well as reported to awaiters.
     pub fn post(self: &Arc<Self>, task: Task) -> TaskId {
         let id = self
             .next_id
@@ -231,12 +228,10 @@ impl Worker {
     }
 
     /// Wait for the task identified by `id` to finish and return its
-    /// [`TaskOutcome`]. A task that already finished still reports its real
-    /// outcome for as long as the progress map retains the terminal entry
-    /// (~[`super::types::TERMINAL_RETENTION`]). Returns
-    /// `TaskOutcome::Err("unknown task id")` once that window has passed, or
-    /// if `id` was never posted; [`TaskOutcome::Err`] likewise if the spawned
-    /// task was dropped before reporting an outcome.
+    /// [`TaskOutcome`]. A finished task still reports its real outcome while the
+    /// progress map retains the terminal entry (~[`super::types::TERMINAL_RETENTION`]);
+    /// after that, or for an id never posted, `TaskOutcome::Err("unknown task id")`.
+    /// [`TaskOutcome::Err`] likewise if the spawned task dropped before reporting.
     pub async fn await_completion(&self, id: TaskId) -> TaskOutcome {
         // Take ownership of the receiver out of the map rather than cloning
         // it. The held receiver observes the channel's final value regardless
@@ -262,18 +257,14 @@ impl Worker {
         }
     }
 
-    /// Recover a finished task's outcome from its retained progress entry,
-    /// for a caller that reached [`await_completion`](Worker::await_completion)
-    /// after the completion slot was already reclaimed.
-    ///
-    /// The progress map is the right place to read this from rather than a
-    /// second retention window on `completions`: it already retains terminal
-    /// entries for [`super::types::TERMINAL_RETENTION`] and already evicts
-    /// them, so nothing new can grow unbounded. The read is sound because
-    /// `post` drops [`ProgressTerminalGuard`] *before*
-    /// [`CompletionsPruneGuard`] — so whenever the slot is gone, the terminal
-    /// state has already been written.
+    /// Recover a finished task's outcome from its retained progress entry, for a
+    /// caller that reached [`await_completion`](Worker::await_completion) after
+    /// the completion slot was reclaimed. Reading the progress map avoids a second
+    /// retention window on `completions`.
     fn retained_outcome(&self, id: TaskId) -> TaskOutcome {
+        // Sound because `post` drops `ProgressTerminalGuard` before
+        // `CompletionsPruneGuard`: once the slot is gone, the terminal state
+        // has already been written.
         let terminal = lock_unpoison(&self.progress)
             .get(&id)
             .filter(|entry| entry.terminal_at.is_some())
@@ -298,13 +289,11 @@ impl Worker {
         }
     }
 
-    /// Non-blocking peek at a task's current lifecycle state, read from the
-    /// progress map by id. Returns `None` once `id` was never posted or its
-    /// entry has been evicted (~[`super::types::TERMINAL_RETENTION`] after the
-    /// task reached a terminal state). Unlike [`await_completion`](Worker::await_completion)
-    /// this neither blocks nor consumes anything, so an enqueue-and-poll caller
-    /// can call it repeatedly: post once, then poll this until it observes a
-    /// terminal [`ProgressState`].
+    /// Non-blocking peek at a task's current lifecycle state from the progress
+    /// map. `None` if `id` was never posted or its entry has been evicted
+    /// (~[`super::types::TERMINAL_RETENTION`] after a terminal state). Unlike
+    /// [`await_completion`](Worker::await_completion) it neither blocks nor
+    /// consumes anything, so an enqueue-and-poll caller can call it repeatedly.
     pub fn task_state(&self, id: TaskId) -> Option<ProgressState> {
         lock_unpoison(&self.progress)
             .get(&id)
@@ -334,14 +323,12 @@ impl Worker {
             .map(|e| e.progress.state.clone())
     }
 
-    /// Reclaim a keyed resource mutex once no other task references it. Held
-    /// under the `resource_locks` map lock so a concurrent `run` can't be
-    /// mid-`entry()` for the same key: the map's own `Arc` plus any live
-    /// runner (each holds a clone before/while awaiting the keyed mutex) each
-    /// count as one strong reference, so a count of 1 — only the map — means
-    /// the slot is free to drop. A later task for the same key just
-    /// re-inserts a fresh mutex via `or_insert_with`.
+    /// Reclaim a keyed resource mutex once no other task references it. A later
+    /// task for the same key re-inserts a fresh mutex via `or_insert_with`.
     pub(super) async fn prune_resource_lock(&self, key: &str) {
+        // Under the map lock, so a concurrent `run` can't be mid-`entry()` for
+        // this key; each live runner holds a clone, so a count of 1 (only the
+        // map) means the slot is free.
         let mut map = self.resource_locks.lock().await;
         if let Some(inner) = map.get(key) {
             if Arc::strong_count(inner) == 1 {

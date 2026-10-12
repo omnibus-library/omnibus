@@ -9,17 +9,11 @@ use sqlx::Row;
 use crate::metadata_overrides::sql::overrides_win_sql;
 
 /// A `books` row the rest of the app treats as present: it has a file, a
-/// physical copy, or somebody's wishlist entry.
-///
-/// The listing, search and the Authors index all apply the file-or-copy half
-/// of this; the wishlist half keeps a book that exists only to be wanted
-/// reachable by the ISBN rung, which is how a wish becomes a copy. A row with
-/// none of the three — a ghosted book whose file went away, or an orphan left
-/// by an older write path — appears on no reader surface, so offering it as
-/// "this one's already in your library" files a copy against a book nothing
-/// else can reach.
-///
-/// Interpolated into a query that aliases `books` as `b`.
+/// physical copy, or somebody's wishlist entry. Interpolated into a query that
+/// aliases `books` as `b`.
+// The wishlist arm keeps a book that exists only to be wanted reachable by the
+// ISBN rung. A row matching none of the three is on no reader surface, so offering
+// it as "already in your library" would file a copy against a book nothing reaches.
 pub(super) const LIVE_BOOK: &str = "(EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)
         OR EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid)
         OR EXISTS (SELECT 1 FROM wishlist_entries we WHERE we.book_uuid = b.uuid))";
@@ -29,18 +23,11 @@ pub(super) const LIVE_BOOK: &str = "(EXISTS (SELECT 1 FROM book_files bf WHERE b
 /// itself: split on `", "`, `Weir, Andy` became two people.
 const AUTHOR_SEP: char = '\u{1f}';
 
-/// The `SELECT` list producing one [`ScanBook`] per `books b` row.
-///
-/// `effective` reads the displayed title and creators through the override
-/// layer, so the confirm card names the book the way its detail page does;
-/// it requires `scan_roots l` and `metadata_overrides mo` joined (`LEFT` is
-/// fine — an unjoined row falls through to the scanned columns). Without it
-/// the scanned columns are selected directly, which is exact for a row that
-/// has no override and keeps the no-override arm on `idx_books_norm`.
-///
-/// `with_isbn` adds the correlated identifier subquery the close-match
-/// screen shows beside the scanned ISBN; the exact rung has no reader for it
-/// and skips the cost.
+/// The `SELECT` list producing one [`ScanBook`] per `books b` row. `effective`
+/// reads the title and creators through the override layer, so the confirm card
+/// names the book as its detail page does; it requires `scan_roots l` and
+/// `metadata_overrides mo` joined (`LEFT` is fine). Without it the scanned columns
+/// are selected directly. `with_isbn` adds the correlated identifier subquery.
 pub(super) fn scan_book_cols(effective: bool, with_isbn: bool) -> String {
     // Not `effective_text_sql!`: a cleared title reads NULL there, and the
     // confirm card's title is not optional.
@@ -64,6 +51,8 @@ pub(super) fn scan_book_cols(effective: bool, with_isbn: bool) -> String {
     } else {
         LINKED_AUTHORS.to_string()
     };
+    // Only the close-match screen shows the ISBN beside the scanned one; the exact
+    // rung has no reader for it and skips the cost.
     let isbn = if with_isbn {
         "(SELECT REPLACE(REPLACE(bi2.value, '-', ''), ' ', '')
             FROM book_identifiers bi2

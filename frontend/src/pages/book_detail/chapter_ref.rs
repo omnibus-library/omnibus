@@ -7,12 +7,9 @@
 
 use omnibus_shared::AlignmentEbookChapter;
 
-/// 1-based spine index encoded in a CFI's pre-`!` package step.
-///
-/// A CFI opens with the path through the package document — `/6/14[chap3]!…`
-/// — where `/6` selects the `<spine>` and the step after it is the *child*
-/// index of the spine item. Child indices are even (odd steps address text
-/// nodes), so the item's ordinal is that step halved.
+/// 1-based spine index encoded in a CFI's pre-`!` package step, e.g. `14` in
+/// `/6/14[chap3]!…`. Spine children are even-numbered (odd steps address text
+/// nodes), so the ordinal is that step halved.
 pub(super) fn cfi_spine_ordinal(cfi: &str) -> Option<u32> {
     let inner = cfi.trim().strip_prefix("epubcfi(")?.strip_suffix(')')?;
     // Everything up to the first `!` is the package-document path; what follows
@@ -30,23 +27,16 @@ pub(super) fn cfi_spine_ordinal(cfi: &str) -> Option<u32> {
     Some(raw / 2)
 }
 
-/// Index of the chapter a CFI sits in. `chapters` are in TOC order.
-///
-/// By spine item first: the reader navigates by spine document, so one
-/// chapter per item resolves exactly, and the percent-rounding off-by-one
-/// across a chapter boundary can't occur. Where several chapters share the
-/// CFI's item, the position inside the document decides — the last whose
-/// anchor is at or before it, or the item's first when it is ahead of every
-/// anchor. A chapter with no anchor recorded counts as opening the item, so a
-/// book extracted before anchors were recorded keeps naming the item's last.
-///
-/// `None` when the CFI carries no readable spine step or sits before the
-/// first chapter's item, letting the caller fall back to the percent-based
-/// estimate.
+/// Index of the chapter a CFI sits in; `chapters` are in TOC order. Resolved by
+/// spine item first, then by position within the item when several chapters
+/// share it. `None` when the CFI has no readable spine step or sits before the
+/// first chapter's item, so the caller falls back to the percent estimate.
 pub(super) fn chapter_index_for_cfi(
     chapters: &[AlignmentEbookChapter],
     cfi: &str,
 ) -> Option<usize> {
+    // Spine item first: the reader navigates by spine document, so one chapter per
+    // item resolves exactly, without the percent-rounding off-by-one at a boundary.
     let spine = i64::from(cfi_spine_ordinal(cfi)?) - 1;
     let Some(first) = chapters.iter().position(|c| c.spine_index == spine) else {
         return chapters.iter().rposition(|c| c.spine_index <= spine);
@@ -58,6 +48,8 @@ pub(super) fn chapter_index_for_cfi(
     let Some(position) = cfi_doc_steps(cfi) else {
         return Some(last);
     };
+    // A chapter with no anchor recorded counts as opening the item, so a book
+    // extracted before anchors were recorded names the item's last chapter.
     let within = (first..=last).rev().find(|&i| {
         chapters[i].spine_index == spine
             && chapters[i]

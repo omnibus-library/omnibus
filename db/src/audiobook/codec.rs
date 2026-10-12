@@ -34,16 +34,13 @@ pub fn is_direct_playable(filename: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Decide the playback mode for a multi-part audiobook. A book
-/// direct-plays only when EVERY part is independently direct-
-/// playable — a single flac mixed into an otherwise mp3 folder
-/// routes the whole book through HLS so the cross-part timeline
-/// math (cumulative offsets, `ended`-driven advance) does not have
-/// to deal with mid-book codec switches.
-///
-/// Empty input returns `Direct` vacuously; callers are expected to
-/// 404 before reaching this point if the book has no parts.
+/// Decide the playback mode for a multi-part audiobook: `Direct` only when EVERY
+/// part is independently direct-playable, otherwise the whole book goes through
+/// HLS. Empty input returns `Direct` vacuously; callers 404 before this when the
+/// book has no parts.
 pub fn classify_filenames<S: AsRef<str>>(filenames: &[S]) -> PlaybackMode {
+    // All-or-nothing so the cross-part timeline math (cumulative offsets,
+    // `ended`-driven advance) never sees a mid-book codec switch.
     if filenames.iter().all(|f| is_direct_playable(f.as_ref())) {
         PlaybackMode::Direct
     } else {

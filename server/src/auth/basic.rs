@@ -32,13 +32,11 @@ const VERIFIED_TTL: Duration = Duration::from_secs(60);
 /// mirroring the rate limiter's bucket cap.
 const MAX_VERIFIED_ENTRIES: usize = 10_000;
 
-/// Shared state behind Basic verification: a per-IP limiter so credential
-/// guessing is throttled, and a short-TTL cache of verified credentials so
-/// a catalog page (which OPDS clients fetch link-by-link, replaying the
-/// credentials every time) costs one Argon2 verify, not dozens.
-///
-/// Layered as an `Extension` by `opds_router` — the only router whose
-/// handlers extract [`OpdsAuthUser`].
+/// Shared state behind Basic verification: a per-IP limiter throttling credential
+/// guessing, and a short-TTL cache of verified credentials so an OPDS catalog
+/// page (which replays credentials per link) costs one Argon2 verify.
+/// Layered as an `Extension` by `opds_router`, the only router whose handlers
+/// extract [`OpdsAuthUser`].
 pub struct BasicAuthState {
     limiter: RateLimiter,
     verified: Mutex<HashMap<[u8; 32], VerifiedCred>>,

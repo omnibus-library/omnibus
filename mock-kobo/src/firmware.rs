@@ -3,8 +3,10 @@
 //! the server code and docs, or is still unverified. A failed sync names the
 //! quirk that tripped, so a red test says which firmware rule broke.
 
+use serde::Serialize;
+
 /// One firmware behaviour the device enforces.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum Quirk {
     /// No `x-kobo-apitoken` on `v1/initialization` fails the sync.
     /// Evidence: `server/src/backend/kobo/auth.rs`. Inferred.

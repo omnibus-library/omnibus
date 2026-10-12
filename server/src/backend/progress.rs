@@ -65,17 +65,10 @@ pub(super) async fn post_progress(
     }
 }
 
-/// Every position the user holds in this book, as a [`BookProgress`]
-/// envelope: the records, which one is `furthest`, and the cross-format link
-/// state. `?format=epub|audio` narrows `records` to that format alone.
-///
-/// **This used to default to `epub` and return that record by itself**, which
-/// reported a reader 87% through the audiobook as 47% through the book with
-/// nothing in the payload to say another position existed. The default is now
-/// every format, and `furthest` names the reader's true place outright.
-///
-/// `200 null` when the uuid names no book — distinct from `200 {records: []}`,
-/// which is a real book the user has never opened.
+/// Every position the user holds in this book, as a [`BookProgress`] envelope: the records,
+/// which one is `furthest`, and the cross-format link state. `?format=epub|audio` narrows
+/// `records` to that format alone. `200 null` when the uuid names no book, distinct from
+/// `200 {records: []}`, a real book the user has never opened.
 pub(super) async fn get_progress(
     user: AuthUser,
     State(state): State<AppState>,
@@ -108,19 +101,11 @@ pub(super) async fn get_recent_progress(
     }
 }
 
-/// Append a batch of session reports. Mobile posts these on reconnect; web
-/// posts best-effort on unmount. Each report is validated at the API
-/// boundary (negative durations / inverted time ranges → 400); unknown
-/// book uuids are silently skipped inside the db layer (best-effort
-/// telemetry). `recorded` reflects the **inserted** row count so callers
-/// can tell which queued reports actually persisted. Batches larger than
-/// `SESSION_BATCH_CAP` (defined in `omnibus_shared` so the web RPC path
-/// in `omnibus_frontend::rpc::rpc_record_sessions` enforces the same
-/// bound) are rejected with 422 before any DB work.
-///
-/// The entire batch runs inside a single transaction — a DB error mid-loop
-/// rolls back all previously inserted rows so the client can safely retry
-/// without risking double-counts.
+/// Append a batch of session reports (mobile posts on reconnect, web best-effort on unmount).
+/// Each is validated at the API boundary (negative durations / inverted ranges → 400);
+/// unknown book uuids are silently skipped. `recorded` is the **inserted** row count.
+/// Batches over `SESSION_BATCH_CAP` are rejected with 422 before any DB work. The batch runs
+/// in one transaction, so a mid-loop DB error rolls back all rows and the client can retry.
 pub(super) async fn post_sessions(
     user: AuthUser,
     State(state): State<AppState>,

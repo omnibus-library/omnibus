@@ -24,14 +24,11 @@ pub(crate) struct IndexPageState<T: 'static> {
     pub sort: Signal<IndexSort>,
 }
 
-/// Runs the fetch-effect (re-run on mount and cache-revalidation bumps),
-/// the post-mount sort-prefs reconcile, and the scroll-restore wiring
-/// common to every index page. `fetch` builds a fresh list future on each
-/// call (so it can re-read `server_url`/generation); `load_sort` reads the
-/// page's persisted sort axis. `sort` is seeded to `IndexSort::default()`
-/// so SSR and first-hydration markup match (rule 07) — the reconcile only
-/// fires post-mount, and the sort toolbar renders only after the fetch
-/// resolves, so it can't cause a flash.
+/// Runs the fetch-effect (re-run on mount and cache-revalidation bumps), the
+/// post-mount sort-prefs reconcile, and the scroll-restore wiring common to
+/// every index page. `fetch` builds a fresh list future per call; `load_sort`
+/// reads the page's persisted sort axis. `sort` is seeded to
+/// `IndexSort::default()` so SSR and first-hydration markup match (rule 07).
 pub(crate) fn use_index_page_shell<T, F, Fut>(
     fetch: F,
     load_sort: impl Fn() -> IndexSort + 'static,

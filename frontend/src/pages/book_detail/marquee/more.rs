@@ -47,10 +47,6 @@ pub(super) struct MoreStopCtx {
 /// this book, the author's other work, then suggestions. The series is fetched
 /// once by the stage and threaded in, so this stop and the Home kicker read the
 /// same record.
-///
-/// These were two stops until the running order collapsed to six — the shelf
-/// is not a subject of its own, it is one of the three ways this page points
-/// away from the book it is about.
 #[component]
 pub(super) fn MarqueeMoreStop(
     b: EbookMetadata,
@@ -273,13 +269,9 @@ fn shelves_load(loaded: Option<&str>, uuid: &str, read: &ShelvesRead) -> Shelves
 
 /// Every shelf holding the book, in the order the block draws them: the
 /// hand-picked ones, the smart ones whose rules match it, then the viewer's own
-/// Wishlist when the book is on it.
-///
-/// The wishlist shelf's membership derives from `wishlist_entries`, not
-/// `shelf_books`, so neither membership read names it; the landing gallery
-/// counts the book under it all the same. It is read off the page's own
-/// wishlist signal instead, so it appears the moment the Add button lands and
-/// goes with Remove — counted in when the read predates the wish.
+/// Wishlist when the book is on it. Wishlist membership comes from the page's
+/// wishlist signal (neither membership read names it), so it tracks Add/Remove
+/// immediately.
 fn held_shelves(
     facts: &ShelvesFacts,
     viewer_id: Option<i64>,
@@ -358,13 +350,11 @@ impl ReadState {
     }
 }
 
-/// Every shelf holding this book, as tiles — the hand-picked ones, the smart
-/// ones whose rules match it, and the viewer's own Wishlist when the book is on
-/// it — and the picker that adds the book to a hand-picked shelf or takes it
-/// off again. `in_series` sits the block under the series shelf, which already
-/// says what the book is part of; `has_cover` is whether the book can stand on
-/// a shelf's ledge. The block re-reads when a save on the page may have moved a
-/// smart shelf's verdict.
+/// Every shelf holding this book as tiles (hand-picked, matching smart, and the
+/// viewer's Wishlist), plus the picker that adds it to or takes it off a
+/// hand-picked shelf. `in_series` sits the block under the series shelf;
+/// `has_cover` is whether the book can stand on a shelf's ledge. Re-reads when a
+/// save on the page may have moved a smart shelf's verdict.
 #[component]
 fn MarqueeShelfMembership(
     uuid: String,

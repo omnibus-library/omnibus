@@ -50,13 +50,10 @@ impl DlFormat {
     }
 }
 
-/// One planned (or fetched) file of a download.
-///
-/// The two validators answer different questions and are deliberately not
-/// one field. Both are `#[serde(default)]` because this struct is stored as
-/// JSON in `downloads.files`, so rows written before they existed still
-/// load — as a download with no validators, which reads as "can't tell",
-/// never as "stale".
+/// One planned (or fetched) file of a download. The two validators answer
+/// different questions and are deliberately not one field. Both are
+/// `#[serde(default)]` so rows stored before they existed load as "no
+/// validators", which reads as "can't tell", never "stale".
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PlannedFile {
     /// File name inside `downloads/{uuid}/` (also the `/dl` URL segment).
@@ -103,15 +100,9 @@ pub struct DownloadEntry {
     pub files: Vec<PlannedFile>,
     pub updated_at: i64,
     /// The library file moved under this download — drives the "Update
-    /// available" chip.
-    ///
-    /// In memory only, and recomputed by [`note_book`] whenever fresh
-    /// metadata lands. Persisting it would mean a chip that outlived the
-    /// evidence for it: the flag is a *comparison* against current server
-    /// state, and after a cold start there is no current state until
-    /// something refreshes. A missing chip that reappears seconds later
-    /// beats a stale chip that tells a reader to re-download a book that is
-    /// already current.
+    /// available" chip. In memory only, recomputed by [`note_book`] whenever
+    /// fresh metadata lands: it is a comparison against current server state,
+    /// so persisting it would leave a chip that outlived its evidence.
     pub stale: bool,
 }
 
@@ -463,14 +454,8 @@ fn persist_progress(
 }
 
 /// Persist the response validator for one file of a download, immediately.
-///
-/// Called by the engine the moment a response's headers arrive, *before*
-/// any of its body is read. That timing is the whole point: the process can
-/// be killed or the task cancelled at any point during a transfer, and the
-/// `.part` it leaves behind is only safely resumable if the tag naming the
-/// file those bytes came from already reached disk. Anything that waits for
-/// the transfer to return — success or failure — misses exactly the
-/// interruptions a mobile client actually suffers.
+/// Called by the engine when a response's headers arrive, *before* any body is
+/// read, so an interrupted transfer's `.part` is resumable (rule 09).
 pub(super) fn record_file_etag(uuid: &str, format: DlFormat, rel: &str, etag: Option<String>) {
     let Ok(mut guard) = registry().write() else {
         return;

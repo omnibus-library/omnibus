@@ -808,11 +808,9 @@ fn delete_copy_only(state: PhysPanelState, url: String, copy_id: i64) {
 }
 
 /// Shared shape of the two last-copy actions: delete the copy, drop it from
-/// local state, close the modal, then run `follow_up` for the effect specific
-/// to "remove from library" vs "move to wishlist". The copy leaves local state
-/// the instant its own delete succeeds — before `follow_up` runs — so a failed
-/// follow-up can't resurrect a phantom card or leave a stale one; it can only
-/// drop the panel into a state the user can retry from.
+/// local state, close the modal, then run `follow_up` (remove from library vs
+/// move to wishlist). The copy leaves local state as soon as its own delete
+/// succeeds, so a failed `follow_up` leaves the panel retryable, not stale.
 fn delete_last_copy_then<F, Fut>(state: PhysPanelState, url: String, copy_id: i64, follow_up: F)
 where
     F: FnOnce() -> Fut + 'static,

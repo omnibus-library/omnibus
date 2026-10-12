@@ -181,21 +181,17 @@ pub struct AlignmentView {
     pub reading: Option<AlignmentPosition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listening: Option<AlignmentAudioPosition>,
-    /// Matched anchor pairs `(text_frac, audio_frac)` in `0.0..=1.0`, in
-    /// text order — the modal's connector threads and its anchored
-    /// mapped-preview interpolation (the same pairs the jump uses, so the
-    /// preview cannot lie). Empty when anchoring is off. Always serialized
-    /// (no `skip_serializing_if`): the iOS `Codable` decode requires the
-    /// key, and omitting it broke the alignment sheet for exactly the
-    /// linear-tier books that most need linking.
+    /// Matched anchor pairs `(text_frac, audio_frac)` in `0.0..=1.0`, in text order:
+    /// the connector threads and anchored preview interpolation the modal draws.
+    /// Empty when anchoring is off. Always serialized: the iOS `Codable` decode
+    /// requires the key.
     #[serde(default)]
     pub anchor_pairs: Vec<(f64, f64)>,
-    /// Usable (titled, non-synthetic) audio chapter marks on the preview
-    /// timeline. With `anchor_match` absent on a *non-stale* view, zero
-    /// means "no marks in the audio" and nonzero means "marks exist but
-    /// couldn't be aligned" — two different linear notices. On a stale
-    /// link the whole preview (this count included) is suppressed at 0;
-    /// check `link.stale` before interpreting it.
+    /// Usable (titled, non-synthetic) audio chapter marks on the preview timeline.
+    /// With `anchor_match` absent on a non-stale view, zero means "no marks in the
+    /// audio" and nonzero means "marks exist but couldn't be aligned". On a stale
+    /// link the whole preview (this count included) is suppressed at 0; check
+    /// `link.stale` before interpreting it.
     #[serde(default)]
     pub audio_chapter_marks: i64,
 }

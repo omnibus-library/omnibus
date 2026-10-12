@@ -61,12 +61,10 @@ pub(super) fn install_chrome_handlers(
     }
 }
 
-/// Leave the reader: always route to the book's detail page. History-walking
-/// (`go_back`) returned to wherever the reader was entered from — the landing
-/// grid, search, the Continue hero — but the reader's back affordance means
-/// "close this book", and its home is the detail page. `replace` keeps the
-/// reader itself out of history so the browser back button doesn't bounce
-/// between the reader and the detail page.
+/// Leave the reader: always route to the book's detail page, not back through
+/// history, since the back affordance means "close this book". `replace` keeps
+/// the reader out of history, so the browser back button doesn't bounce between
+/// the reader and the detail page.
 fn back_to_book(nav: dioxus_router::Navigator, uuid: &str) {
     let _ = nav.replace(crate::Route::BookDetail {
         uuid: uuid.to_string(),

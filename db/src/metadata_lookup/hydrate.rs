@@ -14,24 +14,11 @@ use super::providers::{self, openlibrary};
 use super::query::SearchQuery;
 use super::{MetadataLookupConfig, MetadataLookupError};
 
-/// Re-fetch one selected candidate in full.
-///
-/// `Ok(None)` when the provider no longer knows the candidate — a clean miss
-/// the caller answers by keeping the list row it already has, never by
-/// blanking it.
-///
-/// **The handle, not the ISBN, is what identifies the candidate.** `isbn13`
-/// is a hint: when present it names a *printing*, so it is preferred, and the
-/// provider is asked by ISBN exactly as before. When absent — which is now
-/// routine, since a Hardcover search document describes a work whose `isbns`
-/// span every edition — the provider is asked by its own `provider_ref`
-/// instead. A malformed ISBN is treated as absent rather than fatal, because
-/// the handle alone is enough and refusing the whole re-fetch over a bad hint
-/// would strand a candidate the reader can see.
-///
-/// Google Books and Hardcover already answer their searches from the same
-/// record their detail endpoint would serve, so for those two the ISBN path is
-/// the ISBN lookup and nothing more.
+/// Re-fetch one selected candidate in full. `Ok(None)` when the provider no
+/// longer knows it: the caller keeps the list row it already has. The handle,
+/// not the ISBN, identifies the candidate: `isbn13` is a hint naming a
+/// *printing*, preferred when present and valid; otherwise the provider is
+/// asked by its own `provider_ref`.
 pub async fn hydrate_edition(
     config: &MetadataLookupConfig,
     source: MetadataProvider,

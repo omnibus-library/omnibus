@@ -5,15 +5,24 @@ use serde_json::json;
 
 use crate::device::Device;
 use crate::firmware::Quirk;
-use crate::test_support::{new_entitlement, spawn_stub, Stub, STUB_TOKEN};
+use crate::test_support::{
+    new_entitlement, request_lines, spawn_stub, RunningStub, Stub, STUB_TOKEN,
+};
 
 use super::*;
 
-fn request_lines(report: &SyncReport) -> Vec<String> {
-    report
-        .requests
+/// The `x-kobo-synctoken` each `library_sync` request carried, in order.
+fn library_sync_tokens(stub: &RunningStub) -> Vec<Option<String>> {
+    let requests = stub.requests.lock().unwrap();
+    requests
         .iter()
-        .map(|r| format!("{} {}", r.method, r.path))
+        .filter(|r| r.path.ends_with("/v1/library/sync"))
+        .map(|r| {
+            r.headers
+                .get("x-kobo-synctoken")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        })
         .collect()
 }
 
@@ -25,15 +34,15 @@ async fn sync_now_completes_handshake_against_healthy_stub() {
     let report = sync_now(&mut device, &stub.endpoint).await.unwrap();
 
     assert_eq!(
-        request_lines(&report),
+        request_lines(&report.requests),
         [
-            "GET /kobo/<token>/v1/initialization",
-            "POST /kobo/<token>/v1/analytics/gettests",
-            "GET /kobo/<token>/v1/user/profile",
-            "GET /kobo/<token>/v1/user/loyalty/benefits",
-            "GET /kobo/<token>/v1/products/books/subscriptions",
-            "GET /kobo/<token>/v1/deals",
-            "GET /kobo/<token>/v1/library/sync",
+            "GET /kobo/<token>/v1/initialization 200",
+            "POST /kobo/<token>/v1/analytics/gettests 200",
+            "GET /kobo/<token>/v1/user/profile 200",
+            "GET /kobo/<token>/v1/user/loyalty/benefits 200",
+            "GET /kobo/<token>/v1/products/books/subscriptions 200",
+            "GET /kobo/<token>/v1/deals 200",
+            "GET /kobo/<token>/v1/library/sync 200",
         ]
     );
 }
@@ -268,17 +277,10 @@ async fn sync_now_echoes_sync_token_on_continued_pages() {
         .unwrap();
 
     assert_eq!(report.pages, 2);
-    let requests = stub.requests.lock().unwrap();
-    let tokens: Vec<Option<&str>> = requests
-        .iter()
-        .filter(|r| r.path.ends_with("/v1/library/sync"))
-        .map(|r| {
-            r.headers
-                .get("x-kobo-synctoken")
-                .and_then(|v| v.to_str().ok())
-        })
-        .collect();
-    assert_eq!(tokens, [None, Some("page-1")]);
+    assert_eq!(
+        library_sync_tokens(&stub),
+        [None, Some("page-1".to_owned())]
+    );
 }
 
 #[tokio::test]
@@ -319,4 +321,96 @@ async fn sync_now_fails_when_library_sync_body_is_malformed() {
         .to_string()
         .contains("invalid type: map, expected a sequence"));
     assert!(!format!("{failure:?}").contains(STUB_TOKEN));
+}
+
+#[tokio::test]
+async fn attempt_sync_keeps_requests_when_sync_fails() {
+    let stub = spawn_stub(Stub {
+        store_path_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+
+    let attempt = attempt_sync(&mut Device::new("HW-1"), &stub.endpoint).await;
+
+    assert!(matches!(
+        attempt.outcome,
+        Err(SyncFailure::Quirk {
+            quirk: Quirk::StorePaths,
+            ..
+        })
+    ));
+    assert_eq!(
+        request_lines(&attempt.requests),
+        [
+            "GET /kobo/<token>/v1/initialization 200",
+            "POST /kobo/<token>/v1/analytics/gettests 200",
+            "GET /kobo/<token>/v1/user/profile 404",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn attempt_sync_reports_pages_and_requests_when_sync_succeeds() {
+    let stub = spawn_stub(Stub::default()).await;
+
+    let attempt = attempt_sync(&mut Device::new("HW-1"), &stub.endpoint).await;
+
+    assert!(matches!(attempt.outcome, Ok(1)));
+    assert_eq!(attempt.requests.len(), 7);
+}
+
+#[tokio::test]
+async fn sync_now_echoes_saved_sync_token_on_first_page() {
+    let stub = spawn_stub(Stub::default()).await;
+    let mut device = Device::new("HW-1");
+    device.sync_token = Some("page-9".into());
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap();
+
+    assert_eq!(library_sync_tokens(&stub), [Some("page-9".to_owned())]);
+}
+
+#[tokio::test]
+async fn sync_now_keeps_last_sync_token_on_device() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([]), json!([])],
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap();
+
+    assert_eq!(device.sync_token, Some("page-2".to_owned()));
+}
+
+#[tokio::test]
+async fn sync_now_keeps_saved_sync_token_when_page_carries_none() {
+    let stub = spawn_stub(Stub {
+        sends_sync_token: false,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    device.sync_token = Some("page-9".into());
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap();
+
+    assert_eq!(device.sync_token, Some("page-9".to_owned()));
+}
+
+#[tokio::test]
+async fn sync_now_keeps_saved_sync_token_when_page_fails_to_decode() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!({ "not": "a list" })],
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    device.sync_token = Some("page-9".into());
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap_err();
+
+    assert_eq!(device.sync_token, Some("page-9".to_owned()));
 }

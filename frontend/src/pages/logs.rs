@@ -144,11 +144,10 @@ fn none_if_blank(value: &str) -> Option<String> {
 }
 
 /// Convert a `datetime-local` value (local wall-clock, `YYYY-MM-DDTHH:MM`) to a
-/// UTC ISO-8601 minute prefix (`YYYY-MM-DDTHH:MM`) so it lines up with the
-/// server's UTC (`…Z`) log timestamps. Without this an admin in a non-UTC zone
-/// would filter a window shifted by their offset. `None` for a blank/invalid
-/// value. The minute precision is deliberate — the reader treats `to` as
-/// inclusive of the whole minute.
+/// UTC ISO-8601 minute prefix so it lines up with the server's UTC (`…Z`) log
+/// timestamps; without it a non-UTC admin filters a shifted window. `None` for
+/// a blank/invalid value. Minute precision is deliberate: `to` is inclusive of
+/// the whole minute.
 #[cfg(feature = "web")]
 fn local_to_utc_prefix(value: &str) -> Option<String> {
     let trimmed = value.trim();

@@ -61,12 +61,10 @@ struct AudiobookCommitForm {
 /// [`audiobook_ext_of`] and folded to `m4b` on the way in.
 const MP4_UPLOAD_EXT: &str = "mp4";
 
-/// Map an uploaded filename to the extension it will be filed under, or `None`
-/// if the upload endpoint doesn't take it. The result is always one of
-/// [`db::audiobook::AUDIOBOOK_EXTENSIONS`]: an `.mp4` is admitted because an
-/// audio-only MP4 is byte-for-byte an M4B (same ISO-BMFF container, same AAC),
-/// but it is filed as `.m4b` so the scanner and every player treat it as the
-/// audiobook it is rather than the video its extension implies.
+/// Map an uploaded filename to the extension it will be filed under, or `None` if the
+/// upload endpoint doesn't take it. The result is always one of
+/// [`db::audiobook::AUDIOBOOK_EXTENSIONS`]: an audio-only `.mp4` is byte-for-byte an M4B,
+/// so it is admitted but filed as `.m4b`, and the scanner and players treat it as audio.
 fn audiobook_ext_of(filename: &str) -> Option<String> {
     let ext = raw_extension(filename)?;
     let ext = if ext == MP4_UPLOAD_EXT {
@@ -242,15 +240,11 @@ fn classify_audio_set(files: &[AudioUpload]) -> Result<AudioKind, UploadError> {
     Err(UploadError::MixedAudioUpload)
 }
 
-/// Refuse a single ISO-BMFF container whose tracks don't describe an
-/// audiobook, before it is parsed or placed. Two rules, checked on the staged
-/// tempfile: an upload that arrived as `.mp4` may not carry a `vide` track,
-/// and any container must carry at least one `soun` track. The first rule is
-/// deliberately not applied to `.m4a`/`.m4b` arrivals: iTunes/Audible-style
-/// M4Bs sometimes carry chapter-image stills as a video track and are still
-/// audiobooks. A container with no `moov` is unreadable, not a track verdict,
-/// and reports as [`UploadError::BadAudio`]. `.mp3` sets are not containers
-/// and pass through untouched.
+/// Refuse a single ISO-BMFF container whose tracks don't describe an audiobook, before it
+/// is parsed or placed: an upload that arrived as `.mp4` may not carry a `vide` track, and
+/// any container must carry at least one `soun` track. The first rule is not applied to
+/// `.m4a`/`.m4b` arrivals, which sometimes carry chapter-image stills as video. A
+/// container with no `moov` is unreadable ([`UploadError::BadAudio`]); `.mp3` sets pass.
 async fn require_audio_only_container(
     kind: AudioKind,
     files: &[AudioUpload],

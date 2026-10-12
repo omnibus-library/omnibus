@@ -156,12 +156,10 @@ fn clock_line(hours: &[HourBucket]) -> Option<String> {
     ))
 }
 
-/// "58m" / "1h 28m" / "3h" — the magnitude a reader can't take off a bar, and
-/// an em-dash for a day with nothing on it.
-///
-/// A quiet day reads as an absence, never as "0h 0m": a weekday strip is
-/// zero-filled to seven columns, so a day nobody read has to look different
-/// from a day that was measured at zero.
+/// "58m" / "1h 28m" / "3h", the magnitude a reader can't take off a bar, and an
+/// em-dash for a day with nothing on it: a quiet day reads as an absence, never
+/// "0h 0m", since a zero-filled weekday strip must tell a day nobody read from
+/// one measured at zero.
 fn day_readout(seconds: i64) -> String {
     if seconds <= 0 {
         return "\u{2014}".to_string();

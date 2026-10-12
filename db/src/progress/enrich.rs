@@ -14,15 +14,10 @@ use crate::hls;
 
 use super::ProgressError;
 
-/// How hard to work to place a reading position.
-///
-/// The split exists because the two callers ask at very different rates. A CFI
-/// names its spine document in the string itself, so the chapter is free; only
-/// the offset *within* that document needs the archive opened and one spine
-/// document parsed. Paying that per card on every landing load — for a readout
-/// that reports a chapter, not a percentage of one — is not a trade worth
-/// making, so the feed asks for [`Self::Fast`] and the deliberate single-book
-/// read asks for [`Self::Full`].
+/// How hard to work to place a reading position. A CFI names its spine document
+/// itself, so the chapter is free; only the in-document offset needs the archive
+/// opened and a spine document parsed. The landing feed asks for [`Self::Fast`],
+/// the deliberate single-book read for [`Self::Full`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PositionDetail {
     /// Stored structure only: no file I/O. Names the chapter exactly; reports
@@ -47,12 +42,10 @@ pub(super) struct AudioTotals {
 }
 
 /// Fill a record's read-path fields in place: the resolved audio file and its
-/// duration, a whole-book percent for audio rows (which never store one — the
-/// write path rejects it), and the `resolved` chapter block.
-///
-/// Returns the audio totals so a caller that also renders a part readout
-/// (the resume feed) doesn't repeat the work. `None` for epub rows and for an
-/// audio row whose book has no audio file left.
+/// duration, a whole-book percent for audio rows (which never store one), and
+/// the `resolved` chapter block. Returns the audio totals so a caller that also
+/// renders a part readout doesn't repeat the work; `None` for epub rows and for
+/// an audio row whose book has no audio file left.
 pub(super) async fn enrich_record(
     pool: &SqlitePool,
     record: &mut ProgressRecord,
@@ -90,12 +83,10 @@ pub(super) async fn enrich_record(
 }
 
 /// Fill [`ProgressRecord::derived_epub_cfi`] for an epub row that stores a
-/// percent but no CFI, so a reader opens it where it is. Without one the
-/// reader lands on the cover and writes that back over the percent.
-///
-/// Placed by the same spine-stats mapping the cross-format jump uses, which
-/// floors — the landing never sits past what the reader reached. A no-op for
-/// every other row, and `None` for a book with no measured structure.
+/// percent but no CFI, so a reader opens it where it is instead of the cover.
+/// Placed by the cross-format spine-stats mapping, which floors, so the landing
+/// never sits past what the reader reached. A no-op for every other row, and
+/// `None` for a book with no measured structure.
 pub async fn fill_derived_epub_cfi(pool: &SqlitePool, record: &mut ProgressRecord) {
     if record.format != ProgressFormat::Epub || record.epub_cfi.is_some() {
         return;
@@ -123,12 +114,9 @@ fn audio_percent(record: &ProgressRecord, total_duration_seconds: f64) -> Option
 }
 
 /// Resolve the row's position into a chapter, or `None` when the book carries
-/// no structure to resolve against.
-///
-/// Every underivable case degrades to a coarser block or to `None` — never to
-/// a wrong one — mirroring `state::derive_epub_percent`. Only genuine DB
-/// errors propagate: an unreadable EPUB or an unparseable CFI is a fact about
-/// one book, not a reason to fail the read.
+/// no structure to resolve against. Every underivable case degrades to a coarser
+/// block or `None`, never a wrong one, mirroring `state::derive_epub_percent`;
+/// only genuine DB errors propagate.
 async fn resolve_position(
     pool: &SqlitePool,
     record: &ProgressRecord,
@@ -143,13 +131,10 @@ async fn resolve_position(
     }
 }
 
-/// Map a listening position onto the resolved file's chapter marks.
-///
-/// The marks are container-supplied and may be the indexer's synthetic
-/// per-part fallback ("Part 1", "Part 2", …) — real boundaries, but not
-/// chapters. Those report `Low` rather than being withheld, so a caller can
-/// still say roughly where the reader is without mistaking four parts for
-/// four chapters.
+/// Map a listening position onto the resolved file's chapter marks. Marks that
+/// are the indexer's synthetic per-part fallback ("Part 1", "Part 2", …) are
+/// real boundaries but not chapters, so they report `Low` rather than being
+/// withheld.
 fn resolve_audio(record: &ProgressRecord, totals: &AudioTotals) -> Option<ResolvedPosition> {
     let chapters = &totals.marks;
     let position = record.audio_position_seconds.unwrap_or(0.0);
@@ -186,14 +171,10 @@ fn resolve_audio(record: &ProgressRecord, totals: &AudioTotals) -> Option<Resolv
     })
 }
 
-/// Map a reading position onto the book's spine and table of contents.
-///
-/// Three position shapes arrive here and each resolves differently: a CFI
-/// (which names its own spine document, and yields an in-document offset once
-/// walked), a comic page anchor (no spine to speak of — the stored percent is
-/// the whole answer), and a percent with no CFI at all, which a Kobo writes.
-/// The last is mapped *back* onto the spine, which is necessarily coarse and
-/// says so.
+/// Map a reading position onto the book's spine and table of contents. Three
+/// shapes resolve differently: a CFI (names its own spine document), a comic
+/// page anchor (the stored percent is the whole answer), and a percent with no
+/// CFI, which a Kobo writes and is mapped back onto the spine, coarsely.
 async fn resolve_epub(
     pool: &SqlitePool,
     record: &ProgressRecord,
@@ -346,12 +327,10 @@ async fn resolve_pdf_anchor(
     )))
 }
 
-/// Place a `pdf-page:N` anchor: chapter from the outline at or before the
-/// page, percent at the *end* of that page on the per-page ruler (floored),
-/// so a boundary derived from it — the spoiler cutoff — shows the page the
-/// reader is on and withholds the next. Always `High`: a page is exactly
-/// where the reader was, and one outline entry per page is the finest thing
-/// a PDF records.
+/// Place a `pdf-page:N` anchor: chapter from the outline at or before the page,
+/// percent at the *end* of that page on the per-page ruler (floored), so the
+/// spoiler cutoff derived from it shows the page the reader is on and withholds
+/// the next. Always `High`: a page is exactly where the reader was.
 fn resolve_pdf_page(
     record: &ProgressRecord,
     stats: &[SpineStatRow],
@@ -438,14 +417,10 @@ fn structure_err(e: crate::epub_structure::EpubStructureError) -> ProgressError 
 }
 
 /// Resolve the audio file for a progress row and measure duration + part
-/// position against it. `None` when the book has no resolvable audio file
-/// (e.g. every file was removed after the position was saved).
-///
-/// The row's stored `book_file_id` picks the file for a book carrying more
-/// than one audiobook, so the resume card reads out the narration the user
-/// was actually in. It is a soft reference (rule 06) — a stale id, or one
-/// belonging to another book, falls back to the first audio file by ordinal,
-/// which is what the whole feature did before the id was recorded.
+/// position against it. `None` when the book has no resolvable audio file.
+/// The row's `book_file_id` picks the file for a multi-audiobook book; it is a
+/// soft reference (rule 06), so a stale or foreign id falls back to the first
+/// audio file by ordinal.
 async fn audio_totals(
     pool: &SqlitePool,
     uuid: &str,
@@ -476,12 +451,9 @@ async fn audio_totals(
     }))
 }
 
-/// 0-based index of the mark covering `elapsed` seconds, mirroring the
-/// player's own display arithmetic (not the stored `file_chapters.ordinal`,
-/// which is container-supplied and not guaranteed dense).
-///
-/// `pub(super)` rather than private: exercised directly by a boundary test in
-/// `progress::tests` alongside the rest of the resume-card coverage.
+/// 0-based index of the mark covering `elapsed` seconds, mirroring the player's
+/// own display arithmetic (not the stored `file_chapters.ordinal`, which is
+/// container-supplied and not guaranteed dense).
 pub(super) fn mark_index_at(chapters: &[ChapterInfo], elapsed: f64) -> Option<usize> {
     if chapters.is_empty() {
         return None;

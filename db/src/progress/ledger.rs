@@ -31,12 +31,8 @@ mod tests;
 /// date before which partial reading cannot be reconstructed.
 const PAGES_LEDGER_EPOCH_KEY: &str = "pages_ledger_epoch";
 
-/// Width of a ledger bucket, in seconds — a quarter of an hour.
-///
-/// The granularity a stored gain can be re-bucketed to a local day at: every
-/// modern IANA offset is a whole number of quarter-hours, so shifting a slot by
-/// one lands it exactly on a day boundary, which an hourly bucket could not do
-/// for UTC+05:30, UTC+05:45 or UTC-03:30. Read back by `crate::stats::pages`,
+/// Width of a ledger bucket, in seconds: a quarter of an hour, the grid a stored
+/// gain is re-bucketed to a local day on. Read back by `crate::stats::pages`,
 /// which must resolve days on the same grid this writes them on.
 pub const SLOT_SECS: i64 = 900;
 
@@ -131,11 +127,9 @@ pub(super) async fn observe_percent_tx(
 }
 
 /// The `(new sitting high-water, ground gained)` an observation produces
-/// against an existing mark.
-///
-/// `last_at` is NULL for a mark whose sitting was deliberately ended without
-/// one being started — `merge::transaction::clear_sitting_clock` is the only
-/// writer that does so. It reads as "no sitting in progress", which re-baselines.
+/// against an existing mark. A NULL `last_at` means the sitting was deliberately
+/// ended without one being started (only `merge::transaction::clear_sitting_clock`
+/// does so) and reads as "no sitting in progress", which re-baselines.
 fn sitting_gain(mark: i64, last_at: Option<i64>, percent: i64, observed_at: i64) -> (i64, i64) {
     // A negative gap is an out-of-order observation, not idleness, so it
     // continues the sitting rather than opening one — `<=` covers both.

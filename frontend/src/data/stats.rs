@@ -28,11 +28,8 @@ use super::{
 };
 
 /// `?utc_offset_minutes=…` for the goal writes, or an empty string when this
-/// build has no offset to declare.
-///
-/// The two goal routes take no other query, so the leading `?` lives here. The
-/// Android shell has no browser to ask and reports `None`, which leaves the
-/// server on its session-offset fallback rather than claiming UTC.
+/// build has no offset to declare (the Android shell reports `None`, leaving
+/// the server on its session-offset fallback rather than claiming UTC).
 #[cfg(feature = "mobile")]
 fn offset_query() -> String {
     crate::time::local_utc_offset_minutes()
@@ -42,12 +39,9 @@ fn offset_query() -> String {
 
 /// GET `/api/stats?range=…` — fetch a stats summary: the caller's own with
 /// `user_id: None`, or a sharing household reader's with `user_id: Some(id)`.
-///
-/// A `Some` id bypasses the offline cache entirely (read and write): the
-/// cache is keyed only on `range`, so serving or storing under it here would
-/// let one reader's figures leak into another's cached copy. `require_online`
-/// makes that failure mode a fast, honest [`DataError::Offline`] rather than a
-/// stale answer.
+/// A `Some` id bypasses the offline cache (keyed only on `range`) so one
+/// reader's figures can't leak into another's; `require_online` makes that a
+/// fast [`DataError::Offline`] rather than a stale answer.
 #[cfg(feature = "mobile")]
 pub async fn fetch_stats(
     server_url: &str,
@@ -202,11 +196,8 @@ pub async fn save_reading_goal(
 }
 
 /// PUT `/api/stats/goal/daily` — set, change, or clear one daily goal,
-/// answering with both.
-///
-/// Direct on both targets for the same reason [`save_reading_goal`] is: a goal
-/// is account configuration under rule 08 test 1, so it never enters the
-/// offline outbox.
+/// answering with both. Direct on both targets like [`save_reading_goal`]: a
+/// goal is account configuration (rule 08 test 1), never queued offline.
 #[cfg(feature = "mobile")]
 pub async fn save_daily_goal(
     server_url: &str,
@@ -264,12 +255,10 @@ pub async fn fetch_library_composition(_server_url: &str) -> Result<LibraryCompo
         .map_err(note_server_fn_err)
 }
 
-/// GET `/api/stats/sessions` — one page of the user's session log.
-///
-/// Not read through the offline cache, unlike [`fetch_stats`]: a page is
-/// keyed by a cursor the device only learns from the previous page, so a
-/// cached page one would be the only thing a reader could ever see offline.
-/// The section surfaces its error instead.
+/// GET `/api/stats/sessions` — one page of the user's session log. Not read
+/// through the offline cache, unlike [`fetch_stats`]: pages are keyed by a
+/// cursor from the previous page, so a cached page one would be all a reader
+/// could see offline. The section surfaces its error instead.
 #[cfg(feature = "mobile")]
 pub async fn fetch_session_log(
     server_url: &str,

@@ -189,13 +189,11 @@ fn select_parse_groups(
     (new_groups, changed_groups)
 }
 
-/// [`reindex_audiobooks`] variant that reports verbose [`ScanUpdate`]
-/// events, mirroring [`super::reindex_with_progress`]: a [`PHASE_WALKING`]
-/// event before the walk, per-group parse events during the tag read, and
-/// per-book sync events inside `sync_audiobooks` — parse and sync events
-/// carry the diff's [`omnibus_shared::ScanTallies`] and the current
-/// group's display path. Returns the scan's ghost-count tallies so the
-/// caller can decide whether to attach a warning.
+/// [`reindex_audiobooks`] variant that reports verbose [`ScanUpdate`] events,
+/// mirroring [`super::reindex_with_progress`]: [`PHASE_WALKING`] before the walk,
+/// per-group parse events, and per-book sync events inside `sync_audiobooks`
+/// (carrying the diff's [`omnibus_shared::ScanTallies`] and the group's display
+/// path). Returns the scan's ghost-count tallies for the caller's warning.
 pub async fn reindex_audiobooks_with_progress(
     pool: &SqlitePool,
     library_path: &str,

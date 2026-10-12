@@ -265,14 +265,11 @@ pub fn MetadataEdit(uuid: String) -> Element {
     }
 }
 
-/// Route target for `/read/:uuid` — the immersive EPUB reader.
-/// Deliberately rendered **without** [`ScreenLayout`]: the reader is a
-/// full-screen surface with its own slim control bar, so the app's top/bottom
-/// nav is suppressed. Same uuid-keyed stability rationale as [`BookDetail`].
-/// Non-mobile also layers the persistent audiobook [`crate::pages::MiniDock`]
-/// alongside the reader — unlike `/listen`, the reader has no
-/// transport of its own, so a book playing in the background would
-/// otherwise be invisible and uncontrollable while reading.
+/// Route target for `/read/:uuid` — the immersive EPUB reader. Rendered
+/// **without** [`ScreenLayout`] (a full-screen surface with its own control
+/// bar), with the same uuid-keyed stability as [`BookDetail`]. Non-mobile also
+/// layers the persistent audiobook [`crate::pages::MiniDock`], since the reader
+/// has no transport of its own.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn BookRead(uuid: String) -> Element {
@@ -351,12 +348,10 @@ pub fn ComicRead(uuid: String) -> Element {
     }
 }
 
-/// Route target for `/pdf/:uuid` — the immersive PDF reader (PDF.js).
-/// Same no-chrome + docked-audio contract as [`ComicRead`]. `file_id` picks
-/// one `book_files` row on a mixed-format book (the file picker's
-/// `?file_id=`), and `page` is a 1-based deep link — the book-detail
-/// saved-passages "open in book" for a PDF highlight — that wins over the
-/// saved position.
+/// Route target for `/pdf/:uuid` — the immersive PDF reader (PDF.js). Same
+/// no-chrome + docked-audio contract as [`ComicRead`]. `file_id` picks one
+/// `book_files` row on a mixed-format book, and `page` is a 1-based deep link
+/// (a PDF highlight's "open in book") that wins over the saved position.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn PdfRead(uuid: String, file_id: Option<i64>, page: Option<i64>) -> Element {
@@ -559,14 +554,10 @@ pub fn NotFound(segments: Vec<String>) -> Element {
 }
 
 /// A navigation target for `route` with the dangling `?` trimmed off.
-///
-/// dioxus-router's macro writes the query separator unconditionally, so a
-/// route with an *absent* optional query argument — `Route::BookListen {
-/// file_id: None }`, `Route::Settings { section: None }` — renders its href
-/// as `/listen/<uuid>?`, which looks broken in a URL a reader copies or
-/// bookmarks. Trimming it changes nothing about routing: the router parses a
-/// missing query and an empty one identically. Use this anywhere such a
-/// route becomes a `Link`'s `to` or a `Navigator::push`.
+/// dioxus-router's macro writes the query separator unconditionally, so a route
+/// with an absent optional query argument renders as `/listen/<uuid>?`. Use
+/// this anywhere such a route becomes a `Link`'s `to` or a `Navigator::push`;
+/// routing is unchanged, since a missing query and an empty one parse alike.
 pub fn link_target(route: Route) -> NavigationTarget {
     NavigationTarget::Internal(trim_query_separators(&route.to_string()))
 }

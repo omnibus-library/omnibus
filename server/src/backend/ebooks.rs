@@ -20,8 +20,11 @@ use serde::{Deserialize, Serialize};
 use super::conditional::{self, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 
 pub(super) mod chapters;
+mod query;
+use self::query::{decode_page_cursor, parse_formats, request_filters};
 use super::{internal, with_pagination_headers, AppState};
 use crate::auth::{AuthUser, MediaAuthUser};
+use crate::http_errors::invalid_filter;
 
 /// Default keyset page size for the paginated `GET /api/ebooks` form. A grid
 /// renders ~30–60 cards above the fold and the table more; 100 covers both
@@ -29,24 +32,24 @@ use crate::auth::{AuthUser, MediaAuthUser};
 /// db layer caps it at `MAX_BOOKS_RETURNED`).
 const DEFAULT_PAGE_LIMIT: i64 = 100;
 
-/// Query params for the paginated form of `GET /api/ebooks`. When none are
-/// present the handler returns the full (capped) library exactly as before, so
-/// existing mobile clients are unaffected; any of `sort`/`dir`/`cursor`/`limit`
-/// switches it to a keyset page that also emits `X-Next-Cursor`. `sort`/`dir`
-/// deserialize straight from their `snake_case`/`lowercase` wire forms
-/// (`?sort=last_updated&dir=desc`). The cursor is interpreted under the
-/// request's sort axis, so a `cursor` without an explicit `sort` **and** `dir`
-/// is a 400 — the client repeats them on every page.
+/// Query params for the paginated form of `GET /api/ebooks`. With none present the
+/// handler returns the full (capped) library; any of `sort`/`dir`/`cursor`/`limit`
+/// switches it to a keyset page that also emits `X-Next-Cursor`. The cursor is
+/// interpreted under the request's sort axis, so a `cursor` without an explicit
+/// `sort` **and** `dir` is a 400.
 #[derive(Deserialize)]
 pub(super) struct EbooksQuery {
     sort: Option<SortKey>,
     dir: Option<SortDir>,
     cursor: Option<String>,
     limit: Option<i64>,
-    /// Comma-separated `book_files.format` filter values (lowercase wire
-    /// form, e.g. `?formats=m4b,m4a,mp3`). The mobile Sort & filter sheet's
-    /// format chips; the other web sidebar facets stay RPC-only.
+    /// Comma-separated `book_files.format` values (lowercase wire form, e.g.
+    /// `?formats=m4b,m4a,mp3`). The legacy list older clients (iOS builds, MCP)
+    /// still send; merged as an include-format clause.
     formats: Option<String>,
+    /// Percent-encoded JSON array of `FilterClause` (`?filter=`); see
+    /// `ViewFilters::from_query_param`. Alone it selects the keyset form.
+    filter: Option<String>,
     /// Comma-separated formats the caller's user hides from their landing
     /// view (`?exclude_formats=cbz`). Client-passed by design: the mirror
     /// syncs send nothing here and stay full-library (rule: exclusion is a
@@ -60,15 +63,6 @@ pub(super) struct EbooksQuery {
     /// `Projection::List`. Keyset form only; absent/false keeps full rows,
     /// which the iOS offline mirror and MCP rely on.
     omit_description: Option<bool>,
-}
-
-/// Split the `?formats=` wire value into filter entries, dropping empties.
-fn parse_formats(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_lowercase)
-        .collect()
 }
 
 /// Query parameters for `GET /api/ebooks/{uuid}/file`.
@@ -97,12 +91,17 @@ pub(super) async fn get_ebooks(
         && q.cursor.is_none()
         && q.limit.is_none()
         && q.formats.is_none()
+        && q.filter.is_none()
         && q.exclude_formats.is_none()
     {
         return respond_full_library(&state, ebook.as_deref(), audiobook.as_deref()).await;
     }
 
-    respond_keyset_page(&state, &q, user.id, ebook.as_deref(), audiobook.as_deref()).await
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    respond_keyset_page(&state, &q, viewer, ebook.as_deref(), audiobook.as_deref()).await
 }
 
 /// Full (capped) combined library, with `X-Total-Count` / `X-Total-Cap`
@@ -118,41 +117,6 @@ async fn respond_full_library(
     }
 }
 
-/// Client-input error for a malformed or under-specified keyset-page
-/// request. Kept lean rather than a full `Response` — clippy's
-/// `result_large_err` — with the caller rendering the actual 400 (mirrors
-/// `parse_thumb_size` in `covers.rs`).
-enum CursorRequestError {
-    RequiresSortAndDir,
-    Malformed,
-}
-
-impl CursorRequestError {
-    fn into_response(self) -> Response {
-        let msg = match self {
-            CursorRequestError::RequiresSortAndDir => "cursor requires sort and dir",
-            CursorRequestError::Malformed => "malformed cursor",
-        };
-        (axum::http::StatusCode::BAD_REQUEST, msg).into_response()
-    }
-}
-
-/// Decode `q.cursor` relative to `q.sort`/`q.dir`. A cursor without an
-/// explicit `sort` **and** `dir`, or a malformed cursor, is a 400 rather than
-/// a silently mis-positioned page or a 500 — returned as `Err` for the caller
-/// to short-circuit on.
-fn decode_page_cursor(q: &EbooksQuery) -> Result<Option<db::PageCursor>, CursorRequestError> {
-    if q.cursor.is_some() && (q.sort.is_none() || q.dir.is_none()) {
-        return Err(CursorRequestError::RequiresSortAndDir);
-    }
-    match q.cursor.as_deref() {
-        Some(c) => db::PageCursor::decode(c)
-            .map(Some)
-            .map_err(|_| CursorRequestError::Malformed),
-        None => Ok(None),
-    }
-}
-
 /// The filtered total for the page's paths/filters/exclusion, plus — first
 /// page only — the hidden-count receipt: the diff between that total and the
 /// same query with the exclusion lifted. Later pages inherit the client's
@@ -161,12 +125,13 @@ async fn page_totals(
     state: &AppState,
     paths: &[&str],
     filters: &ViewFilters,
+    viewer: db::Viewer,
     exclude: &[String],
     cursor_is_none: bool,
 ) -> Result<(i64, Option<i64>), db::BooksError> {
-    let total = db::count_books_page(&state.pool, paths, filters, exclude).await?;
+    let total = db::count_books_page(&state.pool, paths, filters, viewer, exclude).await?;
     let hidden = if !exclude.is_empty() && cursor_is_none {
-        let all = db::count_books_page(&state.pool, paths, filters, &[]).await?;
+        let all = db::count_books_page(&state.pool, paths, filters, viewer, &[]).await?;
         Some(all - total)
     } else {
         None
@@ -218,7 +183,7 @@ fn keyset_page_response(
 async fn respond_keyset_page(
     state: &AppState,
     q: &EbooksQuery,
-    user_id: i64,
+    viewer: db::Viewer,
     ebook: Option<&str>,
     audiobook: Option<&str>,
 ) -> Response {
@@ -226,21 +191,18 @@ async fn respond_keyset_page(
         Ok(c) => c,
         Err(e) => return e.into_response(),
     };
+    let filters = match request_filters(q) {
+        Ok(f) => f,
+        Err(reason) => return invalid_filter(&reason),
+    };
     let path = ebook.or(audiobook).map(str::to_string);
     let paths = db::collect_paths(ebook, audiobook);
-    // Format chips are the only REST-exposed facet (the mobile sheet); the
-    // remaining sidebar facets stay a web/RPC concern.
-    let filters = ViewFilters {
-        formats: q.formats.as_deref().map(parse_formats).unwrap_or_default(),
-        ..ViewFilters::default()
-    };
     let exclude = omnibus_shared::sanitize_exclude_formats(
         q.exclude_formats
             .as_deref()
             .map(parse_formats)
             .unwrap_or_default(),
     );
-    let viewer = q.stack_series.unwrap_or(false).then_some(user_id);
     let page = match keyset_rows(
         state,
         q,
@@ -259,7 +221,7 @@ async fn respond_keyset_page(
     // chips (and the exclusion — it counts what pagination will actually
     // yield); identical to the unfiltered count when neither is set.
     let (total, hidden) =
-        match page_totals(state, &paths, &filters, &exclude, cursor.is_none()).await {
+        match page_totals(state, &paths, &filters, viewer, &exclude, cursor.is_none()).await {
             Ok(t) => t,
             Err(error) => return internal("count books", error),
         };
@@ -276,7 +238,7 @@ async fn respond_keyset_page(
     keyset_page_response(body, total, hidden, page.next)
 }
 
-/// The page's rows: series-stacked for `viewer` when set, else plain with no stacks.
+/// The page's rows: series-stacked when the request asks for it, else plain with no stacks.
 async fn keyset_rows(
     state: &AppState,
     q: &EbooksQuery,
@@ -284,7 +246,7 @@ async fn keyset_rows(
     filters: &ViewFilters,
     exclude: &[String],
     cursor: Option<&db::PageCursor>,
-    viewer: Option<i64>,
+    viewer: db::Viewer,
 ) -> Result<db::StackedBookPage, db::BooksError> {
     let sort = q.sort.unwrap_or_default();
     let dir = q.dir.unwrap_or_default();
@@ -294,41 +256,39 @@ async fn keyset_rows(
     } else {
         db::books::Projection::Full
     };
-    match viewer {
-        Some(viewer_id) => {
-            db::list_books_page_stacked(
-                &state.pool,
-                paths,
-                sort,
-                dir,
-                filters,
-                exclude,
-                cursor,
-                limit,
-                viewer_id,
-                projection,
-            )
-            .await
-        }
-        None => {
-            let page = db::books::list_books_page_projected(
-                &state.pool,
-                paths,
-                sort,
-                dir,
-                filters,
-                exclude,
-                cursor,
-                limit,
-                projection,
-            )
-            .await?;
-            Ok(db::StackedBookPage {
-                books: page.books,
-                next: page.next,
-                stacks: Vec::new(),
-            })
-        }
+    if q.stack_series.unwrap_or(false) {
+        db::list_books_page_stacked(
+            &state.pool,
+            paths,
+            sort,
+            dir,
+            filters,
+            viewer,
+            exclude,
+            cursor,
+            limit,
+            projection,
+        )
+        .await
+    } else {
+        let page = db::books::list_books_page_projected(
+            &state.pool,
+            paths,
+            sort,
+            dir,
+            filters,
+            viewer,
+            exclude,
+            cursor,
+            limit,
+            projection,
+        )
+        .await?;
+        Ok(db::StackedBookPage {
+            books: page.books,
+            next: page.next,
+            stacks: Vec::new(),
+        })
     }
 }
 
@@ -344,12 +304,6 @@ pub(super) async fn get_ebook_by_uuid(
     }
 }
 
-/// Resolve the on-disk EPUB path for `uuid`, honouring an optional
-/// `?file_id=N` (multi-EPUB books). Returns the resolved book id alongside
-/// the path on success so callers that need it (the override-baked download,
-/// the CBZ fallback) don't re-resolve uuid→id. On failure the error carries
-/// the id too, when it was resolved before the failure — `None` only when
-/// the uuid itself didn't match a book.
 /// Wire mime for a served PDF.
 pub(crate) const PDF_MIME: &str = "application/pdf";
 /// Wire mime for a served EPUB (and KEPUB).
@@ -364,12 +318,10 @@ struct TextFile {
     mime: &'static str,
 }
 
-/// Resolve the text-bearing file `/download` (and `?file_id=` on `/file`)
-/// serves: with a `file_id`, that row when it is an EPUB or a PDF — never a
-/// CBZ, which has no text and is read page by page; without one, the EPUB
-/// else the PDF (`db::book_text_source`'s order). `Err` carries the book id
-/// when the uuid resolved, so a caller can fall through to the comic archive
-/// without a second lookup.
+/// Resolve the text-bearing file `/download` (and `?file_id=` on `/file`) serves:
+/// with a `file_id`, that row when it is an EPUB or a PDF (never a CBZ); without one,
+/// the EPUB else the PDF (`db::book_text_source`'s order). `Err` carries the book id
+/// when the uuid resolved, so a caller can fall through to the comic archive.
 async fn resolve_text_path(
     state: &AppState,
     uuid: &str,
@@ -421,15 +373,10 @@ async fn resolve_text_path(
 /// `application/zip` would not say what the bytes are.
 pub(crate) const CBZ_MIME: &str = "application/vnd.comicbook+zip";
 
-/// Resolve the file `/file` streams for `uuid` on the one precedence ladder
-/// every surface shares: the EPUB when the book has one, else its CBZ
-/// archive, else its PDF. The archive fallback is what lets a comic-only
-/// book be taken offline whole — the per-page endpoint answers reading, not
-/// downloading — and CBZ outranks PDF because a book carrying both is a
-/// comic scanned twice, and the comic pipeline is the one that is
-/// offline-verified. An explicit `?file_id=` names an EPUB or PDF row only:
-/// multi-file selection exists for text editions and must not silently
-/// resolve to an archive.
+/// Resolve the file `/file` streams for `uuid` on the one precedence ladder every
+/// surface shares: the EPUB when the book has one, else its CBZ archive, else its PDF.
+/// The archive fallback lets a comic-only book be taken offline whole. An explicit
+/// `?file_id=` names an EPUB or PDF row only; it never resolves to an archive.
 async fn resolve_readable_path(
     state: &AppState,
     uuid: &str,
@@ -446,6 +393,8 @@ async fn resolve_readable_path(
         Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
         Err(e) => return Err(internal("resolve_book_id_by_uuid", e)),
     };
+    // CBZ outranks PDF: a book carrying both is a comic scanned twice, and the
+    // comic pipeline is the one that is offline-verified.
     for (format, mime) in [("EPUB", EPUB_MIME), ("CBZ", CBZ_MIME), ("PDF", PDF_MIME)] {
         match db::book_file_path(&state.pool, id, format).await {
             Ok(Some(path)) => return Ok((path, mime)),
@@ -456,15 +405,11 @@ async fn resolve_readable_path(
     Err(StatusCode::NOT_FOUND.into_response())
 }
 
-/// Streams the raw EPUB bytes — or, for a comic-only book, the CBZ archive,
-/// or for a PDF-only book the PDF (the whole-file download the offline
-/// clients pull, and the bytes PDF.js range-fetches). Accepts optional
-/// `?file_id=N` to target a specific EPUB or PDF `book_files` row.
-///
-/// Gated by [`MediaAuthUser`] rather than [`AuthUser`]: epub.js fetches this
-/// URL from inside the mobile WebView, which can carry neither a session
-/// cookie nor a bearer header, so the session token rides a `?token=` query
-/// param. The web reader's same-origin cookie fetch keeps working unchanged.
+/// Streams the raw EPUB bytes, or the CBZ archive for a comic-only book or the PDF for
+/// a PDF-only book (the whole-file download the offline clients pull). Accepts optional
+/// `?file_id=N` to target a specific EPUB or PDF `book_files` row. Gated by
+/// [`MediaAuthUser`] rather than [`AuthUser`]: epub.js fetches it from the mobile
+/// WebView, which can carry only a `?token=` query param.
 pub(super) async fn get_ebook_file(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -486,14 +431,8 @@ pub(super) async fn get_ebook_file(
 }
 
 /// Resolve the book's readable file (EPUB, else CBZ, else PDF) and stream its bytes,
-/// or report the resolution failure as a 404 / 500. CORS is layered on by
-/// the caller so it covers every arm uniformly.
-///
-/// Goes through the shared `serve_file` path rather than buffering the whole
-/// book, which is what gives the endpoint `Range` support — without which
-/// the `If-Range` guarantee would have nothing to guard. No
-/// `Content-Disposition`: this one is read inline by the reader, while
-/// `/download` is the save-to-disk sibling.
+/// or report the resolution failure as a 404 / 500; the caller adds CORS. Supports
+/// `Range`, with no `Content-Disposition`: `/download` is the save-to-disk route.
 async fn read_ebook_file(
     state: &AppState,
     uuid: &str,
@@ -507,24 +446,11 @@ async fn read_ebook_file(
     super::serve_file(req, &path, mime, None).await
 }
 
-/// Serve one page image out of the book's CBZ archive, extracted
-/// server-side so clients never download or unzip whole archives. `page`
-/// is the 0-based index into the natural-sort page order — the same order
-/// `page_count` on the detail payload counts.
-///
-/// Gated by [`MediaAuthUser`] like the other media routes: the pager loads
-/// pages via plain `<img>` fetches, which from the mobile WebView carry
-/// neither a cookie nor a bearer header, so the session token rides
-/// `?token=`.
-///
-/// The validator is derived from the CBZ file's own stat (via
-/// [`conditional::open`], same inode/mtime/size shape the byte-serving
-/// routes use) combined with the page index, rather than a hash of the
-/// decompressed page. Listing and (on a cache miss) decompressing both
-/// reuse that same opened handle, so a replace racing this request can't
-/// splice a validator from one file onto bytes from another. 404 covers an
-/// unknown uuid, a book without a CBZ file, and an out-of-range index; an
-/// unreadable archive surfaces as a 500.
+/// Serve one page image out of the book's CBZ archive, extracted server-side so
+/// clients never download or unzip whole archives. `page` is the 0-based index into
+/// the natural-sort page order (the order `page_count` on the detail payload counts).
+/// Gated by [`MediaAuthUser`]: the pager's `<img>` fetches carry only `?token=`. 404
+/// for an unknown uuid, a book without a CBZ, or an out-of-range index; 500 if unreadable.
 pub(super) async fn get_ebook_page(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -542,6 +468,9 @@ pub(super) async fn get_ebook_page(
         Err(e) => return internal("book_file_path", e),
     };
 
+    // Validator from the CBZ's own stat plus the page index, not a hash of the
+    // decompressed page; listing and decompression reuse this one handle, so a racing
+    // replace can't splice one file's validator onto another's bytes.
     let open = match conditional::open(&path).await {
         Ok(o) => o,
         Err(e) => return internal("open cbz for page validator", e),
@@ -593,12 +522,11 @@ pub(super) async fn get_ebook_page(
 /// and warms the cache for next time.
 const KEPUB_CONVERT_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
 
-/// Convert `book_id`'s EPUB to KEPUB (via the worker, cached) and download it
-/// for USB sideload onto a Kobo. Falls back to the plain EPUB when kepubify is
-/// absent, conversion fails, or it exceeds [`KEPUB_CONVERT_BUDGET`] — a Kobo
-/// reads plain EPUB too, just with slower page turns. The download filename is
-/// the canonical `book_uuid` so a future USB annotation import can map the
-/// device's `ContentID` back to the book.
+/// Convert `book_id`'s EPUB to KEPUB (via the worker, cached) and download it for USB
+/// sideload onto a Kobo. Falls back to the plain EPUB when kepubify is absent,
+/// conversion fails, or it exceeds [`KEPUB_CONVERT_BUDGET`]. The download filename is
+/// the canonical `book_uuid` so a future USB annotation import can map the device's
+/// `ContentID` back to the book.
 pub(super) async fn get_ebook_kepub(
     user: AuthUser,
     State(state): State<AppState>,
@@ -763,18 +691,11 @@ pub(super) async fn get_library(_user: AuthUser, State(state): State<AppState>) 
 #[cfg(test)]
 mod tests;
 
-/// Current validators for a batch of downloaded files.
-///
-/// A device holding N downloads needs to know whether any of their library
-/// files moved. Asking per book meant N full metadata fetches on a timer —
-/// a request-per-download polling loop that is a real data and battery cost
-/// on a phone and a real load cost on the server. This answers all of them
-/// in one small request, and carries no metadata: just the validator per
-/// (book, format, file) the caller names.
-///
-/// A file the caller asks about that is gone, or whose row the scanner has
-/// not stat'd, comes back with no `etag` — which every client reads as
-/// "can't tell", never as "unchanged".
+/// Current validators for a batch of downloaded files, so a device can check whether any
+/// library file moved in one small request instead of polling per book. Carries no
+/// metadata: just the validator per (book, format, file) the caller names. A file that
+/// is gone, or whose row the scanner has not stat'd, comes back with no `etag`, which
+/// every client reads as "can't tell", never "unchanged".
 pub(super) async fn post_download_validators(
     _user: AuthUser,
     State(state): State<AppState>,

@@ -6,12 +6,10 @@
 use omnibus_shared::PaletteResults;
 
 /// A single selectable item in the flat list used for arrow-key navigation.
-/// Books carry the stable `uuid` so the palette can build `/books/:uuid`
-/// URLs without a second round-trip — [`omnibus_shared::PaletteBookHit`]
-/// now includes the uuid alongside `id`.
+/// Books carry the stable `uuid` so the palette can build `/books/:uuid` URLs
+/// without a second round-trip.
 ///
-/// `Genre` is keyed on its name alone: genres have no row to navigate to, so
-/// [`omnibus_shared::PaletteGenreHit`] carries no id (migration `0066`).
+/// `Genre` is keyed on its name alone: genres have no row to navigate to.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum FlatItem {
     Book { uuid: String, title: String },

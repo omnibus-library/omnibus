@@ -5,17 +5,13 @@
 
 use super::super::helpers::HLS_JS;
 
-/// Build the `window.OmnibusAudio` IIFE script (one self-contained JS module).
-///
-/// Composes four sub-segments: a DOM-reset/listener block (with the
-/// initial playback rate and volume interpolated in), the in-line
-/// OmnibusAudio object scaffold (controls + state + the book uuid), and
-/// the two pure JS init methods for direct-play and HLS. Mismatched brace
-/// escapes in the `format!` args would silently break audio playback, so
-/// each pure JS segment lives in its own helper as a raw `&'static str`
-/// (literal `{`/`}`, no escaping required) and only `control_surface_js`
-/// itself uses `format!` for the three interpolation points.
+/// Build the `window.OmnibusAudio` IIFE script (one self-contained JS module)
+/// from four segments: the DOM-reset block (initial rate and volume interpolated
+/// in), the object scaffold (controls, state, book uuid) and the two JS init
+/// methods (direct-play and HLS).
 pub(super) fn control_surface_js(rate_lit: &str, vol_lit: &str, uuid_lit: &str) -> String {
+    // Pure JS segments are raw `&'static str` helpers (no `{{` escaping); only
+    // this `format!` interpolates, since a brace slip would silently break audio.
     format!(
         r#"
 (function(){{
@@ -47,10 +43,8 @@ pub(super) fn control_surface_js(rate_lit: &str, vol_lit: &str, uuid_lit: &str) 
 
 /// OmnibusAudio object scaffold: mode + direct-mode state plus the
 /// transport-control methods (play/pause/toggle/setRate/stop/seek/skip).
-/// `seek` pushes the target time to the transport display synchronously
-/// (not just via the element's `timeupdate`), so a paused seek shows
-/// immediate feedback. Pure JS with no Rust interpolation, so it
-/// lives as a raw `&'static str` with literal braces.
+/// `seek` updates the transport display synchronously, not just via the
+/// element's `timeupdate`, so a paused seek shows immediate feedback.
 fn transport_controls_js() -> &'static str {
     r#"      // Playback mode. Set by initDirect / initHls; null before either fires.
       _mode: null,

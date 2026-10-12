@@ -10,13 +10,11 @@
 //! bridge, so its answer is pushed into [`set_local_zone`] by
 //! `crate::use_mobile_zone_capture` and read back synchronously here.
 
-/// Whether the client is past its post-mount hydration pass, and it is
-/// therefore safe to read the browser's real UTC offset. Starts `false` so
-/// SSR and the first client paint match (rule 07 — [`local_date_offset`]
-/// returns `0` until this flips); reconciles to `true` in a post-mount effect
-/// on web. Hoist this call once per list and thread the returned signal down
-/// to each row — calling it per-row would cost one signal + one effect per
-/// row.
+/// Whether the client is past its post-mount hydration pass, so it is safe to
+/// read the browser's real UTC offset. Starts `false` so SSR and the first
+/// client paint match (rule 07; [`local_date_offset`] returns `0` until this
+/// flips). Hoist this call once per list and thread the signal down to each
+/// row: calling it per row costs a signal and an effect each.
 #[cfg(feature = "web")]
 pub fn use_local_dates_ready() -> dioxus::prelude::ReadSignal<bool> {
     use dioxus::prelude::*;
@@ -40,9 +38,8 @@ pub fn use_local_dates_ready() -> dioxus::prelude::ReadSignal<bool> {
 /// The offset to render a specific `unix_secs` timestamp against, given
 /// whether the client is past hydration (see [`use_local_dates_ready`]). `0`
 /// (UTC) before mount so the render matches SSR; otherwise this timestamp's
-/// *own* historical local offset — computed fresh per call, since a stamp
-/// from before a DST change and one from after it don't share an offset even
-/// though both render in the same list.
+/// *own* historical local offset, computed per call since a stamp before and
+/// after a DST change don't share one.
 pub fn local_date_offset(ready: bool, unix_secs: i64) -> i64 {
     if ready {
         local_utc_offset_secs(unix_secs)
@@ -68,11 +65,9 @@ pub fn now_unix() -> i64 {
 
 /// Local UTC offset in seconds (positive east of UTC) that was in effect at
 /// `unix_secs`, read synchronously from the browser's `Date.getTimezoneOffset`
-/// on web. Takes the specific timestamp — not "now" — because the offset can
-/// differ across a DST transition: an older highlight or journal entry must
-/// report the offset that applied on *its* date, not today's. Zero everywhere
-/// else: SSR has no browser to ask, and mobile's `SystemTime` clock carries no
-/// zone information.
+/// on web. Takes the specific timestamp, not "now", because the offset differs
+/// across a DST transition. Zero everywhere else: SSR has no browser to ask,
+/// and mobile's `SystemTime` clock carries no zone information.
 pub fn local_utc_offset_secs(unix_secs: i64) -> i64 {
     #[cfg(feature = "web")]
     {
@@ -89,25 +84,18 @@ pub fn local_utc_offset_secs(unix_secs: i64) -> i64 {
     }
 }
 
-/// The Android shell's last reported `(offset_minutes, zone_name)`.
-///
-/// A cache rather than a per-call lookup because the WebView can only be asked
-/// over an async bridge, and the two callers cannot both await: the transport
-/// layer is async, but `session_tracker::build_report` is sync and builds a
-/// report inline. One synchronous read serves both.
-///
-/// Refreshed on every `visibilitychange`, not just at launch, so a reader who
-/// crosses a zone — or sits through a DST transition — is re-asked when they
-/// next bring the app forward rather than carrying launch-time state all week.
+/// The Android shell's last reported `(offset_minutes, zone_name)`. A cache
+/// rather than a per-call lookup: the WebView is only reachable over an async
+/// bridge, but `session_tracker::build_report` is sync. Refreshed on every
+/// `visibilitychange`, so a reader who crosses a zone or a DST transition is
+/// re-asked when they next bring the app forward.
 #[cfg(feature = "mobile")]
 static LOCAL_ZONE: std::sync::RwLock<Option<(i64, Option<String>)>> = std::sync::RwLock::new(None);
 
 /// Record what the WebView says this device's zone is. Called only by
-/// `crate::use_mobile_zone_capture`.
-///
-/// An out-of-range offset is dropped rather than stored: it would not produce
-/// an obviously wrong figure, it would silently file reading on the wrong day,
-/// and leaving the cache empty falls back to the server's own resolution.
+/// `crate::use_mobile_zone_capture`. An out-of-range offset is dropped rather
+/// than stored (it would silently file reading on the wrong day); an empty
+/// cache falls back to the server's own resolution.
 #[cfg(feature = "mobile")]
 pub fn set_local_zone(offset_minutes: i64, zone: Option<String>) {
     if !(-12 * 60..=14 * 60).contains(&offset_minutes) {
@@ -119,22 +107,11 @@ pub fn set_local_zone(offset_minutes: i64, zone: Option<String>) {
     }
 }
 
-/// This device's current UTC offset in minutes east of UTC — `-420` in Los
-/// Angeles, `330` in Kolkata — or `None` where it cannot be asked.
-///
-/// What the stats reads declare so the server can cut their day boundaries on
-/// the reader's own calendar (rule 10). Asked about **now**, unlike
-/// [`local_utc_offset_secs`], because that is the question: which day is it
-/// where the reader is, not which offset applied to some past instant.
-///
-/// `None` rather than `0` when it cannot be asked — SSR, or an Android shell
-/// whose capture hook has not reported yet. A *claim* of UTC is worse than an
-/// absence: the server's fallback (the reader's most recent session offset) is
-/// a better answer than a wrong one.
-///
-/// Not a hydration concern (rule 07): every caller reads this inside an effect
-/// or an event handler, never in a component body, so no markup depends on it
-/// and SSR and the first client paint stay identical.
+/// This device's current UTC offset in minutes east of UTC, or `None` where it
+/// cannot be asked (SSR, or an Android shell that has not reported yet); a
+/// claimed UTC would be worse than the server's session-offset fallback. Asked
+/// about **now**, unlike [`local_utc_offset_secs`]: stats reads declare it for
+/// day boundaries (rule 10). Call only in effects or handlers (rule 07).
 pub fn local_utc_offset_minutes() -> Option<i64> {
     #[cfg(feature = "web")]
     {
@@ -154,17 +131,10 @@ pub fn local_utc_offset_minutes() -> Option<i64> {
 }
 
 /// The browser's IANA zone name — `"America/Los_Angeles"` — or `None` off web
-/// and wherever the runtime declines to name one.
-///
-/// Reported alongside [`local_utc_offset_secs`], never instead of it: the offset
-/// is what the stats bucketing actually uses, and it is DST-correct for the
-/// instant it was taken. The zone answers *where*, which an offset cannot —
-/// `-420` is three different places depending on the month. The server stores it
-/// against the session and does not resolve it today; see
-/// `omnibus_shared::SessionReport::time_zone`.
-///
-/// Unlike the offset this takes no timestamp: `resolvedOptions` reports the
-/// zone the browser is configured for, which is not a per-instant fact.
+/// and wherever the runtime declines to name one. Reported alongside
+/// [`local_utc_offset_secs`], never instead of it: the offset is what stats
+/// bucketing uses, the zone says *where*. Takes no timestamp, since the zone is
+/// not a per-instant fact; the server stores it and does not resolve it today.
 pub fn local_time_zone() -> Option<String> {
     #[cfg(feature = "web")]
     {

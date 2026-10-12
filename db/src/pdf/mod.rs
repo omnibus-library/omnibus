@@ -77,12 +77,10 @@ pub fn text_max_bytes() -> u64 {
 }
 
 /// Extract the [`IndexedBook`] for a single PDF. Mirrors the EPUB parser's
-/// failure contract: an unparseable file is logged and surfaced as a
-/// per-book error row — never a panic or an aborted scan. The parsers run
-/// under `catch_unwind` because the scan's blocking phase has no other
-/// guard, and a malformed font table must not take a library down with it.
-/// A file past [`parse_max_bytes`] is not an error: it indexes from its
-/// filename, with no cover, page count, or text, rather than being loaded.
+/// failure contract: an unparseable file (or a parser panic) is logged and
+/// surfaced as a per-book error row, never an aborted scan. A file past
+/// [`parse_max_bytes`] is not an error: it indexes from its filename, with no
+/// cover, page count or text, rather than being loaded.
 pub fn extract_pdf(path: &Path, filename: String, opts: &ScanOptions) -> IndexedBook {
     if std::fs::metadata(path).is_ok_and(|m| m.len() > parse_max_bytes()) {
         tracing::info!(file = %path.display(), "PDF past the parse cap; indexing from its filename");
@@ -121,6 +119,8 @@ struct ParsedPdf {
 
 fn read_pdf(path: &Path) -> anyhow::Result<ParsedPdf> {
     let bytes = read_within_parse_cap(path)?;
+    // Under `catch_unwind`: the scan's blocking phase has no other guard, and a
+    // malformed font table must not take a library down with it.
     let pdf = catch_unwind(AssertUnwindSafe(|| Pdf::new(bytes)))
         .map_err(|_| anyhow::anyhow!("pdf parser panicked"))?
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;

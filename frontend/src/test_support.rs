@@ -6,15 +6,11 @@
 
 use dioxus::prelude::*;
 
-/// SSR-render an rsx `Element` to an HTML string. The workhorse for
-/// render-smoke tests: pass `rsx! { SomeComponent { ..props } }` and assert on
-/// substrings of the returned markup.
-///
-/// Testing `#[cfg(feature = "mobile")]`-only markup needs both features at
-/// once (`cargo test -p omnibus-frontend --features mobile,server` — a combo
-/// neither CI matrix leg runs alone): gate the test module
-/// `#[cfg(all(test, feature = "mobile", feature = "server"))]`, dropping the
-/// `mobile` half when the file's module root already sits behind it.
+/// SSR-render an rsx `Element` to an HTML string: the workhorse for
+/// render-smoke tests (pass `rsx! { SomeComponent { ..props } }`, assert on
+/// substrings). Testing `mobile`-only markup needs `--features mobile,server`
+/// together (no single CI leg runs that): gate the test module
+/// `#[cfg(all(test, feature = "mobile", feature = "server"))]`.
 pub fn render(element: Element) -> String {
     dioxus::ssr::render_element(element)
 }

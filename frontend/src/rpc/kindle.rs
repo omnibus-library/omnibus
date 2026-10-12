@@ -18,9 +18,8 @@ use super::{internal_rpc_error, AuthUser, PoolExt, WorkerExt};
 /// Enqueue a send of the EPUB for `book_uuid` (optionally a specific `file_id`
 /// for multi-EPUB books) to the authenticated user's Kindle address, returning
 /// the worker `task_id` to poll. Errors synchronously when the user has no
-/// Kindle email, when SMTP is unconfigured, or when the book can't be resolved
-/// — those are fast checks the button surfaces immediately. The actual SMTP
-/// delivery runs on the worker; poll [`rpc_kindle_send_status`] for its result.
+/// Kindle email, SMTP is unconfigured, or the book can't be resolved; the SMTP
+/// delivery runs on the worker (poll [`rpc_kindle_send_status`]).
 #[post("/api/rpc/kindle/send", pool: PoolExt, worker: WorkerExt, user: AuthUser)]
 pub async fn rpc_send_to_kindle(book_uuid: String, file_id: Option<i64>) -> Result<u64> {
     Ok(send_to_kindle(&pool.0, &worker.0, user.id, &book_uuid, file_id).await?)
@@ -80,11 +79,10 @@ async fn send_to_kindle(
 }
 
 /// Poll the status of a send enqueued by [`rpc_send_to_kindle`]. Returns
-/// `None` once `task_id` is unknown — never posted, evicted after the worker's
+/// `None` once `task_id` is unknown: never posted, evicted after the worker's
 /// terminal-retention window (~10s past completion), or not owned by the
-/// caller. Scoped to the requesting user so the guessable task-id space can't
-/// be probed for other users' send outcomes. The client polls this until it
-/// observes a non-`Pending` status.
+/// caller (scoped so the guessable id space can't be probed). The client polls
+/// until it sees a non-`Pending` status.
 #[post("/api/rpc/kindle/send/status", _pool: PoolExt, worker: WorkerExt, user: AuthUser)]
 pub async fn rpc_kindle_send_status(task_id: u64) -> Result<Option<KindleSendStatus>> {
     Ok(worker

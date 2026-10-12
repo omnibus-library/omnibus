@@ -37,12 +37,11 @@ pub fn is_epub_cfi(anchor: &str) -> bool {
     anchor.trim_start().starts_with("epubcfi(")
 }
 
-/// One quadrilateral of a highlight, in PDF user-space points on the
-/// unrotated page with the origin at the bottom-left — the coordinate frame
-/// both PDFKit (`PDFSelection.bounds(for:)`) and PDF.js (`getTextContent`
-/// through a rotation-0 viewport) speak, so an anchor written by one client
-/// paints identically on the other. Corner order is the PDF `QuadPoints`
-/// convention: upper-left, upper-right, lower-left, lower-right.
+/// One quadrilateral of a highlight, in PDF user-space points on the unrotated
+/// page with the origin at the bottom-left, the frame both PDFKit and PDF.js
+/// speak, so an anchor written by one client paints identically on the other.
+/// Corner order is the PDF `QuadPoints` convention: upper-left, upper-right,
+/// lower-left, lower-right.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PdfQuad {
     pub points: [(f32, f32); 4],

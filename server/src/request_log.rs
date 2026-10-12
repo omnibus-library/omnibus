@@ -42,12 +42,10 @@ pub fn layer() -> RequestTraceLayer {
         .on_eos(on_eos as fn(Option<&HeaderMap>, Duration, &Span))
 }
 
-/// The request span. Logs only the path, never the query string: media
-/// reads carry the session as `?token=`, and the default span records the
-/// full URI. Headers never carry credentials (Authorization is deliberately
-/// not among the ones recorded), so `user_agent` and `range` are safe;
-/// `client_ip` honours `ConnectInfo` and the `OMNIBUS_TRUST_FORWARDED_FOR`
-/// opt-in exactly as the rate limiter does.
+/// The request span. Logs only the path, never the query string: media reads carry the
+/// session as `?token=`, and the default span records the full URI. Headers never carry
+/// credentials (Authorization is not among those recorded); `client_ip` honours
+/// `ConnectInfo` and the `OMNIBUS_TRUST_FORWARDED_FOR` opt-in exactly as the rate limiter does.
 fn make_span(req: &Request<Body>) -> Span {
     tracing::info_span!(
         "request",

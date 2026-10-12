@@ -128,16 +128,10 @@ pub async fn highlight_id_for_client_id(
     .await?)
 }
 
-/// List a user's highlights in a book, each placed in the book and ordered
-/// by that position.
-///
-/// Position order is the default because a highlight list is read as a pass
-/// through the book, not as a diary — and because the reader's own order
-/// through the text is the one that makes a run of highlights legible.
-/// `chronological` restores creation order for a caller that wants it.
-///
-/// The placement costs one fixed set of structure reads for the whole
-/// list ([`AnchorIndex`]), not a set per highlight.
+/// List a user's highlights in a book, each placed in the book and ordered by
+/// that position; `chronological` restores creation order. Placement costs one
+/// fixed set of structure reads for the whole list ([`AnchorIndex`]), not a set
+/// per highlight.
 pub async fn list_highlights(
     pool: &SqlitePool,
     user_id: i64,
@@ -350,21 +344,11 @@ pub async fn served_kobo_annotations(
         .collect()
 }
 
-/// Batched counterpart to [`served_kobo_annotations`]: fetch the
-/// Kobo-placeable annotations for every uuid in `book_uuids` in a single
-/// query, grouped by `book_uuid`, instead of one round trip per uuid.
-/// Mirrors [`crate::kobo::reading_state_for`]'s `IN (...)` shape and the
-/// windowed per-group cap used by `covers_manual_batch`
-/// ([`crate::shelves::read`]): a `ROW_NUMBER() OVER (PARTITION BY book_uuid
-/// ORDER BY created_at ASC)` keeps each book's first [`LIST_HIGHLIGHTS_LIMIT`]
-/// rows — the same rows and order [`served_kobo_annotations`] would return
-/// for that book — so a caller comparing this batch's fingerprint against one
-/// acked from the single-uuid path sees the same content. Chunked at 900 to
-/// stay under SQLite's 999 bind-parameter cap (one bind per uuid plus
-/// `user_id`). A uuid with nothing servable is absent from the map rather
-/// than present with an empty vec. Unlike the single-uuid form, this does not
-/// canonicalize `book_uuids` first — callers (today, `changed_book_uuids`)
-/// must pass already-canonical uuids.
+/// Batched counterpart to [`served_kobo_annotations`]: the Kobo-placeable
+/// annotations for every uuid in `book_uuids`, grouped by `book_uuid`, in one
+/// query, with the same first [`LIST_HIGHLIGHTS_LIMIT`] rows per book in the
+/// same order. A uuid with nothing servable is absent from the map. Unlike the
+/// single-uuid form, `book_uuids` must already be canonical.
 pub async fn served_kobo_annotations_batch(
     pool: &SqlitePool,
     user_id: i64,
@@ -375,6 +359,7 @@ pub async fn served_kobo_annotations_batch(
     if book_uuids.is_empty() {
         return Ok(out);
     }
+    // 900 uuids plus `user_id` stay under SQLite's 999 bind-parameter cap.
     for chunk in book_uuids.chunks(900) {
         let placeholders = std::iter::repeat_n("?", chunk.len())
             .collect::<Vec<_>>()

@@ -28,13 +28,9 @@ pub fn duration_label(secs: i64) -> String {
 
 /// `"Nov 14, 2023 · 22:13"` from unix seconds, shifted by `offset_secs`.
 ///
-/// Both halves move together: a sitting at 23:36 local on the 7th is not
-/// "Sep 8 · 03:36". Pass [`crate::time::local_date_offset`]'s result
-/// — `0` until the client is past hydration, so SSR and the first WASM paint
-/// agree (rule 07). This is the client rendering a stored instant in the
-/// viewer's zone, which rule 10 puts outside its server-side day-boundary
-/// arithmetic; the day *buckets* beside it are already cut on the reader's
-/// offset by `db::stats::calendar`, so this is what makes the two agree.
+/// Date and time move together, so a sitting at 23:36 local on the 7th is not
+/// "Sep 8 · 03:36". Pass [`crate::time::local_date_offset`]'s result (`0` until
+/// the client is past hydration, so SSR and the first paint agree).
 fn fmt_started(unix_secs: i64, offset_secs: i64) -> String {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -50,14 +46,9 @@ fn fmt_started(unix_secs: i64, offset_secs: i64) -> String {
 
 /// The session log list.
 ///
-/// `book` scopes it to one book — and when it is `Some`, the rows drop the
-/// title: every one of them would carry the same name as the page they sit
-/// on. `compact` drops the card chrome for a surface that supplies its own
-/// (the book-detail marquee stop).
-///
-/// Paging is keyset, so "Show more" appends the page after the last row
-/// already shown rather than an offset that a session landing mid-scroll
-/// would shift.
+/// `book` scopes it to one book (rows then drop the title); `compact` drops
+/// the card chrome for a surface that supplies its own. Paging is keyset:
+/// "Show more" appends the page after the last row shown.
 #[component]
 pub fn SessionLogList(book: Option<String>, compact: bool) -> Element {
     // Hoisted once for the whole list rather than per row (see

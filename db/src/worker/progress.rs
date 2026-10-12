@@ -11,29 +11,20 @@ use omnibus_shared::{ProgressState, TaskDetail, WorkerStatus};
 use super::types::{lock_unpoison, wall_clock_ms, TaskId, Worker, TERMINAL_RETENTION};
 
 impl Worker {
-    /// Snapshot of every live worker task — non-terminal entries go in
-    /// `active`, terminal entries (`Done` / `Failed`) less than
-    /// [`TERMINAL_RETENTION`] old go in `recent_complete`. Older terminal
-    /// entries are evicted under the same lock. Both vecs are sorted by
-    /// `task_id` so a polling client renders a stable list across ticks.
-    ///
-    /// Unfiltered — includes every user's owned tasks. Only safe to call
-    /// from a context that doesn't forward the result to an untrusted
-    /// caller (tests, the periodic-scan seam); an RPC handler serving a
-    /// polling client should use [`Worker::owner_scoped_snapshot`] instead.
+    /// Snapshot of every live worker task: non-terminal entries in `active`,
+    /// terminal ones (`Done` / `Failed`) younger than [`TERMINAL_RETENTION`] in
+    /// `recent_complete` (older ones are evicted under the same lock), both
+    /// sorted by `task_id`. Unfiltered, so an RPC handler serving a polling
+    /// client must use [`Worker::owner_scoped_snapshot`] instead.
     pub fn progress_snapshot(&self) -> WorkerStatus {
         self.progress_snapshot_with_retention(TERMINAL_RETENTION)
     }
 
-    /// Owner-scoped variant of [`Worker::progress_snapshot`] for a
-    /// polling RPC handler: keeps every task with no recorded owner
-    /// (shared library-wide work — a scan, a thumbnail regen, an
-    /// author-photo refetch) plus entries owned by `user_id`, and drops
-    /// every other user's owned task. Closes the leak where any
-    /// authenticated user could read another user's Send-to-Kindle
-    /// failure text off the general worker-status poll, bypassing the
-    /// owner check [`Worker::owned_task_state`] already enforces on the
-    /// dedicated Kindle-status poll.
+    /// Owner-scoped variant of [`Worker::progress_snapshot`] for a polling RPC
+    /// handler: keeps tasks with no recorded owner (shared library-wide work)
+    /// plus entries owned by `user_id`, and drops every other user's. Without
+    /// it, any user could read another's Send-to-Kindle failure text from the
+    /// general poll, bypassing [`Worker::owned_task_state`]'s owner check.
     pub fn owner_scoped_snapshot(&self, user_id: i64) -> WorkerStatus {
         self.snapshot(TERMINAL_RETENTION, Some(user_id))
     }
@@ -91,14 +82,11 @@ impl Worker {
         }
     }
 
-    /// Internal terminal write. Called from `run` (Ok/Err) and from the
-    /// `ProgressTerminalGuard` (panic). The `terminal_at` Instant is
-    /// monotonic so eviction is robust to wall-clock drift. Also records
-    /// this task's wall-clock run duration into
-    /// [`Worker::record_completion`]'s per-kind window, backing
-    /// [`Worker::metrics`] — the two mutexes involved (`progress` and
-    /// `completion_timings`) are never held at once, so this can't
-    /// introduce a lock-order deadlock with `metrics()`.
+    /// Internal terminal write, called from `run` (Ok/Err) and from the
+    /// `ProgressTerminalGuard` (panic). Also records this task's wall-clock run
+    /// duration into [`Worker::record_completion`]'s per-kind window, backing
+    /// [`Worker::metrics`]; the `progress` and `completion_timings` mutexes are
+    /// never held at once, so this can't deadlock with `metrics()`.
     pub(super) fn write_terminal_progress(&self, id: TaskId, state: ProgressState) {
         let recorded = {
             let mut map = lock_unpoison(&self.progress);
@@ -117,6 +105,7 @@ impl Worker {
                         entry.progress.detail = None;
                     }
                 }
+                // `Instant` is monotonic, so eviction is robust to wall-clock drift.
                 entry.terminal_at = Some(Instant::now());
                 let elapsed_ms = now_ms.saturating_sub(entry.progress.started_at_ms).max(0);
                 (

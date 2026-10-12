@@ -42,31 +42,20 @@ pub enum MetadataLookupError {
     /// The input ISBN failed validation (bad length, chars, or check digit).
     #[error(transparent)]
     Isbn(#[from] IsbnError),
-    /// No provider could be asked. Distinct from a clean miss, which is an
-    /// empty answer, not an error.
-    ///
-    /// The message is deliberately the caller-facing sentence rather than the
-    /// provider's own wording: "google books returned an error status" reads as
-    /// an Omnibus bug, when in practice it is usually Google Books' anonymous
-    /// daily quota (HTTP 429 — we send no API key). The provider's error stays
-    /// on the source chain for the log. It names no way forward on purpose:
-    /// the web dialog has no manual-entry route, so a sentence that offered
-    /// one sent readers looking for a screen that does not exist.
+    /// No provider could be asked. Distinct from a clean miss, which is an empty
+    /// answer, not an error. The message is the caller-facing sentence, not the
+    /// provider's wording (usually Google Books' anonymous 429 quota, not an Omnibus
+    /// bug); the provider error stays on the source chain for the log. It names no
+    /// way forward: the web dialog has no manual-entry route.
     #[error("metadata lookup is temporarily unavailable — try again later")]
     Provider(#[from] anyhow::Error),
 }
 
 /// Resolve an ISBN to book metadata, asking each configured provider in turn.
-///
-/// Validates and normalizes the ISBN first (→ [`MetadataLookupError::Isbn`] on
-/// a bad input), so no provider is ever handed an unvalidated string. Returns
-/// `Ok(None)` when the providers answered and none knew the book — the
-/// unresolved signal that sends the UI to manual entry or a title search.
-///
-/// Series and first-publish year are filled in concurrently from Open Library
-/// (see [`openlibrary_enrich`]) for whichever fields the answering provider
-/// left empty — a hit therefore pays no extra latency for them, and a miss
-/// only wastes two cheap best-effort GETs.
+/// A bad ISBN fails first with [`MetadataLookupError::Isbn`]. `Ok(None)` means
+/// the providers answered and none knew the book, which sends the UI to manual
+/// entry or a title search. Series and first-publish year the provider left
+/// empty are filled from Open Library ([`openlibrary_enrich`]).
 pub async fn search_provider_by_isbn(
     config: &MetadataLookupConfig,
     raw_isbn: &str,
@@ -100,23 +89,11 @@ pub async fn search_provider_by_title(
     climb(config, &SearchQuery::from_text(query)).await
 }
 
-/// Walk the provider ladder until one answers.
-///
-/// The first non-empty answer wins. A rung that *fails* is skipped rather than
-/// aborting the walk, because a provider being down says nothing about whether
-/// the book exists — but if the walk ends empty and the terminal rung was one
-/// of the failures, we never got a real answer, so that error surfaces instead
-/// of a "not found" we can't stand behind.
-///
-/// A rung in a rate-limit cooldown is skipped **without a request**, and
-/// counts as a failure for the terminal rule above: we did not get an answer,
-/// so "not found" would be just as much of a lie as it is after a 500.
-///
-/// Each rung's answer is scored before it is accepted. That matters more than
-/// it used to: Hardcover's title search was an exact-match filter that could
-/// only return the book you named, and is now full-text, so without a floor
-/// this walk would take whatever a fuzzy engine ranked first and hand it back
-/// as the one confident answer a reader files a physical copy against.
+/// Walk the provider ladder until one answers; the first non-empty answer wins.
+/// A failed rung is skipped, since a provider being down says nothing about
+/// whether the book exists, but if the walk ends empty and the terminal rung
+/// failed, that error surfaces instead of an unreliable "not found". A rung in
+/// a rate-limit cooldown is skipped without a request and counts as failed.
 async fn climb(
     config: &MetadataLookupConfig,
     query: &SearchQuery,
@@ -138,6 +115,9 @@ async fn climb(
             }
             continue;
         }
+        // Score every answer before accepting it: Hardcover's full-text search would
+        // otherwise hand back whatever a fuzzy engine ranked first as the one confident
+        // answer a reader files a physical copy against.
         match providers::run(rung.provider, config, query)
             .await
             .map(|found| relevance::filter_and_rank(found, query, SEARCH_LIMIT))
@@ -172,24 +152,11 @@ async fn climb(
     }
 }
 
-/// Narrow a rung's candidates to the check-in payload, resolving an edition
-/// for the top one when the whole rung answered at the level of *works*.
-///
-/// The picker is happy with a work-level candidate — it shows the row and
-/// resolves the edition when the reader picks it. Check-in is not: it stores
-/// the ISBN per physical copy and prints it on its confirm screens, so a
-/// candidate without one is not something it can act on.
-///
-/// Hardcover's full-text search is exactly this case: its documents describe
-/// works, whose `isbns` span every edition, so none can honestly be attributed
-/// to the candidate. Without this the rung would answer and then be discarded
-/// wholesale — worse than the exact-title filter it replaced, which at least
-/// answered with an edition on the rare occasions it matched at all.
-///
-/// One extra round trip, for the **first** candidate only, and only on a rung
-/// that would otherwise contribute nothing. It is bounded on purpose: the
-/// check-in flow is a reader standing at a shelf with a scanner, and walking a
-/// whole result page one lookup at a time is not worth the wait.
+/// Narrow a rung's candidates to the check-in payload, resolving an edition for
+/// the top one when the whole rung answered with *works* (Hardcover's full-text
+/// search). Check-in stores an ISBN per copy, so a candidate without one is
+/// unusable. Costs one extra round trip, for the **first** candidate only, and
+/// only on a rung that would otherwise contribute nothing.
 async fn narrow_for_check_in(
     config: &MetadataLookupConfig,
     provider: MetadataProvider,
@@ -206,6 +173,8 @@ async fn narrow_for_check_in(
     let Some(handle) = handle else {
         return narrowed;
     };
+    // First candidate only: a reader at a shelf with a scanner won't wait on a
+    // lookup per result.
     match providers::by_ref(provider, config, &handle).await {
         Ok(Some(detail)) => ExternalBookMeta::try_from(detail)
             .map(|meta| vec![meta])

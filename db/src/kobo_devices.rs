@@ -190,11 +190,9 @@ pub async fn resolve_device_by_token(
 }
 
 /// Bind the `x-kobo-deviceid` hardware id to this device row, so token-less
-/// Reading Services calls can map back to it. Steal-on-learn: the id
-/// is cleared from any other row first (0060 enforces uniqueness), so the
-/// hardware id always follows the device row whose *token* it most recently
-/// presented — a factory-reset or re-pointed Kobo re-binds correctly, and no
-/// other user's row can retain it.
+/// Reading Services calls can map back to it. Steal-on-learn: the id is cleared
+/// from any other row first, so the hardware id follows the row whose *token*
+/// it most recently presented and no other user's row retains it.
 pub async fn learn_kobo_device_id(
     pool: &SqlitePool,
     device_id: i64,

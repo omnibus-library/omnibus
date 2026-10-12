@@ -13,10 +13,8 @@ use crate::Route;
 
 /// Responsive `md`-src + sm/md/lg `srcset` for a book's cover thumbnail;
 /// `(None, None)` when it has no cover. `bust` is this book's
-/// [`crate::contexts::CoverCacheBust`] counter (0 = unchanged this
-/// session) — `/api/thumbs/*` is cached `private, max-age=86400`, so
-/// without it the grid/table would keep showing a pre-edit thumbnail for
-/// the otherwise-unchanged URL after navigating back from a cover edit.
+/// [`crate::contexts::CoverCacheBust`] counter (0 = unchanged this session),
+/// needed because `/api/thumbs/*` is cached `private, max-age=86400`.
 pub fn thumb_srcs(
     book: &EbookMetadata,
     uuid: &str,

@@ -27,19 +27,11 @@ pub fn convert_dir() -> PathBuf {
 }
 
 /// Reject anything that isn't 1–[`MAX_FORMAT_TOKEN_LEN`] ASCII alphanumeric
-/// characters.
-///
-/// `Task::ConvertFormat`'s `source_format`/`target_format` fields are plain
-/// caller-supplied strings with no format allowlist upstream (there is no
-/// wire route yet — but the worker task itself must
-/// not assume one ever validates its input before posting). A token that
-/// isn't a bare extension — `../../etc/passwd`, `a/b`, an absolute path —
-/// must never reach a `PathBuf::join`/`format!` that builds a filesystem
-/// path or a temp-file name, or it can escape [`convert_dir`] entirely.
-/// Rejecting anything but `[A-Za-z0-9]{1,16}` closes that off completely:
-/// no `.`, `/`, `\`, or non-ASCII byte survives, so there is nothing left
-/// for a path-traversal or absolute-path payload to use.
+/// characters, so a token like `../../etc/passwd` or an absolute path can never
+/// reach a `PathBuf::join` or temp-file name and escape [`convert_dir`].
 fn validate_format_token(field: &'static str, token: &str) -> Result<(), ConvertError> {
+    // `Task::ConvertFormat`'s formats are caller-supplied strings with no allowlist
+    // upstream, so the worker can't assume anyone validated them.
     let ok = !token.is_empty()
         && token.len() <= MAX_FORMAT_TOKEN_LEN
         && token.chars().all(|c| c.is_ascii_alphanumeric());

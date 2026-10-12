@@ -4,7 +4,7 @@
 //! library path so each library keeps independent sort/filter state. Shape
 //! lives in `omnibus-shared`.
 
-use omnibus_shared::ViewPrefs;
+use omnibus_shared::{ViewFilters, ViewPrefs};
 
 const STORAGE_PREFIX: &str = "omnibus.view_prefs::";
 
@@ -30,22 +30,14 @@ pub fn load(library_path: &str) -> ViewPrefs {
 
 /// Persist `prefs` for `library_path`. Serialization or storage failures
 /// (private mode, quota, an unwritable data dir) are silently ignored — the UI
-/// keeps its in-memory copy regardless.
-///
-/// Also records `library_path` as the last-browsed library so [`load_last`] can
-/// find these prefs before a fetch has revealed which library is on screen. That
-/// write is skipped when the pointer already names this path: the mobile
-/// `client_store` reserializes and re-flushes its whole map on every `set`, so
-/// re-stamping an unchanged path on each sort toggle is pure I/O.
-///
-/// Storage is best-effort and swallows failures, so the pointer can outlive a
-/// prefs write that never landed. That degrades to [`load`] handing back
-/// [`ViewPrefs::default`] for the pointed-at key — exactly what a missing
-/// pointer would have produced — so a lost write costs the extra fetch this
-/// pointer exists to avoid rather than applying someone else's prefs.
+/// keeps its in-memory copy. Also records `library_path` as the last-browsed
+/// library so [`load_last`] can find these prefs before a fetch reveals it; a
+/// pointer that outlives a failed write degrades to [`ViewPrefs::default`].
 pub fn save(library_path: &str, prefs: &ViewPrefs) {
     if let Ok(raw) = serde_json::to_string(prefs) {
         crate::client_store::set(&storage_key(library_path), &raw);
+        // Skipped when unchanged: the mobile `client_store` re-flushes its
+        // whole map on every `set`.
         if crate::client_store::get(LAST_LIBRARY_KEY).as_deref() != Some(library_path) {
             crate::client_store::set(LAST_LIBRARY_KEY, library_path);
         }
@@ -61,15 +53,84 @@ pub fn last_library() -> Option<String> {
 /// Prefs for the last-browsed library, for hydrating before the library path is
 /// known. `None` — rather than [`ViewPrefs::default`] — when no pointer is
 /// stored, so a caller can tell "nothing was ever saved" from "defaults were
-/// saved" and skip a pointless signal write.
-///
-/// The result is a *guess*: the viewer may since have switched libraries. The
-/// landing page still reconciles against the authoritative path once a fetch
-/// returns it, so a stale pointer costs the one extra fetch this exists to
-/// avoid rather than leaving the wrong prefs applied.
+/// saved". The result is a *guess*: the landing page reconciles against the
+/// authoritative path once a fetch returns it.
 pub fn load_last() -> Option<ViewPrefs> {
     last_library().map(|path| load(&path))
 }
+
+/// Save `filters` as the filter of the last-browsed library, leaving its sort
+/// and view mode as they were — the write for a page that has no prefs of its
+/// own but shares the landing's filter. With no library ever browsed (and under
+/// SSR) there is no key to file it under, so nothing is saved and the caller
+/// holds the filter in memory only.
+pub fn save_filters(filters: &ViewFilters) {
+    let Some(path) = last_library() else {
+        return;
+    };
+    let mut prefs = load(&path);
+    prefs.filters = filters.clone();
+    save(&path, &prefs);
+}
+
+/// Where one edit to the prefs is saved, and whether it still owes the
+/// authoritative library a write once that library is known.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavePlan {
+    /// The library key to write under now, if any.
+    pub write_to: Option<String>,
+    /// The edit has not reached the authoritative library's key.
+    pub unsaved: bool,
+}
+
+/// Plan the save of an edit made while the page's library path is
+/// `lib_path`. Until a page-1 response names the library, the pointer is only
+/// a guess, so an edit is written under it solely when that fetch has failed
+/// and may never answer — otherwise a guess that was wrong would file the edit
+/// under another library and the reconcile would then load that one over it.
+pub fn save_plan(
+    lib_path: Option<&str>,
+    page_failed: bool,
+    last_library: Option<String>,
+) -> SavePlan {
+    match lib_path {
+        Some(path) => SavePlan {
+            write_to: Some(path.to_string()),
+            unsaved: false,
+        },
+        None => SavePlan {
+            write_to: last_library.filter(|_| page_failed),
+            unsaved: true,
+        },
+    }
+}
+
+/// What a page-1 response naming the library does to the prefs in memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reconcile {
+    /// Nothing new was learned: the memory copy stands.
+    Keep,
+    /// A library not seen before: its stored prefs replace the memory copy.
+    Adopt,
+    /// The reader edited before the library was known: save those edits under it.
+    SaveEdits,
+}
+
+/// Decide the [`Reconcile`] for `path`, the library the latest response named.
+/// `reconciled` is the path last acted on; a re-set to the same path teaches
+/// nothing, so it must not reload a copy a failed write left behind memory.
+pub fn reconcile_action(reconciled: Option<&str>, path: &str, unsaved: bool) -> Reconcile {
+    if unsaved {
+        Reconcile::SaveEdits
+    } else if reconciled == Some(path) {
+        Reconcile::Keep
+    } else {
+        Reconcile::Adopt
+    }
+}
+
+#[cfg(test)]
+mod tests;
 
 // Mobile tests — the only non-wasm target where `client_store` actually
 // persists, so it's the only place `load_last`'s positive path and `save`'s
@@ -81,16 +142,16 @@ pub fn load_last() -> Option<ViewPrefs> {
 mod mobile_tests {
     use super::*;
     use omnibus_db::test_support::EnvVarGuard;
-    use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode};
+    use omnibus_shared::{
+        FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewMode,
+    };
     use std::sync::Mutex;
 
     static TEST_GUARD: Mutex<()> = Mutex::new(());
 
-    /// RAII guard that resets the mobile store on drop — including on an
-    /// unwind from a failed assertion inside `f`. Without this, a panicking
-    /// test would leave a dirty process-global mobile store for every later
-    /// test in the same process. Declared after the `$HOME` guard in
-    /// [`with_isolated_store`], so it drops first: the reset runs while
+    /// RAII guard that resets the mobile store on drop, including on an unwind
+    /// from a failed assertion. Declared after the `$HOME` guard in
+    /// [`with_isolated_store`], so it drops first and the reset runs while
     /// `$HOME` still points at the scratch dir.
     struct IsolatedStoreGuard;
 
@@ -101,14 +162,10 @@ mod mobile_tests {
     }
 
     /// Run `f` with `$HOME` redirected to a scratch dir and the mobile store
-    /// reset, so the mobile backend's disk flush (`client_store.rs`) lands in
-    /// a throwaway location instead of a developer's real `~/.omnibus`.
-    /// `$HOME` is process-global and also read by `crate::data::app_dirs::data_dir`,
-    /// so it is held through [`EnvVarGuard`] (the process-wide `ENV_LOCK`,
-    /// shared with the other `$HOME` tests); callers must also hold
-    /// `TEST_GUARD`, which serializes the store reset. Cleanup runs via
-    /// `Drop`, so it fires even if `f` panics — the panic still propagates
-    /// once unwinding drops the guards.
+    /// reset, so the disk flush lands in a throwaway location instead of a
+    /// developer's real `~/.omnibus`. `$HOME` is held through [`EnvVarGuard`]
+    /// (the process-wide `ENV_LOCK`); callers must also hold `TEST_GUARD`,
+    /// which serializes the store reset. Cleanup runs via `Drop`, even on panic.
     fn with_isolated_store(f: impl FnOnce()) {
         let scratch = tempfile::tempdir().expect("tempdir for isolated client_store");
         let _home = EnvVarGuard::set_os("HOME", Some(scratch.path().as_os_str()));
@@ -124,8 +181,11 @@ mod mobile_tests {
             sort_key: SortKey::Author,
             sort_dir: SortDir::Desc,
             filters: ViewFilters {
-                formats: vec!["epub".into()],
-                ..Default::default()
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Include,
+                    &["epub"],
+                )],
             },
             filters_open: true,
         }
@@ -143,6 +203,44 @@ mod mobile_tests {
 
             assert_eq!(last_library(), Some("/library/a".to_string()));
             assert_eq!(load_last(), Some(prefs));
+        });
+    }
+
+    #[test]
+    fn save_filters_replaces_only_the_filters_of_the_last_library() {
+        let _guard = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        with_isolated_store(|| {
+            let prefs = sample_prefs();
+            save("/library/a", &prefs);
+            let next = ViewFilters {
+                clauses: vec![FilterClause::new(
+                    FilterField::Author,
+                    FilterMode::Exclude,
+                    &["Ada"],
+                )],
+            };
+
+            save_filters(&next);
+
+            let stored = load("/library/a");
+            assert_eq!(stored.filters, next);
+            assert_eq!(stored.sort_key, prefs.sort_key);
+            assert_eq!(stored.sort_dir, prefs.sort_dir);
+            assert_eq!(stored.view_mode, prefs.view_mode);
+            assert_eq!(load_last(), Some(stored));
+        });
+    }
+
+    #[test]
+    fn save_filters_writes_nothing_when_no_library_was_ever_saved() {
+        let _guard = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        with_isolated_store(|| {
+            let filters = sample_prefs().filters;
+
+            save_filters(&filters);
+
+            assert_eq!(last_library(), None);
+            assert_eq!(load_last(), None);
         });
     }
 
@@ -181,7 +279,9 @@ mod mobile_tests {
 #[cfg(all(test, not(any(feature = "web", feature = "mobile"))))]
 mod ssr_tests {
     use super::*;
-    use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode};
+    use omnibus_shared::{
+        FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewMode,
+    };
 
     #[test]
     fn load_always_returns_defaults() {
@@ -196,8 +296,11 @@ mod ssr_tests {
             sort_key: SortKey::Author,
             sort_dir: SortDir::Desc,
             filters: ViewFilters {
-                formats: vec!["epub".into()],
-                ..Default::default()
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Include,
+                    &["epub"],
+                )],
             },
             filters_open: true,
         };

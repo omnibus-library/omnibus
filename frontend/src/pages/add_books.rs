@@ -45,10 +45,9 @@ const ACCEPT: &str =
 
 /// Decide which ingest a set of picked filenames goes to, or say why it can't.
 ///
-/// One EPUB or PDF is an ebook; any number of audiobook files is an audiobook (the
-/// server still rejects two `.m4b`s or a mixed set of its own — this only
-/// routes). Everything else is refused here so the wrong endpoint is never
-/// asked: a mix of the two, several EPUBs, or an extension neither takes.
+/// One EPUB or PDF is an ebook; any number of audiobook files is an audiobook.
+/// Everything else (a mix, several EPUBs, an unknown extension) is refused here
+/// so the wrong endpoint is never asked; the server still rejects two `.m4b`s.
 fn classify_pick(names: &[String]) -> Result<UploadKind, String> {
     let ext_of = |name: &String| {
         std::path::Path::new(name)

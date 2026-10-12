@@ -6,10 +6,13 @@
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
-use omnibus_shared::{EbookMetadata, ProgressFormat, ResumePoint, ViewPrefs};
+use omnibus_shared::{
+    EbookMetadata, FilterField, ProgressFormat, ResumePoint, ViewFilters, ViewPrefs,
+};
 
 use crate::components::atrium::Cover;
 use crate::components::cover_tile::thumb_srcs;
+use crate::components::filter_bar::ShelfList;
 use crate::components::loading::{CoverSkeletons, Skeleton, SkeletonShape};
 use crate::components::BusyLabel;
 use crate::Route;
@@ -18,11 +21,9 @@ use super::mobile_filter_sheet::{dir_arrow, sort_pill_label, MobileSortFilterShe
 use super::resume_meta::resume_meta;
 
 /// Wait (bounded) for the above-the-fold cover images to decode, then ping
-/// Rust so the settled reveal doesn't flash placeholder tiles that covers
-/// pop over a few frames later. The 12-image cap keeps the below-the-fold
-/// grid out of the gate; the two timeouts bound the whole wait (imgs that
-/// never appear — an empty library — and covers that are slow to decode)
-/// so this can only delay the reveal, never hold it past the floor.
+/// Rust so the settled reveal doesn't flash placeholder tiles. At most 12
+/// images are awaited and two timeouts bound the wait, so this can only delay
+/// the reveal, never hold it past the floor.
 const COVERS_DECODE_JS: &str = r#"
 (async function(){
   function imgs(){
@@ -72,12 +73,66 @@ pub(super) struct MobileLandingProps {
     pub books: Vec<EbookMetadata>,
     /// Load-more paging state for the cover grid.
     pub paging: MobileLandingPaging,
-    /// Current sort/filter prefs, driving the pill + sheet.
-    pub prefs: ViewPrefs,
+    /// Current sort/filter prefs, driving the pill + sheet. The live signal,
+    /// so a sheet tap builds the next prefs from what they are now.
+    pub prefs: Signal<ViewPrefs>,
     /// Fired with updated prefs on every sheet interaction.
     pub on_prefs_change: EventHandler<ViewPrefs>,
+    /// The viewer's shelves, which the sheet's Shelf section names its values from.
+    pub shelves: ShelfList,
+    /// The signed-in reader; `None` until `/me` resolves.
+    pub viewer_id: Option<i64>,
+    /// Why the grid has nothing to show, when its fetch failed.
+    pub notice: Option<MobileNotice>,
     /// Base server URL used to build thumbnail `src`/`srcset`.
     pub server_url: String,
+}
+
+/// What the mobile landing says about a failed fetch.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum MobileNotice {
+    /// Offline browse can't evaluate a Shelf clause, so the grid is empty
+    /// until the filters are reset or the connection is back.
+    FiltersNeedConnection,
+    /// Any other failure, as the fetch reported it.
+    Failed(String),
+}
+
+/// The notice for a failed page fetch. Offline browse declines a Shelf clause
+/// (the replica holds no membership), which the fetch reports as the same
+/// "offline" failure as a cold replica — so the clause tells them apart.
+pub(super) fn mobile_notice(
+    error: Option<&str>,
+    filters: &ViewFilters,
+    offline: bool,
+) -> Option<MobileNotice> {
+    let error = error?;
+    let shelf_clause = filters
+        .clauses
+        .iter()
+        .any(|c| c.field == FilterField::Shelf);
+    Some(if offline && shelf_clause {
+        MobileNotice::FiltersNeedConnection
+    } else {
+        MobileNotice::Failed(error.to_string())
+    })
+}
+
+/// The line above the grid that says why it is empty or stale.
+fn render_mobile_notice(notice: Option<MobileNotice>) -> Element {
+    match notice {
+        None => rsx! {},
+        Some(MobileNotice::FiltersNeedConnection) => rsx! {
+            p { class: "error m-lib-notice", role: "alert", "data-testid": "mobile-filters-offline",
+                "Filters that use a shelf need a connection. Open Sort & filter and tap Reset to see your books."
+            }
+        },
+        Some(MobileNotice::Failed(message)) => rsx! {
+            p { class: "error m-lib-notice", role: "alert", "data-testid": "mobile-lib-error",
+                "\u{26a0} {message}"
+            }
+        },
+    }
 }
 
 /// "Pick up where you left off" — the most recent progress row, fetched per
@@ -102,10 +157,8 @@ fn use_resume_point(server_url: String) -> Signal<Option<Option<ResumePoint>>> {
 }
 
 /// Settled reveal: hold the screen invisible until the first page fetch lands
-/// (the offline cache answers within tens of ms) AND the above-the-fold cover
-/// images have decoded, so the enter transition plays once over finished
-/// content — no cold "Loading" skeleton fading in, no covers popping over
-/// placeholder tiles mid-flight. Every wait is bounded: the decode eval times
+/// and the above-the-fold covers have decoded, so the enter transition plays
+/// once over finished content. Every wait is bounded: the decode eval times
 /// out internally, and the floor reveals unconditionally so a slow first load
 /// falls back to the ordinary Loading state updating in place.
 fn use_settled_reveal(is_loading: bool, books_empty: bool) -> bool {
@@ -241,6 +294,9 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
         paging,
         prefs,
         on_prefs_change,
+        shelves,
+        viewer_id,
+        notice,
         server_url,
     } = props;
     let MobileLandingPaging {
@@ -254,9 +310,14 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
     let resume = use_resume_point(server_url.clone());
     let cover_bust = crate::contexts::use_cover_cache_bust().0;
 
-    let pill_label = sort_pill_label(prefs.sort_key);
-    let pill_arrow = dir_arrow(prefs.sort_dir);
-    let filter_count = prefs.filters.formats.len();
+    let (pill_label, pill_arrow, filter_count) = {
+        let current = prefs.read();
+        (
+            sort_pill_label(current.sort_key),
+            dir_arrow(current.sort_dir),
+            current.filters.clauses.len(),
+        )
+    };
 
     let books_empty = books.is_empty();
     let settled = use_settled_reveal(is_loading, books_empty);
@@ -295,12 +356,17 @@ pub(super) fn MobileLanding(props: MobileLandingProps) -> Element {
                 span { class: "m-shelves-entry-chevron", {chevron()} }
             }
 
+            {render_mobile_notice(notice)}
+
             {render_mobile_grid(is_loading, is_loading_more, has_more, books, server_url.clone(), cover_bust, on_load_more)}
 
             if sheet_open() {
                 MobileSortFilterSheet {
-                    prefs: prefs.clone(),
+                    prefs,
                     book_count,
+                    server_url: server_url.clone(),
+                    shelves,
+                    viewer_id,
                     on_change: on_prefs_change,
                     on_close: move |_| sheet_open.set(false),
                 }
@@ -531,3 +597,6 @@ fn chevron() -> Element {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

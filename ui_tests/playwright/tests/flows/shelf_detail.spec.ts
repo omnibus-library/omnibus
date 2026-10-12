@@ -1,11 +1,17 @@
-import type { APIRequest, APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { bookTile, createShelf, openShelfFromIndex } from "../utils/shelves";
+import {
+  bookTile,
+  createShelf,
+  createShelfAs,
+  openShelfFromIndex,
+} from "../utils/shelves";
+import { createReader } from "../utils/users";
 
 // The web shelf page, reached the way a reader reaches it: from its card on
 // the `/shelves` index. Every membership write here lands on a shelf this file
@@ -30,29 +36,6 @@ const grid = (page: Page) => page.getByTestId("shelf-grid");
 const title = (page: Page, name: string) =>
   page.getByRole("heading", { level: 1, name });
 
-/** Create a non-admin reader through the admin API and return their id. */
-async function createReader(
-  request: APIRequestContext,
-  username: string,
-): Promise<number> {
-  const resp = await request.post("/api/admin/users", {
-    data: {
-      username,
-      password: READER_PASSWORD,
-      permissions: {
-        is_admin: false,
-        can_upload: false,
-        can_edit: false,
-        can_download: true,
-      },
-    },
-  });
-  expect(resp.status(), `POST /api/admin/users failed for ${username}`).toBe(
-    201,
-  );
-  return ((await resp.json()) as { id: number }).id;
-}
-
 /** Sign `username` in through the login form on a cookie-less page. */
 async function logIn(page: Page, username: string): Promise<void> {
   await gotoReady(page, "/login");
@@ -64,40 +47,6 @@ async function logIn(page: Page, username: string): Promise<void> {
     async () => page.getByRole("button", { name: "Log in" }).click(),
   );
   await expect(page).toHaveURL(/\/$/);
-}
-
-/** Create a shelf owned by `username`, on a bearer session of its own. */
-async function createShelfAs(
-  api: APIRequest,
-  baseURL: string,
-  username: string,
-  body: Record<string, unknown>,
-): Promise<number> {
-  const ctx = await api.newContext({ baseURL });
-  try {
-    const login = await ctx.post("/api/auth/login", {
-      data: { username, password: READER_PASSWORD, client_kind: "bearer" },
-    });
-    expect(login.status(), `bearer login failed for ${username}`).toBe(200);
-    const { token } = (await login.json()) as { token: string };
-    const resp = await ctx.post("/api/rpc/shelves/create", {
-      headers: { Authorization: `Bearer ${token}` },
-      data: {
-        req: {
-          description: null,
-          visibility: "private",
-          match_mode: null,
-          rules: [],
-          book_uuids: [],
-          ...body,
-        },
-      },
-    });
-    expect(resp.status(), `shelf create failed for ${username}`).toBe(200);
-    return ((await resp.json()) as { id: number }).id;
-  } finally {
-    await ctx.dispose();
-  }
 }
 
 /** The admin's own Wishlist — the one shelf it can see but never change. */
@@ -533,7 +482,7 @@ test("greys out another reader's shelf and names its owner", async ({
     visibility: "public",
   });
   const username = `e2e_shelf_viewer_${Date.now()}`;
-  const readerId = await createReader(request, username);
+  const readerId = await createReader(request, username, READER_PASSWORD);
   const context = await browser.newContext({
     storageState: { cookies: [], origins: [] },
   });
@@ -569,12 +518,13 @@ test("lets an admin change another reader's shelf without explaining why", async
   baseURL,
 }) => {
   const username = `e2e_shelf_owner_${Date.now()}`;
-  const readerId = await createReader(request, username);
+  const readerId = await createReader(request, username, READER_PASSWORD);
   try {
     const id = await createShelfAs(
       playwright.request,
       baseURL ?? "",
       username,
+      READER_PASSWORD,
       {
         kind: "manual",
         name: `E2E Reader Shelf ${Date.now()}`,

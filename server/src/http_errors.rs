@@ -13,6 +13,11 @@ pub(crate) fn internal<E: std::fmt::Display>(context: &'static str, e: E) -> Res
     (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response()
 }
 
+/// 400 for a `?filter=` value that failed to parse or validate, naming `reason`.
+pub(crate) fn invalid_filter(reason: &str) -> Response {
+    (StatusCode::BAD_REQUEST, format!("invalid filter: {reason}")).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use axum::body::to_bytes;

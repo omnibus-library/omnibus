@@ -67,21 +67,11 @@ struct AuthorSearchHit {
     key: Option<String>,
 }
 
-/// Resolve and persist a profile photo for `author_id`.
-///
-/// Cascade:
-///   1. If a non-letter row already exists, no-op (the admin upload or
-///      previous resolution wins).
-///   2. If a `letter` row exists, no-op (sticky negative cache).
-///   3. Look up the author's name and query Open Library.
-///   4. On a hit: persist an `openlibrary` row with bytes.
-///      On a clean miss (search returned no docs, cover endpoint 404,
-///      image smaller than [`MIN_IMAGE_BYTES`], non-image MIME): write a
-///      sticky `letter` marker.
-///      On a transient error (network failure, JSON decode error, etc.):
-///      leave the row absent so the next page view can retry. Otherwise a
-///      single Open Library outage would permanently brick resolution for
-///      that author until an admin cleared it.
+/// Resolve and persist a profile photo for `author_id`. A no-op when any photo
+/// row already exists (admin upload, earlier resolution, or the sticky `letter`
+/// marker); otherwise queries Open Library. A clean miss (no docs, cover 404,
+/// image under [`MIN_IMAGE_BYTES`], non-image MIME) writes a sticky `letter`
+/// marker; a transient error leaves the row absent so the next view retries.
 pub async fn resolve(pool: &SqlitePool, author_id: i64) -> anyhow::Result<()> {
     resolve_with(pool, author_id, &OpenLibraryConfig::default()).await
 }
@@ -138,16 +128,11 @@ pub async fn resolve_with(
     Ok(())
 }
 
-/// Bulk re-resolve all author photos. Clears non-manual cached photos and
+/// Bulk re-resolve all author photos: clears non-manual cached photos, then
 /// re-runs the Open Library cascade for every author. Manual uploads are
-/// preserved. The status lookup and cache-clear are each a single chunked
-/// `IN (...)` round-trip (see [`author_photo_status_bulk`] /
-/// [`delete_author_photos_bulk`]) instead of one query per author, and the
-/// Open Library resolutions run with bounded concurrency
-/// ([`REFETCH_CONCURRENCY`]) rather than sequentially. Per-author resolve
-/// errors are logged and skipped so a single failure does not abort the
-/// batch; `on_progress` is called once per author, in completion order, with
-/// a running count (not tied to any particular author).
+/// preserved. Per-author errors are logged and skipped; `on_progress` is called
+/// once per author in completion order with a running count that is not tied to
+/// any particular author.
 pub async fn refetch_all(
     pool: &SqlitePool,
     on_progress: impl Fn(u32, Option<u32>, Option<&str>) + Sync,

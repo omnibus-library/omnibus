@@ -74,29 +74,13 @@ async fn load_author(
     }))
 }
 
-/// SQL CTE expressing the override-aware effective author membership. Used
-/// by both `fetch_author_books` (with the full `BOOK_COLUMNS` SELECT) and
-/// `count_effective_author_members` (with `COUNT(*)`).
-///
-/// `apply_overrides` replaces creators wholesale when the override JSON
-/// has the `creators` key, so the effective creator set for a book is:
-/// - `overrides.creators` if the JSON has that key (including the empty
-///   array, which clears all authors), else
-/// - the canonical names from `books_authors_link`.
-///
-/// Single-pass UNION over (1) canonical link rows for *this* author whose
-/// book has no `creators` override, and (2) override rows whose
-/// `overrides.creators` array names this author. Arm (1) is scoped to
-/// `bal.author = ?2` up front so it drives through the
-/// `idx_books_authors_author` reverse index instead of scanning every
-/// book — mirroring the `EFFECTIVE_SERIES_CTE` shape. Override creators
-/// carry only `name`, so arm (2) matches by name (NOCASE) against `?1`.
-///
-/// Each arm carries the override-aware `series_index` (the same NULLIF
-/// rule `get_series` uses) so the detail page can order by it. An
-/// index-only override on a canonical member still re-sorts here because
-/// arm (1) reads `mo.overrides.series_index` even when creators are
-/// canonical. Bind order: `?1` = author_name, `?2` = author_id.
+/// SQL CTE of the override-aware effective author membership, shared by
+/// `fetch_author_books` and `count_effective_author_members`. An override
+/// replaces creators wholesale when its JSON has a `creators` key (an empty
+/// array clears all authors). Bind order: `?1` = author_name, `?2` = author_id.
+// Arm (1) is scoped to `bal.author = ?2` up front so it drives through the
+// `idx_books_authors_author` index instead of scanning every book; override
+// creators carry only `name`, so arm (2) matches by name against `?1`.
 const EFFECTIVE_AUTHOR_CTE: &str = r#"WITH effective AS (
              -- (1) Canonical authorship of this author with no creators
              -- override. A `series_index` override still drives ordering.
@@ -137,8 +121,7 @@ const EFFECTIVE_AUTHOR_CTE: &str = r#"WITH effective AS (
 /// [`EFFECTIVE_AUTHOR_CTE`] plus a `scoped` CTE narrowing its membership to
 /// books in the library (`super::library_member`) whose scan root is one of
 /// `library_paths`. `None` passes every root through; `Some(&[])` matches
-/// nothing, which is what a surface with no configured library should list.
-/// Path binds occupy `?3` onwards, so the caller's next free parameter is
+/// nothing. Path binds start at `?3`, so the caller's next free parameter is
 /// [`limit_param`].
 fn scoped_author_cte(library_paths: Option<&[&str]>) -> String {
     let filter = match library_paths {

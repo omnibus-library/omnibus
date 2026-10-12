@@ -11,14 +11,11 @@ pub use convert::convert_book;
 pub use detect::{kepubify_available, warn_if_unavailable};
 pub use fs::{is_stale, kepub_dir, kepub_path};
 
-/// Errors from the EPUB→KEPUB conversion path.
-///
-/// `BookNotFound`/`SourceMissing` stay distinct variants because
-/// `worker::handlers::kepub_outcome` branches on them to decide whether the
-/// message is safe to hand back verbatim. Everything else — DB lookup
-/// failures, process spawn / filesystem errors, and a non-zero kepubify exit
-/// — is foreign-system failure with no caller branching on the specific
-/// cause, so it collapses into `Failed` (rule 02: anyhow-territory).
+/// Errors from the EPUB→KEPUB conversion path. `BookNotFound`/`SourceMissing`
+/// stay distinct because `worker::handlers::kepub_outcome` branches on them to
+/// decide whether the message is safe to hand back verbatim; everything else
+/// (DB, spawn / filesystem errors, a non-zero kepubify exit) collapses into
+/// `Failed` (rule 02).
 #[derive(Debug, thiserror::Error)]
 pub enum KepubError {
     #[error("book {0} not found")]

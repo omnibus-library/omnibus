@@ -3,71 +3,26 @@
 //! the `/api/*` REST surface, static assets) in one place rather than
 //! depending on each handler to remember. See [`DEFAULT_CSP`],
 //! [`baseline_layers`], and [`hsts_layer`] for the per-header rationale.
+//!
+//! `script-src` carries `'unsafe-inline'` and `'unsafe-eval'` because the Dioxus web
+//! runtime needs both (an inline hydration bootstrap with no nonce, and `Function()` in
+//! the interpreter), so it buys almost no injection protection. `'wasm-unsafe-eval'` can't
+//! replace `'unsafe-eval'`: it permits only `WebAssembly.instantiate`, not `Function()`, so
+//! the WASM panics on init under it. The CSP's value lives in the other directives:
+//! `connect-src 'self'` blocks exfiltration, and `object-src`, `base-uri`, `form-action`
+//! and `frame-ancestors` are locked down. The `style-src`/`font-src` hosts are explained
+//! in `build_csp`.
 
 use std::sync::LazyLock;
 
 use axum::http::{header, HeaderName, HeaderValue};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-/// Conservative content-security policy that still hydrates Dioxus WASM.
-///
-/// Defense-in-depth against any XSS gap in the user-supplied content
-/// rendered through SSR (book descriptions are sanitized via `ammonia`, but
-/// the policy keeps an injection limited to the page's own origin).
-/// Per-directive rationale:
-///
-/// - `script-src 'self' 'unsafe-inline' 'unsafe-eval'` — three relaxations,
-///   all forced by the Dioxus web runtime; none can be tightened without
-///   upstream changes. `'self'` loads the external WASM glue
-///   (`/wasm/omnibus.js`). `'unsafe-inline'` is required because Dioxus
-///   fullstack emits its hydration bootstrap (`window.dx_hydrate = …`) and
-///   serialized state (`window.initial_dioxus_hydration_data = …`) as inline
-///   `<script>` tags with no nonce and a per-page-variable body, so the SSR
-///   markup cannot hydrate without it (hashes are unstable across pages;
-///   Dioxus stamps no nonce). `'unsafe-eval'` is required because the
-///   `dioxus-interpreter-js` runtime builds functions at runtime via the
-///   `Function()` constructor — classic `eval`; `'wasm-unsafe-eval'` only
-///   permits `WebAssembly.instantiate`, NOT `Function()`/`eval()`, so the
-///   WASM panics on init under it. `'unsafe-eval'` is a superset that also
-///   covers WASM instantiation, so `'wasm-unsafe-eval'` is not listed
-///   separately. Net effect: `script-src` provides essentially no
-///   script-injection protection here — an inherent cost of Dioxus web
-///   today. The CSP's real value lives in the *other* directives:
-///   `connect-src 'self'` blocks exfiltration to foreign origins, `'self'`
-///   still blocks loading *external* scripts, and `object-src` / `base-uri`
-///   / `form-action` / `frame-ancestors` are all locked down. Combined with
-///   `ammonia` sanitizing the primary XSS source (book descriptions), an
-///   injected script's blast radius stays bounded. Revisit only if Dioxus
-///   drops its `Function()` use and gains nonce support.
-/// - `style-src 'self' 'unsafe-inline' blob: https://fonts.googleapis.com` —
-///   `'unsafe-inline'` because Dioxus emits inline `style=""` attributes;
-///   `blob:` because epub.js (`assets/vendor/epub.min.js`) renders a book's
-///   own stylesheets through `URL.createObjectURL`, and without it every
-///   forward page-turn is blocked as a CSP violation — the same
-///   reason `img-src` already lists `blob:`; the Google Fonts host because
-///   `atrium.css` `@import`s the Cormorant Garamond / Instrument Sans / Space
-///   Mono stylesheet from it. The CDN hosts are there for *that* import alone:
-///   the reader's own faces are self-hosted under `/assets/reader-fonts/` and
-///   loaded by the same-origin section iframe under `'self'`. Self-hosting the
-///   app-chrome faces too (a follow-up tracked in `atrium.css`) is what would
-///   let both this host and the one in `font-src` drop back to `'self'`.
-/// - `font-src 'self' data: https://fonts.gstatic.com` — Google serves the
-///   actual WOFF2 files from `fonts.gstatic.com`; without it the `@import`ed
-///   stylesheet resolves but the glyphs fall back to system fonts. `'self'`
-///   covers the reader's self-hosted faces, and `data:` the faces a book
-///   embeds, which the reader glue inlines as `data:` URIs rather than leaving
-///   on the `blob:` rewrite epub.js gives them (`font-src` lists no `blob:`).
-/// - `img-src 'self' data: blob:` plus every host in
-///   [`db::all_cover_hosts`] — `data:` / `blob:` cover thumbnails and
-///   base64-embedded images, plus each metadata provider's cover CDN so the
-///   check-in result page and the metadata editor's edition picker can
-///   preview a provider cover before anything is written (once applied, the
-///   cover is fetched server-side and served same-origin from
-///   `/api/covers/:uuid`). Derived from the provider catalog rather than
-///   written out here, so adding a provider can't leave its covers silently
-///   blocked.
-///
-/// Tighten incrementally as the asset surface stabilizes.
+/// Conservative content-security policy that still hydrates Dioxus WASM: defense-in-depth
+/// against any XSS gap in SSR-rendered user content (book descriptions are sanitized via
+/// `ammonia`). `img-src` lists every provider cover host from [`db::all_cover_hosts`], so
+/// adding a provider can't leave its covers silently blocked; once applied, a cover is
+/// served same-origin from `/api/covers/:uuid`.
 static DEFAULT_CSP: LazyLock<String> = LazyLock::new(build_csp);
 
 /// [`DEFAULT_CSP`] with no provider cover hosts — every other directive
@@ -93,6 +48,9 @@ fn build_csp() -> String {
         .into_iter()
         .map(|host| format!(" https://{host}"))
         .collect::<String>();
+    // `style-src` needs `blob:` (epub.js renders book stylesheets via `createObjectURL`) and
+    // the Google Fonts hosts here and in `font-src` (`atrium.css` `@import`s them); `font-src`
+    // also needs `data:` for faces a book embeds.
     format!(
         "default-src 'self'; \
 script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
@@ -111,12 +69,9 @@ frame-ancestors 'none'"
 /// preload is intentionally omitted (operator opt-in only).
 const DEFAULT_HSTS: &str = "max-age=31536000; includeSubDomains";
 
-/// Build the `(CSP, X-Frame-Options, Referrer-Policy, X-Content-Type-Options)`
-/// layers applied unconditionally to every response.
-///
-/// Returned as an array of layers so the caller can fold each via repeated
-/// `.layer(...)` calls without us needing to build a custom `tower::Layer`
-/// composition (axum's `Router` only stacks layers one at a time).
+/// Build the `(CSP, X-Frame-Options, Referrer-Policy, X-Content-Type-Options)` layers
+/// applied unconditionally to every response, as an array so the caller can fold each via
+/// repeated `.layer(...)` (axum's `Router` stacks layers one at a time).
 pub fn baseline_layers() -> [SetResponseHeaderLayer<HeaderValue>; 4] {
     [
         SetResponseHeaderLayer::overriding(
@@ -158,15 +113,10 @@ pub fn baseline_layers() -> [SetResponseHeaderLayer<HeaderValue>; 4] {
     ]
 }
 
-/// HSTS layer, conditionally constructed.
-///
-/// Returns `Some(layer)` when `secure_cookies` is true (the operator has
-/// opted into HTTPS-only cookies), `None` otherwise. The caller resolves
-/// the toggle by passing the result of `auth::handlers::parse_secure_cookies`
-/// — sharing the single parser keeps HSTS pinned to the cookie `Secure`
-/// flag so the two policies can't drift; sending HSTS over plain HTTP is
-/// ignored by browsers but would advertise the wrong policy on a LAN-IP dev
-/// origin where the operator has set `OMNIBUS_SECURE_COOKIES=0`.
+/// HSTS layer, conditionally constructed: `Some(layer)` when `secure_cookies` is true, `None`
+/// otherwise. The caller passes the result of `auth::handlers::parse_secure_cookies`, so HSTS
+/// stays pinned to the cookie `Secure` flag; HSTS on a plain-HTTP LAN-IP dev origin
+/// (`OMNIBUS_SECURE_COOKIES=0`) would advertise the wrong policy.
 pub fn hsts_layer(secure_cookies: bool) -> Option<SetResponseHeaderLayer<HeaderValue>> {
     secure_cookies.then(|| {
         SetResponseHeaderLayer::overriding(

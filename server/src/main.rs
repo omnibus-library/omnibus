@@ -50,15 +50,11 @@ mod server {
 
     use crate::App;
 
-    /// Bind the configured address and serve, owning the serve call rather
-    /// than handing the router to `dioxus::serve`.
-    ///
-    /// The address comes from `dioxus::cli_config`, so `dx serve --addr` and
-    /// the Docker image's `IP`/`PORT` behave exactly as before; what is given
-    /// up versus `dioxus::serve` is the debug-only subsecond hot-patch loop,
-    /// which `dx serve` leaves off unless `--hot-patch` is passed. See
-    /// [`omnibus::serve::serve_with_peer_addresses`] for why the serve step
-    /// itself is hand-rolled.
+    /// Bind the configured address and serve, owning the serve call rather than handing the
+    /// router to `dioxus::serve`. The address comes from `dioxus::cli_config`, so
+    /// `dx serve --addr` and the Docker image's `IP`/`PORT` set it; the debug-only
+    /// subsecond hot-patch loop is given up. See [`omnibus::serve::serve_with_peer_addresses`]
+    /// for why the serve step is hand-rolled.
     pub(crate) fn serve() -> anyhow::Result<()> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -126,12 +122,11 @@ mod server {
         backend::init_app_version();
     }
 
-    /// Log a WARN if `OMNIBUS_TRUST_FORWARDED_FOR` is enabled — required only
-    /// behind a trusted reverse proxy, dangerous otherwise — and a one-time
-    /// WARN each if no Prometheus scrape token is configured (`/metrics` then
-    /// 404s), if kepubify is missing (Kobo downloads fall back to plain EPUB),
-    /// or if Calibre's `ebook-convert` is missing (format conversion stays
-    /// disabled). All are optional, so none blocks the boot.
+    /// Log a WARN if `OMNIBUS_TRUST_FORWARDED_FOR` is enabled (required only behind a trusted
+    /// reverse proxy, dangerous otherwise), and a one-time WARN each if no Prometheus scrape
+    /// token is configured (`/metrics` 404s), kepubify is missing (Kobo downloads fall back
+    /// to plain EPUB), or Calibre's `ebook-convert` is missing (conversion stays disabled).
+    /// All are optional, so none blocks the boot.
     fn log_startup_warnings() {
         if rate_limit::trust_forwarded_for() {
             tracing::warn!(
@@ -179,18 +174,11 @@ mod server {
         Ok(pool)
     }
 
-    /// Kick off a reindex through the shared worker if the index is empty or
-    /// stale. The first user request reads whatever is currently in the DB;
-    /// the refresh flows in next time the page loads. Treat read errors as
-    /// "stale" so a malformed timestamp doesn't silently suppress the
-    /// recovery scan.
-    ///
-    /// A library that *isn't* due a scan still gets the word-count backfill
-    /// posted, because that is how a migration which re-derives `word_count`
-    /// (`0084`) reaches a running install: the backfill is otherwise only
-    /// posted by a successful scan, so an up-to-date library would carry NULL
-    /// counts until its scan interval next elapsed. The task is a no-op once
-    /// every EPUB has a count, so this costs one empty query per boot.
+    /// Kick off a reindex through the shared worker if the index is empty or stale. The first
+    /// user request reads whatever is in the DB; the refresh flows in next load. Read errors
+    /// count as "stale" so a malformed timestamp can't suppress the recovery scan. A library
+    /// not due a scan still gets the word-count backfill posted (a no-op once every EPUB has
+    /// a count), as that is how a migration re-deriving `word_count` reaches a running install.
     async fn kick_recovery_scans(pool: &SqlitePool, worker: &Arc<Worker>) {
         if let Ok(settings) = omnibus_db::get_settings(pool).await {
             if let Some(path) = settings.ebook_library_path {
@@ -253,15 +241,11 @@ mod server {
         });
     }
 
-    /// Spawn the boot-time Web→Kobo annotation materialization — the retry
-    /// for rows whose kepub cache was absent (or whose text had diverged)
-    /// when they were written, and the backlog pass for highlights that
-    /// predate down-sync. Mirrors `spawn_annotation_cfi_backfill`: cheap
-    /// once caught up.
-    ///
-    /// Takes the worker so a backlog stranded by a cold KEPUB cache can
-    /// request the conversions that unstick it; each one re-runs this book's
-    /// pass on completion.
+    /// Spawn the boot-time Web→Kobo annotation materialization: the retry for rows whose
+    /// kepub cache was absent (or whose text had diverged) when written, and the backlog pass
+    /// for highlights that predate down-sync. Mirrors `spawn_annotation_cfi_backfill`: cheap
+    /// once caught up. Takes the worker so a backlog stranded by a cold KEPUB cache can request
+    /// the conversions that unstick it; each re-runs this book's pass on completion.
     fn spawn_annotation_downsync(pool: SqlitePool, worker: Arc<Worker>) {
         tokio::spawn(async move {
             match omnibus_db::annotations::downsync_all_kobo_annotations(&pool, Some(&worker)).await
@@ -281,13 +265,10 @@ mod server {
         });
     }
 
-    /// Spawn the configurable periodic library rescan (F: "Configurable
-    /// Periodic Library Scan Interval"). Mirrors `spawn_session_pruner`'s
-    /// loop-forever shape, but the wait before each tick is *not* fixed at
-    /// spawn time: `periodic_scan_tick` re-reads `scan_interval_hours` from
-    /// settings every iteration and reports how long to sleep next, so a
-    /// settings change (including disabling it) takes effect on the next
-    /// tick without a restart, and the first tick fires immediately.
+    /// Spawn the configurable periodic library rescan. Mirrors `spawn_session_pruner`'s
+    /// loop-forever shape, but `periodic_scan_tick` re-reads `scan_interval_hours` every
+    /// iteration and reports how long to sleep next, so a settings change (including
+    /// disabling it) takes effect on the next tick and the first tick fires immediately.
     fn spawn_periodic_scan(pool: SqlitePool, worker: Arc<Worker>) {
         tokio::spawn(async move {
             loop {
@@ -302,15 +283,11 @@ mod server {
     /// take one named argument instead of four positional `Arc`s.
     struct RouterLimiters {
         auth: Arc<rate_limit::RateLimiter>,
-        /// Prefix-scope the auth limiter to credential-handling endpoints
-        /// only. `/api/auth/me` is an authenticated read of the caller's
-        /// own row — it's hit on every web App boot (and historically on
-        /// every page mount) but presents no brute-force surface, so
-        /// sharing the same 10-req/60s bucket as `/login`/`/register`
-        /// just throttled legitimate UI rendering (and parallel
-        /// Playwright workers from the same loopback IP). Logout stays
-        /// limited because a stolen token could otherwise be used to DoS
-        /// revoke endpoints.
+        /// Prefix-scope the auth limiter to credential-handling endpoints only.
+        /// `/api/auth/me` is an authenticated read of the caller's own row with no brute-force
+        /// surface, so sharing `/login`'s 10-req/60s bucket would throttle legitimate UI
+        /// rendering (and parallel Playwright workers on one loopback IP). Logout stays
+        /// limited, as a stolen token could otherwise be used to DoS revoke endpoints.
         auth_prefixes: Arc<Vec<&'static str>>,
         /// One per-IP budget shared by the REST `/api/search/*` and RPC
         /// `/api/rpc/search-*` layers (same `Arc`), so neither reaches 2×
@@ -447,12 +424,10 @@ mod server {
             .layer(prometheus_layer)
     }
 
-    /// Layer global HTTP security response headers onto `router`, plus
-    /// the optional HSTS layer (only when secure cookies are enabled) and the
-    /// outermost trace layer. Separate fold because `SetResponseHeaderLayer`
-    /// is one layer per header; placed outside the timeout/body-limit guards
-    /// but inside the trace layer so headers attach to every response —
-    /// including the 408/413 short-circuits emitted by those guards.
+    /// Layer global HTTP security response headers onto `router`, plus the optional HSTS
+    /// layer (only when secure cookies are enabled) and the outermost trace layer. Placed
+    /// outside the timeout/body-limit guards but inside the trace layer so headers attach
+    /// to every response, including the 408/413 short-circuits those guards emit.
     fn apply_security_headers(router: Router) -> Router {
         let secure_cookies = auth::handlers::parse_secure_cookies(
             std::env::var("OMNIBUS_SECURE_COOKIES").ok().as_deref(),

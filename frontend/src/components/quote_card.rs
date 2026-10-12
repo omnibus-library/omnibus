@@ -458,11 +458,9 @@ fn compute_quote_styles(state: &QuoteCardState) -> (String, String, String) {
 
 /// Build the three export-action handlers (download/share/copy), each
 /// wrapping the same canvas payload built from the quote text and the
-/// current style signals. `Clone` on `build_payload` lets each button
-/// handler own a copy. Only the interactive targets build it — `serde_json`
-/// isn't compiled in on SSR — so `quote_text`/`author`/`subtitle` go unused
-/// there, hence the `cfg_attr` below (same pattern as
-/// `pages::reader::highlights_drawer`).
+/// current style signals.
+// Only the interactive targets build the payload (`serde_json` isn't compiled
+// on SSR), so `quote_text`/`author`/`subtitle` go unused there.
 #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(unused_variables))]
 #[allow(clippy::type_complexity)]
 fn build_export_handlers(

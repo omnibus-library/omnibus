@@ -45,17 +45,10 @@ pub(super) struct MobileBookView {
 }
 
 /// Build the Fetch Summary callback: on success, saves the fetched text as a
-/// description override and — provided the user hasn't navigated to a
-/// different book in the meantime — updates the `description` signal in
-/// place, mirroring web's `BdTitleCol`.
-///
-/// `description` arrives pre-seeded from `b.description` (reset by
-/// `BookDetailPage`'s fetch effect on every book load). Snapshots this
-/// book's epoch up front: if the user navigates away before the save below
-/// resolves, `BookDetailPage` bumps `description_epoch` for the new book,
-/// and the mismatch tells us to drop this result instead of overwriting the
-/// new book's summary — mirrors `poll_suggestions_until_resolved`'s
-/// `is_current` guard.
+/// description override and, unless the user has navigated to a different book
+/// meanwhile, updates the `description` signal in place (as web's `BdTitleCol`
+/// does). The result is dropped when `description_epoch` no longer matches the
+/// epoch snapshotted at build time.
 fn build_on_fetched_handler(
     server_url: &str,
     uuid: &str,
@@ -81,13 +74,10 @@ fn build_on_fetched_handler(
     }
 }
 
-/// Render the fully-loaded book detail for the mobile shell. A plain fn with
-/// no hooks of its own: `description` used to be a local `use_signal` here,
-/// but this fn is reached only past [`super::BookDetailPage`]'s
-/// loading/error/not-found early returns, so a hook declared inside it was
-/// registered on some renders of that component and skipped on others —
-/// a hook-order violation (rule 07). It's now owned by `BookDetailPage` and
-/// threaded down as a [`DescriptionSignals`] field on [`MobileBookView`].
+/// Render the fully-loaded book detail for the mobile shell. A plain fn with no
+/// hooks: it is reached only past [`super::BookDetailPage`]'s loading/error/
+/// not-found early returns, so a hook here would break hook order. `description`
+/// is owned by `BookDetailPage` and arrives as [`DescriptionSignals`].
 pub(super) fn render_loaded_mobile(view: MobileBookView) -> Element {
     let MobileBookView {
         b,
@@ -576,13 +566,9 @@ fn has_multi_file_format(files: &[omnibus_shared::BookFileInfo]) -> bool {
 }
 
 /// File rows: per-file detail when some format has more than one file,
-/// otherwise one badge per format.
-///
-/// The count is checked here rather than inferred from `book_files` being
-/// non-empty. The API publishes those rows for every book — they carry each
-/// file's content validator — so emptiness no longer means "single file",
-/// and reading it that way would show filename-and-path detail for every
-/// ordinary one-file book.
+/// otherwise one badge per format. Checks the count rather than whether
+/// `book_files` is empty, since the API publishes those rows (with their content
+/// validators) for every book.
 fn files_list(b: &EbookMetadata) -> Element {
     if has_multi_file_format(&b.book_files) {
         rsx! {

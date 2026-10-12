@@ -42,12 +42,10 @@ fn map_copy(r: CopyRow) -> PhysicalCopy {
 }
 
 /// Check in a physical copy for a book, fulfilling every user's wishlist for it.
-///
 /// The uuid is folded to its canonical `books.uuid` (honoring `merged_uuids`)
-/// before anything is written, so the stored copy and the wishlist sweep both
-/// key on the same value the rest of the system uses; an unresolvable uuid
-/// returns [`PhysicalError::BookNotFound`]. The insert and the sweep run in one
-/// transaction, so a copy never lands without its fulfillment side effect.
+/// first; an unresolvable uuid returns [`PhysicalError::BookNotFound`]. The
+/// insert and the wishlist sweep run in one transaction, so a copy never lands
+/// without its fulfillment side effect.
 pub async fn add_physical_copy(
     pool: &SqlitePool,
     book_uuid: &str,
@@ -97,12 +95,9 @@ pub async fn list_physical_copies(
     list_physical_copies_by_canonical_uuid_exec(pool, &canonical).await
 }
 
-/// Executor-generic counterpart to [`list_physical_copies`] for a uuid
-/// already resolved to canonical, so a caller holding an open transaction
-/// (e.g. book deletion's count-inside-the-tx fix) reads on the same
-/// connection its writes will run on, without a second `merged_uuids`
-/// resolution. Pass `&pool` for a standalone read or `&mut *tx` from within
-/// a transaction.
+/// Executor-generic counterpart to [`list_physical_copies`] for a uuid already
+/// resolved to canonical, so a caller in an open transaction reads on the same
+/// connection its writes use. Pass `&pool` or `&mut *tx`.
 pub async fn list_physical_copies_by_canonical_uuid_exec<'e, E>(
     executor: E,
     canonical_uuid: &str,

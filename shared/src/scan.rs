@@ -46,14 +46,11 @@ pub enum ScanOutcome {
     OnWishlist { book: ScanBook },
     /// Exact identifier hit; in the library digitally, no physical copy yet.
     InLibraryUnowned { book: ScanBook },
-    /// Online-resolved and (title, author)-matched at least one library book —
-    /// needs a human "is this the book?" confirmation before any write.
-    ///
-    /// Carried as head + tail rather than one list so the single-candidate wire
-    /// shape is byte-identical to what shipped: a client that only knows `book`
-    /// still decodes the outcome and renders a usable confirm screen instead of
-    /// failing on an unknown shape. Clients that know both render `book`
-    /// followed by `others` as one picker.
+    /// Online-resolved and (title, author)-matched at least one library book:
+    /// needs a human "is this the book?" confirmation before any write. Carried as
+    /// head + tail so the single-candidate wire shape stays byte-identical for older
+    /// clients; clients that know both render `book` followed by `others` as one
+    /// picker.
     CloseMatch {
         book: ScanBook,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -217,14 +214,11 @@ pub struct WishlistAddRequest {
 }
 
 impl WishlistAddRequest {
-    /// Reject an oversized `book_uuid` or a `meta` that fails its own
-    /// validation. `meta` is only validated when `book_uuid` is absent —
-    /// mirroring the "book_uuid wins, meta is ignored" precedence documented
-    /// on the struct — so a valid `book_uuid` alongside a junk `meta` isn't
-    /// spuriously rejected for a field that would never be used. Handlers
-    /// translate `Err(_)` into 400. Whether at least one of `book_uuid`/`meta`
-    /// is set is a domain rule enforced downstream
-    /// (`ScanError::MissingWishlistTarget`), not a shape check here.
+    /// Reject an oversized `book_uuid` or a `meta` that fails its own validation.
+    /// `meta` is only validated when `book_uuid` is absent ("book_uuid wins, meta is
+    /// ignored" on the struct), so a valid `book_uuid` with a junk `meta` isn't
+    /// rejected. Whether at least one is set is enforced downstream
+    /// (`ScanError::MissingWishlistTarget`). Handlers translate `Err(_)` into 400.
     pub fn validate(&self) -> Result<(), String> {
         if let Some(ref uuid) = self.book_uuid {
             if uuid.trim().is_empty() {

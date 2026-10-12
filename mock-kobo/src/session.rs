@@ -34,11 +34,46 @@ pub enum SyncFailure {
     Transport(String),
 }
 
+/// One "Sync now" press whatever its outcome: every request made, and how it ended.
+#[derive(Debug)]
+pub struct SyncAttempt {
+    /// Every request the device made, in order, token redacted.
+    pub requests: Vec<RequestRecord>,
+    /// The `library_sync` pages fetched, or why the sync failed.
+    pub outcome: Result<usize, SyncFailure>,
+}
+
 /// Press "Sync now" on `device`, configured with `api_endpoint`.
 pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncReport, SyncFailure> {
-    let mut client = Client::new(api_endpoint, &device.hardware_id)?;
+    let attempt = attempt_sync(device, api_endpoint).await;
+    attempt.outcome.map(|pages| SyncReport {
+        requests: attempt.requests,
+        pages,
+    })
+}
+
+/// Press "Sync now", keeping the request log even when the sync fails.
+pub async fn attempt_sync(device: &mut Device, api_endpoint: &str) -> SyncAttempt {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return SyncAttempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_sync(&mut client, device).await;
+    SyncAttempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+/// The handshake, store paths and library sync; returns the pages fetched.
+async fn run_sync(client: &mut Client, device: &mut Device) -> Result<usize, SyncFailure> {
     let initialization = client.initialization().await?;
-    require_not_rejected(&client, &initialization)?;
+    require_not_rejected(client, &initialization)?;
     if !initialization.headers().contains_key(API_TOKEN_HEADER) {
         return Err(tripped(
             Quirk::ApiToken,
@@ -50,39 +85,40 @@ pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncRep
         .await?
         .resources;
     let tests = client.get_tests(&resources.get_tests_request).await?;
-    require_success(&client, &tests, Quirk::GetTestsPost)?;
+    require_success(client, &tests, Quirk::GetTestsPost)?;
     for path in STORE_PATHS {
         let store = client.store_path(path).await?;
-        require_success(&client, &store, Quirk::StorePaths)?;
+        require_success(client, &store, Quirk::StorePaths)?;
     }
-    let pages = sync_library(&mut client, &resources.library_sync, device).await?;
-    Ok(SyncReport {
-        requests: client.into_requests(),
-        pages,
-    })
+    sync_library(client, &resources.library_sync, device).await
 }
 
 /// Fetch and apply `library_sync` pages until the server stops asking for more,
-/// returning how many it took.
+/// returning how many it took. Each page's `x-kobo-synctoken` is kept on the
+/// device once that page's items are applied, and echoed on the next request.
 async fn sync_library(
     client: &mut Client,
     url: &str,
     device: &mut Device,
 ) -> Result<usize, SyncFailure> {
-    let mut sync_token = None;
     for fetched in 1..=MAX_SYNC_PAGES {
-        let page = client.library_sync(url, sync_token.as_deref()).await?;
+        let page = client
+            .library_sync(url, device.sync_token.as_deref())
+            .await?;
         require_not_rejected(client, &page)?;
         let headers = page.headers();
         let more = headers
             .get(SYNC_CONTINUE_HEADER)
             .is_some_and(|v| v == "continue");
-        sync_token = headers
+        let page_token = headers
             .get(SYNC_TOKEN_HEADER)
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
         for item in client.decode::<Vec<SyncItem>>(page).await? {
             device.apply(item);
+        }
+        if page_token.is_some() {
+            device.sync_token = page_token;
         }
         if !more {
             return Ok(fetched);

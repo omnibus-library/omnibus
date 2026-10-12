@@ -1,4 +1,8 @@
 //! One candidate row, and the order the rows come in.
+//!
+//! The fan-out answers provider by provider, so a raw list reshuffles whenever
+//! a source is slow, newly configured or down. Ordering reads which provider
+//! answered only as the final tiebreak.
 
 use dioxus::prelude::*;
 use omnibus_shared::metadata_lookup::ProviderEdition;
@@ -8,21 +12,9 @@ use super::EMPTY;
 
 /// Put candidates in an order derived from the candidates themselves.
 ///
-/// Two problems, one key. The fan-out answers provider by provider, so the
-/// raw list is "everything Open Library found, then everything Google Books
-/// found" — a source being slow, newly configured, or briefly down reshuffles
-/// the whole list under the reader. And within a provider the order is
-/// whatever it felt like, which for a well-known title is reliably four study
-/// guides above the novel.
-///
-/// The **server's relevance score leads**, when it sent one: it is computed
-/// from the candidate and the query alone — never from which provider answered
-/// — so it has the property this ordering has always needed. The
-/// word-coverage key below it is retained as the tiebreak, and as the whole
-/// order for a response that carries no scores (an older server, or a test
-/// fixture). Nothing here reads *who* answered until the final tiebreak, so a
-/// provider dropping out removes its rows and moves nothing else — and
-/// nothing is merged or discarded.
+/// The server's relevance score leads when sent; the word-coverage key is the
+/// tiebreak, and the whole order for a response that carries no scores. A
+/// provider dropping out removes its rows and moves nothing else.
 pub(super) fn in_stable_order(
     mut editions: Vec<ProviderEdition>,
     query: &str,
@@ -57,9 +49,7 @@ pub(super) fn in_stable_order(
 /// The text a query is matched against: title **and** authors.
 ///
 /// The seeded query is "title + primary author", so matching the title alone
-/// would rank every candidate that merely names the author in its title —
-/// a study guide — above the book itself, which of course doesn't repeat its
-/// own author in its title.
+/// would rank every study guide that names the author above the book itself.
 fn haystack(edition: &ProviderEdition) -> String {
     format!("{} {}", edition.title, edition.authors.join(" ")).to_lowercase()
 }
@@ -116,11 +106,8 @@ fn authors_line(edition: &ProviderEdition) -> String {
 /// The row's third line: year, publisher, ISBN — with the parts the provider
 /// left empty dropped rather than rendered as gaps.
 ///
-/// All three can be absent at once. A Hardcover search hit describes a *work*,
-/// so it names no printing, no publisher, and no edition ISBN; the row is
-/// still worth showing (its title, authors, and cover are exactly what the
-/// reader is choosing between) and hydrate-on-select fills the rest in. An em
-/// dash keeps the row three lines tall rather than letting it jump.
+/// All three can be absent at once (a Hardcover hit describes a *work*); the
+/// row still shows, and an em dash keeps it three lines tall.
 fn imprint_line(edition: &ProviderEdition) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(year) = edition.year.as_deref().filter(|v| !v.trim().is_empty()) {

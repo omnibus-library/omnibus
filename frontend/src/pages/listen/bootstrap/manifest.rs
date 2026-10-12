@@ -9,18 +9,11 @@ use super::js::eval_hls_init;
 use super::NEXT_SEQUENCE_FILE;
 use crate::data;
 
-/// Fetch `/api/audiobooks/{uuid}/manifest` — targeting the picker's
-/// `file_id` when one was selected, else the progress row's stored
-/// `book_file_id` so multi-file books resume in the file the seconds were
-/// recorded in — then either:
-/// * **Direct mode** — call `initDirect` with the parts list (instant
-///   playback for m4b/m4a/mp3/aac). `hls_ready` flips once the JS side
-///   confirms via `__omnibusOnAudioBooted` that a source is actually
-///   committed, not optimistically here.
-/// * **HLS mode** — poll `/status` until `ready` (call `initHls`, same
-///   JS-confirmed `hls_ready` flip) or `failed` (flip `playback_failed`).
-/// * **No manifest** — show the same failure overlay as a terminal HLS
-///   transcode failure.
+/// Fetch `/api/audiobooks/{uuid}/manifest` for the picker's `file_id`, else the
+/// progress row's stored `book_file_id`, then init playback: `initDirect` with
+/// the parts list, or for HLS poll `/status` until `ready` (`initHls`) or
+/// `failed`. `hls_ready` flips only once JS confirms via `__omnibusOnAudioBooted`;
+/// no manifest shows the same failure overlay as a failed transcode.
 pub(super) async fn run_manifest_init(
     uuid_for_fetch: String,
     file_id: Option<i64>,
@@ -130,21 +123,19 @@ fn boot_is_current(
     )
 }
 
-/// Resolve follow at boot: when the link follows the counterpart and the
-/// reading position maps newer, seed playback with the mapped spot
-/// instead of the stored row — a post-boot corrective seek would race
-/// `initDirect`'s one-shot restore seek and lose. Fetched even for an
-/// explicit `?file_id=` — every Continue card carries the row's file id,
-/// and skipping follow there reopened books at the stale spot;
-/// `resolve_follow_boot` still stands aside when the pick names a
-/// *different* file than the candidate maps to. `None` when a newer book
-/// was selected mid-fetch.
+/// Resolve follow at boot: when the link follows the counterpart and the reading
+/// position maps newer, seed playback with the mapped spot instead of the stored
+/// row. Fetched even for an explicit `?file_id=`; `resolve_follow_boot` stands
+/// aside when the pick names a *different* file than the one mapped to. `None`
+/// when a newer book was selected mid-fetch.
 async fn resolve_boot_target(
     uuid_for_fetch: &str,
     file_id: Option<i64>,
     row_file: Option<i64>,
     is_current: &impl Fn() -> bool,
 ) -> Option<(Option<(Option<i64>, f64)>, Option<i64>)> {
+    // Resolved before boot, not by a post-boot corrective seek, which would race
+    // `initDirect`'s one-shot restore seek and lose.
     let follow_resume =
         super::super::sync_prompt::fetch_resume_with(uuid_for_fetch, "audio", false).await;
     if !is_current() {
@@ -201,12 +192,10 @@ async fn reconcile_playback_rate(
     true
 }
 
-/// The boot manifest for `boot_file`. The row's stored id is a soft
-/// reference — a reindex may have replaced the `book_files` row since the
-/// position was saved. Fall back to the server's default file rather than
-/// a failure overlay, mirroring `db::progress::resume_points`. Never
-/// applied to an explicit picker selection: a dead `?file_id=` should fail
-/// loudly, not play another file.
+/// The boot manifest for `boot_file`. The row's stored id is a soft reference (a
+/// reindex may have replaced the file), so fall back to the server's default
+/// file rather than a failure overlay, as `db::progress::resume_points` does.
+/// Never for an explicit picker selection: a dead `?file_id=` should fail loudly.
 async fn fetch_boot_manifest(
     uuid_for_fetch: &str,
     file_id: Option<i64>,
@@ -293,12 +282,10 @@ async fn fetch_manifest(
     }
 }
 
-/// Direct-mode arm: hand the part list to the JS `initDirect` shim and
-/// publish the chapter map. Synchronous — the caller's `is_current` guard
-/// covered the only `await`. `hls_ready` is no longer flipped here — the
-/// JS shim reports back via `__omnibusOnAudioBooted` once it has actually
-/// committed a source, closing the race where a click could fire
-/// `el.play()` before `el.src` existed.
+/// Direct-mode arm: hand the part list to the JS `initDirect` shim and publish
+/// the chapter map. Synchronous (the caller's `is_current` guard covered the only
+/// `await`). `hls_ready` is not flipped here: the shim reports
+/// `__omnibusOnAudioBooted` once a source is committed.
 fn init_direct_play(
     parts: Vec<omnibus_shared::ManifestPart>,
     chapters: Vec<omnibus_shared::ChapterInfo>,

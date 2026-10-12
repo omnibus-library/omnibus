@@ -16,21 +16,16 @@ use crate::metadata_overrides::sql::{effective_genres_sql, overrides_win_sql};
 use super::PaletteError;
 
 /// The `FROM`/`WHERE` body both the hits query and the count share, bound
-/// `?1 = library_paths JSON array`, `?2 = like_pattern`.
-///
-/// Membership is the shared `effective_genres_sql!` — guarded against an
-/// unreadable blob and gated on metadata precedence, like every other
-/// effective read. Its join to `genres` is what makes the reported name
-/// canonical: `materialize_genre_rows` deduplicates into a `NOCASE`-unique
-/// row, so a library holding both "sci-fi" and "Sci-Fi" shows one palette
-/// row under whichever spelling was coined first, matching `get_genre_cloud`.
-///
-/// `COUNT(DISTINCT b.id)` guards a duplicate entry inside a single book's
-/// array (`["Horror","Horror"]` counts once).
+/// `?1 = library_paths JSON array`, `?2 = like_pattern`. Membership is the shared
+/// `effective_genres_sql!`; its join to `genres` makes the reported name
+/// canonical (a library holding "sci-fi" and "Sci-Fi" shows one row under the
+/// spelling coined first, like `get_genre_cloud`).
 fn genre_scan_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {
         let visible = visible_book_sql("b", "l", "?1");
+        // `COUNT(DISTINCT b.id)` guards a duplicate entry inside one book's array
+        // (`["Horror","Horror"]` counts once).
         format!(
             r"
         FROM ({membership}) eg

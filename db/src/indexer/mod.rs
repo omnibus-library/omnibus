@@ -3,6 +3,15 @@
 //! per-book changes the on-disk state demands. Reindex is driven by
 //! [`crate::worker::Worker`] on startup (when stale) and on settings save;
 //! scans run via `spawn_blocking` so the axum runtime stays responsive.
+//!
+//! Move detection pairs a vanished row with an arrived file on byte identity
+//! `(size_bytes, mtime_epoch)` within one format. It complements the writer's
+//! `(title_norm, author_norm)` auto-attach: byte identity survives missing author
+//! metadata, but not a retagged title or an mtime-lossy copy (`cp` without `-p`),
+//! which fall back to the auto-attach. A moved file is never parsed, so a declined
+//! relocation is a skip, not a fallback: the emit conditions stay conservative.
+//! Detection lives in the diff because the auto-attach runs in the writer, after
+//! the `check_mass_missing` breaker, which a large reorganization would trip first.
 
 use std::path::Path;
 
@@ -26,12 +35,10 @@ pub(crate) use progress::{
 };
 pub use progress::{ScanUpdate, PHASE_PARSING, PHASE_SYNCING, PHASE_WALKING};
 
-/// Errors returned by the pure-DB indexer reads (`is_stale`). The
-/// transparent `Db` variant honors the `02-error-handling` boundary rule
-/// — no raw `sqlx::Error` across the module boundary — while keeping the
-/// `?` propagation clean. `reindex` and `reindex_audiobooks` stay on
-/// `anyhow::Result` because they span filesystem scans + parsing
-/// (foreign-system failure space).
+/// Errors returned by the pure-DB indexer reads (`is_stale`). The transparent
+/// `Db` variant keeps raw `sqlx::Error` from crossing the module boundary (rule
+/// 02); `reindex` and `reindex_audiobooks` stay on `anyhow::Result` because they
+/// span filesystem scans and parsing.
 #[derive(Debug, thiserror::Error)]
 pub enum IndexerError {
     #[error(transparent)]
@@ -66,12 +73,10 @@ impl From<crate::settings::SettingsError> for IndexerError {
 /// thrashing the disk for users who leave the app open all day.
 pub const REFRESH_AFTER_SECS: i64 = 60 * 60;
 
-/// Circuit-breaker threshold: abort the removal pass when a
-/// single scan would flag more than this fraction of a previously-populated
-/// library missing. A legitimate bulk delete this large is rare; a scan
-/// that would erase a fifth of the library is far more likely a transient
-/// mount/permission fault, so we halt and serve the existing index rather
-/// than commit the wipe.
+/// Circuit-breaker threshold: abort the removal pass when a single scan would
+/// flag more than this fraction of a previously-populated library missing. A
+/// scan that would erase a fifth of the library is likelier a transient
+/// mount/permission fault than a real bulk delete, so we serve the existing index.
 pub const MASS_MISSING_FRACTION: f64 = 0.20;
 
 /// A scan that flags at most this many books missing is always allowed
@@ -103,21 +108,11 @@ pub struct MassMissingError {
     pub percent: f64,
 }
 
-/// Decide whether a scan's enumeration can be trusted to drive the removal
-/// pass. Untrustworthy when the walk was `incomplete` (a subdir read
-/// failed), or when the root read **totally empty** (`saw_any_file ==
-/// false`) while the DB still holds file-backed books under it — the
-/// boot-race / unmounted-NFS case where an empty read would otherwise mark
-/// the whole library missing.
-///
-/// `saw_any_file` counts files of *any* extension, so a shared root that
-/// legitimately holds files of another format but none of this library's
-/// (e.g. EPUBs under an audiobook reindex) stays trustworthy — only a truly
-/// empty directory trips the guard.
-///
-/// A genuinely empty library (`db_has_files == false`) is trustworthy: the
-/// first-ever scan of an empty root, or a library the user really did clear,
-/// must still be indexable.
+/// Decide whether a scan's enumeration can be trusted to drive the removal pass:
+/// not when the walk was `incomplete`, nor when the root read totally empty
+/// (`saw_any_file == false`) while the DB still holds file-backed books under it
+/// (the unmounted-NFS case). `saw_any_file` counts any extension; a genuinely
+/// empty library (`db_has_files == false`) is trustworthy.
 fn enumeration_is_trustworthy(incomplete: bool, saw_any_file: bool, db_has_files: bool) -> bool {
     if incomplete {
         return false;
@@ -149,12 +144,10 @@ fn check_mass_missing(removed: usize, db_file_backed: usize) -> Result<(), MassM
     Ok(())
 }
 
-/// `true` when a scan's ghost count clears [`MASS_MISSING_WARN_FRACTION`]:
-/// more than [`MASS_MISSING_MIN_ABSOLUTE`] books *and* more than the warn
-/// fraction of the file-backed library. Reuses the abort guard's absolute
-/// floor so an ordinary small-library edit never warns either. Callers only
-/// reach this after [`check_mass_missing`] has already passed, so the warn
-/// band is implicitly capped above by [`MASS_MISSING_FRACTION`].
+/// `true` when a scan's ghost count clears [`MASS_MISSING_WARN_FRACTION`]: more
+/// than [`MASS_MISSING_MIN_ABSOLUTE`] books *and* more than the warn fraction of
+/// the file-backed library. Callers reach this only after [`check_mass_missing`]
+/// has passed, so the warn band is capped above by [`MASS_MISSING_FRACTION`].
 fn ghost_warning_threshold_exceeded(removed: usize, db_file_backed: usize) -> bool {
     if removed <= MASS_MISSING_MIN_ABSOLUTE || db_file_backed == 0 {
         return false;
@@ -196,30 +189,17 @@ impl ReindexStats {
     }
 }
 
-/// True when a refresh should be kicked off: no state at all, or state
-/// older than [`REFRESH_AFTER_SECS`].
-///
-/// ## Clock-failure behavior
-///
-/// The freshness check is `now - last_indexed >= REFRESH_AFTER_SECS`. If
-/// reading the wall clock fails (`SystemTime::now()` is before the UNIX
-/// epoch — only reachable with a badly misconfigured system clock), the
-/// `.unwrap_or(last)` fallback substitutes the stored `last_indexed`
-/// timestamp for `now`. That makes `now - last == 0`, so the function
-/// returns `Ok(false)` and the reindex is **silently skipped**.
-///
-/// This is a deliberate "serve stale rather than thrash the disk"
-/// tradeoff: when the clock is unreadable we can't tell how old the index
-/// is, so rather than re-scanning the library on every poll (a clock that
-/// stays broken would otherwise trigger a reindex on every call) we keep
-/// serving the existing index until the clock recovers. The decision is
-/// factored into the pure [`is_stale_decision`] so the window boundaries
-/// and this clock-failure fallback (`now == last`) are pinned by the
-/// `is_stale_decision_*` tests below; change it only with intent.
+/// True when a refresh should be kicked off: no state at all, or state older than
+/// [`REFRESH_AFTER_SECS`]. **Clock failure:** if the wall clock is unreadable,
+/// `now` falls back to the stored `last_indexed`, so this returns `Ok(false)` and
+/// the reindex is silently skipped. The decision lives in the pure
+/// [`is_stale_decision`], pinned by its tests; change it only with intent.
 pub async fn is_stale(pool: &SqlitePool, library_path: &str) -> Result<bool, IndexerError> {
     let Some(last) = crate::settings::last_indexed_at(pool, library_path).await? else {
         return Ok(true);
     };
+    // Deliberate "serve stale rather than thrash the disk": with an unreadable clock
+    // we can't tell how old the index is, and rescanning on every poll would loop.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
@@ -264,65 +244,11 @@ pub struct ReindexDiff {
     pub backfill: Vec<(String, i64, i64)>,
 }
 
-/// Pure classifier — no I/O. Compares a Phase-A stat output against the
-/// current DB state and routes each file into one of the six buckets.
-/// `library_root` is the absolute path the scanner walked; we join it
-/// with each `filename` to fill `ParseTarget.absolute` so Phase B can
-/// open files directly without re-walking.
-///
-/// `enumeration_trustworthy` gates the **Removed** bucket only: when the
-/// caller could not fully enumerate the tree (a subdir read failed, or a
-/// once-populated root read empty) it passes `false`, and `diff_library`
-/// leaves `removed` empty so a partial scan can never flag a book missing.
-/// The New / Changed / Backfill buckets are unaffected — an incomplete
-/// scan still safely indexes the files it *did* see. **Moved** rides on
-/// Removed: with no removal pass there is nothing to match arrivals
-/// against, so it stays empty too.
-///
-/// # Bucket semantics
-///
-/// - **Unchanged** — on disk, in DB, `(mtime_epoch, size_bytes)` matches.
-///   No work. `books.id` preserved.
-/// - **New** — on disk, not in DB. Full Phase-B parse + insert.
-/// - **Changed** — on disk, in DB, stat differs. Full Phase-B parse, then
-///   UPDATE in place (preserves `books.id`).
-/// - **Moved** — a vanished row and an arrived file carrying the same
-///   `(size_bytes, mtime_epoch)`. Writer repoints path columns; identity
-///   and every soft-ref user-data row ride along untouched. See below.
-/// - **Removed** — a file-backed book whose file is gone. Its `book_files`
-///   row is dropped so the book becomes a **fileless book** (the `books`
-///   row + its soft-ref user data are retained, not deleted); a returning
-///   file re-attaches via Changed. An already-fileless book is left alone.
-///   Only populated when `enumeration_trustworthy` is `true`.
-/// - **Backfill** — in DB, in disk, DB has the migration default
-///   `(mtime_epoch=0, size_bytes=0)`. Treated as the sentinel for "fs
-///   metadata never observed" (post-migration), so the writer only
-///   updates the stat columns; the OPF is not re-parsed. Without this,
-///   the first reindex after the migration would treat every existing
-///   row as Changed.
-///
-/// ## Moved, and what it deliberately can't see
-///
-/// The buckets are disjoint, so a file classified Moved never enters New
-/// and the writer's title+author auto-attach never sees it. Phase B parses
-/// only New + Changed, so a moved file is never parsed and the writer has
-/// no `IndexedBook` to fall back on: a declined relocation is a **skip**,
-/// not a fallback, which is why the emit conditions stay conservative.
-/// The pair must be unique on both sides — ambiguity declines rather than
-/// guessing — `(0, 0)`, the never-observed sentinel a failed stat and a
-/// pre-backfill row both carry, never participates, and the match is scoped
-/// to a single **format**: a relocation rewrites path columns only, so it
-/// cannot carry a file whose extension changed (see [`match_moved_files`]).
-///
-/// This detector is a byte identity and the writer's `(title_norm,
-/// author_norm)` auto-attach is a semantic one, so each covers the other's
-/// blind spot. Byte identity survives missing author metadata and tells
-/// two editions of one book apart; it does not survive a move that also
-/// retagged the title, or an mtime-lossy copy (`cp` without `-p`). The
-/// title+author path is the fallback for both of those, at the cost of a
-/// full parse plus ghost / DELETE / re-INSERT / FTS churn — and it runs in
-/// the writer, *after* the `check_mass_missing` breaker, which a large
-/// reorganization would otherwise trip before ever reaching it.
+/// Pure classifier (no I/O): compares a Phase-A stat output against the current
+/// DB state and routes each file into one of six buckets (see `ReindexDiff`).
+/// `enumeration_trustworthy` gates **Removed** (and so **Moved**) only: pass
+/// `false` after a partial scan and `removed` stays empty, while New / Changed /
+/// Backfill still index the files that were seen.
 pub fn diff_library(
     disk: &[ebook::StatEntry],
     db: &[books::IndexedRow],
@@ -406,13 +332,10 @@ fn classify_arrivals<'a>(
     arrivals
 }
 
-/// File-backed rows whose path is no longer on disk — Removed candidates,
-/// held back for the move matcher the same way arrivals are.
-///
-/// The removal pass runs only on a fully-trusted enumeration. On a partial
-/// scan (unreadable subdir, or a once-populated root now reading empty) this
-/// returns nothing, so no book is flagged missing and no `merged_uuids` row
-/// is eroded. An already-fileless book is left untouched.
+/// File-backed rows whose path is no longer on disk: Removed candidates, held
+/// back for the move matcher the same way arrivals are. Returns nothing on a
+/// partial scan (`enumeration_trustworthy == false`), so no book is flagged
+/// missing and no `merged_uuids` row is eroded. Fileless books are untouched.
 fn collect_departures<'a>(
     db: &'a [books::IndexedRow],
     disk_by_key: &std::collections::HashMap<&str, &ebook::StatEntry>,
@@ -472,50 +395,27 @@ fn sort_buckets(out: &mut ReindexDiff) {
     out.backfill.sort_by(|a, b| a.0.cmp(&b.0));
 }
 
-/// Pair vanished rows with arrived files on the `(size_bytes, mtime_epoch)`
-/// pair both sides of the diff already carry, **within one format**.
-/// Returns `(removed index, new index)` pairs; every index appears at most
-/// once.
-///
-/// A pair only matches when it is unique on **both** sides. An ambiguous
-/// group falls through to filename-stem equality, and only where the stem
-/// is itself unique on both sides — a tiebreaker, never a requirement,
-/// because requiring it would kill pure renames, which are the common real
-/// case. `(0, 0)` is the never-observed sentinel: a failed stat and a
-/// pre-backfill row both carry it, so without skipping it every unstattable
-/// file would match every other one.
-///
-/// ## Why the format is part of the key
-///
-/// A relocation rewrites path columns and nothing else, so it cannot change
-/// `book_files.format` — and `format` is not decoration: `books::book_file_path`
-/// rebuilds the on-disk path as `library / path / filename + "." +
-/// lower(format)`, so a row whose format no longer matches its extension
-/// resolves to a file that isn't there. Retyping `Book.m4a` to `Book.m4b`
-/// preserves the bytes, so it would otherwise match on the stat pair alone
-/// (and `path_stem` drops the extension, so the tiebreaker would *help* it
-/// pair) — leaving a book unreachable from every endpoint, and stuck that
-/// way, since the next scan finds the new path with a matching stat and
-/// classifies it Unchanged.
-///
-/// A format change genuinely needs a Phase-B re-parse — a `.cbz` and a
-/// `.epub` parse differently, and format drives HLS/transcode and reader
-/// routing — so declining here, and letting the file fall through to the
-/// Removed and New buckets, is the correct answer rather than a missed
-/// optimization. Note that scoping the diff to a format *set*
-/// (`EBOOK_FORMATS` / `AUDIOBOOK_FORMATS`) is not the same as scoping to a
-/// format: both sets hold more than one today.
+/// Pair vanished rows with arrived files on the `(size_bytes, mtime_epoch)` pair
+/// both sides of the diff already carry, **within one format**. Returns
+/// `(removed index, new index)` pairs; every index appears at most once. A pair
+/// matches only when unique on **both** sides; an ambiguous group falls through
+/// to filename-stem equality, a tiebreaker and never a requirement.
 fn match_moved_files(
     removed: &[&books::IndexedRow],
     new: &[&ebook::StatEntry],
 ) -> Vec<(usize, usize)> {
     use std::collections::HashMap;
 
+    // Format is part of the key: a relocation rewrites path columns only, and
+    // `book_file_path` rebuilds the path from `lower(format)`, so retyping
+    // `Book.m4a` to `Book.m4b` must fall through to Removed + New for a re-parse.
     // `(size_bytes, mtime_epoch, format)`.
     type MatchKey = (i64, i64, String);
 
     let mut removed_by_pair: HashMap<MatchKey, Vec<usize>> = HashMap::new();
     for (i, row) in removed.iter().enumerate() {
+        // `(0, 0)` is the never-observed sentinel (a failed stat, a pre-backfill row):
+        // matching it would pair every unstattable file with every other.
         if row.size_bytes == 0 && row.mtime_epoch == 0 {
             continue;
         }
@@ -601,10 +501,9 @@ fn path_stem(scan_key: &str) -> &str {
 }
 
 /// The uppercase extension of a scan key, derived exactly as
-/// `crate::helpers::split_filename` derives `book_files.format` — so the
-/// match key above gates on the value that actually drives path
-/// resolution, not on a lookalike. A directory-shaped audiobook group key
-/// carries no extension and yields `UNKNOWN`, so multi-part groups compare
+/// `crate::helpers::split_filename` derives `book_files.format`, so the match key
+/// gates on the value that drives path resolution. A directory-shaped audiobook
+/// group key has no extension and yields `UNKNOWN`: multi-part groups compare
 /// equal to each other and never to a single-file group.
 fn path_format(scan_key: &str) -> String {
     Path::new(scan_key)

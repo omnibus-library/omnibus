@@ -58,19 +58,11 @@ pub struct ChapterInfo {
     pub duration_seconds: f64,
 }
 
-/// Response payload for `GET /api/audiobooks/{uuid}/manifest`.
-///
-/// `direct` lists per-part URLs the client streams over HTTP Range —
-/// works for any source the browser / native player decodes natively
-/// (m4b, m4a, mp3, aac). `hls` falls back to the segmented transcode
-/// path for codecs that need conversion (flac, ac3, eac3, …).
-/// Both variants carry the identity of the file the server resolved:
-/// `book_file_id` is the `book_files` row this manifest describes (what a
-/// progress write for the session must name), and `audio_file_count` is how
-/// many audio files the book carries — `> 1` means a stored position is only
-/// meaningful together with its file id. Both are `#[serde(default)]` (0) so
-/// a payload from a server predating them still decodes; clients treat 0 as
-/// "identity unknown".
+/// Response payload for `GET /api/audiobooks/{uuid}/manifest`: `direct` lists
+/// per-part URLs for HTTP Range streaming, `hls` is the transcode fallback for
+/// codecs that need conversion. Both carry `book_file_id` (what a progress write
+/// must name) and `audio_file_count` (`> 1`: a position is only meaningful with
+/// its file id); both default to 0, meaning "identity unknown".
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "mode", rename_all = "lowercase")]
 pub enum AudiobookManifest {
