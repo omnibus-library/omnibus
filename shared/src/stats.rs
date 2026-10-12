@@ -812,19 +812,11 @@ impl ReadingGoal {
     }
 }
 
-/// One reader's standing daily goal for one kind, paired with today's progress
-/// toward it.
-///
-/// Recurring rather than year-bound, so there is no `year` here: the target
-/// stands until it is changed, and `day` names the day `current` was measured
-/// over rather than the day the goal belongs to.
-///
-/// # Which day
-///
-/// **The same for both kinds**: today on the reader's calendar — the offset
-/// the asking client declared, else that of their latest session, else UTC.
-/// Every session counts toward minutes, and pages re-bucket from the ledger's
-/// quarter-hour slots (migration `0095`), so both kinds carry the same `day`.
+/// One reader's standing daily goal for one kind, with today's progress toward
+/// it. Recurring, so there is no `year`: `day` names the day `current` was
+/// measured over. Both kinds measure the same day: today on the reader's
+/// calendar (the client's declared offset, else their latest session's, else
+/// UTC).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DailyGoal {
@@ -873,25 +865,15 @@ pub struct DailyGoals {
     pub pages: Option<DailyGoal>,
     /// The minutes goal, `None` when unset.
     pub minutes: Option<DailyGoal>,
-    /// Pages covered today, measured whether or not a pages target is set.
-    ///
-    /// The figure a surface can show *before* a reader commits to a goal —
-    /// what iOS renders in the ring's slot when there is no ring to draw. It is
-    /// the same measurement [`DailyGoal::current`] carries, over the same
-    /// day, computed once and shared: the number must not change the moment a
-    /// target is set, or the goal appears to move the ground it measures.
-    ///
-    /// `None` only when the server could not measure it at all, never as a
-    /// stand-in for zero.
+    /// Pages covered today, measured whether or not a pages target is set:
+    /// the same figure [`DailyGoal::current`] carries, so setting a target
+    /// never moves it. `None` only when the server could not measure it,
+    /// never as a stand-in for zero.
     #[serde(default)]
     pub pages_today: Option<i64>,
-    /// Minutes read and listened today, on the reader's **local** day, whether
-    /// or not a minutes target is set. The counterpart to
-    /// [`Self::pages_today`], and measured exactly as the minutes goal's own
-    /// `current` is — truncating, so 59 seconds is not yet a minute.
-    ///
-    /// Measured over the same day as `pages_today`; see [`DailyGoal`]'s
-    /// "Which day".
+    /// Minutes read and listened today, whether or not a minutes target is set,
+    /// over the same day as [`Self::pages_today`]. Truncating, like the minutes
+    /// goal's own `current`: 59 seconds is not yet a minute.
     #[serde(default)]
     pub minutes_today: Option<i64>,
     /// Always `0`, kept so a client built against the earlier shape still

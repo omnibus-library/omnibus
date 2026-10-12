@@ -194,12 +194,11 @@ impl RuleField {
     }
 }
 
-/// One smart-shelf condition. `value` interpretation is per-field:
+/// One smart-shelf condition, and the source of truth for `value` (migration
+/// `0034`'s comment is frozen and predates the id→name switch):
 /// tag/genre/author/series/format → name (case-insensitive); year/rating → int;
 /// date fields → ISO date, `START..END`, or `30d`/`3m`/`1y`;
-/// status → `unread`/`reading`/`finished`. Migration
-/// `0034`'s comment predates the author/series id→name switch and is frozen once
-/// applied; this doc is the source of truth.
+/// status → `unread`/`reading`/`finished`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ShelfRule {

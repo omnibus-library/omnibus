@@ -32,13 +32,11 @@ enum JournalBlock: Equatable {
 
 // MARK: - The splitter
 
-/// Markdown for journal bodies. Line-based rather than a real CommonMark
-/// parser: the server owns the canonical render, and this only has to agree
-/// with it on the constructs a phone actually shows. Images, tables and task
-/// lists are not among them — their source falls through as prose.
-///
-/// Works from `body_md` because the web's route, setting the server's
-/// `body_html` as raw HTML, has no SwiftUI equivalent.
+/// Markdown for journal bodies, from `body_md` (the web sets the server's
+/// `body_html` as raw HTML, which SwiftUI cannot). Line-based rather than
+/// CommonMark: the server owns the canonical render, and this only has to
+/// agree on what a phone shows; images, tables and task lists fall through as
+/// prose.
 enum JournalMarkdown {
     /// URL scheme the spoiler reveal rides on. `Text` has no per-run gesture,
     /// but it does route link taps through `OpenURLAction` — so a masked span

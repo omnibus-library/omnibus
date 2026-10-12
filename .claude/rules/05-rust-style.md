@@ -18,7 +18,9 @@ covered by [04-playwright.md](04-playwright.md).
 - **Function `///`** is required on every `pub` item: one-line summary.
   Add a longer rustdoc block (params, errors, invariants) only when the
   behaviour is genuinely surprising — locks, retries, side effects, or
-  contracts a caller can break by accident.
+  contracts a caller can break by accident. Even then, 5 lines is the
+  cap: an implementation reason goes in an inline `//` at the code it
+  explains, and a design trade-off in the module `//!`.
 - **Inline `//` inside function bodies** is for explaining **why**, never
   **what**. A non-obvious invariant, a workaround for a specific bug, a
   perf trick. If you're narrating the algorithm, the function probably

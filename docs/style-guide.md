@@ -48,7 +48,7 @@ roadmap, no issues, no H2 sections.
 ### Function `///`
 
 **Rule:** every `pub` item gets a one-line `///` summary. Longer
-rustdoc only when behaviour is surprising.
+rustdoc only when behaviour is surprising, and never past 5 lines.
 
 **Why:** when reading a call site, IDE hover or `cargo doc` should show
 *what the function does* without making you open the source. One line
