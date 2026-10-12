@@ -10,7 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use omnibus_db as db;
-use omnibus_shared::{Shelf, SortDir, SortKey};
+use omnibus_shared::{Shelf, SortDir, SortKey, ViewFilters};
 
 use crate::auth::OpdsAuthUser;
 use crate::backend::AppState;
@@ -84,7 +84,16 @@ pub(super) async fn acquisition_feed(
         Ok(s) => s,
         Err(resp) => return resp,
     };
-    let mut page = match db::shelf_page(&state.pool, &shelf, SortKey::Title, SortDir::Asc).await {
+    let mut page = match db::shelf_page(
+        &state.pool,
+        &shelf,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        db::Viewer::default(),
+    )
+    .await
+    {
         Ok(p) => p,
         Err(e) => return internal("read shelf members", e),
     };

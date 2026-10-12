@@ -813,7 +813,9 @@ struct CheckInView: View {
             )
             Haptics.success()
             // The wishlist is a real shelf whose membership derives from these
-            // entries, so its count and preview covers are now stale.
+            // entries, so its count and preview covers are now stale — and so
+            // is any page a shelf clause naming it keyed.
+            await UserDataService.dropShelfClausePages()
             await UserDataService.shelvesChanged()
             withAnimation(Motion.settle) { stage = .success(CheckInFlow.wishlistedSuccess(meta: meta, ref: ref)) }
         } catch {

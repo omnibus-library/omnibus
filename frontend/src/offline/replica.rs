@@ -7,7 +7,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use omnibus_shared::sort_order::{creator_sort_key, dictionary_cmp};
-use omnibus_shared::{EbookLibrary, EbookMetadata, LibraryPage, SortDir, SortKey, ViewFilters};
+use omnibus_shared::{
+    EbookLibrary, EbookMetadata, FilterField, LibraryPage, SortDir, SortKey, ViewFilters,
+};
 
 use super::{cache, media, store};
 
@@ -78,7 +80,8 @@ async fn sync_replica(server_url: &str) {
 }
 
 /// Serve one offline page from the replica, or `None` when no replica has
-/// been synced yet.
+/// been synced yet or a shelf clause is active: the replica holds no
+/// membership, and unfiltered rows would read as filtered ones.
 pub(crate) async fn page_from_cache(
     sort_key: SortKey,
     sort_dir: SortDir,
@@ -87,12 +90,19 @@ pub(crate) async fn page_from_cache(
     cursor: Option<&str>,
     limit: i64,
 ) -> Option<LibraryPage> {
+    if filters
+        .clauses
+        .iter()
+        .any(|c| c.field == FilterField::Shelf)
+    {
+        return None;
+    }
     let books: Vec<EbookMetadata> = cache::get_json(&cache::keys::ebooks_all()).await?;
     Some(page_from_replica(
         books,
         sort_key,
         sort_dir,
-        &filters.formats,
+        filters,
         exclude_formats,
         cursor,
         limit,
@@ -121,7 +131,7 @@ pub(crate) fn page_from_replica(
     books: Vec<EbookMetadata>,
     sort_key: SortKey,
     sort_dir: SortDir,
-    formats: &[String],
+    filters: &ViewFilters,
     exclude_formats: &[String],
     cursor: Option<&str>,
     limit: i64,
@@ -145,14 +155,14 @@ pub(crate) fn page_from_replica(
 
     // The replica always holds the full library; hiding is applied at read
     // time so an offline pref toggle restores hidden books instantly. The
-    // receipt is the server's same-filters diff: count under the include
-    // chips alone vs. chips + exclusion.
-    let chip_matched: Vec<EbookMetadata> = books
+    // receipt is the server's same-filters diff: count under the filters
+    // alone vs. filters + exclusion.
+    let filter_matched: Vec<EbookMetadata> = books
         .into_iter()
-        .filter(|b| matches_formats(b, formats))
+        .filter(|b| filters.matches(b) == Some(true))
         .collect();
-    let unexcluded_total = chip_matched.len();
-    let mut filtered: Vec<EbookMetadata> = chip_matched
+    let unexcluded_total = filter_matched.len();
+    let mut filtered: Vec<EbookMetadata> = filter_matched
         .into_iter()
         .filter(|b| visible_under_exclusion(b, exclude_formats))
         .collect();
@@ -212,18 +222,6 @@ pub(crate) fn search_replica(books: &[EbookMetadata], q: &str) -> Vec<EbookMetad
         .take(SEARCH_CAP)
         .cloned()
         .collect()
-}
-
-/// `true` when the book carries any of the selected lowercase format keys
-/// (OR within the facet, matching the server's filter semantics). An empty
-/// filter matches everything.
-fn matches_formats(book: &EbookMetadata, formats: &[String]) -> bool {
-    if formats.is_empty() {
-        return true;
-    }
-    book.formats
-        .iter()
-        .any(|f| formats.iter().any(|want| f.eq_ignore_ascii_case(want)))
 }
 
 /// Sort the replica to approximate the server's ordering. The text axes use

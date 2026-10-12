@@ -8,6 +8,7 @@ mod filters;
 mod overrides;
 mod paging;
 mod projection;
+mod shelf_clauses;
 mod stacked;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -77,6 +78,12 @@ fn titles(page: &BookPage) -> Vec<String> {
         .iter()
         .map(|b| b.title.clone().unwrap_or_default())
         .collect()
+}
+
+fn sorted_titles(page: &BookPage) -> Vec<String> {
+    let mut found = titles(page);
+    found.sort();
+    found
 }
 
 async fn uuid_of(pool: &SqlitePool, id: i64) -> String {

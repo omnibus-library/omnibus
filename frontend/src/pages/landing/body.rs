@@ -30,11 +30,15 @@ use super::stack::{lead_accent_style, stack_entries, EdgeResume, ResumeStack, Re
 use super::stack_toggle::{use_stack_toggle, StackToggleView};
 #[cfg(not(feature = "mobile"))]
 use super::table::BookTableContext;
+#[cfg(not(feature = "mobile"))]
+use super::view::Members;
 use super::view::{LandingHandlers, LandingViewState};
 #[cfg(not(feature = "mobile"))]
 use crate::components::chip_editor::SuggestionItem;
+#[cfg(feature = "mobile")]
+use crate::components::ShelfList;
 #[cfg(not(feature = "mobile"))]
-use crate::components::{AddBooksModal, EditShelfModal};
+use crate::components::{AddBooksModal, EditShelfModal, ShelfList};
 #[cfg(not(feature = "mobile"))]
 use crate::shelf_access::ShelfAccess;
 
@@ -51,6 +55,12 @@ pub(super) fn mobile_landing_body(
     // Hooks stay unconditional within the mobile build: this helper is on
     // LandingPage's only render path there.
     pull_refresh::use_pull_to_refresh(server_url.clone(), sigs.prefs);
+    let viewer_id = crate::use_current_user_summary()().map(|u| u.id);
+    let notice = mobile::mobile_notice(
+        view.page_error.as_deref(),
+        &sigs.prefs.read().filters,
+        crate::offline::sync::is_offline(),
+    );
     rsx! {
         mobile::MobileLanding {
             book_count: view.book_count,
@@ -63,8 +73,15 @@ pub(super) fn mobile_landing_body(
                 is_loading_more: view.is_loading_more,
                 on_load_more: handlers.on_load_more,
             },
-            prefs: (sigs.prefs)(),
+            prefs: sigs.prefs,
             on_prefs_change: handlers.on_prefs_change_header,
+            shelves: ShelfList::from_fetch(
+                (sigs.shelves_loaded)(),
+                (sigs.shelves_answered)(),
+                (sigs.shelves)(),
+            ),
+            viewer_id,
+            notice,
             server_url,
         }
     }
@@ -101,12 +118,15 @@ pub(super) fn web_landing_body(
     let bulk = snapshot_bulk_selection(sigs, (sigs.is_admin)(), bulk_modal_open());
     let books_sig = sigs.books;
     let shelf_books_sig = sigs.shelf_books;
+    let shelf_view_sig = sigs.shelf_view_books;
     // Annotated outside the rsx props — a bare `.into()` there is ambiguous
     // between the dioxus_core and dioxus_stores `SuperInto` impls.
     let author_pool: ReadSignal<Vec<SuggestionItem>> = sigs.pools.authors.into();
     let tag_pool: ReadSignal<Vec<SuggestionItem>> = sigs.pools.tags.into();
     let genre_pool: ReadSignal<Vec<SuggestionItem>> = sigs.pools.genres.into();
     let all_cover_uuids = derive_all_cover_uuids(sigs);
+    let refetch_narrowed = narrowed_view_goes_stale((sigs.selection)(), &prefs.read().filters)
+        .then_some(sigs.shelf_view_tick);
     // Which open book the stack has out front. The whole page takes its
     // accent, and the edge ribbon resumes it — so it is owned here rather
     // than inside either of them. Hooks stay unconditional: this helper is on
@@ -130,7 +150,7 @@ pub(super) fn web_landing_body(
     let lens = use_shelf_lens_actions(
         selected_shelf.as_ref(),
         (sigs.selection)(),
-        view.shelf_members_ready,
+        view.shelf_members,
         edit_shelf,
         show_add_books,
     );
@@ -155,7 +175,7 @@ pub(super) fn web_landing_body(
             }
             {render_gallery(sigs, all_cover_uuids, server_url.clone(), on_select_shelf, on_shelf_created)}
             {render_header_and_content(sigs, view, prefs(), server_url, selected_shelf.clone(), lens, bulk_selected, LandingContentHandlers { on_prefs_change: on_prefs_change_content, on_load_more, on_clear_filters, on_add_tile: lens.add_tile() }, on_prefs_change_header, stack_view, on_stack_toggle)}
-            {render_bulk_overlay(bulk, bulk_modal_open, bulk_shelf_open, shelves_tick, bulk_selected, books_sig, shelf_books_sig, author_pool, tag_pool, genre_pool)}
+            {render_bulk_overlay(bulk, bulk_modal_open, bulk_shelf_open, shelves_tick, bulk_selected, BookLists { books: books_sig, shelf_books: shelf_books_sig, shelf_view: shelf_view_sig, refetch_narrowed }, author_pool, tag_pool, genre_pool)}
             {render_add_books_overlay(show_add_books, selected_shelf.clone(), &shelf_books_sig.read(), shelves_tick)}
             {render_edit_shelf_overlay(edit_shelf, selected_shelf, shelves_tick)}
             if show_stack {
@@ -201,7 +221,7 @@ impl ShelfLensActions {
 fn use_shelf_lens_actions(
     shelf: Option<&omnibus_shared::Shelf>,
     selection: crate::shelf_selection::ShelfSelection,
-    members_ready: bool,
+    members: Members,
     edit_shelf: Signal<bool>,
     show_add: Signal<bool>,
 ) -> ShelfLensActions {
@@ -211,7 +231,7 @@ fn use_shelf_lens_actions(
     });
     ShelfLensActions {
         can_edit,
-        add_books: add_books_state(shelf, selection, can_edit, members_ready),
+        add_books: add_books_state(shelf, selection, can_edit, members),
         edit_shelf,
         show_add,
     }
@@ -257,6 +277,11 @@ fn render_header_and_content(
                 add_books,
                 sort_lock,
                 stack,
+                shelves: ShelfList::from_fetch(
+                    (sigs.shelves_loaded)(),
+                    (sigs.shelves_answered)(),
+                    (sigs.shelves)(),
+                ),
             },
             prefs: prefs.clone(),
             on_prefs_change: on_prefs_change_header,
@@ -310,6 +335,7 @@ fn render_gallery(
         ShelfGallery {
             shelves: (sigs.shelves)(),
             loaded: (sigs.shelves_answered)(),
+            filtered: !sigs.prefs.read().filters.is_empty(),
             selection: (sigs.selection)(),
             all_count: (sigs.total)(),
             all_cover_uuids,
@@ -318,6 +344,42 @@ fn render_gallery(
             on_created: on_shelf_created,
         }
     }
+}
+
+/// The book lists a bulk save installs its returned metadata into: the browse
+/// page, and a shelf's full and filtered member lists.
+#[cfg(not(feature = "mobile"))]
+#[derive(Clone, Copy)]
+struct BookLists {
+    books: Signal<Vec<EbookMetadata>>,
+    shelf_books: Signal<Option<Vec<EbookMetadata>>>,
+    shelf_view: Signal<Option<Vec<EbookMetadata>>>,
+    /// Bumped after a save to fetch the filtered shelf list again; `None` when
+    /// no such list is on screen.
+    refetch_narrowed: Option<Signal<u32>>,
+}
+
+#[cfg(not(feature = "mobile"))]
+impl BookLists {
+    /// Patch the saved books into every list, then fetch the filtered shelf list
+    /// again: a book whose new metadata no longer matches must leave it.
+    fn apply_bulk_save(self, updated: &[EbookMetadata]) {
+        install_updated_books(self, updated);
+        if let Some(mut tick) = self.refetch_narrowed {
+            tick.with_mut(|n| *n += 1);
+        }
+    }
+}
+
+/// Whether a bulk save can invalidate the filtered shelf list on screen: the
+/// patched rows were the server's answer under filters that their new metadata
+/// may no longer satisfy.
+#[cfg(not(feature = "mobile"))]
+fn narrowed_view_goes_stale(
+    selection: crate::shelf_selection::ShelfSelection,
+    filters: &omnibus_shared::ViewFilters,
+) -> bool {
+    matches!(selection, crate::shelf_selection::ShelfSelection::Shelf(_)) && !filters.is_empty()
 }
 
 /// Bulk-edit bar + modal + shelf-picker overlay for [`web_landing_body`], split
@@ -333,8 +395,7 @@ fn render_bulk_overlay(
     mut bulk_shelf_open: Signal<bool>,
     mut shelves_tick: Signal<u32>,
     mut bulk_selected: Signal<BTreeSet<String>>,
-    mut books_sig: Signal<Vec<EbookMetadata>>,
-    mut shelf_books_sig: Signal<Option<Vec<EbookMetadata>>>,
+    lists: BookLists,
     author_pool: ReadSignal<Vec<SuggestionItem>>,
     tag_pool: ReadSignal<Vec<SuggestionItem>>,
     genre_pool: ReadSignal<Vec<SuggestionItem>>,
@@ -371,7 +432,7 @@ fn render_bulk_overlay(
                 },
                 on_close: move |_| bulk_modal_open.set(false),
                 on_saved: move |updated: Vec<EbookMetadata>| {
-                    install_updated_books(&mut books_sig, &mut shelf_books_sig, &updated);
+                    lists.apply_bulk_save(&updated);
                     bulk_selected.write().clear();
                     bulk_modal_open.set(false);
                 },
@@ -538,17 +599,25 @@ pub(super) fn replace_updated_books(list: &mut [EbookMetadata], updated: &[Ebook
 
 /// Install the bulk save's returned metadata into the browse and shelf list
 /// signals — the same optimistic-install idiom the inline cell editors use,
-/// so no refetch is needed.
+/// so no refetch is needed. A shelf has two lists, the full one and the
+/// filtered one on screen.
 #[cfg(not(feature = "mobile"))]
-fn install_updated_books(
-    books: &mut Signal<Vec<EbookMetadata>>,
-    shelf_books: &mut Signal<Option<Vec<EbookMetadata>>>,
-    updated: &[EbookMetadata],
-) {
+fn install_updated_books(lists: BookLists, updated: &[EbookMetadata]) {
+    let BookLists {
+        mut books,
+        shelf_books,
+        shelf_view,
+        ..
+    } = lists;
     books.with_mut(|list| replace_updated_books(list, updated));
-    shelf_books.with_mut(|maybe| {
-        if let Some(list) = maybe.as_mut() {
-            replace_updated_books(list, updated);
-        }
-    });
+    for mut shelf_list in [shelf_books, shelf_view] {
+        shelf_list.with_mut(|maybe| {
+            if let Some(list) = maybe.as_mut() {
+                replace_updated_books(list, updated);
+            }
+        });
+    }
 }
+
+#[cfg(all(test, feature = "server", not(feature = "mobile")))]
+mod tests;

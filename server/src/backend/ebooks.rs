@@ -20,8 +20,11 @@ use serde::{Deserialize, Serialize};
 use super::conditional::{self, MEDIA_CACHE_CONTROL, MEDIA_VARY};
 
 pub(super) mod chapters;
+mod query;
+use self::query::{decode_page_cursor, parse_formats, request_filters};
 use super::{internal, with_pagination_headers, AppState};
 use crate::auth::{AuthUser, MediaAuthUser};
+use crate::http_errors::invalid_filter;
 
 /// Default keyset page size for the paginated `GET /api/ebooks` form. A grid
 /// renders ~30–60 cards above the fold and the table more; 100 covers both
@@ -43,10 +46,13 @@ pub(super) struct EbooksQuery {
     dir: Option<SortDir>,
     cursor: Option<String>,
     limit: Option<i64>,
-    /// Comma-separated `book_files.format` filter values (lowercase wire
-    /// form, e.g. `?formats=m4b,m4a,mp3`). The mobile Sort & filter sheet's
-    /// format chips; the other web sidebar facets stay RPC-only.
+    /// Comma-separated `book_files.format` values (lowercase wire form, e.g.
+    /// `?formats=m4b,m4a,mp3`). The legacy list older clients (iOS builds, MCP)
+    /// still send; merged as an include-format clause.
     formats: Option<String>,
+    /// Percent-encoded JSON array of `FilterClause` (`?filter=`); see
+    /// `ViewFilters::from_query_param`. Alone it selects the keyset form.
+    filter: Option<String>,
     /// Comma-separated formats the caller's user hides from their landing
     /// view (`?exclude_formats=cbz`). Client-passed by design: the mirror
     /// syncs send nothing here and stay full-library (rule: exclusion is a
@@ -60,15 +66,6 @@ pub(super) struct EbooksQuery {
     /// `Projection::List`. Keyset form only; absent/false keeps full rows,
     /// which the iOS offline mirror and MCP rely on.
     omit_description: Option<bool>,
-}
-
-/// Split the `?formats=` wire value into filter entries, dropping empties.
-fn parse_formats(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_lowercase)
-        .collect()
 }
 
 /// Query parameters for `GET /api/ebooks/{uuid}/file`.
@@ -97,12 +94,17 @@ pub(super) async fn get_ebooks(
         && q.cursor.is_none()
         && q.limit.is_none()
         && q.formats.is_none()
+        && q.filter.is_none()
         && q.exclude_formats.is_none()
     {
         return respond_full_library(&state, ebook.as_deref(), audiobook.as_deref()).await;
     }
 
-    respond_keyset_page(&state, &q, user.id, ebook.as_deref(), audiobook.as_deref()).await
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    respond_keyset_page(&state, &q, viewer, ebook.as_deref(), audiobook.as_deref()).await
 }
 
 /// Full (capped) combined library, with `X-Total-Count` / `X-Total-Cap`
@@ -118,41 +120,6 @@ async fn respond_full_library(
     }
 }
 
-/// Client-input error for a malformed or under-specified keyset-page
-/// request. Kept lean rather than a full `Response` — clippy's
-/// `result_large_err` — with the caller rendering the actual 400 (mirrors
-/// `parse_thumb_size` in `covers.rs`).
-enum CursorRequestError {
-    RequiresSortAndDir,
-    Malformed,
-}
-
-impl CursorRequestError {
-    fn into_response(self) -> Response {
-        let msg = match self {
-            CursorRequestError::RequiresSortAndDir => "cursor requires sort and dir",
-            CursorRequestError::Malformed => "malformed cursor",
-        };
-        (axum::http::StatusCode::BAD_REQUEST, msg).into_response()
-    }
-}
-
-/// Decode `q.cursor` relative to `q.sort`/`q.dir`. A cursor without an
-/// explicit `sort` **and** `dir`, or a malformed cursor, is a 400 rather than
-/// a silently mis-positioned page or a 500 — returned as `Err` for the caller
-/// to short-circuit on.
-fn decode_page_cursor(q: &EbooksQuery) -> Result<Option<db::PageCursor>, CursorRequestError> {
-    if q.cursor.is_some() && (q.sort.is_none() || q.dir.is_none()) {
-        return Err(CursorRequestError::RequiresSortAndDir);
-    }
-    match q.cursor.as_deref() {
-        Some(c) => db::PageCursor::decode(c)
-            .map(Some)
-            .map_err(|_| CursorRequestError::Malformed),
-        None => Ok(None),
-    }
-}
-
 /// The filtered total for the page's paths/filters/exclusion, plus — first
 /// page only — the hidden-count receipt: the diff between that total and the
 /// same query with the exclusion lifted. Later pages inherit the client's
@@ -161,12 +128,13 @@ async fn page_totals(
     state: &AppState,
     paths: &[&str],
     filters: &ViewFilters,
+    viewer: db::Viewer,
     exclude: &[String],
     cursor_is_none: bool,
 ) -> Result<(i64, Option<i64>), db::BooksError> {
-    let total = db::count_books_page(&state.pool, paths, filters, exclude).await?;
+    let total = db::count_books_page(&state.pool, paths, filters, viewer, exclude).await?;
     let hidden = if !exclude.is_empty() && cursor_is_none {
-        let all = db::count_books_page(&state.pool, paths, filters, &[]).await?;
+        let all = db::count_books_page(&state.pool, paths, filters, viewer, &[]).await?;
         Some(all - total)
     } else {
         None
@@ -218,7 +186,7 @@ fn keyset_page_response(
 async fn respond_keyset_page(
     state: &AppState,
     q: &EbooksQuery,
-    user_id: i64,
+    viewer: db::Viewer,
     ebook: Option<&str>,
     audiobook: Option<&str>,
 ) -> Response {
@@ -226,21 +194,18 @@ async fn respond_keyset_page(
         Ok(c) => c,
         Err(e) => return e.into_response(),
     };
+    let filters = match request_filters(q) {
+        Ok(f) => f,
+        Err(reason) => return invalid_filter(&reason),
+    };
     let path = ebook.or(audiobook).map(str::to_string);
     let paths = db::collect_paths(ebook, audiobook);
-    // Format chips are the only REST-exposed facet (the mobile sheet); the
-    // remaining sidebar facets stay a web/RPC concern.
-    let filters = ViewFilters {
-        formats: q.formats.as_deref().map(parse_formats).unwrap_or_default(),
-        ..ViewFilters::default()
-    };
     let exclude = omnibus_shared::sanitize_exclude_formats(
         q.exclude_formats
             .as_deref()
             .map(parse_formats)
             .unwrap_or_default(),
     );
-    let viewer = q.stack_series.unwrap_or(false).then_some(user_id);
     let page = match keyset_rows(
         state,
         q,
@@ -259,7 +224,7 @@ async fn respond_keyset_page(
     // chips (and the exclusion — it counts what pagination will actually
     // yield); identical to the unfiltered count when neither is set.
     let (total, hidden) =
-        match page_totals(state, &paths, &filters, &exclude, cursor.is_none()).await {
+        match page_totals(state, &paths, &filters, viewer, &exclude, cursor.is_none()).await {
             Ok(t) => t,
             Err(error) => return internal("count books", error),
         };
@@ -276,7 +241,7 @@ async fn respond_keyset_page(
     keyset_page_response(body, total, hidden, page.next)
 }
 
-/// The page's rows: series-stacked for `viewer` when set, else plain with no stacks.
+/// The page's rows: series-stacked when the request asks for it, else plain with no stacks.
 async fn keyset_rows(
     state: &AppState,
     q: &EbooksQuery,
@@ -284,7 +249,7 @@ async fn keyset_rows(
     filters: &ViewFilters,
     exclude: &[String],
     cursor: Option<&db::PageCursor>,
-    viewer: Option<i64>,
+    viewer: db::Viewer,
 ) -> Result<db::StackedBookPage, db::BooksError> {
     let sort = q.sort.unwrap_or_default();
     let dir = q.dir.unwrap_or_default();
@@ -294,41 +259,39 @@ async fn keyset_rows(
     } else {
         db::books::Projection::Full
     };
-    match viewer {
-        Some(viewer_id) => {
-            db::list_books_page_stacked(
-                &state.pool,
-                paths,
-                sort,
-                dir,
-                filters,
-                exclude,
-                cursor,
-                limit,
-                viewer_id,
-                projection,
-            )
-            .await
-        }
-        None => {
-            let page = db::books::list_books_page_projected(
-                &state.pool,
-                paths,
-                sort,
-                dir,
-                filters,
-                exclude,
-                cursor,
-                limit,
-                projection,
-            )
-            .await?;
-            Ok(db::StackedBookPage {
-                books: page.books,
-                next: page.next,
-                stacks: Vec::new(),
-            })
-        }
+    if q.stack_series.unwrap_or(false) {
+        db::list_books_page_stacked(
+            &state.pool,
+            paths,
+            sort,
+            dir,
+            filters,
+            viewer,
+            exclude,
+            cursor,
+            limit,
+            projection,
+        )
+        .await
+    } else {
+        let page = db::books::list_books_page_projected(
+            &state.pool,
+            paths,
+            sort,
+            dir,
+            filters,
+            viewer,
+            exclude,
+            cursor,
+            limit,
+            projection,
+        )
+        .await?;
+        Ok(db::StackedBookPage {
+            books: page.books,
+            next: page.next,
+            stacks: Vec::new(),
+        })
     }
 }
 

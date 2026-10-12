@@ -1,8 +1,9 @@
 use super::{ebooks_page, merge_candidates, search_ebooks};
-use omnibus_db::test_support::{indexed, seed_synced_ebook, seed_user};
+use omnibus_db::test_support::{indexed, seed_synced_ebook, seed_user, uuid_by_scan_key};
+use omnibus_db::Viewer;
 use omnibus_shared::{
-    FilterClause, FilterField, FilterMode, Settings, SortDir, SortKey, ViewFilters,
-    MAX_FILTER_CLAUSES, SEARCH_QUERY_MAX_LEN,
+    CreateShelfRequest, FilterClause, FilterField, FilterMode, LibraryPage, Settings, ShelfKind,
+    SortDir, SortKey, ViewFilters, Visibility, SEARCH_QUERY_MAX_LEN,
 };
 
 async fn configured_pool(audiobook_path: Option<&str>) -> sqlx::SqlitePool {
@@ -31,10 +32,11 @@ async fn ebooks_page_first_page_carries_total_but_no_facets() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         1,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -57,10 +59,11 @@ async fn ebooks_page_later_page_continues_after_cursor_and_omits_aggregates() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         1,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -71,10 +74,11 @@ async fn ebooks_page_later_page_continues_after_cursor_and_omits_aggregates() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         Some(&cursor),
         1,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -93,58 +97,15 @@ async fn ebooks_page_surfaces_error_for_malformed_cursor() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         Some("not-a-server-issued-cursor"),
         10,
-        None,
+        false,
     )
     .await;
 
     assert!(result.is_err(), "malformed cursor must surface an error");
-}
-
-fn tag_filters(clauses: usize) -> ViewFilters {
-    ViewFilters {
-        clauses: (0..clauses)
-            .map(|i| FilterClause {
-                field: FilterField::Tag,
-                mode: FilterMode::Include,
-                values: vec![format!("tag-{i}")],
-            })
-            .collect(),
-        ..Default::default()
-    }
-}
-
-#[tokio::test]
-async fn ebooks_page_rejects_more_than_max_filter_clauses() {
-    let pool = configured_pool(None).await;
-
-    let over = ebooks_page(
-        &pool,
-        SortKey::Title,
-        SortDir::Asc,
-        &tag_filters(MAX_FILTER_CLAUSES + 1),
-        &[],
-        None,
-        10,
-        None,
-    )
-    .await;
-    let at_cap = ebooks_page(
-        &pool,
-        SortKey::Title,
-        SortDir::Asc,
-        &tag_filters(MAX_FILTER_CLAUSES),
-        &[],
-        None,
-        10,
-        None,
-    )
-    .await;
-
-    assert!(over.is_err(), "17 clauses must be rejected");
-    assert!(at_cap.is_ok(), "16 clauses must still be served");
 }
 
 #[tokio::test]
@@ -204,10 +165,11 @@ async fn ebooks_page_with_exclusion_omits_hidden_books_and_reports_hidden_count(
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &["cbz".to_string()],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -232,10 +194,11 @@ async fn ebooks_page_with_exclusion_reports_visible_total() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &["cbz".to_string()],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -254,16 +217,121 @@ async fn ebooks_page_without_exclusion_keeps_current_total_and_no_hidden_count()
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
 
     assert_eq!(page.total, Some(2));
     assert_eq!(page.hidden_count, None);
+}
+
+fn filters_of(clauses: Vec<FilterClause>) -> ViewFilters {
+    ViewFilters { clauses }
+}
+
+fn titles_of(page: &LibraryPage) -> Vec<&str> {
+    page.books
+        .iter()
+        .filter_map(|b| b.title.as_deref())
+        .collect()
+}
+
+/// A filtered first page of up to 50 books sorted by title, hiding `exclude_formats`.
+async fn filtered_first_page(
+    pool: &sqlx::SqlitePool,
+    filters: &ViewFilters,
+    exclude_formats: &[String],
+) -> LibraryPage {
+    ebooks_page(
+        pool,
+        SortKey::Title,
+        SortDir::Asc,
+        filters,
+        Viewer::default(),
+        exclude_formats,
+        None,
+        50,
+        false,
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn ebooks_page_first_page_total_counts_only_books_matching_the_filter() {
+    let pool = configured_pool(None).await;
+    seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
+    seed_synced_ebook(&pool, "b.epub", "Beta", "Bob Author").await;
+    seed_synced_ebook(&pool, "c.cbz", "Comic", "Ann Author").await;
+    let filters = filters_of(vec![FilterClause::new(
+        FilterField::Author,
+        FilterMode::Exclude,
+        &["Bob Author"],
+    )]);
+
+    let page = filtered_first_page(&pool, &filters, &[]).await;
+
+    assert_eq!(titles_of(&page), vec!["Alpha", "Comic"]);
+    assert_eq!(page.total, Some(2));
+    assert_eq!(page.hidden_count, None);
+}
+
+#[tokio::test]
+async fn ebooks_page_hidden_count_compares_under_the_same_filter() {
+    let pool = configured_pool(None).await;
+    seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
+    seed_synced_ebook(&pool, "b.cbz", "Bravo", "Ann Author").await;
+    seed_synced_ebook(&pool, "c.cbz", "Charlie", "Bob Author").await;
+    seed_synced_ebook(&pool, "d.epub", "Delta", "Bob Author").await;
+    let filters = filters_of(vec![FilterClause::new(
+        FilterField::Author,
+        FilterMode::Include,
+        &["Ann Author"],
+    )]);
+
+    let page = filtered_first_page(&pool, &filters, &["cbz".to_string()]).await;
+
+    assert_eq!(titles_of(&page), vec!["Alpha"]);
+    assert_eq!(page.total, Some(1));
+    assert_eq!(
+        page.hidden_count,
+        Some(1),
+        "only Ann's comic is hidden, not Bob's"
+    );
+}
+
+#[tokio::test]
+async fn ebooks_page_rejects_an_invalid_filter() {
+    let pool = configured_pool(None).await;
+    seed_synced_ebook(&pool, "a.epub", "Alpha", "Ann Author").await;
+    let filters = filters_of(vec![FilterClause::new(
+        FilterField::Shelf,
+        FilterMode::Include,
+        &["favourites"],
+    )]);
+
+    let result = ebooks_page(
+        &pool,
+        SortKey::Title,
+        SortDir::Asc,
+        &filters,
+        Viewer::default(),
+        &[],
+        None,
+        50,
+        false,
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "a non-numeric shelf value must be rejected"
+    );
 }
 
 /// Index a two-book series and a standalone book under `/ebooks`.
@@ -303,7 +371,7 @@ async fn seed_series(pool: &sqlx::SqlitePool) {
 }
 
 #[tokio::test]
-async fn ebooks_page_with_a_stack_viewer_folds_a_series_and_carries_its_stack() {
+async fn ebooks_page_with_stacking_folds_a_series_and_carries_its_stack() {
     let pool = configured_pool(None).await;
     seed_series(&pool).await;
     let viewer = seed_user(&pool, "reader").await;
@@ -313,10 +381,14 @@ async fn ebooks_page_with_a_stack_viewer_folds_a_series_and_carries_its_stack() 
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer {
+            user_id: viewer,
+            ..Viewer::default()
+        },
         &[],
         None,
         50,
-        Some(viewer),
+        true,
     )
     .await
     .unwrap();
@@ -337,7 +409,7 @@ async fn ebooks_page_with_a_stack_viewer_folds_a_series_and_carries_its_stack() 
 }
 
 #[tokio::test]
-async fn ebooks_page_without_a_stack_viewer_lists_every_book_and_no_stacks() {
+async fn ebooks_page_without_stacking_lists_every_book_and_no_stacks() {
     let pool = configured_pool(None).await;
     seed_series(&pool).await;
 
@@ -346,16 +418,90 @@ async fn ebooks_page_without_a_stack_viewer_lists_every_book_and_no_stacks() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
 
     assert_eq!(page.books.len(), 3);
     assert!(page.stacks.is_empty());
+}
+
+#[tokio::test]
+async fn ebooks_page_shelf_clause_ignores_another_readers_private_shelf() {
+    let pool = configured_pool(None).await;
+    seed_series(&pool).await;
+    let owner = seed_user(&pool, "owner").await;
+    let outsider = seed_user(&pool, "outsider").await;
+    let lone = uuid_by_scan_key(&pool, "lone.epub").await;
+    let shelf = omnibus_db::create_shelf(
+        &pool,
+        owner,
+        &CreateShelfRequest {
+            kind: ShelfKind::Manual,
+            name: "Secret".into(),
+            description: None,
+            visibility: Visibility::Private,
+            match_mode: None,
+            rules: vec![],
+            book_uuids: vec![lone],
+        },
+    )
+    .await
+    .unwrap()
+    .id
+    .to_string();
+    let on_shelf = filters_of(vec![FilterClause::new(
+        FilterField::Shelf,
+        FilterMode::Include,
+        &[&shelf],
+    )]);
+    let off_shelf = filters_of(vec![FilterClause::new(
+        FilterField::Shelf,
+        FilterMode::Exclude,
+        &[&shelf],
+    )]);
+    let page_for = |user_id, filters: ViewFilters, stack| {
+        let pool = pool.clone();
+        async move {
+            let viewer = Viewer {
+                user_id,
+                is_admin: false,
+            };
+            ebooks_page(
+                &pool,
+                SortKey::Title,
+                SortDir::Asc,
+                &filters,
+                viewer,
+                &[],
+                None,
+                50,
+                stack,
+            )
+            .await
+            .unwrap()
+        }
+    };
+
+    for (stack, whole_library) in [
+        (false, vec!["Lone Book", "Saga One", "Saga Two"]),
+        (true, vec!["Lone Book", "Saga One"]),
+    ] {
+        let owners = page_for(owner, on_shelf.clone(), stack).await;
+        let included = page_for(outsider, on_shelf.clone(), stack).await;
+        let excluded = page_for(outsider, off_shelf.clone(), stack).await;
+
+        assert_eq!(titles_of(&owners), vec!["Lone Book"], "stack={stack}");
+        assert!(titles_of(&included).is_empty(), "stack={stack}");
+        assert_eq!(included.total, Some(0), "stack={stack}");
+        assert_eq!(titles_of(&excluded), whole_library, "stack={stack}");
+        assert_eq!(excluded.total, Some(3), "stack={stack}");
+    }
 }
 
 const BLURB: &str = "<p>A <b>long</b> blurb.</p>";
@@ -390,10 +536,11 @@ async fn ebooks_page_rows_carry_no_description_but_the_detail_read_keeps_it() {
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         None,
         50,
-        None,
+        false,
     )
     .await
     .unwrap();
@@ -409,7 +556,7 @@ async fn ebooks_page_rows_carry_no_description_but_the_detail_read_keeps_it() {
 }
 
 #[tokio::test]
-async fn ebooks_page_with_a_stack_viewer_carries_no_description_on_rows_or_members() {
+async fn ebooks_page_with_stacking_carries_no_description_on_rows_or_members() {
     let pool = configured_pool(None).await;
     seed_described_series(&pool).await;
     let viewer = seed_user(&pool, "reader").await;
@@ -419,10 +566,14 @@ async fn ebooks_page_with_a_stack_viewer_carries_no_description_on_rows_or_membe
         SortKey::Title,
         SortDir::Asc,
         &ViewFilters::default(),
+        Viewer {
+            user_id: viewer,
+            ..Viewer::default()
+        },
         &[],
         None,
         50,
-        Some(viewer),
+        true,
     )
     .await
     .unwrap();

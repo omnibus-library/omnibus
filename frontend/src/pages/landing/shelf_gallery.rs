@@ -105,9 +105,9 @@ pub(super) fn attributed_owner(shelf: &ShelfSummary, viewer_id: Option<i64>) -> 
 }
 
 /// The slab line above the row, which doubles as the receipt for what the
-/// current pick is doing to the list below.
-pub(super) fn slab_line(filtering: bool) -> &'static str {
-    if filtering {
+/// current pick and the active filters are doing to the list below.
+pub(super) fn slab_line(shelf_picked: bool, filters_active: bool) -> &'static str {
+    if shelf_picked || filters_active {
         "Shelves \u{2014} filtering the list below"
     } else {
         "Shelves \u{2014} showing everything"
@@ -122,6 +122,8 @@ pub(super) struct ShelfGalleryProps {
     pub shelves: Vec<ShelfSummary>,
     /// False until the shelves fetch has answered; placeholders hold the row.
     pub loaded: bool,
+    /// Filter clauses are narrowing the list below, whichever tile is picked.
+    pub filtered: bool,
     pub selection: ShelfSelection,
     pub all_count: Option<i64>,
     pub all_cover_uuids: Vec<String>,
@@ -137,6 +139,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
     let ShelfGalleryProps {
         shelves,
         loaded,
+        filtered,
         selection,
         all_count,
         all_cover_uuids,
@@ -163,7 +166,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
             "data-testid": "shelf-gallery",
             aria_label: "Shelves",
             div { class: "lmq-slab",
-                span { class: "k", "{slab_line(!all_active)}" }
+                span { class: "k", "{slab_line(!all_active, filtered)}" }
                 div { class: "lmq-slab-acts",
                     button {
                         r#type: "button",

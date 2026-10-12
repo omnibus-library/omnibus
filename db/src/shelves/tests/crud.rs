@@ -5,7 +5,8 @@
 //! DB-failure paths.
 
 use omnibus_shared::{
-    MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, UpdateShelfRequest, Visibility,
+    MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, UpdateShelfRequest, ViewFilters,
+    Visibility,
 };
 
 use super::super::*;
@@ -162,9 +163,16 @@ async fn update_shelf_rules_changes_membership_of_an_existing_smart_shelf() {
         "membership must recompute from the new rules, not the old 'fiction' set"
     );
 
-    let page = shelf_page(&pool, &updated, SortKey::Title, SortDir::Asc)
-        .await
-        .unwrap();
+    let page = shelf_page(
+        &pool,
+        &updated,
+        SortKey::Title,
+        SortDir::Asc,
+        &ViewFilters::default(),
+        Viewer::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.books.len(), 1);
     assert_eq!(page.books[0].title.as_deref(), Some("Standalone"));
 }

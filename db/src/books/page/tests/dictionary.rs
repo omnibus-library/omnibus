@@ -57,6 +57,7 @@ async fn page(
         sort,
         dir,
         &ViewFilters::default(),
+        Viewer::default(),
         &[],
         cursor,
         limit,
