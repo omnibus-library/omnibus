@@ -161,14 +161,11 @@ pub(super) async fn acquisition_feed(
     xml_response(ACQUISITION_TYPE, feed.to_xml())
 }
 
-/// Load one author with their books narrowed to what this catalog may
-/// serve: the configured ebook library only (see the `opds` module doc),
-/// then to the formats an acquisition link can point at — an audiobook-only
-/// or physical-only row would otherwise surface as an entry with no
-/// download — and finally to books `user` may see. `Ok(None)` is an
-/// unknown author id; `Err` is a ready-to-return failure response.
-/// `pub(super)` — reused by `opds::json_authors` so both catalogs' author
-/// feeds carry the same entries.
+/// Load one author with their books narrowed to what this catalog may serve: the
+/// configured ebook library only (see the `opds` module doc), formats an acquisition
+/// link can point at (else an entry has no download), and books `user` may see.
+/// `Ok(None)` is an unknown author id; `Err` is a ready-to-return failure response.
+/// Reused by `opds::json_authors` so both catalogs' author feeds carry the same entries.
 pub(super) async fn load_author(
     state: &AppState,
     user: &OpdsAuthUser,

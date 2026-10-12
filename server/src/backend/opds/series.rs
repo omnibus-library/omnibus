@@ -89,13 +89,11 @@ pub(super) async fn acquisition_feed(
     xml_response(ACQUISITION_TYPE, feed.to_xml())
 }
 
-/// Load one series with its books narrowed to e-reader formats and to
-/// books `user` may see — an audiobook/physical-only book, or one
-/// confined to a manual shelf `user` cannot see, would otherwise surface
-/// as an entry with no working acquisition link. `Ok(None)` is an unknown
-/// series id; `Err` is a ready-to-return failure response. `pub(super)` —
-/// reused by `opds::json_series` so both catalogs' series feeds carry the
-/// same entries.
+/// Load one series with its books narrowed to e-reader formats and to books `user` may
+/// see (else an audiobook/physical-only or shelf-hidden book surfaces as an entry with no
+/// working acquisition link). `Ok(None)` is an unknown series id; `Err` is a
+/// ready-to-return failure response. Reused by `opds::json_series` so both catalogs'
+/// series feeds carry the same entries.
 pub(super) async fn load_series(
     state: &AppState,
     user: &OpdsAuthUser,

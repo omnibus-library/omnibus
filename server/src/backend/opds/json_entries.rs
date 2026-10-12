@@ -90,12 +90,10 @@ fn categories(book: &EbookMetadata) -> Vec<Subject> {
         .collect()
 }
 
-/// `book`'s series membership as a `SeriesRef`, when it belongs to one.
-/// `series_index` is a free-text OPF field (Calibre allows fractional
-/// values like `"2.5"`), so a value that doesn't parse as a finite number is
-/// dropped rather than surfaced as a misleading `position: 0` — `f64::parse`
-/// accepts `"NaN"`/`"inf"`/`"-inf"` as valid floats, but `serde_json` cannot
-/// serialize any of them, which would 500 the whole feed for one bad row.
+/// `book`'s series membership as a `SeriesRef`, when it belongs to one. `series_index`
+/// is a free-text OPF field (Calibre allows `"2.5"`), so a value that doesn't parse as a
+/// finite number is dropped rather than surfaced as `position: 0`: `serde_json` cannot
+/// serialize `NaN`/`inf`, which `f64::parse` accepts, and would 500 the whole feed.
 fn series_ref(book: &EbookMetadata) -> Option<SeriesRef> {
     let name = book.series.clone()?;
     let position = book

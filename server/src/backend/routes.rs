@@ -126,12 +126,10 @@ pub(super) fn content_routes() -> Router<AppState> {
         )
 }
 
-/// Metadata overrides, progress sync, author/cover/series/tag discovery routes,
-/// the image-upload endpoints, and the search sub-router. The book uploads
-/// are not here: [`book_upload_router`] is merged outside the request timeout.
-///
-/// Each helper below owns one feature area (the grouping the route list used
-/// to carry as inline comments); this function just merges them.
+/// Metadata overrides, progress sync, author/cover/series/tag discovery routes, the
+/// image-upload endpoints, and the search sub-router. The book uploads are not here:
+/// [`book_upload_router`] is merged outside the request timeout. Each helper below owns
+/// one feature area; this function just merges them.
 pub(super) fn data_routes(search_limiter: Arc<RateLimiter>) -> Router<AppState> {
     Router::new()
         .merge(metadata_override_routes())
@@ -209,9 +207,8 @@ fn progress_routes() -> Router<AppState> {
 
 /// Admin book merge/unmerge — mobile-facing REST. Web hits the analogous
 /// `/api/rpc/merge-books` and `/api/rpc/merge-books/undo` server fns in
-/// `omnibus_frontend::rpc::books`, which repeat these handlers' `AdminUser`
-/// gate: the merge transaction itself is shared (`db::merge_books` /
-/// `db::undo_merge`), but the gate and error mapping are not — change one
+/// `omnibus_frontend::rpc::books`, which repeat these handlers' `AdminUser` gate: the
+/// merge transaction is shared, but the gate and error mapping are not, so change one
 /// side's gate or response shape and the other needs the same edit.
 fn merge_routes() -> Router<AppState> {
     Router::new()
@@ -408,12 +405,10 @@ fn journal_routes() -> Router<AppState> {
         )
 }
 
-/// Cover/thumb/author/series/tag discovery routes, including author photo
-/// reads. GET/DELETE for author photos carry no upload body (DELETE mutates,
-/// but cheaply — it clears photo state, it doesn't ingest one), so they stay
-/// outside the rate-limited `upload_router`. Only the binary uploads (cover
-/// POST, photo PUT, photo-url PUT) carry the per-IP frequency cap — see
-/// `upload_router`.
+/// Cover/thumb/author/series/tag discovery routes, including author photo reads.
+/// GET/DELETE for author photos carry no upload body (DELETE mutates, but cheaply), so
+/// they stay outside the rate-limited `upload_router`; only the binary uploads (cover
+/// POST, photo PUT, photo-url PUT) carry the per-IP frequency cap.
 fn discovery_routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -468,12 +463,10 @@ fn summary_routes() -> Router<AppState> {
 }
 
 /// The metadata-provider surface — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/metadata/*` server fns in `omnibus_frontend::rpc::metadata_search`,
-/// which repeat these handlers' gates: the catalog is read-only for any
-/// authenticated user, and the edition search and hydrate are `can_edit`-gated
-/// inside their handlers. Change one side's gate or response shape and the
-/// other needs the same edit — there is no shared helper between the two
-/// crates.
+/// `/api/rpc/metadata/*` server fns in `omnibus_frontend::rpc::metadata_search`, which
+/// repeat these handlers' gates: the catalog is read-only for any authenticated user,
+/// the edition search and hydrate are `can_edit`-gated inside their handlers. Change one
+/// side's gate or response shape and the other needs the same edit.
 fn metadata_routes() -> Router<AppState> {
     Router::new()
         .route("/api/metadata/providers", get(metadata::get_providers))
@@ -518,23 +511,10 @@ fn kindle_routes() -> Router<AppState> {
         .route("/api/smtp/test", post(kindle::post_smtp_test))
 }
 
-/// Sub-router for `/api/search/*` carrying its own per-IP rate-limit layer.
-///
-/// Each handler runs heavy SQL (four FTS5 queries for the palette; full
-/// search for `/api/search`), so we cap each principal at
-/// `SEARCH_RATE_LIMIT_MAX` requests per `SEARCH_RATE_LIMIT_WINDOW`. The
-/// limiter is constructed per-router so each test (which builds a fresh
-/// `rest_router`) gets its own fresh bucket map — production runs through
-/// `main.rs::rest_router` once, so the limiter persists for the lifetime
-/// of the process.
-///
-/// Returns `Router<AppState>` so it can be merged into `rest_router` before
-/// the outer `.with_state(state)` finalizes the state type. The rate-limit
-/// middleware carries its own state (`Arc<RateLimiter>`) via
-/// `from_fn_with_state`, which doesn't propagate to the route handlers.
-///
-/// The `limiter` is passed in so the live server can share one `Arc` across both
-/// search families; `rest_router` supplies a fresh dedicated one.
+/// Sub-router for `/api/search/*` carrying its own per-IP rate-limit layer, capping each
+/// principal at `SEARCH_RATE_LIMIT_MAX` requests per `SEARCH_RATE_LIMIT_WINDOW` since each
+/// handler runs heavy SQL. The `limiter` is passed in so the live server can share one
+/// `Arc` across both search families; `rest_router` supplies a fresh dedicated one.
 fn search_router(limiter: Arc<RateLimiter>) -> Router<AppState> {
     Router::new()
         .route("/api/search", get(search::get_search))
@@ -546,16 +526,11 @@ fn search_router(limiter: Arc<RateLimiter>) -> Router<AppState> {
         ))
 }
 
-/// Per-IP rate-limited router for the binary-upload endpoints. Mirrors
-/// [`search_router`]: a dedicated sub-router carrying its own
-/// `Arc<RateLimiter>` via `from_fn_with_state` (state that doesn't propagate
-/// to the handlers), merged into [`super::rest_router`]. Its routes — cover
-/// `POST`, cover from-URL `POST`, journal image, avatar, author-photo `PUT`,
-/// author-photo-URL `PUT` — each accept a multi-MiB payload or drive an
-/// outbound fetch, on top of disk I/O, WebP transcoding, and SQLite writes,
-/// so they share a per-IP budget. The `GET`/`DELETE` author-photo routes
-/// carry no upload body (DELETE mutates but cheaply), so they stay in
-/// `rest_router`, outside this limiter.
+/// Per-IP rate-limited router for the binary-upload endpoints. Mirrors [`search_router`]:
+/// a dedicated sub-router carrying its own `Arc<RateLimiter>`, merged into
+/// [`super::rest_router`]. Its routes (cover `POST`, cover from-URL `POST`, journal image,
+/// avatar, author-photo `PUT`s) each accept a multi-MiB payload or drive an outbound fetch,
+/// so they share a per-IP budget. The `GET`/`DELETE` author-photo routes stay in `rest_router`.
 fn upload_router() -> Router<AppState> {
     let limiter = Arc::new(RateLimiter::with_policy(
         super::UPLOAD_RATE_LIMIT_WINDOW,
@@ -595,16 +570,11 @@ fn upload_router() -> Router<AppState> {
         ))
 }
 
-/// Per-IP rate-limited router for the "add your own books" upload endpoints.
-/// Kept separate from [`upload_router`] because book/audiobook payloads are far
-/// larger than cover/photo images, so these routes carry their own (much
-/// higher) `DefaultBodyLimit` from `OMNIBUS_MAX_UPLOAD_BYTES` rather than
-/// raising the image routes' 11 MiB cap. Shares the same per-IP frequency
-/// budget as the image uploads.
-///
-/// Merged outside [`super::REQUEST_TIMEOUT`]: a large audiobook takes minutes
-/// to arrive, and commit then waits for the library scan. `body_idle_timeout`
-/// is what bounds a client that stops sending instead.
+/// Per-IP rate-limited router for the "add your own books" upload endpoints, sharing the
+/// image uploads' per-IP budget but kept separate from [`upload_router`]: book/audiobook
+/// payloads are far larger, so these carry their own `DefaultBodyLimit` from
+/// `OMNIBUS_MAX_UPLOAD_BYTES`. Merged outside [`super::REQUEST_TIMEOUT`]: `body_idle_timeout`
+/// bounds a client that stops sending instead.
 pub(super) fn book_upload_router(body_idle_timeout: Duration) -> Router<AppState> {
     let limiter = Arc::new(RateLimiter::with_policy(
         super::UPLOAD_RATE_LIMIT_WINDOW,

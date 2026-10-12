@@ -19,17 +19,9 @@ use omnibus_shared::{
     ResolvedPosition, ResumePoint, SessionFormat, SessionLogEntry, SessionLogPage,
 };
 
-/// Unix seconds as an ISO 8601 UTC stamp (`2026-09-04T03:25:36Z`).
-///
-/// Delegates to `omnibus_shared::to_iso8601` rather than carrying a second
-/// conversion: the same stamp reaches REST clients through the wire types'
-/// own `_iso` siblings, and two implementations of one format is how the two
-/// surfaces come to disagree about a date.
-///
-/// Total over `i64` — every epoch renders, so a stamp paired with a required
-/// epoch is always present. The previous `time`-backed version returned
-/// `None` outside its own representable range; that was a property of the
-/// crate, not a decision, and callers no longer carry a branch for it.
+/// Unix seconds as an ISO 8601 UTC stamp (`2026-09-04T03:25:36Z`), total over `i64`.
+/// Delegates to `omnibus_shared::to_iso8601` so this surface and the wire types'
+/// `_iso` siblings cannot disagree about a date.
 pub fn iso(epoch: i64) -> String {
     omnibus_shared::to_iso8601(epoch)
 }
@@ -374,13 +366,10 @@ impl From<PhysicalCopy> for PhysicalCopyView {
     }
 }
 
-/// Every position a reader holds in one book, with each record's stamps in
-/// both forms.
-///
-/// Projects the whole envelope rather than a single record. A reader 87%
-/// through the audiobook and 47% through the EPUB has one true place, and an
-/// answer carrying the EPUB row alone reports the wrong one with nothing to
-/// signal it — so `furthest` travels with the records it ranks.
+/// Every position a reader holds in one book, with each record's stamps in both
+/// forms. Projects the whole envelope, not a single record: `furthest` names the
+/// record that is the reader's true place, since one format's row alone (the EPUB
+/// at 47% when the audiobook is at 87%) reports the wrong one.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct BookProgressView {
     pub book_uuid: String,

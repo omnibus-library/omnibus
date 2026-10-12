@@ -21,16 +21,13 @@ pub(crate) async fn body_text(res: Response) -> String {
     String::from_utf8(bytes.to_vec()).unwrap()
 }
 
-/// Asserts the calling test runs on tokio's current-thread flavor — the
-/// invariant every `*DirGuard` in this module (and `EnvGuard` in
-/// `auth::boot::tests`) relies on to hold its lock across `.await`. Call
-/// this as the first line of a guard's constructor rather than only
-/// documenting the assumption, so a future switch to a multi-threaded test
-/// runtime fails loudly instead of silently reintroducing a deadlock risk.
-/// Plain `assert_eq!` (not `debug_assert_eq!`): this module is
-/// `#[cfg(test)]`-only, but `debug_assert!` also compiles out under
-/// `cargo test --release`, which would silently defeat the check.
+/// Asserts the calling test runs on tokio's current-thread flavor, the invariant every
+/// `*DirGuard` in this module (and `EnvGuard` in `auth::boot::tests`) relies on to hold
+/// its lock across `.await`. Call it first in a guard's constructor so a switch to a
+/// multi-threaded test runtime fails loudly instead of risking a deadlock.
 pub(crate) fn assert_current_thread_test_runtime() {
+    // `assert_eq!`, not `debug_assert_eq!`: that also compiles out under
+    // `cargo test --release`, which would silently defeat the check.
     assert_eq!(
         tokio::runtime::Handle::current().runtime_flavor(),
         tokio::runtime::RuntimeFlavor::CurrentThread,

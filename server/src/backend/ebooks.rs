@@ -29,14 +29,11 @@ use crate::auth::{AuthUser, MediaAuthUser};
 /// db layer caps it at `MAX_BOOKS_RETURNED`).
 const DEFAULT_PAGE_LIMIT: i64 = 100;
 
-/// Query params for the paginated form of `GET /api/ebooks`. When none are
-/// present the handler returns the full (capped) library exactly as before, so
-/// existing mobile clients are unaffected; any of `sort`/`dir`/`cursor`/`limit`
-/// switches it to a keyset page that also emits `X-Next-Cursor`. `sort`/`dir`
-/// deserialize straight from their `snake_case`/`lowercase` wire forms
-/// (`?sort=last_updated&dir=desc`). The cursor is interpreted under the
-/// request's sort axis, so a `cursor` without an explicit `sort` **and** `dir`
-/// is a 400 — the client repeats them on every page.
+/// Query params for the paginated form of `GET /api/ebooks`. With none present the
+/// handler returns the full (capped) library; any of `sort`/`dir`/`cursor`/`limit`
+/// switches it to a keyset page that also emits `X-Next-Cursor`. The cursor is
+/// interpreted under the request's sort axis, so a `cursor` without an explicit
+/// `sort` **and** `dir` is a 400.
 #[derive(Deserialize)]
 pub(super) struct EbooksQuery {
     sort: Option<SortKey>,
@@ -344,12 +341,6 @@ pub(super) async fn get_ebook_by_uuid(
     }
 }
 
-/// Resolve the on-disk EPUB path for `uuid`, honouring an optional
-/// `?file_id=N` (multi-EPUB books). Returns the resolved book id alongside
-/// the path on success so callers that need it (the override-baked download,
-/// the CBZ fallback) don't re-resolve uuid→id. On failure the error carries
-/// the id too, when it was resolved before the failure — `None` only when
-/// the uuid itself didn't match a book.
 /// Wire mime for a served PDF.
 pub(crate) const PDF_MIME: &str = "application/pdf";
 /// Wire mime for a served EPUB (and KEPUB).
@@ -364,12 +355,10 @@ struct TextFile {
     mime: &'static str,
 }
 
-/// Resolve the text-bearing file `/download` (and `?file_id=` on `/file`)
-/// serves: with a `file_id`, that row when it is an EPUB or a PDF — never a
-/// CBZ, which has no text and is read page by page; without one, the EPUB
-/// else the PDF (`db::book_text_source`'s order). `Err` carries the book id
-/// when the uuid resolved, so a caller can fall through to the comic archive
-/// without a second lookup.
+/// Resolve the text-bearing file `/download` (and `?file_id=` on `/file`) serves:
+/// with a `file_id`, that row when it is an EPUB or a PDF (never a CBZ); without one,
+/// the EPUB else the PDF (`db::book_text_source`'s order). `Err` carries the book id
+/// when the uuid resolved, so a caller can fall through to the comic archive.
 async fn resolve_text_path(
     state: &AppState,
     uuid: &str,
@@ -421,15 +410,10 @@ async fn resolve_text_path(
 /// `application/zip` would not say what the bytes are.
 pub(crate) const CBZ_MIME: &str = "application/vnd.comicbook+zip";
 
-/// Resolve the file `/file` streams for `uuid` on the one precedence ladder
-/// every surface shares: the EPUB when the book has one, else its CBZ
-/// archive, else its PDF. The archive fallback is what lets a comic-only
-/// book be taken offline whole — the per-page endpoint answers reading, not
-/// downloading — and CBZ outranks PDF because a book carrying both is a
-/// comic scanned twice, and the comic pipeline is the one that is
-/// offline-verified. An explicit `?file_id=` names an EPUB or PDF row only:
-/// multi-file selection exists for text editions and must not silently
-/// resolve to an archive.
+/// Resolve the file `/file` streams for `uuid` on the one precedence ladder every
+/// surface shares: the EPUB when the book has one, else its CBZ archive, else its PDF.
+/// The archive fallback lets a comic-only book be taken offline whole. An explicit
+/// `?file_id=` names an EPUB or PDF row only; it never resolves to an archive.
 async fn resolve_readable_path(
     state: &AppState,
     uuid: &str,
@@ -446,6 +430,8 @@ async fn resolve_readable_path(
         Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
         Err(e) => return Err(internal("resolve_book_id_by_uuid", e)),
     };
+    // CBZ outranks PDF: a book carrying both is a comic scanned twice, and the
+    // comic pipeline is the one that is offline-verified.
     for (format, mime) in [("EPUB", EPUB_MIME), ("CBZ", CBZ_MIME), ("PDF", PDF_MIME)] {
         match db::book_file_path(&state.pool, id, format).await {
             Ok(Some(path)) => return Ok((path, mime)),
@@ -456,15 +442,11 @@ async fn resolve_readable_path(
     Err(StatusCode::NOT_FOUND.into_response())
 }
 
-/// Streams the raw EPUB bytes — or, for a comic-only book, the CBZ archive,
-/// or for a PDF-only book the PDF (the whole-file download the offline
-/// clients pull, and the bytes PDF.js range-fetches). Accepts optional
-/// `?file_id=N` to target a specific EPUB or PDF `book_files` row.
-///
-/// Gated by [`MediaAuthUser`] rather than [`AuthUser`]: epub.js fetches this
-/// URL from inside the mobile WebView, which can carry neither a session
-/// cookie nor a bearer header, so the session token rides a `?token=` query
-/// param. The web reader's same-origin cookie fetch keeps working unchanged.
+/// Streams the raw EPUB bytes, or the CBZ archive for a comic-only book or the PDF for
+/// a PDF-only book (the whole-file download the offline clients pull). Accepts optional
+/// `?file_id=N` to target a specific EPUB or PDF `book_files` row. Gated by
+/// [`MediaAuthUser`] rather than [`AuthUser`]: epub.js fetches it from the mobile
+/// WebView, which can carry only a `?token=` query param.
 pub(super) async fn get_ebook_file(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -486,14 +468,9 @@ pub(super) async fn get_ebook_file(
 }
 
 /// Resolve the book's readable file (EPUB, else CBZ, else PDF) and stream its bytes,
-/// or report the resolution failure as a 404 / 500. CORS is layered on by
-/// the caller so it covers every arm uniformly.
-///
-/// Goes through the shared `serve_file` path rather than buffering the whole
-/// book, which is what gives the endpoint `Range` support — without which
-/// the `If-Range` guarantee would have nothing to guard. No
-/// `Content-Disposition`: this one is read inline by the reader, while
-/// `/download` is the save-to-disk sibling.
+/// or report the resolution failure as a 404 / 500. CORS is layered on by the caller
+/// so it covers every arm uniformly. Served via `serve_file` (so `Range` works) with
+/// no `Content-Disposition`: the reader reads inline, `/download` saves to disk.
 async fn read_ebook_file(
     state: &AppState,
     uuid: &str,
@@ -507,24 +484,11 @@ async fn read_ebook_file(
     super::serve_file(req, &path, mime, None).await
 }
 
-/// Serve one page image out of the book's CBZ archive, extracted
-/// server-side so clients never download or unzip whole archives. `page`
-/// is the 0-based index into the natural-sort page order — the same order
-/// `page_count` on the detail payload counts.
-///
-/// Gated by [`MediaAuthUser`] like the other media routes: the pager loads
-/// pages via plain `<img>` fetches, which from the mobile WebView carry
-/// neither a cookie nor a bearer header, so the session token rides
-/// `?token=`.
-///
-/// The validator is derived from the CBZ file's own stat (via
-/// [`conditional::open`], same inode/mtime/size shape the byte-serving
-/// routes use) combined with the page index, rather than a hash of the
-/// decompressed page. Listing and (on a cache miss) decompressing both
-/// reuse that same opened handle, so a replace racing this request can't
-/// splice a validator from one file onto bytes from another. 404 covers an
-/// unknown uuid, a book without a CBZ file, and an out-of-range index; an
-/// unreadable archive surfaces as a 500.
+/// Serve one page image out of the book's CBZ archive, extracted server-side so
+/// clients never download or unzip whole archives. `page` is the 0-based index into
+/// the natural-sort page order (the order `page_count` on the detail payload counts).
+/// Gated by [`MediaAuthUser`]: the pager's `<img>` fetches carry only `?token=`. 404
+/// for an unknown uuid, a book without a CBZ, or an out-of-range index; 500 if unreadable.
 pub(super) async fn get_ebook_page(
     _user: MediaAuthUser,
     State(state): State<AppState>,
@@ -542,6 +506,9 @@ pub(super) async fn get_ebook_page(
         Err(e) => return internal("book_file_path", e),
     };
 
+    // Validator from the CBZ's own stat plus the page index, not a hash of the
+    // decompressed page; listing and decompression reuse this one handle, so a racing
+    // replace can't splice one file's validator onto another's bytes.
     let open = match conditional::open(&path).await {
         Ok(o) => o,
         Err(e) => return internal("open cbz for page validator", e),
@@ -593,12 +560,11 @@ pub(super) async fn get_ebook_page(
 /// and warms the cache for next time.
 const KEPUB_CONVERT_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
 
-/// Convert `book_id`'s EPUB to KEPUB (via the worker, cached) and download it
-/// for USB sideload onto a Kobo. Falls back to the plain EPUB when kepubify is
-/// absent, conversion fails, or it exceeds [`KEPUB_CONVERT_BUDGET`] — a Kobo
-/// reads plain EPUB too, just with slower page turns. The download filename is
-/// the canonical `book_uuid` so a future USB annotation import can map the
-/// device's `ContentID` back to the book.
+/// Convert `book_id`'s EPUB to KEPUB (via the worker, cached) and download it for USB
+/// sideload onto a Kobo. Falls back to the plain EPUB when kepubify is absent,
+/// conversion fails, or it exceeds [`KEPUB_CONVERT_BUDGET`]. The download filename is
+/// the canonical `book_uuid` so a future USB annotation import can map the device's
+/// `ContentID` back to the book.
 pub(super) async fn get_ebook_kepub(
     user: AuthUser,
     State(state): State<AppState>,
@@ -763,18 +729,11 @@ pub(super) async fn get_library(_user: AuthUser, State(state): State<AppState>) 
 #[cfg(test)]
 mod tests;
 
-/// Current validators for a batch of downloaded files.
-///
-/// A device holding N downloads needs to know whether any of their library
-/// files moved. Asking per book meant N full metadata fetches on a timer —
-/// a request-per-download polling loop that is a real data and battery cost
-/// on a phone and a real load cost on the server. This answers all of them
-/// in one small request, and carries no metadata: just the validator per
-/// (book, format, file) the caller names.
-///
-/// A file the caller asks about that is gone, or whose row the scanner has
-/// not stat'd, comes back with no `etag` — which every client reads as
-/// "can't tell", never as "unchanged".
+/// Current validators for a batch of downloaded files, so a device can check whether any
+/// library file moved in one small request instead of polling per book. Carries no
+/// metadata: just the validator per (book, format, file) the caller names. A file that
+/// is gone, or whose row the scanner has not stat'd, comes back with no `etag`, which
+/// every client reads as "can't tell", never "unchanged".
 pub(super) async fn post_download_validators(
     _user: AuthUser,
     State(state): State<AppState>,

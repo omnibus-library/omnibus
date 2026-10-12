@@ -24,17 +24,10 @@ fn has_session_cookie(jar: &CookieJar) -> bool {
 }
 
 /// Reject state-changing cookie-authed requests whose `Origin`/`Referer` doesn't match the allowlist or `Host`.
-///
-/// Bearer-authed requests (mobile) are exempt because browsers don't
-/// auto-attach bearer headers cross-site; safe methods (`GET`/`HEAD`/
-/// `OPTIONS`) always pass through. Set `OMNIBUS_PUBLIC_ORIGIN` to a
-/// comma-separated list of origins (e.g.
-/// `http://localhost:3000,https://omnibus.example.com`) when the server
-/// runs behind a reverse proxy that rewrites `Host` (the dioxus
-/// `dx serve --fullstack` dev proxy does exactly this) — without an
-/// allowlist, a proxied same-origin POST would 403 because the browser's
-/// `Origin` (`localhost:3000`) no longer matches the upstream `Host`
-/// (`127.0.0.1:<random-port>`).
+/// Bearer-authed requests (mobile) and safe methods (`GET`/`HEAD`/`OPTIONS`) pass.
+/// Set `OMNIBUS_PUBLIC_ORIGIN` to a comma-separated origin list behind a reverse
+/// proxy that rewrites `Host` (as the `dx serve --fullstack` dev proxy does), or a
+/// proxied same-origin POST gets a 403.
 pub async fn origin_check(req: Request, next: Next) -> Response {
     let method = req.method();
     if matches!(method, &Method::GET | &Method::HEAD | &Method::OPTIONS) {

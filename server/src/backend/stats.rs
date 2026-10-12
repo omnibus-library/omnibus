@@ -19,14 +19,10 @@ use serde::{Deserialize, Deserializer};
 use super::{internal, AppState};
 use crate::auth::AuthUser;
 
-/// Read `utc_offset_minutes` leniently: anything that isn't a number becomes
-/// `None`, the same answer an absent field gives.
-///
-/// A plain `Option<i64>` would break the field's own contract before any handler
-/// runs — axum's `Query` rejects the whole *request* on `?utc_offset_minutes=`
-/// or `=abc`, which is what a client interpolating an absent offset into a URL
-/// sends, and the reader loses their stats page over an optional hint. Trimmed
-/// because a `+` in a query string decodes to a space.
+/// Read `utc_offset_minutes` leniently: anything that isn't a number becomes `None`, the
+/// same answer an absent field gives. A plain `Option<i64>` would make axum's `Query`
+/// reject the whole *request* on `?utc_offset_minutes=` or `=abc`, costing the reader
+/// their stats page over an optional hint. Trimmed because `+` decodes to a space.
 fn lenient_offset<'de, D: Deserializer<'de>>(de: D) -> Result<Option<i64>, D::Error> {
     Ok(Option::<String>::deserialize(de)?.and_then(|raw| raw.trim().parse().ok()))
 }
@@ -37,16 +33,11 @@ fn lenient_offset<'de, D: Deserializer<'de>>(de: D) -> Result<Option<i64>, D::Er
 pub(super) struct StatsQuery {
     #[serde(default)]
     range: StatsRange,
-    /// Minutes east of UTC on the calling device, which every day boundary in
-    /// the response is cut on — the heatmap's columns, the streak, both daily
-    /// goals, and where the window itself opens.
-    ///
-    /// Optional so an older client still gets an answer: the server then falls
-    /// back to the offset of the caller's most recent session, and to UTC if
-    /// there is none. Unreadable values take that fallback via
-    /// [`lenient_offset`] and out-of-range ones via
-    /// `db::user_offset::resolve_offset_minutes`, rather than either 400-ing —
-    /// a bad offset must not cost a reader their stats page.
+    /// Minutes east of UTC on the calling device, which every day boundary in the
+    /// response is cut on: heatmap columns, the streak, both daily goals, and where the
+    /// window opens. Optional: the server falls back to the offset of the caller's most
+    /// recent session, then UTC. Unreadable ([`lenient_offset`]) or out-of-range values
+    /// take that fallback too rather than 400-ing.
     #[serde(default, deserialize_with = "lenient_offset")]
     utc_offset_minutes: Option<i64>,
     /// Whose stats to read; absent or the caller's own id reads their own.
@@ -105,12 +96,10 @@ pub(super) fn viewer_error(context: &'static str, e: db::stats::ViewerStatsError
     internal(context, e)
 }
 
-/// How big the library is in words, pages, and hours of audio.
-///
-/// Deliberately not folded into [`get_stats`]'s payload: the answer is
-/// library-wide and only moves on a reindex, so carrying it there would
-/// recompute and re-send it on every period switch. The auth extractor still
-/// applies — the figure isn't per-user, but the library isn't public.
+/// How big the library is in words, pages, and hours of audio. Not folded into
+/// [`get_stats`]'s payload: the answer is library-wide and only moves on a reindex, so
+/// carrying it there would recompute it on every period switch. The auth extractor still
+/// applies, as the library isn't public.
 pub(super) async fn get_library_size(_user: AuthUser, State(state): State<AppState>) -> Response {
     match db::stats::library_size(&state.pool).await {
         Ok(size) => Json(size).into_response(),
@@ -118,16 +107,11 @@ pub(super) async fn get_library_size(_user: AuthUser, State(state): State<AppSta
     }
 }
 
-/// Set, change, or clear the caller's annual reading goal.
-///
-/// `year` defaults to the server's current calendar year and `kind` to
-/// `books`, so the usual body is `{"target": 24}`; a `null` / absent `target`
-/// clears the goal. Returns the resulting goal (`null` once cleared) with its
-/// progress already recomputed, and `db::stats::set_goal` drops this user's
-/// cached summaries so the next read is not the pre-save one.
-///
-/// This is account configuration under rule 08 and must never be queued by an
-/// offline outbox — clients call it directly and disable the control offline.
+/// Set, change, or clear the caller's annual reading goal. `year` defaults to the server's
+/// current calendar year and `kind` to `books`, so the usual body is `{"target": 24}`; a
+/// `null` / absent `target` clears the goal. Returns the resulting goal (`null` once cleared)
+/// with progress recomputed. Account configuration under rule 08: never queued by an offline
+/// outbox, so clients call it directly and disable the control offline.
 pub(super) async fn put_stats_goal(
     user: AuthUser,
     State(state): State<AppState>,
@@ -151,21 +135,11 @@ pub(super) async fn put_stats_goal(
     }
 }
 
-/// Set, change, or clear one of the caller's daily reading goals.
-///
-/// The body names its `kind` — `pages` or `minutes` — and an absent `target`
-/// clears that kind, leaving the other and the annual goal alone. Returns
-/// **both** daily goals with today's progress recomputed, so a client can
-/// redraw the whole band from one response rather than following a save with a
-/// read that could observe a different day.
-///
-/// Its own route rather than a widened `PUT /api/stats/goal`: that route
-/// answers with an `Option<ReadingGoal>` that shipped iOS builds already
-/// decode, and growing its response to carry a daily goal too would break every
-/// one of them.
-///
-/// Account configuration under rule 08, like the annual goal — never queued by
-/// an offline outbox.
+/// Set, change, or clear one of the caller's daily reading goals. The body names its `kind`
+/// (`pages` or `minutes`); an absent `target` clears that kind, leaving the other and the
+/// annual goal alone. Returns **both** daily goals with today's progress recomputed. Its
+/// own route, as growing `PUT /api/stats/goal`'s response would break shipped iOS builds.
+/// Account configuration under rule 08, like the annual goal: never queued offline.
 pub(super) async fn put_stats_daily_goal(
     user: AuthUser,
     State(state): State<AppState>,
@@ -185,14 +159,10 @@ pub(super) async fn put_stats_daily_goal(
     }
 }
 
-/// What the library is made of — format, language, publisher, publication
-/// decade, and genre.
-///
-/// Its own route rather than a field on [`get_stats`]'s payload for the same
-/// reason [`get_library_size`] is: the answer is library-wide and only moves
-/// on a reindex, so carrying it there would recompute and re-send it on every
-/// period switch. The auth extractor still applies — the figures aren't
-/// per-user, but the library isn't public.
+/// What the library is made of — format, language, publisher, publication decade, and
+/// genre. Its own route, like [`get_library_size`]: the answer is library-wide and only
+/// moves on a reindex, so carrying it on [`get_stats`] would recompute it every period
+/// switch. The auth extractor still applies, as the library isn't public.
 pub(super) async fn get_library_composition(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -222,12 +192,9 @@ pub(super) struct SessionLogQuery {
     user_id: Option<i64>,
 }
 
-/// Fetch a page of the caller's session log, newest sitting first, or a
-/// sharing reader's with `user_id`.
-///
-/// A `before` that isn't a cursor this endpoint issued is a 400 checked
-/// before the share gate, rather than a silent rewind to page one, which
-/// would loop a paging client forever.
+/// Fetch a page of the caller's session log, newest sitting first, or a sharing reader's
+/// with `user_id`. A `before` that isn't a cursor this endpoint issued is a 400 checked
+/// before the share gate, since a silent rewind to page one would loop a paging client.
 pub(super) async fn get_session_log(
     user: AuthUser,
     State(state): State<AppState>,

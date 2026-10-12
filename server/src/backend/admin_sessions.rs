@@ -29,12 +29,10 @@ fn to_device_view(d: db::auth::Device) -> DeviceView {
 }
 
 /// `GET /api/admin/users/{id}/sessions` — list a target user's live sessions.
-///
-/// `is_current` comes back `false` on every row: this listing passes no current
-/// session id (unlike the self-service one in `auth::handlers`), not because
-/// the viewed row can never be the admin's own session — an admin listing their
-/// own account can land on the exact session their request authenticated with,
-/// same as any other row. See [`omnibus_shared::SessionView`] docs.
+/// `is_current` is `false` on every row, because this listing passes no current session
+/// id (unlike the self-service one in `auth::handlers`), even when an admin listing
+/// their own account lands on the session their request used. See
+/// [`omnibus_shared::SessionView`].
 pub(super) async fn get_user_sessions(
     _admin: AdminUser,
     State(state): State<AppState>,

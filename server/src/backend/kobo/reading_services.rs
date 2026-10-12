@@ -44,12 +44,9 @@ pub fn reading_services_router(state: AppState) -> Router {
 }
 
 /// `GET .../content/{contentId}/annotations` — serve the book's Kobo-placeable
-/// annotation set with a weak content-hash ETag.
-///
-/// The per-(device, book) ack advances in the stream's final poll — the same
-/// pattern as `library_sync`'s snapshot commit: a connection dropped mid-body
-/// never acks, so `checkforchanges` re-reports the book, which is the
-/// protocol's only redelivery mechanism.
+/// annotation set with a weak content-hash ETag. The per-(device, book) ack advances
+/// in the stream's final poll, so a connection dropped mid-body never acks and
+/// `checkforchanges` re-reports the book, the protocol's only redelivery mechanism.
 async fn get_annotations(
     auth: KoboHardwareUser,
     State(state): State<AppState>,
@@ -308,12 +305,10 @@ async fn patch_annotations(
     StatusCode::NO_CONTENT.into_response()
 }
 
-/// Best-effort KoboSpan-range→CFI derivation for a PATCH's upserts, so the
-/// row lands renderable by the web/iOS readers. Mirrors the posture of
-/// `derive_cfi_for_location` (state PUTs): the cached KEPUB is used even
-/// when stale — the snippet check inside `annotation_cfis` catches a truly
-/// replaced source — and any miss leaves `epub_cfi_range` as `None`, which
-/// the boot-time backfill retries later.
+/// Best-effort KoboSpan-range→CFI derivation for a PATCH's upserts, so the row lands
+/// renderable by the web/iOS readers. The cached KEPUB is used even when stale (the
+/// snippet check inside `annotation_cfis` catches a replaced source); any miss leaves
+/// `epub_cfi_range` as `None`, which the boot-time backfill retries later.
 async fn derive_annotation_cfis(
     state: &AppState,
     uuid: &str,

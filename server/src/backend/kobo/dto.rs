@@ -26,12 +26,9 @@ pub struct AuthEnvelope {
     pub user_key: String,
 }
 
-/// Build the auth envelope for a device.
-///
-/// The values are **derived from the path token, not random**. Nothing ever
-/// validates them — the `/kobo/<TOKEN>/` path token is the real credential —
-/// and the device re-runs this handshake on a refresh schedule, so a stable
-/// answer is the honest one: it needs no storage and cannot drift between the
+/// Build the auth envelope for a device. The values are **derived from the path token,
+/// not random**: nothing validates them (the `/kobo/<TOKEN>/` path token is the real
+/// credential), and a stable answer needs no storage and cannot drift between the
 /// initial exchange and a later refresh.
 pub fn auth_envelope(token: &str) -> AuthEnvelope {
     AuthEnvelope {
@@ -43,14 +40,10 @@ pub fn auth_envelope(token: &str) -> AuthEnvelope {
     }
 }
 
-/// A stable opaque hex value for `(token, purpose)`. Not a secret and not
-/// treated as one — it exists to fill a field shape the device requires.
-///
-/// SHA-256 rather than `DefaultHasher`: the latter's output is explicitly not
-/// stable across Rust toolchain versions, so a compiler bump would silently
-/// rotate every device's envelope and defeat the stability this function
-/// exists to provide. `db::helpers::stable_uuid` documents the same trap after
-/// a `DefaultHasher` rotation once orphaned every cover file on disk.
+/// A stable opaque hex value for `(token, purpose)`. Not a secret and not treated as
+/// one — it exists to fill a field shape the device requires. SHA-256, not
+/// `DefaultHasher`, whose output is not stable across Rust toolchain versions: a
+/// compiler bump would silently rotate every device's envelope.
 fn derive_opaque(token: &str, purpose: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -63,15 +56,11 @@ fn derive_opaque(token: &str, purpose: &str) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// One element of the `library/sync` array. Externally tagged, so each
-/// serializes as `{"<Shape>": { … }}` — the envelope names the device parses.
-///
-/// The three shapes map 1:1 onto `db::kobo::SyncChange`: an add is a
-/// `NewEntitlement`; a change is `ChangedProductMetadata` (the device
-/// refreshes its metadata; the file is not re-downloaded) paired with a
-/// `ChangedReadingState`; a removal is a `ChangedEntitlement` whose
-/// `BookEntitlement.IsRemoved` is true, which archives the book on-device
-/// without touching annotations.
+/// One element of the `library/sync` array. Externally tagged, so each serializes as
+/// `{"<Shape>": { … }}`, the envelope names the device parses. Maps 1:1 onto
+/// `db::kobo::SyncChange`: an add is `NewEntitlement`; a change is `ChangedProductMetadata`
+/// (file not re-downloaded) plus `ChangedReadingState`; a removal is a `ChangedEntitlement`
+/// with `IsRemoved`, which archives the book without touching annotations.
 #[derive(Debug, Serialize)]
 pub enum SyncItem {
     NewEntitlement(Entitlement),
@@ -269,22 +258,15 @@ pub fn new_entitlement(
     })
 }
 
-/// The device-facing reading state for one book: real status and position when
-/// the user has any, an untouched book's defaults otherwise.
-///
-/// The device reconciles `StatusInfo` and `CurrentBookmark` **independently**,
-/// each against the matching clock it already holds, so every one of the three
-/// timestamps here is load-bearing: the envelope's own `state_updated_at`, the
-/// status row's clock, and the progress row's clock. An unstamped sub-object
-/// loses that comparison to whatever the device has and is silently dropped —
-/// which is exactly how a web-side position failed to reach a Kobo. `book_ts`
-/// is only the fallback for a book with no state at all.
-///
-/// A zero clock means "no such row" and stays unstamped rather than becoming
-/// `1970-01-01`: an empty bookmark must lose arbitration, not win it with a
-/// timestamp we invented. `Statistics` follows the same rule and is omitted
-/// outright for a book no device has reported totals for.
+/// The device-facing reading state for one book: real status and position when the user
+/// has any, an untouched book's defaults otherwise. The device reconciles `StatusInfo` and
+/// `CurrentBookmark` independently against their own clocks, so each carries its own
+/// timestamp. A zero clock means "no such row" and stays unstamped, not `1970-01-01`;
+/// `Statistics` is omitted for a book no device has reported totals for.
 pub fn reading_state(uuid: &str, book_ts: &str, state: Option<&KoboBookState>) -> ReadingState {
+    // Every sub-object below is stamped from its own clock: an unstamped one loses the
+    // device's comparison and is silently dropped, so `book_ts` is only the fallback
+    // for a book with no state at all.
     let last_modified = state
         .map(|s| rfc3339(s.state_updated_at))
         .unwrap_or_else(|| book_ts.to_owned());
@@ -484,9 +466,8 @@ pub fn book_metadata(base: &str, token: &str, book: &KoboBookRow) -> BookMetadat
 /// Cumulative per-book stats, echoed and never invented: the device
 /// arbitrates this block newest-wins like every other sub-object, so
 /// zeroes stamped `now` would overwrite its real totals.
-///
-/// Feeds nothing else — these are running totals, while `reading_sessions`
-/// already holds the same reading time as discrete `LeaveContent` rows.
+/// Feeds nothing else: `reading_sessions` already holds the same time as discrete
+/// `LeaveContent` rows.
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct Statistics {

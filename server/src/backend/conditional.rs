@@ -16,21 +16,16 @@ use omnibus_shared::http_range::{self, RangeOutcome};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
-/// `Vary` value shared by every response the media handlers return (200s
-/// *and* 304s). Those endpoints accept either a session cookie or an
-/// `Authorization: Bearer` header, so a shared/intermediate cache keying
-/// only on `Cookie` could hand one bearer-authenticated user's cached
-/// response — including a 304 validator match — back to a different
-/// bearer-authenticated user who shares the same (or no) cookie state.
-/// Defined once so the 200 and 304 paths can never drift apart.
+/// `Vary` value shared by every response the media handlers return (200s *and*
+/// 304s). Those endpoints accept a session cookie or an `Authorization: Bearer`
+/// header, so a cache keying only on `Cookie` could hand one bearer user's response,
+/// 304 included, to another. Defined once so the two paths can't drift.
 pub(super) const MEDIA_VARY: &str = "Cookie, Authorization";
 
-/// `Cache-Control` shared by every response these handlers return.
-/// `no-cache` rather than a `max-age`: a book file can be replaced in place
-/// under the same uuid-keyed URL, and a `max-age`-only cache would keep
-/// serving the old bytes until it expired — the client never even asks. The
-/// whole point of the `ETag` alongside it is that it does ask, and
-/// revalidation costs one 304.
+/// `Cache-Control` shared by every response these handlers return. `no-cache`, not
+/// a `max-age`: a book file can be replaced in place under the same uuid-keyed URL,
+/// and a `max-age` cache would keep serving old bytes without asking; the `ETag`
+/// makes revalidation cost one 304.
 pub(super) const MEDIA_CACHE_CONTROL: &str = "private, no-cache";
 
 /// Everything needed to answer conditionally, taken from one open handle.
@@ -56,25 +51,11 @@ pub(super) struct Validator {
     pub(super) last_modified: SystemTime,
 }
 
-/// Open `path` and derive its validator from the handle, not the path.
-///
-/// The inode is part of the tag deliberately. A stat-derived validator's
-/// real weakness is a replacement that *preserves* the timestamp — `rsync
-/// -t`, `cp -p`, a restore from backup — and almost every such tool writes a
-/// temp file and renames it over the target, which moves the inode even when
-/// the mtime comes along unchanged. (Apache's historic
-/// `FileETag INode MTime Size`; it dropped `INode` only because it breaks
-/// multi-server clusters, which a self-hosted single instance is not.)
-///
-/// Nanosecond precision here is intentionally finer than the second-granular
-/// [`omnibus_shared::file_etag`] the db projection puts on the wire: a miss
-/// on *this* validator splices a file, where a miss on that one merely
-/// delays a notification.
-///
-/// **Known residual:** an in-place overwrite that preserves both length and
-/// timestamp still slips through. No stat-derived validator catches that,
-/// which is why the download client verifies the assembled file rather than
-/// trusting this alone.
+/// Open `path` and derive its validator from the handle, not the path. The tag
+/// includes the inode and nanosecond mtime, finer than the second-granular
+/// [`omnibus_shared::file_etag`] on the wire: a miss here splices a file, a miss there
+/// only delays a notification. Known residual (rule 09): an in-place overwrite
+/// preserving length and mtime still slips through.
 pub(super) async fn open(path: &Path) -> std::io::Result<OpenFile> {
     let file = tokio::fs::File::open(path).await?;
     let meta = file.metadata().await?;
@@ -128,15 +109,9 @@ pub(super) enum Precondition {
 }
 
 /// Evaluate every precondition against `validator`, in RFC 9110 §13.2.2
-/// precedence order, and resolve `Range` against `len`.
-///
-/// The precedence matters and is the reason this cannot be split across two
-/// layers: a stale `If-None-Match` *must* produce the full body even when an
-/// `If-Modified-Since` on the same request would have matched, because
-/// step 4 only runs when step 3's header is absent. Evaluating the ETag
-/// conditions here and leaving the date conditions to a downstream file
-/// service gets that exactly backwards, and answers 304 to a client that
-/// just told us its copy is out of date.
+/// precedence order, and resolve `Range` against `len`. The order cannot be split
+/// across layers: a stale `If-None-Match` must yield the full body even when an
+/// `If-Modified-Since` would have matched (rule 09a).
 pub(super) fn evaluate(headers: &HeaderMap, validator: &Validator, len: u64) -> Precondition {
     // 1. If-Match — strong comparison.
     if let Some(value) = header_str(headers, header::IF_MATCH) {
@@ -193,27 +168,18 @@ fn resolve_range(headers: &HeaderMap, validator: &Validator, len: u64) -> RangeO
 }
 
 /// Cheap content-derived `ETag` for bytes a handler already holds in memory
-/// (covers, thumbs, comic pages — rule 09's "the hash is free here" cases).
-/// Not cryptographic, so a hash collision between two genuinely different
-/// byte sequences is possible — that's a *correctness* failure, not a benign
-/// inefficiency: [`if_none_match_hits`] would treat a stale `If-None-Match`
-/// as current, the handler would return a bodyless 304, and the client would
-/// keep showing the old bytes indefinitely instead of fetching the real
-/// update. A stronger digest would shrink that (already astronomically
-/// small) probability further, but isn't applied here since collisions
-/// self-heal on the next byte change anyway.
+/// (covers, thumbs, comic pages: rule 09's "the hash is free here" cases). Not
+/// cryptographic: a collision makes [`if_none_match_hits`] treat a stale
+/// `If-None-Match` as current, so the handler answers a bodyless 304 and the client
+/// keeps the old bytes until the next change.
 pub(super) fn content_etag(bytes: &[u8]) -> String {
     namespaced_content_etag("", bytes)
 }
 
 /// [`content_etag`] under a namespace, for a route that serves one
-/// representation standing in for another.
-///
-/// Every validator in this workspace renders as 16 hex digits — `content_etag`
-/// from a 64-bit hash, `db::thumbs::thumb_etag` from a truncated SHA-256 — so
-/// two tags derived from unrelated inputs can still come out equal, rarely but
-/// really. A prefix makes the two spaces disjoint by construction, which turns
-/// "this is not that representation" from a probability into a guarantee.
+/// representation standing in for another. Every validator here renders as 16 hex
+/// digits, so tags from unrelated inputs can collide; a prefix makes the two spaces
+/// disjoint by construction.
 pub(super) fn namespaced_content_etag(prefix: &str, bytes: &[u8]) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -250,11 +216,8 @@ pub(super) struct FileResponse<'a> {
 }
 
 /// Stream `open`'s bytes as 200, 206, or 416, from the handle its validator
-/// was taken from.
-///
-/// A 416 is answered here rather than passed along from something else, and
-/// carries the `Content-Range: bytes */{len}` a resuming client needs to
-/// restart correctly — reporting it as 404 would tell that client the book
+/// was taken from. A 416 is answered here with the `Content-Range: bytes */{len}`
+/// a resuming client needs; reporting it as 404 would tell that client the book
 /// had disappeared.
 pub(super) async fn serve(open: OpenFile, range: RangeOutcome, spec: FileResponse<'_>) -> Response {
     let OpenFile {

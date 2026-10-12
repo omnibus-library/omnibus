@@ -153,39 +153,11 @@ pub(super) struct CoverFromUrlBody {
     url: String,
 }
 
-/// Apply a cover by URL — the metadata editor's compare view pressing the
-/// arrow on a provider's cover row, or a reader pasting an image URL of
-/// their own.
-///
-/// The browser can't fetch a cross-origin image to hand us bytes, so the
-/// server fetches it, which is the one place in this feature with a real
-/// security surface. [`cover_fetch_config_for`] splits the terms by host: a
-/// provider-catalog host gets [`db::provider_cover_image_config`]'s
-/// allowlisted terms (the same host list the `img-src` CSP is built from);
-/// any other host gets the pasted terms from [`db::cover_image_config_for`],
-/// which drop the allowlist and rely on the address gate alone. Both share
-/// HTTPS only, each redirect hop re-checked rather than trusted because the
-/// first hop was allowed, the IP-range guard before any connect, and a size
-/// cap that bounds memory whatever the origin advertises. The bytes are then
-/// sniffed here — an HTML error page served with an `image/*` content-type
-/// must not land on disk as a cover.
-///
-/// **Rate-limited** (mounted in `upload_router`): it carries no upload body,
-/// which is what keeps the other cover routes outside that limiter, but it is
-/// the only override route that spends *outbound* fetches, and that is the
-/// cost worth bounding per IP.
-///
-/// The fetch goes through [`db::fetch_provider_cover`] rather than the bare
-/// remote fetch, so a Google Books cover is stored at full size instead of the
-/// 128px thumbnail its `imageLinks` publishes. That costs a second outbound request on this route
-/// alone, and only when the submitted URL is a Google Books one — the upgrade
-/// is opportunistic and falls back to the thumbnail whenever the larger
-/// rendition cannot be shown to be the same picture.
-///
-/// After the fetch it is the multipart upload's tail unchanged —
-/// `persist_cover`, `has_cover_override`, thumbnail invalidation — so
-/// "revert to scanned cover" works on a provider cover exactly as it does on
-/// an uploaded one.
+/// Apply a cover by URL: the compare view's arrow on a provider's cover row, or a pasted
+/// image URL. The server fetches it under [`cover_fetch_config_for`]'s host-split terms
+/// and sniffs the bytes before they land on disk. **Rate-limited** (mounted in
+/// `upload_router`): the only override route that spends *outbound* fetches. A Google
+/// Books cover is stored full-size (not its 128px thumbnail) via [`db::fetch_provider_cover`].
 pub(super) async fn post_ebook_cover_from_url(
     user: AuthUser,
     State(state): State<AppState>,
@@ -224,6 +196,9 @@ pub(super) async fn post_ebook_cover_from_url(
         Err(e) => return internal("resolve_book_id_by_uuid", e),
     };
 
+    // `fetch_provider_cover`, not the bare fetch: a Google Books URL costs a second
+    // request to store the full-size cover instead of its 128px thumbnail, and falls
+    // back to the thumbnail when the larger one can't be shown to be the same picture.
     let config = cover_fetch_config_for(&state, url);
     let (advertised_mime, bytes) = match db::fetch_provider_cover(url, &config).await {
         Ok(pair) => pair,
@@ -284,17 +259,11 @@ pub(super) async fn post_ebook_cover_from_url(
     }
 }
 
-/// Relaxes `config` for a loopback `wiremock` origin — only when `state`'s
-/// injected `RemoteImageConfig` opts in. One flag relaxes it, and only for
-/// tests: `AppState`'s injectable `RemoteImageConfig` (see
-/// `AppState::new_with_remote_image_config`) exists so an integration test
-/// can drive a `wiremock` origin bound to `127.0.0.1`, which is plaintext
-/// and private by nature — so the same flag that permits the address also
-/// permits the scheme and adds the loopback hosts, rather than each being a
-/// separate knob a production path could trip independently. A production
-/// `AppState` is built with `Default`, whose flag is `false`, so none of it
-/// applies; `cover_fetch_config_is_strict_by_default` is what holds that
-/// true.
+/// Relaxes `config` for a loopback `wiremock` origin, only when `state`'s injected
+/// `RemoteImageConfig` opts in. That one flag relaxes the address, the scheme and the
+/// host allowlist together, so a production path can't trip them independently; a
+/// production `AppState` is built with `Default` (flag `false`), which
+/// `cover_fetch_config_is_strict_by_default` holds true.
 fn with_loopback_hatch(
     state: &AppState,
     mut config: db::author_photos::RemoteImageConfig,
@@ -390,15 +359,11 @@ impl CoverPersistError {
     }
 }
 
-/// Write the new override cover to disk and mark `has_cover_override = 1`,
-/// preserving any existing field overrides.
-///
-/// The prior overrides row is read BEFORE touching disk: `write_override_cover`
-/// deletes any existing `override-<uuid>.*` before writing, so fetching first
-/// keeps the disk-write/cleanup decision race-free. If the upsert fails,
-/// the just-written file is cleaned up ONLY when no prior override cover existed
-/// — otherwise the write step already replaced the user's previous valid cover
-/// and cleanup would compound the loss.
+/// Write the new override cover to disk and mark `has_cover_override = 1`, preserving any
+/// existing field overrides. The prior overrides row is read BEFORE touching disk, since
+/// `write_override_cover` deletes any existing `override-<uuid>.*`. If the upsert fails,
+/// the just-written file is cleaned up ONLY when no prior override cover existed: else the
+/// write already replaced the user's previous cover and cleanup would compound the loss.
 pub(super) async fn persist_cover(
     state: &AppState,
     uuid: &str,
@@ -442,13 +407,11 @@ pub(super) async fn persist_cover(
     Ok(())
 }
 
-/// Admin-only: queue a fleet-wide bake of every book's active metadata/cover
-/// overrides into its EPUB container — the bulk sibling of the
-/// per-book export bake `get_ebook_download` already performs on demand.
-/// Dispatches `Task::RewriteAllEpubs` to the shared worker and returns as
-/// soon as it's queued, mirroring `post_scan_library`, instead of awaiting
-/// the whole pass inline on the request. 200 once queued. Mobile-facing
-/// REST; the web counterpart is `rpc_rewrite_all_epubs`.
+/// Admin-only: queue a fleet-wide bake of every book's active metadata/cover overrides
+/// into its EPUB container, the bulk sibling of the per-book export bake
+/// `get_ebook_download` performs on demand. Dispatches `Task::RewriteAllEpubs` and returns
+/// 200 as soon as it's queued, like `post_scan_library`. Mobile-facing REST; the web
+/// counterpart is `rpc_rewrite_all_epubs`.
 pub(super) async fn post_rewrite_all_epubs(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -458,16 +421,14 @@ pub(super) async fn post_rewrite_all_epubs(
 }
 
 /// Best-effort delete of the on-disk override cover after a DB failure in
-/// `post_ebook_cover`. `delete_override_cover` is a synchronous `std::fs`
-/// call (matches the neighbouring delete-handler pattern) so it runs on
-/// the blocking pool to keep the axum runtime responsive. The inner
-/// call swallows its own filesystem errors; a `JoinError` here is logged
-/// but ignored — the caller is already returning the original DB error,
-/// and a missing cover file is preferred over a dangling file with no row
-/// pointing at it.
+/// `post_ebook_cover`. The inner call swallows its own filesystem errors and a
+/// `JoinError` is logged but ignored: the caller is already returning the original
+/// DB error, and a missing cover file is preferred over a dangling file with no row.
 async fn cleanup_orphan_cover(uuid: &str) {
     tracing::warn!(uuid, "cover upload DB step failed — removing orphan file");
     let uuid = uuid.to_string();
+    // `delete_override_cover` is a synchronous `std::fs` call, so it runs on the
+    // blocking pool to keep the axum runtime responsive.
     if let Err(e) = tokio::task::spawn_blocking(move || db::delete_override_cover(&uuid)).await {
         tracing::warn!(error = %e, "spawn_blocking(delete_override_cover) join failed");
     }

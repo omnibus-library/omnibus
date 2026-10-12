@@ -148,19 +148,11 @@ pub(super) async fn resolve_staged_cover(
     Ok(Some((mime, Bytes::from(bytes))))
 }
 
-/// Layer what the reader confirmed onto the freshly indexed book: the legacy
-/// fields, the review diff on top of them, pruned back to what actually
-/// differs from the indexed row, then the staged cover. A book accepted
-/// as-is ends up with no override at all, so it keeps following its file.
-///
-/// The indexer may have *attached* the upload to an existing book in
-/// another format rather than minting one (`scan_key` is then not the
-/// book's own). That book's record is not the upload's: the legacy
-/// title/author only ever named the folder, so they are not applied to it —
-/// only the edits the reader made on the form are. And whatever this writes,
-/// a failure part-way puts the book's override row back as it was, so a
-/// request the client saw fail changes nothing on a book that already
-/// existed (the handler then removes the file itself).
+/// Layer what the reader confirmed onto the freshly indexed book: the legacy fields, the
+/// review diff on top, pruned back to what differs from the indexed row, then the staged
+/// cover. A book accepted as-is ends with no override. If the indexer *attached* the upload
+/// to an existing book, only the reader's form edits apply, not the legacy title/author.
+/// A failure part-way restores the book's prior override row, so a failed request changes nothing.
 pub(super) async fn finish_upload(
     state: &AppState,
     uuid: &str,
@@ -242,13 +234,11 @@ async fn apply_review(
     Ok(())
 }
 
-/// Put a book's override row — and its override cover file — back to what
-/// [`finish_upload`] read before it wrote anything, after a failed finish.
-/// A row that did not exist is deleted again; a cover override this request
-/// wrote over a book that had none is removed, and one it wrote over a
-/// book that had its own is overwritten with the snapshotted bytes.
-/// Best-effort, like the file rollback: the original error is what the
-/// client gets.
+/// Put a book's override row — and its override cover file — back to what [`finish_upload`]
+/// read before it wrote anything, after a failed finish. A row that did not exist is
+/// deleted again; a cover this request wrote over a book with none is removed, over one
+/// it had is overwritten with the snapshotted bytes. Best-effort: the original error is
+/// what the client gets.
 pub(super) async fn restore_overrides(
     state: &AppState,
     uuid: &str,
@@ -287,14 +277,11 @@ pub(super) async fn restore_overrides(
     }
 }
 
-/// Undo a commit whose finish step failed after the reindex: delete the
-/// file row the scan recorded under `scan_key` — and, when that was the
-/// book's only file, the book itself with its covers — so a request the
-/// client saw fail did not quietly add a book. Keyed on the uploaded file
-/// rather than the uuid because the indexer may have *attached* the upload
-/// to an existing book in another format; that book keeps everything it
-/// had. Best-effort: the original error is what the client gets, and a
-/// rollback failure is logged beside it rather than replacing it.
+/// Undo a commit whose finish step failed after the reindex: delete the file row the scan
+/// recorded under `scan_key`, and the book itself with its covers when that was its only
+/// file. Keyed on the uploaded file, not the uuid, because the indexer may have *attached*
+/// the upload to an existing book, which keeps everything it had. Best-effort: a rollback
+/// failure is logged beside the original error rather than replacing it.
 pub(super) async fn rollback_uploaded_file(state: &AppState, uuid: &str, scan_key: &str) {
     let file_ids: Vec<i64> = match db::resolve_book_id_by_uuid(&state.pool, uuid).await {
         Ok(Some(id)) => match db::get_book_files(&state.pool, id).await {

@@ -5,14 +5,10 @@ use std::net::SocketAddr;
 
 use axum::Router;
 
-/// Serve `router` on `listener`, attaching each connection's peer address.
-///
-/// Dioxus 0.7.9 serves through a bare `axum::serve` in release and
-/// `Router::into_make_service` in debug, neither of which inserts
-/// `ConnectInfo<SocketAddr>` — so every request reached the per-IP rate
-/// limiter and the request log as `0.0.0.0`, one bucket for the whole
-/// internet. `into_make_service_with_connect_info` is the only way to get
-/// the peer address and dioxus exposes no hook for it.
+/// Serve `router` on `listener`, attaching each connection's peer address. Dioxus 0.7.9's
+/// serve paths insert no `ConnectInfo<SocketAddr>`, so every request reached the per-IP rate
+/// limiter and request log as `0.0.0.0`, one bucket for the whole internet;
+/// `into_make_service_with_connect_info` is the only fix and dioxus exposes no hook for it.
 pub async fn serve_with_peer_addresses(
     listener: tokio::net::TcpListener,
     router: Router,
