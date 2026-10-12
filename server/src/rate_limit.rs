@@ -6,6 +6,7 @@
 //! limiter off with `OMNIBUS_DEV_DISABLE_RATE_LIMITS` ([`RateLimits`]), decided once at boot.
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -38,8 +39,13 @@ pub enum RateLimits {
 }
 
 impl RateLimits {
+    /// Decide the switch for this build: debug builds honour the flag, release builds ignore it.
+    pub fn at_boot(dev_flag: Option<&OsStr>) -> Self {
+        Self::from_dev_flag(dev_flag, !cfg!(debug_assertions))
+    }
+
     /// Decide the switch from the dev env var's value and the build profile.
-    pub fn from_dev_flag(dev_flag: Option<&str>, release_build: bool) -> Self {
+    pub fn from_dev_flag(dev_flag: Option<&OsStr>, release_build: bool) -> Self {
         if release_build {
             if dev_flag.is_some() {
                 tracing::warn!(
@@ -50,7 +56,7 @@ impl RateLimits {
             return Self::Enforced;
         }
         // Same truthy set as `trust_forwarded_for`.
-        if matches!(dev_flag, Some("1" | "true" | "yes")) {
+        if matches!(dev_flag.and_then(OsStr::to_str), Some("1" | "true" | "yes")) {
             tracing::warn!(
                 target: "omnibus::startup",
                 "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set; every per-IP rate limiter is off (dev-only hook)"

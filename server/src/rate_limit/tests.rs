@@ -441,7 +441,7 @@ fn from_dev_flag_enforces_when_the_flag_is_unset_in_a_debug_build() {
 #[test]
 fn from_dev_flag_disables_when_the_flag_is_one_in_a_debug_build() {
     assert_eq!(
-        RateLimits::from_dev_flag(Some("1"), false),
+        RateLimits::from_dev_flag(Some(OsStr::new("1")), false),
         RateLimits::Disabled
     );
 }
@@ -449,7 +449,7 @@ fn from_dev_flag_disables_when_the_flag_is_one_in_a_debug_build() {
 #[test]
 fn from_dev_flag_disables_when_the_flag_is_true_in_a_debug_build() {
     assert_eq!(
-        RateLimits::from_dev_flag(Some("true"), false),
+        RateLimits::from_dev_flag(Some(OsStr::new("true")), false),
         RateLimits::Disabled
     );
 }
@@ -457,7 +457,7 @@ fn from_dev_flag_disables_when_the_flag_is_true_in_a_debug_build() {
 #[test]
 fn from_dev_flag_disables_when_the_flag_is_yes_in_a_debug_build() {
     assert_eq!(
-        RateLimits::from_dev_flag(Some("yes"), false),
+        RateLimits::from_dev_flag(Some(OsStr::new("yes")), false),
         RateLimits::Disabled
     );
 }
@@ -465,7 +465,7 @@ fn from_dev_flag_disables_when_the_flag_is_yes_in_a_debug_build() {
 #[test]
 fn from_dev_flag_enforces_when_the_flag_is_zero_in_a_debug_build() {
     assert_eq!(
-        RateLimits::from_dev_flag(Some("0"), false),
+        RateLimits::from_dev_flag(Some(OsStr::new("0")), false),
         RateLimits::Enforced
     );
 }
@@ -473,7 +473,7 @@ fn from_dev_flag_enforces_when_the_flag_is_zero_in_a_debug_build() {
 #[test]
 fn from_dev_flag_enforces_when_the_flag_is_set_in_a_release_build() {
     assert_eq!(
-        RateLimits::from_dev_flag(Some("1"), true),
+        RateLimits::from_dev_flag(Some(OsStr::new("1")), true),
         RateLimits::Enforced
     );
 }
@@ -481,6 +481,15 @@ fn from_dev_flag_enforces_when_the_flag_is_set_in_a_release_build() {
 #[test]
 fn from_dev_flag_enforces_when_the_flag_is_unset_in_a_release_build() {
     assert_eq!(RateLimits::from_dev_flag(None, true), RateLimits::Enforced);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn at_boot_disables_when_the_flag_is_one_in_a_debug_build() {
+    assert_eq!(
+        RateLimits::at_boot(Some(OsStr::new("1"))),
+        RateLimits::Disabled
+    );
 }
 
 /// Everything `f` logs, captured through a scoped subscriber.
@@ -495,7 +504,7 @@ fn logged_by(f: impl FnOnce()) -> String {
 #[test]
 fn from_dev_flag_logs_the_release_warn_when_the_flag_is_set_in_a_release_build() {
     let text = logged_by(|| {
-        RateLimits::from_dev_flag(Some("1"), true);
+        RateLimits::from_dev_flag(Some(OsStr::new("1")), true);
     });
     assert_eq!(
         text.matches(
@@ -511,6 +520,27 @@ fn from_dev_flag_logs_the_release_warn_when_the_flag_is_set_in_a_release_build()
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn from_dev_flag_logs_the_release_warn_when_the_flag_is_not_utf8_in_a_release_build() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let flag = OsStr::from_bytes(b"\xff");
+    let mut limits = None;
+    let text = logged_by(|| {
+        limits = Some(RateLimits::from_dev_flag(Some(flag), true));
+    });
+    assert_eq!(
+        text.matches(
+            "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set in a release build; ignoring (dev-only hook)"
+        )
+        .count(),
+        1,
+        "got: {text}"
+    );
+    assert_eq!(limits, Some(RateLimits::Enforced));
+}
+
 #[test]
 fn from_dev_flag_logs_nothing_when_the_flag_is_unset_in_a_release_build() {
     let text = logged_by(|| {
@@ -522,7 +552,7 @@ fn from_dev_flag_logs_nothing_when_the_flag_is_unset_in_a_release_build() {
 #[test]
 fn from_dev_flag_logs_the_disable_warn_when_it_disables_in_a_debug_build() {
     let text = logged_by(|| {
-        RateLimits::from_dev_flag(Some("1"), false);
+        RateLimits::from_dev_flag(Some(OsStr::new("1")), false);
     });
     assert_eq!(
         text.matches(
@@ -538,7 +568,7 @@ fn from_dev_flag_logs_the_disable_warn_when_it_disables_in_a_debug_build() {
 #[test]
 fn from_dev_flag_logs_nothing_when_it_stays_enforced_in_a_debug_build() {
     let text = logged_by(|| {
-        RateLimits::from_dev_flag(Some("0"), false);
+        RateLimits::from_dev_flag(Some(OsStr::new("0")), false);
     });
     assert_eq!(text, "");
 }
