@@ -320,15 +320,11 @@ async fn api_upload_endpoints_never_return_429_when_rate_limits_are_disabled() {
     for i in 0..=UPLOAD_RATE_LIMIT_MAX {
         let res = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/api/authors/1/photo/url")
-                    .method("PUT")
-                    .header("content-type", "application/json")
-                    .header(AUTHORIZATION, format!("Bearer {token}"))
-                    .body(Body::from(r#"{"url":"http://127.0.0.1:1/x.jpg"}"#))
-                    .unwrap(),
-            )
+            .oneshot(put_photo_url(
+                "/api/authors/1/photo/url",
+                &token,
+                "http://127.0.0.1:1/x.jpg",
+            ))
             .await
             .expect("request should succeed");
         assert_ne!(
