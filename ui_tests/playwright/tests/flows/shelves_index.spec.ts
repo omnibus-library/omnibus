@@ -1,4 +1,3 @@
-import type { APIRequestContext } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
@@ -6,6 +5,7 @@ import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 import { createShelf, openShelfFromIndex, shelfCard } from "../utils/shelves";
+import { createReader } from "../utils/users";
 
 // The `/shelves` index lists every shelf the viewer can see, grouped by owner.
 // The suite runs as an admin, who sees every shelf every parallel spec has
@@ -17,33 +17,6 @@ test.beforeAll(async ({ request }) => {
 
 const filterInput = (page: import("@playwright/test").Page) =>
   page.getByLabel("Filter shelves by name or owner");
-
-/**
- * Create a non-admin reader through the admin API and return their id. The
- * account comes with its public Wishlist shelf, which is what puts a second
- * owner on the index without signing in as them.
- */
-async function createReader(
-  request: APIRequestContext,
-  username: string,
-): Promise<number> {
-  const resp = await request.post("/api/admin/users", {
-    data: {
-      username,
-      password: "shelf-owner-pw-0001",
-      permissions: {
-        is_admin: false,
-        can_upload: false,
-        can_edit: false,
-        can_download: true,
-      },
-    },
-  });
-  expect(resp.status(), `POST /api/admin/users failed for ${username}`).toBe(
-    201,
-  );
-  return ((await resp.json()) as { id: number }).id;
-}
 
 test("renders the shelves index layout", async ({ page }) => {
   await gotoReady(page, "/shelves");
@@ -190,7 +163,9 @@ test("groups another reader's shelves under their name and filters to them", asy
   request,
 }) => {
   const username = `e2e_shelf_owner_${Date.now()}`;
-  const readerId = await createReader(request, username);
+  // A second owner on the index needs only the account, which comes with its
+  // public Wishlist shelf; nothing here signs in as them.
+  const readerId = await createReader(request, username, "shelf-owner-pw-0001");
   try {
     await gotoReady(page, "/shelves");
     const group = page.getByTestId(`shelves-group-${readerId}`);

@@ -4,7 +4,7 @@
 //! library path so each library keeps independent sort/filter state. Shape
 //! lives in `omnibus-shared`.
 
-use omnibus_shared::ViewPrefs;
+use omnibus_shared::{ViewFilters, ViewPrefs};
 
 const STORAGE_PREFIX: &str = "omnibus.view_prefs::";
 
@@ -71,6 +71,79 @@ pub fn load_last() -> Option<ViewPrefs> {
     last_library().map(|path| load(&path))
 }
 
+/// Save `filters` as the filter of the last-browsed library, leaving its sort
+/// and view mode as they were — the write for a page that has no prefs of its
+/// own but shares the landing's filter. With no library ever browsed (and under
+/// SSR) there is no key to file it under, so nothing is saved and the caller
+/// holds the filter in memory only.
+pub fn save_filters(filters: &ViewFilters) {
+    let Some(path) = last_library() else {
+        return;
+    };
+    let mut prefs = load(&path);
+    prefs.filters = filters.clone();
+    save(&path, &prefs);
+}
+
+/// Where one edit to the prefs is saved, and whether it still owes the
+/// authoritative library a write once that library is known.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavePlan {
+    /// The library key to write under now, if any.
+    pub write_to: Option<String>,
+    /// The edit has not reached the authoritative library's key.
+    pub unsaved: bool,
+}
+
+/// Plan the save of an edit made while the page's library path is
+/// `lib_path`. Until a page-1 response names the library, the pointer is only
+/// a guess, so an edit is written under it solely when that fetch has failed
+/// and may never answer — otherwise a guess that was wrong would file the edit
+/// under another library and the reconcile would then load that one over it.
+pub fn save_plan(
+    lib_path: Option<&str>,
+    page_failed: bool,
+    last_library: Option<String>,
+) -> SavePlan {
+    match lib_path {
+        Some(path) => SavePlan {
+            write_to: Some(path.to_string()),
+            unsaved: false,
+        },
+        None => SavePlan {
+            write_to: last_library.filter(|_| page_failed),
+            unsaved: true,
+        },
+    }
+}
+
+/// What a page-1 response naming the library does to the prefs in memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reconcile {
+    /// Nothing new was learned: the memory copy stands.
+    Keep,
+    /// A library not seen before: its stored prefs replace the memory copy.
+    Adopt,
+    /// The reader edited before the library was known: save those edits under it.
+    SaveEdits,
+}
+
+/// Decide the [`Reconcile`] for `path`, the library the latest response named.
+/// `reconciled` is the path last acted on; a re-set to the same path teaches
+/// nothing, so it must not reload a copy a failed write left behind memory.
+pub fn reconcile_action(reconciled: Option<&str>, path: &str, unsaved: bool) -> Reconcile {
+    if unsaved {
+        Reconcile::SaveEdits
+    } else if reconciled == Some(path) {
+        Reconcile::Keep
+    } else {
+        Reconcile::Adopt
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
 // Mobile tests — the only non-wasm target where `client_store` actually
 // persists, so it's the only place `load_last`'s positive path and `save`'s
 // dedup-write skip can be exercised without a browser. The mobile backend is
@@ -81,7 +154,9 @@ pub fn load_last() -> Option<ViewPrefs> {
 mod mobile_tests {
     use super::*;
     use omnibus_db::test_support::EnvVarGuard;
-    use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode};
+    use omnibus_shared::{
+        FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewMode,
+    };
     use std::sync::Mutex;
 
     static TEST_GUARD: Mutex<()> = Mutex::new(());
@@ -124,8 +199,11 @@ mod mobile_tests {
             sort_key: SortKey::Author,
             sort_dir: SortDir::Desc,
             filters: ViewFilters {
-                formats: vec!["epub".into()],
-                ..Default::default()
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Include,
+                    &["epub"],
+                )],
             },
             filters_open: true,
         }
@@ -143,6 +221,44 @@ mod mobile_tests {
 
             assert_eq!(last_library(), Some("/library/a".to_string()));
             assert_eq!(load_last(), Some(prefs));
+        });
+    }
+
+    #[test]
+    fn save_filters_replaces_only_the_filters_of_the_last_library() {
+        let _guard = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        with_isolated_store(|| {
+            let prefs = sample_prefs();
+            save("/library/a", &prefs);
+            let next = ViewFilters {
+                clauses: vec![FilterClause::new(
+                    FilterField::Author,
+                    FilterMode::Exclude,
+                    &["Ada"],
+                )],
+            };
+
+            save_filters(&next);
+
+            let stored = load("/library/a");
+            assert_eq!(stored.filters, next);
+            assert_eq!(stored.sort_key, prefs.sort_key);
+            assert_eq!(stored.sort_dir, prefs.sort_dir);
+            assert_eq!(stored.view_mode, prefs.view_mode);
+            assert_eq!(load_last(), Some(stored));
+        });
+    }
+
+    #[test]
+    fn save_filters_writes_nothing_when_no_library_was_ever_saved() {
+        let _guard = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        with_isolated_store(|| {
+            let filters = sample_prefs().filters;
+
+            save_filters(&filters);
+
+            assert_eq!(last_library(), None);
+            assert_eq!(load_last(), None);
         });
     }
 
@@ -181,7 +297,9 @@ mod mobile_tests {
 #[cfg(all(test, not(any(feature = "web", feature = "mobile"))))]
 mod ssr_tests {
     use super::*;
-    use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode};
+    use omnibus_shared::{
+        FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters, ViewMode,
+    };
 
     #[test]
     fn load_always_returns_defaults() {
@@ -196,8 +314,11 @@ mod ssr_tests {
             sort_key: SortKey::Author,
             sort_dir: SortDir::Desc,
             filters: ViewFilters {
-                formats: vec!["epub".into()],
-                ..Default::default()
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Include,
+                    &["epub"],
+                )],
             },
             filters_open: true,
         };

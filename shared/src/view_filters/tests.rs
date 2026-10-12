@@ -1,8 +1,10 @@
 //! Unit tests for the library filter clauses: their wire tokens, the
-//! `ViewFilters` predicates, and the legacy-facet bridge into clauses.
+//! `ViewFilters` predicates, and the legacy-facet fallback into clauses.
+
+use crate::ebook::Contributor;
+use crate::{SortDir, SortKey, ViewMode, ViewPrefs};
 
 use super::*;
-use crate::{SortDir, SortKey, ViewMode, ViewPrefs};
 
 const ALL_FIELDS: [FilterField; 6] = [
     FilterField::Tag,
@@ -53,111 +55,126 @@ fn view_filters_is_empty_true_for_default() {
 }
 
 #[test]
-fn view_filters_is_empty_false_when_any_facet_has_a_value() {
-    // One case per facet: any single populated group flips the predicate.
-    let with_author = ViewFilters {
-        authors: vec!["Tolkien".into()],
-        ..Default::default()
-    };
-    assert!(!with_author.is_empty());
-
-    let with_series = ViewFilters {
-        series: vec!["Poppy War".into()],
-        ..Default::default()
-    };
-    assert!(!with_series.is_empty());
-
-    let with_format = ViewFilters {
-        formats: vec!["epub".into()],
-        ..Default::default()
-    };
-    assert!(!with_format.is_empty());
-
-    let with_tag = ViewFilters {
-        tags: vec!["horror".into()],
-        ..Default::default()
-    };
-    assert!(!with_tag.is_empty());
-}
-
-#[test]
-fn view_filters_is_empty_false_when_only_clauses_is_non_empty() {
-    let filters = ViewFilters {
-        clauses: vec![FilterClause::new(
-            FilterField::Tag,
-            FilterMode::Exclude,
-            &["horror"],
-        )],
-        ..Default::default()
-    };
+fn view_filters_is_empty_false_when_a_clause_is_present() {
+    let filters = filters_with(vec![FilterClause::new(
+        FilterField::Tag,
+        FilterMode::Exclude,
+        &["horror"],
+    )]);
     assert!(!filters.is_empty());
 }
 
-#[test]
-fn effective_clauses_is_empty_for_default_filters() {
-    assert_eq!(ViewFilters::default().effective_clauses(), vec![]);
-}
+const LEGACY_BLOB: &str = r#"{
+    "authors": ["Tolkien"],
+    "series": [],
+    "formats": ["epub"],
+    "tags": ["horror"],
+    "genres": ["Fantasy"]
+}"#;
 
 #[test]
-fn effective_clauses_lists_legacy_facets_as_include_clauses_before_the_clauses() {
-    let filters = ViewFilters {
-        clauses: vec![FilterClause::new(
-            FilterField::Tag,
-            FilterMode::Exclude,
-            &["horror"],
-        )],
-        genres: vec!["Fantasy".into()],
-        tags: vec!["sci-fi".into(), "space".into()],
-        formats: vec!["epub".into()],
-        series: vec!["Poppy War".into()],
-        authors: vec!["Tolkien".into()],
-    };
+fn view_filters_deserializes_a_legacy_facet_blob_into_include_clauses() {
+    let filters: ViewFilters = serde_json::from_str(LEGACY_BLOB).expect("legacy blob parses");
+
     assert_eq!(
-        filters.effective_clauses(),
-        vec![
+        filters,
+        filters_with(vec![
             FilterClause::new(FilterField::Author, FilterMode::Include, &["Tolkien"]),
-            FilterClause::new(FilterField::Series, FilterMode::Include, &["Poppy War"]),
             FilterClause::new(FilterField::Format, FilterMode::Include, &["epub"]),
-            FilterClause::new(FilterField::Tag, FilterMode::Include, &["sci-fi", "space"]),
+            FilterClause::new(FilterField::Tag, FilterMode::Include, &["horror"]),
             FilterClause::new(FilterField::Genre, FilterMode::Include, &["Fantasy"]),
-            FilterClause::new(FilterField::Tag, FilterMode::Exclude, &["horror"]),
-        ]
+        ])
     );
 }
 
 #[test]
-fn effective_clauses_skips_legacy_facets_with_no_values() {
-    let filters = ViewFilters {
-        series: vec!["Poppy War".into()],
-        ..Default::default()
-    };
-    assert_eq!(
-        filters.effective_clauses(),
-        vec![FilterClause::new(
-            FilterField::Series,
-            FilterMode::Include,
-            &["Poppy War"]
-        )]
-    );
-}
-
-#[test]
-fn view_prefs_deserializes_a_record_written_before_clauses_existed() {
-    let legacy = r#"{
-        "view_mode": "table",
-        "sort_key": "newest_added",
-        "sort_dir": "desc",
-        "filters": {
-            "authors": ["Tolkien"],
-            "series": [],
-            "formats": ["epub"],
-            "tags": ["horror"],
-            "genres": ["Fantasy"]
-        },
-        "filters_open": true
+fn view_filters_deserializes_a_mixed_era_blob_keeping_legacy_facets_and_clauses() {
+    let mixed = r#"{
+        "clauses": [{"field":"tag","mode":"exclude","values":["horror"]}],
+        "tags": ["sci-fi", "space"],
+        "series": ["Poppy War"]
     }"#;
 
-    let prefs: ViewPrefs = serde_json::from_str(legacy).expect("legacy record parses");
+    let filters: ViewFilters = serde_json::from_str(mixed).expect("mixed blob parses");
+
+    assert_eq!(
+        filters,
+        filters_with(vec![
+            FilterClause::new(FilterField::Series, FilterMode::Include, &["Poppy War"]),
+            FilterClause::new(FilterField::Tag, FilterMode::Include, &["sci-fi", "space"]),
+            FilterClause::new(FilterField::Tag, FilterMode::Exclude, &["horror"]),
+        ])
+    );
+}
+
+#[test]
+fn view_filters_deserializes_a_legacy_facet_with_bad_values_into_a_valid_filter() {
+    let authors: Vec<String> = (0..65).map(|i| format!("author-{i}")).collect();
+    let longest_allowed = "y".repeat(SHELF_RULE_VALUE_MAX_LEN);
+    let blob = serde_json::json!({
+        "tags": ["   ", "x".repeat(SHELF_RULE_VALUE_MAX_LEN + 1), longest_allowed, "ok"],
+        "authors": authors,
+    });
+
+    let filters: ViewFilters = serde_json::from_value(blob).expect("legacy blob parses");
+
+    let kept_authors = FilterClause {
+        field: FilterField::Author,
+        mode: FilterMode::Include,
+        values: (0..MAX_FILTER_VALUES)
+            .map(|i| format!("author-{i}"))
+            .collect(),
+    };
+    assert_eq!(
+        filters,
+        filters_with(vec![
+            kept_authors,
+            FilterClause::new(
+                FilterField::Tag,
+                FilterMode::Include,
+                &[&longest_allowed, "ok"],
+            ),
+        ])
+    );
+    assert_eq!(filters.validate(), Ok(()));
+}
+
+#[test]
+fn view_filters_deserializes_a_legacy_facet_of_only_bad_values_into_no_clause() {
+    let filters: ViewFilters =
+        serde_json::from_str(r#"{"formats":["  "]}"#).expect("legacy blob parses");
+
+    assert_eq!(filters, ViewFilters::default());
+}
+
+#[test]
+fn view_filters_serializes_only_clauses() {
+    let legacy: ViewFilters = serde_json::from_str(LEGACY_BLOB).expect("legacy blob parses");
+
+    let wire = serde_json::to_value(&legacy).expect("serialize");
+
+    let keys: Vec<&str> = wire
+        .as_object()
+        .expect("an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, vec!["clauses"]);
+}
+
+#[test]
+fn view_prefs_deserializes_a_legacy_record_keeping_sort_and_view_mode() {
+    let legacy = format!(
+        r#"{{
+            "view_mode": "table",
+            "sort_key": "newest_added",
+            "sort_dir": "desc",
+            "filters": {LEGACY_BLOB},
+            "filters_open": true
+        }}"#
+    );
+
+    let prefs: ViewPrefs = serde_json::from_str(&legacy).expect("legacy record parses");
 
     assert_eq!(prefs.view_mode, ViewMode::Table);
     assert_eq!(prefs.sort_key, SortKey::NewestAdded);
@@ -165,15 +182,9 @@ fn view_prefs_deserializes_a_record_written_before_clauses_existed() {
     assert!(prefs.filters_open);
     assert_eq!(
         prefs.filters,
-        ViewFilters {
-            clauses: vec![],
-            authors: vec!["Tolkien".into()],
-            series: vec![],
-            formats: vec!["epub".into()],
-            tags: vec!["horror".into()],
-            genres: vec!["Fantasy".into()],
-        }
+        serde_json::from_str::<ViewFilters>(LEGACY_BLOB).expect("legacy blob parses")
     );
+    assert_eq!(prefs.filters.clauses.len(), 4);
 }
 
 fn clause_with_values(count: usize) -> FilterClause {
@@ -185,10 +196,7 @@ fn clause_with_values(count: usize) -> FilterClause {
 }
 
 fn filters_with(clauses: Vec<FilterClause>) -> ViewFilters {
-    ViewFilters {
-        clauses,
-        ..Default::default()
-    }
+    ViewFilters { clauses }
 }
 
 fn error_of(filters: &ViewFilters) -> String {
@@ -221,14 +229,6 @@ fn view_filters_validate_rejects_more_than_the_max_clauses() {
         error_of(&filters_with(clauses)),
         "a filter may have at most 16 clauses"
     );
-}
-
-#[test]
-fn view_filters_validate_counts_legacy_facets_toward_the_clause_cap() {
-    let mut filters = filters_with(vec![clause_with_values(1); MAX_FILTER_CLAUSES]);
-    filters.formats = vec!["epub".into()];
-
-    assert_eq!(error_of(&filters), "a filter may have at most 16 clauses");
 }
 
 #[test]
@@ -316,11 +316,9 @@ fn view_filters_to_query_param_emits_the_clauses_as_a_json_array() {
 }
 
 #[test]
-fn view_filters_to_query_param_carries_legacy_facets_as_include_clauses() {
-    let filters = ViewFilters {
-        formats: vec!["epub".into()],
-        ..Default::default()
-    };
+fn view_filters_to_query_param_keeps_the_cache_key_a_legacy_record_produced() {
+    let filters: ViewFilters =
+        serde_json::from_str(r#"{"formats":["epub"]}"#).expect("legacy blob parses");
 
     assert_eq!(
         filters.to_query_param().as_deref(),
@@ -329,27 +327,16 @@ fn view_filters_to_query_param_carries_legacy_facets_as_include_clauses() {
 }
 
 #[test]
-fn view_filters_from_query_param_round_trips_to_the_clause_only_form() {
-    let filters = ViewFilters {
-        clauses: vec![FilterClause::new(
-            FilterField::Tag,
-            FilterMode::Exclude,
-            &["a,b", "c"],
-        )],
-        authors: vec!["Tolkien".into()],
-        ..Default::default()
-    };
+fn view_filters_from_query_param_round_trips_the_clauses() {
+    let filters = filters_with(vec![
+        FilterClause::new(FilterField::Author, FilterMode::Include, &["Tolkien"]),
+        FilterClause::new(FilterField::Tag, FilterMode::Exclude, &["a,b", "c"]),
+    ]);
     let wire = filters.to_query_param().expect("non-empty filters encode");
 
     let parsed = ViewFilters::from_query_param(&wire).expect("round trip parses");
 
-    assert_eq!(
-        parsed,
-        filters_with(vec![
-            FilterClause::new(FilterField::Author, FilterMode::Include, &["Tolkien"]),
-            FilterClause::new(FilterField::Tag, FilterMode::Exclude, &["a,b", "c"]),
-        ])
-    );
+    assert_eq!(parsed, filters);
 }
 
 #[test]
@@ -375,4 +362,371 @@ fn view_filters_from_query_param_validates_the_parsed_clauses() {
         .expect_err("empty clause");
 
     assert_eq!(error, "a filter clause needs at least one value");
+}
+
+fn novel() -> EbookMetadata {
+    EbookMetadata {
+        subjects: vec!["Horror".into(), "gothic".into()],
+        genres: vec!["Fantasy".into()],
+        creators: vec![Contributor {
+            name: "Mary Shelley".into(),
+            ..Default::default()
+        }],
+        series: Some("Frankenstein Cycle".into()),
+        formats: vec!["EPUB".into()],
+        ..Default::default()
+    }
+}
+
+/// A physical-only book: no value for any filterable field.
+fn bare() -> EbookMetadata {
+    EbookMetadata::default()
+}
+
+fn verdict(
+    field: FilterField,
+    mode: FilterMode,
+    values: &[&str],
+    book: &EbookMetadata,
+) -> Option<bool> {
+    filters_with(vec![FilterClause::new(field, mode, values)]).matches(book)
+}
+
+#[test]
+fn view_filters_matches_include_tag_keeps_books_with_any_listed_value() {
+    let values = ["horror", "romance"];
+    let second_only = EbookMetadata {
+        subjects: vec!["romance".into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &values, &second_only),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_tag_keeps_only_books_without_a_listed_value() {
+    let values = ["horror", "romance"];
+    let second_only = EbookMetadata {
+        subjects: vec!["romance".into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Exclude, &values, &second_only),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_include_genre_keeps_books_with_any_listed_value() {
+    let values = ["Fantasy", "Sci-Fi"];
+    let second_only = EbookMetadata {
+        genres: vec!["Sci-Fi".into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Genre, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Genre,
+            FilterMode::Include,
+            &values,
+            &second_only
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Genre, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_genre_keeps_only_books_without_a_listed_value() {
+    let values = ["Fantasy", "Sci-Fi"];
+    let second_only = EbookMetadata {
+        genres: vec!["Sci-Fi".into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Genre, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Genre,
+            FilterMode::Exclude,
+            &values,
+            &second_only
+        ),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Genre, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_include_author_keeps_books_with_any_listed_creator() {
+    let values = ["Mary Shelley", "Bram Stoker"];
+    let second_only = EbookMetadata {
+        creators: vec![Contributor {
+            name: "Bram Stoker".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Author, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Author,
+            FilterMode::Include,
+            &values,
+            &second_only
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Author, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_author_keeps_only_books_without_a_listed_creator() {
+    let values = ["Mary Shelley", "Bram Stoker"];
+    let second_only = EbookMetadata {
+        creators: vec![Contributor {
+            name: "Bram Stoker".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Author, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Author,
+            FilterMode::Exclude,
+            &values,
+            &second_only
+        ),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Author, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_include_series_keeps_books_in_any_listed_series() {
+    let values = ["Frankenstein Cycle", "Foundation"];
+    let second_only = EbookMetadata {
+        series: Some("Foundation".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Series, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Series,
+            FilterMode::Include,
+            &values,
+            &second_only
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Series, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_series_keeps_only_books_outside_every_listed_series() {
+    let values = ["Frankenstein Cycle", "Foundation"];
+    let second_only = EbookMetadata {
+        series: Some("Foundation".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Series, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Series,
+            FilterMode::Exclude,
+            &values,
+            &second_only
+        ),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Series, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_include_format_keeps_books_with_any_listed_format() {
+    let values = ["epub", "m4b"];
+    let second_only = EbookMetadata {
+        formats: vec!["M4B".into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Format, FilterMode::Include, &values, &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Format,
+            FilterMode::Include,
+            &values,
+            &second_only
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(FilterField::Format, FilterMode::Include, &values, &bare()),
+        Some(false)
+    );
+}
+
+#[test]
+fn view_filters_matches_exclude_format_keeps_only_books_without_a_listed_format() {
+    let values = ["epub", "m4b"];
+    let second_only = EbookMetadata {
+        formats: vec!["M4B".into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        verdict(FilterField::Format, FilterMode::Exclude, &values, &novel()),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Format,
+            FilterMode::Exclude,
+            &values,
+            &second_only
+        ),
+        Some(false)
+    );
+    assert_eq!(
+        verdict(FilterField::Format, FilterMode::Exclude, &values, &bare()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_compares_values_ascii_case_insensitively() {
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &["HORROR"], &novel()),
+        Some(true)
+    );
+    assert_eq!(
+        verdict(
+            FilterField::Format,
+            FilterMode::Include,
+            &["epub"],
+            &novel()
+        ),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_trims_clause_values() {
+    assert_eq!(
+        verdict(
+            FilterField::Tag,
+            FilterMode::Include,
+            &["  horror "],
+            &novel()
+        ),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_skips_a_clause_with_no_usable_value() {
+    assert_eq!(
+        verdict(FilterField::Tag, FilterMode::Include, &["  "], &novel()),
+        Some(true)
+    );
+}
+
+#[test]
+fn view_filters_matches_everything_when_there_are_no_clauses() {
+    assert_eq!(ViewFilters::default().matches(&bare()), Some(true));
+}
+
+#[test]
+fn view_filters_matches_intersects_clauses_across_fields() {
+    let tagged_and_by_shelley = filters_with(vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["horror"]),
+        FilterClause::new(FilterField::Author, FilterMode::Include, &["Mary Shelley"]),
+    ]);
+    assert_eq!(tagged_and_by_shelley.matches(&novel()), Some(true));
+
+    let tagged_but_not_epub = filters_with(vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["horror"]),
+        FilterClause::new(FilterField::Format, FilterMode::Exclude, &["epub"]),
+    ]);
+    assert_eq!(tagged_but_not_epub.matches(&novel()), Some(false));
+}
+
+#[test]
+fn view_filters_matches_rules_a_book_out_when_a_decidable_clause_fails_beside_a_shelf_clause() {
+    let tag_then_shelf = filters_with(vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["romance"]),
+        FilterClause::new(FilterField::Shelf, FilterMode::Include, &["7"]),
+    ]);
+    let shelf_then_tag = filters_with(vec![
+        FilterClause::new(FilterField::Shelf, FilterMode::Include, &["7"]),
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["romance"]),
+    ]);
+
+    assert_eq!(tag_then_shelf.matches(&novel()), Some(false));
+    assert_eq!(shelf_then_tag.matches(&novel()), Some(false));
+}
+
+#[test]
+fn view_filters_matches_is_undecided_when_every_decidable_clause_passes_beside_a_shelf_clause() {
+    let filters = filters_with(vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["horror"]),
+        FilterClause::new(FilterField::Shelf, FilterMode::Include, &["7"]),
+    ]);
+
+    assert_eq!(filters.matches(&novel()), None);
 }

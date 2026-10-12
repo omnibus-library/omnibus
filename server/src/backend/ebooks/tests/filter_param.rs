@@ -51,15 +51,6 @@ async fn seed_tagged_library(pool: &sqlx::SqlitePool) {
     .unwrap();
 }
 
-async fn book_uuid(pool: &sqlx::SqlitePool, title: &str) -> String {
-    let books = db::list_books(pool, "/lib").await.unwrap();
-    let book = books
-        .iter()
-        .find(|b| b.title.as_deref() == Some(title))
-        .unwrap();
-    book.unique_identifier.clone().unwrap()
-}
-
 struct Page {
     titles: Vec<String>,
     total: Option<String>,
@@ -198,6 +189,28 @@ async fn api_get_ebooks_filter_param_rejects_too_many_clauses_with_400() {
 }
 
 #[tokio::test]
+async fn api_get_ebooks_formats_param_counts_toward_the_clause_cap() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    seed_tagged_library(&pool).await;
+    let clauses = vec![
+        FilterClause::new(FilterField::Tag, FilterMode::Include, &["fantasy"]);
+        omnibus_shared::MAX_FILTER_CLAUSES
+    ];
+
+    let (status, body) = get_status(
+        &app,
+        &token,
+        &format!("formats=epub&filter={}", filter_param(&clauses)),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("at most 16 clauses"), "{body}");
+}
+
+#[tokio::test]
 async fn api_get_ebooks_formats_param_still_applies_beside_a_filter_param() {
     let (app, _state, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "alice").await;
@@ -213,6 +226,19 @@ async fn api_get_ebooks_formats_param_still_applies_beside_a_filter_param() {
 
     assert_eq!(page.titles, vec!["Alpha"]);
     assert_eq!(page.total.as_deref(), Some("1"));
+}
+
+#[tokio::test]
+async fn api_get_ebooks_formats_param_with_only_blank_entries_applies_no_filter() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    seed_tagged_library(&pool).await;
+
+    let page = get_page(&app, &token, "formats=,%20,&limit=50").await;
+
+    assert_eq!(page.titles.len(), ALL_TITLES.len());
+    assert_eq!(page.total.as_deref(), Some("4"));
 }
 
 #[tokio::test]
@@ -233,7 +259,7 @@ async fn api_get_ebooks_filter_param_ignores_another_readers_private_shelf() {
             visibility: Visibility::Private,
             match_mode: None,
             rules: vec![],
-            book_uuids: vec![book_uuid(&pool, "Alpha").await],
+            book_uuids: vec![db::test_support::uuid_by_scan_key(&pool, "alpha.epub").await],
         },
     )
     .await

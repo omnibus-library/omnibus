@@ -1,25 +1,41 @@
-//! Toolbar (Stack series + view mode + sort key + sort direction) for the landing page.
+//! Toolbar (Stack series + view mode + sort key + sort direction) and the
+//! filter chip bar beneath it, for the landing page.
 //!
 //! Stateless: emits a new [`ViewPrefs`] through the parent's `on_change`
 //! handler so [`super::LandingPage`] owns the canonical signal.
 
 use dioxus::prelude::*;
-use omnibus_shared::{SortDir, SortKey, ViewMode, ViewPrefs};
+use omnibus_shared::{SortDir, SortKey, ViewFilters, ViewMode, ViewPrefs};
+
+use crate::components::{FilterBar, ShelfList};
 
 use super::sorting::{
     default_dir_for, sort_key_from_value, sort_key_label, sort_key_value, toggle_dir, SORT_KEYS,
 };
 use super::stack_toggle::{StackToggle, StackToggleView};
 
+/// `shelves` is what the filter bar names its shelf chips from.
 #[component]
 pub(super) fn Toolbar(
     prefs: ViewPrefs,
+    shelves: ShelfList,
     sort_lock: Option<&'static str>,
     stack: StackToggleView,
     on_change: EventHandler<ViewPrefs>,
     on_stack_toggle: EventHandler<()>,
 ) -> Element {
     let view_mode = prefs.view_mode;
+    let filters = prefs.filters.clone();
+    let viewer_id = crate::use_current_user_summary()().map(|u| u.id);
+    let set_filters = {
+        let prefs = prefs.clone();
+        move |filters: ViewFilters| {
+            on_change.call(ViewPrefs {
+                filters,
+                ..prefs.clone()
+            })
+        }
+    };
 
     rsx! {
         div { class: "lib-toolbar", role: "toolbar", "data-testid": "lib-toolbar",
@@ -41,6 +57,8 @@ pub(super) fn Toolbar(
                 }
             }
         }
+        // A sibling of the toolbar so the header row wraps it onto its own line.
+        FilterBar { filters, shelves, viewer_id, on_change: set_filters }
     }
 }
 
@@ -149,6 +167,8 @@ fn SortControls(prefs: ViewPrefs, locked: bool, on_change: EventHandler<ViewPref
 // mount the toolbar through a tiny prop-only harness.
 #[cfg(all(test, feature = "server"))]
 mod tests {
+    use omnibus_shared::{FilterClause, FilterField, FilterMode, ViewFilters};
+
     use super::*;
     use crate::test_support::render;
 
@@ -157,12 +177,14 @@ mod tests {
     #[component]
     fn ToolbarHarness(
         prefs: ViewPrefs,
+        shelves: ShelfList,
         sort_lock: Option<&'static str>,
         stack: StackToggleView,
     ) -> Element {
         rsx! {
             Toolbar {
                 prefs,
+                shelves,
                 sort_lock,
                 stack,
                 on_change: move |_| {},
@@ -193,7 +215,7 @@ mod tests {
         stack: StackToggleView,
     ) -> String {
         render(rsx! {
-            ToolbarHarness { prefs, sort_lock, stack }
+            ToolbarHarness { prefs, shelves: ShelfList::Pending, sort_lock, stack }
         })
     }
 
@@ -320,5 +342,42 @@ mod tests {
         assert!(html.contains("role=\"alert\""));
         // SSR escapes the apostrophe, so match the HTML-entity form.
         assert!(html.contains("Couldn&#39;t save Stack series."));
+    }
+
+    #[test]
+    fn toolbar_renders_the_filter_bar_in_grid_mode() {
+        let html = render_toolbar(ViewPrefs::default());
+
+        assert!(html.contains("data-testid=\"lib-filter-bar\""), "{html}");
+        assert!(html.contains("data-testid=\"filter-add\""));
+    }
+
+    #[test]
+    fn toolbar_renders_the_filter_bar_in_table_mode() {
+        let prefs = ViewPrefs {
+            view_mode: ViewMode::Table,
+            ..ViewPrefs::default()
+        };
+        let html = render_toolbar(prefs);
+
+        assert!(html.contains("data-testid=\"lib-filter-bar\""), "{html}");
+    }
+
+    #[test]
+    fn toolbar_draws_a_chip_for_each_clause_in_the_prefs() {
+        let prefs = ViewPrefs {
+            filters: ViewFilters {
+                clauses: vec![FilterClause::new(
+                    FilterField::Format,
+                    FilterMode::Exclude,
+                    &["pdf"],
+                )],
+            },
+            ..ViewPrefs::default()
+        };
+        let html = render_toolbar(prefs);
+
+        assert!(html.contains("Format excludes any of PDF"), "{html}");
+        assert!(html.contains("data-testid=\"filter-clear-all\""));
     }
 }

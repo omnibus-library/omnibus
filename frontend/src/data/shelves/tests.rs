@@ -21,7 +21,6 @@ fn shelf_filter() -> ViewFilters {
             mode: FilterMode::Include,
             values: vec!["12".into()],
         }],
-        ..Default::default()
     }
 }
 

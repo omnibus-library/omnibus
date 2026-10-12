@@ -17,6 +17,8 @@ mod body;
 mod header;
 #[cfg(feature = "mobile")]
 mod mobile;
+#[cfg(not(feature = "mobile"))]
+mod narrow;
 
 #[cfg(not(feature = "mobile"))]
 use body::{back_crumb, ShelfBodySignals, WebShelfBody};

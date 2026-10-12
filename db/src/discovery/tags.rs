@@ -12,7 +12,7 @@ use super::DiscoveryError;
 /// Maximum number of tags returned from [`get_tag_cloud`]. Caps the
 /// payload so a Calibre dump with 10k+ unique subjects can't blow up
 /// the client or stall the SQLite pool on serialization.
-const TAG_CLOUD_LIMIT: i64 = 500;
+const TAG_CLOUD_LIMIT: i64 = omnibus_shared::TAG_CLOUD_LIMIT as i64;
 
 /// Return up to [`TAG_CLOUD_LIMIT`] tags with their book counts, ordered
 /// by count descending then name ascending. Serves `/api/tags` and the

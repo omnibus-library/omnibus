@@ -54,6 +54,12 @@ pub(super) struct FetchSignals {
     /// until it flips, so the first request carries the viewer's own sort
     /// instead of [`omnibus_shared::ViewPrefs::default`].
     pub(super) prefs_ready: Signal<bool>,
+    /// The reader edited the prefs before a page-1 response named the library,
+    /// so no authoritative key holds those edits yet.
+    pub(super) prefs_unsaved: Signal<bool>,
+    /// The filters the current `books` answer was fetched under. The list lags
+    /// the prefs by one fetch, so only these say what an empty `books` means.
+    pub(super) fetched_filters: Signal<ViewFilters>,
 }
 
 /// Refetch the admin-only author/tag/genre suggestion pools whenever `is_admin` changes.
@@ -131,6 +137,7 @@ pub(super) fn spawn_page_fetch_effect(
             *fetch_epoch.peek()
         };
         let url = server_url.clone();
+        let fetched_with = filters.clone();
         let has_books = !sigs.books.peek().is_empty();
         spawn(async move {
             // Keep the populated grid on screen during a revalidation
@@ -140,8 +147,8 @@ pub(super) fn spawn_page_fetch_effect(
             }
             error.set(None);
             next_cursor.set(None);
-            // Server keyset page 1 (server-side sort + filter; the
-            // full-library total rides along on the first page).
+            // Server keyset page 1 (server-side sort + filter; the total under
+            // the active filters and exclusion rides along on the first page).
             let result = data::get_ebooks_page(
                 &url,
                 sort_key,
@@ -156,7 +163,7 @@ pub(super) fn spawn_page_fetch_effect(
             if *fetch_epoch.peek() != epoch {
                 return; // a newer fetch superseded us — drop this result
             }
-            apply_browse_result(sigs, result);
+            apply_browse_result(sigs, fetched_with, result);
             loading.set(false);
         });
     });
@@ -167,9 +174,11 @@ pub(super) fn spawn_page_fetch_effect(
 /// header count.
 fn apply_browse_result(
     sigs: FetchSignals,
+    fetched_with: ViewFilters,
     result: Result<omnibus_shared::LibraryPage, data::DataError>,
 ) {
     let FetchSignals {
+        mut fetched_filters,
         mut books,
         mut stacks,
         mut next_cursor,
@@ -180,6 +189,7 @@ fn apply_browse_result(
         mut hidden,
         ..
     } = sigs;
+    fetched_filters.set(fetched_with);
     match result {
         Ok(page) => {
             lib_path.set(page.path);
@@ -353,82 +363,173 @@ pub(super) fn spawn_hero_effect(
     });
 }
 
-/// Signals the shelf-overlay fetch drives (see [`spawn_shelf_books_effect`]).
+/// Signals the shelf-overlay fetches drive (see [`spawn_shelf_members_effect`]).
 #[derive(Copy, Clone)]
 pub(super) struct ShelfFetchSignals {
-    /// `None` = no shelf selected / not loaded yet; `Some` = member list.
+    /// `None` = no shelf selected / not loaded yet; `Some` = the shelf's full
+    /// member list, which no filter narrows. It marks what the add-books
+    /// picker already holds and tells an empty shelf from a filtered-out one.
     pub(super) shelf_books: Signal<Option<Vec<EbookMetadata>>>,
     pub(super) shelf_loading: Signal<bool>,
     pub(super) shelf_error: Signal<Option<String>>,
     pub(super) shelf_epoch: Signal<u64>,
+    /// The members matching the active filters, as the server answered. `None`
+    /// while no filter applies (the full list is then what the lens draws) and
+    /// until the first narrowed answer lands.
+    pub(super) shelf_view_books: Signal<Option<Vec<EbookMetadata>>>,
+    pub(super) shelf_view_error: Signal<Option<String>>,
+    pub(super) shelf_view_epoch: Signal<u64>,
+    /// The filters `shelf_view_books` was fetched under. The list lags the
+    /// prefs by one fetch, so only these say whether it answers the filters
+    /// now asked for.
+    pub(super) shelf_view_filters: Signal<ViewFilters>,
+    /// Bumped to fetch the narrowed list again after an edit that can change
+    /// which books match, such as a bulk save.
+    pub(super) shelf_view_tick: Signal<u32>,
 }
 
-/// Fetch the selected shelf's members whenever the selection or sort axis
-/// changes, or the shelves list refetches (the `u32` tick — an edit-shelf
-/// save can change smart membership, an add-books save manual membership).
-/// Layered over the browse pipeline rather than replacing it — the
-/// always-warm browse page keeps `lib_path`, the header subtitle, and the All
-/// Books mosaic working, and makes switching back to All instant.
-pub(super) fn spawn_shelf_books_effect(
+impl ShelfFetchSignals {
+    /// The shelf's full member list.
+    pub(super) fn full(self) -> MemberList {
+        MemberList {
+            books: self.shelf_books,
+            error: self.shelf_error,
+            epoch: self.shelf_epoch,
+            scope: MemberScope::Full {
+                loading: self.shelf_loading,
+            },
+        }
+    }
+
+    /// The members matching the active filters.
+    pub(super) fn narrowed(self) -> MemberList {
+        MemberList {
+            books: self.shelf_view_books,
+            error: self.shelf_view_error,
+            epoch: self.shelf_view_epoch,
+            scope: MemberScope::Narrowed {
+                fetched_under: self.shelf_view_filters,
+            },
+        }
+    }
+}
+
+/// Which of the selected shelf's member lists a fetch keeps, and the signal
+/// only that list has.
+#[derive(Copy, Clone)]
+pub(super) enum MemberScope {
+    /// Every member, whatever the filters; `loading` is its in-flight flag.
+    Full { loading: Signal<bool> },
+    /// The members matching the filters, which are the server's to decide — a
+    /// shelf clause needs the viewer's shelves, which no client can.
+    Narrowed { fetched_under: Signal<ViewFilters> },
+}
+
+/// One member list and the signals its fetch drives.
+#[derive(Copy, Clone)]
+pub(super) struct MemberList {
+    books: Signal<Option<Vec<EbookMetadata>>>,
+    error: Signal<Option<String>>,
+    epoch: Signal<u64>,
+    scope: MemberScope,
+}
+
+/// `(pick, sort, dir, filters, refetch tick)` — every input that refetches a
+/// member list. The full list's filters are always the default.
+pub(super) type ShelfMembersKey = (ShelfSelection, SortKey, SortDir, ViewFilters, u32);
+
+/// Fetch the selected shelf's members whenever the key moves. The full list is
+/// layered over the browse pipeline rather than replacing it — the always-warm
+/// browse page keeps `lib_path`, the header subtitle, and the All Books mosaic
+/// working, and makes switching back to All instant. With no filter there is
+/// nothing for the narrowed list to fetch: the full list is what the lens
+/// draws, and the narrowed one clears.
+pub(super) fn spawn_shelf_members_effect(
     server_url: String,
-    key: Memo<(ShelfSelection, SortKey, SortDir, u32)>,
-    sigs: ShelfFetchSignals,
+    key: Memo<ShelfMembersKey>,
+    list: MemberList,
 ) {
-    let ShelfFetchSignals {
-        mut shelf_books,
-        mut shelf_loading,
-        mut shelf_error,
-        mut shelf_epoch,
-    } = sigs;
-    // The shelf whose members `shelf_books` holds or is fetching. Hook state,
-    // not a closure local: `use_effect` swaps in a fresh closure each render.
+    let MemberList {
+        mut books,
+        mut error,
+        mut epoch,
+        scope,
+    } = list;
+    // The shelf whose members `books` holds or is fetching. Hook state, not a
+    // closure local: `use_effect` swaps in a fresh closure each render.
     let mut last_pick = use_signal(|| None::<i64>);
     use_effect(move || {
-        let (selection, sort_key, sort_dir, _tick) = key();
-        // Same stale-drop idiom as `fetch_epoch`: an in-flight member fetch
-        // superseded by a newer selection/sort change discards its result.
-        let epoch = {
-            shelf_epoch.with_mut(|e| *e += 1);
-            *shelf_epoch.peek()
+        let (selection, sort_key, sort_dir, filters, _tick) = key();
+        // An in-flight fetch superseded by a newer key discards its result.
+        let this_fetch = {
+            epoch.with_mut(|e| *e += 1);
+            *epoch.peek()
         };
+        let narrowed = matches!(scope, MemberScope::Narrowed { .. });
         let ShelfSelection::Shelf(id) = selection else {
-            last_pick.set(None);
-            shelf_books.set(None);
-            shelf_loading.set(false);
-            shelf_error.set(None);
+            forget_members(last_pick, books, error, scope);
             return;
         };
+        if narrowed && filters.is_empty() {
+            forget_members(last_pick, books, error, scope);
+            return;
+        }
         // A new pick clears the previous shelf's members before fetching: the
         // sweep remount (keyed on the selection) happens at click time, so
         // leaving them in place would replay the cascade twice — once with
-        // stale data. Refetching the same shelf (a sort change, or a
-        // membership edit's tick) keeps them on screen until the answer lands,
-        // still marked loading so nothing reads them as current.
+        // stale data. Refetching the same shelf (a sort change, a membership
+        // edit's tick, a changed filter) keeps them on screen until the answer
+        // lands, still marked loading so nothing reads them as current.
         if *last_pick.peek() != Some(id) {
             last_pick.set(Some(id));
-            shelf_books.set(None);
+            books.set(None);
         }
-        shelf_loading.set(true);
+        match scope {
+            MemberScope::Full { mut loading } => loading.set(true),
+            // The last answer's failure belongs to the filters it was fetched under.
+            MemberScope::Narrowed { fetched_under } => {
+                if *fetched_under.peek() != filters {
+                    error.set(None);
+                }
+            }
+        }
         let url = server_url.clone();
         spawn(async move {
-            let result =
-                data::shelf_page(&url, id, sort_key, sort_dir, ViewFilters::default()).await;
-            if *shelf_epoch.peek() != epoch {
+            let result = data::shelf_page(&url, id, sort_key, sort_dir, filters.clone()).await;
+            if *epoch.peek() != this_fetch {
                 return;
             }
             match result {
                 Ok(page) => {
-                    shelf_error.set(None);
-                    shelf_books.set(Some(page.books));
+                    error.set(None);
+                    books.set(Some(page.books));
                 }
                 Err(e) => {
-                    shelf_error.set(Some(e.to_string()));
-                    shelf_books.set(Some(Vec::new()));
+                    error.set(Some(e.to_string()));
+                    books.set(Some(Vec::new()));
                 }
             }
-            shelf_loading.set(false);
+            match scope {
+                MemberScope::Full { mut loading } => loading.set(false),
+                MemberScope::Narrowed { mut fetched_under } => fetched_under.set(filters),
+            }
         });
     });
+}
+
+/// Drop a list's members and failure: no shelf is picked, or no filter applies.
+fn forget_members(
+    mut last_pick: Signal<Option<i64>>,
+    mut books: Signal<Option<Vec<EbookMetadata>>>,
+    mut error: Signal<Option<String>>,
+    scope: MemberScope,
+) {
+    last_pick.set(None);
+    books.set(None);
+    error.set(None);
+    if let MemberScope::Full { mut loading } = scope {
+        loading.set(false);
+    }
 }
 
 /// Web-only: arm an `IntersectionObserver` on the load-more sentinel; re-arms after each page append.

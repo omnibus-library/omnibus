@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use omnibus_db as db;
-use omnibus_shared::ViewFilters;
+use omnibus_shared::{FilterClause, FilterField, FilterMode, ViewFilters};
 
 use super::EbooksQuery;
 
@@ -26,7 +26,14 @@ pub(super) fn request_filters(q: &EbooksQuery) -> Result<ViewFilters, String> {
         Some(raw) => ViewFilters::from_query_param(raw)?,
         None => ViewFilters::default(),
     };
-    filters.formats = q.formats.as_deref().map(parse_formats).unwrap_or_default();
+    let values = q.formats.as_deref().map(parse_formats).unwrap_or_default();
+    if !values.is_empty() {
+        filters.clauses.push(FilterClause {
+            field: FilterField::Format,
+            mode: FilterMode::Include,
+            values,
+        });
+    }
     filters.validate()?;
     Ok(filters)
 }

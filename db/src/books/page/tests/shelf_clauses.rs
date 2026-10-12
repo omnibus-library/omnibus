@@ -83,10 +83,7 @@ fn shelf_clause(mode: FilterMode, shelf_ids: &[i64]) -> FilterClause {
 
 /// Titles on the first page of `/lib` under `clauses`, as `viewer` sees them.
 async fn titles_for(pool: &SqlitePool, viewer: Viewer, clauses: Vec<FilterClause>) -> Vec<String> {
-    let filters = ViewFilters {
-        clauses,
-        ..Default::default()
-    };
+    let filters = ViewFilters { clauses };
     let page = list_books_page(
         pool,
         &["/lib"],
@@ -258,7 +255,6 @@ async fn list_books_page_stacked_stacks_only_the_members_on_the_listed_shelf() {
     let private = manual_shelf(&pool, owner, Visibility::Private, &[&one, &two]).await;
     let filters = ViewFilters {
         clauses: vec![shelf_clause(Include, &[private])],
-        ..Default::default()
     };
 
     let page = list_books_page_stacked(
@@ -289,7 +285,6 @@ async fn count_books_page_counts_a_private_shelf_only_for_its_owner() {
     let private = manual_shelf(&pool, owner, Visibility::Private, &[&uuids[0], &uuids[1]]).await;
     let filters = ViewFilters {
         clauses: vec![shelf_clause(Include, &[private])],
-        ..Default::default()
     };
 
     let owners = count_books_page(&pool, &["/lib"], &filters, reader(owner), &[])

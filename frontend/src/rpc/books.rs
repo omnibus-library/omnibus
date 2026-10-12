@@ -59,14 +59,15 @@ pub async fn rpc_get_ebooks() -> Result<EbookLibrary> {
 ///
 /// The server owns the sort order, so the client drives `sort_key`/`sort_dir`
 /// and appends pages by feeding `next_cursor` back as `cursor`. The first page
-/// (`cursor == None`) also returns the full-library `total` (header count);
-/// later pages omit it so an infinite scroll doesn't re-pay the aggregate
-/// cost — the client caches it. `LibraryPage.facets` is always `None`.
+/// (`cursor == None`) also returns the `total` (header count) under the active
+/// `filters` and exclusion; later pages omit it so an infinite scroll doesn't
+/// re-pay the aggregate cost — the client caches it. `LibraryPage.facets` is
+/// always `None`.
 ///
 /// `exclude_formats` is the caller's hidden-formats preference (from
 /// `UserSummary::hidden_formats`) — client-passed so only the landing surface
-/// applies it, and the first page's `total`/`hidden_count` report the visible
-/// library size and the receipt.
+/// applies it, and the first page's `total`/`hidden_count` report the size of
+/// the filtered, visible library and the receipt.
 ///
 /// `stack_series` asks for the Stack series page (grid, no search, viewer preference on).
 #[post("/api/rpc/ebooks/page", pool: PoolExt, user: AuthUser)]

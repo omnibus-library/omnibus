@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ebook::EbookMetadata;
 use crate::shelves::SHELF_RULE_VALUE_MAX_LEN;
 
 #[cfg(test)]
@@ -22,7 +23,7 @@ pub enum FilterField {
     Shelf,
 }
 
-/// Most clauses a [`ViewFilters`] may carry, legacy facets included.
+/// Most clauses a [`ViewFilters`] may carry.
 pub const MAX_FILTER_CLAUSES: usize = 16;
 
 /// Most values one [`FilterClause`] may list.
@@ -53,92 +54,159 @@ impl FilterClause {
             values: values.iter().map(|v| v.to_string()).collect(),
         }
     }
+
+    /// The values that can match: trimmed, blanks dropped.
+    pub fn usable_values(&self) -> impl Iterator<Item = &str> {
+        self.values
+            .iter()
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+    }
 }
 
-/// Active library filter. The legacy facet lists are include-only and stay
-/// readable so a record persisted before `clauses` existed still loads.
+/// Active library filter: a clause list whose clauses AND together.
+///
+/// A record persisted before `clauses` existed carried one include-only facet
+/// list per field; deserializing folds those into include clauses so it still
+/// loads. Serializing writes `clauses` alone.
 ///
 /// Format values are stored lowercase (`"epub"`, `"m4b"`) since the underlying
 /// `EbookMetadata.formats` strings vary in case across sources.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "ViewFiltersWire")]
 pub struct ViewFilters {
-    #[serde(default)]
     pub clauses: Vec<FilterClause>,
+}
+
+/// Every key a stored or posted filter has ever carried.
+#[derive(Deserialize)]
+struct ViewFiltersWire {
     #[serde(default)]
-    pub authors: Vec<String>,
+    clauses: Vec<FilterClause>,
     #[serde(default)]
-    pub series: Vec<String>,
+    authors: Vec<String>,
     #[serde(default)]
-    pub formats: Vec<String>,
+    series: Vec<String>,
     #[serde(default)]
-    pub tags: Vec<String>,
+    formats: Vec<String>,
     #[serde(default)]
-    pub genres: Vec<String>,
+    tags: Vec<String>,
+    #[serde(default)]
+    genres: Vec<String>,
+}
+
+impl From<ViewFiltersWire> for ViewFilters {
+    /// One include clause per legacy facet (author, series, format, tag, genre)
+    /// that keeps a usable value, then `clauses` verbatim.
+    fn from(wire: ViewFiltersWire) -> Self {
+        let legacy = [
+            (FilterField::Author, wire.authors),
+            (FilterField::Series, wire.series),
+            (FilterField::Format, wire.formats),
+            (FilterField::Tag, wire.tags),
+            (FilterField::Genre, wire.genres),
+        ];
+        let clauses = legacy
+            .into_iter()
+            .filter_map(|(field, values)| legacy_clause(field, values))
+            .chain(wire.clauses)
+            .collect();
+        Self { clauses }
+    }
+}
+
+/// An include clause over the values of a stored facet that [`ViewFilters::validate`]
+/// would accept, so an old record never loads into a filter the API rejects.
+fn legacy_clause(field: FilterField, values: Vec<String>) -> Option<FilterClause> {
+    let values: Vec<String> = values
+        .into_iter()
+        .filter(|v| !v.trim().is_empty() && v.chars().count() <= SHELF_RULE_VALUE_MAX_LEN)
+        .take(MAX_FILTER_VALUES)
+        .collect();
+    (!values.is_empty()).then_some(FilterClause {
+        field,
+        mode: FilterMode::Include,
+        values,
+    })
 }
 
 impl ViewFilters {
-    /// `true` when neither a clause nor a legacy facet has a value.
+    /// `true` when there is no clause.
     pub fn is_empty(&self) -> bool {
         self.clauses.is_empty()
-            && self.authors.is_empty()
-            && self.series.is_empty()
-            && self.formats.is_empty()
-            && self.tags.is_empty()
-            && self.genres.is_empty()
     }
 
-    /// Legacy facets as include clauses (author, series, format, tag, genre),
-    /// then `clauses` verbatim.
-    pub fn effective_clauses(&self) -> Vec<FilterClause> {
-        let legacy = [
-            (FilterField::Author, &self.authors),
-            (FilterField::Series, &self.series),
-            (FilterField::Format, &self.formats),
-            (FilterField::Tag, &self.tags),
-            (FilterField::Genre, &self.genres),
-        ];
-        legacy
-            .into_iter()
-            .filter(|(_, values)| !values.is_empty())
-            .map(|(field, values)| FilterClause {
-                field,
-                mode: FilterMode::Include,
-                values: values.clone(),
-            })
-            .chain(self.clauses.iter().cloned())
-            .collect()
+    /// Whether `book` passes every clause, over metadata with overrides already
+    /// merged. A clause it can decide rules a book out even when a shelf clause
+    /// is present; `None` when the rest pass and a shelf clause remains, since
+    /// membership is the server's to answer and a guess would read as fact.
+    pub fn matches(&self, book: &EbookMetadata) -> Option<bool> {
+        let mut undecided = false;
+        for clause in &self.clauses {
+            match clause_matches(clause, book) {
+                Some(false) => return Some(false),
+                Some(true) => {}
+                None => undecided = true,
+            }
+        }
+        (!undecided).then_some(true)
     }
 
     /// Reject filters over the clause or value caps, or a clause no book could
-    /// be matched by. Reads [`Self::effective_clauses`], so legacy facets count.
+    /// be matched by.
     pub fn validate(&self) -> Result<(), String> {
-        let clauses = self.effective_clauses();
-        if clauses.len() > MAX_FILTER_CLAUSES {
+        if self.clauses.len() > MAX_FILTER_CLAUSES {
             return Err(format!(
                 "a filter may have at most {MAX_FILTER_CLAUSES} clauses"
             ));
         }
-        clauses.iter().try_for_each(validate_clause)
+        self.clauses.iter().try_for_each(validate_clause)
     }
 
     /// The `?filter=` value: a JSON array of [`FilterClause`], `None` when empty.
-    /// Legacy facets ride as include clauses. Not percent-encoded.
+    /// Not percent-encoded.
     pub fn to_query_param(&self) -> Option<String> {
         if self.is_empty() {
             return None;
         }
-        serde_json::to_string(&self.effective_clauses()).ok()
+        serde_json::to_string(&self.clauses).ok()
     }
 
-    /// Parse and validate a `?filter=` value into clause-only filters.
+    /// Parse and validate a `?filter=` value.
     pub fn from_query_param(raw: &str) -> Result<ViewFilters, String> {
         let clauses: Vec<FilterClause> = serde_json::from_str(raw).map_err(|e| e.to_string())?;
-        let filters = ViewFilters {
-            clauses,
-            ..Default::default()
-        };
+        let filters = ViewFilters { clauses };
         filters.validate()?;
         Ok(filters)
+    }
+}
+
+/// Mirrors the db engine: values are trimmed, compared ASCII-case-insensitively,
+/// and a clause with no usable value matches every book.
+fn clause_matches(clause: &FilterClause, book: &EbookMetadata) -> Option<bool> {
+    if clause.field == FilterField::Shelf {
+        return None;
+    }
+    if clause.usable_values().next().is_none() {
+        return Some(true);
+    }
+    let carries_one = clause
+        .usable_values()
+        .any(|wanted| holds(book, clause.field, wanted));
+    Some(carries_one == (clause.mode == FilterMode::Include))
+}
+
+/// Whether `book` carries `wanted` under `field`. Always `false` for a shelf,
+/// which the book alone can't answer; `clause_matches` settles that first.
+fn holds(book: &EbookMetadata, field: FilterField, wanted: &str) -> bool {
+    let is_wanted = |held: &str| held.eq_ignore_ascii_case(wanted);
+    match field {
+        FilterField::Tag => book.subjects.iter().any(|v| is_wanted(v)),
+        FilterField::Genre => book.genres.iter().any(|v| is_wanted(v)),
+        FilterField::Format => book.formats.iter().any(|v| is_wanted(v)),
+        FilterField::Author => book.creators.iter().any(|c| is_wanted(&c.name)),
+        FilterField::Series => book.series.as_deref().is_some_and(is_wanted),
+        FilterField::Shelf => false,
     }
 }
 
