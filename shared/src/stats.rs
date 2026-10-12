@@ -4,18 +4,10 @@
 //! [`StatsSummary`] carries the headline numbers, daily-activity heatmap,
 //! top-authors/top-tags rankings, and finished-books rail for one user.
 //!
-//! Every completion metric on [`StatsSummary`] (`books_finished`,
-//! `finished_books`, `books_per_month`, `pages_per_hour`, `length_buckets`,
-//! `previous`) shares one definition of "finished": a 100% `journal_entries` row
-//! or an explicit `book_read_status` of `finished`, never the session tables
-//! (which carry duration but no progress), counted once per book, live books
-//! only. They must not drift apart, since several render on one screen.
-//! `pages_read` is deliberately not one of them: it measures ground covered, from
-//! the forward-progress ledger.
+//! Every completion metric on [`StatsSummary`] shares the "finished" definition in its
+//! doc, never the session tables (no progress there), so they can't drift apart.
 //!
-//! [`LibrarySize`] and [`LibraryComposition`] are library-scoped, so they stay off
-//! the per-user [`StatsSummary`]: they only move on a reindex, and hanging them
-//! off it would recompute and re-send them on every period switch.
+//! `LibrarySize` and `LibraryComposition` stay off it: they only move on a reindex.
 
 use serde::{Deserialize, Serialize};
 
@@ -1058,14 +1050,12 @@ pub struct SessionLogEntry {
     pub seconds: i64,
     /// [`Self::started_at`] rendered as ISO 8601 UTC. When the sitting began.
     ///
-    /// The epoch is what clients compare and sort on; the string saves API readers
-    /// calendar arithmetic. `None` on a payload a client built itself.
+    /// `None` on a payload a client built itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at_iso: Option<String>,
     /// [`Self::ended_at`] rendered as ISO 8601 UTC. When it ended.
     ///
-    /// The epoch is what clients compare and sort on; the string saves API readers
-    /// calendar arithmetic. `None` on a payload a client built itself.
+    /// `None` on a payload a client built itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at_iso: Option<String>,
 }

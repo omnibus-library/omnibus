@@ -20,8 +20,6 @@ use omnibus_shared::{
 };
 
 /// Unix seconds as an ISO 8601 UTC stamp (`2026-09-04T03:25:36Z`), total over `i64`.
-/// Delegates to `omnibus_shared::to_iso8601` so this surface and the wire types'
-/// `_iso` siblings cannot disagree about a date.
 pub fn iso(epoch: i64) -> String {
     omnibus_shared::to_iso8601(epoch)
 }

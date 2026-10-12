@@ -76,10 +76,10 @@ pub(super) struct AvatarQuery {
 }
 
 /// Serve a user's avatar bytes. Byte-derived `ETag` with `If-None-Match` revalidation:
-/// the URL is stable per user and the bytes are replaced in place. `MEDIA_VARY` rides both
-/// the 200 and the 304, as the route authenticates by cookie, bearer, *or* `?token=`.
-/// Serves the stored thumbnail by default (every avatar is at most 80px); `?size=full`
-/// serves the original upload. The validator comes from the bytes actually served.
+/// the URL is stable per user and the bytes are replaced in place. `MEDIA_VARY` rides the
+/// 200 and the 304 (rule 09a). Serves the stored thumbnail by default (every avatar is
+/// drawn at 80px or smaller); `?size=full` serves the original upload. The validator
+/// comes from the bytes actually served.
 pub(super) async fn get_user_avatar(
     _user: MediaAuthUser,
     State(state): State<AppState>,

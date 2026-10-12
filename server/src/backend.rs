@@ -71,17 +71,16 @@ pub use process_meta::{
 };
 
 /// Per-IP rate-limit budget for `/api/search/*` and the `/api/rpc/search-*` server
-/// functions: 30 requests per 10 seconds. Each request runs four FTS5 queries plus
-/// joins, so it is tighter than the auth-endpoint default (10/60s) yet still
-/// covers a user typing into the command palette.
+/// functions, separate from the auth limiter. Each request runs four FTS5 queries plus
+/// joins; the budget still covers a user typing into the command palette.
 pub const SEARCH_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
 /// Max search requests per [`SEARCH_RATE_LIMIT_WINDOW`] per IP.
 pub const SEARCH_RATE_LIMIT_MAX: u32 = 30;
 
-/// Per-IP rate-limit budget for the binary-upload endpoints (`POST /api/ebooks/{id}/cover`,
-/// `PUT /api/authors/{id}/photo`, `PUT /api/authors/{id}/photo/url`): 10 uploads per
-/// 60 seconds. Each accepts a multi-MiB image and drives disk I/O, WebP transcoding
-/// and SQLite writes, so one principal looping could exhaust resources.
+/// Per-IP rate-limit policy for both upload routers (`routes::upload_router`: cover, journal
+/// image, avatar and author-photo writes; `routes::book_upload_router`: book and audiobook
+/// uploads): 10 requests per 60 seconds, each router in its own bucket. Each request carries
+/// a multi-MiB payload or an outbound fetch, so one principal looping could exhaust resources.
 pub const UPLOAD_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 /// Max upload requests per [`UPLOAD_RATE_LIMIT_WINDOW`] per IP.
 pub const UPLOAD_RATE_LIMIT_MAX: u32 = 10;
@@ -131,11 +130,8 @@ async fn serve_download(
     .await
 }
 
-/// The shared body of every endpoint that streams bytes off disk. Opens the file
-/// **once** and hands that handle to both the validator and the stream (see
-/// `conditional`'s module doc for the splice this closes). Preconditions settle
-/// before any byte is read; only a missing file is a 404, so a real 416 reaches the
-/// client with its `Content-Range`.
+/// The shared body of every endpoint that streams bytes off disk: one open handle for
+/// validator and bytes, preconditions before any byte, 404 only for a missing file (rule 09a).
 async fn serve_file(
     req: axum::extract::Request,
     path: &std::path::Path,

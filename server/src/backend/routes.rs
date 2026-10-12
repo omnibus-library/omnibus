@@ -570,9 +570,9 @@ fn upload_router() -> Router<AppState> {
         ))
 }
 
-/// Per-IP rate-limited router for the "add your own books" upload endpoints, sharing the
-/// image uploads' per-IP budget but kept separate from [`upload_router`]: book/audiobook
-/// payloads are far larger, so these carry their own `DefaultBodyLimit` from
+/// Per-IP rate-limited router for the "add your own books" upload endpoints: same per-IP
+/// policy as the image uploads (own bucket), kept separate from [`upload_router`] because
+/// book/audiobook payloads are far larger, so they carry their own `DefaultBodyLimit` from
 /// `OMNIBUS_MAX_UPLOAD_BYTES`. Merged outside [`super::REQUEST_TIMEOUT`]: `body_idle_timeout`
 /// bounds a client that stops sending instead.
 pub(super) fn book_upload_router(body_idle_timeout: Duration) -> Router<AppState> {

@@ -212,10 +212,10 @@ pub(crate) async fn get_ebook_chapter_text(
 }
 
 /// How far into this chapter the caller has read, in chars of the **extracted text**:
-/// the ceiling `?stop_at_progress=true` slices at. `None` means no ceiling (the reader
-/// is past this document); `Some(0)` withholds the whole chapter (the reader is before
-/// it, or their position cannot be placed); otherwise how far in they reached,
-/// approximate and deliberately rounded down.
+/// the ceiling `?stop_at_progress=true` slices at. `None` means no ceiling (past this
+/// document); `Some(0)` withholds the whole chapter (before it, or unplaceable); else
+/// how far in they reached, rounded down: the spine stats and the extracted text count
+/// the same document slightly differently, so the offset is rescaled, not used raw.
 async fn progress_cutoff(
     state: &AppState,
     user_id: i64,

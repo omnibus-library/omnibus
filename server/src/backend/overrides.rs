@@ -196,10 +196,10 @@ pub(super) async fn post_ebook_cover_from_url(
         Err(e) => return internal("resolve_book_id_by_uuid", e),
     };
 
+    let config = cover_fetch_config_for(&state, url);
     // `fetch_provider_cover`, not the bare fetch: a Google Books URL costs a second
     // request to store the full-size cover instead of its 128px thumbnail, and falls
     // back to the thumbnail when the larger one can't be shown to be the same picture.
-    let config = cover_fetch_config_for(&state, url);
     let (advertised_mime, bytes) = match db::fetch_provider_cover(url, &config).await {
         Ok(pair) => pair,
         Err(db::author_photos::FetchRemoteImageError::Http(e)) => {

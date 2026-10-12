@@ -468,9 +468,8 @@ pub(super) async fn get_ebook_file(
 }
 
 /// Resolve the book's readable file (EPUB, else CBZ, else PDF) and stream its bytes,
-/// or report the resolution failure as a 404 / 500. CORS is layered on by the caller
-/// so it covers every arm uniformly. Served via `serve_file` (so `Range` works) with
-/// no `Content-Disposition`: the reader reads inline, `/download` saves to disk.
+/// or report the resolution failure as a 404 / 500; the caller adds CORS. Supports
+/// `Range`, with no `Content-Disposition`: `/download` is the save-to-disk route.
 async fn read_ebook_file(
     state: &AppState,
     uuid: &str,

@@ -6,9 +6,12 @@
 //!
 //! `script-src` carries `'unsafe-inline'` and `'unsafe-eval'` because the Dioxus web
 //! runtime needs both (an inline hydration bootstrap with no nonce, and `Function()` in
-//! the interpreter), so it buys almost no injection protection. The CSP's value lives in
-//! the other directives: `connect-src 'self'` blocks exfiltration, and `object-src`,
-//! `base-uri`, `form-action` and `frame-ancestors` are locked down.
+//! the interpreter), so it buys almost no injection protection. `'wasm-unsafe-eval'` can't
+//! replace `'unsafe-eval'`: it permits only `WebAssembly.instantiate`, not `Function()`, so
+//! the WASM panics on init under it. The CSP's value lives in the other directives:
+//! `connect-src 'self'` blocks exfiltration, and `object-src`, `base-uri`, `form-action`
+//! and `frame-ancestors` are locked down. The `style-src`/`font-src` hosts are explained
+//! in `build_csp`.
 
 use std::sync::LazyLock;
 

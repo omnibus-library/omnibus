@@ -17,9 +17,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
 /// `Vary` value shared by every response the media handlers return (200s *and*
-/// 304s). Those endpoints accept a session cookie or an `Authorization: Bearer`
-/// header, so a cache keying only on `Cookie` could hand one bearer user's response,
-/// 304 included, to another. Defined once so the two paths can't drift.
+/// 304s); why both, and why `Authorization`: rule 09a.
 pub(super) const MEDIA_VARY: &str = "Cookie, Authorization";
 
 /// `Cache-Control` shared by every response these handlers return. `no-cache`, not
@@ -51,11 +49,8 @@ pub(super) struct Validator {
     pub(super) last_modified: SystemTime,
 }
 
-/// Open `path` and derive its validator from the handle, not the path. The tag
-/// includes the inode and nanosecond mtime, finer than the second-granular
-/// [`omnibus_shared::file_etag`] on the wire: a miss here splices a file, a miss there
-/// only delays a notification. Known residual (rule 09): an in-place overwrite
-/// preserving length and mtime still slips through.
+/// Open `path` and derive its validator (inode, nanosecond mtime, size) from the
+/// handle, not the path, so it can't drift from the bytes served (rule 09).
 pub(super) async fn open(path: &Path) -> std::io::Result<OpenFile> {
     let file = tokio::fs::File::open(path).await?;
     let meta = file.metadata().await?;
@@ -109,9 +104,7 @@ pub(super) enum Precondition {
 }
 
 /// Evaluate every precondition against `validator`, in RFC 9110 §13.2.2
-/// precedence order, and resolve `Range` against `len`. The order cannot be split
-/// across layers: a stale `If-None-Match` must yield the full body even when an
-/// `If-Modified-Since` would have matched (rule 09a).
+/// precedence order, and resolve `Range` against `len`. Never split across layers (rule 09a).
 pub(super) fn evaluate(headers: &HeaderMap, validator: &Validator, len: u64) -> Precondition {
     // 1. If-Match — strong comparison.
     if let Some(value) = header_str(headers, header::IF_MATCH) {
@@ -216,9 +209,7 @@ pub(super) struct FileResponse<'a> {
 }
 
 /// Stream `open`'s bytes as 200, 206, or 416, from the handle its validator
-/// was taken from. A 416 is answered here with the `Content-Range: bytes */{len}`
-/// a resuming client needs; reporting it as 404 would tell that client the book
-/// had disappeared.
+/// was taken from. A 416 carries `Content-Range: bytes */{len}` (rule 09a).
 pub(super) async fn serve(open: OpenFile, range: RangeOutcome, spec: FileResponse<'_>) -> Response {
     let OpenFile {
         mut file,

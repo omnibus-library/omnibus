@@ -14,11 +14,11 @@ use omnibus_shared::{LoginRequest, LoginResponse};
 
 use crate::config::Config;
 
-/// The complete set of mutating requests this crate may issue, per
-/// `.claude/rules/08-offline-writes.md`. Non-`GET` requests go through
+/// The complete set of mutating requests this crate may issue, per rule 08
+/// (`.claude/rules/08-offline-writes.md`). Every write but `login()` goes through
 /// [`OmnibusClient::write_json`] / [`OmnibusClient::write_no_content`], which assert
-/// membership here (`{param}` matches one path segment) and fail before leaving
-/// the crate. Never add settings, commands or API-token endpoints.
+/// membership here (`{param}` matches one path segment) and fail before sending.
+/// Never add instance configuration (settings, SMTP, API keys), commands or API-token endpoints.
 pub const WRITE_ALLOWLIST: &[&str] = &[
     // The session itself (the one write the read-only crate shipped with).
     "POST /api/auth/login",

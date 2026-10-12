@@ -213,9 +213,8 @@ async fn thumb_cache_hit_response(
 }
 
 /// Fire-and-forget mtime bump so `evict_if_over_cap` treats this thumb as
-/// recently used (LRU). Detached via `tokio::spawn` so it never adds latency, but
-/// a panic or cancellation is logged rather than dropped. Called on both the 200
-/// and 304 paths: a revalidated thumb is still a used one.
+/// recently used (LRU); never adds latency. Called on both the 200 and 304
+/// paths: a revalidated thumb is still a used one.
 fn spawn_touch_thumb(id: i64, size: db::ThumbSize, last_modified_epoch: i64) {
     tokio::spawn(async move {
         if let Err(join_err) = tokio::task::spawn_blocking(move || {

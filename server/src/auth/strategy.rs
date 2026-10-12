@@ -24,8 +24,7 @@ pub struct AuthenticatedUser {
 
 /// Contract for a pluggable auth backend. Implementations do the crypto + DB
 /// lookup; session issuing and cookie/bearer plumbing stay in the handler layer,
-/// so every strategy lands sessions the same way. Consumers must hold a concrete
-/// strategy type: there is no `dyn AuthStrategy` (see the module docs).
+/// so every strategy lands sessions the same way.
 pub trait AuthStrategy: Send + Sync {
     /// Short stable tag for logs and admin UI (`"password"`, `"oidc"`, …).
     fn kind(&self) -> &'static str;

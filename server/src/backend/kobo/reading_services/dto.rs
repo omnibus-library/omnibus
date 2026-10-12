@@ -203,9 +203,10 @@ fn parse_delete(entry: &Value) -> Option<String> {
 }
 
 /// Map a device color onto the closed Omnibus palette. Tries a Kobo firmware hex
-/// swatch first (what [`color_to_kobo`] emits and what a real device sends, see
-/// `docs/kobo.md`), then falls back to CSS-style names so an older-shaped value still
-/// parses. Unknown names, unrecognized hex, and a missing field all land on amber.
+/// swatch first (what [`color_to_kobo`] emits and, per a reference client but unproven
+/// by a captured device, what a real device sends; see `docs/kobo.md`), then falls back
+/// to CSS-style names so an older-shaped value still parses. Unknown names, unrecognized
+/// hex, and a missing field all land on amber.
 pub fn color_from_kobo(raw: Option<&str>) -> HighlightColor {
     let Some(raw) = raw else {
         return HighlightColor::Amber;

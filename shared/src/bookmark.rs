@@ -24,8 +24,7 @@ pub struct Bookmark {
     pub created_at: i64,
     /// [`Self::created_at`] rendered as ISO 8601 UTC. When it was made.
     ///
-    /// The epoch is what clients compare and sort on; the string saves API readers
-    /// calendar arithmetic. `None` on a payload a client built itself.
+    /// `None` on a payload a client built itself.
     #[serde(default)]
     pub created_at_iso: Option<String>,
     /// Spine document this anchor sits in, resolved from its CFI. `None`

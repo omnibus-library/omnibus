@@ -52,7 +52,7 @@ mod server {
 
     /// Bind the configured address and serve, owning the serve call rather than handing the
     /// router to `dioxus::serve`. The address comes from `dioxus::cli_config`, so
-    /// `dx serve --addr` and the Docker image's `IP`/`PORT` work as before; the debug-only
+    /// `dx serve --addr` and the Docker image's `IP`/`PORT` set it; the debug-only
     /// subsecond hot-patch loop is given up. See [`omnibus::serve::serve_with_peer_addresses`]
     /// for why the serve step is hand-rolled.
     pub(crate) fn serve() -> anyhow::Result<()> {
@@ -281,7 +281,7 @@ mod server {
         auth: Arc<rate_limit::RateLimiter>,
         /// Prefix-scope the auth limiter to credential-handling endpoints only.
         /// `/api/auth/me` is an authenticated read of the caller's own row with no brute-force
-        /// surface, so sharing `/login`'s 10-req/60s bucket just throttled legitimate UI
+        /// surface, so sharing `/login`'s 10-req/60s bucket would throttle legitimate UI
         /// rendering (and parallel Playwright workers on one loopback IP). Logout stays
         /// limited, as a stolen token could otherwise be used to DoS revoke endpoints.
         auth_prefixes: Arc<Vec<&'static str>>,
@@ -426,7 +426,6 @@ mod server {
             std::env::var("OMNIBUS_SECURE_COOKIES").ok().as_deref(),
         );
         let mut router = router;
-        // `SetResponseHeaderLayer` is one layer per header, hence the fold.
         for layer in security_headers::baseline_layers() {
             router = router.layer(layer);
         }

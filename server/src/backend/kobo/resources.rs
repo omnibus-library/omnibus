@@ -94,8 +94,8 @@ pub async fn download(
 /// Record that `auth`'s device now holds this book — the gate `ack_served` checks before
 /// a later `GET .../annotations` may advance its watermark — and give any web-origin
 /// annotation still waiting on a KEPUB cache one more chance to downsync. Call only once
-/// the response actually delivered the file. Best-effort and non-fatal: annotation
-/// bookkeeping must never become an error the device retries.
+/// the response delivered the file or a 304 confirmed the device holds it. Best-effort and
+/// non-fatal: annotation bookkeeping must never become an error the device retries.
 async fn record_download_state(
     state: &AppState,
     auth: &KoboAuthUser,

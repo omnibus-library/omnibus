@@ -23,8 +23,7 @@ pub struct PhysicalCopy {
     pub checked_in_at: i64,
     /// [`Self::checked_in_at`] rendered as ISO 8601 UTC. When the copy was checked in.
     ///
-    /// The epoch is what clients compare and sort on; the string saves API readers
-    /// calendar arithmetic. `None` on a payload a client built itself.
+    /// `None` on a payload a client built itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked_in_at_iso: Option<String>,
 

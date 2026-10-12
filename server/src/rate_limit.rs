@@ -58,8 +58,8 @@ impl RateLimiter {
         Self::with_policy(Duration::from_secs(WINDOW_SECS), MAX_REQUESTS)
     }
 
-    /// Construct a limiter with an explicit `(window, max requests)` policy (the search family
-    /// uses a tighter 30 / 10s). Otherwise identical to [`RateLimiter::new`]; the same `Arc` can
+    /// Construct a limiter with an explicit `(window, max requests)` policy, as the search
+    /// family does. Otherwise identical to [`RateLimiter::new`]; the same `Arc` can
     /// be shared across REST and RPC routers ([`rate_limit_by_ip`], [`rate_limit_paths`]) so
     /// both consume from one per-IP budget.
     pub fn with_policy(window: Duration, max: u32) -> Self {
@@ -179,7 +179,7 @@ pub async fn rate_limit_by_ip(
 /// prefixes passes through, for routers mixing limited and unlimited routes (e.g. the
 /// dioxus RPC router, where only `/api/rpc/search-*` is throttled). The bucket map is the
 /// passed-in limiter's, so `main.rs` shares one `Arc` with the REST `/api/search/*` layer for
-/// one per-IP budget. The auth allow-list deliberately omits `/api/auth/me`.
+/// one per-IP budget.
 pub async fn rate_limit_paths(
     State((limiter, prefixes)): State<(Arc<RateLimiter>, Arc<Vec<&'static str>>)>,
     req: Request,

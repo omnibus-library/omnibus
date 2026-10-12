@@ -110,8 +110,7 @@ pub(super) async fn get_library_size(_user: AuthUser, State(state): State<AppSta
 /// Set, change, or clear the caller's annual reading goal. `year` defaults to the server's
 /// current calendar year and `kind` to `books`, so the usual body is `{"target": 24}`; a
 /// `null` / absent `target` clears the goal. Returns the resulting goal (`null` once cleared)
-/// with progress recomputed. Account configuration under rule 08: never queued by an offline
-/// outbox, so clients call it directly and disable the control offline.
+/// with progress recomputed. Never queued offline (rule 08: account configuration).
 pub(super) async fn put_stats_goal(
     user: AuthUser,
     State(state): State<AppState>,
@@ -137,9 +136,8 @@ pub(super) async fn put_stats_goal(
 
 /// Set, change, or clear one of the caller's daily reading goals. The body names its `kind`
 /// (`pages` or `minutes`); an absent `target` clears that kind, leaving the other and the
-/// annual goal alone. Returns **both** daily goals with today's progress recomputed. Its
-/// own route, as growing `PUT /api/stats/goal`'s response would break shipped iOS builds.
-/// Account configuration under rule 08, like the annual goal: never queued offline.
+/// annual goal alone. Returns **both** daily goals with today's progress recomputed.
+/// Never queued offline (rule 08: account configuration).
 pub(super) async fn put_stats_daily_goal(
     user: AuthUser,
     State(state): State<AppState>,
@@ -160,9 +158,7 @@ pub(super) async fn put_stats_daily_goal(
 }
 
 /// What the library is made of — format, language, publisher, publication decade, and
-/// genre. Its own route, like [`get_library_size`]: the answer is library-wide and only
-/// moves on a reindex, so carrying it on [`get_stats`] would recompute it every period
-/// switch. The auth extractor still applies, as the library isn't public.
+/// genre. Its own route for the same reason as [`get_library_size`]; the auth extractor still applies.
 pub(super) async fn get_library_composition(
     _user: AuthUser,
     State(state): State<AppState>,

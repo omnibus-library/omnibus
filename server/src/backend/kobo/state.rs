@@ -26,9 +26,9 @@ fn reject_oversized_state_request(body: &dto::StateRequest) -> Option<Response> 
 
 /// `PUT library/<uuid>/state` — persist the device's reading state: `StatusInfo` into
 /// `book_read_status`, the `CurrentBookmark` into `reading_progress` (percent, verbatim
-/// `KoboSpan`, a derived `epub_cfi` when the cached KEPUB allows) at the device's own
-/// event time, and `Statistics` for echo only (never aggregated into `db::stats`). One
-/// transaction covers the batch: a DB failure rolls back all; `BookNotFound` is skipped.
+/// `KoboSpan`, a derived `epub_cfi` when the cached KEPUB allows) at the device's event
+/// time (else server-now), and `Statistics` for echo only (never aggregated into `db::stats`).
+/// One transaction covers the batch: a DB failure rolls back all; `BookNotFound` is skipped.
 pub async fn put_state(
     auth: KoboAuthUser,
     State(state): State<AppState>,

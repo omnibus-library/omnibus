@@ -83,9 +83,9 @@ pub(super) fn book_entry(book: &EbookMetadata) -> Entry {
 }
 
 /// The acquisition download link `(href, mime)` for `book`, chosen by its first matching
-/// known format, in the fallback order `/api/ebooks/{uuid}/file` uses (EPUB, else CBZ),
-/// extended with the audiobook formats. `None` when the book carries no format this
-/// catalog can link to (e.g. a physical-only entry). Returns a bare tuple so
+/// known format, in the fallback order `/api/ebooks/{uuid}/file` uses (EPUB, else CBZ,
+/// else PDF), extended with the audiobook formats. `None` when the book carries no format
+/// this catalog can link to (e.g. a physical-only entry). Returns a bare tuple so
 /// `opds::json_entries` builds the same link as its own JSON `Link` type.
 pub(super) fn download_link(uuid: &str, book: &EbookMetadata) -> Option<(String, &'static str)> {
     let has = |fmt: &str| book.formats.iter().any(|f| f.eq_ignore_ascii_case(fmt));

@@ -264,9 +264,7 @@ pub fn new_entitlement(
 /// timestamp. A zero clock means "no such row" and stays unstamped, not `1970-01-01`;
 /// `Statistics` is omitted for a book no device has reported totals for.
 pub fn reading_state(uuid: &str, book_ts: &str, state: Option<&KoboBookState>) -> ReadingState {
-    // Every sub-object below is stamped from its own clock: an unstamped one loses the
-    // device's comparison and is silently dropped, so `book_ts` is only the fallback
-    // for a book with no state at all.
+    // An unstamped sub-object loses the device's comparison and is silently dropped.
     let last_modified = state
         .map(|s| rfc3339(s.state_updated_at))
         .unwrap_or_else(|| book_ts.to_owned());

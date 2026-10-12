@@ -3,13 +3,7 @@
 //! [`super::BookFileInfo`], and compared by offline clients to learn that a
 //! downloaded copy is stale.
 //!
-//! The tag is deliberately the same `(mtime_epoch, size_bytes)` pair the reindex
-//! diff keys on, so "the validator moved" and "the indexer classified this
-//! Changed" cannot drift apart. A stored column would be a second copy every write
-//! path must bump, and a content hash would re-read every audiobook on each scan.
-//! Second granularity is enough because it is only compared against itself across
-//! a reindex; the request-time `If-Range` validator on the media endpoints is a
-//! separate, stronger thing.
+//! Why this stat pair, and not a stored column or a content hash: rule 09 (content validators).
 
 /// Entity tag for a library file, derived from the `(mtime_epoch, size_bytes)`
 /// pair recorded on `book_files` / `book_file_parts`. `None` for the indexer's

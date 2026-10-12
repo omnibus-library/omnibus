@@ -55,8 +55,7 @@ pub fn normalize_isbn(raw: &str) -> Result<String, IsbnError> {
 }
 
 /// Validate an ISBN-10: nine digits + a check digit (0–9 or `X` = 10), where
-/// the weighted sum (weights 10..1) is divisible by 11. Unlike
-/// `MetadataOverrides::validate`'s format-only check, this verifies the check digit.
+/// the weighted sum (weights 10..1) is divisible by 11.
 pub fn validate_isbn10(s: &str) -> Result<(), IsbnError> {
     let mut sum = 0u32;
     for (i, c) in s.chars().enumerate() {
