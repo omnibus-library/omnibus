@@ -18,7 +18,7 @@ use sqlx::SqlitePool;
 
 use crate::auth::AuthUser;
 use crate::http_errors::internal;
-use crate::rate_limit::RateLimiter;
+use crate::rate_limit::{RateLimiter, RateLimits};
 
 mod account;
 mod admin_health;
@@ -267,6 +267,8 @@ pub struct AppState {
     /// `AppState` via [`AppState::new_with_remote_image_config`] with the
     /// flag flipped on; production code must never do this.
     remote_image_config: Arc<db::author_photos::RemoteImageConfig>,
+    /// Whether the per-IP limiters built from this state enforce their budgets.
+    rate_limits: RateLimits,
 }
 
 impl AppState {
@@ -277,6 +279,15 @@ impl AppState {
             pool,
             worker,
             remote_image_config: Arc::new(db::author_photos::RemoteImageConfig::default()),
+            rate_limits: RateLimits::default(),
+        }
+    }
+
+    /// Replace the rate-limit switch; `new` defaults to `Enforced`.
+    pub fn with_rate_limits(self, limits: RateLimits) -> Self {
+        Self {
+            rate_limits: limits,
+            ..self
         }
     }
 
@@ -309,6 +320,11 @@ impl AppState {
     /// SSRF guard config consulted before fetching admin-supplied URLs.
     pub fn remote_image_config(&self) -> &db::author_photos::RemoteImageConfig {
         &self.remote_image_config
+    }
+
+    /// Whether the per-IP limiters wired from this state enforce or admit everything.
+    pub fn rate_limits(&self) -> RateLimits {
+        self.rate_limits
     }
 }
 

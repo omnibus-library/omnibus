@@ -2,7 +2,8 @@
 //!
 //! Fixed-window counter keyed on the request's peer IP — or, with
 //! `OMNIBUS_TRUST_FORWARDED_FOR=1`, on the rightmost `X-Forwarded-For` hop.
-//! Mounted per-router in `server/src/main.rs`.
+//! Mounted per-router in `server/src/main.rs`. A debug build can switch every
+//! limiter off with `OMNIBUS_DEV_DISABLE_RATE_LIMITS` ([`RateLimits`]), decided once at boot.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -23,6 +24,42 @@ pub const WINDOW_SECS: u64 = 60;
 pub const MAX_REQUESTS: u32 = 10;
 /// Maximum number of tracked IPs before stale buckets are pruned.
 const MAX_BUCKETS: usize = 10_000;
+/// Env var that turns every per-IP limiter off in a debug build.
+pub const DEV_DISABLE_RATE_LIMITS_ENV: &str = "OMNIBUS_DEV_DISABLE_RATE_LIMITS";
+
+/// Whether the per-IP limiters hold their budgets or admit every request.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RateLimits {
+    /// Every limiter enforces its budget; the only mode a release build uses.
+    #[default]
+    Enforced,
+    /// Every limiter admits every request; reachable only from a debug build.
+    Disabled,
+}
+
+impl RateLimits {
+    /// Decide the switch from the dev env var's value and the build profile.
+    pub fn from_dev_flag(dev_flag: Option<&str>, release_build: bool) -> Self {
+        if release_build {
+            if dev_flag.is_some() {
+                tracing::warn!(
+                    target: "omnibus::startup",
+                    "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set in a release build; ignoring (dev-only hook)"
+                );
+            }
+            return Self::Enforced;
+        }
+        // Same truthy set as `trust_forwarded_for`.
+        if matches!(dev_flag, Some("1" | "true" | "yes")) {
+            tracing::warn!(
+                target: "omnibus::startup",
+                "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set; every per-IP rate limiter is off (dev-only hook)"
+            );
+            return Self::Disabled;
+        }
+        Self::Enforced
+    }
+}
 
 /// Returns true when the operator has opted in to consulting the client-supplied
 /// `X-Forwarded-For` header as the rate-limit key (via
@@ -49,6 +86,7 @@ pub struct RateLimiter {
     inner: Mutex<HashMap<IpAddr, Bucket>>,
     window: Duration,
     max: u32,
+    limits: RateLimits,
 }
 
 impl RateLimiter {
@@ -74,11 +112,21 @@ impl RateLimiter {
             inner: Mutex::new(HashMap::new()),
             window,
             max,
+            limits: RateLimits::Enforced,
         }
+    }
+
+    /// Set whether this limiter enforces its budget; `Disabled` admits every request.
+    pub fn with_limits(mut self, limits: RateLimits) -> Self {
+        self.limits = limits;
+        self
     }
 
     /// Record a request from `ip`; returns `false` once the per-IP bucket exceeds `max` within `window`.
     pub async fn allow(&self, ip: IpAddr) -> bool {
+        if self.limits == RateLimits::Disabled {
+            return true;
+        }
         let now = Instant::now();
         let mut map = self.inner.lock().await;
 
