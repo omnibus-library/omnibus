@@ -55,8 +55,9 @@ dev-bounce:
 # token, q quits. It auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER
 # and serves the control API on a free loopback port its header shows. Flags pass
 # through: `just kobo --state .claude/runtime/other.json` is a second device.
+[positional-arguments]
 kobo *args:
-    scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui {{args}}
+    scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
 
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).
