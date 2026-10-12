@@ -2,8 +2,8 @@
 //! [`list_books_page`] returns one page ordered by any [`SortKey`] axis,
 //! filtered by the sidebar [`ViewFilters`] and positioned by an opaque
 //! [`PageCursor`] encoding the last row's `(sort-value, series-index, id)` — so
-//! each axis stays a pure index range scan and paging never uses `OFFSET`;
-//! [`stacked`] folds each series into one row on top of it.
+//! paging never uses `OFFSET`; [`stacked`] folds each series into one row on
+//! top of it.
 
 use base64::engine::{general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use omnibus_shared::{EbookMetadata, SortDir, SortKey, ViewFilters};

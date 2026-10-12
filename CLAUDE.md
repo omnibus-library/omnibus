@@ -52,7 +52,7 @@ Alongside it, `omnibus-ios/` is a native SwiftUI client — an Xcode project, no
 
 `site/` is the marketing site served at <https://omnibus-library.github.io/omnibus/> — static HTML with no build step, published to the `gh-pages` branch by `.github/workflows/pages.yml`. Its framed app screens are stills exported from the Claude Design "Omnibus" project, not live markup; see the `site/` section of [docs/architecture.md](docs/architecture.md).
 
-Full crate descriptions, per-crate module maps, request flow diagrams, and mobile-auth details live in [docs/architecture.md](docs/architecture.md).
+Crate descriptions, request flows, and mobile-auth details live in [docs/architecture.md](docs/architecture.md); the iOS app's design lives in [docs/ios.md](docs/ios.md). Per-module detail lives only in each file's own `//!` doc (a Swift file's header comment) — `just modules <dir>` prints a directory's map from them.
 
 ## Version control
 
@@ -96,6 +96,7 @@ just lint                                                   # cargo fmt --check 
 just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules in frontend/assets)
 just lint-ts                                                # Playwright TS: biome check + tsc --noEmit (TypeScript 7), in .#e2e
 just check                                                  # lint then test
+just modules db/src                                         # module map for any directory, from each file's //! doc
 # …or per-crate (note: `cargo test --workspace` SKIPS frontend rpc/page tests,
 #  mobile, mcp, and mock-kobo — the rpc/page tests need --features server to
 #  compile the server-function bodies; mobile, mcp, and mock-kobo are out of

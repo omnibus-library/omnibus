@@ -1,7 +1,7 @@
 //! Per-row resolve-or-insert helpers for the single-valued normalized
-//! taxonomy tables (`series`, `publishers`, `languages`). Used only by the
-//! indexer write path in `sync` — kept module-private at the crate root,
-//! exposed to siblings via `pub(crate)`. The multi-valued relations
+//! taxonomy tables (`series`, `publishers`, `languages`), plus the orphan
+//! sweeps run wherever a book's last link can disappear. Kept module-private
+//! at the crate root, exposed via `pub(crate)`. The multi-valued relations
 //! (authors, tags, identifiers) are inserted in batches directly in `sync`.
 
 use std::collections::HashMap;
