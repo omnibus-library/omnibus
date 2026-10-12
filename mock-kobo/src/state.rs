@@ -1,6 +1,7 @@
 //! A device's state file: everything a real Kobo keeps on disk across restarts.
-//! Synced to disk in a temp file and renamed into place, so neither a crash nor
-//! a power loss leaves a half-written file. Owner-only: it holds the device token.
+//! Synced to disk in a temp file, renamed into place, and its directory synced,
+//! so neither a crash nor a power loss leaves a half-written file or undoes a
+//! saved one. Owner-only: it holds the device token.
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -78,9 +79,15 @@ pub async fn save(path: &Path, state: &SavedState) -> Result<(), StateError> {
         .map_err(write_error)
 }
 
-/// Create `path`'s parent, write `json` to a temp file beside it, and rename that over `path`.
+/// `path`'s parent directory, or `None` for a bare file name.
+fn parent_dir(path: &Path) -> Option<&Path> {
+    path.parent().filter(|p| !p.as_os_str().is_empty())
+}
+
+/// Create `path`'s parent, write `json` to a temp file beside it, rename that over `path`,
+/// and sync the parent so the rename survives a power loss.
 fn write_atomically(path: &Path, json: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+    if let Some(parent) = parent_dir(path) {
         std::fs::create_dir_all(parent)?;
     }
     let tmp = temp_path(path).ok_or(std::io::ErrorKind::InvalidInput)?;
@@ -89,7 +96,21 @@ fn write_atomically(path: &Path, json: &[u8]) -> std::io::Result<()> {
         // Best effort: the write's own error is the one worth reporting.
         let _ = std::fs::remove_file(&tmp);
     }
-    written
+    written?;
+    sync_parent(path)
+}
+
+/// Flush the rename onto disk: it is recorded in the parent directory, not in the file.
+#[cfg(unix)]
+fn sync_parent(path: &Path) -> std::io::Result<()> {
+    let parent = parent_dir(path).unwrap_or(Path::new("."));
+    std::fs::File::open(parent)?.sync_all()
+}
+
+/// Windows has no way to sync a directory.
+#[cfg(not(unix))]
+fn sync_parent(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Write `json` to a new file at `path`, owner-only, and flush it to disk.
