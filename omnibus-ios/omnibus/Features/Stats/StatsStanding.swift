@@ -5,9 +5,10 @@
 //  they answer "how am I doing right now"; the rest — what's open, the
 //  trailing twelve months, the library's own scale — sit under the "Not tied
 //  to the window" rule at the foot. None of them may move when the period
-//  switcher does: `current_streak_days`, `heatmap` and `books_per_month` are
-//  unwindowed on the wire, and the library figures aren't on the payload at
-//  all.
+//  switcher does: `current_streak_days` and `books_per_month` are unwindowed
+//  on the wire, `heatmap` is windowed and so is read off the all-time summary
+//  (see `StatsView.standingSummary`), and the library figures aren't on the
+//  payload at all.
 
 import SwiftUI
 

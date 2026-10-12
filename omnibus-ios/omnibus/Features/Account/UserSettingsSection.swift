@@ -63,6 +63,8 @@ struct ShareStatsToggle: Equatable {
     func isDisabled(online: Bool) -> Bool { !online || isSaving }
 }
 
+/// The native twin of the web Account page's user-settings card
+/// (`frontend/src/pages/account/user_settings.rs`).
 struct UserSettingsSection: View {
     /// Owned by `AccountView`, which seeds and saves it.
     @Binding var scrollStops: Bool

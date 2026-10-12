@@ -12,8 +12,9 @@ regardless of which agent or tool you are:
   content validators, keep-skills-fresh, end-of-session).
 - **[.claude/skills/](.claude/skills/)** — task recipes: `add-backend-route`,
   `add-playwright-flow`, `create-github-issue`, `ui-validate`.
-- **[docs/architecture.md](docs/architecture.md)** — the five-crate
-  workspace map (per-crate module maps + request-flow diagrams).
+- **[docs/architecture.md](docs/architecture.md)** — how the seven crates fit
+  together (request flows, cross-module design); per-module detail lives in
+  each file's own `//!` doc, printed by `just modules <dir>`.
 
 This file is intentionally a thin pointer. **Do not duplicate content here** — a
 drifting copy is worse than a redirect. Make changes in `CLAUDE.md` / `.claude/`.

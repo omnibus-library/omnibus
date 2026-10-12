@@ -1,6 +1,6 @@
-//! Cross-format resume read endpoint: serves the mapped "resume in the
-//! other format" candidate for a linked dual-format book. Read-only — the
-//! write side (confirm/unlink) ships with the alignment modal.
+//! Cross-format REST endpoints for a dual-format book: the mapped "resume in
+//! the other format" candidate and the alignment payload, plus the writes that
+//! confirm or remove the link, declare a sync point, and toggle follow mode.
 
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
