@@ -86,6 +86,51 @@ async fn sync_records_failed_last_sync_without_quirk_when_server_unreachable() {
 }
 
 #[tokio::test]
+async fn sync_refuses_token_wired_for_another_server() {
+    let wired = spawn_stub(Stub::default()).await;
+    let live = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against(
+        &live.origin,
+        Some(&wired.origin),
+        dir.path().join("kobo.json"),
+    );
+    let refused = LastSync::Failed {
+        quirk: None,
+        message: format!(
+            "the device token was auto-wired for {}, not {}: press w to wire one for this \
+             server, or give one with t / --token",
+            wired.origin, live.origin
+        ),
+    };
+
+    let last_sync = control.sync().await.unwrap();
+
+    assert_eq!(last_sync, refused);
+    assert_eq!(control.view().last_sync, Some(refused));
+    assert!(!control.view().syncing);
+    assert!(live.paths().is_empty());
+    assert!(wired.paths().is_empty());
+}
+
+#[tokio::test]
+async fn sync_sends_token_wired_for_the_live_server() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against(
+        &stub.origin,
+        Some(&stub.origin),
+        dir.path().join("kobo.json"),
+    );
+
+    let last_sync = control.sync().await.unwrap();
+
+    assert_eq!(last_sync, LastSync::Synced { pages: 1 });
+    let initialization = format!("/kobo/{STUB_TOKEN}/v1/initialization");
+    assert_eq!(stub.requests_to(&initialization).len(), 1);
+}
+
+#[tokio::test]
 async fn sync_appends_requests_of_failed_sync_to_request_log() {
     let stub = spawn_stub(Stub {
         store_path_status: StatusCode::NOT_FOUND,

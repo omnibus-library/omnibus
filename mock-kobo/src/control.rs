@@ -3,7 +3,7 @@
 //! half-way. A reset clears what the device holds, but Omnibus still remembers
 //! what it delivered, so the next sync sends only changes. A retarget changes
 //! the URL or token between syncs; a sync reads both under one lock, so it
-//! never mixes two targets.
+//! never mixes two targets, and never sends a token auto-wired for another URL.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -115,8 +115,12 @@ impl Control {
 
     /// Press "Sync now" against `<url>/kobo/<token>`. The sync runs on its own
     /// task, so dropping the caller (a client disconnect) never cancels it.
+    /// A token auto-wired for another server is never sent: the sync fails without a request.
     pub async fn sync(self: &Arc<Self>) -> Result<LastSync, ControlError> {
-        let (syncing, device, endpoint) = self.begin_sync()?;
+        let (syncing, device, endpoint) = match self.begin_sync()? {
+            Begun::Run(syncing, device, endpoint) => (syncing, device, endpoint),
+            Begun::Refused(refused) => return Ok(refused),
+        };
         let control = Arc::clone(self);
         let task = tokio::spawn(async move { control.run_sync(syncing, device, endpoint).await });
         match task.await {
@@ -131,17 +135,21 @@ impl Control {
 
     /// Mark a sync as running and hand back what it works on, or turn it away if one already is.
     /// The endpoint is read with the flag, so a retarget never lands between them.
-    fn begin_sync(self: &Arc<Self>) -> Result<(SyncingGuard, Device, String), ControlError> {
+    fn begin_sync(self: &Arc<Self>) -> Result<Begun, ControlError> {
         let (device, endpoint) = {
             let mut live = self.live();
             if live.syncing {
                 return Err(ControlError::SyncInProgress);
             }
+            if let Some(refused) = live.refusal() {
+                live.last_sync = Some(refused.clone());
+                return Ok(Begun::Refused(refused));
+            }
             live.syncing = true;
             let endpoint = format!("{}/kobo/{}", live.url, live.saved.token);
             (live.saved.device.clone(), endpoint)
         };
-        Ok((SyncingGuard(Arc::clone(self)), device, endpoint))
+        Ok(Begun::Run(SyncingGuard(Arc::clone(self)), device, endpoint))
     }
 
     /// Sync `device`, commit what it learned, and save; `_syncing` clears the flag when this ends.
@@ -207,11 +215,7 @@ impl Control {
                     live.saved.wired_url = Some(url);
                 }
             }
-            let needs_wire = live
-                .saved
-                .wired_url
-                .as_ref()
-                .is_some_and(|wired| *wired != live.url);
+            let needs_wire = !live.saved.token_wired_for(&live.url);
             Retargeted {
                 view: live.view(),
                 needs_wire,
@@ -240,6 +244,22 @@ impl Control {
 }
 
 impl Live {
+    /// How a sync ends before any request when the token was auto-wired for another server.
+    fn refusal(&self) -> Option<LastSync> {
+        let wired_url = self.saved.wired_url.as_deref()?;
+        if self.saved.token_wired_for(&self.url) {
+            return None;
+        }
+        Some(LastSync::Failed {
+            quirk: None,
+            message: format!(
+                "the device token was auto-wired for {wired_url}, not {}: press w to wire one \
+                 for this server, or give one with t / --token",
+                self.url
+            ),
+        })
+    }
+
     /// The device as `GET /device` reports it.
     fn view(&self) -> DeviceView {
         DeviceView {
@@ -251,6 +271,12 @@ impl Live {
             library: self.saved.device.library.clone(),
         }
     }
+}
+
+/// What `begin_sync` decided: a sync to run, or how a sync ended before it began.
+enum Begun {
+    Run(SyncingGuard, Device, String),
+    Refused(LastSync),
 }
 
 /// Clears `syncing` when a sync ends for any reason, including its task panicking.

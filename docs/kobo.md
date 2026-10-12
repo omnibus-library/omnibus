@@ -259,7 +259,8 @@ device's hardware id, URL, library, last sync and the requests it made.
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL
 that is not local (`localhost`, `127.0.0.0/8`, `::1`) is never logged in to, so
-give it a token with <kbd>t</kbd>. Edits are turned away while a sync runs.
+give it a token with <kbd>t</kbd>. Until then a sync fails without sending the
+old server's token. Edits are turned away while a sync runs.
 
 > [!NOTE]
 > Reset empties the device, but Omnibus still remembers what it delivered, so
