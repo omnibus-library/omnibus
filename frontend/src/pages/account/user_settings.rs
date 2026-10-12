@@ -146,8 +146,9 @@ fn user_setting_toggle_handler(
 #[component]
 fn UserSettingRow(setting: UserSetting) -> Element {
     let confirmed = use_signal(|| None::<bool>);
-    // Separate from `confirmed`: the same split as the self-registration toggle
-    // (`pages/settings/users/registration.rs`), which says why.
+    // Separate from `confirmed`: a click flips the DOM checkbox natively, so if the
+    // rendered value never moved, Dioxus would diff it as unchanged and a rejected
+    // save would leave the box in a state the server refused.
     let shown = use_signal(|| None::<bool>);
     let error = use_signal(|| None::<String>);
     let saving = use_signal(|| false);
