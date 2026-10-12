@@ -47,10 +47,11 @@ Cargo workspace with seven crates:
   `firmware::Quirk` citing its evidence. `mock-kobo serve` runs one device
   behind a loopback control API (`POST /actions/sync`, `GET /device`,
   `GET /requests`, `PUT /reset`; replies `{status, code, message, details}`),
-  keeps a JSON state file, and auto-wires the dev seed admin's device. Dev
-  tooling only — it ships in neither the server binary nor the Docker image —
-  and it depends on no `omnibus-*` crate, so its wire types can catch a
-  server-side shape change that a shared DTO would hide.
+  keeps a JSON state file, and auto-wires the dev seed admin's device;
+  `mock-kobo tui` drives that same device from a terminal UI while serving the
+  same API. Dev tooling only — it ships in neither the server binary nor the
+  Docker image — and it depends on no `omnibus-*` crate, so its wire types can
+  catch a server-side shape change that a shared DTO would hide.
 
 Default `cargo build` / `clippy` covers `server`, `shared`, `frontend` only.
 Mobile is excluded via workspace `default-members` because its `mobile` feature

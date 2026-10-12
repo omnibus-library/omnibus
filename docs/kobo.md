@@ -12,6 +12,9 @@ both:
 Either way the book is converted to a **KEPUB** — Kobo's own EPUB variant, which
 gets noticeably faster page turns than a plain EPUB.
 
+No device to hand? Developers can [test wireless sync with a mock
+Kobo](#testing-without-a-device) instead.
+
 ## Send a book over USB
 
 Your Kobo plugs into the computer running the browser (never the Omnibus
@@ -225,3 +228,84 @@ wrong.
 > colour. Confirming (or refuting) this needs a `.kobo/KoboReader.sqlite`
 > capture (or a packet capture) from a device that just received a coloured
 > highlight over wireless sync, per AC2 of #1629.
+
+## Testing without a device
+
+For development: `mock-kobo` is a fake Kobo e-reader that syncs against the
+same `/kobo/<token>/v1/*` routes a real device uses, so wireless sync can be
+tried, and its bugs reproduced, with no hardware.
+
+### In a terminal
+
+Start the dev server (`just dev-up`), then run:
+
+```bash
+just kobo
+```
+
+It follows this worktree's dev server, logs in as `OMNIBUS_DEV_SEED_USER`, and
+reuses or creates the Omnibus device named "Mock Kobo". The screen shows the
+device's hardware id, URL, library, last sync and the requests it made.
+
+| Key | Does |
+|---|---|
+| <kbd>s</kbd> | Sync now |
+| <kbd>r</kbd> | Reset the device: empty library, no sync token |
+| <kbd>u</kbd> | Edit the server URL (pinned and saved) |
+| <kbd>t</kbd> | Edit the device token (saved) |
+| <kbd>w</kbd> | Wire a token for the current URL, as startup does |
+| <kbd>q</kbd> / <kbd>Ctrl-C</kbd> | Quit |
+
+While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
+device at another server re-wires a token that was wired for the old one; a URL
+that is not local (`localhost`, `127.0.0.0/8`, `::1`) is never logged in to, so
+give it a token with <kbd>t</kbd>. Edits are turned away while a sync runs.
+
+> [!NOTE]
+> Reset empties the device, but Omnibus still remembers what it delivered, so
+> the next sync sends only changes (until #2743). For a full resend, remove the
+> device in **Account settings** and press <kbd>w</kbd> (or point a fresh state
+> file at it).
+
+For a second device, give it its own state file; inside the gitignored
+`.claude/runtime/`, because a state file holds the device token:
+
+```bash
+just kobo --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (other)"
+```
+
+### From a script
+
+`mock-kobo serve` runs the same device headless, printing one
+`MOCK_KOBO_READY port=<n> hardware_id=<id> state=<path> pid=<pid>` line when it
+is listening:
+
+```bash
+cargo run -p omnibus-mock-kobo -- serve
+```
+
+Both commands take the same options; each flag wins over its env var:
+
+| Flag | Env var | Meaning |
+|---|---|---|
+| `--url <origin>` | `OMNIBUS_MOCK_KOBO_URL` | The Omnibus origin to sync against; saved in the state file |
+| `--token <token>` | `OMNIBUS_MOCK_KOBO_TOKEN` | The device's path token; saved in the state file |
+| `--state <path>` | `OMNIBUS_MOCK_KOBO_STATE` | The device's JSON state file |
+| `--port <n>` | | The control API port on `127.0.0.1` (default: any free port) |
+
+With no token, the device logs in as the `user:password` in
+`OMNIBUS_DEV_SEED_USER`. `mock-kobo --help` lists the rest.
+
+### The control API
+
+Both commands serve a loopback HTTP API over the same device (the terminal UI's
+port is in its header). Every reply is `{status, code, message, details}`:
+
+| Route | Replies (`status` `code`) |
+|---|---|
+| `GET /device` | 200 `ok` |
+| `POST /actions/sync` | 200 `synced` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `GET /requests` | 200 `ok` |
+| `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| any other path | 404 `not_found` |
+| any other method on these paths | 405 `method_not_allowed` |
