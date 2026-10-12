@@ -43,24 +43,11 @@ pub struct AudiobookSyncPlan {
     pub backfill: Vec<(String, i64, i64)>,
 }
 
-/// Apply a multi-file audiobook sync plan atomically. Mirrors [`sync_books`]
-/// but writes `book_file_parts` rows in addition to `books` and `book_files`.
-///
-/// Transaction order:
-/// 1. Upsert `scan_roots` row.
-/// 2. Mark Removed files missing (drop `book_files`, retain the `books` row).
-/// 3. Relocate Moved groups: repoint path columns (including every
-///    `book_file_parts.filename`) without re-parsing.
-/// 4. Update Changed in-place: wipe `book_files` + `book_file_parts` + author
-///    link + FTS, then re-insert them.
-/// 5. Insert New.
-/// 6. Backfill `book_files.(mtime_epoch, size_bytes)` only.
-/// 7. Delete taxonomy rows left with zero books by step 4's link wipe.
-/// 8. Stamp `scan_roots.last_indexed`.
-///
-/// Post-commit: write / delete cover files (best-effort, same as sync_books).
-///
-/// [`sync_books`]: super::books::sync_books
+/// Apply a multi-file audiobook sync plan atomically, like
+/// [`sync_books`](super::books::sync_books) plus `book_file_parts` rows. In order:
+/// upsert `scan_roots`, mark Removed missing (retaining the `books` row), relocate
+/// Moved, update Changed in place, insert New, backfill stats, prune orphaned
+/// taxonomy, stamp `last_indexed`. Covers are written post-commit, best-effort.
 pub async fn sync_audiobooks(
     pool: &SqlitePool,
     library_path: &str,

@@ -10,14 +10,11 @@ use sqlx::Transaction;
 use super::super::books::SyncError;
 use super::shared::{insert_new_audiobook, rewrite_audiobook_in_place, try_attach_new_audiobook};
 
-/// Apply the New bucket: for each entry try cross-format attach first,
-/// otherwise insert a fresh `books` + `book_files` + parts + chapters +
-/// author-link + FTS row. Returns the post-commit cover triples.
-///
-/// `removed_uuids` is this same sync's Removed-bucket output — passed through
-/// to the attach heuristic so it can tell a relocation (the matched target's
-/// own group just vanished this scan) from a genuine cross-format
-/// attachment.
+/// Apply the New bucket: for each entry try cross-format attach first, otherwise
+/// insert a fresh `books` + `book_files` + parts + chapters + author-link + FTS
+/// row. Returns the post-commit cover triples. `removed_uuids` is this sync's
+/// Removed-bucket output, so the attach heuristic can tell a relocation from a
+/// genuine cross-format attachment.
 pub(super) async fn sync_audiobooks_new(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,

@@ -37,12 +37,10 @@ pub struct AudiobookGroup {
     pub format: String,
 }
 
-/// Group per-file stat entries into audiobook groups. Each `.m4b`/`.m4a`
-/// file becomes its own one-file group; `.mp3` files bucket by parent
-/// directory. Synthetic `error`-bearing entries from
-/// `stat_audiobook_library` (empty uuid) pass through untouched in their
-/// own one-part group so the legacy error-row contract is preserved at
-/// the diff layer.
+/// Group per-file stat entries into audiobook groups: each `.m4b`/`.m4a` file is
+/// its own one-file group, `.mp3` files bucket by parent directory. Synthetic
+/// `error`-bearing entries (empty uuid) from `stat_audiobook_library` pass
+/// through untouched in their own one-part group.
 pub fn group_into_books(
     entries: Vec<AudiobookStatEntry>,
     library_path_key: &str,

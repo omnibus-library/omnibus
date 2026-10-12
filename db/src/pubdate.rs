@@ -7,14 +7,10 @@
 mod tests;
 
 /// Reduce a provider-reported publication date to the shape `books.pubdate`
-/// holds for scanned books: an ISO date (`2015-08-04`), an ISO month
-/// (`2015-08`) or a bare year (`2015`). Anything else — `8/4/2015`,
-/// `August 4, 2015`, `c. 2015` — is reduced to its four-digit year, and a
-/// value carrying no year at all is dropped rather than stored.
-///
-/// Dropping is the right failure: a locale-formatted string in this column
-/// renders as `8/4/` on iOS (the first four characters) and sorts among the
-/// ISO dates by its first digit.
+/// holds for scanned books: an ISO date (`2015-08-04`), an ISO month (`2015-08`)
+/// or a bare year (`2015`). Anything else (`8/4/2015`, `c. 2015`) is reduced to
+/// its four-digit year; a value with no year is dropped, because a
+/// locale-formatted string renders as `8/4/` on iOS and mis-sorts.
 pub fn normalize_pubdate(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if let Some(iso) = iso_prefix(trimmed) {

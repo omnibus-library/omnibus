@@ -16,17 +16,15 @@ pub struct Mp4Tracks {
     pub video: usize,
 }
 
-/// Count the audio and video tracks in the container at `path`.
-///
-/// Walks `moov > trak > mdia > hdlr` seeking by box size — including a 64-bit
-/// `largesize` — so a multi-GB `mdat` ahead of `moov` (where real muxers put
-/// it) costs one seek, not a read. A `trak` with no `mdia` or an unreadable
-/// handler counts as neither kind. Errors when the file cannot be opened or
-/// carries no `moov`: that is an unreadable container, not a verdict on its
-/// tracks, and the caller reports it as such.
+/// Count the audio and video tracks in the container at `path`, walking
+/// `moov > trak > mdia > hdlr`. A `trak` with no `mdia` or an unreadable handler
+/// counts as neither kind. Errors when the file cannot be opened or has no `moov`
+/// (an unreadable container, not a verdict on its tracks).
 pub fn inspect_mp4_tracks(path: &Path) -> anyhow::Result<Mp4Tracks> {
     let mut file = std::fs::File::open(path)?;
     let file_len = file.metadata()?.len();
+    // Boxes are skipped by size (incl. 64-bit `largesize`), so a multi-GB `mdat`
+    // ahead of `moov` costs one seek, not a read.
     let Some(moov) = find_box(&mut file, file_len, b"moov") else {
         anyhow::bail!("no moov box found");
     };

@@ -3,6 +3,14 @@
 //! insert, or delete. `book_files.format` is deliberately not repointed — the
 //! classifier keys on it, so a file whose extension changed never reaches this
 //! writer. Shared by both pipelines; `sync_audiobooks` calls the same one.
+//!
+//! A relocation whose destination is already spoken for is skipped per-book (the
+//! `books` side would be refused by `idx_books_scan_key`; the ledger side keeps
+//! the same uniqueness by hand), since failing a whole reindex over one ambiguous
+//! path is worse. The skip is stable, not self-healing: the diff took the arrival
+//! out of New and the departure out of Removed, so a declined book keeps naming its
+//! old path, the next scan re-offers the same move, and the file at the destination
+//! stays unindexed until the squatting row is resolved.
 
 use sqlx::Transaction;
 
@@ -25,30 +33,11 @@ struct NewLocation<'a> {
     stem: &'a str,
 }
 
-/// Relocate every file in the Moved bucket in place.
-///
-/// Each entry names one row by uuid, resolved in two steps: the book's own
-/// `books` row first, then the `merged_uuids` ledger. Both projections feed
-/// the diff, so both can surface here, and the two write different things —
-/// an attached file's move must leave the target book's `scan_key` alone
-/// (it names a *different* file).
-///
-/// A relocation whose destination is already spoken for is logged and
-/// skipped per-book, on both branches: the `books` side would be refused by
-/// the `idx_books_scan_key` unique index, and the ledger side has no such
-/// index but must preserve the same uniqueness by hand (see
-/// `attach::attachment_scan_key_taken`). Failing a whole reindex over one
-/// ambiguous path would be worse than leaving the book where it is.
-///
-/// Skipping is stable, not self-healing, and that is the accepted cost:
-/// the diff took the arrival out of New and the departure out of Removed
-/// before the writer ever saw them, so a declined book keeps naming its old
-/// path and the next scan re-offers — and re-declines — the same move,
-/// while the file at the destination goes unindexed. It stays that way
-/// until the squatting row is resolved. Reaching this needs a book whose
-/// `scan_key` names a path its own format no longer occupies (its file went
-/// missing while a different format's attachment kept it out of the ebook
-/// projection) *and* a second file moved onto exactly that path.
+/// Relocate every file in the Moved bucket in place. Each entry names one row by
+/// uuid, resolved against the book's own `books` row first, then the
+/// `merged_uuids` ledger; an attached file's move leaves the target book's
+/// `scan_key` alone. A relocation whose destination is already taken is logged and
+/// skipped per-book, which is stable but not self-healing (see the module docs).
 pub(in crate::sync) async fn sync_moved(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,
@@ -169,27 +158,20 @@ async fn anchor_row(
     Ok(row.filter(|(_, scan_key)| !scan_key.is_empty()))
 }
 
-/// Would moving `book_id` onto `new_scan_key` collide with the
-/// `idx_books_scan_key` unique index? Checked rather than caught: the diff
-/// can't see a book scoped out of its own format projection (a book whose
-/// only remaining file is an M4B still owns its `.epub` scan_key), so this
-/// is reachable, and a pre-check keeps the transaction clean.
-///
-/// The holder is always a **stationary** row, never another entry in this
-/// same bucket, so skipping cannot deadlock a swap or a cycle. Two things
-/// rule that out: each arrival is matched at most once, so no two entries
-/// share a destination; and a departure requires its `scan_key` to be
-/// absent from disk while an arrival requires its path to be present, so an
-/// entry's destination can never be another entry's source. A real
-/// path swap leaves both paths occupied, so neither row is a departure and
-/// both classify Changed — see
-/// `diff_classifies_a_path_swap_as_changed_never_as_a_moved_cycle`.
+/// Would moving `book_id` onto `new_scan_key` collide with the `idx_books_scan_key`
+/// unique index? Checked rather than caught: the diff can't see a book scoped out
+/// of its own format projection, so this is reachable and a pre-check keeps the
+/// transaction clean. The holder is always a **stationary** row, so skipping
+/// cannot deadlock a swap or cycle (a real path swap classifies both Changed).
 async fn scan_key_taken(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,
     new_scan_key: &str,
     book_id: i64,
 ) -> Result<bool, sqlx::Error> {
+    // The holder is never another Moved entry: each arrival matches at most once,
+    // and a departure's source is absent from disk while an arrival's path is
+    // present, so no destination is another entry's source.
     let hit: Option<i64> = sqlx::query_scalar(
         "SELECT 1 FROM books WHERE library_id = ? AND scan_key = ? AND id <> ? LIMIT 1",
     )
@@ -201,13 +183,11 @@ async fn scan_key_taken(
     Ok(hit.is_some())
 }
 
-/// Repoint the `book_files` row keyed on `(book_id, old_scan_key)` — the
-/// file that actually moved — plus any `book_file_parts` hanging off it.
-///
-/// `path` is a location *override* (migration 0016): NULL means "inherit
-/// `books.path`". `force_override` says which side of that the caller is
-/// on — an attachment must always name its own directory, a native row
-/// must keep inheriting unless it already carried an override.
+/// Repoint the `book_files` row keyed on `(book_id, old_scan_key)` (the file that
+/// actually moved) plus any `book_file_parts` hanging off it. `path` is a
+/// location *override* (NULL inherits `books.path`); `force_override` says which
+/// side the caller is on: an attachment must always name its own directory, a
+/// native row keeps inheriting unless it already carried an override.
 async fn relocate_file_row(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -253,17 +233,11 @@ async fn relocate_file_row(
     relocate_file_parts(tx, book_file_id, old_scan_key, to.scan_key).await
 }
 
-/// Carry an audiobook group's `book_file_parts` along with it. Part
-/// filenames are **library-relative** — the HLS pipeline joins them onto
-/// the scan root, not onto `books.path` (see `build_concat_file`) — so each
-/// is the group's own scan_key plus whatever follows it inside the group; a
-/// single-file group's one part *is* the group path. Ebook rows have no
-/// parts, so this reads zero rows off the `UNIQUE(book_file_id, ordinal)`
-/// index and returns.
-///
-/// Done in Rust rather than one `substr`-based UPDATE so a part that
-/// doesn't actually sit under its group is skipped and logged instead of
-/// having a path invented for it.
+/// Carry an audiobook group's `book_file_parts` along with it. Part filenames are
+/// **library-relative** (the HLS pipeline joins them onto the scan root, see
+/// `build_concat_file`), so each is the group's own scan_key plus whatever follows
+/// it inside the group. Ebook rows have no parts and this reads zero rows. A part
+/// not actually under its group is skipped and logged, never given an invented path.
 async fn relocate_file_parts(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_file_id: i64,

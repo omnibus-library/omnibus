@@ -15,12 +15,11 @@ pub const PHASE_PARSING: &str = "Reading file metadata";
 /// Phase label reported while the sync writer applies the diff.
 pub const PHASE_SYNCING: &str = "Updating the library";
 
-/// One verbose progress event from a reindex: the counted state plus the
-/// phase / current-item / tally detail the worker forwards to the UI via
-/// [`omnibus_shared::TaskDetail`]. `current_item` inside `detail` is always
-/// the library directory name plus the library-relative path — never an
-/// absolute server path (the worker status feed is readable by any
-/// authenticated user).
+/// One verbose progress event from a reindex: the counted state plus the phase /
+/// current-item / tally detail the worker forwards to the UI via
+/// [`omnibus_shared::TaskDetail`]. `current_item` is the library directory name
+/// plus the library-relative path, never an absolute server path (the worker
+/// status feed is readable by any authenticated user).
 #[derive(Debug, Clone)]
 pub struct ScanUpdate {
     pub processed: u32,

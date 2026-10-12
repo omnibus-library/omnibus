@@ -18,24 +18,10 @@ use super::fs::mtime_epoch;
 const CONVERTED_ORIGIN: &str = "converted";
 
 /// Insert or refresh the `book_files` row for `book_id`'s conversion to
-/// `target_format`, whose bytes now live at `out_path` — always
-/// `super::fs::convert_path(book_id, target_format)`, the caller's own
-/// output path from a just-completed [`super::execute::convert_book`].
-///
-/// Idempotent: a second conversion of the same `(book_id, target_format)`
-/// updates the existing converted row's stat columns in place via
-/// `ON CONFLICT` against the partial unique index scoped to
-/// `origin = 'converted'` (migration 0077) — it never touches a *scanned*
-/// file already occupying that format slot.
-///
-/// `library_path`/`path`/`filename` are set so the same reconstruction
-/// `book_file_path` uses (`COALESCE(bf.library_path, l.path)` +
-/// `COALESCE(bf.path, b.path)` + `filename.format`) resolves back to
-/// exactly `out_path`: `library_path` is `out_path`'s parent (the convert
-/// cache dir) as an absolute override, `path` is the empty string so the
-/// join can't fall through to the book's own relative `books.path`, and
-/// `filename` is the bare book id — matching `convert_path`'s
-/// `<book_id>.<format>` naming.
+/// `target_format`, whose bytes now live at `out_path` (always
+/// `super::fs::convert_path(book_id, target_format)`). Idempotent: a repeat
+/// updates the converted row in place and never touches a *scanned* file already
+/// occupying that format slot.
 pub(super) async fn persist_converted_file(
     pool: &SqlitePool,
     book_id: i64,
@@ -46,6 +32,9 @@ pub(super) async fn persist_converted_file(
     let size_bytes = meta.len() as i64;
     let mtime = mtime_epoch(&meta);
     let format = target_format.to_uppercase();
+    // Set so `book_file_path`'s reconstruction (`COALESCE(bf.library_path, l.path)`
+    // + `COALESCE(bf.path, b.path)` + `filename.format`) resolves to exactly
+    // `out_path`: an empty `path` can't fall through to the book's `books.path`.
     let filename = book_id.to_string();
     let library_path = out_path
         .parent()

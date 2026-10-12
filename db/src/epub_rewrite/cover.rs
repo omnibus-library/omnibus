@@ -8,13 +8,11 @@ use std::io::Cursor;
 
 use image::ImageFormat;
 
-/// Produce cover bytes encoded to `target_mime` from an override image.
-///
-/// Returns the override bytes unchanged when it is already the target format
-/// (the common case — most covers and most uploads are JPEG). Otherwise
-/// decodes and re-encodes. Returns `None` (never an error) when the override
-/// can't be decoded or the target format can't be encoded — the caller then
-/// leaves the original cover in place rather than failing the whole export.
+/// Produce cover bytes encoded to `target_mime` from an override image. Returns
+/// the override bytes unchanged when already in the target format (the common
+/// case), otherwise re-encodes. `None` (never an error) when the override can't
+/// be decoded or the target can't be encoded; the caller then leaves the
+/// original cover in place rather than failing the whole export.
 pub(super) fn encode_cover_for(
     target_mime: &str,
     override_mime: &str,

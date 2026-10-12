@@ -22,18 +22,11 @@ pub enum MissingFilesError {
     Db(#[from] sqlx::Error),
 }
 
-/// Hard-delete books whose files have been missing longer than
-/// `retention_days`. A book is exempt while any of these hold: it carries
-/// user data (a row in one of the soft-ref user-data tables, including a
-/// physical copy, a wishlist entry, or hand-picked shelf membership), it is
-/// intentionally fileless (`is_missing_files_override = 1`), or it still
-/// anchors a cross-format attachment (`merged_uuids`). Each purged book's regenerable
-/// `metadata_overrides` row and cover files go with it. Returns the purged
-/// count.
-///
-/// Best-effort cover unlink runs off the runtime via `spawn_blocking`; a
-/// `JoinError` there is logged and swallowed — covers are a rebuildable cache,
-/// so a failed unlink must not fail the GC (mirrors `set_settings`).
+/// Hard-delete books whose files have been missing longer than `retention_days`,
+/// plus their regenerable `metadata_overrides` row and cover files. Exempt: books
+/// with user data (a soft-ref row, physical copy, wishlist entry, hand-picked
+/// shelf membership), intentionally fileless ones (`is_missing_files_override`),
+/// and ones anchoring a cross-format attachment (`merged_uuids`). Returns the count.
 pub async fn gc_books_missing_files(
     pool: &SqlitePool,
     retention_days: i64,

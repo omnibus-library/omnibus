@@ -9,13 +9,10 @@ use std::path::PathBuf;
 
 use sqlx::SqlitePool;
 
-/// Errors returned by the on-disk cover read path.
-///
-/// Today the only failure mode that surfaces here is the DB lookup that
-/// resolves a book id to its uuid + cover flags. Filesystem probes
-/// (`find_cover_file` / `find_override_cover_file`) swallow every
-/// `std::fs::read` failure and return `Ok(None)` — they don't distinguish
-/// a missing file from a permissions or I/O error.
+/// Errors returned by the on-disk cover read path. The only failure that
+/// surfaces is the DB lookup; filesystem probes (`find_cover_file` /
+/// `find_override_cover_file`) swallow every read failure into `Ok(None)`, so a
+/// missing file is indistinguishable from a permissions or I/O error.
 #[derive(Debug, thiserror::Error)]
 pub enum CoversError {
     #[error(transparent)]
@@ -151,37 +148,16 @@ pub(crate) const MAX_OVERRIDE_COVER_HEIGHT: u32 = 1200;
 /// JPEG quality used when re-encoding an override cover.
 const OVERRIDE_COVER_JPEG_QUALITY: u8 = 85;
 
-/// Normalize a user-uploaded override cover for storage, returning the mime
-/// and bytes to write.
-///
-/// Two transformations, both driven by what the *Kobo* can read — it is the
-/// one client served the stored file verbatim rather than a derived
-/// thumbnail (`kobo::resources::image`):
-///
-/// - **WebP is transcoded to JPEG.** Kobo firmware renders no cover at all
-///   for a WebP, and the cover route it fetches is literally `image.jpg`.
-///   PNG and GIF are left alone — PNG is confirmed working on-device, and
-///   re-encoding a GIF would flatten it to its first frame.
-/// - **Anything taller than [`MAX_OVERRIDE_COVER_HEIGHT`] is downscaled.**
-///
-/// Normalization is best-effort by design: an undecodable image, an SVG, or
-/// bytes in a format we don't cache pass through untouched. A cover upload
-/// must never fail because a re-encode did — the worst case of passing
-/// through is the status quo before this existed.
-///
-/// The source format is sniffed from the bytes rather than taken from
-/// `mime`, for the same reason [`write_cover_file`] does it: a WebP
-/// mislabelled `image/jpeg` is exactly the case this needs to catch. That
-/// also covers the cover-from-URL route, which funnels through the same
-/// write — a provider CDN serving WebP is the likelier source of one than a
-/// hand-picked file.
-///
-/// Decoding and re-encoding are CPU-bound; call this from the blocking pool
-/// (`write_override_cover`'s only caller already wraps it in
-/// `spawn_blocking`).
+/// Normalize a user-uploaded override cover for storage, returning the mime and
+/// bytes to write. WebP is transcoded to JPEG and anything taller than
+/// [`MAX_OVERRIDE_COVER_HEIGHT`] is downscaled, both driven by what the Kobo can
+/// read. Best-effort: an undecodable image, an SVG or an uncached format passes
+/// through untouched. CPU-bound; call from the blocking pool.
 pub(crate) fn normalize_override_cover(mime: &str, bytes: &[u8]) -> (String, Vec<u8>) {
     let passthrough = || (mime.to_owned(), bytes.to_vec());
 
+    // Sniff the bytes, not `mime`: a WebP mislabelled `image/jpeg` is the case to
+    // catch, and cover-from-URL (a provider CDN serving WebP) funnels here too.
     let Ok(guessed) = image::guess_format(bytes) else {
         return passthrough();
     };
@@ -194,6 +170,8 @@ pub(crate) fn normalize_override_cover(mime: &str, bytes: &[u8]) -> (String, Vec
         return passthrough();
     }
 
+    // Kobo firmware renders no cover for WebP (the route it fetches is `image.jpg`),
+    // so WebP becomes JPEG; PNG is confirmed working on-device and stays PNG.
     let target = match source {
         ImageFormat::Webp => ImageFormat::Jpeg,
         other => other,
@@ -326,26 +304,14 @@ pub(crate) fn find_override_cover_file(uuid: &str) -> Option<(String, Vec<u8>)> 
     None
 }
 
-/// Cheaply resolve a book's cover MIME type by checking which known
-/// extension exists on disk — unlike [`get_cover`] / [`find_cover_file`],
-/// no file bytes are read, only a handful of `stat`-class existence checks.
-/// Meant for callers (the OPDS catalog) that need an accurate `type`
-/// attribute on a cover link without paying for the full read that actually
-/// serving the file requires. Checks the override path first when
-/// `has_cover_override` is set, matching [`get_cover`]'s precedence.
-///
-/// Falls back to `image/jpeg` — the common case, and what every OPDS entry
-/// advertised before this existed — when no cover file is found under any
-/// known extension; the byte-serving endpoint 404s in that case regardless,
-/// so the advertised type is moot.
-///
-/// Deliberately synchronous `std::fs` (unlike [`get_cover`]'s
-/// `spawn_blocking`-wrapped probes): callers skip it entirely for a book
-/// with no `cover_url` (the common no-cover case), and an OPDS page is
-/// capped at a bounded book count — a few extra `stat`s per row is not the
-/// kind of hot loop `spawn_blocking`'s dispatch overhead is worth paying
-/// for. Revisit if a caller ever calls this outside that bound.
+/// Cheaply resolve a book's cover MIME type (for OPDS cover links) from which
+/// known extension exists on disk, override first when `has_cover_override`, like
+/// [`get_cover`]; no file bytes are read. Falls back to `image/jpeg` when no cover
+/// file is found (the byte-serving endpoint 404s then anyway).
 pub fn cover_mime_hint(uuid: &str, has_cover_override: bool) -> &'static str {
+    // Sync `std::fs` on purpose: callers skip no-cover books and an OPDS page is
+    // bounded, so a few `stat`s per row aren't worth `spawn_blocking`'s overhead.
+    // Revisit if a caller ever calls this outside that bound.
     let dir = covers_dir();
     if has_cover_override {
         for fmt in ImageFormat::PROBE_ORDER {
@@ -365,20 +331,11 @@ pub fn cover_mime_hint(uuid: &str, has_cover_override: bool) -> &'static str {
     ImageFormat::Jpeg.to_mime()
 }
 
-/// Load a book's cover image bytes + mime type from disk. The `id` parameter
-/// is the `books.id` primary key — the REST surface is uuid-keyed at
-/// `/api/covers/{uuid}` (`server/src/backend.rs`), where the handler resolves
-/// the uuid to an id via `resolve_book_id_by_uuid` before calling this.
-///
-/// User-uploaded override covers take precedence: when the
-/// `metadata_overrides` table flags `has_cover_override`, the override file
-/// at `covers_dir()/override-<uuid>.<ext>` is returned first. The override
-/// flag is pulled in via a `LEFT JOIN` so the hot path stays at one query.
-///
-/// Filesystem probes (`find_override_cover_file` / `find_cover_file`) are
-/// synchronous `std::fs` calls and run on the blocking pool via
-/// [`tokio::task::spawn_blocking`] so a hot cover-fetch loop doesn't pin
-/// tokio worker threads.
+/// Load a book's cover image bytes + mime type from disk. `book_id` is the
+/// `books.id` primary key (handlers resolve the REST uuid before calling this).
+/// A user-uploaded override cover takes precedence: when `metadata_overrides`
+/// flags `has_cover_override`, `covers_dir()/override-<uuid>.<ext>` is returned
+/// first.
 pub async fn get_cover(
     pool: &SqlitePool,
     book_id: i64,

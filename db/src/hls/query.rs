@@ -188,14 +188,9 @@ pub async fn get_parts_bulk(
     Ok(map)
 }
 
-/// Fetch chapter markers for every id in `book_file_ids` in one round trip
-/// (chunked under SQLite's bind cap), grouped by `book_file_id`. Returns
-/// only rows actually found in `file_chapters` — an id with no chapters (or
-/// not present in `book_files` at all) is simply absent from the returned
-/// map. Unlike [`get_chapters`]'s single-id query, which always returns a
-/// `Vec` (possibly empty) for the one id it's given, a caller here must
-/// treat a missing key as "no chapters", not panic or assume the id was
-/// invalid.
+/// Fetch chapter markers for every id in `book_file_ids` in one round trip,
+/// grouped by `book_file_id`. An id with no chapters (or no `book_files` row)
+/// is absent from the map, so treat a missing key as "no chapters".
 pub async fn get_chapters_bulk(
     pool: &SqlitePool,
     book_file_ids: &[i64],

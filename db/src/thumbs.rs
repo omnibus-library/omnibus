@@ -112,12 +112,9 @@ fn parse_thumb_name(name: &str) -> Option<(i64, ThumbSize, Option<i64>)> {
     parts.next().is_none().then_some((book_id, size, epoch))
 }
 
-/// True unless the thumbnail generated for exactly `last_modified_epoch` is
-/// on disk. A thumb for any other epoch — including one written *after* the
-/// book moved on, from a cover read before it did — is never this one.
-/// Synchronous variant — call from `spawn_blocking` contexts (the worker's
-/// encode loop). For the async request path, use [`is_stale_async`] so the
-/// metadata syscall doesn't pin a tokio worker.
+/// True unless the thumbnail generated for exactly `last_modified_epoch` is on
+/// disk (a thumb for any other epoch is never this one). Synchronous: call from
+/// `spawn_blocking`; on the async request path use [`is_stale_async`].
 pub fn is_stale(book_id: i64, size: ThumbSize, last_modified_epoch: i64) -> bool {
     std::fs::metadata(thumb_path_for(book_id, size, last_modified_epoch)).is_err()
 }
@@ -129,45 +126,26 @@ pub async fn is_stale_async(book_id: i64, size: ThumbSize, last_modified_epoch: 
         .is_err()
 }
 
-/// Bump this whenever [`write_thumbnail`]'s encode path changes (a new WebP
-/// encoder, a different quality setting, a new output format) so a client
-/// holding a validator from the old scheme is forced to re-fetch even though
-/// the book's `last_modified_epoch` never moved. This repo doesn't need to
-/// detect the encoder version dynamically, so a hand-bumped constant is
-/// enough.
-///
-/// v2: lossless `image` WebP → lossy libwebp at
-/// [`THUMB_QUALITY`]. v3: file names carry the epoch they were generated
-/// for; the bump retires every validator a client holds for a thumbnail
-/// the mtime scheme may have stranded on superseded art. A bump also purges
-/// the on-disk cache once at boot — see [`purge_stale_scheme_thumbs_once`],
-/// which is the other half of this constant's contract: the ETag alone
-/// would re-validate a client while the server kept serving the old bytes
-/// forever.
+/// Bump this whenever [`write_thumbnail`]'s encode path changes (encoder,
+/// quality, output format) so a client holding a validator from the old scheme
+/// re-fetches though `last_modified_epoch` never moved. A bump also purges the
+/// on-disk cache once at boot ([`purge_stale_scheme_thumbs_once`]); the ETag alone
+/// would revalidate a client while the server kept serving the old bytes.
 const THUMB_ENCODER_VERSION: u32 = 3;
 
-/// Derive a thumbnail's `ETag` from its freshness key — `(book_id, size,
-/// last_modified_epoch)`, the exact triple [`thumb_path_for`] names the file
-/// by — plus `version`, without touching the filesystem. A validator that
-/// cannot disagree with the freshness check it stands in for.
-///
-/// Deliberately not stat-derived: [`touch_thumb`] bumps the cached file's
-/// mtime on every cache-hit read for the LRU in [`evict_if_over_cap`], so an
-/// mtime-bearing validator would churn on every request and never produce a
-/// 304. Split out from [`thumb_etag`] so a test can vary `version`
-/// independently of [`THUMB_ENCODER_VERSION`].
-///
-/// SHA-256, not `std::hash::Hasher` — the same trap `helpers::stable_uuid`'s
-/// doc comment and `kobo::dto`'s fixed-digest derivation both flag:
-/// `DefaultHasher`'s algorithm is not guaranteed stable across toolchain
-/// versions, so a compiler bump could silently rotate every cached client's
-/// ETag and force a mass re-fetch.
+/// Derive a thumbnail's `ETag` from its freshness key `(book_id, size,
+/// last_modified_epoch)` plus `version`, without touching the filesystem. Not
+/// stat-derived: [`touch_thumb`] bumps mtime on every cache hit, so an
+/// mtime-bearing validator would never produce a 304. Split from [`thumb_etag`]
+/// so a test can vary `version`.
 fn thumb_etag_versioned(
     book_id: i64,
     size: ThumbSize,
     last_modified_epoch: i64,
     version: u32,
 ) -> String {
+    // SHA-256, not `std::hash::Hasher`: `DefaultHasher`'s algorithm isn't stable across
+    // toolchains, so a compiler bump could rotate every client's ETag and force a re-fetch.
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(book_id.to_le_bytes());
@@ -192,28 +170,10 @@ fn scheme_sentinel_name() -> String {
     format!(".omnibus-thumb-scheme-v{THUMB_ENCODER_VERSION}")
 }
 
-/// One-time purge of thumbnails written by an older encoder, run at boot.
-/// Returns the number of files removed.
-///
-/// [`is_stale`] keys on the book's `last_modified_epoch` and nothing else,
-/// so a re-encode at the same source bytes never invalidates anything — an
-/// upgraded install would serve its pre-existing thumbs forever. Bumping
-/// [`THUMB_ENCODER_VERSION`] rotates the sentinel filename, this sweep sees
-/// the new name missing and empties the directory once, and the next request
-/// regenerates each thumb through the current encoder.
-///
-/// Best-effort throughout, like the covers-dir purge in `pool`: a missing
-/// directory, an unreadable entry, or a failed unlink is logged and skipped
-/// rather than surfaced. The thumbnail directory is a cache, so the worst
-/// outcome of a failure is a stale file, never a broken boot.
-///
-/// **The sentinel lands only on a clean sweep.** Writing it after a partial
-/// one would mark the directory current while a previous-scheme file is still
-/// sitting in it, and `is_stale` would go on serving that file until its
-/// book's `last_modified_epoch` happened to move — the exact
-/// serve-it-forever case this function exists to prevent. Leaving the
-/// sentinel absent costs a re-sweep of an already-empty directory next boot.
-///
+/// One-time purge of thumbnails written by an older encoder, run at boot; returns
+/// the number of files removed. [`is_stale`] keys on `last_modified_epoch` alone,
+/// so bumping [`THUMB_ENCODER_VERSION`] rotates the sentinel name and this sweep
+/// empties the directory once. Best-effort: failures are logged, never break boot.
 /// Must be called inside `tokio::task::spawn_blocking`.
 pub fn purge_stale_scheme_thumbs_once() -> usize {
     let dir = thumbs_dir();
@@ -270,6 +230,9 @@ pub fn purge_stale_scheme_thumbs_once() -> usize {
         return 0;
     }
 
+    // The sentinel lands only on a clean sweep: after a partial one it would mark the
+    // directory current while a previous-scheme file lingers, which `is_stale` would
+    // serve until its book moved. Left absent, the cost is a re-sweep next boot.
     if left_behind > 0 {
         tracing::warn!(
             thumbs_dir = %dir.display(),
@@ -372,14 +335,10 @@ const PREVIEW_MAX_EDGE: u32 = 8192;
 /// frame is 256 MiB, so this is the edge cap restated in bytes.
 const PREVIEW_MAX_ALLOC: u64 = 256 * 1024 * 1024;
 
-/// Encode a cover as a small lossy WebP for inline preview — the upload
-/// review form shows the file's cover before the book exists and there is a
-/// cover route to point at. Bounded by [`ThumbSize::Md`] on either edge,
-/// aspect preserved (no crop: this is the reader checking the art, not a
-/// grid tile). Nothing is written to disk.
-///
-/// Must be called inside `tokio::task::spawn_blocking` — decode + encode are
-/// CPU-bound.
+/// Encode a cover as a small lossy WebP for inline preview (the upload review
+/// form shows it before the book exists). Bounded by [`ThumbSize::Md`] on either
+/// edge, aspect preserved (no crop); nothing is written to disk. Must be called
+/// inside `tokio::task::spawn_blocking` (decode + encode are CPU-bound).
 pub fn encode_cover_preview(cover_bytes: &[u8]) -> Result<Vec<u8>, ThumbError> {
     use image::imageops::FilterType;
 
@@ -426,13 +385,10 @@ pub fn cover_preview_data_url(cover_bytes: &[u8]) -> Result<String, ThumbError> 
     ))
 }
 
-/// Ensure all three thumbnail sizes exist for `last_modified_epoch`.
-///
-/// Decodes `cover_bytes` once and reuses the [`image::DynamicImage`] across
-/// every size that's currently stale, then writes each WebP atomically and
-/// drops the book's thumbnails from earlier epochs.
-///
-/// Must be called inside `tokio::task::spawn_blocking`.
+/// Ensure all three thumbnail sizes exist for `last_modified_epoch`: decodes
+/// `cover_bytes` once and reuses the [`image::DynamicImage`] across every stale
+/// size, writes each WebP atomically, and drops the book's thumbnails from earlier
+/// epochs. Must be called inside `tokio::task::spawn_blocking`.
 pub fn ensure_thumbnails_sync(
     book_id: i64,
     last_modified_epoch: i64,
@@ -516,23 +472,19 @@ fn remove_thumbs_where(doomed: impl Fn(i64, Option<i64>) -> bool) {
 }
 
 /// Bump a cached thumbnail's mtime to now, marking it recently-used for
-/// [`evict_if_over_cap`]'s LRU ordering. Call on every cache-hit read (the
-/// request path calls this via `spawn_blocking`, fire-and-forget, so it
-/// never adds latency to the response). Best-effort: a failure (e.g. the
-/// file was evicted between the freshness check and this call) is not worth
-/// surfacing — the file is simply gone, so there's nothing left to touch.
+/// [`evict_if_over_cap`]'s LRU ordering. Call on every cache-hit read (fire-and-
+/// forget via `spawn_blocking` on the request path). Best-effort: a failure, e.g.
+/// the file was evicted meanwhile, is not worth surfacing.
 pub fn touch_thumb(book_id: i64, size: ThumbSize, last_modified_epoch: i64) {
     if let Ok(file) = std::fs::File::open(thumb_path_for(book_id, size, last_modified_epoch)) {
         let _ = file.set_modified(SystemTime::now());
     }
 }
 
-/// Total bytes currently held by the thumbnail cache — every regular
-/// `.webp` file directly under `thumbs_dir()`. Read-only counterpart to
-/// [`evict_if_over_cap`]'s usage computation, for the admin health page's
-/// storage section. Missing directory or an unreadable entry reads as
-/// empty/skipped rather than an error — this is a display figure, not an
-/// eviction decision.
+/// Total bytes currently held by the thumbnail cache: every regular `.webp` file
+/// directly under `thumbs_dir()`. Read-only counterpart to [`evict_if_over_cap`]'s
+/// usage computation, for the admin health page. A missing directory or unreadable
+/// entry reads as empty/skipped, not an error.
 pub fn used_bytes() -> u64 {
     let dir = thumbs_dir();
     let Ok(entries) = std::fs::read_dir(&dir) else {

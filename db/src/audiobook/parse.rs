@@ -120,11 +120,8 @@ pub struct IndexedAudiobook {
 
 /// Phase B for multi-file audiobooks. Reads ID3 tags from every part in each
 /// [`super::AudiobookGroup`], sorts parts by (track_number, filename), and
-/// assembles one [`IndexedAudiobook`] per group.
-///
-/// A per-part lofty failure is logged as WARN and the part is still included
-/// with `duration_seconds = 0` so one corrupt file doesn't drop the whole
-/// book from the library.
+/// assembles one [`IndexedAudiobook`] per group. A part whose tags fail to read
+/// is logged (WARN) and kept with `duration_seconds = 0`.
 pub fn parse_groups(
     groups: Vec<super::AudiobookGroup>,
     library_root: &Path,
@@ -398,15 +395,11 @@ fn offset_chapters(
         .collect()
 }
 
-/// Path-derived `(title, creator)` fallback for groups whose tags carry
-/// neither. An mp3 folder group's `group_path` *is* the title directory, so
-/// leaf = title and parent = creator. A single-file group's `group_path` is
-/// the file itself, one level deeper — under the standard
-/// `<Author>/<Title>/<file>` layout the title is the parent directory and
-/// the creator its grandparent. Shallower single-file layouts
-/// degrade: `<Author>/<file>` takes parent as creator and the file stem
-/// (minus any duplicated `<creator> - ` prefix) as title; a bare `<file>`
-/// keeps the stem with no creator.
+/// Path-derived `(title, creator)` fallback for groups whose tags carry neither.
+/// Mp3 folder: leaf = title, parent = creator. Single file under
+/// `<Author>/<Title>/<file>`: parent = title, grandparent = creator. Shallower
+/// layouts degrade: `<Author>/<file>` gives the stem as title, a bare `<file>`
+/// has no creator.
 fn path_fallback(group_path: &str, single_file: bool) -> (String, Option<String>) {
     if !single_file {
         return (leaf_name(group_path), parent_name(group_path));

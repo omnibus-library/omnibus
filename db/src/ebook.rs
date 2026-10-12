@@ -24,14 +24,11 @@ pub use parse::{parse_ebook_targets, parse_ebook_targets_with_progress, ParseTar
 pub use stat::{stat_ebook_library, StatEntry, StatScanResult};
 pub use wordcount::estimate_word_count;
 
-/// `book_files.format` values produced by the ebook indexer. Used by
-/// [`crate::indexer::reindex`] to scope the diff's "currently indexed"
-/// view to ebook rows — prevents `sync_books` from classifying foreign
-/// (audiobook) rows under a shared `library_path` as Removed and
-/// deleting them. Also doubles as the stat walk's extension allowlist
-/// (compared case-insensitively), so the diff's view and the walk can
-/// never disagree. Uppercased to match
-/// [`crate::helpers::split_filename`]'s output.
+/// `book_files.format` values produced by the ebook indexer, uppercased to match
+/// [`crate::helpers::split_filename`]'s output. Scopes [`crate::indexer::reindex`]'s
+/// diff to ebook rows, so `sync_books` never classifies foreign (audiobook) rows
+/// under a shared `library_path` as Removed. Also the stat walk's extension
+/// allowlist (case-insensitive), so the diff's view and the walk can't disagree.
 pub const EBOOK_FORMATS: &[&str] = &["CBZ", "EPUB", "PDF"];
 
 /// The same formats as lowercase extensions, in the order the settings-page
@@ -41,16 +38,10 @@ pub const EBOOK_FORMATS: &[&str] = &["CBZ", "EPUB", "PDF"];
 /// `AUDIOBOOK_EXTENSIONS`.
 pub const EBOOK_EXTENSIONS: &[&str] = &["epub", "pdf", "cbz"];
 
-/// A single scanner output row — metadata plus the raw cover image bytes
-/// (and mime), if the epub included one. Consumed by [`crate::sync::sync_books`].
-///
-/// `mtime_epoch` and `size_bytes` are the filesystem stat values captured
-/// during the walk, used by the incremental reindex diff to detect changes
-/// and by the writer to persist on `book_files`.
-///
-/// `word_count` is the spine-text estimate ([`estimate_word_count`]), computed
-/// once here while the EPUB is already open so `books.word_count` can feed the
-/// stats Pages tile without re-parsing. `None` when the estimate could not be
+/// A single scanner output row: metadata plus the raw cover bytes (and mime), if
+/// the epub included one. Consumed by [`crate::sync::sync_books`]. `mtime_epoch`
+/// and `size_bytes` are the stat values captured during the walk. `word_count` is
+/// the spine-text estimate ([`estimate_word_count`]); `None` when it could not be
 /// produced (empty/unreadable spine).
 #[derive(Debug, Default)]
 pub struct IndexedBook {
@@ -76,13 +67,11 @@ pub struct ScanResult {
 /// instead of re-opening the zip.
 #[derive(Debug, Clone, Default)]
 pub struct ScanOptions {
-    /// A `cover.{jpg,jpeg,png}` (or per-stem `<basename>.{jpg,jpeg,png}`)
-    /// sidecar next to the epub is always preferred over the embedded cover.
-    /// With this set, on a successful cover extraction with no existing
-    /// sidecar, write the embedded bytes to `<basename>.{jpg|png}` next to
-    /// the epub so subsequent scans skip the zip entirely. Best-effort:
-    /// errors are swallowed (logged via `tracing::warn!`) so a read-only
-    /// filesystem doesn't kill the scan.
+    /// A `cover.{jpg,jpeg,png}` (or per-stem `<basename>.{jpg,jpeg,png}`) sidecar
+    /// next to the epub is always preferred over the embedded cover. With this set, a
+    /// successful embedded extraction with no existing sidecar writes
+    /// `<basename>.{jpg|png}` next to the epub so later scans skip the zip.
+    /// Best-effort: errors are logged, never fatal.
     pub materialize_sidecars: bool,
 }
 
@@ -92,11 +81,9 @@ pub fn scan_ebook_library(path: Option<&str>) -> ScanResult {
 }
 
 /// Full-walk-and-parse scan, kept for non-indexer callers (server bootstrap
-/// probes, existing tests). Now a thin wrapper over the two phases —
-/// `stat_ebook_library` → build all-entries target list → `parse_ebook_targets`.
-///
-/// The incremental reindex path in [`crate::indexer::reindex`] uses the two
-/// phases directly so it can skip Phase B for unchanged files.
+/// probes, existing tests): `stat_ebook_library` → build all-entries target list
+/// → `parse_ebook_targets`. The incremental [`crate::indexer::reindex`] uses the
+/// two phases directly to skip Phase B for unchanged files.
 pub fn scan_ebook_library_with(path: Option<&str>, opts: ScanOptions) -> ScanResult {
     // For this legacy callpath, the library_path string is the input path
     // verbatim — same key the indexer uses, so stable_uuid stays consistent
@@ -189,16 +176,11 @@ pub(crate) mod test_support {
         target
     }
 
-    /// Copy a fixture epub into `dest`, rewriting its OPF so the cover is
-    /// declared the legacy EPUB2 way — `<meta name="cover" content="…"/>`
-    /// pointing at a manifest id — instead of the EPUB3
-    /// `properties="cover-image"` the generator emits. The package `version`
-    /// stays `3.0`, which is precisely the combination `EpubDoc::get_cover`
-    /// refuses to resolve (#2240).
-    ///
-    /// Real bytes throughout: same zip, same image, only the declaration
-    /// moves. Panics if the fixture doesn't carry the EPUB3 form, so a
-    /// regenerated fixture can't silently turn this into a no-op test.
+    /// Copy a fixture epub into `dest`, rewriting its OPF so the cover is declared
+    /// the legacy EPUB2 way (`<meta name="cover" content="…"/>` pointing at a
+    /// manifest id) instead of the EPUB3 `properties="cover-image"`, with the package
+    /// `version` still `3.0`. Panics if the fixture lacks the EPUB3 form, so a
+    /// regenerated fixture can't turn this into a no-op test.
     pub(crate) fn copy_fixture_with_legacy_cover(
         name: &str,
         dest: &Path,
