@@ -7,7 +7,7 @@ use std::path::Path;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::client::RequestRecord;
@@ -17,6 +17,9 @@ use crate::tui::app::{App, Edit, Field, Mode, Status};
 
 const HELP: &str = "s sync · r reset · u edit URL · t edit token · w wire · q quit";
 const EDIT_HELP: &str = "Enter save · Esc cancel";
+
+/// Rows the status line may wrap onto before the rest is cut.
+const STATUS_ROWS: u16 = 3;
 
 /// Everything one frame shows, read once per tick.
 pub struct Screen<'a> {
@@ -34,7 +37,7 @@ pub fn draw(frame: &mut Frame, screen: &Screen) {
         Constraint::Percentage(35),
         Constraint::Length(1),
         Constraint::Fill(1),
-        Constraint::Length(3),
+        Constraint::Length(STATUS_ROWS + 2),
     ])
     .areas(frame.area());
     draw_header(frame, header, screen);
@@ -93,12 +96,17 @@ fn draw_requests(frame: &mut Frame, area: Rect, requests: &[RequestRecord]) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-/// The status line, the edit prompt while editing, and the key help.
+/// The status message (wrapped), the edit prompt while editing, and the key help.
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
-    let [status_area, edit_area, help_area] =
-        Layout::vertical([Constraint::Length(1); 3]).areas(area);
+    let [status_area, edit_area, help_area] = Layout::vertical([
+        Constraint::Length(STATUS_ROWS),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
     if let Some(status) = &app.status {
-        frame.render_widget(status_line(status), status_area);
+        let wrapped = Paragraph::new(status_line(status)).wrap(Wrap { trim: true });
+        frame.render_widget(wrapped, status_area);
     }
     match &app.mode {
         Mode::Normal => frame.render_widget(Line::raw(HELP), help_area),

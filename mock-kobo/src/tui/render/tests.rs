@@ -7,7 +7,7 @@ use ratatui::backend::TestBackend;
 use ratatui::style::Color;
 use ratatui::Terminal;
 
-use crate::control::LastSync;
+use crate::control::{LastSync, RESET_MESSAGE};
 use crate::device::Book;
 use crate::firmware::Quirk;
 use crate::tui::app::{Edit, Field, Mode, Status};
@@ -81,6 +81,18 @@ fn draw_screen(
         app,
     };
     terminal.draw(|frame| draw(frame, &screen)).unwrap();
+}
+
+/// Each row of the last frame drawn into `terminal`, as text.
+fn screen_rows(terminal: &Terminal<TestBackend>) -> Vec<String> {
+    let buffer = terminal.backend().buffer();
+    (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect()
+        })
+        .collect()
 }
 
 /// What a 100x30 terminal shows for `view` and `app`, with no requests.
@@ -245,6 +257,21 @@ fn draw_shows_status_message() {
 }
 
 #[test]
+fn draw_wraps_long_status_so_its_end_is_visible() {
+    let app = App {
+        status: Some(Status::Info(RESET_MESSAGE.to_owned())),
+        ..App::default()
+    };
+    let mut terminal = terminal(120, 30);
+
+    draw_screen(&mut terminal, &view(), &[], &app);
+
+    let words = screen_rows(&terminal).join(" ");
+    let words = words.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(words.contains(RESET_MESSAGE), "{words}");
+}
+
+#[test]
 fn draw_styles_error_status_red() {
     let app = App {
         status: Some(Status::Error("invalid server URL: nope".to_owned())),
@@ -254,16 +281,12 @@ fn draw_styles_error_status_red() {
 
     draw_screen(&mut terminal, &view(), &[], &app);
 
-    let buffer = terminal.backend().buffer();
-    let (x, y) = (0..buffer.area.height)
-        .find_map(|y| {
-            let row: String = (0..buffer.area.width)
-                .map(|x| buffer[(x, y)].symbol())
-                .collect();
-            row.find("invalid server URL: nope").map(|x| (x as u16, y))
-        })
+    let (x, y) = screen_rows(&terminal)
+        .iter()
+        .zip(0..)
+        .find_map(|(row, y)| row.find("invalid server URL: nope").map(|x| (x as u16, y)))
         .expect("the error is on screen");
-    assert_eq!(buffer[(x, y)].fg, Color::Red);
+    assert_eq!(terminal.backend().buffer()[(x, y)].fg, Color::Red);
 }
 
 #[test]
