@@ -306,6 +306,19 @@ async fn reset_saves_wiped_state_file() {
 }
 
 #[tokio::test]
+async fn reset_returns_state_not_saved_when_state_file_cannot_be_written() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let parent = dir.path().join("parent");
+    std::fs::write(&parent, "").unwrap();
+    let control = stub_control(&stub, parent.join("kobo.json"));
+
+    let result = control.reset().await;
+
+    assert!(matches!(result, Err(ControlError::StateNotSaved(_))));
+}
+
+#[tokio::test]
 async fn reset_returns_sync_in_progress_while_sync_runs() {
     let stub = spawn_stub(Stub {
         sync_never_answers: true,

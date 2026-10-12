@@ -419,6 +419,26 @@ fn reset_reply_is_sync_in_progress_when_sync_running() {
     );
 }
 
+#[test]
+fn reset_reply_is_state_not_saved_when_save_fails() {
+    let write_error = StateError::Write {
+        path: "x.json".into(),
+        source: std::io::Error::other("disk full"),
+    };
+
+    let reply = reset_reply(Err(ControlError::StateNotSaved(write_error)));
+
+    assert_eq!(
+        wire(&reply),
+        json!({
+            "status": 500,
+            "code": "state_not_saved",
+            "message": "device state not saved: cannot write x.json: disk full",
+            "details": {},
+        })
+    );
+}
+
 #[tokio::test]
 async fn put_reset_returns_reset_reply() {
     let stub = spawn_stub(Stub::default()).await;
