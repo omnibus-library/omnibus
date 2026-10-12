@@ -47,6 +47,7 @@ mod tests;
 /// (harmless overlap, mirroring `rest_router`).
 pub fn opds_router(state: AppState) -> Router {
     let pool = state.pool().clone();
+    let limits = state.rate_limits();
     Router::new()
         .route("/opds", get(nav::root))
         .route("/opds/osd", get(nav::osd))
@@ -84,7 +85,7 @@ pub fn opds_router(state: AppState) -> Router {
         )
         .with_state(state)
         .layer(Extension(pool))
-        .layer(Extension(crate::auth::BasicAuthState::new_shared()))
+        .layer(Extension(crate::auth::BasicAuthState::new_shared(limits)))
 }
 
 /// Wrap an already-serialized XML document as a `200` response with the

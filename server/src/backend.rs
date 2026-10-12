@@ -18,7 +18,7 @@ use sqlx::SqlitePool;
 
 use crate::auth::AuthUser;
 use crate::http_errors::internal;
-use crate::rate_limit::RateLimiter;
+use crate::rate_limit::{RateLimiter, RateLimits};
 
 mod account;
 mod admin_health;
@@ -249,6 +249,8 @@ pub struct AppState {
     /// `AppState` via [`AppState::new_with_remote_image_config`] with the
     /// flag flipped on; production code must never do this.
     remote_image_config: Arc<db::author_photos::RemoteImageConfig>,
+    /// Whether the per-IP limiters built from this state enforce their budgets.
+    rate_limits: RateLimits,
 }
 
 impl AppState {
@@ -259,6 +261,15 @@ impl AppState {
             pool,
             worker,
             remote_image_config: Arc::new(db::author_photos::RemoteImageConfig::default()),
+            rate_limits: RateLimits::default(),
+        }
+    }
+
+    /// Replace the rate-limit switch; `new` defaults to `Enforced`.
+    pub fn with_rate_limits(self, limits: RateLimits) -> Self {
+        Self {
+            rate_limits: limits,
+            ..self
         }
     }
 
@@ -292,19 +303,20 @@ impl AppState {
     pub fn remote_image_config(&self) -> &db::author_photos::RemoteImageConfig {
         &self.remote_image_config
     }
+
+    /// Whether the per-IP limiters wired from this state enforce or admit everything.
+    pub fn rate_limits(&self) -> RateLimits {
+        self.rate_limits
+    }
 }
 
 /// Build the `/api/*` REST router with a fresh per-call search rate-limiter.
 pub fn rest_router(state: AppState) -> Router {
     // Standalone/test entrypoint: a fresh, dedicated search limiter per call.
     // The live server uses `rest_router_with_search_limiter` to share one (#249).
-    rest_router_with_search_limiter(
-        state,
-        std::sync::Arc::new(RateLimiter::with_policy(
-            SEARCH_RATE_LIMIT_WINDOW,
-            SEARCH_RATE_LIMIT_MAX,
-        )),
-    )
+    let search_limiter = RateLimiter::with_policy(SEARCH_RATE_LIMIT_WINDOW, SEARCH_RATE_LIMIT_MAX)
+        .with_limits(state.rate_limits());
+    rest_router_with_search_limiter(state, std::sync::Arc::new(search_limiter))
 }
 
 /// Build the `/api/*` REST router, sharing `search_limiter` with the caller so
@@ -330,13 +342,14 @@ fn rest_router_with_timeouts(
     upload_body_idle_timeout: std::time::Duration,
 ) -> Router {
     let pool = state.pool().clone();
+    let limits = state.rate_limits();
     routes::content_routes()
-        .merge(routes::data_routes(search_limiter))
+        .merge(routes::data_routes(search_limiter, limits))
         // Route-level, so it covers only the routes merged above. A book
         // upload's body alone can outlast it, so those routes are merged
         // after it and bound a stalled client with an idle timeout instead.
         .layer(timeout_layer(request_timeout))
-        .merge(routes::book_upload_router(upload_body_idle_timeout))
+        .merge(routes::book_upload_router(upload_body_idle_timeout, limits))
         .with_state(state)
         // `AuthUser`/`AdminUser` read the pool from `Extension<SqlitePool>`.
         // Layer it here so the router is self-contained for integration

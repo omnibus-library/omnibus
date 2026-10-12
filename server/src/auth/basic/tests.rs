@@ -44,7 +44,7 @@ async fn can_download(user: OpdsAuthUser) -> String {
 /// state too so a test can assert on the cache directly.
 async fn fixture() -> (Router, SqlitePool, Arc<BasicAuthState>) {
     let pool = db::init_db("sqlite::memory:").await.unwrap();
-    let basic = BasicAuthState::new_shared();
+    let basic = BasicAuthState::new_shared(RateLimits::Enforced);
     let app = Router::new()
         .route("/whoami", get(whoami))
         .route("/can-download", get(can_download))
@@ -96,7 +96,7 @@ fn cred_cache_key_separates_the_fields_so_a_shifted_split_differs() {
 
 #[tokio::test]
 async fn cached_user_id_returns_the_stored_id_within_the_ttl() {
-    let state = BasicAuthState::new_shared();
+    let state = BasicAuthState::new_shared(RateLimits::Enforced);
     let key = cred_cache_key("reader", PASSWORD);
     let t0 = Instant::now();
     state.store_at(key, 7, t0).await;
@@ -110,14 +110,14 @@ async fn cached_user_id_returns_the_stored_id_within_the_ttl() {
 
 #[tokio::test]
 async fn cached_user_id_returns_none_for_an_unknown_key() {
-    let state = BasicAuthState::new_shared();
+    let state = BasicAuthState::new_shared(RateLimits::Enforced);
     let key = cred_cache_key("reader", PASSWORD);
     assert_eq!(state.cached_user_id_at(&key, Instant::now()).await, None);
 }
 
 #[tokio::test]
 async fn cached_user_id_expires_and_drops_an_entry_once_the_ttl_elapses() {
-    let state = BasicAuthState::new_shared();
+    let state = BasicAuthState::new_shared(RateLimits::Enforced);
     let key = cred_cache_key("reader", PASSWORD);
     let t0 = Instant::now();
     state.store_at(key, 7, t0).await;
@@ -129,7 +129,7 @@ async fn cached_user_id_expires_and_drops_an_entry_once_the_ttl_elapses() {
 
 #[tokio::test]
 async fn cached_user_id_prunes_stale_entries_once_the_cache_is_full() {
-    let state = BasicAuthState::new_shared();
+    let state = BasicAuthState::new_shared(RateLimits::Enforced);
     let t0 = Instant::now();
     for i in 0..MAX_VERIFIED_ENTRIES {
         state

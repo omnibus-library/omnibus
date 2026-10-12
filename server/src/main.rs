@@ -89,7 +89,11 @@ mod server {
         }
 
         let pool = init_database().await?;
-        let state = backend::AppState::new(pool.clone());
+        // Read once here and injected, so no limiter consults the environment per request.
+        let rate_limits = rate_limit::RateLimits::at_boot(
+            std::env::var_os(rate_limit::DEV_DISABLE_RATE_LIMITS_ENV).as_deref(),
+        );
+        let state = backend::AppState::new(pool.clone()).with_rate_limits(rate_limits);
         let worker: Arc<Worker> = state.worker().clone();
 
         kick_recovery_scans(&pool, &worker).await;
@@ -294,18 +298,21 @@ mod server {
         search_prefixes: Arc<Vec<&'static str>>,
     }
 
-    fn build_router_limiters() -> RouterLimiters {
+    fn build_router_limiters(limits: rate_limit::RateLimits) -> RouterLimiters {
         RouterLimiters {
-            auth: Arc::new(rate_limit::RateLimiter::new()),
+            auth: Arc::new(rate_limit::RateLimiter::new().with_limits(limits)),
             auth_prefixes: Arc::new(vec![
                 "/api/auth/login",
                 "/api/auth/register",
                 "/api/auth/logout",
             ]),
-            search: Arc::new(rate_limit::RateLimiter::with_policy(
-                backend::SEARCH_RATE_LIMIT_WINDOW,
-                backend::SEARCH_RATE_LIMIT_MAX,
-            )),
+            search: Arc::new(
+                rate_limit::RateLimiter::with_policy(
+                    backend::SEARCH_RATE_LIMIT_WINDOW,
+                    backend::SEARCH_RATE_LIMIT_MAX,
+                )
+                .with_limits(limits),
+            ),
             search_prefixes: Arc::new(vec!["/api/rpc/search"]),
         }
     }
@@ -370,7 +377,7 @@ mod server {
     /// body-limit middleware stack. Returns the router; security headers and
     /// the trace layer are added by `apply_security_headers`.
     fn build_router(state: backend::AppState, pool: SqlitePool, worker: Arc<Worker>) -> Router {
-        let limiters = build_router_limiters();
+        let limiters = build_router_limiters(state.rate_limits());
         // Prometheus HTTP metrics: middleware + `/metrics` scrape route. The
         // layer goes on outermost (see below); the route merges in here.
         let (prometheus_layer, metrics_route) = metrics::layer_and_route();
@@ -438,4 +445,7 @@ mod server {
         // never does (the query string), is `request_log`'s contract.
         router.layer(request_log::layer())
     }
+
+    #[cfg(test)]
+    mod tests;
 }
