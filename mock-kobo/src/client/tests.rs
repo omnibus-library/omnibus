@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use crate::test_support::{spawn_stub, RunningStub, Stub, STUB_TOKEN};
+use crate::test_support::{never_answers, spawn_stub, RunningStub, Stub, STUB_TOKEN};
 use crate::wire::SyncItem;
 
 use super::*;
@@ -64,11 +64,7 @@ async fn client_records_each_request_with_redacted_path_and_status() {
 
 #[tokio::test]
 async fn library_sync_reports_transport_failure_naming_path_when_server_never_answers() {
-    let stub = spawn_stub(Stub {
-        sync_never_answers: true,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(never_answers()).await;
     let timeout = Duration::from_millis(200);
     let mut client = Client::with_timeout(&stub.endpoint, "HW-1", timeout).unwrap();
     let url = stub_url(&stub, "/v1/library/sync");

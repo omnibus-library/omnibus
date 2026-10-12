@@ -258,6 +258,12 @@ skip = [
     { name = "foldhash", version = "0.1.5" },
     { name = "foldhash", version = "0.2.0" },
 
+    # --- lru (dioxus-server vs the mock-kobo TUI) ---
+    # 0.16.4 from dioxus-server (→ dioxus); 0.18.x from ratatui-core, behind
+    # mock-kobo's `tui` feature (dev tooling, never in the server binary).
+    # Collapses when Dioxus bumps its lru dependency to >= 0.18.2.
+    { name = "lru", version = "0.16.4" },
+
     # --- hashlink (rusqlite vs sqlx split) ---
     # 0.9.1 from rusqlite 0.32.1 (omnibus-frontend's mobile-offline SQLite
     # store); 0.10.0 from sqlx-core 0.8.6. Downstream instance of the

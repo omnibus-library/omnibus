@@ -1,4 +1,4 @@
-//! `Control::sync`, `view` and `requests` against a stub Omnibus and a real temp state file.
+//! `Control::sync`, `reset`, `retarget`, `view` and `requests` against a stub Omnibus and a real temp state file.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,35 +11,17 @@ use tokio::sync::Notify;
 use crate::device::Device;
 use crate::state;
 use crate::test_support::{
-    dune_stub, new_entitlement, request_lines, spawn_stub, stub_control, stub_control_with, Stub,
-    STUB_TOKEN,
+    control_wired_against, dune_stub, never_answers, new_entitlement, request_lines, spawn_stub,
+    spawn_sync, stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
 };
 
 use super::*;
-
-/// Poll `condition` until it holds, failing the test at a deadline.
-async fn wait_until(mut condition: impl FnMut() -> bool) {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while !condition() {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "timed out waiting for the condition"
-        );
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-}
 
 /// A device already holding the book "Dune".
 fn device_with_dune() -> Device {
     let mut device = Device::new("HW-1");
     device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
     device
-}
-
-/// Start a sync on its own task, as the control API's handler does.
-fn spawn_sync(control: &Arc<Control>) -> tokio::task::JoinHandle<Result<LastSync, ControlError>> {
-    let control = Arc::clone(control);
-    tokio::spawn(async move { control.sync().await })
 }
 
 #[tokio::test]
@@ -104,6 +86,51 @@ async fn sync_records_failed_last_sync_without_quirk_when_server_unreachable() {
 }
 
 #[tokio::test]
+async fn sync_refuses_token_wired_for_another_server() {
+    let wired = spawn_stub(Stub::default()).await;
+    let live = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against(
+        &live.origin,
+        Some(&wired.origin),
+        dir.path().join("kobo.json"),
+    );
+    let refused = LastSync::Failed {
+        quirk: None,
+        message: format!(
+            "the device token was auto-wired for {}, not {}: press w to wire one for this \
+             server, or give one with t / --token",
+            wired.origin, live.origin
+        ),
+    };
+
+    let last_sync = control.sync().await.unwrap();
+
+    assert_eq!(last_sync, refused);
+    assert_eq!(control.view().last_sync, Some(refused));
+    assert!(!control.view().syncing);
+    assert!(live.paths().is_empty());
+    assert!(wired.paths().is_empty());
+}
+
+#[tokio::test]
+async fn sync_sends_token_wired_for_the_live_server() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against(
+        &stub.origin,
+        Some(&stub.origin),
+        dir.path().join("kobo.json"),
+    );
+
+    let last_sync = control.sync().await.unwrap();
+
+    assert_eq!(last_sync, LastSync::Synced { pages: 1 });
+    let initialization = format!("/kobo/{STUB_TOKEN}/v1/initialization");
+    assert_eq!(stub.requests_to(&initialization).len(), 1);
+}
+
+#[tokio::test]
 async fn sync_appends_requests_of_failed_sync_to_request_log() {
     let stub = spawn_stub(Stub {
         store_path_status: StatusCode::NOT_FOUND,
@@ -127,11 +154,7 @@ async fn sync_appends_requests_of_failed_sync_to_request_log() {
 
 #[tokio::test]
 async fn sync_returns_sync_in_progress_while_another_sync_runs() {
-    let stub = spawn_stub(Stub {
-        sync_never_answers: true,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
     let running = spawn_sync(&control);
@@ -147,11 +170,7 @@ async fn sync_returns_sync_in_progress_while_another_sync_runs() {
 
 #[tokio::test]
 async fn view_shows_syncing_while_sync_runs() {
-    let stub = spawn_stub(Stub {
-        sync_never_answers: true,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
     assert!(!control.view().syncing);
@@ -196,6 +215,52 @@ async fn sync_completes_when_caller_is_cancelled() {
         .filter(|r| r.path.ends_with("/v1/library/sync"))
         .count();
     assert_eq!(sync_requests, 2);
+}
+
+#[tokio::test]
+async fn wait_until_idle_returns_after_running_sync_commits() {
+    let gate = Arc::new(Notify::new());
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![
+            json!([new_entitlement("book-1", "Dune")]),
+            json!([new_entitlement("book-2", "Dune Messiah")]),
+        ],
+        second_page_gate: Some(Arc::clone(&gate)),
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    let library_sync = format!("/kobo/{STUB_TOKEN}/v1/library/sync");
+    let running = spawn_sync(&control);
+    wait_until(|| stub.requests_to(&library_sync).len() == 2).await;
+    let waiting = {
+        let control = Arc::clone(&control);
+        tokio::spawn(async move { control.wait_until_idle().await })
+    };
+
+    gate.notify_one();
+
+    tokio::time::timeout(Duration::from_secs(5), waiting)
+        .await
+        .expect("it returns once the sync has ended")
+        .unwrap();
+    let view = control.view();
+    assert!(!view.syncing);
+    let titles: Vec<_> = view.library.values().map(|b| b.title.as_str()).collect();
+    assert_eq!(titles, ["Dune", "Dune Messiah"]);
+    running.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn wait_until_idle_returns_at_once_when_no_sync_runs() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+
+    tokio::time::timeout(Duration::from_secs(5), control.wait_until_idle())
+        .await
+        .expect("an idle device has nothing to wait for");
 }
 
 #[tokio::test]
@@ -312,11 +377,7 @@ async fn reset_returns_state_not_saved_when_state_file_cannot_be_written() {
 
 #[tokio::test]
 async fn reset_returns_sync_in_progress_while_sync_runs() {
-    let stub = spawn_stub(Stub {
-        sync_never_answers: true,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control_with(&stub, device_with_dune(), dir.path().join("kobo.json"));
     let running = spawn_sync(&control);
@@ -327,4 +388,215 @@ async fn reset_returns_sync_in_progress_while_sync_runs() {
     assert!(matches!(result, Err(ControlError::SyncInProgress)));
     assert_eq!(control.view().library, device_with_dune().library);
     running.abort();
+}
+
+#[tokio::test]
+async fn retarget_url_syncs_against_new_url() {
+    let old = spawn_stub(Stub::default()).await;
+    let new = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&old, dir.path().join("kobo.json"));
+
+    let retargeted = control
+        .retarget(Retarget::Url(new.origin.clone()))
+        .await
+        .unwrap();
+    let last_sync = control.sync().await.unwrap();
+
+    assert_eq!(retargeted.view.url, new.origin);
+    assert_eq!(control.view().url, new.origin);
+    assert_eq!(last_sync, LastSync::Synced { pages: 1 });
+    assert_eq!(control.view().library["book-1"].title, "Dune");
+    assert!(old.paths().is_empty());
+    let initialization = format!("/kobo/{STUB_TOKEN}/v1/initialization");
+    assert_eq!(new.requests_to(&initialization).len(), 1);
+}
+
+#[tokio::test]
+async fn retarget_url_pins_url_in_state_file() {
+    let old = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&old, path.clone());
+
+    control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await
+        .unwrap();
+
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.url, Some("http://new.example:3000".to_owned()));
+}
+
+#[tokio::test]
+async fn retarget_url_keeps_library_sync_token_and_hardware_id() {
+    let old = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&old, path.clone());
+    control.sync().await.unwrap();
+    let before = control.view();
+    let saved_before = state::load(&path).await.unwrap().unwrap();
+
+    let retargeted = control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await
+        .unwrap();
+
+    let after = control.view();
+    assert_eq!(retargeted.view, after);
+    assert_eq!(after.hardware_id, before.hardware_id);
+    assert_eq!(after.library, before.library);
+    assert_eq!(after.sync_token, before.sync_token);
+    assert_eq!(after.last_sync, before.last_sync);
+    let saved_after = state::load(&path).await.unwrap().unwrap();
+    let only_the_url_moved = SavedState {
+        url: Some("http://new.example:3000".to_owned()),
+        ..saved_before
+    };
+    assert_eq!(saved_after, only_the_url_moved);
+}
+
+#[tokio::test]
+async fn retarget_url_keeps_user_token_without_needing_wire() {
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against("http://old.example:1", None, dir.path().join("kobo.json"));
+
+    let retargeted = control
+        .retarget(Retarget::Url("http://new.example:1".into()))
+        .await
+        .unwrap();
+
+    assert!(!retargeted.needs_wire);
+}
+
+#[tokio::test]
+async fn retarget_url_reports_needs_wire_when_token_was_wired_against_another_url() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = control_wired_against(
+        "http://old.example:1",
+        Some("http://old.example:1"),
+        path.clone(),
+    );
+
+    let retargeted = control
+        .retarget(Retarget::Url("http://new.example:1".into()))
+        .await
+        .unwrap();
+
+    assert!(retargeted.needs_wire);
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.wired_url, Some("http://old.example:1".to_owned()));
+}
+
+#[tokio::test]
+async fn retarget_url_reports_no_wire_needed_when_url_is_the_wired_url() {
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against(
+        "http://other.example:1",
+        Some("http://wired.example:1"),
+        dir.path().join("kobo.json"),
+    );
+
+    let retargeted = control
+        .retarget(Retarget::Url("http://wired.example:1".into()))
+        .await
+        .unwrap();
+
+    assert!(!retargeted.needs_wire);
+}
+
+#[tokio::test]
+async fn retarget_token_saves_token_and_clears_wired_url() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = control_wired_against(
+        "http://old.example:1",
+        Some("http://old.example:1"),
+        path.clone(),
+    );
+
+    let retargeted = control
+        .retarget(Retarget::Token("typed-token".into()))
+        .await
+        .unwrap();
+
+    assert!(!retargeted.needs_wire);
+    assert_eq!(retargeted.view.url, "http://old.example:1");
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.token, "typed-token");
+    assert_eq!(saved.wired_url, None);
+    assert_eq!(saved.url, None);
+}
+
+#[tokio::test]
+async fn retarget_wired_saves_token_and_wired_url() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = control_wired_against("http://now.example:1", None, path.clone());
+
+    let retargeted = control
+        .retarget(Retarget::Wired {
+            token: "minted-token".into(),
+            url: "http://now.example:1".into(),
+        })
+        .await
+        .unwrap();
+
+    assert!(!retargeted.needs_wire);
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.token, "minted-token");
+    assert_eq!(saved.wired_url, Some("http://now.example:1".to_owned()));
+}
+
+#[tokio::test]
+async fn retarget_wired_reports_needs_wire_when_url_is_not_the_device_url() {
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against("http://now.example:1", None, dir.path().join("kobo.json"));
+
+    let retargeted = control
+        .retarget(Retarget::Wired {
+            token: "minted-token".into(),
+            url: "http://elsewhere.example:1".into(),
+        })
+        .await
+        .unwrap();
+
+    assert!(retargeted.needs_wire);
+}
+
+#[tokio::test]
+async fn retarget_returns_sync_in_progress_while_sync_runs() {
+    let stub = spawn_stub(never_answers()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path.clone());
+    let running = spawn_sync(&control);
+    wait_until(|| control.view().syncing).await;
+
+    let result = control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await;
+
+    assert!(matches!(result, Err(ControlError::SyncInProgress)));
+    assert_eq!(control.view().url, stub.origin);
+    assert!(state::load(&path).await.unwrap().is_none());
+    running.abort();
+}
+
+#[tokio::test]
+async fn retarget_returns_state_not_saved_when_state_file_cannot_be_written() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let parent = dir.path().join("parent");
+    std::fs::write(&parent, "").unwrap();
+    let control = stub_control(&stub, parent.join("kobo.json"));
+
+    let result = control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await;
+
+    assert!(matches!(result, Err(ControlError::StateNotSaved(_))));
+    assert_eq!(control.view().url, "http://new.example:3000");
 }

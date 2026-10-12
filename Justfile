@@ -50,6 +50,15 @@ env-clear:
 dev-bounce:
     scripts/with-dev-env.sh web scripts/dev-server-bounce.sh
 
+# Run a mock Kobo e-reader in a terminal UI against this worktree's dev server
+# (run `just dev-up` first): s syncs, r resets, u/t edit the URL/token, w wires a
+# token, q quits. It auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER
+# and serves the control API on a free loopback port its header shows. Flags pass
+# through: `just kobo --state .claude/runtime/other.json` is a second device.
+[positional-arguments]
+kobo *args:
+    scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
+
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).
 # Runs outside the nix shell on purpose — curl + tar only. Auto-run by

@@ -84,6 +84,7 @@ just serve-pc                                               # process-compose
 # Used by the `ui-validate` skill; safe to re-run.
 just dev-up
 source .claude/runtime/env.sh                               # picks up OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
+just kobo                                                   # mock Kobo e-reader in a terminal UI against the dev server (docs/kobo.md)
 
 # Fullstack dev (serves SSR + WASM hydration at http://localhost:8080 by default)
 dx serve --platform web -p omnibus

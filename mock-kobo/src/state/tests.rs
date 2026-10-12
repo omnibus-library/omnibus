@@ -171,3 +171,27 @@ async fn save_reports_write_error_when_parent_is_a_file() {
 
     assert!(matches!(error, StateError::Write { .. }));
 }
+
+#[test]
+fn token_wired_for_is_true_for_a_token_the_user_gave() {
+    let state = SavedState {
+        wired_url: None,
+        ..synced_state()
+    };
+
+    assert!(state.token_wired_for("http://anywhere:1"));
+}
+
+#[test]
+fn token_wired_for_is_true_for_the_url_it_was_wired_against() {
+    let state = synced_state();
+
+    assert!(state.token_wired_for("http://dev:1"));
+}
+
+#[test]
+fn token_wired_for_is_false_for_another_url() {
+    let state = synced_state();
+
+    assert!(!state.token_wired_for("http://other:1"));
+}

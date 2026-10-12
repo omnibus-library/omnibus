@@ -44,7 +44,7 @@ pub fn resolve_target(
         .unwrap_or_else(|| DEFAULT_URL.to_owned());
     let (token, wired_url) = match (&args.token, saved) {
         (Some(token), _) => (Some(token.clone()), None),
-        (None, Some(saved)) if saved.wired_url.as_ref().is_none_or(|wired| *wired == url) => {
+        (None, Some(saved)) if saved.token_wired_for(&url) => {
             (Some(saved.token.clone()), saved.wired_url.clone())
         }
         (None, _) => (None, None),

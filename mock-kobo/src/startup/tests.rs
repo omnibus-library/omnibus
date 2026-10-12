@@ -7,10 +7,10 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::control::LastSync;
+use crate::control::{LastSync, Retarget};
 use crate::device::Device;
 use crate::state::{self, StateError};
-use crate::test_support::{dune_stub, spawn_stub, RunningStub, Stub, STUB_TOKEN};
+use crate::test_support::{dune_stub, spawn_stub, stub_with_device, RunningStub, Stub, STUB_TOKEN};
 
 use super::*;
 
@@ -34,14 +34,6 @@ fn args_in(dir: &TempDir, url: Option<&str>, token: Option<&str>) -> ServeArgs {
 /// A runtime dir that never holds a dev server's port file.
 fn no_runtime(dir: &TempDir) -> PathBuf {
     dir.path().join("runtime")
-}
-
-/// A server already holding the device auto-wire looks for, under `token`.
-fn stub_with_device(token: &str) -> Stub {
-    Stub {
-        devices: vec![("Mock Kobo (kobo)".to_owned(), token.to_owned())],
-        ..Stub::default()
-    }
 }
 
 fn saved(url: Option<&str>, token: &str) -> SavedState {
@@ -256,6 +248,70 @@ async fn start_persists_given_url_and_token_across_restarts() {
 
     assert_eq!(second.view().url, stub.origin);
     assert_eq!(second.sync().await.unwrap(), LastSync::Synced { pages: 1 });
+}
+
+#[tokio::test]
+async fn start_restores_url_set_by_retarget_after_restart() {
+    let first = spawn_stub(Stub::default()).await;
+    let second = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let given = args_in(&dir, Some(&first.origin), Some(STUB_TOKEN));
+    let running = Arc::new(
+        start(&given, None, &no_runtime(&dir))
+            .await
+            .unwrap()
+            .control,
+    );
+    running
+        .retarget(Retarget::Url(second.origin.clone()))
+        .await
+        .unwrap();
+    drop(running);
+
+    let restarted = Arc::new(
+        start(&args_in(&dir, None, None), None, &no_runtime(&dir))
+            .await
+            .unwrap()
+            .control,
+    );
+
+    assert_eq!(restarted.view().url, second.origin);
+    assert_eq!(
+        restarted.sync().await.unwrap(),
+        LastSync::Synced { pages: 1 }
+    );
+    assert!(first.paths().is_empty());
+    assert!(!second.paths().is_empty());
+}
+
+#[tokio::test]
+async fn start_restores_token_set_by_retarget_after_restart() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let given = args_in(&dir, Some(&stub.origin), Some("wrong"));
+    let running = Arc::new(
+        start(&given, None, &no_runtime(&dir))
+            .await
+            .unwrap()
+            .control,
+    );
+    running
+        .retarget(Retarget::Token(STUB_TOKEN.to_owned()))
+        .await
+        .unwrap();
+    drop(running);
+
+    let restarted = Arc::new(
+        start(&args_in(&dir, None, None), None, &no_runtime(&dir))
+            .await
+            .unwrap()
+            .control,
+    );
+
+    assert_eq!(
+        restarted.sync().await.unwrap(),
+        LastSync::Synced { pages: 1 }
+    );
 }
 
 #[tokio::test]

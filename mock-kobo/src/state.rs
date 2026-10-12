@@ -27,6 +27,13 @@ pub struct SavedState {
     pub device: Device,
 }
 
+impl SavedState {
+    /// Whether `token` may be sent to `url`: one the user gave, or one auto-wired against `url`.
+    pub fn token_wired_for(&self, url: &str) -> bool {
+        self.wired_url.as_ref().is_none_or(|wired| wired == url)
+    }
+}
+
 /// Why a state file couldn't be read or written.
 #[derive(Debug, thiserror::Error)]
 pub enum StateError {
