@@ -242,9 +242,10 @@ drops `isReady` and leaves the view, `teardown` drops the view and leaves
 
 **The models are hand-mirrored, so they drift silently.** `Models/` restates the
 `shared/` wire DTOs in Swift with no generator and no compiler tying the two
-together, so a field added or renamed on the Rust side surfaces as a runtime 422
-(or a `#[serde(other)]`-style fallback swallowing a variant), never a build
-error. `omnibusTests/ScanCodecTests.swift` is the pattern for pinning one of
+together, so a change on the Rust side surfaces only at runtime, never as a
+build error: a request missing a field a handler now requires gets a 422, a
+response field renamed or removed fails as `APIError.decoding`, and a new enum
+variant can vanish into a `#[serde(other)]`-style fallback. `omnibusTests/ScanCodecTests.swift` is the pattern for pinning one of
 these contracts — assert the encoded keys a handler requires, and that every
 enum variant the server can answer with maps to its own case rather than the
 catch-all. Worth adding wherever a mismatch would fail quietly.
