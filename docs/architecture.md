@@ -362,17 +362,24 @@ session.rs      — sync_now: one "Sync now" press, returning a SyncReport or
                   the SyncFailure the device would show; attempt_sync keeps
                   the request log when the sync fails
 main.rs         — the `mock-kobo` binary: parse, start, listen, print the
-                  MOCK_KOBO_READY line, serve
-cli.rs          — `serve` flags and OMNIBUS_MOCK_KOBO_* env vars → ServeArgs
+                  MOCK_KOBO_READY line (port, hardware id, state, pid) and
+                  any start notice, serve
+cli.rs          — `serve` flags and OMNIBUS_MOCK_KOBO_* env vars → ServeArgs;
+                  the URL is reduced to a bare origin
 startup.rs      — start(): load the state file, resolve the target (given >
-                  saved > dev server > default), auto-wire a token, save
-state.rs        — SavedState: device, token and pinned URL as a JSON file,
+                  saved > dev server > default), auto-wire a token (again
+                  when the dev server moved), save; Started carries a notice
+                  when a new device reuses a server device
+state.rs        — SavedState: device, token, pinned URL and the origin an
+                  auto-wired token came from, as an owner-only JSON file
                   written atomically
-autowire.rs     — dev-server discovery and the seed admin login that reuses
-                  or creates the device named "Mock Kobo"
-control.rs      — Control: the live device; sync, reset, view, requests. A
-                  reset cannot force a full resend until #2743: remove the
-                  device in Account settings and add it again
+autowire.rs     — dev-server discovery and the seed admin login (local
+                  servers only, logged out after) that reuses or creates the
+                  device named "Mock Kobo"
+control.rs      — Control: the live device; sync (its own task, so a dropped
+                  caller never cancels it), reset, view, requests. A reset
+                  cannot force a full resend until #2743: remove the device
+                  in Account settings and add it again
 api.rs          — the loopback control API: routes, the {status, code,
                   message, details} envelope, listen, ready_line
 test_support.rs — a stub Omnibus that reproduces old server bugs on request
