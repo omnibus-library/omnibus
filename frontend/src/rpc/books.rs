@@ -59,14 +59,15 @@ pub async fn rpc_get_ebooks() -> Result<EbookLibrary> {
 ///
 /// The server owns the sort order, so the client drives `sort_key`/`sort_dir`
 /// and appends pages by feeding `next_cursor` back as `cursor`. The first page
-/// (`cursor == None`) also returns the full-library `total` (header count);
-/// later pages omit it so an infinite scroll doesn't re-pay the aggregate
-/// cost — the client caches it. `LibraryPage.facets` is always `None`.
+/// (`cursor == None`) also returns the `total` (header count) under the active
+/// `filters` and exclusion; later pages omit it so an infinite scroll doesn't
+/// re-pay the aggregate cost — the client caches it. `LibraryPage.facets` is
+/// always `None`.
 ///
 /// `exclude_formats` is the caller's hidden-formats preference (from
 /// `UserSummary::hidden_formats`) — client-passed so only the landing surface
-/// applies it, and the first page's `total`/`hidden_count` report the visible
-/// library size and the receipt.
+/// applies it, and the first page's `total`/`hidden_count` report the size of
+/// the filtered, visible library and the receipt.
 ///
 /// `stack_series` asks for the Stack series page (grid, no search, viewer preference on).
 #[post("/api/rpc/ebooks/page", pool: PoolExt, user: AuthUser)]
@@ -83,34 +84,41 @@ pub async fn rpc_get_ebooks_page(
     // Read-side clamp mirroring the REST twin: the exclusion is caller-
     // supplied, so cap it before it becomes SQL binds.
     let exclude_formats = omnibus_shared::sanitize_exclude_formats(exclude_formats);
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
     Ok(ebooks_page(
         &pool.0,
         sort_key,
         sort_dir,
         &filters,
+        viewer,
         &exclude_formats,
         cursor.as_deref(),
         limit,
-        stack_series.then_some(user.id),
+        stack_series,
     )
     .await?)
 }
 
 /// Server-side body of [`rpc_get_ebooks_page`], extracted so the
 /// cursor-decode and first-page-aggregates branches can be unit-tested
-/// without the server-fn transport. `stack_viewer` is `Some(id)` to read the series-stacked page.
+/// without the server-fn transport. `stack` reads the series-stacked page.
 #[cfg(feature = "server")]
-#[allow(clippy::too_many_arguments)] // the RPC's knobs plus the stacking viewer
+#[allow(clippy::too_many_arguments)] // the RPC's knobs plus the viewer and the stacking switch
 async fn ebooks_page(
     pool: &sqlx::SqlitePool,
     sort_key: SortKey,
     sort_dir: SortDir,
     filters: &ViewFilters,
+    viewer: db::Viewer,
     exclude_formats: &[String],
     cursor: Option<&str>,
     limit: i64,
-    stack_viewer: Option<i64>,
+    stack: bool,
 ) -> Result<LibraryPage, ServerFnError> {
+    filters.validate().map_err(ServerFnError::new)?;
     let settings = db::get_settings(pool)
         .await
         .map_err(|e| internal_rpc_error("get settings", e))?;
@@ -133,44 +141,42 @@ async fn ebooks_page(
         None => None,
     };
 
-    let (books, next, stacks) = match stack_viewer {
-        Some(viewer_id) => {
-            let page = db::list_books_page_stacked(
-                pool,
-                &paths,
-                sort_key,
-                sort_dir,
-                filters,
-                exclude_formats,
-                decoded.as_ref(),
-                limit,
-                viewer_id,
-                db::books::Projection::List,
-            )
-            .await
-            .map_err(|e| internal_rpc_error("list stacked books page", e))?;
-            (page.books, page.next, page.stacks)
-        }
-        None => {
-            let page = db::books::list_books_page_projected(
-                pool,
-                &paths,
-                sort_key,
-                sort_dir,
-                filters,
-                exclude_formats,
-                decoded.as_ref(),
-                limit,
-                db::books::Projection::List,
-            )
-            .await
-            .map_err(|e| internal_rpc_error("list books page", e))?;
-            (page.books, page.next, Vec::new())
-        }
+    let (books, next, stacks) = if stack {
+        let page = db::list_books_page_stacked(
+            pool,
+            &paths,
+            sort_key,
+            sort_dir,
+            filters,
+            viewer,
+            exclude_formats,
+            decoded.as_ref(),
+            limit,
+            db::books::Projection::List,
+        )
+        .await
+        .map_err(|e| internal_rpc_error("list stacked books page", e))?;
+        (page.books, page.next, page.stacks)
+    } else {
+        let page = db::books::list_books_page_projected(
+            pool,
+            &paths,
+            sort_key,
+            sort_dir,
+            filters,
+            viewer,
+            exclude_formats,
+            decoded.as_ref(),
+            limit,
+            db::books::Projection::List,
+        )
+        .await
+        .map_err(|e| internal_rpc_error("list books page", e))?;
+        (page.books, page.next, Vec::new())
     };
 
     let (total, hidden_count) = if decoded.is_none() {
-        first_page_aggregates(pool, &paths, exclude_formats).await?
+        first_page_aggregates(pool, &paths, filters, viewer, exclude_formats).await?
     } else {
         (None, None)
     };
@@ -186,28 +192,34 @@ async fn ebooks_page(
     })
 }
 
-/// First-page-only aggregates as `(total, hidden_count)`: the library-wide
-/// total and, when an exclusion is active, the hidden-count receipt beside it.
-/// Both counts use default filters and differ only in the exclusion, so with
-/// no exclusion this stays the single `count_books_for_paths` query.
+/// First-page-only aggregates as `(total, hidden_count)`: the total under the
+/// filter and exclusion and, when an exclusion is active, the hidden-count
+/// receipt beside it. Both counts share the filter and differ only in the
+/// exclusion; with neither set this stays the single `count_books_for_paths`.
 #[cfg(feature = "server")]
 async fn first_page_aggregates(
     pool: &sqlx::SqlitePool,
     paths: &[&str],
+    filters: &ViewFilters,
+    viewer: db::Viewer,
     exclude_formats: &[String],
 ) -> Result<(Option<i64>, Option<i64>), ServerFnError> {
-    let all = db::count_books_for_paths(pool, paths)
-        .await
-        .map_err(|e| internal_rpc_error("count books", e))?;
-    let (total, hidden) = if exclude_formats.is_empty() {
-        (all, None)
-    } else {
-        let visible = db::count_books_page(pool, paths, &ViewFilters::default(), exclude_formats)
+    if filters.is_empty() && exclude_formats.is_empty() {
+        let all = db::count_books_for_paths(pool, paths)
             .await
-            .map_err(|e| internal_rpc_error("count visible books", e))?;
-        (visible, Some(all - visible))
-    };
-    Ok((Some(total), hidden))
+            .map_err(|e| internal_rpc_error("count books", e))?;
+        return Ok((Some(all), None));
+    }
+    let total = db::count_books_page(pool, paths, filters, viewer, exclude_formats)
+        .await
+        .map_err(|e| internal_rpc_error("count matching books", e))?;
+    if exclude_formats.is_empty() {
+        return Ok((Some(total), None));
+    }
+    let unhidden = db::count_books_page(pool, paths, filters, viewer, &[])
+        .await
+        .map_err(|e| internal_rpc_error("count unhidden books", e))?;
+    Ok((Some(total), Some(unhidden - total)))
 }
 
 /// POST (not GET) for the same reason as `rpc_search`: Dioxus `#[get]`

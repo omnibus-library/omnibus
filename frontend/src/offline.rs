@@ -32,7 +32,7 @@ pub fn init() {
 /// Cache-key prefixes holding *user-scoped* replicated data. Library-wide
 /// rows (books, authors, series, manifests, the replica) survive an account
 /// switch; these do not.
-const USER_SCOPED_PREFIXES: [&str; 16] = [
+const USER_SCOPED_PREFIXES: [&str; 17] = [
     "me",
     "progress:",
     "recent_progress",
@@ -45,6 +45,8 @@ const USER_SCOPED_PREFIXES: [&str; 16] = [
     "shelves",
     "shelf:",
     "shelf_page:",
+    // The first page's filter can name a shelf, whose members depend on the viewer.
+    "ebooks_first:",
     "stats:",
     "reader_cfi:",
     "audio_pos:",

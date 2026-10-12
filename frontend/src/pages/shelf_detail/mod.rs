@@ -6,7 +6,7 @@
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
-use omnibus_shared::{EbookMetadata, Shelf, SortDir, SortKey};
+use omnibus_shared::{EbookMetadata, Shelf, SortDir, SortKey, ViewFilters};
 
 use crate::components::{AddBooksModal, EditShelfModal, Loading, LoadingKind};
 use crate::{data, use_server_url, Route};
@@ -17,6 +17,8 @@ mod body;
 mod header;
 #[cfg(feature = "mobile")]
 mod mobile;
+#[cfg(not(feature = "mobile"))]
+mod narrow;
 
 #[cfg(not(feature = "mobile"))]
 use body::{back_crumb, ShelfBodySignals, WebShelfBody};
@@ -294,7 +296,7 @@ fn use_shelf_effects(
             // the previous shelf's members.
             members_ready.set(false);
             let dir = default_dir_for(key);
-            match data::shelf_page(&url, id, key, dir).await {
+            match data::shelf_page(&url, id, key, dir, ViewFilters::default()).await {
                 Ok(page) => {
                     books.set(page.books);
                     errored.set(false);
