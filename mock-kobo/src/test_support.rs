@@ -2,6 +2,7 @@
 //! the Kobo sync routes as a [`Stub`] says and records every request, so a
 //! test can reproduce an old server bug and watch the device react to it.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -12,6 +13,10 @@ use axum::{
     Json, Router,
 };
 use serde_json::{json, Value};
+
+use crate::control::Control;
+use crate::device::Device;
+use crate::state::SavedState;
 
 /// The path token every stub device syncs with.
 pub const STUB_TOKEN: &str = "stub-device-token";
@@ -70,6 +75,8 @@ pub struct Recorded {
 
 /// A running stub: the `api_endpoint` a device points at, and what it received.
 pub struct RunningStub {
+    /// The server's origin, with no path: what `--url` takes.
+    pub origin: String,
     pub endpoint: String,
     pub requests: Arc<Mutex<Vec<Recorded>>>,
 }
@@ -104,8 +111,19 @@ pub async fn spawn_stub(stub: Stub) -> RunningStub {
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     RunningStub {
         endpoint: format!("{base}/kobo/{STUB_TOKEN}"),
+        origin: base,
         requests,
     }
+}
+
+/// A fresh `HW-1` device holding `STUB_TOKEN`, syncing against `stub`, saving to `state_path`.
+pub fn stub_control(stub: &RunningStub, state_path: PathBuf) -> Control {
+    let saved = SavedState {
+        url: None,
+        token: STUB_TOKEN.to_owned(),
+        device: Device::new("HW-1"),
+    };
+    Control::new(saved, stub.origin.clone(), state_path)
 }
 
 async fn handle(
