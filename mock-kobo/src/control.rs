@@ -1,7 +1,9 @@
 //! One running device: the state the control API reads and drives.
 //! A sync runs on its own task, so a caller that disconnects never cancels it
 //! half-way. A reset clears what the device holds, but Omnibus still remembers
-//! what it delivered, so the next sync sends only changes.
+//! what it delivered, so the next sync sends only changes. A retarget changes
+//! the URL or token between syncs; a sync reads both under one lock, so it
+//! never mixes two targets.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -17,7 +19,6 @@ use crate::state::{self, SavedState, StateError};
 
 /// One running device: what the control API (and a TUI) reads and drives.
 pub struct Control {
-    url: String,
     state_path: PathBuf,
     live: Mutex<Live>,
     /// Serializes saves, so the snapshot written last is always the newest.
@@ -27,6 +28,8 @@ pub struct Control {
 /// The parts of a running device that change.
 struct Live {
     saved: SavedState,
+    /// The origin syncs go to: the pinned URL if there is one, else the one discovered at start.
+    url: String,
     syncing: bool,
     last_sync: Option<LastSync>,
     requests: Vec<RequestRecord>,
@@ -59,6 +62,25 @@ pub enum ControlError {
     StateNotSaved(#[from] StateError),
 }
 
+/// Where `Control::retarget` points the device.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Retarget {
+    /// Pin this origin (one `cli::valid_url` accepted); the token and its `wired_url` stay.
+    Url(String),
+    /// A token the user gave (one `cli::valid_token` accepted); `wired_url` becomes `None`.
+    Token(String),
+    /// A token auto-wire minted against `url`; `wired_url` becomes `Some(url)`.
+    Wired { token: String, url: String },
+}
+
+/// What a retarget left the device with.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Retargeted {
+    pub view: DeviceView,
+    /// The token was auto-wired against another origin than the device now syncs with.
+    pub needs_wire: bool,
+}
+
 /// What `GET /device` shows. Never carries the device token.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DeviceView {
@@ -74,11 +96,11 @@ impl Control {
     /// A device restored from (or just written to) `state_path`, syncing against `url`.
     pub fn new(saved: SavedState, url: String, state_path: PathBuf) -> Self {
         Self {
-            url,
             state_path,
             save_lock: tokio::sync::Mutex::new(()),
             live: Mutex::new(Live {
                 saved,
+                url,
                 syncing: false,
                 last_sync: None,
                 requests: Vec::new(),
@@ -88,23 +110,15 @@ impl Control {
 
     /// The device as `GET /device` reports it.
     pub fn view(&self) -> DeviceView {
-        let live = self.live();
-        DeviceView {
-            hardware_id: live.saved.device.hardware_id.clone(),
-            url: self.url.clone(),
-            syncing: live.syncing,
-            last_sync: live.last_sync.clone(),
-            sync_token: live.saved.device.sync_token.clone(),
-            library: live.saved.device.library.clone(),
-        }
+        self.live().view()
     }
 
     /// Press "Sync now" against `<url>/kobo/<token>`. The sync runs on its own
     /// task, so dropping the caller (a client disconnect) never cancels it.
     pub async fn sync(self: &Arc<Self>) -> Result<LastSync, ControlError> {
-        let (syncing, device, token) = self.begin_sync()?;
+        let (syncing, device, endpoint) = self.begin_sync()?;
         let control = Arc::clone(self);
-        let task = tokio::spawn(async move { control.run_sync(syncing, device, token).await });
+        let task = tokio::spawn(async move { control.run_sync(syncing, device, endpoint).await });
         match task.await {
             Ok(result) => result,
             Err(error) => std::panic::resume_unwind(
@@ -116,16 +130,18 @@ impl Control {
     }
 
     /// Mark a sync as running and hand back what it works on, or turn it away if one already is.
+    /// The endpoint is read with the flag, so a retarget never lands between them.
     fn begin_sync(self: &Arc<Self>) -> Result<(SyncingGuard, Device, String), ControlError> {
-        let (device, token) = {
+        let (device, endpoint) = {
             let mut live = self.live();
             if live.syncing {
                 return Err(ControlError::SyncInProgress);
             }
             live.syncing = true;
-            (live.saved.device.clone(), live.saved.token.clone())
+            let endpoint = format!("{}/kobo/{}", live.url, live.saved.token);
+            (live.saved.device.clone(), endpoint)
         };
-        Ok((SyncingGuard(Arc::clone(self)), device, token))
+        Ok((SyncingGuard(Arc::clone(self)), device, endpoint))
     }
 
     /// Sync `device`, commit what it learned, and save; `_syncing` clears the flag when this ends.
@@ -133,9 +149,8 @@ impl Control {
         &self,
         _syncing: SyncingGuard,
         mut device: Device,
-        token: String,
+        endpoint: String,
     ) -> Result<LastSync, ControlError> {
-        let endpoint = format!("{}/kobo/{token}", self.url);
         let attempt = attempt_sync(&mut device, &endpoint).await;
         let last_sync = match attempt.outcome {
             Ok(pages) => LastSync::Synced { pages },
@@ -170,6 +185,42 @@ impl Control {
         Ok(self.view())
     }
 
+    /// Point the device at a new URL or token and save it; library and sync token stay.
+    /// Turned away while a sync runs.
+    pub async fn retarget(&self, to: Retarget) -> Result<Retargeted, ControlError> {
+        let retargeted = {
+            let mut live = self.live();
+            if live.syncing {
+                return Err(ControlError::SyncInProgress);
+            }
+            match to {
+                Retarget::Url(url) => {
+                    live.saved.url = Some(url.clone());
+                    live.url = url;
+                }
+                Retarget::Token(token) => {
+                    live.saved.token = token;
+                    live.saved.wired_url = None;
+                }
+                Retarget::Wired { token, url } => {
+                    live.saved.token = token;
+                    live.saved.wired_url = Some(url);
+                }
+            }
+            let needs_wire = live
+                .saved
+                .wired_url
+                .as_ref()
+                .is_some_and(|wired| *wired != live.url);
+            Retargeted {
+                view: live.view(),
+                needs_wire,
+            }
+        };
+        self.persist().await?;
+        Ok(retargeted)
+    }
+
     /// Every request the device made since start or the last reset, oldest first.
     pub fn requests(&self) -> Vec<RequestRecord> {
         self.live().requests.clone()
@@ -185,6 +236,20 @@ impl Control {
     /// The lock on the live state; a panic elsewhere never makes the device unreadable.
     fn live(&self) -> MutexGuard<'_, Live> {
         self.live.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl Live {
+    /// The device as `GET /device` reports it.
+    fn view(&self) -> DeviceView {
+        DeviceView {
+            hardware_id: self.saved.device.hardware_id.clone(),
+            url: self.url.clone(),
+            syncing: self.syncing,
+            last_sync: self.last_sync.clone(),
+            sync_token: self.saved.device.sync_token.clone(),
+            library: self.saved.device.library.clone(),
+        }
     }
 }
 

@@ -1,5 +1,6 @@
-//! `Control::sync`, `view` and `requests` against a stub Omnibus and a real temp state file.
+//! `Control::sync`, `reset`, `retarget`, `view` and `requests` against a stub Omnibus and a real temp state file.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -327,4 +328,230 @@ async fn reset_returns_sync_in_progress_while_sync_runs() {
     assert!(matches!(result, Err(ControlError::SyncInProgress)));
     assert_eq!(control.view().library, device_with_dune().library);
     running.abort();
+}
+
+/// A `HW-1` device holding `STUB_TOKEN`, syncing against `url`, whose token was wired against `wired_url`.
+fn control_wired_against(url: &str, wired_url: Option<&str>, state_path: PathBuf) -> Arc<Control> {
+    let saved = SavedState {
+        url: None,
+        token: STUB_TOKEN.into(),
+        wired_url: wired_url.map(str::to_owned),
+        device: Device::new("HW-1"),
+    };
+    Arc::new(Control::new(saved, url.to_owned(), state_path))
+}
+
+#[tokio::test]
+async fn retarget_url_syncs_against_new_url() {
+    let old = spawn_stub(Stub::default()).await;
+    let new = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&old, dir.path().join("kobo.json"));
+
+    let retargeted = control
+        .retarget(Retarget::Url(new.origin.clone()))
+        .await
+        .unwrap();
+    let last_sync = control.sync().await.unwrap();
+
+    assert_eq!(retargeted.view.url, new.origin);
+    assert_eq!(control.view().url, new.origin);
+    assert_eq!(last_sync, LastSync::Synced { pages: 1 });
+    assert_eq!(control.view().library["book-1"].title, "Dune");
+    assert!(old.paths().is_empty());
+    let initialization = format!("/kobo/{STUB_TOKEN}/v1/initialization");
+    assert_eq!(new.requests_to(&initialization).len(), 1);
+}
+
+#[tokio::test]
+async fn retarget_url_pins_url_in_state_file() {
+    let old = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&old, path.clone());
+
+    control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await
+        .unwrap();
+
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.url, Some("http://new.example:3000".to_owned()));
+}
+
+#[tokio::test]
+async fn retarget_url_keeps_library_sync_token_and_hardware_id() {
+    let old = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&old, path.clone());
+    control.sync().await.unwrap();
+    let before = control.view();
+    let saved_before = state::load(&path).await.unwrap().unwrap();
+
+    let retargeted = control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await
+        .unwrap();
+
+    let after = control.view();
+    assert_eq!(retargeted.view, after);
+    assert_eq!(after.hardware_id, before.hardware_id);
+    assert_eq!(after.library, before.library);
+    assert_eq!(after.sync_token, before.sync_token);
+    assert_eq!(after.last_sync, before.last_sync);
+    let saved_after = state::load(&path).await.unwrap().unwrap();
+    let only_the_url_moved = SavedState {
+        url: Some("http://new.example:3000".to_owned()),
+        ..saved_before
+    };
+    assert_eq!(saved_after, only_the_url_moved);
+}
+
+#[tokio::test]
+async fn retarget_url_keeps_user_token_without_needing_wire() {
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against("http://old.example:1", None, dir.path().join("kobo.json"));
+
+    let retargeted = control
+        .retarget(Retarget::Url("http://new.example:1".into()))
+        .await
+        .unwrap();
+
+    assert!(!retargeted.needs_wire);
+}
+
+#[tokio::test]
+async fn retarget_url_reports_needs_wire_when_token_was_wired_against_another_url() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = control_wired_against(
+        "http://old.example:1",
+        Some("http://old.example:1"),
+        path.clone(),
+    );
+
+    let retargeted = control
+        .retarget(Retarget::Url("http://new.example:1".into()))
+        .await
+        .unwrap();
+
+    assert!(retargeted.needs_wire);
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.wired_url, Some("http://old.example:1".to_owned()));
+}
+
+#[tokio::test]
+async fn retarget_url_reports_no_wire_needed_when_url_is_the_wired_url() {
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against(
+        "http://other.example:1",
+        Some("http://wired.example:1"),
+        dir.path().join("kobo.json"),
+    );
+
+    let retargeted = control
+        .retarget(Retarget::Url("http://wired.example:1".into()))
+        .await
+        .unwrap();
+
+    assert!(!retargeted.needs_wire);
+}
+
+#[tokio::test]
+async fn retarget_token_saves_token_and_clears_wired_url() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = control_wired_against(
+        "http://old.example:1",
+        Some("http://old.example:1"),
+        path.clone(),
+    );
+
+    let retargeted = control
+        .retarget(Retarget::Token("typed-token".into()))
+        .await
+        .unwrap();
+
+    assert!(!retargeted.needs_wire);
+    assert_eq!(retargeted.view.url, "http://old.example:1");
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.token, "typed-token");
+    assert_eq!(saved.wired_url, None);
+    assert_eq!(saved.url, None);
+}
+
+#[tokio::test]
+async fn retarget_wired_saves_token_and_wired_url() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = control_wired_against("http://now.example:1", None, path.clone());
+
+    let retargeted = control
+        .retarget(Retarget::Wired {
+            token: "minted-token".into(),
+            url: "http://now.example:1".into(),
+        })
+        .await
+        .unwrap();
+
+    assert!(!retargeted.needs_wire);
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.token, "minted-token");
+    assert_eq!(saved.wired_url, Some("http://now.example:1".to_owned()));
+}
+
+#[tokio::test]
+async fn retarget_wired_reports_needs_wire_when_url_is_not_the_device_url() {
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against("http://now.example:1", None, dir.path().join("kobo.json"));
+
+    let retargeted = control
+        .retarget(Retarget::Wired {
+            token: "minted-token".into(),
+            url: "http://elsewhere.example:1".into(),
+        })
+        .await
+        .unwrap();
+
+    assert!(retargeted.needs_wire);
+}
+
+#[tokio::test]
+async fn retarget_returns_sync_in_progress_while_sync_runs() {
+    let stub = spawn_stub(Stub {
+        sync_never_answers: true,
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path.clone());
+    let running = spawn_sync(&control);
+    wait_until(|| control.view().syncing).await;
+
+    let result = control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await;
+
+    assert!(matches!(result, Err(ControlError::SyncInProgress)));
+    assert_eq!(control.view().url, stub.origin);
+    assert!(state::load(&path).await.unwrap().is_none());
+    running.abort();
+}
+
+#[tokio::test]
+async fn retarget_returns_state_not_saved_when_state_file_cannot_be_written() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let parent = dir.path().join("parent");
+    std::fs::write(&parent, "").unwrap();
+    let control = stub_control(&stub, parent.join("kobo.json"));
+
+    let result = control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await;
+
+    assert!(matches!(result, Err(ControlError::StateNotSaved(_))));
+    assert_eq!(control.view().url, "http://new.example:3000");
 }
