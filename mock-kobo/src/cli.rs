@@ -128,7 +128,7 @@ fn parse_serve(
 }
 
 /// The origin of `url`, if it is a bare http(s) origin: no path, query, fragment or credentials.
-fn valid_url(url: String) -> Result<String, CliError> {
+pub fn valid_url(url: String) -> Result<String, CliError> {
     let invalid = |reason: &str| CliError::Invalid {
         name: "server URL",
         reason: reason.into(),
@@ -149,7 +149,7 @@ fn valid_url(url: String) -> Result<String, CliError> {
 }
 
 /// `token` if it is made only of the URL-safe base64 characters Omnibus issues.
-fn valid_token(token: String) -> Result<String, CliError> {
+pub fn valid_token(token: String) -> Result<String, CliError> {
     let url_safe = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
     if !token.is_empty() && token.chars().all(url_safe) {
         return Ok(token);

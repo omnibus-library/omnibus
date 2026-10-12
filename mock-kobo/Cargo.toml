@@ -12,6 +12,12 @@ license.workspace = true
 name = "mock-kobo"
 path = "src/main.rs"
 
+[features]
+# On by default so `mock-kobo tui` works as built; `server/` opts out.
+default = ["tui"]
+# The `mock-kobo tui` terminal UI, and the only user of ratatui.
+tui = ["dep:ratatui"]
+
 [dependencies]
 # `main.rs` is the only user: the library reports typed errors.
 anyhow = "1"
@@ -19,6 +25,8 @@ anyhow = "1"
 axum = "0.8"
 # Same version `db/` uses for its CSPRNG tokens, so cargo unifies on one build.
 getrandom = "0.3"
+# The terminal UI. Its re-exported crossterm is the only one used, so the two can't disagree.
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"], optional = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

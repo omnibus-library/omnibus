@@ -16,4 +16,6 @@ pub mod startup;
 pub mod state;
 #[cfg(test)]
 mod test_support;
+#[cfg(feature = "tui")]
+pub mod tui;
 pub mod wire;
