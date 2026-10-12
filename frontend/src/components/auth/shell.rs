@@ -47,15 +47,11 @@ const SPINES: &[Spine] = &[
     },
 ];
 
-/// Split-pane wrapper used by every auth screen. The left pane is the
-/// branded art panel; the right pane hosts the form column.
+/// Split-pane wrapper used by every auth screen: a branded art panel on the
+/// left, the form column on the right.
 ///
-/// Props:
-/// - `kicker` — small uppercase label above the title (e.g. `"Sign in"`).
-/// - `title` — heading rsx for the right pane. Pass plain text or rich
-///   markup (e.g. an italic span).
-/// - `lede` — optional supporting copy under the title.
-/// - `children` — the form content.
+/// Props: `kicker` (small uppercase label above the title), `title` (heading
+/// rsx), `lede` (optional supporting copy), `children` (the form content).
 #[component]
 pub fn AuthShell(
     kicker: String,

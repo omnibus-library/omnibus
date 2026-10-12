@@ -140,11 +140,8 @@ pub fn remaining_in_chapter(chapters: &[ChapterInfo], idx: usize, elapsed: f64) 
     }
 }
 
-/// Resolve the "previous chapter" seek target:
-/// - >3s into the current chapter → its start;
-/// - within 3s of the start and not the first → the previous chapter's start;
-/// - otherwise → 0.
-///
+/// Resolve the "previous chapter" seek target: the current chapter's start when
+/// more than 3 s into it, else the previous chapter's start (0 on the first).
 /// `None` when `chapters` is empty or `idx` is out of bounds.
 pub fn chapter_prev_seek(chapters: &[ChapterInfo], elapsed: f64, idx: usize) -> Option<f64> {
     let current = chapters.get(idx)?;
@@ -159,14 +156,10 @@ pub fn chapter_prev_seek(chapters: &[ChapterInfo], elapsed: f64, idx: usize) -> 
 }
 
 /// Pick the next playable part after `idx` given a part count. Returns `None`
-/// when `idx` is the last part (playback should stop, not wrap).
-///
-/// Intentionally kept unwired: the runtime decision runs synchronously inside
-/// the JS `ended` handler ([`super::interop`]) so the next part's `src` can be
-/// set with zero playback gap — routing through a Rust/WASM round-trip
-/// (`dioxus.send` + a response) would add audible latency at every part
-/// boundary. This mirrors that same `idx + 1 < part_count` check so the
-/// boundary arithmetic stays unit-tested in Rust.
+/// when `idx` is the last part (playback should stop, not wrap). Unwired on
+/// purpose: the runtime check runs inside the JS `ended` handler
+/// ([`super::interop`]) to avoid a WASM round-trip gap; this mirrors it so the
+/// boundary arithmetic stays unit-tested.
 #[allow(dead_code)]
 pub fn next_part_index(part_count: usize, idx: usize) -> Option<usize> {
     let next = idx + 1;

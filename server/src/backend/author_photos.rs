@@ -104,16 +104,11 @@ pub(super) async fn delete_author_photo(
     }
 }
 
-/// Admin: synchronously run the Open Library cascade for an author. Clears
-/// any sticky `letter` negative-cache marker so the resolver re-queries Open
-/// Library, then awaits the resolver inline and returns
-/// `{ "resolved": bool }`. `resolved=false` means Open Library had nothing
-/// (a `letter` marker is now in place to skip future autoresolution).
-///
-/// Manual uploads are treated as overrides: a `source = 'manual'` row is
-/// preserved and Scan returns `resolved=true` without touching the row,
-/// so admins can't accidentally wipe a manual upload by clicking the
-/// button.
+/// Admin: synchronously run the Open Library cascade for an author. Clears any
+/// sticky `letter` negative-cache marker so the resolver re-queries Open Library,
+/// then awaits it inline and returns `{ "resolved": bool }`; `false` means Open
+/// Library had nothing (a `letter` marker is re-set). A `source = 'manual'` row is
+/// preserved and reports `resolved=true`, so a manual upload can't be wiped here.
 pub(super) async fn post_author_photo_scan(
     _admin: AdminUser,
     State(state): State<AppState>,

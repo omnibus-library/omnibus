@@ -32,13 +32,10 @@ type JsCallbackHolder = std::rc::Rc<std::cell::RefCell<Vec<Box<dyn std::any::Any
 // exercises the `server` + `mobile` features). The rest of this module is
 // JS/WASM interop (`eval`, `window.*` callbacks).
 
-/// Whether the driver must (re)load for a newly-requested `(uuid, file_id)`.
-///
-/// A different book always reloads. The *same* book reloads only on an
-/// explicit, different file selection — so picking another part in the file
-/// picker switches parts, while the mini-dock (which relinks with no
-/// `file_id`) resumes the current part instead of restarting from the first
-/// file. Mirrors `pages::listen::mobile::host::needs_reload`.
+/// Whether the driver must (re)load for a newly-requested `(uuid, file_id)`. A
+/// different book always reloads; the *same* book only on an explicit, different
+/// file selection, so the mini-dock (which relinks with no `file_id`) resumes
+/// the current part. Mirrors `pages::listen::mobile::host::needs_reload`.
 fn needs_reload(
     loaded: &Option<(String, Option<i64>, u32)>,
     uuid: &str,
@@ -55,16 +52,11 @@ fn needs_reload(
     }
 }
 
-/// App-root playback driver. Installs the `window.OmnibusAudio` shim and
-/// drives manifest-based playback off the app-wide [`crate::PlaybackState`].
-///
-/// Called once from [`crate::App`] (so the audio element and all signals
-/// outlive any single route). The inner `use_effect` reacts to
-/// `playback.uuid` and `playback.file_id`: retargeting either (the listen
-/// page on mount / a picker selection, or a dock dismiss that clears the
-/// uuid) loads, swaps, or tears down playback, gated by [`needs_reload`].
-/// Because the signals now outlive the page, every book swap must reset the
-/// prior book's state before installing fresh callbacks.
+/// App-root playback driver. Installs the `window.OmnibusAudio` shim and drives
+/// manifest-based playback off the app-wide [`crate::PlaybackState`]. Called once
+/// from [`crate::App`], so the audio element and signals outlive any route.
+/// Retargeting `playback.uuid` or `playback.file_id` loads, swaps, or tears down
+/// playback, gated by [`needs_reload`], resetting the prior book's state first.
 pub(crate) fn install_audio_bootstrap(playback: crate::PlaybackState) {
     let cb_holder: JsCallbackHolder =
         use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::new())));

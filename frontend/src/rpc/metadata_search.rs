@@ -45,12 +45,10 @@ pub async fn rpc_metadata_providers() -> Result<Vec<ProviderInfo>> {
 }
 
 /// Search every configured provider at once, keeping each source's
-/// candidates attributed and un-collapsed.
-///
-/// `can_edit`-gated like the overrides *write* it feeds, because it is the
-/// one metadata read that spends outbound provider calls. Always `Ok` once
-/// the query is well-formed: a provider that fails reports `Failed` on its
-/// own status row rather than failing the whole search.
+/// candidates attributed and un-collapsed. `can_edit`-gated like the overrides
+/// *write* it feeds, as the one metadata read that spends outbound provider
+/// calls. Always `Ok` once the query is well-formed: a failing provider
+/// reports `Failed` on its own status row.
 #[post("/api/rpc/metadata/editions/search", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_search_editions(req: EditionSearchRequest) -> Result<EditionSearchResponse> {
     if !user.is_admin && !user.can_edit {
@@ -65,12 +63,9 @@ pub async fn rpc_search_editions(req: EditionSearchRequest) -> Result<EditionSea
     .await)
 }
 
-/// Turn a request into the query the providers are actually asked.
-///
-/// The structured fields win when the caller sent them; free text falls back
-/// to a title-only query, which is the only honest reading of a string a
-/// reader typed — splitting it on a guess would be worse than not splitting
-/// it at all.
+/// Turn a request into the query the providers are actually asked. The
+/// structured fields win when sent; free text falls back to a title-only
+/// query, since splitting a typed string on a guess would be worse.
 #[cfg(feature = "server")]
 fn search_query(req: &EditionSearchRequest) -> db::SearchQuery {
     // Built first, then checked for content — the structured fields are

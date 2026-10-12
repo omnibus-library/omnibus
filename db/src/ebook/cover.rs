@@ -14,17 +14,11 @@ use super::ScanOptions;
 
 mod embedded;
 
-/// Sidecar-first cover resolution.
-///
-/// 1. If `<path>` has a sidecar (per-stem first, folder-level fallback),
-///    read its bytes and return them.
-/// 2. Otherwise, ask the EPUB for its embedded cover.
-/// 3. If `opts.materialize_sidecars` is set and the embedded cover came back
-///    successfully, write it to a `<basename>.{jpg|png}` sidecar so the next
-///    scan hits the sidecar directly. Failures are non-fatal.
-///
-/// Returns the cover bytes used for *this* scan (the in-memory copy, even
-/// when materialization wrote them to disk — this avoids a round-trip read).
+/// Sidecar-first cover resolution: use the `<path>` sidecar's bytes (per-stem
+/// first, folder-level fallback), else the EPUB's embedded cover. With
+/// `opts.materialize_sidecars`, a successful embedded cover is also written to a
+/// `<basename>.{jpg|png}` sidecar (failures non-fatal). Returns the in-memory
+/// bytes used for this scan, even when materialization wrote them to disk.
 pub(crate) fn resolve_cover<R: std::io::Read + std::io::Seek>(
     path: &Path,
     doc: &mut EpubDoc<R>,
@@ -43,11 +37,9 @@ pub(crate) fn resolve_cover<R: std::io::Read + std::io::Seek>(
 }
 
 /// Re-resolve the cover of an already-indexed EPUB at `path`, outside a scan.
-///
-/// Takes the same sidecar-first path a scan does, but read-only: a backfill's
-/// job is to fill in a cover the scan missed, not to start writing sidecars
-/// into someone's library. Returns `None` for an unreadable file or a book
-/// that genuinely has no cover.
+/// Read-only: takes the same sidecar-first path as a scan but never writes
+/// sidecars into someone's library. `None` for an unreadable file or a book with
+/// no cover.
 pub fn extract_cover(path: &Path) -> Option<(String, Vec<u8>)> {
     let mut doc = EpubDoc::new(path).ok()?;
     resolve_cover(path, &mut doc, &ScanOptions::default())
@@ -114,14 +106,11 @@ fn mime_for_extension(path: &Path) -> &'static str {
     }
 }
 
-/// Best-effort write of `<basename>.{jpg|png}` next to the epub so future
-/// scans skip the zip. Fails silently — this is a cache, not a contract.
-///
-/// `corrupt_sidecar`, when set, is a sidecar path the caller already
-/// confirmed is unreadable. We allow overwriting *exactly* that file so a
-/// corrupt cache entry self-heals on the next scan instead of forcing every
-/// future scan to re-open the zip. Anything else under `target.exists()`
-/// (a valid file, a different filename) we leave alone.
+/// Best-effort write of `<basename>.{jpg|png}` next to the epub so future scans
+/// skip the zip. Fails silently: this is a cache, not a contract.
+/// `corrupt_sidecar` is a sidecar path the caller already confirmed is
+/// unreadable; overwriting exactly that file lets a corrupt entry self-heal.
+/// Any other existing target (a valid file, a different filename) is left alone.
 pub(crate) fn materialize_sidecar(
     epub_path: &Path,
     mime: &str,

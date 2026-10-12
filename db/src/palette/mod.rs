@@ -82,12 +82,10 @@ const LIMIT: i32 = 5;
 /// full-text book search holds to.
 pub const MAX_SECTION_LIMIT: u32 = 500;
 
-/// Grouped command-palette results for one library path.
-///
-/// Returns up to 5 books, authors, series, tags, and genres plus server-side
-/// timing in `duration_ms`.
-/// Books are matched via FTS5 (`build_search_query`); taxonomy categories use
-/// `LIKE '%q%'`. Empty/whitespace queries return `PaletteResults::default()`.
+/// Grouped command-palette results for one library path: up to 5 books, authors,
+/// series, tags, and genres plus server-side timing in `duration_ms`. Books match
+/// via FTS5 (`build_search_query`); taxonomy categories use `LIKE '%q%'`.
+/// Empty/whitespace queries return `PaletteResults::default()`.
 pub async fn search_palette(
     pool: &SqlitePool,
     library_path: &str,

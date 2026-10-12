@@ -120,10 +120,8 @@ fn target_summary(target: Option<i64>, unit: &str) -> String {
 /// The drafts a save should actually write: index and new value for every
 /// field whose target moved.
 ///
-/// This is what preserves the per-kind write contract behind a single Save. A
-/// reader changing their pages target has said nothing about their minutes
-/// target, and restating it would overwrite a value another device may have
-/// changed since this page loaded.
+/// This keeps the per-kind write contract behind a single Save: restating an
+/// untouched target would overwrite a value another device may have changed.
 fn changed_updates(
     drafts: &[Option<i64>; 3],
     current: &[Option<i64>; 3],

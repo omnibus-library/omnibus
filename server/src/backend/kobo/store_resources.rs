@@ -32,13 +32,10 @@ pub const OVERRIDDEN_KEYS: [&str; 7] = [
     "reading_services_host",
 ];
 
-/// Build the `Resources` map for one device: Kobo's map with
-/// [`OVERRIDDEN_KEYS`] repointed at `base` (this server's origin) under the
-/// caller's path `token`.
-///
-/// `base` is the already-resolved request origin; an empty `base` yields
-/// host-relative overrides rather than an invalid `http:///…`, matching the
-/// download/image URL builders.
+/// Build the `Resources` map for one device: Kobo's map with [`OVERRIDDEN_KEYS`]
+/// repointed at `base` (this server's origin) under the caller's path `token`. `base` is
+/// the already-resolved request origin; an empty `base` yields host-relative overrides
+/// rather than an invalid `http:///…`.
 pub fn resources_for(base: &str, token: &str) -> Map<String, Value> {
     let mut map = RESOURCES.clone();
     let prefix = format!("{base}/kobo/{token}");

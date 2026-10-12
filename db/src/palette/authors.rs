@@ -25,19 +25,9 @@ use super::PaletteError;
 
 /// Authors-arm palette query, bound `?1 = library_paths JSON array`,
 /// `?2 = folded like_pattern`, `?3 = limit`, `?4 = raw like_pattern` (the
-/// NULL-key fallback).
-///
-/// Visibility scoping ([`visible_book_sql`]) is applied before aggregation so
-/// book_count stays library-correct (covered by
-/// `search_palette_scoped_to_library` and
-/// `search_palette_taxonomy_counts_scoped_per_library`). The join plan is
-/// locked in by `search_palette_taxonomy_query_plans_use_indexes`.
-///
-/// Both the count and the visibility gate read the shared effective
-/// membership (`effective_authors_sql!`) — the relation the Authors index and
-/// smart-shelf author rules read — so an author whose books were all
-/// re-credited through the edit form drops out rather than advertising a
-/// count its `/author/:id` page no longer shows.
+/// NULL-key fallback). Visibility ([`visible_book_sql`]) applies before
+/// aggregation so book_count stays library-correct; count and gate both read
+/// `effective_authors_sql!`, so a fully re-credited author drops out.
 pub(super) fn search_authors_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {

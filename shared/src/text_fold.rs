@@ -9,11 +9,9 @@ use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
 /// Fold `s` to a case- and accent-insensitive match key: decompose, drop
-/// combining marks, lowercase.
-///
-/// NFKD also folds compatibility forms (`ﬁ` → `fi`), making this slightly
-/// stronger than SQLite FTS5's `remove_diacritics 2` — strictly more
-/// folding, never less, so a folded query never misses what FTS matches.
+/// combining marks, lowercase. NFKD also folds compatibility forms (`ﬁ` → `fi`),
+/// so this folds strictly more than SQLite FTS5's `remove_diacritics 2` and a
+/// folded query never misses what FTS matches.
 pub fn fold_for_match(s: &str) -> String {
     s.nfkd()
         .filter(|c| !is_combining_mark(*c))

@@ -11,11 +11,9 @@ use super::super::books::SyncError;
 
 /// Apply the Removed bucket: resolve affected ids and, via
 /// `mark_book_files_missing_batch`, drop the `book_files` rows (parts/chapters
-/// cascade) and flag each book missing — but **retain** the `books` row, its
-/// links, FTS, and soft-ref user data, so the book stays in browse/search (the
-/// grid hides it via `EXISTS book_files`) and a returning group re-attaches via
-/// Changed. Also drop any `book_files` rows whose uuid lived only in
-/// `merged_uuids` (cross-format attachments — the target book survives).
+/// cascade) and flag each book missing, but **retain** the `books` row, its links,
+/// FTS and soft-ref user data, so a returning group re-attaches via Changed. Also
+/// drops `book_files` rows living only in `merged_uuids`; the target book survives.
 pub(super) async fn sync_audiobooks_removed(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,
@@ -64,20 +62,10 @@ pub(super) async fn sync_audiobooks_removed(
 }
 
 /// Batched form of `books::mark_book_files_missing` for the Removed bucket: one
-/// IN-list DELETE of the `book_files` rows (parts/chapters cascade) and one
-/// guarded UPDATE flagging the now-fileless `books` rows missing, instead
-/// of two statements per book. The UPDATE keeps `mark_book_files_missing`'s
-/// guards — `is_missing_files = 0` preserves the original `missing_files_since`
-/// on a re-run, and `is_missing_files_override = 0` leaves intentionally-fileless
-/// rows (wishlist) un-flagged. `ids` must be non-empty and within the SQLite
-/// 999-param cap (the caller chunks at 500).
-///
-/// The DELETE excludes any row still recorded in `merged_uuids` — a
-/// cross-format attachment (a different format's file, still present) —
-/// so it survives this book's own group going missing. The UPDATE that
-/// follows is guarded on `NOT EXISTS book_files` too, so a book whose
-/// cross-format attachment survived the delete (and so isn't actually
-/// fileless) is not flagged missing.
+/// IN-list DELETE of the `book_files` rows (parts/chapters cascade), sparing
+/// cross-format attachments recorded in `merged_uuids`, and one guarded UPDATE
+/// flagging the now-fileless `books` rows missing. `ids` must be non-empty and
+/// within SQLite's 999-param cap (the caller chunks at 500).
 async fn mark_book_files_missing_batch(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     ids: &[i64],
@@ -102,6 +90,9 @@ async fn mark_book_files_missing_batch(
     }
     del_q.execute(&mut **tx).await?;
 
+    // `is_missing_files = 0` keeps the original `missing_files_since` on a re-run;
+    // `is_missing_files_override = 0` leaves intentionally-fileless (wishlist) rows
+    // unflagged; `NOT EXISTS book_files` skips a book a surviving attachment keeps live.
     let upd_sql = format!(
         "UPDATE books
             SET is_missing_files = 1, missing_files_since = unixepoch()

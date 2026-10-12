@@ -16,13 +16,11 @@ pub enum NormalizeError {
     Db(#[from] sqlx::Error),
 }
 
-/// Normalize a title into its match key: diacritics folded, lowercased,
-/// `&` expanded to `and`, punctuation collapsed to single spaces. `None`
-/// when nothing survives.
-///
-/// Deliberately exact — no article stripping, no substring or fuzzy
-/// matching — so *Dune* never matches *Dune Messiah*. A missed match
-/// costs one manual merge; a false positive silently corrupts a book.
+/// Normalize a title into its match key: diacritics folded, lowercased, `&`
+/// expanded to `and`, punctuation collapsed to single spaces. `None` when
+/// nothing survives. Deliberately exact (no article stripping, no substring or
+/// fuzzy matching) so *Dune* never matches *Dune Messiah*: a missed match costs
+/// one manual merge, a false positive silently corrupts a book.
 pub fn normalize_title(s: &str) -> Option<String> {
     normalize(s)
 }
@@ -39,20 +37,11 @@ pub fn normalize_author(s: &str) -> Option<String> {
     normalize(s)
 }
 
-/// Fold `s` to `[a-z0-9 ]`, expanding `&` and collapsing everything else
-/// to single spaces.
-///
-/// `&` is expanded rather than dropped so the two spellings of the same
-/// conjunction converge on one key — without it `"Mirth & Magic"` keys as
-/// `mirth magic` and a provider's `"Mirth and Magic"` as
-/// `mirth and magic`, and neither the Check-In norm rung nor cross-format
-/// auto-attach can bridge a difference that sits mid-string. It expands in
-/// every position, glued neighbours included (`R&B` → `r and b`), because
-/// `&` is only ever the word "and".
-///
-/// `+` deliberately gets no such treatment: it is far more often a literal
-/// part of a token (`C++`, `Disney+`, `A+`) than a conjunction, so
-/// expanding it would key `"C++ Primer"` as `c and and primer`.
+/// Fold `s` to `[a-z0-9 ]`, expanding `&` and collapsing everything else to
+/// single spaces. `&` is expanded rather than dropped so `"Mirth & Magic"` and
+/// `"Mirth and Magic"` converge on one key, in every position (`R&B` becomes
+/// `r and b`). `+` is deliberately not expanded: it is usually a literal part
+/// of a token (`C++`, `Disney+`), so expanding it would mangle `"C++ Primer"`.
 fn normalize(s: &str) -> Option<String> {
     let folded = deunicode::deunicode(s).to_lowercase();
     let mut out = String::with_capacity(folded.len());
@@ -79,16 +68,11 @@ fn normalize(s: &str) -> Option<String> {
     Some(out).filter(|s| !s.is_empty())
 }
 
-/// One-time backfill of `books.(title_norm, author_norm)` for rows
-/// indexed before migration 0016. Idempotent — only touches rows where
-/// `title_norm IS NULL` — and cheap once caught up, so it runs on every
-/// boot from `init_db`. Normalizes **scanned** metadata only; the
-/// override-derived keys have their own boot pass
+/// One-time backfill of `books.(title_norm, author_norm)` for rows indexed
+/// before the columns existed. Idempotent (only `title_norm IS NULL` rows) and
+/// cheap once caught up, so it runs on every boot from `init_db`. Normalizes
+/// **scanned** metadata only; override-derived keys have their own boot pass
 /// (`metadata_overrides::backfill_override_norm_columns`).
-///
-/// The `IS NULL` guard is also how a *changed* folder re-derives stored
-/// keys: a migration nulls the rows whose key the change invalidated and
-/// this pass recomputes them (migration 0070 did that for `&`).
 pub async fn backfill_norm_columns(pool: &SqlitePool) -> Result<(), NormalizeError> {
     let rows: Vec<(i64, String, Option<String>)> = sqlx::query_as(
         "SELECT b.id, b.title, a.name
@@ -155,16 +139,9 @@ const NORM_UPDATE_CHUNK: usize = 300;
 
 /// Boot backfill: rewrite any `books.author_sort` the sync writers would now
 /// key differently, so the Author axis orders every existing row on one key
-/// format. Heals the two shapes older write paths stored verbatim: a
-/// given-first display name and a comma-less OPF `file_as` such as
-/// `"Andy Weir"`. New rows are keyed by [`creator_sort_key`] already.
-///
-/// Recomputes from the book's position-0 linked author, the name the scanner
-/// derived from, and only for a stored value with no comma — a comma-form key
-/// is one [`creator_sort_key`] keeps verbatim. Its output for a multi-word
-/// name always carries a comma, so a fixed row leaves the candidate set and a
-/// mononym that is already its own key is read but never rewritten. Runs on
-/// every boot from `init_db` alongside [`backfill_norm_columns`].
+/// format. Heals a given-first display name and a comma-less OPF `file_as`
+/// such as `"Andy Weir"`. Recomputes from the position-0 linked author, only
+/// for a stored value with no comma, so a fixed row leaves the candidate set.
 pub async fn backfill_author_sort(pool: &SqlitePool) -> Result<(), NormalizeError> {
     let rows: Vec<(i64, String, Option<String>)> = sqlx::query_as(
         "SELECT b.id, b.author_sort, a.name
@@ -216,13 +193,10 @@ pub async fn backfill_author_sort(pool: &SqlitePool) -> Result<(), NormalizeErro
 const AUTHOR_SORT_UPDATE_CHUNK: usize = 400;
 
 /// Recompute `authors.name_norm` for every author and rewrite the rows whose
-/// stored key disagrees. Run at boot from `init_db`.
-///
-/// Compares rather than filtering on `IS NULL`, so this both fills the rows
-/// that predate the column and heals a value left behind by a write path that
-/// missed it — a key an `IS NULL` guard could never correct. The write is
-/// unconditional because the fold is total: every name yields a key, so there
-/// is no "cannot derive" case a plain write would erase.
+/// stored key disagrees. Run at boot from `init_db`. Compares rather than
+/// filtering on `IS NULL`, so it fills rows that predate the column and heals a
+/// stale value an `IS NULL` guard could never correct. The write is
+/// unconditional because the fold is total: every name yields a key.
 pub async fn backfill_author_name_norm(pool: &SqlitePool) -> Result<(), NormalizeError> {
     let rows: Vec<(i64, String, Option<String>)> =
         sqlx::query_as("SELECT id, name, name_norm FROM authors")

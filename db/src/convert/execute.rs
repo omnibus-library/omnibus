@@ -20,16 +20,11 @@ use crate::settings::effective_ebook_convert_path;
 /// generous for a large book on a loaded host.
 const DEFAULT_TIMEOUT_SECS: u64 = 600;
 
-/// Errors from the format-conversion path.
-///
-/// `SourceMissing`/`BinaryUnavailable`/`Timeout`/`InvalidFormat` stay
-/// distinct variants because `worker::handlers::convert_outcome` branches on
-/// them to decide whether the message is safe to hand back verbatim — none
-/// of the four carry a filesystem path or subprocess output. Everything else
-/// (DB lookup failures, process spawn/filesystem errors, a non-zero
-/// `ebook-convert` exit) is foreign-system failure with no caller branching
-/// on the specific cause, so it collapses into `Failed` (rule 02:
-/// anyhow-territory).
+/// Errors from the format-conversion path. `SourceMissing`, `BinaryUnavailable`,
+/// `Timeout` and `InvalidFormat` stay distinct because
+/// `worker::handlers::convert_outcome` branches on them to decide whether the
+/// message is safe to hand back verbatim (none carries a path or subprocess
+/// output); everything else collapses into `Failed` (rule 02).
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
     #[error("book {book_id} has no {format} file to convert")]
@@ -48,21 +43,11 @@ pub enum ConvertError {
     Failed(#[from] anyhow::Error),
 }
 
-/// Convert `book_id`'s `source_format` file to `target_format` and return
-/// the output path, `<convert_dir>/<book_id>.<target_format>`.
-///
-/// Always reconverts — unlike the KEPUB cache, a conversion request names an
-/// explicit target pair rather than one fixed derived format, so no
-/// staleness check is meaningful here. Errors when `source_format`/
-/// `target_format` aren't safe bare extensions (see
-/// [`super::fs::validate_format_pair`]), the configured `ebook-convert`
-/// binary isn't runnable, the source file is missing, the job exceeds
-/// `OMNIBUS_CONVERT_TIMEOUT_SECS` (default [`DEFAULT_TIMEOUT_SECS`]), or
-/// `ebook-convert` exits non-zero.
-///
-/// Callers run this behind the worker's convert-concurrency semaphore and a
-/// per-`(book_id, source_format, target_format)` keyed mutex — see
-/// `Task::ConvertFormat` in `crate::worker`.
+/// Convert `book_id`'s `source_format` file to `target_format` and return the
+/// output path, `<convert_dir>/<book_id>.<target_format>`; always reconverts.
+/// Not self-serializing: callers hold `Task::ConvertFormat`'s keyed mutex.
+/// Errors on unsafe formats ([`super::fs::validate_format_pair`]), an unrunnable
+/// `ebook-convert`, a missing source, a non-zero exit, or a timeout ([`DEFAULT_TIMEOUT_SECS`]).
 pub async fn convert_book(
     pool: &SqlitePool,
     book_id: i64,

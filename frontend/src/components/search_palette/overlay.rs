@@ -262,14 +262,7 @@ pub(super) fn SpOverlay(open: PaletteOpen) -> Element {
 
 /// Search-icon + autofocused query input, with the debounce/RPC dispatch
 /// delegated to `on_input` and the loading spinner shown while a search runs.
-///
-/// Real DOM focus lands a frame after mount (see [`focus_after_paint`]), so
-/// a click-then-immediately-type user's first keystrokes would otherwise
-/// land on whatever had focus before the overlay opened and vanish.
-/// `install_prefocus_key_buffer` closes that window: a temporary
-/// `document`-level `keydown` listener folds keystrokes into `query` until
-/// real focus lands, at which point `remove_prefocus_key_buffer` detaches
-/// it so ordinary typing goes through `oninput` as usual.
+/// Keystrokes typed before real focus lands are buffered into `query`.
 #[component]
 fn SpInputRow(query: Signal<String>, is_loading: bool, on_input: EventHandler<String>) -> Element {
     let buffer: PrefocusKeyBufferHolder = use_hook(Rc::default);
@@ -410,14 +403,10 @@ fn detach_prefocus_key_buffer(buf: PrefocusKeyBuffer) {
 #[cfg(not(feature = "web"))]
 fn detach_prefocus_key_buffer(_buf: PrefocusKeyBuffer) {}
 
-/// `bufferable_key`'s decision, from primitive fields rather than a real
-/// `web_sys::KeyboardEvent` — that type only constructs on a wasm32 target,
-/// so pulling the classification out keeps it unit-testable on the host.
-/// `Some(Some(c))` appends `c`, `Some(None)` deletes the last character
-/// (Backspace), `None` skips the event — Enter/Tab/arrows/modified combos
-/// are left for the palette's real `onkeydown` once focus lands for real.
-/// Only reachable from `bufferable_key` (web) and the unit tests below — a
-/// non-web, non-test build has neither caller, hence the `cfg`.
+/// `bufferable_key`'s decision, from primitive fields (a real
+/// `web_sys::KeyboardEvent` only constructs on wasm32). `Some(Some(c))`
+/// appends `c`, `Some(None)` deletes the last character (Backspace), `None`
+/// skips the event, leaving Enter/Tab/arrows/modified combos to `onkeydown`.
 #[cfg(any(feature = "web", test))]
 fn classify_prefocus_key(key: &str, ctrl: bool, meta: bool, alt: bool) -> Option<Option<char>> {
     if ctrl || meta || alt {

@@ -44,14 +44,11 @@ pub(super) async fn get_merge_candidates(
     }
 }
 
-/// `POST /api/books/merge` — merge `source_uuid` into `target_uuid`: the
-/// target absorbs the source's files, links, identifiers, and per-reader
-/// state, and the source row disappears. Returns the `merge_log` id (the
-/// undo handle) and the surviving uuid. Mirrors `rpc_merge_books` in
-/// `omnibus_frontend::rpc::books`, whose `AdminUser` gate this repeats —
-/// the merge semantics live in `db::merge_books`, but there is no shared
-/// gate helper between the two crates, so changing one side's gate means
-/// changing the other.
+/// `POST /api/books/merge` — merge `source_uuid` into `target_uuid`: the target absorbs
+/// the source's files, links, identifiers, and per-reader state, and the source row
+/// disappears. Returns the `merge_log` id (the undo handle) and the surviving uuid.
+/// Repeats the `AdminUser` gate of `rpc_merge_books` in `omnibus_frontend::rpc::books`;
+/// changing one side's gate means changing the other.
 pub(super) async fn post_merge_books(
     admin: AdminUser,
     State(state): State<AppState>,

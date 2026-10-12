@@ -30,10 +30,8 @@ mod tests;
 
 /// The six stops, in running order. The label pair is `NN` + name — the
 /// section label renders `NN / 06 — Name` and the dot rail `NN · Name`.
-///
-/// The shelf is not a stop of its own: the books beside this one belong with
-/// the author and the suggestions under `More`, which is the one place the
-/// page points away from the book it is about.
+// The shelf has no stop of its own: books beside this one sit under `More`,
+// the one place the page points away from the book it is about.
 pub(super) const MARQUEE_SECTIONS: [(&str, &str); 6] = [
     ("01", "Home"),
     ("02", "Stats"),

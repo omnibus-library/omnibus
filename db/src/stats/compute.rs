@@ -54,14 +54,11 @@ pub(super) const SESSION_ROWS: &str = "\
     SELECT book_uuid, started_at, ended_at, seconds_listened AS secs, 1 AS is_audio \
         FROM listening_sessions WHERE user_id = ? AND started_at >= ?";
 
-/// The **unwindowed** session union for one user: one
-/// `(book_uuid, started_at, secs)` row per reading and listening session on
-/// record, whatever its date. Bind order is `user_id, user_id`.
-///
-/// Separate from [`SESSION_ROWS`] because a figure about how a *book* was read
-/// — when it was first opened, how much time it holds — must not be clipped to
-/// a reporting period. Windowing it reports a book begun in March and finished
-/// in April as an April sprint.
+/// The **unwindowed** session union for one user: one `(book_uuid, started_at,
+/// secs)` row per reading and listening session on record. Bind order is
+/// `user_id, user_id`.
+// Separate from `SESSION_ROWS`: a figure about how a book was read must not be
+// clipped to a period, or a March-to-April read reports as an April sprint.
 pub(super) const USER_SESSION_ROWS: &str = "\
     SELECT book_uuid, started_at, seconds_read AS secs FROM reading_sessions \
         WHERE user_id = ? \
@@ -71,10 +68,9 @@ pub(super) const USER_SESSION_ROWS: &str = "\
 
 /// Book-level completion events for a user, unioned across the two ways a book
 /// can be "finished": a 100% journal entry (keyed on `created_at`) and an
-/// explicit read-status `finished` (keyed on `finished_at`). One
-/// `(book_uuid, finished_at)` row per source; callers window on `finished_at`
-/// and `COUNT(DISTINCT book_uuid)` so a book finished both ways counts once.
-/// Bind order is `user_id, user_id`.
+/// explicit read-status `finished` (keyed on `finished_at`). Callers window on
+/// `finished_at` and `COUNT(DISTINCT book_uuid)` so a book finished both ways
+/// counts once. Bind order is `user_id, user_id`.
 pub(super) const FINISHED_EVENTS: &str = "\
     SELECT book_uuid, created_at AS finished_at FROM journal_entries \
         WHERE user_id = ? AND progress = 100 \
@@ -82,13 +78,9 @@ pub(super) const FINISHED_EVENTS: &str = "\
     SELECT book_uuid, finished_at FROM book_read_status \
         WHERE user_id = ? AND status = 'finished' AND finished_at IS NOT NULL";
 
-/// [`FINISHED_EVENTS`] narrowed to completions on a book that still exists —
-/// the liveness filter **every** completion metric shares. Same
-/// `(book_uuid, finished_at)` shape, same two binds.
-///
-/// Derived once rather than spelled out per query: several of these metrics
-/// render on the same screen, so a metric that opts out of the filter has to
-/// do so visibly.
+/// [`FINISHED_EVENTS`] narrowed to completions on a book that still exists, the
+/// liveness filter **every** completion metric shares (so one that opts out has
+/// to do so visibly). Same `(book_uuid, finished_at)` shape, same two binds.
 pub(super) fn live_finished_events() -> String {
     format!(
         "SELECT f.book_uuid AS book_uuid, f.finished_at AS finished_at \
@@ -225,17 +217,11 @@ pub(super) async fn sum_seconds(
         .await?)
 }
 
-/// Sittings in the window, counted over [`sessionize::stitched`] groups
-/// rather than raw checkpoint rows — the figure would otherwise report a
-/// client's flush cadence (~60 rows for an hour on web, ~12 on iOS) instead
-/// of how often the user actually sat down with a book. Stitching is
-/// per-book, so this stays the sum of every book's Pickups, and glances under
-/// [`sessionize::MIN_SITTING_SECS`] don't count (their seconds still do,
-/// in `reading_seconds` / `listening_seconds`).
-///
-/// Rows are windowed before they are stitched, so a sitting straddling
-/// `start` is truncated to its in-window part rather than pulling pre-window
-/// time into the count — and can fall under the floor once truncated.
+/// Sittings in the window, counted over [`sessionize::stitched`] groups rather than
+/// raw checkpoint rows, which would report a client's flush cadence. Stitching is
+/// per-book, so this is the sum of every book's Pickups; glances under
+/// [`sessionize::MIN_SITTING_SECS`] don't count (their seconds still do). Rows are
+/// windowed first, so a sitting straddling `start` is truncated to its in-window part.
 pub(super) async fn session_count(
     pool: &SqlitePool,
     user_id: i64,
@@ -288,21 +274,11 @@ pub(super) async fn heatmap(
         .collect())
 }
 
-/// The busiest ISO week: `(week's Monday, total seconds)`. Weeks bucket by
-/// Monday — `dnum - ((dnum + 3) % 7)`, since unix day 0 (1970-01-01) is a
-/// Thursday. Returns `(None, 0)` when the window has no sessions.
-///
-/// The day returned is the bucket's Monday, not the first day the reader was
-/// active in it: surfaces label this "Week of …", and a reader who only read
-/// midweek would otherwise have a Wednesday named as their week's start.
-///
-/// A consequence worth knowing: because the bucket key comes from the
-/// calendar rather than from a row, **the Monday can precede the window**.
-/// `Week` opens on a Monday and so is exactly one bucket, but `Month` starts on
-/// the 1st and can straddle two and crown the partial leading one — whose
-/// seconds then cover only the in-window days, like every other figure here.
-/// Clamping the date into the window would just reintroduce the midweek
-/// mislabel.
+/// The busiest ISO week: `(week's Monday, total seconds)`, `(None, 0)` when the
+/// window has no sessions. The day is the bucket's Monday, not the first active
+/// day ("Week of …"). Because the key comes from the calendar, **the Monday can
+/// precede the window**: a `Month` can crown a partial leading week whose seconds
+/// cover only the in-window days. Clamping would reintroduce the midweek mislabel.
 pub(super) async fn busiest_week(
     pool: &SqlitePool,
     user_id: i64,
@@ -310,6 +286,7 @@ pub(super) async fn busiest_week(
     offset_minutes: i64,
 ) -> Result<(Option<String>, i64), StatsError> {
     let dnum = calendar::local_day_number("started_at", offset_minutes);
+    // + 3: unix day 0 (1970-01-01) is a Thursday.
     let sql = format!(
         "SELECT date(week_start * 86400, 'unixepoch') AS start_day,
                 SUM(secs) AS seconds FROM (
@@ -332,20 +309,11 @@ pub(super) async fn busiest_week(
     })
 }
 
-/// Time spent per author, most-read first — the source of the "Most-read
-/// author" standout.
-///
-/// Grouped on the **effective** position-0 creator name rather than
-/// `authors.id`, so a book re-attributed through `metadata_overrides` is
-/// credited to the author the reader sees on it, and a scanned author slug
-/// (`stephen-fry`) that has been renamed stops headlining the tile.
-/// The name is the group key because an overridden creator has no
-/// `authors` row to key on; `COLLATE NOCASE` on the expression folds case
-/// drift into one row, as the id used to.
-///
-/// The link joins are LEFT for the same reason: a book whose only author is
-/// an override carries no link row, and an inner join would drop the time
-/// spent on it entirely.
+/// Time spent per author, most-read first: the source of the "Most-read author"
+/// standout. Grouped on the **effective** position-0 creator name rather than
+/// `authors.id`, so a book re-attributed through `metadata_overrides` is credited
+/// to the author the reader sees. The link joins are LEFT since an override-only
+/// author has no link row, and an inner join would drop that time.
 pub(super) async fn top_authors(
     pool: &SqlitePool,
     user_id: i64,
@@ -421,18 +389,10 @@ pub(super) async fn books_active(
         .await?)
 }
 
-/// Today on the reader's calendar, as both the `YYYY-MM-DD` string stamped on
-/// the summary — the heatmap grid's right edge — and its unix day number, which
-/// anchors the current streak.
-///
-/// The server still owns the arithmetic and the clock; the client contributes
-/// only *where it is*. That distinction is what keeps the web page, the iOS tab
-/// and any widget from each deriving their own streak and disagreeing, while
-/// still letting a reader's day end at their own midnight.
-///
-/// Both come out of **one** statement on purpose: SQLite holds `'now'` fixed for
-/// a single statement, so the two can't straddle midnight and describe different
-/// days.
+/// Today on the reader's calendar, as both the `YYYY-MM-DD` string stamped on the
+/// summary (the heatmap grid's right edge) and its unix day number, which anchors
+/// the current streak. Both come from **one** statement: SQLite holds `'now'`
+/// fixed within one, so they can't straddle midnight and describe different days.
 pub(super) async fn as_of(
     pool: &SqlitePool,
     offset_minutes: i64,
@@ -465,14 +425,11 @@ pub(super) async fn finished_count(
         .await?)
 }
 
-/// Books completed in the window — sourced from either a 100% journal entry or
-/// an explicit read-status `finished` (see [`FINISHED_EVENTS`]). A book finished
-/// both ways collapses to one row with the newest completion moment. Ghosted
-/// books (no live `books` row for the `book_uuid`) are omitted from the rail and
-/// the count. Capped at [`FINISHED_BOOKS_LIMIT`] newest completions.
-///
-/// Titles and authors read the effective (override-aware) value, so a renamed
-/// book is named here the way its own page names it.
+/// Books completed in the window, from either a 100% journal entry or an explicit
+/// read-status `finished` (see [`FINISHED_EVENTS`]); a book finished both ways
+/// collapses to one row with the newest completion moment. Ghosted books are
+/// omitted from the rail and the count. Capped at [`FINISHED_BOOKS_LIMIT`] newest
+/// completions. Titles and authors read the effective (override-aware) value.
 pub(super) async fn finished_books(
     pool: &SqlitePool,
     user_id: i64,
@@ -534,14 +491,10 @@ pub(super) async fn finished_books(
 }
 
 /// Bounds `(start, end)` (unix secs, `start` inclusive, `end` exclusive) of the
-/// baseline the current window is compared against: the **same elapsed slice**
-/// of the preceding period. `None` for [`StatsRange::AllTime`] — there is no
-/// window before "all of it".
-///
-/// The current window is period-to-date, so the baseline has to be the same
-/// offset into the previous period for the two to be commensurable. `end` is
-/// clamped to the current period's start, since the elapsed offset can exceed
-/// a shorter previous period (30 days into March against a 28-day February).
+/// baseline the current window is compared against: the **same elapsed slice** of
+/// the preceding period, so the two are commensurable. `None` for
+/// [`StatsRange::AllTime`]. `end` is clamped to the current period's start (30
+/// days into March against a 28-day February).
 pub(super) async fn prev_window_bounds(
     pool: &SqlitePool,
     range: StatsRange,
@@ -568,13 +521,9 @@ pub(super) async fn prev_window_bounds(
 }
 
 /// The bounds arithmetic of [`prev_window_bounds`], split from its clock so it
-/// can be tested on fixed dates — reading SQLite's `now` makes the clamp
-/// reachable on only a handful of days a year.
-///
-/// Yields `[prev_start, prev_start + elapsed)`, clamped to `cur_start` so the
-/// baseline never runs past the period it belongs to. `elapsed` is zero for the
-/// first second of a period, which yields an empty baseline — correct, since
-/// the current window is equally empty then.
+/// can be tested on fixed dates. Yields `[prev_start, prev_start + elapsed)`,
+/// clamped to `cur_start`; `elapsed` is zero for a period's first second, which
+/// yields an empty baseline, correct since the current window is empty too.
 pub(super) fn prev_window_from(prev_start: i64, cur_start: i64, now: i64) -> (i64, i64) {
     let elapsed = now.saturating_sub(cur_start).max(0);
     (
@@ -689,14 +638,10 @@ pub(super) async fn listening_daily(
         .collect())
 }
 
-/// Books finished per calendar month over the trailing 12 months (oldest
-/// first, ending at the current month), independent of any windowing —
-/// the all-time trend chart is never scoped to the period switcher. Uses the
-/// same completion definition as [`finished_books`] (either source, see
-/// [`FINISHED_EVENTS`]). A recursive CTE generates the 12-month spine and
-/// `LEFT JOIN`s it against the unified completion events in one query, so a
-/// month with no finishes still comes back as zero rather than being omitted,
-/// and a 10k-event library never pays an N+1.
+/// Books finished per calendar month over the trailing 12 months (oldest first,
+/// ending at the current month), independent of any windowing. Uses the same
+/// completion definition as [`finished_books`] (see [`FINISHED_EVENTS`]). A month
+/// with no finishes comes back as zero rather than being omitted.
 pub(super) async fn books_per_month(
     pool: &SqlitePool,
     user_id: i64,

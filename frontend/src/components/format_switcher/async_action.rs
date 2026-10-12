@@ -12,11 +12,9 @@ use dioxus::prelude::*;
 use crate::platform_sleep::async_sleep_ms;
 
 /// State for one async-action-with-toast button: `in_flight` disables the
-/// button and swaps its label; `result` drives
-/// [`super::send_result_toast`]. Plain signals, so each call site's button
-/// markup binds them directly (`disabled: in_flight()`, `BusyLabel { busy:
-/// in_flight(), .. }`). `Copy` so a single value can be captured into an `onclick`
-/// closure and called from it.
+/// button and swaps its label; `result` drives [`super::send_result_toast`].
+/// Plain signals, so a call site binds them directly; `Copy`, so one value can
+/// be captured into an `onclick` closure.
 #[derive(Clone, Copy)]
 pub(super) struct AsyncActionToast {
     pub in_flight: Signal<bool>,
@@ -37,12 +35,10 @@ pub(super) fn use_async_action_toast(success_dismiss_ms: u32) -> AsyncActionToas
     }
 }
 
-/// Apply one send's outcome once its action future resolves — the
-/// seq-guard-then-write step of [`AsyncActionToast::run`], split out so
-/// the race guard and the success/error split are unit-testable without
-/// spawning. Returns `true` when this send is still the latest *and* its
-/// outcome was a success, i.e. the caller should schedule the auto-dismiss
-/// sleep.
+/// Apply one send's outcome once its action future resolves (the
+/// seq-guard-then-write step of [`AsyncActionToast::run`]). Returns `true`
+/// when this send is still the latest *and* succeeded, i.e. the caller should
+/// schedule the auto-dismiss sleep.
 fn apply_outcome(
     seq: u64,
     current_seq: u64,
@@ -73,15 +69,11 @@ fn clear_after_dismiss(seq: u64, current_seq: u64, result: &mut Signal<Option<(b
 }
 
 impl AsyncActionToast {
-    /// Run one send: bump the sequence, flip in-flight and clear any
-    /// standing toast, await `action`, then apply its outcome. `action`
-    /// resolves to `None` to end quietly (e.g. a cancelled file picker) or
-    /// `Some((is_error, message))` to raise a toast — a success toast
-    /// auto-dismisses after `success_dismiss_ms`, an error toast persists
-    /// until the user dismisses it. A superseded send — a newer click
-    /// landed before this one resolved — leaves all shared state alone, so
-    /// its auto-dismiss can never clear (or hide the error of) the newer
-    /// toast.
+    /// Run one send: bump the sequence, flip in-flight, clear any standing
+    /// toast, await `action`, then apply its outcome. `action` resolves to
+    /// `None` to end quietly or `Some((is_error, message))` to raise a toast
+    /// (success auto-dismisses after `success_dismiss_ms`, an error persists).
+    /// A superseded send leaves all shared state alone.
     pub fn run(&self, action: impl Future<Output = Option<(bool, String)>> + 'static) {
         let mut in_flight = self.in_flight;
         let mut result = self.result;

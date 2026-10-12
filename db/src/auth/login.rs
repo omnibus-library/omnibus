@@ -32,21 +32,10 @@ fn sentinel_hash() -> AuthResult<&'static str> {
 }
 
 /// Verify a login attempt. On success returns the user; on failure returns a
-/// generic `InvalidCredentials` — the same error for an unknown username, a
-/// wrong password, and a wrong password against a locked account, so no
-/// status code distinguishes them.
-///
-/// Per-account lockout is enforced for everyone but *disclosed* only to a
-/// caller that presented the correct password, via
-/// `AuthError::AccountLocked` — and only for the first
-/// `LOCKOUT_DISCLOSURE_ATTEMPTS` attempts made inside the window. A locked
-/// account that answered differently from an unknown username would be a
-/// username oracle, which is the whole reason the unknown-username path
-/// burns a sentinel verify.
-///
-/// Registration's `UsernameTaken` is an accepted, deliberate oracle: there
-/// is no way to run a sign-up form without it, and self-registration is off
-/// by default once the first user exists.
+/// generic `InvalidCredentials`, the same for an unknown username, a wrong
+/// password, and a wrong password on a locked account. Lockout is disclosed
+/// (`AuthError::AccountLocked`) only to a caller with the correct password, and
+/// only for the first `LOCKOUT_DISCLOSURE_ATTEMPTS` attempts in the window.
 pub async fn verify_login(pool: &SqlitePool, username: &str, password: &str) -> AuthResult<User> {
     let row = sqlx::query(
         "SELECT u.id, u.username, u.password_hash, u.is_admin, u.can_upload, u.can_edit,

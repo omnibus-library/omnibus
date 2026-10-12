@@ -67,12 +67,9 @@ pub(super) fn sleep_chip_label(remaining: Option<i32>, choice: SleepChoice) -> S
     }
 }
 
-/// The book-time position an end-of-chapter timer armed at `elapsed` must
-/// pause at: the end of the chapter the playhead is currently inside.
-///
-/// `None` when the chapter list can't place the playhead, or when the
-/// playhead is already at or past that end — arming a boundary that is
-/// behind the listener is what paused instantly instead of at the seam.
+/// The book-time position an end-of-chapter timer armed at `elapsed` must pause
+/// at: the end of the chapter the playhead is inside. `None` when the chapter
+/// list can't place the playhead or the playhead is already at or past that end.
 pub(super) fn end_of_chapter_anchor(chapters: &[ChapterInfo], elapsed: f64) -> Option<f64> {
     let idx = super::chapter_nav::chapter_index_for_elapsed(chapters, elapsed);
     let ch = chapters.get(idx)?;
@@ -80,12 +77,10 @@ pub(super) fn end_of_chapter_anchor(chapters: &[ChapterInfo], elapsed: f64) -> O
     (end > elapsed).then_some(end)
 }
 
-/// Wall-clock seconds until the playhead reaches `anchor` at `rate`.
-///
-/// Display only. The timer fires on the playhead reaching `anchor`, never on
-/// this reaching zero: a countdown cannot tell "the boundary arrived" from
-/// "the listener jumped", and guessing between them is what re-armed an
-/// armed timer at every seam and let the book play on for hours.
+/// Wall-clock seconds until the playhead reaches `anchor` at `rate`. Display
+/// only: the timer fires on the playhead reaching `anchor`, never on this
+/// reaching zero, since a countdown can't tell "the boundary arrived" from "the
+/// listener jumped".
 pub(super) fn seconds_until_anchor(anchor: f64, elapsed: f64, rate: f64) -> i32 {
     let rem = super::helpers::remaining_at_rate((anchor - elapsed).max(0.0), rate)
         .min(f64::from(i32::MAX));
@@ -228,13 +223,10 @@ pub(crate) fn use_sleep() -> SleepController {
 }
 
 /// Install the sleep-timer signals and the self-re-arming countdown effect.
-/// Called once from App root (`use_user_and_playback_contexts`) so the
-/// countdown outlives `/listen`. Both effects are declared unconditionally
-/// (hook-order parity across SSR and WASM); only the audio interop and the
-/// 1 s tick are web-gated. The signals come from the shared
-/// [`crate::PlaybackState`] — the fade restores to its `volume` instead of a
-/// hardcoded `1.0`, and the chapter map, position and speed are what the
-/// end-of-chapter option is armed from and re-anchored against.
+/// Called once from App root (`use_user_and_playback_contexts`) so the countdown
+/// outlives `/listen`. The signals come from the shared [`crate::PlaybackState`]:
+/// the fade restores to its `volume`, and the chapter map, position and speed
+/// arm and re-anchor the end-of-chapter option.
 pub(crate) fn use_sleep_timer(playback: &crate::PlaybackState) -> SleepController {
     let volume = playback.volume;
     let chapters = playback.chapters;

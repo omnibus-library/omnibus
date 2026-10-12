@@ -9,24 +9,11 @@ use sqlx::{Row, SqlitePool};
 use super::compute::SESSION_BOOK_SECS;
 use super::StatsError;
 
-/// Genre share by distinct book count: for each genre, how many distinct
-/// books carrying it had session activity in the window. Count-based (not
-/// seconds) so a multi-genre book counts once per genre but never twice per
-/// genre.
-///
-/// Returns **every** genre, not a top-N: the donut folds everything past its
-/// fourth slice into "Other" and can only size that fold honestly if given the
-/// whole tail. Genres are a user-curated vocabulary (`0066_genres.sql`), so the
-/// row count is bounded by what a reader has assigned.
-///
-/// Reads the user-assigned genres, which live only in the
-/// `metadata_overrides` JSON blob (the table itself predates them, from
-/// `0007`; `0066_genres.sql` adds the vocabulary table this joins for the
-/// canonical spelling). This deliberately does *not* fall back to a book's
-/// tags: the donut is labelled "What you read", and a `<dc:subject>` list is
-/// whatever the publisher's OPF happened to carry, not a genre. A library
-/// with no genres assigned yet renders an empty donut, which is the honest
-/// answer.
+/// Genre share by distinct book count: for each genre, how many distinct books
+/// carrying it had session activity in the window (a multi-genre book counts once
+/// per genre). Returns **every** genre, not a top-N, so the donut can size its
+/// "Other" fold honestly. Reads user-assigned genres from the `metadata_overrides`
+/// JSON only, never a book's tags: a `<dc:subject>` list is not a genre.
 pub(super) async fn genre_share(
     pool: &SqlitePool,
     user_id: i64,
@@ -66,14 +53,11 @@ pub(super) async fn genre_share(
         .collect())
 }
 
-/// Distinct books with a genre *and* session activity in the window — the
+/// Distinct books with a genre *and* session activity in the window: the
 /// population the donut's slices are drawn from, and so the number its center
-/// reports.
-///
-/// Not [`super::compute::books_active`]: a book with no genre reaches that
-/// count but no slice, so it overstates what the ring describes. Counted
-/// distinctly, so a book carrying three genres counts once here even though it
-/// appears in three slices.
+/// reports. Not [`super::compute::books_active`], which counts genre-less books
+/// the ring doesn't describe. A book with three genres counts once here though
+/// it appears in three slices.
 pub(super) async fn genre_tagged_books(
     pool: &SqlitePool,
     user_id: i64,

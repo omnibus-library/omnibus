@@ -79,13 +79,10 @@ fn untagged_note(untagged: i64) -> String {
     format!("+{untagged} {noun} without a genre")
 }
 
-/// "Where the time went" — the genre ring with its legend, and the
-/// read-vs-listened split beneath.
-///
-/// The centre reports `genre_tagged_books` — the population the slices are
-/// drawn from — rather than `books_active`, which counts books the ring does
-/// not describe. The difference is disclosed under the legend instead, where
-/// it can't be read as a slice.
+/// "Where the time went": the genre ring with its legend, and the read-vs-listened
+/// split beneath. The centre reports `genre_tagged_books` (the population the
+/// slices are drawn from), not `books_active`; the difference is disclosed under
+/// the legend, where it can't be read as a slice.
 #[component]
 pub(super) fn GenreDonut(summary: StatsSummary) -> Element {
     let folded = fold_shares(&summary.genre_share);
@@ -177,17 +174,11 @@ fn FormatSplit(summary: StatsSummary) -> Element {
     }
 }
 
-/// "How long they were" — the books finished in the window bucketed by page
-/// count, on the same bar treatment as the split above.
-///
-/// Rows only, no card chrome: this is the Finished tile's detail, drawn inside
-/// its drill-in rather than as a card of its own — a length distribution is a
-/// fact *about* the books finished, not a peer of the count.
-///
-/// The server owns the buckets, their order, and their labels, so this renders
-/// whatever it is handed — including the "Unknown" bucket, which is the point:
-/// an audiobook has no page analogue, and dropping it would quietly report the
-/// distribution over fewer books than the window actually holds.
+/// "How long they were": the books finished in the window bucketed by page
+/// count, on the same bar treatment as the split above. Rows only, no card
+/// chrome: it is the Finished tile's detail, drawn inside its drill-in. The
+/// server owns the buckets, order and labels, so this renders whatever it is
+/// handed, including "Unknown" (an audiobook has no page analogue).
 #[component]
 pub(super) fn LengthRows(summary: StatsSummary) -> Element {
     let buckets = summary.length_buckets;

@@ -42,11 +42,8 @@ pub fn slugify(s: &str) -> String {
 }
 
 /// Compute the canonical on-disk path for a book without touching the
-/// filesystem: `<root>/<author-slug>/<title-slug>/<title-slug>.<ext>`.
-///
-/// An empty `ext` produces a filename without an extension
-/// (`<title-slug>`), not a trailing dot — paths ending in `.` are awkward on
-/// POSIX and outright rejected by Windows.
+/// filesystem: `<root>/<author-slug>/<title-slug>/<title-slug>.<ext>`. An empty
+/// `ext` produces a filename without an extension, not a trailing dot.
 pub fn canonical_path(library_root: &Path, author: &str, title: &str, ext: &str) -> PathBuf {
     let author_slug = slugify(author);
     let title_slug = slugify(title);
@@ -62,33 +59,11 @@ pub fn canonical_path(library_root: &Path, author: &str, title: &str, ext: &str)
         .join(filename)
 }
 
-/// Return the cover sidecar file path for `ebook_path`, if any. Looks first
-/// for a per-stem sidecar (`<basename>.{jpg,jpeg,png}` next to the epub) and
-/// falls back to a folder-level `cover.{jpg,jpeg,png}`. All filename matches
-/// are case-insensitive. Within each tier, priority order is `.jpg` > `.jpeg`
-/// > `.png`.
-///
-/// Lookup order, highest priority first:
-/// 1. direct-path probe, per-stem (`<stem>.{jpg,jpeg,png}` via `is_file()`)
-/// 2. case-insensitive per-stem (`read_dir` scan)
-/// 3. direct-path probe, folder-level (`cover.{jpg,jpeg,png}` via `is_file()`)
-/// 4. case-insensitive folder-level (`read_dir` scan)
-///
-/// The direct-path probes are a cheap fast path: on the canonical Omnibus
-/// layout (and any library whose sidecars use lowercase names) they resolve
-/// the cover with a few `stat` syscalls and skip `read_dir` entirely. This
-/// matters on flat-dump libraries with thousands of files in one folder,
-/// where each `read_dir` is O(files-in-folder). The case-insensitive
-/// `read_dir` scans remain as fallbacks so the matching contract is unchanged
-/// — the only observable difference is fewer syscalls on the common case.
-///
-/// Note: "direct-path probe" rather than "exact-case lookup" because
-/// `is_file()` on a case-insensitive filesystem (APFS, NTFS) will match a
-/// differently-cased file too. That's fine here — any match still satisfies
-/// the documented case-insensitive contract — but the returned `PathBuf`
-/// preserves the *probed* casing, not the on-disk entry casing. Callers
-/// that need the on-disk casing should fall through to `find_with_extensions`,
-/// which carries the entry casing back from `read_dir`.
+/// Return the cover sidecar file path for `ebook_path`, if any: a per-stem
+/// sidecar (`<basename>.{jpg,jpeg,png}`) first, then a folder-level
+/// `cover.{jpg,jpeg,png}`; names match case-insensitively, `.jpg` > `.jpeg` >
+/// `.png`. The path has the on-disk casing, except that on a case-insensitive
+/// filesystem a direct hit keeps the probed `<basename>.<ext>`/`cover.<ext>` casing.
 pub fn sidecar_cover_for(ebook_path: &Path) -> Option<PathBuf> {
     let parent = ebook_path.parent()?;
 
@@ -120,11 +95,9 @@ pub fn sidecar_cover_for(ebook_path: &Path) -> Option<PathBuf> {
 }
 
 /// The **per-stem** half of [`sidecar_cover_for`] only: `<stem>.{jpg,jpeg,png}`
-/// next to `ebook_path`, never a folder-level `cover.*`.
-///
-/// Deletion uses this rather than the full lookup: a cover named after the book
-/// dies with it, but a folder-level `cover.jpg` in a flat-dump library is
-/// shared by every book in that folder and must survive.
+/// next to `ebook_path`, never a folder-level `cover.*`. Deletion uses this
+/// because a folder-level `cover.jpg` in a flat-dump library is shared by every
+/// book in the folder and must survive.
 pub fn per_stem_sidecar_cover(ebook_path: &Path) -> Option<PathBuf> {
     let parent = ebook_path.parent()?;
     let stem = ebook_path.file_stem().and_then(|s| s.to_str())?;
@@ -133,16 +106,11 @@ pub fn per_stem_sidecar_cover(ebook_path: &Path) -> Option<PathBuf> {
 
 const COVER_EXTS: &[&str] = &["jpg", "jpeg", "png"];
 
-/// Direct-path probe: stat `<base>.{jpg,jpeg,png}` directly with `is_file()`
-/// in `COVER_EXTS` priority order, avoiding a `read_dir` of the whole folder.
-/// Returns the first match, or `None` if no probed path is a regular file
-/// (caller then falls back to the case-insensitive `read_dir` scan).
-///
-/// "Direct-path" rather than "exact-case" because `is_file()` follows the
-/// host filesystem's casing rules — on case-insensitive filesystems (APFS,
-/// NTFS) the probe will succeed against a differently-cased on-disk entry.
-/// That's fine: the caller's contract is already case-insensitive, and any
-/// match returned here satisfies it.
+/// Direct-path probe: stat `<base>.{jpg,jpeg,png}` with `is_file()` in
+/// `COVER_EXTS` priority order, avoiding a `read_dir` of the folder. Returns the
+/// first match, or `None` (the caller then falls back to the case-insensitive
+/// scan). On case-insensitive filesystems (APFS, NTFS) the probe also matches a
+/// differently-cased entry, which the case-insensitive contract allows.
 fn probe_direct_path(dir: &Path, base: &str) -> Option<PathBuf> {
     for ext in COVER_EXTS {
         let candidate = dir.join(format!("{base}.{ext}"));
@@ -177,14 +145,9 @@ fn find_with_extensions(dir: &Path, base: &str) -> Option<PathBuf> {
 }
 
 /// Compute a canonical path that doesn't already exist on disk. If the
-/// canonical title-slug folder already holds something, append ` (2)`,
-/// ` (3)`, … to the title-slug component until an unused folder is found, and
-/// place the file inside that suffixed folder. An empty folder counts as
-/// unused (see [`is_free_folder`]).
-///
-/// Upload-time helper, kept covered by tests even though no caller wires
-/// it in yet. An empty `ext` is rejected with `InvalidInput` — uploads
-/// must know the format they're storing.
+/// canonical title-slug folder already holds something, append ` (2)`, ` (3)`,
+/// … to it until an unused folder is found (an empty folder counts as unused,
+/// see [`is_free_folder`]). An empty `ext` is rejected with `InvalidInput`.
 pub fn allocate_canonical_path(
     library_root: &Path,
     author: &str,
@@ -227,11 +190,9 @@ pub fn allocate_canonical_path(
 
 /// Allocate a non-colliding canonical *folder* for a multi-file book (e.g. a
 /// per-chapter `.mp3` audiobook): `<root>/<author-slug>/<title-slug>/`. Like
-/// [`allocate_canonical_path`] the title-slug component gains a ` (2)`, ` (3)`,
-/// … suffix until an unused folder is found, but the returned path is the
-/// directory itself — the caller places each part inside it. Unlike the
-/// single-file allocator this takes no extension: the parts keep their own
-/// filenames within the folder.
+/// [`allocate_canonical_path`] the title-slug gains a ` (2)`, ` (3)`, … suffix
+/// until unused, but the returned path is the directory itself and takes no
+/// extension: the caller places each part inside it.
 pub fn allocate_canonical_dir(
     library_root: &Path,
     author: &str,
@@ -276,12 +237,10 @@ fn is_free_folder(folder: &Path) -> bool {
 const FALLBACK_SLUG_PART: &str = "part";
 
 /// Sanitize a client-supplied filename into a safe `<stem-slug>.<ext>` basename
-/// for placing inside a canonical folder. Strips any directory components
-/// (defeating `../` path traversal), [`slugify`]s the stem, and lowercases the
-/// extension so the audiobook scanner's extension filter still recognizes the
-/// part. A missing/empty stem falls back to `"part"`; a missing extension
-/// yields the bare stem slug. The `(track, filename)` playlist sort survives
-/// because a leading-number stem (`01-intro`) still sorts first.
+/// for placing inside a canonical folder. Strips directory components
+/// (defeating `../` traversal), [`slugify`]s the stem, and lowercases the
+/// extension so the audiobook scanner still recognizes the part. An empty stem
+/// falls back to `"part"`; a missing extension yields the bare stem slug.
 pub fn sanitize_part_filename(filename: &str) -> String {
     let base = Path::new(filename)
         .file_name()

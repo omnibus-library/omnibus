@@ -422,15 +422,11 @@ pub(super) async fn count_smart_fan_out(
     Ok(out)
 }
 
-/// Count the owner's wishlist. Membership is the user's `wishlist_entries`, not
-/// `shelf_books` — the join to `books` is what keeps the count consistent with
-/// the detail path's wishlist fetch.
-///
-/// Batched wishlist counts keyed by owner id, in one `GROUP BY we.user_id` pass
-/// — the [`super::detail`] single-owner count's analogue for
-/// [`list_visible_shelves`], so a rail showing many public wishlists isn't one
-/// query per shelf. An owner with an empty wishlist has no row; callers
-/// default a missing id to 0.
+/// Batched wishlist counts keyed by owner id, in one `GROUP BY we.user_id` pass:
+/// the [`super::detail`] single-owner count's analogue for
+/// [`list_visible_shelves`]. Membership is the user's `wishlist_entries` joined
+/// to `books`, which keeps the count consistent with the detail path. An owner
+/// with an empty wishlist has no row; callers default a missing id to 0.
 async fn count_wishlist_batch(
     pool: &SqlitePool,
     owner_ids: &[i64],

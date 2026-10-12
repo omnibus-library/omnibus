@@ -8,18 +8,11 @@ use wasm_bindgen::prelude::*;
 use super::super::helpers::post_audio_progress;
 use super::{JsCallbackHolder, NEXT_SEQUENCE_FILE};
 
-/// Wire the six Rust-side closures that JS calls back into:
-/// `__omnibusOnAudioTime`, `__omnibusOnAudioDuration`, `__omnibusOnAudioPlay`,
-/// `__omnibusOnAudioPause`, `__omnibusOnAudioEnded`, `__omnibusOnInitTimeout`.
-/// Registered before the JS bootstrap so a fast `loadedmetadata` always finds
-/// them.
-///
-/// `loaded_file_id` is the shared signal `run_manifest_init` fills once the
-/// manifest names the file it resolved; every position POST reads it live,
-/// so writes name the file playback is actually in even though these
-/// closures are registered before the manifest lands. A file switch
-/// always re-boots (see [`super::needs_reload`]), which resets the signal
-/// before the next manifest fills it again.
+/// Wire the six Rust-side closures JS calls back into: `__omnibusOnAudio{Time,
+/// Duration,Play,Pause,Ended}` and `__omnibusOnInitTimeout`. Registered before
+/// the JS bootstrap so a fast `loadedmetadata` finds them. Every position POST
+/// reads `loaded_file_id` live, so writes name the file playback is actually in;
+/// a file switch re-boots (see [`super::needs_reload`]), which resets it.
 #[expect(clippy::too_many_arguments, reason = "one closure per JS callback")]
 pub(super) fn register_js_callbacks(
     cb_holder: &JsCallbackHolder,
@@ -227,17 +220,11 @@ fn pause_callback(
     })
 }
 
-/// Wire the three JS→Rust readiness/health callbacks:
-/// `__omnibusOnAudioBooted` fires once `initDirect`/`initHls` has actually
-/// committed a source to the element — the authoritative "ready" signal,
-/// replacing the old optimistic `hls_ready.set(true)` issued right after
-/// firing the init eval (a real, if usually tiny, race against the JS
-/// actually running). `__omnibusOnAudioBuffering` mirrors the JS
-/// watchdog's `readyState < HAVE_FUTURE_DATA` check while playing.
-/// `__omnibusOnAudioStalled` reuses `playback_failed` — a stall with no
-/// forward progress is exactly as unrecoverable-without-a-reload as an
-/// init timeout. Closures are appended to `cb_holder` alongside
-/// [`register_js_callbacks`]'s so both sets outlive the installing effect.
+/// Wire the three JS→Rust readiness/health callbacks: `__omnibusOnAudioBooted`
+/// (a source is committed to the element: the authoritative "ready" signal),
+/// `__omnibusOnAudioBuffering` (the JS watchdog's `readyState < HAVE_FUTURE_DATA`
+/// while playing) and `__omnibusOnAudioStalled` (reuses `playback_failed`). The
+/// closures join `cb_holder` alongside [`register_js_callbacks`]'s.
 pub(super) fn register_readiness_callbacks(
     cb_holder: &JsCallbackHolder,
     mut hls_ready: Signal<bool>,

@@ -30,16 +30,9 @@ pub async fn apply_initial_admin(pool: &SqlitePool) -> Result<(), omnibus_db::au
     Ok(())
 }
 
-/// Read `OMNIBUS_DEV_SEED_USER=<username>:<password>` and create the named
-/// user (promoted to admin) if it doesn't already exist. No-op when:
-///
-/// - the binary is a release build (`!cfg!(debug_assertions)`) — hard
-///   gate so a misconfigured prod env can't silently provision an admin;
-/// - the env var is unset, malformed, or has empty halves;
-/// - the user is already present (idempotent).
-///
-/// Log seed actions at `warn` so any stray seed event in prod logs stands
-/// out (even though the release-build gate above should prevent them).
+/// Read `OMNIBUS_DEV_SEED_USER=<username>:<password>` and create the named user
+/// (promoted to admin) if absent. No-op in release builds, when the variable is
+/// unset, malformed or has empty halves, or when the user already exists.
 pub async fn seed_dev_user(pool: &SqlitePool) -> Result<(), omnibus_db::auth::AuthError> {
     // Release builds must not provision admin credentials from env, even
     // if OMNIBUS_DEV_SEED_USER is somehow set. We additionally warn so a

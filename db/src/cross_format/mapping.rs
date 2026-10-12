@@ -58,13 +58,10 @@ struct SnapshotEntry {
 }
 
 /// Canonical JSON of an audio file set: `(scan_key, wire etag)` pairs in
-/// **ordinal order**. Keyed on scan_key + etag so comparison is
-/// id-independent (`book_files.id` changes on every Changed re-index,
-/// scan_key doesn't) — but deliberately order-DEPENDENT: the sequence
-/// timeline concatenates by ordinal, so a re-order changes what every
-/// stored global second means and must read as a different set (stale
-/// links, cleared anchors). A sorted snapshot let `set_audio_order`
-/// permute the timeline under every user's live mapping undetected.
+/// **ordinal order**. Keyed on scan_key + etag so comparison is id-independent,
+/// but deliberately order-dependent: a re-order changes what every stored
+/// global second means and must read as a different set (stale links, cleared
+/// anchors).
 pub(super) fn snapshot_json(files: &[AudioFile]) -> String {
     let entries: Vec<SnapshotEntry> = files
         .iter()
@@ -208,13 +205,10 @@ pub(super) fn audio_fraction(
     Some((global / timeline.total_seconds).clamp(0.0, 1.0))
 }
 
-/// Full-precision whole-book fraction of a reading row: derived from the
-/// stored CFI via spine stats when both exist (sub-percent, the same
-/// machinery as `derive_epub_percent`), else the stored integer percent.
-/// Every failure along the precise path — no stats yet, unreadable file,
-/// unanchorable CFI — degrades to the integer fallback rather than
-/// erroring: the caller is composing an offer, and a coarser offer beats
-/// no answer.
+/// Full-precision whole-book fraction of a reading row: derived from the stored
+/// CFI via spine stats when both exist (sub-percent), else the stored integer
+/// percent. Any failure on the precise path (no stats, unreadable file,
+/// unanchorable CFI) degrades to the integer fallback rather than erroring.
 pub(super) async fn epub_source_fraction(
     pool: &SqlitePool,
     book_id: i64,

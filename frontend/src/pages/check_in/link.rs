@@ -14,13 +14,9 @@ use crate::{data, use_server_url};
 
 /// Turn a library-search hit into the [`ScanBook`] the confirm screen renders.
 ///
-/// The palette's `author_display` is kept as one entry rather than split on
-/// `", "`: a sort-form name (`Weir, Andy`) carries that separator itself, and
-/// splitting it turned one author into two. The byline renders a
-/// single entry verbatim, so the card reads exactly as the search row did.
-/// The two holdings flags come off the hit — `formats` says whether a file
-/// exists, `has_physical` whether a copy is filed — because the confirm
-/// subtitle is worded from both.
+/// `author_display` stays one entry, not split on `", "`: a sort-form name
+/// (`Weir, Andy`) carries that separator itself. `formats` and `has_physical`
+/// come off the hit because the confirm subtitle is worded from both.
 pub(crate) fn scan_book_from_hit(hit: &PaletteBookHit) -> ScanBook {
     let display = hit.author_display.trim();
     ScanBook {

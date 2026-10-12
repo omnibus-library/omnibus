@@ -17,11 +17,9 @@ pub enum RangeOutcome {
 
 /// Parse an optional `Range` header value against a file of `len` bytes.
 ///
-/// Handles the three single-range forms (`bytes=a-b`, `bytes=a-`,
-/// `bytes=-suffix`). Malformed or multi-range headers fall back to
-/// [`RangeOutcome::Full`] per RFC 9110 (a server may ignore Range);
-/// syntactically valid but unsatisfiable ranges yield
-/// [`RangeOutcome::NotSatisfiable`].
+/// Handles `bytes=a-b`, `bytes=a-` and `bytes=-suffix`. Malformed or multi-range
+/// headers fall back to [`RangeOutcome::Full`] (RFC 9110 lets a server ignore
+/// Range); unsatisfiable ranges yield [`RangeOutcome::NotSatisfiable`].
 pub fn parse(header: Option<&str>, len: u64) -> RangeOutcome {
     let Some(raw) = header else {
         return RangeOutcome::Full;

@@ -10,24 +10,16 @@ use serde::{Deserialize, Serialize};
 
 /// How many buckets a single result may carry.
 ///
-/// A Lifetime range at Day granularity spans a decade of points on a real
-/// library, which no axis can render legibly. The result keeps the **most
-/// recent** [`MAX_BUCKETS`] and sets [`ChartResult::truncated`] so the surface
-/// can say so — a silently shortened axis would read as "this is all the data".
+/// A Lifetime range at Day granularity spans a decade of points, which no axis
+/// can render legibly. The result keeps the **most recent** [`MAX_BUCKETS`] and
+/// sets [`ChartResult::truncated`] so the surface can say so.
 pub const MAX_BUCKETS: usize = 366;
 
-/// The most y-scales one chart may carry.
-///
-/// Two, because that is how many axes a chart can label without a reader
-/// having to guess which scale a mark belongs to. This bounds the *units* on
-/// screen, never the number of measures: any number that share a scale can be
-/// plotted together and stay directly comparable. A third distinct unit would
-/// have to borrow a scale that isn't its own, which draws a mark whose height
-/// means nothing.
-///
-/// The vocabulary bounds the rest on its own — the two largest unit groups
-/// hold five measures between them, inside the palette's colour count — so
-/// there is deliberately no separate cap on how many may be selected.
+/// The most y-scales one chart may carry: two, the most axes a chart can label
+/// without a reader guessing which scale a mark belongs to. This bounds distinct
+/// *units*, not measures: any number sharing a scale can be plotted together,
+/// and the vocabulary itself keeps the selection inside the palette, so there is
+/// no separate cap on measures.
 pub const MAX_AXES: usize = 2;
 
 /// Width of the tail-folded breakdown: this many real series, plus `Other`.
@@ -82,10 +74,9 @@ impl ChartBucket {
 
 /// Which table a measure is computed over.
 ///
-/// This is the field that makes the builder tractable: two measures at
-/// different grains cannot be one query without double-counting, so each
-/// declares its grain and the fan-out runs them separately, aligning only on
-/// the shared bucket key.
+/// Two measures at different grains cannot be one query without
+/// double-counting, so each declares its grain and the fan-out runs them
+/// separately, aligning only on the shared bucket key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -130,10 +121,8 @@ pub enum ChartAggregate {
 impl ChartAggregate {
     /// What an absent bucket means for this aggregate.
     ///
-    /// The whole reason the two cases are distinguished: a month in which the
-    /// reader finished nothing really did have zero books, but it does not
-    /// have an average page length of zero — plotting one would drag a
-    /// trendline toward a number nobody read.
+    /// A month in which the reader finished nothing really did have zero books, but
+    /// not an average page length of zero, which would drag a trendline.
     pub fn empty_bucket(&self) -> Option<f64> {
         match self {
             ChartAggregate::Count | ChartAggregate::Sum => Some(0.0),
@@ -181,10 +170,9 @@ impl ChartUnit {
 
 /// The closed measure vocabulary.
 ///
-/// Each variant maps to a hand-written SQL fragment in `db::stats::builder`
-/// that **reuses** the fragment its curated equivalent on `/stats` already
-/// uses, so the two surfaces cannot report different numbers for the same
-/// window.
+/// Each variant maps to a hand-written SQL fragment in `db::stats::builder` that
+/// **reuses** its curated `/stats` equivalent's fragment, so the two surfaces
+/// cannot report different numbers for the same window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -253,12 +241,11 @@ impl ChartMeasure {
         }
     }
 
-    /// One line saying what this measure actually counts, for the notes
-    /// under the chart.
+    /// One line saying what this measure actually counts, for the notes under the
+    /// chart.
     ///
-    /// Kept beside `grain`/`unit` rather than in the UI because it describes
-    /// the *query*, not the presentation — a measure whose SQL changes needs
-    /// its sentence changed in the same edit.
+    /// Kept beside `grain`/`unit` because it describes the *query*, not the
+    /// presentation: change a measure's SQL and its sentence in the same edit.
     pub fn description(&self) -> &'static str {
         match self {
             ChartMeasure::BooksFinished => {
@@ -324,20 +311,17 @@ impl ChartMeasure {
 
     /// Whether this measure supports a breakdown split.
     ///
-    /// Only the completion-grain measures do: a genre is a property of a
-    /// *book*, so splitting a sitting — which may cover several books, and a
-    /// book which may carry several genres — would attribute the same minutes
-    /// to more than one series and report a total larger than the truth.
+    /// Only the completion-grain measures do: a genre belongs to a *book*, so
+    /// splitting a sitting (several books, each with several genres) would count the
+    /// same minutes in more than one series and overstate the total.
     pub fn supports_breakdown(&self) -> bool {
         self.grain() == ChartGrain::Completion
     }
 
     /// A coverage caveat this measure carries into the chart, when it has one.
     ///
-    /// `PagesRead` is bounded by the migration `0083` ledger epoch — reading
-    /// before it left no position trail to difference and cannot be
-    /// reconstructed — so a window reaching further back is genuinely partial
-    /// rather than quiet.
+    /// `PagesRead` is bounded by the ledger epoch: reading before it left no
+    /// position trail to difference, so a window reaching further back is partial.
     pub fn caveat(&self) -> Option<&'static str> {
         match self {
             ChartMeasure::PagesRead => Some(
@@ -433,12 +417,9 @@ pub enum ChartSpecError {
 impl ChartSpec {
     /// Reject a spec the builder must not compile to SQL.
     ///
-    /// Called on the server before any query runs, not merely in the UI: the
-    /// spec arrives over RPC, so the UI's own guards are a convenience and
-    /// this is the contract.
-    /// An **empty selection is valid** and answers with an empty result: a
-    /// reader who has cleared the chart has not made a mistake, and the
-    /// surface has a prompt for that state rather than an error.
+    /// Called on the server before any query runs, not merely in the UI: the spec
+    /// arrives over RPC, so this is the contract. An **empty selection is valid**
+    /// and answers with an empty result, since the surface has a prompt for it.
     pub fn validate(&self) -> Result<(), ChartSpecError> {
         let mut seen: Vec<ChartMeasure> = Vec::new();
         let mut units: Vec<ChartUnit> = Vec::new();
@@ -478,13 +459,10 @@ impl ChartSpec {
         units
     }
 
-    /// Which axis `measure` would be drawn against, or `None` when both are
-    /// already claimed by other units.
-    ///
-    /// This is the compatibility rule the picker greys options out by, and the
-    /// reason it is here rather than in the UI: the server assigns axes from
-    /// the same function, so a control that looked available can never produce
-    /// a spec the server then rejects.
+    /// Which axis `measure` would be drawn against, or `None` when both are already
+    /// claimed by other units. The compatibility rule the picker greys options out
+    /// by; the server assigns axes from the same function, so an offered control
+    /// never produces a spec the server rejects.
     pub fn axis_for(&self, measure: ChartMeasure) -> Option<u8> {
         let units = self.units();
         match units.iter().position(|u| *u == measure.unit()) {
@@ -500,12 +478,9 @@ impl ChartSpec {
         !self.measures.contains(&measure) && self.axis_for(measure).is_some()
     }
 
-    /// Add or remove `measure`, keeping selection order — the first measure
-    /// chosen owns the left axis, so a toggle must not quietly reorder it.
-    ///
-    /// Adding an incompatible measure is a no-op rather than an error: the
-    /// control offering it is already disabled, and a toggle that threw would
-    /// only duplicate that guard.
+    /// Add or remove `measure`, keeping selection order: the first measure chosen
+    /// owns the left axis, so a toggle must not reorder it. Adding an incompatible
+    /// measure is a no-op rather than an error.
     pub fn toggle(&mut self, measure: ChartMeasure) {
         if let Some(i) = self.measures.iter().position(|m| *m == measure) {
             self.measures.remove(i);
@@ -559,10 +534,9 @@ pub fn nice_step(raw: f64) -> f64 {
 
 /// How much of the axis the data must fill before the fit is accepted.
 ///
-/// A ladder that only ever rounds the *maximum* up leaves an axis of 1000 for
-/// a peak of 550 — the data occupies half the frame and every shape in it
-/// reads flatter than it is. Trying several tick counts and keeping the
-/// tightest honest fit is what avoids that.
+/// A ladder that only rounds the *maximum* up leaves an axis of 1000 for a peak
+/// of 550, flattening every shape. Trying several tick counts and keeping the
+/// tightest honest fit avoids that.
 pub const AXIS_MAX_HEADROOM: f64 = 1.35;
 
 /// Tick counts to try, in preference order.
@@ -623,16 +597,9 @@ pub fn axis_max_on(max: f64, divisions: usize, integral: bool) -> f64 {
 }
 
 /// The one or two axes `series` are scaled against, plus the gridline count
-/// they share.
-///
-/// Public because the client re-runs it: a zoom narrows the window to a
-/// sub-range the client already holds, and that slice's axis has to be fitted
-/// by the *same* assembly the server used for the whole — otherwise the scale
-/// would shift under the reader for reasons that have nothing to do with
-/// their data.
-///
-/// The left axis picks the tick count; the right is then fitted to it, because
-/// one set of gridlines serves both.
+/// they share. Public because the client re-runs it: a zoom's sub-range must be
+/// fitted by the *same* assembly the server used, or the scale shifts under the
+/// reader. The left axis picks the tick count; the right is fitted to it.
 pub fn fit_axes(series: &[ChartSeries], stacked: bool, buckets: usize) -> (Vec<ChartAxis>, usize) {
     let unit_of = |axis: u8| -> Option<ChartUnit> {
         series
@@ -689,12 +656,10 @@ pub fn fit_axes(series: &[ChartSeries], stacked: bool, buckets: usize) -> (Vec<C
     (axes, divisions)
 }
 
-/// One plotted series: a measure (optionally narrowed to a breakdown slice)
-/// and its value in every bucket of the shared axis.
-///
-/// `values` is positionally aligned with [`ChartResult::buckets`] and always
-/// the same length. `None` means *no data*, which for an average is a real
-/// state and not a zero — see [`ChartAggregate::empty_bucket`].
+/// One plotted series: a measure (optionally narrowed to a breakdown slice) and
+/// its value in every bucket of the shared axis. `values` is positionally
+/// aligned with [`ChartResult::buckets`]; `None` means *no data*, which for an
+/// average is a real state and not a zero (see [`ChartAggregate::empty_bucket`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChartSeries {
@@ -759,11 +724,9 @@ pub struct ChartResult {
     pub divisions: u8,
     /// Whether the bar series stack into one column per bucket.
     ///
-    /// Only ever true for a **breakdown of one additive measure**, where the
-    /// slices are parts of a whole and their sum is the figure the unsplit
-    /// chart would show. Two different measures never stack — books on top of
-    /// pages is not a quantity — and neither does a split average, since means
-    /// do not add.
+    /// Only true for a **breakdown of one additive measure**, where the slices are
+    /// parts of a whole. Different measures never stack, nor does a split average,
+    /// since means do not add.
     pub stacked: bool,
     /// Set when the axis was clipped to the most recent [`MAX_BUCKETS`].
     pub truncated: bool,

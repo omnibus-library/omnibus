@@ -16,12 +16,10 @@ pub(crate) fn ReaderScrim(onclick: EventHandler<MouseEvent>) -> Element {
     }
 }
 
-/// Scrim + `rd-drawer` shell: grabber, a `head` slot (title/count/sub),
-/// an `actions` slot grouped with the close button (e.g. the bookmarks
-/// drawer's "+ Bookmark"), then `children` for the drawer's body/extra
-/// sections. `extra_class` appends additional drawer classes (the search
-/// panel's `rd-search-drawer`, which lets the phone breakpoint take it
-/// full-screen).
+/// Scrim + `rd-drawer` shell: grabber, a `head` slot (title/count/sub), an
+/// `actions` slot grouped with the close button (e.g. the bookmarks drawer's
+/// "+ Bookmark"), then `children` for the body. `extra_class` appends drawer
+/// classes (the search panel's `rd-search-drawer` goes full-screen on phones).
 // Deliberately left at six props: four of them (`head`, `actions`, `children`,
 // `on_close`) are slot/handler idioms a struct can't carry without losing the
 // rsx slot syntax, so grouping would only bundle the two chrome strings.

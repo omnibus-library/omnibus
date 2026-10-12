@@ -292,18 +292,11 @@ fn WarnRow(
     }
 }
 
-/// A fleet-wide EPUB override bake that left one or more
-/// books unbaked — distinct from both [`WarnRow`] and the red
-/// [`FailedRow`]: the run itself succeeded (every book was attempted, and
-/// the ones that could be baked were), but the admin who kicked it off from
-/// "Bake Overrides Into EPUBs" needs to know which books still need
-/// attention. Doesn't route through `kind_label` — `RewriteAllEpubs`
-/// reuses `TaskKind::Scan` for its wire kind (no dedicated progress
-/// widget), so this row names the job directly instead of rendering the
-/// misleading "Library scan" label. `errors` is just the failed
-/// `book_uuid`s — the wire type deliberately drops the per-book error text
-/// (which can carry a server filesystem path); see the doc comment on
-/// `omnibus_shared::ProgressState::Done::bake_errors`.
+/// A fleet-wide EPUB override bake that left books unbaked: distinct from
+/// [`WarnRow`] and the red [`FailedRow`], since the run itself succeeded. The
+/// row names the job directly (`RewriteAllEpubs` reuses `TaskKind::Scan`'s wire
+/// kind, so `kind_label` would say "Library scan"). `errors` is only the failed
+/// `book_uuid`s: the wire type drops per-book text, which can carry a server path.
 #[component]
 fn BakeErrorsRow(errors: Vec<String>, on_dismiss: EventHandler<MouseEvent>) -> Element {
     let message = bake_errors_message(&errors);
@@ -351,11 +344,8 @@ fn FailedRow(kind: TaskKind, message: String, on_dismiss: EventHandler<MouseEven
 }
 
 /// Map a wire-protocol [`TaskKind`] to a user-facing label. `running` flips
-/// the tense ("Scanning" vs "Library scan") so the indicator reads
-/// naturally in both the in-flight and terminal contexts. New `TaskKind`
-/// variants add one match arm here and inherit the same active/done/failed
-/// rendering for free. `pub(crate)` so `pages::admin_health`'s worker-queue
-/// section can reuse the same labels instead of a second mapping.
+/// the tense ("Scanning" vs "Library scan"). New `TaskKind` variants add one
+/// match arm here. `pub(crate)` so `pages::admin_health` reuses the labels.
 pub(crate) fn kind_label(kind: TaskKind, running: bool) -> &'static str {
     match (kind, running) {
         (TaskKind::Scan, true) => "Scanning library",

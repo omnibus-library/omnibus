@@ -65,12 +65,9 @@ pub(super) async fn post_settings(
     }
 }
 
-/// `POST /api/settings/registration` — admin-only open/close of
-/// self-registration. `204` on success.
-///
-/// The matching read is the *unauthenticated* `GET /api/auth/registration`:
-/// the login and register pages need it before a session exists, so only the
-/// write is gated here.
+/// `POST /api/settings/registration` — admin-only open/close of self-registration. `204`
+/// on success. The matching read is the *unauthenticated* `GET /api/auth/registration`
+/// (the login and register pages need it before a session exists), so only the write is gated.
 pub(super) async fn post_registration(
     _admin: AdminUser,
     State(state): State<AppState>,

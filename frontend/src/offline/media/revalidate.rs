@@ -26,20 +26,10 @@ pub(super) enum Fetched {
 }
 
 /// Ask the server whether a cached image has changed, and replace it when it
-/// has. Runs *after* the cached copy has already been served, so it never
-/// adds latency to a cover render — the newer image lands on the next one.
-///
-/// Skipped while offline, while the cached copy is younger than
-/// [`super::IMG_REVALIDATE_AFTER_SECS`], and while another revalidation of
-/// the same path is already in flight — a grid scroll must not turn into
-/// one request per visible cover, repeatedly.
-///
-/// An entry with *no* validator is checked anyway, unconditionally. Skipping
-/// those made "we cannot ask cheaply" mean "we never ask", and nothing ever
-/// restored the validator — so the entry stayed pinned to those bytes until
-/// the cache was pruned, which is how a stale thumbnail outlived the cover it
-/// was made from. The refetch costs one full body, once, and stores
-/// the validator that makes every later check a 304.
+/// has. Runs *after* the cached copy was served, so the newer image lands on
+/// the next render. Skipped while offline, while the copy is younger than
+/// [`super::IMG_REVALIDATE_AFTER_SECS`], or while the same path is already in
+/// flight. An entry with *no* validator is checked anyway, to restore it.
 pub(super) fn revalidate_in_background(img_dir: PathBuf, path: String, cached: &CachedImage) {
     // Cheap pre-check so an in-window render doesn't spawn a task at all.
     // It is *not* the decision — that is re-taken under the write lock
@@ -70,14 +60,11 @@ pub(super) fn revalidate_in_background(img_dir: PathBuf, path: String, cached: &
     });
 }
 
-/// Serializes every write to one cache key.
-///
-/// Two writers for the same image are not merely wasteful, they corrupt:
-/// the foreground `?v=` bust and a background revalidation used to write
-/// the same temp file concurrently and then each rename it into place.
-/// Holding this across fetch-and-write also gives the background task a
-/// point at which to notice that a bust replaced the entry while it was
-/// queued — see [`revalidate_in_background`].
+/// Serializes every write to one cache key: two writers for the same image
+/// corrupt it (the `?v=` bust and a background revalidation share a temp
+/// file). Holding it across fetch-and-write also lets the background task
+/// notice a bust replaced the entry while it was queued — see
+/// [`revalidate_in_background`].
 pub(super) async fn lock_cache_key(path: &str) -> tokio::sync::OwnedMutexGuard<()> {
     let lock = {
         let mut map = write_locks().lock().unwrap_or_else(|e| e.into_inner());

@@ -37,10 +37,8 @@ pub async fn rpc_save_overrides(
 /// Apply one bulk edit to many books (the table view's bulk-edit modal).
 /// Requires `can_edit` or admin. All-or-nothing: the db layer applies every
 /// book in one transaction, so a bad uuid edits nothing. Returns the merged
-/// `EbookMetadata` for the edited books so the client can update its table
-/// rows without a refetch — a book deleted concurrently between the commit
-/// and the re-read is omitted from the result rather than failing the
-/// already-committed edit.
+/// `EbookMetadata` for the edited books; one deleted concurrently between the
+/// commit and the re-read is omitted rather than failing the committed edit.
 #[post("/api/rpc/ebook/overrides/bulk", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_bulk_save_overrides(
     uuids: Vec<String>,
@@ -158,11 +156,10 @@ pub async fn rpc_delete_ebook_cover(uuid: String) -> Result<Option<EbookMetadata
         .map_err(|e| internal_rpc_error("get ebook", e))?)
 }
 
-/// Admin-only: queues a fleet-wide bake of every book's active
-/// metadata/cover overrides into its EPUB container. Posts a
-/// single `Task::RewriteAllEpubs` to the background worker and returns
-/// immediately; completion surfaces via the existing `rpc_worker_status`
-/// polling loop (`WorkerStatusIndicator`). Mobile's analogous route is
+/// Admin-only: queues a fleet-wide bake of every book's active metadata/cover
+/// overrides into its EPUB container. Posts a single `Task::RewriteAllEpubs` to
+/// the background worker and returns immediately; completion surfaces via the
+/// `rpc_worker_status` polling loop. Mobile's analogue is
 /// `POST /api/admin/rewrite-all-epubs`.
 #[post("/api/rpc/admin/rewrite-all-epubs", _pool: PoolExt, worker: WorkerExt, _admin: AdminUser)]
 pub async fn rpc_rewrite_all_epubs() -> Result<()> {

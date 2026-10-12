@@ -12,11 +12,10 @@ use super::super::attach;
 use super::super::books::SyncError;
 use super::shared::{attach_audiobook_file, insert_new_audiobook, rewrite_audiobook_in_place};
 
-/// Apply the Changed bucket: batch-resolve uuid → book_id, then per book
-/// either refresh the attached file row (uuid lives in `merged_uuids`),
-/// promote to a New insert (TOCTOU — diff said the uuid existed but a
-/// concurrent process removed it), or wipe-and-rewrite the file/parts/
-/// author rows in place. Returns `(uuid, mime, bytes)` triples for the
+/// Apply the Changed bucket: batch-resolve uuid → book_id, then per book either
+/// refresh the attached file row (uuid lives in `merged_uuids`), promote to a New
+/// insert (TOCTOU: a concurrent process removed it), or wipe-and-rewrite the
+/// file/parts/author rows in place. Returns `(uuid, mime, bytes)` triples for the
 /// post-commit cover materialization.
 pub(super) async fn sync_audiobooks_changed(
     tx: &mut Transaction<'_, sqlx::Sqlite>,

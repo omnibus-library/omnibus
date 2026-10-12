@@ -35,12 +35,10 @@ pub use tracks::{inspect_mp4_tracks, Mp4Tracks};
 /// definition; [`crate::scanner`] re-exports it for the settings-page count.
 pub const AUDIOBOOK_EXTENSIONS: &[&str] = &["m4b", "m4a", "mp3"];
 
-/// `book_files.format` values produced by the audiobook indexer. Used by
-/// [`crate::indexer::reindex_audiobooks`] to scope the diff's "currently
-/// indexed" view to audiobook rows — prevents `sync_audiobooks` from
-/// classifying foreign (ebook) rows under a shared `library_path` as
-/// Removed and deleting them. Uppercased to match the values written
-/// in [`crate::sync::sync_audiobooks`].
+/// `book_files.format` values produced by the audiobook indexer, uppercased to
+/// match what [`crate::sync::sync_audiobooks`] writes. Scopes the diff in
+/// [`crate::indexer::reindex_audiobooks`] to audiobook rows, so foreign (ebook)
+/// rows under a shared `library_path` are never classified Removed and deleted.
 pub const AUDIOBOOK_FORMATS: &[&str] = &["M4B", "M4A", "MP3"];
 
 /// Re-export of [`crate::ebook::IndexedBook`] so callers using
@@ -115,12 +113,9 @@ pub struct InspectedAudiobook {
 }
 
 /// Inspect the audiobook file(s) at `paths` and derive book-level metadata for
-/// the upload confirm step, without touching the library. `paths` is one file
-/// for `.m4b`/`.m4a` or the ordered `.mp3` parts of a multi-file audiobook.
-///
-/// Per-part tag failures are tolerated (logged, skipped) so one corrupt file
-/// doesn't sink the inspect; an error is returned only when *no* part yields
-/// readable tags.
+/// the upload confirm step, without touching the library. `paths` is one `.m4b`/
+/// `.m4a` file or the ordered `.mp3` parts. Parts with unreadable tags are
+/// skipped (logged); errors only when no part yields tags.
 pub fn inspect_audiobook_files(paths: &[PathBuf]) -> anyhow::Result<InspectedAudiobook> {
     let multi = paths.len() > 1;
     let mut album_title: Option<String> = None;
@@ -190,11 +185,8 @@ fn filename_stem(filename: &str) -> String {
 }
 
 /// Split a duration in seconds into `(hours, minutes)` for the human-readable
-/// `Audiobook · {h}h {m:02}m` description. Tag-supplied durations can be
-/// `NaN`/`inf`/negative when a file is corrupt; without this guard those
-/// values get cast straight to `i64::MIN`, surfacing as
-/// `-9223372036854775808h` in the UI. Clamp to a sane upper bound so the
-/// final cast cannot truncate.
+/// `Audiobook · {h}h {m:02}m` description. Non-finite or negative durations
+/// (corrupt tags) give `(0, 0)`; huge ones are clamped.
 pub(super) fn duration_to_hm(d: f64) -> (i64, i64) {
     if !d.is_finite() || d < 0.0 {
         return (0, 0);

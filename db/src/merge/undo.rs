@@ -1,5 +1,9 @@
 //! Undo for [`super::merge_books`]: recreate the absorbed source book
 //! from its `merge_log` snapshot and move its file rows back.
+//!
+//! Undoing several merges into one book is last-in-first-out wherever they
+//! overlap: a later, still-open merge leaves a record this undo cannot see past,
+//! so it fails with `MergeError::UndoConflict` rather than guessing.
 
 use std::collections::HashSet;
 
@@ -20,28 +24,11 @@ use super::relocation::{deleted_ids, restore_relocation};
 use super::snapshot::SourceSnapshot;
 use super::MergeError;
 
-/// Reverse a merge: recreate the source `books` row from the snapshot,
-/// move the snapshot's file formats back off the target, restore links
-/// by name, hand each book back its own read status and rating, strip the
-/// identifiers the merge copied onto the target, and clear the source-uuid
-/// reindex guard. Returns the restored book's uuid.
-///
-/// Fails with [`MergeError::UndoConflict`] when a reader has re-curated the
-/// survivor since the merge — that value and the pre-merge one are both real,
-/// and quietly keeping either is how undo used to hand one book's curation to
-/// the other — or when a **later, still-open merge into the same book** also
-/// moved that reader's row, or supplies one of the identifiers this undo would
-/// take back. Neither is something this undo can see past, so undoing several
-/// merges into one book is last-in-first-out wherever they overlap.
-///
-/// Every row the merge moved — positions, sessions, annotations, journals,
-/// shelf slots — goes back to the source, and every row its dedupe deleted is
-/// reinserted where it was; rows written on the survivor since stay there. The
-/// links and override keys the merge added come off the target, and the
-/// source's own overrides come back. A merge logged before these were recorded
-/// leaves them where they are. If a moved file row was deleted in the meantime
-/// (file removed from disk), the restored source comes back **fileless** — a
-/// legal state — rather than failing.
+/// Reverse a merge: recreate the source `books` row from the snapshot, move its files and
+/// every moved row back, restore links by name, hand each book back its own read status and
+/// rating, and strip the identifiers the merge copied; returns the restored uuid. A file
+/// deleted since leaves the source fileless (no error). Fails with [`MergeError::UndoConflict`]
+/// when a reader re-curated the survivor since, or a later open merge overlaps.
 pub async fn undo_merge(pool: &SqlitePool, merge_log_id: i64) -> Result<String, MergeError> {
     let mut tx = pool.begin().await?;
 
@@ -232,12 +219,10 @@ async fn recreate_source_row(
     Ok(id)
 }
 
-/// Move the snapshot's files back from the target. Uses file IDs when
-/// available (new snapshots); falls back to format matching for old
-/// snapshots created before same-format merges were allowed. Rows that
-/// vanished since the merge are skipped — the restored book is then
-/// fileless. Moved files get sequential ordinals per format and their
-/// label cleared.
+/// Move the snapshot's files back from the target, by file ID when the snapshot
+/// has them and by format matching for older ones. Rows that vanished since the
+/// merge are skipped, leaving the restored book fileless. Moved files get
+/// sequential ordinals per format and their label cleared.
 async fn move_files_back(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     target_id: i64,
@@ -345,12 +330,10 @@ async fn reparent_files_with_ordinals(
 }
 
 /// Restore the source's author links by name in two batched statements
-/// (mirroring the sync writer): one `INSERT ... ON CONFLICT` upsert that keeps
-/// each name's first non-null sort, then one `INSERT OR IGNORE ... SELECT ...
-/// JOIN authors` that resolves ids by name. A name repeated in the snapshot
-/// keeps its first (lowest) position — identical to the old per-row
-/// `INSERT OR IGNORE` loop, since `books_authors_link` is keyed `(book,
-/// author)`.
+/// (mirroring the sync writer): an `INSERT ... ON CONFLICT` upsert keeping each
+/// name's first non-null sort, then an `INSERT OR IGNORE ... SELECT` that
+/// resolves ids by name. A name repeated in the snapshot keeps its first
+/// (lowest) position, as `books_authors_link` is keyed `(book, author)`.
 async fn restore_author_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -468,23 +451,19 @@ async fn restore_links(
     Ok(())
 }
 
-/// What a still-open merge into the same target, recorded *after* the one
-/// being undone, is holding on the survivor. Each field exists because this
-/// undo cannot see what that later merge's own dedupe deleted — and each
-/// makes undoing the two overlapping merges last-in-first-out.
-///
-/// The two reader sets stay apart because `book_read_status` and
-/// `user_ratings` collide independently: a later merge that moved only a
-/// rating says nothing about anyone's read status.
+/// What a still-open merge into the same target, recorded *after* the one being
+/// undone, is holding on the survivor. This undo cannot see what that later
+/// merge's own dedupe deleted, so each field makes undoing the two overlapping
+/// merges last-in-first-out. The reader sets stay apart because
+/// `book_read_status` and `user_ratings` collide independently.
 struct LaterMergeClaims {
     status_readers: HashSet<i64>,
     rating_readers: HashSet<i64>,
-    /// `(scheme, value)` its absorbed book carries, ASCII-lowercased to model
-    /// the columns' `COLLATE NOCASE` — which is ASCII-only, so a full-Unicode
-    /// fold would treat two tuples SQLite considers distinct as one. Taken
-    /// from the later snapshot's own `identifiers` rather than what it *added*
-    /// to the target: a tuple an earlier merge already put there is recorded
-    /// as added by neither, yet the later-merged book still supplies it.
+    /// `(scheme, value)` its absorbed book carries, ASCII-lowercased to model the
+    /// columns' ASCII-only `COLLATE NOCASE`. Taken from the later snapshot's own
+    /// `identifiers`, not what it *added*: a tuple an earlier merge already put on
+    /// the target is recorded as added by neither, yet the later book still
+    /// supplies it.
     identifiers: HashSet<(String, String)>,
     /// `(link table, lowercased name)` its absorbed book carries — the same
     /// reasoning as `identifiers`.
@@ -536,16 +515,10 @@ async fn load_later_merge_claims(
 }
 
 /// Take back off the target exactly the identifier tuples the merge's union
-/// added to it. A tuple the target already carried is not the merge's to
-/// remove, so it is never in `added` in the first place.
-///
-/// Refuses when a still-open later merge's book *also* supplies one of them,
-/// because neither answer is available at that point: stripping it takes an
-/// identifier off a survivor still entitled to it, and skipping it leaks the
-/// tuple forever — the later merge recorded the same tuple as added by
-/// nobody, so its own undo would not remove it either. Undoing in reverse
-/// order settles it, which is the same last-in-first-out rule the curation
-/// guard imposes.
+/// added to it; a tuple the target already carried is never in `added`. Refuses
+/// when a still-open later merge's book *also* supplies one: stripping it would
+/// take an identifier off a survivor still entitled to it, and skipping it would
+/// leak the tuple forever. Undoing in reverse order settles it.
 async fn strip_merged_identifiers(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     target_id: i64,

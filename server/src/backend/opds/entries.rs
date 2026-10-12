@@ -29,14 +29,10 @@ pub(super) fn is_ereader_format(format: &str) -> bool {
         || format.eq_ignore_ascii_case("pdf")
 }
 
-/// Drop every book without an e-reader-servable file. The shared list
-/// queries surface physical-only books on purpose for the web UI,
-/// but in a catalog for e-readers a row with no usable acquisition link is
-/// dead weight. Strictly EPUB/CBZ/PDF: audiobook-only books are
-/// excluded too, so [`download_link`]'s audio fallback arms never fire
-/// from a feed — they remain only for defense on unfiltered callers.
-/// Every feed builder calls this right after its fetch, so both catalogs
-/// filter identically.
+/// Drop every book without an e-reader-servable file (strictly EPUB/CBZ/PDF; audiobook-only
+/// books go too). The shared list queries surface physical-only books on purpose for the
+/// web UI, but a catalog row with no usable acquisition link is dead weight. Every feed
+/// builder calls this right after its fetch, so both catalogs filter identically.
 pub(super) fn retain_ereader_books(books: &mut Vec<EbookMetadata>) {
     books.retain(|b| b.formats.iter().any(|f| is_ereader_format(f)));
 }
@@ -86,16 +82,11 @@ pub(super) fn book_entry(book: &EbookMetadata) -> Entry {
     }
 }
 
-/// The acquisition download link `(href, mime)` for `book`, chosen by its
-/// first matching known format. Mirrors the fallback order
-/// `/api/ebooks/{uuid}/file` already uses (EPUB, else CBZ — see that
-/// handler's doc comment), extended with the audiobook formats so a
-/// dual-format or audiobook-only entry still links somewhere. `None` when
-/// the book carries no format this catalog can link to (e.g. a
-/// physical-only entry with no files). Returns a bare tuple rather than an
-/// [`atom::Link`](super::atom::Link) so `opds::json_entries` can build the
-/// same link as its own JSON `Link` type — the whole point of factoring
-/// this out is one format-selection decision feeding both catalogs.
+/// The acquisition download link `(href, mime)` for `book`, chosen by its first matching
+/// known format, in the fallback order `/api/ebooks/{uuid}/file` uses (EPUB, else CBZ,
+/// else PDF), extended with the audiobook formats. `None` when the book carries no format
+/// this catalog can link to (e.g. a physical-only entry). Returns a bare tuple so
+/// `opds::json_entries` builds the same link as its own JSON `Link` type.
 pub(super) fn download_link(uuid: &str, book: &EbookMetadata) -> Option<(String, &'static str)> {
     let has = |fmt: &str| book.formats.iter().any(|f| f.eq_ignore_ascii_case(fmt));
     if has("epub") {

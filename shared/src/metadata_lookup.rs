@@ -21,11 +21,9 @@ pub enum MetadataProvider {
 impl MetadataProvider {
     /// Every provider, in catalog order.
     ///
-    /// The one hand-written roster in the workspace. Anything that has to
-    /// visit every provider — the catalog, the cover-host union, their tests —
-    /// reads it rather than repeating the list, because a second copy compiles
-    /// perfectly well while silently missing a variant: the failure shows up
-    /// as a blocked cover image or a 400, never as a build error.
+    /// The one hand-written roster in the workspace. Anything that visits every
+    /// provider reads it rather than repeating the list: a second copy compiles but
+    /// silently misses a variant, showing up as a blocked cover image or a 400.
     pub const ALL: &'static [MetadataProvider] = &[
         MetadataProvider::OpenLibrary,
         MetadataProvider::GoogleBooks,
@@ -43,14 +41,10 @@ impl MetadataProvider {
 }
 
 /// What one provider can be asked and what it can return, independent of
-/// whether it is currently configured.
-///
-/// A flag is a claim about the provider's API, not about one book: a source
-/// that can answer for genres advertises `carries_genres` even when a given
-/// edition has none. Flip one only in the same change that teaches the
-/// provider module to parse the field onto [`ProviderEdition`] — the two are
-/// cross-checked against a fixture, so a flag that outruns its parser fails
-/// the suite.
+/// whether it is currently configured. A flag is a claim about the provider's
+/// API, not one book: flip one only in the same change that teaches the
+/// provider module to parse the field onto [`ProviderEdition`], because a
+/// fixture cross-check fails a flag that outruns its parser.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderCapabilities {
     pub search_by_title: bool,
@@ -142,15 +136,11 @@ impl ExternalBookMeta {
     /// Maximum number of authors.
     pub(crate) const MAX_AUTHORS: usize = 32;
 
-    /// Validate field lengths. This is untrusted wire input — either resolved
-    /// from an external provider or hand-edited by the client before being
-    /// submitted back (add-physical-only / wishlist-by-meta) — so every
-    /// free-text field gets a cap before it reaches a DB write. Returns `Err`
-    /// with a human-readable message on the first field that exceeds its cap.
-    ///
-    /// Length caps are measured in Unicode scalar values (`chars`), not UTF-8
-    /// bytes, matching `MetadataOverrides::validate` — **except** `cover_url`,
-    /// whose cap is byte-based (see [`Self::COVER_URL_MAX_LEN`]).
+    /// Validate field lengths. This is untrusted wire input, so every free-text
+    /// field gets a cap before it reaches a DB write. Returns `Err` with a
+    /// human-readable message on the first field over its cap. Caps count Unicode
+    /// scalar values (`chars`), **except** `cover_url`, whose cap is byte-based
+    /// (see [`Self::COVER_URL_MAX_LEN`]).
     pub fn validate(&self) -> Result<(), String> {
         if self.title.chars().count() > Self::TITLE_MAX_LEN {
             return Err(format!("title exceeds {} characters", Self::TITLE_MAX_LEN));
@@ -192,48 +182,28 @@ impl ExternalBookMeta {
 
 /// One candidate from one provider in a fan-out edition search, kept
 /// **attributed and un-collapsed**: two editions sharing an ISBN across two
-/// sources stay two entries, and so do two printings one source reports
-/// separately, because telling editions apart is what the picker is for.
-///
-/// Deliberately a new type rather than an extension of [`ExternalBookMeta`] —
-/// that one is the check-in wire payload, validated and round-tripped back
-/// from the client, and keeping its contract frozen is worth more than the
-/// reuse. Convert with `From` where a check-in-shaped value is wanted.
+/// sources stay two entries, because telling editions apart is what the picker
+/// is for. A separate type from [`ExternalBookMeta`], the frozen check-in wire
+/// payload; convert with `TryFrom` where a check-in-shaped value is wanted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProviderEdition {
     pub source: MetadataProvider,
-    /// Opaque, provider-scoped handle for re-fetching this candidate in full
-    /// once it is selected — a thin search hit carries less than the
-    /// provider's own record does (Open Library's search docs have no
-    /// description, Google Books' do). Omnibus never parses it: it is the
-    /// provider's own id where one exists, and `isbn:<isbn13>` on the rare row
-    /// that carries none, which every provider can also be re-queried by.
+    /// Opaque, provider-scoped handle for re-fetching this candidate in full once
+    /// it is selected, since a thin search hit carries less than the provider's own
+    /// record. Omnibus never parses it: it is the provider's own id where one
+    /// exists, else `isbn:<isbn13>`, which every provider can be re-queried by.
     pub provider_ref: String,
-    /// The normalized ISBN-13 that identifies this edition (13 digits, no
-    /// hyphens), when the provider ties one to *this* edition.
-    ///
-    /// **Optional, deliberately.** A search hit is very often a *work* rather
-    /// than a printing: Open Library's `search.json` carries one `isbn` list
-    /// spanning every edition, and Hardcover's `search` document carries an
-    /// `isbns` array doing the same. Requiring one here used to drop those
-    /// candidates outright — silently, and worst for exactly the books a
-    /// reader is most likely to be fixing up by hand (pre-ISBN works,
-    /// translations, small-press printings). What a candidate must have is a
-    /// [`Self::provider_ref`] to be re-fetched by, not an ISBN.
-    ///
-    /// The check-in path still requires one, and enforces that on its own
-    /// boundary — see [`ExternalBookMeta`] and the `TryFrom` below.
+    /// The normalized ISBN-13 (13 digits, no hyphens), when the provider ties one
+    /// to *this* edition. Optional on purpose: a search hit is often a *work*, not a
+    /// printing, so a candidate needs a [`Self::provider_ref`] to be re-fetched by,
+    /// not an ISBN. The check-in path still requires one (see [`ExternalBookMeta`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn13: Option<String>,
-    /// ISBN-10 for the **same** printing as [`Self::isbn13`], when the
-    /// provider carries one.
-    ///
-    /// Only set when the two demonstrably name one edition — providers list
-    /// identifiers per *work* as readily as per edition, and a search hit's
-    /// ISBN-13 and ISBN-10 can otherwise come from different printings. A
-    /// 979-prefixed ISBN-13 has no ISBN-10 at all, so `None` is the normal
-    /// answer for a modern edition, not a parse failure.
+    /// ISBN-10 for the **same** printing as [`Self::isbn13`], when the provider
+    /// carries one. Only set when the two demonstrably name one edition, since
+    /// providers list identifiers per *work* as readily as per edition. `None` is
+    /// the normal answer for a 979-prefixed ISBN-13, which has no ISBN-10.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn10: Option<String>,
     pub title: String,
@@ -263,24 +233,15 @@ pub struct ProviderEdition {
     /// Genres as this provider labels them, already sanitized and capped at
     /// [`Self::MAX_GENRES`].
     ///
-    /// Empty means "this provider has none for this book"; whether a source
-    /// can answer for genres *at all* is
-    /// [`ProviderCapabilities::carries_genres`], so the picker can leave out
-    /// a column no source could ever fill.
+    /// Empty means "this provider has none for this book"; whether a source can
+    /// answer for genres *at all* is [`ProviderCapabilities::carries_genres`].
     #[serde(default)]
     pub genres: Vec<String>,
     /// How strongly this candidate matches the query that found it, in
-    /// **hundredths of a point** (so `1000` is a perfect title match) — or
-    /// `None` from a source that did not score, which is what an older client
-    /// and every hand-written test fixture send.
-    ///
-    /// Fixed-point rather than a float so this type keeps `Eq`, and so two
-    /// candidates that scored identically compare identically rather than
-    /// depending on float formatting.
-    ///
-    /// It is derived from the candidate and the query alone — never from
-    /// which provider answered — so a source dropping out removes its rows
-    /// and reorders nothing.
+    /// **hundredths of a point** (so `1000` is a perfect title match), or `None`
+    /// from a source that did not score. Derived from the candidate and the query
+    /// alone, never from which provider answered, so a source dropping out removes
+    /// its rows and reorders nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relevance: Option<i32>,
 }
@@ -288,26 +249,16 @@ pub struct ProviderEdition {
 impl ProviderEdition {
     /// Maximum genres one candidate contributes.
     ///
-    /// Far below `MetadataOverrides::MAX_GENRES` (64) on purpose: that bounds
-    /// what a book may *store*, this bounds what one source may *propose*.
-    /// Open Library's subject lists run to dozens of entries — genre, setting,
-    /// and character names mixed together — and a chip editor handed all of
-    /// them is unusable.
+    /// Far below `MetadataOverrides::MAX_GENRES` (64) on purpose: that bounds what
+    /// a book may *store*, this bounds what one source may *propose*, since Open
+    /// Library's subject lists run to dozens of mixed entries.
     pub const MAX_GENRES: usize = 10;
 
-    /// Fill this record's empty fields from `thinner`, keeping every value
-    /// this one already carries.
-    ///
-    /// The merge behind hydrate-on-select: the detail record a provider
-    /// serves for one edition is richer in some fields and *poorer* in
-    /// others than the search hit that named it — Open Library's edition
-    /// record has the publisher and the printing's own page count but no
-    /// subjects or first-publish year, and its search doc is the mirror
-    /// image. Re-fetching would otherwise blank whatever the list row had
-    /// shown, which is the one thing a picker must never do.
-    ///
-    /// `self` wins every conflict: it is the record fetched *for this
-    /// edition*, where the search hit may describe the work.
+    /// Fill this record's empty fields from `thinner`, keeping every value this one
+    /// already carries. The merge behind hydrate-on-select: the detail record is
+    /// richer in some fields and poorer in others than the search hit that named
+    /// it, and re-fetching must not blank what the list row showed. `self` wins
+    /// every conflict, being the record fetched *for this edition*.
     pub fn fill_missing_from(&mut self, thinner: &ProviderEdition) {
         // Both sides are checked for content, not just presence. Providers
         // don't consistently trim these, and filling an absent field with a
@@ -363,12 +314,9 @@ impl ProviderEdition {
 }
 
 /// A [`ProviderEdition`] that names no ISBN-13 cannot become an
-/// [`ExternalBookMeta`].
-///
-/// Not a general failure: the picker is *expected* to surface candidates like
-/// this, and the check-in path is expected to skip them. It exists so the
-/// narrowing is a decision the compiler forces a caller to make, rather than
-/// an `unwrap_or_default` that would put an empty ISBN on the wire.
+/// [`ExternalBookMeta`]. Not a general failure: the picker is *expected* to
+/// surface such candidates and the check-in path to skip them, rather than put
+/// an empty ISBN on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoIsbn;
 
@@ -383,16 +331,11 @@ impl std::error::Error for NoIsbn {}
 impl TryFrom<ProviderEdition> for ExternalBookMeta {
     type Error = NoIsbn;
 
-    /// Narrow a search candidate to the check-in payload, dropping the fields
-    /// that type doesn't carry — `provider_ref`, `isbn10`, `series_index`,
-    /// `relevance`, and `genres`. The check-in wire contract stays frozen;
-    /// the picker keeps the rest.
-    ///
-    /// Fails with [`NoIsbn`] when the candidate has none. Check-in stores the
-    /// ISBN per physical copy and prints it on its confirm screens, and the
-    /// iOS client decodes `isbn13` as a non-optional `String` — so a
-    /// candidate without one is not something that flow can act on, and
-    /// inventing a blank would break the client outright.
+    /// Narrow a search candidate to the check-in payload, dropping the fields that
+    /// type doesn't carry (`provider_ref`, `isbn10`, `series_index`, `relevance`,
+    /// `genres`). Fails with [`NoIsbn`] when the candidate has none: check-in stores
+    /// the ISBN per physical copy and the iOS client decodes `isbn13` as a
+    /// non-optional `String`, so a blank would break it.
     fn try_from(e: ProviderEdition) -> Result<Self, Self::Error> {
         Ok(Self {
             isbn13: e.isbn13.ok_or(NoIsbn)?,
@@ -428,13 +371,11 @@ pub enum ProviderSearchStatus {
     /// top-level context, never the error chain below it — which is where a
     /// request URL, and so a `?key=`, would render.
     Failed { message: String },
-    /// Skipped without a request: this provider rate-limited us recently and
-    /// is still inside its cooldown.
+    /// Skipped without a request: this provider rate-limited us recently and is
+    /// still inside its cooldown.
     ///
-    /// Distinct from [`Self::Failed`] on purpose. A failure is "we asked and
-    /// it went wrong"; this is "we did not ask, and here is when it is worth
-    /// asking again" — which is the difference between a reader retrying
-    /// immediately for nothing and knowing to come back later.
+    /// Distinct from [`Self::Failed`]: nothing was asked, and `retry_after_secs`
+    /// says when it is worth asking again.
     Throttled {
         /// Whole seconds left on the cooldown, rounded up.
         retry_after_secs: u64,
@@ -457,17 +398,11 @@ pub struct EditionSearchRequest {
     /// The query as free text — what the reader sees in the search box, and
     /// the whole request from a client that sends nothing else.
     pub query: String,
-    /// The book's title on its own, when the caller can separate it.
-    ///
-    /// The three fields below are what let each provider be asked in *its*
-    /// terms rather than handed one flattened string. Open Library takes a
-    /// `title=`/`author=` pair and searches the author's name inside the
-    /// title field if you give it the concatenation — for "Dune Frank
-    /// Herbert" that returns five books *about* Dune and not the novel.
-    ///
-    /// Absent means "the reader typed something specific": fall back to
-    /// treating [`Self::query`] as the title with no author, which is the
-    /// only honest reading of free text.
+    /// The book's title on its own, when the caller can separate it. Lets each
+    /// provider be asked in *its* terms: Open Library searches the author's name
+    /// inside the title field if handed one flattened string. Absent means "the
+    /// reader typed something specific": treat [`Self::query`] as the title, with
+    /// no author.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// The primary author, paired with [`Self::title`].
@@ -493,14 +428,9 @@ impl EditionSearchRequest {
     pub const ISBN_MAX_LEN: usize = 32;
 
     /// Reject a request that asks *nothing*, an oversized field, and an
-    /// explicitly-empty provider list — which would otherwise search nothing
-    /// and look like an outage. Handlers translate `Err(_)` into 400.
-    ///
-    /// "Asks nothing" means every field is blank, not that `query` is blank: a
-    /// structured request carries its question in `title`/`author`/`isbn`, and
-    /// an ISBN-only search — the strongest question any provider takes — has
-    /// no free text to compose a `query` from at all. Requiring `query` here
-    /// made that search impossible to express.
+    /// explicitly-empty provider list (which would search nothing and look like an
+    /// outage). "Asks nothing" means every field is blank, not just `query`: an
+    /// ISBN-only search has no free text. Handlers translate `Err(_)` into 400.
     pub fn validate(&self) -> Result<(), String> {
         let blank = |v: &Option<String>| v.as_deref().is_none_or(|s| s.trim().is_empty());
         if self.query.trim().is_empty()
@@ -538,12 +468,11 @@ impl EditionSearchRequest {
     }
 }
 
-/// Body for `POST /api/metadata/editions/hydrate` — the second call the
-/// picker makes once a candidate is selected, naming one edition rather than
-/// a query.
+/// Body for `POST /api/metadata/editions/hydrate`, the second call the picker
+/// makes once a candidate is selected, naming one edition rather than a query.
 ///
-/// `provider_ref` is echoed back exactly as the search handed it over;
-/// Omnibus never parses it, so it is capped rather than validated for shape.
+/// `provider_ref` is echoed back exactly as the search handed it over; Omnibus
+/// never parses it, so it is capped rather than validated for shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EditionHydrateRequest {
@@ -551,11 +480,9 @@ pub struct EditionHydrateRequest {
     pub provider_ref: String,
     /// The candidate's ISBN-13, when it has one.
     ///
-    /// Optional because a candidate now may not have one at all — and because
-    /// the ISBN was never the handle that made a re-fetch possible.
-    /// `provider_ref` is: every provider can be re-asked by its own id, and
-    /// only some can be re-asked by ISBN. When present it is still preferred,
-    /// since it names a *printing* where a bare handle may name a work.
+    /// Optional because a candidate may have none; `provider_ref` is the re-fetch
+    /// handle. When present it is still preferred, since it names a *printing*
+    /// where a bare handle may name a work.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn13: Option<String>,
 }

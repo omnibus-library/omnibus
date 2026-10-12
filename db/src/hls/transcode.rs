@@ -22,23 +22,11 @@ use super::{
 /// the orphan detector mistaking a slow disk for a dead transcode.
 const HEARTBEAT_PERIOD: Duration = Duration::from_secs(5);
 
-/// Transcode all parts for `(book_id, profile)` to HLS segments via ffmpeg.
-///
-/// Writes a `.progress` sentinel that heartbeats every
-/// [`HEARTBEAT_PERIOD`] (~5 s) while ffmpeg is alive, and `1.0` on
-/// success. If a previous run left a `.progress` sentinel pinned to a
-/// non-terminal value (server restart mid-transcode), the orphan is
-/// detected via `is_progress_stale_at` and wiped before retrying so the
-/// status endpoint's `progress < 0.05` re-kick gate can fire on the next
-/// poll.
-///
-/// On failure the sentinel and all partial segments are cleaned up so a
-/// retry produces a clean slate, and a sibling `.failed` marker is left
-/// behind so subsequent polls don't burn CPU on a corrupt source.
-///
-/// Configurable via:
-/// - `OMNIBUS_FFMPEG_PATH` — path or name of the ffmpeg binary (default `ffmpeg`)
-/// - `OMNIBUS_HLS_TRANSCODE_TIMEOUT_SECS` — hard timeout in seconds (default 1800)
+/// Transcode all parts for `(book_id, profile)` to HLS segments via ffmpeg,
+/// heartbeating a `.progress` sentinel every [`HEARTBEAT_PERIOD`] and writing
+/// `1.0` on success. A stale orphan sentinel is wiped before retrying; on failure
+/// the sentinel and partial segments go and a `.failed` marker stays. Env:
+/// `OMNIBUS_FFMPEG_PATH` (`ffmpeg`), `OMNIBUS_HLS_TRANSCODE_TIMEOUT_SECS` (1800).
 pub async fn transcode_book(
     pool: &SqlitePool,
     book_id: i64,
@@ -345,15 +333,11 @@ async fn finalize_transcode(
     }
 }
 
-/// Remove a `(book_id, profile)` segment directory and its `.progress`
-/// sentinel on transcode failure, then write a sibling `.failed` marker
-/// so the status / segment handlers stop kicking fresh transcodes for
-/// what is clearly a broken book (corrupt source, missing ffmpeg, …).
-///
-/// The `.failed` marker lives at the `<book_id>/` level (not inside the
-/// just-removed segment dir) so a retry is only possible after either
-/// (a) operator intervention removing the marker, or (b) a cache
-/// eviction sweep that wipes the entire `<book_id>/` directory.
+/// Remove a `(book_id, profile)` segment directory and its `.progress` sentinel
+/// on transcode failure, then write a sibling `.failed` marker so the status and
+/// segment handlers stop kicking fresh transcodes for a broken book. The marker
+/// lives at the `<book_id>/` level, so a retry needs an operator removing it or
+/// a cache eviction sweep wiping the whole `<book_id>/` directory.
 async fn cleanup_segment_dir(book_id: i64, profile: &str) {
     let dir = segment_dir(book_id, profile);
     if let Err(e) = tokio::fs::remove_dir_all(&dir).await {
@@ -370,12 +354,9 @@ async fn cleanup_segment_dir(book_id: i64, profile: &str) {
     }
 }
 
-/// Evict oldest book-level cache directories until total usage ≤ `cap_bytes`.
-///
-/// Directories are sorted by their own modification time (oldest first). Each
-/// is removed in order until the aggregate drops below the cap. Removal errors
-/// are logged as WARN and the loop continues — a single locked file should not
-/// prevent other dirs from being evicted.
+/// Evict oldest book-level cache directories (by their own modification time)
+/// until total usage ≤ `cap_bytes`. Removal errors are logged as WARN and the
+/// loop continues, so one locked file doesn't block other evictions.
 pub fn evict_if_over_cap(cap_bytes: u64) -> anyhow::Result<()> {
     let dir = hls_dir();
     if !dir.exists() {

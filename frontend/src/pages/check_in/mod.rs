@@ -33,10 +33,8 @@ use screens::{
 
 /// Whether the check-in overlay is open. Provided at [`crate::App`] scope so
 /// every entry point (top nav, add-books sheet, account row) can raise it and
-/// the overlay — mounted once at the `ScreenLayout` root — can read it.
-///
-/// Starts closed, so SSR and the first WASM paint render no modal and agree
-/// (rule 07).
+/// the overlay — mounted once at the `ScreenLayout` root — can read it. Starts
+/// closed, so SSR and the first WASM paint agree.
 #[derive(Copy, Clone, PartialEq)]
 pub struct CheckInOpen(pub Signal<bool>);
 
@@ -62,13 +60,10 @@ pub fn use_check_in_writes() -> Signal<u32> {
 }
 
 /// Centered check-in overlay: the [`CheckInPage`] flow floating in a card over
-/// a blurred scrim of the current page.
-///
-/// Mounted once at the `ScreenLayout` root (like the search palette) so its
-/// `position: fixed` scrim covers the whole app and clicking outside closes it
-/// — placed inside `TopNav`, the topbar's `backdrop-filter` would become the
-/// containing block and shrink the scrim to the header strip. The `/check-in`
-/// route still renders the same flow full-page as a deep-link fallback.
+/// a blurred scrim of the current page. Mounted once at the `ScreenLayout`
+/// root, not in `TopNav`, whose `backdrop-filter` would shrink the fixed scrim
+/// to the header strip. The `/check-in` route renders the same flow full-page
+/// as a deep-link fallback.
 #[component]
 pub fn CheckInOverlay() -> Element {
     let open = use_context::<CheckInOpen>().0;
@@ -183,11 +178,9 @@ pub(crate) enum Stage {
 
 /// The stage the flow opens on, and the one every "start over" returns to.
 ///
-/// The mobile shell leads with the camera — that's the whole point of a phone
-/// in front of a bookshelf. Everywhere else leads with the fields, so opening
-/// check-in never starts a camera nobody asked for. Gating the *value* rather
-/// than any rsx keeps SSR and the first WASM paint identical (rule 07); the
-/// mobile build renders client-side only and has no SSR markup to hydrate.
+/// The mobile shell leads with the camera; everywhere else leads with the
+/// fields, so opening check-in never starts a camera nobody asked for. Gating
+/// the *value*, not rsx, keeps SSR and the first WASM paint identical.
 #[cfg(feature = "mobile")]
 pub(crate) fn front_door() -> Stage {
     Stage::Scan
@@ -211,10 +204,9 @@ pub(crate) fn manual_fallback(origin: &Stage) -> Stage {
 
 /// Map a resolved outcome onto the screen it opens.
 ///
-/// [`ScanOutcome::AlreadyOwned`] has no stage of its own: the design routes an
-/// already-owned book straight to its detail page, so the caller navigates and
-/// this returns `None`. A book on the caller's wishlist is the one they wanted
-/// and now hold, so it opens the check-in confirm like any library book.
+/// [`ScanOutcome::AlreadyOwned`] has no stage: the caller navigates to the
+/// book's detail page and this returns `None`. A book on the caller's
+/// wishlist opens the check-in confirm like any library book.
 pub(crate) fn stage_for(outcome: ScanOutcome, isbn: &str) -> Option<Stage> {
     match outcome {
         ScanOutcome::AlreadyOwned { .. } => None,
@@ -289,10 +281,9 @@ pub(crate) fn friendly_error(raw: &str) -> String {
 
 /// How the reader reached the book the flow is now holding.
 ///
-/// The three front doors are not interchangeable in the copy: after a title
-/// search the ISBN on screen came from the *provider*, so describing it as
-/// one the reader entered or scanned is simply false. Carried through
-/// to the match screens and to the provenance a wishlist entry records.
+/// The front doors are not interchangeable in the copy: after a title search
+/// the ISBN on screen came from the *provider*, so calling it entered or
+/// scanned is false. Carried to the match screens and a wishlist entry's provenance.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum FoundVia {
     /// An ISBN typed at the keypad or the lookup screen's field.
@@ -589,10 +580,7 @@ fn entry_stage(state: FlowState, on_resolve: EventHandler<String>) -> Element {
 /// error so a failed lookup's message can't follow the reader onto a screen it
 /// no longer describes.
 ///
-/// Shared by the scanner, the keypad, and the unresolved screen. On web the
-/// lookup screen is already the front door, so this matters most on the mobile
-/// shell — the camera starts there, and this is its one-tap route to a title
-/// search.
+/// Shared by the scanner, the keypad, and the unresolved screen.
 pub(crate) fn go_to_search(state: FlowState) -> EventHandler<()> {
     let FlowState {
         mut stage,

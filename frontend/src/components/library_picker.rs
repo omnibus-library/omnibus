@@ -240,11 +240,8 @@ fn apply_search(feed: PickerFeed, result: Result<omnibus_shared::EbookLibrary, d
 }
 
 /// Auto-bump the load-more sentinel as it nears the picker's scroll area.
-///
-/// The hook is declared unconditionally on every target and only its *body*
-/// is gated, so SSR and the first WASM render agree on hook order (rule 07).
-/// The observer is keyed to its own global and testid rather than sharing the
-/// landing grid's — two observers on one handle would disconnect each other.
+/// The observer has its own global and testid, not the landing grid's: two
+/// observers on one handle would disconnect each other.
 fn use_load_more_observer(next_cursor: Signal<Option<String>>) {
     use_effect(move || {
         // Re-arm after each append: the sentinel is replaced, so the old
@@ -304,12 +301,9 @@ fn toggled_meta(list: &[EbookMetadata], book: &EbookMetadata, uuid: &str) -> Vec
 
 /// The line above the grid: how much the server holds.
 ///
-/// Browsing pages until every book is loaded, so how many are on screen at
-/// this instant is noise — scrolling reaches all of them — and the line simply
-/// says how many there are. A search is the one case that withholds rows: it
-/// is capped server-side and carries no cursor, so the shortfall is real and
-/// worth naming. The count of what's *picked* belongs to the host modal's
-/// submit button, which is the one place it's reported.
+/// Browsing pages until every book is loaded, so the line says how many there
+/// are. A search is capped server-side with no cursor, so it names the
+/// shortfall; the picked count belongs to the host modal's submit button.
 fn status_line(searching: bool, shown: usize, total: Option<i64>) -> String {
     let (one, many) = if searching {
         ("match", "matches")

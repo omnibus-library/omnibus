@@ -98,12 +98,9 @@ pub struct ViewPrefs {
     pub sort_dir: SortDir,
     #[serde(default)]
     pub filters: ViewFilters,
-    /// Whether the filter sidebar is open. Defaults to `false`: a brand-new
-    /// visitor sees an unobstructed library and opts into filters via the
-    /// toolbar's `Filters` toggle. The choice persists per library. At
-    /// narrow viewports the sidebar overlays the content as a drawer when
-    /// open, so leaving it closed by default avoids popping a panel over
-    /// the books on first load.
+    /// Whether the filter sidebar is open. Defaults to `false`: a brand-new visitor
+    /// sees an unobstructed library and opts in via the toolbar's `Filters` toggle.
+    /// The choice persists per library.
     #[serde(default)]
     pub filters_open: bool,
 }

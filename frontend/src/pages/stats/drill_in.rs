@@ -290,14 +290,10 @@ pub(super) fn finished_book_as_ebook(book: &FinishedBook) -> EbookMetadata {
 }
 
 /// The drill-in sheet/modal: header + close, delta chip, trend chart, and
-/// (Finished only) the finished-books list. `expanded` closes on backdrop
-/// click, Escape, or the close button. Built on the shared `ConfirmModal`
-/// shell (see
-/// `components::confirm_modal`) — `busy: false` since no mutation is ever
-/// in flight here, the grabber + title/close head go in the `head` slot,
-/// and `backdrop_class`/`dialog_class` keep this sheet's own bottom-sheet
-/// (mobile) / centered-modal (desktop) chrome rather than the default
-/// author-photo backdrop.
+/// (Finished only) the finished-books list. `expanded` closes on backdrop click,
+/// Escape, or the close button. Built on the shared `ConfirmModal` shell
+/// (`components::confirm_modal`), keeping this sheet's own bottom-sheet (mobile)
+/// / centered-modal (desktop) chrome via `backdrop_class`/`dialog_class`.
 #[component]
 pub(super) fn DrillIn(
     metric: Metric,
@@ -317,6 +313,7 @@ pub(super) fn DrillIn(
             aria_label: "{metric.title()} detail",
             backdrop_class: "st-drill-scrim".to_string(),
             dialog_class: "st-drill-sheet".to_string(),
+            // No mutation is ever in flight in this sheet.
             busy: false,
             // The sheet is opened from a tile outside it, so nothing inside
             // holds focus — without this Escape would never reach the shell's
@@ -447,12 +444,9 @@ fn render_section_head(title: &str, caption: &str, testid: &str) -> Element {
     }
 }
 
-/// A reading rate for display: one decimal under ten pages an hour, whole
-/// pages above it. Nobody reads at 32.4 pages an hour reproducibly, and the
-/// decimal would dress an estimate as a measurement.
-///
-/// The branch tests the **rounded** figure, not the raw one: 9.96 at one
-/// decimal is "10.0", which is not "under ten" however it got there.
+/// A reading rate for display: one decimal under ten pages an hour, whole pages
+/// above it, since a decimal would dress an estimate as a measurement. The
+/// branch tests the **rounded** figure: 9.96 at one decimal is "10.0".
 fn rate_value(rate: f64) -> String {
     let one_decimal = (rate * 10.0).round() / 10.0;
     if one_decimal < 10.0 {
@@ -462,13 +456,10 @@ fn rate_value(rate: f64) -> String {
     }
 }
 
-/// The Pages drill-in's reading-speed line — the rate the tile's total is
-/// missing, and the number a reader actually compares against their own past.
-///
-/// Absent rather than zeroed when there's nothing to divide: "0 pages per
-/// hour" is a claim about how this reader reads, and no finished book carrying
-/// both a resolvable length and recorded time is not that claim. The empty
-/// copy names **both** halves, since either one missing produces it.
+/// The Pages drill-in's reading-speed line, the rate the tile's total is
+/// missing. Absent rather than zeroed when there's nothing to divide ("0 pages
+/// per hour" is a claim about how this reader reads); the empty copy names
+/// **both** halves (length and recorded time), since either missing produces it.
 fn render_pages_rate(rate: Option<f64>) -> Element {
     let Some(rate) = rate else {
         return rsx! {
@@ -557,12 +548,9 @@ fn render_finished_row(book: &FinishedBook, server_url: &str) -> Element {
 }
 
 /// The Pages read drill-in's prose: what the window covered, what it could not
-/// measure, and the date before which it cannot measure anything.
-///
-/// Every line here exists because the headline number is one figure standing in
-/// for several different situations. Silence about the cutover in particular
-/// would leave a Lifetime total that quietly excludes years of reading looking
-/// like a Lifetime total.
+/// measure, and the date before which it cannot measure anything. The headline
+/// number stands in for several situations; silence about the cutover would let
+/// a Lifetime total that excludes years of reading look complete.
 fn render_pages_note(detail: &PagesReadDetail, pages_read: Option<i64>) -> Element {
     rsx! {
         div { class: "st-drill-pages-note", "data-testid": "stats-drill-pages-note",

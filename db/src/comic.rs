@@ -44,20 +44,9 @@ pub fn list_pages_from_file(file: File) -> anyhow::Result<(File, Vec<String>)> {
     Ok((archive.into_inner(), pages))
 }
 
-/// Best-effort CBZ page count for `book_id`: the length of the archive's
-/// page list. `None` when the book has no CBZ file, the archive is
-/// unreadable, or the blocking read fails — failures log and read as "no
-/// count" rather than propagating.
-///
-/// `books.page_count` is populated once at index time
-/// ([`indexed_book_from`]) and served straight off that column, so
-/// this single-book lookup is no longer on the request path; it remains a
-/// small, independently-testable building block a future ad-hoc "recount
-/// this one book" tool can reach for without duplicating the archive-open
-/// dance. The bulk equivalent used by
-/// [`crate::indexer::backfill_page_counts`] (the one-time catch-up for CBZ
-/// rows indexed before migration `0063`) inlines the same steps to share
-/// one batched path lookup across every candidate.
+/// Best-effort CBZ page count for `book_id`: the length of the archive's page
+/// list. `None` when the book has no CBZ file, the archive is unreadable, or the
+/// blocking read fails; failures log rather than propagate.
 pub async fn page_count_for_book(pool: &sqlx::SqlitePool, book_id: i64) -> Option<i64> {
     let path = match crate::books::book_file_path(pool, book_id, "CBZ").await {
         Ok(Some(p)) => p,
@@ -80,11 +69,9 @@ pub async fn page_count_for_book(pool: &sqlx::SqlitePool, book_id: i64) -> Optio
     }
 }
 
-/// Hard cap on a single decompressed page. A crafted archive can declare a
-/// false entry size or lean on deflate's ~1000:1 worst-case ratio to make a
-/// small `.cbz` decompress to gigabytes (a "zip bomb") — this bounds memory
-/// regardless of what the entry claims. 64 MiB comfortably covers any real
-/// scanned page while staying far below an OOM. Same shape as
+/// Hard cap on a single decompressed page, bounding memory against a "zip bomb"
+/// (a crafted archive with a false entry size or deflate's ~1000:1 ratio).
+/// 64 MiB covers any real scanned page. Same shape as
 /// `epub_rewrite::archive::MAX_ENTRY_BYTES`.
 #[cfg(not(test))]
 const MAX_PAGE_BYTES: u64 = 64 * 1024 * 1024;

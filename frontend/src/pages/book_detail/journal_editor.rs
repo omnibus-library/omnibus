@@ -42,16 +42,11 @@ fn editor_dispatch(
 ) {
 }
 
-/// Progressively enhance a plain `<textarea>` (rendered by SSR + the first
-/// hydration paint on every target) into the live contenteditable editor.
-/// The JS side flips a `data-omnibus-enhanced` marker on the wrapping element
-/// — which CSS uses to swap visibility from the textarea to the sibling
-/// contenteditable — and then wires the editor to mirror its markdown back
-/// into the textarea.
-///
-/// The `onmounted` handler in the composer / entry-card rsx calls this
-/// unconditionally so the rsx body is identical on every target (rule 07);
-/// the non-web stub below makes it a no-op on SSR / native.
+/// Progressively enhance a plain `<textarea>` (rendered by SSR and the first
+/// hydration paint) into the live contenteditable editor. The JS flips a
+/// `data-omnibus-enhanced` marker on the wrapping element, which CSS uses to
+/// swap visibility, and mirrors the editor's markdown back into the textarea.
+/// Call it unconditionally; the non-web stub is a no-op.
 #[cfg(feature = "web")]
 pub(crate) fn editor_enhance(source_id: &str, editor_id: &str) {
     editor_dispatch("enhance", editor_id, source_id, "", "", "");

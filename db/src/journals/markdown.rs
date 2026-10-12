@@ -102,12 +102,10 @@ fn drop_srcless_imgs(html: &str) -> String {
     out
 }
 
-/// Upgrade a paragraph that contains exactly one image (and nothing else)
-/// into `<figure><img …><figcaption>alt</figcaption></figure>` so embedded
-/// images render as captioned figures — the alt text doubles as the caption.
-/// Inline images (an `<img>` amid other paragraph content) are left as-is.
-/// Runs after [`sanitize`], so the only `<p><img…></p>` shapes seen here are
-/// ones the sanitizer produced.
+/// Upgrade a paragraph that contains exactly one image (and nothing else) into
+/// `<figure><img …><figcaption>alt</figcaption></figure>`, so the alt text
+/// doubles as the caption. Inline images are left as-is. Runs after [`sanitize`],
+/// so the only `<p><img…></p>` shapes seen here are ones the sanitizer produced.
 fn wrap_figures(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html;
@@ -148,24 +146,18 @@ fn attr_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     Some(&tag[start..end])
 }
 
-/// Remove every `<input>` that isn't a disabled task-list checkbox.
-///
-/// `ammonia` strips *disallowed attributes* but keeps an *allowed tag*, so a
-/// hand-authored `<input type="text">` degrades to a bare `<input>` — which the
-/// browser renders as a text field — and would otherwise survive. We only ever
-/// emit `<input>` for task-list checkboxes (`<input disabled type="checkbox">`),
-/// so any tag missing either marker is user-authored and dropped wholesale.
-/// Runs on already-sanitized HTML, so the only attributes an `<input>` can
-/// carry are the allowlisted `checked`/`disabled`/`type="checkbox"`/`class`,
-/// none of which contain `>`; scanning to the next `>` therefore bounds the tag.
-/// Attribute presence is matched on real name boundaries (not raw substrings),
-/// so a lookalike like `aria-disabled` can't sneak an interactive input through.
+/// Remove every `<input>` that isn't a disabled task-list checkbox: `ammonia`
+/// strips disallowed attributes but keeps the tag, so a hand-authored
+/// `<input type="text">` would survive as a bare text field. Runs on sanitized
+/// HTML; attribute presence is matched on name boundaries, so `aria-disabled`
+/// can't sneak an interactive input through.
 fn drop_non_checkbox_inputs(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html;
     while let Some(start) = rest.find("<input") {
         out.push_str(&rest[..start]);
         let tag_rest = &rest[start..];
+        // Allowlisted attributes never contain `>`, so the next one bounds the tag.
         let Some(end) = tag_rest.find('>').map(|i| i + 1) else {
             // No closing `>` — malformed; drop the remainder rather than emit it.
             return out;
@@ -211,12 +203,9 @@ fn has_attr_value(tag: &str, name: &str, value: &str) -> bool {
 
 /// Rewrite `||text||` spoiler markers in the markdown **source** into an inline
 /// `role="button"` span around an `aria-hidden` text span, which pulldown-cmark
-/// passes through (the text still gets markdown inline processing). Not a
-/// `<button>`: that is an atomic box, so a spoiler wider than the rest of its
-/// line drops whole to the next one. `tabindex` puts it in the Tab order, the
-/// label names it until it is revealed, and the client handles Enter/Space.
-/// Pairs are matched greedily left-to-right; an unterminated trailing `||` is
-/// left literal.
+/// passes through. Not a `<button>`: that is an atomic box, so a wide spoiler
+/// drops whole to the next line. The client handles Enter/Space. Pairs match
+/// greedily left-to-right; an unterminated trailing `||` is left literal.
 fn wrap_spoilers(md: &str) -> String {
     let mut out = String::with_capacity(md.len());
     let mut rest = md;

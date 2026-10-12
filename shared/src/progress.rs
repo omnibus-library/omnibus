@@ -14,10 +14,9 @@ mod tests;
 
 /// Maximum number of `SessionReport`s accepted per session-batch upload.
 ///
-/// Enforced at both API boundaries — the mobile REST route
-/// `POST /api/progress/sessions` and the web RPC `rpc_record_sessions` —
-/// to bound per-request DB work and SQLite write-lock hold time. Not
-/// runtime-configurable; change here to move the cap.
+/// Enforced at both API boundaries (`POST /api/progress/sessions` and the web
+/// RPC `rpc_record_sessions`) to bound per-request DB work and write-lock hold
+/// time. Not runtime-configurable.
 pub const SESSION_BATCH_CAP: usize = 500;
 
 /// Maximum length (in chars) of an `epub_cfi` position string. Defined in
@@ -25,13 +24,10 @@ pub const SESSION_BATCH_CAP: usize = 500;
 /// kind of value — so the two ceilings can't drift apart.
 pub const EPUB_CFI_MAX_LEN: usize = CreateHighlight::EPUB_CFI_RANGE_MAX_LEN;
 
-/// Position anchor for a comic (CBZ) page, stored in the `epub_cfi` slot of
-/// an `Epub`-format progress row. Comics reuse the existing ebook progress
-/// record — the row CHECK admits any text position plus a percent — so
-/// Continue Reading and cross-device sync work unchanged, but a page index
-/// is not a CFI: the `comic-page:` prefix makes the value self-describing,
-/// and every client (web pager, iOS pager) round-trips it through these two
-/// helpers rather than inventing its own encoding. The percent alongside it
+/// Position anchor for a comic (CBZ) page, stored in the `epub_cfi` slot of an
+/// `Epub`-format progress row. A page index is not a CFI, so the `comic-page:`
+/// prefix makes the value self-describing; every client round-trips it through
+/// these two helpers rather than inventing an encoding. The percent alongside
 /// is the cross-surface half, same as a Kobo's percent-only write.
 pub fn comic_page_anchor(page: usize) -> String {
     format!("comic-page:{page}")
@@ -98,12 +94,10 @@ pub struct ProgressUpdate {
     /// the same default file the manifest would have served.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book_file_id: Option<i64>,
-    /// Unix seconds when the client observed this position — used to
-    /// resolve most-recent-wins by **event** time rather than server
-    /// receipt time. `#[serde(default)]` so an older client
-    /// that never sends this field still parses; `upsert_progress` treats a
-    /// missing value as "use server now", preserving prior last-write-wins
-    /// behaviour.
+    /// Unix seconds when the client observed this position, used to resolve
+    /// most-recent-wins by **event** time rather than server receipt time. An older
+    /// client that never sends it still parses; `upsert_progress` then uses server
+    /// now.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_updated_at: Option<i64>,
 }
@@ -187,12 +181,10 @@ impl ProgressUpdate {
 }
 
 /// Server-authoritative position returned by `POST /api/progress` and
-/// `GET /api/progress/{uuid}`. The non-discriminated field for the other
-/// format is always `None`. `updated_at` is unix seconds (SQLite
-/// `strftime('%s')`) — server receipt time. `client_updated_at` is the
-/// event time the most-recent-wins ordering actually resolves on (clamped
-/// to server now for a client with a fast clock; defaulted to server now
-/// when the write carried none).
+/// `GET /api/progress/{uuid}`. The non-discriminated field for the other format
+/// is always `None`. `updated_at` is unix seconds of server receipt;
+/// `client_updated_at` is the event time most-recent-wins resolves on (clamped
+/// to server now for a fast clock; server now when the write carried none).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProgressRecord {
@@ -213,25 +205,22 @@ pub struct ProgressRecord {
     pub book_file_id: Option<i64>,
     pub updated_at: i64,
     pub client_updated_at: i64,
-    /// Whole-book audio duration (sum of parts), so no caller ever has to
-    /// source an audiobook's runtime out of band to turn
-    /// [`Self::audio_position_seconds`] into a percent. `None` for epub rows.
-    ///
-    /// Read-path only: filled by `GET /api/progress/{uuid}` and the resume
-    /// feed, absent from the echo `POST /api/progress` returns — deriving it
-    /// costs queries a page-turn write should not pay.
+    /// Whole-book audio duration (sum of parts), so no caller has to source an
+    /// audiobook's runtime elsewhere to turn [`Self::audio_position_seconds`] into
+    /// a percent. `None` for epub rows. Read-path only: filled by
+    /// `GET /api/progress/{uuid}` and the resume feed, absent from the
+    /// `POST /api/progress` echo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_duration_seconds: Option<f64>,
     /// Where this position actually is in the book. Read-path only, on the
     /// same terms as [`Self::total_duration_seconds`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved: Option<ResolvedPosition>,
-    /// A point CFI for an epub row that stores a whole-book percent but no
-    /// CFI — a Kobo's percent-only write — so a reader can open it where it
-    /// is rather than at the cover. Floored onto the spine-stats ruler, so it
-    /// never sits past the stored percent. Derived per read and never stored;
-    /// `None` whenever [`Self::epub_cfi`] is set or the book has no measured
-    /// structure.
+    /// A point CFI for an epub row that stores a whole-book percent but no CFI (a
+    /// Kobo's percent-only write), so a reader can open it where it is rather than
+    /// at the cover. Floored onto the spine-stats ruler, so it never sits past the
+    /// stored percent. Derived per read, never stored; `None` whenever
+    /// [`Self::epub_cfi`] is set or the book has no measured structure.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub derived_epub_cfi: Option<String>,
 }
@@ -254,14 +243,10 @@ pub enum PositionConfidence {
 }
 
 /// Where a stored position sits in the book, resolved server-side against the
-/// same spine/TOC data `GET /api/ebooks/{uuid}/chapters` serves and the same
-/// chapter marks the player reads.
-///
-/// Exists so a position is never opaque on the wire: an `epubcfi(...)` or a
-/// raw second count answers "where am I?" only after arithmetic the client
-/// has no data for. Every field is optional because the underlying structure
-/// may be missing (a TOC-less EPUB, an audiobook with no chapter marks);
-/// [`Self::confidence`] says how much of the block to lean on.
+/// spine/TOC data `GET /api/ebooks/{uuid}/chapters` serves and the chapter marks
+/// the player reads. Every field is optional because the structure may be
+/// missing (a TOC-less EPUB, an audiobook with no marks); [`Self::confidence`]
+/// says how much of the block to lean on.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ResolvedPosition {
@@ -288,14 +273,11 @@ pub struct ResolvedPosition {
     pub confidence: PositionConfidence,
 }
 
-/// Every position the user holds in one book — the body of
-/// `GET /api/progress/{uuid}`.
-///
-/// Returned whole rather than one format at a time: a reader 87% through the
-/// audiobook and 47% through the EPUB has one true place, and an endpoint
-/// that answers with the EPUB row alone reports the wrong one with nothing to
-/// signal it. `format` narrows [`Self::records`] to a single entry when a
-/// caller genuinely wants one side.
+/// Every position the user holds in one book, the body of
+/// `GET /api/progress/{uuid}`. Returned whole rather than one format at a time:
+/// a reader 87% through the audiobook and 47% through the EPUB has one true
+/// place, which an EPUB-only answer would misreport. `format` narrows
+/// [`Self::records`] to a single entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookProgress {
@@ -334,14 +316,10 @@ pub struct ResumePoint {
     /// (absent when the other side is newer or unmappable).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cross_format: Option<crate::cross_format::CrossFormatCandidate>,
-    /// 1-based structural part of the audiobook timeline at the saved
-    /// position, from the resolved file's marks. `None` for epub rows.
-    ///
-    /// **Not a book chapter.** The marks are whatever the container carried,
-    /// which for a 65-chapter novel stored as a 4-part M4B is four of them —
-    /// reported as `chapter 4 of 4`, that read as "at the end of the last
-    /// chapter". Book chapters live in
-    /// [`ProgressRecord::resolved`], which says how far to trust itself.
+    /// 1-based structural part of the audiobook timeline at the saved position, from
+    /// the resolved file's marks. `None` for epub rows. **Not a book chapter:** the
+    /// marks are whatever the container carried (a 65-chapter novel stored as a
+    /// 4-part M4B has four); book chapters live in [`ProgressRecord::resolved`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_part: Option<i64>,
     /// Total structural parts, for a "3 of 12" readout. `None` for epub rows.
@@ -372,12 +350,11 @@ pub enum StructuralPosition {
 }
 
 impl ResumePoint {
-    /// The structural position to show beside this card, or `None` when the
-    /// book can name neither.
+    /// The structural position to show beside this card, or `None` when the book
+    /// can name neither.
     ///
-    /// A confidently resolved chapter wins: it is the answer the reader means
-    /// by "where am I". A `Low`-confidence block is not demoted to nothing —
-    /// it is demoted to the part readout, which is what it actually measured.
+    /// A confidently resolved chapter wins; a `Low`-confidence block is demoted to
+    /// the part readout, which is what it actually measured.
     pub fn structural_position(&self) -> Option<StructuralPosition> {
         if let Some(resolved) = &self.record.resolved {
             if resolved.confidence == PositionConfidence::High {
@@ -417,36 +394,19 @@ pub struct SessionReport {
     /// which post once and never retry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
-    /// Minutes east of UTC on the recording device at capture time — `-420`
-    /// for UTC-7, `330` for UTC+05:30. The time-of-day rollups bucket
-    /// `started_at` against this instead of against UTC (see
-    /// `db::stats::patterns`), which is what lets a reader outside UTC see
-    /// their own evening as an evening, and keeps a session read while
-    /// travelling anchored to the place it happened.
-    ///
-    /// `None` from a client that doesn't report one, and on every row
-    /// predating migration 0080 — those are excluded from the time-pattern
-    /// charts rather than silently defaulted to UTC.
+    /// Minutes east of UTC on the recording device at capture time (`-420` for
+    /// UTC-7, `330` for UTC+05:30). The time-of-day rollups bucket `started_at`
+    /// against this instead of UTC (see `db::stats::patterns`). `None` from a client
+    /// that doesn't report one and on older rows, which the time-pattern charts
+    /// exclude rather than default to UTC.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub utc_offset_minutes: Option<i64>,
-    /// IANA zone name on the recording device at capture time —
-    /// `"America/Los_Angeles"`, `"Asia/Tokyo"` (migration `0094`).
-    ///
-    /// Recorded **alongside** [`Self::utc_offset_minutes`], not instead of it,
-    /// because the two answer different questions. The offset says what the
-    /// clock read, which is all the time-of-day strips need and is DST-correct
-    /// by construction. The zone says *where*, which an offset cannot: `-420` is
-    /// Los Angeles in summer, Phoenix year-round and Denver in winter. Only a
-    /// zone can resolve an offset for a **different** instant than the one
-    /// captured — which is what the stats fallback needs when a reader has not
-    /// read across a DST transition.
-    ///
-    /// Nothing reads it yet; resolving a zone needs a tz database, which is a
-    /// dependency this has not earned. It is captured now because a zone name
-    /// cannot be recovered from an offset after the fact.
-    ///
-    /// `None` from a client that doesn't report one, and on every row predating
-    /// migration `0092`.
+    /// IANA zone name on the recording device at capture time
+    /// (`"America/Los_Angeles"`, `"Asia/Tokyo"`), recorded **alongside**
+    /// [`Self::utc_offset_minutes`]: the offset says what the clock read, the zone
+    /// says *where* (`-420` is Los Angeles in summer, Phoenix year-round). `None`
+    /// from a client that doesn't report one and on older rows.
+    // Captured ahead of any reader: a zone cannot be recovered from an offset later.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_zone: Option<String>,
 }

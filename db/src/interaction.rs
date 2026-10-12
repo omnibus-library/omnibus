@@ -5,20 +5,13 @@
 
 /// Every interaction signal, folded into one INTEGER unix-seconds expression
 /// over the `books` alias `b`. Expands to a string literal so the callers
-/// that build a `const` projection can `concat!` it.
-///
-/// Two of the seven signals need no join: `save_overrides` and the cover
-/// upsert both call `touch_book_last_modified`, so a metadata edit and a
-/// cover replacement are already `books.last_modified`.
-///
-/// Journal drafts (migration `0040`) are excluded deliberately — a private
-/// draft must not reveal its existence by moving a book up a shared sort.
-///
-/// The `NULLIF(…, 0)` maps "no signal at all" back to `NULL`, which SQLite
-/// orders first ascending and last descending — the same placement the other
-/// nullable axes get, and the one `page`'s keyset predicate assumes.
+/// that build a `const` projection can `concat!` it. Journal drafts are
+/// excluded deliberately: a private draft must not reveal its existence by
+/// moving a book up a shared sort.
 macro_rules! interacted_at_epoch_sql {
     () => {
+        // `NULLIF(…, 0)` maps "no signal at all" to `NULL`, which SQLite orders first
+        // ascending and last descending, as `page`'s keyset predicate assumes.
         r"NULLIF(MAX(
         COALESCE(b.last_modified, 0),
         COALESCE(b.timestamp, 0),

@@ -62,12 +62,9 @@ struct Bucketed {
 }
 
 /// Wrap a SQL expression yielding a UTC `YYYY-MM-DD` into this bucket's key.
-///
-/// **Every** bucket key in this module — the data's and the axis's alike —
-/// goes through here, so a series and the axis it is plotted against cannot
-/// disagree about which bucket a day belongs to. All four keys sort
-/// lexicographically, which is what lets the alignment pass use a plain
-/// string compare.
+/// **Every** bucket key (the data's and the axis's alike) goes through here, so a
+/// series and its axis cannot disagree about a day's bucket. All four keys sort
+/// lexicographically, which the alignment pass relies on.
 fn bucket_expr(bucket: ChartBucket, day: &str) -> String {
     match bucket {
         ChartBucket::Day => day.to_string(),
@@ -90,12 +87,10 @@ fn bucket_start_day(bucket: ChartBucket, key: &str) -> String {
 }
 
 /// The distinct `(bucket, book)` pairs a reader completed in the window.
-///
 /// Deduplicated on purpose: `FINISHED_EVENTS` unions the journal and the
-/// read-status table, so one completion routinely produces two rows. Counting
-/// those would report a book twice, and averaging over them would weight it
-/// twice. Both completion measures build on this one subquery so they always
-/// describe the same set of books. Binds: `user_id, user_id, start`.
+/// read-status table, so one completion routinely yields two rows, which would
+/// count and weight a book twice. Both completion measures build on this
+/// subquery. Binds: `user_id, user_id, start`.
 fn completion_pairs(bucket: ChartBucket, offset_minutes: i64) -> String {
     let k = bucket_expr(
         bucket,
@@ -233,12 +228,10 @@ async fn series_rows(
         .collect())
 }
 
-/// Run a genre-split measure and return its rows keyed by slice.
-///
-/// Reads the reader's assigned genres out of the `metadata_overrides` JSON and
-/// joins `genres` for the canonical spelling, exactly as `genre::genre_share`
-/// does — grouping the raw `json_each` value instead would split "sci-fi" from
-/// "Sci-Fi" into two series. Binds: `user_id, user_id, start`.
+/// Run a genre-split measure and return its rows keyed by slice. Reads the
+/// reader's assigned genres from the `metadata_overrides` JSON and joins `genres`
+/// for the canonical spelling, as `genre::genre_share` does, since grouping the raw
+/// `json_each` value would split "sci-fi" from "Sci-Fi". Binds: `user_id, user_id, start`.
 async fn breakdown_rows(
     pool: &SqlitePool,
     user_id: i64,
@@ -288,18 +281,11 @@ async fn breakdown_rows(
         .collect())
 }
 
-/// The dense bucket axis, ascending.
-///
-/// Dense on purpose: a month nobody read in is part of the story, and dropping
-/// it would let the x-axis compress a gap into nothing and misreport a trend.
-/// Built from a day spine in SQLite so the calendar arithmetic stays in one
-/// place, then folded to bucket keys by the *same* [`bucket_expr`] the data
-/// used.
-///
-/// A bounded window opens its axis on its own first day, so elapsed days with
-/// no activity read as zero rather than falling off the front. Only Lifetime
-/// passes `first_data_bucket` and opens at the later of the two — which is what
-/// keeps it from opening at the unix epoch and drawing fifty empty years.
+/// The dense bucket axis, ascending: a month nobody read in is part of the story,
+/// and dropping it would let the x-axis compress a gap and misreport a trend.
+/// A bounded window opens on its own first day, so elapsed days with no activity
+/// read as zero; only Lifetime passes `first_data_bucket` and opens at the later
+/// of the two, so it doesn't open at the unix epoch.
 async fn axis(
     pool: &SqlitePool,
     bucket: ChartBucket,
@@ -350,12 +336,9 @@ fn reduce(rows: &[&Bucketed], aggregate: ChartAggregate) -> Option<f64> {
     }
 }
 
-/// Lay rows onto the axis, filling absent buckets per the aggregate's rule.
-///
-/// A `Count` or `Sum` bucket with no rows is a real zero — the reader finished
-/// nothing that month. An `Average` bucket with no rows is *no data*, and
-/// plotting it as zero would drag a trendline toward a number that was never
-/// read.
+/// Lay rows onto the axis, filling absent buckets per the aggregate's rule: a
+/// `Count` or `Sum` bucket with no rows is a real zero, an `Average` bucket with
+/// no rows is *no data* (zero would drag a trendline toward a number never read).
 fn align(buckets: &[String], rows: &[Bucketed], aggregate: ChartAggregate) -> Vec<Option<f64>> {
     let mut by_bucket: HashMap<&str, Vec<&Bucketed>> = HashMap::new();
     for r in rows {
@@ -370,15 +353,10 @@ fn align(buckets: &[String], rows: &[Bucketed], aggregate: ChartAggregate) -> Ve
         .collect()
 }
 
-/// Keep the `BREAKDOWN_LIMIT` most-read slices and fold the tail into one
-/// `Other` series, so a library with forty genres still draws a legend
-/// somebody can read. A real genre named "Other" merges into the fold rather
-/// than colliding with it — two legend rows of one name is the worse outcome.
-///
-/// Ranked on the **book count** behind each slice, not the accumulated value:
-/// for an average, the value is a length, so ranking on it would let a genre
-/// holding two doorstoppers outrank one holding four novellas. For a count the
-/// two are the same number, so this is the one rule both measures want.
+/// Keep the `BREAKDOWN_LIMIT` most-read slices and fold the tail into one `Other`
+/// series; a real genre named "Other" merges into the fold rather than colliding.
+/// Ranked on the **book count** behind each slice, not the accumulated value, so
+/// for an average a genre of two doorstoppers can't outrank one of four novellas.
 fn top_slices(rows: &[(String, Bucketed)]) -> Vec<String> {
     let mut totals: HashMap<&str, f64> = HashMap::new();
     for (slice, b) in rows {
@@ -515,12 +493,10 @@ fn empty_result(spec: &ChartSpec, caveats: Vec<String>) -> ChartResult {
 }
 
 /// One series per measure, each scaled against the axis its **unit** claims.
-///
-/// Units claim axes in the order their first measure was chosen, so any number
-/// of measures sharing a unit sit on one scale and stay directly comparable —
-/// `MAX_AXES` bounds the scales on screen, never the measures. A unit with no
-/// axis left is unreachable here: `ChartSpec::validate` rejects it before any
-/// query runs, and the picker greys it out before that.
+/// Units claim axes in the order their first measure was chosen, so measures
+/// sharing a unit sit on one scale; `MAX_AXES` bounds the scales, never the
+/// measures. A unit with no axis left is unreachable: `ChartSpec::validate`
+/// rejects it before any query runs.
 fn build_measure_series(
     buckets: &[String],
     fetched: &[(ChartMeasure, Vec<Bucketed>)],

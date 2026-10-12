@@ -67,12 +67,10 @@ pub struct CacheDecision {
 }
 
 /// Pure cache state machine. `marker` is the `(state, fetched_at)` pair from
-/// [`suggestion_state`] (`None` = no row yet); `now` is unix-seconds.
-///
-/// This is the single place that guarantees a page refresh or a burst of
-/// concurrent viewers never re-hits Hardcover while a result is fresh: a 30-day
-/// TTL result cache, plus a `pending` debounce so concurrent first-viewers
-/// collapse to one posted resolution task.
+/// [`suggestion_state`] (`None` = no row yet); `now` is unix-seconds. The
+/// single place that keeps a refresh or burst of concurrent viewers from
+/// re-hitting Hardcover while a result is fresh: a 30-day TTL result cache plus
+/// a `pending` debounce that collapses concurrent first-viewers to one task.
 pub fn decide(marker: Option<(SuggestionState, i64)>, now: i64) -> CacheDecision {
     match marker {
         // No marker: first viewer. Nothing to serve; kick off a resolution.

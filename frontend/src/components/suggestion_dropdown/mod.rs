@@ -110,11 +110,9 @@ pub(super) fn SuggestionDropdown(
 
 /// Compute the ≤`MAX_SUGGESTIONS` autocomplete candidates for the current
 /// query and focus state. Returns an empty `Vec` when the pool is empty,
-/// when the query doesn't match anything, or when the input is unfocused
-/// and the query is empty (open-on-focus is suppressed by `suppress_open`).
-///
-/// Filtering uses Unicode-aware `to_lowercase()` so ASCII case variants and
-/// non-ASCII look-alikes don't slip past the dedup check.
+/// nothing matches, or the input is unfocused with an empty query
+/// (`suppress_open` suppresses open-on-focus). Filtering uses Unicode-aware
+/// `to_lowercase()` so non-ASCII look-alikes don't slip past the dedup check.
 pub(super) fn compute_suggestions(
     suggestions: &[SuggestionItem],
     current_values: &[String],

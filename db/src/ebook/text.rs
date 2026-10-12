@@ -15,12 +15,9 @@ mod tests;
 /// plus `title`, whose `<head>` text would otherwise lead every chapter.
 const SUPPRESSED_ELEMENTS: [&str; 3] = ["script", "style", "title"];
 
-/// Extract the plain text of the spine document at `spine_index`.
-///
-/// `Ok(None)` when the spine has no such index — the caller's not-found —
-/// and `Err` for the open/parse/read failure space (a foreign archive can
-/// fail arbitrarily, so the message carries the path and index rather than
-/// enumerating variants).
+/// Extract the plain text of the spine document at `spine_index`. `Ok(None)` when
+/// the spine has no such index (the caller's not-found); `Err` for any
+/// open/parse/read failure, with the path and index in the message.
 pub fn extract_chapter_text(path: &Path, spine_index: usize) -> anyhow::Result<Option<String>> {
     let mut doc = EpubDoc::new(path).with_context(|| format!("open epub {}", path.display()))?;
     let Some(item) = doc.spine.get(spine_index) else {

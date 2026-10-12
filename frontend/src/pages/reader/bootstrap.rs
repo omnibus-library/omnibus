@@ -23,17 +23,16 @@ pub(crate) struct BootstrapArgs<'a> {
     pub locations_key_lit: &'a str,
 }
 
-/// Build the JS that loads JSZip → epub.js → glue **in order**, each only
-/// after the last has loaded, as `window.__omnibusReaderLoad()`, and starts
-/// it. Not `document::Script`: on a client-side navigation those tags run in
-/// download order, and an epub.js that runs before JSZip binds
-/// `window.JSZip` as undefined for the page's life. Serial rather than
-/// parallel so a failed JSZip can never let epub.js run at all. Once the glue
-/// exists it drains `window.__omnibusReaderQueue` — the glue calls made before
-/// it loaded (see `reader_call`) — so they reach it ahead of `init`, as they
-/// did when SSR put the scripts in `<head>`. Each script times out at 10 s.
+/// Build the JS that loads JSZip → epub.js → glue **in order**, each only after
+/// the last has loaded, as `window.__omnibusReaderLoad()`, and starts it. Serial
+/// so a failed JSZip never lets epub.js run. Once the glue exists it drains
+/// `window.__omnibusReaderQueue` (glue calls made before it loaded, see
+/// `reader_call`) ahead of `init`. Each script times out at 10 s.
 #[cfg_attr(not(feature = "web"), allow(dead_code))]
 pub(crate) fn reader_runtime_load_js(jszip_lit: &str, epub_lit: &str, glue_lit: &str) -> String {
+    // Not `document::Script`: on client-side navigation those tags run in download
+    // order, and an epub.js that runs before JSZip binds `window.JSZip` as
+    // undefined for the page's life.
     format!(
         r#"(function(){{
   function load(src){{return new Promise(function(res,rej){{

@@ -276,13 +276,10 @@ pub(super) async fn recreate_entity(
 /// lists are large.
 const SPLIT_UNDO_CHUNK: usize = 450;
 
-/// Resolve every name in `names` to its current `tags.id` in chunked `IN
-/// (...)` queries — the batched replacement for a per-atom lookup-then-
-/// delete loop, used by [`super::undo::undo_split`] to resolve every split
-/// atom to an id in a handful of round trips instead of one per atom. A
-/// name with no live row (e.g. already reaped by an intervening
-/// [`crate::taxonomy::delete_orphan_taxonomy`]) is silently absent from the
-/// result, matching the original per-name `Option` guard it replaces.
+/// Resolve every name in `names` to its current `tags.id` in chunked `IN (...)`
+/// queries, used by [`super::undo::undo_split`]. A name with no live row (e.g.
+/// already reaped by [`crate::taxonomy::delete_orphan_taxonomy`]) is silently
+/// absent from the result.
 pub(super) async fn lookup_tag_ids(
     tx: &mut Transaction<'_, Sqlite>,
     names: &[String],
@@ -332,14 +329,10 @@ pub(super) async fn insert_links_bulk(
     Ok(())
 }
 
-/// Bulk counterpart of [`delete_link`]: delete every `(book, entity_id)`
-/// link row where `book` is in `book_ids` and `entity_id` is in
-/// `entity_ids` — used by [`super::undo::undo_split`] to remove exactly the
-/// per-book atom links a split added, without the O(books × atoms)
-/// lookup-then-delete the naive replay used. Both lists are chunked (not
-/// just `book_ids`) so the statement stays bounded even in the pathological
-/// case of a split with many atoms, though in practice `entity_ids` is a
-/// handful and this degenerates to one outer iteration.
+/// Bulk counterpart of [`delete_link`]: delete every `(book, entity_id)` row
+/// with `book` in `book_ids` and `entity_id` in `entity_ids`, used by
+/// [`super::undo::undo_split`] to remove the per-book atom links a split added.
+/// Both lists are chunked so the statement stays bounded.
 pub(super) async fn delete_links_bulk(
     tx: &mut Transaction<'_, Sqlite>,
     entity: MergeEntity,
@@ -410,12 +403,10 @@ pub(super) async fn delete_entity_alias(
     Ok(())
 }
 
-/// The `(canonical_id, created_at)` an `entity_aliases` row held *before* a
-/// merge is about to overwrite it via [`write_entity_alias`]'s
-/// `ON CONFLICT` — `None` when no such row exists yet. A merge snapshots
-/// this ahead of writing its own alias so undo can tell "this name never
-/// aliased anything before me" from "this name already pointed somewhere
-/// else, from an earlier merge I must not erase".
+/// The `(canonical_id, created_at)` an `entity_aliases` row held before a merge
+/// overwrites it via [`write_entity_alias`]'s `ON CONFLICT`, or `None` if there
+/// was none. A merge snapshots it first so undo can tell "never aliased" from
+/// "already pointed elsewhere from an earlier merge" and not erase the latter.
 pub(super) async fn fetch_entity_alias(
     tx: &mut Transaction<'_, Sqlite>,
     kind: CleanupKind,

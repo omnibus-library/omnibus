@@ -18,27 +18,11 @@ mod tests;
 /// restart instead of waiting on a timer that was never armed.
 pub const PERIODIC_SCAN_RECHECK: Duration = Duration::from_secs(5 * 60);
 
-/// One iteration of the periodic-scan loop: read the configured interval,
-/// and when it's set and at least [`SCAN_INTERVAL_MIN_HOURS`], post
-/// [`Task::Scan`] / [`Task::ScanAudiobooks`] for each configured library
-/// path via `worker` — the same tasks a manual "Scan Library" click or a
-/// settings save would post. Returns how long the caller should sleep
-/// before the next tick.
-///
-/// The returned duration is [`PERIODIC_SCAN_RECHECK`] — never
-/// [`Duration::ZERO`] or a sub-recheck sleep — in every case where a scan
-/// was *not* posted, so the caller's loop can't busy-spin and a later
-/// settings change is always picked up within the recheck window:
-/// - the settings read failed;
-/// - the interval is unset (disabled);
-/// - the interval is below [`SCAN_INTERVAL_MIN_HOURS`] (defense-in-depth
-///   against a corrupted/hand-edited `settings` row that parses as
-///   `Some(0)` — `Settings::validate` already rejects this on the write
-///   path, but `get_settings` doesn't re-validate on read);
-/// - the interval is valid but no library path is configured yet.
-///
-/// Only when a scan is actually posted does it return the full configured
-/// interval.
+/// One iteration of the periodic-scan loop: read the configured interval and,
+/// when it is set and at least [`SCAN_INTERVAL_MIN_HOURS`], post [`Task::Scan`] /
+/// [`Task::ScanAudiobooks`] for each configured library path via `worker`.
+/// Returns how long to sleep: the full interval when a scan was posted, else
+/// [`PERIODIC_SCAN_RECHECK`] (never zero), so the loop can't busy-spin.
 pub async fn periodic_scan_tick(pool: &SqlitePool, worker: &Arc<Worker>) -> Duration {
     let settings = match crate::settings::get_settings(pool).await {
         Ok(s) => s,
@@ -50,6 +34,8 @@ pub async fn periodic_scan_tick(pool: &SqlitePool, worker: &Arc<Worker>) -> Dura
     let Some(hours) = settings.scan_interval_hours else {
         return PERIODIC_SCAN_RECHECK;
     };
+    // Defense-in-depth: a hand-edited `settings` row can parse as `Some(0)`;
+    // `Settings::validate` rejects it on write but `get_settings` doesn't on read.
     if hours < SCAN_INTERVAL_MIN_HOURS {
         tracing::warn!(
             hours,

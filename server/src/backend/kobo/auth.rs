@@ -15,14 +15,11 @@ use super::{dto, extractor::KoboAuthUser, origin_from_headers, store_resources};
 /// device treats the payload as malformed and never adopts the resources map.
 const KOBO_API_TOKEN: &str = "e30=";
 
-/// `GET v1/initialization` — the handshake that redirects a device at this
-/// server. Returns Kobo's own resources map with only the sync/download/cover/
-/// annotation entries repointed here, so store browse and search keep working
-/// against Kobo directly and this server never proxies that traffic.
-///
-/// `reading_services_host` points the device's annotation channel here too —
-/// answered by [`super::reading_services::reading_services_router`] at the
-/// bare origin, since the device calls it without the path token.
+/// `GET v1/initialization` — the handshake that redirects a device at this server.
+/// Returns Kobo's own resources map with only the sync/download/cover/annotation
+/// entries repointed here, so store browse and search keep working against Kobo
+/// directly and this server never proxies that traffic. `reading_services_host`
+/// points the annotation channel at [`super::reading_services::reading_services_router`].
 pub async fn initialization(auth: KoboAuthUser, headers: HeaderMap) -> Response {
     let base = origin_from_headers(&headers);
     let resources = store_resources::resources_for(&base, &auth.token);

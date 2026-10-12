@@ -148,13 +148,9 @@ fn secure_cookies() -> bool {
     parse_secure_cookies(std::env::var("OMNIBUS_SECURE_COOKIES").ok().as_deref())
 }
 
-/// Build a session cookie. When `OMNIBUS_SECURE_COOKIES` is on (the
-/// default) this emits a `__Host-omnibus_session` cookie; the
-/// `__Host-` prefix is browser-enforced to require `Secure` + no
-/// `Domain` + `Path=/`, all of which this helper already sets. On dev
-/// origins with the flag flipped off it falls back to the plain
-/// `omnibus_session` name (no `Secure`, same `Path=/`, still no
-/// `Domain`) so loopback/LAN HTTP keeps working.
+/// Build a session cookie: `__Host-omnibus_session` (always `Secure`, `Path=/`, no
+/// `Domain`, as the prefix requires) when `OMNIBUS_SECURE_COOKIES` is on (the
+/// default), else the plain `omnibus_session` name so loopback/LAN HTTP keeps working.
 fn session_cookie(value: String, max_age_secs: i64) -> Cookie<'static> {
     let secure = secure_cookies();
     // Invariants required by the `__Host-` prefix when `secure` is true:
@@ -210,12 +206,9 @@ fn request_user_agent(headers: &HeaderMap) -> Option<&str> {
 }
 
 /// `GET /api/auth/registration` — whether self-registration is open.
-///
-/// Unauthenticated by design: it sits in the gate-exempt `/api/auth/*` prefix
-/// because the login and register pages must read it before any session
-/// exists, and it discloses nothing a `POST /api/auth/register` wouldn't
-/// already reveal. The admin *write* lives on the gated side
-/// (`POST /api/settings/registration`).
+/// Unauthenticated by design: the login and register pages read it before any
+/// session exists, and it reveals nothing `POST /api/auth/register` wouldn't. The
+/// admin *write* is `POST /api/settings/registration`, on the gated side.
 async fn registration_handler(State(state): State<AppState>) -> Response {
     match auth_db::registration_enabled(state.pool()).await {
         Ok(enabled) => Json(RegistrationStatus { enabled }).into_response(),

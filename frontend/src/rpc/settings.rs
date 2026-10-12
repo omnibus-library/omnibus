@@ -125,29 +125,12 @@ pub async fn rpc_set_metadata_precedence(
     Ok(precedence)
 }
 
-/// Snapshot of every in-flight and recently-completed background-worker
-/// task. Polled at 1 Hz by the `WorkerStatusIndicator` component to
-/// surface scan / thumbnail / author-photo / (future) cleanup progress
-/// under the Save button on `/settings`.
-///
-/// Auth-gated as `AuthUser` (not `AdminUser`): scans affect the shared
-/// library and every authed user has a reason to know one is running.
-/// Scoped to the caller via [`omnibus_db::worker::Worker::owner_scoped_snapshot`]
-/// so a user-owned task (e.g. another user's Send-to-Kindle failure) never
-/// reaches a caller who doesn't own it — only unowned, library-wide tasks
-/// are visible to everyone.
-///
-/// Modeled on `rpc_save_settings` because both routes need the
-/// `WorkerExt` extension. Empirically the Dioxus fullstack server-fn
-/// macro mounts `#[post]` routes whose extractor list contains
-/// `WorkerExt`, but the `#[get]` variant of the same signature 404s at
-/// runtime (the route string ends up in the binary but never reaches
-/// the axum router). The body is idempotent and read-only; using POST
-/// is purely a framework workaround so the route actually mounts.
-///
-/// `_pool: PoolExt` is kept in the extractor list to put the macro on
-/// the same code path every other `/api/rpc/*` route uses (all of
-/// which take a `PoolExt`), but is unused — no DB calls run.
+/// Snapshot of every in-flight and recently-completed background-worker task,
+/// polled at 1 Hz by `WorkerStatusIndicator`. `AuthUser`, not `AdminUser`, but
+/// scoped via [`omnibus_db::worker::Worker::owner_scoped_snapshot`] so a
+/// user-owned task never reaches a non-owner. POST, not GET: the fullstack
+/// macro 404s a `#[get]` route whose extractors include `WorkerExt`.
+// `_pool` keeps the macro on the path every other `/api/rpc/*` route uses.
 #[post("/api/rpc/worker_status", _pool: PoolExt, worker: WorkerExt, user: AuthUser)]
 pub async fn rpc_worker_status() -> Result<WorkerStatus> {
     Ok(worker.0.owner_scoped_snapshot(user.id))
@@ -177,11 +160,9 @@ pub async fn rpc_get_hardcover_key() -> Result<HardcoverKeyStatus> {
 }
 
 /// Admin-only: save (or clear, with `None`/blank) the Hardcover key in
-/// settings. Returns the new masked status — never echoes the raw key.
-/// Rejects tokens longer than `HARDCOVER_API_KEY_MAX_LEN` before the KV
-/// write, surfacing the validation message via `ServerFnError` (same shape
-/// every other RPC uses today; upgrading the codebase-wide 500-vs-4xx shape
-/// is a known follow-up).
+/// settings. Returns the new masked status — never echoes the raw key. Rejects
+/// tokens longer than `HARDCOVER_API_KEY_MAX_LEN` before the KV write,
+/// surfacing the validation message via `ServerFnError`.
 #[post("/api/rpc/hardcover-key", pool: PoolExt, _admin: AdminUser)]
 pub async fn rpc_set_hardcover_key(key: Option<String>) -> Result<HardcoverKeyStatus> {
     match db::set_hardcover_api_key(&pool.0, key.as_deref()).await {

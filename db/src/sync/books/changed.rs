@@ -18,16 +18,10 @@ use super::shared::{
 use super::{EntityAliasMaps, SyncError};
 
 /// Apply Changed entries: wipe-and-rewrite the per-book link rows for each,
-/// UPDATE the `books` row in place (preserving id), and re-insert the FTS
-/// row. Returns `(uuid, mime, bytes)` triples for the post-commit cover
-/// materialization.
-///
-/// If the diff said this uuid existed but a concurrent process removed it
-/// between Phase A and the write, fall back to inserting it as a new book
-/// rather than failing the whole sync over a TOCTOU.
-///
-/// `alias_maps` is the whole New+Changed batch's reindex-resurrection guard
-/// lookup, pre-resolved by `super::collect_entity_alias_maps`.
+/// UPDATE the `books` row in place (preserving id), and re-insert the FTS row.
+/// Returns `(uuid, mime, bytes)` triples for the post-commit cover
+/// materialization. If a concurrent process removed the uuid since Phase A (a
+/// TOCTOU), it is inserted as a new book instead of failing the whole sync.
 pub(super) async fn sync_changed(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,

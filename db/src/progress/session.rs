@@ -13,16 +13,10 @@ use crate::resolve_canonical_book_uuid_exec;
 use super::ProgressError;
 
 /// Append one session row inside an existing transaction. Returns `Ok(true)`
-/// when a row was inserted and `Ok(false)` when the report was skipped
-/// because the `book_uuid` resolves to neither a `books` row nor a
-/// `merged_uuids` entry (best-effort telemetry — a session that outlived its
-/// book is not an integrity failure). A format-merged or auto-attached uuid
-/// resolves to the surviving book and is recorded.
-///
-/// The caller is responsible for committing or rolling back the transaction.
-/// Batch writers that already pre-resolved every uuid via
-/// [`crate::resolve_canonical_book_uuids_bulk_exec`] should skip this wrapper
-/// and call [`insert_session_tx`] directly to avoid the per-row SELECT.
+/// when inserted and `Ok(false)` when skipped because `book_uuid` resolves to
+/// neither a `books` row nor a `merged_uuids` entry (best-effort telemetry).
+/// The caller commits or rolls back. Batch writers that pre-resolved every uuid
+/// should call [`insert_session_tx`] directly to avoid the per-row SELECT.
 pub async fn record_session_tx(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
@@ -42,14 +36,10 @@ pub async fn record_session_tx(
 }
 
 /// Insert one session row into the correct per-format table using a
-/// **pre-resolved** canonical `books.uuid`. This is the INSERT-only half of
-/// [`record_session_tx`], exposed so batch writers (see `post_sessions`) can
-/// pre-resolve every uuid in the batch through
-/// [`crate::resolve_canonical_book_uuids_bulk_exec`] and then loop through
-/// pure inserts — collapsing an N-report batch's 2N queries into
-/// `chunks + N`. The caller is responsible for committing or rolling back
-/// the transaction; the caller also owns the "skip on unknown uuid" branch
-/// (an entry missing from the bulk map).
+/// **pre-resolved** canonical `books.uuid`: the INSERT-only half of
+/// [`record_session_tx`], so batch writers can pre-resolve every uuid in bulk and
+/// loop pure inserts. The caller commits or rolls back, and owns the
+/// "skip on unknown uuid" branch (an entry missing from the bulk map).
 pub async fn insert_session_tx(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
@@ -116,15 +106,11 @@ fn zone_or_null(report: &SessionReport) -> Option<&str> {
         .filter(|z| !z.is_empty())
 }
 
-/// Append one session row to the per-format table. Returns `Ok(true)` when
-/// a row was inserted and `Ok(false)` when the report was skipped because
-/// the `book_uuid` is unknown. The handler surfaces the inserted count to
-/// the client so it can tell which queued reports actually persisted.
-///
-/// For batch inserts, prefer the pattern in `post_sessions`: pre-resolve
-/// every uuid via [`crate::resolve_canonical_book_uuids_bulk_exec`], then
-/// loop [`insert_session_tx`] inside a caller-managed transaction so the
-/// entire batch rolls back atomically on error and no per-row SELECT fires.
+/// Append one session row to the per-format table. Returns `Ok(true)` when a row
+/// was inserted and `Ok(false)` when skipped because the `book_uuid` is unknown,
+/// so a client can tell which queued reports persisted. For batch inserts,
+/// pre-resolve every uuid via [`crate::resolve_canonical_book_uuids_bulk_exec`]
+/// and loop [`insert_session_tx`] in one caller-managed transaction.
 pub async fn record_session(
     pool: &SqlitePool,
     user_id: i64,

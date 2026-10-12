@@ -8,23 +8,19 @@ use sqlx::{SqliteConnection, SqlitePool};
 
 use super::{PhysicalError, PHYSICAL_LIBRARY_PATH};
 
-/// The promotion UPDATE. A book under the Physical pseudo-root (`?1`) that
-/// has at least one `book_files` row rooted in a *real* scan root is moved
-/// to that root — lowest `(ordinal, id)` file wins, matching how
-/// `book_file_path` picks the served file. Books under a real root, and
-/// genuinely fileless books, don't match the WHERE and are untouched.
-///
-/// Only `library_id` moves. `books.path`/`scan_key` stay empty on purpose:
-/// the file remains tracked through its `merged_uuids` ledger row
-/// (`list_merged_rows_for_formats`), and stamping `books.scan_key` with the
-/// file's key would additionally surface it via the native-file join in
-/// `list_indexed_rows_for_formats` — the same file diffed twice.
+/// The promotion UPDATE. A book under the Physical pseudo-root (`?1`) with a
+/// `book_files` row in a *real* scan root moves to that root (lowest
+/// `(ordinal, id)` file wins, like `book_file_path`). Books under a real root
+/// and genuinely fileless books are untouched. Only `library_id` moves.
 fn promote_sql(single_book: bool) -> String {
     let id_filter = if single_book {
         " AND books.id = ?2"
     } else {
         ""
     };
+    // `books.path`/`scan_key` stay empty: the file is tracked through its
+    // `merged_uuids` row, and stamping `scan_key` would surface it a second
+    // time via `list_indexed_rows_for_formats`.
     format!(
         "UPDATE books
             SET library_id = (

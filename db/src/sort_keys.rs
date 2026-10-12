@@ -15,22 +15,18 @@ pub enum SortKeysError {
 }
 
 /// The `series_sort` value to store for a book: its primary series name
-/// (trimmed, with any embedded `#N` / ", Book N" index stripped),
-/// or `None` when the book has no (non-empty) series. Delegates to
-/// [`crate::helpers::cleaned_series_name`] so this column and the
-/// `books_series_link` write it sits alongside always agree on the same
-/// cleaned name.
+/// (trimmed, `#N` / ", Book N" index stripped), or `None` when it has no
+/// non-empty series. Delegates to [`crate::helpers::cleaned_series_name`] so
+/// this column and the `books_series_link` write always agree.
 pub fn series_sort_value(m: &EbookMetadata) -> Option<String> {
     crate::helpers::cleaned_series_name(m)
 }
 
-/// One-time backfill of `books.series_sort` for rows indexed before migration
-/// 0028. Idempotent and cheap once caught up, so it runs on every boot from
-/// `init_db`: it only selects rows whose `series_sort` is still NULL **and**
-/// that actually have a series link, so a seriesless book (correctly left
-/// NULL) is never re-touched and the query is a no-op once every linked book
-/// is filled. The value mirrors the read-path "primary series" pick
-/// (alphabetically first by name), matching `BOOK_COLUMNS`' `series_json`.
+/// One-time backfill of `books.series_sort`, run on every boot from `init_db`
+/// (idempotent and cheap once caught up). Only selects rows whose `series_sort`
+/// is NULL **and** that have a series link, so a seriesless book is never
+/// re-touched. The value is the alphabetically first series name, matching
+/// `BOOK_COLUMNS`' `series_json`.
 pub async fn backfill_series_sort(pool: &SqlitePool) -> Result<(), SortKeysError> {
     // TRIM mirrors the write-time `series_sort_value` so backfilled rows match
     // freshly-indexed ones. The guard requires a non-whitespace linked series

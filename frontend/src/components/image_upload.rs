@@ -9,17 +9,11 @@ use dioxus::prelude::*;
 
 use crate::data::DataError;
 
-/// Builds an `onchange` handler for an image `<input type="file">`. On
-/// change it resolves the picked file's name and MIME (falling back to
-/// `application/octet-stream` when the browser doesn't report one), flips
-/// `busy` on for the duration, and seeds `message` from `on_start` (the two
-/// call sites want different things here: a "status" signal that shows
-/// "Uploading…" progress, versus an "error" signal that should just clear).
-/// `upload` receives `(filename, mime, bytes)`; on success its result is
-/// handed to `on_success` (e.g. to insert markdown or notify a parent), on
-/// failure the error is written to `message`. `upload` and `on_success` are
-/// cloned per call so the returned handler can fire more than once (the
-/// admin can change their file pick, or upload again).
+/// Builds an `onchange` handler for an image `<input type="file">`. It flips
+/// `busy` on for the upload, seeds `message` from `on_start`, and calls
+/// `upload(filename, mime, bytes)` (MIME falls back to
+/// `application/octet-stream`). On success the result goes to `on_success`;
+/// on failure the error is written to `message`.
 pub(crate) fn use_file_upload<T, U, Fut>(
     mut busy: Signal<bool>,
     mut message: Signal<Option<String>>,

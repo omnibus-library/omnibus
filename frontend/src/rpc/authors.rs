@@ -20,13 +20,10 @@ use omnibus_shared::detect_image_format;
 use super::{internal_rpc_error, AdminUser, AuthUser, PoolExt, WorkerExt};
 
 /// Fetch a single author and all their books. POST for the same reason as
-/// `rpc_get_ebook` — needs `id` in the body.
-///
-/// Queues a background `Task::ResolveAuthorPhoto` when the author has no
-/// `author_photos` row yet so first-time visits trigger Open Library
-/// resolution. A subsequent visit picks up the resolved photo (or the
-/// `letter` negative-cache marker), and the worker's per-author resource
-/// mutex prevents duplicate queueing while resolution is in flight.
+/// `rpc_get_ebook` — needs `id` in the body. Queues a background
+/// `Task::ResolveAuthorPhoto` when the author has no `author_photos` row yet,
+/// so the next visit picks up the resolved photo (or the `letter`
+/// negative-cache marker); the worker's per-author mutex prevents duplicates.
 #[post("/api/rpc/author", pool: PoolExt, worker: WorkerExt, _user: AuthUser)]
 pub async fn rpc_get_author(id: i64) -> Result<Option<AuthorDetail>> {
     let author = db::get_author(&pool.0, id)
@@ -47,14 +44,10 @@ pub async fn rpc_get_author(id: i64) -> Result<Option<AuthorDetail>> {
 }
 
 /// Admin-triggered "Scan for picture" for an author. Clears any sticky
-/// `letter` negative-cache marker and runs the Open Library resolver
-/// inline, so the admin gets a definitive "found / not found" answer in a
-/// single round-trip without polling the worker.
-///
-/// Manual uploads are treated as overrides: a `source = 'manual'` row is
-/// preserved and Scan returns `resolved=true` without touching the row,
-/// so admins can't accidentally wipe a manual upload by clicking the
-/// button.
+/// `letter` negative-cache marker and runs the Open Library resolver inline,
+/// so the admin gets a definitive found / not found in one round-trip. A
+/// `source = 'manual'` row is preserved: Scan returns `resolved=true` without
+/// touching it.
 #[post("/api/rpc/author/scan-photo", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_scan_author_photo(id: i64) -> Result<AuthorPhotoScanResult> {
     if !user.is_admin {
@@ -92,10 +85,8 @@ pub async fn rpc_refetch_author_photos() -> Result<()> {
 
 /// Validate and trim an author photo URL: non-empty, within
 /// `AUTHOR_PHOTO_URL_MAX_LEN` bytes. Returns the trimmed slice on success.
-///
-/// Only the server-side body of `rpc_set_author_photo_url` calls this, so it
-/// is `server`-gated like the other server-only helpers above — otherwise it
-/// is dead code in the `mobile`/`web` client builds (caught by clippy).
+// Only the server-side body of `rpc_set_author_photo_url` calls this; ungated
+// it is dead code in the `mobile`/`web` builds (clippy).
 #[cfg(feature = "server")]
 fn validate_author_photo_url(url: &str) -> Result<&str, ServerFnError> {
     let trimmed = url.trim();

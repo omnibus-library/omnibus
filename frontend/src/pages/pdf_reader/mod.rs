@@ -296,19 +296,11 @@ fn apply_event(event: interop::PdfEvent, uuid: &str, server_url: &str, sigs: Pdf
     }
 }
 
-/// Metadata + saved-position bootstrap, the glue mount, the highlight load,
-/// and the event drain — post-mount only (rule 07: SSR and the first WASM
-/// paint both render the loading state). Every hook is declared on every
-/// target so the hook order never diverges between SSR and the client; only
-/// the effect body that talks to the WebView is gated.
-///
-/// `use_reactive!` re-runs this whenever the route params change on an
-/// already-mounted instance — the router reuses the page across a same-route
-/// param swap rather than remounting it — and again on Retry (the
-/// `retry` signal read inside). The retained task is cancelled first so the
-/// previous document's drain can't land events on the new one, and every
-/// per-document signal is reset so the previous title, annotations, and open
-/// drawers never show over the next document.
+/// Metadata + saved-position bootstrap, the glue mount, the highlight load, and
+/// the event drain, post-mount only (rule 07). `use_reactive!` re-runs it when
+/// the route params change on a reused page and on Retry: the retained task is
+/// cancelled and every per-document signal reset first, so the previous
+/// document's events and state never show over the next.
 fn use_pdf_bootstrap(
     uuid: String,
     file_id: Option<i64>,
@@ -454,12 +446,11 @@ impl PdfDisplay {
 
 /// The full-page PDF reader: top bar (back, title, highlight/bookmark tools,
 /// fit modes), the PDF.js stage with edge page-turn buttons, a footer slider
-/// + page label, and the annotation overlays. Over the line cap by design,
-/// for the comic pager's reason: the hooks (session tracking, auto
-/// read-status, bootstrap, the paint and fit effects) must run
-/// unconditionally before the declarative tree.
+/// + page label, and the annotation overlays.
 #[component]
 pub fn PdfReadPage(uuid: String, file_id: Option<i64>, page: Option<i64>) -> Element {
+    // Over the line cap by design, for the comic pager's reason: the hooks run
+    // unconditionally before the declarative tree.
     let server_url = use_server_url();
     let nav = use_navigator();
     let sigs = PdfSignals {

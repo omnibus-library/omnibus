@@ -20,12 +20,10 @@ use super::entity_ops::{
 use super::snapshot::{DeleteAuthorSnapshot, MergeSnapshot, RenameSnapshot, SplitSnapshot};
 use super::MergeEntity;
 
-/// Reverse a previously-applied cleanup log entry, restoring the
-/// pre-mutation state its snapshot recorded.
-///
-/// Errs [`CleanupApplyError::AlreadyUndone`] if `log_id` was already
-/// undone, and [`CleanupApplyError::LogNotFound`] for an unknown id or a
-/// `(kind, action)` combination no primitive ever produces.
+/// Reverse a previously-applied cleanup log entry, restoring the pre-mutation
+/// state its snapshot recorded. Errs [`CleanupApplyError::AlreadyUndone`] if
+/// `log_id` was already undone, and [`CleanupApplyError::LogNotFound`] for an
+/// unknown id or a `(kind, action)` combination no primitive ever produces.
 pub async fn undo(pool: &SqlitePool, log_id: i64) -> Result<(), CleanupApplyError> {
     let row: Option<CleanupLogRow> = sqlx::query_as(
         "SELECT kind, action, snapshot_json, applied_by, undone_at
@@ -128,18 +126,11 @@ async fn mark_undone_tx(
     Ok(())
 }
 
-/// Undo `apply_book_title_override`: restore the previous overrides blob,
-/// or delete the override row entirely if there was none — joining the
-/// caller's transaction via `upsert_one_in_tx`/`delete_one_in_tx` so the
-/// claim in [`undo`] and this restore commit or roll back together. Returns
-/// `Some(book_uuid)` when the restore path needs the post-commit FTS
-/// rebuild `upsert_metadata_overrides` would normally trigger itself — the
-/// delete path already restores canonical FTS inside its own tx-scoped
-/// call, matching `delete_metadata_overrides`.
-///
-/// Reuses the original apply's `applied_by` to attribute the restore, since
-/// `undo` takes no actor of its own — `apply_book_title_override` requires
-/// a real `applied_by`, so this is always `Some` for a Rename row.
+/// Undo `apply_book_title_override`: restore the previous overrides blob, or
+/// delete the override row if there was none, in the caller's transaction so
+/// the claim in [`undo`] and this restore commit or roll back together. Returns
+/// `Some(book_uuid)` when the restore needs the post-commit FTS rebuild (the
+/// delete path restores FTS itself). Reuses the original `applied_by` as actor.
 async fn undo_rename(
     tx: &mut Transaction<'_, Sqlite>,
     snapshot_json: &str,
@@ -226,18 +217,10 @@ async fn undo_merge(
 }
 
 /// Undo `apply_tag_split`: recreate the source tag, restore its links, and
-/// remove exactly the per-book atom links the split added (an atom tag
-/// that pre-existed independently, or gained other links since, is left
-/// alone — only [`crate::taxonomy::delete_orphan_taxonomy`] can still reap
-/// it if it's now unreferenced).
-///
-/// Batched, not one query per `(book, atom)` pair: [`lookup_tag_ids`]
-/// resolves every atom name to an id in one pass, [`insert_links_bulk`]
-/// restores every book's link to the recreated source tag in one pass, and
-/// [`delete_links_bulk`] removes every atom link the split added in one
-/// pass — O(books + atoms) round trips instead of the O(books × atoms) the
-/// naive per-pair replay ran (mirrors `apply_tag_split`'s own set-based
-/// shape in `apply.rs`).
+/// remove exactly the per-book atom links the split added. An atom tag that
+/// pre-existed, or gained other links since, is left alone; only
+/// [`crate::taxonomy::delete_orphan_taxonomy`] can still reap it if it is now
+/// unreferenced.
 async fn undo_split(
     tx: &mut Transaction<'_, Sqlite>,
     snapshot_json: &str,

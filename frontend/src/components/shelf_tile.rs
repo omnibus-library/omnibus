@@ -61,9 +61,8 @@ pub fn tile_labelled_by(
 /// The tile's inner markup — ledge, then name, facets and foot. The caller
 /// supplies the element around it (a link, a button, a plain block) carrying
 /// [`tile_class`] and [`accent_style`]. `owner_label` is what the foot says;
-/// `owner_testid` tags it, for the one surface that selects on it; `name_id`
-/// and `owner_id` id the name and the owner's label, for a wrapper named by
-/// them through [`tile_labelled_by`].
+/// `owner_testid` tags it; `name_id` and `owner_id` id the name and the
+/// owner's label for a wrapper named via [`tile_labelled_by`].
 #[component]
 pub fn ShelfTileFace(
     shelf: ShelfSummary,

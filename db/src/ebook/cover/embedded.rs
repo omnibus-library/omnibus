@@ -17,14 +17,13 @@ const CONVENTIONAL_COVER_IDS: &[&str] = &["cover", "cover-image"];
 const RASTER_MIMES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 /// The EPUB's cover as `(bytes, mime)`, or `None` when nothing plausible is
-/// found.
-///
-/// `EpubDoc::get_cover` reads only the declaration its package `version`
-/// calls for, and returns the named resource whatever its type; neither is
-/// how real books are shaped. So every declared or conventional id is
-/// followed to an image — through an XHTML cover page when that is what it
-/// names — before the guide and the manifest's images are consulted.
+/// found. Every declared or conventional id is followed to an image (through an
+/// XHTML cover page if that is what it names) before the guide and the
+/// manifest's images are consulted.
 pub(super) fn embedded_cover<R: Read + Seek>(doc: &mut EpubDoc<R>) -> Option<(Vec<u8>, String)> {
+    // `EpubDoc::get_cover` reads only the declaration its package `version` calls
+    // for and returns the named resource whatever its type; real books aren't shaped
+    // that way.
     let mut ids: Vec<String> = Vec::new();
     let declared = [
         doc.get_cover_id(),

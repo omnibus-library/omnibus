@@ -17,14 +17,10 @@ pub(super) fn chapter_index_for_elapsed(chapters: &[ChapterInfo], elapsed: f64) 
         .saturating_sub(1)
 }
 
-/// Resolve the seek target for "previous chapter":
-/// - If we're more than 3 s into the current chapter, seek to its start.
-/// - If within 3 s of the start and not the first chapter, go to the previous.
-/// - Otherwise seek to 0.
-///
-/// Returns `None` when `chapters` is empty or `idx` is out of bounds
-/// (the click handler computes `idx` from a separate signal, so a chapter
-/// list refresh in between can leave it stale).
+/// Resolve the seek target for "previous chapter": the current chapter's start
+/// when more than 3 s into it, else the previous chapter's (0 on the first).
+/// `None` when `chapters` is empty or `idx` is out of bounds; the click handler
+/// computes `idx` separately, so a chapter-list refresh can leave it stale.
 pub(super) fn chapter_prev_target(
     chapters: &[ChapterInfo],
     elapsed: f64,

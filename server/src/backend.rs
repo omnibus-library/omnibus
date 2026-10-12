@@ -70,25 +70,17 @@ pub use process_meta::{
     app_version, build_id, init_app_version, init_build_id, init_repo_root, repo_root,
 };
 
-/// Per-IP rate-limit budget for `/api/search/*` and the `/api/rpc/search-*`
-/// server functions. Each request runs four FTS5 queries plus joins, so the
-/// budget is tighter than the auth-endpoint default (10/60s). 30 requests
-/// per 10 seconds per IP comfortably covers a power user typing into the
-/// command palette without throttling, while still backstopping a runaway
-/// client. Surfaced as a constant so callers / tests share a single source
-/// of truth.
+/// Per-IP rate-limit budget for `/api/search/*` and the `/api/rpc/search-*` server
+/// functions, separate from the auth limiter. Each request runs four FTS5 queries plus
+/// joins; the budget still covers a user typing into the command palette.
 pub const SEARCH_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
 /// Max search requests per [`SEARCH_RATE_LIMIT_WINDOW`] per IP.
 pub const SEARCH_RATE_LIMIT_MAX: u32 = 30;
 
-/// Per-IP rate-limit budget for the binary-upload endpoints
-/// (`POST /api/ebooks/{id}/cover`, `PUT /api/authors/{id}/photo`,
-/// `PUT /api/authors/{id}/photo/url`). Each accepts a multi-MiB image and
-/// drives disk I/O, WebP transcoding CPU, and SQLite writes, so a tight
-/// loop from a single principal could exhaust resources. 10 uploads per
-/// 60 seconds per IP is generous for legitimate editing while still
-/// backstopping abuse. Surfaced as constants so callers / tests share a
-/// single source of truth.
+/// Per-IP rate-limit policy for both upload routers (`routes::upload_router`: cover, journal
+/// image, avatar and author-photo writes; `routes::book_upload_router`: book and audiobook
+/// uploads): 10 requests per 60 seconds, each router in its own bucket. Each request carries
+/// a multi-MiB payload or an outbound fetch, so one principal looping could exhaust resources.
 pub const UPLOAD_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 /// Max upload requests per [`UPLOAD_RATE_LIMIT_WINDOW`] per IP.
 pub const UPLOAD_RATE_LIMIT_MAX: u32 = 10;
@@ -108,12 +100,10 @@ fn timeout_layer(timeout: std::time::Duration) -> tower_http::timeout::TimeoutLa
 }
 
 /// 403 unless `user` may download. The single enforcement point for every
-/// download-shaped route — one whose purpose is handing the caller a file to
-/// keep (`Content-Disposition: attachment`), as opposed to the in-app
-/// reading/streaming routes (`/file`, `/parts/{ordinal}`, page images, HLS),
-/// which stay open to any authenticated user. Shared by the `/api/*`
-/// handlers here and by `opds::delegate`'s Basic-auth'd acquisition routes,
-/// so the two surfaces cannot drift on what counts as a download.
+/// download-shaped route (one handing the caller a file to keep via
+/// `Content-Disposition: attachment`; in-app reading/streaming routes stay open to
+/// any authenticated user), shared with `opds::delegate`'s acquisition routes so
+/// the two surfaces cannot drift on what counts as a download.
 fn deny_without_download(user: &AuthUser) -> Option<Response> {
     (!user.can_download).then(|| (StatusCode::FORBIDDEN, "download not permitted").into_response())
 }
@@ -140,14 +130,8 @@ async fn serve_download(
     .await
 }
 
-/// The shared body of every endpoint that streams bytes off disk.
-///
-/// Opens the file **once** and hands that same handle to both the validator
-/// and the stream — see `conditional`'s module doc for why splitting those
-/// two is what reopens the splice this whole mechanism exists to close.
-/// Every precondition is settled before a byte is read; a missing file is
-/// the only condition reported as 404, so a legitimate 416 reaches the
-/// client intact with the `Content-Range` it needs to restart.
+/// The shared body of every endpoint that streams bytes off disk: one open handle for
+/// validator and bytes, preconditions before any byte, 404 only for a missing file (rule 09a).
 async fn serve_file(
     req: axum::extract::Request,
     path: &std::path::Path,
@@ -187,11 +171,9 @@ async fn serve_file(
 }
 
 /// Build a `Content-Disposition: attachment` value for `filename`.
-///
-/// Emits both a sanitized ASCII `filename="…"` fallback (control chars,
-/// quotes, backslashes, and path separators replaced with `_`) and an
-/// RFC 5987 `filename*=UTF-8''…` form so non-ASCII titles survive in
-/// browsers that honour it, without pulling in a percent-encoding crate.
+/// Emits a sanitized ASCII `filename="…"` fallback (control chars, quotes, backslashes
+/// and path separators become `_`) plus an RFC 5987 `filename*=UTF-8''…` form so
+/// non-ASCII titles survive in browsers that honour it.
 fn content_disposition_attachment(filename: &str) -> String {
     let ascii: String = filename
         .chars()
@@ -368,17 +350,10 @@ fn rest_router_with_timeouts(
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
 }
 
-/// Attach the pagination hint headers to a list/search response.
-///
-/// * `X-Total-Count` — the true row count of the underlying query, before
-///   the `MAX_BOOKS_RETURNED` server-side cap is applied.
-/// * `X-Total-Cap` — the cap itself, only set when the response was
-///   actually truncated. Clients can branch on its presence to decide
-///   whether to surface a "too large to fully load" hint.
-///
-/// The JSON body shape is intentionally unchanged so older mobile clients
-/// keep parsing the response as `EbookLibrary` without any wire-format
-/// migration.
+/// Attach the pagination hint headers to a list/search response: `X-Total-Count` is
+/// the true row count before the `MAX_BOOKS_RETURNED` cap, and `X-Total-Cap` is the
+/// cap, set only when the response was truncated. The JSON body shape is unchanged,
+/// so older mobile clients keep parsing it as `EbookLibrary`.
 fn with_pagination_headers(mut resp: Response, total: i64) -> Response {
     use axum::http::HeaderValue;
     if let Ok(v) = HeaderValue::from_str(&total.to_string()) {

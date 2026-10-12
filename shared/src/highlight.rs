@@ -76,9 +76,6 @@ pub struct Highlight {
     pub created_at: i64,
     /// [`Self::created_at`] rendered as ISO 8601 UTC. When it was made.
     ///
-    /// Both forms travel together: the epoch is what clients compare and sort
-    /// on, the string is what a reader of the API can act on without doing
-    /// calendar arithmetic by hand. Populated by the server's read paths;
     /// `None` on a payload a client built itself.
     #[serde(default)]
     pub created_at_iso: Option<String>,
@@ -131,12 +128,9 @@ impl CreateHighlight {
     /// without letting an authed client index arbitrary blobs.
     pub const CLIENT_ID_MAX_LEN: usize = 64;
 
-    /// Validate field lengths and required-ness. Call at the handler
-    /// boundary before persisting so over-long inputs surface as 400
-    /// instead of falling through to the DB.
-    ///
-    /// Length caps are measured in Unicode scalar values (`chars`),
-    /// matching `MetadataOverrides::validate`.
+    /// Validate field lengths and required-ness. Call at the handler boundary before
+    /// persisting so over-long inputs surface as 400 instead of falling through to the
+    /// DB. Caps count Unicode scalar values (`chars`), like `MetadataOverrides::validate`.
     pub fn validate(&self) -> Result<(), String> {
         if self.book_uuid.trim().is_empty() {
             return Err("book_uuid is required".into());

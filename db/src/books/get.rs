@@ -15,19 +15,9 @@ use super::projection::{
 
 /// Fetch a single book by its stable `books.id`. Returns `None` if not found.
 ///
-/// One round-trip to SQLite: the main `books` row plus every m2m relation are
-/// pulled in a single statement using scalar subqueries (for single-valued
-/// joins) and `json_group_array` over ordered inner selects (for multi-valued
-/// lists). Determinism is preserved by always ordering the inner selects —
-/// EPUB-preferred for the primary file, alphabetical for publisher/language/
-/// series/tags/formats/identifiers, and `books_authors_link.position` for
-/// authors.
-///
-/// Multi-valued lists are returned as JSON via SQLite's `json_group_array` +
-/// `json_object`, which round-trips any UTF-8 — including control chars and
-/// punctuation that a delimiter-based encoding would corrupt. The Rust side
-/// parses each blob with `serde_json`. Empty aggregates come back as `"[]"`,
-/// so the `Option<String>` path only fires when the column itself was NULL.
+/// One round-trip: the `books` row plus every m2m relation in a single
+/// statement, with multi-valued lists as JSON blobs ordered deterministically
+/// (EPUB-preferred primary file, authors by `position`, the rest alphabetical).
 pub async fn get_book(
     pool: &SqlitePool,
     id: i64,
@@ -37,6 +27,8 @@ pub async fn get_book(
     };
 
     let uuid: String = row.try_get("uuid")?;
+    // Lists arrive as `json_group_array` JSON, not a delimited string, so
+    // control characters and punctuation round-trip intact.
     let mut book = row_to_ebook(&row)?;
 
     // F5.1: merge user-supplied metadata overrides, gated by the owning
@@ -122,11 +114,8 @@ async fn backfill_series_id_by_name(
 }
 
 /// Look up a book by its stable `books.uuid` and return the same merged
-/// metadata `get_book` produces. Delegates to `get_book` after resolving
-/// the uuid to an id so the body stays a single source of truth.
-///
-/// This is the read path for `/books/:uuid` and `/api/ebooks/:uuid` —
-/// the URL-stable counterparts to the renumbering `:id` routes.
+/// metadata as `get_book`. The read path for `/books/:uuid` and
+/// `/api/ebooks/:uuid`, the URL-stable counterparts to the `:id` routes.
 pub async fn get_book_by_uuid(
     pool: &SqlitePool,
     uuid: &str,
@@ -137,18 +126,11 @@ pub async fn get_book_by_uuid(
     get_book(pool, id).await
 }
 
-/// Map a `books.uuid` to its current `books.id`. `books.uuid` is
-/// `UNIQUE`, so this is one indexed lookup. Returns `None` if the uuid
-/// is unknown — handlers translate to a 404.
-///
-/// Falls back to `merged_uuids`: a uuid that was merged into (or
-/// auto-attached to) another book resolves to the surviving book, so
-/// old detail-page links, cover/thumb URLs, and in-flight progress
-/// POSTs keep working after a merge.
-///
-/// The covers / thumbs / mobile-ebooks routes use this to keep their
-/// URLs uuid-keyed externally while reusing the existing id-keyed
-/// internal helpers (`get_cover`, the thumbnail pipeline) unchanged.
+/// Map a `books.uuid` to its current `books.id` in one indexed lookup. `None`
+/// if the uuid is unknown (handlers translate to a 404). Falls back to
+/// `merged_uuids`, so a uuid merged into (or auto-attached to) another book
+/// resolves to the surviving book and old links and in-flight POSTs keep
+/// working.
 pub async fn resolve_book_id_by_uuid(
     pool: &SqlitePool,
     uuid: &str,
@@ -220,19 +202,16 @@ pub async fn book_last_modified_for(pool: &SqlitePool, id: i64) -> Result<i64, s
     .await?)
 }
 
-/// Bulk counterpart to [`resolve_book_id_by_uuid`]: map each input uuid to
-/// its current `books.id`, replicating the `merged_uuids` fallback so a
-/// merged/attached uuid still resolves to the surviving book. UUIDs that
-/// match neither table are simply absent from the returned map.
-///
-/// Emits one `SELECT` per chunk, chunked at 499 uuids because each chunk
-/// binds its uuids twice (the `books` and `merged_uuids` legs of the
-/// `UNION ALL`), keeping the bound-parameter count under SQLite's 999 limit.
+/// Bulk counterpart to [`resolve_book_id_by_uuid`]: map each input uuid to its
+/// current `books.id`, with the same `merged_uuids` fallback. UUIDs that match
+/// neither table are absent from the returned map. One `SELECT` per chunk.
 pub(crate) async fn resolve_book_ids_bulk(
     pool: &SqlitePool,
     uuids: &[String],
 ) -> Result<HashMap<String, i64>, super::BooksError> {
     let mut map = HashMap::with_capacity(uuids.len());
+    // 499 per chunk: each uuid is bound twice (`books` and `merged_uuids`
+    // legs), which keeps the count under SQLite's 999 bind limit.
     for chunk in uuids.chunks(499) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
@@ -284,12 +263,11 @@ pub(crate) async fn get_books_by_ids(
     Ok(out)
 }
 
-/// Resolve any book reference (its own durable `books.uuid` or a
-/// `merged_uuids` ledger key for a format-merged/attached file) to the
-/// **canonical** `books.uuid` of the surviving book. `None` when the uuid
-/// matches neither. Used by the user-data write paths so a row always
-/// stores the durable identity (and a merged uuid collapses onto its target)
-/// — keeping `(user_id, book_uuid, format)` uniqueness correct.
+/// Resolve any book reference (its own `books.uuid` or a `merged_uuids` key for
+/// a format-merged/attached file) to the **canonical** `books.uuid` of the
+/// surviving book; `None` when it matches neither. User-data write paths use it
+/// so rows store the durable identity and `(user_id, book_uuid, format)`
+/// uniqueness holds.
 pub async fn resolve_canonical_book_uuid_exec<'e, E>(
     executor: E,
     uuid: &str,
@@ -317,13 +295,10 @@ pub async fn resolve_canonical_book_uuid(
 }
 
 /// Bulk counterpart to [`resolve_canonical_book_uuid_exec`]: resolve every
-/// distinct uuid in `uuids` to its canonical `books.uuid` in one round-trip
-/// (chunked at 499 to stay under SQLite's 999 bind-parameter cap — each uuid
-/// is bound twice for the `books`/`merged_uuids` UNION). Returns a map from
-/// input uuid to canonical uuid; uuids unknown in **both** tables are absent
-/// from the map. Callers that would otherwise loop `resolve_canonical_book_uuid_exec`
-/// (e.g. the batched `post_sessions` write path) use this to collapse an N-report
-/// batch's 2N queries into `chunks + N` inserts.
+/// distinct uuid in `uuids` to its canonical `books.uuid` in chunked
+/// round-trips. Returns input uuid to canonical uuid; uuids unknown in **both**
+/// tables are absent. Callers that would loop the single-uuid form (e.g. batched
+/// `post_sessions` writes) use this instead.
 pub async fn resolve_canonical_book_uuids_bulk_exec(
     tx: &mut Transaction<'_, Sqlite>,
     uuids: &[String],
@@ -456,12 +431,11 @@ pub struct TextSource {
     pub format: String,
 }
 
-/// Resolve the file every text-addressed surface — chapter list, chapter
-/// text, content search, spoiler boundary, anchor placement, progress
-/// enrichment — reads for `id`: the lowest-ordinal EPUB, else the
-/// lowest-ordinal PDF ([`TEXT_SOURCE_FORMAT_ORDER`]). `Ok(None)` for a book
-/// with neither (audio-only, comic-only). A structure row keyed on the
-/// returned `file_id` therefore always describes the file the reader opens.
+/// Resolve the file every text-addressed surface (chapter list and text,
+/// content search, spoiler boundary, anchor placement, progress enrichment)
+/// reads for `id`: the lowest-ordinal EPUB, else the lowest-ordinal PDF
+/// ([`TEXT_SOURCE_FORMAT_ORDER`]). `Ok(None)` for a book with neither (audio-
+/// or comic-only).
 pub async fn book_text_source(
     pool: &SqlitePool,
     id: i64,
@@ -518,10 +492,8 @@ pub async fn book_file_with_id(
 }
 
 /// Resolve the scan-root-relative directory of a book's file for the given
-/// format (e.g. "EPUB"), as stored verbatim in `book_files.path` /
-/// `books.path`. Used where a caller must not echo the server's absolute
-/// filesystem layout back to the client but still wants to show where the
-/// file lives *within* the library. Same
+/// format (e.g. "EPUB"), as stored in `book_files.path` / `books.path`, for
+/// callers that must not echo the server's absolute filesystem layout. Same
 /// lowest-`ordinal` tie-break as [`book_file_path`]. `Ok(None)` when absent.
 pub async fn book_file_relative_dir(
     pool: &SqlitePool,
@@ -676,13 +648,8 @@ where
 
 /// Resolve a library-relative `scan_key` under the library rooted at
 /// `library_path` to its book's durable `books.uuid`, or `None` if no book is
-/// indexed at that path yet.
-///
-/// `scan_key` is the indexer's durable diff key (the library-relative path),
-/// so the upload-commit handler can map a file it just filed back to the row a
-/// reindex inserted without depending on the absolute path. A `None` result
-/// means the triggered scan hasn't surfaced the file — the caller treats that
-/// as a transient failure, not a 404.
+/// indexed at that path yet. The caller treats `None` as a transient failure
+/// (the triggered scan hasn't surfaced the file), not a 404.
 pub async fn get_book_uuid_by_scan_key(
     pool: &SqlitePool,
     library_path: &str,
@@ -710,18 +677,10 @@ pub async fn get_book_uuid_by_scan_key(
 }
 
 /// Answer a batch of "what is this file's validator now?" questions in two
-/// queries, whatever the batch size.
-///
-/// The row picked per query mirrors what the download endpoints resolve: an
-/// explicit `file_id` when given, else the lowest-ordinal row of a format
-/// the download serves (`db::book_file_path`'s `ORDER BY bf.ordinal LIMIT
-/// 1`, and `default_audio_file_id` on the client). Answering about a
-/// different row than the one a download came from would report a book
-/// stale that isn't.
-///
-/// `None` for an entry whose book, format, or chosen file is gone, or whose
-/// row the scanner has not stat'd — every one of which a client reads as
-/// "can't tell", never as "unchanged".
+/// queries. The row picked mirrors what the download endpoints resolve: the
+/// explicit `file_id` when given, else the lowest-ordinal row of a served
+/// format. `None` for an entry whose book, format or file is gone, or whose row
+/// the scanner has not stat'd; clients read it as "can't tell", not "unchanged".
 pub async fn download_validators(
     pool: &SqlitePool,
     queries: &[omnibus_shared::DownloadValidatorQuery],

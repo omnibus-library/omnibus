@@ -38,21 +38,17 @@ pub async fn start_task(
     Ok(row.get("id"))
 }
 
-/// Update a task row to its terminal state, recording the finish time and —
-/// for `Err` — the error text.
-///
-/// The outcome is a `Result` rather than a `(status, error)` pair so the
-/// table's two invariants hold by construction rather than by convention: a
-/// terminal write cannot name the non-terminal `Running`, and an error string
-/// cannot ride along with a success. A no-op — not an error — if `id` no
-/// longer exists; the row is best-effort observability, not a write the
-/// worker's own success depends on.
+/// Update a task row to its terminal state, recording the finish time and, for
+/// `Err`, the error text. A no-op, not an error, if `id` no longer exists: the
+/// row is best-effort observability the worker's success doesn't depend on.
 pub async fn finish_task(
     pool: &SqlitePool,
     id: i64,
     finished_at: i64,
     outcome: Result<(), &str>,
 ) -> Result<(), BackgroundTaskError> {
+    // A `Result`, not a `(status, error)` pair: a terminal write cannot name
+    // `Running`, and an error string cannot ride along with a success.
     let (status, error) = match outcome {
         Ok(()) => (BackgroundTaskStatus::Success, None),
         Err(msg) => (BackgroundTaskStatus::Failed, Some(msg)),
@@ -82,14 +78,9 @@ pub async fn recent_tasks(
     Ok(rows.iter().map(row_to_record).collect())
 }
 
-/// Map one `background_tasks` row to its wire record. The `status` column is
-/// constrained by the migration's `CHECK` to the three values
-/// [`BackgroundTaskStatus::from_str`] parses, so a row written through this
-/// module can never fail to parse. A mismatch here means something else
-/// wrote the row — a future version with a status value this build doesn't
-/// know, or manual DB surgery — so it's logged rather than silently
-/// swallowed, while still falling back to `Running` so the dashboard read
-/// never hard-fails on one corrupted row.
+/// Map one `background_tasks` row to its wire record. An unparseable `status`
+/// (a newer build's value, or manual DB surgery) is logged and falls back to
+/// `Running`, so one corrupted row never hard-fails the dashboard read.
 fn row_to_record(row: &sqlx::sqlite::SqliteRow) -> BackgroundTaskRecord {
     let id: i64 = row.get("id");
     let status_raw: String = row.get("status");

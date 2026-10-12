@@ -164,13 +164,9 @@ fn date_condition(rule: &ShelfRule, v: &str) -> Result<(String, Vec<Bind>), Shel
 }
 
 /// Members-select prefix (ending in `WHERE `) and compared name column for a
-/// name-matched field; `None` for fields that don't match by name.
-///
-/// Names resolve against the normalized taxonomy `name` columns (all `COLLATE
-/// NOCASE`), so the user types a name, not an id. Each reads the shared
-/// effective membership the indexes and the palette count, so an override
-/// moves a book on every surface at once. Uncorrelated, so the union is built
-/// once per query rather than once per book.
+/// name-matched field; `None` for fields that don't match by name. The
+/// membership is the shared effective one (overrides included) over the taxonomy
+/// `name` columns (`COLLATE NOCASE`).
 pub(crate) fn name_membership(field: RuleField) -> Option<(&'static str, &'static str)> {
     Some(match field {
         RuleField::Tag => (
@@ -214,11 +210,9 @@ pub(crate) fn name_membership(field: RuleField) -> Option<(&'static str, &'stati
     })
 }
 
-/// Build a case-insensitive `IN`/`NOT IN` text predicate for a name-matched
-/// field (see [`name_membership`]).
-///
-/// Equality (`is`/`is_not`/`includes`) uses `COLLATE NOCASE`;
-/// `contains`/`starts_with` use `LIKE` (case-insensitive for ASCII) with
+/// Build an ASCII-case-insensitive `IN`/`NOT IN` text predicate for a
+/// name-matched field (see [`name_membership`]). Equality (`is`/`is_not`/
+/// `includes`) uses `COLLATE NOCASE`; `contains`/`starts_with` use `LIKE` with
 /// metacharacters escaped so user text matches literally.
 fn text_condition(rule: &ShelfRule) -> Result<(String, Vec<Bind>), ShelfError> {
     let (members, col) = name_membership(rule.field).ok_or_else(|| unsupported(rule))?;
@@ -247,6 +241,7 @@ fn text_condition(rule: &ShelfRule) -> Result<(String, Vec<Bind>), ShelfError> {
         _ => return Err(unsupported(rule)),
     };
     let not = if negate { "NOT " } else { "" };
+    // Uncorrelated, so a membership union is built once per query, not per book.
     Ok((format!("b.id {not}IN ({members}{cmp})"), vec![bind]))
 }
 

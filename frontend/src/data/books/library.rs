@@ -37,11 +37,9 @@ pub(crate) async fn get_ebooks_online(server_url: &str) -> Result<EbookLibrary, 
 }
 
 /// GET `/api/ebooks?sort=&dir=&cursor=&limit=&filter=` — one keyset page.
-///
-/// `filters` rides the REST query as one `filter` param; `facets` comes back
-/// `None`. `total` is read from `X-Total-Count` on the first page only;
-/// `next_cursor` from `X-Next-Cursor`.
-/// `_stack_series` is ignored: the REST page carries no stacks.
+/// `filters` rides the REST query as one `filter` param; `facets` comes back `None`
+/// and `_stack_series` is ignored (the REST page carries no stacks). `total` is read
+/// from `X-Total-Count` on the first page only; `next_cursor` from `X-Next-Cursor`.
 #[cfg(feature = "mobile")]
 #[allow(clippy::too_many_arguments)] // the shared signature
 pub async fn get_ebooks_page(
@@ -538,11 +536,8 @@ pub async fn get_ebook(_server_url: &str, uuid: &str) -> Result<Option<EbookMeta
 }
 
 /// `POST /api/downloads/validators` — current validators for a batch of
-/// downloaded files, in one request carrying no metadata.
-///
-/// Deliberately not cached: the answer's whole purpose is to be newer than
-/// what this device holds, and it is small enough that a cache row would
-/// cost more than the request.
+/// downloaded files, in one request carrying no metadata. Deliberately not
+/// cached: the answer must be newer than what this device holds.
 #[cfg(feature = "mobile")]
 pub async fn download_validators(
     server_url: &str,

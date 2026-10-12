@@ -11,17 +11,11 @@ use axum::{
 
 use super::{app_version, build_id, repo_root};
 
-/// Unauthenticated liveness + fingerprint endpoint. The `app` field lets
-/// `scripts/dev-server-up.sh` distinguish an omnibus instance from some
-/// other process that happens to bind the same port. The `repo_root`
-/// field lets it distinguish *this* workspace's server from a sibling
-/// worktree's server bound to the same port. The `version` field
-/// (from `OMNIBUS_VERSION`, `"dev"` when unset) lets the mobile "You"
-/// screen show the running server's release alongside its own app version.
-/// The `time` field (unix seconds) lets a client measure its own clock
-/// offset from the server, so it can stamp progress writes with a
-/// server-corrected event time. Whitelisted in
-/// `auth::gate::require_auth` so it remains reachable without a session.
+/// Unauthenticated liveness + fingerprint endpoint, whitelisted in `auth::gate::require_auth`.
+/// `app` lets `scripts/dev-server-up.sh` tell an omnibus instance from another process on
+/// the port, `repo_root` this workspace's server from a sibling worktree's. `version`
+/// (`OMNIBUS_VERSION`, `"dev"` when unset) feeds the mobile "You" screen; `time` (unix
+/// seconds) lets a client measure its clock offset to stamp progress writes.
 pub(super) async fn get_health() -> Response {
     Json(serde_json::json!({
         "app": "omnibus",

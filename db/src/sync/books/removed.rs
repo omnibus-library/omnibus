@@ -14,16 +14,11 @@ fn placeholders(n: usize) -> String {
     std::iter::repeat_n("?", n).collect::<Vec<_>>().join(", ")
 }
 
-/// Mark a batch of removed books' files missing. The file is gone, but the
-/// `books` row — its metadata, taxonomy links, FTS row, and every soft-ref
-/// user-data row — is **retained**; only the book's own native `book_files`
-/// row(s) are dropped (parts and chapters cascading) — a row still recorded
-/// in `merged_uuids` is a cross-format attachment in a different format and
-/// survives — so the book stays in author/series/tag browse and
-/// search while the grid hides it via its `EXISTS book_files` filter. A
-/// returning file re-attaches via the Changed path, preserving the uuid.
-/// Idempotent: a re-run on an already-fileless row deletes zero `book_files`
-/// and the flag UPDATE is a no-op via the `is_missing_files = 0` guard.
+/// Mark a batch of removed books' files missing. The `books` row (metadata,
+/// taxonomy links, FTS, soft-ref user data) is **retained**; only the book's own
+/// native `book_files` rows are dropped (parts and chapters cascading), sparing
+/// cross-format attachments in `merged_uuids`. The book stays in browse/search
+/// and a returning file re-attaches via Changed. Idempotent on re-run.
 pub(super) async fn sync_removed(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,
@@ -75,12 +70,10 @@ async fn resolve_removed_book_ids(
 }
 
 /// One DELETE per chunk: `book_file_parts` + `file_chapters` cascade off the
-/// `book_files` row. Scoped to rows with **no** matching `merged_uuids`
-/// entry — a row that IS recorded there is a cross-format attachment (a
-/// different format's file, still present) and must survive this book's own
-/// file going missing; the old blanket `book_id IN (...)` delete dropped it
-/// too, only for it to re-attach (and re-mint a `book_files` row) on the
-/// next scan.
+/// `book_files` row. Scoped to rows with **no** matching `merged_uuids` entry: a
+/// recorded row is a cross-format attachment (a different format's file, still
+/// present) and must survive this book's own file going missing, or it would just
+/// re-attach on the next scan.
 async fn delete_removed_book_files(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     ids: &[i64],
@@ -105,17 +98,10 @@ async fn delete_removed_book_files(
 }
 
 /// One UPDATE per chunk: clear `has_cover` for the books whose cover files the
-/// post-commit reconcile is about to unlink (`delete_cover_files_for`, called
-/// with every removed uuid). Leaving the flag set strands the book with
-/// `has_cover = 1` and no file on disk, which nothing repairs: `get_cover`
-/// trusts the flag and probes a path that is gone, `maybe_adopt_cover` returns
-/// early on `has_cover != 0` so a returning file never re-adopts, and
-/// `backfill_covers` selects on `has_cover = 0` so the re-extraction pass never
-/// sees it. Clearing it hands the book back to that pass, which
-/// re-extracts under the correct `books.uuid` once a file is present again.
-///
-/// The uploaded cover override is `metadata_overrides.has_cover_override`, a
-/// different column read through `find_override_cover_file`, and is untouched.
+/// post-commit reconcile is about to unlink (`delete_cover_files_for`). A
+/// lingering flag strands the book with `has_cover = 1` and no file, which nothing
+/// repairs; clearing it hands the book to `backfill_covers`. The uploaded override
+/// (`metadata_overrides.has_cover_override`) is untouched.
 async fn clear_has_cover(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     ids: &[i64],
@@ -131,14 +117,11 @@ async fn clear_has_cover(
     Ok(())
 }
 
-/// One UPDATE per chunk: set the missing-files flag + start the retention
-/// clock. The `is_missing_files = 0` guard preserves the original
-/// `missing_files_since` on a re-run; the `is_missing_files_override = 0`
-/// guard leaves intentionally-fileless rows (wishlist) unflagged so reads
-/// keep showing them. The `NOT EXISTS book_files` guard excludes a book
-/// whose cross-format attachment (a different format's file, still present)
-/// survived the delete above — it isn't actually fileless, so it must not
-/// be flagged missing.
+/// One UPDATE per chunk: set the missing-files flag + start the retention clock.
+/// `is_missing_files = 0` preserves the original `missing_files_since` on a re-run;
+/// `is_missing_files_override = 0` leaves intentionally-fileless rows (wishlist)
+/// unflagged; `NOT EXISTS book_files` skips a book whose cross-format attachment
+/// survived the delete, since it isn't actually fileless.
 async fn flag_books_missing(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     ids: &[i64],

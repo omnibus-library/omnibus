@@ -101,12 +101,9 @@ struct GraphqlError {
 
 /// POST a GraphQL operation and deserialize `data` into `T`. Returns
 /// [`HardcoverError::Graphql`] when the response carries `errors[]` or no
-/// `data`. Integer-id arrays are inlined by callers (safe — `i64`); all
-/// untrusted strings go through `variables`.
-///
-/// `pub(crate)` so `metadata_lookup::providers::hardcover` can own its own
-/// queries — the scan ladder wants different fields than the suggestions
-/// ranking path — without duplicating this envelope handling.
+/// `data`. Integer-id arrays are inlined by callers (safe, `i64`); all untrusted
+/// strings go through `variables`. `pub(crate)` so
+/// `metadata_lookup::providers::hardcover` can reuse the envelope handling.
 pub(crate) async fn post_graphql<T: DeserializeOwned>(
     config: &HardcoverConfig,
     query: &str,

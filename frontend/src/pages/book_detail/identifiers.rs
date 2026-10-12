@@ -4,18 +4,12 @@
 
 use omnibus_shared::{EbookMetadata, Identifier};
 
-/// Collision-free list key for an identifier row. A book can carry several
-/// identifiers sharing one `scheme` (the projection keeps every distinct
-/// value per scheme), so the key folds in `value` to stay unique among the
-/// keyed siblings — Dioxus panics when two keyed siblings share a key.
-///
-/// Both fields are `Debug`-quoted (not joined with a plain separator): a raw
-/// `scheme|value` join collides when the data itself contains the delimiter
-/// (`scheme="a|b", value="c"` vs `scheme="a", value="b|c"`), which would
-/// reintroduce the very panic this guards against. `Debug` escapes embedded
-/// quotes/backslashes, so the `(scheme, value)` pair maps injectively to the
-/// key.
+/// Collision-free list key for an identifier row. Several identifiers can share
+/// one `scheme`, so the key folds in `value`; Dioxus panics on duplicate keyed
+/// siblings.
 pub(super) fn bd_identifier_key(ident: &Identifier) -> String {
+    // `Debug`-quote both fields: a plain `scheme|value` join collides when the data
+    // holds the delimiter, reintroducing the duplicate-key panic.
     format!("{:?}\u{1f}{:?}", ident.scheme, ident.value)
 }
 
@@ -33,14 +27,10 @@ enum LabelRank {
     Known,
 }
 
-/// Human label for a scheme this table recognizes. Covers the ONIX
-/// codelist-5 numbers an EPUB 3 `identifier-type` refinement carries (a
-/// reader should never be shown the bare code `15`) and the scheme names
-/// Calibre and the retailers write.
-///
-/// `uuid` is deliberately not "UUID": the value is the *source file's* uuid,
-/// which is not the book's own uuid — the one Omnibus keys everything on and
-/// shows in the URL.
+/// Human label for a scheme this table recognizes: the ONIX codelist-5 numbers
+/// an EPUB 3 `identifier-type` refinement carries, and the scheme names Calibre
+/// and the retailers write. `uuid` is not labelled "UUID": it is the source
+/// file's uuid, not the book's own.
 fn bd_known_scheme_label(scheme: &str) -> Option<&'static str> {
     let label = match scheme.trim().to_ascii_lowercase().as_str() {
         "01" | "proprietary" => "Proprietary ID",
@@ -103,23 +93,9 @@ pub(super) struct BdIdentifierRow {
 }
 
 /// The identifier rows to render, deduplicated by value, with the book's
-/// saved ISBN overrides folded in.
-///
-/// A book routinely carries one identifier under several schemes — an EPUB 3
-/// package repeats its ISBN as an ONIX refinement, and a merge folds two
-/// editions' identifier sets together — which listed one value on as many
-/// rows as it had schemes. Two identifiers with the same value *are* the same
-/// identifier, so the rows collapse to one, keeping the best-named label
-/// (which also subsumes the `(scheme, value)` dedup the DB's primary key
-/// already gives us) and the first occurrence's position.
-///
-/// `isbn13` / `isbn10` are the fields the metadata editor writes and
-/// `apply_overrides` merges; rendering only `identifiers` meant a saved ISBN
-/// appeared nowhere and a correction read as silently ignored. They
-/// are folded in last, so an override replaces the row it corrects — by value
-/// when the file already holds it, else by label — rather than sitting beside
-/// it. With no override the fields are absent (or re-derived from the file),
-/// so the scanned row is what renders.
+/// saved ISBN overrides folded in. Same-value identifiers collapse to one row
+/// that keeps the best-named label and the first occurrence's position; an
+/// override replaces the row it corrects rather than sitting beside it.
 pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
     let mut rows: Vec<(BdIdentifierRow, LabelRank)> = Vec::new();
     for ident in &book.identifiers {
@@ -149,23 +125,10 @@ pub(super) fn bd_identifier_rows(book: &EbookMetadata) -> Vec<BdIdentifierRow> {
     rows.into_iter().map(|(row, _)| row).collect()
 }
 
-/// Fold one saved ISBN override into `rows` under `scheme`.
-///
-/// **Never drop a row by label alone** — a book can genuinely carry two
-/// distinct ISBNs (a second edition's identifier set copied in by a merge,
-/// or a book indexed under both), and `isbn13`/`isbn10` are derived from the
-/// scanned rows whenever no override exists, so this runs on every book.
-/// Placement, in order: (a) a row that is the *same ISBN* as the
-/// override (per [`same_identifier`]) is relabelled and revalued in place —
-/// this is a rename, not a new identifier, and is what lets `urn:isbn:…`,
-/// hyphenated, and bare-digit forms of one ISBN collapse onto the override
-/// row; (b) failing that, a row sharing the override's label is replaced —
-/// the correction case, where the file's value under that label was simply
-/// wrong (a derived value's own source row always matches in (a), so it can
-/// never reach this branch); (c) failing both, the override is a value the
-/// file never carried and is appended. Only *other* rows that are the same
-/// ISBN as what was just placed are then dropped — a `urn:isbn:` twin
-/// beside its hyphenated twin, never a genuinely different ISBN.
+/// Fold one saved ISBN override into `rows` under `scheme`: it replaces the row
+/// holding the same ISBN (per [`same_identifier`]), else the row with its label,
+/// else is appended; other rows of that ISBN are then dropped. A row is never
+/// dropped by label alone, since a book can carry two distinct ISBNs.
 fn apply_isbn_override(
     rows: &mut Vec<(BdIdentifierRow, LabelRank)>,
     scheme: &str,
@@ -184,6 +147,8 @@ fn apply_isbn_override(
         label: label.clone(),
         value: value.to_string(),
     };
+    // A same-ISBN match is a rename (`urn:isbn:`, hyphenated and bare forms
+    // collapse); a same-label match corrects a wrong file value.
     let slot_index = rows
         .iter()
         .position(|(existing, _)| same_identifier(&existing.value, value))
@@ -200,14 +165,10 @@ fn apply_isbn_override(
     });
 }
 
-/// The value's derived ISBN, if — once lowercased, a leading `urn:isbn:` /
-/// `isbn:` / `isbn ` prefix stripped, and hyphens and whitespace removed —
-/// the remainder is exactly 13 ASCII digits (ISBN-13), or 9 ASCII digits
-/// followed by a digit or `X` (ISBN-10). No checksum: a mistyped scanned
-/// ISBN must still collapse onto its derived digits. Deliberately narrow —
-/// a URL, a calibre id, or a uuid never reduces to this shape, so they
-/// return `None` rather than being coerced into a false match on whatever
-/// digits they happen to contain.
+/// The value's derived ISBN: after stripping a `urn:isbn:` / `isbn:` / `isbn `
+/// prefix, hyphens and whitespace, exactly 13 digits or 9 digits plus a digit or
+/// `X`. No checksum, so a mistyped scanned ISBN still collapses onto its derived
+/// digits. `None` for URLs, calibre ids and uuids rather than a false match.
 fn isbn_value(v: &str) -> Option<String> {
     let lower = v.trim().to_ascii_lowercase();
     let rest = lower
@@ -228,12 +189,9 @@ fn isbn_value(v: &str) -> Option<String> {
 }
 
 /// True when two identifier values are the same identifier: an exact,
-/// case-insensitive match, or both reduce to the same [`isbn_value`]. The
-/// ISBN comparison is deliberately narrower than a plain hyphen/whitespace
-/// fold — that fold alone would collapse two distinct non-ISBN values that
-/// merely share punctuation (`foo-123` / `foo123`), and stripping every
-/// non-digit would let a URL ending in an ISBN's digits be mistaken for the
-/// ISBN itself.
+/// case-insensitive match, or both reduce to the same [`isbn_value`]. The ISBN
+/// comparison is deliberately narrow, so non-ISBN values that merely share
+/// punctuation (`foo-123` / `foo123`) stay distinct.
 fn same_identifier(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
         || matches!((isbn_value(a), isbn_value(b)), (Some(x), Some(y)) if x == y)
@@ -241,12 +199,8 @@ fn same_identifier(a: &str, b: &str) -> bool {
 
 /// True when `value`, with hyphens and whitespace stripped, is a valid ISBN —
 /// the right length for an ISBN-10 or ISBN-13 **and** passing its check digit.
-///
-/// The check digit is the point: a shape-only test (right length, digits with
-/// an optional trailing `X`) labelled a checksum-failing `unknown`-scheme
-/// value like `2100906924` as an ISBN, presenting bad file metadata as
-/// verified data. Only used to *infer* a label when the scheme said
-/// nothing, so a false positive here is a mislabel.
+/// Only used to infer a label when the scheme said nothing, so a false positive
+/// mislabels bad file metadata as verified.
 fn bd_looks_like_isbn(value: &str) -> bool {
     let cleaned: Vec<char> = value
         .chars()

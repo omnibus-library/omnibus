@@ -16,10 +16,9 @@ use epub::doc::EpubDoc;
 
 /// `epub:type` declarations marking a document as navigation rather than
 /// reading, in both quote styles. Mirrors `NAV_EPUB_TYPE_ATTRS` in
-/// `db/src/ebook/wordcount.rs`: an EPUB 2 HTML table of contents is an
-/// ordinary spine item, so its own declaration is the only signal. Indexing
-/// it would answer every chapter-title query with the ToC instead of the
-/// chapter.
+/// `db/src/ebook/wordcount.rs`. An EPUB 2 HTML ToC is an ordinary spine item, so
+/// its own declaration is the only signal; indexing it would answer chapter-title
+/// queries with the ToC.
 const NAV_EPUB_TYPE_ATTRS: [&str; 6] = [
     "epub:type=\"toc\"",
     "epub:type='toc'",
@@ -69,13 +68,11 @@ fn extract_page_texts(path: &Path) -> Option<Vec<ChapterText>> {
     )
 }
 
-/// Extract every readable chapter's plain text from the EPUB at `path`.
-///
-/// `None` when the file won't open as an EPUB or no spine resource loads —
-/// "couldn't read", which the backfill logs and retries next scan. `Some`
-/// with fewer entries than spine positions is normal: navigation documents
-/// and empty chapters are dropped, keeping the surviving entries' original
-/// spine indices so a hit still cites the true position.
+/// Extract every readable chapter's plain text from the EPUB at `path`. `None`
+/// when it won't open or no spine resource loads ("couldn't read": the backfill
+/// logs and retries next scan). Navigation documents and empty chapters are
+/// dropped, so `Some` may hold fewer entries than spine positions; each kept entry
+/// keeps its original spine index.
 pub fn extract_chapter_texts(path: &Path) -> Option<Vec<ChapterText>> {
     let mut doc = EpubDoc::new(path).ok()?;
     let nav_id = doc.get_nav_id();

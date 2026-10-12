@@ -17,16 +17,11 @@ use crate::{resolve_canonical_book_uuid, resolve_canonical_book_uuid_exec};
 use super::enrich::{enrich_record, PositionDetail};
 use super::{format_str, ledger, parse_format, ProgressError};
 
-/// Attach a server-derived KoboSpan location (and percent, when the row
-/// has none) to an existing epub row WITHOUT advancing any freshness
-/// clock — the derived half describes the same position the row already
-/// holds, so bumping `updated_at`/`client_updated_at` would re-fire the
-/// Kobo sync delta forever. Optimistic: no-ops unless the row still has
-/// no location and its event time is unchanged since the caller read it.
-/// Returns whether a row was updated.
-///
-/// A percent this fills is observed by the forward-progress ledger, like every
-/// other writer of that column — see [`attach_derived_percent`].
+/// Attach a server-derived KoboSpan location (and percent, when the row has
+/// none) to an existing epub row WITHOUT advancing any freshness clock, since
+/// bumping `updated_at`/`client_updated_at` would re-fire the Kobo sync delta
+/// forever. No-ops unless the row still has no location and its event time is
+/// unchanged since the caller read it. Returns whether a row was updated.
 pub async fn attach_derived_kobo_location(
     pool: &SqlitePool,
     user_id: i64,
@@ -75,13 +70,11 @@ pub async fn attach_derived_kobo_location(
     Ok(attached.is_some())
 }
 
-/// Attach a server-derived whole-book percent to an existing epub row
-/// WITHOUT advancing any freshness clock — the same contract as
-/// [`attach_derived_kobo_location`]: the percent describes the position the
-/// row already holds, so bumping a clock would re-fire sync deltas.
-/// Optimistic: no-ops unless the row still has no percent and its event
-/// time is unchanged since the caller read it. Returns whether a row was
-/// updated.
+/// Attach a server-derived whole-book percent to an existing epub row WITHOUT
+/// advancing any freshness clock, the same contract as
+/// [`attach_derived_kobo_location`]. No-ops unless the row still has no percent
+/// and its event time is unchanged since the caller read it. Returns whether a
+/// row was updated.
 pub async fn attach_derived_percent(
     pool: &SqlitePool,
     user_id: i64,
@@ -126,13 +119,11 @@ pub async fn attach_derived_percent(
     Ok(attached)
 }
 
-/// Derive the whole-book visible-text percent for a stored epub CFI from
-/// the book's source EPUB alone (no kepub involved) and attach it via
-/// [`attach_derived_percent`]. `Ok(false)` covers every underivable case —
-/// no EPUB file row, an unparseable CFI, an unanchorable tail, or a row
-/// whose event time moved on since `expected_client_updated_at` was read —
-/// mirroring `kobo_position`'s rule of degrading to no derived value,
-/// never a wrong one. `Err` is reserved for I/O-level surprises.
+/// Derive the whole-book visible-text percent for a stored epub CFI from the
+/// book's source EPUB alone (no kepub) and attach it via [`attach_derived_percent`].
+/// `Ok(false)` covers every underivable case (no EPUB file row, an unparseable
+/// CFI or unanchorable tail, or a row whose event time moved on); `Err` is
+/// reserved for I/O-level surprises.
 pub async fn derive_epub_percent(
     pool: &SqlitePool,
     user_id: i64,
@@ -273,15 +264,11 @@ impl KoboStatistics {
     }
 }
 
-/// Mirror a device's `Statistics` block onto its epub position row;
-/// returns whether a row was updated.
-///
-/// UPDATE, not upsert: statistics annotate a position, they don't create one.
-/// A stamped write wins over an older or unstamped stored block (an unstamped
-/// one can't be echoed anyway); an unstamped write only takes an empty slot.
-/// So a second Kobo can't overwrite newer totals and have them echoed back as
-/// truth. The stamp clamps forward to server-now like
-/// [`upsert_progress_tx`](super::upsert::upsert_progress_tx)'s.
+/// Mirror a device's `Statistics` block onto its epub position row; returns
+/// whether a row was updated. UPDATE, not upsert: statistics annotate a position.
+/// A stamped write wins over an older or unstamped stored block; an unstamped
+/// write only takes an empty slot, so a second Kobo can't overwrite newer totals.
+/// The stamp clamps forward to server-now like `upsert_progress_tx`'s.
 pub async fn set_kobo_statistics_tx(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
@@ -375,18 +362,11 @@ fn row_to_record(
     })
 }
 
-/// Every position the user holds in one book, enriched with the runtime and
-/// chapter data a caller would otherwise have to reconstruct.
-///
-/// `format` narrows the result to one record; omitted, **every** format the
-/// user has a position in comes back. That default is the point: reading only
-/// the epub row of a book the reader is 87% through in audio reports the
-/// wrong place with nothing to signal it, and [`BookProgress::furthest`]
-/// names the right one outright.
-///
-/// `Ok(None)` when the uuid names no book. A known book the user has never
-/// opened returns an envelope with no records — "no position" and "no book"
-/// are different answers.
+/// Every position the user holds in one book, enriched with the runtime and chapter
+/// data a caller would otherwise reconstruct. `format` narrows to one record;
+/// omitted, **every** format comes back ([`BookProgress::furthest`] names the true
+/// place). `Ok(None)` when the uuid names no book; a known book never opened
+/// returns an envelope with no records.
 pub async fn book_progress(
     pool: &SqlitePool,
     user_id: i64,
@@ -444,13 +424,10 @@ pub async fn book_progress(
     }))
 }
 
-/// Which record represents the reader's true place.
-///
-/// Whole-book percent decides it, because that is the question — a reader is
-/// further along in the format they have covered more of, whichever they
-/// touched last. The comparison needs a percent on **every** record to mean
-/// anything, so a set with any missing one falls back to the most recent
-/// event time rather than ranking a known percent against an assumed zero.
+/// Which record represents the reader's true place: the one with the highest
+/// whole-book percent, whichever format was touched last. The comparison needs a
+/// percent on **every** record, so a set with any missing one falls back to the
+/// most recent event time rather than ranking a known percent against zero.
 fn furthest_of(records: &[ProgressRecord]) -> Option<ProgressFormat> {
     fn percent(r: &ProgressRecord) -> Option<i64> {
         r.resolved

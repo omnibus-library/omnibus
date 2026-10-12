@@ -10,9 +10,8 @@ use super::image_upload::use_file_upload;
 use crate::components::{ConfirmModal, MarkSize, Ring};
 use crate::data;
 
-/// Wrapper that renders an "edit" pencil button positioned over its child.
-/// The button is hidden by default and revealed on hover/focus (via the
-/// `author-photo-edit__overlay` CSS rule). Clicking opens the modal.
+/// Wrapper that renders an "edit" pencil button over its child, revealed on
+/// hover/focus; clicking opens the modal.
 ///
 /// `on_change` fires after a successful URL/upload/scan so the parent can
 /// re-fetch the author payload and swap in the new photo.

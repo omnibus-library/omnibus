@@ -13,15 +13,11 @@ pub enum IdentityError {
     Db(#[from] sqlx::Error),
 }
 
-/// Reconstruct a book/attachment's `scan_key` (its scanner-relative path)
-/// from the stored `(path, filename, format)` and the part count, matching
-/// exactly what the Phase-A walk would emit so the diff doesn't
-/// misclassify a backfilled row as New.
-///
-/// A folder of `.mp3` chapters has a directory `scan_key` with **no**
-/// extension (its `book_file_parts` count is > 1); every other shape — an
-/// `.epub`, a single `.m4b`/`.m4a`, or a single `.mp3` — is a file whose
-/// `scan_key` carries the lowercased extension.
+/// Reconstruct a book/attachment's `scan_key` (its scanner-relative path) from
+/// the stored `(path, filename, format)` and part count, matching what the
+/// Phase-A walk emits so the diff doesn't misclassify a backfilled row as New.
+/// A folder of `.mp3` chapters (part count > 1) has a directory `scan_key` with
+/// no extension; every other shape carries the lowercased extension.
 fn reconstruct_scan_key(path: &str, filename: &str, format: &str, part_count: i64) -> String {
     let is_mp3_folder = format.eq_ignore_ascii_case("MP3") && part_count > 1;
     let leaf = if is_mp3_folder {
@@ -48,18 +44,13 @@ pub async fn backfill_scan_keys(pool: &SqlitePool) -> Result<(), IdentityError> 
     Ok(())
 }
 
-/// Fill `book_files.scan_key` (migration 0043) for every row from its own
-/// stored `(path, filename, format)` + part count — the same reconstruction
-/// the `books`/`merged_uuids` backfills use. Attached rows carry their
-/// file's real `path` (the attach writer sets it) and reconstruct from it
-/// directly. A **native** row never has `book_files.path` set (only
-/// `books.path` is) — `bf.path` is `NULL` there, so this JOINs `books` and
-/// falls back to the book's own `path` for those rows. Without the JOIN a
-/// native row at `A/one.epub` would backfill to the bare leaf `one.epub`,
-/// losing the directory — which broke the per-file `bf.scan_key = b.scan_key`
-/// anchor match `list_indexed_rows_for_formats` relies on.
-/// Idempotent — `scan_key IS NULL` only.
+/// Fill `book_files.scan_key` for every row from its stored
+/// `(path, filename, format)` and part count, as the `books`/`merged_uuids`
+/// backfills do. Idempotent: `scan_key IS NULL` rows only.
 async fn backfill_book_files_scan_keys(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    // A native row has no `book_files.path`, so JOIN `books` and fall back to its
+    // path: else `A/one.epub` backfills to the bare leaf, breaking the
+    // `bf.scan_key = b.scan_key` anchor match in `list_indexed_rows_for_formats`.
     let rows: Vec<(i64, String, String, String, i64)> = sqlx::query_as(
         "SELECT bf.id, COALESCE(bf.path, b.path), bf.filename, bf.format,
                 (SELECT COUNT(*) FROM book_file_parts p WHERE p.book_file_id = bf.id)

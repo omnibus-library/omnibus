@@ -174,11 +174,9 @@ fn word_number(word: &str) -> Option<u32> {
 }
 
 /// Build the anchor map for a linked book, or `None` when no trustworthy
-/// anchoring exists. `ebook_file_id` is the served EPUB's `book_files` row
-/// (spine stats + chapters live under it). Computes the audio marks itself —
-/// callers that already hold them (because they also need
-/// [`usable_audio_mark_count`]) should call [`anchor_map_from_marks`]
-/// instead, to avoid a redundant `audio_marks` fetch.
+/// anchoring exists. `ebook_file_id` is the served EPUB's `book_files` row.
+/// Computes the audio marks itself; a caller that already holds them should
+/// call [`anchor_map_from_marks`] instead to skip a redundant fetch.
 pub(super) async fn anchor_map(
     pool: &SqlitePool,
     ebook_file_id: i64,
@@ -309,11 +307,9 @@ fn positional_fallback(
 const MAX_CHAPTER_OFFSET: u32 = 12;
 
 /// How many of the earliest pairs arbitrate between the two numbering
-/// hypotheses. The offset is only *identifiable* at the front of the book:
-/// there the front matter's extent is measurable on both sides at once,
-/// whereas each axis being normalized to its own total turns a constant
-/// chapter offset into a shear, whose whole-book residual comes out nearly
-/// the same either way.
+/// hypotheses.
+// The offset is only identifiable at the book's front, where front matter is
+// measurable on both axes; whole-book normalization turns it into a shear.
 const OFFSET_SCORE_ANCHORS: usize = 5;
 
 /// How much tighter the offset hypothesis must fit before it displaces
@@ -321,13 +317,10 @@ const OFFSET_SCORE_ANCHORS: usize = 5;
 /// every tie and every close call.
 const OFFSET_SCORE_MARGIN: f64 = 3.0;
 
-/// The chapter-number rung: plain equality, or the same pairing shifted by
-/// a constant offset when the audio numbers front matter the book leaves
-/// unnumbered. Equality alone reads GraphicAudio's "Chapter 5" as the
-/// book's chapter 5 when it is really chapter 3, and does so at full
-/// `ChapterAnchored` confidence, because every pair it makes is
-/// self-consistent — the whole map is displaced, so nothing local looks
-/// wrong.
+/// The chapter-number rung: plain equality, or the same pairing shifted by a
+/// constant offset when the audio numbers front matter the book leaves
+/// unnumbered. Equality alone displaces the whole map at full `ChapterAnchored`
+/// confidence, so nothing local looks wrong.
 fn match_chapter_numbers(
     text: &[TextMark],
     audio: &[AudioMark],
@@ -358,20 +351,14 @@ fn match_chapter_numbers(
     }
 }
 
-/// The offset hypothesis to test beside equality: how many more chapters
-/// the audio numbers than the book does. An audiobook that numbers the
-/// book's unnumbered front matter — Way of Kings' prelude and prologue,
-/// Frankenstein's four letters — runs exactly that far ahead, so its
-/// highest number exceeds the book's by the same amount. Highest number
-/// rather than a count of them: an ebook nav that reuses an ordinal
-/// (Stormlight files its interludes as "1-1", "1-2") has more numbered
-/// entries than chapters, while its maximum still names the last chapter.
-///
+/// The offset hypothesis to test beside equality: how many more chapters the
+/// audio numbers than the book (numbered front matter runs the audio ahead).
 /// `None` for a gap outside the plausible window, and for an audio side
-/// numbering *fewer* chapters than the book — that is an incomplete rip or
-/// a nav this rung can't read, and shifting the book forward against it is
-/// a guess with nothing behind it.
+/// numbering fewer chapters than the book (an incomplete rip or unreadable
+/// nav), where shifting the book forward would be a guess.
 fn chapter_number_offset(text: &[TextMark], audio: &[AudioMark]) -> Option<u32> {
+    // Highest number, not a count: a nav that reuses an ordinal has more numbered
+    // entries than chapters.
     let max_text = text.iter().filter_map(|t| t.chapter_no).max()?;
     let max_audio = audio
         .iter()
@@ -672,18 +659,11 @@ pub(super) fn interpolate(anchors: &[Anchor], frac: f64, text_to_audio: bool) ->
     frac
 }
 
-/// Fold user-declared sync points into the anchor set. User pairs are
-/// ground truth: they seed the set, and chapter anchors survive only where
-/// they stay strictly monotonic between the user pairs on both axes.
-///
-/// A chapter map the reader's own pair *contradicts* is dropped whole
-/// rather than trimmed. The map is one hypothesis, not a bag of
-/// independent observations — its usual failure is a displacement that
-/// runs the length of the book, so the pairs that still fit around a
-/// contradicting sync point fit by arithmetic rather than by being right.
-/// Splicing them kept a correction alive for the couple of chapters either
-/// side of the declaration and then handed the reader back to the same
-/// wrong map.
+/// Fold user-declared sync points into the anchor set. User pairs are ground
+/// truth: they seed the set, and chapter anchors survive only where they stay
+/// strictly monotonic between the user pairs on both axes. A chapter map a
+/// user pair contradicts is dropped whole, not trimmed: the pairs that still
+/// fit around it fit by arithmetic, not by being right.
 pub(super) fn merge_user_anchors(user: &[Anchor], chapter: Option<AnchorMap>) -> Option<AnchorMap> {
     if user.is_empty() {
         return chapter;
@@ -725,14 +705,9 @@ pub(super) fn merge_user_anchors(user: &[Anchor], chapter: Option<AnchorMap>) ->
 }
 
 /// Whether the chapter map disagrees with a reader's own pair by more than
-/// about one chapter. Compared against the map's own typical anchor
-/// spacing rather than a fixed fraction: "one chapter out" is the point at
-/// which a jump lands somewhere the reader would call wrong, and it means
-/// a different thing on a three-hour recording than on a fifty-hour one.
-///
-/// Any single disagreement condemns the map — see [`merge_user_anchors`].
-/// This does trust the declaration over the map, which is the trust order
-/// the rest of this module already uses.
+/// about one chapter, measured against the map's own typical anchor spacing.
+/// Any single disagreement condemns the map (see [`merge_user_anchors`]): the
+/// declaration is trusted over the map.
 fn contradicts(user: &[Anchor], chapter: &[Anchor]) -> bool {
     let Some(tolerance) = typical_anchor_gap(chapter) else {
         return false;

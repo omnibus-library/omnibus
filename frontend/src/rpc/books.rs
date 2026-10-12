@@ -52,24 +52,11 @@ pub async fn rpc_get_ebooks() -> Result<EbookLibrary> {
     .map_err(|e| internal_rpc_error("list ebooks", e))?)
 }
 
-/// Keyset-paginated landing read (the web path's Option-B replacement for
-/// the full-library `rpc_get_ebooks`). POST — like `rpc_search` — so the sort /
-/// filter / cursor arguments ride in the JSON body that Dioxus `#[get]` server
-/// functions can't carry.
-///
-/// The server owns the sort order, so the client drives `sort_key`/`sort_dir`
-/// and appends pages by feeding `next_cursor` back as `cursor`. The first page
-/// (`cursor == None`) also returns the `total` (header count) under the active
-/// `filters` and exclusion; later pages omit it so an infinite scroll doesn't
-/// re-pay the aggregate cost — the client caches it. `LibraryPage.facets` is
-/// always `None`.
-///
-/// `exclude_formats` is the caller's hidden-formats preference (from
-/// `UserSummary::hidden_formats`) — client-passed so only the landing surface
-/// applies it, and the first page's `total`/`hidden_count` report the size of
-/// the filtered, visible library and the receipt.
-///
-/// `stack_series` asks for the Stack series page (grid, no search, viewer preference on).
+/// Keyset-paginated landing read. POST, like `rpc_search`, so the sort / filter
+/// / cursor arguments ride in the JSON body. Feed `next_cursor` back as `cursor`
+/// for the next page; only the first page (`cursor == None`) returns `total` (under
+/// `filters` and the exclusion) and `hidden_count`; `facets` is always `None`.
+/// `exclude_formats` is the hidden-formats preference; `stack_series` asks for Stack series.
 #[post("/api/rpc/ebooks/page", pool: PoolExt, user: AuthUser)]
 #[allow(clippy::too_many_arguments)] // the macro adds pool/user to the seven query knobs
 pub async fn rpc_get_ebooks_page(
@@ -236,16 +223,10 @@ pub async fn rpc_get_ebook(uuid: String) -> Result<Option<EbookMetadata>> {
 }
 
 /// Admin: merge the book `source_uuid` into `target_uuid` — the target
-/// absorbs the source's files, links, identifiers, and progress; the
-/// source row disappears. Returns the `merge_log` id (the undo handle)
-/// and the surviving uuid. Same-format files are allowed (e.g. merging
-/// five M4B books into one). Domain failures (`SameBook`, …) surface as
-/// their display strings so the dialog can render them directly.
-///
-/// Mirrored by the REST `POST /api/books/merge` handler in
-/// `server::backend::merge`, which repeats this `AdminUser` gate — the
-/// merge itself is shared (`db::merge_books`), but the gate is not, so
-/// changing one side's gate means changing the other.
+/// absorbs the source's files, links, identifiers, and progress; the source
+/// row disappears. Returns the `merge_log` id (the undo handle) and the
+/// surviving uuid; domain failures (`SameBook`, …) surface as display strings.
+/// Mirrored by REST `POST /api/books/merge`, which repeats this `AdminUser` gate.
 #[post("/api/rpc/merge-books", pool: PoolExt, admin: AdminUser)]
 pub async fn rpc_merge_books(source_uuid: String, target_uuid: String) -> Result<MergeBooksResult> {
     match db::merge_books(&pool.0, &source_uuid, &target_uuid, Some(admin.0.id)).await {
@@ -353,17 +334,10 @@ async fn merge_candidates(
 }
 
 /// FTS5-backed search across the configured ebook and audiobook libraries.
-/// Empty or whitespace-only `q` returns an empty library.
-///
-/// POST (not GET) so the query string can ride in the JSON body — Dioxus
-/// `#[get]` server functions reject arg bodies because HTTP spec forbids
-/// bodies on GET.
-///
-/// `search_books` is capped server-side at `db::MAX_BOOKS_RETURNED` hits.
-/// Server functions can't expose response headers, so — unlike
-/// `rpc_get_ebooks` — the search path threads the full hit count through
-/// `EbookLibrary::total`, letting the web client show "N of M results"
-/// when the vec is truncated.
+/// Empty or whitespace-only `q` returns an empty library. POST (not GET) so the
+/// query rides in the JSON body. Capped server-side at `db::MAX_BOOKS_RETURNED`
+/// hits; unlike `rpc_get_ebooks`, the full hit count comes back in
+/// `EbookLibrary::total` so the client can show "N of M results".
 #[post("/api/rpc/search", pool: PoolExt, _user: AuthUser)]
 pub async fn rpc_search(q: String) -> Result<EbookLibrary> {
     Ok(search_ebooks(&pool.0, &q).await?)

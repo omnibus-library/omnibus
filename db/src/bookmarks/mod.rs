@@ -111,13 +111,10 @@ pub async fn bookmark_id_for_client_id(
     )
 }
 
-/// List a user's bookmarks in a book, each placed in the book and ordered
-/// by that position.
-///
-/// A bookmark's `position` is an opaque token — a CFI for the reader, a
-/// timestamp for the player — so both are placed here rather than leaving
-/// each caller to work out which it holds. `chronological` restores
-/// creation order.
+/// List a user's bookmarks in a book, each placed in the book and ordered by
+/// that position. A bookmark's `position` is an opaque token (a CFI for the
+/// reader, a timestamp for the player), placed here so callers needn't work out
+/// which it holds. `chronological` restores creation order.
 pub async fn list_bookmarks(
     pool: &SqlitePool,
     user_id: i64,

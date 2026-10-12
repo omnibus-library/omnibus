@@ -5,43 +5,23 @@
 //! sitting on the ledger's write path.
 
 /// Idle seconds that end a sitting. Comfortably above every client's flush
-/// interval — the longest is the iOS reader's 300s checkpoint — so no
-/// cadence can manufacture a split and only real idleness does.
-///
-/// `pub(crate)` because the forward-progress ledger scopes its accrual to the
-/// same sitting (`db::progress::ledger::observe_percent_tx`): a reader who
-/// flips back for a quote and returns has to land inside one sitting there for
-/// the same reason two of their checkpoint rows do here.
+/// interval (the longest is the iOS reader's 300s checkpoint), so only real
+/// idleness splits. `pub(crate)` because the forward-progress ledger scopes its
+/// accrual to the same sitting (`db::progress::ledger::observe_percent_tx`).
 pub(crate) const IDLE_GAP_SECS: i64 = 900;
 
-/// Shortest sitting that counts as a session. Opening a book and closing it
-/// again is a glance, not a sitting, and the writers' own 5s floor is far too
-/// low to filter one.
-///
-/// This bounds the **count** only: every second stays in the seconds totals,
-/// which are what "Time read" reports. Filtering the totals too would mean
-/// deleting time the user genuinely spent, and an inflated mean is a far
-/// smaller lie than an under-reported total. The floor lives here rather than
-/// at the writers so it applies to already-recorded rows, keeps a glance's
-/// seconds instead of discarding them, and stays one number rather than four
-/// (web, two iOS readers, the iOS player) that can drift apart.
+/// Shortest sitting that counts as a session: a glance is not a sitting, and the
+/// writers' own 5s floor is far too low to filter one. This bounds the **count**
+/// only; every second stays in the seconds totals, which "Time read" reports.
+// The floor lives here, not at the writers, so it applies to already-recorded rows
+// and stays one number rather than four that can drift apart.
 pub(super) const MIN_SITTING_SECS: i64 = 60;
 
 /// Wrap a session-row union in the gap-and-islands grouping, yielding one
-/// `(book_uuid, started_at, ended_at, secs, min_audio, max_audio)` row per
-/// stitched sitting: the book, the first row's start, the last row's end, the
-/// total seconds recorded across the sitting, and which tables fed it.
-///
-/// `inner` must select `book_uuid, started_at, ended_at, secs, is_audio` (0
-/// for a reading row, 1 for a listening one) and carries its own binds — this
-/// adds none, since the threshold is a const literal. `min_audio < max_audio`
-/// is a sitting both tables fed, which the session log renders as a mixed
-/// format rather than picking one.
-///
-/// Sittings are scoped per book, so the user-wide count stays the sum of
-/// every book's and the two surfaces can't disagree. Within a book the union
-/// spans both session tables, so a dual-format book read and listened to in
-/// one stretch is one sitting rather than one per table.
+/// `(book_uuid, started_at, ended_at, secs, min_audio, max_audio)` row per stitched
+/// sitting. `inner` must select `book_uuid, started_at, ended_at, secs, is_audio` (0
+/// reading, 1 listening) and carries its own binds. `min_audio < max_audio` marks a
+/// sitting both tables fed. Sittings are scoped per book, so counts sum across books.
 pub(super) fn stitched(inner: &str) -> String {
     // The break test compares against a running MAX of every earlier row's
     // `ended_at`, not LAG's immediately-preceding one: rows overlap when a

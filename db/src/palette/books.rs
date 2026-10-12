@@ -43,11 +43,8 @@ const PALETTE_BOOK_COLUMNS: &str = r"
 ";
 
 /// FTS5 books-arm palette query for a free-text (or `author:`/`series:`) query
-/// with no relational facet: bound `?1 = match_expr`,
-/// `?2 = library_paths JSON array`, `?3 = limit`. The `bm25` MATCH scan runs
-/// once inside a `MATERIALIZED` CTE and `total_count` is a scalar `COUNT(*)`
-/// over it, so the true (pre-cap) match total ships on every row alongside the
-/// capped result set.
+/// with no relational facet: bound `?1 = match_expr`, `?2 = library_paths JSON
+/// array`, `?3 = limit`. Every row carries the true (pre-cap) match total.
 fn search_books_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {
@@ -73,13 +70,11 @@ fn search_books_sql() -> &'static str {
     })
 }
 
-/// The two facet-bearing shapes, built per call because the number of
-/// `EXISTS` predicates varies with the query. Positional `?` throughout:
-/// match (when present), then paths, then one bind per facet, then the limit.
-///
-/// A facets-only query drops the `books_fts` join entirely — FTS5 rejects an
-/// empty `MATCH`, and with no rank to order by the library's own sort carries
-/// the order.
+/// The two facet-bearing shapes, built per call because the number of `EXISTS`
+/// predicates varies with the query. Positional `?` throughout: match (when
+/// present), then paths, then one bind per facet, then the limit. A facets-only
+/// query drops the `books_fts` join (FTS5 rejects an empty `MATCH`), so the
+/// library's own sort carries the order.
 fn faceted_books_sql(query: &SearchQuery, facets: &str) -> String {
     let visible = visible_book_sql("b", "l", "?");
     if query.fts_match.is_some() {
@@ -121,13 +116,10 @@ fn faceted_books_sql(query: &SearchQuery, facets: &str) -> String {
 }
 
 /// Run the FTS5 books arm of the palette for `trimmed` (already-trimmed,
-/// length-capped query) scoped to `library_path`, capped to `limit`.
-///
-/// Returns the (capped) display hits alongside the *true* match count
-/// (before the cap), computed in a single pass: the scan runs once inside a
-/// `MATERIALIZED` CTE and the total is a scalar `COUNT(*)` over it — so the
-/// results header can show "N books" even when only `limit` ship.
-/// Returns `(vec![], 0)` when the input parses to nothing to run.
+/// length-capped query) scoped to `library_path`, capped to `limit`. Returns the
+/// capped display hits plus the *true* pre-cap match count, computed in a single
+/// pass, so the header can show "N books". `(vec![], 0)` when the input parses
+/// to nothing to run.
 pub async fn search_books(
     pool: &SqlitePool,
     library_path: &str,

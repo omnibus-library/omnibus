@@ -15,14 +15,10 @@ use super::shared::{
 };
 use super::{EntityAliasMaps, SyncError};
 
-/// Insert a batch of New entries: canonical `books` + `book_files` row,
-/// metadata link rows, FTS row. Returns the post-commit cover triples.
-///
-/// `removed_uuids` is this same sync's Removed-bucket output — passed through
-/// to the attach heuristic so it can tell a relocation (the matched target's
-/// own file just vanished this scan) from a genuine cross-format attachment.
-/// `alias_maps` is the whole New+Changed batch's reindex-resurrection guard
-/// lookup, pre-resolved by `super::collect_entity_alias_maps`.
+/// Insert a batch of New entries: canonical `books` + `book_files` row, metadata
+/// link rows, FTS row. Returns the post-commit cover triples. `removed_uuids` is
+/// this sync's Removed-bucket output, passed to the attach heuristic so it can
+/// tell a relocation from a genuine cross-format attachment.
 pub(super) async fn sync_new(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_id: i64,

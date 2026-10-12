@@ -63,20 +63,11 @@ pub async fn init_db(database_url: &str) -> Result<SqlitePool, InitDbError> {
     Ok(pool)
 }
 
-/// Build the SQLite pool and register the per-connection PRAGMA setup.
-///
-/// PRAGMAs `foreign_keys`, `busy_timeout`, and `synchronous` are
-/// *per-connection* settings — they only apply to the connection that
-/// executed them, and any future connection the pool spins up would start
-/// with SQLite's defaults. Applying them inside `after_connect` makes every
-/// pooled connection initialize the same way. `journal_mode = WAL` is a
-/// database-level setting stored in the SQLite header, so it only needs to
-/// take effect once; running it on every connection is cheap (returns the
-/// current mode) and keeps the logic in one place. It's skipped for
-/// in-memory databases so test output isn't littered with pragma results.
-///
-/// Every connection also registers the two sort collations — see
-/// [`with_sort_collations`].
+/// Build the SQLite pool and register the per-connection PRAGMA setup
+/// (`foreign_keys`, `busy_timeout`, `synchronous`, applied in `after_connect`
+/// so every pooled connection gets them; `journal_mode = WAL` is skipped for
+/// in-memory databases). Every connection also registers the sort collations,
+/// see [`with_sort_collations`].
 async fn connect_pool(database_url: &str, is_memory: bool) -> Result<SqlitePool, sqlx::Error> {
     let options = with_sort_collations(SqliteConnectOptions::from_str(database_url)?);
     SqlitePoolOptions::new()
@@ -86,6 +77,8 @@ async fn connect_pool(database_url: &str, is_memory: bool) -> Result<SqlitePool,
                 conn.execute("PRAGMA foreign_keys = ON").await?;
                 conn.execute("PRAGMA busy_timeout = 5000").await?;
                 conn.execute("PRAGMA synchronous = NORMAL").await?;
+                // WAL is database-level, so it only takes effect once; repeating
+                // it per connection is cheap and keeps the setup in one place.
                 if !is_memory {
                     conn.execute("PRAGMA journal_mode = WAL").await?;
                 }
@@ -98,12 +91,9 @@ async fn connect_pool(database_url: &str, is_memory: bool) -> Result<SqlitePool,
 
 /// Register the app's sort collations on every connection `options` opens:
 /// `dictionary` (accent- and case-insensitive, plain spelling first on a tie)
-/// for the text axes, and `author_dictionary` (the same order over each
-/// name's surname-first key) for the Author axis.
-///
-/// Query-only, by rule: a collation named in a migration, an index or a
-/// column definition would make the database unreadable to any tool that
-/// opens it without the app ("no such collation sequence").
+/// for the text axes and `author_dictionary` (the same order over each name's
+/// surname-first key) for Author. Query-only: a collation named in a migration,
+/// index or column would make the database unreadable to other tools.
 fn with_sort_collations(options: SqliteConnectOptions) -> SqliteConnectOptions {
     options
         .collation("dictionary", dictionary_cmp)
@@ -212,22 +202,15 @@ async fn repair_ghosted_audiobook_attachments(pool: &SqlitePool) -> Result<(), s
 }
 
 /// Repair multi-part audiobook merges damaged before the per-file attach fix.
-/// Two idempotent steps, both `WHERE`-guarded no-ops once healthy:
-///
-/// 1. Plant a `merged_uuids` guard for every attached audiobook `book_files`
-///    row missing one — the state the old `(book, format)` single-occupancy
-///    slot left, where all but one part lost its guard and resurrected as a
-///    standalone book on each scan. An attachment is identified by its
-///    `scan_key` differing from its book's own native `scan_key`.
-/// 2. Delete standalone books that duplicate a file now attached elsewhere (the
-///    resurrected copies) — but only when they carry **no** user data, so a
-///    dupe someone rated/journaled is left for a deliberate manual merge. The
-///    `delete_fts` + orphan-taxonomy prune mirror the merge finalize.
-///
-/// Runs after `backfill_scan_keys` so `book_files.scan_key` is populated.
+/// Two idempotent, `WHERE`-guarded steps (no-ops once healthy), run after
+/// `backfill_scan_keys`: plant a `merged_uuids` guard for every attached
+/// audiobook `book_files` row missing one, then delete standalone duplicates of
+/// a file now attached elsewhere, only if they carry **no** user data.
 async fn repair_multipart_audiobook_attachments(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
+    // An attachment is a row whose `scan_key` differs from its book's own
+    // native `scan_key`.
     let orphaned: Vec<(i64, String, String, String)> = sqlx::query_as(
         "SELECT bf.book_id, bf.format, bf.scan_key, COALESCE(bf.library_path, l.path)
            FROM book_files bf
@@ -281,6 +264,7 @@ async fn repair_multipart_audiobook_attachments(pool: &SqlitePool) -> Result<(),
     )
     .fetch_all(&mut *tx)
     .await?;
+    // Same cleanup as the merge finalize.
     for id in &dupes {
         crate::sync::delete_fts(&mut tx, *id).await?;
     }
@@ -315,17 +299,10 @@ async fn repair_multipart_audiobook_attachments(pool: &SqlitePool) -> Result<(),
 /// delete, so 400 keeps either comfortably under SQLite's 999-bind cap.
 const BOOT_REPAIR_CHUNK: usize = 400;
 
-/// Run the one-time legacy cover-cache purge on the blocking pool.
-///
-/// The previous `stable_uuid` implementation hashed via `DefaultHasher` and
-/// produced toolchain-dependent UUIDs. Switching to UUIDv5 changes every
-/// cover id on the next reindex, so any pre-existing `<old-uuid>.<ext>` files
-/// would be orphaned and never served again. `purge_legacy_covers_once`
-/// walks the covers dir with synchronous `std::fs`, which can be large on the
-/// first boot after the upgrade, so it runs on the blocking pool — boot still
-/// awaits completion, keeping other runtime tasks schedulable during the
-/// sweep. A `JoinError` (a panic in the sweep) is logged and swallowed: the
-/// covers dir is a rebuildable cache, so a failed purge must not abort boot.
+/// Run the one-time legacy cover-cache purge on the blocking pool: the sweep is
+/// synchronous `std::fs` over a possibly large directory. Boot awaits it. A
+/// `JoinError` (a panic in the sweep) is logged and swallowed, since the covers
+/// dir is a rebuildable cache that must not abort boot.
 async fn run_legacy_cover_purge() {
     let dir = covers_dir();
     if let Err(join_err) = tokio::task::spawn_blocking(move || {
@@ -337,15 +314,10 @@ async fn run_legacy_cover_purge() {
     }
 }
 
-/// Run the one-time thumbnail-cache purge for the current encoder scheme on
-/// the blocking pool.
-///
-/// Same shape and rationale as [`run_legacy_cover_purge`] above: the sweep is
-/// synchronous `std::fs` over a directory that holds three files per book, so
-/// it runs on the blocking pool while boot awaits it, and a `JoinError` is
-/// logged and swallowed because a rebuildable cache must never abort boot.
-/// See `thumbs::purge_stale_scheme_thumbs_once` for why a re-encode needs
-/// this at all.
+/// Run the one-time thumbnail-cache purge for the current encoder scheme on the
+/// blocking pool. Same shape as [`run_legacy_cover_purge`]: boot awaits it, and
+/// a `JoinError` is logged and swallowed. See
+/// `thumbs::purge_stale_scheme_thumbs_once` for why a re-encode needs it.
 async fn run_thumb_scheme_purge() {
     if let Err(join_err) =
         tokio::task::spawn_blocking(crate::thumbs::purge_stale_scheme_thumbs_once).await
@@ -367,25 +339,11 @@ fn is_memory_url(database_url: &str) -> bool {
 /// purge on subsequent boots. See `purge_legacy_covers_once`.
 const COVERS_SCHEME_SENTINEL: &str = ".omnibus-cover-scheme-v5";
 
-/// One-time cleanup for the cover cache when upgrading from the legacy
-/// `DefaultHasher`-derived UUIDs to UUIDv5. The old derivation produced
-/// toolchain-dependent ids, whose output
-/// changes between Rust toolchains; the new derivation uses RFC 4122 UUIDv5,
-/// which produces different ids for the same `(library_path, filename)`
-/// inputs. Any cover files written under the old scheme are now unreachable
-/// — the `books.uuid` column will be rewritten on the next reindex, but the
-/// orphan files would sit in the covers dir forever.
-///
-/// This is deliberately best-effort: an unreadable or uncreatable dir,
-/// permission errors, and individual unlink failures are all
-/// logged-and-swallowed rather than surfaced. The covers directory is a
-/// cache; the worst outcome of failure is a few stale files, not a broken
-/// server. The sentinel file ensures we only sweep once per install.
-///
-/// **The sentinel lands only on a clean sweep.** Writing it after a partial
-/// one would mark the directory as current while a legacy file is still
-/// sitting in it, orphaned forever. Leaving the sentinel absent costs a
-/// re-sweep of an already-empty directory on the next boot.
+/// One-time cleanup of the cover cache for the legacy `DefaultHasher`-derived
+/// UUIDs, whose files become unreachable. Best-effort: dir, permission and
+/// unlink errors are logged and swallowed (the dir is a cache). The sentinel
+/// file limits this to one sweep per install and lands only on a clean one, so
+/// a partial sweep is retried next boot.
 fn purge_legacy_covers_once(dir: &Path) {
     let sentinel = dir.join(COVERS_SCHEME_SENTINEL);
     if sentinel.exists() {
@@ -404,16 +362,13 @@ enum PurgeOutcome {
     Skipped,
 }
 
-/// Sweep `dir`'s top-level regular files, removing each one, and return
-/// `(removed, left_behind)` counts. `None` means the sweep couldn't
-/// proceed at all — an unreadable directory, or a missing one that
-/// couldn't be created — and the caller must leave the scheme unmarked.
-///
-/// A directory that doesn't exist yet has nothing to purge, but still
-/// counts as a clean sweep: leaving a fresh install unmarked means its
-/// *second* boot finds an unmarked directory and deletes every cover the
-/// first boot's indexing run just extracted.
+/// Sweep `dir`'s top-level regular files, removing each, and return
+/// `(removed, left_behind)`. `None` means the sweep couldn't proceed (unreadable
+/// dir, or a missing one that couldn't be created); the caller must leave the
+/// scheme unmarked. A missing dir is created and counts as a clean sweep.
 fn sweep_legacy_covers_dir(dir: &Path) -> Option<(usize, usize)> {
+    // Mark a fresh install clean: leaving it unmarked would make its second
+    // boot delete every cover the first boot's indexing run extracted.
     if !dir.exists() {
         return match std::fs::create_dir_all(dir) {
             Ok(()) => Some((0, 0)),
@@ -451,13 +406,10 @@ fn sweep_legacy_covers_dir(dir: &Path) -> Option<(usize, usize)> {
     Some((removed, left_behind))
 }
 
-/// Remove one `read_dir` entry if it's a top-level regular file. Only
-/// regular files are touched — subdirectories are left alone, since
-/// nothing in this layer writes them today and a future version that does
-/// shouldn't have them swept away. An entry that can't be read or stat'd
-/// counts as [`PurgeOutcome::LeftBehind`] for the same reason a removal
-/// failure does: it can't be verified as clean, so the sentinel must not
-/// land.
+/// Remove one `read_dir` entry if it's a top-level regular file; subdirectories
+/// are left alone. An entry that can't be read or stat'd counts as
+/// [`PurgeOutcome::LeftBehind`], like a removal failure: it can't be verified
+/// clean, so the sentinel must not land.
 fn purge_one_legacy_cover(dir: &Path, entry: std::io::Result<std::fs::DirEntry>) -> PurgeOutcome {
     let entry = match entry {
         Ok(e) => e,

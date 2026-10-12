@@ -13,20 +13,11 @@ use sqlx::{SqliteConnection, SqlitePool};
 /// per book id per list, comfortably under SQLite's ~999-parameter cap.
 const UPSERT_BATCH_CHUNK: usize = 450;
 
-/// The `SELECT` projection shared by the per-book upsert and the
-/// whole-table rebuild: same columns, same correlated subqueries for the
-/// taxonomy joins and the ISBN lookup. Built once so the three call sites
-/// can't drift apart — append `WHERE b.id = ?` for the single-book form, or
-/// leave it off to project every row.
-///
+/// The `SELECT` projection shared by the per-book upsert and the whole-table
+/// rebuild: same columns, same correlated subqueries, built once so the call
+/// sites can't drift apart (append `WHERE b.id = ?` for the single-book form).
 /// `authors` / `series` / `tags` mirror the rename-trigger projections in
-/// 0005_fts5.sql so the inline upsert and the triggers agree on the same
-/// text. `isbn` takes the first ISBN-scheme identifier (case-insensitive)
-/// straight from `book_identifiers` — the canonical source now that the
-/// denormalized `books.isbn` column is gone. `genres` is the one column
-/// with no canonical table behind it: nothing Omnibus parses carries a genre,
-/// so migration `0066` gives them no link table and the override JSON is
-/// their only storage — see [`GENRES_FROM_OVERRIDES`].
+/// 0005_fts5.sql; `genres` has no canonical table, see [`GENRES_FROM_OVERRIDES`].
 fn fts_select_from_books() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {
@@ -55,32 +46,12 @@ fn fts_select_from_books() -> &'static str {
 }
 
 /// The `genres` source expression for a book aliased `b`: the override JSON's
-/// `$.genres`, space-joined. Two guards, both load-bearing now that this runs
-/// on the *write* path — every scan and every admin rebuild — rather than on
-/// one read.
-///
-/// **`json_valid`, applied to the argument rather than as a `WHERE` filter.**
-/// `json_each` raises `malformed JSON` on a bad blob, and a corrupt
-/// `overrides` row is reachable state this codebase already models (a
-/// hand-edited DB, or a schema predating a field — see
-/// `get_metadata_overrides_returns_serialization_error_for_corrupt_blob`).
-/// One such row would otherwise fail every reindex and the admin rebuild. A
-/// `WHERE` guard would leave that riding on the planner evaluating it before
-/// the table-valued function; substituting `'{}'` into the argument cannot.
-///
-/// **The precedence gate**, mirroring `apply_overrides`'s
-/// `overrides_outrank_embedded` early return. Without it this door and
-/// `overlay_overrides` — which sources the same column from precedence-gated
-/// merged metadata — write different genres for the same book inside the same
-/// transaction, so what `genre:` matched would depend on which path last
-/// touched the row. A no-op under the default precedence, where the override
-/// layer already outranks embedded metadata.
-///
-/// `json_each` on an array exposes the 0-based index as `key`, so the gate is
-/// a direct translation of that function's `position()` comparison. A missing
-/// entry on either side leaves the comparison NULL and falls back to true,
-/// matching its `_ => true` arm — as does a malformed list, which
-/// `parse_metadata_precedence` likewise resolves to the overrides-win default.
+/// `$.genres`, space-joined. A corrupt overrides blob yields no genres instead of
+/// failing the reindex, and the metadata-precedence gate keeps this door in step
+/// with `overlay_overrides` (a no-op under the default precedence).
+// `json_valid` guards the `json_each` argument, not a `WHERE` (which would rely on
+// planner order). The gate mirrors `apply_overrides`'s `overrides_outrank_embedded`
+// early return; a missing entry or malformed list falls back to true, as there.
 const GENRES_FROM_OVERRIDES: &str = "
     CASE WHEN (SELECT COALESCE(
                  (SELECT o.key FROM json_each(CASE WHEN json_valid(sr.metadata_precedence)
@@ -104,17 +75,10 @@ const GENRES_FROM_OVERRIDES: &str = "
 /// insert sites.
 const FTS_INSERT_COLUMNS: &str = "rowid, title, authors, series, tags, description, isbn, genres";
 
-/// Delete-then-insert the `books_fts` row for `book_id`, sourcing the
-/// indexed text from the canonical `books` row plus its taxonomy links.
-///
-/// This is the only place that inserts a single `books_fts` row (the
-/// whole-table rebuild in [`rebuild_all_fts`] uses the same projection but
-/// batches it into one statement). The column set
-/// ([`FTS_INSERT_COLUMNS`]) is identical for ebooks and
-/// audiobooks — both live in the same `books` table and the joins below
-/// read whatever link rows exist — so one door serves both. A no-op
-/// INSERT when `book_id` has no `books` row, but callers only pass live
-/// ids.
+/// Delete-then-insert the `books_fts` row for `book_id`, sourcing the indexed text
+/// from the canonical `books` row plus its taxonomy links. The only place that
+/// inserts a single `books_fts` row; one door serves ebooks and audiobooks (same
+/// `books` table). A no-op INSERT when `book_id` has no `books` row.
 pub(crate) async fn upsert_fts(
     conn: &mut SqliteConnection,
     book_id: i64,
@@ -134,13 +98,10 @@ pub(crate) async fn upsert_fts(
 }
 
 /// The many-books counterpart of [`upsert_fts`]: delete-then-insert the
-/// `books_fts` rows for every id in `book_ids`, two DML statements per
-/// chunk of [`UPSERT_BATCH_CHUNK`] rather than 2N statements for N books.
-/// For a caller that already knows its whole affected-book set up front
-/// (a merge/split undo replaying a snapshot) this replaces a per-book
-/// `upsert_fts` loop; duplicate ids in `book_ids` are harmless — the
-/// `INSERT ... SELECT ... WHERE b.id IN (...)` reads one row per distinct
-/// book regardless of how many times its id appears in the bound list.
+/// `books_fts` rows for every id in `book_ids`, two DML statements per chunk of
+/// [`UPSERT_BATCH_CHUNK`] rather than 2N. For a caller that knows its whole
+/// affected set up front (a merge/split undo replaying a snapshot); duplicate ids
+/// are harmless.
 pub(crate) async fn upsert_fts_batch(
     conn: &mut SqliteConnection,
     book_ids: &[i64],
@@ -186,15 +147,10 @@ pub(crate) async fn delete_fts(
 }
 
 /// Rebuild the entire `books_fts` index from `books`: drop every row, then
-/// re-insert every row in one batched `INSERT ... SELECT`. Used by the
-/// admin "rebuild search index" job to repair any drift left by a failed
-/// post-commit refresh. Idempotent — safe to re-run.
-///
-/// Two DML statements total regardless of library size — previously this
-/// looped `upsert_fts` per book (2N statements for N books, one DELETE +
-/// one INSERT each). Runs in a single transaction so the index is never
-/// observed empty mid-rebuild. Orphan `books_fts` rows (rowid with no
-/// `books` row) are swept by the leading `DELETE`.
+/// re-insert every row in one batched `INSERT ... SELECT`. Used by the admin
+/// "rebuild search index" job to repair drift from a failed post-commit refresh.
+/// Idempotent; two DML statements in a single transaction, so the index is never
+/// observed empty mid-rebuild, and orphan rows are swept by the leading `DELETE`.
 pub async fn rebuild_all_fts(pool: &SqlitePool) -> anyhow::Result<()> {
     let mut tx = pool
         .begin()

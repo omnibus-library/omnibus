@@ -120,12 +120,9 @@ pub async fn apply_merge_tags(
 
 /// Shared merge body for authors/series/tags. Snapshots every source's
 /// name/sort/links(/photo), moves links onto the canonical id with
-/// `INSERT OR IGNORE` (survives a book already linked to both), records
-/// each source's name in `entity_aliases`, then deletes the source rows —
-/// staged across [`snapshot_canonical`], [`move_source_links`],
-/// [`reconcile_photos_and_sort`], [`delete_sources_and_reap_taxonomy`], and
-/// [`rederive_fts_and_log`], all inside the one transaction this function
-/// owns.
+/// `INSERT OR IGNORE` (survives a book already linked to both), records each
+/// source's name in `entity_aliases`, then deletes the source rows, all inside
+/// the one transaction this function owns.
 async fn apply_merge(
     pool: &SqlitePool,
     entity: MergeEntity,
@@ -212,12 +209,11 @@ async fn snapshot_canonical(
     ))
 }
 
-/// For each source id: snapshot its name/sort/links(/photo) and whatever it
-/// already aliased, move its links onto `canonical_id`, drop its own links,
-/// and record its name in `entity_aliases`. Every touched book id — from
-/// both the canonical's pre-merge links (via the caller-seeded `affected`)
-/// and each source's — accumulates into `affected` for the FTS rebuild
-/// pass. Returns one [`MergedSource`] per source id, in `source_ids` order.
+/// For each source id: snapshot its name/sort/links(/photo) and existing
+/// aliases, move its links onto `canonical_id`, drop its own links, and record
+/// its name in `entity_aliases`. Every touched book id accumulates into
+/// `affected` (seeded by the caller with the canonical's) for the FTS rebuild.
+/// Returns one [`MergedSource`] per source id, in `source_ids` order.
 async fn move_source_links(
     tx: &mut Transaction<'_, Sqlite>,
     entity: MergeEntity,
@@ -368,13 +364,11 @@ async fn reconcile_author_photos(
 // Tag split
 // ---------------------------------------------------------------------------
 
-/// Replace tag `source_id` with `atoms`: resolve-or-insert each atom,
-/// link it to every book the source tag was linked to, drop the source's
-/// links, then delete the source tag row. Each atom's linking is one
-/// set-based `INSERT ... SELECT` (via [`move_links`]) reading the source's
-/// current `books_tags_link` rows, not a per-book round trip — a popular
-/// tag split into a handful of atoms stays O(atoms) queries rather than
-/// O(atoms × books).
+/// Replace tag `source_id` with `atoms`: resolve-or-insert each atom, link it to
+/// every book the source tag was linked to, drop the source's links, then
+/// delete the source tag row. Linking is one set-based `INSERT ... SELECT` per
+/// atom (via [`move_links`]), so a popular tag costs O(atoms) queries, not
+/// O(atoms x books).
 pub async fn apply_tag_split(
     pool: &SqlitePool,
     source_id: i64,
@@ -437,25 +431,11 @@ pub async fn apply_tag_split(
 // Book title rename
 // ---------------------------------------------------------------------------
 
-/// Adopt `proposed_title` for `book_uuid` by routing through the existing
-/// metadata-overrides door — never touching `books.title` directly, so the
-/// rename composes with every other override field and reverts cleanly.
-///
-/// Like the other primitives, this runs in one `BEGIN IMMEDIATE`
-/// transaction: the previous-overrides snapshot is read through that same
-/// transaction (not the pool), then it composes [`upsert_one_in_tx`] (the
-/// tx-scoped body behind the pool-level
-/// [`crate::metadata_overrides::upsert_metadata_overrides`]) with the
-/// `cleanup_log` INSERT — so the snapshot read, the override write, and the
-/// log row all agree with each other and land together or not at all. The
-/// `books_fts` rebuild still runs best-effort after commit, matching every
-/// other override-write caller: a stale FTS row is recoverable and far less
-/// consequential than a stale series/tag link.
-///
-/// Takes a required `applied_by` (unlike the other primitives'
-/// `Option<i64>`) because the metadata-overrides write requires a real user
-/// id to attribute the write to, and [`super::undo::undo`] reuses that same
-/// id to attribute the restore.
+/// Adopt `proposed_title` for `book_uuid` through the metadata-overrides door,
+/// never touching `books.title`, so the rename composes with other overrides and
+/// reverts cleanly. One `BEGIN IMMEDIATE` transaction covers the snapshot read,
+/// override write and `cleanup_log` row; the `books_fts` rebuild is best-effort
+/// after commit. `applied_by` must be a real user id; undo reuses it.
 pub async fn apply_book_title_override(
     pool: &SqlitePool,
     book_uuid: &str,

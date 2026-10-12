@@ -83,16 +83,11 @@ pub fn used_bytes() -> u64 {
         .sum()
 }
 
-/// Delete the cached rewritten EPUB for `book_id`, if present.
-///
-/// Called once a book's override state fully clears — see
+/// Delete the cached rewritten EPUB for `book_id`, if present. Called once a
+/// book's override state fully clears (see
 /// [`crate::metadata_overrides::delete_metadata_overrides`] and
-/// [`crate::metadata_overrides::clear_cover_override`] — and when the book
-/// itself is deleted (`deletion::fs`), so the cache doesn't linger
-/// unreferenced. A missing file is a no-op; any other failure is
-/// logged and swallowed — the caller has already decided the cache shouldn't
-/// exist, and a stray file is a disk-space nuisance, not a correctness
-/// problem.
+/// [`crate::metadata_overrides::clear_cover_override`]) and when the book is
+/// deleted. A missing file is a no-op; other failures are logged and swallowed.
 pub fn invalidate_export_epub_cache(book_id: i64) {
     if let Err(e) = std::fs::remove_file(export_epub_path(book_id)) {
         if e.kind() != std::io::ErrorKind::NotFound {
@@ -102,14 +97,10 @@ pub fn invalidate_export_epub_cache(book_id: i64) {
 }
 
 /// Walk `export_epub_dir()` and delete cached rewritten EPUBs, oldest-mtime
-/// first, until the total cache size is under `cap_bytes`.
-///
-/// Unlike [`crate::thumbs::evict_if_over_cap`] there is no cache-hit mtime
-/// touch, so eviction order is FIFO by last-rewrite time rather than true
-/// LRU — acceptable here since this cache is written only on an explicit
-/// export/download action, not on every page view.
-///
-/// Must be called inside `tokio::task::spawn_blocking`.
+/// first, until the total cache size is under `cap_bytes`. Order is FIFO by
+/// last-rewrite time, not true LRU (no cache-hit mtime touch, unlike
+/// [`crate::thumbs::evict_if_over_cap`]). Must be called inside
+/// `tokio::task::spawn_blocking`.
 pub fn evict_if_over_cap(cap_bytes: u64) -> Result<(), std::io::Error> {
     let dir = export_epub_dir();
     if !dir.exists() {
@@ -153,13 +144,10 @@ pub fn evict_if_over_cap(cap_bytes: u64) -> Result<(), std::io::Error> {
 }
 
 /// Path to the EPUB that should be exported for `book_id`, given its `source`
-/// EPUB on disk.
-///
-/// Returns `Ok(None)` when the book has no active metadata/cover override — the
-/// caller then serves `source` unchanged (byte-faithful passthrough). Returns
-/// `Ok(Some(path))` to a cached rewritten EPUB otherwise, rebuilding it when
-/// stale vs. `books.last_modified`. Idempotent: a fresh cache is returned
-/// without touching the filesystem.
+/// EPUB on disk. `Ok(None)` when the book has no active metadata/cover override
+/// (the caller serves `source` unchanged); otherwise `Ok(Some(path))` to a cached
+/// rewritten EPUB, rebuilt when stale vs. `books.last_modified`. Idempotent: a
+/// fresh cache is returned without touching the filesystem.
 pub async fn rewritten_epub_path(
     pool: &SqlitePool,
     book_id: i64,
@@ -184,13 +172,10 @@ pub async fn rewritten_epub_path(
 }
 
 /// Core of [`rewritten_epub_path`]: given a book's id, its on-disk EPUB
-/// `source`, already-resolved merged `book` metadata, and its
-/// `last_modified` epoch, return the cached rewritten path (rebuilding it
-/// when stale) or `None` when the book has no active override. Takes no
-/// pool — every DB read it would otherwise need is already resolved by the
-/// caller, which is what lets [`rewrite_all_epubs_with_overrides`] bulk-fetch
-/// these three inputs for the whole fleet-wide pass instead of paying a
-/// `get_book` + `get_last_modified_epoch` round trip per book.
+/// `source`, already-resolved merged `book` metadata and `last_modified` epoch,
+/// return the cached rewritten path (rebuilt when stale) or `None` when the book
+/// has no active override. Takes no pool, so [`rewrite_all_epubs_with_overrides`]
+/// can bulk-fetch the inputs for a whole pass.
 async fn rewrite_or_reuse_cache(
     book_id: i64,
     source: &Path,
@@ -305,17 +290,9 @@ fn rewrite_blocking(src: &Path, dst: &Path, book: &EbookMetadata) -> anyhow::Res
 }
 
 /// Rewrites every book's export-EPUB cache to bake in its active override, the
-/// fleet-wide sibling of the per-book [`rewritten_epub_path`] bake; a
-/// per-book failure is recorded rather than aborting the run.
-///
-/// `book_uuid → (book_id, source path, last_modified)` is resolved for the
-/// whole batch up front via [`crate::books::resolve_book_ids_bulk`],
-/// [`crate::books::book_file_paths`], and [`crate::covers::last_modified_bulk`]
-/// — each a handful of chunked `IN (...)` queries — plus one bulk
-/// [`crate::books::get_books_by_ids`] for the merged metadata every rewrite
-/// needs. This replaces what used to be up to four sequential DB round trips
-/// *per book*; the only work left inside the per-book loop is the
-/// filesystem-bound rewrite itself.
+/// fleet-wide sibling of the per-book [`rewritten_epub_path`] bake; a per-book
+/// failure is recorded rather than aborting the run. The per-book inputs are
+/// resolved up front in bulk, so the loop does only the filesystem-bound rewrite.
 pub async fn rewrite_all_epubs_with_overrides(
     pool: &SqlitePool,
 ) -> anyhow::Result<BulkRewriteSummary> {

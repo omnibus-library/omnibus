@@ -11,13 +11,11 @@ use super::detect::kepubify_bin;
 use super::fs::{is_stale_async, kepub_dir, kepub_path};
 use super::KepubError;
 
-/// Convert `book_id`'s EPUB to a cached KEPUB and return its path.
-///
-/// Returns the cached path unchanged when it is already fresh vs.
-/// `books.last_modified` (idempotent). Otherwise runs kepubify into a temp
-/// file and atomically renames it into place so a concurrent reader never
-/// sees a torn file. Errors when the book/EPUB is missing or kepubify fails —
-/// the caller then falls back to serving the plain EPUB.
+/// Convert `book_id`'s EPUB to a cached KEPUB and return its path. Idempotent:
+/// returns the cached path unchanged when already fresh vs. `books.last_modified`;
+/// otherwise runs kepubify into a temp file and atomically renames it into place,
+/// so a concurrent reader never sees a torn file. Errors when the book/EPUB is
+/// missing or kepubify fails (the caller falls back to the plain EPUB).
 pub async fn convert_book(pool: &SqlitePool, book_id: i64) -> Result<PathBuf, KepubError> {
     let last_modified = crate::get_last_modified_epoch(pool, book_id)
         .await

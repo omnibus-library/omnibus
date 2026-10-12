@@ -72,11 +72,9 @@ pub(super) fn supplied_links(snap: &SourceSnapshot) -> HashSet<(String, String)>
 }
 
 /// Copy the source's authors, tags and publishers onto the target and clear
-/// every source link row. Returns what was added, for undo.
-///
-/// The source's authors go **after** the target's: sharing position 0 left
-/// the credit order to chance, which is how a merge demoted the kept entry's
-/// primary author.
+/// every source link row. Returns what was added, for undo. The source's
+/// authors go **after** the target's, so the kept entry's primary author stays
+/// at position 0.
 pub(super) async fn move_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_id: i64,

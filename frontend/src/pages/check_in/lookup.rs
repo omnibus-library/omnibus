@@ -84,11 +84,8 @@ pub(super) fn LookupScreen(
 /// The Open-Library-fallback disclaimer, shown under whichever input screen
 /// is fronting the provider ladder — this one or the scanner.
 ///
-/// `data::google_books_configured` is a non-admin-gated boolean check (any
-/// authenticated user may read it), so every caller — web and mobile alike —
-/// can fetch it directly with no role check and no guaranteed-403 round trip
-/// for non-admins. Starts `None` on both SSR and the first WASM paint, so the
-/// note only appears after the post-mount fetch resolves (rule 07).
+/// `data::google_books_configured` is not admin-gated, so every caller (web
+/// and mobile) fetches it directly. It appears only after the post-mount fetch.
 #[component]
 pub(super) fn ProviderNote() -> Element {
     let server_url = use_server_url();

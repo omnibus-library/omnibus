@@ -154,21 +154,11 @@ impl ReaderPrefs {
     }
 }
 
-/// Construct the reader-prefs signals.
-///
-/// SSR-safe by construction: every signal starts at the same
-/// target-agnostic default on every target (server, web, mobile) so the
-/// first paint matches on every target — no hydration mismatch. A
-/// target-agnostic `use_effect` then reads any persisted `localStorage`
-/// values back in (web only; a no-op everywhere else) after the component
-/// mounts and updates the signals that have a saved preference, triggering
-/// a single re-render to apply it. Mobile overwrites the same defaults
-/// asynchronously once `mobile::prefs_storage::load_and_apply_reader_prefs`
-/// resolves the WebView's `localStorage` (see that function's doc for the
-/// first-paint timing tradeoff). Mirrors the `init_theme` hydration pattern
-/// in `frontend/src/components/atrium.rs`. `theme` is borrowed from the
-/// app-wide atrium signal so changes here flip both reader and the
-/// surrounding chrome.
+/// Construct the reader-prefs signals, SSR-safe: every signal starts at the same
+/// target-agnostic default on every target, so first paint matches. Persisted
+/// values are read back after mount (web: an effect; mobile:
+/// `prefs_storage::load_and_apply_reader_prefs`). `theme` is the app-wide atrium
+/// signal, so changes here flip the surrounding chrome too.
 pub(crate) fn init_reader_prefs(theme: Signal<Theme>) -> ReaderPrefs {
     let snap = use_context::<ThemeSnap>();
     let mut font_size = use_signal(default_font_size);

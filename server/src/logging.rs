@@ -12,18 +12,11 @@ mod tests;
 
 use error_ring_layer::ErrorRingLayer;
 
-/// Install the global tracing subscriber. Runs first in `main`, before
-/// `server::serve`, so it is the process's only subscriber. `RUST_LOG` wins
-/// when set; the fallback keeps omnibus events visible without dependency
-/// noise.
-///
-/// Two sinks share one env-filter: a compact human-readable layer to stderr for
-/// local dev, and a non-blocking rolling-file layer emitting one JSON record per
-/// event for durable, machine-parseable logs. Returns the file writer's
-/// [`WorkerGuard`](tracing_appender::non_blocking::WorkerGuard); the caller must
-/// hold it for the process lifetime so buffered records flush on shutdown.
-/// `None` when the log directory can't be created — stderr logging still comes
-/// up so the server isn't blocked on a read-only volume.
+/// Install the global tracing subscriber. Runs first in `main`, so it is the process's only
+/// subscriber; `RUST_LOG` wins when set. Two sinks share one env-filter: stderr for local
+/// dev and a rolling JSON file. Returns the file writer's
+/// [`WorkerGuard`](tracing_appender::non_blocking::WorkerGuard), which the caller must hold
+/// for the process lifetime so records flush; `None` when the log dir can't be created.
 pub fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     use tracing_subscriber::{fmt, prelude::*};
 

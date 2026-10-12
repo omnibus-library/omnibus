@@ -4,12 +4,10 @@
 
 use super::HlsPart;
 
-/// Build an HLS VOD manifest from the stored part durations.
-///
-/// Each segment is 10 seconds; the last segment gets the remainder.
-/// When all parts have `duration_seconds = 0` (not yet lofty-probed) a
-/// minimal single-segment stub is returned so the frontend can still load the
-/// resource before the first real transcode finishes.
+/// Build an HLS VOD manifest from the stored part durations. Each segment is
+/// 10 seconds; the last gets the remainder. When all parts have
+/// `duration_seconds = 0` (not yet lofty-probed) a minimal single-segment stub is
+/// returned so the frontend can still load before the first real transcode.
 pub fn build_manifest(parts: &[HlsPart]) -> String {
     const TARGET: f64 = 10.0;
     // Cap: 100 hours of audio at 10s/segment. Real audiobooks max out

@@ -280,11 +280,6 @@ pub(super) fn spawn_load_more_effect(
 /// (after a create). Failures leave the list empty — the gallery then renders
 /// the All Books tile alone, and `loaded` stays false so a persisted shelf
 /// selection isn't wrongly reset against a missing list.
-///
-/// The dangling-pick reset lives *here*, in the fetch completion with the
-/// authoritative list in hand, rather than in a reactive effect over
-/// `(loaded, selection)` — that shape intermittently misfired during
-/// hydration and silently rewrote a valid persisted pick back to All.
 pub(super) fn spawn_shelves_list_effect(
     server_url: String,
     tick: Signal<u32>,
@@ -307,6 +302,9 @@ pub(super) fn spawn_shelves_list_effect(
                 answered.set(true);
                 return;
             };
+            // Reset a dangling pick here, with the authoritative list in hand: a
+            // reactive effect over `(loaded, selection)` would misfire during
+            // hydration and rewrite a valid persisted pick to All.
             let current = *selection.peek();
             if let ShelfSelection::Shelf(id) = current {
                 if !list.iter().any(|s| s.id == id) {
@@ -439,11 +437,10 @@ pub(super) struct MemberList {
 pub(super) type ShelfMembersKey = (ShelfSelection, SortKey, SortDir, ViewFilters, u32);
 
 /// Fetch the selected shelf's members whenever the key moves. The full list is
-/// layered over the browse pipeline rather than replacing it — the always-warm
+/// layered over the browse pipeline rather than replacing it, so the always-warm
 /// browse page keeps `lib_path`, the header subtitle, and the All Books mosaic
-/// working, and makes switching back to All instant. With no filter there is
-/// nothing for the narrowed list to fetch: the full list is what the lens
-/// draws, and the narrowed one clears.
+/// working. With no filter the narrowed list has nothing to fetch: the full list
+/// is what the lens draws, and the narrowed one clears.
 pub(super) fn spawn_shelf_members_effect(
     server_url: String,
     key: Memo<ShelfMembersKey>,

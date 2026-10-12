@@ -10,10 +10,9 @@ mod tests;
 
 /// What to do about hits that sit past the reader's own position.
 ///
-/// The default annotates rather than excludes: an agent that can see a hit
-/// is ahead of the reader can say "there's an answer, but it's ahead of
-/// you", which is more useful than silence — while `Exclude` is there for
-/// the case where the caller must not see the payoff at all.
+/// The default annotates rather than excludes, so an agent can say "there's an
+/// answer, but it's ahead of you"; `Exclude` is for callers who must not see the
+/// payoff at all.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]

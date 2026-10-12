@@ -31,12 +31,9 @@ fn reannotate(bridge: AnnotationBridge, anchor: &str, color: HighlightColor) {
 }
 
 /// Recolor a highlight to `next`: optimistically repaint the viewer + the row
-/// signal, persist via `update_highlight_color`, and roll both back to `prev`
-/// if the write fails. Mirrors the create/delete optimistic pattern.
-///
-/// A no-op when `next == prev` (clicking the already-selected swatch). The
-/// rollback is gated on the row still showing `next`, so a late failure from
-/// one request can't clobber a newer recolor that already succeeded.
+/// signal, persist via `update_highlight_color`, and roll both back to `prev` if
+/// the write fails. A no-op when `next == prev`. The rollback only applies while
+/// the row still shows `next`, so a late failure can't clobber a newer recolor.
 fn spawn_recolor(
     server_url: String,
     mut highlights: Signal<Vec<Highlight>>,

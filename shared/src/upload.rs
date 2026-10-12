@@ -24,14 +24,10 @@ pub mod commit_fields {
     pub const COVER_URL: &str = "cover_url";
 }
 
-/// Auto-extracted metadata returned by the inspect step. Each field mirrors
-/// what the indexer would read from the file's embedded metadata, so the
-/// review form starts from exactly what the library would show. The reader
-/// can correct any field before committing; the corrected `title`/`author`
-/// drive the on-disk folder.
-///
-/// The original four fields keep their place at the top level so the iOS
-/// client's decoder is untouched; everything the full edit form needs is
+/// Auto-extracted metadata returned by the inspect step, mirroring what the
+/// indexer would read from the file's embedded metadata. The reader can correct
+/// any field before committing; the corrected `title`/`author` drive the
+/// on-disk folder. The original four fields stay top-level and the rest are
 /// `#[serde(default)]`, so an older server's reply still decodes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UploadInspection {
@@ -171,17 +167,11 @@ pub struct UploadCommitResult {
 /// signature is 5.
 pub const EBOOK_MAGIC_LEN: usize = 5;
 
-/// Detect an uploadable ebook format from magic bytes. Returns the canonical
-/// lowercase extension for accepted formats. Mirrors
-/// [`crate::image_format::detect_image_format`] — pure byte inspection, no
-/// parser dependency, so it compiles on every target.
-///
-/// EPUB is a ZIP archive, so it carries the ZIP local-file-header magic
-/// `PK\x03\x04`; a PDF opens with `%PDF-`. A successful parse in the inspect
-/// handler is the second gate; this sniff just rejects obviously-wrong
-/// uploads (text, images, truncated files) before the heavier parse runs.
-/// The extension decides where the file is filed and which parser reads it,
-/// the way `audiobook_ext_of` lets the magic gate the family for audio.
+/// Detect an uploadable ebook format from magic bytes, returning the canonical
+/// lowercase extension (`PK\x03\x04` ZIP header for EPUB, `%PDF-` for PDF). Pure
+/// byte inspection, so it compiles on every target; it only rejects obviously
+/// wrong uploads, and a successful parse in the inspect handler is the second
+/// gate. The extension decides where the file is filed and which parser reads it.
 pub fn detect_ebook_format(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() < EBOOK_MAGIC_LEN {
         return None;
@@ -203,11 +193,9 @@ pub const AUDIOBOOK_MAGIC_LEN: usize = 8;
 
 /// Detect an uploadable audiobook container family from magic bytes, returning
 /// the representative lowercase family (`"mp4"` for `.m4a`/`.m4b`, `"mp3"` for
-/// `.mp3`). The caller keeps the uploaded `.m4a`/`.m4b` distinction from the
-/// filename — both share one ISO-BMFF container, so bytes alone can't tell them
-/// apart (nor from an audio-only `.mp4`, which the upload handler files as
-/// `.m4b`). Like [`detect_ebook_format`] this is a cheap first gate; a
-/// successful `lofty` parse in the inspect handler is the second.
+/// `.mp3`). The caller keeps the `.m4a`/`.m4b` distinction from the filename,
+/// since both share one ISO-BMFF container. Like [`detect_ebook_format`] this is
+/// a cheap first gate; a successful `lofty` parse is the second.
 pub fn detect_audiobook_format(bytes: &[u8]) -> Option<&'static str> {
     // ISO Base Media File Format (MP4): a `ftyp` box type at offset 4. Covers
     // `.m4a` and `.m4b` regardless of the specific brand (`M4A `, `M4B `,

@@ -18,15 +18,11 @@ use crate::metadata_overrides::sql::{
 
 use super::PaletteError;
 
-/// Series-arm palette query, bound `?1 = library_paths JSON array`, `?2 = like_pattern`,
-/// `?3 = limit`.
-///
-/// Both the count and the visibility gate read the shared effective
-/// membership (`effective_series_sql!`) narrowed to the visible books — the
-/// relation the Series index and smart-shelf series rules read — so a book
-/// rehomed through the edit form moves between the two counts, and a series
-/// whose every book was moved out drops from both. The `author_display` line
-/// follows the first book's creators override.
+/// Series-arm palette query, bound `?1 = library_paths JSON array`,
+/// `?2 = like_pattern`, `?3 = limit`. Count and visibility gate both read
+/// `effective_series_sql!` narrowed to the visible books, so a rehomed book moves
+/// between counts and a series whose every book was moved out drops from both.
+/// `author_display` follows the first book's creators override.
 pub(super) fn search_series_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {
