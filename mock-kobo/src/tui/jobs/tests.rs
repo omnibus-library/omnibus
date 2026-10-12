@@ -6,9 +6,9 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use tempfile::TempDir;
 
-use crate::control::{Control, LastSync, RESET_MESSAGE};
+use crate::control::{Control, ControlError, LastSync, RESET_MESSAGE};
 use crate::firmware::Quirk;
-use crate::state;
+use crate::state::{self, StateError};
 use crate::test_support::{
     control_wired_against, dune_stub, spawn_stub, spawn_sync, stub_control, wait_until, Stub,
     STUB_TOKEN,
@@ -212,6 +212,67 @@ async fn perform_set_url_reports_sync_in_progress_while_sync_runs() {
     );
     assert_eq!(control.view().url, stub.origin);
     running.abort();
+}
+
+#[tokio::test]
+async fn perform_set_url_refuses_rewire_while_sync_runs_without_contacting_server() {
+    let old = spawn_stub(never_answers()).await;
+    let new = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = control_wired_against(&old.origin, Some(&old.origin), dir.path().join("k.json"));
+    let running = spawn_sync(&control);
+    wait_until(|| control.view().syncing).await;
+
+    let status = perform(&control, &wiring(), Job::SetUrl(new.origin.clone())).await;
+
+    assert_eq!(
+        status,
+        Status::Error("a sync is already running".to_owned())
+    );
+    assert!(new.paths().is_empty());
+    running.abort();
+}
+
+#[tokio::test]
+async fn perform_wire_refuses_while_sync_runs_without_contacting_server() {
+    let stub = spawn_stub(never_answers()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    let running = spawn_sync(&control);
+    wait_until(|| control.view().syncing).await;
+
+    let status = perform(&control, &wiring(), Job::Wire).await;
+
+    assert_eq!(
+        status,
+        Status::Error("a sync is already running".to_owned())
+    );
+    assert!(stub.requests_to("/api/auth/login").is_empty());
+    running.abort();
+}
+
+#[test]
+fn wired_status_reports_sync_that_started_before_token_was_saved() {
+    let status = wired_status(Err(ControlError::SyncInProgress), "Mock Kobo (kobo)", false);
+
+    let expected = "wired \"Mock Kobo (kobo)\", but a sync started before its token could be \
+                    saved; press w again when it finishes";
+    assert_eq!(status, Status::Error(expected.to_owned()));
+}
+
+#[test]
+fn wired_status_reports_state_not_saved_error() {
+    let not_saved = StateError::Write {
+        path: "kobo.json".into(),
+        source: std::io::Error::other("disk full"),
+    };
+
+    let status = wired_status(Err(not_saved.into()), "Mock Kobo (kobo)", false);
+
+    assert_eq!(
+        status,
+        Status::Error("device state not saved: cannot write kobo.json: disk full".to_owned())
+    );
 }
 
 #[tokio::test]

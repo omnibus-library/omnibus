@@ -7,7 +7,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use crate::autowire::{self, SeedUser};
-use crate::control::{Control, LastSync, Retarget, RESET_MESSAGE};
+use crate::control::{Control, ControlError, LastSync, Retarget, Retargeted, RESET_MESSAGE};
 use crate::tui::app::{Job, Status};
 
 /// What `w` needs to wire a token: the dev seed admin and the device's Omnibus name.
@@ -70,8 +70,13 @@ async fn set_url(control: &Control, wiring: &Wiring, url: &str) -> Status {
 }
 
 /// Wire a token for the device's current URL and keep it, with the URL it was minted against.
+/// Turned away before any request while a sync runs, since the token could not be saved.
 async fn wire(control: &Control, wiring: &Wiring) -> Status {
-    let url = control.view().url;
+    let view = control.view();
+    if view.syncing {
+        return failure(ControlError::SyncInProgress);
+    }
+    let url = view.url;
     let seed = match SeedUser::parse(wiring.seed_user.as_deref()) {
         Ok(seed) => seed,
         Err(error) => return failure(error),
@@ -84,8 +89,22 @@ async fn wire(control: &Control, wiring: &Wiring) -> Status {
         token: wired.token,
         url,
     };
-    match control.retarget(to).await {
-        Ok(_) => Status::Info(wired_message(&wiring.device_name, wired.reused)),
+    let saved = control.retarget(to).await;
+    wired_status(saved, &wiring.device_name, wired.reused)
+}
+
+/// How saving a freshly wired token went.
+fn wired_status(
+    saved: Result<Retargeted, ControlError>,
+    device_name: &str,
+    reused: bool,
+) -> Status {
+    match saved {
+        Ok(_) => Status::Info(wired_message(device_name, reused)),
+        Err(ControlError::SyncInProgress) => Status::Error(format!(
+            "wired \"{device_name}\", but a sync started before its token could be saved; \
+             press w again when it finishes"
+        )),
         Err(error) => failure(error),
     }
 }
