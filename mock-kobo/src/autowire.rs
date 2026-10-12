@@ -1,5 +1,7 @@
 //! Zero-setup wiring: find this worktree's dev server, log in as the dev seed
-//! admin, and reuse or create the Omnibus device a mock Kobo syncs as.
+//! admin, and reuse or create the Omnibus device a mock Kobo syncs as. Only a
+//! local server is ever logged in to, since the login carries the seed
+//! password, and the session is ended once the device is wired.
 
 use std::net::IpAddr;
 use std::path::Path;

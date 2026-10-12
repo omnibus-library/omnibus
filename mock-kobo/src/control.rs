@@ -1,4 +1,7 @@
 //! One running device: the state the control API reads and drives.
+//! A sync runs on its own task, so a caller that disconnects never cancels it
+//! half-way. A reset clears what the device holds, but Omnibus still remembers
+//! what it delivered, so the next sync sends only changes.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
