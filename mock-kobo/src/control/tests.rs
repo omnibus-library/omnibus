@@ -255,7 +255,7 @@ async fn reset_wipes_library_sync_token_last_sync_and_requests() {
 }
 
 #[tokio::test]
-async fn reset_keeps_hardware_id_url_and_token() {
+async fn reset_keeps_hardware_id_and_token() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
@@ -264,9 +264,30 @@ async fn reset_keeps_hardware_id_url_and_token() {
     let view = control.reset().await.unwrap();
 
     assert_eq!(view.hardware_id, "HW-1");
-    assert_eq!(view.url, stub.origin);
     assert_eq!(control.sync().await.unwrap(), LastSync::Synced { pages: 1 });
     assert_eq!(control.view().library["book-1"].title, "Dune");
+}
+
+#[tokio::test]
+async fn reset_keeps_pinned_url_in_state_file() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let saved = SavedState {
+        url: Some("http://pinned.example:3000".into()),
+        token: STUB_TOKEN.into(),
+        wired_url: None,
+        device: Device::new("HW-1"),
+    };
+    let control = Arc::new(Control::new(
+        saved,
+        "http://pinned.example:3000".into(),
+        path.clone(),
+    ));
+
+    control.reset().await.unwrap();
+
+    let reloaded = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(reloaded.url, Some("http://pinned.example:3000".to_owned()));
 }
 
 #[tokio::test]
