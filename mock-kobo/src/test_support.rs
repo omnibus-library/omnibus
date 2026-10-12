@@ -34,6 +34,8 @@ pub struct Stub {
     /// The `library_sync` bodies, served in turn; all but the last say `continue`.
     /// Empty means the server has no books: one `[]` page.
     pub sync_pages: Vec<Value>,
+    /// Whether `library_sync` pages carry an `x-kobo-synctoken`.
+    pub sends_sync_token: bool,
     /// The status every `library_sync` page answers with, its body and headers unchanged.
     pub sync_status: StatusCode,
     /// Say `continue` on every `library_sync` page, forever.
@@ -51,6 +53,7 @@ impl Default for Stub {
             store_path_status: StatusCode::OK,
             resources_under: "",
             sync_pages: Vec::new(),
+            sends_sync_token: true,
             sync_status: StatusCode::OK,
             sync_never_ends: false,
             sync_never_answers: false,
@@ -167,8 +170,10 @@ async fn library_sync(state: &StubState) -> Response {
     let body = Json(page.cloned().unwrap_or_else(|| json!([])));
     let mut response = (state.stub.sync_status, body).into_response();
     let headers = response.headers_mut();
-    let token = HeaderValue::from_str(&format!("page-{}", call + 1)).unwrap();
-    headers.insert(HeaderName::from_static("x-kobo-synctoken"), token);
+    if state.stub.sends_sync_token {
+        let token = HeaderValue::from_str(&format!("page-{}", call + 1)).unwrap();
+        headers.insert(HeaderName::from_static("x-kobo-synctoken"), token);
+    }
     if call + 1 < pages.len() || state.stub.sync_never_ends {
         let more = HeaderValue::from_static("continue");
         headers.insert(HeaderName::from_static("x-kobo-sync"), more);

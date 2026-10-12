@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::device::Device;
 use crate::firmware::Quirk;
-use crate::test_support::{new_entitlement, spawn_stub, Stub, STUB_TOKEN};
+use crate::test_support::{new_entitlement, spawn_stub, RunningStub, Stub, STUB_TOKEN};
 
 use super::*;
 
@@ -14,6 +14,21 @@ fn request_lines(report: &SyncReport) -> Vec<String> {
         .requests
         .iter()
         .map(|r| format!("{} {}", r.method, r.path))
+        .collect()
+}
+
+/// The `x-kobo-synctoken` each `library_sync` request carried, in order.
+fn library_sync_tokens(stub: &RunningStub) -> Vec<Option<String>> {
+    let requests = stub.requests.lock().unwrap();
+    requests
+        .iter()
+        .filter(|r| r.path.ends_with("/v1/library/sync"))
+        .map(|r| {
+            r.headers
+                .get("x-kobo-synctoken")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        })
         .collect()
 }
 
@@ -276,17 +291,10 @@ async fn sync_now_echoes_sync_token_on_continued_pages() {
         .unwrap();
 
     assert_eq!(report.pages, 2);
-    let requests = stub.requests.lock().unwrap();
-    let tokens: Vec<Option<&str>> = requests
-        .iter()
-        .filter(|r| r.path.ends_with("/v1/library/sync"))
-        .map(|r| {
-            r.headers
-                .get("x-kobo-synctoken")
-                .and_then(|v| v.to_str().ok())
-        })
-        .collect();
-    assert_eq!(tokens, [None, Some("page-1")]);
+    assert_eq!(
+        library_sync_tokens(&stub),
+        [None, Some("page-1".to_owned())]
+    );
 }
 
 #[tokio::test]
@@ -364,4 +372,59 @@ async fn attempt_sync_reports_pages_and_requests_when_sync_succeeds() {
 
     assert!(matches!(attempt.outcome, Ok(1)));
     assert_eq!(attempt.requests.len(), 7);
+}
+
+#[tokio::test]
+async fn sync_now_echoes_saved_sync_token_on_first_page() {
+    let stub = spawn_stub(Stub::default()).await;
+    let mut device = Device::new("HW-1");
+    device.sync_token = Some("page-9".into());
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap();
+
+    assert_eq!(library_sync_tokens(&stub), [Some("page-9".to_owned())]);
+}
+
+#[tokio::test]
+async fn sync_now_keeps_last_sync_token_on_device() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([]), json!([])],
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap();
+
+    assert_eq!(device.sync_token, Some("page-2".to_owned()));
+}
+
+#[tokio::test]
+async fn sync_now_keeps_saved_sync_token_when_page_carries_none() {
+    let stub = spawn_stub(Stub {
+        sends_sync_token: false,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    device.sync_token = Some("page-9".into());
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap();
+
+    assert_eq!(device.sync_token, Some("page-9".to_owned()));
+}
+
+#[tokio::test]
+async fn sync_now_keeps_saved_sync_token_when_page_fails_to_decode() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!({ "not": "a list" })],
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    device.sync_token = Some("page-9".into());
+
+    sync_now(&mut device, &stub.endpoint).await.unwrap_err();
+
+    assert_eq!(device.sync_token, Some("page-9".to_owned()));
 }

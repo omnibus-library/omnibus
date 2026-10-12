@@ -15,6 +15,8 @@ pub struct Device {
     pub hardware_id: String,
     /// The books on the device, keyed by entitlement id.
     pub library: BTreeMap<String, Book>,
+    /// The last `x-kobo-synctoken` the server sent, which the device echoes on its next sync.
+    pub sync_token: Option<String>,
 }
 
 /// One book as the device shows it.
@@ -36,6 +38,7 @@ impl Device {
         Self {
             hardware_id: hardware_id.to_owned(),
             library: BTreeMap::new(),
+            sync_token: None,
         }
     }
 
