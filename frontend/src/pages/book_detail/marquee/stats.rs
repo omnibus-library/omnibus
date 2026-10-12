@@ -1,4 +1,4 @@
-//! Stop 03 · Stats — the at-a-glance record: the 2×2 record grid
+//! Stop 02 · Stats — the at-a-glance record: the 2×2 record grid
 //! (Started / Time in book / Pickups / Longest sit), a time-left note, the
 //! per-day activity spark over the last 22 days, the session log behind those
 //! figures, and the rating widget.

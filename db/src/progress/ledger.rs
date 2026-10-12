@@ -11,6 +11,10 @@
 //! is resolved on the way out, against whatever offset the reading client is on
 //! — see `crate::user_offset`. Writing a day here, as `0083` did, is what made
 //! the daily pages goal reset at UTC midnight.
+//!
+//! Gains are stored as percent, not pages, so a later `print_pages` override
+//! re-prices history already held. A backtrack across a sitting boundary is
+//! credited again: a per-sitting clamp cannot net across sittings.
 
 use omnibus_shared::ProgressFormat;
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
@@ -37,39 +41,10 @@ const PAGES_LEDGER_EPOCH_KEY: &str = "pages_ledger_epoch";
 pub const SLOT_SECS: i64 = 900;
 
 /// Record an observed whole-book percent for `(user, book, format)` and accrue
-/// whatever ground it covers beyond the current sitting's furthest point into
-/// the quarter-hour it was observed in.
-///
-/// The gain is measured against the ledger's own mark, never against
-/// `reading_progress.progress_percent`: an epub write carrying only a CFI nulls
-/// that column and `spawn_epub_percent_derivation` refills it off the request
-/// path, so the live row is NULL for part of its life and differencing it would
-/// silently lose every gain on the surfaces that write CFIs (iOS).
-///
-/// The mark is the **sitting's high-water percent**, not the last position seen
-/// (migration `0095`), so a there-and-back move inside one sitting is free
-/// while forward ground the reader later backtracks out of stays credited.
-///
-/// [`IDLE_GAP_SECS`] of quiet opens a new sitting, and that governs the **mark**
-/// alone, never the gain: it is the only thing that lets the mark fall back, so
-/// a re-read counts from wherever it restarts instead of climbing to a lifetime
-/// high-water of 100. Ground beyond the mark is earned either way — an offline
-/// stretch drains as one coalesced write long after the fact, and it is real
-/// reading, not a gap.
-///
-/// Two cases accrue nothing on purpose:
-///
-/// * A book with no mark yet is *baselined* — a device syncing a book it is
-///   already 60% through has not just read 60% of it.
-/// * A move at or below the mark is ground already credited.
-///
-/// `observed_at` is the surviving record's client event time, so a write
-/// replayed from an offline outbox lands in the quarter-hour it happened in
-/// rather than the one it drained in. An observation that arrives *out of
-/// order* — the off-request-path percent derivation completing after a newer
-/// write, carrying the older position's event time — is treated as part of the
-/// sitting already in progress rather than as a gap, and cannot drag the
-/// sitting clock backward.
+/// the ground beyond the sitting's high-water mark into the quarter-hour of
+/// `observed_at`, the client's event time, so an offline replay lands when it
+/// happened. Measured against the ledger's own mark, never `progress_percent`,
+/// which stays NULL while an epub's percent is derived off the request path.
 pub(super) async fn observe_percent_tx(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
