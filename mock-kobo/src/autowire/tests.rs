@@ -73,6 +73,34 @@ fn device_name_uses_path_when_state_file_has_no_stem() {
 }
 
 #[test]
+fn is_local_url_accepts_localhost_and_loopback_addresses() {
+    for url in [
+        "http://localhost:3000",
+        "https://localhost",
+        "http://127.0.0.1:3000",
+        "http://127.8.9.10:1",
+        "http://[::1]:3000",
+    ] {
+        assert!(is_local_url(url), "{url}");
+    }
+}
+
+#[test]
+fn is_local_url_rejects_other_hosts() {
+    for url in [
+        "http://192.0.2.1:9",
+        "http://0.0.0.0:3000",
+        "https://omnibus.example",
+        "http://localhost.example:3000",
+        "http://127.0.0.1.example:3000",
+        "http://[2001:db8::1]:3000",
+        "not a url",
+    ] {
+        assert!(!is_local_url(url), "{url}");
+    }
+}
+
+#[test]
 fn seed_user_parse_splits_at_first_colon() {
     let seed = SeedUser::parse(Some("admin:pa:ss")).unwrap();
 

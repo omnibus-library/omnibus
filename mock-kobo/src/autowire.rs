@@ -1,6 +1,7 @@
 //! Zero-setup wiring: find this worktree's dev server, log in as the dev seed
 //! admin, and reuse or create the Omnibus device a mock Kobo syncs as.
 
+use std::net::IpAddr;
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -41,6 +42,18 @@ pub async fn dev_server_url(runtime_dir: &Path) -> Option<String> {
         .ok()?;
     let port: u16 = port.trim().parse().ok()?;
     Some(format!("http://127.0.0.1:{port}"))
+}
+
+/// Whether `url` names this machine: `localhost`, a `127.0.0.0/8` address or `::1`.
+fn is_local_url(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    host == "localhost" || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 /// The dev seed admin's credentials. No `Debug`: it holds a password.
@@ -100,7 +113,13 @@ pub struct Wired {
 }
 
 /// Log in at `url` as `seed`, then reuse or create the device called `name`.
+/// Refuses any `url` that is not a local dev server before sending anything: the seed password goes in the login.
 pub async fn wire(url: &str, seed: &SeedUser, name: &str) -> Result<Wired, AutoWireError> {
+    if !is_local_url(url) {
+        return Err(AutoWireError::NotLocal {
+            url: url.to_owned(),
+        });
+    }
     let http = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
@@ -186,6 +205,8 @@ pub enum AutoWireError {
     NoSeedUser,
     #[error("OMNIBUS_DEV_SEED_USER must be <user>:<password>")]
     BadSeedUser,
+    #[error("auto-wire only logs in to a local dev server, not {url}: pass --token (or set OMNIBUS_MOCK_KOBO_TOKEN)")]
+    NotLocal { url: String },
     #[error("auto-wire: {step} answered {status}")]
     Rejected { step: &'static str, status: u16 },
     #[error("auto-wire: {step} failed: {detail}")]

@@ -436,6 +436,20 @@ async fn start_does_not_warn_when_existing_device_is_rewired() {
 }
 
 #[tokio::test]
+async fn start_refuses_to_auto_wire_against_non_local_server() {
+    let dir = TempDir::new().unwrap();
+    let args = args_in(&dir, Some("http://192.0.2.1:9"), None);
+
+    let result = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir)).await;
+
+    let Err(StartError::AutoWire(AutoWireError::NotLocal { url })) = result else {
+        panic!("expected a refusal to auto-wire, got {:?}", result.err());
+    };
+    assert_eq!(url, "http://192.0.2.1:9");
+    assert!(!args.state.exists());
+}
+
+#[tokio::test]
 async fn start_fails_without_token_or_seed_user() {
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some("http://127.0.0.1:1"), None);
