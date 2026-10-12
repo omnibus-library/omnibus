@@ -3,12 +3,15 @@
 
 use axum::{
     body::{to_bytes, Body},
+    extract::{Path, State},
     http::{header::AUTHORIZATION, Request, StatusCode},
 };
+use omnibus_db::auth::SessionKind;
 use omnibus_shared::{Shelf, ShelfPage, ShelfSummary, SortDir, SortKey};
 use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
+use crate::auth::AuthUser;
 use crate::backend::test_support::*;
 
 fn req(
@@ -612,6 +615,111 @@ async fn api_shelf_page_returns_404_for_an_unseen_shelf_when_filtered() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn api_smart_shelves_containing_lists_the_smart_shelves_matching_the_book() {
+    let (app, _s, pool) = fixture().await;
+    seed_book(&pool, "bk1").await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let create = |body: serde_json::Value| {
+        app.clone()
+            .oneshot(req("POST", "/api/shelves", Some(&token), Some(body)))
+    };
+    let matching = shelf_from(
+        create(serde_json::json!({
+            "kind": "smart", "name": "Epubs", "visibility": "private",
+            "match_mode": "any",
+            "rules": [{ "field": "format", "op": "includes", "value": "epub" }],
+        }))
+        .await
+        .unwrap(),
+    )
+    .await;
+    create(serde_json::json!({
+        "kind": "manual", "name": "Picks", "visibility": "private",
+        "book_uuids": ["bk1"],
+    }))
+    .await
+    .unwrap();
+
+    let res = app
+        .oneshot(req(
+            "GET",
+            "/api/shelves/containing/bk1/smart",
+            Some(&token),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let ids: Vec<i64> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(ids, vec![matching.id]);
+}
+
+#[tokio::test]
+async fn api_smart_shelves_containing_answers_empty_for_a_book_no_smart_shelf_matches() {
+    let (app, _s, pool) = fixture().await;
+    seed_book(&pool, "bk1").await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let res = app
+        .oneshot(req(
+            "GET",
+            "/api/shelves/containing/bk1/smart",
+            Some(&token),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let ids: Vec<i64> = serde_json::from_slice(&bytes).unwrap();
+    assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn api_smart_shelves_containing_requires_authentication() {
+    let (app, _s, pool) = fixture().await;
+    seed_book(&pool, "bk1").await;
+
+    let res = app
+        .oneshot(req("GET", "/api/shelves/containing/bk1/smart", None, None))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+// Invoked directly: a closed pool would fail the bearer extractor before the handler ran.
+#[tokio::test]
+async fn api_smart_shelves_containing_returns_500_when_the_db_is_unavailable() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+    let user = AuthUser {
+        id: 1,
+        username: "reader".to_string(),
+        is_admin: false,
+        can_upload: false,
+        can_edit: false,
+        can_download: false,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+        share_stats: true,
+        session_id: 1,
+        session_kind: SessionKind::Bearer,
+    };
+
+    let res = super::smart_shelves_containing(user, State(state), Path("bk1".to_string())).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
 #[test]

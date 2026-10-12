@@ -39,6 +39,28 @@ pub fn test_user(is_admin: bool, can_upload: bool) -> omnibus_shared::UserSummar
     }
 }
 
+/// A private, empty shelf row for render tests. Its owner's username is
+/// `user-{owner_user_id}`, which is what an attribution line reads.
+pub fn test_shelf_summary(
+    id: i64,
+    owner_user_id: i64,
+    kind: omnibus_shared::ShelfKind,
+    name: &str,
+) -> omnibus_shared::ShelfSummary {
+    omnibus_shared::ShelfSummary {
+        id,
+        owner_user_id,
+        owner_username: format!("user-{owner_user_id}"),
+        owner_has_avatar: false,
+        kind,
+        name: name.to_string(),
+        visibility: omnibus_shared::Visibility::Private,
+        accent: None,
+        book_count: 0,
+        cover_uuids: Vec::new(),
+    }
+}
+
 /// Provide [`crate::CurrentUser`] holding `user` to the calling component's
 /// subtree: `None` is unresolved, `Some(None)` signed out. A hook — call it
 /// at the top of a test's root component.

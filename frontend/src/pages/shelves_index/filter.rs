@@ -237,32 +237,6 @@ pub fn empty_message(query: &ShelfQuery, has_shelves: bool) -> String {
     }
 }
 
-/// Kind word on a card.
-pub fn kind_label(kind: ShelfKind) -> &'static str {
-    match kind {
-        ShelfKind::Smart => "Smart",
-        ShelfKind::Manual => "Hand-picked",
-        ShelfKind::Wishlist => "Wishlist",
-    }
-}
-
-/// Visibility word on a card.
-pub fn visibility_label(visibility: Visibility) -> &'static str {
-    match visibility {
-        Visibility::Private => "Private",
-        Visibility::Public => "Public",
-    }
-}
-
-/// `"1 book"` / `"N books"`.
-pub fn book_count_label(count: i64) -> String {
-    if count == 1 {
-        "1 book".into()
-    } else {
-        format!("{count} books")
-    }
-}
-
 fn plural(n: usize, one: &str, many: &str) -> String {
     if n == 1 {
         format!("1 {one}")

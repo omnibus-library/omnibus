@@ -145,6 +145,9 @@ jobs:
           # that transport is `server/src/mcp_http.rs`, which `server` lints.
           - name: mcp
             cmd: cargo clippy -p omnibus-mcp --all-targets -- -D warnings
+          # Out of `default-members` too; small and native, so the shared bucket.
+          - name: mock-kobo
+            cmd: cargo clippy -p omnibus-mock-kobo --all-targets -- -D warnings
     steps:
       - uses: actions/checkout@v4
 
@@ -218,6 +221,9 @@ jobs:
           # fixtures — the suite stubs the Omnibus instance it talks to.
           - name: mcp
             args: -p omnibus-mcp
+          # Out of `default-members`; its suite stubs the server it syncs with.
+          - name: mock-kobo
+            args: -p omnibus-mock-kobo
     steps:
       - uses: actions/checkout@v4
 
