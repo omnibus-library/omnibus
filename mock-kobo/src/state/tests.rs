@@ -1,5 +1,7 @@
 //! `state::load` and `state::save` against a real temp directory.
 
+use std::path::Path;
+
 use tempfile::TempDir;
 
 use crate::device::{Book, Device};
@@ -85,6 +87,50 @@ async fn save_leaves_no_temp_file_behind() {
 
     save(&path, &synced_state()).await.unwrap();
 
+    let names: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["kobo.json"]);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn save_writes_state_file_readable_only_by_owner() {
+    use std::os::unix::fs::PermissionsExt;
+    let mode_of = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+
+    save(&path, &synced_state()).await.unwrap();
+    let first = mode_of(&path);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    save(&path, &synced_state()).await.unwrap();
+
+    assert_eq!((first, mode_of(&path)), (0o600, 0o600));
+}
+
+#[test]
+fn save_uses_a_fresh_temp_file_for_each_write() {
+    let path = Path::new("/some/dir/kobo.json");
+
+    let first = temp_path(path).unwrap();
+    let second = temp_path(path).unwrap();
+
+    assert_ne!(first, second);
+    assert_eq!(first.parent(), path.parent());
+    assert_eq!(second.parent(), path.parent());
+}
+
+#[tokio::test]
+async fn save_leaves_no_temp_file_behind_when_rename_fails() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    std::fs::create_dir(&path).unwrap();
+
+    let error = save(&path, &synced_state()).await.unwrap_err();
+
+    assert!(matches!(error, StateError::Write { .. }));
     let names: Vec<_> = std::fs::read_dir(dir.path())
         .unwrap()
         .map(|entry| entry.unwrap().file_name())

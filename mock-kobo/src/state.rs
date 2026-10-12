@@ -1,7 +1,13 @@
 //! A device's state file: everything a real Kobo keeps on disk across restarts.
-//! Written atomically so a crash mid-save never leaves a half-written file.
+//! Synced to disk in a temp file and renamed into place, so neither a crash nor
+//! a power loss leaves a half-written file. Owner-only: it holds the device token.
 
+use std::fs::OpenOptions;
+use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -57,28 +63,53 @@ pub async fn load(path: &Path) -> Result<Option<SavedState>, StateError> {
         })
 }
 
-/// Write `state` to `path` atomically: `<file name>.tmp` beside it, then rename.
+/// Write `state` to `path` atomically: a synced temp file beside it, then a rename.
+/// The whole write runs as one blocking task, so a cancelled caller never leaves it half-run.
 pub async fn save(path: &Path, state: &SavedState) -> Result<(), StateError> {
     let write_error = |source| StateError::Write {
         path: path.to_owned(),
         source,
     };
     let json = serde_json::to_vec_pretty(state).map_err(|error| write_error(error.into()))?;
-    let tmp =
-        temp_path(path).ok_or_else(|| write_error(std::io::ErrorKind::InvalidInput.into()))?;
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(write_error)?;
-    }
-    tokio::fs::write(&tmp, json).await.map_err(write_error)?;
-    tokio::fs::rename(&tmp, path).await.map_err(write_error)
+    let target = path.to_owned();
+    tokio::task::spawn_blocking(move || write_atomically(&target, &json))
+        .await
+        .map_err(|error| write_error(std::io::Error::other(error)))?
+        .map_err(write_error)
 }
 
-/// `<file name>.tmp` in the same directory as `path`, so the rename never crosses a filesystem.
+/// Create `path`'s parent, write `json` to a temp file beside it, and rename that over `path`.
+fn write_atomically(path: &Path, json: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = temp_path(path).ok_or(std::io::ErrorKind::InvalidInput)?;
+    let written = write_synced(&tmp, json).and_then(|()| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        // Best effort: the write's own error is the one worth reporting.
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
+}
+
+/// Write `json` to a new file at `path`, owner-only, and flush it to disk.
+fn write_synced(path: &Path, json: &[u8]) -> std::io::Result<()> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path)?;
+    file.write_all(json)?;
+    file.sync_all()
+}
+
+/// A temp path in the same directory as `path` (so the rename never crosses a
+/// filesystem), unique to this process and write so concurrent saves never share one.
 fn temp_path(path: &Path) -> Option<PathBuf> {
+    static WRITES: AtomicU64 = AtomicU64::new(0);
+    let write = WRITES.fetch_add(1, Ordering::Relaxed);
     let mut name = path.file_name()?.to_owned();
-    name.push(".tmp");
+    name.push(format!(".{}.{write}.tmp", std::process::id()));
     Some(path.with_file_name(name))
 }
 
