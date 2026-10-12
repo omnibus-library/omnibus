@@ -47,7 +47,7 @@ pub struct AudiobookSyncPlan {
 /// [`sync_books`](super::books::sync_books) plus `book_file_parts` rows. In order:
 /// upsert `scan_roots`, mark Removed missing (retaining the `books` row), relocate
 /// Moved, update Changed in place, insert New, backfill stats, prune orphaned
-/// taxonomy, stamp `last_indexed`. Covers are written post-commit, best-effort.
+/// taxonomy, stamp `last_indexed`. Post-commit, best-effort: write and delete covers.
 pub async fn sync_audiobooks(
     pool: &SqlitePool,
     library_path: &str,

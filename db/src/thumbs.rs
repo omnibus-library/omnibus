@@ -136,8 +136,7 @@ const THUMB_ENCODER_VERSION: u32 = 3;
 /// Derive a thumbnail's `ETag` from its freshness key `(book_id, size,
 /// last_modified_epoch)` plus `version`, without touching the filesystem. Not
 /// stat-derived: [`touch_thumb`] bumps mtime on every cache hit, so an
-/// mtime-bearing validator would never produce a 304. Split from [`thumb_etag`]
-/// so a test can vary `version`.
+/// mtime-bearing validator would never produce a 304.
 fn thumb_etag_versioned(
     book_id: i64,
     size: ThumbSize,

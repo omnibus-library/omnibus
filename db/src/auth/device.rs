@@ -62,7 +62,7 @@ pub fn validate_client_version(version: Option<&str>) -> AuthResult<()> {
 /// returns the inserted record. Accepts any `sqlx::Executor`: pass `&mut *tx`
 /// to keep the insert atomic with the session insert (an orphan device leaks if
 /// `create_session` fails after it commits). The cap trigger evicts the user's
-/// oldest devices beyond `MAX_DEVICES_PER_USER` in the same INSERT.
+/// least-recently-seen devices beyond `MAX_DEVICES_PER_USER` in the same INSERT.
 pub async fn register_device<'e, E>(
     executor: E,
     user_id: i64,

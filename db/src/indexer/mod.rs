@@ -10,6 +10,8 @@
 //! metadata, but not a retagged title or an mtime-lossy copy (`cp` without `-p`),
 //! which fall back to the auto-attach. A moved file is never parsed, so a declined
 //! relocation is a skip, not a fallback: the emit conditions stay conservative.
+//! Detection lives in the diff because the auto-attach runs in the writer, after
+//! the `check_mass_missing` breaker, which a large reorganization would trip first.
 
 use std::path::Path;
 
@@ -243,7 +245,7 @@ pub struct ReindexDiff {
 }
 
 /// Pure classifier (no I/O): compares a Phase-A stat output against the current
-/// DB state and routes each file into one of six buckets (see [`ReindexDiff`]).
+/// DB state and routes each file into one of six buckets (see `ReindexDiff`).
 /// `enumeration_trustworthy` gates **Removed** (and so **Moved**) only: pass
 /// `false` after a partial scan and `removed` stays empty, while New / Changed /
 /// Backfill still index the files that were seen.

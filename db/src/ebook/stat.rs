@@ -53,8 +53,8 @@ pub struct StatScanResult {
 }
 
 /// Phase A: walk the library and `stat` every indexed ebook file (`.epub` /
-/// `.cbz`) without opening the zip. Returns one `StatEntry` per file plus a
-/// synthetic empty-`scan_key` entry for any unreadable subdirectory.
+/// `.cbz` / `.pdf`) without opening the zip. Returns one `StatEntry` per file
+/// plus a synthetic empty-`scan_key` entry for any unreadable subdirectory.
 /// `library_path_key` does not take part in identity (the diff key is the
 /// library-relative path); it is kept for parity with the audiobook walker.
 pub fn stat_ebook_library(path: Option<&str>, library_path_key: &str) -> StatScanResult {

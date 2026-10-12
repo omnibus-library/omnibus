@@ -249,10 +249,10 @@ async fn repoint_scan_root(
 }
 
 /// Drop **childless** orphan `scan_roots` rows whose `path` is not in `keep`.
-/// Never-prune: a removed root that still owns books is **kept**, with its
-/// books and soft-ref user data, and reappears if the path is re-added. Only
-/// roots with zero books are swept, so nothing user-facing is deleted and the
-/// returned uuid list (for post-commit cover cleanup) is always empty.
+/// Never-prune: a removed root that still owns books is **kept** with its books
+/// and soft-ref user data; those books stop being listed until the path is
+/// re-added. Only roots with zero books are swept, so nothing user-facing is
+/// deleted; the returned uuid list (for post-commit cover cleanup) is always empty.
 pub(crate) async fn prune_orphan_libraries(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     keep: &[Option<&str>],

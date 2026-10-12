@@ -73,8 +73,8 @@ impl From<crate::settings::SettingsError> for SyncError {
 /// One file the diff recognized as **relocated** rather than
 /// deleted-and-re-added. Deliberately not a `ParseTarget`: a move needs no
 /// Phase-B parse, and carrying one would invite a caller to hand it to the
-/// parser. See the Moved section of the [`crate::indexer::diff_library`]
-/// bucket contract.
+/// parser. Detection rules live on `ReindexDiff::moved` and in the `crate::indexer`
+/// module doc.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MovedFile {
     /// The identity to relocate: `books.uuid` for the file a book is anchored
@@ -160,7 +160,7 @@ pub struct SyncPlan {
 /// Apply a per-bucket sync plan atomically: upsert `scan_roots`, mark Removed
 /// missing (dropping `book_files`, retaining the `books` row), relocate Moved,
 /// update Changed in place (ids preserved), insert New, backfill stat columns
-/// only, prune orphaned taxonomy, stamp `last_indexed`. Covers are written
+/// only, prune orphaned taxonomy, stamp `last_indexed`. Covers are written and deleted
 /// post-commit, best-effort. `metadata_overrides` is untouched, so edits survive.
 pub async fn sync_books(
     pool: &SqlitePool,

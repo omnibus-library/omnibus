@@ -16,8 +16,8 @@ pub(crate) const WISHLIST_NAME_SUFFIX: &str = "'s Wishlist";
 /// Ensure one user has a Wishlist shelf. Idempotent and race-safe: a `WHERE NOT
 /// EXISTS` guard skips the common case, and `INSERT OR IGNORE` lets the
 /// `idx_shelves_owner_wishlist` partial-unique index absorb a concurrent
-/// double-provision. Runs against any executor, so `create_user` can call it
-/// inside its registration transaction.
+/// double-provision. Takes any executor, but the `users` row must be visible to it
+/// (`create_user` passes its registration tx); otherwise it silently inserts nothing.
 pub async fn provision_wishlist_shelf<'e, E>(exec: E, user_id: i64) -> Result<(), ShelfError>
 where
     E: Executor<'e, Database = Sqlite>,

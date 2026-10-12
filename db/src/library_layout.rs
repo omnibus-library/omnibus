@@ -62,8 +62,8 @@ pub fn canonical_path(library_root: &Path, author: &str, title: &str, ext: &str)
 /// Return the cover sidecar file path for `ebook_path`, if any: a per-stem
 /// sidecar (`<basename>.{jpg,jpeg,png}`) first, then a folder-level
 /// `cover.{jpg,jpeg,png}`; names match case-insensitively, `.jpg` > `.jpeg` >
-/// `.png`. The returned `PathBuf` keeps the *probed* casing, not the on-disk
-/// entry's; `find_with_extensions` carries the entry casing back.
+/// `.png`. The path has the on-disk casing, except that on a case-insensitive
+/// filesystem a direct hit keeps the probed `<basename>.<ext>`/`cover.<ext>` casing.
 pub fn sidecar_cover_for(ebook_path: &Path) -> Option<PathBuf> {
     let parent = ebook_path.parent()?;
 

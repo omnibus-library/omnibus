@@ -221,8 +221,9 @@ pub async fn get_shelf(pool: &SqlitePool, id: i64) -> Result<Option<Shelf>, Shel
 
 /// Every book uuid the owner's Kobo devices may sync: the union of membership
 /// across `user_id`'s shelves flagged `sync_to_kobo`. Deliberately **uncapped**
-/// (the sync response streams, so no `MAX_BOOKS_RETURNED`) and scoped to shelves
-/// the user owns. Uuids come in no meaningful order; the caller orders the rows.
+/// (the sync response streams, so no `MAX_BOOKS_RETURNED`). Owner-scoped so one
+/// user's opt-in never exposes books to another user's device token. Uuids come in
+/// no meaningful order; the caller orders the rows.
 pub async fn kobo_synced_book_uuids(
     pool: &SqlitePool,
     user_id: i64,

@@ -19,10 +19,9 @@ pub async fn list_books(
     list_books_for_paths(pool, &[library_path]).await
 }
 
-/// Return every book indexed under any of `library_paths` in one round-trip,
-/// matching the pattern in `get_book`. Empty `library_paths` returns an empty
-/// vec. One `l.path IN (?, …)` filter keeps the unified landing path (ebook +
-/// audiobook) a single query.
+/// Return every book indexed under any of `library_paths` in one round-trip.
+/// Empty `library_paths` returns an empty vec. One `l.path IN (?, …)` filter
+/// keeps the unified landing path (ebook + audiobook) a single query.
 pub async fn list_books_for_paths(
     pool: &SqlitePool,
     library_paths: &[&str],

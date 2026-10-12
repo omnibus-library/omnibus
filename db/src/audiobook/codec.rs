@@ -39,9 +39,8 @@ pub fn is_direct_playable(filename: &str) -> bool {
 /// HLS. Empty input returns `Direct` vacuously; callers 404 before this when the
 /// book has no parts.
 pub fn classify_filenames<S: AsRef<str>>(filenames: &[S]) -> PlaybackMode {
-    // One non-direct part routes the whole book through HLS, so the cross-part
-    // timeline math (cumulative offsets, `ended`-driven advance) never sees a
-    // mid-book codec switch.
+    // All-or-nothing so the cross-part timeline math (cumulative offsets,
+    // `ended`-driven advance) never sees a mid-book codec switch.
     if filenames.iter().all(|f| is_direct_playable(f.as_ref())) {
         PlaybackMode::Direct
     } else {

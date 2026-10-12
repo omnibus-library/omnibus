@@ -264,7 +264,7 @@ async fn repair_multipart_audiobook_attachments(pool: &SqlitePool) -> Result<(),
     )
     .fetch_all(&mut *tx)
     .await?;
-    // Mirror the merge finalize: drop the FTS twin, then prune orphan taxonomy.
+    // Same cleanup as the merge finalize.
     for id in &dupes {
         crate::sync::delete_fts(&mut tx, *id).await?;
     }

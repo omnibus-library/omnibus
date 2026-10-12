@@ -76,22 +76,22 @@ pub enum Task {
     /// `library_path` (mutual exclusion with the scan on the same library); does
     /// not consume the scan semaphore (light per-file IO).
     BackfillWordCounts { library_path: String },
-    /// Backfill `books.page_count` for CBZ books indexed before the column
-    /// existed. Posted by the [`Task::Scan`] handler on success. Keyed on
+    /// Backfill `books.page_count` for CBZ and PDF books indexed before the
+    /// column existed. Posted by the [`Task::Scan`] handler on success. Keyed on
     /// `library_path` (mutual exclusion with the scan on the same library); does
     /// not consume the scan semaphore (light per-file IO).
     BackfillPageCounts { library_path: String },
-    /// Backfill `epub_spine_stats` + `ebook_chapters` for EPUB files with no
-    /// extracted structure yet. Posted by the [`Task::Scan`] handler on success;
+    /// Backfill `epub_spine_stats` + `ebook_chapters` for EPUB and PDF files with
+    /// no extracted structure yet. Posted by the [`Task::Scan`] handler on success;
     /// a Changed file re-creates its `book_files` row, cascade clears stale
     /// structure, and this re-extracts it. Keyed on `library_path`; does not
     /// consume the scan semaphore.
     BackfillEpubStructure { library_path: String },
-    /// Re-extract covers for EPUB books the indexer left without one, since the
-    /// reindex diff skips unchanged files and a scanner fix would otherwise never
-    /// reach them. Posted by the [`Task::Scan`] handler on success, *before*
-    /// [`Task::BackfillThumbs`] so a filled cover is thumbnailed in the same
-    /// pass. Keyed on `library_path`; does not consume the scan semaphore.
+    /// Re-extract covers for EPUB and PDF books the indexer left without one,
+    /// since the reindex diff skips unchanged files and a scanner fix would
+    /// otherwise never reach them. Posted by the [`Task::Scan`] handler on
+    /// success, *before* [`Task::BackfillThumbs`] so a filled cover is thumbnailed
+    /// in the same pass. Keyed on `library_path`; does not consume the scan semaphore.
     BackfillCovers { library_path: String },
     /// Pre-generate WebP thumbnails (all three sizes) for every covered book
     /// under `library_path`, so the landing grid's first post-scan load serves

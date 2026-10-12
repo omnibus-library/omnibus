@@ -70,10 +70,9 @@ pub async fn list_authors(
     Ok(rows.iter().map(map_author_row).collect())
 }
 
-/// Build the `list_authors` query text for an `n`-entry `library_paths` binding,
-/// split out because the SQL is the bulk of that function. `effective` is the
-/// shared override-aware membership set narrowed to visible books; the inner
-/// `JOIN counts` enforces the `book_count > 0` invariant.
+/// Build the `list_authors` query text for an `n`-entry `library_paths` binding.
+/// `effective` is the shared override-aware membership set narrowed to visible
+/// books; the inner `JOIN counts` enforces the `book_count > 0` invariant.
 fn list_authors_sql(n: usize) -> String {
     let ph = placeholders(n);
     let vis = visible("b", "l");

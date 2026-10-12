@@ -45,9 +45,9 @@ pub enum ConvertError {
 
 /// Convert `book_id`'s `source_format` file to `target_format` and return the
 /// output path, `<convert_dir>/<book_id>.<target_format>`; always reconverts.
+/// Not self-serializing: callers hold `Task::ConvertFormat`'s keyed mutex.
 /// Errors on unsafe formats ([`super::fs::validate_format_pair`]), an unrunnable
-/// `ebook-convert`, a missing source, a non-zero exit, or a timeout
-/// (`OMNIBUS_CONVERT_TIMEOUT_SECS`, default [`DEFAULT_TIMEOUT_SECS`]).
+/// `ebook-convert`, a missing source, a non-zero exit, or a timeout ([`DEFAULT_TIMEOUT_SECS`]).
 pub async fn convert_book(
     pool: &SqlitePool,
     book_id: i64,

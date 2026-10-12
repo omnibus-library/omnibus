@@ -241,8 +241,7 @@ struct QueryToken {
     text: String,
     /// A quoted token is an **exact** value, so it gets no trailing `*`: the
     /// prefix star is type-ahead, and a facet link carries a name the app knows
-    /// in full, which prefix-matching would silently widen (`tag:"Science
-    /// fiction"` also matched "Science Fiction & Fantasy").
+    /// in full, which prefix-matching would silently widen.
     quoted: bool,
 }
 

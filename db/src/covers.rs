@@ -151,8 +151,8 @@ const OVERRIDE_COVER_JPEG_QUALITY: u8 = 85;
 /// Normalize a user-uploaded override cover for storage, returning the mime and
 /// bytes to write. WebP is transcoded to JPEG and anything taller than
 /// [`MAX_OVERRIDE_COVER_HEIGHT`] is downscaled, both driven by what the Kobo can
-/// read. Best-effort: an undecodable image, an SVG or an uncached format passes
-/// through untouched. CPU-bound; call from the blocking pool.
+/// read. GIF passes through untouched. Best-effort: an undecodable image, an SVG
+/// or an uncached format passes through untouched. CPU-bound; call from the blocking pool.
 pub(crate) fn normalize_override_cover(mime: &str, bytes: &[u8]) -> (String, Vec<u8>) {
     let passthrough = || (mime.to_owned(), bytes.to_vec());
 
@@ -170,8 +170,8 @@ pub(crate) fn normalize_override_cover(mime: &str, bytes: &[u8]) -> (String, Vec
         return passthrough();
     }
 
-    // Kobo firmware renders no cover for WebP (the route it fetches is `image.jpg`),
-    // so WebP becomes JPEG; PNG is confirmed working on-device and stays PNG.
+    // Kobo firmware renders no cover for WebP (the route it fetches is `image.jpg`);
+    // PNG is confirmed working on-device, so only WebP is retargeted.
     let target = match source {
         ImageFormat::Webp => ImageFormat::Jpeg,
         other => other,
@@ -306,12 +306,11 @@ pub(crate) fn find_override_cover_file(uuid: &str) -> Option<(String, Vec<u8>)> 
 
 /// Cheaply resolve a book's cover MIME type (for OPDS cover links) from which
 /// known extension exists on disk, override first when `has_cover_override`, like
-/// [`get_cover`]; no file bytes are read. Falls back to `image/jpeg` when no cover
-/// file is found (the byte-serving endpoint 404s then anyway).
+/// [`get_cover`]; no bytes are read. Falls back to `image/jpeg` when none is found.
+/// Blocking `std::fs` `stat`s on the caller's thread: call it only for books with a
+/// cover and a bounded count (one OPDS page), never from an unbounded async loop.
 pub fn cover_mime_hint(uuid: &str, has_cover_override: bool) -> &'static str {
-    // Sync `std::fs` on purpose: callers skip no-cover books and an OPDS page is
-    // bounded, so a few `stat`s per row aren't worth `spawn_blocking`'s overhead.
-    // Revisit if a caller ever calls this outside that bound.
+    // Sync on purpose: a few stats per row aren't worth spawn_blocking's overhead.
     let dir = covers_dir();
     if has_cover_override {
         for fmt in ImageFormat::PROBE_ORDER {

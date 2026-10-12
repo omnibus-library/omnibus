@@ -324,8 +324,8 @@ where
     Ok(r.rows_affected())
 }
 
-/// List every currently-live session for `user_id` (not revoked, past its
-/// absolute expiry, or idle-expired), most-recently-used first, up to
+/// List every currently-live session for `user_id` (not revoked, not past its
+/// absolute expiry, not idle-expired), most-recently-used first, up to
 /// [`LIST_SESSIONS_LIMIT`]. Shared by the self-service and admin listings; they
 /// differ only in which `user_id` the caller may pass.
 pub async fn list_sessions_for_user(pool: &SqlitePool, user_id: i64) -> AuthResult<Vec<Session>> {

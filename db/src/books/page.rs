@@ -102,10 +102,10 @@ enum KeyVal {
 }
 
 /// Return one page of `library_paths` ordered by `sort`/`dir`, filtered by
-/// `filters`, strictly after `cursor` (the top when `None`). `exclude_formats`
-/// is the landing-only hidden-formats exclusion ([`exclude_formats_predicate`]);
-/// pass `&[]` elsewhere. `limit` is clamped to `[1, MAX_BOOKS_RETURNED]`; a
-/// short page yields `next == None`.
+/// `filters`, strictly after `cursor` (the top when `None`); an empty
+/// `library_paths` returns an empty page. `exclude_formats` is the landing-only
+/// hidden-formats exclusion ([`exclude_formats_predicate`]); pass `&[]` elsewhere.
+/// `limit` is clamped to `[1, MAX_BOOKS_RETURNED]`; a short page yields `next == None`.
 #[allow(clippy::too_many_arguments)] // orthogonal query knobs; a params struct would just rename them
 pub async fn list_books_page(
     pool: &SqlitePool,

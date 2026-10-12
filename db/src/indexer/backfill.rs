@@ -141,8 +141,8 @@ const CHAPTER_BATCH: usize = 250;
 
 /// Fill `file_chapters` for audiobook `book_files` rows that have none, as a
 /// separate worker task (the diff-based reindex skips unchanged files); a no-op
-/// once all books have chapters. `on_progress(processed, total)` is called after
-/// each book for the UI.
+/// once all books have chapters. `on_progress(processed, total, item)` is called
+/// after each book for the UI.
 pub(crate) async fn backfill_chapters(
     pool: &SqlitePool,
     library_path: &str,
@@ -232,9 +232,9 @@ async fn extract_chapters_off_thread(
 
 /// Fill `books.word_count` for EPUB-backed books under `library_path` that have
 /// none yet (NULL), as a separate worker task posted after each library scan; a
-/// no-op once every EPUB book has a count. `on_progress(processed, total)` is
-/// called per book for the UI. A book whose spine can't be estimated stays NULL
-/// and is retried on the next scan, rather than persisting a sentinel that lies.
+/// no-op once every EPUB book has a count. `on_progress(processed, total, item)`
+/// is called per book for the UI. A book whose spine can't be estimated stays
+/// NULL and is retried on the next scan, rather than persisting a sentinel that lies.
 pub(crate) async fn backfill_word_counts(
     pool: &SqlitePool,
     library_path: &str,
@@ -253,7 +253,6 @@ pub(crate) async fn backfill_word_counts(
     let ids: Vec<i64> = candidates.iter().map(|(id, _)| *id).collect();
     let paths = crate::book_file_paths(pool, &ids, "EPUB").await?;
 
-    // Updates commit in batches of 250 to bound WAL flushes.
     let mut processed = 0u32;
     for chunk in candidates.chunks(250) {
         let mut tx = pool.begin().await?;
@@ -318,8 +317,8 @@ async fn fetch_word_count_candidates(
 
 /// Fill `books.page_count` for page-based (CBZ or PDF) books under `library_path`
 /// that have none yet (NULL), as a separate worker task posted after each ebook
-/// scan; a no-op once every book has a count. `on_progress(processed, total)` is
-/// called per book for the UI. A book whose archive can't be listed stays NULL
+/// scan; a no-op once every book has a count. `on_progress(processed, total, item)`
+/// is called per book for the UI. A book whose archive can't be listed stays NULL
 /// and is retried on the next scan.
 pub(crate) async fn backfill_page_counts(
     pool: &SqlitePool,
@@ -420,8 +419,8 @@ async fn fetch_page_count_candidates(
 /// Pre-generate all three WebP thumbnail sizes for every book under
 /// `library_path` that has a cover, so the first post-scan grid load serves
 /// cached thumbnails. Only stale books ([`thumbs::is_stale_async`]) count toward
-/// `total`, so an unchanged library posts no progress task. A per-book failure
-/// is logged and skipped (the lazy path retries); `on_progress(processed, total)`.
+/// `total`, so an unchanged library posts no progress task. A per-book failure is
+/// logged and skipped (the lazy path retries); `on_progress(processed, total, item)`.
 pub(crate) async fn backfill_thumbs(
     pool: &SqlitePool,
     library_path: &str,
@@ -674,11 +673,11 @@ async fn fetch_cover_candidates(
         .collect())
 }
 
-/// Re-extract covers for EPUB books the indexer left coverless, run after each
-/// ebook scan so a scanner fix reaches books already in the library (the reindex
-/// diff only re-parses files whose stat moved). A book that still comes back
-/// empty is retried next scan, costing one zip open. Per-book failures are
-/// logged and skipped; `on_progress(processed, total, item)`.
+/// Re-extract covers for EPUB and PDF books the indexer left coverless, run
+/// after each ebook scan so a scanner fix reaches books already in the library
+/// (the reindex diff only re-parses files whose stat moved). A book that still
+/// comes back empty is retried next scan, costing one zip open. Per-book
+/// failures are logged and skipped; `on_progress(processed, total, item)`.
 pub(crate) async fn backfill_covers(
     pool: &SqlitePool,
     library_path: &str,

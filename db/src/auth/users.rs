@@ -220,7 +220,8 @@ pub async fn set_display_name(
         .execute(&mut *tx)
         .await?;
     // `shelves.name` denormalizes the owner's display name at provisioning, so
-    // rename it in the same transaction or the old label is stranded.
+    // rename it in the same transaction or the old label is stranded. No unique-index
+    // risk: `idx_shelves_owner_name` excludes `kind = 'wishlist'`.
     sqlx::query(
         "UPDATE shelves
             SET name = (SELECT COALESCE(u.display_name, u.username) FROM users u WHERE u.id = ?1) || ?2

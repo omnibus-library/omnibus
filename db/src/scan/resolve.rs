@@ -2,7 +2,8 @@
 //!
 //! The scan flow is supervised: `CloseMatch` is a confirmation screen, never
 //! auto-applied, so a wrong suggestion costs a tap while a missed one costs a
-//! duplicate physical-only book. The fuzzy rung therefore offers every matching row
+//! duplicate physical-only book. The fuzzy rung therefore offers several matching
+//! rows (up to `MAX_CLOSE_MATCH_CANDIDATES`) rather than declining them as ambiguous,
 //! and is looser than the unattended `normalize`/`sync::attach` path, whose strict
 //! guard exists because a false positive there silently corrupts a book. A print
 //! edition's barcode ISBN differs from the ebook's, so the norm rung is the only
@@ -334,9 +335,6 @@ async fn find_book_by_norm(
     };
     let author_norm = meta.authors.first().and_then(|a| normalize_author(a));
 
-    // Pass 3 drops a leading article and relaxes the author to `authors_compatible`:
-    // print editions disagree on both ("Room with a View", "E. M." vs "Edward Morgan"),
-    // defeating passes 1 and 2. With no author it matches on title alone.
     let mut candidates = Vec::new();
     if let Some(author_norm) = &author_norm {
         candidates = query_norm_candidates(pool, &title_norm, author_norm, false).await?;
@@ -344,6 +342,9 @@ async fn find_book_by_norm(
             candidates = query_norm_candidates(pool, &title_norm, author_norm, true).await?;
         }
     }
+    // Pass 3 drops a leading article and relaxes the author to `authors_compatible`:
+    // print editions disagree on both ("Room with a View", "E. M." vs "Edward Morgan"),
+    // defeating passes 1 and 2. With no author it matches on title alone.
     if candidates.is_empty() {
         candidates = query_loose_candidates(pool, &title_norm, author_norm.as_deref()).await?;
     }

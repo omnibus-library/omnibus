@@ -368,9 +368,8 @@ pub(super) async fn insert_metadata_links(
     m: &EbookMetadata,
     alias_maps: &EntityAliasMaps,
 ) -> Result<(), sqlx::Error> {
-    // Multi-valued relations (authors, tags, identifiers) are batched: one insert of the
-    // distinct terms, then one `INSERT ... SELECT ... JOIN` resolving ids by name, chunked
-    // under SQLite's bind cap, so a bulk import doesn't hold the write lock throughout.
+    // Authors, tags and identifiers are batch-written (see each callee) so a bulk
+    // import doesn't hold the SQLite write lock for its whole length.
     insert_author_links(tx, book_id, m, &alias_maps.authors).await?;
 
     // Cleaned (trimmed, embedded-index-stripped — #1912) so the linked

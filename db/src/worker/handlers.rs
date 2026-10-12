@@ -99,7 +99,6 @@ async fn run_cleanup_detection(
     let suggestions = match kind {
         Some(CleanupKind::Author) => crate::cleanup::detect_authors(pool).await?,
         Some(CleanupKind::Series) => crate::cleanup::detect_series(pool).await?,
-        // One `CleanupKind::Tag` covers both the merge and the split action.
         Some(CleanupKind::Tag) => {
             let mut suggestions = crate::cleanup::detect_tags_merge(pool).await?;
             suggestions.extend(crate::cleanup::detect_tags_split(pool).await?);
@@ -156,10 +155,10 @@ pub(super) fn resizes_library(task: &Task) -> bool {
 }
 
 impl Worker {
-    /// Run a queued [`Task`], then drop the library-scoped stats caches if the
-    /// task could have changed the library's own content (see
-    /// [`resizes_library`]), so a just-finished scan doesn't describe the
-    /// library as it was before.
+    /// Run a queued [`Task`], then drop the library-scoped stats caches (library
+    /// totals and composition rollups) if `resizes_library` says the task could
+    /// have changed the library's own content, so a just-finished scan doesn't
+    /// describe the library as it was before.
     pub(super) async fn execute(self: &Arc<Self>, task: Task, id: TaskId) -> TaskOutcome {
         let resizes = resizes_library(&task);
         let outcome = self.dispatch(task, id).await;

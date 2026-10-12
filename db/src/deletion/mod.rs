@@ -131,8 +131,9 @@ pub async fn delete_book_items(
     // Post-commit, so an image another book's entry still embeds survives.
     let journal_images = purge::orphaned_images(pool, committed.journal_images).await?;
 
-    // File cleanup trails the commit: a failed unlink leaves a recoverable
-    // orphan, whereas a deleted file with its row intact is the ghost state.
+    // Unlinks trail the commit: a deleted file with its row intact is the ghost
+    // state. A scan already in flight may re-insert a file it snapshotted before
+    // the unlink as a new book; the next scan won't, so this doesn't lock the worker.
     fs::cleanup(fs::Cleanup {
         paths: committed.paths,
         library_roots: committed.library_roots,
@@ -171,8 +172,8 @@ async fn run_deletion_tx(
     copy_ids: &[i64],
 ) -> Result<Option<CommittedDeletion>, DeleteError> {
     // IMMEDIATE takes the write lock before the count is read; a DEFERRED
-    // `BEGIN` would leave that read outside the lock (a TOCTOU), as in
-    // `auth::users::create_user`.
+    // `BEGIN` would leave that read outside the lock (a TOCTOU).
+    // `auth::users::create_user` guards the same way.
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let Some(total_delete) =
         selection_total_delete(&mut tx, book_id, uuid, file_ids, copy_ids).await?

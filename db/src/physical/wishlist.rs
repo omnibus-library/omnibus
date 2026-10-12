@@ -82,8 +82,8 @@ pub async fn remove_wishlist_entry(
         .execute(&mut *tx)
         .await?;
 
-    // Only a book that existed to be wanted (physical pseudo-root, no file, no
-    // copy, no other entry) is purged; a ghosted library book is the reindex's.
+    // Purged only under the physical pseudo-root (`l.path = ?2`); a ghosted
+    // library book (file gone, root real) is the reindex's to retain.
     let orphan: Option<i64> = sqlx::query_scalar(
         "SELECT b.id FROM books b
            JOIN scan_roots l ON l.id = b.library_id

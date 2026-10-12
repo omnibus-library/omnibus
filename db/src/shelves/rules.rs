@@ -203,7 +203,7 @@ fn date_condition(rule: &ShelfRule, v: &str) -> Result<(String, Vec<Bind>), Shel
     }
 }
 
-/// Build a case-insensitive `IN`/`NOT IN` text predicate for a joined name
+/// Build an ASCII-case-insensitive `IN`/`NOT IN` text predicate for a joined name
 /// column. `members` selects the `book_id`s up to the column comparison (e.g.
 /// `"SELECT bf.book_id FROM book_files bf WHERE "`), `col` is the compared
 /// column. Equality ops use `COLLATE NOCASE`; `contains`/`starts_with` use
@@ -213,7 +213,6 @@ fn text_condition(
     members: &str,
     col: &str,
 ) -> Result<(String, Vec<Bind>), ShelfError> {
-    // Uncorrelated, so a membership union is built once per query, not per book.
     let v = rule.value.trim();
     let (cmp, bind, negate) = match rule.op {
         RuleOp::Is | RuleOp::Includes => (
@@ -239,6 +238,7 @@ fn text_condition(
         _ => return Err(unsupported(rule)),
     };
     let not = if negate { "NOT " } else { "" };
+    // Uncorrelated, so a membership union is built once per query, not per book.
     Ok((format!("b.id {not}IN ({members}{cmp})"), vec![bind]))
 }
 

@@ -169,9 +169,9 @@ async fn scan_key_taken(
     new_scan_key: &str,
     book_id: i64,
 ) -> Result<bool, sqlx::Error> {
-    // The holder is never another Moved entry: each arrival matches at most once,
-    // and a departure's source is absent from disk while an arrival's path is
-    // present, so no destination is another entry's source.
+    // Each arrival matches at most once, and a departure's source is absent
+    // from disk while an arrival's path is present, so no destination is
+    // another entry's source.
     let hit: Option<i64> = sqlx::query_scalar(
         "SELECT 1 FROM books WHERE library_id = ? AND scan_key = ? AND id <> ? LIMIT 1",
     )
