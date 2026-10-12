@@ -366,6 +366,10 @@ fn shelf_routes() -> Router<AppState> {
             get(shelves::shelves_containing),
         )
         .route(
+            "/api/shelves/containing/{uuid}/smart",
+            get(shelves::smart_shelves_containing),
+        )
+        .route(
             "/api/shelves/{id}",
             get(shelves::get_shelf)
                 .patch(shelves::update_shelf)

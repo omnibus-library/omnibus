@@ -4,7 +4,7 @@ import type {
   Locator,
   Page,
 } from "@playwright/test";
-import { expect } from "../fixtures/test";
+import { expect, test } from "../fixtures/test";
 import { gotoReady } from "./nav";
 
 /** The empty private hand-picked shelf a create request starts from. */
@@ -62,6 +62,40 @@ export async function createShelfAs(
   } finally {
     await ctx.dispose();
   }
+}
+
+/**
+ * Run `body` against a fresh private shelf built from `shelf`, named `label`
+ * plus a suffix unique to this test, then delete it — even when `body` throws —
+ * so a parallel spec never sees it left behind.
+ */
+export async function withOwnShelf(
+  request: APIRequestContext,
+  label: string,
+  shelf: Record<string, unknown>,
+  body: (shelf: { id: number; name: string }) => Promise<void>,
+): Promise<void> {
+  const name = `${label} ${Date.now()}-${test.info().workerIndex}`;
+  const id = await createShelf(request, { ...shelf, name });
+  try {
+    await body({ id, name });
+  } finally {
+    const resp = await request.post("/api/rpc/shelves/delete", {
+      data: { id },
+    });
+    expect(resp.status(), `cleanup delete of shelf ${id} must succeed`).toBe(
+      200,
+    );
+  }
+}
+
+/** Run `body` against a fresh private hand-picked shelf (see `withOwnShelf`). */
+export function withManualShelf(
+  request: APIRequestContext,
+  label: string,
+  body: (shelf: { id: number; name: string }) => Promise<void>,
+): Promise<void> {
+  return withOwnShelf(request, label, { kind: "manual" }, body);
 }
 
 // A shelf opens two ways on web, and they are different surfaces. Both start
