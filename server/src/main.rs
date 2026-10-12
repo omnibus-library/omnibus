@@ -470,4 +470,7 @@ mod server {
         // never does (the query string), is `request_log`'s contract.
         router.layer(request_log::layer())
     }
+
+    #[cfg(test)]
+    mod tests;
 }
