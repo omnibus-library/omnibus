@@ -234,6 +234,19 @@ fn on_key_returns_set_url_job_with_origin_on_enter() {
 }
 
 #[test]
+fn on_key_cancels_url_edit_when_url_unchanged() {
+    let mut app = App::new(Some("note".to_owned()));
+    app.on_key(key('u'), URL);
+
+    let action = app.on_key(code(KeyCode::Enter), URL);
+
+    assert_eq!(action, None);
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.status, Some(Status::Info("note".to_owned())));
+    assert!(!app.busy);
+}
+
+#[test]
 fn on_key_keeps_url_edit_open_with_error_when_url_invalid() {
     let mut app = editing('u');
     type_text(&mut app, "ftp://nope");
@@ -309,6 +322,21 @@ fn on_key_keeps_edit_open_when_enter_pressed_while_busy() {
     assert_eq!(action, None);
     assert_eq!(editing_buffer(&app), Some("new-token"));
     assert_eq!(app.status, Some(Status::Error(BUSY.to_owned())));
+}
+
+#[test]
+fn on_key_shows_validation_error_when_invalid_entry_saved_while_busy() {
+    let mut app = App::new(None);
+    app.on_key(key('s'), URL);
+    app.on_key(key('t'), URL);
+    type_text(&mut app, "has space");
+
+    let action = app.on_key(code(KeyCode::Enter), URL);
+
+    assert_eq!(action, None);
+    assert_eq!(editing_buffer(&app), Some("has space"));
+    let message = "invalid device token: expected letters, digits, '-' and '_' only";
+    assert_eq!(app.status, Some(Status::Error(message.to_owned())));
 }
 
 #[test]

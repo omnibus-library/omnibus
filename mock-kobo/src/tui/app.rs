@@ -88,7 +88,7 @@ impl App {
         }
         match self.mode {
             Mode::Normal => self.on_normal_key(key, current_url),
-            Mode::Editing(_) => self.on_edit_key(key),
+            Mode::Editing(_) => self.on_edit_key(key, current_url),
         }
     }
 
@@ -118,7 +118,7 @@ impl App {
         self.start(job)
     }
 
-    fn on_edit_key(&mut self, key: KeyEvent) -> Option<Action> {
+    fn on_edit_key(&mut self, key: KeyEvent, current_url: &str) -> Option<Action> {
         let Mode::Editing(edit) = &mut self.mode else {
             return None;
         };
@@ -127,7 +127,7 @@ impl App {
             KeyCode::Backspace => {
                 edit.buffer.pop();
             }
-            KeyCode::Enter => return self.save_edit(),
+            KeyCode::Enter => return self.save_edit(current_url),
             _ => {
                 if let Some(c) = typed_char(key) {
                     edit.buffer.push(c);
@@ -145,23 +145,28 @@ impl App {
     }
 
     /// Validate the open edit with the command line's rules and start its job;
-    /// on a refusal the edit stays open so the user can fix it.
-    fn save_edit(&mut self) -> Option<Action> {
+    /// on a refusal the edit stays open so the user can fix it. A URL equal to
+    /// `current_url` changes nothing, so it closes the edit like Esc.
+    fn save_edit(&mut self, current_url: &str) -> Option<Action> {
         let Mode::Editing(edit) = &self.mode else {
             return None;
         };
-        if self.busy {
-            return self.refuse_busy();
-        }
         let buffer = edit.buffer.clone();
         let job = match edit.field {
             Field::Url => cli::valid_url(buffer).map(Job::SetUrl),
             Field::Token => cli::valid_token(buffer).map(Job::SetToken),
         };
         match job {
-            Ok(job) => {
+            Ok(Job::SetUrl(url)) if url == current_url => {
                 self.mode = Mode::Normal;
-                self.start(job)
+                None
+            }
+            Ok(job) => {
+                let action = self.start(job);
+                if action.is_some() {
+                    self.mode = Mode::Normal;
+                }
+                action
             }
             Err(error) => {
                 self.status = Some(Status::Error(error.to_string()));
