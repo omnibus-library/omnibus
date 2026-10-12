@@ -7,11 +7,13 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
 
-use crate::control::{Control, DeviceView};
+use crate::client::RequestRecord;
+use crate::control::{Control, ControlError, DeviceView, LastSync};
+use crate::firmware::Quirk;
 
 /// Every control API reply, success or failure: `{status, code, message, details}`.
 #[derive(Debug, Serialize)]
@@ -51,6 +53,16 @@ pub enum ReplyCode {
     MethodNotAllowed,
 }
 
+/// What a reply's `details` carries, for routes whose outcomes differ.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum Details {
+    Pages { pages: usize },
+    Quirk { quirk: Option<Quirk> },
+    Requests { requests: Vec<RequestRecord> },
+    Empty(NoDetails),
+}
+
 impl<T: Serialize> Reply<T> {
     fn new(status: StatusCode, code: ReplyCode, message: impl Into<String>, details: T) -> Self {
         Self {
@@ -73,6 +85,8 @@ impl<T: Serialize> IntoResponse for Reply<T> {
 pub fn router(control: Arc<Control>) -> Router {
     Router::new()
         .route("/device", get(get_device))
+        .route("/actions/sync", post(post_sync))
+        .route("/requests", get(get_requests))
         .method_not_allowed_fallback(method_not_allowed)
         .fallback(not_found)
         .with_state(control)
@@ -80,6 +94,56 @@ pub fn router(control: Arc<Control>) -> Router {
 
 async fn get_device(State(control): State<Arc<Control>>) -> Reply<DeviceView> {
     Reply::new(StatusCode::OK, ReplyCode::Ok, "ok", control.view())
+}
+
+async fn post_sync(State(control): State<Arc<Control>>) -> Reply<Details> {
+    sync_reply(control.sync().await)
+}
+
+async fn get_requests(State(control): State<Arc<Control>>) -> Reply<Details> {
+    let requests = control.requests();
+    Reply::new(
+        StatusCode::OK,
+        ReplyCode::Ok,
+        "ok",
+        Details::Requests { requests },
+    )
+}
+
+/// The reply for a finished `POST /actions/sync`.
+fn sync_reply(result: Result<LastSync, ControlError>) -> Reply<Details> {
+    match result {
+        Ok(LastSync::Synced { pages }) => {
+            let details = Details::Pages { pages };
+            Reply::new(StatusCode::OK, ReplyCode::Synced, "sync complete", details)
+        }
+        Ok(LastSync::Failed { quirk, message }) => {
+            let details = Details::Quirk { quirk };
+            Reply::new(
+                StatusCode::BAD_GATEWAY,
+                ReplyCode::SyncFailed,
+                message,
+                details,
+            )
+        }
+        Err(error) => error_reply(&error),
+    }
+}
+
+/// The reply for a control problem, whichever action hit it.
+fn error_reply(error: &ControlError) -> Reply<Details> {
+    let (status, code) = match error {
+        ControlError::SyncInProgress => (StatusCode::CONFLICT, ReplyCode::SyncInProgress),
+        ControlError::StateNotSaved(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, ReplyCode::StateNotSaved)
+        }
+    };
+    Reply::new(
+        status,
+        code,
+        error.to_string(),
+        Details::Empty(NoDetails {}),
+    )
 }
 
 async fn not_found(method: Method, uri: Uri) -> Reply<NoDetails> {

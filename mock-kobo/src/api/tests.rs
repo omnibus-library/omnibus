@@ -6,12 +6,23 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
-use crate::control::Control;
+use crate::control::{Control, ControlError, LastSync};
 use crate::device::Device;
-use crate::state::SavedState;
+use crate::firmware::Quirk;
+use crate::state::{SavedState, StateError};
 use crate::test_support::{new_entitlement, spawn_stub, stub_control, Stub, STUB_TOKEN};
 
 use super::*;
+
+/// A reply as the client sees it on the wire.
+fn wire(reply: &Reply<Details>) -> Value {
+    serde_json::to_value(reply).unwrap()
+}
+
+/// One request a healthy sync makes, as `GET /requests` lists it.
+fn request(method: &str, path: &str) -> Value {
+    json!({ "method": method, "path": format!("/kobo/<token>{path}"), "status": 200 })
+}
 
 /// Serve `control` on a free loopback port and return its base URL.
 async fn serve(control: Control) -> String {
@@ -161,4 +172,138 @@ async fn wrong_method_returns_method_not_allowed_reply() {
             "details": {},
         })
     );
+}
+
+#[test]
+fn sync_reply_is_synced_with_pages_when_sync_succeeds() {
+    let reply = sync_reply(Ok(LastSync::Synced { pages: 1 }));
+
+    assert_eq!(
+        wire(&reply),
+        json!({
+            "status": 200,
+            "code": "synced",
+            "message": "sync complete",
+            "details": { "pages": 1 },
+        })
+    );
+}
+
+#[test]
+fn sync_reply_is_sync_failed_with_quirk_when_sync_fails() {
+    let message = "sync failed (StorePaths): /kobo/<token>/v1/user/profile answered 404 Not Found";
+    let tripped = sync_reply(Ok(LastSync::Failed {
+        quirk: Some(Quirk::StorePaths),
+        message: message.into(),
+    }));
+    let no_answer = sync_reply(Ok(LastSync::Failed {
+        quirk: None,
+        message: "sync failed: no answer from the server: refused".into(),
+    }));
+
+    assert_eq!(
+        wire(&tripped),
+        json!({
+            "status": 502,
+            "code": "sync_failed",
+            "message": message,
+            "details": { "quirk": "StorePaths" },
+        })
+    );
+    assert_eq!(wire(&no_answer)["details"], json!({ "quirk": null }));
+}
+
+#[test]
+fn sync_reply_is_sync_in_progress_when_sync_running() {
+    let reply = sync_reply(Err(ControlError::SyncInProgress));
+
+    assert_eq!(
+        wire(&reply),
+        json!({
+            "status": 409,
+            "code": "sync_in_progress",
+            "message": "a sync is already running",
+            "details": {},
+        })
+    );
+}
+
+#[test]
+fn sync_reply_is_state_not_saved_when_save_fails() {
+    let write_error = StateError::Write {
+        path: "x.json".into(),
+        source: std::io::Error::other("disk full"),
+    };
+
+    let reply = sync_reply(Err(ControlError::StateNotSaved(write_error)));
+
+    assert_eq!(
+        wire(&reply),
+        json!({
+            "status": 500,
+            "code": "state_not_saved",
+            "message": "device state not saved: cannot write x.json: disk full",
+            "details": {},
+        })
+    );
+}
+
+#[tokio::test]
+async fn post_actions_sync_returns_synced_reply_against_healthy_stub() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(
+        body,
+        json!({
+            "status": 200,
+            "code": "synced",
+            "message": "sync complete",
+            "details": { "pages": 1 },
+        })
+    );
+}
+
+#[tokio::test]
+async fn get_requests_returns_ok_reply_with_redacted_requests() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+
+    let response = reqwest::get(format!("{base}/requests")).await.unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(
+        body,
+        json!({
+            "status": 200,
+            "code": "ok",
+            "message": "ok",
+            "details": { "requests": [
+                request("GET", "/v1/initialization"),
+                request("POST", "/v1/analytics/gettests"),
+                request("GET", "/v1/user/profile"),
+                request("GET", "/v1/user/loyalty/benefits"),
+                request("GET", "/v1/products/books/subscriptions"),
+                request("GET", "/v1/deals"),
+                request("GET", "/v1/library/sync"),
+            ] },
+        })
+    );
+    assert!(!body.to_string().contains(STUB_TOKEN));
 }
