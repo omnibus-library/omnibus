@@ -3,6 +3,7 @@
 //! behaviours behind past Kobo regressions, so a test sees what a device would.
 
 pub mod api;
+pub mod autowire;
 pub mod cli;
 pub mod client;
 pub mod control;

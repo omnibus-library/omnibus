@@ -21,6 +21,9 @@ use crate::state::SavedState;
 /// The path token every stub device syncs with.
 pub const STUB_TOKEN: &str = "stub-device-token";
 
+/// The bearer token the stub's login hands out, and the only one its device routes accept.
+pub const SESSION_TOKEN: &str = "stub-session";
+
 /// How a stub answers. `Stub::default()` behaves like a healthy Omnibus.
 #[derive(Clone)]
 pub struct Stub {
@@ -47,6 +50,12 @@ pub struct Stub {
     pub sync_never_ends: bool,
     /// Leave `library_sync` requests open without ever answering.
     pub sync_never_answers: bool,
+    /// The `(name, token)` devices `POST /api/rpc/kobo/devices` lists, oldest first.
+    pub devices: Vec<(String, String)>,
+    /// The status `POST /api/auth/login` answers with.
+    pub login_status: StatusCode,
+    /// The `token` in a successful login reply; `None` leaves it null.
+    pub login_token: Option<&'static str>,
 }
 
 impl Default for Stub {
@@ -62,6 +71,9 @@ impl Default for Stub {
             sync_status: StatusCode::OK,
             sync_never_ends: false,
             sync_never_answers: false,
+            devices: Vec::new(),
+            login_status: StatusCode::OK,
+            login_token: Some(SESSION_TOKEN),
         }
     }
 }
@@ -71,6 +83,7 @@ impl Default for Stub {
 pub struct Recorded {
     pub path: String,
     pub headers: HeaderMap,
+    pub body: String,
 }
 
 /// A running stub: the `api_endpoint` a device points at, and what it received.
@@ -82,6 +95,16 @@ pub struct RunningStub {
 }
 
 impl RunningStub {
+    /// The requests received at `path`, in order.
+    pub fn requests_to(&self, path: &str) -> Vec<Recorded> {
+        let requests = self.requests.lock().unwrap();
+        requests
+            .iter()
+            .filter(|r| r.path == path)
+            .cloned()
+            .collect()
+    }
+
     /// The paths requested so far, in order.
     pub fn paths(&self) -> Vec<String> {
         let requests = self.requests.lock().unwrap();
@@ -131,11 +154,16 @@ async fn handle(
     method: Method,
     uri: Uri,
     headers: HeaderMap,
+    body: String,
 ) -> Response {
     state.requests.lock().unwrap().push(Recorded {
         path: uri.path().to_owned(),
-        headers,
+        headers: headers.clone(),
+        body: body.clone(),
     });
+    if let Some(response) = omnibus_api(&state, uri.path(), &headers, &body) {
+        return response;
+    }
     let prefix = format!("/kobo/{STUB_TOKEN}");
     let Some(rest) = uri.path().strip_prefix(&prefix) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -151,6 +179,58 @@ async fn handle(
             None => StatusCode::NOT_FOUND.into_response(),
         },
     }
+}
+
+/// The Omnibus `/api` routes auto-wire calls: login, then the device list and create.
+fn omnibus_api(state: &StubState, path: &str, headers: &HeaderMap, body: &str) -> Option<Response> {
+    let signed_in = headers
+        .get("authorization")
+        .is_some_and(|value| value == format!("Bearer {SESSION_TOKEN}").as_str());
+    match path {
+        "/api/auth/login" => Some(login(state)),
+        "/api/rpc/kobo/devices" | "/api/rpc/kobo/devices/create" if !signed_in => {
+            Some(StatusCode::UNAUTHORIZED.into_response())
+        }
+        "/api/rpc/kobo/devices" => Some(list_devices(state)),
+        "/api/rpc/kobo/devices/create" => Some(create_device(body)),
+        _ => None,
+    }
+}
+
+fn login(state: &StubState) -> Response {
+    let status = state.stub.login_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    (
+        status,
+        Json(json!({ "user": {}, "token": state.stub.login_token })),
+    )
+        .into_response()
+}
+
+fn device_row(id: usize, name: &str, token: &str) -> Value {
+    json!({
+        "id": id,
+        "name": name,
+        "token": token,
+        "created_at": "2026-01-01T00:00:00Z",
+        "last_seen_at": null,
+    })
+}
+
+fn list_devices(state: &StubState) -> Response {
+    let rows: Vec<Value> = (1..)
+        .zip(&state.stub.devices)
+        .map(|(id, (name, token))| device_row(id, name, token))
+        .collect();
+    Json(rows).into_response()
+}
+
+fn create_device(body: &str) -> Response {
+    let request: Value = serde_json::from_str(body).unwrap_or_default();
+    let name = request["name"].as_str().unwrap_or_default();
+    Json(device_row(99, name, STUB_TOKEN)).into_response()
 }
 
 /// A firmware store path's answer, redirecting to a healthy path when `store_path_status` is a 3xx.
