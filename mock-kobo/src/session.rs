@@ -34,11 +34,46 @@ pub enum SyncFailure {
     Transport(String),
 }
 
+/// One "Sync now" press whatever its outcome: every request made, and how it ended.
+#[derive(Debug)]
+pub struct SyncAttempt {
+    /// Every request the device made, in order, token redacted.
+    pub requests: Vec<RequestRecord>,
+    /// The `library_sync` pages fetched, or why the sync failed.
+    pub outcome: Result<usize, SyncFailure>,
+}
+
 /// Press "Sync now" on `device`, configured with `api_endpoint`.
 pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncReport, SyncFailure> {
-    let mut client = Client::new(api_endpoint, &device.hardware_id)?;
+    let attempt = attempt_sync(device, api_endpoint).await;
+    attempt.outcome.map(|pages| SyncReport {
+        requests: attempt.requests,
+        pages,
+    })
+}
+
+/// Press "Sync now", keeping the request log even when the sync fails.
+pub async fn attempt_sync(device: &mut Device, api_endpoint: &str) -> SyncAttempt {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return SyncAttempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_sync(&mut client, device).await;
+    SyncAttempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+/// The handshake, store paths and library sync; returns the pages fetched.
+async fn run_sync(client: &mut Client, device: &mut Device) -> Result<usize, SyncFailure> {
     let initialization = client.initialization().await?;
-    require_not_rejected(&client, &initialization)?;
+    require_not_rejected(client, &initialization)?;
     if !initialization.headers().contains_key(API_TOKEN_HEADER) {
         return Err(tripped(
             Quirk::ApiToken,
@@ -50,16 +85,12 @@ pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncRep
         .await?
         .resources;
     let tests = client.get_tests(&resources.get_tests_request).await?;
-    require_success(&client, &tests, Quirk::GetTestsPost)?;
+    require_success(client, &tests, Quirk::GetTestsPost)?;
     for path in STORE_PATHS {
         let store = client.store_path(path).await?;
-        require_success(&client, &store, Quirk::StorePaths)?;
+        require_success(client, &store, Quirk::StorePaths)?;
     }
-    let pages = sync_library(&mut client, &resources.library_sync, device).await?;
-    Ok(SyncReport {
-        requests: client.into_requests(),
-        pages,
-    })
+    sync_library(client, &resources.library_sync, device).await
 }
 
 /// Fetch and apply `library_sync` pages until the server stops asking for more,

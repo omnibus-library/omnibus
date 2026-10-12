@@ -17,6 +17,14 @@ fn request_lines(report: &SyncReport) -> Vec<String> {
         .collect()
 }
 
+fn attempt_lines(attempt: &SyncAttempt) -> Vec<String> {
+    attempt
+        .requests
+        .iter()
+        .map(|r| format!("{} {} {}", r.method, r.path, r.status))
+        .collect()
+}
+
 #[tokio::test]
 async fn sync_now_completes_handshake_against_healthy_stub() {
     let stub = spawn_stub(Stub::default()).await;
@@ -319,4 +327,41 @@ async fn sync_now_fails_when_library_sync_body_is_malformed() {
         .to_string()
         .contains("invalid type: map, expected a sequence"));
     assert!(!format!("{failure:?}").contains(STUB_TOKEN));
+}
+
+#[tokio::test]
+async fn attempt_sync_keeps_requests_when_sync_fails() {
+    let stub = spawn_stub(Stub {
+        store_path_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+
+    let attempt = attempt_sync(&mut Device::new("HW-1"), &stub.endpoint).await;
+
+    assert!(matches!(
+        attempt.outcome,
+        Err(SyncFailure::Quirk {
+            quirk: Quirk::StorePaths,
+            ..
+        })
+    ));
+    assert_eq!(
+        attempt_lines(&attempt),
+        [
+            "GET /kobo/<token>/v1/initialization 200",
+            "POST /kobo/<token>/v1/analytics/gettests 200",
+            "GET /kobo/<token>/v1/user/profile 404",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn attempt_sync_reports_pages_and_requests_when_sync_succeeds() {
+    let stub = spawn_stub(Stub::default()).await;
+
+    let attempt = attempt_sync(&mut Device::new("HW-1"), &stub.endpoint).await;
+
+    assert!(matches!(attempt.outcome, Ok(1)));
+    assert_eq!(attempt.requests.len(), 7);
 }
