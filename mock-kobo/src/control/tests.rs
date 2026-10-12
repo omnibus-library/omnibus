@@ -229,3 +229,77 @@ async fn sync_returns_state_not_saved_when_state_file_cannot_be_written() {
         Some(LastSync::Synced { pages: 1 })
     );
 }
+
+#[tokio::test]
+async fn reset_wipes_library_sync_token_last_sync_and_requests() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync().await.unwrap();
+
+    let view = control.reset().await.unwrap();
+
+    assert_eq!(view, control.view());
+    assert!(view.library.is_empty());
+    assert_eq!(view.sync_token, None);
+    assert_eq!(view.last_sync, None);
+    assert!(control.requests().is_empty());
+}
+
+#[tokio::test]
+async fn reset_keeps_hardware_id_url_and_token() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync().await.unwrap();
+
+    let view = control.reset().await.unwrap();
+
+    assert_eq!(view.hardware_id, "HW-1");
+    assert_eq!(view.url, stub.origin);
+    assert_eq!(control.sync().await.unwrap(), LastSync::Synced { pages: 1 });
+    assert_eq!(control.view().library["book-1"].title, "Dune");
+}
+
+#[tokio::test]
+async fn reset_saves_wiped_state_file() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path.clone());
+    control.sync().await.unwrap();
+
+    control.reset().await.unwrap();
+
+    let saved = state::load(&path).await.unwrap().unwrap();
+    assert_eq!(saved.token, STUB_TOKEN);
+    assert_eq!(saved.device, Device::new("HW-1"));
+}
+
+#[tokio::test]
+async fn reset_returns_sync_in_progress_while_sync_runs() {
+    let stub = spawn_stub(Stub {
+        sync_never_answers: true,
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let saved = SavedState {
+        url: None,
+        token: STUB_TOKEN.into(),
+        device: device_with_dune(),
+    };
+    let control = Arc::new(Control::new(
+        saved,
+        stub.origin.clone(),
+        dir.path().join("kobo.json"),
+    ));
+    let running = spawn_sync(&control);
+    wait_until(|| control.view().syncing).await;
+
+    let result = control.reset().await;
+
+    assert!(matches!(result, Err(ControlError::SyncInProgress)));
+    assert_eq!(control.view().library, device_with_dune().library);
+    running.abort();
+}

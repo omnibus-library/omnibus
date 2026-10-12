@@ -43,6 +43,10 @@ pub enum LastSync {
     },
 }
 
+/// What `PUT /reset` tells the caller about the server's delivery record.
+pub const RESET_MESSAGE: &str = "device reset; Omnibus still remembers what it sent this device until #2743, \
+so the next sync sends only changes — remove the device in Account settings and add it again for a full resend";
+
 /// Why the control API couldn't do what it was asked.
 #[derive(Debug, thiserror::Error)]
 pub enum ControlError {
@@ -125,6 +129,22 @@ impl Control {
             (live.saved.device.clone(), live.saved.token.clone())
         };
         Ok((SyncingGuard(self), device, token))
+    }
+
+    /// Wipe what the device holds; keep who it is and where it syncs.
+    pub async fn reset(&self) -> Result<DeviceView, ControlError> {
+        {
+            let mut live = self.live();
+            if live.syncing {
+                return Err(ControlError::SyncInProgress);
+            }
+            live.saved.device.library.clear();
+            live.saved.device.sync_token = None;
+            live.last_sync = None;
+            live.requests.clear();
+        }
+        self.persist().await?;
+        Ok(self.view())
     }
 
     /// Every request the device made since start or the last reset, oldest first.

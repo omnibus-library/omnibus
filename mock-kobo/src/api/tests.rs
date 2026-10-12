@@ -1,12 +1,13 @@
 //! The control API over real TCP: `listen`, `ready_line`, and each route's reply envelope.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
-use crate::control::{Control, ControlError, LastSync};
+use crate::control::{Control, ControlError, DeviceView, LastSync};
 use crate::device::Device;
 use crate::firmware::Quirk;
 use crate::state::{SavedState, StateError};
@@ -306,4 +307,72 @@ async fn get_requests_returns_ok_reply_with_redacted_requests() {
         })
     );
     assert!(!body.to_string().contains(STUB_TOKEN));
+}
+
+fn empty_device_view() -> DeviceView {
+    DeviceView {
+        hardware_id: "HW-1".into(),
+        url: "http://127.0.0.1:3000".into(),
+        syncing: false,
+        last_sync: None,
+        sync_token: None,
+        library: BTreeMap::new(),
+    }
+}
+
+#[test]
+fn reset_reply_is_reset_with_full_resend_workaround() {
+    let reply = reset_reply(Ok(empty_device_view()));
+
+    let body = wire(&reply);
+    assert_eq!(body["status"], 200);
+    assert_eq!(body["code"], "reset");
+    assert_eq!(
+        body["details"],
+        json!({
+            "hardware_id": "HW-1",
+            "url": "http://127.0.0.1:3000",
+            "syncing": false,
+            "last_sync": null,
+            "sync_token": null,
+            "library": {},
+        })
+    );
+    let message = body["message"].as_str().unwrap();
+    assert!(message.contains("#2743"));
+    assert!(message.contains("remove the device in Account settings and add it again"));
+}
+
+#[test]
+fn reset_reply_is_sync_in_progress_when_sync_running() {
+    let reply = reset_reply(Err(ControlError::SyncInProgress));
+
+    assert_eq!(
+        wire(&reply),
+        json!({
+            "status": 409,
+            "code": "sync_in_progress",
+            "message": "a sync is already running",
+            "details": {},
+        })
+    );
+}
+
+#[tokio::test]
+async fn put_reset_returns_reset_reply() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .put(format!("{base}/reset"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "reset");
+    assert_eq!(body["details"]["hardware_id"], "HW-1");
+    assert_eq!(body["details"]["library"], json!({}));
 }

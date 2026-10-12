@@ -7,12 +7,12 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::Serialize;
 
 use crate::client::RequestRecord;
-use crate::control::{Control, ControlError, DeviceView, LastSync};
+use crate::control::{Control, ControlError, DeviceView, LastSync, RESET_MESSAGE};
 use crate::firmware::Quirk;
 
 /// Every control API reply, success or failure: `{status, code, message, details}`.
@@ -59,6 +59,7 @@ pub enum ReplyCode {
 enum Details {
     Pages { pages: usize },
     Quirk { quirk: Option<Quirk> },
+    Device(DeviceView),
     Requests { requests: Vec<RequestRecord> },
     Empty(NoDetails),
 }
@@ -87,6 +88,7 @@ pub fn router(control: Arc<Control>) -> Router {
         .route("/device", get(get_device))
         .route("/actions/sync", post(post_sync))
         .route("/requests", get(get_requests))
+        .route("/reset", put(put_reset))
         .method_not_allowed_fallback(method_not_allowed)
         .fallback(not_found)
         .with_state(control)
@@ -108,6 +110,21 @@ async fn get_requests(State(control): State<Arc<Control>>) -> Reply<Details> {
         "ok",
         Details::Requests { requests },
     )
+}
+
+async fn put_reset(State(control): State<Arc<Control>>) -> Reply<Details> {
+    reset_reply(control.reset().await)
+}
+
+/// The reply for a finished `PUT /reset`.
+fn reset_reply(result: Result<DeviceView, ControlError>) -> Reply<Details> {
+    match result {
+        Ok(view) => {
+            let details = Details::Device(view);
+            Reply::new(StatusCode::OK, ReplyCode::Reset, RESET_MESSAGE, details)
+        }
+        Err(error) => error_reply(&error),
+    }
 }
 
 /// The reply for a finished `POST /actions/sync`.
