@@ -10,9 +10,10 @@ Logs in as `explorer-<k>`, then reuses, creates or recreates the device named
      "device_name": "Mock Kobo", "token": …}
 
 `mock-kobo serve` cannot do this itself: its auto-wire refuses a remote
-instance. A device is reused only when the state file records this instance
-and exactly one "Mock Kobo" exists; otherwise a fresh device on an old server
-record would sync only changes (#2743), so the old ones are revoked first.
+instance. A device is reused only when exactly one "Mock Kobo" exists and the
+state file records this instance and that device's token; otherwise a fresh
+device on an old server record would sync only changes (#2743), so the old
+ones are revoked first.
 
 Exit 1 means the instance refused or failed; exit 2 is a usage or accounts
 problem. The token is printed on stdout and nowhere else.
@@ -57,9 +58,11 @@ def normalise_origin(url: str) -> str:
     return f"{parts.scheme}://{host}{suffix}{parts.path.rstrip('/')}"
 
 
-def state_matches(saved: Any, url: str) -> bool:
-    """Whether the device state file `saved` records the instance at `url`."""
+def state_matches(saved: Any, url: str, token: str) -> bool:
+    """Whether the device state file `saved` records the instance at `url` and the device `token`."""
     if not isinstance(saved, dict) or not isinstance(saved.get("url"), str):
+        return False
+    if saved.get("token") != token:
         return False
     try:
         return normalise_origin(saved["url"]) == normalise_origin(url)
@@ -106,7 +109,9 @@ def wire(client: Client, url: str, state: Path) -> tuple[str, str]:
     """Reuse, create or recreate the account's "Mock Kobo"; returns how, and its token."""
     devices = client.rpc("/api/rpc/kobo/devices", {})
     ours = [d for d in devices if d["name"] == DEVICE_NAME]
-    action = plan(state_matches(read_state(state), url), len(ours))
+    saved = read_state(state)
+    have_state = any(state_matches(saved, url, device["token"]) for device in ours)
+    action = plan(have_state, len(ours))
     if action == "reuse":
         return "reused", ours[0]["token"]
     for device in ours:

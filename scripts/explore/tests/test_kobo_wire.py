@@ -52,9 +52,16 @@ class PlanTests(unittest.TestCase):
 
 class StateMatchesTests(unittest.TestCase):
     URL = "https://omnibus-test.example.com"
+    TOKEN = "tok-1"
 
-    def test_state_matches_when_the_saved_url_is_the_instance_origin(self):
-        self.assertTrue(kobo_wire.state_matches({"url": self.URL}, self.URL))
+    def saved(self, url=URL, token=TOKEN):
+        return {"url": url, "token": token}
+
+    def matches(self, saved, token=TOKEN):
+        return kobo_wire.state_matches(saved, self.URL, token)
+
+    def test_state_matches_when_it_records_the_instance_origin_and_the_device_token(self):
+        self.assertTrue(self.matches(self.saved()))
 
     def test_state_matches_ignoring_case_default_port_and_trailing_slash(self):
         for saved in (
@@ -63,10 +70,11 @@ class StateMatchesTests(unittest.TestCase):
             "https://omnibus-test.example.com/",
         ):
             with self.subTest(saved=saved):
-                self.assertTrue(kobo_wire.state_matches({"url": saved}, self.URL))
+                self.assertTrue(self.matches(self.saved(url=saved)))
 
     def test_state_matches_ignoring_the_default_port_of_http(self):
-        self.assertTrue(kobo_wire.state_matches({"url": "http://127.0.0.1:80/"}, "http://127.0.0.1"))
+        saved = {"url": "http://127.0.0.1:80/", "token": self.TOKEN}
+        self.assertTrue(kobo_wire.state_matches(saved, "http://127.0.0.1", self.TOKEN))
 
     def test_state_does_not_match_another_instance(self):
         for saved in (
@@ -75,20 +83,26 @@ class StateMatchesTests(unittest.TestCase):
             "https://omnibus-test.example.com:8443",
         ):
             with self.subTest(saved=saved):
-                self.assertFalse(kobo_wire.state_matches({"url": saved}, self.URL))
+                self.assertFalse(self.matches(self.saved(url=saved)))
 
-    def test_state_does_not_match_without_a_usable_saved_url(self):
+    def test_state_does_not_match_another_devices_token(self):
+        self.assertFalse(self.matches(self.saved(token="tok-2")))
+
+    def test_state_does_not_match_without_a_usable_saved_url_and_token(self):
         for saved in (
             None,
             {},
-            {"url": None},
-            {"url": 3},
-            {"url": "http://host:99999"},
+            {"token": self.TOKEN},
+            {"url": self.URL},
+            {"url": None, "token": self.TOKEN},
+            {"url": 3, "token": self.TOKEN},
+            {"url": "http://host:99999", "token": self.TOKEN},
+            {"url": self.URL, "token": None},
             ["url"],
             "https://omnibus-test.example.com",
         ):
             with self.subTest(saved=saved):
-                self.assertFalse(kobo_wire.state_matches(saved, self.URL))
+                self.assertFalse(self.matches(saved))
 
 
 class KoboWireCliTests(unittest.TestCase):
@@ -117,6 +131,10 @@ class KoboWireCliTests(unittest.TestCase):
              "--agent", str(agent), "--state", str(state)],
             capture_output=True, text=True, env=env,
         )
+
+    def save_state(self, token, url=None, name="state.json"):
+        """Leave a device state file as `mock-kobo serve` would, recording `token` against `url`."""
+        (self.dir / name).write_text(json.dumps({"url": self.fake.origin if url is None else url, "token": token}))
 
     def sent(self):
         return [(r["method"], r["path"]) for r in self.fake.requests]
@@ -165,9 +183,9 @@ class CreateTests(KoboWireCliTests):
 
 
 class ReuseTests(KoboWireCliTests):
-    def test_reuses_the_device_when_the_state_file_names_this_instance(self):
+    def test_reuses_the_device_when_the_state_file_names_this_instance_and_its_token(self):
         device = self.fake.add_device("explorer-1", "Mock Kobo")
-        (self.dir / "state.json").write_text(json.dumps({"url": self.fake.origin}))
+        self.save_state(device["token"])
 
         proc = self.wire()
 
@@ -177,15 +195,6 @@ class ReuseTests(KoboWireCliTests):
         self.assertEqual(self.fake.devices["explorer-1"], [device])
         self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/create"), [])
         self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/revoke"), [])
-
-    def test_reuses_the_device_when_the_state_url_differs_only_in_case_and_trailing_slash(self):
-        device = self.fake.add_device("explorer-1", "Mock Kobo")
-        (self.dir / "state.json").write_text(json.dumps({"url": self.fake.origin.upper() + "/"}))
-
-        proc = self.wire()
-
-        self.assertEqual(json.loads(proc.stdout)["token"], device["token"])
-        self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/create"), [])
 
 
 class RecreateTests(KoboWireCliTests):
@@ -205,9 +214,26 @@ class RecreateTests(KoboWireCliTests):
 
     def test_recreates_the_device_when_the_state_file_names_another_instance(self):
         stale = self.fake.add_device("explorer-1", "Mock Kobo")
-        (self.dir / "state.json").write_text(json.dumps({"url": "http://elsewhere.example.com"}))
+        self.save_state(stale["token"], url="http://elsewhere.example.com")
 
         self.assert_recreated(self.wire(), stale)
+
+    def test_recreates_the_device_when_the_state_file_holds_another_devices_token(self):
+        stale = self.fake.add_device("explorer-1", "Mock Kobo")
+        self.save_state("tok-of-a-device-since-revoked")
+
+        self.assert_recreated(self.wire(), stale)
+
+    def test_recreates_the_device_when_another_checkout_wired_it_since(self):
+        checkout_a, checkout_b = "state-a.json", "state-b.json"
+        outcomes = []
+        for state in (checkout_a, checkout_b, checkout_a):
+            proc = self.wire(state=self.dir / state)
+            out = json.loads(proc.stdout)
+            outcomes.append(out["wired"])
+            self.save_state(out["token"], name=state)
+
+        self.assertEqual(outcomes, ["created", "recreated", "recreated"])
 
     def test_recreates_the_device_when_the_state_file_reads_as_no_state(self):
         self.fake.add_device("explorer-1", "Mock Kobo")
@@ -221,7 +247,7 @@ class RecreateTests(KoboWireCliTests):
         first = self.fake.add_device("explorer-1", "Mock Kobo")
         other = self.fake.add_device("explorer-1", "Living Room")
         second = self.fake.add_device("explorer-1", "Mock Kobo")
-        (self.dir / "state.json").write_text(json.dumps({"url": self.fake.origin}))
+        self.save_state(first["token"])
 
         proc = self.wire()
 
