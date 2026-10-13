@@ -93,8 +93,9 @@ renamed wishlist is reported as a shelf nothing journalled.
   appears to succeed, that itself is the finding.
 - Password and Kindle-email fields live on this page too. **Do not touch
   either** — changing your password locks you out of the rest of the run.
-- The Kobo section on this page registers devices. Leave it alone unless you
-  were handed [kobo_sync.md](../kobo_sync.md).
+- The Kobo section on this page lists devices. Leave it alone: the runner's
+  `kobo.sh up` registered a Kobo agent's device there, and removing one cuts
+  that device off.
 - The account page also holds the reading goals and the detail-page
   scroll-stop toggle. Those belong to [viewing_stats.md](viewing_stats.md)
   and [browsing_book_details.md](browsing_book_details.md) respectively; they

@@ -65,6 +65,12 @@ class FakeState:
     def library(self) -> list[str]:
         return self.facts.get("library", [])
 
+    def kobo_books(self) -> set[str]:
+        return set(self.facts.get("kobo_books", ()))
+
+    def kobo_smart_shelves(self) -> list[str]:
+        return self.facts.get("kobo_smart_shelves", [])
+
 
 def claims_of(*slots: tuple, shelf_names: Any = (), shelf_any: bool = False) -> expectations.Claims:
     c = expectations.Claims()

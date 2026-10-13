@@ -1,6 +1,6 @@
 ---
 name: agentic-exploration
-argument-hint: "[--agents N] [--flows-per-agent K] [--corpus PATH] [--seed S] [--ios] [--kobo] [--reader]"
+argument-hint: "[--agents N] [--flows-per-agent K] [--corpus PATH] [--seed S] [--ios] [--kobo K] [--reader]"
 description: Run an exploratory testing swarm against the persistent Omnibus instance — snapshot, provision accounts, sample flows from the catalog, and fan out one agent per simulated reader. Triggers when the user asks to "run the exploration swarm", "run agentic exploration", "exercise the app with agents", or invokes /agentic-exploration.
 ---
 
@@ -14,7 +14,7 @@ speculatively.
 
 ## 0. Arguments — or an interview
 
-`/agentic-exploration [--agents N] [--flows-per-agent K] [--corpus PATH] [--seed S] [--ios] [--kobo] [--reader]`
+`/agentic-exploration [--agents N] [--flows-per-agent K] [--corpus PATH] [--seed S] [--ios] [--kobo K] [--reader]`
 
 | Arg | Default | Notes |
 |---|---|---|
@@ -23,7 +23,7 @@ speculatively.
 | `--corpus` | — | A directory of books the tests can upload. Required if `adding_book` can be drawn. |
 | `--seed` | random | Print whatever you use — it is what makes a run repeatable. |
 | `--ios` | off | Adds **exactly one** iOS agent on top of `--agents`. More than one is refused — see [drivers.md](drivers.md). |
-| `--kobo` | off | Hands [`kobo_sync.md`](../../../docs/qa/agentic_exploration/kobo_sync.md) to one web agent on top of its draw; you play the device — see [scenarios.md](scenarios.md). |
+| `--kobo K` | `0` | Adds K **Kobo agents** on top of `--agents` and the iOS agent, each with its own fake Kobo — see [drivers.md](drivers.md). |
 | `--reader` | off | Makes one web agent a **non-admin** account, so the shelf-visibility and upload-refusal criteria become decidable — see [scenarios.md](scenarios.md). |
 
 **If the invocation sets none of these — no flags, and no prose fixing a value
@@ -67,7 +67,7 @@ It needs `OMNIBUS_EXPLORE_SSH_HOST`, which `env.sh check` does not require. **If
 ## 4. Provision accounts
 
 ```bash
-scripts/explore/provision.sh <N>    # <N+1> with --ios; --reader <k> for --reader
+scripts/explore/provision.sh <N>    # N + 1 (with --ios) + K (with --kobo); --reader <k> for --reader
 ```
 
 Emits JSON: `actor`, `username`, `password`, `action`, `role`. **Save it** —
@@ -75,15 +75,15 @@ the audit needs it in steps 6 and 9, and passwords are rotated per run, never
 stored. Idempotent via `/api/admin/users*`; usernames are stable because
 provenance ownership is keyed on the actor, so fresh accounts would orphan
 every book previous runs uploaded. Hand each agent only its own credential.
-The iOS agent is `agent-(N+1)`. Every account is an admin unless `--reader <k>`
-makes one web agent's `explorer-k` a reader — see [scenarios.md](scenarios.md).
+The iOS agent is `agent-(N+1)`, the Kobo agents follow it. Every account is an admin unless
+`--reader <k>` makes one web agent's `explorer-k` a reader — see [scenarios.md](scenarios.md).
 
 ## 5. Decide the draw
 
 ```bash
 explore::login_admin && explore::curl -b "$EXPLORE_JAR" "$EXPLORE_URL/api/ebooks?limit=1"
 scripts/explore/sample.py --agents N --flows-per-agent K --seed S --run <run-id> \
-  [--ios] [--library-empty] [--exclude flow1,flow2] [--exclude-for agent-K=flow1,flow2 ...]
+  [--ios] [--kobo K] [--library-empty] [--exclude flow1,flow2] [--exclude-for agent-K=flow1,flow2 ...]
 ```
 
 - **`--library-empty`** when no books exist: `adding_book` goes first for
@@ -91,8 +91,9 @@ scripts/explore/sample.py --agents N --flows-per-agent K --seed S --run <run-id>
 - **`--exclude`** a flow or subflow nothing can supply — no corpus for
   `adding_book`, no audio for `listening_to_audiobook` — not merely blocked;
   **`--exclude-for agent-K=…`** drops flows for one agent only.
-- **`--ios`** adds `agent-(N+1)`, drawn last from the flows whose doc lists
-  iOS, without changing the web agents' draws for the same seed.
+- **`--ios`** adds `agent-(N+1)`, drawn after the web agents from the flows whose doc lists iOS, without changing their draws for the same seed.
+- **`--kobo K`** adds K Kobo agents last, each drawn from the flows whose doc lists kobo;
+  a pool shorter than `--flows-per-agent` is drawn whole and comes back as `capped` — say so.
 
 `flows/README.md` is the single source of truth — every top-level flow equally
 likely, every subflow inside its parent, `viewing_stats` drawn after reading or
@@ -125,36 +126,36 @@ scripts/explore/audit.py --accounts <accounts.json> \
   capture --run $RUN --snapshot <snapshot name from step 3>
 ```
 
-## 7. Start the browsers, and the simulator if `--ios`
+## 7. Start the browsers, the Kobo devices, and the simulator if `--ios`
 
 ```bash
-scripts/explore/driver.sh up <N>     # one server, session, browser and scratch dir per agent
+scripts/explore/driver.sh up <M>     # M = the highest web or Kobo agent number; one server, session, browser, scratch dir each
 scripts/explore/driver.sh status
 scripts/explore/driver.sh guard 1 agent-1
 scripts/explore/ios.sh up            # `--ios` only: boot, build, install, launch
+scripts/explore/kobo.sh up --agent <n> --accounts <accounts.json>   # each Kobo agent, one at a time
 ```
 
-**One browser per agent, and at most one iOS agent.** Sharing either collapses
-several users into one cookie jar, which is how run `r-20260828-01` died. Guard
-every agent before any starts; it reads ownership from the journals on every
-destructive call, never from the agent, so a book added mid-run needs no second
-guard. Replace a browser that dies mid-run with `driver.sh restart <n>` and
-guard it again. [drivers.md](drivers.md) has the rest: what the guard buys,
-driving a browser, a dead driver, the iOS agent, and teardown.
+**One browser per agent, one fake Kobo per Kobo agent, at most one iOS agent.** Sharing a
+browser or the simulator collapses several users into one cookie jar, which is how run
+`r-20260828-01` died. Guard every agent before any starts; it reads ownership from the
+journals on every destructive call, never from the agent. Replace a browser that dies
+mid-run with `driver.sh restart <n>` and guard it again. [drivers.md](drivers.md) has the
+rest: the guard, a dead driver, the iOS agent, the Kobo agents, and teardown.
 
 ## 8. Fan out
 
 One subagent per actor, in parallel, each given **only**:
 
-- the absolute path to `docs/qa/agentic_exploration/start.md`, to read in full first;
-- its `actor`, its `surface` (`web`, or `ios` for the one iOS agent), the base URL, and its own username and password — and, for the `--reader` agent, that it is a non-admin;
+- the absolute path to `docs/qa/agentic_exploration/start.md`, to read in full first — and, for a Kobo agent, [`kobo_lane.md`](../../../docs/qa/agentic_exploration/kobo_lane.md) beside it;
+- its `actor`, its `surface` (`web`, `ios` for the one iOS agent, or `kobo`), the base URL, and its own username and password — and, for the `--reader` agent, that it is a non-admin;
 - its sampled sequence — hand over **one flow document at a time**, never the list;
 - the corpus path, **the corpus files already uploaded** (per [scenarios.md](scenarios.md), naming this agent's file when two drew `adding_book`), and whether the library holds a CBZ;
 - `scripts/explore/journal.py append` — the only way to write the journal, since a bare `>>` can tear a line — and that `flow.start` carries `base_url`;
 - the run id;
-- **its agent number**, for `driver.sh run <n>` and `driver.sh console <n>` — never another agent's — and the `scratch` directory `driver.sh up` printed for it. The iOS agent gets `ios.sh` instead, which takes no agent number.
+- **its agent number**, for `driver.sh run <n>`, `driver.sh console <n>` and, for a Kobo agent, `kobo.sh act|state|requests --agent <n>` — never another agent's — and the `scratch` directory `driver.sh up` printed for it. The iOS agent gets `ios.sh` instead, which takes no agent number.
 
-`resuming_from_another_device` needs the phantom position written **before** the hand-over, every flow is a **fresh subagent** briefed from a standing file, and `--kobo` makes you the device — all in [scenarios.md](scenarios.md).
+`resuming_from_another_device` needs the phantom position written **before** the hand-over, and every flow is a **fresh subagent** briefed from a standing file — both in [scenarios.md](scenarios.md).
 
 Tell each agent, verbatim in the brief: read
 [`pitfalls.md`](../../../docs/qa/agentic_exploration/pitfalls.md) before
@@ -195,5 +196,5 @@ recommend it.
 
 - Catalog + contract: [`docs/qa/agentic_exploration/`](../../../docs/qa/agentic_exploration/start.md)
 - Journal + audit: `scripts/explore/{journal,audit}.py` (#2202) · Report: `report.py` (#2203)
-- iOS lane: [`ios_lane.md`](../../../docs/qa/agentic_exploration/ios_lane.md) (#2204)
-- Runner-driven scenarios and draw edits: [scenarios.md](scenarios.md) · Kobo: [`kobo_sync.md`](../../../docs/qa/agentic_exploration/kobo_sync.md)
+- iOS lane: [`ios_lane.md`](../../../docs/qa/agentic_exploration/ios_lane.md) (#2204) · Kobo lane: [`kobo_lane.md`](../../../docs/qa/agentic_exploration/kobo_lane.md)
+- Runner-driven scenarios and draw edits: [scenarios.md](scenarios.md)

@@ -117,6 +117,7 @@ NOUN_POLICY = {
     "shelf": UNKNOWN,
     "wishlist": UNKNOWN,
     "book": UNKNOWN,
+    "kobo": UNKNOWN,
     # No audited state on the noun at all — any verb is a look.
     "nav": OBSERVATION,
     "ui": OBSERVATION,
@@ -130,8 +131,8 @@ NOUN_POLICY = {
     "session": OBSERVATION,
     "flow": OBSERVATION,
     "page": OBSERVATION,
-    # The iOS lane's offline scenario and the runner's Kobo scenario journal
-    # device state, not per-user state: a look, never a write.
+    # The iOS lane's offline scenario journals device state, not per-user
+    # state: a look, never a write.
     "offline": OBSERVATION,
     "outbox": OBSERVATION,
     "probe": OBSERVATION,
@@ -146,7 +147,6 @@ NOUN_POLICY = {
     "settings": OUT_OF_SCOPE,
     "checkin": OUT_OF_SCOPE,
     "kindle": OUT_OF_SCOPE,
-    "kobo": OUT_OF_SCOPE,
 }
 
 # Nouns spelled as two segments. Without this, `read-status.set` splits into
@@ -165,7 +165,6 @@ SCOPE_FOR_NOUN = {
     "checkin": SCOPE_LIBRARY,
     "settings": SCOPE_LIBRARY,
     "kindle": SCOPE_LIBRARY,
-    "kobo": SCOPE_LIBRARY,
     "profile": SCOPE_ACCOUNT,
 }
 
@@ -254,6 +253,12 @@ VERBS: dict[tuple[str, str], tuple[str, str | None, str | None]] = {
     ("checkin", "start"): (OBSERVATION, None, None),
     ("checkin", "lookup"): (OBSERVATION, None, None),
     ("checkin", "search"): (OBSERVATION, None, None),
+    # The Kobo lane's device actions (kobo_lane.md). A sync is the one write:
+    # it fixes what the device library should hold. `kobo.reset` is withheld
+    # from agents (#2743), so it stays unlisted and reads as a visible gap.
+    ("kobo", "sync"): (WRITE, "kobo_library", None),
+    ("kobo", "show"): (OBSERVATION, None, None),
+    ("kobo", "requests"): (OBSERVATION, None, None),
 }
 
 # Names with no noun at all. `start.md` calls these out as special.

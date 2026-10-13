@@ -25,7 +25,8 @@ pub enum Quirk {
     ResourcesOnly,
     /// `library_sync` pages are followed while the server says
     /// `x-kobo-sync: continue`, echoing each `x-kobo-synctoken` back; past
-    /// [`MAX_SYNC_PAGES`] the sync never ends. Evidence: `kobo_sync.md`. Inferred.
+    /// [`MAX_SYNC_PAGES`] the sync never ends. Evidence:
+    /// `docs/qa/agentic_exploration/flows/syncing_a_kobo.md`. Inferred.
     SyncPaging,
     /// Before a download, authors come from `Contributors`; `ContributorRoles`
     /// alone shows "Unknown". Evidence: #2684. Observed.

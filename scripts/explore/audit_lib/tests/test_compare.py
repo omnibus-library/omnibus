@@ -7,7 +7,7 @@ from typing import Any
 
 from .. import compare, expectations
 from ..client import ApiError
-from .support import BOOK, FakeState, claims_of, entry
+from .support import BOOK, OTHER, FakeState, claims_of, entry
 
 
 class CompareTests(unittest.TestCase):
@@ -194,6 +194,57 @@ class WishlistRenameTests(unittest.TestCase):
         state = FakeState(shelves=[{"name": "Rosalind Fenwick's Wishlist", "kind": "wishlist"}])
         baseline = self._baseline("Rosalind Fenwick's Wishlist")
         self.assertEqual(compare.unexpected("agent-4", state, baseline, claims_of()), [])
+
+
+class KoboLibraryCompareTests(unittest.TestCase):
+    def _expect(self, books: Any) -> expectations.Expectation:
+        return expectations.Expectation("agent-4", 3, "kobo_library", "Kobo library", None, "x", frozenset(books))
+
+    def test_a_device_holding_exactly_the_synced_books_gives_no_finding(self) -> None:
+        state = FakeState(kobo_books={BOOK, OTHER})
+        self.assertIsNone(compare.check(self._expect({OTHER, BOOK}), state))
+
+    def test_a_synced_book_missing_from_the_device_is_a_mismatch_naming_it(self) -> None:
+        found = compare.check(self._expect({BOOK}), FakeState(kobo_books={BOOK, OTHER}))
+        self.assertEqual(found.kind, compare.MISMATCH)
+        self.assertEqual(found.replay_from, 3)
+        self.assertIn("1 book(s) on the device", found.observed)
+        self.assertIn(f"on a Kobo-synced shelf but not on the device: [{OTHER}]", found.observed)
+        self.assertIn("on the device but on no Kobo-synced shelf: []", found.observed)
+
+    def test_a_device_book_on_no_synced_shelf_is_a_mismatch_naming_it(self) -> None:
+        found = compare.check(self._expect({BOOK, OTHER}), FakeState(kobo_books={BOOK}))
+        self.assertEqual(found.kind, compare.MISMATCH)
+        self.assertIn(f"on the device but on no Kobo-synced shelf: [{OTHER}]", found.observed)
+        self.assertIn("on a Kobo-synced shelf but not on the device: []", found.observed)
+
+    def test_each_list_stops_at_five_uuids_and_says_there_are_more(self) -> None:
+        wanted = {f"book-{n}" for n in range(7)}
+        found = compare.check(self._expect(set()), FakeState(kobo_books=wanted))
+        self.assertIn("[book-0, book-1, book-2, book-3, book-4, …]", found.observed)
+        self.assertNotIn("book-5", found.observed)
+
+    def test_a_list_of_exactly_five_uuids_is_shown_whole(self) -> None:
+        wanted = {f"book-{n}" for n in range(5)}
+        found = compare.check(self._expect(set()), FakeState(kobo_books=wanted))
+        self.assertIn("[book-0, book-1, book-2, book-3, book-4]", found.observed)
+        self.assertNotIn("…", found.observed)
+
+    def test_a_synced_smart_shelf_means_not_judged_never_a_mismatch(self) -> None:
+        state = FakeState(kobo_books={BOOK}, kobo_smart_shelves=["Rules of thumb"])
+        with self.assertRaises(compare.NotJudged) as raised:
+            compare.check(self._expect(set()), state)
+        self.assertIn("Rules of thumb", str(raised.exception))
+        self.assertIn("turn its Sync to Kobo off", str(raised.exception))
+
+    def test_check_all_reports_a_smart_shelf_as_not_judged_rather_than_a_finding(self) -> None:
+        state = FakeState(kobo_books={BOOK}, kobo_smart_shelves=["Rules of thumb"])
+        exp = self._expect(set())
+        findings, not_judged = compare.check_all([exp], state)
+        self.assertEqual(findings, [])
+        self.assertEqual([e.seq for e, _ in not_judged], [3])
+        self.assertIn("Rules of thumb", not_judged[0][1])
+
 
 class ContainmentTests(unittest.TestCase):
     """PY-4: one bad uuid or one dead login must not destroy the report."""

@@ -7,11 +7,12 @@
 
 set -euo pipefail
 
-# Load .env from the repo root without letting it clobber anything already
-# exported (an explicit env var wins, matching the shellHook's precedence).
-explore::load_env() {
+# Load OMNIBUS_EXPLORE_* from the .env at repo root $1 (default: this checkout's)
+# without letting it clobber anything already exported (an explicit env var wins,
+# matching the shellHook's precedence). Requires nothing to be set.
+explore::load_dotenv() {
   local root
-  root="$(git rev-parse --show-toplevel)"
+  root="${1:-$(git rev-parse --show-toplevel)}"
   if [ -f "$root/.env" ]; then
     while IFS= read -r line; do
       case "$line" in ''|\#*) continue ;; esac
@@ -20,6 +21,11 @@ explore::load_env() {
       export "${line?}"
     done < <(grep -E '^OMNIBUS_EXPLORE_[A-Z_]+=' "$root/.env" || true)
   fi
+}
+
+# Load .env (see above), then resolve the instance and the admin credential.
+explore::load_env() {
+  explore::load_dotenv
 
   : "${OMNIBUS_EXPLORE_URL:?set OMNIBUS_EXPLORE_URL in .env — see .env.example}"
   : "${OMNIBUS_EXPLORE_ADMIN:?set OMNIBUS_EXPLORE_ADMIN=user:password in .env — see .env.example}"

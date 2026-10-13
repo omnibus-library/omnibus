@@ -42,6 +42,13 @@ FLOWS = [
 TOP = [f[0] for f in FLOWS if f[1] == "on its own"]
 IOS_TOP = [f[0] for f in FLOWS if f[1] == "on its own" and "iOS" in f[3]]
 
+# The two flows only a Kobo agent can run, and the same catalog with them added.
+KOBO_FLOWS = [
+    ("device_sync", "on its own", "—", "kobo"),
+    ("device_shelves", "on its own", "device_sync", "kobo"),
+]
+KOBO_TOP = [f[0] for f in KOBO_FLOWS]
+
 
 def write_catalog(root: Path, flows=FLOWS, skip_doc=(), no_surfaces=()) -> Path:
     rows = "\n".join(
@@ -204,6 +211,103 @@ class IosTests(CatalogTestCase):
         self.assertNotIn("adding_book", flows_of(ios))
 
 
+class KoboCatalogTestCase(CatalogTestCase):
+    def setUp(self):
+        super().setUp()
+        (self.root / "kobo").mkdir()
+        self.with_kobo = write_catalog(self.root / "kobo", FLOWS + KOBO_FLOWS)
+
+
+class SurfaceTests(KoboCatalogTestCase):
+    def test_a_web_agent_never_draws_a_kobo_only_flow_and_reports_it(self):
+        out = draw(self.with_kobo, "--agents", "1", "--flows-per-agent", str(len(TOP)), "--seed", "1")
+        web = out["agents"][0]
+        self.assertEqual(sorted(flows_of(web)), sorted(TOP))
+        self.assertEqual(web["excluded"], {"device_sync": "surface web", "device_shelves": "surface web"})
+
+    def test_a_surfaces_row_matches_whole_words_in_any_case(self):
+        flows = [
+            ("shouted", "on its own", "—", "WEB, KOBO"),
+            ("mixed", "on its own", "—", "Kobo (sync), iOS"),
+            ("lookalike", "on its own", "—", "webkit, kobold"),
+        ]
+        (self.root / "words").mkdir()
+        catalog = write_catalog(self.root / "words", flows)
+        out = draw(catalog, "--agents", "1", "--flows-per-agent", "1", "--seed", "1", "--ios", "--kobo", "1")
+        web, ios, kobo = out["agents"]
+        self.assertEqual(web["excluded"], {"mixed": "surface web", "lookalike": "surface web"})
+        self.assertEqual(ios["excluded"], {"shouted": "surface ios", "lookalike": "surface ios"})
+        self.assertEqual(kobo["excluded"], {"lookalike": "surface kobo"})
+
+
+class KoboTests(KoboCatalogTestCase):
+    def test_kobo_appends_agents_after_the_web_and_ios_agents(self):
+        out = draw(self.with_kobo, "--agents", "2", "--ios", "--kobo", "2", "--flows-per-agent", "2", "--seed", "1")
+        self.assertEqual([(a["actor"], a["surface"]) for a in out["agents"]], [
+            ("agent-1", "web"), ("agent-2", "web"), ("agent-3", "ios"),
+            ("agent-4", "kobo"), ("agent-5", "kobo"),
+        ])
+
+    def test_a_kobo_agent_draws_only_flows_listing_kobo_and_reports_the_rest(self):
+        out = draw(self.with_kobo, "--agents", "1", "--kobo", "1", "--flows-per-agent", "2", "--seed", "1")
+        kobo = out["agents"][-1]
+        self.assertEqual(sorted(flows_of(kobo)), sorted(KOBO_TOP))
+        self.assertEqual(kobo["excluded"], {f[0]: "surface kobo" for f in FLOWS})
+
+    def test_kobo_does_not_change_the_web_or_ios_draws_for_a_fixed_seed(self):
+        for seed in range(10):
+            args = ("--agents", "2", "--ios", "--flows-per-agent", "3", "--seed", str(seed))
+            without = draw(self.with_kobo, *args)["agents"]
+            with_kobo = draw(self.with_kobo, *args, "--kobo", "2")["agents"]
+            self.assertEqual(with_kobo[:3], without, f"seed {seed}")
+
+    def test_a_kobo_pool_exactly_as_big_as_flows_per_agent_is_not_capped(self):
+        out = draw(self.with_kobo, "--agents", "1", "--kobo", "1", "--flows-per-agent", "2", "--seed", "1")
+        kobo = out["agents"][-1]
+        self.assertEqual(len(kobo["sequence"]), 2)
+        self.assertNotIn("capped", kobo)
+
+    def test_a_kobo_pool_smaller_than_flows_per_agent_draws_them_all_and_says_capped(self):
+        out = draw(self.with_kobo, "--agents", "1", "--kobo", "2", "--flows-per-agent", "4", "--seed", "1")
+        for kobo in out["agents"][1:]:
+            self.assertEqual(sorted(flows_of(kobo)), sorted(KOBO_TOP))
+            self.assertEqual(kobo["capped"], "2 kobo flow(s) available after exclusions; --flows-per-agent is 4")
+        self.assertNotIn("capped", out["agents"][0])
+
+    def test_a_capped_message_counts_the_kobo_flows_left_after_exclusions(self):
+        out = draw(self.with_kobo, "--agents", "1", "--kobo", "1", "--flows-per-agent", "4",
+                   "--exclude", KOBO_TOP[1], "--seed", "1")
+        self.assertEqual(out["agents"][-1]["capped"], "1 kobo flow(s) available after exclusions; --flows-per-agent is 4")
+
+    def test_a_kobo_agent_with_no_flow_left_exits_naming_it(self):
+        proc = run(self.with_kobo, "--agents", "1", "--kobo", "1", "--exclude", "device_sync,device_shelves")
+        self.assertFails(proc, "agent-2")
+
+    def test_a_catalog_with_no_kobo_flow_exits_naming_the_kobo_agent(self):
+        self.assertFails(run(self.catalog, "--agents", "2", "--kobo", "1"), "agent-3")
+
+    def test_exclude_for_accepts_a_kobo_agent(self):
+        out = draw(self.with_kobo, "--agents", "1", "--kobo", "1", "--flows-per-agent", "1",
+                   "--seed", "1", "--exclude-for", "agent-2=device_shelves")
+        kobo = out["agents"][-1]
+        self.assertEqual(flows_of(kobo), ["device_sync"])
+        self.assertEqual(kobo["excluded"]["device_shelves"], "--exclude-for")
+
+    def test_kobo_zero_is_the_same_as_leaving_it_out(self):
+        args = ("--agents", "2", "--seed", "3")
+        self.assertEqual(draw(self.with_kobo, *args, "--kobo", "0"), draw(self.with_kobo, *args))
+
+    def test_a_negative_kobo_count_exits_non_zero(self):
+        self.assertFails(run(self.with_kobo, "--kobo", "-1"), "--kobo")
+
+    def test_help_says_kobo_agents_are_drawn_last(self):
+        proc = run(None, "--help")
+        self.assertEqual(proc.returncode, 0)
+        help_text = " ".join(proc.stdout.split())
+        self.assertIn("--kobo", help_text)
+        self.assertIn("drawn last", help_text[help_text.index("--kobo K"):])
+
+
 class DrawnAfterTests(CatalogTestCase):
     def setUp(self):
         super().setUp()
@@ -256,15 +360,27 @@ class CatalogTests(CatalogTestCase):
 
     def test_real_catalog_parses_and_keeps_the_ios_agent_off_the_web_only_flows(self):
         web_only = {"adding_book", "merging_books", "deleting_a_book"}
+        kobo_only = {"syncing_a_kobo", "choosing_kobo_shelves"}
         for seed in range(10):
             out = draw(None, "--agents", "2", "--flows-per-agent", "4",
                        "--seed", str(seed), "--ios")
             ios = out["agents"][-1]
             self.assertEqual(ios["surface"], "ios")
             drawn = set(flows_of(ios)) | {s for step in ios["sequence"] for s in step["subflows"]}
-            self.assertFalse(drawn & web_only, f"seed {seed}: {drawn & web_only}")
+            self.assertFalse(drawn & (web_only | kobo_only), f"seed {seed}: {drawn}")
             self.assertEqual({k for k, v in ios["excluded"].items() if v == "surface ios"},
-                             web_only)
+                             web_only | kobo_only)
+
+    def test_real_catalog_gives_the_kobo_agent_its_two_flows_in_order_and_keeps_web_off_them(self):
+        kobo_only = ["syncing_a_kobo", "choosing_kobo_shelves"]
+        for seed in range(10):
+            out = draw(None, "--agents", "1", "--kobo", "1", "--seed", str(seed))
+            web, kobo = out["agents"]
+            self.assertEqual(kobo["surface"], "kobo")
+            self.assertEqual(flows_of(kobo), kobo_only, f"seed {seed}: drawn after must put syncing first")
+            self.assertEqual(kobo["capped"], "2 kobo flow(s) available after exclusions; --flows-per-agent is 4")
+            self.assertFalse(set(flows_of(web)) & set(kobo_only), f"seed {seed}")
+            self.assertEqual({k for k, v in web["excluded"].items() if v == "surface web"}, set(kobo_only))
 
 
 if __name__ == "__main__":

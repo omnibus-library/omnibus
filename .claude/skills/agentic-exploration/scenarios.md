@@ -20,6 +20,9 @@ exclusion in the hand-back — a silent one reads as a flow that ran.
   whose doc lists iOS, so `adding_book`, `merging_books` and
   `deleting_a_book` — web-only, with no ownership guard on that surface —
   never reach it; its `excluded` lists them as `surface ios`.
+- **Kobo agents need nothing extra.** Their pool comes from the Surfaces rows
+  too, so a web-only flow never reaches them (`surface kobo`), and a pool
+  shorter than `--flows-per-agent` is drawn whole and reported as `capped`.
 - **A comic reader needs a CBZ, and a listening flow needs audio.** The
   library listing's formats column says which exist. If none does, `--exclude
   listening_to_audiobook` at draw time; for comics, tell the agent handed
@@ -64,10 +67,10 @@ finish them without writing a second `flow.start`.
 ## Non-admin readers
 
 Every provisioned account is an admin unless `--reader <k>` makes one web
-agent's account a reader — `k` in `1..N`, never `N+1`, the iOS agent's under `--ios`:
+agent's account a reader — `k` in `1..N`, never the iOS agent's or a Kobo agent's number:
 
 ```bash
-scripts/explore/provision.sh <N> --reader <k>   # <N+1> with --ios; explorer-k: no admin, no upload
+scripts/explore/provision.sh <N> --reader <k>   # N + 1 with --ios, + K with --kobo; explorer-k: no admin, no upload
 ```
 
 Tell `agent-k` in its brief that it is a **reader**: it will see no **Delete
@@ -110,12 +113,3 @@ agent has not opened — the audit keys progress per book, and a percent
 placed ahead of a later sitting makes that sitting credit zero pages on the
 Stats page, which is honest but confusing to the agent handed `viewing_stats`
 afterwards.
-
-## The Kobo scenario (`--kobo`)
-
-[`kobo_sync.md`](../../../docs/qa/agentic_exploration/kobo_sync.md) is
-handed to **one web agent** on top of its draw, and its Parts 2 and 4 are
-yours. The agent gives you the device endpoint out of band — never through the
-journal — and you drive the device with `mock-kobo serve` and the calls in
-that file, journalling each under the agent's actor with `surface: kobo`.
-Remove the device from the agent's account page at the end, or it persists.

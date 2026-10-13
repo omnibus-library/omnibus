@@ -15,10 +15,13 @@ handed a flow; you execute it.
 ## Your identity
 
 The harness gives you, at spawn: a **run id**, an **actor id**
-(`agent-1`…`agent-N`), a **surface** (`web` or `ios`), a **base URL**, and a
-**username and password**. On `ios`, read [ios_lane.md](ios_lane.md) next — it
-says how to drive the app and hands you a scenario only that surface can run. Log in with those and stay logged in. Never register
-a new account, and never use another agent's credentials.
+(`agent-1`…`agent-N`), a **surface** (`web`, `ios` or `kobo`), a **base URL**,
+and a **username and password**. On `ios`, read [ios_lane.md](ios_lane.md)
+next — it says how to drive the app and hands you a scenario only that surface
+can run. On `kobo`, read [kobo_lane.md](kobo_lane.md) next — it gives you a
+fake Kobo of your own and says how to drive it. Log in with those and stay
+logged in. Never register a new account, and never use another agent's
+credentials.
 
 Most agents are admins. That is a convenience, not a licence — see *Rails*
 below. The runner may instead brief you as a **reader**: a non-admin account
@@ -154,7 +157,7 @@ transcripts are thrown away.
 |---|---|
 | `ts` | UTC, ms precision. The report correlates agents on this alone — never batch entries and stamp them later. |
 | `seq` | Your own counter, monotonic and unique **per actor**. Derive it from the journal filtered to your own `actor`, never from the line count — the journal is shared, so counting all lines numbers you by other agents' work. Starting above 1 is acceptable; going backwards or repeating is not. |
-| `surface` | `web` or `ios`, as briefed. The runner writes `phantom` or `kobo` on entries it makes on your behalf; never use those yourself. |
+| `surface` | `web`, `ios` or `kobo`, as briefed; `kobo` only for actions on your own device. The runner writes `phantom` on entries it makes on your behalf; never use that yourself. |
 | `action` | Dotted `noun.verb` — `book.open`, `highlight.create`, `metadata.save`, `shelf.add`. Use the names the flow document lists. The report matches names as strings; the audit classifies them by noun and verb, and every name a flow document lists is classified — as a write it checks, a look, or something it declines by policy — while an invented one lands in `unverifiable` as a gap. A trailing `.verify` on any name means "I checked it stuck" and is always accepted. |
 | `target` | The book uuid or other entity id, **in full** — never abbreviated. Ownership is looked up on this exact string, so a truncated uuid loses the book forever. `null` when there isn't one. |
 | `params` | **Everything a replayer needs to redo this.** Under-filling it is the commonest way a real bug becomes an anecdote. |
@@ -257,7 +260,10 @@ Never, whatever a flow seems to invite:
 - Trigger a reindex, a library scan, or an FTS rebuild.
 - Send to Kindle or Kobo. These deliver real things to real places. (Marking a
   shelf for Kobo *sync* is different — it sends nothing until a device asks —
-  and only the agent handed [kobo_sync.md](kobo_sync.md) does that.)
+  and only a Kobo agent does that, on its own shelves, in its Kobo flows.)
+- Add, remove or regenerate a Kobo device on the Account page. A Kobo agent's
+  device was registered for it by the runner; removing or regenerating one cuts
+  that device off.
 - Change another user's account or permissions.
 - Delete a user.
 - Change your own password or Kindle email. Both live beside your profile;

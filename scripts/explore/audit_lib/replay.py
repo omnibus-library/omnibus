@@ -37,6 +37,7 @@ REFUSALS = {
     "wishlist": "wishlist adds carry the server's ISBN-lookup answer, not a payload the journal owns",
     "book_add": "re-uploading would add a second copy; replay it by hand from params.source_path",
     "shelf_member": "a shelf name is not a handle — two runs can leave two shelves with one name",
+    "kobo_library": "the device's library comes from a sync, not a payload the journal owns — re-run `kobo.sh act sync`",
 }
 
 

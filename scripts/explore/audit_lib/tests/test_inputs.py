@@ -8,15 +8,37 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from .. import env, journal
+from .. import env, journal, state
 from ..client import ApiError, load_accounts
-from .support import entry
+from .support import BOOK, OTHER, entry
 
 
 def _append_many(path: str, actor: str, count: int) -> None:
     """Worker for the concurrency test — one process per actor."""
     for i in range(count):
         journal.append(path, {"actor": actor, "action": "note", "params": {"i": i, "pad": "x" * 4000}})
+
+
+def shelf(shelf_id, name="Bedside", kind="manual", sync=True, owner=7):
+    return {"id": shelf_id, "name": name, "kind": kind, "sync_to_kobo": sync, "owner_user_id": owner}
+
+
+def book(uuid, *formats):
+    return {"unique_identifier": uuid, "formats": list(formats)}
+
+
+class FakeShelfClient:
+    """Answers the shelf routes from a table, and records what was asked."""
+
+    user_id = 7
+
+    def __init__(self, routes):
+        self.routes = routes
+        self.asked = []
+
+    def get_json(self, path, default=None):
+        self.asked.append(path)
+        return self.routes.get(path, default)
 
 
 class JournalTests(unittest.TestCase):
@@ -92,3 +114,77 @@ class AccountTests(unittest.TestCase):
     def test_load_accounts_rejects_a_row_missing_a_field(self) -> None:
         with self.assertRaises(ApiError):
             load_accounts([{"actor": "agent-1"}])
+
+
+class KoboSyncedBooksTests(unittest.TestCase):
+    def test_a_synced_shelf_contributes_its_books_the_server_can_deliver(self) -> None:
+        page = {"books": [book(BOOK, "EPUB"), book(OTHER, "cbz"), book("pdf-only", "Pdf")]}
+        self.assertEqual(state.kobo_synced_books([(shelf(1), page)]), {BOOK, OTHER, "pdf-only"})
+
+    def test_a_shelf_with_sync_off_contributes_nothing(self) -> None:
+        page = {"books": [book(BOOK, "EPUB")]}
+        self.assertEqual(state.kobo_synced_books([(shelf(1, sync=False), page)]), set())
+
+    def test_an_audiobook_only_book_contributes_nothing(self) -> None:
+        page = {"books": [book(BOOK, "M4B"), book(OTHER, "MP3", "M4B")]}
+        self.assertEqual(state.kobo_synced_books([(shelf(1), page)]), set())
+
+    def test_a_book_with_an_audiobook_and_an_epub_counts(self) -> None:
+        self.assertEqual(state.kobo_synced_books([(shelf(1), {"books": [book(BOOK, "M4B", "EPUB")]})]), {BOOK})
+
+    def test_a_book_on_two_synced_shelves_appears_once(self) -> None:
+        page = {"books": [book(BOOK, "EPUB")]}
+        self.assertEqual(state.kobo_synced_books([(shelf(1), page), (shelf(2), page)]), {BOOK})
+
+
+class KoboShelfReadTests(unittest.TestCase):
+    ROUTES = {
+        "/api/shelves": [
+            shelf(1, "Bedside"),
+            shelf(2, "Off", sync=False),
+            shelf(3, "Someone else's", owner=99),
+            shelf(4, "Rules", kind="smart"),
+            shelf(5, "Unsynced rules", kind="smart", sync=False),
+        ],
+        "/api/shelves/1": shelf(1, "Bedside"),
+        "/api/shelves/2": shelf(2, "Off", sync=False),
+        "/api/shelves/4": shelf(4, "Rules", kind="smart"),
+        "/api/shelves/5": shelf(5, "Unsynced rules", kind="smart", sync=False),
+        "/api/shelves/1/page": {"books": [book(BOOK, "EPUB")]},
+        "/api/shelves/4/page": {"books": [book(OTHER, "EPUB")]},
+    }
+
+    def _state(self):
+        client = FakeShelfClient(dict(self.ROUTES))
+        return state.ActorState(client, "agent-1"), client
+
+    def test_kobo_books_unions_the_actors_own_synced_shelves(self) -> None:
+        actor, _ = self._state()
+        self.assertEqual(actor.kobo_books(), {BOOK, OTHER})
+
+    def test_it_reads_a_shelf_page_only_for_shelves_with_sync_on_and_never_another_owners(self) -> None:
+        actor, client = self._state()
+        actor.kobo_books()
+        self.assertEqual(
+            client.asked,
+            ["/api/shelves", "/api/shelves/1", "/api/shelves/1/page", "/api/shelves/2", "/api/shelves/4",
+             "/api/shelves/4/page", "/api/shelves/5"],
+        )
+
+    def test_it_reads_each_route_once_however_often_it_is_asked(self) -> None:
+        actor, client = self._state()
+        actor.kobo_books()
+        asked = len(client.asked)
+        actor.kobo_books()
+        actor.kobo_smart_shelves()
+        self.assertEqual(len(client.asked), asked)
+
+    def test_a_shelf_page_read_for_its_members_is_not_read_again_for_the_kobo_sync(self) -> None:
+        actor, client = self._state()
+        actor.shelf_members(1)
+        actor.kobo_books()
+        self.assertEqual(client.asked.count("/api/shelves/1/page"), 1)
+
+    def test_kobo_smart_shelves_names_only_the_smart_shelves_synced_to_the_kobo(self) -> None:
+        actor, _ = self._state()
+        self.assertEqual(actor.kobo_smart_shelves(), ["Rules"])

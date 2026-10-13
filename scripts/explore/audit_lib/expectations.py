@@ -46,6 +46,10 @@ MISSING = object()
 # Families whose journal entries restate one value; the last one wins.
 SCALAR_FAMILIES = frozenset({"rating", "read_status", "progress", "playback_rate", "book_add"})
 
+# The families a shelf write lands in; one after a `kobo.sync` makes that
+# sync's picture of the Kobo-synced shelves stale.
+SHELF_FAMILIES = frozenset({"shelf", "shelf_member"})
+
 # Nouns whose surfaces auto-write read status client-side (unread → reading on
 # open, → finished at the end): frontend/src/read_status_auto.rs, mounted by
 # the reader, comic reader, and listen pages. Any entry about these nouns
@@ -457,6 +461,22 @@ def _name(entry: Entry) -> Any:
     return _first_parsable((_get(entry.params, "shelf", "shelf_name", "name", *title_keys),), parse_text)
 
 
+def _kobo_books(entry: Entry) -> Any:
+    """The book uuids the device held after a `kobo.sync`, or `UNPARSED`.
+
+    `params.books` is a list of uuids; failing that, `params.library` is the
+    `details.library` object `kobo.sh act show` prints, whose archived entries
+    are books the device no longer shows.
+    """
+    books = entry.params.get("books")
+    if isinstance(books, list) and all(isinstance(b, str) and b.strip() for b in books):
+        return frozenset(b.strip() for b in books)
+    library = entry.params.get("library")
+    if isinstance(library, dict) and all(isinstance(v, dict) for v in library.values()):
+        return frozenset(str(k) for k, v in library.items() if v.get("archived") is not True)
+    return UNPARSED
+
+
 def _uuid(entry: Entry) -> Any:
     for candidate in (entry.target, _get(entry.params, "uuid", "book_uuid", "target")):
         if isinstance(candidate, str) and candidate.strip():
@@ -597,6 +617,23 @@ def _fold_entry(fold: _Fold, entry: Entry, cls: vocabulary.Classification) -> No
 
     def exp(what: str, target: str | None, expected: str, value: Any = None, **extra: Any) -> Expectation:
         return Expectation(actor, seq, family or "", what, target, expected, value, extra)
+
+    if family == "kobo_library":
+        code = p.get("code")
+        if code != "synced":
+            why = (
+                "the entry has no reply code (params.code) — cannot tell the device was updated"
+                if code is None
+                else f"the sync answered {code!r}, not 'synced' — the device was not updated"
+            )
+            fold.skip(entry, f"{entry.action}: {why}")
+            return
+        books = _kobo_books(entry)
+        if books is UNPARSED:
+            fold.skip(entry, f"{entry.action}: no readable books list (params.books) or library in params")
+            return
+        fold.scalar(exp("Kobo library", None, f"{len(books)} book(s) on the device", books), key=("kobo_library",))
+        return
 
     if family in SCALAR_FAMILIES:
         uuid = _uuid(entry)
@@ -870,10 +907,13 @@ def expectations_for(
     # Each (action, subject)'s latest attempt when it was `uncertain`, which a
     # later `ok` verify of that action settles as done.
     unsettled: dict[tuple, tuple[Entry, vocabulary.Classification, Unverifiable]] = {}
+    last_shelf_write: int | None = None
     for entry in entries:
         cls = vocabulary.classify(entry.action)
         tally[cls.kind] = tally.get(cls.kind, 0) + 1
         _claim(claims, entry, cls)
+        if entry.seq is not None and _may_write_a_shelf(entry, cls):
+            last_shelf_write = entry.seq
         if cls.kind == vocabulary.OBSERVATION:
             confirmed = unsettled.pop(_confirmed_write(entry), None)
             if confirmed is not None:
@@ -895,5 +935,29 @@ def expectations_for(
                 unsettled[key] = (entry, cls, fold.unverifiable[-1])
             continue
         _fold_entry(fold, entry, cls)
+    _drop_stale_kobo_library(fold, last_shelf_write)
     exps, unver = fold.result()
     return exps, unver, tally, claims
+
+
+def _may_write_a_shelf(entry: Entry, cls: vocabulary.Classification) -> bool:
+    """Whether `entry` wrote a shelf, or names a shelf verb the vocabulary can't place."""
+    if cls.family in SHELF_FAMILIES:
+        return True
+    return cls.kind == vocabulary.UNKNOWN and vocabulary.noun_of(entry.action or "") == "shelf"
+
+
+def _drop_stale_kobo_library(fold: _Fold, last_shelf_write: int | None) -> None:
+    """Decline a `kobo.sync` expectation that a later shelf write has outdated."""
+    sync = fold.scalars.get(("kobo_library",))
+    if sync is None or sync.seq is None or last_shelf_write is None or last_shelf_write <= sync.seq:
+        return
+    del fold.scalars[("kobo_library",)]
+    fold.unverifiable.append(
+        Unverifiable(
+            fold.actor,
+            sync.seq,
+            f"kobo.sync (seq {sync.seq}) predates the shelf write at seq {last_shelf_write} — "
+            "sync again as the flow's last step so the device library can be checked",
+        )
+    )
