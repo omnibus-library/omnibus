@@ -17,12 +17,14 @@ import json
 import os
 import re
 import signal
+import socket
 import stat
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -85,6 +87,11 @@ class KoboLaneTestCase(unittest.TestCase):
 
     def stub_state(self, agent=1) -> dict:
         return json.loads((self.agent_dir(agent) / "state.json").read_text())
+
+    def stub_get(self, manifest, path):
+        """What the device's control API answers, asked directly rather than through `kobo.sh`."""
+        with urllib.request.urlopen(f"http://127.0.0.1:{manifest['port']}{path}", timeout=10) as reply:
+            return json.load(reply)
 
     def stop_abruptly(self, manifest):
         os.kill(manifest["pid"], signal.SIGKILL)
@@ -245,6 +252,116 @@ class UpPermissionTests(KoboLaneTestCase):
         self.up(agent=1)
 
         self.assert_private()
+
+
+class ActTests(KoboLaneTestCase):
+    def test_act_sync_posts_to_the_sync_route_and_prints_the_reply(self):
+        manifest = self.up(agent=1)
+
+        proc = self.kobo("act", "--agent", 1, "sync")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        reply = json.loads(proc.stdout)
+        self.assertEqual((reply["status"], reply["code"]), (200, "synced"))
+        self.assertEqual(reply["details"], {"pages": 1})
+        self.assertEqual(self.stub_get(manifest, "/__calls"), [["POST", "/actions/sync"]])
+
+    def test_act_sync_prints_a_failed_sync_with_its_quirk_and_exits_1(self):
+        self.up(agent=1, mode="sync_failed")
+
+        proc = self.kobo("act", "--agent", 1, "sync")
+
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        reply = json.loads(proc.stdout)
+        self.assertEqual((reply["status"], reply["code"]), (502, "sync_failed"))
+        self.assertIn("404", reply["message"])
+        self.assertEqual(reply["details"]["quirk"], "StorePaths")
+
+    def test_act_show_gets_the_device_and_prints_its_library_and_last_sync(self):
+        manifest = self.up(agent=1)
+        self.kobo("act", "--agent", 1, "sync")
+
+        proc = self.kobo("act", "--agent", 1, "show")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.stub_get(manifest, "/__calls"), [["POST", "/actions/sync"], ["GET", "/device"]])
+        self.assertEqual(json.loads(proc.stdout), self.stub_get(manifest, "/device"))
+        details = json.loads(proc.stdout)["details"]
+        self.assertEqual(details["last_sync"]["result"], "synced")
+        self.assertEqual(len(details["library"]), 1)
+
+    def test_requests_gets_the_request_log_and_prints_it(self):
+        manifest = self.up(agent=1)
+        self.kobo("act", "--agent", 1, "sync")
+
+        proc = self.kobo("requests", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), self.stub_get(manifest, "/requests"))
+        self.assertEqual(self.stub_get(manifest, "/__calls")[-1], ["GET", "/requests"])
+
+    def test_act_refuses_an_unknown_action_or_extra_argument_and_lists_the_actions(self):
+        manifest = self.up(agent=1)
+        for name, args in {
+            "reset, which is withheld": ["act", "--agent", "1", "reset"],
+            "an extra argument": ["act", "--agent", "1", "sync", "now"],
+            "no action": ["act", "--agent", "1"],
+            "requests with an argument": ["requests", "--agent", "1", "now"],
+        }.items():
+            with self.subTest(name):
+                proc = self.kobo(*args)
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertEqual(proc.stdout, "")
+                self.assertIn("sync show", proc.stderr)
+        self.assertEqual(self.stub_get(manifest, "/__calls"), [])
+
+    def test_act_without_a_running_device_exits_1_naming_the_agent(self):
+        proc = self.kobo("act", "--agent", 3, "sync")
+
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout, "")
+        self.assertIn("no Kobo running for agent-3 — kobo.sh up --agent 3 first", proc.stderr)
+
+    def test_requests_without_a_running_device_exits_1_naming_the_agent(self):
+        self.up(agent=1)
+        self.kobo("down", "--agent", 1)
+
+        proc = self.kobo("requests", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout, "")
+        self.assertIn("no Kobo running for agent-1 — kobo.sh up --agent 1 first", proc.stderr)
+
+    def test_act_exits_1_when_the_device_does_not_answer(self):
+        self.up(agent=1)
+        manifest_path = self.agent_dir() / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            manifest["port"] = probe.getsockname()[1]
+        manifest_path.write_text(json.dumps(manifest))
+
+        proc = self.kobo("act", "--agent", 1, "show")
+
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout, "")
+        self.assertIn("agent-1", proc.stderr)
+
+    def test_act_waits_up_to_300_seconds_for_an_answer(self):
+        self.up(agent=1)
+        shims = self.dir / "shims"
+        shims.mkdir()
+        curl = shims / "curl"
+        args = self.dir / "curl-args"
+        curl.write_text(f'#!/bin/sh\nprintf \'%s\\n\' "$@" > {args}\nexit 28\n')
+        curl.chmod(0o755)
+
+        proc = self.kobo("act", "--agent", 1, "show", env={"PATH": f"{shims}:{os.environ['PATH']}"})
+
+        self.assertEqual(proc.returncode, 1)
+        recorded = args.read_text().split()
+        self.assertEqual(recorded[recorded.index("--max-time") + 1], "300")
+        self.assertIn("agent-1", proc.stderr)
 
 
 USAGE_CASES = {
