@@ -70,7 +70,7 @@ Every provisioned account is an admin unless `--reader <k>` makes one web
 agent's account a reader — `k` in `1..N`, never the iOS agent's or a Kobo agent's number:
 
 ```bash
-scripts/explore/provision.sh <N> --reader <k>   # <N+1> with --ios; explorer-k: no admin, no upload
+scripts/explore/provision.sh <N> --reader <k>   # N + 1 with --ios, + K with --kobo; explorer-k: no admin, no upload
 ```
 
 Tell `agent-k` in its brief that it is a **reader**: it will see no **Delete
