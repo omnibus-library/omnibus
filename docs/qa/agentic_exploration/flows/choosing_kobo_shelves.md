@@ -18,6 +18,9 @@ still empty, step 1 sets up the first shelf itself.
 
 ## Steps
 
+Use only books that were in the library before the run started, on every shelf
+here: one another agent uploads or merges this run can change under you.
+
 1. **Shelf A on the device.** If the previous flow left a hand-picked shelf
    with **Sync to Kobo** On, that is A. Otherwise make one with three books,
    switch it On under **Edit shelf**, run `act sync`, and journal the sync.
@@ -41,7 +44,12 @@ still empty, step 1 sets up the first shelf itself.
    at all, which is stronger than a form leaving the toggle out. Check that
    once, and compare with shelf C, so you know you are seeing a system shelf
    and not an empty one.
-6. **End on a sync.** After your last shelf edit, run `act sync` and `act show`
+6. **A Smart shelf, judged by eye.** The audit leaves a sync unjudged while a
+   Smart shelf is On, so you are the judge here. Make a Smart shelf, switch
+   **Sync to Kobo** On, `act sync`, and check with `act show` that its current
+   books arrived. Then switch it Off again before the last step. Journal
+   `shelf.create` and both edits as `shelf.edit`.
+7. **End on a sync.** After your last shelf edit, run `act sync` and `act show`
    and journal the `kobo.sync` with the recipe in
    [syncing_a_kobo.md](syncing_a_kobo.md#journalling-the-sync). The audit
    judges your last `kobo.sync` against your Kobo-synced shelves, and a shelf
@@ -83,6 +91,3 @@ or token.
   reopened.
 - A Smart shelf's members move with the library, so the audit leaves a sync
   unjudged while a Smart shelf is On. Use hand-picked shelves here.
-- The device keeps its library across runs. Books an earlier run synced may
-  still be on it, archived once their shelf stopped syncing.
-- `act` has no reset (#2743).
