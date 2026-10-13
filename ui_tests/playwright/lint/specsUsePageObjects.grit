@@ -1,0 +1,10 @@
+language js
+
+`$receiver.$method($args)` where {
+  $method <: r"^(?:getBy[A-Z]\w*|locator|route)$",
+  register_diagnostic(
+    span = $method,
+    message = "Specs reach the page through page objects: add the locator or stub there.",
+    severity = "error"
+  )
+}

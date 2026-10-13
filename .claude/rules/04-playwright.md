@@ -10,7 +10,7 @@ The Playwright project (`ui_tests/playwright`) uses **pnpm** as its package mana
 
 - Install / run: `pnpm install`, `pnpm exec playwright test`, `pnpm exec tsx tools/…`.
 - Lint + typecheck: `pnpm run lint` (Biome), `pnpm run typecheck` (`tsc --noEmit`), or `just lint-ts` for both. Enforced in CI by `.github/workflows/ts-lint.yml` (the `🔒 TS Lint Required` gate).
-- Biome config is [biome.json](../../ui_tests/playwright/biome.json): double quotes, 2-space indent, 80-col, recommended lint rules + organize-imports. `noNonNullAssertion` is **off** — the specs use `!` on indexed access (`FIXTURE_BOOKS[0]!`) because `tsconfig.json` sets `noUncheckedIndexedAccess`; the two would otherwise fight. When Biome offers a `!`→`?.` "fix", reject it: it changes types and breaks the typecheck.
+- Biome config is [biome.json](../../ui_tests/playwright/biome.json): double quotes, 2-space indent, 80-col, recommended lint rules + organize-imports, plus the GritQL plugins in `lint/` (see [04d](04d-playwright-page-objects.md#lint)). `noNonNullAssertion` is **off** — the specs use `!` on indexed access (`FIXTURE_BOOKS[0]!`) because `tsconfig.json` sets `noUncheckedIndexedAccess`; the two would otherwise fight. When Biome offers a `!`→`?.` "fix", reject it: it changes types and breaks the typecheck.
 
 ## Chromium comes from Nix, not npm
 
@@ -22,9 +22,9 @@ The `playwright-driver.browsers` package in [flake.nix](../../flake.nix) provide
 
 [`playwright.config.ts`](../../ui_tests/playwright/playwright.config.ts) configures both a `list` reporter (console) and a `junit` reporter (`results.xml`). The JUnit output feeds Codecov Test Analytics — don't drop it. CI ([`e2e.yml`](../../.github/workflows/e2e.yml)) overrides the reporter on the CLI (`--reporter=list,blob,junit`), adds `blob` for the merged HTML report, and sets `PLAYWRIGHT_JUNIT_OUTPUT_NAME` per shard before uploading via `codecov/codecov-action@v5` (`report_type: test_results`).
 
-## Style — functional helpers + fixtures
+## Style — page objects, injected by fixtures
 
-Never page-object classes. Import `test` and `expect` from `tests/fixtures/test.ts` (not directly from `@playwright/test`) so shared fixtures apply uniformly. Factor reusable selectors and actions into plain functions.
+New specs are built from page, component and request objects that fixtures inject; the suite is migrating to them one surface at a time (#2744). The layout, the rules and the worked example live in [04d-playwright-page-objects.md](04d-playwright-page-objects.md). An unmigrated spec keeps its functional helpers until its surface moves.
 
 ## Selectors — semantic first, `locator()` last, never XPath
 
@@ -81,10 +81,10 @@ both, but the landing *hides* it from a viewer who can't change the shelf.
 
 Under `tests/flows/`, each `*.spec.ts` contains:
 
-1. **One layout test** (`renders the <page> layout`) asserting the destination page's structure: key elements visible, shared nav present (via `expectNavVisible` from `utils/nav.ts`). No user actions.
+1. **One layout test** (`renders the <page> layout`; `show the <page> layout` in a page-object spec) asserting the destination page's structure: key elements visible, shared nav present (via `expectNavVisible` from `utils/nav.ts`). No user actions.
 2. **One or more action tests**, one per user action, covering happy path and error path. Action tests drive the UI, assert network contracts, then assert UI state.
 
-Flow-specific helpers (e.g. `fillSettingsForm`) live inside the flow's spec file. Only cross-flow helpers go to `utils/`.
+A page-object spec holds tests and nothing else: its locators and actions are page-object members, its API calls request objects, its payloads contracts. In an unmigrated spec, flow-specific helpers (e.g. `fillSettingsForm`) live inside the spec file, and only cross-flow helpers go to `utils/`.
 
 ## Waits — `expect.poll` and auto-waiting only
 
@@ -130,7 +130,7 @@ It arms `waitForRequest`/`waitForResponse`, runs the action, checks payload and 
 
 ## Error paths — force failures with `page.route`
 
-Intercept the mutating route and `route.fulfill({ status: 500, ... })` before triggering the action, then still use `expectMutation` to verify the request fired with the expected payload and observed the forced status. Assert the UI surfaces the error (status text, error class, unchanged state).
+Intercept the mutating route and `route.fulfill({ status: 500, ... })` before triggering the action, then still use `expectMutation` to verify the request fired with the expected payload and observed the forced status. Assert the UI surfaces the error (status text, error class, unchanged state). In a page-object spec the intercept is a stub method on the page or component object, never a `page.route` in the spec.
 
 ## Example
 
