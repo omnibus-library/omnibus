@@ -19,6 +19,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -103,6 +104,28 @@ class StateMatchesTests(unittest.TestCase):
         ):
             with self.subTest(saved=saved):
                 self.assertFalse(self.matches(saved))
+
+
+class InstanceUrlTests(unittest.TestCase):
+    def instance_url(self, url):
+        with mock.patch.dict(os.environ, {"OMNIBUS_EXPLORE_URL": url}):
+            return kobo_wire.instance_url()
+
+    def test_instance_url_refuses_a_port_that_is_not_a_port_number(self):
+        for url in ("http://host:99999", "http://host:abc", "http://reader:secret@host:abc"):
+            with self.subTest(url=url):
+                with self.assertRaises(kobo_wire.UsageError) as raised:
+                    self.instance_url(url)
+                self.assertNotIn("secret", str(raised.exception))
+
+    def test_instance_url_refuses_an_origin_with_no_scheme_or_host(self):
+        for url in ("//host:8080", "http://", "http://:8080"):
+            with self.subTest(url=url):
+                with self.assertRaises(kobo_wire.UsageError):
+                    self.instance_url(url)
+
+    def test_instance_url_returns_the_normalised_origin(self):
+        self.assertEqual(self.instance_url(" HTTP://Host:80/ "), "http://host")
 
 
 class KoboWireCliTests(unittest.TestCase):

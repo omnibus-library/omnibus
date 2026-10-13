@@ -36,6 +36,7 @@ from audit_lib.client import Account, ApiError, Client, load_accounts  # noqa: E
 
 DEVICE_NAME = "Mock Kobo"
 DEFAULT_PORTS = {"http": 80, "https": 443}
+ORIGIN_RULE = "OMNIBUS_EXPLORE_URL must be an origin (scheme://host[:port]): no path, query, fragment or credentials"
 
 
 def plan(have_state: bool, matching: int) -> str:
@@ -102,10 +103,16 @@ def instance_url() -> str:
     url = os.environ.get("OMNIBUS_EXPLORE_URL", "")
     if not url:
         raise UsageError("set OMNIBUS_EXPLORE_URL in .env — see .env.example")
-    parts = urlsplit(url.strip())
-    if parts.path.strip("/") or parts.query or parts.fragment or parts.username or parts.password:
-        raise UsageError("OMNIBUS_EXPLORE_URL must be an origin (scheme://host[:port]): no path, query, fragment or credentials")
-    return normalise_origin(url)
+    try:
+        parts = urlsplit(url.strip())
+        origin = normalise_origin(url)
+    except ValueError:
+        # The parser's message can quote the URL, which may carry credentials.
+        raise UsageError(ORIGIN_RULE) from None
+    extras = parts.path.strip("/") or parts.query or parts.fragment or parts.username or parts.password
+    if not (parts.scheme and parts.hostname) or extras:
+        raise UsageError(ORIGIN_RULE)
+    return origin
 
 
 def wire(client: Client, url: str, state: Path) -> tuple[str, str]:
