@@ -98,7 +98,8 @@ Two things leave the sync unjudged instead, and both are by design:
   agent adds or deletes a book, so the audit cannot tell drift from a bad sync.
   Use hand-picked shelves for anything you want judged.
 
-A `kobo.sync` journalled `error` or `uncertain` is never judged.
+A `kobo.sync` journalled `error` or `uncertain`, or whose `code` is not `synced`,
+is never judged.
 
 ## Sharp edges
 
