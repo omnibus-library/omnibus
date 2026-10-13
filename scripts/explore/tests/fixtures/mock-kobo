@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""A stand-in for `mock-kobo serve`, for the Kobo lane's tests.
+
+Speaks the part of the real binary's contract the lane depends on: the flags,
+the token in `OMNIBUS_MOCK_KOBO_TOKEN`, a state file that records the origin and
+keeps the hardware id across restarts, and the `MOCK_KOBO_READY` line.
+`STUB_MOCK_KOBO_MODE` picks a behaviour: `ok` (default), `crash` (exit before
+READY), `stubborn` (ignore SIGTERM).
+"""
+
+import json
+import os
+import signal
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+def flags(argv):
+    pairs = dict(zip(argv[1::2], argv[2::2]))
+    return pairs["--url"], pairs["--state"], int(pairs["--port"])
+
+
+def hardware_id(state_path):
+    try:
+        with open(state_path) as handle:
+            return json.load(handle)["device"]["hardware_id"]
+    except (OSError, ValueError, KeyError):
+        return "mock-" + os.urandom(16).hex()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        return
+
+
+def main(argv):
+    mode = os.environ.get("STUB_MOCK_KOBO_MODE", "ok")
+    if mode == "crash":
+        print("mock-kobo: cannot bind 127.0.0.1:0 (stub crash)", file=sys.stderr)
+        return 1
+    url, state_path, port = flags(argv)
+    device = {"hardware_id": hardware_id(state_path), "library": {}, "sync_token": None}
+    state = {"url": url, "token": os.environ["OMNIBUS_MOCK_KOBO_TOKEN"], "device": device, "argv": argv}
+    with open(state_path, "w") as handle:
+        json.dump(state, handle)
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    if mode == "stubborn":
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    ready = f"MOCK_KOBO_READY port={server.server_port} hardware_id={device['hardware_id']} state={state_path} pid={os.getpid()}"
+    print(ready, flush=True)
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

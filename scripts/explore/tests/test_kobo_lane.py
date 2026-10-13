@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+"""Tests for `kobo.sh`, the exploration swarm's Kobo lane.
+
+Run them directly:
+
+    python3 scripts/explore/tests/test_kobo_lane.py
+    python3 -m unittest discover -s scripts/explore/tests
+
+`kobo.sh` runs as a subprocess, as the runner and the agents run it. Omnibus is
+`FakeOmnibus` and `mock-kobo` is the stub in `fixtures/`, so the processes, the
+files and the HTTP are real and only the two outside programs are stood in for.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+from kobo_fakes import FakeOmnibus  # noqa: E402
+
+KOBO_SH = HERE.parent / "kobo.sh"
+STUB = HERE / "fixtures" / "mock-kobo"
+PASSWORDS = {"explorer-1": "pw-one", "explorer-2": "pw-two"}
+
+
+def is_running(pid: int) -> bool:
+    """Whether `pid` is a live process; a zombie awaiting its reaper is not."""
+    out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    return bool(out) and not out.startswith("Z")
+
+
+class KoboLaneTestCase(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        self.kobo_dir = self.dir / "kobo"
+        self.fake = FakeOmnibus(PASSWORDS)
+        self.fake.__enter__()
+        self.addCleanup(self.fake.__exit__, None, None, None)
+        self.addCleanup(self.kill_devices)
+        self.accounts = self.dir / "provision.json"
+        self.accounts.write_text(json.dumps([
+            {"actor": f"agent-{i}", "username": user, "password": pw}
+            for i, (user, pw) in enumerate(PASSWORDS.items(), start=1)
+        ]))
+
+    def kill_devices(self):
+        for manifest in self.kobo_dir.glob("agent-*/manifest.json"):
+            try:
+                os.kill(json.loads(manifest.read_text())["pid"], signal.SIGKILL)
+            except (OSError, ValueError, KeyError):
+                pass
+
+    def kobo(self, *args, mode="ok", env=None):
+        environment = {
+            **os.environ,
+            "OMNIBUS_EXPLORE_URL": self.fake.origin,
+            "OMNIBUS_EXPLORE_MOCK_KOBO": str(STUB),
+            "OMNIBUS_EXPLORE_KOBO_DIR": str(self.kobo_dir),
+            "STUB_MOCK_KOBO_MODE": mode,
+            **(env or {}),
+        }
+        return subprocess.run(["bash", str(KOBO_SH), *map(str, args)], capture_output=True, text=True, env=environment)
+
+    def up(self, agent=1, **kwargs):
+        proc = self.kobo("up", "--agent", agent, "--accounts", self.accounts, **kwargs)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return json.loads(proc.stdout)
+
+    def agent_dir(self, agent=1) -> Path:
+        return self.kobo_dir / f"agent-{agent}"
+
+    def stub_state(self, agent=1) -> dict:
+        return json.loads((self.agent_dir(agent) / "state.json").read_text())
+
+    def stop_abruptly(self, manifest):
+        os.kill(manifest["pid"], signal.SIGKILL)
+        deadline = time.monotonic() + 5
+        while is_running(manifest["pid"]) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(is_running(manifest["pid"]))
+
+
+class UpTests(KoboLaneTestCase):
+    def test_up_prints_one_manifest_line_and_starts_the_device(self):
+        proc = self.kobo("up", "--agent", 1, "--accounts", self.accounts)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(len(proc.stdout.splitlines()), 1)
+        manifest = json.loads(proc.stdout)
+        self.assertTrue(is_running(manifest["pid"]))
+        self.assertEqual(manifest["actor"], "agent-1")
+        self.assertEqual(manifest["username"], "explorer-1")
+        self.assertEqual(manifest["device_name"], "Mock Kobo")
+        self.assertEqual(manifest["wired"], "created")
+        self.assertEqual(manifest["url"], self.fake.origin)
+        self.assertEqual(manifest["bin"], str(STUB))
+        self.assertEqual(manifest["state"], str(self.agent_dir() / "state.json"))
+        self.assertEqual(manifest["log"], str(self.agent_dir() / "serve.log"))
+        self.assertEqual(manifest["hardware_id"], self.stub_state()["device"]["hardware_id"])
+        self.assertGreater(manifest["port"], 0)
+        self.assertEqual(json.loads((self.agent_dir() / "manifest.json").read_text()), manifest)
+
+    def test_up_starts_the_device_with_serve_url_state_and_an_ephemeral_port(self):
+        self.up(agent=1)
+
+        self.assertEqual(self.stub_state()["argv"], [
+            "serve", "--url", self.fake.origin, "--state", str(self.agent_dir() / "state.json"), "--port", "0",
+        ])
+
+    def test_up_hands_the_token_over_in_the_environment_not_the_command_line(self):
+        self.up(agent=1)
+
+        token = self.fake.devices["explorer-1"][0]["token"]
+        state = self.stub_state()
+        self.assertEqual(state["token"], token)
+        self.assertNotIn(token, " ".join(state["argv"]))
+
+    def test_up_never_writes_the_token_to_stdout_stderr_or_the_manifest(self):
+        proc = self.kobo("up", "--agent", 1, "--accounts", self.accounts)
+
+        token = self.fake.devices["explorer-1"][0]["token"]
+        manifest = (self.agent_dir() / "manifest.json").read_text()
+        for name, text in (("stdout", proc.stdout), ("stderr", proc.stderr), ("manifest", manifest)):
+            with self.subTest(name):
+                self.assertNotIn(token, text)
+
+    def test_up_for_two_agents_leaves_two_devices_running_apart(self):
+        first = self.up(agent=1)
+        second = self.up(agent=2)
+
+        self.assertTrue(is_running(first["pid"]))
+        self.assertTrue(is_running(second["pid"]))
+        self.assertEqual((first["username"], second["username"]), ("explorer-1", "explorer-2"))
+        for field in ("port", "state", "pid", "hardware_id"):
+            with self.subTest(field):
+                self.assertNotEqual(first[field], second[field])
+        self.assertEqual(self.fake.logins(), ["explorer-1", "explorer-2"])
+
+
+class UpRestartTests(KoboLaneTestCase):
+    def test_up_for_a_running_device_prints_the_same_manifest_and_starts_nothing(self):
+        first = self.kobo("up", "--agent", 1, "--accounts", self.accounts)
+        requests_before = len(self.fake.requests)
+
+        again = self.kobo("up", "--agent", 1, "--accounts", self.accounts)
+
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(again.stdout, first.stdout)
+        self.assertEqual(len(self.fake.requests), requests_before)
+
+    def test_up_starts_a_device_whose_process_has_died_and_keeps_its_hardware_id(self):
+        first = self.up(agent=1)
+        self.stop_abruptly(first)
+
+        second = self.up(agent=1)
+
+        self.assertTrue(is_running(second["pid"]))
+        self.assertNotEqual(second["pid"], first["pid"])
+        self.assertEqual(second["wired"], "reused")
+        self.assertEqual(second["hardware_id"], first["hardware_id"])
+
+    def test_up_treats_a_pid_that_belongs_to_another_program_as_not_running(self):
+        bystander = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(bystander.wait)
+        self.addCleanup(bystander.kill)
+        self.agent_dir().mkdir(parents=True)
+        (self.agent_dir() / "manifest.json").write_text(json.dumps({"pid": bystander.pid, "bin": str(STUB)}))
+
+        manifest = self.up(agent=1)
+
+        self.assertNotEqual(manifest["pid"], bystander.pid)
+        self.assertTrue(is_running(manifest["pid"]))
+        self.assertIsNone(bystander.poll())
+
+    def test_up_deletes_a_state_file_the_instance_does_not_vouch_for(self):
+        self.agent_dir().mkdir(parents=True)
+        stale = {"url": self.fake.origin, "token": "old", "device": {"hardware_id": "mock-stale", "library": {}, "sync_token": None}}
+        (self.agent_dir() / "state.json").write_text(json.dumps(stale))
+
+        manifest = self.up(agent=1)
+
+        self.assertEqual(manifest["wired"], "created")
+        self.assertNotEqual(manifest["hardware_id"], "mock-stale")
+
+
+class UpFailureTests(KoboLaneTestCase):
+    def test_up_exits_with_the_wire_failure_code_and_starts_nothing(self):
+        wrong = self.dir / "wrong.json"
+        wrong.write_text(json.dumps([{"actor": "agent-1", "username": "explorer-1", "password": "nope"}]))
+        for accounts, agent, code in ((wrong, 1, 1), (self.accounts, 5, 2)):
+            with self.subTest(agent=agent, code=code):
+                proc = self.kobo("up", "--agent", agent, "--accounts", accounts)
+                self.assertEqual(proc.returncode, code, proc.stderr)
+                self.assertEqual(proc.stdout, "")
+                self.assertFalse((self.agent_dir(agent) / "manifest.json").exists())
+                self.assertFalse((self.agent_dir(agent) / "state.json").exists())
+
+    def test_up_fails_fast_with_the_log_tail_when_the_device_exits_before_it_is_ready(self):
+        started = time.monotonic()
+
+        proc = self.kobo("up", "--agent", 1, "--accounts", self.accounts, mode="crash")
+
+        self.assertEqual(proc.returncode, 1)
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertIn("cannot bind 127.0.0.1:0 (stub crash)", proc.stderr)
+        self.assertEqual(proc.stdout, "")
+        self.assertFalse((self.agent_dir() / "manifest.json").exists())
+
+
+class UpPermissionTests(KoboLaneTestCase):
+    def mode(self, path):
+        return stat.S_IMODE(path.stat().st_mode)
+
+    def assert_private(self):
+        self.assertEqual(self.mode(self.agent_dir()), 0o700)
+        self.assertEqual(self.mode(self.agent_dir() / "state.json"), 0o600)
+        self.assertEqual(self.mode(self.agent_dir() / "serve.log"), 0o600)
+
+    def test_up_creates_the_device_directory_and_its_files_private(self):
+        self.up(agent=1)
+
+        self.assert_private()
+
+    def test_up_tightens_a_directory_and_files_left_open(self):
+        first = self.up(agent=1)
+        self.stop_abruptly(first)
+        self.agent_dir().chmod(0o755)
+        for name in ("state.json", "serve.log"):
+            (self.agent_dir() / name).chmod(0o644)
+
+        self.up(agent=1)
+
+        self.assert_private()
+
+
+USAGE_CASES = {
+    "no command": [],
+    "an unknown command": ["frobnicate", "--agent", "1"],
+    "a missing agent": ["state"],
+    "agent zero": ["state", "--agent", "0"],
+    "agent with a leading zero": ["state", "--agent", "01"],
+    "an agent that is not a number": ["state", "--agent", "x"],
+    "a negative agent": ["state", "--agent", "-1"],
+    "an agent that climbs out of the directory": ["state", "--agent", "../x"],
+    "an agent flag with no value": ["state", "--agent"],
+    "an unknown flag": ["state", "--agent", "1", "--bogus"],
+    "down with a bad agent": ["down", "--agent", "0"],
+    "up without accounts": ["up", "--agent", "1"],
+    "up with an accounts file that does not exist": ["up", "--agent", "1", "--accounts", "/nonexistent/provision.json"],
+}
+
+
+class UsageTests(KoboLaneTestCase):
+    def test_a_bad_command_line_exits_2_with_usage_before_touching_anything(self):
+        for name, args in USAGE_CASES.items():
+            with self.subTest(name):
+                proc = self.kobo(*args)
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn("usage:", proc.stderr)
+                self.assertEqual(proc.stdout, "")
+        self.assertEqual(self.fake.requests, [])
+        self.assertFalse(self.kobo_dir.exists())
+
+
+class StateTests(KoboLaneTestCase):
+    def test_state_prints_the_manifest_with_running_true_while_the_device_runs(self):
+        manifest = self.up(agent=1)
+
+        proc = self.kobo("state", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), {**manifest, "running": True})
+
+    def test_state_reports_not_running_for_a_device_never_started(self):
+        proc = self.kobo("state", "--agent", 2)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), {"actor": "agent-2", "running": False})
+
+    def test_state_reports_not_running_once_the_device_is_down(self):
+        self.up(agent=1)
+        self.kobo("down", "--agent", 1)
+
+        proc = self.kobo("state", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), {"actor": "agent-1", "running": False})
+
+
+class DownTests(KoboLaneTestCase):
+    def test_down_for_an_agent_stops_only_that_device_and_keeps_its_files(self):
+        first = self.up(agent=1)
+        second = self.up(agent=2)
+
+        proc = self.kobo("down", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertFalse(is_running(first["pid"]))
+        self.assertTrue(is_running(second["pid"]))
+        self.assertFalse((self.agent_dir(1) / "manifest.json").exists())
+        self.assertTrue((self.agent_dir(2) / "manifest.json").exists())
+        self.assertTrue((self.agent_dir(1) / "state.json").exists())
+        self.assertTrue((self.agent_dir(1) / "serve.log").exists())
+
+    def test_down_without_an_agent_stops_every_device(self):
+        pids = [self.up(agent=k)["pid"] for k in (1, 2)]
+
+        proc = self.kobo("down")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual([is_running(pid) for pid in pids], [False, False])
+        self.assertEqual(list(self.kobo_dir.glob("agent-*/manifest.json")), [])
+
+    def test_down_with_no_devices_exits_0(self):
+        self.assertEqual(self.kobo("down").returncode, 0)
+
+    def test_down_kills_a_device_that_ignores_the_stop_request(self):
+        manifest = self.up(agent=1, mode="stubborn")
+
+        proc = self.kobo("down", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertFalse(is_running(manifest["pid"]))
+
+    def test_down_leaves_a_pid_that_belongs_to_another_program_alone(self):
+        bystander = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(bystander.wait)
+        self.addCleanup(bystander.kill)
+        self.agent_dir().mkdir(parents=True)
+        (self.agent_dir() / "manifest.json").write_text(json.dumps({"pid": bystander.pid, "bin": str(STUB)}))
+
+        proc = self.kobo("down", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIsNone(bystander.poll())
+        self.assertFalse((self.agent_dir() / "manifest.json").exists())
+
+    def test_up_after_down_reuses_the_device_and_creates_nothing(self):
+        first = self.up(agent=1)
+        self.kobo("down", "--agent", 1)
+
+        second = self.up(agent=1)
+
+        self.assertEqual(second["wired"], "reused")
+        self.assertEqual(second["hardware_id"], first["hardware_id"])
+        self.assertEqual(len(self.fake.calls("/api/rpc/kobo/devices/create")), 1)
+
+
+class ScriptShapeTests(unittest.TestCase):
+    """The runner may be on macOS, whose bash is 3.2 and whose userland is BSD."""
+
+    FORBIDDEN = {
+        "an associative array": r"\b(declare|local|typeset)\s+-[a-zA-Z]*A\b",
+        "case conversion in an expansion": r"\$\{[^}]*(,,|\^\^)",
+        "mapfile": r"\b(mapfile|readarray)\b",
+        "wait -n": r"\bwait\s+-n\b",
+        "timeout": r"(^|[\s|;(])timeout\s",
+        "setsid": r"\bsetsid\b",
+    }
+
+    def test_kobo_sh_parses(self):
+        proc = subprocess.run(["bash", "-n", str(KOBO_SH)], capture_output=True, text=True)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_kobo_sh_avoids_bash_4_features_and_gnu_only_tools(self):
+        code = "\n".join(line for line in KOBO_SH.read_text().splitlines() if not line.lstrip().startswith("#"))
+        for name, pattern in self.FORBIDDEN.items():
+            with self.subTest(name):
+                self.assertIsNone(re.search(pattern, code, re.M))
+
+
+if __name__ == "__main__":
+    unittest.main()
