@@ -98,6 +98,12 @@ class KoboLaneTestCase(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{manifest['port']}{path}", timeout=10) as reply:
             return json.load(reply)
 
+    def plant_manifest(self, agent, pid):
+        """Leave `agent` a manifest that points at `pid`, running the stub, whatever that process is."""
+        self.agent_dir(agent).mkdir(parents=True, exist_ok=True)
+        manifest = {"actor": f"agent-{agent}", "pid": pid, "bin": str(STUB)}
+        (self.agent_dir(agent) / "manifest.json").write_text(json.dumps(manifest))
+
     def stop_abruptly(self, manifest):
         os.kill(manifest["pid"], signal.SIGKILL)
         deadline = time.monotonic() + 5
@@ -290,6 +296,13 @@ class UpFailureTests(KoboLaneTestCase):
         self.assertFalse((self.agent_dir() / "manifest.json").exists())
 
 
+class UpReadyTests(KoboLaneTestCase):
+    def test_up_records_the_pid_of_the_device_it_started_when_the_log_has_another_ready_line(self):
+        manifest = self.up(agent=1, mode="foreign_ready")
+
+        self.assertEqual(manifest["pid"], self.stub_state()["pid"])
+
+
 class UpPermissionTests(KoboLaneTestCase):
     def mode(self, path):
         return stat.S_IMODE(path.stat().st_mode)
@@ -470,6 +483,15 @@ class StateTests(KoboLaneTestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(json.loads(proc.stdout), {"actor": "agent-2", "running": False})
 
+    def test_state_reports_not_running_for_a_pid_that_is_another_agents_device(self):
+        other = self.up(agent=2)
+        self.plant_manifest(1, other["pid"])
+
+        proc = self.kobo("state", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), {"actor": "agent-1", "running": False})
+
     def test_state_reports_not_running_once_the_device_is_down(self):
         self.up(agent=1)
         self.kobo("down", "--agent", 1)
@@ -527,6 +549,16 @@ class DownTests(KoboLaneTestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIsNone(bystander.poll())
         self.assertFalse((self.agent_dir() / "manifest.json").exists())
+
+    def test_down_leaves_another_agents_device_alone(self):
+        other = self.up(agent=2)
+        self.plant_manifest(1, other["pid"])
+
+        proc = self.kobo("down", "--agent", 1)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(is_running(other["pid"]))
+        self.assertFalse((self.agent_dir(1) / "manifest.json").exists())
 
     def test_up_after_down_reuses_the_device_and_creates_nothing(self):
         first = self.up(agent=1)

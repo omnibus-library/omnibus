@@ -34,7 +34,7 @@ KOBO_DIR="${OMNIBUS_EXPLORE_KOBO_DIR:-$ROOT/.claude/runtime/explore/kobo}"
 case "$KOBO_DIR" in /*) ;; *) KOBO_DIR="$ROOT/$KOBO_DIR" ;; esac
 ACT_TIMEOUT=300
 READY_TICKS=150
-READY_RE='^MOCK_KOBO_READY port=[0-9]+ hardware_id=[^ ]+ state=.* pid=[0-9]+$'
+READY_RE='^MOCK_KOBO_READY port=[0-9]+ hardware_id=[^ ]+ state=.* pid='
 STOP_TICKS=50
 
 # One row per action: name, method, path. PUT /reset is withheld until #2743.
@@ -69,16 +69,19 @@ EOF
 
 kobo::manifest() { echo "$KOBO_DIR/agent-$1/manifest.json"; }
 
+kobo::state_path() { echo "$KOBO_DIR/agent-$1/state.json"; }
+
 kobo::field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$1" "$2"; }
 
-# Whether `pid` is a live process running `bin`. A recycled pid runs something
-# else, and a zombie shows as `[name] <defunct>`, so neither counts.
+# Whether `pid` is a live process running `bin` on the state file `state`. A
+# recycled pid runs something else, another agent's device has its own state
+# file, and a zombie shows as `[name] <defunct>`, so none of them count.
 kobo::is_device() {
   local cmd
-  [ -n "$1" ] && [ -n "$2" ] || return 1
+  [ -n "$1" ] && [ -n "$2" ] && [ -n "$3" ] || return 1
   kill -0 "$1" 2>/dev/null || return 1
   cmd="$(ps -p "$1" -o command= 2>/dev/null)" || return 1
-  case "$cmd" in *"$2"*) return 0 ;; esac
+  case "$cmd" in *"$2"*"$3"*) return 0 ;; esac
   return 1
 }
 
@@ -87,15 +90,15 @@ kobo::running() {
   local manifest
   manifest="$(kobo::manifest "$1")"
   [ -f "$manifest" ] || return 1
-  kobo::is_device "$(kobo::field "$manifest" pid)" "$(kobo::field "$manifest" bin)"
+  kobo::is_device "$(kobo::field "$manifest" pid)" "$(kobo::field "$manifest" bin)" "$(kobo::state_path "$1")"
 }
 
-# TERM, a little grace for the device to close, then KILL.
+# TERM, a little grace for the device to close, then KILL. Args: pid, bin, state file.
 kobo::stop() {
-  kobo::is_device "$1" "$2" || return 0
+  kobo::is_device "$1" "$2" "$3" || return 0
   kill "$1" 2>/dev/null || true
   for _ in $(seq 1 "$STOP_TICKS"); do
-    kobo::is_device "$1" "$2" || return 0
+    kobo::is_device "$1" "$2" "$3" || return 0
     sleep 0.2
   done
   kill -KILL "$1" 2>/dev/null || true
@@ -134,7 +137,7 @@ print(found)')"
 kobo::up() {
   local k="$1" accounts="$2" dir state log manifest bin wire token wired url username device_name
   dir="$KOBO_DIR/agent-$k"
-  state="$dir/state.json"
+  state="$(kobo::state_path "$k")"
   log="$dir/serve.log"
   manifest="$(kobo::manifest "$k")"
   (umask 077; mkdir -p "$dir")
@@ -156,22 +159,23 @@ for key in ("wired", "url", "username", "device_name"):
     print(w[key])')"
 
   [ "$wired" = reused ] || rm -f "$state"
-  (umask 077; : >>"$log")
+  (umask 077; : >"$log")
   chmod 600 "$log"
   [ ! -f "$state" ] || chmod 600 "$state"
 
-  local pid ready=""
+  local pid ready="" ready_re
   pid="$( (umask 077; OMNIBUS_MOCK_KOBO_TOKEN="$token" nohup "$bin" serve --url "$url" --state "$state" --port 0 \
     >"$log" 2>&1 </dev/null & echo $!) )"
+  ready_re="${READY_RE}${pid}\$"
   for _ in $(seq 1 "$READY_TICKS"); do
-    ready="$(grep -m1 -E "$READY_RE" "$log" || true)"
+    ready="$(grep -m1 -E "$ready_re" "$log" || true)"
     [ -n "$ready" ] && break
     sleep 0.2
     kill -0 "$pid" 2>/dev/null || break
   done
-  ready="$(grep -m1 -E "$READY_RE" "$log" || true)"
+  ready="$(grep -m1 -E "$ready_re" "$log" || true)"
   if [ -z "$ready" ]; then
-    kobo::stop "$pid" "$bin"
+    kobo::stop "$pid" "$bin" "$state"
     echo "the Kobo for agent-$k never became ready — end of $log:" >&2
     tail -n 20 "$log" >&2
     return 1
@@ -219,7 +223,7 @@ kobo::down() {
   local manifest
   manifest="$(kobo::manifest "$1")"
   if kobo::running "$1"; then
-    kobo::stop "$(kobo::field "$manifest" pid)" "$(kobo::field "$manifest" bin)"
+    kobo::stop "$(kobo::field "$manifest" pid)" "$(kobo::field "$manifest" bin)" "$(kobo::state_path "$1")"
   fi
   rm -f "$manifest"
   printf '{"actor":"agent-%s","running":false}\n' "$1"

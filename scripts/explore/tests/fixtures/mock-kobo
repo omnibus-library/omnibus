@@ -6,7 +6,8 @@ the token in `OMNIBUS_MOCK_KOBO_TOKEN`, a state file that records the origin and
 keeps the hardware id across restarts, the `MOCK_KOBO_READY` line, and the
 control API's reply envelope. `GET /__calls` lists the control requests it got.
 `STUB_MOCK_KOBO_MODE` picks a behaviour: `ok` (default), `crash` (exit before
-READY), `stubborn` (ignore SIGTERM), `sync_failed` (every sync fails).
+READY), `stubborn` (ignore SIGTERM), `sync_failed` (every sync fails),
+`foreign_ready` (a READY line for another process comes first).
 """
 
 import json
@@ -93,7 +94,7 @@ def main(argv):
         return 1
     url, state_path, port = flags(argv)
     device = {"hardware_id": hardware_id(state_path), "library": {}, "sync_token": None}
-    state = {"url": url, "token": os.environ["OMNIBUS_MOCK_KOBO_TOKEN"], "device": device, "argv": argv}
+    state = {"url": url, "token": os.environ["OMNIBUS_MOCK_KOBO_TOKEN"], "device": device, "argv": argv, "pid": os.getpid()}
     with open(state_path, "w") as handle:
         json.dump(state, handle)
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
@@ -101,6 +102,8 @@ def main(argv):
     if mode == "stubborn":
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
     ready = f"MOCK_KOBO_READY port={server.server_port} hardware_id={device['hardware_id']} state={state_path} pid={os.getpid()}"
+    if mode == "foreign_ready":
+        print(f"MOCK_KOBO_READY port=1 hardware_id=mock-foreign state={state_path} pid=1", flush=True)
     print(ready, flush=True)
     server.serve_forever()
 
