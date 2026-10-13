@@ -381,12 +381,17 @@ class KoboAttributionTests(unittest.TestCase):
         self.assertIsNone(attr.entry)
         self.assertEqual(attr.basis, "none")
 
-    def test_a_web_request_is_still_attributed_among_every_surface(self):
+    def test_a_web_request_goes_to_the_web_action_not_a_nearer_kobo_one(self):
         attr = self.attribute([
             row("2026-08-28T10:00:29Z", "agent-2", "rating.set"),
             row("2026-08-28T10:00:31Z", "agent-4", "kobo.sync", surface="kobo"),
         ], "/api/ratings")
-        self.assertEqual((attr.entry.actor, attr.basis), ("agent-4", "time"))
+        self.assertEqual((attr.entry.actor, attr.entry.action, attr.basis), ("agent-2", "rating.set", "time"))
+
+    def test_a_web_request_with_no_web_action_in_the_window_is_unattributed(self):
+        attr = self.attribute([row("2026-08-28T10:00:31Z", "agent-4", "kobo.sync", surface="kobo")], "/api/ratings")
+        self.assertIsNone(attr.entry)
+        self.assertEqual(attr.basis, "none")
 
 
 class SeverityTests(unittest.TestCase):

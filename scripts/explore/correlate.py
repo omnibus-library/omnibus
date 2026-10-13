@@ -516,14 +516,15 @@ def attribute(
     Identity first: if the line names a book uuid, only entries whose `target`
     is that uuid are candidates. Time second, and in both directions — see the
     module docstring on batched journalling. A request on a Kobo path can only
-    have come from a Kobo action, so only those are candidates. Everything else
-    the reader needs to judge the join is returned alongside: what each agent
-    had in flight at that instant, and the other actors' entries inside the
-    window.
+    have come from a Kobo action, and any other request from none, so each
+    kind of request is matched against its own surface's entries. Everything
+    else the reader needs to judge the join is returned alongside: what each
+    agent had in flight at that instant, and the other actors' entries inside
+    the window.
     """
     in_window = [e for e in run.entries if abs((e.ts - finding.ts).total_seconds()) <= window_s]
     from_device = (finding.path or "").startswith(KOBO_PATH_PREFIXES)
-    pool = [e for e in in_window if e.surface == KOBO_SURFACE] if from_device else in_window
+    pool = [e for e in in_window if (e.surface == KOBO_SURFACE) == from_device]
     by_target = [e for e in pool if e.target and e.target.lower() in finding.uuids]
 
     fallback = "kobo device" if from_device else "time"

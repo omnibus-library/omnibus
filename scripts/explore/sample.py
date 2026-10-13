@@ -226,10 +226,8 @@ def main() -> None:
         top = [t for t in catalog.top if t not in drop]
         subs = {p: [s for s in names if s not in drop]
                 for p, names in catalog.subs.items() if p not in drop}
-        # Flows are drawn distinct, so asking for more than exist would silently
-        # yield a shorter sequence — a coverage cut that reads as coverage. A Kobo
-        # agent's short pool is the expected state of a catalog that grows a
-        # slice at a time, so it is drawn whole and reported instead.
+        # Flows are drawn distinct, so a short pool would silently shorten the sequence:
+        # a web or iOS agent exits, a Kobo agent draws it whole and reports `capped`.
         short = args.flows_per_agent > len(top)
         if short and (surface != "kobo" or not top):
             sys.exit(f"--flows-per-agent {args.flows_per_agent} exceeds the "
@@ -242,7 +240,8 @@ def main() -> None:
             "sequence": draw(top, subs, catalog.after, args.flows_per_agent, rng, first),
         }
         if short:
-            agent["capped"] = f"{len(top)} flow(s) list kobo; --flows-per-agent is {args.flows_per_agent}"
+            agent["capped"] = (f"{len(top)} kobo flow(s) available after exclusions; "
+                               f"--flows-per-agent is {args.flows_per_agent}")
         agents.append(agent)
     json.dump({"run": args.run, "seed": seed, "excluded": excluded, "agents": agents},
               sys.stdout, indent=2)

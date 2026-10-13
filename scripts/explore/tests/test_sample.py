@@ -271,8 +271,13 @@ class KoboTests(KoboCatalogTestCase):
         out = draw(self.with_kobo, "--agents", "1", "--kobo", "2", "--flows-per-agent", "4", "--seed", "1")
         for kobo in out["agents"][1:]:
             self.assertEqual(sorted(flows_of(kobo)), sorted(KOBO_TOP))
-            self.assertEqual(kobo["capped"], "2 flow(s) list kobo; --flows-per-agent is 4")
+            self.assertEqual(kobo["capped"], "2 kobo flow(s) available after exclusions; --flows-per-agent is 4")
         self.assertNotIn("capped", out["agents"][0])
+
+    def test_a_capped_message_counts_the_kobo_flows_left_after_exclusions(self):
+        out = draw(self.with_kobo, "--agents", "1", "--kobo", "1", "--flows-per-agent", "4",
+                   "--exclude", KOBO_TOP[1], "--seed", "1")
+        self.assertEqual(out["agents"][-1]["capped"], "1 kobo flow(s) available after exclusions; --flows-per-agent is 4")
 
     def test_a_kobo_agent_with_no_flow_left_exits_naming_it(self):
         proc = run(self.with_kobo, "--agents", "1", "--kobo", "1", "--exclude", "device_sync,device_shelves")
@@ -373,7 +378,7 @@ class CatalogTests(CatalogTestCase):
             web, kobo = out["agents"]
             self.assertEqual(kobo["surface"], "kobo")
             self.assertEqual(flows_of(kobo), kobo_only, f"seed {seed}: drawn after must put syncing first")
-            self.assertEqual(kobo["capped"], "2 flow(s) list kobo; --flows-per-agent is 4")
+            self.assertEqual(kobo["capped"], "2 kobo flow(s) available after exclusions; --flows-per-agent is 4")
             self.assertFalse(set(flows_of(web)) & set(kobo_only), f"seed {seed}")
             self.assertEqual({k for k, v in web["excluded"].items() if v == "surface web"}, set(kobo_only))
 
