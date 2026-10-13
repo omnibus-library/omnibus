@@ -14,14 +14,20 @@ reason: a roll that skips it is a roll that skips a check.
 
 The catalog table in flows/README.md is the single source of truth for which
 flows exist, which parent a subflow runs inside, and which flows another is
-drawn after; each flow's own doc says which surfaces it runs on. The parser is
+drawn after; each flow's own doc says which surfaces it runs on, and every
+agent draws only from flows that list its own surface. The parser is
 deliberately strict: if the table or a doc cannot be read, or a cell names a
 flow that is not in the catalog, this exits non-zero rather than silently
 drawing from a catalog nobody intended.
 
 `--exclude` drops flows (top-level or subflow) for every agent, `--exclude-for`
-for one, and `--ios` adds one agent drawn only from flows whose doc lists iOS.
-Every exclusion is emitted with its reason, so no cut reads as coverage.
+for one, `--ios` adds one iOS agent and `--kobo K` adds K Kobo agents, drawn
+last: web agents first, then the iOS agent, then the Kobo agents. Every
+exclusion is emitted with its reason, so no cut reads as coverage.
+
+The Kobo catalog grows one slice at a time, so a Kobo agent whose pool is
+shorter than `--flows-per-agent` draws every flow it has and says so in a
+`capped` field, where a web or iOS agent exits instead.
 """
 
 from __future__ import annotations
@@ -39,7 +45,8 @@ TOP = "on its own"
 INSIDE = re.compile(r"^inside\s+([a-z_]+)$")
 NONE = "—"
 SURFACES = re.compile(r"^\|\s*\*\*Surfaces\*\*\s*\|(.*)\|\s*$")
-IOS = re.compile(r"\bios\b", re.IGNORECASE)
+SURFACE_NAMES = ("web", "ios", "kobo")
+SURFACE_WORDS = {name: re.compile(rf"\b{name}\b", re.IGNORECASE) for name in SURFACE_NAMES}
 EXCLUDE_FOR = re.compile(r"^(agent-\d+)=(.+)$")
 
 
@@ -48,7 +55,7 @@ class Catalog:
     flows: list[str]
     top: list[str]
     subs: dict[str, list[str]]
-    ios: set[str]
+    surfaces: dict[str, set[str]]
     after: dict[str, list[str]]
 
 
@@ -58,14 +65,14 @@ def surfaces(name: str, doc: Path) -> str:
     for line in doc.read_text().splitlines():
         if m := SURFACES.match(line):
             return m.group(1)
-    sys.exit(f"{doc} has no '| **Surfaces** | … |' row — the iOS agent's pool is read from it")
+    sys.exit(f"{doc} has no '| **Surfaces** | … |' row — every agent's pool is read from it")
 
 
 def parse_catalog(path: Path) -> Catalog:
     flows: list[str] = []
     top: list[str] = []
     subs: dict[str, list[str]] = {}
-    ios: set[str] = set()
+    listed: dict[str, set[str]] = {}
     after: dict[str, list[str]] = {}
     for line in path.read_text().splitlines():
         m = ROW.match(line)
@@ -86,8 +93,8 @@ def parse_catalog(path: Path) -> Catalog:
             sys.exit(f"unparseable 'Runs' cell in catalog for {name}: {runs!r}")
         if drawn_after != NONE:
             after[name] = [s.strip() for s in drawn_after.split(",")]
-        if IOS.search(surfaces(name, path.parent / m.group(2))):
-            ios.add(name)
+        row = surfaces(name, path.parent / m.group(2))
+        listed[name] = {n for n, word in SURFACE_WORDS.items() if word.search(row)}
 
     if not top:
         sys.exit(f"no top-level flows parsed from {path} — has the table format changed?")
@@ -99,7 +106,7 @@ def parse_catalog(path: Path) -> Catalog:
             if flow not in top:
                 sys.exit(f"'Drawn after' for {name} names {flow!r}, which is not a "
                          f"top-level flow — fix {path}")
-    return Catalog(flows, top, subs, ios, after)
+    return Catalog(flows, top, subs, listed, after)
 
 
 def order(picked: list[str], after: dict[str, list[str]]) -> list[str]:
@@ -143,8 +150,8 @@ def flow_list(value: str, catalog: Catalog, flag: str) -> list[str]:
 def agent_exclusions(args, catalog: Catalog, actors, excluded) -> dict[str, dict[str, str]]:
     """Each agent's own exclusions, flow -> reason; run-wide ones are reported once, at the top."""
     cuts = {
-        actor: {f: "surface ios" for f in catalog.flows
-                if surface == "ios" and f not in catalog.ios and f not in excluded}
+        actor: {f: f"surface {surface}" for f in catalog.flows
+                if surface not in catalog.surfaces[f] and f not in excluded}
         for actor, surface in actors
     }
     for spec in args.exclude_for:
@@ -184,21 +191,30 @@ def main() -> None:
                     help="comma-separated flows to drop for one agent only (e.g. "
                          "merging_books for an agent owning too few books); repeatable")
     ap.add_argument("--ios", action="store_true",
-                    help="add one iOS agent, agent-(N+1), drawn last and only from "
-                         "flows whose doc lists iOS")
+                    help="add one iOS agent, agent-(N+1), drawn after the web agents "
+                         "and only from flows whose doc lists iOS")
+    ap.add_argument("--kobo", type=int, default=0, metavar="K",
+                    help="add K Kobo agents, drawn last (after the web agents and the "
+                         "iOS agent), each only from flows whose doc lists kobo; a "
+                         "short pool is drawn whole and reported as 'capped'")
     args = ap.parse_args()
 
     if args.agents < 1:
         sys.exit("--agents must be at least 1")
     if args.flows_per_agent < 1:
         sys.exit("--flows-per-agent must be at least 1")
+    if args.kobo < 0:
+        sys.exit("--kobo must be 0 or more")
 
     catalog = parse_catalog(args.catalog)
     excluded = flow_list(args.exclude, catalog, "--exclude")
-    # The iOS agent goes last so adding it never shifts the web agents' draws.
+    # Each lane is appended after the one before, so adding it never shifts an
+    # earlier agent's draws.
     actors = [(f"agent-{i}", "web") for i in range(1, args.agents + 1)]
     if args.ios:
-        actors.append((f"agent-{args.agents + 1}", "ios"))
+        actors.append((f"agent-{len(actors) + 1}", "ios"))
+    for _ in range(args.kobo):
+        actors.append((f"agent-{len(actors) + 1}", "kobo"))
     cuts = agent_exclusions(args, catalog, actors, excluded)
 
     # A run with no seed is still reproducible, because the seed is emitted.
@@ -211,17 +227,23 @@ def main() -> None:
         subs = {p: [s for s in names if s not in drop]
                 for p, names in catalog.subs.items() if p not in drop}
         # Flows are drawn distinct, so asking for more than exist would silently
-        # yield a shorter sequence — a coverage cut that reads as coverage.
-        if args.flows_per_agent > len(top):
+        # yield a shorter sequence — a coverage cut that reads as coverage. A Kobo
+        # agent's short pool is the expected state of a catalog that grows a
+        # slice at a time, so it is drawn whole and reported instead.
+        short = args.flows_per_agent > len(top)
+        if short and (surface != "kobo" or not top):
             sys.exit(f"--flows-per-agent {args.flows_per_agent} exceeds the "
                      f"{len(top)} flow(s) available to {actor} after exclusions")
         first = "adding_book" if args.library_empty and "adding_book" in top else None
-        agents.append({
+        agent = {
             "actor": actor,
             "surface": surface,
             "excluded": cuts[actor],
             "sequence": draw(top, subs, catalog.after, args.flows_per_agent, rng, first),
-        })
+        }
+        if short:
+            agent["capped"] = f"{len(top)} flow(s) list kobo; --flows-per-agent is {args.flows_per_agent}"
+        agents.append(agent)
     json.dump({"run": args.run, "seed": seed, "excluded": excluded, "agents": agents},
               sys.stdout, indent=2)
     print()
