@@ -9,7 +9,9 @@
 #   kobo.sh requests --agent <k>                         what the device asked Omnibus for
 #   kobo.sh down [--agent <k>]                           runner only: stop one device, or every device
 #
-# Each device lives in ${OMNIBUS_EXPLORE_KOBO_DIR:-<repo>/.claude/runtime/explore/kobo}/agent-<k>/:
+# Settings come from the environment, else the repo's .env. Each device lives in
+# ${OMNIBUS_EXPLORE_KOBO_DIR:-<repo>/.claude/runtime/explore/kobo}/agent-<k>/
+# (a relative KOBO_DIR is taken from the repo root):
 #   state.json     mock-kobo's state file; kept across up/down, holds the device token
 #   serve.log      mock-kobo's output
 #   manifest.json  what `up` printed; removed by `down`
@@ -25,7 +27,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
+# shellcheck source=./lib.sh
+source "$HERE/lib.sh"
+explore::load_dotenv "$ROOT"
 KOBO_DIR="${OMNIBUS_EXPLORE_KOBO_DIR:-$ROOT/.claude/runtime/explore/kobo}"
+case "$KOBO_DIR" in /*) ;; *) KOBO_DIR="$ROOT/$KOBO_DIR" ;; esac
 ACT_TIMEOUT=300
 READY_TICKS=150
 READY_RE='^MOCK_KOBO_READY port=[0-9]+ hardware_id=[^ ]+ state=.* pid=[0-9]+$'

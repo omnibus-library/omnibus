@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import stat
@@ -66,7 +67,8 @@ class KoboLaneTestCase(unittest.TestCase):
             except (OSError, ValueError, KeyError):
                 pass
 
-    def kobo(self, *args, mode="ok", env=None):
+    def kobo(self, *args, mode="ok", env=None, script=KOBO_SH, cwd=None):
+        """Run `script` with the lane's settings exported; an `env` value of `None` unsets that variable."""
         environment = {
             **os.environ,
             "OMNIBUS_EXPLORE_URL": self.fake.origin,
@@ -75,7 +77,10 @@ class KoboLaneTestCase(unittest.TestCase):
             "STUB_MOCK_KOBO_MODE": mode,
             **(env or {}),
         }
-        return subprocess.run(["bash", str(KOBO_SH), *map(str, args)], capture_output=True, text=True, env=environment)
+        environment = {key: value for key, value in environment.items() if value is not None}
+        return subprocess.run(
+            ["bash", str(script), *map(str, args)], capture_output=True, text=True, env=environment, cwd=cwd
+        )
 
     def up(self, agent=1, **kwargs):
         proc = self.kobo("up", "--agent", agent, "--accounts", self.accounts, **kwargs)
@@ -156,6 +161,63 @@ class UpTests(KoboLaneTestCase):
             with self.subTest(field):
                 self.assertNotEqual(first[field], second[field])
         self.assertEqual(self.fake.logins(), ["explorer-1", "explorer-2"])
+
+
+class SettingsTests(KoboLaneTestCase):
+    """`kobo.sh` takes its settings from the `.env` of the checkout it lives in, so these run a copy of it in a repo of their own."""
+
+    def setUp(self):
+        super().setUp()
+        self.checkout = self.dir / "checkout"
+        shutil.copytree(
+            KOBO_SH.parent, self.checkout / "scripts" / "explore",
+            ignore=shutil.ignore_patterns("tests", "__pycache__"),
+        )
+        subprocess.run(["git", "init", "-q", str(self.checkout)], check=True)
+
+    def write_dotenv(self, **settings):
+        (self.checkout / ".env").write_text("".join(f"{key}={value}\n" for key, value in settings.items()))
+
+    def kobo_in_checkout(self, *args, env=None, cwd=None):
+        unset = {"OMNIBUS_EXPLORE_MOCK_KOBO": None, "OMNIBUS_EXPLORE_KOBO_DIR": None}
+        script = self.checkout / "scripts" / "explore" / "kobo.sh"
+        return self.kobo(*args, script=script, env={**unset, **(env or {})}, cwd=cwd)
+
+    def test_up_starts_the_mock_kobo_and_uses_the_directory_named_in_dotenv(self):
+        self.write_dotenv(OMNIBUS_EXPLORE_MOCK_KOBO=STUB, OMNIBUS_EXPLORE_KOBO_DIR=self.kobo_dir)
+
+        proc = self.kobo_in_checkout("up", "--agent", 1, "--accounts", self.accounts)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        manifest = json.loads(proc.stdout)
+        self.assertEqual(manifest["bin"], str(STUB))
+        self.assertEqual(manifest["state"], str(self.agent_dir() / "state.json"))
+
+    def test_up_prefers_an_exported_setting_to_dotenv(self):
+        from_dotenv = self.dir / "from-dotenv"
+        self.write_dotenv(OMNIBUS_EXPLORE_MOCK_KOBO=STUB, OMNIBUS_EXPLORE_KOBO_DIR=from_dotenv)
+
+        proc = self.kobo_in_checkout(
+            "up", "--agent", 1, "--accounts", self.accounts,
+            env={"OMNIBUS_EXPLORE_KOBO_DIR": str(self.kobo_dir)},
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue((self.agent_dir() / "manifest.json").exists())
+        self.assertFalse(from_dotenv.exists())
+
+    def test_a_relative_kobo_dir_is_taken_from_the_repo_root_whatever_the_working_directory(self):
+        self.kobo_dir = self.checkout / "devices"
+        env = {"OMNIBUS_EXPLORE_MOCK_KOBO": str(STUB), "OMNIBUS_EXPLORE_KOBO_DIR": "devices"}
+        elsewhere = self.dir / "elsewhere"
+        elsewhere.mkdir()
+
+        up = self.kobo_in_checkout("up", "--agent", 1, "--accounts", self.accounts, env=env, cwd=elsewhere)
+        state = self.kobo_in_checkout("state", "--agent", 1, env=env, cwd=self.dir)
+
+        self.assertEqual(up.returncode, 0, up.stderr)
+        self.assertTrue((self.agent_dir() / "manifest.json").exists())
+        self.assertTrue(json.loads(state.stdout)["running"])
 
 
 class UpRestartTests(KoboLaneTestCase):
