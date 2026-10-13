@@ -1,4 +1,4 @@
-# Browsers, the ownership guard, and the iOS simulator
+# Browsers, the ownership guard, the iOS simulator, and the Kobo devices
 
 Companion to [SKILL.md](SKILL.md) step 7. The commands are there; this is what
 they buy and how the agents use them.
@@ -14,7 +14,7 @@ Agents drive theirs with `driver.sh run <n> "<command>"`, which prints
 `{"text": ..., "isError": ...}`. Hand each agent **its own** number and no
 other's, and the `scratch` directory `up` printed for it — its own place for
 helper scripts, since the harness's scratchpad is shared. Tear down with
-`driver.sh down` (and `ios.sh down`) when the run ends, whatever the outcome.
+`driver.sh down` (and `ios.sh down`, `kobo.sh down`) when the run ends, whatever the outcome.
 
 `driver.sh console <n> [--errors]` prints what that browser has logged since
 its server started — console messages, uncaught page errors, and any rejection
@@ -92,3 +92,30 @@ the previous run's iOS actor. Give it
 alongside `start.md`, and the `offline_outbox` scenario from that file **on top
 of** its sampled flows — it is the only surface that can run it. There is no
 ownership guard here, so keep it off `adding_book` and `merging_books`.
+
+## Kobo agents
+
+```bash
+scripts/explore/kobo.sh up --agent <n> --accounts <accounts.json>   # one agent at a time
+scripts/explore/kobo.sh state --agent <n>                           # "running": true
+```
+
+`--kobo K` adds K Kobo agents, numbered after the web agents and the iOS agent,
+and **several are fine**: each has its own account, `mock-kobo` process, port,
+state file and hardware id, so none meets another's library. Each is also a
+browser agent, since it turns shelves on and reads the results there, so
+`driver.sh up` must reach its number and it gets `driver.sh guard` like any
+other. `driver.sh up <M>` numbers from 1, so under `--ios` the iOS agent's
+browser starts too and idles; nobody is handed its number.
+
+`up` starts the `mock-kobo` that `OMNIBUS_EXPLORE_MOCK_KOBO` names, or builds one
+with cargo through `scripts/with-dev-env.sh`, which needs Nix.
+
+Start the devices one at a time — two `up`s for one agent race. A device keeps
+its account's "Mock Kobo" and its `state.json` across runs on purpose: `up`
+reuses it when the state file names this instance, and otherwise revokes the
+old one and registers a new one, because a fresh device wired to an old server
+record would sync only changes and miss books (#2743). Teardown includes
+`kobo.sh down`, which stops every device and keeps the state files and logs.
+Give a Kobo agent `surface: kobo`, [`kobo_lane.md`](../../../docs/qa/agentic_exploration/kobo_lane.md)
+beside `start.md`, and its number for both `driver.sh` and `kobo.sh`.

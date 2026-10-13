@@ -24,7 +24,7 @@ avoid. The numeric defaults are `sample.py`'s own, so the two cannot drift.
 | `--corpus` | Where is the corpus — **a directory of books the tests can upload**? | a path, or none |
 | `--seed` | Reuse a seed, or draw a fresh one? | fresh (default), or a number |
 | `--ios` | Add the one iOS agent? | no (default), yes |
-| `--kobo` | Run the Kobo scenario — you play the device against one web agent's account? | no (default), yes |
+| `--kobo` | How many Kobo agents, each driving its own fake Kobo? | `0` (default), `1`, `2` |
 | `--reader` | Make one web agent a non-admin reader, so the shelf-visibility and upload-refusal criteria are decidable? | no (default), yes |
 
 The corpus question says what a corpus *is* because the word is this system's
