@@ -35,31 +35,21 @@ case "$KOBO_DIR" in /*) ;; *) KOBO_DIR="$ROOT/$KOBO_DIR" ;; esac
 ACT_TIMEOUT=300
 READY_TICKS=150
 READY_RE='^MOCK_KOBO_READY port=[0-9]+ hardware_id=[^ ]+ state=.* pid='
-STOP_TICKS=50
+STOP_TICKS="${OMNIBUS_EXPLORE_KOBO_STOP_TICKS:-50}"
 
-# One row per action: name, method, path. PUT /reset is withheld until #2743.
-ACTIONS='sync POST /actions/sync
-show GET /device'
-
-# The route for action $1 as "METHOD /path"; fails for an action not in the table.
+# The route for action $1 as "METHOD /path"; fails for an action not listed.
 kobo::route() {
-  local name method path
-  while read -r name method path; do
-    [ "$name" = "$1" ] && { echo "$method $path"; return 0; }
-  done <<<"$ACTIONS"
-  return 1
-}
-
-kobo::action_names() {
-  local name names=""
-  while read -r name _; do names="$names $name"; done <<<"$ACTIONS"
-  echo "${names# }"
+  case "$1" in
+    sync) echo "POST /actions/sync" ;;
+    show) echo "GET /device" ;;
+    *) return 1 ;;
+  esac
 }
 
 kobo::usage() {
   cat >&2 <<EOF
 usage: kobo.sh up --agent <k> --accounts <provision.json>
-       kobo.sh act --agent <k> <action>       actions: $(kobo::action_names)
+       kobo.sh act --agent <k> <action>       actions: sync show
        kobo.sh state --agent <k>
        kobo.sh requests --agent <k>
        kobo.sh down [--agent <k>]

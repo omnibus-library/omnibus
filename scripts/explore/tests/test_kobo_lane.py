@@ -529,13 +529,17 @@ class DownTests(KoboLaneTestCase):
     def test_down_with_no_devices_exits_0(self):
         self.assertEqual(self.kobo("down").returncode, 0)
 
-    def test_down_kills_a_device_that_ignores_the_stop_request(self):
+    def test_down_waits_the_configured_ticks_before_killing_a_device_that_ignores_the_stop_request(self):
         manifest = self.up(agent=1, mode="stubborn")
+        started = time.monotonic()
 
-        proc = self.kobo("down", "--agent", 1)
+        proc = self.kobo("down", "--agent", 1, env={"OMNIBUS_EXPLORE_KOBO_STOP_TICKS": "5"})
 
+        waited = time.monotonic() - started
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertFalse(is_running(manifest["pid"]))
+        self.assertGreaterEqual(waited, 5 * 0.2)
+        self.assertLess(waited, 5)
 
     def test_down_leaves_a_pid_that_belongs_to_another_program_alone(self):
         bystander = subprocess.Popen(["sleep", "60"])
