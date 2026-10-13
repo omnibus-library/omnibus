@@ -330,6 +330,65 @@ class AttributionTests(unittest.TestCase):
         self.assertEqual(sum(groups[0].actors.values()), 3)
 
 
+class KoboAttributionTests(unittest.TestCase):
+    AT = "2026-08-28T10:00:30Z"
+    BOOK = "18c784fc-e768-47c5-9d6c-ceb3e0cbb3db"
+
+    def finding(self, path, uuids=()):
+        return correlate.LogFinding(
+            ts=ts(self.AT), level="WARN", target="t", message="m", status=404, method="GET",
+            path=path, uuids=tuple(uuids), detail="", request_scoped=True,
+        )
+
+    def attribute(self, rows, path, uuids=()):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = correlate.load_journal(write_journal(Path(tmp), "r-tmp", rows), "r-tmp")
+        return correlate.attribute(self.finding(path, uuids), run, run.spans())
+
+    def test_load_journal_keeps_each_entrys_surface_and_reads_a_missing_one_as_web(self):
+        bare = row("2026-08-28T10:00:01Z", "agent-1", "rating.set")
+        del bare["surface"]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_journal(Path(tmp), "r-tmp", [
+                row("2026-08-28T10:00:00Z", "agent-4", "kobo.sync", surface="kobo"),
+                bare,
+            ])
+            run = correlate.load_journal(path, "r-tmp")
+        self.assertEqual([e.surface for e in run.entries], ["kobo", "web"])
+
+    def test_an_entry_built_without_a_surface_is_a_web_entry(self):
+        entry = correlate.Entry(1, ts(self.AT), "a", "f", 1, "rating.set", None, {}, "ok", None)
+        self.assertEqual(entry.surface, "web")
+
+    def test_a_kobo_request_goes_to_the_kobo_action_not_a_nearer_web_one(self):
+        for path in ("/kobo/[REDACTED]/v1/library/sync", "/api/v3/content/checkforchanges"):
+            with self.subTest(path):
+                attr = self.attribute([
+                    row("2026-08-28T10:00:29Z", "agent-2", "rating.set"),
+                    row("2026-08-28T10:00:50Z", "agent-4", "kobo.sync", surface="kobo"),
+                ], path)
+                self.assertEqual((attr.entry.actor, attr.entry.action, attr.basis), ("agent-4", "kobo.sync", "kobo device"))
+
+    def test_a_kobo_request_naming_a_book_prefers_the_kobo_entry_that_targets_it(self):
+        attr = self.attribute([
+            row("2026-08-28T10:00:29Z", "agent-4", "kobo.show", surface="kobo", seq=1),
+            row("2026-08-28T10:00:45Z", "agent-4", "kobo.sync", surface="kobo", seq=2, target=self.BOOK),
+        ], "/kobo/[REDACTED]/v1/library/" + self.BOOK + "/metadata", uuids=[self.BOOK])
+        self.assertEqual((attr.entry.seq, attr.basis), (2, "target uuid"))
+
+    def test_a_kobo_request_with_no_kobo_action_in_the_window_is_unattributed(self):
+        attr = self.attribute([row("2026-08-28T10:00:29Z", "agent-2", "rating.set")], "/kobo/[REDACTED]/v1/library/sync")
+        self.assertIsNone(attr.entry)
+        self.assertEqual(attr.basis, "none")
+
+    def test_a_web_request_is_still_attributed_among_every_surface(self):
+        attr = self.attribute([
+            row("2026-08-28T10:00:29Z", "agent-2", "rating.set"),
+            row("2026-08-28T10:00:31Z", "agent-4", "kobo.sync", surface="kobo"),
+        ], "/api/ratings")
+        self.assertEqual((attr.entry.actor, attr.basis), ("agent-4", "time"))
+
+
 class SeverityTests(unittest.TestCase):
     def test_ranked_anomalies_orders_high_before_low(self):
         with tempfile.TemporaryDirectory() as tmp:

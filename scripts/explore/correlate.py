@@ -63,6 +63,11 @@ UNRANKED = "unranked"
 # defect loses it.
 ISSUE_KINDS = {"issue", "friction", "execution"}
 
+# The device's sync and Reading Services routes; the path token is already
+# redacted in the log. Only an action journalled on the `kobo` surface makes one.
+KOBO_PATH_PREFIXES = ("/kobo/", "/api/v3/")
+KOBO_SURFACE = "kobo"
+
 # Requests the browser makes on its own. Attributing these to an agent's action
 # is noise dressed as a finding; nothing else is suppressed.
 IGNORED_PATHS = {"/favicon.ico"}
@@ -115,6 +120,7 @@ class Entry:
     params: dict
     outcome: str
     note: str | None
+    surface: str = "web"
 
     @property
     def family(self) -> str:
@@ -265,6 +271,7 @@ def load_journal(path: Path, run_id: str | None = None) -> Run:
                 params=params if isinstance(params, dict) else {},
                 outcome=str(row.get("outcome") or "?"),
                 note=row.get("note") or None,
+                surface=str(row.get("surface") or "web"),
             )
         )
     if not entries:
@@ -508,14 +515,19 @@ def attribute(
 
     Identity first: if the line names a book uuid, only entries whose `target`
     is that uuid are candidates. Time second, and in both directions — see the
-    module docstring on batched journalling. Everything else the reader needs to
-    judge the join is returned alongside: what each agent had in flight at that
-    instant, and the other actors' entries inside the window.
+    module docstring on batched journalling. A request on a Kobo path can only
+    have come from a Kobo action, so only those are candidates. Everything else
+    the reader needs to judge the join is returned alongside: what each agent
+    had in flight at that instant, and the other actors' entries inside the
+    window.
     """
     in_window = [e for e in run.entries if abs((e.ts - finding.ts).total_seconds()) <= window_s]
-    by_target = [e for e in in_window if e.target and e.target.lower() in finding.uuids]
+    from_device = (finding.path or "").startswith(KOBO_PATH_PREFIXES)
+    pool = [e for e in in_window if e.surface == KOBO_SURFACE] if from_device else in_window
+    by_target = [e for e in pool if e.target and e.target.lower() in finding.uuids]
 
-    candidates, basis = (by_target, "target uuid") if by_target else (in_window, "time")
+    fallback = "kobo device" if from_device else "time"
+    candidates, basis = (by_target, "target uuid") if by_target else (pool, fallback)
     # Later entries win a tie: an agent stamps the journal after the act, so the
     # entry that follows a log line is the likelier cause of it.
     best = min(candidates, key=lambda e: (abs((e.ts - finding.ts).total_seconds()), -e.ts.timestamp()), default=None)
