@@ -130,9 +130,8 @@ control as missing when you are on iOS.
     visibility are fixed at creation there; journal `shelf.edit` as
     `uncertain` saying so, and do not hunt. Save, and confirm the change on
     the rail or card and after a reload. On the web the form also carries a
-    **Sync to Kobo** Off/On toggle: read it and **leave it Off** unless you
-    were handed
-    [kobo_sync.md](../kobo_sync.md). The wishlist shelf has no Edit control
+    **Sync to Kobo** Off/On toggle: read it and **leave it Off** — only a
+    Kobo agent's Kobo flows turn it on. The wishlist shelf has no Edit control
     at all on the web, which is how it declines the opt-in; confirm that
     once. Journal `shelf.edit` with before and after. The audit verifies a shelf by name, so a rename must carry both:
     `old_name` for the name it had and `name` for the name it has now — the

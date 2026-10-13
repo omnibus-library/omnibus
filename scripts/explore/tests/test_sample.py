@@ -355,15 +355,27 @@ class CatalogTests(CatalogTestCase):
 
     def test_real_catalog_parses_and_keeps_the_ios_agent_off_the_web_only_flows(self):
         web_only = {"adding_book", "merging_books", "deleting_a_book"}
+        kobo_only = {"syncing_a_kobo", "choosing_kobo_shelves"}
         for seed in range(10):
             out = draw(None, "--agents", "2", "--flows-per-agent", "4",
                        "--seed", str(seed), "--ios")
             ios = out["agents"][-1]
             self.assertEqual(ios["surface"], "ios")
             drawn = set(flows_of(ios)) | {s for step in ios["sequence"] for s in step["subflows"]}
-            self.assertFalse(drawn & web_only, f"seed {seed}: {drawn & web_only}")
+            self.assertFalse(drawn & (web_only | kobo_only), f"seed {seed}: {drawn}")
             self.assertEqual({k for k, v in ios["excluded"].items() if v == "surface ios"},
-                             web_only)
+                             web_only | kobo_only)
+
+    def test_real_catalog_gives_the_kobo_agent_its_two_flows_in_order_and_keeps_web_off_them(self):
+        kobo_only = ["syncing_a_kobo", "choosing_kobo_shelves"]
+        for seed in range(10):
+            out = draw(None, "--agents", "1", "--kobo", "1", "--seed", str(seed))
+            web, kobo = out["agents"]
+            self.assertEqual(kobo["surface"], "kobo")
+            self.assertEqual(flows_of(kobo), kobo_only, f"seed {seed}: drawn after must put syncing first")
+            self.assertEqual(kobo["capped"], "2 flow(s) list kobo; --flows-per-agent is 4")
+            self.assertFalse(set(flows_of(web)) & set(kobo_only), f"seed {seed}")
+            self.assertEqual({k for k, v in web["excluded"].items() if v == "surface web"}, set(kobo_only))
 
 
 if __name__ == "__main__":

@@ -12,8 +12,9 @@ is either `on its own` or `inside <parent>`, exactly, and the **Drawn after**
 cell is `—` or a comma-separated list of top-level flows: when an agent draws
 the flow *before* any of them, the flow moves to just after the last one drawn
 (stats read back what reading and listening wrote). It also reads each flow's
-**Surfaces** row and draws the iOS agent only from flows that list iOS. An
-unknown name in any cell, or a doc with no Surfaces row, stops the draw.
+**Surfaces** row and draws every agent only from flows that list its own
+surface: web, iOS or kobo. An unknown name in any cell, or a doc with no
+Surfaces row, stops the draw.
 
 | Flow | Runs | Owner-only | Drawn after |
 |---|---|---|---|
@@ -30,6 +31,8 @@ unknown name in any cell, or a doc with no Surfaces row, stops the draw.
 | [creating_a_shelf](creating_a_shelf.md) | on its own | no | — |
 | [checking_in_a_book](checking_in_a_book.md) | on its own | removing a copy: yes | — |
 | [updating_profile](updating_profile.md) | on its own | own account | — |
+| [syncing_a_kobo](syncing_a_kobo.md) | on its own | no — your own shelves and device | — |
+| [choosing_kobo_shelves](choosing_kobo_shelves.md) | on its own | no — your own shelves and device | syncing_a_kobo |
 | [adding_highlight](adding_highlight.md) | inside reading_a_book | no | — |
 | [resuming_from_another_device](resuming_from_another_device.md) | inside reading_a_book | no — the runner plays the device | — |
 | [adding_bookmark](adding_bookmark.md) | inside listening_to_audiobook | no | — |
@@ -40,13 +43,10 @@ unknown name in any cell, or a doc with no Surfaces row, stops the draw.
 
 You never sample anything yourself. You are handed a flow; you execute it.
 
-Two scenarios are deliberately **not** in this table, because they are not
-drawn — the runner hands them to one agent on top of that agent's draw:
-
-- the iOS lane's `offline_outbox`, in [ios_lane.md](../ios_lane.md) — the one
-  iOS agent always gets it;
-- the Kobo scenario, in [kobo_sync.md](../kobo_sync.md) — one web agent gets
-  it when the run is started with `--kobo`.
+One scenario is deliberately **not** in this table, because it is not drawn —
+the runner hands it to one agent on top of that agent's draw: the iOS lane's
+`offline_outbox`, in [ios_lane.md](../ios_lane.md), which the one iOS agent
+always gets.
 
 ## Not covered, and why
 
