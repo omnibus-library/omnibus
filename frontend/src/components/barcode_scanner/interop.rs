@@ -34,20 +34,17 @@ pub(super) enum ScannerEvent {
 }
 
 /// Build the install IIFE: define the `__omnibusOnScan*` → `dioxus.send` shims,
-/// then load the vendored runtime **in order** (zxing → glue) and start the
-/// camera. Scripts are chained through `onload` promises rather than emitted as
-/// `<script>` tags, so the same script works on mobile (no SSR ordering) and on
-/// web without adding markup that SSR would have to match. Each script is
-/// skipped when its global already exists (re-entry after "Enter ISBN
-/// instead"), and each load has a 10 s timeout so a stalled request surfaces
-/// the error state instead of a permanently black viewfinder. `start`'s own
-/// promise is returned into this chain too, so a decoder-init failure it
-/// already reports via `status()` also reaches this outer `.catch`.
+/// load the vendored runtime in order (zxing → glue) and start the camera.
+/// Each script is skipped when its global already exists, and each load times
+/// out after 10 s so a stalled request surfaces the error state.
 pub(super) fn install_scanner_js(video_id: &str, scripts: &ScannerScripts) -> String {
     let video_lit = js_str(video_id);
     let decoder = js_str(&scripts.decoder);
     let glue = js_str(&scripts.glue);
     let wasm = js_str(&scripts.wasm);
+    // Scripts chain through `onload` promises, not `<script>` tags, so SSR has no
+    // markup to match. `start`'s promise joins the chain so a decoder-init
+    // failure it reports via `status()` also reaches the outer `.catch`.
     format!(
         r#"(function(){{
   window.__omnibusOnScanResult=function(t){{dioxus.send({{kind:"Result",text:t}});}};

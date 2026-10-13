@@ -16,12 +16,10 @@ pub enum SeriesNormalizeError {
     Db(#[from] sqlx::Error),
 }
 
-/// Merge every `series` row whose name still embeds a trailing index into
-/// its cleaned, canonical row, and backfill `books.series_index` for any
-/// newly-linked book that had none. Idempotent: once a series row is
-/// renamed/merged its name no longer matches the embedded-index pattern, so
-/// a later pass skips it — the whole scan is cheap once every library has
-/// converged.
+/// Merge every `series` row whose name still embeds a trailing index into its
+/// cleaned, canonical row, and backfill `books.series_index` for any
+/// newly-linked book that had none. Idempotent: a renamed/merged row no longer
+/// matches the embedded-index pattern, so a later pass skips it.
 pub async fn backfill_embedded_series_index(pool: &SqlitePool) -> Result<(), SeriesNormalizeError> {
     let series: Vec<(i64, String)> = sqlx::query_as("SELECT id, name FROM series")
         .fetch_all(pool)

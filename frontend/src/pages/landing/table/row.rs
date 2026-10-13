@@ -71,14 +71,11 @@ pub(super) fn EbookRow(book: EbookMetadata, ctx: BookTableContext, dates_ready: 
     }
 }
 
-/// Per-row reactive state — optimistic book copy, current editing cell, and
-/// the authors/tags/genres chip-editor drafts. The optimistic copy lets a successful
-/// inline save update the row immediately without a full library refetch;
-/// the `book` prop is resynced into it on upstream changes only when no
-/// cell is mid-edit (so a save round-trip doesn't clobber an open input).
-/// `authors_draft` / `tags_draft` / `genres_draft` mirror
-/// `book_state.creators` / `.subjects` / `.genres` so each chip editor sees
-/// canonical values after a save without dropping in-progress chip edits.
+/// Per-row reactive state: the optimistic book copy, the editing cell, and
+/// the authors/tags/genres chip-editor drafts. The copy lets an inline save
+/// update the row without a library refetch; the `book` prop resyncs into it
+/// only when no cell is mid-edit. The drafts mirror `book_state` so chip
+/// editors see canonical values after a save without losing in-progress edits.
 struct RowState {
     book_state: Signal<EbookMetadata>,
     editing: Signal<Option<EditField>>,
@@ -176,14 +173,10 @@ struct RowDisplay {
 }
 
 /// Compute the per-cell display strings from the optimistic book state.
-/// Pulled out of [`EbookRow`] so the closures and rsx live in their own
-/// scopes. `cover_bust` is this book's [`crate::contexts::CoverCacheBust`]
-/// counter (0 = unchanged this session) — `/api/thumbs/*` is cached
-/// `private, max-age=86400`, so without it the table would keep showing a
-/// pre-edit thumbnail for the otherwise-unchanged URL after navigating back
-/// from a cover edit. The two stored instants land on the reader's own day
-/// once `dates_ready`, as the detail page dates them (rule 10); `published`
-/// is a calendar date and is never shifted.
+/// `cover_bust` is this book's [`crate::contexts::CoverCacheBust`] counter
+/// (0 = unchanged this session), needed as `/api/thumbs/*` is cached
+/// `private, max-age=86400`. The two stored instants land on the reader's own
+/// day once `dates_ready` (rule 10); `published` is a calendar date, never shifted.
 fn derive_row_display(
     book: &EbookMetadata,
     server_url: &str,

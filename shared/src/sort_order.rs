@@ -10,14 +10,11 @@ use std::cmp::Ordering;
 use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
-/// Dictionary order: accents and case are ignored, and the plain spelling
-/// files first only when two strings are otherwise identical (`Perez` before
-/// `Pérez`). A comma files before a space, so a surname ends at its comma and
-/// every `Perez, …` lands ahead of `Pérez Galdós, …`.
-///
-/// Total and antisymmetric — two strings compare `Equal` only when they are
-/// byte-identical — which is what SQLite requires of a collation and what
-/// keeps a keyset cursor's `=` consistent with its `>`.
+/// Dictionary order: accents and case are ignored, and the plain spelling files
+/// first only when two strings are otherwise identical (`Perez` before `Pérez`).
+/// A comma files before a space, so every `Perez, …` lands ahead of `Pérez
+/// Galdós, …`. Total and antisymmetric (`Equal` only when byte-identical), as
+/// SQLite collations require and so a keyset cursor's `=` agrees with its `>`.
 pub fn dictionary_cmp(a: &str, b: &str) -> Ordering {
     let folded = if a.is_ascii() && b.is_ascii() {
         // Same result as `fold`, minus the decomposition machinery: this is
@@ -44,12 +41,10 @@ pub fn author_dictionary_cmp(a: &str, b: &str) -> Ordering {
     dictionary_cmp(&author_key(a), &author_key(b))
 }
 
-/// Surname-first sort key for an author *display name*:
-/// - a name already in `"Surname, Given"` form (it carries a comma) is kept
-///   verbatim — some Calibre dumps store the display name that way;
-/// - a mononym (no whitespace) is kept verbatim;
-/// - otherwise the last space-separated token becomes the surname:
-///   `"Andy Weir"` → `"Weir, Andy"`.
+/// Surname-first sort key for an author *display name*: a name already in
+/// `"Surname, Given"` form (it carries a comma) and a mononym are kept verbatim;
+/// otherwise the last space-separated token becomes the surname
+/// (`"Andy Weir"` → `"Weir, Andy"`).
 pub fn author_sort_key(name: &str) -> String {
     author_key(name).into_owned()
 }

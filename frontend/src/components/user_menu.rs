@@ -15,13 +15,9 @@ use crate::{use_current_user, Route};
 
 /// Renders the user menu component (web and server targets).
 ///
-/// SSR/hydration: the trigger is always rendered (empty placeholder
-/// initials in the pre-hydration phase) so the topbar markup is stable and
-/// `expectNavVisible` finds it without racing the auth ping. The App-wide
-/// [`crate::CurrentUser`] context — populated once by the boot effect in
-/// [`crate::App`] — then either fills in real initials (auth'd) or swaps
-/// the trigger for a `Log in` link (unauth). The panel only opens once we
-/// have a real user.
+/// The trigger always renders (placeholder initials before hydration) so the
+/// topbar markup is stable; [`crate::CurrentUser`] then fills in the initials
+/// or swaps in a `Log in` link. The panel opens only for a real user.
 #[cfg(any(feature = "web", feature = "server"))]
 #[component]
 pub fn UserMenu() -> Element {
@@ -178,16 +174,11 @@ fn UserMenuPanel(user: UserSummary, open: Signal<bool>) -> Element {
 }
 
 /// Sign-out action: logs out, closes the menu, then routes to the login
-/// page. Spawn-first ordering matters — closing the menu unmounts the
-/// button mid-handler on web, which can swallow work queued after
-/// `open.set(false)`.
-///
-/// Hydration parity (rule 07): the closure body must be identical across
-/// SSR/WASM. `data::logout` has a non-web `Ok(())` stub so this
-/// dispatches uniformly — SSR never fires click handlers, and WASM runs
-/// the real REST call.
+/// page.
 fn build_on_signout(mut open: Signal<bool>, nav: dioxus_router::Navigator) -> EventHandler<()> {
     EventHandler::new(move |()| {
+        // Spawn first: closing the menu unmounts the button mid-handler on web,
+        // which can swallow work queued after `open.set(false)`.
         spawn(async move {
             let _ = crate::data::logout().await;
             open.set(false);

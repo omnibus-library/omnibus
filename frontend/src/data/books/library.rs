@@ -11,7 +11,7 @@ use omnibus_shared::{
 use crate::data::note_server_fn_err;
 use crate::data::DataError;
 #[cfg(feature = "mobile")]
-use crate::data::{drain_error, http_client, note_status, with_bearer};
+use crate::data::{drain_error, encode_query_value, http_client, note_status, with_bearer};
 
 /// GET `/api/ebooks` — fetch the full ebook library payload.
 /// Cache-first with background revalidation.
@@ -36,13 +36,10 @@ pub(crate) async fn get_ebooks_online(server_url: &str) -> Result<EbookLibrary, 
     Ok(response.json::<EbookLibrary>().await?)
 }
 
-/// GET `/api/ebooks?sort=&dir=&cursor=&limit=&formats=` — one keyset page.
-///
-/// Of the sidebar facets only `filters.formats` rides the REST query (the
-/// mobile Sort & filter sheet's chips); the rest are ignored and `facets`
-/// comes back `None`. `total` is read from `X-Total-Count`
-/// on the first page only; `next_cursor` from `X-Next-Cursor`. `_stack_series`
-/// is ignored: the REST page carries no stacks.
+/// GET `/api/ebooks?sort=&dir=&cursor=&limit=&filter=` — one keyset page.
+/// `filters` rides the REST query as one `filter` param; `facets` comes back `None`
+/// and `_stack_series` is ignored (the REST page carries no stacks). `total` is read
+/// from `X-Total-Count` on the first page only; `next_cursor` from `X-Next-Cursor`.
 #[cfg(feature = "mobile")]
 #[allow(clippy::too_many_arguments)] // the shared signature
 pub async fn get_ebooks_page(
@@ -96,6 +93,22 @@ pub async fn get_ebooks_page(
     }
 }
 
+/// Cache key of the browse first page for this sort, filter and hidden formats.
+#[cfg(feature = "mobile")]
+fn first_page_key(
+    sort_key: SortKey,
+    sort_dir: SortDir,
+    filters: &ViewFilters,
+    exclude_formats: &[String],
+) -> String {
+    crate::offline::cache::keys::ebooks_first(
+        sort_key.as_wire(),
+        sort_dir.as_wire(),
+        &filters.to_query_param().unwrap_or_default(),
+        &exclude_formats.join(","),
+    )
+}
+
 /// First page: cache-first via the SWR policy, so landing paints instantly
 /// (server-exact ordering as of the last visit) and revalidates in the
 /// background. Falls back to the full replica if the network attempt itself
@@ -109,12 +122,7 @@ async fn first_page_ebooks(
     exclude_formats: Vec<String>,
     limit: i64,
 ) -> Result<LibraryPage, DataError> {
-    let key = crate::offline::cache::keys::ebooks_first(
-        sort_key.as_wire(),
-        sort_dir.as_wire(),
-        &filters.formats.join(","),
-        &exclude_formats.join(","),
-    );
+    let key = first_page_key(sort_key, sort_dir, &filters, &exclude_formats);
     let url = server_url.to_string();
     let f = filters.clone();
     let excl = exclude_formats.clone();
@@ -203,12 +211,7 @@ pub async fn refresh_ebooks_first_page(
     exclude_formats: Vec<String>,
     limit: i64,
 ) {
-    let key = crate::offline::cache::keys::ebooks_first(
-        sort_key.as_wire(),
-        sort_dir.as_wire(),
-        &filters.formats.join(","),
-        &exclude_formats.join(","),
-    );
+    let key = first_page_key(sort_key, sort_dir, &filters, &exclude_formats);
     let url = server_url.to_string();
     crate::offline::cache::refresh(key, async move {
         get_ebooks_page_online(
@@ -241,11 +244,9 @@ pub(crate) async fn get_ebooks_page_online(
         sort_key.as_wire(),
         sort_dir.as_wire(),
     );
-    if !filters.formats.is_empty() {
-        // Format keys are plain lowercase tokens (`epub`, `m4b`) — no
-        // URL-encoding needed.
-        url.push_str("&formats=");
-        url.push_str(&filters.formats.join(","));
+    if let Some(filter) = filters.to_query_param() {
+        url.push_str("&filter=");
+        url.push_str(&encode_query_value(&filter));
     }
     if !exclude_formats.is_empty() {
         url.push_str("&exclude_formats=");
@@ -535,11 +536,8 @@ pub async fn get_ebook(_server_url: &str, uuid: &str) -> Result<Option<EbookMeta
 }
 
 /// `POST /api/downloads/validators` — current validators for a batch of
-/// downloaded files, in one request carrying no metadata.
-///
-/// Deliberately not cached: the answer's whole purpose is to be newer than
-/// what this device holds, and it is small enough that a cache row would
-/// cost more than the request.
+/// downloaded files, in one request carrying no metadata. Deliberately not
+/// cached: the answer must be newer than what this device holds.
 #[cfg(feature = "mobile")]
 pub async fn download_validators(
     server_url: &str,

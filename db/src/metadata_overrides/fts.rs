@@ -12,21 +12,11 @@ use crate::sync::upsert_fts;
 
 use super::upsert::MetadataOverridesError;
 
-/// Rebuild the `books_fts` row for the book identified by `book_uuid`
-/// using the merged metadata returned from [`crate::books::get_book`]
-/// (canonical taxonomy with overrides applied). Called from the override
-/// write paths so search matches what the UI displays.
-///
-/// Resolves the uuid through [`resolve_book_id_by_uuid`] so a merged /
-/// attached uuid still lands on the surviving book. Silently returns
-/// `Ok(())` if the uuid has no matching book — overrides for an unknown
-/// uuid would only happen if a book row was deleted out from under us,
-/// in which case there is no FTS row to maintain.
-///
-/// The canonical-write + override-overlay pair runs inside a single
-/// transaction via [`rebuild_fts_row_tx`], so a failure in the overlay
-/// rolls back the canonical write instead of leaving the FTS row with
-/// unmerged data — matching [`rebuild_fts_for_books_batch`].
+/// Rebuild the `books_fts` row for the book identified by `book_uuid` from the
+/// merged metadata ([`crate::books::get_book`]: canonical taxonomy with
+/// overrides applied). The uuid resolves through [`resolve_book_id_by_uuid`],
+/// so a merged/attached uuid lands on the survivor; an unknown uuid returns
+/// `Ok(())`. The canonical write and override overlay share one transaction.
 pub(crate) async fn rebuild_fts_for_book(
     pool: &SqlitePool,
     book_uuid: &str,
@@ -58,16 +48,10 @@ pub(crate) async fn rebuild_fts_row_tx(
     Ok(())
 }
 
-/// Patch the override-driven columns of an existing `books_fts` row with
-/// the merged metadata. The door already wrote the canonical row; this
-/// overwrites `title / authors / series / tags / description / genres` so
-/// search reflects user edits. `isbn` is canonical-only (overrides can't
-/// change identifiers), so it's left as the door wrote it.
-///
-/// `genres` is written from the merged list rather than trusted to the door,
-/// even though the door reads the same `$.genres` key: this is the write that
-/// states the column is override-driven, and it keeps the row correct if the
-/// merge ever gains a source the projection's subquery doesn't read.
+/// Patch the override-driven columns of an existing `books_fts` row with the
+/// merged metadata: `title / authors / series / tags / description / genres`.
+/// `isbn` is canonical-only (overrides can't change identifiers), so it is left
+/// as the door wrote it.
 async fn overlay_overrides(
     conn: &mut SqliteConnection,
     book_id: i64,
@@ -78,6 +62,8 @@ async fn overlay_overrides(
     let series = merged.series.clone().unwrap_or_default();
     let tags = crate::helpers::join_names(merged.subjects.iter().map(String::as_str));
     let description = merged.description.clone().unwrap_or_default();
+    // From the merged list, not trusted to the door: this write states that the
+    // column is override-driven, and it stays correct if the merge gains a source.
     let genres = crate::helpers::join_names(merged.genres.iter().map(String::as_str));
     sqlx::query(
         "UPDATE books_fts
@@ -97,12 +83,9 @@ async fn overlay_overrides(
 }
 
 /// Rebuild `books_fts` for all given UUIDs through the choke-point, with
-/// override text overlaid. Each uuid is resolved via merged-uuids
-/// fallback; uuids with no live book row are silently skipped.
-///
-/// Fetches merged metadata per-book before the write phase. Runs the
-/// writes in one transaction so a large batch (e.g. an author delete
-/// touching thousands of books) takes the write lock once.
+/// override text overlaid. Each uuid is resolved via merged-uuids fallback;
+/// uuids with no live book row are skipped. Fetches merged metadata per-book,
+/// then writes in one transaction so a large batch takes the write lock once.
 pub(crate) async fn rebuild_fts_for_books_batch(
     pool: &SqlitePool,
     book_uuids: &[String],

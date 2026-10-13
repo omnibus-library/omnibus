@@ -5,14 +5,14 @@
 
 use omnibus_shared::{
     CreateShelfRequest, MatchMode, RulePreview, Shelf, ShelfPage, ShelfRule, ShelfSummary, SortDir,
-    SortKey, UpdateShelfRequest,
+    SortKey, UpdateShelfRequest, ViewFilters,
 };
 
 #[cfg(not(feature = "mobile"))]
 use super::note_server_fn_err;
 use super::DataError;
 #[cfg(feature = "mobile")]
-use super::{drain_error, http_client, note_status, with_bearer};
+use super::{drain_error, encode_query_value, http_client, note_status, with_bearer};
 
 // Mobile (REST).
 
@@ -167,19 +167,26 @@ pub(crate) async fn delete_shelf_online(server_url: &str, id: i64) -> Result<(),
     Ok(())
 }
 
-/// GET `/api/shelves/{id}/page?sort=&dir=` — the shelf's member books.
+/// GET `/api/shelves/{id}/page?sort=&dir=&filter=` — the shelf's member books,
+/// narrowed by `filters`.
 #[cfg(feature = "mobile")]
 pub async fn shelf_page(
     server_url: &str,
     id: i64,
     sort_key: SortKey,
     sort_dir: SortDir,
+    filters: ViewFilters,
 ) -> Result<ShelfPage, DataError> {
     let url = server_url.to_string();
-    crate::offline::cache::read_through(
-        crate::offline::cache::keys::shelf_page(id, sort_key.as_wire(), sort_dir.as_wire()),
-        async move { shelf_page_online(&url, id, sort_key, sort_dir).await },
-    )
+    let key = crate::offline::cache::keys::shelf_page(
+        id,
+        sort_key.as_wire(),
+        sort_dir.as_wire(),
+        &filters.to_query_param().unwrap_or_default(),
+    );
+    crate::offline::cache::read_through(key, async move {
+        shelf_page_online(&url, id, sort_key, sort_dir, filters).await
+    })
     .await
 }
 
@@ -190,12 +197,17 @@ pub(crate) async fn shelf_page_online(
     id: i64,
     sort_key: SortKey,
     sort_dir: SortDir,
+    filters: ViewFilters,
 ) -> Result<ShelfPage, DataError> {
-    let url = format!(
+    let mut url = format!(
         "{server_url}/api/shelves/{id}/page?sort={}&dir={}",
         sort_key.as_wire(),
         sort_dir.as_wire()
     );
+    if let Some(filter) = filters.to_query_param() {
+        url.push_str("&filter=");
+        url.push_str(&encode_query_value(&filter));
+    }
     let response = with_bearer(http_client().get(url)).send().await?;
     let status = note_status(response.status());
     if !status.is_success() {
@@ -334,6 +346,18 @@ pub async fn shelves_containing(_server_url: &str, uuid: &str) -> Result<Vec<i64
         .map_err(note_server_fn_err)
 }
 
+/// Ids of the visible smart shelves whose rules match this book. Web-only
+/// caller, like [`shelves_containing`].
+#[cfg(not(feature = "mobile"))]
+pub async fn smart_shelves_containing(
+    _server_url: &str,
+    uuid: &str,
+) -> Result<Vec<i64>, DataError> {
+    crate::rpc::rpc_smart_shelves_containing(uuid.to_string())
+        .await
+        .map_err(note_server_fn_err)
+}
+
 /// Create a shelf.
 #[cfg(not(feature = "mobile"))]
 pub async fn create_shelf(_server_url: &str, req: CreateShelfRequest) -> Result<Shelf, DataError> {
@@ -362,15 +386,16 @@ pub async fn delete_shelf(_server_url: &str, id: i64) -> Result<(), DataError> {
         .map_err(note_server_fn_err)
 }
 
-/// The shelf's member books, sorted per `sort_key`/`sort_dir`.
+/// The shelf's member books, sorted per `sort_key`/`sort_dir` and narrowed by `filters`.
 #[cfg(not(feature = "mobile"))]
 pub async fn shelf_page(
     _server_url: &str,
     id: i64,
     sort_key: SortKey,
     sort_dir: SortDir,
+    filters: ViewFilters,
 ) -> Result<ShelfPage, DataError> {
-    crate::rpc::rpc_get_shelf_page(id, sort_key, sort_dir)
+    crate::rpc::rpc_get_shelf_page(id, sort_key, sort_dir, filters)
         .await
         .map_err(note_server_fn_err)
 }
@@ -410,3 +435,6 @@ pub async fn preview_shelf_rule(
         .await
         .map_err(note_server_fn_err)
 }
+
+#[cfg(all(test, feature = "mobile"))]
+mod tests;

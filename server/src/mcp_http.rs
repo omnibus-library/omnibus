@@ -78,15 +78,11 @@ pub fn mcp_router(app: AppState, loopback_url: String) -> Router {
         .with_state(state)
 }
 
-/// `ANY /mcp` — toggle gate, bearer auth, then hand the request to rmcp.
-///
-/// * Toggle read per request (AC5): flipping the admin setting takes effect
-///   without a restart. Disabled → `404`, indistinguishable from a build
-///   without the endpoint (AC2).
-/// * Bearer-only auth: `resolve_token` routes `omni_…` API tokens to the
-///   `api_tokens` table and session bearers to `sessions` — the same
-///   routing every `/api/*` request gets, so a revoked token is rejected
-///   here exactly as it is there (AC3 rides on the loopback REST calls).
+/// `ANY /mcp` — toggle gate, bearer auth, then hand the request to rmcp. The toggle is read
+/// per request, so flipping the admin setting takes effect without a restart; disabled is a
+/// `404`, indistinguishable from a build without the endpoint. Bearer-only: `resolve_token`
+/// routes `omni_…` API tokens and session bearers as every `/api/*` request does, so a
+/// revoked token is rejected here exactly as there.
 async fn mcp_handler(State(state): State<McpHttpState>, req: Request) -> Response {
     match omnibus_db::mcp_enabled(state.app.pool()).await {
         Ok(true) => {}

@@ -25,13 +25,9 @@ pub enum TaskKind {
 
 /// Lifecycle state of a single worker task as exposed to the UI.
 ///
-/// `Running.total = None` means the task either has no granular progress
-/// surface yet or is in a pre-count phase (e.g. scanner tree-walk). When
-/// `total` is `Some`, `processed / total` is a stable ratio the UI can
-/// render as a progress bar. Terminal variants (`Done`, `Failed`) stick
-/// around in [`WorkerStatus::recent_complete`] for ~10s after completion
-/// so a transient "Library updated" / error banner can render before the
-/// indicator collapses.
+/// `Running.total = None` means no granular progress yet or a pre-count phase
+/// (e.g. scanner tree-walk); with `Some`, `processed / total` is a stable ratio.
+/// `Done` and `Failed` stay in [`WorkerStatus::recent_complete`] for ~10s.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ProgressState {
@@ -47,17 +43,11 @@ pub enum ProgressState {
         /// instead of the ordinary success row.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ghost_warning: Option<GhostFilesWarning>,
-        /// `book_uuid`s that failed a fleet-wide EPUB override bake — `Some`
-        /// only for a `RewriteAllEpubs` run that left at
-        /// least one book unbaked; every other task kind, and a bake with
-        /// zero failures, reports `None`. Mutually exclusive with
-        /// `ghost_warning` (each task kind produces at most one of the two).
-        /// Deliberately just the uuids, not the per-book error text: this
-        /// endpoint is reachable by any authenticated user, not only the
-        /// admin who kicked off the bake, and the underlying error (from
-        /// `db::epub_rewrite`) can carry a server filesystem path. The full
-        /// message is logged server-side instead — see
-        /// `handle_rewrite_all_epubs` in `db/src/worker/handlers.rs`.
+        /// `book_uuid`s that failed a fleet-wide EPUB override bake: `Some` only for a
+        /// `RewriteAllEpubs` run that left at least one book unbaked, else `None`.
+        /// Mutually exclusive with `ghost_warning`. Deliberately just uuids, not error
+        /// text: this endpoint is readable by any authenticated user and the underlying
+        /// error can carry a server filesystem path (the full message is logged instead).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bake_errors: Option<Vec<String>>,
     },
@@ -76,15 +66,10 @@ pub struct GhostFilesWarning {
 }
 
 /// Live verbose detail attached to a [`TaskProgress`] entry: which phase the
-/// task is in, the item it is working on right now, and (for scans) the
-/// diff's classification tallies. Every field is optional so task kinds
-/// opt in piecemeal; all three absent serializes to no `detail` key at all.
-///
-/// `current_item` is user-facing display text and must never carry an
-/// absolute server path — scans report the library directory name plus the
-/// library-relative path (`books/Author/Title.epub`), other tasks report a
-/// book title or author name. `rpc_worker_status` is readable by any
-/// authenticated user, so this is a security boundary, not a style choice.
+/// task is in, the item it is working on right now, and (for scans) the diff's
+/// classification tallies. Every field is optional; all three absent serializes
+/// to no `detail` key. `current_item` is user-facing display text and must never
+/// carry an absolute server path: `rpc_worker_status` is readable by any user.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskDetail {
     /// Short human-readable phase label, e.g. "Walking the library".
@@ -143,10 +128,8 @@ pub struct TaskProgress {
 
 /// Aggregate progress feed served from `POST /api/rpc/worker_status`.
 ///
-/// Two-vec split lets callers short-circuit the "do I need a fade timer?"
-/// check by inspecting `recent_complete.is_empty()` without scanning
-/// `active`. Both vecs are sorted by `task_id` for stable list rendering
-/// across polls.
+/// Both vecs are sorted by `task_id` for stable list rendering across polls;
+/// callers can check `recent_complete.is_empty()` to skip a fade timer.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkerStatus {
     pub active: Vec<TaskProgress>,

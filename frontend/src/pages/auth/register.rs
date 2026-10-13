@@ -84,12 +84,11 @@ pub fn RegisterPage() -> Element {
     out
 }
 
-/// Probes whether registration is open. `None` until the probe answers — SSR
-/// and the first WASM paint both render the placeholder, so hydration
-/// matches (rule 07) and the form never appears only to be pulled back when
-/// registration turns out to be closed. A *failed* probe resolves to
-/// `Some(true)`: the server's 403 is the real gate, so a flaky read must not
-/// lock anyone out of the form. Called unconditionally from [`RegisterPage`].
+/// Probes whether registration is open. `None` until the probe answers, so
+/// SSR and the first WASM paint both render the placeholder and the form never
+/// appears only to be pulled back. A *failed* probe resolves to `Some(true)`:
+/// the server's 403 is the real gate. Called unconditionally from
+/// [`RegisterPage`].
 fn use_registration_open_probe(server_url: String) -> Signal<Option<bool>> {
     let mut registration_open = use_signal(|| Option::<bool>::None);
     use_effect({

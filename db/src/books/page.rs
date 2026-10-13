@@ -2,8 +2,11 @@
 //! [`list_books_page`] returns one page ordered by any [`SortKey`] axis,
 //! filtered by the sidebar [`ViewFilters`] and positioned by an opaque
 //! [`PageCursor`] encoding the last row's `(sort-value, series-index, id)` — so
-//! each axis stays a pure index range scan and paging never uses `OFFSET`;
-//! [`stacked`] folds each series into one row on top of it.
+//! paging never uses `OFFSET`; [`stacked`] folds each series into one row on
+//! top of it.
+//!
+//! Ordering by an expression (the *effective* value under overrides) cannot
+//! use a raw-column keyset index; acceptable at a self-hosted library's scale.
 
 use base64::engine::{general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use omnibus_shared::{EbookMetadata, SortDir, SortKey, ViewFilters};
@@ -14,6 +17,7 @@ use crate::metadata_overrides::sql::{
     creator_sort_sql, effective_author_sql, effective_text_sql, effective_value_sql,
     override_present_sql, override_sql, overrides_win_sql,
 };
+use crate::shelves::filter::{filter_predicate, Bind, Viewer, MATCH_ALL};
 
 use super::projection::{
     backfill_creator_ids, merge_overrides_projected, row_to_ebook, Projection, MAX_BOOKS_RETURNED,
@@ -24,11 +28,10 @@ mod stacked;
 pub use stacked::{list_books_page_stacked, StackedBookPage};
 
 /// Opaque keyset position: the active axis's sort value (`sort`), the
-/// secondary numeric key for the Series axis (`idx`, the in-series index;
-/// `None` for every other axis), and the row `id` tiebreak. Carried to the
-/// client as a base64url(JSON) string and handed back verbatim to fetch the
-/// next page. Non-authoritative — a tampered or stale cursor only
-/// mis-positions the reader's own page, so it is unsigned.
+/// in-series index for the Series axis (`idx`, `None` on every other axis), and
+/// the row `id` tiebreak. Carried to the client as base64url(JSON) and handed
+/// back verbatim for the next page. Unsigned: a tampered or stale cursor only
+/// mis-positions the reader's own page.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PageCursor {
     #[serde(rename = "s")]
@@ -50,14 +53,11 @@ pub enum CursorError {
 
 impl PageCursor {
     /// base64url(no-pad) of the compact JSON form. Greppable in logs and
-    /// trivially decodable — fine for a single-tenant self-hosted app.
-    ///
-    /// A non-finite `idx` (a NaN/Inf `series_index` from a corrupt source) is
-    /// coerced to `None` before serialization: `serde_json` refuses to encode
-    /// non-finite floats, and silently emitting an empty cursor would break
-    /// the next page request. `parse_series_index` already blocks such values
-    /// at index time; this is belt-and-suspenders for any legacy row.
+    /// trivially decodable, which is fine for a single-tenant self-hosted app.
+    /// A non-finite `idx` is coerced to `None`.
     pub fn encode(&self) -> String {
+        // `serde_json` refuses non-finite floats, and an empty cursor would
+        // break the next page request.
         let safe = PageCursor {
             sort: self.sort.clone(),
             idx: self.idx.filter(|n| n.is_finite()),
@@ -103,16 +103,10 @@ enum KeyVal {
 }
 
 /// Return one page of `library_paths` ordered by `sort`/`dir`, filtered by
-/// `filters`, starting strictly after `cursor` (or at the top when `None`).
-///
-/// `exclude_formats` is the caller's landing-only hidden-formats exclusion
-/// (see [`exclude_formats_predicate`]); pass `&[]` everywhere else.
-///
-/// `limit` is clamped to `[1, MAX_BOOKS_RETURNED]`. Fetches one extra row to
-/// decide whether a further page exists: a full `limit` page yields a
-/// `next` cursor built from the last returned row; a short page yields
-/// `next == None`. Empty `library_paths` returns an empty page. Rows carry
-/// every column, `description` included (see [`list_books_page_projected`]).
+/// `filters` (shelf clauses scoped to `viewer`), strictly after `cursor` (the top when
+/// `None`); an empty `library_paths` returns an empty page. `exclude_formats` is the
+/// landing-only hidden-formats exclusion ([`exclude_formats_predicate`]); pass `&[]`
+/// elsewhere. `limit` is clamped to `[1, MAX_BOOKS_RETURNED]`; a short page yields `next == None`.
 #[allow(clippy::too_many_arguments)] // orthogonal query knobs; a params struct would just rename them
 pub async fn list_books_page(
     pool: &SqlitePool,
@@ -120,6 +114,7 @@ pub async fn list_books_page(
     sort: SortKey,
     dir: SortDir,
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
     cursor: Option<&PageCursor>,
     limit: i64,
@@ -130,6 +125,7 @@ pub async fn list_books_page(
         sort,
         dir,
         filters,
+        viewer,
         exclude_formats,
         cursor,
         limit,
@@ -147,6 +143,7 @@ pub async fn list_books_page_projected(
     sort: SortKey,
     dir: SortDir,
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
     cursor: Option<&PageCursor>,
     limit: i64,
@@ -158,6 +155,7 @@ pub async fn list_books_page_projected(
         sort,
         dir,
         filters,
+        viewer,
         exclude_formats,
         cursor,
         limit,
@@ -175,6 +173,7 @@ async fn fetch_page(
     sort: SortKey,
     dir: SortDir,
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
     cursor: Option<&PageCursor>,
     limit: i64,
@@ -194,6 +193,7 @@ async fn fetch_page(
         dir,
         library_paths,
         filters,
+        viewer,
         exclude_formats,
         cursor,
         stacked,
@@ -232,6 +232,7 @@ fn build_page_sql(
     dir: SortDir,
     library_paths: &[&str],
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
     cursor: Option<&PageCursor>,
     stacked: bool,
@@ -242,7 +243,7 @@ fn build_page_sql(
 
     let mut binds: Vec<SqlVal> = Vec::new();
     let visible = visible_book_sql(library_paths, &mut binds);
-    let filter_sql = filter_predicates(filters, &mut binds);
+    let filter_sql = filter_predicates(filters, viewer, &mut binds);
     let exclude_sql = exclude_formats_predicate(exclude_formats, &mut binds);
     // Between the exclusion and the keyset: binds follow the `?` text order.
     let stack_sql = if stacked {
@@ -251,6 +252,7 @@ fn build_page_sql(
             dir,
             library_paths,
             filters,
+            viewer,
             exclude_formats,
             &mut binds,
         )
@@ -304,22 +306,11 @@ fn build_page_sql(
     (sql, binds)
 }
 
-/// The `(primary, secondary)` sort expressions for each axis. `primary`
-/// always yields `TEXT`; `secondary` (the in-series index) is `Some` only for
-/// [`SortKey::Series`].
-///
-/// The three metadata axes key on the *effective* value — a book renamed or
-/// re-attributed through `metadata_overrides` sorts where the page shows it,
-/// not where the scanned file put it — and compare in dictionary order
-/// through the collations `pool.rs` registers. The collation rides inside the
-/// expression, so the `ORDER BY` and the keyset predicate cannot compare
-/// differently. Shelf member sorts reuse these. The two time axes read INTEGER
-/// unix-seconds (migration 0038) but format them to fixed-width ISO here, for
-/// the same reason the projection does: the cursor round-trips the primary
-/// value as `Option<String>` and compares it lexicographically, which stays
-/// chronologically correct on ISO text. (The trade-off, shared by every
-/// expression axis here, is that ordering by an expression can't use the
-/// raw-column keyset index — acceptable at a self-hosted library's scale.)
+/// The `(primary, secondary)` sort expressions for each axis. `primary` always
+/// yields `TEXT`; `secondary` (the in-series index) is `Some` only for
+/// [`SortKey::Series`]. The metadata axes key on the *effective* value (after
+/// `metadata_overrides`) under the `pool.rs` collations, carried inside the
+/// expression so `ORDER BY` and the keyset predicate agree. Shelf sorts reuse these.
 pub(crate) fn axis_sort_columns(sort: SortKey) -> (&'static str, Option<&'static str>) {
     match sort {
         SortKey::Title => (effective_text_sql!("$.title"; "b.sort"; "dictionary"), None),
@@ -330,6 +321,9 @@ pub(crate) fn axis_sort_columns(sort: SortKey) -> (&'static str, Option<&'static
             effective_author_sql!("b.author_sort"),
             None,
         ),
+        // Time axes format INTEGER unix-seconds to fixed-width ISO text: the
+        // cursor carries the primary value as `Option<String>` and compares it
+        // lexicographically.
         SortKey::LastUpdated => (
             "strftime('%Y-%m-%dT%H:%M:%SZ', b.last_modified, 'unixepoch')",
             None,
@@ -363,12 +357,9 @@ fn axis_terms(sort: SortKey, cursor: &PageCursor) -> Vec<(String, KeyVal)> {
     terms
 }
 
-/// Read the `(cursor_sort, cursor_idx, id)` aliases off a boundary row into
-/// the next-page cursor.
-/// The projected column a page row carries its axis value under. Every axis
-/// but Recently Interacted gets its own `cursor_sort` alias; that one reuses
-/// `BOOK_COLUMNS`' `last_interacted_at` rather than paying for the expression
-/// a second time.
+/// The projected column a page row carries its axis value under: `cursor_sort`
+/// for every axis but Recently Interacted, which reuses `BOOK_COLUMNS`'
+/// `last_interacted_at` instead of paying for the expression twice.
 fn cursor_sort_column(sort: SortKey) -> &'static str {
     match sort {
         SortKey::RecentlyInteracted => "last_interacted_at",
@@ -376,6 +367,8 @@ fn cursor_sort_column(sort: SortKey) -> &'static str {
     }
 }
 
+/// Read the `(cursor_sort, cursor_idx, id)` aliases off a boundary row into
+/// the next-page cursor.
 fn cursor_from_row(row: &sqlx::sqlite::SqliteRow, sort: SortKey) -> PageCursor {
     PageCursor {
         sort: row.get::<Option<String>, _>(cursor_sort_column(sort)),
@@ -518,6 +511,7 @@ pub async fn count_books_page(
     pool: &SqlitePool,
     library_paths: &[&str],
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
 ) -> Result<i64, super::BooksError> {
     if library_paths.is_empty() {
@@ -525,7 +519,7 @@ pub async fn count_books_page(
     }
     let mut binds: Vec<SqlVal> = Vec::new();
     let visible = visible_book_sql(library_paths, &mut binds);
-    let filter_sql = filter_predicates(filters, &mut binds);
+    let filter_sql = filter_predicates(filters, viewer, &mut binds);
     let exclude_sql = exclude_formats_predicate(exclude_formats, &mut binds);
     let sql = format!(
         r"
@@ -546,78 +540,25 @@ pub async fn count_books_page(
     Ok(q.fetch_one(pool).await?)
 }
 
-/// Build the ` AND EXISTS(…)` server-side filter conjuncts. Each non-empty
-/// facet group ANDs across groups and ORs within (an `IN (…)` list), matching
-/// the former client-side `matches_filters`.
-fn filter_predicates(filters: &ViewFilters, binds: &mut Vec<SqlVal>) -> String {
-    let mut out = String::new();
-    if !filters.authors.is_empty() {
-        out.push_str(&exists_in(
-            "books_authors_link bal JOIN authors a ON a.id = bal.author",
-            "bal.book = b.id",
-            "a.name",
-            &filters.authors,
-            binds,
-        ));
+/// The ` AND (<clauses>)` server-side filter conjunct, or `""` when no clause
+/// applies. Clauses come from [`filter_predicate`], so the page and smart
+/// shelves share one membership engine.
+fn filter_predicates(filters: &ViewFilters, viewer: Viewer, binds: &mut Vec<SqlVal>) -> String {
+    let predicate = filter_predicate(filters, viewer);
+    if predicate.sql == MATCH_ALL {
+        return String::new();
     }
-    if !filters.series.is_empty() {
-        out.push_str(&exists_in(
-            "books_series_link bsl JOIN series s ON s.id = bsl.series",
-            "bsl.book = b.id",
-            "s.name",
-            &filters.series,
-            binds,
-        ));
-    }
-    if !filters.formats.is_empty() {
-        // `book_files.format` is COLLATE NOCASE, so the lowercase chip keys
-        // (`"epub"`) match the stored uppercase (`"EPUB"`) without folding.
-        out.push_str(&exists_in(
-            "book_files bf",
-            "bf.book_id = b.id",
-            "bf.format",
-            &filters.formats,
-            binds,
-        ));
-    }
-    if !filters.tags.is_empty() {
-        out.push_str(&exists_in(
-            "books_tags_link btl JOIN tags t ON t.id = btl.tag",
-            "btl.book = b.id",
-            "t.name",
-            &filters.tags,
-            binds,
-        ));
-    }
-    out
-}
-
-/// ` AND EXISTS (SELECT 1 FROM <from> WHERE <join> AND <col> IN (?, …))`,
-/// pushing each value as a bind.
-fn exists_in(
-    from: &str,
-    join: &str,
-    col: &str,
-    values: &[String],
-    binds: &mut Vec<SqlVal>,
-) -> String {
-    let ph = placeholders(values.len());
-    for v in values {
-        binds.push(SqlVal::Text(v.clone()));
-    }
-    format!(" AND EXISTS (SELECT 1 FROM {from} WHERE {join} AND {col} IN ({ph}))")
+    binds.extend(predicate.binds.into_iter().map(|bind| match bind {
+        Bind::Text(s) => SqlVal::Text(s),
+        Bind::Int(i) => SqlVal::Int(i),
+    }));
+    format!(" AND ({})", predicate.sql)
 }
 
 /// The landing hidden-formats exclusion: a book stays visible while it has at
-/// least one file in a non-hidden format, or any physical copy. Hiding is
-/// per-*format*, so a dual-format book survives until every format it carries
-/// is hidden — and physical ownership trumps hiding outright (a book whose
-/// only files are hidden but which has a physical copy remains visible, by
-/// design). Empty `exclude` returns `""`.
-///
-/// `book_files.format` is COLLATE NOCASE (column collation governs `NOT IN`
-/// exactly as it does the include clause's `IN`), so lowercase wire tokens
-/// match the stored uppercase values without folding.
+/// least one file in a non-hidden format, or any physical copy (physical
+/// ownership trumps hiding). Hiding is per-*format*, so a dual-format book
+/// survives until every format it carries is hidden. Empty `exclude` returns `""`.
 fn exclude_formats_predicate(exclude: &[String], binds: &mut Vec<SqlVal>) -> String {
     if exclude.is_empty() {
         return String::new();
@@ -626,6 +567,8 @@ fn exclude_formats_predicate(exclude: &[String], binds: &mut Vec<SqlVal>) -> Str
     for v in exclude {
         binds.push(SqlVal::Text(v.clone()));
     }
+    // `book_files.format` is COLLATE NOCASE, which governs `NOT IN` too, so
+    // lowercase wire tokens match stored uppercase values without folding.
     format!(
         " AND (EXISTS (SELECT 1 FROM book_files bf \
                         WHERE bf.book_id = b.id AND bf.format NOT IN ({ph})) \

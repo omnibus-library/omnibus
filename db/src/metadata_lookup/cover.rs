@@ -13,21 +13,16 @@ use crate::author_photos::{fetch_remote_image_with, FetchRemoteImageError, Remot
 
 use super::providers::googlebooks;
 
-/// Redirect hops allowed when fetching a provider cover.
-///
-/// Not zero, because Open Library's cover CDN genuinely needs two: it 302s to
-/// `archive.org`, which 302s again to the node holding the file. Four leaves
-/// headroom without turning the fetch into a crawl. Every hop is re-checked
-/// against the same scheme and allowlist gates as the original URL — the
-/// follow is only safe because of that.
+/// Redirect hops allowed when fetching a provider cover. Not zero: Open
+/// Library's cover CDN 302s to `archive.org`, which 302s again to the node
+/// holding the file. Every hop is re-checked against the same scheme and
+/// allowlist gates as the original URL.
 pub const MAX_COVER_REDIRECTS: u8 = 4;
 
 /// The fetch config for a provider cover: HTTPS only, hosts limited to the
-/// provider catalog's, and a bounded redirect follow.
-///
-/// `allow_private_addresses` is threaded through rather than defaulted so a
-/// test can point the fetch at a loopback `wiremock` origin; production
-/// callers pass `false` and every other gate still applies either way.
+/// provider catalog's, and a bounded redirect follow. Production callers pass
+/// `allow_private_addresses = false`; it exists so a test can point the fetch at
+/// a loopback `wiremock` origin, and every other gate applies either way.
 pub fn provider_cover_image_config(allow_private_addresses: bool) -> RemoteImageConfig {
     RemoteImageConfig {
         allow_private_addresses,
@@ -65,32 +60,16 @@ pub fn cover_image_config_for(url: &str, allow_private_addresses: bool) -> Remot
 }
 
 /// How far a high-resolution candidate's aspect ratio may drift from the
-/// thumbnail's before it is judged a different picture.
-///
-/// Measured across 18 volumes: every genuine high-resolution cover matched its
-/// own thumbnail within 2.6%, and every placeholder missed by 5.4% or more.
-/// The threshold sits in that gap rather than hugging either edge.
+/// thumbnail's before it is judged a different picture. Measured across 18
+/// volumes: genuine covers matched within 2.6%, placeholders missed by 5.4% or
+/// more, and the threshold sits in that gap.
 const COVER_ASPECT_TOLERANCE: f64 = 0.04;
 
 /// Fetch a provider cover, taking the highest resolution that is provably the
-/// same picture.
-///
-/// For every provider but one this is [`fetch_remote_image_with`] unchanged.
-/// Google Books is the exception: its `imageLinks` only publishes 128px
-/// renditions, so the URL the picker holds is always the small one, and the
-/// full-size art has to be asked for separately.
-///
-/// That request cannot be trusted on its status. A volume Google holds no art
-/// for answers **200 with a placeholder** — an "image not available" card, a
-/// redacted-cover skeleton, or the publisher's colophon in place of the real
-/// jacket — so the bytes are compared against the thumbnail before being
-/// accepted, and the thumbnail is kept whenever they disagree. Roughly two
-/// thirds of volumes take that path, which is why the upgrade is opportunistic
-/// rather than a plain URL rewrite at search time.
-///
-/// Both fetches run under the caller's `config`, so the host allowlist,
-/// HTTPS-only rule, redirect cap and size cap apply to the upgrade exactly as
-/// they do to the original.
+/// same picture. Only Google Books differs from [`fetch_remote_image_with`]: it
+/// publishes 128px thumbnails, and a volume with no full art answers **200 with
+/// a placeholder**, so the full-size bytes are compared with the thumbnail,
+/// which is kept if they disagree. Both fetches run under the caller's `config`.
 pub async fn fetch_provider_cover(
     url: &str,
     config: &RemoteImageConfig,
@@ -119,13 +98,9 @@ pub async fn fetch_provider_cover(
 }
 
 /// Whether `candidate` is a bigger rendition of `thumbnail` rather than a
-/// different image.
-///
-/// Aspect ratio is the discriminator because the thumbnail is always the real
-/// cover, and a rendition of a picture keeps its shape while a substituted
-/// placeholder does not. Undecodable bytes on either side answer `false`: the
-/// thumbnail is the safe choice, and the caller's own magic-byte sniff is what
-/// rejects a non-image outright.
+/// different image, judged by aspect ratio: a rendition keeps its shape and a
+/// substituted placeholder does not. Undecodable bytes on either side answer
+/// `false`, keeping the thumbnail.
 fn is_larger_rendition(thumbnail: &[u8], candidate: &[u8]) -> bool {
     let (Some((tw, th)), Some((cw, ch))) = (dimensions(thumbnail), dimensions(candidate)) else {
         return false;

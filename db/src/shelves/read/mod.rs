@@ -20,7 +20,7 @@ mod summary;
 
 pub use detail::{
     get_shelf, kobo_synced_book_uuids, manual_shelves_containing, preview_rule,
-    shelf_exclusive_hidden_uuids, shelf_page,
+    shelf_exclusive_hidden_uuids, shelf_page, smart_shelves_containing,
 };
 pub use summary::list_visible_shelves;
 
@@ -72,7 +72,8 @@ fn row_to_rule(r: &sqlx::sqlite::SqliteRow) -> Result<ShelfRule, ShelfError> {
     })
 }
 
-/// Count of books matching a smart shelf's rules. Shared by
+/// Count of books matching a smart shelf's rules, or of that one book when
+/// `uuid` names it (so `> 0` answers "is it on the shelf"). Shared by
 /// [`detail::get_shelf`] / [`detail::preview_rule`] (single-shelf) and
 /// [`summary::count_smart_fan_out`] (fanned out per visible shelf).
 async fn count_smart(
@@ -80,10 +81,16 @@ async fn count_smart(
     owner_id: i64,
     match_mode: MatchMode,
     rules: &[ShelfRule],
+    uuid: Option<&str>,
 ) -> Result<i64, ShelfError> {
     let pred = membership_predicate(rules, match_mode, owner_id)?;
+    let only = if uuid.is_some() {
+        " AND b.uuid = ?"
+    } else {
+        ""
+    };
     let sql = format!(
-        "SELECT COUNT(*) FROM books b WHERE {SMART_VISIBLE} AND {}",
+        "SELECT COUNT(*) FROM books b WHERE {SMART_VISIBLE} AND {}{only}",
         pred.sql
     );
     let mut q = sqlx::query_scalar::<_, i64>(&sql);
@@ -92,6 +99,9 @@ async fn count_smart(
             Bind::Text(s) => q.bind(s.clone()),
             Bind::Int(i) => q.bind(*i),
         };
+    }
+    if let Some(u) = uuid {
+        q = q.bind(u.to_string());
     }
     Ok(q.fetch_one(pool).await?)
 }

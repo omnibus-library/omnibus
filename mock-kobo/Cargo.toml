@@ -1,0 +1,38 @@
+# A fake Kobo e-reader that speaks the firmware's side of `/kobo/<token>/v1/*`.
+# Dev tooling only, out of default-members like `mcp/`. It takes no `omnibus-*`
+# dependency on purpose: a type shared with the server can't catch its drift.
+
+[package]
+name = "omnibus-mock-kobo"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[[bin]]
+name = "mock-kobo"
+path = "src/main.rs"
+
+[features]
+# On by default so `mock-kobo tui` works as built; `server/` opts out.
+default = ["tui"]
+# The `mock-kobo tui` terminal UI, and the only user of ratatui.
+tui = ["dep:ratatui"]
+
+[dependencies]
+# `main.rs` is the only user: the library reports typed errors.
+anyhow = "1"
+# Same version `server/` uses for axum, so cargo unifies on one build.
+axum = "0.8"
+# Same version `db/` uses for its CSPRNG tokens, so cargo unifies on one build.
+getrandom = "0.3"
+# The terminal UI. Its re-exported crossterm is the only one used, so the two can't disagree.
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"], optional = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["time"] }
+tempfile = { workspace = true }

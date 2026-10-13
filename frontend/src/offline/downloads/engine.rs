@@ -60,12 +60,10 @@ pub(super) async fn run(server_url: String, uuid: String, format: DlFormat, file
     }
 }
 
-/// Run a replacement download, restoring `previous` if it fails.
-///
-/// The files `previous` describes are still on disk throughout: the engine
-/// writes `.part` siblings and renames over them only on success. So a
-/// failure here is not a loss — it is the book the reader already had,
-/// still complete and still flagged, with the chip inviting another try.
+/// Run a replacement download, restoring `previous` if it fails. The files
+/// `previous` describes stay on disk throughout (the engine writes `.part`
+/// siblings and renames over them only on success), so a failure leaves the
+/// book the reader already had, still complete and still flagged.
 pub(super) async fn run_replacing(
     server_url: String,
     uuid: String,
@@ -333,16 +331,9 @@ fn provenance(previous: Option<&str>, current: Option<&str>) -> Provenance {
 }
 
 /// Whether a part already on disk may be carried into this attempt.
-///
 /// `Unknown` is reusable only while the *current* file has no validator
-/// either — nothing has been learned, so refusing to resume would just
-/// break downloads against a row the scanner has never stat'd. Once the
-/// current file does have one, an unprovable part is not kept: it would be
-/// silently restamped with that validator, which turns "I have no idea
-/// where these bytes came from" into "these bytes are current" and lets a
-/// pre-validator part sit in the same audiobook as freshly-fetched ones
-/// with nothing downstream ever reporting it. Re-fetching costs a
-/// download; the alternative costs a book that is quietly wrong.
+/// either (rule 09): once it has one, an unprovable part is re-fetched rather
+/// than silently restamped as current.
 fn reusable(previous: Option<&str>, current: Option<&str>) -> bool {
     match provenance(previous, current) {
         Provenance::Proven => true,
@@ -352,13 +343,9 @@ fn reusable(previous: Option<&str>, current: Option<&str>) -> bool {
 }
 
 /// Drop the partial bytes for `rel` so the retry starts clean instead of
-/// resuming onto bytes from another edition.
-///
-/// The **finished** file is deliberately left alone. It is about to be
-/// overwritten by the rename at the end of a successful fetch — which is
-/// atomic — and until then it is the only copy the reader has. Deleting it
-/// up front buys nothing and turns any later failure into a book that used
-/// to work and now doesn't.
+/// resuming onto bytes from another edition. The **finished** file is left
+/// alone: until the atomic rename at the end of a successful fetch, it is the
+/// only copy the reader has (rule 09).
 async fn discard_partial(dir: &std::path::Path, rel: &str) {
     let _ = tokio::fs::remove_file(dir.join(format!("{rel}.part"))).await;
 }
@@ -369,16 +356,9 @@ struct Fetched {
 }
 
 /// Stream one file to `{rel}.part`, resuming from any existing bytes via a
-/// Range request, then rename to `rel`.
-///
-/// `on_etag` fires **as soon as the response headers arrive**, before a
-/// single body byte is read, so the caller can put the validator on disk
-/// while the transfer is still running. That timing is the point: the
-/// process can die at any moment during a large download, and the `.part`
-/// left behind is only safely resumable if the tag naming the file those
-/// bytes came from was already persisted. Reporting it with the result —
-/// even on the error path — misses every interruption that isn't a clean
-/// error return.
+/// Range request, then rename to `rel`. `on_etag` fires **as soon as the
+/// response headers arrive**, before any body byte is read, so the caller can
+/// persist the validator while the transfer is still running (rule 09).
 async fn download_file(
     server_url: &str,
     dir: &std::path::Path,

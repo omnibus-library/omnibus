@@ -56,10 +56,7 @@ pub async fn search_editions(
 
 /// Web/SSR: re-fetch one selected candidate in full. `Ok(None)` means the
 /// provider no longer knows the candidate — the caller keeps the one it
-/// already has.
-///
-/// `isbn13` is optional because a candidate may not have one; the handle is
-/// what the re-fetch is keyed on either way.
+/// already has. `isbn13` is optional; the handle is what the re-fetch keys on.
 #[cfg(not(feature = "mobile"))]
 pub async fn hydrate_edition(
     _server_url: &str,
@@ -84,15 +81,9 @@ pub async fn hydrate_edition(
 }
 
 /// Web: apply a provider's cover by URL — `POST /api/ebooks/{uuid}/cover/from-url`.
-///
-/// Straight to REST via `gloo-net`, like the neighbouring cover calls in
-/// `data::books::manage`, rather than through a server function: the write
-/// path (fetch → sniff → `persist_cover` → thumbnail invalidation) lives in
-/// the REST handler, and a server-fn analogue would have to repeat it.
-///
 /// `Ok(None)` when the book is gone; every refusal is an `Err` carrying the
-/// server's own message, because each one names a different thing the reader
-/// or the source did wrong.
+/// server's own message, because each names a different thing the reader or
+/// the source did wrong.
 #[cfg(feature = "web")]
 pub async fn apply_cover_from_url(
     _server_url: &str,
@@ -101,6 +92,9 @@ pub async fn apply_cover_from_url(
 ) -> Result<Option<EbookMetadata>, DataError> {
     use gloo_net::http::Request;
 
+    // Straight to REST like the neighbouring cover calls: the write path
+    // (fetch, sniff, `persist_cover`, thumbnail invalidation) lives in the
+    // REST handler, which a server function would have to repeat.
     let res = Request::post(&format!("/api/ebooks/{uuid}/cover/from-url"))
         .json(&serde_json::json!({ "url": url }))
         .map_err(|e| DataError::Other(e.to_string()))?

@@ -19,15 +19,9 @@ pub async fn list_books(
     list_books_for_paths(pool, &[library_path]).await
 }
 
-/// Return every book indexed under any of `library_paths`. One round-trip
-/// to SQLite: every multi-valued relation is pulled in a single statement
-/// using scalar subqueries (for single-valued joins) and `json_group_array`
-/// over ordered inner selects (for multi-valued lists), matching the
-/// pattern in `get_book`.
-///
-/// Empty `library_paths` returns an empty vec. The library filter uses
-/// `l.path IN (?, …)` so the unified landing path (ebook + audiobook)
-/// stays one query instead of two.
+/// Return every book indexed under any of `library_paths` in one round-trip.
+/// Empty `library_paths` returns an empty vec. One `l.path IN (?, …)` filter
+/// keeps the unified landing path (ebook + audiobook) a single query.
 pub async fn list_books_for_paths(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -85,20 +79,11 @@ async fn fetch_list_rows(
     q.fetch_all(pool).await
 }
 
-/// One row per book under `library_path`, carrying just the bits the
-/// incremental reindex diff needs to classify a filesystem stat against
-/// the existing index.
-///
-/// `scan_key` is the durable diff key (the library-relative path): the
-/// diff matches disk-vs-DB on it. `uuid` is the book's durable identity
-/// (carried for the Removed/Backfill buckets, which act by uuid).
-/// `has_file` is false for a **fileless book** — a book whose file was
-/// removed but whose row (and soft-ref user data) is retained; the diff
-/// routes a fileless book whose file reappears back through Changed to re-attach.
-///
-/// `mtime_epoch` / `size_bytes` come from the matching `book_files` row;
-/// `(0, 0)` with `has_file = true` is the "never observed" Backfill
-/// sentinel (the migration default).
+/// One row per book under `library_path`, carrying what the incremental reindex
+/// diff needs to classify a filesystem stat against the index. `scan_key` (the
+/// library-relative path) is the diff key and `uuid` the durable identity.
+/// `has_file` is false for a **fileless book**; `(0, 0)` stat with
+/// `has_file = true` is the "never observed" Backfill sentinel.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IndexedRow {
     pub uuid: String,
@@ -155,21 +140,11 @@ fn row_to_indexed(r: sqlx::sqlite::SqliteRow) -> IndexedRow {
     }
 }
 
-/// Format-scoped variant of [`list_indexed_rows`]: returns only books
-/// that have **at least one** `book_files` row whose `format` is in
-/// `formats` (matched case-insensitively via the `COLLATE NOCASE`
-/// `book_files.format` column).
-///
-/// Used by the per-format reindex paths (ebook / audiobook) so that
-/// when the user configures the ebook and audiobook libraries to the
-/// same on-disk directory, an audiobook reindex does not classify the
-/// EPUB rows as Removed (and vice versa). With this filter the diff
-/// only sees the rows the current scan can legitimately account for.
-///
-/// `formats` is an allow-list of uppercase `book_files.format` values
-/// — see [`crate::ebook::EBOOK_FORMATS`] and
-/// [`crate::audiobook::AUDIOBOOK_FORMATS`]. An empty slice returns an
-/// empty vec (no formats to match against).
+/// Format-scoped variant of [`list_indexed_rows`]: only books with a
+/// `book_files` row whose `format` is in `formats` (case-insensitive; see
+/// [`crate::ebook::EBOOK_FORMATS`] and [`crate::audiobook::AUDIOBOOK_FORMATS`]).
+/// A per-format reindex then never classifies the other format's rows as
+/// Removed when both libraries share a directory. Empty `formats` returns empty.
 pub async fn list_indexed_rows_for_formats(
     pool: &SqlitePool,
     library_path: &str,
@@ -233,18 +208,11 @@ pub async fn list_indexed_rows_for_formats(
     Ok(rows.into_iter().map(row_to_indexed).collect())
 }
 
-/// Diff input for files that were attached to a book in another library
-/// or format via `merged_uuids`: one [`IndexedRow`] per merged uuid
-/// under `library_path` whose backing `book_files` row (matched by
-/// `(book_id, format)`) still exists, carrying that row's stat.
-///
-/// Scoped by `merged_uuids.library_path` — the *file's* scanned root —
-/// rather than the target book's library, because the book an attached
-/// file hangs off can live in a different library (Dracula.m4b from the
-/// audiobook root attached to the ebook root's Dracula). The INNER JOIN
-/// is deliberate — a merged uuid whose attachment row vanished simply
-/// isn't returned, so the on-disk file classifies as New and
-/// re-attaches.
+/// Diff input for files attached to a book in another library or format via
+/// `merged_uuids`: one [`IndexedRow`] per merged uuid under `library_path`
+/// whose backing `book_files` row (matched by `(book_id, format)`) still
+/// exists, carrying that row's stat. Scoped by the *file's* scanned root, not
+/// the target book's library; a merged uuid whose row vanished is not returned.
 pub async fn list_merged_rows_for_formats(
     pool: &SqlitePool,
     library_path: &str,
@@ -291,12 +259,9 @@ pub async fn count_books(pool: &SqlitePool, library_path: &str) -> Result<i64, s
 }
 
 /// Total number of books currently indexed under any of `library_paths`.
-///
-/// Companion to `list_books_for_paths`: `list_books_for_paths` caps the
-/// returned vec at `MAX_BOOKS_RETURNED`, so callers that need to surface a
-/// truncation hint (UI banner, `X-Total-Count` header) ask the count
-/// separately. Single scalar query — cheaper than re-running the full
-/// SELECT just to count rows.
+/// Companion to `list_books_for_paths`, which caps its vec at
+/// `MAX_BOOKS_RETURNED`: callers surfacing a truncation hint (UI banner,
+/// `X-Total-Count`) ask for the count separately.
 pub async fn count_books_for_paths(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -326,15 +291,10 @@ pub async fn count_books_for_paths(
     Ok(q.fetch_one(pool).await?)
 }
 
-/// Build an `EbookLibrary` from whatever is currently in the DB for
-/// `library_path`. Returns an empty library (no error, no books) if the path
-/// is `None`.
-///
-/// The returned `books` vec is capped at `MAX_BOOKS_RETURNED`; callers that
-/// need to surface a truncation hint should use
-/// [`library_from_db_with_total`] instead. This entrypoint deliberately
-/// avoids the extra `count_books` round-trip — non-REST callers (the RPC
-/// path, internal lookups) don't need the total and shouldn't pay for it.
+/// Build an `EbookLibrary` from whatever is in the DB for `library_path`;
+/// empty (no error) if the path is `None`. `books` is capped at
+/// `MAX_BOOKS_RETURNED`; use [`library_from_db_with_total`] to surface a
+/// truncation hint. This entrypoint skips the extra count round-trip.
 pub async fn library_from_db(
     pool: &SqlitePool,
     library_path: Option<&str>,
@@ -353,15 +313,10 @@ pub async fn library_from_db_with_total(
     library_from_db_with_total_combined(pool, library_path, None).await
 }
 
-/// Build an `EbookLibrary` spanning the ebook and audiobook libraries
-/// together — both rows live in the same `books` table under different
-/// `library_id`s, so the unified landing grid is one query over the union.
-/// Either path may be `None` (no library configured for that format).
-///
-/// `EbookLibrary.path` reports the ebook path when set, otherwise the
-/// audiobook path; the landing page uses it to key per-library
-/// `view_prefs` and to render the subtitle, and treating ebooks as the
-/// "primary" key preserves prefs across an audiobook-path edit.
+/// Build an `EbookLibrary` spanning the ebook and audiobook libraries (one query
+/// over the union). Either path may be `None`. `EbookLibrary.path` reports the
+/// ebook path when set, else the audiobook path; the landing page keys
+/// per-library `view_prefs` on it, so prefs survive an audiobook-path edit.
 pub async fn library_from_db_combined(
     pool: &SqlitePool,
     ebook_path: Option<&str>,

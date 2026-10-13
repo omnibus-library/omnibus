@@ -6,14 +6,11 @@
 
 use sqlx::Transaction;
 
-/// Reindex protection: has the file at `(library_path, scan_key)` already
-/// been merged into / attached to a book? Returns the recorded
-/// `(uuid, book_id, format)` when so, so the caller re-attaches against the
-/// **stored** ledger uuid rather than a freshly-recomputed path-derived one.
-/// Keying on the relative `scan_key` — not on `stable_uuid` — is what
-/// lets an attachment survive a repoint of its scan root. Covers both
-/// index-time auto-attach and manual merges, even when the titles no longer
-/// match.
+/// Reindex protection: has the file at `(library_path, scan_key)` already been
+/// merged into / attached to a book (auto-attach or manual merge, even if titles
+/// no longer match)? Returns the recorded `(uuid, book_id, format)` so the caller
+/// re-attaches against the **stored** ledger uuid, not a recomputed one. Keyed on
+/// the relative `scan_key`, so an attachment survives a scan-root repoint.
 pub(super) async fn find_attachment_by_scan_key(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_path: &str,
@@ -52,14 +49,11 @@ pub(super) async fn find_attachment_by_uuid(
     Ok(row.filter(|(_, scan_key)| !scan_key.is_empty()))
 }
 
-/// Does a **different** ledger row already hold `(library_path,
-/// scan_key)`? The ledger's counterpart to the `books`-side
-/// `idx_books_scan_key` pre-check, and needed for the same reason even
-/// though nothing here can abort a transaction: `merged_uuids` has only the
-/// non-unique `idx_merged_uuids_library_scan`, so a blind relocation would
-/// silently leave two rows sharing one key, and
-/// [`find_attachment_by_scan_key`] reads with `fetch_optional` — a later
-/// scan would then resolve that path to an arbitrary one of them.
+/// Does a **different** ledger row already hold `(library_path, scan_key)`? The
+/// ledger's counterpart to the `books`-side `idx_books_scan_key` pre-check:
+/// `merged_uuids` has only the non-unique `idx_merged_uuids_library_scan`, so a
+/// blind relocation would leave two rows sharing one key and a later scan would
+/// resolve the path to an arbitrary one ([`find_attachment_by_scan_key`]).
 pub(super) async fn attachment_scan_key_taken(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_path: &str,
@@ -94,14 +88,11 @@ pub(super) async fn relocate_attachment(
     Ok(())
 }
 
-/// Conservative title+author match for a brand-new file: the book this
-/// file should attach to, if there is **exactly one** candidate with the
-/// same normalized title and author that doesn't already have a
-/// `format` file. Ambiguity (two candidates) returns `None` — better to
-/// surface a duplicate the admin can merge manually than to guess.
-/// Global across libraries: the ebook and audiobook roots are separate
-/// trees. Returns the candidate's uuid alongside its id so the caller can
-/// test it against this scan's Removed bucket (the relocation check).
+/// Conservative title+author match for a brand-new file: the book it should
+/// attach to, if there is **exactly one** candidate with the same normalized
+/// title and author and no `format` file yet. Ambiguity returns `None` (a
+/// duplicate the admin can merge beats a guess). Global across libraries; returns
+/// the candidate's uuid with its id for the relocation check against Removed.
 pub(super) async fn find_attach_target(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     title_norm: &str,
@@ -127,14 +118,11 @@ pub(super) async fn find_attach_target(
     }
 }
 
-/// Return whether another file holds the `(book_id, format)` attachment slot.
-/// The incoming `scan_key` is excluded so re-attaching the same file proceeds.
-///
-/// Both tables are consulted because neither alone describes the slot:
-/// `merged_uuids` records attached files but never a book's own native file,
-/// so asking it alone let a second on-disk copy of one book evict the native
-/// file's `book_files` row and then trade the slot back on the following scan,
-/// restamping `books.last_modified` forever.
+/// Return whether another file holds the `(book_id, format)` attachment slot; the
+/// incoming `scan_key` is excluded so re-attaching the same file proceeds. Both
+/// `merged_uuids` and `book_files` are consulted: the ledger never records a
+/// book's own native file, so asking it alone let a second on-disk copy evict
+/// that file and trade the slot back each scan, restamping `books.last_modified`.
 pub(super) async fn slot_held_by_other(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -250,15 +238,11 @@ pub(super) async fn maybe_adopt_cover(
     Ok(Some((target_uuid, mime.clone(), bytes.clone())))
 }
 
-/// Drop the attached `book_files` rows (and `merged_uuids` entries) for
-/// removed uuids. The companion to `sync_removed`'s `DELETE FROM books`:
-/// removed uuids that were attachments have no `books` row of their own,
-/// so the books delete no-ops for them — this cleans up the actual
-/// attachment instead. The file delete is scoped per-file on
-/// `(book_id, scan_key)` so removing one multi-part `.m4b` sibling leaves
-/// the rest of the parts attached. Parts and chapters cascade via the
-/// `book_files` FK; the target book survives (possibly fileless, which is
-/// a legal state).
+/// Drop the attached `book_files` rows (and `merged_uuids` entries) for removed
+/// uuids: the companion to `sync_removed`'s `DELETE FROM books`, which no-ops for
+/// attachments since they have no `books` row of their own. Scoped per file on
+/// `(book_id, scan_key)`, so removing one multi-part `.m4b` sibling leaves the
+/// other parts attached. The target book survives (possibly fileless).
 pub(super) async fn remove_attached_files(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     removed_uuids: &[String],

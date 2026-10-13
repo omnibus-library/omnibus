@@ -10,7 +10,9 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use omnibus_shared::{Contributor, EbookMetadata, ProgressFormat, ProgressUpdate};
+use omnibus_shared::{
+    Contributor, EbookMetadata, MetadataOverrides, ProgressFormat, ProgressUpdate,
+};
 use sqlx::SqlitePool;
 
 use crate::ebook::IndexedBook;
@@ -143,12 +145,10 @@ pub struct TestPdf<'a> {
     pub rotate: Option<u16>,
 }
 
-/// Hand-assemble a small but complete PDF (a computed xref, base-14
-/// Helvetica, one content stream per page) so the PDF paths can be tested
-/// without a fixture on disk — the sibling of [`build_stored_zip`]. Both
-/// parsers in use read it: the pure-Rust renderer for the cover and page
-/// count, and the text extractor for per-page prose and the outline. Kept
-/// byte-deterministic so an iOS port can pin the same bytes.
+/// Hand-assemble a small but complete PDF (a computed xref, base-14 Helvetica,
+/// one content stream per page) so the PDF paths can be tested without a
+/// fixture on disk, the sibling of [`build_stored_zip`]. Byte-deterministic so
+/// an iOS port can pin the same bytes.
 pub fn build_test_pdf(spec: &TestPdf<'_>) -> Vec<u8> {
     fn escape(text: &str) -> String {
         let mut out = String::with_capacity(text.len());
@@ -433,13 +433,10 @@ pub fn build_test_kepub(spine: &[(&str, &str)]) -> Vec<u8> {
 // In-memory audiobook fixtures
 // ---------------------------------------------------------------------------
 
-/// Minimal MP4/M4B carrying a Nero `chpl` atom with the given chapters,
-/// as `(start_100ns, title)` pairs. Just `ftyp` + `moov/udta/chpl` — enough
-/// for `audiobook::extract_chapters` to walk, with no media payload.
-///
-/// Panics on a title over 255 bytes: `chpl` gives each one a single-byte
-/// length prefix, and silently truncating it would emit a container that
-/// parses into garbage chapters rather than failing the test that built it.
+/// Minimal MP4/M4B carrying a Nero `chpl` atom with the given chapters, as
+/// `(start_100ns, title)` pairs: just `ftyp` + `moov/udta/chpl`, no media
+/// payload. Panics on a title over 255 bytes (`chpl` uses a single-byte length
+/// prefix) rather than emitting a container that parses into garbage chapters.
 pub fn build_m4b_with_chapters(chapters: &[(u64, &str)]) -> Vec<u8> {
     let mut chpl_body = Vec::new();
     // version=0, flags=0x000000
@@ -492,18 +489,11 @@ fn wrap_mp4_box(box_type: &[u8; 4], body: &[u8]) -> Vec<u8> {
 /// one another — env-var space is process-global.
 pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// RAII guard that sets one or more env vars for the lifetime of the
-/// test, then restores each previous value on drop. Acquires `ENV_LOCK`
-/// so parallel `cargo test` runs can't race on shared variables.
-///
-/// Create with `EnvVarGuard::set(var, value)`, then chain `.also_set(var,
-/// value)` for additional vars — all managed under the single `ENV_LOCK`
-/// acquisition. Pass `None` for `value` to _remove_ a variable for the
-/// test's duration (the previous value is still restored on drop).
-///
-/// Use the `_os` variants when the value is an `OsStr` (e.g. a
-/// `tempfile::TempDir`'s path) to avoid `to_str().unwrap()` at call sites
-/// and to round-trip non-UTF-8 pre-existing values correctly.
+/// RAII guard that sets one or more env vars for the lifetime of the test, then
+/// restores each previous value on drop. Holds `ENV_LOCK` so parallel `cargo
+/// test` runs can't race on shared variables. Create with
+/// `EnvVarGuard::set(var, value)` and chain `.also_set(..)` for more vars; a
+/// `None` value removes the variable. Use the `_os` variants for an `OsStr`.
 pub struct EnvVarGuard {
     /// `(var_name, previous_value)` pairs, restored in reverse on drop.
     /// Snapshots use `OsString` via `var_os` so a pre-existing non-UTF-8
@@ -580,13 +570,10 @@ impl Drop for EnvVarGuard {
 // Covers env guard
 // ---------------------------------------------------------------------------
 
-/// RAII guard that points `OMNIBUS_COVERS_DIR` at a unique temp dir for
-/// the lifetime of the test, then restores the previous value (and
-/// removes the temp dir) on drop. Holds the shared [`ENV_LOCK`] — the
-/// same lock `EnvVarGuard` uses — so it serializes against *every* other
-/// env-var mutation in the crate, not just other `CoversTempDir`s. A
-/// prior split lock let a test setting `OMNIBUS_COVERS_DIR` via
-/// `EnvVarGuard` run concurrently with one here and stomp the value.
+/// RAII guard that points `OMNIBUS_COVERS_DIR` at a unique temp dir for the
+/// lifetime of the test, then restores the previous value (and removes the
+/// temp dir) on drop. Holds the shared [`ENV_LOCK`] that `EnvVarGuard` uses, so
+/// it serializes against every other env-var mutation in the crate.
 pub struct CoversTempDir {
     pub path: PathBuf,
     prev: Option<String>,
@@ -987,6 +974,23 @@ pub async fn uuid_by_scan_key(pool: &SqlitePool, scan_key: &str) -> String {
         .unwrap()
 }
 
+/// Save `overrides` on the book titled `title`, as `editor`. Panics on a missing title.
+pub async fn set_overrides_by_title(
+    pool: &SqlitePool,
+    title: &str,
+    overrides: &MetadataOverrides,
+    editor: i64,
+) {
+    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE title = ?")
+        .bind(title)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    crate::upsert_metadata_overrides(pool, &uuid, overrides, false, editor)
+        .await
+        .unwrap();
+}
+
 /// One-scalar COUNT helper for table-shape assertions.
 pub async fn count_rows(pool: &SqlitePool, sql: &str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
@@ -1060,6 +1064,18 @@ pub async fn seed_user(pool: &SqlitePool, username: &str) -> i64 {
          VALUES (?, '!x', 0, 0, 0, 1) RETURNING id",
     )
     .bind(username)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// `owner`'s built-in wishlist shelf id, provisioning it first (raw user inserts skip `create_user`).
+pub async fn wishlist_shelf_id(pool: &SqlitePool, owner: i64) -> i64 {
+    crate::provision_wishlist_shelf(pool, owner).await.unwrap();
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM shelves WHERE owner_user_id = ? AND kind = 'wishlist'",
+    )
+    .bind(owner)
     .fetch_one(pool)
     .await
     .unwrap()

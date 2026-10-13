@@ -1,7 +1,7 @@
 //! Settings KV CRUD, scan-root row upserts, and orphan-scan-root pruning. The
 //! `ebook_library_path` / `audiobook_library_path` keys are read by the UI and
-//! translated into `scan_roots` rows by the indexer; saving settings prunes any
-//! orphan root and its books, FTS rows, and on-disk covers. Also owns
+//! translated into `scan_roots` rows by the indexer; saving settings prunes
+//! only childless orphan roots, never cascading into a root's books. Also owns
 //! per-library metadata-source precedence, keyed by `path` on `scan_roots`.
 
 use std::collections::HashMap;
@@ -123,11 +123,10 @@ pub async fn get_settings(pool: &SqlitePool) -> Result<Settings, SettingsError> 
 }
 
 /// Persist library paths and reconcile dependent state in a single
-/// transaction: upserts each path into `settings`, prunes orphaned
-/// `scan_roots` rows (and their books / FTS rows via cascade), then deletes
-/// the matching cover files from disk *after* commit so filesystem
-/// side-effects don't run inside the DB transaction. Callers should kick
-/// off a reindex afterwards — this function does not touch the indexer.
+/// transaction: upserts each path into `settings`, then prunes orphaned
+/// `scan_roots` rows — only childless ones; a root that still owns books is
+/// kept, never cascade-deleted. Callers should kick off a reindex afterwards
+/// — this function does not touch the indexer.
 pub async fn set_settings(pool: &SqlitePool, settings: &Settings) -> Result<(), SettingsError> {
     // Read the *current* paths before writing so a changed path can be
     // repointed in place (F2) — keeping the `scan_roots` row's id, and thus
@@ -192,20 +191,11 @@ pub async fn set_settings(pool: &SqlitePool, settings: &Settings) -> Result<(), 
     Ok(())
 }
 
-/// Repoint a slot's `scan_roots` row in place when its configured path
-/// changes. Updating the existing row's `path` (rather than letting
-/// `upsert_library` insert a new one) keeps the row id — and therefore every
-/// `books.uuid` keyed under that `library_id` — stable, so the next reindex
-/// matches each file by its unchanged relative `scan_key` and preserves its
-/// identity. The attached-file location overrides (`book_files.library_path`)
-/// and the attach ledger (`merged_uuids.library_path`) are repointed in the
-/// same step so attachments stay discoverable and resolve to the new root.
-///
-/// A no-op unless both old and new paths are set and differ; skipped if a row
-/// for the new path already exists (avoid a UNIQUE collision — the existing
-/// row wins and the reindex reconciles), and skipped when `old` is still
-/// referenced by the *other* slot's new path (a shared scan root must not be
-/// moved out from under the slot that still uses it).
+/// Repoint a slot's `scan_roots` row in place when its configured path changes,
+/// keeping the row id (and so every `books.uuid` under that `library_id`)
+/// stable; `book_files.library_path` and `merged_uuids.library_path` follow in
+/// the same step. A no-op unless both paths are set and differ; skipped if a
+/// row for the new path exists, or `old` is the *other* slot's new path.
 async fn repoint_scan_root(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     old: Option<&str>,
@@ -259,14 +249,10 @@ async fn repoint_scan_root(
 }
 
 /// Drop **childless** orphan `scan_roots` rows whose `path` is not in `keep`.
-///
-/// Never-prune: a removed scan root that still owns books is **kept**,
-/// and its books (plus their soft-ref user data) are retained rather than
-/// cascade-deleted — the durable-identity safety net. Books under a cleared
-/// path simply stop being listed (no `list_books` call passes that path) and
-/// reappear if it is re-added. Only roots with zero books are swept, to bound
-/// empty-row accumulation; nothing user-facing is deleted, so the returned
-/// uuid list (for post-commit cover cleanup) is always empty.
+/// Never-prune: a removed root that still owns books is **kept** with its books
+/// and soft-ref user data; those books stop being listed until the path is
+/// re-added. Only roots with zero books are swept, so nothing user-facing is
+/// deleted; the returned uuid list (for post-commit cover cleanup) is always empty.
 pub(crate) async fn prune_orphan_libraries(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     keep: &[Option<&str>],

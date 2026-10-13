@@ -16,11 +16,9 @@ use omnibus_db::auth as auth_db;
 use super::extractor::{extract_token, query_token};
 use crate::backend::AppState;
 
-/// Media read endpoints whose bytes are rendered into an `<img src>` (covers,
-/// thumbs, photos) or `<audio src>` (direct-play audiobook parts) and so may
-/// authenticate via a `?token=` query param — the only auth such a WebView
-/// media fetch can carry. Kept in lockstep with the handlers gated on
-/// [`MediaAuthUser`]; every other `/api/*` path stays header/cookie-only.
+/// Media read endpoints whose bytes render into an `<img src>` or `<audio src>` and
+/// so may authenticate via a `?token=` query param, the only auth a WebView media
+/// fetch can carry. Kept in lockstep with the handlers gated on [`MediaAuthUser`].
 ///
 /// [`MediaAuthUser`]: super::MediaAuthUser
 fn is_media_read_path(path: &str) -> bool {
@@ -48,15 +46,10 @@ fn is_media_read_path(path: &str) -> bool {
 }
 
 /// Reject `/api/*` requests without a live session with `401 Unauthorized`, after exempting `/api/auth/*` and `/api/_health`.
-///
-/// `/api/auth/*` handles its own authentication (`/me` uses the
-/// [`AuthUser`](super::AuthUser) extractor; `/login`/`/register` deliberately
-/// don't require auth). `/api/_health` is an unauthenticated liveness +
-/// fingerprint probe used by `scripts/dev-server-up.sh` to decide whether to
-/// reuse an existing omnibus server on the port — it cannot require auth or
-/// the probe couldn't run before a session exists. This middleware does not
-/// set per-user request extensions: handlers that need `AuthUser` should
-/// still declare it as an extractor; this only gates the *boundary*.
+/// `/api/auth/*` handles its own authentication; `/api/_health` is the unauthenticated
+/// liveness probe used by `scripts/dev-server-up.sh`. This only gates the boundary:
+/// it sets no per-user request extensions, so handlers that need `AuthUser` must
+/// still declare it as an extractor.
 pub async fn require_auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let path = req.uri().path();
     if !path.starts_with("/api/")

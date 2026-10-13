@@ -92,12 +92,10 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> A
 }
 
 /// Precondition checks for [`create_user`], run inside its `BEGIN IMMEDIATE`
-/// transaction. Returns whether this is the first user (who becomes admin).
-///
-/// Errors with [`AuthError::RegistrationDisabled`] when the table is
-/// non-empty and self-registration is off, or [`AuthError::UsernameTaken`]
-/// when the (case-insensitive) username already exists. Takes the
-/// transaction connection so the caller's write lock guards these reads.
+/// transaction so the caller's write lock guards these reads. Returns whether
+/// this is the first user (who becomes admin). Errors with
+/// [`AuthError::RegistrationDisabled`] (table non-empty, self-registration off)
+/// or [`AuthError::UsernameTaken`] (case-insensitive match).
 async fn check_registration_preconditions(
     conn: &mut SqliteConnection,
     username: &str,
@@ -192,17 +190,9 @@ pub async fn set_kindle_email(
 pub const DISPLAY_NAME_MAX_LEN: usize = 64;
 
 /// Set (or clear, when `None`/blank) a user's display name, and rename their
-/// Wishlist shelf to match in the same transaction.
-///
-/// The rename is not incidental: `shelves.name` denormalizes
-/// `COALESCE(display_name, username) || "'s Wishlist"` at provisioning time, so
-/// leaving it alone would strand the old label forever. Doing both writes under
-/// one transaction keeps the stored name and the name it was derived from from
-/// ever disagreeing. No unique-index risk — `idx_shelves_owner_name` excludes
-/// `kind = 'wishlist'`.
-///
-/// Errors with [`AuthError::Validation`] for a name that is too long or carries
-/// control characters (which would break the shelf title and byline rendering).
+/// Wishlist shelf to match in the same transaction. Errors with
+/// [`AuthError::Validation`] for a name that is too long or has control
+/// characters (they would break shelf title and byline rendering).
 pub async fn set_display_name(
     pool: &SqlitePool,
     user_id: i64,
@@ -229,6 +219,9 @@ pub async fn set_display_name(
         .bind(user_id)
         .execute(&mut *tx)
         .await?;
+    // `shelves.name` denormalizes the owner's display name at provisioning, so
+    // rename it in the same transaction or the old label is stranded. No unique-index
+    // risk: `idx_shelves_owner_name` excludes `kind = 'wishlist'`.
     sqlx::query(
         "UPDATE shelves
             SET name = (SELECT COALESCE(u.display_name, u.username) FROM users u WHERE u.id = ?1) || ?2
@@ -256,12 +249,10 @@ pub async fn get_kindle_email(pool: &SqlitePool, user_id: i64) -> AuthResult<Opt
 /// variety, low enough that the column can't become a dumping ground.
 pub const HIDDEN_FORMATS_MAX: usize = 32;
 
-/// Set (or clear, when empty) the formats a user hides from the landing
-/// All Books view. Tokens are canonicalized (trim, lowercase, dedupe, sort)
-/// before storage and the canonical list is returned. Rejects a token that
-/// isn't a plausible file-format name (`[a-z0-9]{1,16}` after lowercasing)
-/// or a list longer than [`HIDDEN_FORMATS_MAX`] with
-/// [`AuthError::Validation`].
+/// Set (or clear, when empty) the formats a user hides from the landing All
+/// Books view. Tokens are canonicalized (trim, lowercase, dedupe, sort) and the
+/// canonical list is returned. [`AuthError::Validation`] for a token that isn't
+/// `[a-z0-9]{1,16}` or a list longer than [`HIDDEN_FORMATS_MAX`].
 pub async fn set_hidden_formats(
     pool: &SqlitePool,
     user_id: i64,
@@ -371,19 +362,11 @@ pub async fn get_share_stats(pool: &SqlitePool, user_id: i64) -> AuthResult<bool
     Ok(v.unwrap_or(0) != 0)
 }
 
-/// Change a user's password. Verifies `current` against the stored hash to
-/// authorize the change, validates `new` against the password policy, then
-/// re-hashes with Argon2id and stamps `password_changed_at` — all in one
-/// transaction so an interrupted call never leaves a half-applied state.
-/// Also revokes every other active session for the user in the same
-/// transaction, except `except_session_id` — the caller's own
-/// session, which stays live so a self-service change doesn't immediately
-/// log the caller out.
-///
-/// Errors with [`AuthError::InvalidCredentials`] when the current password is
-/// wrong (or the user id no longer exists) and [`AuthError::Validation`] when
-/// the new password fails policy (min length / common-password reject-list).
-/// Only ever touches the row identified by `user_id`.
+/// Change a user's password: verify `current`, validate `new` against policy,
+/// re-hash with Argon2id and stamp `password_changed_at`, in one transaction.
+/// Revokes every other active session except `except_session_id` (the
+/// caller's own). [`AuthError::InvalidCredentials`] for a wrong current
+/// password or unknown user; [`AuthError::Validation`] when `new` fails policy.
 pub async fn change_password(
     pool: &SqlitePool,
     user_id: i64,
@@ -513,13 +496,10 @@ pub async fn list_users(pool: &SqlitePool) -> AuthResult<Vec<AdminUserRow>> {
     Ok(rows.iter().map(|r| row_to_admin_user(r, now)).collect())
 }
 
-/// Admin-create a user with explicit permissions. Unlike [`create_user`]
-/// (self-registration), this bypasses the `registration_enabled` gate and the
-/// first-user-admin logic — an admin is always the caller — and sets the four
-/// permission flags directly. Validates username/password, provisions the
-/// built-in Wishlist shelf (like `create_user`), and returns the new
-/// row. Errors with [`AuthError::UsernameTaken`] on a case-insensitive
-/// collision.
+/// Admin-create a user with explicit permissions. Unlike [`create_user`], this
+/// bypasses the `registration_enabled` gate and first-user-admin logic, sets the
+/// four permission flags directly, provisions the Wishlist shelf and returns the
+/// new row. [`AuthError::UsernameTaken`] on a case-insensitive collision.
 pub async fn admin_create_user(
     pool: &SqlitePool,
     username: &str,
@@ -612,14 +592,11 @@ pub async fn update_user_permissions(
     Ok(())
 }
 
-/// Admin-reset a user's password: validate + re-hash + stamp
-/// `password_changed_at`, then revoke every active session for the target
-/// user in the same transaction — unlike the self-service
-/// [`change_password`], there is no caller session to exclude, since the
-/// admin isn't the affected account. No current-password check — this is
-/// the admin override path.
-/// [`AuthError::UserNotFound`] for an unknown id; [`AuthError::Validation`]
-/// when the new password fails policy.
+/// Admin-reset a user's password: validate, re-hash, stamp `password_changed_at`
+/// and revoke every active session for the target in one transaction (unlike
+/// [`change_password`], no caller session is excluded). No current-password
+/// check. [`AuthError::UserNotFound`] for an unknown id,
+/// [`AuthError::Validation`] when the new password fails policy.
 pub async fn admin_set_password(
     pool: &SqlitePool,
     user_id: i64,
@@ -663,12 +640,11 @@ pub async fn unlock_user(pool: &SqlitePool, user_id: i64) -> AuthResult<()> {
     Ok(())
 }
 
-/// Delete a user. Their owned rows cascade away via the schema's
-/// `ON DELETE CASCADE` foreign keys (sessions, devices, progress, shelves,
-/// ratings, journals, …); audit references (`updated_by`/`merged_by`/
-/// `added_by`) null out. Refuses to delete the last remaining admin
-/// ([`AuthError::LastAdmin`]); [`AuthError::UserNotFound`] for an unknown id.
-/// Runs under `BEGIN IMMEDIATE` so the admin-count guard is race-free.
+/// Delete a user. Owned rows cascade away via `ON DELETE CASCADE` foreign keys;
+/// audit references (`updated_by`/`merged_by`/`added_by`) null out. Refuses to
+/// delete the last remaining admin ([`AuthError::LastAdmin`]);
+/// [`AuthError::UserNotFound`] for an unknown id. Runs under `BEGIN IMMEDIATE`
+/// so the admin-count guard is race-free.
 pub async fn delete_user(pool: &SqlitePool, user_id: i64) -> AuthResult<()> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 

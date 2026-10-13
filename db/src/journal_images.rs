@@ -28,15 +28,10 @@ fn data_dir_journal_images() -> PathBuf {
 }
 
 /// Move journal images sitting in the `$OMNIBUS_DATA_DIR` default into the
-/// directory `OMNIBUS_JOURNAL_IMAGES_DIR` now names. Call once at boot; a
-/// no-op when the variable is unset or already names that same directory.
-///
-/// The Docker image left the variable unset, so images landed in `/cache` —
-/// the volume operators are told they may delete. Relocation is best-effort
-/// and never fails the boot: a name already present at the destination is
-/// left on both sides rather than overwritten, a name we don't mint is left
-/// alone, and a cross-volume `rename` falls back to copy-then-unlink. Sync
-/// `std::fs` — call from `spawn_blocking`.
+/// directory `OMNIBUS_JOURNAL_IMAGES_DIR` now names. Call once at boot; a no-op
+/// when the variable is unset or names that same directory. Best-effort, never
+/// fails the boot: an existing destination name is left on both sides, a name we
+/// don't mint is left alone. Sync `std::fs`: call from `spawn_blocking`.
 pub fn relocate_legacy_journal_images() {
     let dest = journal_images_dir();
     let legacy = data_dir_journal_images();
@@ -137,16 +132,11 @@ fn move_across_volumes(from: &Path, to: &Path) -> std::io::Result<()> {
     copy_then_unlink(from, to)
 }
 
-/// The cross-volume half of [`move_across_volumes`], split out because it is
-/// the path a Docker upgrade actually takes — `/cache` and `/config` are
-/// separate mounts, so `rename` answers `EXDEV` there and this is what runs.
-///
-/// Copies into a `.part` sibling and renames that into place, so a partial
-/// copy is never visible under a name the read path would serve, and no temp
-/// file survives a failure at either step. The source is unlinked only once
-/// the destination is complete; a source that won't unlink (a read-only
-/// `/cache`) is a leftover to warn about, not a failed relocation, since the
-/// bytes are already safe at `to`.
+/// The cross-volume half of [`move_across_volumes`]: `rename` answers `EXDEV`
+/// across the Docker `/cache` and `/config` mounts, so this runs there. Copies
+/// into a `.part` sibling and renames into place, so a partial copy is never
+/// served and no temp file survives a failure. A source that won't unlink is a
+/// warned leftover, not a failed relocation: the bytes are safe at `to`.
 fn copy_then_unlink(from: &Path, to: &Path) -> std::io::Result<()> {
     let part = to.with_extension("part");
     if let Err(e) = std::fs::copy(from, &part) {

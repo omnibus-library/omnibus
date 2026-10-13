@@ -56,11 +56,10 @@ fn prior_value(from: &ChartResult, series: &ChartSeries, key: &str) -> Option<f6
     matched.values.get(at).copied().flatten()
 }
 
-/// `from` and `to` blended at `t`, with the axes already on `to`.
-///
-/// A mark with no counterpart in `from` — a new bucket, a measure just
-/// ticked on — grows in from the baseline rather than appearing at full
-/// height, which is the same motion a first paint plays.
+/// `from` and `to` blended at `t`, with the axes already on `to`. A mark new in
+/// `to` grows in from the baseline, like a first paint. Known gaps: a mark
+/// absent from `to` just vanishes, and a zoom-in (only the snapped scale
+/// changes) has nothing to tween.
 pub fn blend(from: &ChartResult, to: &ChartResult, t: f64) -> ChartResult {
     let e = ease_out(t);
     let mut out = to.clone();
@@ -80,13 +79,10 @@ pub fn blend(from: &ChartResult, to: &ChartResult, t: f64) -> ChartResult {
     out
 }
 
-/// A view of `target` that travels to each new value instead of jumping.
-///
-/// Falls back to `target` whenever no frame has been produced yet, which
-/// matters twice: the driving effect does not run during SSR, so the server
-/// renders the real data rather than nothing (rule 07); and on the client the
-/// first paint after a result arrives is the data itself rather than a blank
-/// frame waiting for the effect to catch up.
+/// A view of `target` that travels to each new value instead of jumping. Falls
+/// back to `target` until a frame has been produced, so SSR (where the driving
+/// effect doesn't run) renders the real data and the client's first paint after
+/// a result arrives is the data itself.
 pub fn use_tweened(target: Memo<Option<ChartResult>>) -> Memo<Option<ChartResult>> {
     let mut shown: Signal<Option<ChartResult>> = use_signal(|| None);
     // Supersedes an in-flight tween the way the fetch effect supersedes a

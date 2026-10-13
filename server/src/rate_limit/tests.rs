@@ -1,10 +1,14 @@
 //! Tests for the per-IP rate limiter: window/max enforcement, per-IP bucket
 //! isolation, window reset, prefix-scoped middleware pass-through, the
 //! shared-budget wiring between REST and RPC search, the auth-router
-//! allow-list, bucket pruning at capacity, and `client_ip` resolution.
+//! allow-list, bucket pruning at capacity, `client_ip` resolution, and the
+//! dev-only `RateLimits` switch.
 
 use super::*;
 use omnibus_db::test_support::EnvVarGuard;
+use tracing_subscriber::prelude::*;
+
+use crate::request_log::tests::Sink;
 
 #[tokio::test]
 async fn rate_limiter_allow_up_to_max_then_blocks() {
@@ -425,4 +429,178 @@ async fn rate_limit_by_ip_gives_each_connect_info_address_its_own_bucket() {
         StatusCode::OK,
         "one address exhausting its budget must not lock out another"
     );
+}
+
+// ------------------------------------------------- dev-only RateLimits switch
+
+#[test]
+fn from_dev_flag_enforces_when_the_flag_is_unset_in_a_debug_build() {
+    assert_eq!(RateLimits::from_dev_flag(None, false), RateLimits::Enforced);
+}
+
+#[test]
+fn from_dev_flag_disables_when_the_flag_is_one_in_a_debug_build() {
+    assert_eq!(
+        RateLimits::from_dev_flag(Some(OsStr::new("1")), false),
+        RateLimits::Disabled
+    );
+}
+
+#[test]
+fn from_dev_flag_disables_when_the_flag_is_true_in_a_debug_build() {
+    assert_eq!(
+        RateLimits::from_dev_flag(Some(OsStr::new("true")), false),
+        RateLimits::Disabled
+    );
+}
+
+#[test]
+fn from_dev_flag_disables_when_the_flag_is_yes_in_a_debug_build() {
+    assert_eq!(
+        RateLimits::from_dev_flag(Some(OsStr::new("yes")), false),
+        RateLimits::Disabled
+    );
+}
+
+#[test]
+fn from_dev_flag_enforces_when_the_flag_is_zero_in_a_debug_build() {
+    assert_eq!(
+        RateLimits::from_dev_flag(Some(OsStr::new("0")), false),
+        RateLimits::Enforced
+    );
+}
+
+#[test]
+fn from_dev_flag_enforces_when_the_flag_is_set_in_a_release_build() {
+    assert_eq!(
+        RateLimits::from_dev_flag(Some(OsStr::new("1")), true),
+        RateLimits::Enforced
+    );
+}
+
+#[test]
+fn from_dev_flag_enforces_when_the_flag_is_unset_in_a_release_build() {
+    assert_eq!(RateLimits::from_dev_flag(None, true), RateLimits::Enforced);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn at_boot_disables_when_the_flag_is_one_in_a_debug_build() {
+    assert_eq!(
+        RateLimits::at_boot(Some(OsStr::new("1"))),
+        RateLimits::Disabled
+    );
+}
+
+/// Everything `f` logs, captured through a scoped subscriber.
+fn logged_by(f: impl FnOnce()) -> String {
+    let sink = Sink::default();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_writer(sink.clone()));
+    tracing::subscriber::with_default(subscriber, f);
+    sink.text()
+}
+
+#[test]
+fn from_dev_flag_logs_the_release_warn_when_the_flag_is_set_in_a_release_build() {
+    let text = logged_by(|| {
+        RateLimits::from_dev_flag(Some(OsStr::new("1")), true);
+    });
+    assert_eq!(
+        text.matches(
+            "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set in a release build; ignoring (dev-only hook)"
+        )
+        .count(),
+        1,
+        "got: {text}"
+    );
+    assert!(
+        !text.contains("every per-IP rate limiter is off"),
+        "got: {text}"
+    );
+}
+
+#[test]
+fn from_dev_flag_logs_the_release_warn_when_the_flag_is_zero_in_a_release_build() {
+    let text = logged_by(|| {
+        RateLimits::from_dev_flag(Some(OsStr::new("0")), true);
+    });
+    assert_eq!(
+        text.matches(
+            "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set in a release build; ignoring (dev-only hook)"
+        )
+        .count(),
+        1,
+        "got: {text}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn from_dev_flag_logs_the_release_warn_when_the_flag_is_not_utf8_in_a_release_build() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let flag = OsStr::from_bytes(b"\xff");
+    let mut limits = None;
+    let text = logged_by(|| {
+        limits = Some(RateLimits::from_dev_flag(Some(flag), true));
+    });
+    assert_eq!(
+        text.matches(
+            "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set in a release build; ignoring (dev-only hook)"
+        )
+        .count(),
+        1,
+        "got: {text}"
+    );
+    assert_eq!(limits, Some(RateLimits::Enforced));
+}
+
+#[test]
+fn from_dev_flag_logs_nothing_when_the_flag_is_unset_in_a_release_build() {
+    let text = logged_by(|| {
+        RateLimits::from_dev_flag(None, true);
+    });
+    assert_eq!(text, "");
+}
+
+#[test]
+fn from_dev_flag_logs_the_disable_warn_when_it_disables_in_a_debug_build() {
+    let text = logged_by(|| {
+        RateLimits::from_dev_flag(Some(OsStr::new("1")), false);
+    });
+    assert_eq!(
+        text.matches(
+            "OMNIBUS_DEV_DISABLE_RATE_LIMITS is set; every per-IP rate limiter is off (dev-only hook)"
+        )
+        .count(),
+        1,
+        "got: {text}"
+    );
+    assert!(!text.contains("in a release build"), "got: {text}");
+}
+
+#[test]
+fn from_dev_flag_logs_nothing_when_it_stays_enforced_in_a_debug_build() {
+    let text = logged_by(|| {
+        RateLimits::from_dev_flag(Some(OsStr::new("0")), false);
+    });
+    assert_eq!(text, "");
+}
+
+#[tokio::test]
+async fn rate_limiter_allow_never_blocks_when_limits_are_disabled() {
+    let rl = RateLimiter::with_policy(Duration::from_secs(60), 1).with_limits(RateLimits::Disabled);
+    let ip: IpAddr = "127.0.0.1".parse().unwrap();
+    assert!(rl.allow(ip).await);
+    assert!(rl.allow(ip).await);
+    assert!(rl.allow(ip).await);
+}
+
+#[tokio::test]
+async fn rate_limiter_allow_blocks_after_max_when_limits_are_enforced() {
+    let rl = RateLimiter::with_policy(Duration::from_secs(60), 1).with_limits(RateLimits::Enforced);
+    let ip: IpAddr = "127.0.0.1".parse().unwrap();
+    assert!(rl.allow(ip).await);
+    assert!(!rl.allow(ip).await);
 }

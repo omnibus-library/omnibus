@@ -16,14 +16,10 @@ pub(crate) struct ReaderStart {
     pub hold_first_write: bool,
 }
 
-/// Resolve the opening position: a `?cfi=` deep link outright, else the
-/// server's own CFI, else the CFI the server derived for a percent-only row,
-/// else this device's last local save.
-///
-/// The server's row outranks the local save because an accepted write
-/// replaces the whole row: a percent-only row is newer than any CFI this
-/// client managed to post. Anything that is not an epub CFI — a PDF's
-/// `pdf-page:N` on a mixed book — never reaches epub.js.
+/// Resolve the opening position: a `?cfi=` deep link outright, else the server's
+/// own CFI, else the CFI the server derived for a percent-only row, else this
+/// device's last local save. Anything that is not an epub CFI (a PDF's
+/// `pdf-page:N` on a mixed book) never reaches epub.js.
 pub(crate) fn reader_start(
     deep_link: Option<String>,
     record: Option<&ProgressRecord>,
@@ -36,6 +32,8 @@ pub(crate) fn reader_start(
         };
     }
     let placeable = |c: &Option<String>| c.clone().filter(|c| is_epub_cfi(c));
+    // The server's row outranks the local save: an accepted write replaces the
+    // whole row, so a percent-only row is newer than any CFI this client posted.
     let cfi = record
         .and_then(|r| placeable(&r.epub_cfi).or_else(|| placeable(&r.derived_epub_cfi)))
         .or(local_saved);

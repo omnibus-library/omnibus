@@ -110,6 +110,7 @@ cargo test -p omnibus-db                           # db + scanner + sync tests
 cargo test -p omnibus-frontend --features server   # rpc + page tests
 cargo test -p omnibus-shared                       # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                          # MCP tool layer (out of default-members)
+cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (out of default-members)
 ```
 
 ### Web E2E (Playwright)
@@ -190,7 +191,7 @@ setup:
 
 ## Project layout
 
-Six-crate Cargo workspace:
+Seven-crate Cargo workspace:
 
 | Crate | Responsibility |
 |---|---|
@@ -200,6 +201,7 @@ Six-crate Cargo workspace:
 | `server/` | fullstack binary + REST router |
 | `mobile/` | thin native Android shell over the system WebView |
 | `mcp/` | MCP tool layer over the `/api/*` surface (out of default-members) |
+| `mock-kobo/` | fake Kobo e-reader that syncs against the Kobo routes (out of default-members) |
 
 Alongside it, `omnibus-ios/` holds the native SwiftUI iOS client — an Xcode
 project, not a Cargo crate, so `cargo` / `just lint` / `just test` never touch
@@ -208,8 +210,10 @@ build step).
 
 ## Conventions
 
-Deeper architecture — module maps, request-flow diagrams, mobile auth — is in
-[architecture.md](architecture.md). The rules contributors follow live under
+Deeper architecture — crates, request flows, mobile auth — is in
+[architecture.md](architecture.md), and the iOS app's design in [ios.md](ios.md).
+Per-module detail lives in each file's own `//!` doc; `just modules <dir>`
+prints a directory's map from them. The rules contributors follow live under
 [.claude/rules/](../.claude/rules/):
 
 | Topic | Rule |

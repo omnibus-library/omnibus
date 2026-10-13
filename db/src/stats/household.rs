@@ -69,12 +69,9 @@ pub async fn household_readers(
         .collect())
 }
 
-/// `target_id`'s summary as `viewer_id` may see it; `None` or the viewer's
-/// own id reads their own.
-///
-/// Days in another reader's summary are still cut on the viewer's own
-/// calendar (rule 10) — resolving the offset against the target's history
-/// would put the viewer on a calendar they aren't on.
+/// `target_id`'s summary as `viewer_id` may see it; `None` or the viewer's own id
+/// reads their own. Days in another reader's summary are still cut on the viewer's
+/// own calendar (rule 10).
 pub async fn stats_for_viewer(
     pool: &SqlitePool,
     viewer_id: i64,

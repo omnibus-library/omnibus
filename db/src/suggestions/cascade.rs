@@ -48,15 +48,11 @@ pub async fn resolve(pool: &SqlitePool, book_uuid: &str) -> anyhow::Result<()> {
     .await
 }
 
-/// [`resolve`] with injectable Hardcover + remote-image configs (tests point
-/// these at a local `wiremock` server).
-///
-/// Flow: resolve the library book to a Hardcover book (ISBN-first, title
-/// fallback) → collect its curated lists → rank co-listed books → filter to
-/// different-author / different-series / entry-point survivors → fetch cover
-/// bytes → cache the top 10. A clean miss writes the sticky `empty` marker; a
-/// transient network error leaves the marker untouched so the debounce window
-/// re-posts later.
+/// [`resolve`] with injectable Hardcover + remote-image configs (for a local
+/// `wiremock` in tests). Resolves the library book to a Hardcover book
+/// (ISBN-first, title fallback), ranks books co-listed with it, and caches the
+/// top 10 with cover bytes. A clean miss writes the sticky `empty` marker; a
+/// transient network error leaves the marker untouched so the debounce re-posts.
 pub async fn resolve_with(
     pool: &SqlitePool,
     book_uuid: &str,

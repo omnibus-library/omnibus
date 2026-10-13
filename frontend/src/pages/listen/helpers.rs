@@ -14,24 +14,10 @@ use omnibus_shared::{
     MAX_AUDIOBOOK_PLAYBACK_RATE as MAX_RATE, MIN_AUDIOBOOK_PLAYBACK_RATE as MIN_RATE,
 };
 
-/// Effective (position, chapter index, remaining) derivation shared by the
-/// web and mobile players' scrub bars: while dragging (`scrub` is `Some`)
-/// every readout previews the target position instead of the real playback
-/// state; at rest (`None`) `elapsed` / `current_chapter_index` / `remaining`
-/// pass through unchanged. `chapter_index_fn` is threaded in rather than
-/// called directly because each target keeps its own
-/// `chapter_index_for_elapsed` under its own cfg gate (`chapter_nav` on web,
-/// `mobile::view` on mobile) — this is the one place the "preview while
-/// dragging, commit on release" math itself lives, so the two can't diverge.
-///
-/// Note the `target.clamp(0.0, max)` below is a deliberate, small behavior
-/// change on mobile: the pre-refactor mobile derivation used the raw drag
-/// value unclamped (`scrub().unwrap_or(elapsed)`), while web already
-/// clamped. A stale drag value that outlives a mid-drag `duration` change
-/// (or any other out-of-range input) now clamps into range on both
-/// platforms instead of only on web — intentionally aligning mobile with
-/// web's existing, safer edge-case behavior rather than preserving mobile's
-/// unguarded one.
+/// Effective (position, chapter index, remaining) for the web and mobile scrub
+/// bars. While dragging (`scrub` is `Some`) every readout previews the target
+/// position, clamped into range so a stale drag value can't overshoot; at rest
+/// (`None`) `elapsed`, `current_chapter_index` and `remaining` pass through.
 pub(super) fn effective_scrub_position(
     chapters: &[ChapterInfo],
     elapsed: f64,
@@ -46,24 +32,18 @@ pub(super) fn effective_scrub_position(
     };
     let max = if duration > 0.0 { duration } else { 1.0 };
     let effective = target.clamp(0.0, max);
+    // `chapter_index_fn` is passed in: each target keeps its own
+    // `chapter_index_for_elapsed` under its own cfg gate (`chapter_nav` / `mobile::view`).
     let eff_current = chapter_index_fn(chapters, effective);
     let eff_remaining = (duration - effective).max(0.0);
     (effective, eff_current, eff_remaining)
 }
 
 /// Where a native `<input type=range>` sits in its own bounds, 0–100, for the
-/// `--fill` custom property its CSS paints the filled span from.
-///
-/// WebKit has no `::-webkit-range-progress`: its track is one element and the
-/// filled part has to be a gradient stop the markup supplies, which is why the
-/// value comes from here rather than the stylesheet. Firefox's
-/// `::-moz-range-progress` does it natively and ignores this.
-///
-/// Returns 0 on degenerate bounds or a non-finite input, so the track renders
-/// empty rather than dropping the whole gradient on a NaN stop.
-///
-/// The desktop player needs none of this: its bar is `.lp-chapter-seg-row`, a
-/// row of divs that paints its own fill on every engine.
+/// `--fill` custom property its CSS paints the filled span from (WebKit has no
+/// `::-webkit-range-progress`). Returns 0 on degenerate bounds or a non-finite
+/// input, so the track renders empty rather than dropping the whole gradient on
+/// a NaN stop.
 #[cfg(any(feature = "mobile", test))]
 pub(super) fn range_fill_pct(value: f64, min: f64, max: f64) -> f64 {
     let span = max - min;
@@ -116,12 +96,10 @@ pub(super) fn on_skip_forward_30() -> impl FnMut(MouseEvent) + 'static {
     }
 }
 
-/// Seek the shared audio element to an absolute position in seconds. Shared
-/// by the full player's scrub/chapter/bookmark handlers and the mini-dock's
-/// chapter jumps; no-op off web (SSR has no audio element to poke). The JS
-/// `seek` shim pushes the target time to the transport display immediately
-/// — playing or paused — rather than waiting on the element's own
-/// `timeupdate`.
+/// Seek the shared audio element to an absolute position in seconds. Shared by
+/// the full player's scrub/chapter/bookmark handlers and the mini-dock's chapter
+/// jumps; no-op off web (SSR has no audio element). The JS `seek` shim updates
+/// the transport display immediately, playing or paused.
 #[cfg(not(feature = "mobile"))]
 pub(super) fn seek_to(secs: f64) {
     #[cfg(feature = "web")]
@@ -151,14 +129,11 @@ pub(super) fn resolve_boot_file(requested: Option<i64>, row_file: Option<i64>) -
     requested.or(row_file)
 }
 
-/// Seconds to seed playback with, given the file the manifest actually
-/// resolved. On a single-file book — or when a legacy server reports no
-/// file identity (`audio_file_count == 0`) — this is the historic behavior:
-/// server seconds, else the locally cached position. On a multi-file book
-/// an offset is applied only when the progress row names the loaded file:
-/// seconds recorded in another file, or in no named file at all (the local
-/// cache never names one), start playback at zero rather than splicing one
-/// file's offset into another.
+/// Seconds to seed playback with, given the file the manifest resolved. A
+/// single-file book (or a legacy server with `audio_file_count == 0`) takes the
+/// server seconds, else the local cached position. A multi-file book takes an
+/// offset only when the progress row names the loaded file; otherwise playback
+/// starts at zero rather than splicing one file's offset into another.
 #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]
 pub(super) fn resolve_boot_position(
     row: Option<(Option<i64>, Option<f64>)>,
@@ -183,14 +158,10 @@ pub(super) fn resolve_boot_position(
     }
 }
 
-/// Follow-at-boot override: with follow on and a mapped Candidate, the
-/// boot seeds the mapped `(file, seconds)` instead of the stored row — a
-/// post-boot corrective seek would race `initDirect`'s one-shot restore
-/// seek and lose. An explicit picker `?file_id=` outranks follow only
-/// when it names a *different* file than the candidate maps to: picking
-/// the file the mapping already lands in (which every Continue card does
-/// — it always carries the row's file id) is a resume, not a divergent
-/// navigation, and skipping follow there reopened books at the stale spot.
+/// Follow-at-boot override: with follow on and a mapped Candidate, the boot
+/// seeds the mapped `(file, seconds)` instead of the stored row. An explicit
+/// picker `?file_id=` outranks follow only when it names a *different* file than
+/// the candidate maps to.
 #[cfg(not(feature = "mobile"))]
 #[cfg_attr(not(feature = "web"), allow(dead_code))]
 pub(super) fn resolve_follow_boot(
@@ -350,21 +321,10 @@ pub(super) fn format_hms(seconds: f64) -> String {
 }
 
 /// Wall-clock seconds a listener at `rate` experiences for a real (1x)
-/// book-time span — remaining, elapsed, a chapter length, or a whole
-/// duration; falls back to `seconds` unscaled when `rate` is non-finite or
-/// non-positive.
-///
-/// **Only figures that say "left" or "remaining" go through this.** Sending
-/// every span through it made a speed change move the elapsed readout and the
-/// totals too, and a rescaled *position* disagrees with the bookmark stamps
-/// and the detail page that name the same spot. The labelling rule still
-/// holds: a wall-clock figure never sits unmarked beside a book-time one —
-/// the chapter panel and the iOS transport included.
-///
-/// So: durations and positions are book time — the transport's elapsed and
-/// total, every chapter row's length, bookmark stamps, chapter starts. Wall
-/// clock is for what the listener will actually wait through, and it says
-/// so on screen.
+/// book-time span; falls back to `seconds` unscaled when `rate` is non-finite or
+/// non-positive. **Only figures that say "left" or "remaining" go through
+/// this**: positions and durations (elapsed, totals, chapter rows, bookmark
+/// stamps) are book time, and a wall-clock figure never sits unmarked beside one.
 pub(crate) fn remaining_at_rate(seconds: f64, rate: f64) -> f64 {
     if !rate.is_finite() || rate <= 0.0 {
         return seconds;
@@ -372,15 +332,11 @@ pub(crate) fn remaining_at_rate(seconds: f64, rate: f64) -> f64 {
     seconds / rate
 }
 
-/// Fire-and-forget POST `/api/rpc/progress` with the audio update.
-///
-/// `file_id` is the `book_files` row currently playing — the id the
-/// manifest itself resolved (`PlaybackState::loaded_file_id`), so multi-file
-/// writes always name their file and the Continue surfaces reopen *this*
-/// audiobook rather than the first one by ordinal. `None` (no manifest
-/// resolved yet, or a server predating the identity fields) omits the field;
-/// the server-side guard then refuses to blank a named file on a multi-file
-/// row.
+/// Fire-and-forget POST `/api/rpc/progress` with the audio update. `file_id` is
+/// the `book_files` row currently playing (`PlaybackState::loaded_file_id`), so
+/// multi-file writes name their file. `None` (no manifest yet, or an older
+/// server) omits the field, and the server then refuses to blank a named file
+/// on a multi-file row.
 #[cfg(feature = "web")]
 pub(super) fn post_audio_progress(uuid: String, file_id: Option<i64>, seconds: f64) {
     wasm_bindgen_futures::spawn_local(async move {

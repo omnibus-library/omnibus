@@ -12,6 +12,7 @@ use sqlx::SqlitePool;
 
 use crate::books::list_books_page;
 use crate::pool::init_db;
+use crate::shelves::Viewer;
 use crate::test_support::{seed_minimal_books, seed_user};
 
 /// `seed_minimal_books` numbers uuids `uuid-1`..`uuid-N`.
@@ -195,6 +196,7 @@ async fn walk_pages(pool: &SqlitePool, dir: SortDir, limit: i64) -> Vec<String> 
             SortKey::RecentlyInteracted,
             dir,
             &filters,
+            Viewer::default(),
             &[],
             cursor.as_ref(),
             limit,

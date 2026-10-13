@@ -14,17 +14,11 @@ use super::{
     ReindexDiff, ReindexStats, ScanUpdate, PHASE_WALKING,
 };
 
-/// Scan `library_path`, diff against the existing index, and apply only
-/// the per-book changes the diff demands. Runs the scan on the blocking
-/// pool so callers can `await` it from a normal async context without
-/// blocking the runtime.
-///
-/// A fatal scan error (missing or unreadable root) is returned as `Err`
-/// and the existing index is **not** touched — we'd rather serve
-/// stale-but-good data than wipe the table and mark the index "fresh"
-/// (which would also suppress retries until [`super::REFRESH_AFTER_SECS`]
-/// elapses). Per-book parse failures are *not* fatal; they land in the
-/// DB as rows with `error = Some(_)`, same as before.
+/// Scan `library_path`, diff against the existing index, and apply only the
+/// per-book changes the diff demands. Runs the scan on the blocking pool. A
+/// fatal scan error (missing or unreadable root) is returned as `Err` and the
+/// existing index is **not** touched, so stale-but-good data keeps serving and
+/// retries aren't suppressed. Per-book parse failures are not fatal.
 pub async fn reindex(pool: &SqlitePool, library_path: &str) -> anyhow::Result<ReindexStats> {
     reindex_with_progress(pool, library_path, |_| {}).await
 }
@@ -118,14 +112,10 @@ async fn diff_ebook_library_for_reindex(
 }
 
 /// [`reindex`] variant that reports verbose [`ScanUpdate`] events: a
-/// [`PHASE_WALKING`] event before the tree walk, a per-file parse event
-/// during the Phase-B metadata parse, and a per-book sync event after each
-/// write inside `sync_books` — the parse and sync events carry the diff's
-/// [`omnibus_shared::ScanTallies`] and the current item's display path.
-/// Used by [`crate::worker::Worker`] to feed the UI's live activity panel.
-/// `Send + 'static` because the callback rides into the Phase-B
-/// `spawn_blocking` (and back out). Returns the scan's ghost-count tallies
-/// so the caller can decide whether to attach a warning.
+/// [`PHASE_WALKING`] event before the walk, a per-file event during the Phase-B
+/// parse, and a per-book sync event inside `sync_books` (with the diff's
+/// [`omnibus_shared::ScanTallies`]). `Send + 'static` because the callback rides
+/// into `spawn_blocking`. Returns the ghost-count tallies for the caller's warning.
 pub async fn reindex_with_progress(
     pool: &SqlitePool,
     library_path: &str,

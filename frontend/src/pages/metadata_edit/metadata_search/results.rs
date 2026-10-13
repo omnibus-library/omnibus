@@ -16,11 +16,9 @@ use crate::focus_after_paint::focus_after_paint;
 
 /// One labelled field of the query.
 ///
-/// Separate fields rather than one box because that is the only way to say
-/// which part is which — and each provider is asked in its own terms, so the
-/// distinction is load-bearing rather than cosmetic. Open Library matches
-/// `title=` against the title field alone: hand it "Dune Frank Herbert" and it
-/// answers with books written *about* Dune.
+/// Separate fields rather than one box because each provider is asked in its
+/// own terms: Open Library matches `title=` against the title field alone, so
+/// "Dune Frank Herbert" answers with books written *about* Dune.
 #[component]
 fn QueryField(
     slug: &'static str,

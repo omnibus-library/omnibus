@@ -122,12 +122,10 @@ pub(crate) fn install_reader_web_interop(uuid: String, prefs: ReaderPrefs, sigs:
     });
 }
 
-/// `true` when `new` names a position the caller hasn't already POSTed.
-/// Deliberately compares against the last **posted** CFI, not the last
-/// **seen** one (the mobile variant's rule): the web glue's
-/// locations-ready re-emit is an echo that races a turn's debounced
-/// relocate and reads epub.js's already-updated location, so a last-seen
-/// key would swallow the turn's own write.
+/// `true` when `new` names a position the caller hasn't already POSTed. Compares
+/// against the last **posted** CFI, not the last **seen** one (the mobile
+/// variant's rule), because the glue's locations-ready re-emit is an echo that
+/// would otherwise swallow a turn's own write.
 #[cfg(feature = "web")]
 fn relocate_moved(new: &Option<String>, last_posted: &Option<String>) -> bool {
     match (new, last_posted) {
@@ -156,11 +154,10 @@ async fn post_epub_progress(uuid: String, cfi: String, percent_for_post: i64) {
     }
 }
 
-/// Build the `__omnibusOnRelocate` closure: re-derives chapter/total from
-/// the TOC's own order (`resolve_chapter_position`),
-/// persists + POSTs a real (non-echo, moved) position, and clears a
-/// TOC-jump `Loading` back to `Ready` once a position lands.
-/// `hold_first_write` swallows the first such write — see
+/// Build the `__omnibusOnRelocate` closure: re-derives chapter/total from the
+/// TOC's own order (`resolve_chapter_position`), persists + POSTs a real
+/// (non-echo, moved) position, and clears a TOC-jump `Loading` back to `Ready`.
+/// `hold_first_write` swallows the first such write, see
 /// [`super::start::ReaderStart::hold_first_write`].
 #[cfg(feature = "web")]
 fn build_relocate_callback(
@@ -327,19 +324,10 @@ struct BootstrapLiterals {
 }
 
 /// Resolve the starting CFI ([`super::start::reader_start`]), run the epub.js
-/// bootstrap IIFE, then seed the annotation layer from the saved highlights
-/// and publish them into the `highlights` signal.
-///
-/// `deep_link_cfi` wins outright: the reader was opened *at* a passage (from
-/// the book-detail saved-passages list), so resuming where this book was last
-/// left off would ignore the whole point of the link. The relocate handler
-/// then persists the new position as usual.
-///
-/// The same progress fetch also seeds `loc` with the server's stored
-/// whole-book percent (flagged approximate) so the footer/ribbon show the
-/// last-known position immediately — not a blank (or a frozen 0%) while
-/// epub.js fetches, parses, and paginates the book. The
-/// first real relocate overwrites the seed wholesale.
+/// bootstrap IIFE, then seed the annotation layer from the saved highlights and
+/// publish them into the `highlights` signal. `deep_link_cfi` wins outright over
+/// the saved position. The progress fetch also seeds `loc` with the stored
+/// whole-book percent (approximate) until the first real relocate overwrites it.
 #[cfg(feature = "web")]
 async fn spawn_bootstrap_and_highlights(
     uuid: String,

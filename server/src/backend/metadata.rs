@@ -37,15 +37,11 @@ pub(super) async fn get_providers(_user: AuthUser, State(state): State<AppState>
     }
 }
 
-/// Fan an edition search out across the providers, keeping every source's
-/// candidates attributed and un-collapsed for the metadata editor's picker.
-///
-/// Always 200 once the request is well-formed and the caller may edit: a
-/// provider that fails reports `Failed` on its own status row rather than
-/// failing the search, so one source's outage never costs the reader the
-/// others' results. 400 for a blank/oversized query or an empty provider list,
-/// 403 without edit permission — this is the one metadata read that spends
-/// outbound provider calls, so it is gated like the overrides *write*.
+/// Fan an edition search out across the providers, keeping every source's candidates
+/// attributed and un-collapsed for the metadata editor's picker. Always 200 once the
+/// request is well-formed and the caller may edit: a failing provider reports `Failed`
+/// on its own status row, not as a failed search. 400 for a blank/oversized query or
+/// empty provider list, 403 without edit permission (it spends outbound provider calls).
 pub(super) async fn post_edition_search(
     user: AuthUser,
     State(state): State<AppState>,
@@ -66,16 +62,11 @@ pub(super) async fn post_edition_search(
     Json(found).into_response()
 }
 
-/// Re-fetch one selected candidate from the provider that offered it.
-///
-/// The picker's second call: a search hit is thinner than the provider's own
-/// record, so selecting one is worth a round trip. Answers `null` when that
-/// provider no longer knows the candidate — a clean miss the caller absorbs by
-/// keeping the list row it already has, never by blanking it.
-///
-/// 400 for a blank or oversized handle, 403 without edit permission (the same
-/// gate the search carries, for the same reason), and 502 when the provider
-/// itself could not be reached — which is a failure, unlike the miss above.
+/// Re-fetch one selected candidate from the provider that offered it: the picker's
+/// second call, since a search hit is thinner than the provider's own record. Answers
+/// `null` when that provider no longer knows the candidate, a clean miss the caller
+/// absorbs by keeping its list row. 400 for a blank or oversized handle, 403 without
+/// edit permission, 502 when the provider could not be reached (a failure, unlike a miss).
 pub(super) async fn post_edition_hydrate(
     user: AuthUser,
     State(state): State<AppState>,
@@ -117,12 +108,10 @@ pub(super) async fn post_edition_hydrate(
     }
 }
 
-/// Turn a request into the query the providers are actually asked.
-///
-/// The structured fields win when the caller sent them; free text falls back
-/// to a title-only query, which is the only honest reading of a string a
-/// reader typed. Mirrors `omnibus_frontend::rpc::metadata_search`'s own
-/// helper — the two front doors must agree on what a request means.
+/// Turn a request into the query the providers are actually asked. The structured
+/// fields win when the caller sent them; free text falls back to a title-only query.
+/// Mirrors `omnibus_frontend::rpc::metadata_search`'s own helper, as the two front
+/// doors must agree on what a request means.
 fn search_query(req: &EditionSearchRequest) -> db::SearchQuery {
     // Built first, then checked for content — the structured fields are
     // *cleaned* (blanks trimmed to absent, an unusable ISBN discarded), so

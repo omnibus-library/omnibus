@@ -35,13 +35,10 @@ pub enum FetchRemoteImageError {
     /// SVG, or size cap); the message names which, and the handler maps it to 400.
     #[error("{0}")]
     Validation(String),
-    /// SSRF guard triggered. The supplied URL parsed cleanly, but either its
-    /// host could not be resolved or one of the resolved IPs falls into a
-    /// blocked range (loopback / private RFC1918 / link-local / multicast /
-    /// IPv6 ULA / IPv6 site-local / unspecified / broadcast / documentation).
-    /// We reject *before* any TCP connect so a hostile admin URL can't be
-    /// used to probe the loopback / cloud-metadata (`169.254.169.254`) /
-    /// internal-network surface area.
+    /// SSRF guard triggered: the host did not resolve, or a resolved IP is in a
+    /// blocked range (loopback, private, link-local, multicast, ULA, and so on).
+    /// Rejected before any TCP connect, so a hostile admin URL cannot probe the
+    /// loopback or cloud-metadata (`169.254.169.254`) surface.
     #[error("URL host is not allowed: {0}")]
     BlockedAddress(String),
     /// The host is publicly routable but not on the caller's allowlist. A
@@ -69,21 +66,11 @@ fn too_large() -> FetchRemoteImageError {
     FetchRemoteImageError::Validation(format!("image exceeds {REMOTE_IMAGE_MAX_BYTES} byte cap"))
 }
 
-/// Knobs for [`fetch_remote_image_with`]. Production code constructs
-/// [`RemoteImageConfig::default`] (strict: only public IPs are allowed) or
-/// derives from it. The `allow_private_addresses` escape hatch exists
-/// exclusively for integration tests that need to hit a local `wiremock`
-/// server bound to `127.0.0.1` — the production HTTP handlers must never
-/// construct a `RemoteImageConfig` with this flag set.
-///
-/// The remaining three fields tighten the default rather than relaxing it,
-/// and exist so every cover fetch can share this one SSRF implementation
-/// instead of growing a second: `Default` reproduces the admin paste-a-URL
-/// behaviour exactly (any host, `http` allowed, redirects refused); the
+/// Knobs for [`fetch_remote_image_with`]. `Default` is the strict admin
+/// paste-a-URL setup (any public host, `http` allowed, redirects refused); the
 /// provider-cover path (`db::provider_cover_image_config`) adds a host
-/// allowlist, HTTPS-only, and a bounded follow; the pasted terms from
-/// `db::cover_image_config_for` keep HTTPS-only and the bounded follow but
-/// leave the allowlist empty, relying on the address gate alone.
+/// allowlist, HTTPS-only and a bounded redirect follow. The
+/// `allow_private_addresses` flag is test-only: production must never set it.
 #[derive(Debug, Clone, Default)]
 pub struct RemoteImageConfig {
     /// When `true`, [`fetch_remote_image_with`] skips the IP-range check
@@ -106,13 +93,9 @@ pub struct RemoteImageConfig {
 }
 
 impl RemoteImageConfig {
-    /// Whether `host` is allowed under this config. An empty allowlist
-    /// allows everything, matching the pre-allowlist behaviour.
-    ///
-    /// The wildcard deliberately does **not** match the bare parent domain:
-    /// `*.archive.org` matches `ia1.us.archive.org` but not `archive.org`,
-    /// which must be listed on its own. A single-label suffix (`*.com`) is
-    /// refused outright rather than treated as a wildcard over a whole TLD.
+    /// Whether `host` is allowed under this config; an empty allowlist allows all.
+    /// `*.archive.org` matches `ia1.us.archive.org` but not the bare `archive.org`
+    /// (list it separately), and a single-label suffix like `*.com` is refused.
     pub fn host_allowed(&self, host: &str) -> bool {
         if self.host_allowlist.is_empty() {
             return true;
@@ -133,25 +116,11 @@ impl RemoteImageConfig {
     }
 }
 
-/// SSRF guard. Returns `true` if `addr` falls into any range we refuse to
-/// open a TCP connection against from an admin-supplied URL. Categories:
-///   - loopback (127.0.0.0/8, ::1)
-///   - unspecified (0.0.0.0, ::)
-///   - IPv4 private (RFC 1918: 10/8, 172.16/12, 192.168/16)
-///   - IPv4 link-local (169.254/16 — covers AWS/GCP/Azure IMDS at
-///     169.254.169.254)
-///   - IPv4 multicast (224/4) + broadcast (255.255.255.255)
-///   - IPv4 documentation (192.0.2/24, 198.51.100/24, 203.0.113/24)
-///   - IPv4 carrier-grade NAT (100.64/10)
-///   - IPv4 benchmarking (198.18/15)
-///   - IPv6 multicast (ff00::/8)
-///   - IPv6 ULA (fc00::/7) — `Ipv6Addr::is_unique_local` is nightly-only
-///     so we bit-check the high octet directly.
-///   - IPv6 link-local (fe80::/10) — also nightly-only on stable, bit-check.
-///   - IPv6 documentation (2001:db8::/32)
-///   - IPv6-mapped IPv4 — unwrap to the wrapped IPv4 and re-check, so
-///     `::ffff:127.0.0.1` is still loopback.
-///   - NAT64-mapped IPv4 (64:ff9b::/96) — same unwrap-and-recheck.
+/// SSRF guard. Returns `true` if `addr` is in a range we refuse to connect to
+/// from an admin-supplied URL: loopback, unspecified, private, link-local
+/// (cloud IMDS), multicast, broadcast, documentation, CGNAT, benchmarking, IPv6
+/// ULA and link-local. IPv6-mapped and NAT64-mapped IPv4 are unwrapped and
+/// re-checked, so `::ffff:127.0.0.1` is still loopback.
 pub(super) fn is_blocked_address(addr: IpAddr) -> bool {
     match addr {
         IpAddr::V4(v4) => {
@@ -256,31 +225,20 @@ async fn validated_resolve(
     Ok((host, addrs))
 }
 
-/// Fetch an image from a user-supplied URL with the same validation gates as
-/// the multipart upload route — image content-type, no SVG, size cap. Returns
-/// the raw bytes and the server-advertised content-type; callers are
-/// expected to run magic-byte sniffing on the bytes before persisting.
-///
-/// Production callers go through the default strict [`RemoteImageConfig`]
-/// SSRF guard: the URL's host is resolved and every resolved IP is checked
-/// against [`is_blocked_address`] *before* any TCP connect, then the
-/// `reqwest` client is built with `.resolve_to_addrs(host, validated)` so
-/// it can't be tricked into re-resolving and hitting a different IP (DNS
-/// rebinding).
+/// Fetch an image from a user-supplied URL with the same gates as the multipart
+/// upload route (image content-type, no SVG, size cap). Returns the bytes and
+/// the server-advertised content-type; callers must magic-byte sniff the bytes
+/// before persisting. The default strict config checks every resolved IP with
+/// [`is_blocked_address`] before connecting, then pins the client to them.
 pub async fn fetch_remote_image(url: &str) -> Result<(String, Vec<u8>), FetchRemoteImageError> {
     fetch_remote_image_with(url, &RemoteImageConfig::default()).await
 }
 
-/// [`fetch_remote_image`] with an injectable config. Integration tests that
-/// need to hit a `127.0.0.1`-bound `wiremock` server flip
-/// `allow_private_addresses` on; everything else (RPC handler, REST
-/// handler, follow-up code paths) MUST keep it off.
-///
-/// The gates run in this order, and the order matters: scheme, then host
-/// allowlist, then IP range — **for the original URL and independently for
-/// every redirect hop**. Redirects are only followed at all when
-/// [`RemoteImageConfig::max_redirects`] says so, and a hop that fails any
-/// gate ends the fetch rather than being followed and checked afterwards.
+/// [`fetch_remote_image`] with an injectable config; only integration tests
+/// against a `127.0.0.1` `wiremock` may set `allow_private_addresses`. Gates run
+/// in order (scheme, host allowlist, IP range) on the original URL and on every
+/// redirect hop independently; a hop that fails any gate ends the fetch.
+/// Redirects are followed only per [`RemoteImageConfig::max_redirects`].
 pub async fn fetch_remote_image_with(
     url: &str,
     config: &RemoteImageConfig,
@@ -370,12 +328,9 @@ async fn send_one(
         .await?)
 }
 
-/// The next URL to fetch, from a 3xx response — re-parsed, re-gated, and
-/// resolved relative to the hop it came from.
-///
-/// `pub(super)` so the sibling test module can drive it directly: the per-hop
-/// scheme recheck cannot be reached end-to-end from a `wiremock` origin,
-/// which is plaintext, so hop 1 would be refused before hop 2 existed.
+/// The next URL to fetch, from a 3xx response: re-parsed, re-gated, and resolved
+/// relative to the hop it came from. `pub(super)` so the sibling test module can
+/// drive the per-hop scheme recheck, which a plaintext `wiremock` cannot reach.
 pub(super) fn next_hop(
     from: &reqwest::Url,
     resp: &reqwest::Response,

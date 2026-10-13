@@ -71,11 +71,10 @@ where
     }
 }
 
-/// Authenticated principal for the token-less Reading Services routes
-/// (`/api/v3/...`): the device speaks at the bare origin, identified
-/// only by its `x-kobo-deviceid` header, which a prior tokened
-/// `/kobo/<TOKEN>/v1` call bound to a device row. The hardware id is not a
-/// secret the way the path token is — it only ever unlocks the annotation
+/// Authenticated principal for the token-less Reading Services routes (`/api/v3/...`):
+/// the device speaks at the bare origin, identified only by its `x-kobo-deviceid`
+/// header, which a prior tokened `/kobo/<TOKEN>/v1` call bound to a device row. The
+/// hardware id is not a secret like the path token: it only unlocks the annotation
 /// channel, and presenting a *token* is what moves it between rows.
 pub struct KoboHardwareUser {
     pub user_id: i64,

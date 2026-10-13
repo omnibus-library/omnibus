@@ -3,63 +3,18 @@
 //! wishlist-only stay hidden (list and count agreeing), and the
 //! hidden-formats exclusion composing with the include filter.
 
-use omnibus_shared::{SortDir, SortKey, ViewFilters};
+use omnibus_shared::{FilterClause, FilterField, FilterMode, SortDir, SortKey, ViewFilters};
 use sqlx::SqlitePool;
 
 use super::super::*;
-use super::{ids, insert_book, insert_lib, titles, uniq};
+use super::{ids, insert_book, insert_book_with_formats, insert_lib, insert_physical_copy, titles};
 use crate::pool::init_db;
 use crate::test_support::{seed_discovery_fixture, seed_minimal_books};
 
-/// Like [`insert_book`], but with an explicit set of `book_files` formats
-/// (stored-case, e.g. `"CBZ"`). An empty slice inserts no file rows — pair it
-/// with [`insert_physical_copy`] or the fileless gate hides the book.
-async fn insert_book_with_formats(
-    pool: &SqlitePool,
-    lib_id: i64,
-    title: &str,
-    formats: &[&str],
-) -> i64 {
-    let key = uniq();
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO books (uuid, scan_key, library_id, path, title)
-         VALUES (?, ?, ?, '/p', ?) RETURNING id",
-    )
-    .bind(&key)
-    .bind(&key)
-    .bind(lib_id)
-    .bind(title)
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    for (i, fmt) in formats.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO book_files (book_id, format, filename, size_bytes, mtime_epoch, ordinal)
-             VALUES (?, ?, ?, 1, 1, ?)",
-        )
-        .bind(id)
-        .bind(fmt)
-        .bind(format!("{title}.{}", fmt.to_lowercase()))
-        .bind(i as i64)
-        .execute(pool)
-        .await
-        .unwrap();
+fn include(field: FilterField, values: &[&str]) -> ViewFilters {
+    ViewFilters {
+        clauses: vec![FilterClause::new(field, FilterMode::Include, values)],
     }
-    id
-}
-
-/// Attach a physical copy to a book so the physical OR-arm keeps it visible.
-async fn insert_physical_copy(pool: &SqlitePool, book_id: i64) {
-    let uuid: String = sqlx::query_scalar("SELECT uuid FROM books WHERE id = ?")
-        .bind(book_id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO physical_copies (book_uuid) VALUES (?)")
-        .bind(uuid)
-        .execute(pool)
-        .await
-        .unwrap();
 }
 
 #[tokio::test]
@@ -88,6 +43,7 @@ async fn list_books_page_respects_library_path_filter() {
             SortKey::Title,
             SortDir::Asc,
             &f,
+            Viewer::default(),
             &[],
             cursor.as_ref(),
             2,
@@ -111,16 +67,14 @@ async fn list_books_page_respects_library_path_filter() {
 #[tokio::test]
 async fn list_books_page_applies_author_filter_server_side() {
     let (pool, _guard) = seed_discovery_fixture().await;
-    let f = ViewFilters {
-        authors: vec!["Ada Lovelace".into()],
-        ..Default::default()
-    };
+    let f = include(FilterField::Author, &["Ada Lovelace"]);
     let page = list_books_page(
         &pool,
         &["/lib"],
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &[],
         None,
         50,
@@ -137,16 +91,14 @@ async fn list_books_page_applies_author_filter_server_side() {
 #[tokio::test]
 async fn list_books_page_applies_format_filter_case_insensitively() {
     let (pool, _guard) = seed_discovery_fixture().await; // all EPUB
-    let epub = ViewFilters {
-        formats: vec!["epub".into()],
-        ..Default::default()
-    };
+    let epub = include(FilterField::Format, &["epub"]);
     let page = list_books_page(
         &pool,
         &["/lib"],
         SortKey::Title,
         SortDir::Asc,
         &epub,
+        Viewer::default(),
         &[],
         None,
         50,
@@ -155,16 +107,14 @@ async fn list_books_page_applies_format_filter_case_insensitively() {
     .unwrap();
     assert_eq!(page.books.len(), 4, "lowercase chip matches stored EPUB");
 
-    let m4b = ViewFilters {
-        formats: vec!["m4b".into()],
-        ..Default::default()
-    };
+    let m4b = include(FilterField::Format, &["m4b"]);
     let none = list_books_page(
         &pool,
         &["/lib"],
         SortKey::Title,
         SortDir::Asc,
         &m4b,
+        Viewer::default(),
         &[],
         None,
         50,
@@ -178,9 +128,19 @@ async fn list_books_page_applies_format_filter_case_insensitively() {
 async fn list_books_page_returns_empty_for_no_paths() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let f = ViewFilters::default();
-    let page = list_books_page(&pool, &[], SortKey::Title, SortDir::Asc, &f, &[], None, 50)
-        .await
-        .unwrap();
+    let page = list_books_page(
+        &pool,
+        &[],
+        SortKey::Title,
+        SortDir::Asc,
+        &f,
+        Viewer::default(),
+        &[],
+        None,
+        50,
+    )
+    .await
+    .unwrap();
     assert!(page.books.is_empty());
     assert!(page.next.is_none());
 }
@@ -224,6 +184,7 @@ async fn list_books_page_shows_physical_only_book_but_hides_wishlist_only() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &[],
         None,
         50,
@@ -264,9 +225,15 @@ async fn count_books_page_counts_physical_only_book_but_not_wishlist_only() {
     seed_fileless(&pool, "Wishlist Only Title", vec![]).await;
 
     // 1 normal book + 1 physical-only book; the wishlist-only book is excluded.
-    let count = count_books_page(&pool, &["/lib"], &ViewFilters::default(), &[])
-        .await
-        .unwrap();
+    let count = count_books_page(
+        &pool,
+        &["/lib"],
+        &ViewFilters::default(),
+        Viewer::default(),
+        &[],
+    )
+    .await
+    .unwrap();
     assert_eq!(
         count, 2,
         "count includes physical-only but not wishlist-only"
@@ -276,34 +243,36 @@ async fn count_books_page_counts_physical_only_book_but_not_wishlist_only() {
 #[tokio::test]
 async fn count_books_page_matches_unfiltered_count_and_applies_format_filter() {
     let (pool, _guard) = seed_discovery_fixture().await; // all EPUB
-    let all = count_books_page(&pool, &["/lib"], &ViewFilters::default(), &[])
-        .await
-        .unwrap();
+    let all = count_books_page(
+        &pool,
+        &["/lib"],
+        &ViewFilters::default(),
+        Viewer::default(),
+        &[],
+    )
+    .await
+    .unwrap();
     assert_eq!(all, 4, "empty filters count the whole library");
 
-    let epub = ViewFilters {
-        formats: vec!["epub".into()],
-        ..Default::default()
-    };
+    let epub = include(FilterField::Format, &["epub"]);
     assert_eq!(
-        count_books_page(&pool, &["/lib"], &epub, &[])
+        count_books_page(&pool, &["/lib"], &epub, Viewer::default(), &[])
             .await
             .unwrap(),
         4
     );
 
-    let m4b = ViewFilters {
-        formats: vec!["m4b".into()],
-        ..Default::default()
-    };
+    let m4b = include(FilterField::Format, &["m4b"]);
     assert_eq!(
-        count_books_page(&pool, &["/lib"], &m4b, &[]).await.unwrap(),
+        count_books_page(&pool, &["/lib"], &m4b, Viewer::default(), &[])
+            .await
+            .unwrap(),
         0
     );
 
     // No library paths → zero without touching the db.
     assert_eq!(
-        count_books_page(&pool, &[], &ViewFilters::default(), &[])
+        count_books_page(&pool, &[], &ViewFilters::default(), Viewer::default(), &[])
             .await
             .unwrap(),
         0
@@ -326,6 +295,7 @@ async fn list_books_page_excludes_books_whose_every_format_is_hidden() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -350,6 +320,7 @@ async fn list_books_page_keeps_dual_format_book_while_any_format_stays_visible()
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -370,6 +341,7 @@ async fn list_books_page_keeps_dual_format_book_while_any_format_stays_visible()
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide_both,
         None,
         50,
@@ -398,6 +370,7 @@ async fn list_books_page_never_hides_physical_only_books() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -424,6 +397,7 @@ async fn list_books_page_exclusion_matches_stored_uppercase_formats_case_insensi
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -446,10 +420,7 @@ async fn list_books_page_exclusion_composes_with_include_format_filter() {
 
     // Include-filter selects cbz+epub; exclusion hides cbz. The include list
     // must not resurrect a hidden book ("All" chip semantics).
-    let f = ViewFilters {
-        formats: vec!["cbz".into(), "epub".into()],
-        ..Default::default()
-    };
+    let f = include(FilterField::Format, &["cbz", "epub"]);
     let hide = vec!["cbz".to_string()];
     let page = list_books_page(
         &pool,
@@ -457,6 +428,7 @@ async fn list_books_page_exclusion_composes_with_include_format_filter() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
@@ -483,17 +455,22 @@ async fn count_books_page_exclusion_matches_list_books_page() {
         SortKey::Title,
         SortDir::Asc,
         &f,
+        Viewer::default(),
         &hide,
         None,
         50,
     )
     .await
     .unwrap();
-    let count = count_books_page(&pool, &["/lib"], &f, &hide).await.unwrap();
+    let count = count_books_page(&pool, &["/lib"], &f, Viewer::default(), &hide)
+        .await
+        .unwrap();
     assert_eq!(page.books.len() as i64, count);
     assert_eq!(count, 2, "Dual + Novel");
 
     // The receipt arithmetic: same filters, exclusion diff only.
-    let all = count_books_page(&pool, &["/lib"], &f, &[]).await.unwrap();
+    let all = count_books_page(&pool, &["/lib"], &f, Viewer::default(), &[])
+        .await
+        .unwrap();
     assert_eq!(all - count, 2, "two comic-only books hidden");
 }

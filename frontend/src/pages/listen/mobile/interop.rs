@@ -148,12 +148,11 @@ pub fn refresh_title_marquee() {
     fire(MARQUEE_JS);
 }
 
-/// Measures only the primary (first, always-visible) track span — the
-/// second copy exists solely for the animated loop, and CSS gives it a
-/// `gap` for loop spacing, so including it in the measurement would flag a
-/// title that actually fits as overflowing. Double `requestAnimationFrame`
-/// lets layout (webfonts in particular) settle before measuring
-/// `scrollWidth`.
+/// Eval script behind `refresh_title_marquee`: toggles `.is-overflowing` on each
+/// `.m-player-title` whose primary (first) track span is wider than the title.
+// Measures only the first track span: the second copy exists for the loop and
+// has a `gap`, which would flag a fitting title. Double `requestAnimationFrame`
+// lets layout (webfonts) settle before `scrollWidth` is read.
 const MARQUEE_JS: &str = "requestAnimationFrame(function(){ requestAnimationFrame(function(){ \
      document.querySelectorAll('.m-player-title').forEach(function(h1){ \
        var track = h1.querySelector('.m-player-title-track'); \
@@ -169,12 +168,10 @@ fn fire(js: &str) {
     let _ = dioxus::document::eval(js);
 }
 
-/// Build the `window.OmnibusMobileAudio` install script. Composes five
-/// pure-JS sub-segments ([`mount_element_js`], [`transport_js`],
-/// [`media_session_js`], [`listeners_js`], [`seed_resume_js`]) around the
-/// four interpolation points (`parts_json`, `resume_lit`, `rate_lit`,
-/// `meta_lit`) — the same composition idiom the desktop bootstrap's
-/// `control_surface_js` uses for `dom_reset_js`/`listeners_js`/etc.
+/// Build the `window.OmnibusMobileAudio` install script from five pure-JS
+/// segments ([`mount_element_js`], [`transport_js`], [`media_session_js`],
+/// [`listeners_js`], [`seed_resume_js`]) around the four interpolation points
+/// (`parts_json`, `resume_lit`, `rate_lit`, `meta_lit`).
 fn surface_js(parts_json: &str, resume_lit: &str, rate_lit: &str, meta_lit: &str) -> String {
     format!(
         r#"
@@ -281,12 +278,10 @@ fn transport_js() -> &'static str {
   };"#
 }
 
-/// The four audio-element event listeners (timeupdate/play/pause/ended)
-/// that push [`AudioEvent`]s back to Rust and reconcile Media Session
-/// state. Pure JS with no Rust interpolation (`el`, `absTime`,
-/// `hasMediaSession`, `updatePositionState` come from
-/// [`mount_element_js`]/[`media_session_js`]), so it lives as a raw
-/// `&'static str`.
+/// The four audio-element event listeners (timeupdate/play/pause/ended) that
+/// push [`AudioEvent`]s back to Rust and reconcile Media Session state. Uses
+/// `el`, `absTime`, `hasMediaSession` and `updatePositionState` from
+/// [`mount_element_js`]/[`media_session_js`].
 fn listeners_js() -> &'static str {
     r#"  el.addEventListener('timeupdate', function(){ dioxus.send({ kind: 'Time', seconds: absTime(), paused: el.paused }); updatePositionState(); });
   el.addEventListener('play',  function(){ dioxus.send({ kind: 'Play' }); if (hasMediaSession) navigator.mediaSession.playbackState = 'playing'; updatePositionState(); });
@@ -328,12 +323,8 @@ fn seed_resume_js() -> &'static str {
 
 /// iOS lock-screen / Control Center now-playing via the Media Session API:
 /// seeds the `MediaMetadata`, wires `setPositionState`, and installs the
-/// seek/skip action handlers. WKWebView mirrors this into
-/// `MPNowPlayingInfoCenter`. Guarded — older WebViews lack the API. Pure JS
-/// with no Rust interpolation (`meta`, `acc`, `el`, `absTime` are already in
-/// scope from the enclosing IIFE), so it lives as a raw `&'static str`
-/// (literal braces, no escaping) — the same idiom the desktop bootstrap's
-/// `dom_reset_js`/`listeners_js` use.
+/// seek/skip action handlers (WKWebView mirrors them into
+/// `MPNowPlayingInfoCenter`). Guarded, since older WebViews lack the API.
 fn media_session_js() -> &'static str {
     r#"  var hasMediaSession = ('mediaSession' in navigator);
   function updatePositionState() {

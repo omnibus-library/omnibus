@@ -69,11 +69,10 @@ pub use stats::*;
 pub use summary::*;
 
 /// Log the real error server-side and return a generic message safe to hand
-/// to the client, mirroring `server/src/backend.rs`'s `internal()` one layer
-/// up (HTTP/RPC response boundary instead of a Rust module boundary — see
-/// `.claude/rules/02-error-handling.md`'s boundary rule). Only for opaque
-/// failures (`Sqlx`, transport, IO) — typed/validation variants a client
-/// legitimately branches on should keep their specific message.
+/// to the client, mirroring `server/src/backend.rs`'s `internal()` at the
+/// RPC boundary (rule 02-error-handling). Only for opaque failures (`Sqlx`,
+/// transport, IO): typed/validation variants a client branches on keep their
+/// specific message.
 #[cfg(feature = "server")]
 pub(crate) fn internal_rpc_error<E: std::fmt::Display>(
     context: &'static str,
@@ -100,18 +99,10 @@ type WorkerExt = dioxus::fullstack::axum::Extension<std::sync::Arc<omnibus_db::w
 pub use server_auth::{AdminUser, AuthUser};
 
 /// Server-side per-route authorization extractors used by the `#[get]` /
-/// `#[post]` macros in the submodules. These are deliberately scoped to this
-/// module instead of imported from `crate::omnibus::auth` — the `frontend`
-/// crate can't depend on the `server` crate (cycle), and dioxus already
-/// re-exports axum/axum-extra under `dioxus::fullstack::*`, so duplicating
-/// ~50 lines is cheaper than restructuring the workspace.
-///
-/// Behaviour mirrors `server::auth::extractor::AuthUser` /
-/// `AdminUser`. Both delegate session validation to
-/// `omnibus_db::auth::validate_session`, the single consolidated security
-/// surface (token precedence, SHA-256 hashing, absolute + idle expiry,
-/// revocation), so the wire-level contract stays in lockstep with the REST
-/// side without the compiler being able to catch a divergence.
+/// `#[post]` macros in the submodules, scoped here because `frontend` can't
+/// depend on the `server` crate (cycle). Mirrors `server::auth::extractor`'s
+/// `AuthUser` / `AdminUser`: sessions go through `validate_session`, but the
+/// rest is a hand-kept copy the compiler can't check, so change both together.
 #[cfg(feature = "server")]
 mod server_auth {
     use dioxus::fullstack::axum::extract::FromRequestParts;

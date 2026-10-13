@@ -12,11 +12,9 @@ use omnibus_shared::{SessionView, UNKNOWN_CLIENT};
 use sqlx::SqlitePool;
 
 /// Project `sessions` onto their wire views, resolving each one's client name.
-///
-/// `current_session_id` marks the row the request itself authenticated with;
-/// the admin listing passes `None` because it never sets that flag (see
-/// [`SessionView::is_current`]). Registered devices are fetched once for the
-/// whole listing rather than per row.
+/// `current_session_id` marks the row the request authenticated with; the admin
+/// listing passes `None` because it never sets that flag (see
+/// [`SessionView::is_current`]). Devices are fetched once for the whole listing.
 pub async fn session_views(
     pool: &SqlitePool,
     user_id: i64,

@@ -137,7 +137,10 @@ test("adds then removes a wishlist entry", async ({ page, request }) => {
   await expect(page.getByTestId("find-a-copy")).toBeVisible();
   // The viewer's own Wishlist shelf holds the book now, and the More stop's
   // shelf list says so off the same signal the card reads — no refetch.
-  await expect(page.getByTestId("bdmq-shelves")).toContainText("Wishlist");
+  const wishlistTile = page
+    .getByTestId(/^bdmq-shelf-\d+$/)
+    .filter({ has: page.locator(".shv-facet--kind", { hasText: "Wishlist" }) });
+  await expect(wishlistTile).toBeVisible();
 
   await page.route("**/api/rpc/physical/wishlist/remove", (route) =>
     route.fulfill({
@@ -157,7 +160,8 @@ test("adds then removes a wishlist entry", async ({ page, request }) => {
   );
 
   await expect(page.getByTestId("add-to-wishlist")).toBeVisible();
-  await expect(page.getByTestId("bdmq-shelves")).toBeHidden();
+  // Other shelves (a smart shelf matching the book) may stay; the Wishlist goes.
+  await expect(wishlistTile).toHaveCount(0);
 });
 
 test("surfaces an error when the wishlist add fails", async ({

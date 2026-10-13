@@ -1,14 +1,7 @@
 //! Reading-stats aggregation over the `reading_sessions` /
 //! `listening_sessions` tables plus `journal_entries` / `book_read_status`
-//! for completion; no new query-time schema. See the `book`, `compute`,
-//! `pages`, `patterns`, `ratings`, `streak`, and `superlatives` submodules
-//! for the per-scope aggregation bodies this module's cache wraps,
-//! `sessionize` for how checkpoint rows become sittings, `library` /
-//! `composition` for the two aggregates here that describe the collection
-//! rather than a reader, and `sessions` for the uncached per-sitting log
-//! those aggregates summarize. `household` lists which readers share their
-//! stats and gates a viewer's read of another reader's summary, session log,
-//! or in-progress list.
+//! for completion; no new query-time schema. This module owns the cache; the
+//! per-scope aggregation bodies it wraps live in the submodules.
 //!
 //! # Which calendar
 //!
@@ -118,15 +111,11 @@ impl From<crate::books::BooksError> for StatsError {
 
 type Cache = Mutex<HashMap<(i64, StatsRange, i64), (i64, StatsSummary)>>;
 
-/// Process-wide cache shared by every request for every user — keyed by
-/// `(user_id, range, offset_minutes)` so no cached aggregate leaks between
-/// users, and read through by [`user_stats_at`] before any SQL runs.
-///
-/// The offset belongs in the key because it moves the answer: every day boundary
-/// in a summary is cut on it, so a phone in Tokyo and a laptop in Los Angeles
-/// have genuinely different summaries to be served, and omitting it would hand
-/// one of them the other's days. It costs nothing in practice — a reader is in
-/// one place at a time, so this stays one entry per range.
+/// Process-wide cache shared by every request for every user, keyed by
+/// `(user_id, range, offset_minutes)` so no cached aggregate leaks between users
+/// (the offset is in the key per rule 10), and read through by [`user_stats_at`]
+/// before any SQL runs. One entry per range in practice: a reader is in one place
+/// at a time.
 fn cache() -> &'static Cache {
     static CACHE: OnceLock<Cache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -140,13 +129,10 @@ pub(super) fn now_secs() -> i64 {
 }
 
 /// Aggregate one user's reading/listening stats over `range`, cached for
-/// [`STATS_TTL_SECS`].
-///
-/// `claimed_offset_minutes` is what the asking client says its UTC offset is,
-/// and every day boundary in the result is cut on it — the heatmap's columns,
-/// the streak's today, both daily goals, and where the window itself begins.
-/// `None` falls back to the reader's most recent session offset and then to UTC;
-/// see [`crate::user_offset::resolve_offset_minutes`].
+/// [`STATS_TTL_SECS`]. `claimed_offset_minutes` is the asking client's UTC offset;
+/// every day boundary in the result is cut on it. `None` falls back to the
+/// reader's most recent session offset, then UTC; see
+/// [`crate::user_offset::resolve_offset_minutes`].
 pub async fn user_stats(
     pool: &SqlitePool,
     user_id: i64,

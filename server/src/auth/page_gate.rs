@@ -20,11 +20,9 @@ use super::extractor::extract_token;
 use crate::backend::AppState;
 
 /// Redirect a `GET`/`HEAD` of a session-only page to `/login` when the request carries no live session.
-///
-/// A session lookup that fails for any reason other than "no such session"
-/// serves the page anyway: the client's own 401 redirect still catches a
-/// signed-out reader, where failing closed would lock every reader out for
-/// the length of a database hiccup.
+/// A session lookup failing for any reason but "no such session" serves the page
+/// anyway: the client's own 401 redirect still catches a signed-out reader, where
+/// failing closed would lock everyone out during a database hiccup.
 pub async fn require_page_session(
     State(state): State<AppState>,
     req: Request,

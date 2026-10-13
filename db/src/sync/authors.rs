@@ -13,17 +13,11 @@ use sqlx::Transaction;
 #[cfg(test)]
 mod tests;
 
-/// Batch-insert author join rows from the merged `creators` list. The OPF
-/// parser appends `<dc:contributor>` entries onto `creators` in source
-/// order (see `db::ebook::parse`), so positions here are simply `0..n` in
-/// that combined order. Names on the `ignored_authors` blocklist are
-/// skipped — leaving a gap in `position` rather than renumbering — identical
-/// to the previous per-author loop, but resolved in a constant handful of
-/// statements instead of ~4 per author.
-///
-/// `author_aliases` is the whole-batch reindex-resurrection guard
-/// lookup built once by `super::books::collect_entity_alias_maps` before the
-/// per-book write loop starts, not re-resolved here.
+/// Batch-insert author join rows from the merged `creators` list (the OPF parser
+/// appends `<dc:contributor>` entries in source order, so positions are `0..n`).
+/// Names on the `ignored_authors` blocklist are skipped, leaving a gap in
+/// `position` rather than renumbering. `author_aliases` is the whole-batch
+/// resurrection guard built once by `super::books::collect_entity_alias_maps`.
 pub(super) async fn insert_author_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,

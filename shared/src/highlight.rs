@@ -56,9 +56,10 @@ impl std::fmt::Display for HighlightColor {
 pub struct Highlight {
     pub id: i64,
     pub book_uuid: String,
-    /// `None` for Kobo-origin annotations — those are anchored by an opaque
-    /// KoboSpan location the server never exposes, so they list in the UI
-    /// but cannot be placed or jumped to in the web reader.
+    /// The range CFI the readers paint. A Kobo-origin annotation gets one
+    /// derived server-side from its `KoboSpan` location (at ingest, else at
+    /// the boot backfill); `None` only while that mapping fails, and such a
+    /// row lists in the UI but cannot be placed or jumped to in the web reader.
     #[serde(default)]
     pub epub_cfi_range: Option<String>,
     pub color: HighlightColor,
@@ -75,14 +76,12 @@ pub struct Highlight {
     pub created_at: i64,
     /// [`Self::created_at`] rendered as ISO 8601 UTC. When it was made.
     ///
-    /// Both forms travel together: the epoch is what clients compare and sort
-    /// on, the string is what a reader of the API can act on without doing
-    /// calendar arithmetic by hand. Populated by the server's read paths;
     /// `None` on a payload a client built itself.
     #[serde(default)]
     pub created_at_iso: Option<String>,
     /// Spine document this anchor sits in, resolved from its CFI. `None`
-    /// for a Kobo-origin anchor and anything else unparseable.
+    /// when no CFI could be derived (an unmapped Kobo-origin anchor) or the
+    /// CFI is unparseable.
     #[serde(default)]
     pub spine_index: Option<i64>,
     /// TOC title of the chapter it sits in, when the book's structure has
@@ -129,12 +128,9 @@ impl CreateHighlight {
     /// without letting an authed client index arbitrary blobs.
     pub const CLIENT_ID_MAX_LEN: usize = 64;
 
-    /// Validate field lengths and required-ness. Call at the handler
-    /// boundary before persisting so over-long inputs surface as 400
-    /// instead of falling through to the DB.
-    ///
-    /// Length caps are measured in Unicode scalar values (`chars`),
-    /// matching `MetadataOverrides::validate`.
+    /// Validate field lengths and required-ness. Call at the handler boundary before
+    /// persisting so over-long inputs surface as 400 instead of falling through to the
+    /// DB. Caps count Unicode scalar values (`chars`), like `MetadataOverrides::validate`.
     pub fn validate(&self) -> Result<(), String> {
         if self.book_uuid.trim().is_empty() {
             return Err("book_uuid is required".into());

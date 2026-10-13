@@ -88,18 +88,12 @@ pub struct JournalEntry {
     pub updated_at: i64,
     /// [`Self::created_at`] rendered as ISO 8601 UTC. When the entry was written.
     ///
-    /// Both forms travel together: the epoch is what clients compare and
-    /// sort on, the string is what a reader of the API can act on without
-    /// doing calendar arithmetic by hand. Populated by the server's read
-    /// paths; `None` on a payload a client built itself.
+    /// `None` on a payload a client built itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at_iso: Option<String>,
     /// [`Self::updated_at`] rendered as ISO 8601 UTC. When it was last edited.
     ///
-    /// Both forms travel together: the epoch is what clients compare and
-    /// sort on, the string is what a reader of the API can act on without
-    /// doing calendar arithmetic by hand. Populated by the server's read
-    /// paths; `None` on a payload a client built itself.
+    /// `None` on a payload a client built itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at_iso: Option<String>,
 }

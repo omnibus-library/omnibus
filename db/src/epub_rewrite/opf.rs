@@ -15,13 +15,11 @@ use quick_xml::writer::Writer;
 /// Descriptive `<dc:*>` local names we own: their originals are dropped and a
 /// fresh copy is emitted from the effective metadata. Everything not listed
 /// (`identifier`, `rights`, `source`, `type`, …) is preserved verbatim.
-///
-/// `contributor` is dropped alongside `creator` because the effective
-/// `creators` vec already folds contributors in, so re-emitting them as
-/// `<dc:creator>` would otherwise duplicate them.
 const MANAGED_DC: &[&[u8]] = &[
     b"title",
     b"creator",
+    // Dropped alongside `creator`: the effective `creators` already folds
+    // contributors in, so keeping them would duplicate them as `<dc:creator>`.
     b"contributor",
     b"description",
     b"publisher",
@@ -157,12 +155,11 @@ fn handle_empty(
     Ok(())
 }
 
-/// Record whether `e` declares the `xmlns:dc`/`xmlns:opf` prefixes the
-/// rewrite is about to inject. Callers must only invoke this for `<metadata>`
-/// itself or one of its ancestors — a declaration on a descendant (e.g. a
-/// redundant `xmlns:dc` on a `<dc:title>` child) is out of scope again by the
-/// time we inject new markup just before `</metadata>`, so trusting it would
-/// let unbound `dc:`/`opf:` elements slip into invalid OPF.
+/// Record whether `e` declares the `xmlns:dc`/`xmlns:opf` prefixes the rewrite
+/// is about to inject. Callers must only invoke this for `<metadata>` itself or
+/// one of its ancestors: a declaration on a descendant is out of scope again by
+/// the time new markup is injected before `</metadata>`, so trusting it could
+/// leave unbound `dc:`/`opf:` elements in invalid OPF.
 fn track_namespace_bindings(e: &BytesStart<'_>, state: &mut RewriteState) {
     if declares(e, b"xmlns:dc") {
         state.dc_bound = true;
@@ -173,11 +170,9 @@ fn track_namespace_bindings(e: &BytesStart<'_>, state: &mut RewriteState) {
 }
 
 /// When the upcoming `Event::End` closes the tracked `<metadata>` element,
-/// inject the regenerated managed children just before it. No-op otherwise.
-///
-/// Refuses (bails) when a prefix the injected markup would use isn't bound
-/// by the source, so the caller falls back to the untouched source EPUB
-/// instead of shipping invalid XML.
+/// inject the regenerated managed children just before it; no-op otherwise.
+/// Bails when a prefix the injected markup needs isn't bound by the source, so
+/// the caller falls back to the untouched source EPUB.
 fn inject_managed_metadata_before_close(
     writer: &mut Writer<Vec<u8>>,
     state: &mut RewriteState,
@@ -243,18 +238,16 @@ fn local_name(qname: &[u8]) -> &[u8] {
     }
 }
 
-/// Render the descriptive `<metadata>` children this rewrite regenerates from
-/// a book's effective metadata — title, creators, description, publisher,
-/// date, language, subjects, and the calibre series pair — as a single
-/// four-space-indented XML fragment, one element per line.
-///
-/// Contributors were merged into `creators` at parse time and the schema
-/// can't tell them apart, so every creator re-exports as `<dc:creator>`.
-/// Description is ammonia-sanitized HTML; escaping it once as a text node
-/// means a consumer that unescapes gets the markup back.
+/// Render the descriptive `<metadata>` children this rewrite regenerates from a
+/// book's effective metadata (title, creators, description, publisher, date,
+/// language, subjects, calibre series pair) as one four-space-indented XML
+/// fragment, one element per line. Every creator re-exports as `<dc:creator>`
+/// (contributors were merged in at parse time).
 fn render_effective_metadata(book: &EbookMetadata) -> String {
     let mut out = String::new();
     push_title_and_creators(&mut out, book);
+    // Description is ammonia-sanitized HTML; escaping it once as a text node
+    // means a consumer that unescapes gets the markup back.
     push_dc(&mut out, "description", book.description.as_deref());
     push_dc(&mut out, "publisher", book.publisher.as_deref());
     push_dc(&mut out, "date", book.published.as_deref());

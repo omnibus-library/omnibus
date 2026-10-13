@@ -59,12 +59,9 @@ pub(super) struct BdExportContext {
     pub epub_size_bytes: Option<i64>,
 }
 
-/// The open dropdown body. Split out so `onmounted` can focus it (so ESC
-/// reaches the panel-level `onkeydown`), mirroring the user-menu panel.
-///
-/// Uses `role="dialog"` (not `role="menu"`) to match the user-menu dropdown:
-/// this is a scrim-dismissed popover with plain links/buttons, not an ARIA
-/// menu with roving-tabindex / arrow-key navigation.
+/// The open dropdown body, split out so `onmounted` can focus it and ESC reaches
+/// the panel-level `onkeydown`. Uses `role="dialog"`, not `role="menu"`, like the
+/// user-menu dropdown: it is a scrim-dismissed popover of plain links/buttons.
 #[component]
 fn BdExportPanel(ctx: BdExportContext, open: Signal<bool>) -> Element {
     let BdExportContext {

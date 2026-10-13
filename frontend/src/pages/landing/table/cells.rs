@@ -47,18 +47,9 @@ pub(super) struct RowContext {
 
 /// Build the single-field override payload for a grid quick-edit save.
 ///
-/// `EditableCell` only invokes the save callback when the trimmed value
-/// differs from the cell's prior value (see its `onkeydown`/`onblur`
-/// guards), so by the time this runs the field has genuinely changed —
-/// including changing to empty (the user cleared it). That means the
-/// override must always carry `Some(trimmed)`, **never `None`**: `None`
-/// is what `MetadataOverrides::merge` (and `merge_metadata_overrides`'s
-/// read-merge-write) reads as "untouched, keep whatever override already
-/// exists", so a `None`-based "clear" is a silent no-op. `Some("")` is
-/// the established clear sentinel — the same one the full metadata-edit
-/// page's `build_overrides` already emits (see
-/// `frontend::pages::metadata_edit::build_overrides`) — and the merge +
-/// `apply_overrides` read path already understands it.
+/// Always `Some(trimmed)`, **never `None`**, even when the user cleared the
+/// field: `MetadataOverrides::merge` reads `None` as "untouched", so a
+/// `None` clear is a silent no-op. `Some("")` is the established clear sentinel.
 pub(super) fn field_override(field: EditField, value: &str) -> MetadataOverrides {
     let mut overrides = MetadataOverrides::default();
     let value = Some(value.trim().to_string());
@@ -389,12 +380,9 @@ pub(super) struct EditableCellDisplay {
     pub col_class: String,
     pub cell_testid: String,
     pub display_value: String,
-    /// Separate value used to seed the input when edit mode opens.
-    /// Some cells render a richer display string than the underlying
-    /// scalar override — Series shows "Pioneers #1" but only "Pioneers"
-    /// is the series-name override. Pass `Some(bare_value)` so the
-    /// input seeds (and the blur-comparison runs against) the editable
-    /// scalar, not the rendered text. Defaults to `display_value`.
+    /// Seeds the input (and the blur comparison) when edit mode opens, for cells
+    /// whose display string is richer than the editable scalar (Series shows
+    /// "Pioneers #1"; the override is "Pioneers"). Defaults to `display_value`.
     pub edit_value: Option<String>,
     pub placeholder: String,
 }
@@ -638,14 +626,10 @@ pub(super) struct ChipCellProps {
 }
 
 /// Inline-editable multi-value cell (Authors, Tags, Genres). Unlike [`EditableCell`]
-/// (which hosts a single-line text input), this cell renders the full
-/// [`ChipEditor`] *inside* the `<td>` when the row's editing signal matches
-/// its field. The cell grows vertically to fit the chips + input + dropdown,
-/// matching the design comp.
-///
-/// Display mode: comma-joined values. Hover: dashed amber outline.
-/// Click: swaps to chip editor (auto-focused) with the library-wide
-/// pool surfaced in the dropdown. Escape exits edit mode.
+/// (a single-line text input), it renders the full [`ChipEditor`] *inside* the
+/// `<td>` while the row's editing signal matches its field, growing vertically
+/// to fit. Display mode: comma-joined values. Click swaps to the chip editor
+/// (auto-focused) with the library-wide pool in the dropdown; Escape exits.
 #[component]
 pub(super) fn ChipCell(props: ChipCellProps) -> Element {
     let ChipCellProps {

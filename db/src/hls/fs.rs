@@ -44,13 +44,11 @@ pub fn progress_path(book_id: i64, profile: &str) -> PathBuf {
     segment_dir(book_id, profile).join(".progress")
 }
 
-/// Read transcode progress `[0.0, 1.0]` from the sentinel file. Returns
-/// `0.0` if the file is absent, unreadable, or stale (mtime older than
-/// [`STALE_PROGRESS_THRESHOLD`] and value < 1.0). Treating stale sentinels
-/// as zero lets the status handler's `progress < 0.05` re-kick gate fire
-/// naturally after a crashed/restarted transcode — without that, an orphan
-/// `.progress=0.1` left over from a previous run would pin the book in
-/// "preparing" forever.
+/// Read transcode progress `[0.0, 1.0]` from the sentinel file. Returns `0.0` if
+/// the file is absent, unreadable, or stale (mtime older than
+/// [`STALE_PROGRESS_THRESHOLD`] and value < 1.0), so the status handler's
+/// `progress < 0.05` re-kick gate fires after a crashed or restarted transcode
+/// instead of an orphan `.progress` pinning the book in "preparing".
 pub fn read_progress(book_id: i64, profile: &str) -> f32 {
     let path = progress_path(book_id, profile);
     let raw: f32 = match std::fs::read_to_string(&path)

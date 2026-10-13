@@ -15,12 +15,11 @@ use dioxus::document::Eval;
 
 use crate::js_interop::json_literal;
 
-/// Absolute URLs of the vendored PDF runtime, resolved from the `asset!`
-/// bundle: the glue (a classic script), the two ES modules it imports on
-/// demand — the library and its worker — and the directory holding the
-/// worker's WASM image decoders (JPEG 2000, JBIG2/CCITT, ICC). Without that
-/// directory PDF.js silently drops every image those codecs encode, and a
-/// scanned or illustrated book opens as blank pages.
+/// Absolute URLs of the vendored PDF runtime, resolved from the `asset!` bundle:
+/// the glue (a classic script), the library and worker ES modules it imports on
+/// demand, and the directory of the worker's WASM image decoders (JPEG 2000,
+/// JBIG2/CCITT, ICC). Without that directory PDF.js silently drops images those
+/// codecs encode.
 pub(super) struct PdfScripts {
     pub glue: String,
     pub pdfjs: String,

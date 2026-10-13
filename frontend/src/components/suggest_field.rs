@@ -113,12 +113,10 @@ pub fn SuggestField(props: SuggestFieldProps) -> Element {
     }
 }
 
-/// Arrow/Enter/Escape handling for [`SuggestField`] — a smaller sibling of
-/// `chip_editor`'s `dispatch_keydown` without the chip-list "+ Create" row:
-/// ↑/↓ move the highlight, Enter overwrites `value` with the highlighted row
-/// and closes the dropdown (or, with nothing highlighted, leaves the typed
-/// text — it's already the live value), Escape drops the highlight and
-/// closes.
+/// Arrow/Enter/Escape handling for [`SuggestField`]: ↑/↓ move the highlight,
+/// Enter overwrites `value` with the highlighted row and closes the dropdown
+/// (with nothing highlighted it leaves the typed text), Escape drops the
+/// highlight and closes.
 fn dispatch_suggest_field_keydown(
     e: Event<KeyboardData>,
     filtered: &[SuggestionItem],

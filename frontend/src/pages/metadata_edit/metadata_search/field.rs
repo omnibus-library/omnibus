@@ -15,16 +15,9 @@ use super::super::form_grid::FormFields;
 
 /// One field a source can offer and the form can take.
 ///
-/// Adding a field is: a variant here, its entry in [`Self::ALL`], and the arms
-/// the compiler then demands in [`Self::label`], [`Self::current`],
-/// [`Self::source_value`], and [`Self::apply`]. Nothing in the compare view
-/// itself changes — it renders [`Self::ALL`] and nothing else.
-///
-/// Four of those five steps are compiler-enforced: each accessor is an
-/// exhaustive `match`, so a new variant fails to build until every one has an
-/// arm. Adding it to [`Self::ALL`] is the single manual step, which is why
-/// the completeness test drives every entry through all four accessors rather
-/// than only reading its label.
+/// Adding a field is a variant here, its entry in [`Self::ALL`] (the one manual
+/// step), and the arms the compiler then demands in [`Self::label`],
+/// [`Self::current`], [`Self::source_value`] and [`Self::apply`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum MetadataField {
     Title,
@@ -42,15 +35,12 @@ pub(super) enum MetadataField {
 
 impl MetadataField {
     /// Every copyable field, in the order the compare view renders them:
-    /// identity first, then the long free text, mirroring the edit form's own
-    /// running order so the two read as the same book.
+    /// identity first, then the long free text, mirroring the edit form.
     ///
-    /// **Tags are deliberately absent.** A provider's subject list lands on
-    /// `genres` in this codebase; `subjects` is whatever the EPUB's
-    /// own `<dc:subject>` entries were, and overwriting that with a provider's
-    /// vocabulary would destroy the one field that describes *this file*.
-    /// Series position *is* here, but only Hardcover ever fills it — the
-    /// catalogs carry no book number to copy.
+    /// **Tags are deliberately absent**: overwriting `subjects` (the EPUB's own
+    /// `<dc:subject>` entries) with a provider's vocabulary would destroy them.
+    // Series position is here, but only Hardcover fills it: the other catalogs
+    // carry no book number to copy.
     pub(super) const ALL: &'static [MetadataField] = &[
         MetadataField::Title,
         MetadataField::Authors,
@@ -103,10 +93,9 @@ impl MetadataField {
 
     /// What the source offers, or the empty string when it offers nothing.
     ///
-    /// The empty string is the whole safety property of this screen: it is
-    /// what [`Self::is_available`] reads, and an unavailable field can't be
-    /// applied — so a provider that doesn't know a field can never blank out
-    /// a value the reader already has.
+    /// The empty string is the whole safety property of this screen: it is what
+    /// [`Self::is_available`] reads, so a provider that doesn't know a field can
+    /// never blank out a value the reader already has.
     pub(super) fn source_value(self, edition: &ProviderEdition) -> String {
         let text = |v: &Option<String>| v.as_deref().unwrap_or_default().trim().to_string();
         match self {
@@ -134,9 +123,8 @@ impl MetadataField {
     /// What the book held before this editing session — the same frozen
     /// baseline the save bar counts against.
     ///
-    /// Formatted exactly like [`Self::current`] so the two can be compared as
-    /// strings; a mismatch in formatting here would report a field as edited
-    /// for the shape of its rendering rather than its value.
+    /// Formatted exactly like [`Self::current`] so the two compare as strings; a
+    /// formatting mismatch would report a field as edited for how it renders.
     pub(super) fn original(self, orig: &EbookMetadata) -> String {
         let text = |v: &Option<String>| v.clone().unwrap_or_default();
         match self {
@@ -164,10 +152,9 @@ impl MetadataField {
 
     /// Whether this field is currently carrying an unsaved change.
     ///
-    /// Defined against the *baseline*, not against what the compare screen
-    /// happened to do — so it is true for a field edited directly in the form
-    /// too, it survives leaving and re-entering the screen, and it can never
-    /// disagree with the save bar's own count, which asks the same question.
+    /// Defined against the *baseline*, not what the compare screen did, so it is
+    /// true for a field edited in the form too, survives leaving and re-entering
+    /// the screen, and never disagrees with the save bar's count.
     pub(super) fn is_staged(self, fields: FormFields, orig: &EbookMetadata) -> bool {
         self.current(fields) != self.original(orig)
     }
@@ -194,11 +181,9 @@ impl MetadataField {
 
     /// Whether the source would actually change this field.
     ///
-    /// What the compare screen filters on: a row that says the same thing on
-    /// both sides is a row the reader has to read and then dismiss, and there
-    /// are usually more of those than of the ones that matter. A field the
-    /// source has no value for is *not* a difference — it can't be applied,
-    /// so showing it would only be showing an em dash beside a dead control.
+    /// What the compare screen filters on: a row that says the same thing on both
+    /// sides is noise. A field the source has no value for is *not* a difference
+    /// (it can't be applied), so no em dash beside a dead control.
     pub(super) fn differs(self, fields: FormFields, edition: &ProviderEdition) -> bool {
         let source = self.source_value(edition);
         !source.trim().is_empty() && source != self.current(fields)
@@ -206,10 +191,9 @@ impl MetadataField {
 
     /// Stage the source's value into the form's own signal.
     ///
-    /// Staging only: the page's save bar and `on_save` stay the single writer,
-    /// so dirty tracking, the field count, and validation keep working with no
-    /// changes. A field the source lacks is a no-op — the guard is here as
-    /// well as on the button, because "take everything" also comes through.
+    /// Staging only: the page's save bar and `on_save` stay the single writer, so
+    /// dirty tracking and validation keep working. A field the source lacks is a
+    /// no-op; the guard is here too because "take everything" also comes through.
     pub(super) fn apply(self, fields: FormFields, edition: &ProviderEdition) {
         if !self.is_available(edition) {
             return;
@@ -241,10 +225,9 @@ impl MetadataField {
 
 /// How a list-valued field renders on one side of a compare row.
 ///
-/// Blank entries are dropped before joining, so a list of them reads as
-/// absent rather than as the separator string — `["", ""]` would otherwise
-/// render, and stage, as ", ". Used by both sides so a value and its baseline
-/// are compared on equal terms.
+/// Blank entries are dropped before joining, so `["", ""]` reads as absent
+/// rather than rendering, and staging, as ", ". Used by both sides so a value
+/// and its baseline compare on equal terms.
 fn list(values: &[String]) -> String {
     values
         .iter()

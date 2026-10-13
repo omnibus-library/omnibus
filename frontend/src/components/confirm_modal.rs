@@ -40,28 +40,11 @@ fn dismiss_unless_busy(busy: bool, on_dismiss: EventHandler<()>) {
     }
 }
 
-/// Modal backdrop + panel shell shared by every dialog in the app: a
-/// backdrop click dismisses (unless `busy`), a click inside the panel
-/// itself does not bubble to the backdrop. Callers supply their own body
-/// markup as `children`, and optionally a `head` slot (title + close
-/// button) rendered above it — `backdrop_class` defaults to the original
-/// fixed class so every pre-existing caller is unaffected; a caller
-/// with its own backdrop chrome (centered vs. bottom-sheet, blur, z-index)
-/// overrides it. The `head` slot stays a raw `Element` rather than a
-/// `title: String` because callers disagree on heading tag and class
-/// (`ModalShell`'s `h3`/`users-modal-*` vs. `DrillIn`'s `h4`/`st-drill-*`
-/// plus a leading grabber bar) — forcing one shape would change either
-/// caller's rendered markup, which is the one thing this refactor must not
-/// do.
-///
-/// Escape dismisses on the same gate as a backdrop click. `focus_on_open`
-/// is what makes that reachable without a prior click — the panel takes focus
-/// once painted, as the listen page's overlay panels do — and it is
-/// opt-in rather than the default because a modal that autofocuses a field of
-/// its own (the merge dialog's search box) must keep that focus.
-///
-/// 9 heterogeneous props left ungrouped: 16 call sites make a chrome struct
-/// not worth the churn.
+/// Modal backdrop + panel shell shared by every dialog: a backdrop click
+/// dismisses (unless `busy`), a click inside the panel does not bubble to it.
+/// `children` is the body, `head` an optional title/close slot, `backdrop_class`
+/// overrides the default chrome. Escape dismisses on the same gate; `focus_on_open`
+/// focuses the panel for it, so leave it off when the body autofocuses a field.
 #[component]
 pub fn ConfirmModal(
     testid: String,
@@ -70,6 +53,8 @@ pub fn ConfirmModal(
     dialog_class: String,
     busy: bool,
     on_dismiss: EventHandler<()>,
+    // Raw `Element`, not a `title: String`: callers differ in heading tag and
+    // class, and one shape would change their rendered markup.
     #[props(default)] head: Option<Element>,
     #[props(default = false)] focus_on_open: bool,
     children: Element,
@@ -110,17 +95,9 @@ pub fn ConfirmModal(
 
 /// Title + body copy + optional note + action-button row — the "confirm one
 /// thing" body shape shared by the shelf, journal and physical-copy delete
-/// modals.
-///
-/// The `.del-body` wrapper is what carries the pane's padding, so it is
-/// emitted here rather than left to each caller: a caller that forgot it got
-/// a panel whose text ran flush into the card edge, which is how the
-/// delete-shelf modal shipped. A card that pads itself
-/// (`.author-delete-modal`, `.users-modal-card`) zeroes it back out in CSS.
-///
-/// `note` renders *above* the action row — a failure message belongs inside
-/// the padded stack and in front of the buttons that caused it, not trailing
-/// off the bottom edge of the card.
+/// modals. The `.del-body` wrapper carries the pane's padding, so it is
+/// emitted here, not by each caller. `note` renders *above* the action row,
+/// in front of the buttons that caused it.
 pub fn confirm_modal_body(
     title: &str,
     body: &str,

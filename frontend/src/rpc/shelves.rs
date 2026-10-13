@@ -5,7 +5,7 @@ use dioxus::fullstack::{get, post};
 use dioxus::prelude::*;
 use omnibus_shared::{
     CreateShelfRequest, MatchMode, RulePreview, Shelf, ShelfPage, ShelfRule, ShelfSummary, SortDir,
-    SortKey, UpdateShelfRequest,
+    SortKey, UpdateShelfRequest, ViewFilters,
 };
 
 #[cfg(feature = "server")]
@@ -84,6 +84,18 @@ pub async fn rpc_shelves_containing(uuid: String) -> Result<Vec<i64>> {
     )
 }
 
+/// Ids of the caller-visible smart shelves whose rules match this book — the
+/// book page's read-only "follows its rules" memberships (RPC twin of `GET
+/// /api/shelves/containing/{uuid}/smart`).
+#[post("/api/rpc/shelves/containing-smart", pool: PoolExt, user: AuthUser)]
+pub async fn rpc_smart_shelves_containing(uuid: String) -> Result<Vec<i64>> {
+    Ok(
+        db::shelves::smart_shelves_containing(&pool.0, user.id, user.is_admin, &uuid)
+            .await
+            .map_err(|e| map_shelf_error("smart shelves containing", e))?,
+    )
+}
+
 /// Create a shelf owned by the caller.
 #[post("/api/rpc/shelves/create", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_create_shelf(req: CreateShelfRequest) -> Result<Shelf> {
@@ -116,17 +128,25 @@ pub async fn rpc_delete_shelf(id: i64) -> Result<()> {
         .map_err(|e| map_shelf_error("delete shelf", e))?)
 }
 
-/// The shelf's member books (view check). Smart shelves honor `sort_key`/`dir`.
+/// The shelf's member books narrowed by `filters` (view check). Smart shelves honor `sort_key`/`dir`.
 #[post("/api/rpc/shelves/page", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_get_shelf_page(
     id: i64,
     sort_key: SortKey,
     sort_dir: SortDir,
+    filters: ViewFilters,
 ) -> Result<ShelfPage> {
+    filters.validate().map_err(ServerFnError::new)?;
     let shelf = shelf_for_view(&pool.0, id, &user).await?;
-    Ok(db::shelf_page(&pool.0, &shelf, sort_key, sort_dir)
-        .await
-        .map_err(|e| map_shelf_error("shelf page", e))?)
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    Ok(
+        db::shelf_page(&pool.0, &shelf, sort_key, sort_dir, &filters, viewer)
+            .await
+            .map_err(|e| map_shelf_error("shelf page", e))?,
+    )
 }
 
 /// Append books to a hand-picked shelf (owner or admin).

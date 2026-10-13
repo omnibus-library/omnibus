@@ -53,26 +53,16 @@ impl Theme {
 
 /// Transient theme-switch flag, provided alongside the theme signal by
 /// [`init_theme`]. While `true`, [`AtriumRoot`] renders a `theme-snap` class
-/// that suppresses CSS transitions (see `.atrium.theme-snap` in
-/// `atrium.css`), so a theme switch repaints every surface in the same frame
-/// instead of each hover transition animating the palette change at its own
-/// duration. Raised by [`apply_theme`], cleared by the root two animation
-/// frames later.
+/// that suppresses CSS transitions, so a theme switch repaints every surface
+/// in the same frame. Raised by [`apply_theme`], cleared by the root two
+/// animation frames later.
 #[derive(Clone, Copy)]
 pub(crate) struct ThemeSnap(pub(crate) Signal<bool>);
 
 /// Install the theme signal in the app context. Call once from the root
-/// component.
-///
-/// SSR-safe by construction: the signal always starts as `Theme::Dark` so
-/// server-rendered markup is deterministic and matches the first paint on
-/// every client target (no hydration mismatch on the `data-theme`
-/// attribute). A target-agnostic `use_effect` then reads the persisted value
-/// back via [`crate::client_store`] (`localStorage` on web, a JSON file on
-/// mobile, always `None` on SSR) after the component mounts and updates the
-/// signal if the user has a stored preference, triggering a single
-/// re-render to apply it. Mirrors the `view_prefs` hydration pattern in
-/// `frontend/src/pages/landing.rs`.
+/// component. SSR-safe: the signal starts as `Theme::Dark` on every target,
+/// then an effect applies the value persisted via [`crate::client_store`]
+/// (always `None` on SSR), so hydration markup matches.
 pub fn init_theme() {
     let mut theme = use_context_provider(|| Signal::new(Theme::Dark));
     use_context_provider(|| ThemeSnap(Signal::new(false)));
@@ -85,10 +75,8 @@ pub fn init_theme() {
 
 /// Switch the app theme. Raises the [`ThemeSnap`] flag in the same batch as
 /// the theme write, so the render that flips `data-theme` also carries the
-/// transition-suppressing `theme-snap` class — without it, every control
-/// with a hover `transition` (buttons, chips, rows, captions) animates the
-/// palette change at its own 0.08–0.25s duration while untransitioned
-/// surfaces snap, and the switch visibly repaints in pieces.
+/// transition-suppressing `theme-snap` class and the palette repaints in one
+/// frame.
 pub(crate) fn apply_theme(mut theme: Signal<Theme>, snap: ThemeSnap, t: Theme) {
     let mut flag = snap.0;
     flag.set(true);
@@ -141,25 +129,11 @@ pub fn AtriumRoot(children: Element) -> Element {
 
 // ── Cover ─────────────────────────────────────────────────────────
 
-/// Book cover. Renders the real image when one exists, otherwise a stylized
-/// "plate" template using the book's title + author metadata on a neutral
-/// grey ground (the per-book accent only tints real-image theming, never
-/// the missing-cover plate).
-///
-/// The `--accent` custom property is set inline from the book's extracted
-/// accent color (or left to inherit the page-level default). Consumers who
-/// want the accent to bleed past the cover (e.g. detail-page hero backdrop)
-/// can read the same value from `book.accent`.
-///
-/// Props:
-/// - `book` — the metadata row driving the cover.
-/// - `src_override` — when present, used for the rendered `<img src>`
-///   instead of `book.cover_url`. Grid callers point this at the
-///   `/api/thumbs/:id/{sm,md,lg}` responsive thumbnail endpoint with the
-///   client's `use_server_url()` prefix; the raw `/api/covers/:id` would
-///   skip the resized WebP cache and break the mobile origin.
-/// - `srcset` / `sizes` — companion responsive-image attributes for the
-///   thumbnail variant; ignored when no image is rendered.
+/// Book cover: the real image when one exists, otherwise a title and author
+/// "plate" on a neutral ground. `--accent` is set inline from `book.accent`.
+/// `src_override` replaces `book.cover_url` (grids pass the responsive
+/// `/api/thumbs/:id/{sm,md,lg}` URL; the raw cover skips the WebP cache);
+/// `srcset` / `sizes` apply only when an image renders.
 #[component]
 pub fn Cover(
     book: EbookMetadata,
@@ -261,12 +235,10 @@ fn cover_plate_labels(book: &EbookMetadata) -> (String, String) {
 }
 
 /// Resolve the `<img src>` for a cover: `src_override` when the caller
-/// already built one (grid/table/rails point this at the resized thumbnail
-/// endpoint via `CoverTile::thumb_srcs`), otherwise `book.cover_url` routed
-/// through `media_url` (origin + mobile token, no-op on web) and this book's
-/// cache-bust counter — `/api/covers/*` is cached `private, max-age=86400`,
-/// so without the bust a book detail revisited after a cover edit would keep
-/// showing the pre-edit image until the cache expires.
+/// built one, otherwise `book.cover_url` through `media_url` (origin and
+/// mobile token) plus this book's cache-bust counter, since `/api/covers/*`
+/// is cached `private, max-age=86400` and a cover edit would otherwise show
+/// the old image.
 fn resolve_cover_image_src(
     book: &EbookMetadata,
     src_override: Option<String>,

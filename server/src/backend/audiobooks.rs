@@ -115,15 +115,11 @@ pub(super) async fn get_audiobook_playlist(
         .into_response()
 }
 
-/// Returns the playback manifest for `uuid`. Accepts an optional
-/// `?file_id=N` to target a specific `book_files` row (for multi-file
-/// books after merge). Routes direct-playable books (m4b / m4a / mp3) to
-/// per-part HTTP Range URLs and everything else to the legacy HLS playlist.
-///
-/// See [`omnibus_db::audiobook::codec`] for the direct-vs-HLS gate; note
-/// that [`omnibus_db::hls::resolve_audiobook`] only admits books whose
-/// top-level `book_files.format` is one of `M4B` / `M4A` / `MP3`, so
-/// pure-AAC or pure-FLAC sources never reach direct mode today.
+/// Returns the playback manifest for `uuid`; optional `?file_id=N` targets a specific
+/// `book_files` row (multi-file books after merge). Direct-playable books (m4b / m4a /
+/// mp3) get per-part HTTP Range URLs, everything else the legacy HLS playlist (gate:
+/// [`omnibus_db::audiobook::codec`]; [`omnibus_db::hls::resolve_audiobook`] admits only
+/// `M4B` / `M4A` / `MP3`, so pure-AAC or FLAC sources never go direct).
 pub(super) async fn get_audiobook_manifest(
     user: AuthUser,
     State(state): State<AppState>,
@@ -252,11 +248,8 @@ pub(super) struct PartsQuery {
 
 /// Range-served raw file for one part of a direct-play audiobook.
 /// Accepts optional `?file_id=N` to target a specific `book_files` row.
-///
-/// Authenticated via [`MediaAuthUser`] (not [`AuthUser`]) because this URL is
-/// wired straight into the mobile WebView's `<audio src>`, whose fetch can
-/// carry neither the native `reqwest` bearer header nor a session cookie — the
-/// `?token=` query param is the only auth it has. Kept in lockstep with
+/// Authenticated via [`MediaAuthUser`] (not [`AuthUser`]): the mobile WebView's
+/// `<audio src>` can carry only the `?token=` query param. Kept in lockstep with
 /// `is_media_read_path` in `auth::gate`.
 pub(super) async fn get_audiobook_part(
     _user: MediaAuthUser,
@@ -305,19 +298,9 @@ pub(super) struct DownloadQuery {
 
 /// Serves one source file of the audiobook as a browser download
 /// (`Content-Disposition: attachment`), streaming via [`super::serve_download`].
-///
-/// `?file_id=N` picks a `book_files` row (default: the server's own — first
-/// audio file by ordinal); `?part=N` picks one part of that row by ordinal,
-/// defaulting to the lowest. A single-file audiobook (the common m4b case)
-/// has exactly one part, so the bare URL is the whole book.
-///
-/// A multi-part book is fetched one part at a time — there is still no
-/// on-the-fly archiving, and this is what the offline clients walk to take
-/// every part of a book with them. `?part=` exists rather than reusing
-/// `/parts/{ordinal}` so every byte the download feature serves stays behind
-/// [`super::deny_without_download`]: the streaming route is deliberately open
-/// to a `can_download = 0` user, and planning offline downloads against it
-/// would hand that user the whole book.
+/// `?file_id=N` picks a `book_files` row (default: first audio file by ordinal);
+/// `?part=N` picks one part of that row by ordinal, defaulting to the lowest. A
+/// multi-part book is fetched one part at a time, each behind [`super::deny_without_download`].
 pub(super) async fn get_audiobook_download(
     user: AuthUser,
     State(state): State<AppState>,
@@ -325,6 +308,8 @@ pub(super) async fn get_audiobook_download(
     Query(query): Query<DownloadQuery>,
     req: Request,
 ) -> Response {
+    // Parts are served here, not via `/parts/{ordinal}`: that route is open to a
+    // `can_download = 0` user, so offline downloads must not plan against it.
     if let Some(denied) = super::deny_without_download(&user) {
         return denied;
     }
@@ -404,11 +389,9 @@ pub(super) async fn get_audiobook_status(
 }
 
 /// Serves one `.ts` segment file from the HLS cache.
-///
-/// If the segment is absent (transcode not yet complete) the handler
-/// posts a `Task::HlsTranscode` and blocks until it finishes. After
-/// completion it re-checks for the file and serves it, or 404s if
-/// ffmpeg failed to produce it.
+/// If the segment is absent (transcode not yet complete) the handler posts a
+/// `Task::HlsTranscode` and blocks until it finishes, then re-checks and serves the
+/// file, or 404s if ffmpeg failed to produce it.
 pub(super) async fn get_audiobook_segment(
     _user: AuthUser,
     State(state): State<AppState>,
@@ -485,17 +468,14 @@ struct StatusResponse {
 }
 
 /// `true` if `name` matches `seg-NNNN.ts` exactly (4 decimal digits).
-///
-/// Case-insensitive on prefix and extension so the validator stays in
-/// sync with case-insensitive filesystems (APFS, NTFS) — the transcoder
-/// writes lowercase today, but `seg-0001.TS` from the same file must
-/// still resolve. Compares byte slices via `eq_ignore_ascii_case` to
-/// avoid allocating a lowercased copy on the HLS segment hot path.
+/// Case-insensitive on prefix and extension, so it stays in sync with
+/// case-insensitive filesystems (APFS, NTFS): `seg-0001.TS` must still resolve.
 fn is_valid_segment_name(name: &str) -> bool {
     if name.len() != 11 {
         return false;
     }
     let bytes = name.as_bytes();
+    // Byte-slice comparison avoids allocating a lowercased copy on the HLS hot path.
     bytes[..4].eq_ignore_ascii_case(b"seg-")
         && bytes[8..].eq_ignore_ascii_case(b".ts")
         && bytes[4..8].iter().all(u8::is_ascii_digit)

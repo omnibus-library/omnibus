@@ -29,16 +29,14 @@ fn bd_immersive_mark() -> Element {
     }
 }
 
-/// Retarget the app-wide playback context at `uuid` and open the reader —
-/// the Immersive Read action (web). The App-level audio bootstrap loads the
-/// book's manifest and the `/read` route's [`crate::pages::MiniDock`]
-/// surfaces (paused, at the resume position) once book + uuid resolve.
-/// Playback itself starts on the first transport action, not on load. The
-/// playback context and navigator are read here at click time (not as
-/// render-time hooks) so callers render under SSR and in unit tests without
-/// a provider, keeping hydration parity (rule 07).
+/// Retarget the app-wide playback context at `uuid` and open the reader (the
+/// web Immersive Read action). The audio bootstrap loads the manifest and the
+/// `/read` route's [`crate::pages::MiniDock`] surfaces, paused at the resume
+/// position; playback starts on the first transport action, not on load.
 #[cfg(not(feature = "mobile"))]
 pub(crate) fn retarget_and_open_immersive(uuid: String) {
+    // Read at click time, not as render-time hooks, so callers render under SSR
+    // and in unit tests without a provider (rule 07).
     let playback = consume_context::<crate::PlaybackState>();
     // Retarget only when the book differs, mirroring the listen page: clear
     // the previous book's metadata/error and flag loading first so the dock
@@ -87,12 +85,10 @@ pub(crate) fn retarget_and_open_immersive(uuid: String) {
     dioxus_router::navigator().push(Route::BookRead { uuid });
 }
 
-/// Retarget the app-wide playback context at `uuid` and open the reader —
-/// the Immersive Read action (mobile). Retargets
-/// [`crate::pages::MobilePlayback`]: the app-root `MobileAudioHost` loads
-/// the book's manifest and installs the audio surface, and the `/read`
-/// route's docked [`crate::pages::MobileMiniPlayer`] surfaces once the view
-/// resolves. Same click-time context reads as the web variant.
+/// Retarget the app-wide playback context at `uuid` and open the reader (the
+/// mobile Immersive Read action). The app-root `MobileAudioHost` loads the
+/// manifest, and the `/read` route's docked [`crate::pages::MobileMiniPlayer`]
+/// surfaces once the view resolves.
 #[cfg(feature = "mobile")]
 pub(crate) fn retarget_and_open_immersive(uuid: String) {
     let ctx = consume_context::<crate::pages::MobilePlayback>();

@@ -70,22 +70,11 @@ pub(crate) use sleep::use_sleep_timer;
 #[cfg(feature = "mobile")]
 pub(crate) use mobile::{mobile_dock_is_active, MobileAudioHost, MobileMiniPlayer, MobilePlayback};
 
-/// Renders the audiobook listen page for the book with the given uuid.
-///
-/// Startup sequence: `GET /api/audiobooks/{uuid}/manifest` returns either
-/// `{mode: "direct", parts}` (m4b/m4a/mp3/aac — instant) or `{mode: "hls",
-/// playlist_url}` (everything else). Direct mode chains per-part
-/// `<audio src>` URLs with auto-advance on `ended` via the JS shim, using a
-/// cumulative sum of per-part durations as the timeline; HLS mode falls back
-/// to the legacy `/status` poll + hls.js attach, rendering an error overlay
-/// if `/status` reports `state: "failed"` instead of polling forever.
-///
-/// Position lives in [`crate::audiobook_progress`] — localStorage on web,
-/// in-memory on mobile, no-op under SSR. Writes both there AND
-/// fire-and-forget POST `/api/rpc/progress` with `format: "audio"` +
-/// `audio_position_seconds`, so a position written on one device syncs
-/// forward on the next open. Across direct-mode parts the JS shim reports
-/// absolute (cross-part) seconds so the same shape works for both modes.
+/// Renders the audiobook listen page for the book with the given uuid. Startup
+/// reads `/api/audiobooks/{uuid}/manifest`: `direct` mode chains per-part
+/// `<audio src>` URLs, `hls` mode polls `/status` then attaches hls.js, with an
+/// error overlay on `failed`. Position lives in [`crate::audiobook_progress`]
+/// and is also POSTed to `/api/rpc/progress`, so it syncs to the next device.
 #[component]
 pub fn BookListenPage(uuid: String, file_id: Option<i64>) -> Element {
     #[cfg(feature = "mobile")]
@@ -118,14 +107,11 @@ pub fn BookListenPage(uuid: String, file_id: Option<i64>) -> Element {
     }
 }
 
-/// Points the app-wide player at this route's book + selected file. The
-/// App-level driver (`install_audio_bootstrap`) reacts to both `uuid` and
-/// `file_id` and does the fetch + manifest init; this only retargets. The
-/// uuid write (which clears the prior book) fires only when the book differs
-/// so re-entering an already-playing book is seamless, but the file_id
-/// signal always tracks the route so the picker's `?file_id=` reboots the
-/// *same* book onto the chosen part. Called unconditionally from
-/// [`BookListenPage`] (non-mobile).
+/// Points the app-wide player at this route's book + selected file; the App-level
+/// driver (`install_audio_bootstrap`) does the fetch + manifest init. The uuid
+/// write (which clears the prior book) fires only when the book differs, so
+/// re-entering a playing book is seamless; `file_id` always tracks the route.
+/// Called unconditionally from [`BookListenPage`] (non-mobile).
 #[cfg(not(feature = "mobile"))]
 fn use_retarget_playback(
     playback: crate::PlaybackState,

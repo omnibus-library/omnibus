@@ -4,15 +4,12 @@
 //! the one ladder in [`book_pages_source`] — every input is persisted at index
 //! time, so no EPUB or archive is opened at query time.
 //!
-//! They are scoped to **three different questions**, and conflating any two of
-//! them is the bug this module has already had once:
+//! They answer **three different questions**; conflating any two is a bug:
 //!
 //! * [`pages_read`] is ground *covered* in the window, so it windows on the
-//!   forward-progress ledger (migration `0083`). Summing the length of the
-//!   books finished in the window — what it used to do — reported an em-dash to
-//!   a reader who finished nothing and attributed a whole book to whichever
-//!   window its status flip landed in, which is the Finished tile weighted by
-//!   length, not pages read.
+//!   forward-progress ledger (the `0095` slots). Summing the lengths of books
+//!   finished in the window would credit a whole book to whichever window its
+//!   status flip landed in.
 //! * [`length_buckets`] is about books *finished*, so it windows on completion
 //!   events. That is its subject, not an oversight.
 //! * [`pages_per_hour`] is a reading *speed*, so it pairs the books finished in
@@ -37,14 +34,8 @@ const WORDS_PER_PAGE: f64 = 275.0;
 
 /// The length buckets, in order, as `(label, exclusive upper bound in pages)`.
 /// The last one is open-ended.
-///
-/// These are StoryGraph's thresholds, and matching them is deliberate: they
-/// map onto how readers already talk about length — a quick read, an ordinary
-/// novel, a doorstopper. Finer buckets would split the middle into bars nobody
-/// reads any differently.
-///
-/// Labels and bounds sit in one array so a boundary and the bar naming it stay
-/// next to each other under any later edit.
+// StoryGraph's thresholds, matched deliberately: they map onto how readers talk
+// about length, and finer buckets would split the middle into indistinct bars.
 const LENGTH_BUCKETS: [(&str, Option<i64>); 3] = [
     ("Under 300", Some(300)),
     ("300\u{2013}499", Some(500)),
@@ -57,24 +48,14 @@ const LENGTH_BUCKETS: [(&str, Option<i64>); 3] = [
 /// shortest bucket would report a library as shorter than it is.
 const UNKNOWN_LABEL: &str = "Unknown";
 
-/// One `(uuid, pages)` row per book: **the** length ladder, in one place.
-///
-/// The order is the whole point:
-/// 1. `metadata_overrides.overrides -> '$.print_pages'` — a real print-edition
-///    count from the metadata lookup, so it outranks every estimate.
-/// 2. `books.page_count` — exact, but only ever set for a CBZ comic (migration
-///    `0063`). An image-page count is the right answer for a comic and
-///    meaningless anywhere else, which is why it can't lead.
-/// 3. `books.word_count / WORDS_PER_PAGE` (migration `0049`) — the EPUB spine
-///    estimate, the weakest rung and so the last.
-///
-/// `pages` is NULL for a book none of the three can measure. That is
-/// "not measured", never zero, and callers must keep the distinction:
-/// `SUM` skips it, and the distribution buckets it as [`UNKNOWN_LABEL`].
-///
-/// Takes no binds — it is library-wide, and every caller narrows it by joining
-/// its own set of book uuids.
+/// One `(uuid, pages)` row per book: **the** length ladder, in one place. In order:
+/// the `print_pages` override, then `books.page_count` (CBZ comics only), then
+/// `word_count / WORDS_PER_PAGE` (the weakest estimate, so last). `pages` is NULL
+/// for a book none can measure: "not measured", never zero, so `SUM` skips it and
+/// the distribution buckets it as [`UNKNOWN_LABEL`]. Takes no binds.
 pub(super) fn book_pages_source() -> String {
+    // `page_count` is exact but an image-page count is meaningless outside a comic,
+    // which is why it can't lead the ladder.
     format!(
         "SELECT b.uuid AS uuid,
                 COALESCE(
@@ -121,20 +102,11 @@ struct LedgerPrune {
     daily: String,
 }
 
-/// Prune both arms to a window opening at the unix second `param`.
-///
-/// A *bound*, never the filter — the exact day comparison stays in
-/// [`ledger_in_window`]'s outer `WHERE`, and this only has to be implied by it.
-/// It is: the shift cancels on both sides of `local_day(t) >= local_day(start)`,
-/// and that comparison can only hold when `t + shift > start + shift - 86400`,
-/// so every row the outer filter keeps has `t > start - 86400` whatever the
-/// offset. A row this lets through may still be dropped out there; none it
-/// excludes would have survived.
-///
-/// It has to exist because the outer filter compares a *computed* `date(...)`
-/// that no index can serve. Without a bound on the stored column the slots arm
-/// matches on `user_id` alone and re-reads a reader's whole ledger history —
-/// once per aggregate, on every stats load.
+/// Prune both arms to a window opening at the unix second `param`. A *bound*, never
+/// the filter: the exact day comparison stays in [`ledger_in_window`]'s outer `WHERE`,
+/// whose kept rows all have `t > start - 86400` whatever the offset, so nothing this
+/// excludes would have survived. It exists because no index serves the outer computed
+/// `date(...)`; without it the slots arm re-reads a reader's whole ledger.
 fn window_prune(param: &str) -> LedgerPrune {
     LedgerPrune {
         // `/` truncates toward zero, so a pre-1970 bound rounds *up* — still at
@@ -148,12 +120,10 @@ fn window_prune(param: &str) -> LedgerPrune {
 }
 
 /// Prune both arms to the one reader-calendar day `param` names (`YYYY-MM-DD`).
-///
-/// Same implication, bounded at both ends: that day is the UTC day of `param`
-/// shifted by less than a day either way, so every instant it can hold lies in
-/// `[midnight - 1 day, midnight + 2 days)`. The frozen arm needs no slack at
-/// all — its stored day *is* what the outer filter compares, so the push-down
-/// there is exact rather than conservative.
+/// Bounded at both ends: that day is the UTC day of `param` shifted by less than a
+/// day either way, so every instant it can hold lies in `[midnight - 1 day,
+/// midnight + 2 days)`. The frozen arm's push-down is exact: its stored day *is*
+/// what the outer filter compares.
 fn day_prune(param: &str) -> LedgerPrune {
     // `strftime` returns TEXT; CAST rather than lean on numeric affinity to
     // compare an integer bound against an integer column.
@@ -167,26 +137,10 @@ fn day_prune(param: &str) -> LedgerPrune {
     }
 }
 
-/// Every forward-progress gain one reader has on record within `prune`'s reach,
-/// resolved to a day on **their** calendar: one `(day, uuid, percent_gained)`
-/// row per bucket.
-///
-/// Unions the ledger's two generations, which is the whole reason this exists.
-/// `reading_progress_slots` (migration `0095`) keys on a quarter-hour, so its
-/// day is computed here against `offset_minutes` and follows the reader.
-/// `reading_progress_daily` (`0083`) stored a UTC day string and kept no
-/// instant, so there is nothing to re-bucket it from — those rows contribute
-/// their stored day verbatim and are the reason days around the cutover can sit
-/// a few hours out. The old table is frozen, so its share shrinks to nothing as
-/// its days age out of every window.
-///
-/// Parameters are **numbered**: `?1` and `?2` are `user_id`, once per arm, and
-/// the prune's bound is `?3` — referenced from both arms and again by the
-/// caller's exact filter, but still one bind. Numbering rather than repeating a
-/// bare `?` is what keeps every caller's bind list the three-value one it has
-/// always had. A caller adding a placeholder of its own numbers it `?4`; a bare
-/// `?` mixed in here would be assigned an index by position and silently take
-/// the wrong value.
+/// Every forward-progress gain one reader has on record within `prune`'s reach, as
+/// one `(day, uuid, percent_gained)` row per bucket on **their** calendar.
+/// Parameters are numbered (`?1`, `?2` user_id, `?3` the prune bound); a caller's
+/// own placeholder must be `?4`.
 fn ledger_days(offset_minutes: i64, prune: &LedgerPrune) -> String {
     let slot_day = calendar::local_day(&format!("(s.slot * {SLOT_SECS})"), offset_minutes);
     let LedgerPrune { slots, daily } = prune;
@@ -202,19 +156,10 @@ fn ledger_days(offset_minutes: i64, prune: &LedgerPrune) -> String {
 }
 
 /// The window's ledger gains joined to their book's resolved length: one
-/// `(day, uuid, percent_gained, pages)` row per bucket. `pages` is NULL for a
-/// book no rung measures, and the callers each decide what to do with those
-/// rather than the join dropping them silently — the total excludes them, the
-/// coverage counts them.
-///
-/// Bind order is `user_id, user_id, start` — three binds, unchanged. `start` is
-/// a unix second compared as the day it falls in **on the reader's calendar**,
-/// so it lines up with the day labels the union produces; comparing it as a UTC
-/// day would include a leading extra day for every reader east of UTC.
-///
-/// It occupies `?1..?3`, `start` appearing as `?3` in [`window_prune`]'s two
-/// bounds as well as here. A caller wrapping this with a placeholder of its own
-/// must number it `?4` and bind it fourth.
+/// `(day, uuid, percent_gained, pages)` row per bucket. `pages` is NULL for a book
+/// no rung measures; callers decide what to do with those. Binds `user_id, user_id,
+/// start` (`?1..?3`; a caller's own placeholder is `?4`); `start` is compared as the
+/// day it falls in **on the reader's calendar**, not as a UTC day.
 pub(super) fn ledger_in_window(offset_minutes: i64) -> String {
     format!(
         "SELECT g.day AS day,
@@ -230,17 +175,11 @@ pub(super) fn ledger_in_window(offset_minutes: i64) -> String {
     )
 }
 
-/// Pages read in the window: for every book, the fraction of it covered inside
-/// the window times its resolved length, summed.
-///
-/// `None` when no book read in the window resolves a length at all — nothing
-/// read, or everything read is not-yet-backfilled. That is the em-dash, and it
-/// is **not** the same as an audio-only window; [`pages_detail`] is what tells
-/// the two apart.
-///
-/// Rounding happens once, on the total, rather than per book: a reader who
-/// turned a few pages in each of six books should not lose a page to rounding
-/// six times over.
+/// Pages read in the window: for every book, the fraction of it covered inside the
+/// window times its resolved length, summed. `None` when no book read in the window
+/// resolves a length at all (the em-dash), which is **not** the same as an
+/// audio-only window; [`pages_detail`] tells them apart. Rounded once, on the
+/// total, so six books don't each lose a page.
 pub(super) async fn pages_read(
     pool: &SqlitePool,
     user_id: i64,
@@ -264,45 +203,26 @@ pub(super) async fn pages_read(
 }
 
 /// One `(book_uuid, secs)` row per book the user has ever read, carrying that
-/// book's **lifetime** reading seconds. Lifetime rather than windowed on
-/// purpose: a book begun in March and finished in April would otherwise pair
-/// April's whole length with April's hours alone and print an absurd rate.
-///
-/// `reading_sessions` only — pages per hour is a reading-speed figure, and
-/// folding `listening_sessions` in would measure the narrator instead.
-/// One bind: `user_id`.
+/// book's **lifetime** reading seconds. One bind: `user_id`.
+// Lifetime, not windowed: a book begun in March and finished in April would pair
+// April's whole length with April's hours alone. `reading_sessions` only, since
+// listening time would measure the narrator.
 const BOOK_READING_SECS: &str = "\
     SELECT book_uuid, SUM(seconds_read) AS secs FROM reading_sessions \
         WHERE user_id = ? GROUP BY book_uuid";
 
-/// Estimated pages read per hour over the window: a seconds-weighted mean,
-/// not a mean of per-book rates.
-///
-/// Both sides describe **the same books** — every distinct live book finished
-/// in the window that resolves a length *and* carries recorded reading time.
-/// A book with length but no reading seconds contributes neither, since its
-/// words with nobody's hours behind them would inflate the rate; a book with
-/// hours but no resolvable length is dropped for the mirror-image reason.
-///
-/// `None` when that set is empty, which drives the same em-dash empty state
-/// [`pages_read`] does. Books read partly in audio over-report here — their
-/// listening time is excluded from the denominator by design — which is why
-/// the surfaces label this an estimate.
-///
-/// A book resolving to **zero** pages is dropped, where [`pages_read`] sums it
-/// harmlessly. Two ways to get one: `estimate_word_count` yields `Some(0)` for
-/// an EPUB whose spine loads but strips to no words (image-only or
-/// fixed-layout), and the ladder's own rounding sends anything under half a
-/// page there too. Either way it donates its hours while contributing no
-/// pages, dragging the rate down — and as the only qualifying book it would
-/// print a "0 pages an hour" that is exactly the claim the empty state exists
-/// to avoid. `pages_read` and [`length_buckets`] keep their existing treatment
-/// of a stored zero; only a figure with a denominator is hurt by one.
+/// Estimated pages read per hour over the window: a seconds-weighted mean, not a
+/// mean of per-book rates, over **the same books** on both sides (distinct live
+/// books finished in the window with a resolved length *and* recorded reading
+/// time). `None` when that set is empty (the em-dash). Books read partly in audio
+/// over-report, so surfaces label it an estimate.
 pub(super) async fn pages_per_hour(
     pool: &SqlitePool,
     user_id: i64,
     start: i64,
 ) -> Result<Option<f64>, StatsError> {
+    // A book resolving to zero pages (an image-only EPUB, or under half a page) is
+    // dropped: it would donate hours with no pages and could print "0 pages an hour".
     let sql = format!(
         "SELECT SUM(p.pages) AS pages, SUM(t.secs) AS secs
          FROM ({}) fin
@@ -338,24 +258,10 @@ fn hourly_rate(pages: Option<i64>, secs: Option<i64>) -> Option<f64> {
 }
 
 /// [`pages_read`] over an explicit `[start, end]` slice, for the drill-in's
-/// vs-previous-period delta. Zero rather than `None` when the baseline window
-/// measured nothing — the delta treats "no baseline" as new, and a missing
-/// baseline and an empty one are the same thing to it.
-///
-/// The slice is half-open like every other bounded aggregate, but resolved a
-/// **day** at a time: the last day counted is the one `end - 1s` falls in. That
-/// keeps a partial boundary day in (the current window it is compared against
-/// always includes a partial today, so dropping it would bias every comparison
-/// downward) while keeping a boundary that lands exactly on midnight out.
-///
-/// The distinction is not academic. `compute::prev_window_from` clamps `end` to
-/// the current period's start once the elapsed slice fills the previous period,
-/// which happens on the last days of most months — and `date(end)` then names
-/// day one of the *current* window, so an inclusive comparison would count that
-/// day into its own baseline and report a 0% delta against it.
-///
-/// Bind order is `user_id, user_id, start, end`: [`ledger_in_window`] holds
-/// `?1..?3`, so `end` is the `?4` this adds.
+/// vs-previous-period delta. Zero rather than `None` when the baseline measured
+/// nothing. Half-open, but resolved a **day** at a time: the last day counted is
+/// the one `end - 1s` falls in, so a partial boundary day stays in and a boundary
+/// exactly on midnight stays out. Binds `user_id, user_id, start, end` (`?4`).
 pub(super) async fn pages_read_bounded(
     pool: &SqlitePool,
     user_id: i64,
@@ -363,6 +269,9 @@ pub(super) async fn pages_read_bounded(
     end: i64,
     offset_minutes: i64,
 ) -> Result<i64, StatsError> {
+    // `prev_window_from` clamps `end` to the current period's start near month end, so
+    // `date(end)` would be the current window's day one; counting it would put that
+    // day in its own baseline and report a 0% delta.
     let sql = format!(
         "SELECT COALESCE(
                     CAST(ROUND(SUM(CAST(w.percent_gained AS REAL) * w.pages) / 100.0) AS INTEGER),
@@ -381,24 +290,11 @@ pub(super) async fn pages_read_bounded(
         .await?)
 }
 
-/// Pages covered on one `YYYY-MM-DD`, for the daily pages goal.
-///
-/// Zero rather than `None` when nothing resolves, which is the one place this
-/// module deliberately departs from [`pages_read`]: that function's `None` is
-/// the tile's em-dash, telling "nothing measurable" apart from "nothing read".
-/// A goal has no such state — a reader who has not opened a book today is at
-/// zero of their target, and an em-dash there would read as the goal being
-/// broken rather than as the day being young.
-///
-/// `day` is on the reader's own calendar, and so is the bucketing this compares
-/// it against — which is the point of migration `0093`. A gain the reader made
-/// at 21:00 counts toward the day they made it on, not the one UTC had rolled
-/// over into.
-///
-/// Bind order is `user_id, user_id, day` — three binds, unchanged, with `day`
-/// as `?3` in [`day_prune`]'s bounds as well as in the exact filter. The daily
-/// goals are unwindowed and run on every stats load, so the bounds are what
-/// stop this reading a reader's whole ledger four times over.
+/// Pages covered on one `YYYY-MM-DD`, for the daily pages goal. Zero rather than
+/// `None` when nothing resolves, unlike [`pages_read`]: a goal has no em-dash
+/// state, a reader who hasn't opened a book today is at zero. `day` is on the
+/// reader's own calendar, as is the bucketing it is compared against. Binds
+/// `user_id, user_id, day` (`?3`).
 pub(super) async fn pages_read_on_day(
     pool: &SqlitePool,
     user_id: i64,
@@ -552,13 +448,10 @@ async fn ledger_epoch(pool: &SqlitePool) -> Result<Option<String>, StatsError> {
     )
 }
 
-/// How the books finished in the window are distributed across
-/// [`LENGTH_BUCKETS`], plus the unknown bucket.
-///
-/// Every bucket comes back, zeros included — a distribution with missing bars
-/// reads as a different distribution. An all-zero result means nothing was
-/// finished in the window; the surfaces render their empty state off the total
-/// rather than drawing flat bars.
+/// How the books finished in the window are distributed across [`LENGTH_BUCKETS`],
+/// plus the unknown bucket. Every bucket comes back, zeros included, since missing
+/// bars read as a different distribution; an all-zero result means nothing was
+/// finished, so surfaces render their empty state off the total.
 pub(super) async fn length_buckets(
     pool: &SqlitePool,
     user_id: i64,

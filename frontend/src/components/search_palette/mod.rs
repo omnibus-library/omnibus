@@ -43,14 +43,9 @@ pub fn SearchPaletteTrigger() -> Element {
 }
 
 /// The palette overlay (scrim + panel), mounted once at the `ScreenLayout`
-/// root rather than next to the trigger.
-///
-/// Root placement is load-bearing, not cosmetic: `.atrium-topbar` sets
-/// `backdrop-filter`, which makes it the containing block for
-/// `position: fixed` descendants. Rendered inside the nav, the scrim's
-/// `inset: 0` resolved to the topbar's box — it dimmed only the header
-/// strip and clicks below it never reached the scrim, so click-outside
-/// couldn't close. Mounting at the root also keeps `⌘K` working on
+/// root rather than next to the trigger. Root placement is load-bearing:
+/// `.atrium-topbar`'s `backdrop-filter` makes it the containing block for the
+/// fixed scrim (it would dim only the header), and `⌘K` must keep working on
 /// `/settings`, where `TopNav` hides the trigger.
 //
 // Component tree:
@@ -94,12 +89,8 @@ fn SpTriggerButton(open: PaletteOpen) -> Element {
 /// Register a global `keydown` listener that toggles the palette on `⌘K`
 /// (Mac) or `Ctrl+K` (other platforms).
 ///
-/// Must be called from a component that mounts **exactly once** for the
-/// app's lifetime (i.e. `App`), not from a component that re-mounts on
-/// route changes. `use_hook` only guarantees "once per component
-/// instance", so a re-mounting host would accumulate listeners — each
-/// press would then toggle the signal N times and effectively no-op on
-/// the second route onward.
+/// Call from a component that mounts **exactly once** for the app's lifetime
+/// (i.e. `App`); a re-mounting host would accumulate listeners that toggle N times.
 #[cfg(feature = "web")]
 pub fn use_palette_global_shortcut() {
     let mut open = use_context::<PaletteOpen>();
@@ -138,14 +129,9 @@ mod tests {
     use crate::test_support::render_in_vdom;
 
     /// Provides the `PaletteOpen` context both public components read, then
-    /// mounts them side by side, starting closed — mirrors how `App`
-    /// provides the context and `TopNav`/`ScreenLayout` mount the trigger
-    /// and overlay separately. The `open` branch renders `SpOverlay`, whose
-    /// body calls `use_navigator()`, which needs a live `Router` this test
-    /// doesn't mount (the same reason `TopNav`'s own render is untested;
-    /// `book_detail/highlights/tests.rs` does mount one for `Link` coverage,
-    /// but wiring that harness here is out of scope) — so only the closed
-    /// state (the SSR/first-paint default, rule 07) is exercised here.
+    /// mounts them side by side, starting closed. Only the closed state (the
+    /// SSR/first-paint default) is exercised: the `open` branch calls
+    /// `use_navigator()`, which needs a live `Router` this test doesn't mount.
     fn closed_harness() -> Element {
         use_context_provider(|| PaletteOpen(Signal::new(false)));
         rsx! {

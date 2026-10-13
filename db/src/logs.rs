@@ -33,15 +33,10 @@ fn resolve_log_dir(log_dir: Option<String>, data_dir: Option<String>) -> PathBuf
     PathBuf::from(base).join("logs")
 }
 
-/// Read one filtered, newest-first page of log records from `dir`.
-///
-/// The daily-rolling files are named `omnibus.log.YYYY-MM-DD`, so a descending
-/// filename sort is a descending date sort; within a file the lines are
-/// chronological, so reversing them yields newest-first. Records accumulate in
-/// that global newest-first order and reading stops as soon as the requested
-/// page (plus one lookahead record for `has_more`) is satisfied, bounding the
-/// work to roughly `offset + per_page` matches rather than the whole corpus. A
-/// missing directory is an empty page, not an error — logging may be disabled.
+/// Read one filtered, newest-first page of log records from `dir`. Reading
+/// stops once the requested page (plus one lookahead record for `has_more`) is
+/// satisfied, bounding the work to roughly `offset + per_page` matches. A
+/// missing directory is an empty page, not an error: logging may be disabled.
 pub async fn read_logs(dir: &Path, query: &LogQuery) -> anyhow::Result<LogPage> {
     let per_page = query.effective_per_page() as usize;
     let offset = query.page as usize * per_page;
@@ -57,6 +52,8 @@ pub async fn read_logs(dir: &Path, query: &LogQuery) -> anyhow::Result<LogPage> 
             // read (rotation, permissions) shouldn't sink the whole query.
             Err(_) => continue,
         };
+        // Files are `omnibus.log.YYYY-MM-DD`, so a descending name sort is
+        // newest first; lines within a file are chronological, hence `rev()`.
         for line in content.lines().rev() {
             if line.is_empty() {
                 continue;

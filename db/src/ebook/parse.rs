@@ -244,14 +244,10 @@ fn lookup_refinement(refs: &[epub::doc::MetadataRefinement], key: &str) -> Optio
         .map(|r| r.value.clone())
 }
 
-/// Whether `name` is a conversion tool's generator stamp rather than a person.
-///
-/// Two shapes, both written by the tools that produce these entries:
-/// a bracketed URL anywhere in the name (`calibre (3.48.0)
-/// [https://calibre-ebook.com]`), or a leading tool name followed by a
-/// parenthesised dotted version (`Sigil (1.9.10)`). Deliberately narrow — the
-/// blocklist this replaces was per-version whack-a-mole, but a filter that
-/// swallowed a real credited name would be worse than the stamp it removes.
+/// Whether `name` is a conversion tool's generator stamp rather than a person:
+/// a bracketed URL anywhere (`calibre (3.48.0) [https://calibre-ebook.com]`), or
+/// a leading tool name plus a parenthesised dotted version (`Sigil (1.9.10)`).
+/// Deliberately narrow: swallowing a real credited name is worse than a stamp.
 fn looks_like_generator_stamp(name: &str) -> bool {
     has_bracketed_url(name) || has_parenthesised_version(name)
 }
@@ -268,12 +264,10 @@ fn has_bracketed_url(name: &str) -> bool {
     rest[..close].contains("://")
 }
 
-/// A single-token leading name followed by a `(...)` group holding nothing
-/// but digits and dots, with at least one of each — a version, never a
-/// lifespan (`1907-1988` carries a hyphen) or a nickname. The leading name
-/// must carry no internal whitespace: a tool stamps itself as one word
-/// (`calibre`, `Sigil`, `pandoc`), while a credited person's name does not,
-/// so `Author Name (1965.07.31)` is a role-less human, not a stamp.
+/// A single-token leading name followed by a `(...)` group holding nothing but
+/// digits and dots, at least one of each: a version, never a lifespan
+/// (`1907-1988`) or nickname. The leading name must be one word (`calibre`,
+/// `Sigil`), so `Author Name (1965.07.31)` is a human, not a stamp.
 fn has_parenthesised_version(name: &str) -> bool {
     let Some(open) = name.find('(') else {
         return false;
@@ -292,13 +286,10 @@ fn has_parenthesised_version(name: &str) -> bool {
         && inner.chars().any(|c| c.is_ascii_digit())
 }
 
-/// Resolve (series, series_index) from the OPF.
-///
-/// EPUB3 stores a series as a `belongs-to-collection` metadata entry whose
-/// `group-position` refinement holds the index. Calibre's legacy EPUB2 tooling
-/// writes top-level `<meta name="calibre:series">` and `calibre:series_index`
-/// entries instead. We try EPUB3 first (with the refinement), then fall back
-/// to the Calibre keys.
+/// Resolve (series, series_index) from the OPF. Tries EPUB3 first (a
+/// `belongs-to-collection` entry whose `group-position` refinement holds the
+/// index), then Calibre's legacy EPUB2 `calibre:series` / `calibre:series_index`
+/// meta entries.
 fn collect_series<R: std::io::Read + std::io::Seek>(
     doc: &EpubDoc<R>,
 ) -> (Option<String>, Option<String>) {

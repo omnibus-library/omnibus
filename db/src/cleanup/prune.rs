@@ -3,26 +3,20 @@
 //! written once stays pending until somebody decides it — so a suggestion
 //! outlives the thing it names and the queue keeps offering to delete authors
 //! that are already gone.
+//!
+//! Decided rows are never pruned: they are the ledger that stops detection
+//! re-suggesting what was already reviewed. Rows whose payload this build
+//! cannot read are kept too (each clause requires its key to be present), so
+//! `review_queue` reports them instead of a prune destroying them unseen.
 
 use omnibus_shared::{CleanupAction, CleanupKind};
 use sqlx::SqlitePool;
 
 use super::{DetectedSuggestion, MergeEntity};
 
-/// Delete every pending suggestion whose target no longer exists.
-///
-/// This is the cheap half of staleness — "the row it names is gone" — and it
-/// is deliberately a read-path concern: an admin who deletes an author from
-/// the author page never runs detection, so without a self-healing pass here
-/// the dashboard would keep counting that author's card until they did.
-/// Decided rows are left alone; they are the ledger that stops detection
-/// re-suggesting what was already reviewed. So is a row whose payload this
-/// build cannot read: every clause below requires the key it keys on to be
-/// present, so an undecodable row reaches [`super::review_queue`] and is
-/// *reported* rather than quietly destroyed by a prune that could not tell
-/// what it was deleting.
-///
-/// Returns how many rows were retired.
+/// Delete every pending suggestion whose target no longer exists, so the
+/// dashboard stops counting a card for a row deleted elsewhere (deleting an
+/// author never runs detection). Returns how many rows were retired.
 pub async fn prune_stale_suggestions(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
     let mut removed = 0;
     for entity in [MergeEntity::Author, MergeEntity::Series, MergeEntity::Tag] {
@@ -36,25 +30,14 @@ pub async fn prune_stale_suggestions(pool: &SqlitePool) -> Result<u64, sqlx::Err
 }
 
 /// Retire merge suggestions with no survivor to merge into, or nothing left to
-/// merge: the canonical row is gone, or every source is.
-///
-/// Deliberately *not* "any source is gone". A group that has lost one of three
-/// duplicates is still a real merge of the two that remain, and the apply
-/// primitive already tolerates an id with no rows behind it — pruning on the
-/// first missing source would throw away a suggestion that still works. The
-/// common case this does catch is the two-way merge whose one source has been
-/// deleted, which is what leaves the queue offering to merge away an author
-/// that is already gone.
-///
-/// Both keys are guarded, not just the canonical: a payload carrying a
-/// `canonical_id` but no `source_ids` *array* would otherwise read as "no
-/// surviving source" — `json_each` over a missing or non-array path yields
-/// nothing to survive — and be deleted as stale, which is exactly the silent
-/// destruction of an unreadable row this module promises not to do.
-///
-/// `table` is [`MergeEntity`]'s own constant, never caller text.
+/// merge: the canonical row is gone, or every source is. Deliberately not "any
+/// source is gone": a group that lost one of three duplicates is still a real
+/// merge of the remaining two. `table` is [`MergeEntity`]'s own constant, never
+/// caller text.
 async fn prune_missing_merge(pool: &SqlitePool, entity: MergeEntity) -> Result<u64, sqlx::Error> {
     let table = entity.table();
+    // Guard both keys: without a `source_ids` array `json_each` yields nothing,
+    // which would read as "no surviving source" and delete an unreadable row.
     let sql = format!(
         "DELETE FROM dedup_suggestions
           WHERE decision = 'pending' AND kind = ? AND action = 'merge'
@@ -102,13 +85,9 @@ async fn prune_missing_single(
         .rows_affected())
 }
 
-/// Retire a rename whose book has gone, has been retitled underneath it, or
-/// now carries a title override.
-///
-/// The override clause is the one that matters in practice: accepting a rename
-/// *writes* an override, and so does the metadata edit form, so any book whose
-/// title a human has settled must stop being offered a proposal derived from
-/// the scanned title it still carries on disk.
+/// Retire a rename whose book has gone, has been retitled underneath it, or now
+/// carries a title override: accepting a rename and the metadata edit form both
+/// write one, and a human-settled title must stop being offered a proposal.
 async fn prune_stale_renames(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
     Ok(sqlx::query(
         "DELETE FROM dedup_suggestions
@@ -127,13 +106,9 @@ async fn prune_stale_renames(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
 }
 
 /// Delete pending suggestions of the kinds a detection pass just covered that
-/// the pass did not re-emit.
-///
-/// This is the other half of staleness, and the half [`prune_stale_suggestions`]
-/// cannot see: a suggestion whose rows all still exist but which detection no
-/// longer considers real — an author every one of whose books has since had its
-/// creators overridden away, say. Only the detector knows that, and it only
-/// knows it about the kinds it just ran, so `kinds` scopes the delete to those.
+/// the pass did not re-emit: those whose rows still exist but which detection no
+/// longer considers real, which [`prune_stale_suggestions`] cannot see. `kinds`
+/// scopes the delete to the kinds the pass ran.
 pub async fn prune_undetected(
     pool: &SqlitePool,
     kinds: &[CleanupKind],

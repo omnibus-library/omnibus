@@ -146,13 +146,11 @@ pub(crate) async fn get_ebook_chapters(
     .into_response()
 }
 
-/// Bounded plain-text read of one spine document — an EPUB spine item or a
-/// PDF page. 404 covers an unknown uuid and an out-of-range spine index; a
-/// book with no EPUB or PDF answers `has_text: false`; an unreadable file is
-/// a 500. The slice is char-
-/// addressed (`?offset=`, `?limit=`) and capped at
-/// [`CHAPTER_TEXT_MAX_CHARS`], with `truncated` / `next_offset` reporting
-/// the boundary.
+/// Bounded plain-text read of one spine document — an EPUB spine item or a PDF page.
+/// 404 covers an unknown uuid and an out-of-range spine index; a book with no EPUB or
+/// PDF answers `has_text: false`; an unreadable file is a 500. The slice is
+/// char-addressed (`?offset=`, `?limit=`) and capped at [`CHAPTER_TEXT_MAX_CHARS`],
+/// with `truncated` / `next_offset` reporting the boundary.
 pub(crate) async fn get_ebook_chapter_text(
     user: AuthUser,
     State(state): State<AppState>,
@@ -213,33 +211,11 @@ pub(crate) async fn get_ebook_chapter_text(
     Json(slice_text(uuid, spine_index, &text, q, stop_at)).into_response()
 }
 
-/// How far into this chapter the caller has read, in chars of the
-/// **extracted text** — the ceiling `?stop_at_progress=true` slices at.
-/// `None` means no ceiling applies.
-///
-/// Three outcomes, and the difference matters:
-/// - the reader is **past** this spine document → no ceiling (`None`),
-/// - the reader is **inside** it → how far in they reached,
-/// - the reader is **before** it, or their position cannot be placed at all
-///   → `Some(0)`, i.e. withhold the whole chapter.
-///
-/// That last case is conservative on purpose: a caller asking not to be
-/// shown text past the reader must not be handed a whole chapter because
-/// the server could not work out where they were.
-///
-/// The within-document figure is **approximate, and deliberately rounded
-/// down**. The reader's offset is measured in the spine-stats coordinate
-/// system (`kobo_position::visible_chars`' normalizing walk) while the slice
-/// is indexed into `extract_chapter_text`'s plain text, and the two count
-/// the same document slightly differently — so the offset is rescaled by the
-/// ratio of the two lengths rather than used as a raw index, and the result
-/// floors. Cutting a few words early is the harmless direction; cutting late
-/// is the spoiler this exists to prevent.
-///
-/// The same asymmetry is why the whole-book percent may be the integer
-/// `ResolvedPosition::percent_through_book`: `progress::enrich` floors it, so
-/// it never overstates how far the reader reached, and a ceiling derived from
-/// it lands at or before their true place.
+/// How far into this chapter the caller has read, in chars of the **extracted text**:
+/// the ceiling `?stop_at_progress=true` slices at. `None` means no ceiling (past this
+/// document); `Some(0)` withholds the whole chapter (before it, or unplaceable); else
+/// how far in they reached, rounded down: the spine stats and the extracted text count
+/// the same document slightly differently, so the offset is rescaled, not used raw.
 async fn progress_cutoff(
     state: &AppState,
     user_id: i64,
@@ -249,6 +225,8 @@ async fn progress_cutoff(
     chapter_chars: usize,
 ) -> Result<Option<usize>, anyhow::Error> {
     let progress = db::progress::book_progress(&state.pool, user_id, uuid, None).await?;
+    // `percent_through_book` is floored by `progress::enrich`, so it never overstates
+    // how far the reader got and the ceiling lands at or before their true place.
     let Some(percent) = progress
         .iter()
         .flat_map(|p| p.records.iter())
@@ -270,6 +248,9 @@ async fn progress_cutoff(
         return Ok(Some(0));
     };
     let spine_index = spine_index as i64;
+    // Within the document the offset is rescaled (spine-stats `visible_chars` and
+    // `extract_chapter_text` count the text slightly differently) and floored: cutting
+    // a few words early is harmless, cutting late is the spoiler this prevents.
     Ok(match reader_spine.cmp(&spine_index) {
         std::cmp::Ordering::Greater => None,
         std::cmp::Ordering::Equal => Some(rescale_offset(

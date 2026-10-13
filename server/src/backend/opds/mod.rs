@@ -47,6 +47,7 @@ mod tests;
 /// (harmless overlap, mirroring `rest_router`).
 pub fn opds_router(state: AppState) -> Router {
     let pool = state.pool().clone();
+    let limits = state.rate_limits();
     Router::new()
         .route("/opds", get(nav::root))
         .route("/opds/osd", get(nav::osd))
@@ -84,7 +85,7 @@ pub fn opds_router(state: AppState) -> Router {
         )
         .with_state(state)
         .layer(Extension(pool))
-        .layer(Extension(crate::auth::BasicAuthState::new_shared()))
+        .layer(Extension(crate::auth::BasicAuthState::new_shared(limits)))
 }
 
 /// Wrap an already-serialized XML document as a `200` response with the
@@ -167,20 +168,11 @@ fn json_nav_link(title: &str, href: &str) -> opds2::Link {
         .with_title(title)
 }
 
-/// Drop every book in `books` that's confined to a manual shelf `user`
-/// cannot see: on at least one manual shelf, and every one of those
-/// shelves is private and owned by someone else. A book on no shelf at
-/// all, or on any shelf visible to `user`, is untouched — so this only
-/// ever narrows a page the caller already fetched through the normal
-/// (shelf-unaware) library read. Every browse/search/new/nav handler in
-/// both catalogs runs its page through this after the e-reader-format
-/// filter, so the two catalogs can't drift on the rule.
-///
-/// **Known gap:** the per-author/per-series *navigation*-level `book_count`
-/// shown in `/opds/authors/{letter}` and `/opds/series` (sourced from
-/// `db::list_authors`/`list_series`, informational summary text only) is not
-/// narrowed by this filter — only the acquisition-feed entries are. A
-/// shelf-exclusive book can still nudge that count without ever appearing.
+/// Drop every book in `books` confined to a manual shelf `user` cannot see: on at least
+/// one manual shelf, every one of them private and owned by someone else. Every handler
+/// in both catalogs runs its page through this after the e-reader-format filter.
+/// **Known gap:** the navigation-level `book_count` in `/opds/authors/{letter}` and
+/// `/opds/series` is not narrowed, so a shelf-exclusive book can still nudge it.
 async fn retain_shelf_visible(
     state: &AppState,
     user: &OpdsAuthUser,
@@ -210,27 +202,17 @@ async fn retain_shelf_visible(
     Ok(())
 }
 
-/// Single-uuid form of [`retain_shelf_visible`] for the byte-serving
-/// [`delegate`] routes, which resolve a `{uuid}` path segment directly
-/// rather than paging through a fetched list. `true` means `user` must not
-/// be shown this book — the delegate routes 404 rather than 403, matching
-/// [`shelves::load_visible_shelf`]'s no-existence-leak rule.
-///
-/// Canonicalizes `uuid` through [`db::resolve_canonical_book_uuid`] first:
-/// the media handlers this gate sits in front of resolve
-/// a path uuid via `resolve_book_id_by_uuid`, which falls back to
-/// `merged_uuids` — a book merged away from an old uuid still serves under
-/// it. `shelf_books` only ever names the *canonical* uuid, so checking the
-/// raw path segment let an old/merged uuid walk straight past a shelf that
-/// hides the surviving book. An unresolvable uuid (unknown to both `books`
-/// and `merged_uuids`) is never "shelf-hidden" by this rule — the handler's
-/// own lookup 404s it as not-found, which is the correct answer for that
-/// case.
+/// Single-uuid form of [`retain_shelf_visible`] for the byte-serving [`delegate`]
+/// routes. `true` means `user` must not be shown this book; the routes 404 rather than
+/// 403, matching [`shelves::load_visible_shelf`]'s no-existence-leak rule. An
+/// unresolvable uuid is never "shelf-hidden": the handler's own lookup 404s it.
 async fn is_shelf_hidden(
     state: &AppState,
     user: &OpdsAuthUser,
     uuid: &str,
 ) -> Result<bool, Response> {
+    // Canonicalize first: `shelf_books` names only the canonical uuid, and a merged-away
+    // uuid still serves via `merged_uuids`, so the raw path segment would walk past a shelf.
     let Some(canonical) = db::resolve_canonical_book_uuid(&state.pool, uuid)
         .await
         .map_err(|e| internal("resolve canonical book uuid", e))?

@@ -136,13 +136,10 @@ const NAMES: &[(&str, &str)] = &[
 /// Label of the bucket a declared-but-meaningless code lands in.
 pub(super) const UNKNOWN_LABEL: &str = "Unknown";
 
-/// The display label one `languages.code` belongs under.
-///
-/// `und` (undetermined), `mul` (multiple), `zxx` (no linguistic content) and
-/// an empty code are all [`UNKNOWN_LABEL`]: they are a file declining to
-/// answer, and four spellings of that are still one bucket. A code with no
-/// name here keeps its own primary subtag, uppercased — better an honest `QU`
-/// than a wrong name or a silent fold into "Other".
+/// The display label one `languages.code` belongs under. `und`, `mul`, `zxx` and an
+/// empty code are all [`UNKNOWN_LABEL`], a file declining to answer. A code with no
+/// name here keeps its own primary subtag, uppercased: better an honest `QU` than a
+/// wrong name or a silent fold into "Other".
 pub(super) fn language_label(code: &str) -> String {
     let primary = primary_subtag(code);
     if matches!(primary.as_str(), "" | "und" | "mul" | "zxx" | "mis") {

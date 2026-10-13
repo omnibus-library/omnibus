@@ -13,11 +13,12 @@ use axum::{
 use omnibus_db::{self as db, shelves::ShelfError};
 use omnibus_shared::{
     validate_book_uuids, CreateShelfRequest, RulePreviewRequest, Shelf, SortDir, SortKey,
-    UpdateShelfRequest,
+    UpdateShelfRequest, ViewFilters,
 };
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
+use crate::http_errors::invalid_filter;
 
 /// `GET /api/shelves` — every shelf the caller can see, with live counts.
 pub(super) async fn list_shelves(user: AuthUser, State(state): State<AppState>) -> Response {
@@ -38,6 +39,22 @@ pub(super) async fn shelves_containing(
     Path(uuid): Path<String>,
 ) -> Response {
     match db::shelves::manual_shelves_containing(&state.pool, user.id, user.is_admin, &uuid).await {
+        Ok(ids) => Json(ids).into_response(),
+        Err(e) => map_err(e),
+    }
+}
+
+/// `GET /api/shelves/containing/{uuid}/smart` — ids of the visible smart shelves
+/// whose rules currently match this book.
+///
+/// A separate route from [`shelves_containing`] on purpose: that answer is a
+/// toggle checklist, and a smart shelf's membership cannot be toggled.
+pub(super) async fn smart_shelves_containing(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path(uuid): Path<String>,
+) -> Response {
+    match db::shelves::smart_shelves_containing(&state.pool, user.id, user.is_admin, &uuid).await {
         Ok(ids) => Json(ids).into_response(),
         Err(e) => map_err(e),
     }
@@ -70,18 +87,36 @@ pub(super) async fn get_shelf(
     }
 }
 
-/// `GET /api/shelves/{id}/page?sort=&dir=` — the shelf's member books.
+/// `GET /api/shelves/{id}/page?sort=&dir=&filter=` — the shelf's member books,
+/// narrowed by the filter. A bad filter is a 400 before the view check runs.
 pub(super) async fn get_shelf_page(
     user: AuthUser,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Query(q): Query<PageQuery>,
 ) -> Response {
+    let filters = match q.filters() {
+        Ok(f) => f,
+        Err(reason) => return invalid_filter(&reason),
+    };
     let shelf = match load_for_view(&state, id, &user).await {
         Ok(s) => s,
         Err(resp) => return resp,
     };
-    match db::shelf_page(&state.pool, &shelf, q.sort_key(), q.sort_dir()).await {
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    match db::shelf_page(
+        &state.pool,
+        &shelf,
+        q.sort_key(),
+        q.sort_dir(),
+        &filters,
+        viewer,
+    )
+    .await
+    {
         Ok(page) => Json(page).into_response(),
         Err(e) => map_err(e),
     }
@@ -236,14 +271,22 @@ impl AddBooksRequest {
     }
 }
 
-/// Query string for the shelf page (`?sort=&dir=`).
+/// Query string for the shelf page (`?sort=&dir=&filter=`).
 #[derive(serde::Deserialize)]
 pub(super) struct PageQuery {
     sort: Option<String>,
     dir: Option<String>,
+    filter: Option<String>,
 }
 
 impl PageQuery {
+    fn filters(&self) -> Result<ViewFilters, String> {
+        match self.filter.as_deref() {
+            Some(raw) => ViewFilters::from_query_param(raw),
+            None => Ok(ViewFilters::default()),
+        }
+    }
+
     fn sort_key(&self) -> SortKey {
         self.sort
             .as_deref()

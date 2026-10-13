@@ -20,13 +20,10 @@ use super::{
 };
 
 /// Merge `incoming` field overrides on top of any existing overrides for
-/// `book_uuid` and persist the result inside one `BEGIN IMMEDIATE`
-/// transaction, so two concurrent edits to the same book can't interleave
-/// and silently drop each other's changes. The existing `has_cover_override`
-/// flag is carried forward — a text-only edit must not clear a cover the
-/// user uploaded earlier. The series-link and tags-row materializations run
-/// inside the same transaction so the override row and its canonical rows
-/// land atomically; the `books_fts` rebuild runs best-effort after commit.
+/// `book_uuid` and persist the result, with the series-link and tag-row
+/// materializations, in one `BEGIN IMMEDIATE` transaction so concurrent edits
+/// can't interleave and drop each other's changes. The existing
+/// `has_cover_override` flag is carried forward; the FTS rebuild runs after commit.
 pub async fn merge_metadata_overrides(
     pool: &SqlitePool,
     book_uuid: &str,
@@ -99,25 +96,11 @@ async fn merge_one_in_tx(
     Ok(())
 }
 
-/// Apply one [`BulkMetadataEdit`] to every uuid inside a single
-/// `BEGIN IMMEDIATE` transaction — all books update or none do (an unknown
-/// uuid fails the whole call with [`MetadataOverridesError::BookNotFound`]).
-///
-/// Tag deltas are computed per book against its effective subjects: the
-/// in-tx override row's `subjects` when one exists, else the merged
-/// metadata fetched just before the transaction (equal to the scanned
-/// subjects when no override exists — and any concurrent subjects write
-/// would have created the override row this transaction reads, so the
-/// pre-tx fetch cannot serve a stale base). Both the pre-tx effective-subjects
-/// fetch and the in-tx override-row read are batched via chunked `IN (...)`
-/// queries (mirroring [`super::load_overrides_bulk`]) rather than looped per uuid.
-///
-/// Genre deltas need no such pre-tx fetch: genres exist only in the override
-/// row (migration `0066`), so the in-tx read *is* the complete base.
-///
-/// FTS rebuilds run best-effort for the whole batch after commit via
-/// [`rebuild_fts_for_books_batch`], one write-lock acquisition instead of
-/// one per book.
+/// Apply one [`BulkMetadataEdit`] to every uuid in a single `BEGIN IMMEDIATE`
+/// transaction: all books update or none do (an unknown uuid fails the call with
+/// [`MetadataOverridesError::BookNotFound`]). Tag deltas are computed per book
+/// against its effective subjects: the in-tx override row's, else the merged
+/// metadata fetched before the transaction. FTS rebuilds run after commit.
 pub async fn bulk_merge_metadata_overrides(
     pool: &SqlitePool,
     uuids: &[String],
@@ -157,6 +140,7 @@ pub async fn bulk_merge_metadata_overrides(
             incoming.subjects = Some(subjects);
         }
         if has_genre_deltas {
+            // Genres live only in the override row, so the in-tx read is the full base.
             let base = override_rows
                 .get(uuid)
                 .and_then(|ov| ov.genres.as_deref())
@@ -202,11 +186,9 @@ fn check_list_cap(
 
 /// Batch-resolve the effective (scanned + override-merged) `subjects` for a
 /// whole uuid set, for [`bulk_merge_metadata_overrides`]'s pre-transaction
-/// tag-delta base. Chunked bulk queries regardless of batch size —
-/// [`resolve_book_ids_bulk`] then [`get_books_by_ids`], the same
-/// join-in-memory pattern [`super::super::fts::rebuild_fts_for_books_batch`]
-/// uses. A uuid absent from either step (unknown, or resolved to a book row
-/// that vanished concurrently) fails the whole call with `BookNotFound`.
+/// tag-delta base, in chunked bulk queries ([`resolve_book_ids_bulk`] then
+/// [`get_books_by_ids`]). A uuid absent from either step (unknown, or vanished
+/// concurrently) fails the whole call with `BookNotFound`.
 async fn effective_subjects_bulk(
     pool: &SqlitePool,
     uuids: &[String],

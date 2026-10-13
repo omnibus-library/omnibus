@@ -208,15 +208,11 @@ pub(crate) async fn record_sessions_online(
     Ok(body.get("recorded").and_then(|v| v.as_u64()).unwrap_or(0))
 }
 
-/// GET `/api/progress/recent?limit=…` — the "pick up where you left off"
-/// feed: the caller's own with `user_id: None`, or a sharing household
-/// reader's with `user_id: Some(id)`.
-///
-/// A `Some` id bypasses the offline cache entirely, like [`fetch_stats`]:
-/// the cache is keyed only on `limit`, so serving or storing under it here
-/// would leak one reader's open books into another's cached copy.
-///
-/// [`fetch_stats`]: crate::data::fetch_stats
+/// GET `/api/progress/recent?limit=…` — the "pick up where you left off" feed:
+/// the caller's own with `user_id: None`, or a sharing household reader's with
+/// `user_id: Some(id)`. A `Some` id bypasses the offline cache (keyed only on
+/// `limit`), like `fetch_stats`, so one reader's open books can't leak into
+/// another's cached copy.
 #[cfg(feature = "mobile")]
 pub async fn recent_progress(
     server_url: &str,

@@ -16,13 +16,11 @@ use super::super::attach;
 use super::super::books::SyncError;
 use super::super::fts::upsert_fts;
 
-/// Rewrite an existing audiobook in place from a freshly-parsed group,
-/// preserving `books.id`/`books.uuid`: refresh the `books` scalars, wipe +
-/// re-insert this format's `book_files`/parts/chapters and the author link,
-/// and refresh FTS. Shared by the Changed update path and the New re-attach
-/// path (a fileless book whose group returned, or a `replace_books`
-/// re-add). The `book_files` delete is scoped to this group's own format so
-/// a cross-format attachment (e.g. an EPUB row via `merged_uuids`) survives.
+/// Rewrite an existing audiobook in place from a freshly-parsed group, preserving
+/// `books.id`/`books.uuid`: refresh the `books` scalars, wipe + re-insert this
+/// format's `book_files`/parts/chapters and the author link, and refresh FTS.
+/// Shared by the Changed path and the New re-attach path. The `book_files` delete
+/// is scoped to this group's format, so a cross-format attachment survives.
 pub(super) async fn rewrite_audiobook_in_place(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -68,17 +66,11 @@ pub(super) async fn insert_new_audiobook(
     Ok(())
 }
 
-/// Try to attach a brand-new audiobook group to an existing book in
-/// another format instead of inserting a fresh `books` row. Mirrors
-/// `books::try_attach_new_ebook`: a `merged_uuids` hit attaches
-/// unconditionally; otherwise exactly one normalized title+author match
-/// without this format attaches. Returns `true` when attached.
-///
-/// `removed_this_scan` is the set of uuids this same sync just dropped from
-/// the Removed bucket. When the title+author match lands on one of them,
-/// this group is that book's own native group returning under a new
-/// directory (a relocation), so it's rewritten in place instead of
-/// minting a `merged_uuids` row.
+/// Try to attach a brand-new audiobook group to an existing book in another
+/// format instead of inserting a fresh `books` row. Mirrors
+/// `books::try_attach_new_ebook`: a `merged_uuids` hit attaches unconditionally,
+/// else exactly one title+author match lacking this format. A match in
+/// `removed_this_scan` is a relocation, rewritten in place. `true` when attached.
 pub(super) async fn try_attach_new_audiobook(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     library_path: &str,
@@ -122,18 +114,11 @@ pub(super) async fn try_attach_new_audiobook(
     Ok(true)
 }
 
-/// Write (or rewrite) an attached audiobook's `book_files` row (plus
-/// parts and chapters) under `book_id`, record the attachment, and adopt
-/// the cover when the target has none. The target's `books` scalars and
-/// links are deliberately left untouched, but its FTS row is refreshed
-/// via the door so any newly-unioned text becomes searchable. The file
-/// row carries its own `(library_path, path)` location override — the
-/// target book may live in a different library, and the HLS read path
-/// resolves part filenames against the *audio* root.
-///
-/// Attaching a second same-format file (a distinct multi-part `.m4b`)
-/// accumulates as its own `book_files` row keyed on `scan_key` — it does
-/// not clobber the sibling parts already attached to this `(book, format)`.
+/// Write (or rewrite) an attached audiobook's `book_files` row (plus parts and
+/// chapters) under `book_id`, record the attachment, and adopt the cover when the
+/// target has none. The target's `books` scalars and links are untouched, but its
+/// FTS row is refreshed. A second same-format file (a distinct multi-part
+/// `.m4b`) gets its own row keyed on `scan_key`; sibling parts stay attached.
 pub(super) async fn attach_audiobook_file(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,
@@ -170,6 +155,9 @@ pub(super) async fn attach_audiobook_file(
             .execute(&mut **tx)
             .await?;
     }
+    // The file row carries its own `(library_path, path)` override: the target book
+    // may live in a different library, and the HLS read path resolves part
+    // filenames against the *audio* root.
     let dir = std::path::Path::new(&b.group_path)
         .parent()
         .and_then(|p| p.to_str())
@@ -303,12 +291,8 @@ async fn insert_audiobook_file_row(
     Ok(id)
 }
 
-/// Batch-insert `book_file_parts` rows for the ordered part list.
-///
-/// One VALUES-list `INSERT` per chunk (chunked at 166 rows: 6 binds per row
-/// keeps each statement under SQLite's 999 bind-parameter cap) instead of
-/// one round-trip per part — the parent transaction's commit boundary is
-/// unchanged.
+/// Batch-insert `book_file_parts` rows for the ordered part list, one VALUES-list
+/// `INSERT` per chunk instead of one round-trip per part.
 async fn insert_audiobook_parts(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_file_id: i64,
@@ -339,14 +323,9 @@ async fn insert_audiobook_parts(
     Ok(())
 }
 
-/// Insert `file_chapters` rows. If no chapters were extracted, synthesize
-/// one chapter per part — yielding zero rows only when both `chapters` and
-/// `parts` are empty (the empty-parts edge case).
-///
-/// Both branches first materialize the row tuples and then hand them to
-/// [`bulk_insert_chapters`], which issues a single VALUES-list `INSERT` per
-/// chunk (199 rows × 5 binds = 995, under SQLite's 999 bind cap) instead of
-/// one round-trip per chapter.
+/// Insert `file_chapters` rows. If no chapters were extracted, synthesize one
+/// chapter per part (zero rows only when both `chapters` and `parts` are empty).
+/// Rows go through [`bulk_insert_chapters`], one VALUES-list `INSERT` per chunk.
 pub(crate) async fn insert_chapters(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_file_id: i64,
@@ -453,13 +432,10 @@ async fn insert_audiobook_author_link(
     Ok(())
 }
 
-/// UPDATE the `books` row for a Changed audiobook (preserves `books.id`).
-///
-/// Also refreshes `scan_key` from `b.scan_key`. For the Changed bucket and
-/// the New-bucket same-scan_key rewrite this is a no-op (the entry already
-/// matched on that value); it's load-bearing for the New-bucket relocation
-/// rewrite, where the incoming group's directory is the book's *new*
-/// scan_key.
+/// UPDATE the `books` row for a Changed audiobook (preserves `books.id`). Also
+/// refreshes `scan_key` from `b.scan_key`: a no-op for Changed and same-scan_key
+/// rewrites, but load-bearing for the New-bucket relocation rewrite, where the
+/// incoming group's directory is the book's *new* scan_key.
 async fn update_audiobook_row(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,

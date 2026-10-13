@@ -40,12 +40,9 @@ impl SyncDelta {
 }
 
 /// Compute what `device_id` still needs, given `user_id`'s opted-in books.
-///
-/// **Read-only.** The snapshot is advanced by [`record_synced`] once the
-/// entitlements have actually been written to the response — a device that
-/// drops the connection mid-body must see the same delta again rather than
-/// silently losing books. That ordering is the whole reason this is two calls
-/// and not one.
+/// **Read-only**: [`record_synced`] advances the snapshot once the entitlements
+/// are written to the response, so a device that drops the connection mid-body
+/// sees the same delta again rather than silently losing books.
 pub async fn sync_delta(
     pool: &SqlitePool,
     user_id: i64,
@@ -101,15 +98,9 @@ const UPSERT_CHUNK_SIZE: usize = 300;
 /// `device_id` plus one per UUID, well under the cap.
 const UUID_CHUNK_SIZE: usize = 900;
 
-/// Advance the device's snapshot to match `changes` — upserting the adds and
-/// changes at the `last_modified` they were sent at, and dropping the removals.
-///
-/// Groups `changes` by operation kind and issues one chunked multi-row
-/// statement per group, instead of one round-trip per book — a large opted-in
-/// library would otherwise hold SQLite's single writer lock for the whole
-/// device sync.
-///
-/// Call this only after the response body is committed to; see [`sync_delta`].
+/// Advance the device's snapshot to match `changes`: upsert the adds and
+/// changes at the `last_modified` they were sent at, drop the removals. Call
+/// only after the response body is committed to; see [`sync_delta`].
 pub async fn record_synced(
     pool: &SqlitePool,
     device_id: i64,
@@ -118,6 +109,8 @@ pub async fn record_synced(
     if changes.is_empty() {
         return Ok(());
     }
+    // Group by kind: one chunked multi-row statement per group, not a round trip
+    // per book, so a large library doesn't hold SQLite's writer lock all sync.
     let mut upserts: Vec<&KoboBookRow> = Vec::new();
     let mut state_changed: Vec<&str> = Vec::new();
     let mut removed: Vec<&str> = Vec::new();

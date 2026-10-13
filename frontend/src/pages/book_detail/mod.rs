@@ -28,6 +28,7 @@ mod journal_editor;
 mod merge;
 mod rating;
 mod read_status;
+mod rule_facts;
 #[cfg(not(feature = "mobile"))]
 mod sync_link;
 mod view;
@@ -114,12 +115,9 @@ pub fn BookDetailPage(uuid: String) -> Element {
     )
 }
 
-/// Every signal [`BookDetailPage`] owns, declared unconditionally (rule 07)
-/// so the hook count and order stay identical on every platform target.
-/// Bundled into one custom-hook-style helper — called unconditionally, so
-/// Dioxus's per-scope hook-order tracking sees the same sequence of
-/// `use_signal` calls every render — so the component body reads as a
-/// data-fetch + dispatch shell instead of a wall of hook declarations.
+/// Every signal [`BookDetailPage`] owns, declared unconditionally so the hook
+/// count and order stay identical on every target (rule 07), and bundled so the
+/// component body reads as a data-fetch + dispatch shell.
 struct BookDetailSignals {
     book: Signal<Option<EbookMetadata>>,
     author_books: Signal<Option<Vec<EbookMetadata>>>,
@@ -436,14 +434,11 @@ fn build_delete_pieces(
 // View helpers — the loaded-book case is the only thing rendered, so the
 // data-fetch shell above stays small.
 
-/// Fetch the book, then (if it resolves and has a creator) the primary
-/// author's other books, filtering out the current book. `book` and
-/// `author_books` are written directly so a fast re-run (uuid change) is
-/// naturally superseded by the newer fetch's writes. `description.value`
-/// (mobile's Fetch Summary override) resets to the freshly-loaded book's
-/// saved summary on every call, and `description.epoch` bumps alongside it
-/// so a fetch-and-save left over from a previous book can detect it's stale
-/// and drop its result instead of overwriting the new book's description.
+/// Fetch the book, then (if it resolves and has a creator) the primary author's
+/// other books, minus the current one. A fast re-run (uuid change) is superseded
+/// by the newer fetch's writes. Every call resets `description.value` to the
+/// loaded book's saved summary and bumps `description.epoch`, so a stale
+/// fetch-and-save can detect it and drop its result.
 fn fetch_book_and_author_books(
     server_url: String,
     uuid: String,

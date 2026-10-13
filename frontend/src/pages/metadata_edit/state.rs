@@ -306,12 +306,10 @@ fn build_on_revert(
     })
 }
 
-/// Parses the print-pages form field into a validated `i64`, mirroring
-/// `ScanIntervalField`'s handler in settings/library.rs: an empty field
+/// Parses the print-pages form field into a validated `i64`: an empty field
 /// clears the override, a non-numeric entry is rejected with a specific
-/// message so the client gives feedback before the round trip. An in-range
-/// numeric value still passes through `MetadataOverrides::validate`
-/// server-side (e.g. the `PRINT_PAGES_MAX` ceiling).
+/// message before the round trip, and an in-range value still passes through
+/// `MetadataOverrides::validate` server-side (e.g. the `PRINT_PAGES_MAX` ceiling).
 fn parse_print_pages_field(input: &str) -> Result<Option<i64>, String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -371,9 +369,8 @@ pub(crate) fn overrides_from_form(
 /// Save handler — builds the diff and POSTs to the overrides endpoint,
 /// then navigates back to the book detail page on success.
 ///
-/// An empty diff skips the round trip and just leaves: the save bar enables
-/// Save with no dirty field only after a cover write, which has already
-/// landed server-side, so there is nothing left for the POST to carry.
+/// An empty diff skips the round trip and just leaves: Save is enabled with no
+/// dirty field only after a cover write, which already landed server-side.
 fn build_on_save(
     server_url: &str,
     uuid: &str,

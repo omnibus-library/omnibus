@@ -29,19 +29,10 @@ pub enum OffsetError {
 }
 
 /// The offset this request's day boundaries are cut on, in minutes east of UTC.
-///
-/// Prefers what the asking client declared — it is the only source that knows
-/// where the reader is *now*, which is what a day boundary is a fact about.
-/// Falls back to the offset of their most recent session, then to UTC.
-///
-/// Returns a concrete offset rather than an `Option` because the caller always
-/// has to bucket on something; `0` is what a day gets called when nobody can say
-/// better, not a claim that the reader is at UTC.
-///
-/// An out-of-range claim is discarded rather than rejected. The offset shifts a
-/// timestamp before a date is read off it, so an absurd value does not produce
-/// an obviously bad row — it silently files reading on the wrong day, and every
-/// caller here is a read path that should degrade rather than 500.
+/// Prefers what the asking client declared, falling back to the offset of their
+/// most recent session, then to UTC (`0`: what a day gets called when nobody can
+/// say better, not a claim the reader is at UTC). An out-of-range claim is
+/// discarded rather than rejected: every caller is a read path that should degrade.
 pub async fn resolve_offset_minutes(
     pool: &SqlitePool,
     user_id: i64,
@@ -61,26 +52,17 @@ fn in_range(offset: i64) -> bool {
         .contains(&offset)
 }
 
-/// The reader's UTC offset from the most recent session carrying a plausible
-/// one, or `None` when no session ever has.
-///
-/// A **proxy**, and worth naming as one: it says where they were when they last
-/// read, not where they are now, and it is stale by an hour after a DST
-/// transition the reader has not read across. Only reached when the asking
-/// client declared no offset of its own — the sessions' `time_zone` column
-/// (migration `0094`) is what would answer this exactly, once there is a tz
-/// database to resolve it against.
-///
-/// One indexed probe per table, compared here, rather than one `ORDER BY` over a
-/// `UNION ALL` of both: SQLite cannot push the sort through the union, so that
-/// shape materialises and sorts a reader's whole offset-carrying session history
-/// on a path that runs for every stats load. Each probe instead walks
-/// `idx_{reading,listening}_sessions_user_started` backwards and stops at the
-/// first row it wants.
+/// The reader's UTC offset from the most recent session carrying a plausible one,
+/// or `None` when no session ever has. A **proxy**: where they were when they last
+/// read, not where they are now, and stale by an hour after a DST transition they
+/// haven't read across. Only reached when the client declared no offset.
 pub async fn current_offset_minutes(
     pool: &SqlitePool,
     user_id: i64,
 ) -> Result<Option<i64>, OffsetError> {
+    // One indexed probe per table, compared here, not an `ORDER BY` over a `UNION ALL`:
+    // SQLite can't push the sort through the union and would sort a reader's whole
+    // offset-carrying history on every stats load.
     let mut latest: Option<(i64, i64)> = None;
     // Range-checked inside each probe rather than on the winner: rows written
     // before `SessionReport::validate` existed are still here, and one of them

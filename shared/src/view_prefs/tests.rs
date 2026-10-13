@@ -1,6 +1,6 @@
 //! Unit tests for library-view preference wire round-trips: the
 //! `SortKey`/`SortDir` string↔enum tokens (which must stay in lockstep
-//! with their serde renames) and the `ViewFilters::is_empty` predicate.
+//! with their serde renames) and the index-page sort preferences.
 
 use super::*;
 
@@ -63,39 +63,6 @@ fn sort_dir_as_wire_uses_lowercase_tokens() {
     // Documented to match the serde `lowercase` rename for the `?dir=` query.
     assert_eq!(SortDir::Asc.as_wire(), "asc");
     assert_eq!(SortDir::Desc.as_wire(), "desc");
-}
-
-#[test]
-fn view_filters_is_empty_true_for_default() {
-    assert!(ViewFilters::default().is_empty());
-}
-
-#[test]
-fn view_filters_is_empty_false_when_any_facet_has_a_value() {
-    // One case per facet: any single populated group flips the predicate.
-    let with_author = ViewFilters {
-        authors: vec!["Tolkien".into()],
-        ..Default::default()
-    };
-    assert!(!with_author.is_empty());
-
-    let with_series = ViewFilters {
-        series: vec!["Poppy War".into()],
-        ..Default::default()
-    };
-    assert!(!with_series.is_empty());
-
-    let with_format = ViewFilters {
-        formats: vec!["epub".into()],
-        ..Default::default()
-    };
-    assert!(!with_format.is_empty());
-
-    let with_tag = ViewFilters {
-        tags: vec!["horror".into()],
-        ..Default::default()
-    };
-    assert!(!with_tag.is_empty());
 }
 
 #[test]

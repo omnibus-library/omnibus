@@ -10,13 +10,11 @@ use omnibus_shared::{PeriodComparison, StatsRange, StatsSummary};
 use super::drill_in::Metric;
 use super::group_thousands;
 
-/// How a tile's figure compares with the same slice of the previous window:
-/// the signed label, and the fill 0..=100 the bar draws.
-///
-/// `None` on [`StatsRange::AllTime`], which has no previous window —
-/// `PeriodComparison` is `Default` there, so a delta drawn against it would
-/// report every lifetime figure as brand new. The whole comparison row is
-/// dropped rather than shown against a zero nobody measured.
+/// How a tile's figure compares with the same slice of the previous window: the
+/// signed label, and the fill 0..=100 the bar draws. There is none on
+/// [`StatsRange::AllTime`], which has no previous window (`PeriodComparison` is
+/// `Default` there, so a delta would report every lifetime figure as brand new);
+/// the whole comparison row is dropped.
 pub(super) struct Comparison {
     pub(super) label: String,
     pub(super) css_class: &'static str,
@@ -129,14 +127,10 @@ fn percent_comparison(current: f64, previous: f64) -> Comparison {
     }
 }
 
-/// A star delta stated in stars — "+0.1", "flat" — with the bar drawn against
-/// the five-star ceiling rather than against the previous window. A rating is
-/// already on a bounded scale, so its own share of that scale is the honest
-/// shape; a ratio between two means would peg at 100% for any window that
-/// rated as well as the last.
-///
-/// `None` when either window carries no rated books: a mean over nothing is
-/// not zero, it is absent.
+/// A star delta stated in stars ("+0.1", "flat"), with the bar drawn against the
+/// five-star ceiling rather than the previous window: a ratio between two means
+/// would peg at 100% for any window that rated as well as the last. `None` when
+/// either window carries no rated books (a mean over nothing is absent, not zero).
 fn stars_comparison(current: Option<f64>, previous: Option<f64>) -> Option<Comparison> {
     let cur = current?;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -195,13 +189,9 @@ pub(super) fn avg_stars_value(avg: Option<f64>) -> String {
 }
 
 /// Thousand-grouped page count ("9,214"), or an empty state when
-/// [`omnibus_shared::StatsSummary::pages_read`] is `None`.
-///
-/// Two different empty states, because they are two different facts. A window
-/// whose only activity was listening turned exactly zero pages — audio has no
-/// page analogue, so `0` is the answer, not a shrug. Anything else the ladder
-/// could not measure is a genuine em-dash: something was read and the server
-/// cannot say how much.
+/// [`omnibus_shared::StatsSummary::pages_read`] is `None`: `0` for a window whose
+/// only activity was listening (audio has no page analogue), an em-dash for
+/// anything else the ladder could not measure.
 fn pages_value(pages: Option<i64>, audio_only: bool) -> String {
     match pages {
         Some(n) => group_thousands(n),

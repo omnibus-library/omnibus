@@ -33,14 +33,10 @@ pub use page_gate::require_page_session;
 pub use omnibus_db::auth::SESSION_COOKIE_NAME as SESSION_COOKIE;
 
 /// `__Host-` prefixed session-cookie name (RFC 6265bis) used when
-/// `OMNIBUS_SECURE_COOKIES` is on (the default). The prefix is a
-/// browser-enforced contract — `Secure` + no `Domain` + `Path=/` — and
-/// blocks subdomain cookie injection from a sibling host. The write side
-/// in [`handlers::session_cookie`] is the single place that picks between
-/// this and the plain form via [`session_cookie_name`]; the read side
-/// (token parser, CSRF jar lookup) accepts either so a deploy that
-/// toggles `OMNIBUS_SECURE_COOKIES` mid-rollout doesn't invalidate
-/// in-flight cookies.
+/// `OMNIBUS_SECURE_COOKIES` is on (the default); the browser enforces `Secure`, no
+/// `Domain` and `Path=/`. The write side picks between this and the plain form via
+/// [`session_cookie_name`]; the read side accepts either, so toggling the flag
+/// mid-rollout doesn't invalidate in-flight cookies.
 pub use omnibus_db::auth::SESSION_COOKIE_NAME_HOST_PREFIXED as SESSION_COOKIE_HOST_PREFIXED;
 
 /// Pure selector used by the cookie write path: returns the `__Host-`

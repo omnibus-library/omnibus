@@ -11,10 +11,8 @@ use super::relocation::RelocationSnapshot;
 
 /// Deserialize `timestamp` from either the current INTEGER unix-seconds or the
 /// TEXT form persisted by pre-0038 snapshots. A numeric string parses to its
-/// epoch; a non-numeric ISO string (`'YYYY-MM-DD HH:MM:SS'`) can't be converted
-/// without a date library, so it degrades to `None` — `recreate_source_row`
-/// then falls back to now, an acceptable loss for a book merged before the
-/// migration and undone after it.
+/// epoch; a non-numeric ISO string degrades to `None` (no date library), and
+/// `recreate_source_row` then falls back to now.
 fn de_epoch_flexible<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
 where
     D: Deserializer<'de>,
@@ -41,12 +39,9 @@ pub(super) struct SourceSnapshot {
     /// The source book's `scan_roots.path` (re-resolved or recreated on
     /// undo) — also the `merged_uuids.library_path` for the guard row.
     pub library_path: String,
-    /// `books.scan_key` — the library-relative path the reindex diff
-    /// matches disk against. Undo must restore it, or the next reindex
-    /// can't match the on-disk file/folder to the recreated row and
-    /// inserts a duplicate. `#[serde(default)]` keeps pre-fix `merge_log`
-    /// JSON (no `scan_key` key) replaying — those degrade to `None`, the
-    /// prior behaviour.
+    /// `books.scan_key`, the library-relative path the reindex diff matches disk
+    /// against. Undo must restore it, or the next reindex can't match the on-disk
+    /// file to the recreated row and inserts a duplicate. `None` on older snapshots.
     #[serde(default)]
     pub scan_key: Option<String>,
     pub path: String,
@@ -158,11 +153,10 @@ struct LinkRows {
 }
 
 /// Load the full snapshot for `book_id` inside the merge transaction.
-///
-/// `target_uuid` is needed because the curation half of the snapshot spans
-/// **both** books: the merge settles a per-reader collision by deleting one
-/// side's row, so recording only the source's would leave undo unable to give
-/// the survivor its own value back.
+/// `target_uuid` is needed because the curation half spans **both** books: the
+/// merge settles a per-reader collision by deleting one side's row, so
+/// recording only the source's would leave undo unable to restore the
+/// survivor's own value.
 pub(super) async fn build_snapshot(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,

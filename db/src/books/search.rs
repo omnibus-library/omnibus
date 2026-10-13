@@ -18,20 +18,11 @@ use super::projection::{
     MAX_BOOKS_RETURNED,
 };
 
-/// Full-text search across `books_fts`. Returns hydrated `EbookMetadata`
-/// ordered by bm25 rank (best first) when the query carries free text, and by
-/// the library's own sort order when it is facets alone. Free-text terms are
-/// scoped to `title/authors/series` via a column filter so that short prefix
-/// queries don't surface spurious hits on generic `tags` or `genres` values
-/// (e.g. typing "Dra" matching books tagged — or genred — "Drama"). Ranking
-/// weights favour title matches; see [`FTS_BM25_RANK`].
-///
-/// `q` is parsed via [`build_search_query`] (which recognises `author:`,
-/// `series:`, `tag:`, `genre:` facets and sanitises every token) before
-/// reaching `MATCH`, so arbitrary user input is safe to pass through. A
-/// `tag:`/`genre:` facet names its value exactly and is answered from the
-/// link tables and the override layer instead of `MATCH`. Returns an empty
-/// vec when the parsed query is empty.
+/// Full-text search across `books_fts`: hydrated `EbookMetadata` ordered by bm25
+/// rank (see [`FTS_BM25_RANK`]) for free text, or by the library's own sort for
+/// facets alone. `q` is parsed via [`build_search_query`] (`author:`, `series:`,
+/// `tag:`, `genre:` facets), which sanitises every token, so arbitrary user
+/// input is safe. Empty vec when the parsed query is empty.
 pub async fn search_books(
     pool: &SqlitePool,
     library_path: &str,
@@ -50,13 +41,10 @@ pub async fn search_books_for_paths(
     Ok(books)
 }
 
-/// Same as [`search_books`] but returns the *true* FTS5 hit count (before the
-/// `MAX_BOOKS_RETURNED` cap) alongside the hydrated rows, in a **single** FTS5
-/// pass: the `bm25` MATCH scan runs once inside a `MATERIALIZED` CTE and the
-/// total comes from a scalar `(SELECT COUNT(*) FROM matches)` over it. Used by
-/// the REST search handler and the RPC search server function so neither has
-/// to issue a second `count_search_books` query. Empty/oversized `q` is handled
-/// identically to `search_books` and yields `(vec![], 0)`.
+/// Same as [`search_books`] but also returns the *true* FTS5 hit count (before
+/// the `MAX_BOOKS_RETURNED` cap), from a single FTS5 pass, so the REST handler
+/// and RPC server function need no second `count_search_books` query. Empty or
+/// oversized `q` yields `(vec![], 0)`, as in `search_books`.
 pub async fn search_books_with_total(
     pool: &SqlitePool,
     library_path: &str,
@@ -101,15 +89,10 @@ pub async fn search_books_for_paths_with_total(
     Ok((out, total))
 }
 
-/// Run the single-pass match + hydrate query: the scan lives inside a
-/// `MATERIALIZED` CTE, then the outer SELECT joins back to `books` with the
-/// shared `BOOK_COLUMNS` projection plus a scalar `(SELECT COUNT(*))`
-/// `total_count` column. bm25() is only valid in a query that directly
-/// references books_fts, so it must live inside the CTE.
-///
-/// A facets-only query takes a second shape with no `books_fts` join at all:
-/// FTS5 rejects an empty `MATCH`, and there is no rank to order by, so the
-/// library's own sort carries the order instead.
+/// Run the single-pass match + hydrate query: the bm25 scan lives in a
+/// `MATERIALIZED` CTE that the outer SELECT joins back to `books`, adding a
+/// scalar `total_count` column. A facets-only query has no `books_fts` join
+/// and orders by the library's own sort (FTS5 rejects an empty `MATCH`).
 async fn fetch_search_rows(
     pool: &SqlitePool,
     library_paths: &[&str],
@@ -117,6 +100,8 @@ async fn fetch_search_rows(
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     let visible = visible_book_sql("b", "l", "?");
     let (facets, facet_binds) = facet_exists_predicates(query);
+    // `bm25()` is only valid in a query that directly references `books_fts`,
+    // so the scan lives inside the CTE.
     let sql = if query.fts_match.is_some() {
         format!(
             r"

@@ -33,17 +33,9 @@ pub fn use_server_url_signal() -> Signal<String> {
 
 /// Build the URL for a media API path (`/api/covers/…`, `/api/thumbs/…`,
 /// `/api/authors/{id}/photo`) rendered into an `<img src>`.
-///
-/// Web/SSR: returns `path` unchanged — same-origin and cookie-authed, so
-/// the browser attaches the session automatically. Keeping it relative also
-/// preserves SSR/WASM hydration parity.
-///
-/// Mobile: the WebView fetches `<img src>` itself, bypassing the native
-/// `reqwest` client that carries the bearer token — and there's no session
-/// cookie, since mobile auth is bearer-only. So prefix the server base to
-/// give the relative path an origin and append the session token as a
-/// `?token=` query param, the one auth an `<img>` fetch can carry. The
-/// server accepts it via `MediaAuthUser` on the media read endpoints.
+/// Web/SSR: `path` unchanged (same-origin, cookie-authed, hydration parity).
+/// Mobile: server base prefixed and the session token appended as `?token=`,
+/// the one auth an `<img>` fetch can carry (`MediaAuthUser` accepts it).
 pub fn media_url(server_url: &str, path: &str) -> String {
     #[cfg(feature = "mobile")]
     {
@@ -84,10 +76,9 @@ pub struct PageTitle(pub Signal<String>);
 
 /// Set the browser-tab title to `Omnibus | {subtitle}` — or the bare app name
 /// when `subtitle()` returns `None` (the landing page). `subtitle` is read
-/// inside the effect, so a page whose name arrives asynchronously (book /
-/// author / series detail) can pass a signal-backed closure and the title
-/// re-renders once its data lands. Post-mount only, so SSR and the first WASM
-/// paint keep the default title and hydration parity holds (rule 07).
+/// inside the effect, so a closure over a signal retitles once async data
+/// lands. Post-mount only, so SSR and the first WASM paint keep the default
+/// title (hydration parity, rule 07).
 pub fn use_page_title(subtitle: impl Fn() -> Option<String> + 'static) {
     let PageTitle(mut title) = use_context::<PageTitle>();
     use_effect(move || title.set(format_page_title(subtitle().as_deref())));
@@ -102,15 +93,10 @@ fn format_page_title(subtitle: Option<&str>) -> String {
 }
 
 /// Cross-route cover cache-bust registry: book uuid → a counter bumped by
-/// [`crate::pages::metadata_edit`]'s `CoverEditor` after a successful cover
-/// upload/revert. `/api/covers/*` and `/api/thumbs/*` are served with
-/// `Cache-Control: private, max-age=86400`, so re-fetching the *book* on a
-/// later navigation (landing grid/table, book detail) still leaves the
-/// browser serving pre-edit image bytes for the otherwise-unchanged
-/// `/api/covers/:uuid` / `/api/thumbs/:uuid/:size` URL. Owned by [`App`] via
-/// `use_context_provider` so it survives route changes for the SPA session —
-/// the WASM runtime never reloads on navigation, only components
-/// unmount/remount.
+/// [`crate::pages::metadata_edit`]'s `CoverEditor` after a cover upload/revert,
+/// since `/api/covers/*` and `/api/thumbs/*` are cached (`max-age=86400`) and
+/// a re-fetched book would otherwise show stale bytes. Owned by [`App`] so it
+/// survives route changes for the SPA session.
 #[derive(Copy, Clone)]
 pub struct CoverCacheBust(pub Signal<std::collections::HashMap<String, u32>>);
 
@@ -156,23 +142,11 @@ pub fn use_avatar_cache_bust() -> AvatarCacheBust {
     use_context::<AvatarCacheBust>()
 }
 
-/// App-wide cached `/api/auth/me` result. Owned by [`App`] via
-/// `use_context_provider` so every component that needs to gate on
-/// `is_admin` (top nav avatar, landing inline edits, author Delete) reads
-/// from one signal instead of each firing its own `current_user()` round
-/// trip on mount. Without this every navigation would re-fetch `/me`
-/// from N components and race the `/api/auth/*` rate-limit budget.
-///
-/// The outer `Option` is "not yet resolved since boot" (pre-hydration on
-/// SSR, or the very first tick before the boot effect lands). The inner
-/// `Option` is "resolved": `None` means an explicit 401 (unauthenticated),
-/// `Some(u)` means authenticated. Transient errors (network blip, 429)
-/// leave the outer `None` in place so the UI keeps showing the
-/// placeholder rather than briefly swapping to "Log in".
-///
-/// Web-only: mobile uses bearer tokens via `token_store` and never hits
-/// `/api/auth/me`. The context isn't provided on mobile and
-/// [`use_current_user`] is not callable there.
+/// App-wide cached `/api/auth/me` result, owned by [`App`] so components gating
+/// on `is_admin` share one fetch instead of N racing the `/api/auth/*` rate
+/// limit. Outer `Option`: not yet resolved (pre-hydration, or before the boot
+/// effect lands). Inner: `None` = 401, `Some(u)` = authenticated. Transient
+/// errors leave the outer `None`. Web-only: mobile uses bearer tokens.
 #[cfg(not(feature = "mobile"))]
 #[derive(Copy, Clone)]
 pub struct CurrentUser(pub Signal<Option<Option<omnibus_shared::UserSummary>>>);
@@ -274,28 +248,24 @@ pub fn use_upload_access() -> ReadSignal<Access> {
     use_access(|u| u.is_admin || u.can_upload)
 }
 
-/// Derive the resolved current user from the app-wide [`CurrentUser`]
-/// context — a pure function of its value, so `use_memo` recomputes it
-/// inline with no extra render pass, flattening "not yet resolved" and
-/// "unauthenticated" alike to `None`. The memo evaluates to `None` on first
-/// paint (before the client's boot effect resolves `CurrentUser`), matching
-/// the SSR default and keeping hydration parity (rule 07). Returns a boxed
-/// [`ReadSignal`], same reasoning as [`use_is_admin`].
+/// Derive the resolved current user from the app-wide [`CurrentUser`] context,
+/// flattening "not yet resolved" and "unauthenticated" alike to `None`. The
+/// memo is `None` on first paint, matching the SSR default (hydration parity,
+/// rule 07). Returns a boxed [`ReadSignal`], same reasoning as [`use_is_admin`].
 #[cfg(feature = "web")]
 pub fn use_current_user_summary() -> ReadSignal<Option<omnibus_shared::UserSummary>> {
     let user_ctx = use_current_user().0;
     ReadSignal::new(use_memo(move || user_ctx().flatten()))
 }
 
-/// Mobile fallback for [`use_current_user_summary`]. Mobile has no
-/// `CurrentUser` context (bearer auth, not cookies), so — unlike the web
-/// memo — this resolves the user via an async `/api/auth/me` fetch, which
-/// isn't a pure derivation and so can't be a `use_memo`; it stays a
-/// `use_signal` written from a post-mount `use_effect`, starting at `None`
-/// to match the web/SSR default until the fetch lands. This is what lets
-/// owner-only affordances (e.g. journal edit/delete) light up on mobile.
+/// Mobile fallback for [`use_current_user_summary`]: there is no `CurrentUser`
+/// context (bearer auth), so this resolves the user via an async
+/// `/api/auth/me` fetch and starts at `None` to match the web/SSR default.
+/// That is what lights up owner-only affordances (e.g. journal edit/delete).
 #[cfg(feature = "mobile")]
 pub fn use_current_user_summary() -> ReadSignal<Option<omnibus_shared::UserSummary>> {
+    // An async fetch isn't a pure derivation, so this is a signal written
+    // from a post-mount effect rather than a `use_memo`.
     let mut current = use_signal(|| None);
     let server_url = use_server_url();
     use_effect(move || {
@@ -317,17 +287,11 @@ pub fn use_current_user_summary() -> ReadSignal<Option<omnibus_shared::UserSumma
     ReadSignal::new(use_signal(|| None))
 }
 
-/// App-wide audiobook playback state. Owned by [`crate::App`] via
-/// `use_context_provider` so the full listen player and the persistent
-/// mini-dock share one set of signals. Playback survives route changes
-/// because both these signals and the backing `<audio>` element live at the
-/// App root, not inside the route component.
-///
-/// `uuid` is the currently-loaded audiobook (`None` = nothing playing).
-/// Setting it (the listen page on mount) or clearing it (the dock's dismiss
-/// button) drives the App-level bootstrap effect to load / swap / tear down
-/// playback. Provided unconditionally on `not(mobile)` so SSR markup matches
-/// the WASM client; mobile stubs the listen page and never provides it.
+/// App-wide audiobook playback state, owned by [`crate::App`] so the listen
+/// player and mini-dock share one set of signals and playback survives route
+/// changes. `uuid` is the loaded audiobook (`None` = nothing playing); setting
+/// or clearing it drives the App-level bootstrap to load, swap or tear down.
+/// Provided unconditionally on `not(mobile)`, so SSR matches the WASM client.
 #[cfg(not(feature = "mobile"))]
 #[derive(Copy, Clone)]
 pub struct PlaybackState {
@@ -364,20 +328,13 @@ pub struct PlaybackState {
     /// restores to this value rather than always `1.0`.
     pub volume: Signal<f64>,
     /// Bumped to force the app-level driver to re-run its boot (resume +
-    /// follow resolution) for the *current* book without tearing it down.
-    /// The Immersive Read CTA uses this for the same-book idle case: the
-    /// old `uuid` None→Some nudge unmounted the dock for a frame and raced
-    /// the reader's own mount — losing the race left the player closed or
-    /// the reader stuck loading.
+    /// follow resolution) for the *current* book without tearing it down; the
+    /// Immersive Read CTA uses it for the same-book idle case.
     pub reload_epoch: Signal<u32>,
-    /// Bumped once per *user* seek — the scrubber, a chapter row, the ±30s
-    /// buttons — all of which funnel through the shim's `seek()` and its
-    /// `__omnibusOnAudioSeeked` callback. Deliberately not bumped by the
-    /// boot restore or a part swap, which move `currentTime` without the
-    /// listener asking. The end-of-chapter sleep timer re-anchors on this
-    /// and nothing else: it is the only signal that separates "the playhead
-    /// jumped" from "the playhead is playing", and inferring one from the
-    /// other is what made an armed timer re-arm at every seam.
+    /// Bumped once per *user* seek (scrubber, chapter row, ±30s buttons), via
+    /// the shim's `__omnibusOnAudioSeeked` callback. Not bumped by the boot
+    /// restore or a part swap. The end-of-chapter sleep timer re-anchors on
+    /// this and nothing else: it separates "the playhead jumped" from "playing".
     pub seek_epoch: Signal<u32>,
 }
 

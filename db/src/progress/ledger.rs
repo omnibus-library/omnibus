@@ -11,6 +11,10 @@
 //! is resolved on the way out, against whatever offset the reading client is on
 //! — see `crate::user_offset`. Writing a day here, as `0083` did, is what made
 //! the daily pages goal reset at UTC midnight.
+//!
+//! Gains are stored as percent, not pages, so a later `print_pages` override
+//! re-prices history already held. A backtrack across a sitting boundary is
+//! credited again: a per-sitting clamp cannot net across sittings.
 
 use omnibus_shared::ProgressFormat;
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
@@ -27,49 +31,16 @@ mod tests;
 /// date before which partial reading cannot be reconstructed.
 const PAGES_LEDGER_EPOCH_KEY: &str = "pages_ledger_epoch";
 
-/// Width of a ledger bucket, in seconds — a quarter of an hour.
-///
-/// The granularity a stored gain can be re-bucketed to a local day at: every
-/// modern IANA offset is a whole number of quarter-hours, so shifting a slot by
-/// one lands it exactly on a day boundary, which an hourly bucket could not do
-/// for UTC+05:30, UTC+05:45 or UTC-03:30. Read back by `crate::stats::pages`,
+/// Width of a ledger bucket, in seconds: a quarter of an hour, the grid a stored
+/// gain is re-bucketed to a local day on. Read back by `crate::stats::pages`,
 /// which must resolve days on the same grid this writes them on.
 pub const SLOT_SECS: i64 = 900;
 
 /// Record an observed whole-book percent for `(user, book, format)` and accrue
-/// whatever ground it covers beyond the current sitting's furthest point into
-/// the quarter-hour it was observed in.
-///
-/// The gain is measured against the ledger's own mark, never against
-/// `reading_progress.progress_percent`: an epub write carrying only a CFI nulls
-/// that column and `spawn_epub_percent_derivation` refills it off the request
-/// path, so the live row is NULL for part of its life and differencing it would
-/// silently lose every gain on the surfaces that write CFIs (iOS).
-///
-/// The mark is the **sitting's high-water percent**, not the last position seen
-/// (migration `0095`), so a there-and-back move inside one sitting is free
-/// while forward ground the reader later backtracks out of stays credited.
-///
-/// [`IDLE_GAP_SECS`] of quiet opens a new sitting, and that governs the **mark**
-/// alone, never the gain: it is the only thing that lets the mark fall back, so
-/// a re-read counts from wherever it restarts instead of climbing to a lifetime
-/// high-water of 100. Ground beyond the mark is earned either way — an offline
-/// stretch drains as one coalesced write long after the fact, and it is real
-/// reading, not a gap.
-///
-/// Two cases accrue nothing on purpose:
-///
-/// * A book with no mark yet is *baselined* — a device syncing a book it is
-///   already 60% through has not just read 60% of it.
-/// * A move at or below the mark is ground already credited.
-///
-/// `observed_at` is the surviving record's client event time, so a write
-/// replayed from an offline outbox lands in the quarter-hour it happened in
-/// rather than the one it drained in. An observation that arrives *out of
-/// order* — the off-request-path percent derivation completing after a newer
-/// write, carrying the older position's event time — is treated as part of the
-/// sitting already in progress rather than as a gap, and cannot drag the
-/// sitting clock backward.
+/// the ground beyond the sitting's high-water mark into the quarter-hour of
+/// `observed_at`, the client's event time, so an offline replay lands when it
+/// happened. Measured against the ledger's own mark, never `progress_percent`,
+/// which stays NULL while an epub's percent is derived off the request path.
 pub(super) async fn observe_percent_tx(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
@@ -156,11 +127,9 @@ pub(super) async fn observe_percent_tx(
 }
 
 /// The `(new sitting high-water, ground gained)` an observation produces
-/// against an existing mark.
-///
-/// `last_at` is NULL for a mark whose sitting was deliberately ended without
-/// one being started — `merge::transaction::clear_sitting_clock` is the only
-/// writer that does so. It reads as "no sitting in progress", which re-baselines.
+/// against an existing mark. A NULL `last_at` means the sitting was deliberately
+/// ended without one being started (only `merge::transaction::clear_sitting_clock`
+/// does so) and reads as "no sitting in progress", which re-baselines.
 fn sitting_gain(mark: i64, last_at: Option<i64>, percent: i64, observed_at: i64) -> (i64, i64) {
     // A negative gap is an out-of-order observation, not idleness, so it
     // continues the sitting rather than opening one — `<=` covers both.

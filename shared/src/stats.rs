@@ -3,6 +3,11 @@
 //! Produced by `db::stats` and served to the `/stats` page. One
 //! [`StatsSummary`] carries the headline numbers, daily-activity heatmap,
 //! top-authors/top-tags rankings, and finished-books rail for one user.
+//!
+//! Every completion metric on [`StatsSummary`] shares the "finished" definition in its
+//! doc, never the session tables (no progress there), so they can't drift apart.
+//!
+//! `LibrarySize` and `LibraryComposition` stay off it: they only move on a reindex.
 
 use serde::{Deserialize, Serialize};
 
@@ -65,8 +70,8 @@ impl StatsRange {
     }
 }
 
-/// One heatmap cell: a calendar day (UTC `YYYY-MM-DD`) and the total active
-/// seconds recorded that day across reading and listening.
+/// One heatmap cell: a calendar day (`YYYY-MM-DD` on the reader's calendar)
+/// and the total active seconds recorded that day across reading and listening.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DayActivity {
@@ -82,15 +87,11 @@ pub struct RankedEntity {
     pub seconds: i64,
 }
 
-/// Reading/listening insights for one book, scoped to one user — the
-/// book-detail page's Stats stop (Started / Time in book / Pickups + avg sit /
-/// Longest sit, plus the per-day activity spark). Produced by
-/// `db::stats::book_insights` from the same `reading_sessions` /
-/// `listening_sessions` tables [`StatsSummary`] aggregates from, but scoped to
-/// a single `(user, book_uuid)` rather than a user-wide window. The RPC wraps
-/// this in `Option` — `None` means either that the uuid resolves to no live
-/// book or that the book has no sitting worth reporting yet, both driving the
-/// stop's quiet empty state.
+/// Reading/listening insights for one book, scoped to one user: the book-detail
+/// page's Stats stop (Started / Time in book / Pickups + avg sit / Longest sit,
+/// plus the per-day activity spark). Aggregated from the same session tables as
+/// [`StatsSummary`] but for a single `(user, book_uuid)`. The RPC wraps this in
+/// `Option`; `None` means no live book for the uuid or no sitting worth reporting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookInsights {
@@ -106,13 +107,10 @@ pub struct BookInsights {
     /// the server's minimum are glances and don't count.
     pub sessions: i64,
     /// Seconds belonging to the sittings [`Self::sessions`] counted, glances
-    /// excluded — the numerator for a per-sitting mean.
+    /// excluded: the numerator for a per-sitting mean.
     ///
-    /// Dividing [`Self::seconds_total`] by [`Self::sessions`] instead mixes
-    /// two populations: a book with one real sitting and a pile of glances
-    /// would report a mean above its own longest sitting. This is always
-    /// `<= seconds_total`, and the mean it yields is always
-    /// `<= longest_seconds`.
+    /// Dividing [`Self::seconds_total`] by [`Self::sessions`] instead mixes two
+    /// populations. Always `<= seconds_total`; the mean it yields is `<= longest_seconds`.
     #[serde(default)]
     pub sitting_seconds: i64,
     /// Seconds of the single longest sitting on this book.
@@ -120,10 +118,10 @@ pub struct BookInsights {
     /// Unix seconds when that longest sitting started.
     pub longest_started_at: i64,
     /// Per-day activity on this book (active days only, ascending). Days use
-    /// the same UTC `YYYY-MM-DD` bucketing as [`DayActivity`] elsewhere;
-    /// callers fill calendar gaps against [`Self::as_of_day`].
+    /// the same reader's-calendar `YYYY-MM-DD` bucketing as [`DayActivity`]
+    /// elsewhere; callers fill calendar gaps against [`Self::as_of_day`].
     pub daily: Vec<DayActivity>,
-    /// The server's current UTC day (`YYYY-MM-DD`) — the right edge of the
+    /// Today on the reader's calendar (`YYYY-MM-DD`) — the right edge of the
     /// `daily` window, so clients don't have to guess the server's "today".
     pub as_of_day: String,
 }
@@ -171,7 +169,7 @@ pub struct FinishedBook {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MonthCount {
-    /// UTC calendar month, `YYYY-MM`.
+    /// Calendar month on the reader's calendar, `YYYY-MM`.
     pub month: String,
     pub books: i64,
 }
@@ -189,9 +187,8 @@ pub struct TrendPoint {
 /// One bar of the star-rating distribution: a half-star bucket and how many
 /// books the user rated into it within the window.
 ///
-/// `half_stars` is the stored 1..=10 scale, **not** stars — renderers must
-/// halve it, or a 5-star rating reads as a 10-point scale. `stars()` is that
-/// conversion, so no surface reimplements it.
+/// `half_stars` is the stored 1..=10 scale, **not** stars: renderers must halve
+/// it (`stars()` does), or a 5-star rating reads as a 10-point scale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RatingBucket {
@@ -210,14 +207,10 @@ impl RatingBucket {
 }
 
 /// One bar of the book-length distribution: a page-range label and how many
-/// books finished in the window fall into it.
-///
-/// The server owns both the boundaries and their labels (`db::stats::pages`),
-/// so a client never re-derives a range and disagrees about where 499 pages
-/// belongs. One bucket is the **unknown** bucket — a book no rung of the
-/// length ladder can measure — and it must be rendered, not dropped: an
-/// audiobook has no page analogue, and silently omitting it reports a
-/// distribution over fewer books than the window contains.
+/// books finished in the window fall into it. The server owns the boundaries and
+/// labels (`db::stats::pages`). One bucket is the **unknown** bucket (a book no
+/// rung of the length ladder can measure, e.g. an audiobook); render it, don't
+/// drop it, or the distribution covers fewer books than the window.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LengthBucket {
@@ -227,11 +220,9 @@ pub struct LengthBucket {
 
 /// A library-scale total and the coverage behind it.
 ///
-/// `total` and `books` travel as a pair: every input is nullable-or-zero when
-/// unmeasured, so a total published without its denominator reports a
-/// partly-backfilled library as a confidently smaller one. `books == 0` means
-/// nothing has been measured at all, which the surfaces render as an empty
-/// state rather than a zero.
+/// `total` and `books` travel as a pair: a total published without its
+/// denominator reports a partly-backfilled library as a smaller one. `books == 0`
+/// means nothing has been measured, which surfaces render as an empty state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MeasuredTotal {
@@ -247,22 +238,16 @@ impl MeasuredTotal {
     }
 }
 
-/// How big the library is in the units a reader thinks in — words, pages, and
-/// hours of audio.
-///
-/// **Library-scoped, not user-scoped**, and deliberately not a field on
-/// [`StatsSummary`]: it is the same answer for every reader and only moves on
-/// a reindex, so hanging it off a per-user payload would recompute and re-send
-/// it on every period switch.
+/// How big the library is in the units a reader thinks in: words, pages, and
+/// hours of audio. **Library-scoped, not user-scoped**: the same for every
+/// reader, so deliberately not a field on [`StatsSummary`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct LibrarySize {
-    /// Live books — those with at least one surviving `book_files` row. The
+    /// Live books: those with at least one surviving `book_files` row. The
     /// denominator every coverage figure below is read against.
     ///
-    /// Ghosted books (a `books` row whose files are gone) are excluded from
-    /// this *and* from every numerator: their bytes aren't on disk, so
-    /// counting them would report a library larger than the one that exists
-    /// and drag every coverage fraction down for rows nothing can measure.
+    /// Ghosted books (a `books` row whose files are gone) are excluded from this
+    /// *and* from every numerator, since nothing can measure them.
     pub books: i64,
     /// Total words across books with a stored `word_count`.
     #[serde(default)]
@@ -289,13 +274,9 @@ impl LibrarySize {
 
 /// One column of the time-of-day strip: an hour of the reader's **local** day
 /// and the active seconds recorded in it, reading and listening together.
-///
-/// `hour` is 0..=23 in the reader's own clock, resolved server-side from the
-/// UTC offset each session carried at capture time (`db::stats::patterns`) —
-/// never from the viewing client's zone, which would make the same account
-/// read differently on a phone abroad than on the desktop at home.
-/// [`StatsSummary::hour_of_day`] always carries all 24, ascending, zeros
-/// included.
+/// `hour` is 0..=23 on the reader's own clock, resolved server-side from the UTC
+/// offset each session carried at capture (`db::stats::patterns`), never the
+/// viewing client's zone. [`StatsSummary::hour_of_day`] carries all 24, zeros included.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct HourBucket {
@@ -304,13 +285,10 @@ pub struct HourBucket {
 }
 
 /// One column of the day-of-week strip: a weekday in the reader's local
-/// calendar and the active seconds recorded on it.
-///
-/// `weekday` is 0 = Monday .. 6 = Sunday, and the server sends `label` with
-/// it for the same reason `LengthBucket` carries its own: week-start is a
-/// convention, and a client that assumed Sunday-first would silently draw
-/// every column one place out. [`StatsSummary::day_of_week`] always carries
-/// all 7, Monday first, zeros included.
+/// calendar and the active seconds recorded on it. `weekday` is 0 = Monday ..
+/// 6 = Sunday, and the server sends `label` with it because week-start is a
+/// convention a client could get wrong. [`StatsSummary::day_of_week`] always
+/// carries all 7, Monday first, zeros included.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WeekdayBucket {
@@ -320,22 +298,16 @@ pub struct WeekdayBucket {
 }
 
 /// Recorded time a book needs before it can be crowned the window's fastest
-/// read, in seconds.
-///
-/// The metric measures *tracked* reading, and a book read mostly on another
-/// device shows only its tail here — one 40-second checkpoint on the day it
-/// was marked finished would otherwise take the crown from every book the
-/// reader actually raced through. Lives here so the surfaces can state the
-/// floor without a second copy of the number drifting from
-/// `db::stats::superlatives`'s.
+/// read, in seconds. The metric measures *tracked* reading, so a book read mostly
+/// on another device shows only its tail. Lives here so the surfaces can state
+/// the floor without a second copy drifting from `db::stats::superlatives`'s.
 pub const FASTEST_READ_MIN_SECS: i64 = 1800;
 
-/// One superlative that names a book: which book won, and the figure it won
-/// with.
+/// One superlative that names a book: which book won, and the figure it won with.
 ///
-/// `value`'s **unit is the field's, not this struct's** — pages for the length
-/// superlatives, seconds for the longest sit, days for the fastest read — and
-/// each is documented on [`Superlatives`]. Renderers must not guess.
+/// `value`'s **unit is the field's, not this struct's** (pages for the length
+/// superlatives, seconds for the longest sit, days for the fastest read), each
+/// documented on [`Superlatives`]. Renderers must not guess.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BookSuperlative {
@@ -349,9 +321,7 @@ pub struct BookSuperlative {
 /// say, and the shape a recap leads with.
 ///
 /// **Every field is optional, and an absent one is the point.** A window that
-/// can't support a superlative omits it rather than crowning its only datum:
-/// a reader who finished one book has no "shortest", and a "longest" that is
-/// also the only book is noise dressed as a finding.
+/// can't support a superlative omits it rather than crowning its only datum.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Superlatives {
@@ -375,25 +345,19 @@ pub struct Superlatives {
     #[serde(default)]
     pub longest_sit: Option<BookSuperlative>,
     /// The book finished in the window in the fewest **days** from its first
-    /// recorded session, counting a same-day read as one day rather than
-    /// zero.
-    ///
-    /// Only books carrying at least [`FASTEST_READ_MIN_SECS`] of recorded
-    /// time are eligible, and even so this is a **lower bound** on how long
-    /// the read really took — reading done before session tracking, or on a
-    /// device that reports nothing, is invisible here. Surfaces must say so.
+    /// recorded session (a same-day read counts as one). Only books with at least
+    /// [`FASTEST_READ_MIN_SECS`] of recorded time are eligible, and this is a **lower
+    /// bound** on the real time, since untracked reading is invisible here.
+    /// Surfaces must say so.
     #[serde(default)]
     pub fastest_read: Option<BookSuperlative>,
 }
 
 impl Superlatives {
-    /// True when none of the five server-computed figures is present.
-    ///
-    /// Deliberately **not** the card's render gate. Both surfaces also draw
-    /// rows off `StatsSummary` fields that live outside this struct — the
-    /// busiest week and the top-ranked author and subject — so a window with
-    /// only a busiest week is `is_empty()` yet still has a card to show. The
-    /// gate is the assembled row list; this is a predicate over the five.
+    /// True when none of the five server-computed figures is present. Deliberately
+    /// **not** the card's render gate: both surfaces also draw rows off
+    /// `StatsSummary` fields outside this struct (busiest week, top author and
+    /// subject), so the gate is the assembled row list.
     pub fn is_empty(&self) -> bool {
         self.longest_book.is_none()
             && self.shortest_book.is_none()
@@ -404,15 +368,10 @@ impl Superlatives {
 }
 
 /// What the Pages tile could and could not measure in the window, and the day
-/// before which it cannot measure anything at all.
-///
-/// The tile's headline is a single number that has three different empty
-/// states, and they mean different things: a window with no activity, a window
-/// whose only activity was listening (audio has no page analogue, so zero pages
-/// is the *correct* answer rather than an unknown one), and a window of real
-/// reading in books whose length no rung of the ladder resolves. Collapsing all
-/// three into an em-dash tells a reader who listened all week that the server
-/// has no idea what they did.
+/// before which it cannot measure anything at all. The headline has three
+/// different empty states: no activity, listening only (audio has no page
+/// analogue, so zero pages is *correct*), and reading in books whose length no
+/// rung of the ladder resolves.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PagesReadDetail {
@@ -432,19 +391,15 @@ pub struct PagesReadDetail {
     /// pages by design; this is what separates "listened, so zero pages" from
     /// "nothing happened".
     pub audio_books: i64,
-    /// Pages per UTC day within the window, active days only, ascending — the
-    /// tile's drill-in trend.
+    /// Pages per day on the reader's calendar within the window, active days
+    /// only, ascending — the tile's drill-in trend.
     #[serde(default)]
     pub daily: Vec<TrendPoint>,
     /// Whether this window opens before [`Self::since_day`], so part of it is
-    /// unmeasurable no matter what the reader did.
-    ///
-    /// Computed server-side against the window's real start rather than
-    /// inferred from the [`StatsRange`], because the range is not the fact: a
-    /// Year window in the calendar year *after* the epoch is fully covered, and
-    /// a Week window in the days right after it is not. Only the server knows
-    /// where a period starts — that calendar math lives in SQLite — so it is
-    /// the only side that can answer this without guessing.
+    /// unmeasurable no matter what the reader did. Computed server-side against the
+    /// window's real start, not inferred from the [`StatsRange`]: only the server
+    /// knows where a period starts (a Year window just after the epoch is fully
+    /// covered, a Week window right after it is not).
     #[serde(default)]
     pub window_predates_ledger: bool,
 }
@@ -476,24 +431,18 @@ pub struct PeriodComparison {
     pub avg_stars: Option<f64>,
     pub listening_seconds: i64,
     /// Pages read over the baseline window. Day-grained, unlike its siblings
-    /// here — the ledger buckets by UTC day — so the baseline includes the whole
-    /// of its boundary day, matching the current window's own partial today.
+    /// here — the ledger is resolved to days on the reader's calendar — so the
+    /// baseline includes the whole of its boundary day, matching the current
+    /// window's own partial today.
     #[serde(default)]
     pub pages_read: i64,
 }
 
 /// The full aggregate payload for one user over one [`StatsRange`].
 ///
-/// Book completion is sourced from either a 100% `journal_entries` row or an
-/// explicit `book_read_status` of `finished`, never from the session tables
-/// (which carry duration but no progress). A book finished both ways counts
-/// once, and every completion metric on this struct — `books_finished`,
-/// `finished_books`, `books_per_month`, `pages_per_hour`, `length_buckets`
-/// and `previous` — shares that one definition, live books only. They must
-/// not drift apart: several of them render on the same screen.
-///
-/// `pages_read` is pointedly **not** one of them. It measures ground covered,
-/// not books completed, and sources from the forward-progress ledger instead.
+/// A book counts as finished from a 100% `journal_entries` row or a `finished`
+/// `book_read_status` (once if both, live books only); every completion metric
+/// shares that definition. `pages_read` measures ground covered instead.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct StatsSummary {
@@ -510,24 +459,16 @@ pub struct StatsSummary {
     pub sessions: i64,
     pub active_days: i64,
     pub longest_streak_days: i64,
-    /// Consecutive active days still running as of [`Self::as_of_day`] — the
-    /// streak the reader is *on*, where `longest_streak_days` is the record.
-    /// A run ending yesterday still counts (the day isn't over yet); one
-    /// ending earlier reports zero.
-    ///
-    /// Server-computed so every client renders the same number rather than
-    /// each deriving its own from `heatmap`. **Not windowed**, unlike every
-    /// other figure here: a streak is a fact about right now, not about a
-    /// reporting period, so this reads the same on every `StatsRange`. Windowed
-    /// it would report 2 on the 2nd of the month for a reader 40 days deep —
-    /// and the web card (fed the all-time summary) and the iOS tile (fed the
-    /// period-scoped one) would disagree about the very field that exists to
-    /// stop clients disagreeing.
+    /// Consecutive active days still running as of [`Self::as_of_day`]: the streak
+    /// the reader is *on*, where `longest_streak_days` is the record. A run ending
+    /// yesterday still counts; one ending earlier reports zero. **Not windowed**,
+    /// unlike every other figure here: it is a fact about right now, so it reads the
+    /// same on every `StatsRange`.
     #[serde(default)]
     pub current_streak_days: i64,
-    /// Monday (UTC `YYYY-MM-DD`) of the busiest ISO week, if any — the week's
-    /// own start, so a surface can label it "Week of …" whether or not the
-    /// reader happened to read on the Monday.
+    /// Monday (`YYYY-MM-DD`, reader's calendar) of the busiest ISO week, if any
+    /// — the week's own start, so a surface can label it "Week of …" whether or
+    /// not the reader happened to read on the Monday.
     pub busiest_week_start: Option<String>,
     pub busiest_week_seconds: i64,
     pub books_finished: i64,
@@ -541,7 +482,7 @@ pub struct StatsSummary {
     /// into a total that would overstate what the slices cover.
     #[serde(default)]
     pub genre_tagged_books: i64,
-    /// The server's current UTC day (`YYYY-MM-DD`) when the summary was
+    /// Today on the reader's calendar (`YYYY-MM-DD`) when the summary was
     /// computed. Anchors the heatmap's trailing-year grid so the client
     /// never bakes its own clock into render (rule 07).
     #[serde(default)]
@@ -580,49 +521,18 @@ pub struct StatsSummary {
     /// bucket counts sum to the set the mean is taken over.
     #[serde(default)]
     pub rating_histogram: Vec<RatingBucket>,
-    /// Pages read in the window — the Pages tile. Sums the ground each book
-    /// was actually carried over inside the window (the forward-progress
-    /// ledger, migration `0083`) against its length as resolved by the one
-    /// ladder in `db::stats::pages`: a print-edition page count from the
-    /// metadata overrides, else a comic's exact image-page count, else the EPUB
-    /// word estimate. Exact for some books and an estimate for others, which is
-    /// why the surfaces keep the estimate disclosure in the drill-in.
-    ///
-    /// Deliberately **not** the length of the books finished in the window:
-    /// that figure reported nothing for a reader who finished nothing, and
-    /// dumped a whole book's length into whichever window its status flip
-    /// happened to land in.
-    ///
-    /// `None` when no book read in the window resolves a length on any rung —
-    /// an unmeasured book contributes nothing rather than zero. See
-    /// [`Self::pages_detail`] before rendering that as "no data": it also
-    /// covers the audio-only window, whose honest answer is zero.
+    /// Pages read in the window (the Pages tile): the ground each book was carried
+    /// over inside the window, from the forward-progress ledger, against its length
+    /// on the one ladder in `db::stats::pages`. Exact for some books, an estimate
+    /// for others. `None` when no book read resolves a length (an unmeasured book
+    /// adds nothing, not zero); see [`Self::pages_detail`] before rendering "no data".
     #[serde(default)]
     pub pages_read: Option<i64>,
-    /// Estimated reading speed over the window, in pages per hour — the
-    /// context `pages_read` is missing, and the figure a reader compares
-    /// against their own past rather than against anyone else's.
-    ///
-    /// A **seconds-weighted** mean over the books finished in the window that
-    /// resolve a length *and* carry recorded reading time: a book that
-    /// contributes pages contributes the hours behind them, so a book begun
-    /// before the window reports a plausible rate instead of its whole length
-    /// against one window's hours.
-    ///
-    /// Scoped to books *finished* in the window, where `pages_read` beside it
-    /// is scoped to ground *covered* in it: the two answer different questions
-    /// over different sets of books, so dividing one by the other — or by
-    /// `reading_seconds` — is not this figure. Narrowed further by the books
-    /// nobody has recorded reading time on, and by those whose length resolves
-    /// to zero pages: a total carries a zero harmlessly, but a rate would spend
-    /// that book's hours against none of its pages.
-    ///
-    /// Reading time only — listening is excluded, since narration speed is
-    /// the narrator's, not the reader's. A book read partly in audio
-    /// therefore over-reports here.
-    ///
-    /// `None` when no finished book in the window has both, driving the same
-    /// em-dash empty state `pages_read` does.
+    /// Estimated reading speed over the window, in pages per hour: a
+    /// **seconds-weighted** mean over books *finished* in the window that resolve a
+    /// length (above zero pages) and carry recorded reading time. Not `pages_read`
+    /// over `reading_seconds`, which cover different books. Reading time only, so a
+    /// book read partly in audio over-reports. `None` when no finished book qualifies.
     #[serde(default)]
     pub pages_per_hour: Option<f64>,
     /// Books finished in the window bucketed by length, plus the unknown
@@ -631,15 +541,11 @@ pub struct StatsSummary {
     /// rather than flat bars.
     #[serde(default)]
     pub length_buckets: Vec<LengthBucket>,
-    /// Active seconds in the window by **local** hour of day — all 24
-    /// buckets, ascending, zeros included, so the shape of a day stays
-    /// readable rather than collapsing to whichever hours had activity.
-    /// Reading and listening together, like every other activity metric here.
-    ///
-    /// Bucketed server-side against the UTC offset each session recorded at
-    /// capture time, so every client draws the same columns from the same
-    /// payload. Sessions with no recorded offset are **not** in these totals;
-    /// their seconds are reported separately as [`Self::unzoned_seconds`].
+    /// Active seconds in the window by **local** hour of day: all 24 buckets,
+    /// ascending, zeros included. Reading and listening together. Bucketed
+    /// server-side against each session's capture-time UTC offset; sessions with no
+    /// recorded offset are **not** in these totals and are reported separately as
+    /// [`Self::unzoned_seconds`].
     #[serde(default)]
     pub hour_of_day: Vec<HourBucket>,
     /// Active seconds in the window by local weekday — all 7 buckets, Monday
@@ -648,15 +554,11 @@ pub struct StatsSummary {
     /// sessions and sum to the same total.
     #[serde(default)]
     pub day_of_week: Vec<WeekdayBucket>,
-    /// Active seconds in the window that carry no capture-time UTC offset and
-    /// so can't be placed on a local clock — rows written before migration
-    /// 0080, or by a client that doesn't report one.
-    ///
-    /// Surfaced rather than folded in: attributing them to UTC would put a
-    /// reader's evening in the small hours, and attributing them to some later
-    /// offset would invent a fact about where they were. A non-zero value is a
-    /// disclosure the two strips are drawn over less than the window's whole
-    /// total, not an error.
+    /// Active seconds in the window that carry no capture-time UTC offset and so
+    /// can't be placed on a local clock (older rows, or a client that doesn't report
+    /// one). Surfaced rather than folded into UTC or some later offset, which would
+    /// invent where the reader was. A non-zero value discloses that the two strips
+    /// cover less than the window's total; it is not an error.
     #[serde(default)]
     pub unzoned_seconds: i64,
     /// The window's single most-X figures. Scoped to `range` like the rest of
@@ -672,17 +574,11 @@ pub struct StatsSummary {
     /// [`StatsRange`] and a period switch never moves it.
     #[serde(default)]
     pub goal: Option<ReadingGoal>,
-    /// Books finished in the current calendar year, whether or not an annual
-    /// goal is set.
-    ///
-    /// The figure a surface can show *before* a reader commits to a target —
-    /// the annual counterpart of [`DailyGoals::pages_today`]. It is the same
-    /// measurement [`ReadingGoal::current`] carries, over the same year bounds,
-    /// computed once and shared: setting a goal must not appear to move the
-    /// count it measures.
-    ///
-    /// Not windowed, like [`Self::goal`] itself — a calendar year is not a
-    /// reporting period, so this reads the same on every [`StatsRange`].
+    /// Books finished in the current calendar year, whether or not an annual goal
+    /// is set: the figure a surface can show *before* a reader commits to a target.
+    /// It is the same measurement [`ReadingGoal::current`] carries, computed once, so
+    /// setting a goal never appears to move the count. Not windowed, like
+    /// [`Self::goal`]: it reads the same on every [`StatsRange`].
     #[serde(default)]
     pub books_this_year: Option<i64>,
     /// The caller's standing daily goals and today's progress toward them.
@@ -705,23 +601,18 @@ impl StatsSummary {
 
     /// True when the user has no activity to show, driving the empty state.
     ///
-    /// Tested on recorded seconds rather than [`Self::sessions`], which is a
-    /// *filtered* count — sittings under the server's minimum don't reach it.
-    /// A reader whose every sitting was a glance still has time read, active
-    /// days, a heatmap and top authors to render, so keying the page's empty
-    /// state on the count would blank a populated page.
+    /// Tested on recorded seconds rather than [`Self::sessions`], a *filtered* count:
+    /// a reader whose every sitting was a glance still has time read, active days, a
+    /// heatmap and top authors to render.
     pub fn is_empty(&self) -> bool {
         self.total_seconds() == 0 && self.books_finished == 0
     }
 
     /// Whether the time-pattern strips have anything to draw.
     ///
-    /// Both strips are zero-filled to a fixed width, so "no data" and "a full
-    /// day of nothing" render identically — this is the predicate that tells
-    /// them apart, and it is deliberately shared rather than re-derived per
-    /// surface. Checks the hour strip alone: the two rollups run over one set
-    /// of sessions, so a non-empty weekday strip without a non-empty hour
-    /// strip is not a state the server can produce.
+    /// Both strips are zero-filled to a fixed width, so "no data" and "a full day of
+    /// nothing" render identically; this predicate tells them apart. Checks the hour
+    /// strip alone: both rollups run over one set of sessions.
     pub fn has_time_patterns(&self) -> bool {
         self.hour_of_day.iter().any(|b| b.seconds > 0)
     }
@@ -768,10 +659,8 @@ pub const MAX_GOAL_YEAR: i64 = 2999;
 /// One reader's goal for one calendar year, paired with progress toward it.
 ///
 /// `current` uses the **same completion definition as every other completion
-/// metric on [`StatsSummary`]** — a 100% journal entry or an explicit
-/// `finished` read status, on a live book, counted once per book. It is
-/// bounded to the goal's own year, so raising this year's target never moves
-/// last year's number.
+/// metric on [`StatsSummary`]**, bounded to the goal's own year so raising this
+/// year's target never moves last year's number.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ReadingGoal {
@@ -783,7 +672,8 @@ pub struct ReadingGoal {
     /// Progress toward `target` within `year`. May exceed it — a reader past
     /// their goal is the good case, and clamping it here would hide it.
     pub current: i64,
-    /// The calendar year (UTC) this goal and its `current` count belong to.
+    /// The calendar year (reader's calendar) this goal and its `current`
+    /// count belong to.
     pub year: i64,
 }
 
@@ -810,25 +700,11 @@ impl ReadingGoal {
     }
 }
 
-/// One reader's standing daily goal for one kind, paired with today's progress
-/// toward it.
-///
-/// Recurring rather than year-bound, so there is no `year` here: the target
-/// stands until it is changed, and `day` names the day `current` was measured
-/// over rather than the day the goal belongs to.
-///
-/// # Which day
-///
-/// **Kind-dependent, and deliberately so.** A minutes goal is measured over the
-/// reader's *local* day, from the capture-time offset each session recorded
-/// (migration `0080`) — the same treatment
-/// [`StatsSummary::hour_of_day`] gets, and the only honest one for a target
-/// that resets at midnight. A pages goal is measured over the **UTC** day,
-/// because the forward-progress ledger buckets to a UTC `YYYY-MM-DD` and keeps
-/// no timestamp to re-bucket from. So the two can name different days for the
-/// same moment, by up to the reader's offset. `day` is per-goal rather than
-/// shared for exactly that reason — a single day string on the parent would
-/// have to be wrong for one of them.
+/// One reader's standing daily goal for one kind, with today's progress toward
+/// it. Recurring, so there is no `year`: `day` names the day `current` was
+/// measured over. Both kinds measure the same day: today on the reader's
+/// calendar (the client's declared offset, else their latest session's, else
+/// UTC).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DailyGoal {
@@ -841,7 +717,7 @@ pub struct DailyGoal {
     /// [`ReadingGoal::current`] may.
     pub current: i64,
     /// The day `current` was measured over, `YYYY-MM-DD`. See the type docs
-    /// for which calendar that is — it is not the same for both kinds.
+    /// for which calendar that is.
     pub day: String,
 }
 
@@ -877,39 +753,21 @@ pub struct DailyGoals {
     pub pages: Option<DailyGoal>,
     /// The minutes goal, `None` when unset.
     pub minutes: Option<DailyGoal>,
-    /// Pages covered today, measured whether or not a pages target is set.
-    ///
-    /// The figure a surface can show *before* a reader commits to a goal —
-    /// what iOS renders in the ring's slot when there is no ring to draw. It is
-    /// the same measurement [`DailyGoal::current`] carries, over the same UTC
-    /// day, computed once and shared: the number must not change the moment a
-    /// target is set, or the goal appears to move the ground it measures.
-    ///
-    /// `None` only when the server could not measure it at all, never as a
-    /// stand-in for zero.
+    /// Pages covered today, measured whether or not a pages target is set:
+    /// the same figure [`DailyGoal::current`] carries, so setting a target
+    /// never moves it. `None` only when the server could not measure it,
+    /// never as a stand-in for zero.
     #[serde(default)]
     pub pages_today: Option<i64>,
-    /// Minutes read and listened today, on the reader's **local** day, whether
-    /// or not a minutes target is set. The counterpart to
-    /// [`Self::pages_today`], and measured exactly as the minutes goal's own
-    /// `current` is — truncating, so 59 seconds is not yet a minute.
-    ///
-    /// Note this is the local day where `pages_today` is the UTC one, for the
-    /// same reason the two goals differ: see [`crate::stats`]'s
-    /// `daily_goals` docs.
+    /// Minutes read and listened today, whether or not a minutes target is set,
+    /// over the same day as [`Self::pages_today`]. Truncating, like the minutes
+    /// goal's own `current`: 59 seconds is not yet a minute.
     #[serde(default)]
     pub minutes_today: Option<i64>,
-    /// Seconds recorded today by sessions carrying no capture-time offset,
-    /// which the minutes goal therefore could not place on a local day.
-    ///
-    /// The same disclosure [`StatsSummary::unzoned_seconds`] makes, narrowed to
-    /// the day: those seconds are real reading that neither `minutes` nor
-    /// [`Self::minutes_today`] includes, and a figure that silently
-    /// under-reports is worse than one that says what it could not see.
-    ///
-    /// Reported whether or not a minutes target is set, because
-    /// `minutes_today` is shown either way — there is always something to
-    /// disclose against.
+    /// Always `0`, kept so a client built against the earlier shape still
+    /// decodes. The day is placed by the reader's current offset, not each
+    /// session's, so every session counts toward [`Self::minutes_today`] and
+    /// nothing is left unplaced to disclose.
     #[serde(default)]
     pub unzoned_seconds: i64,
 }
@@ -922,18 +780,11 @@ impl DailyGoals {
     }
 }
 
-/// Write payload for `PUT /api/stats/goal/daily`.
-///
-/// Its own route and its own type rather than a `scope` on
-/// [`ReadingGoalUpdate`]: that route answers with an `Option<ReadingGoal>` that
-/// the iOS client already decodes, and widening its response to carry a daily
-/// goal too would break every shipped build. The two write paths stay
-/// independent on the wire and meet in `db::stats`.
-///
-/// `kind` is required — unlike the annual update there is no single sensible
-/// default, since a reader may be setting either of two goals. An absent
-/// `target` **clears** that kind, on the same grounds
-/// [`ReadingGoalUpdate::target`] does.
+/// Write payload for `PUT /api/stats/goal/daily`. A separate route and type from
+/// [`ReadingGoalUpdate`], whose `Option<ReadingGoal>` response shipped iOS
+/// builds already decode. `kind` is required, as a reader may be setting either
+/// of two goals. An absent `target` **clears** that kind, like
+/// [`ReadingGoalUpdate::target`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DailyGoalUpdate {
@@ -988,12 +839,9 @@ impl DailyGoalUpdate {
 
 /// Write payload for `PUT /api/stats/goal`.
 ///
-/// `year` and `kind` default to the server's current year and
-/// [`GOAL_KIND_BOOKS`], so the common client sends `{"target": 24}` alone and
-/// never bakes its own clock into the request. A `null` / absent `target`
-/// **clears** the goal for that `(year, kind)` — there is no separate DELETE
-/// route, because "no goal" and "a goal of zero" must not both be
-/// representable.
+/// `year` and `kind` default to the server's current year and [`GOAL_KIND_BOOKS`],
+/// so the common client sends `{"target": 24}` alone. A `null` / absent `target`
+/// **clears** the goal for that `(year, kind)`; there is no separate DELETE route.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ReadingGoalUpdate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1062,19 +910,11 @@ pub struct CompositionSlice {
     pub books: i64,
 }
 
-/// One dimension of the library's composition — its buckets plus the coverage
-/// behind them.
-///
-/// The coverage pair is the same [`MeasuredTotal`] contract the library-size
-/// figures use, read one level up: `total` is **bucket placements** (the sum
-/// of every slice's `books`) and `books` is the **distinct live books** the
-/// dimension describes. The two differ exactly when a book lands in more than
-/// one bucket — a dual-format book, a multi-genre one — so `total - books` is
-/// the overlap, and `books` against `LibraryComposition::books` is the share
-/// of the library the dimension can speak for at all.
-///
-/// `coverage.books == 0` means nothing in the library carries this dimension,
-/// which the surfaces render as an empty state rather than an empty chart.
+/// One dimension of the library's composition: its buckets plus the coverage
+/// behind them. `coverage.total` is **bucket placements** (the sum of every
+/// slice's `books`) and `coverage.books` the **distinct live books** the
+/// dimension describes; they differ when a book lands in several buckets.
+/// `coverage.books == 0` means no book carries this dimension: show an empty state.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompositionDimension {
     #[serde(default)]
@@ -1107,28 +947,19 @@ impl CompositionDimension {
 /// What the collection is made of: its format mix, language mix, publisher
 /// spread, publication-decade histogram, and genre distribution.
 ///
-/// **Library-scoped, not user-scoped**, and deliberately not a field on
-/// [`StatsSummary`] for the same reason [`LibrarySize`] isn't: it is the same
-/// answer for every reader and only moves on a reindex, so hanging it off a
-/// per-user payload would recompute and re-send it on every period switch.
-///
-/// Every count is `DISTINCT` over books, never over rows. `book_files` is one
-/// row per *file* (migration `0018` keys it `UNIQUE(book_id, format,
-/// ordinal)`), so a twelve-part M4B is twelve rows and counting rows would
-/// report one audiobook as twelve.
+/// **Library-scoped, not user-scoped**, like [`LibrarySize`]. Every count is
+/// `DISTINCT` over books, never rows: a twelve-part M4B is twelve `book_files` rows.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LibraryComposition {
     /// Live books — those with at least one surviving `book_files` row. The
     /// denominator every dimension's coverage is read against, and the same
     /// population [`LibrarySize::books`] counts.
     pub books: i64,
-    /// Books whose files are gone: a `books` row with no surviving
-    /// `book_files`, the rows `db::admin_health::index_status` calls ghosted.
+    /// Books whose files are gone: a `books` row with no surviving `book_files`.
     ///
-    /// Reported rather than dropped. They carry no format at all, so they
-    /// would otherwise vanish from the format rollup and leave the per-format
-    /// counts quietly failing to reconcile against the library. The identity
-    /// the surfaces publish is `books + ghosted_books` = every `books` row.
+    /// Reported rather than dropped: they carry no format, so they would vanish from
+    /// the format rollup and leave per-format counts failing to reconcile. The
+    /// identity surfaces publish is `books + ghosted_books` = every `books` row.
     #[serde(default)]
     pub ghosted_books: i64,
     /// Format mix by `book_files.format`, most books first. A book held in
@@ -1145,26 +976,18 @@ pub struct LibraryComposition {
     /// Publisher spread by `publishers.name`, tail folded into "Other".
     #[serde(default)]
     pub publishers: CompositionDimension,
-    /// Publication decades, oldest first, and **not folded** — a histogram
-    /// sorted by height or truncated at six bars is a bar chart of nothing.
-    /// The year comes from the same `CAST(substr(pubdate, 1, 4) AS INTEGER)`
-    /// extraction smart-shelf rules use, so a decade histogram and a
-    /// `year >= 1990` shelf can never disagree about a book.
-    ///
-    /// There is deliberately **no `Unknown` bucket**: a book with an absent
-    /// or unparseable `pubdate` is uncovered, reported through the coverage
-    /// pair like every other dimension's unknowns. That uniformity is what
-    /// keeps `sum(slices) == coverage.total` checkable everywhere.
+    /// Publication decades, oldest first, and **not folded**: a histogram sorted by
+    /// height or truncated is a bar chart of nothing. The year uses the same
+    /// extraction as smart-shelf rules, so a decade bar and a `year >= 1990` shelf
+    /// never disagree. There is no `Unknown` bucket: a book with an absent or
+    /// unparseable `pubdate` is uncovered, reported through the coverage pair.
     #[serde(default)]
     pub decades: CompositionDimension,
     /// Genre distribution, tail folded into "Other".
     ///
-    /// **Read its coverage before its slices.** Genres have no link table by
-    /// design (migration `0066`): nothing Omnibus parses carries one, so they
-    /// live only in `metadata_overrides -> '$.genres'` and this describes
-    /// exactly the books someone has hand-edited. Presenting a 4%-of-library
-    /// sample as "your library's genres" is the failure mode the coverage
-    /// pair exists to prevent.
+    /// **Read its coverage before its slices.** Genres live only in
+    /// `metadata_overrides -> '$.genres'`, so this describes just the books someone
+    /// has hand-edited, not "your library's genres".
     #[serde(default)]
     pub genres: CompositionDimension,
 }
@@ -1185,10 +1008,9 @@ impl LibraryComposition {
 
 /// Which of the two session tables a stitched sitting drew from.
 ///
-/// [`Self::Mixed`] is not a fallback: a dual-format book read and listened to
-/// in one stretch stitches into a single sitting (see `db::stats::sessionize`),
-/// and reporting it as one or the other would name a format the reader didn't
-/// spend the whole sitting in.
+/// [`Self::Mixed`] is not a fallback: a dual-format book read and listened to in
+/// one stretch stitches into a single sitting (see `db::stats::sessionize`), and
+/// naming either format alone would misreport it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -1212,10 +1034,8 @@ impl SessionFormat {
 /// One sitting in the reading-session log: adjacent checkpoint rows stitched
 /// back together, so an entry is a sit rather than a heartbeat flush.
 ///
-/// `seconds` is the *recorded* time across the sitting, not `ended_at -
-/// started_at`: a sitting the reader paused mid-way spans more wall clock than
-/// it recorded, and the recorded figure is the one every other stats surface
-/// reports.
+/// `seconds` is the *recorded* time, not `ended_at - started_at`: a paused
+/// sitting spans more wall clock than it recorded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SessionLogEntry {
@@ -1230,18 +1050,12 @@ pub struct SessionLogEntry {
     pub seconds: i64,
     /// [`Self::started_at`] rendered as ISO 8601 UTC. When the sitting began.
     ///
-    /// Both forms travel together: the epoch is what clients compare and
-    /// sort on, the string is what a reader of the API can act on without
-    /// doing calendar arithmetic by hand. Populated by the server's read
-    /// paths; `None` on a payload a client built itself.
+    /// `None` on a payload a client built itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at_iso: Option<String>,
     /// [`Self::ended_at`] rendered as ISO 8601 UTC. When it ended.
     ///
-    /// Both forms travel together: the epoch is what clients compare and
-    /// sort on, the string is what a reader of the API can act on without
-    /// doing calendar arithmetic by hand. Populated by the server's read
-    /// paths; `None` on a payload a client built itself.
+    /// `None` on a payload a client built itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at_iso: Option<String>,
 }
@@ -1268,9 +1082,8 @@ impl SessionLogEntry {
 /// A keyset cursor into the session log: the last-seen sitting's start plus
 /// its book, ordered `(started_at DESC, book_uuid DESC)`.
 ///
-/// The book uuid is not decoration. Two different books can start a sitting in
-/// the same second, and a cursor carrying only `started_at` either drops the
-/// tie's remainder (`<`) or repeats it forever (`<=`).
+/// The book uuid breaks ties: two books can start a sitting in the same second,
+/// and a cursor with only `started_at` drops or repeats the remainder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SessionCursor {

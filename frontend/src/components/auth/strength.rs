@@ -80,12 +80,10 @@ pub fn StrengthMeter(score: StrengthScore, #[props(default)] label: Option<Strin
     }
 }
 
-/// Presentational password scoring — the server still enforces policy (the
-/// 10-char minimum + common-password reject-list). Returns the meter score
-/// (0..=4), a short label, and the three checklist booleans (length≥10,
-/// mixed case, number-or-symbol) so a page renders both the meter and the
-/// requirements list from one pass. Shared by the register page and the
-/// Settings → Account change-password form.
+/// Presentational password scoring; the server still enforces policy. Returns
+/// the meter score (0..=4), a short label, and the three checklist booleans
+/// (length≥10, mixed case, number-or-symbol), so a page renders the meter and
+/// the requirements list from one pass.
 pub fn score_password(pw: &str) -> (StrengthScore, &'static str, [bool; 3]) {
     let len = pw.chars().count();
     let has_lower = pw.chars().any(|c| c.is_ascii_lowercase());

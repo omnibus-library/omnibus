@@ -120,12 +120,10 @@ fn spelled(n: i64) -> String {
     group_thousands(n)
 }
 
-/// The hero's opening sentence, split so the middle clause can be tinted.
-///
-/// Deliberately says nothing about how long the shelf would take to read:
-/// that answer is the *reader's* pace, and this scope is labelled "whole shelf
-/// · not period-scoped". Borrowing a user figure to finish the sentence would
-/// contradict the boundary the page just drew.
+/// The hero's opening sentence, split so the middle clause can be tinted. It
+/// says nothing about how long the shelf would take to read: that is the
+/// *reader's* pace, and this scope is labelled "whole shelf · not
+/// period-scoped".
 fn hero_sentence(size: &LibrarySize) -> (String, Option<String>, &'static str) {
     let books = format!(
         "{} {}.",
@@ -143,11 +141,9 @@ fn hero_sentence(size: &LibrarySize) -> (String, Option<String>, &'static str) {
 }
 
 /// The Library scope's hero: the collection in one sentence, over its size in
-/// words, pages, and hours of audio.
-///
-/// A placeholder until the fetch lands (never carrying the card's testid), and
-/// nothing when the library has been measured for nothing: three zeroes read
-/// as a claim about the collection rather than about the backfill.
+/// words, pages, and hours of audio. A placeholder until the fetch lands (never
+/// carrying the card's testid), and nothing when the library has been measured
+/// for nothing, since three zeroes would read as a claim about the collection.
 #[component]
 pub(super) fn LibrarySizeHero(size: Option<LibrarySize>) -> Element {
     let Some(size) = size else {

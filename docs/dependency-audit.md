@@ -1,6 +1,6 @@
 # Dependency Audit — Cargo.lock Duplicate Families
 
-Last updated: 2026-09-22 (issue #522 — Dioxus now resolves from crates.io, not a git tag; previously issues #2054, #1767, #1710, #1621, #1529, #1530, #1100, #1268, #1147, #643).
+Last updated: 2026-10-12 (issue #2724 — the mock-kobo TUI adds the `lru` family; previously issue #522 — Dioxus now resolves from crates.io, not a git tag — and issues #2054, #1767, #1710, #1621, #1529, #1530, #1100, #1268, #1147, #643).
 
 Run `cargo tree -d` and inspect the output any time Dioxus or Axum are bumped.
 The `deny.toml` `[bans]` section has matching `skip` entries for all accepted
@@ -19,6 +19,7 @@ this list.
 | `rand_core` | 0.5.1, 0.6.4, 0.9.5 | 0.5.1 via `rand 0.7.3` (build-dep, `phf_generator`); 0.6.4 via argon2 auth path + signature crates; 0.9.5 via `rand 0.9` (tungstenite) | **blocked by upstream** | Three-way split mirrors the `rand` family below. 0.5/0.6 are the auth and build-dep paths described elsewhere; 0.9 is the new tungstenite path. |
 | `hashbrown` | 0.14.5, 0.15.5, 0.16.1, 0.17.1 | 0.14 from `dashmap` (dioxus-server); 0.15 from `sqlx-core` + `hashlink`; 0.16 from `lru` (dioxus-server); 0.17 from `indexmap` (h2 + sqlx + epub/zip) | **blocked by upstream** | Four-way spread across two major upstream stacks (Dioxus + sqlx + h2). All versions are internal impl details of their respective crates — `hashbrown` does not appear in any public API. Collapses as each upstream crate independently catches up to the same `hashbrown` minor. |
 | `foldhash` | 0.1.5, 0.2.0 | 0.1.5 via `hashbrown 0.15.5` (sqlx-core/hashlink path); 0.2.0 via `hashbrown 0.16.1` (dioxus-server's `lru`/`metrics-util` path) | **accepted intentionally** | One copy per `hashbrown` minor — both are internal impl details of `hashbrown`, same root cause as the `hashbrown` row above. Classified separately, though: the `deny.toml` skips for both `foldhash` versions are already in place, unlike `hashbrown`'s still-open four-way spread. Already carries a `deny.toml` skip + comment. |
+| `lru` | 0.16.4, 0.18.5 | 0.16.4 via `dioxus-server` 0.7.9 (→ `dioxus`, asks for `^0.16`); 0.18.5 via `ratatui-core` (`omnibus-mock-kobo`'s `tui` feature) | **blocked by upstream** | The 0.18 copy is dev tooling only: `server/` builds mock-kobo with default features off, so it never reaches the shipped server binary. The 0.16 copy is the one RUSTSEC-2026-0253 (accepted below) hits; both collapse once Dioxus asks for `lru >= 0.18.2`. |
 | `hashlink` | 0.9.1, 0.10.0 | 0.9.1 via `rusqlite 0.32.1` (`omnibus-frontend`'s mobile-offline SQLite store); 0.10.0 via `sqlx-core 0.8.6` | **blocked by upstream** | Downstream instance of the same `rusqlite`/`sqlx` `libsqlite3-sys` coupling already documented for issue #1529 (see Policy section below) — the two crates simply vendor different `hashlink` minors alongside their independent `libsqlite3-sys` pins. Collapses only when that coordinated `rusqlite`/`sqlx` bump happens. |
 | `convert_case` | 0.4.0, 0.8.0, 0.10.0 | 0.4 from `derive_more 0.99.20` (proc-macro path, transitive via Dioxus desktop/mobile shells); 0.8 from Dioxus proc-macro crates (`dioxus-core-macro`, `dioxus-html-internal-macro`, `dioxus-stores-macro`); 0.10 from `derive_more-impl` (pulled by `dioxus-fullstack`) | **blocked by upstream** | Pure proc-macro dependency; not in any runtime binary image. |
 | `rand` | 0.7.3, 0.8.6, 0.9.4 | 0.7 and 0.8 both from `phf_generator` build-dep chains rooted in `kuchikiki` (wry's bundled HTML/CSS engine, on an old html5ever/cssparser lineage) → `wry` — **not** `ammonia`, which is a direct `omnibus-db` dependency but sits on a separate, newer `markup5ever` lineage using `phf_generator 0.13` (fastrand-backed, no `rand` at all); 0.9 from `rand_core@0.9` (via tungstenite) | **blocked by upstream** | Verified with `cargo tree -i rand@0.7.3` / `@0.8.6` and `cargo tree -p omnibus-db` (issue #2054): both build-dep copies terminate at `wry`, confined to the native shell. The 0.7 and 0.8 copies are build-only (`phf_codegen` / `string_cache_codegen`) and never link into the runtime binary. |
@@ -34,7 +35,7 @@ this list.
 | `digest` | 0.10.7 (×2) | Both consumers are `sha1` (axum/tungstenite) + `blake2`/`sha2` (argon2/sqlx) | N/A — same version | `cargo tree -d` shows two entry paths to the same version (different consumers). No actual duplicate in the lockfile. |
 | `rustc-hash` | 1.1.0, 2.1.2 | 1.1.0 via `sledgehammer_utils` (pulled in by `dioxus-interpreter-js`, which both `dioxus-web` and `dioxus-server` depend on); 2.1.2 as a direct dependency of `dioxus-core` | **blocked by upstream** | Verified with `cargo tree -i rustc-hash@1.1.0` / `@2.1.2` (not assumed): both versions are reachable from the default, non-mobile build via `dioxus-core`/`dioxus-server`/`dioxus-web`, which `omnibus` and `omnibus-frontend` depend on directly — i.e. **inside** the shipped web/WASM bundle, not confined to the `wry`/`tao` mobile native-shell subtree (despite that subtree's skip-tree comment in `deny.toml` also naming `rustc-hash` among its duplicates — the mobile subtree apparently resolves to one of these same two versions rather than introducing a third). Collapses when Dioxus unifies its internal `rustc-hash` pin. As of issue #2054 this row finally has the matching `deny.toml` `skip` entries the Policy section below promises — a prior gap: the row existed here but `bans` had nothing suppressing it. |
 | `windows-sys` | 0.52.0, 0.59.0, 0.60.2, 0.61.2 | Four independent chains, each straddling both the native shell and the default build (`cfg(windows)`-gated, so `cargo deny`'s all-target resolution surfaces them even though this project ships Linux/container-only): 0.52.0 via `errno`→`rustix` (native shell) **and** `ring`/`rustls-webpki` + `signal-hook-registry`→`tokio` (default build); 0.59.0 via `dirs-sys`/`global-hotkey` (native shell) **and** `nu-ansi-term`→`tracing-subscriber` (default build); 0.60.2 via `muda`/`tray-icon` (native shell) **and** `socket2`→`hyper-util`/`lettre`/`tokio` (default build); 0.61.2 via `rfd`/`schannel`→`native-tls`→`tungstenite` (native shell) **and** `mio`→`tokio` + `rustls-native-certs`→`rustls-platform-verifier`→`reqwest` (default build) | **blocked by upstream** | Not confined to `wry`/`tao` — the default-build paths run through `tokio`/`rustls`/`tracing-subscriber`, core dependencies of the shipped server. Windows target support in those crates is out of this project's control. |
-| `bytes`, `futures-*`, `num-traits`, `tokio`, `manganis-core`, `log`, `fastrand`, `sqlx-sqlite` | (shown ×2 each) | Multiple downstream consumers | N/A — same version | Same pattern as `digest`: one version, multiple reverse-dependency entry points in the `cargo tree -d` output. Not true duplicates. |
+| `bytes`, `futures-*`, `num-traits`, `tokio`, `mio`, `manganis-core`, `log`, `fastrand`, `sqlx-sqlite` | (shown ×2 each) | Multiple downstream consumers | N/A — same version | Same pattern as `digest`: one version, multiple reverse-dependency entry points in the `cargo tree -d` output. Not true duplicates. |
 
 ## First-party skew resolved in this PR
 
@@ -133,6 +134,15 @@ this list.
   glue's header comment in step, and re-run `pdf_reader.spec.ts` — the text
   layer's CSS contract (`--total-scale-factor`, `--scale-round-x/y`,
   `.textLayer span` geometry) has moved between majors before.
+
+## TUI crates (mock-kobo)
+
+- `ratatui` 0.30 and `crossterm` 0.29 (both MIT) sit behind mock-kobo's
+  default `tui` feature: dev tooling, never in the server or its tests.
+- `lru` is the only new duplicate family (see the table); `lru 0.18.x` is past
+  RUSTSEC-2026-0253's `>= 0.18.2` fix.
+- ratatui-core's `bitflags ^2.12` lifted bitflags 2.11.1 to 2.13.2; nothing
+  else moved.
 
 ## Policy
 

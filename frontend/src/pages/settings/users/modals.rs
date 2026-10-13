@@ -230,10 +230,8 @@ pub(super) fn EditUserModal(
 
 /// Delete-confirmation modal. Warns when the admin is deleting their own
 /// account; the last-admin guard is enforced server-side and surfaced inline.
-/// Passes `busy` through to the shared `ConfirmModal` shell (see
-/// `components::confirm_modal`) so the backdrop can't be dismissed
-/// mid-delete — unlike `ModalShell` above, which always passes `busy: false`
-/// since none of its callers need that gate.
+/// Passes `busy` through to the shared `ConfirmModal` shell so the backdrop
+/// can't be dismissed mid-delete.
 #[component]
 pub(super) fn DeleteUserModal(
     user: AdminUserRow,
@@ -308,12 +306,10 @@ pub(super) fn DeleteUserModal(
     }
 }
 
-/// Device & session management modal: lists a target user's
-/// live sessions and registered devices, each with a Revoke action. Both
-/// lists reload after any revoke so the rendered state always matches the
-/// server. Devices are listed separately from sessions — revoking a device
-/// also revokes any session still tied to it (enforced server-side), so a
-/// device row disappearing can also drop a session row on the next reload.
+/// Device & session management modal: lists a target user's live sessions and
+/// registered devices, each with a Revoke action; both lists reload after any
+/// revoke. Revoking a device also revokes any session still tied to it
+/// (server-side), so a device row disappearing can drop a session row on reload.
 #[component]
 pub(super) fn SessionsModal(user: AdminUserRow, on_close: EventHandler<()>) -> Element {
     let uid = user.id;
@@ -462,14 +458,11 @@ fn render_device_list(
     }
 }
 
-/// Shared modal overlay + card chrome, built on the `ConfirmModal` shell
-/// (see `components::confirm_modal`) with its `head` slot carrying the
-/// title bar and close button. Clicking the scrim or the close button
-/// dismisses; clicks inside the card don't propagate. Unlike
-/// `DeleteUserModal`'s use of `ConfirmModal`, this always passes `busy:
-/// false` — none of `ModalShell`'s callers (new/edit/sessions) gate the
-/// backdrop on an in-flight save, matching this shell's pre-refactor
-/// behavior.
+/// Shared modal overlay + card chrome, built on the `ConfirmModal` shell with
+/// its `head` slot carrying the title bar and close button. Clicking the scrim
+/// or the close button dismisses; clicks inside the card don't propagate. It
+/// always passes `busy: false`, as no caller (new/edit/sessions) gates the
+/// backdrop on an in-flight save.
 #[component]
 fn ModalShell(
     title: String,

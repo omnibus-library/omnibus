@@ -29,14 +29,9 @@ pub(crate) fn toggle_dir(d: SortDir) -> SortDir {
 }
 
 /// Why the landing's sort controls are inert for the current gallery pick, or
-/// `None` when they act.
-///
-/// A hand-picked shelf's member order is the reader's own
-/// (`ORDER BY sb.position, sb.added_at`) and the wishlist's is when they
-/// wished for it (`ORDER BY we.added_at DESC`) — both settled server-side in
-/// `db::shelves::read::detail`, where neither the axis nor the direction is
-/// consulted. The queries are deliberate and unchanged; what was wrong is a
-/// control that stayed live and pretended to act.
+/// `None` when they act. A hand-picked shelf's member order is the reader's own
+/// and the wishlist's is when they wished for it, both settled in
+/// `db::shelves::read::detail`, where neither axis nor direction is consulted.
 pub(crate) fn sort_lock_reason(kind: Option<ShelfKind>) -> Option<&'static str> {
     match kind? {
         ShelfKind::Manual | ShelfKind::Wishlist => Some("shelf order"),
@@ -125,14 +120,9 @@ pub(crate) fn slugify(s: &str) -> String {
 
 /// Stable per-book testid slug for a row/tile.
 ///
-/// A fileless book (physical-only, or a ghost) has no `book_files` row, and
-/// `row_to_ebook` leaves its `filename` empty — slugging that alone would
-/// collapse every such book onto one testid and make Playwright selectors
-/// ambiguous. Fall back to the uuid, which is always present.
-///
-/// **Not a diff key.** `filename` is the file's *basename*, so two books slug
-/// alike whenever their files are named alike, however far apart the folders
-/// holding them sit. Keyed lists take [`row_diff_key`].
+/// A fileless book (physical-only, or a ghost) has an empty `filename`, so
+/// this falls back to the uuid. Not a diff key (rule 07): keyed lists take
+/// [`row_diff_key`].
 pub(crate) fn row_ident(book: &EbookMetadata) -> String {
     if book.filename.is_empty() {
         return row_slug(book.unique_identifier.as_deref().unwrap_or_default());
@@ -142,11 +132,7 @@ pub(crate) fn row_ident(book: &EbookMetadata) -> String {
 
 /// Stable per-book key for a keyed list — `books.id`, unique library-wide.
 ///
-/// Deliberately not [`row_ident`]: that slug is cut from the file's basename,
-/// so `vol.epub` under two folders — or `A Book!.epub` beside `A Book.epub` —
-/// collapses two books onto one string. An ambiguous testid is a nuisance;
-/// duplicate keyed siblings corrupt Dioxus's keyed diff and take the whole
-/// page's event handling down with it (#2633, rule 07).
+/// Never [`row_ident`], whose slug can collide (rule 07).
 pub(crate) fn row_diff_key(book: &EbookMetadata) -> String {
     book.id.to_string()
 }

@@ -21,13 +21,11 @@ fn sanitized_err(label: &str, e: impl std::fmt::Display) -> TaskOutcome {
     TaskOutcome::Err(format!("{label} failed; see server logs for details"))
 }
 
-/// [`sanitized_err`]-based mapping for the handlers whose failure space is
-/// `anyhow` (foreign systems: filesystem scans, ffmpeg, parsers) and thus
-/// has no enumerable variants to bucket. The `Ok` payload is discarded
-/// (some handlers return a path/id), so `Ok(())` and `Ok(value)` collapse
-/// to [`TaskOutcome::Ok(None)`] identically. Scan tasks that need to
-/// surface a ghost-count warning build their `TaskOutcome`
-/// directly instead of going through this helper.
+/// [`sanitized_err`]-based mapping for handlers whose failure space is `anyhow`
+/// (foreign systems: filesystem scans, ffmpeg, parsers), with no variants to
+/// bucket. The `Ok` payload is discarded, so `Ok(())` and `Ok(value)` both
+/// become [`TaskOutcome::Ok(None)`]. Scan tasks that surface a ghost-count
+/// warning build their `TaskOutcome` directly instead.
 fn anyhow_outcome<T>(label: &str, result: anyhow::Result<T>) -> TaskOutcome {
     match result {
         Ok(_) => TaskOutcome::Ok(None),
@@ -69,12 +67,10 @@ fn kepub_outcome(result: Result<std::path::PathBuf, crate::kepub::KepubError>) -
     }
 }
 
-/// Variant-aware mapping for [`crate::convert::ConvertError`]: a missing
-/// source file, an unavailable `ebook-convert` binary, a timeout, and an
-/// invalid format token are safe, specific messages; the collapsed
-/// `Failed` variant (DB lookups, I/O, a non-zero `ebook-convert` exit)
-/// carries subprocess stderr / lower-level internals, so it goes through
-/// [`sanitized_err`].
+/// Variant-aware mapping for [`crate::convert::ConvertError`]: a missing source
+/// file, an unavailable `ebook-convert`, a timeout and an invalid format token
+/// are safe, specific messages; the collapsed `Failed` variant carries
+/// subprocess stderr and internals, so it goes through [`sanitized_err`].
 fn convert_outcome(
     result: Result<std::path::PathBuf, crate::convert::ConvertError>,
 ) -> TaskOutcome {
@@ -91,21 +87,11 @@ fn convert_outcome(
     }
 }
 
-/// Run the requested cleanup detector(s) and persist any newly-found
-/// suggestions into `dedup_suggestions` (migration `0069`). `kind = None`
-/// runs every detector via [`crate::cleanup::detect_all`]; `Some(k)` scopes
-/// to just that domain — `Tag` runs both `detect_tags_merge` and
-/// `detect_tags_split`, since one `CleanupKind::Tag` covers both actions.
-/// The insert relies on the table's `UNIQUE (kind, action, payload_json)`
-/// constraint (`INSERT OR IGNORE`), so re-running detection after nothing
-/// changed inserts nothing new. Returns the count of newly-inserted rows.
-///
-/// The pass is subtractive as well as additive: pending rows of the kinds it
-/// covered that it did not re-emit are retired via
-/// [`crate::cleanup::prune_undetected`]. Without that, a suggestion detected
-/// once outlives whatever made it true — an author whose books have all since
-/// had their creators overridden away is still named by a pending card, and
-/// no amount of re-running detection removes it.
+/// Run the requested cleanup detector(s) and persist newly-found suggestions
+/// into `dedup_suggestions`; returns the count of newly-inserted rows. `kind =
+/// None` runs every detector ([`crate::cleanup::detect_all`]), `Some(k)` only
+/// that domain. Pending rows it didn't re-emit are retired via
+/// [`crate::cleanup::prune_undetected`], so stale suggestions don't linger.
 async fn run_cleanup_detection(
     pool: &SqlitePool,
     kind: Option<CleanupKind>,
@@ -154,12 +140,10 @@ async fn run_cleanup_detection(
     Ok(inserted)
 }
 
-/// Whether a task can change how big the library itself is.
-///
-/// `db::stats::library`'s totals are library-wide and cached behind a long TTL,
-/// because a collection changes on a scan rather than on a sitting. These four
-/// tasks are what move it; everything else leaves the entry alone rather than
-/// paying for a recompute the reader would not see a different answer from.
+/// Whether a task can change how big the library itself is. The library-wide
+/// totals in `db::stats::library` are cached behind a long TTL (a collection
+/// changes on a scan, not on a sitting); only these four tasks move them, so
+/// everything else leaves the cache entry alone.
 pub(super) fn resizes_library(task: &Task) -> bool {
     matches!(
         task,
@@ -171,14 +155,10 @@ pub(super) fn resizes_library(task: &Task) -> bool {
 }
 
 impl Worker {
-    /// Run a queued [`Task`], then drop the library-scoped stats caches if the
-    /// task could have changed the library's own content.
-    ///
-    /// `db::stats::library`'s totals and `db::stats::composition`'s dimension
-    /// rollups are library-wide and cached behind a long TTL, because a
-    /// collection changes on a scan rather than on a sitting. These four tasks
-    /// are what move them, and dropping the entries after one is what stops a
-    /// just-finished scan describing the library the reader had before it.
+    /// Run a queued [`Task`], then drop the library-scoped stats caches (library
+    /// totals and composition rollups) if `resizes_library` says the task could
+    /// have changed the library's own content, so a just-finished scan doesn't
+    /// describe the library as it was before.
     pub(super) async fn execute(self: &Arc<Self>, task: Task, id: TaskId) -> TaskOutcome {
         let resizes = resizes_library(&task);
         let outcome = self.dispatch(task, id).await;
@@ -538,18 +518,17 @@ impl Worker {
     }
 
     /// `Task::KepubConvert` plus the Web→Kobo annotation materialization it
-    /// unblocks. A KoboSpan anchor is derivable only against the converted
-    /// KEPUB, so a highlight written while the cache was cold is left
-    /// unresolved by `downsync_book_annotations` — which requests exactly this
-    /// task on its way out. Running the pass here is what makes that request
-    /// pay off: without it the row waits for the next highlight write or the
-    /// next boot, because an unmaterialized row never moves the wire
-    /// fingerprint that `checkforchanges` uses to invite a re-pull.
-    /// Non-fatal — the conversion itself is the task's contract.
+    /// unblocks: a KoboSpan anchor is derivable only against the converted KEPUB,
+    /// so a highlight written while the cache was cold is left unresolved by
+    /// `downsync_book_annotations`, which requests exactly this task. The
+    /// annotation pass is non-fatal; the conversion is the task's contract.
     async fn handle_kepub_convert(self: &Arc<Self>, book_id: i64, id: TaskId) -> TaskOutcome {
         self.report_book_detail(id, book_id).await;
         let outcome = kepub_outcome(crate::kepub::convert_book(&self.pool, book_id).await);
         if matches!(outcome, TaskOutcome::Ok(_)) {
+            // Without this the row waits for the next highlight write or boot: an
+            // unmaterialized row never moves the wire fingerprint that
+            // `checkforchanges` uses to invite a re-pull.
             if let Err(e) =
                 crate::annotations::downsync_book_id_annotations(&self.pool, book_id).await
             {
@@ -559,16 +538,11 @@ impl Worker {
         outcome
     }
 
-    /// Reindex an ebook library, then (on success) post the follow-up
-    /// word-count, page-count, cover re-extract, thumbnail-warm-up, and
-    /// content-FTS backfill tasks for any rows this library still needs
-    /// them for, plus a
-    /// library-cleanup detection pass so fresh dedup suggestions appear after
-    /// an import without any admin action. All of them share the scan's
-    /// resource key except `DetectCleanup`, which runs under its own
-    /// `cleanup` key so it doesn't wait behind (or block) a same-library
-    /// rescan; the posts themselves are instant. Mirrors the audiobook
-    /// chapter backfill.
+    /// Reindex an ebook library, then (on success) post the follow-up word-count,
+    /// page-count, cover re-extract, thumbnail-warm-up and content-FTS backfill
+    /// tasks it still needs, plus a cleanup detection pass so fresh dedup
+    /// suggestions appear after an import. All share the scan's resource key but
+    /// `DetectCleanup`, which has its own `cleanup` key and never queues behind a rescan.
     async fn handle_scan(self: &Arc<Self>, library_path: String, id: TaskId) -> TaskOutcome {
         // Owned clone: the verbose callback rides into the indexer's
         // blocking parse phase, which needs `Send + 'static`.
@@ -607,18 +581,11 @@ impl Worker {
         }
     }
 
-    /// Bake every book's active override into its EPUB export cache.
-    /// Per-book failures are recorded in
-    /// [`omnibus_shared::BulkRewriteSummary::errors`] by
-    /// `rewrite_all_epubs_with_overrides` itself and never fail the task —
-    /// only a failure resolving the batch (DB down, etc.) reaches this
-    /// match's `Err` arm. A non-empty error list rides onto the terminal
-    /// `TaskOutcome` as [`TaskSuccessDetail::BakeErrors`] so the
-    /// poller can surface it, in addition to the summary counts always
-    /// being logged. Only the failed `book_uuid`s cross that boundary —
-    /// each per-book `message` (from `db::epub_rewrite`, which can carry a
-    /// server filesystem path) is logged here, server-side only, and never
-    /// reaches `rpc_worker_status`, which any authenticated user can poll.
+    /// Bake every book's active override into its EPUB export cache. Per-book
+    /// failures never fail the task (`BulkRewriteSummary::errors`); only a
+    /// failure resolving the batch reaches the `Err` arm. A non-empty error list
+    /// rides onto the outcome as [`TaskSuccessDetail::BakeErrors`] with only the
+    /// failed `book_uuid`s: messages can carry server paths and are logged only.
     async fn handle_rewrite_all_epubs(self: &Arc<Self>, id: TaskId) -> TaskOutcome {
         match crate::rewrite_all_epubs_with_progress(&self.pool, |processed, total, current| {
             self.report_item_progress(id, processed, total, current.unwrap_or("…"));
@@ -696,12 +663,11 @@ impl Worker {
         }
     }
 
-    /// Fetch a book's cover and (re)generate its WebP thumbnails on the
-    /// blocking pool, then evict the thumb cache if it's over the cap. A
-    /// missing cover is a safe, specific error; every other failure (DB,
-    /// codec, I/O, a panicked/cancelled blocking task) goes through
-    /// [`sanitized_err`] since its text can carry driver or codec
-    /// internals — the real cause is still logged server-side.
+    /// Fetch a book's cover and (re)generate its WebP thumbnails on the blocking
+    /// pool, then evict the thumb cache if it's over the cap. A missing cover is
+    /// a safe, specific error; every other failure goes through [`sanitized_err`]
+    /// since its text can carry driver or codec internals (the cause is still
+    /// logged server-side).
     async fn handle_generate_thumbs(
         self: &Arc<Self>,
         book_id: i64,

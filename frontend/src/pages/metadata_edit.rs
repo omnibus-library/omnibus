@@ -143,13 +143,8 @@ fn MetadataEditForm(book: EbookMetadata, uuid: String) -> Element {
 
 /// Append a cache-busting `v=` query param to `url`, using `&` when `url`
 /// already carries a query string (mobile's [`crate::media_url`] appends
-/// `?token=…`).
-///
-/// Lives on the page module because both cover surfaces need it — the
-/// sidebar's `CoverEditor` and the edition picker's cover row — and they
-/// bust the same `/api/covers/:uuid` URL for the same reason: the route
-/// caches for a day, so nothing short of a changed query string gets the new
-/// bytes.
+/// `?token=…`). Shared by the sidebar's `CoverEditor` and the edition picker's
+/// cover row, which bust the same day-cached `/api/covers/:uuid` URL.
 fn bust_query(url: &str, bust: u32) -> String {
     let sep = if url.contains('?') { '&' } else { '?' };
     format!("{url}{sep}v={bust}")

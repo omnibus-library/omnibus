@@ -8,20 +8,11 @@ use super::{bump, get_entry, registry, set_error, start, target_file, upsert};
 use super::{engine, media, store, sync};
 use super::{DlFormat, DownloadStatus};
 
-/// Replace a completed download with the library's current bytes.
-///
-/// **Not** `remove` followed by `start`. `remove` deletes asynchronously, so
-/// pairing them races the deletion against the engine writing the
-/// replacement into the same directory — and, race or no race, it throws
-/// away a book the reader could still open the moment before any network,
-/// auth or integrity failure. A stale copy is worth strictly more than no
-/// copy.
-///
-/// Instead the existing files stay exactly where they are. The engine
-/// fetches into `{rel}.part` beside them and renames over the top on
-/// success, which is atomic per file; if anything fails first, the prior
-/// entry is restored and the reader still has the book they had — still
-/// flagged, so the chip invites another try.
+/// Replace a completed download with the library's current bytes. **Not**
+/// `remove` then `start`: `remove` deletes asynchronously, racing the engine's
+/// writes into the same directory, and discards a book the reader could still
+/// open. The existing files stay put; the engine fetches into `{rel}.part`
+/// beside them, and on any failure the prior entry is restored, still flagged.
 pub fn redownload(
     server_url: String,
     uuid: String,
@@ -77,13 +68,10 @@ pub fn redownload(
 }
 
 /// Recompute the "Update available" flag for every downloaded format of
-/// `book` from freshly-read metadata.
-///
-/// Called wherever a full [`omnibus_shared::EbookMetadata`] lands — opening
-/// a book detail page — so a device learns its copy is stale from a refresh
-/// it was making anyway. Only the per-book read carries `book_files`; the
-/// landing/replica projection does not, which [`staleness`] answers as
-/// "can't tell" and this leaves alone.
+/// `book` from freshly-read metadata. Called wherever a full
+/// [`omnibus_shared::EbookMetadata`] lands (opening a book detail page). Only
+/// the per-book read carries `book_files`; a projection without it is answered
+/// by [`staleness`] as "can't tell" and left alone.
 pub fn note_book(book: &omnibus_shared::EbookMetadata) {
     let Some(uuid) = book.unique_identifier.as_deref() else {
         return;
@@ -126,19 +114,10 @@ pub(super) fn last_stale_check() -> &'static std::sync::atomic::AtomicI64 {
 }
 
 /// Refresh the "Update available" flags for every completed download, in as
-/// few requests as the server's per-request cap allows.
-///
-/// Driven by the online background tick, so the Downloads list learns about
-/// a replaced file without the reader opening each book. Two properties are
-/// deliberate:
-///
-/// - It asks `POST /api/downloads/validators`, not N metadata fetches. A
-///   device with fifty downloads was otherwise making fifty full-book
-///   requests every minute.
-/// - It writes **no cache rows**. The response carries validators and
-///   nothing else, so there is no metadata to smuggle past
-///   `cache::read_through`'s compare/put/notify path — which, bypassed,
-///   leaves an open page rendering fields the cache has already replaced.
+/// few requests as the server's per-request cap allows. Driven by the online
+/// background tick. Uses `POST /api/downloads/validators`, not N metadata
+/// fetches, and writes **no cache rows**: the response has no metadata to
+/// route through `cache::read_through`'s compare/put/notify path.
 pub(crate) async fn refresh_stale_flags(server_url: &str) {
     use std::sync::atomic::Ordering;
 
@@ -162,16 +141,10 @@ pub(crate) async fn refresh_stale_flags(server_url: &str) {
 }
 
 /// Ask about every completed download in chunks of at most
-/// `MAX_VALIDATOR_QUERY` — the server rejects a single request over that
-/// size with `422` (`post_download_validators`), and a device can easily
-/// hold more downloads than that cap.
-///
-/// Each chunk's answers are applied as soon as they arrive rather than
-/// buffered for one final apply, so a later chunk failing still leaves the
-/// earlier chunks' flags updated. Returns whether every chunk succeeded;
-/// [`refresh_stale_flags`] only advances the TTL timestamp on a full `true`,
-/// so a partial sweep is retried in full on the next tick rather than being
-/// recorded as done.
+/// `MAX_VALIDATOR_QUERY` (the server rejects a larger request with `422`).
+/// Each chunk's answers apply as they arrive, so a later failure keeps earlier
+/// flags. Returns whether every chunk succeeded; [`refresh_stale_flags`] only
+/// advances its TTL timestamp on `true`, so a partial sweep is retried in full.
 pub(super) async fn sweep_validators(
     server_url: &str,
     queries: &[omnibus_shared::DownloadValidatorQuery],
@@ -253,27 +226,19 @@ pub(super) fn apply_validators(answers: &[omnibus_shared::DownloadValidator]) {
 }
 
 /// Whether the stored copy of `(uuid, format)` predates the file currently
-/// in the library — the "Update available" condition.
-///
-/// Deliberately conservative: a missing validator on either side (an old
-/// registry row, a `book_files` row the scanner has not stat'd) reports
-/// `false`. Not knowing is not the same as knowing it is stale, and
-/// prompting a reader to re-download a book on a guess is worse than
-/// staying quiet. [`staleness`] keeps the two apart for callers that write
-/// the answer rather than render it.
+/// in the library — the "Update available" condition. Conservative: a missing
+/// validator on either side reports `false`, since prompting a re-download on
+/// a guess is worse than staying quiet. [`staleness`] keeps "can't tell"
+/// apart for callers that write the answer rather than render it.
 pub fn is_stale(uuid: &str, format: DlFormat, book: &omnibus_shared::EbookMetadata) -> bool {
     staleness(uuid, format, book).unwrap_or(false)
 }
 
 /// The comparison behind [`is_stale`], keeping "the file moved" and "this
-/// metadata can't tell me" as different answers.
-///
-/// `None` whenever a validator is missing on either side — an old registry
-/// row, a `book_files` row the scanner hasn't stat'd, or the landing
-/// projection, which carries no per-file rows at all. Callers that merely
-/// render collapse it to `false`; [`note_book`], which *writes* the flag,
-/// must not, or a projection-shaped read would clear a chip that a real
-/// comparison had set.
+/// metadata can't tell me" as different answers. `None` whenever a validator
+/// is missing on either side (or the metadata is a landing projection with no
+/// per-file rows). Callers that render collapse it to `false`; [`note_book`],
+/// which *writes* the flag, must not, or it would clear a chip already set.
 fn staleness(uuid: &str, format: DlFormat, book: &omnibus_shared::EbookMetadata) -> Option<bool> {
     let entry = get_entry(uuid, format)?;
     if !matches!(entry.status, DownloadStatus::Complete { .. }) {

@@ -63,11 +63,6 @@ pub async fn create_shelf(
 
 /// Apply a partial update. `None` fields are untouched; `rules` (when present)
 /// replaces the whole rule set. Returns the updated shelf.
-///
-/// The rule replacement runs *before* the shelf-row `UPDATE` within the same
-/// transaction: both share one commit, so a rename that collides with an
-/// existing name (`ShelfError::NameTaken`) rolls the rule replacement back
-/// too, instead of leaving the new rules committed under the old name.
 pub async fn update_shelf(
     pool: &SqlitePool,
     id: i64,
@@ -100,6 +95,8 @@ pub async fn update_shelf(
 
     let mut tx = pool.begin().await?;
 
+    // Rules are replaced before the shelf-row `UPDATE` in this one transaction,
+    // so a rename collision (`ShelfError::NameTaken`) rolls the rules back too.
     if let Some(rules) = &req.rules {
         sqlx::query("DELETE FROM shelf_rules WHERE shelf_id = ?")
             .bind(id)

@@ -48,6 +48,13 @@ so the publisher's own faces win. So assert on a `p`'s computed `font-family`
 inside `#omnibus-viewer iframe` (same-origin, `contentDocument` is reachable),
 never on a named face being set somewhere.
 
+**The "Add to shelf" picker's tiles are named by their shelf alone.** A
+hand-picked shelf is a `role="checkbox"` button (a plain button in the bulk
+bar's picker) labelled by its name, so `getByRole("checkbox", { name, exact:
+true })` selects it. The smart shelves a book matches sit apart under
+`shelf-picker-automatic` as inert `shelf-picker-auto-<id>` tiles, and the More
+stop draws every held shelf, smart ones included, as a `bdmq-shelf-<id>` link.
+
 **The book detail panel reads two ways.** `book_detail_scroll_stops` (off by
 default) chooses between the flow — one continuous scroller, `#bdmq-flow`,
 sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book
@@ -190,3 +197,7 @@ POSTs `/api/rpc/progress` with `epub_cfi: "pdf-page:N"`; opening the reader
 POSTs nothing for position (the ready report is treated as already saved) but
 does write read status `reading` on an unread book — pre-set `flatland` to
 `reading` in `beforeAll` (the comic spec's pattern) or assert that write.
+
+**The filter bar and what reads its saved filter** (chips, the Add filter
+dialog, the shelf lens and `/shelves/:id` states) have their own file:
+[04c-playwright-filters.md](04c-playwright-filters.md).

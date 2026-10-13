@@ -31,11 +31,9 @@ pub struct DerivedSpan {
 }
 
 /// Kobo→Web: derive an epub.js-compatible CFI for a KoboSpan bookmark.
-///
-/// `Ok(None)` covers every underivable case — unknown `Source`, missing
-/// span id, or a snippet mismatch proving the kepub and source text
-/// streams diverged (kepubify normalization, or a replaced source file
-/// under a stale cache). `Err` is reserved for I/O-level surprises.
+/// `Ok(None)` covers every underivable case (unknown `Source`, missing span id,
+/// or a snippet mismatch showing the kepub and source text diverged); `Err` is
+/// reserved for I/O-level surprises.
 pub fn span_to_cfi(
     kepub: &Path,
     source_epub: &Path,
@@ -68,12 +66,10 @@ pub fn span_to_cfi(
     Ok(Some(format_cfi(s_idx, &tail)))
 }
 
-/// Kobo→Web: derive epub.js-compatible *range* CFIs for a batch of
-/// annotation anchors from one book, opening each container (and indexing
-/// each content document) once. Per-anchor failures — unknown source,
-/// missing span, snippet mismatch, an inverted range — yield `None` in that
-/// slot rather than failing the batch; `Err` is reserved for not being able
-/// to open either container at all.
+/// Kobo→Web: derive epub.js-compatible *range* CFIs for a batch of annotation
+/// anchors from one book, opening each container once. A per-anchor failure
+/// (unknown source, missing span, snippet mismatch, inverted range) yields
+/// `None` in that slot; `Err` is reserved for failing to open either container.
 pub fn annotation_cfis(
     kepub: &Path,
     source_epub: &Path,
@@ -130,13 +126,11 @@ fn annotation_cfi(
     Some(format_range_cfi(s_idx, &start_tail, &end_tail))
 }
 
-/// Web→Kobo: derive Kobo annotation `location` objects for a batch of
-/// stored range CFIs from one book, opening each container (and indexing
-/// each content document) once — the inverse of [`annotation_cfis`].
-/// Per-anchor failures — an unparseable or point CFI, unknown spine index,
-/// missing kepub span, snippet mismatch — yield `None` in that slot rather
-/// than failing the batch; `Err` is reserved for not being able to open
-/// either container at all.
+/// Web→Kobo: derive Kobo annotation `location` objects for a batch of stored
+/// range CFIs from one book, the inverse of [`annotation_cfis`]. A per-anchor
+/// failure (unparseable or point CFI, unknown spine index, missing kepub span,
+/// snippet mismatch) yields `None` in that slot; `Err` is reserved for failing
+/// to open either container.
 pub fn annotation_locations(
     kepub: &Path,
     source_epub: &Path,

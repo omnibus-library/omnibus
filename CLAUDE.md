@@ -14,6 +14,8 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [04-playwright.md](.claude/rules/04-playwright.md) — full E2E conventions (selectors, fixtures, `expectMutation`, error paths).
 - [04a-playwright-surfaces.md](.claude/rules/04a-playwright-surfaces.md) — per-surface selector gotchas: the screens whose obvious selector matches nothing.
 - [04b-playwright-ios-glue.md](.claude/rules/04b-playwright-ios-glue.md) — the iOS reader glue's test lane: serving `omnibus-ios/omnibus/Reader/Web/` on a routed origin, driving the host's entry points, and what Chromium can't prove.
+- [04c-playwright-filters.md](.claude/rules/04c-playwright-filters.md) — the library filter's test lane: the bar's popover, the landing lens and shelf page states, and the held-request technique.
+- [04d-playwright-page-objects.md](.claude/rules/04d-playwright-page-objects.md) — page, component and request objects injected by fixtures: the layout, the rules, and one sign-in per worker.
 - [05-rust-style.md](.claude/rules/05-rust-style.md) — Rust style guide: comments, function/file shape, errors, tests, mechanics. Long-form rationale in [docs/style-guide.md](docs/style-guide.md).
 - [06-migrations.md](.claude/rules/06-migrations.md) — authoring SQL migrations: `NNNN_` naming, never-edit-applied, the `_norm` backfill pattern, testing against `sqlite::memory:`, and the dev-bounce step.
 - [07-hydration.md](.claude/rules/07-hydration.md) — SSR/WASM hydration parity: never feature-gate a component body on `web`; how to confirm and fix a hydration mismatch; why keyed siblings must each be unique.
@@ -46,13 +48,13 @@ Do not use Chrome DevTools MCP or Claude in Chrome for routine agent verificatio
 
 ## Architecture
 
-Six-crate Cargo workspace: `shared/` (serde types), `db/` (data layer + indexer), `frontend/` (Dioxus UI + server functions), `server/` (fullstack binary + REST router), `mobile/` (thin native shell, Android-only), `mcp/` (MCP tool layer speaking the `/api/*` REST surface — a stdio binary plus the library `server/` mounts at the hosted `/mcp` endpoint behind an admin toggle; out of default-members like `mobile/`).
+Seven-crate Cargo workspace: `shared/` (serde types), `db/` (data layer + indexer), `frontend/` (Dioxus UI + server functions), `server/` (fullstack binary + REST router), `mobile/` (thin native shell, Android-only), `mcp/` (MCP tool layer speaking the `/api/*` REST surface — a stdio binary plus the library `server/` mounts at the hosted `/mcp` endpoint behind an admin toggle; out of default-members like `mobile/`), `mock-kobo/` (a fake Kobo e-reader that syncs against the Kobo routes to reproduce firmware-side bugs; dev tooling, also out of default-members).
 
 Alongside it, `omnibus-ios/` is a native SwiftUI client — an Xcode project, not a Cargo crate; `just ios-build` / `ios-test` / `ios-test-ui` / `ios-sim` wrap xcodebuild + simctl for it (no cargo target touches it). It is the iOS surface; `mobile/` is the Android shell (nothing builds the `mobile/` crate for iOS anymore). It speaks the same `/api/*` REST surface.
 
 `site/` is the marketing site served at <https://omnibus-library.github.io/omnibus/> — static HTML with no build step, published to the `gh-pages` branch by `.github/workflows/pages.yml`. Its framed app screens are stills exported from the Claude Design "Omnibus" project, not live markup; see the `site/` section of [docs/architecture.md](docs/architecture.md).
 
-Full crate descriptions, per-crate module maps, request flow diagrams, and mobile-auth details live in [docs/architecture.md](docs/architecture.md).
+Crate descriptions, request flows, and mobile-auth details live in [docs/architecture.md](docs/architecture.md); the iOS app's design lives in [docs/ios.md](docs/ios.md). Per-module detail lives only in each file's own `//!` doc (a Swift file's header comment) — `just modules <dir>` prints a directory's map from them.
 
 ## Version control
 
@@ -83,6 +85,7 @@ just serve-pc                                               # process-compose
 # Used by the `ui-validate` skill; safe to re-run.
 just dev-up
 source .claude/runtime/env.sh                               # picks up OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
+just kobo                                                   # mock Kobo e-reader in a terminal UI against the dev server (docs/kobo.md)
 
 # Fullstack dev (serves SSR + WASM hydration at http://localhost:8080 by default)
 dx serve --platform web -p omnibus
@@ -91,20 +94,23 @@ dx serve --platform web -p omnibus
 cargo run -p omnibus                                        # start at http://0.0.0.0:3000
 
 # Tests & lint — aggregate targets cover the full crate matrix in one go
-just test                                                   # db + server + frontend(server + mobile features) + shared + mcp
-just lint                                                   # cargo fmt --check + clippy -D warnings (incl. mobile + mcp + frontend-server + frontend-web wasm32) + stylelint
+just test                                                   # db + server + frontend(server + mobile features) + shared + mcp + mock-kobo
+just lint                                                   # cargo fmt --check + clippy -D warnings (incl. mobile + mcp + mock-kobo + frontend-server + frontend-web wasm32) + stylelint
 just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules in frontend/assets)
 just lint-ts                                                # Playwright TS: biome check + tsc --noEmit (TypeScript 7), in .#e2e
 just check                                                  # lint then test
+just modules db/src                                         # module map for any directory, from each file's //! doc
 # …or per-crate (note: `cargo test --workspace` SKIPS frontend rpc/page tests,
-#  mobile, and mcp — the rpc/page tests need --features server to compile the
-#  server-function bodies; mobile and mcp are out of default-members, and of
-#  those two only mcp has tests, so name it explicitly):
+#  mobile, mcp, and mock-kobo — the rpc/page tests need --features server to
+#  compile the server-function bodies; mobile, mcp, and mock-kobo are out of
+#  default-members, and of those three only mcp and mock-kobo have tests, so
+#  name them explicitly):
 cargo test -p omnibus                                       # /api/* REST integration tests
 cargo test -p omnibus-db                                    # db + scanner + sync tests
 cargo test -p omnibus-frontend --features server            # rpc + page tests (server feature required)
 cargo test -p omnibus-shared                                # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                                   # MCP tool-layer tests (crate is out of default-members)
+cargo test -p omnibus-mock-kobo                             # fake Kobo firmware tests (crate is out of default-members)
 cargo clippy                                                # lint default-members (server, shared, frontend)
 cargo fmt                                                   # format all crates
 

@@ -16,14 +16,11 @@ use crate::metadata_overrides::sql::{effective_tags_sql, overrides_win_sql};
 
 use super::PaletteError;
 
-/// Tags-arm palette query, bound `?1 = library_paths JSON array`, `?2 = like_pattern`,
-/// `?3 = limit`.
-///
-/// Both the count and the visibility gate read the shared effective-membership
-/// relation, so an override that replaces a book's subjects wholesale — the
-/// empty array included, which clears them — moves the listing and the count
-/// together. Requiring a canonical `books_tags_link` row instead would hide a
-/// tag that exists only in override JSON, which is a tag the reader just added.
+/// Tags-arm palette query, bound `?1 = library_paths JSON array`,
+/// `?2 = like_pattern`, `?3 = limit`. Count and visibility gate both read the
+/// shared effective-membership relation, so an override that replaces a book's
+/// subjects wholesale (the empty array included) moves the listing and the count
+/// together. A tag that exists only in override JSON is still listed.
 pub(super) fn search_tags_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| {

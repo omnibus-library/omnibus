@@ -73,8 +73,8 @@ impl From<crate::settings::SettingsError> for SyncError {
 /// One file the diff recognized as **relocated** rather than
 /// deleted-and-re-added. Deliberately not a `ParseTarget`: a move needs no
 /// Phase-B parse, and carrying one would invite a caller to hand it to the
-/// parser. See the Moved section of the [`crate::indexer::diff_library`]
-/// bucket contract.
+/// parser. Detection rules live on `ReindexDiff::moved` and in the `crate::indexer`
+/// module doc.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MovedFile {
     /// The identity to relocate: `books.uuid` for the file a book is anchored
@@ -86,13 +86,11 @@ pub struct MovedFile {
     pub filename: String,
 }
 
-/// Pre-resolved reindex-resurrection guard lookups for one whole
-/// sync batch: the canonical id every distinct author/series/tag name
-/// across the batch resolves to, if a prior library-cleanup merge absorbed
-/// it. Built once per [`CleanupKind`] by [`collect_entity_alias_maps`]
-/// before the per-book write loop starts, then threaded down through
-/// `insert_metadata_links` — replacing what used to be a
-/// `resolve_entity_aliases` call issued once per book.
+/// Pre-resolved reindex-resurrection guard lookups for one whole sync batch: the
+/// canonical id every distinct author/series/tag name resolves to, if a prior
+/// library-cleanup merge absorbed it. Built once per [`CleanupKind`] by
+/// [`collect_entity_alias_maps`] before the per-book write loop, then threaded
+/// down through `insert_metadata_links`.
 #[derive(Debug, Default)]
 pub(super) struct EntityAliasMaps {
     pub(super) authors: HashMap<String, i64>,
@@ -141,12 +139,10 @@ pub(super) async fn collect_entity_alias_maps(
     })
 }
 
-/// Per-bucket payload for [`sync_books`]. Built by
-/// `crate::indexer::diff_library` (plus the Phase-B parse for new + changed).
-///
-/// The five buckets are mutually exclusive — a given uuid appears in at
-/// most one of them per sync — and the diff already ordered them
-/// deterministically.
+/// Per-bucket payload for [`sync_books`], built by `crate::indexer::diff_library`
+/// (plus the Phase-B parse for new + changed). The five buckets are mutually
+/// exclusive: a uuid appears in at most one per sync, already ordered
+/// deterministically by the diff.
 #[derive(Debug, Default)]
 pub struct SyncPlan {
     pub new_books: Vec<crate::ebook::IndexedBook>,
@@ -161,37 +157,11 @@ pub struct SyncPlan {
     pub backfill: Vec<(String, i64, i64)>,
 }
 
-/// Apply a per-bucket sync plan atomically. Unchanged books are not in
-/// the plan, so their `books.id` is preserved by definition; Changed
-/// books are UPDATEd in place so their `books.id` is preserved too.
-///
-/// Inside a single transaction, in this order:
-/// 1. Upsert the `scan_roots` row.
-/// 2. Mark Removed files missing: drop each removed book's
-///    `book_files` row but retain the `books` row, its links, FTS, and
-///    soft-ref user data so the book stays in browse/search (the grid
-///    hides it via `EXISTS book_files`) and the uuid survives.
-/// 3. Relocate Moved files: repoint the path columns of rows that already
-///    exist. No parse, no insert, no delete.
-/// 4. Update Changed in place (preserves `books.id`); wipe-and-rewrite
-///    link rows + FTS row for each.
-/// 5. Insert New (autoincrement assigns a fresh id).
-/// 6. Backfill: UPDATE `book_files.(mtime_epoch, size_bytes)` only — no
-///    OPF re-parse, no link writes, no FTS write. See the Backfill rule
-///    in the [`crate::indexer`] module doc.
-/// 7. Delete taxonomy rows left with zero books by step 4's link wipe.
-/// 8. Stamp `scan_roots.last_indexed`.
-///
-/// Post-commit (best-effort, logged on failure — covers are a
-/// rebuildable cache):
-/// - Delete cover files for Removed uuids only.
-/// - Write cover files for New + Changed (overwrites the old file in
-///   place; mime change sweeps the stale-extension orphan).
-///
-/// `metadata_overrides` is intentionally not touched — keyed by
-/// `book_uuid` with no FK to `books.id` (see `0007_metadata_overrides.sql`).
-/// User edits survive Changed UPDATEs and even Removed→New cycles for
-/// the same filename.
+/// Apply a per-bucket sync plan atomically: upsert `scan_roots`, mark Removed
+/// missing (dropping `book_files`, retaining the `books` row), relocate Moved,
+/// update Changed in place (ids preserved), insert New, backfill stat columns
+/// only, prune orphaned taxonomy, stamp `last_indexed`. Covers are written and deleted
+/// post-commit, best-effort. `metadata_overrides` is untouched, so edits survive.
 pub async fn sync_books(
     pool: &SqlitePool,
     library_path: &str,
@@ -200,14 +170,11 @@ pub async fn sync_books(
     sync_books_with_progress(pool, library_path, plan, |_, _, _| {}).await
 }
 
-/// [`sync_books`] variant that calls `on_progress(processed, total,
-/// current)` after each per-book write so the worker can surface a
-/// determinate progress bar naming the book just written (`current` is the
-/// library-relative filename; `None` on the initial pre-write tick).
-/// `total` is the count of buckets that loop per book — Changed + New.
-/// Removed, Moved and Backfill are cheap path-column writes with no parse
-/// behind them, so they are not reported as per-book progress (they're
-/// invisible to the user-facing "Scanning" step).
+/// [`sync_books`] variant that calls `on_progress(processed, total, current)` after
+/// each per-book write (`current` is the library-relative filename; `None` on the
+/// initial tick). `total` counts only the buckets that loop per book, Changed +
+/// New: Removed, Moved and Backfill are cheap path-column writes with no parse
+/// behind them, so they are not reported.
 pub async fn sync_books_with_progress(
     pool: &SqlitePool,
     library_path: &str,
@@ -300,13 +267,10 @@ pub async fn sync_books_with_progress(
     Ok(())
 }
 
-/// Atomically replace every book under `library_path` with `books` and stamp
-/// the last-indexed time. Thin compatibility shim over [`sync_books`]: it
-/// computes the diff implicitly by treating every existing book as
-/// Removed and every passed-in book as New. Kept for tests and any
-/// caller that still wants the nuke-and-pave semantics; production
-/// reindex goes through [`sync_books`] directly via
-/// `crate::indexer::reindex`.
+/// Atomically replace every book under `library_path` with `books` and stamp the
+/// last-indexed time: a compatibility shim over [`sync_books`] that treats every
+/// existing book as Removed and every passed-in book as New. Kept for tests and
+/// callers wanting nuke-and-pave semantics; production reindex uses [`sync_books`].
 pub async fn replace_books(
     pool: &SqlitePool,
     library_path: &str,
@@ -333,16 +297,11 @@ pub async fn replace_books(
     .await
 }
 
-/// Delete every per-book link row for `book_id`. Used by `sync_changed`
-/// before re-inserting fresh rows — cascade delete on FK isn't an option
-/// here (the `books` row stays), so we wipe explicitly. All these tables
-/// have UNIQUE(book, ...) constraints, so a re-insert without the wipe
-/// would fail.
-///
-/// `book_files` is scoped to the changed file's own `format`: a blanket
-/// wipe would also destroy a cross-format attachment (e.g. the M4B row
-/// hanging off this book via `merged_uuids`) every time the ebook
-/// re-parses.
+/// Delete every per-book link row for `book_id`, used by `sync_changed` before
+/// re-inserting fresh rows (all these tables have UNIQUE(book, ...) constraints,
+/// and the `books` row stays, so cascade isn't an option). `book_files` is scoped
+/// to the changed file's own `format`, so a cross-format attachment (e.g. the M4B
+/// row via `merged_uuids`) survives every ebook re-parse.
 async fn wipe_per_book_link_rows(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     book_id: i64,

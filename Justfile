@@ -50,6 +50,15 @@ env-clear:
 dev-bounce:
     scripts/with-dev-env.sh web scripts/dev-server-bounce.sh
 
+# Run a mock Kobo e-reader in a terminal UI against this worktree's dev server
+# (run `just dev-up` first): s syncs, r resets, u/t edit the URL/token, w wires a
+# token, q quits. It auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER
+# and serves the control API on a free loopback port its header shows. Flags pass
+# through: `just kobo --state .claude/runtime/other.json` is a second device.
+[positional-arguments]
+kobo *args:
+    scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
+
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).
 # Runs outside the nix shell on purpose — curl + tar only. Auto-run by
@@ -64,6 +73,16 @@ fixtures:
 explore-test:
     cd scripts/explore && python3 -m unittest audit_lib.tests && python3 -m unittest discover -s tests -p 'test_*.py'
 
+# Print one directory's module map, built on demand from each file's own `//!`
+# doc (a Swift file's header comment), e.g. `just modules db/src`. Nothing is
+# committed, so the map cannot drift from the code.
+modules dir:
+    @python3 scripts/module_map.py {{dir}}
+
+# Unit tests for scripts/module_map.py. Stdlib unittest, like explore-test.
+module-map-test:
+    python3 scripts/tests/module-map.test.py
+
 # Run the full unit/integration test matrix via cargo-nextest (the same runner
 # CI uses, so local and CI results match; no doctests in the tree, which is all
 # nextest can't run). A bare `--workspace` is a trap here — it silently skips
@@ -75,14 +94,15 @@ explore-test:
 # The `omnibus-mobile` shell crate itself has no tests (lint covers it via
 # `just lint`).
 # Self-wraps in the slim nix shell so it works from a bare checkout too.
-test: fixtures explore-test
+test: fixtures explore-test module-map-test
     scripts/with-dev-env.sh default bash -ec '\
         cargo nextest run -p omnibus-db && \
         cargo nextest run -p omnibus && \
         cargo nextest run -p omnibus-frontend --features server && \
         cargo nextest run -p omnibus-frontend --features mobile && \
         cargo nextest run -p omnibus-shared && \
-        cargo nextest run -p omnibus-mcp'
+        cargo nextest run -p omnibus-mcp && \
+        cargo nextest run -p omnibus-mock-kobo'
 
 # Line/region coverage over the same crate matrix as `just test`, via
 # cargo-llvm-cov driving cargo-nextest (matches the CI `test` job). Each crate
@@ -102,6 +122,7 @@ coverage: fixtures
         cargo llvm-cov nextest --no-report -p omnibus-frontend --features mobile && \
         cargo llvm-cov nextest --no-report -p omnibus-shared && \
         cargo llvm-cov nextest --no-report -p omnibus-mcp && \
+        cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
         cargo llvm-cov report --lcov --output-path lcov.info && \
         cargo llvm-cov report'
 
@@ -117,6 +138,7 @@ coverage-html: fixtures
         cargo llvm-cov nextest --no-report -p omnibus-frontend --features mobile && \
         cargo llvm-cov nextest --no-report -p omnibus-shared && \
         cargo llvm-cov nextest --no-report -p omnibus-mcp && \
+        cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
         cargo llvm-cov report --html --open'
 
 # Structural CSS lint — stylelint over frontend/assets, scoped to parse /
@@ -151,7 +173,8 @@ lint: lint-css
         cargo clippy --all-targets -- -D warnings && \
         cargo clippy -p omnibus-frontend --features server --all-targets -- -D warnings && \
         cargo clippy -p omnibus-mobile --all-targets -- -D warnings && \
-        cargo clippy -p omnibus-mcp --all-targets -- -D warnings'
+        cargo clippy -p omnibus-mcp --all-targets -- -D warnings && \
+        cargo clippy -p omnibus-mock-kobo --all-targets -- -D warnings'
     scripts/with-dev-env.sh web cargo clippy -p omnibus-frontend --features web --all-targets --target wasm32-unknown-unknown -- -D warnings
 
 # Lint then test — the pre-push gate referenced by rule 99.

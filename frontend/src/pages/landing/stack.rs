@@ -197,14 +197,11 @@ pub(super) fn lead_accent_style(entries: &[StackEntry], lead: usize) -> String {
         .unwrap_or_default()
 }
 
-/// How many distinct books the fan holds. Not its card count: a book open in
-/// both formats contributes a card each, and "2 books open" over one book's
-/// two covers is a lie the reader can see.
+/// How many distinct books the fan holds, not its card count: a book open in
+/// both formats contributes a card each.
 ///
-/// Counts the **resolved** book, not `uuid` — that is the progress row's
-/// filing uuid, which [`resume_key`] deliberately keys on because two rows can
-/// resolve through `merged_uuids` to one surviving book. That is exactly the
-/// case this must fold rather than split.
+/// Counts the **resolved** book, not `uuid` ([`resume_key`]'s filing uuid):
+/// rows that resolve through `merged_uuids` to one surviving book must fold.
 pub(super) fn open_book_count(entries: &[StackEntry]) -> usize {
     entries
         .iter()
@@ -348,11 +345,9 @@ fn StackAlts(front: StackEntry) -> Element {
 }
 
 /// One cover in the fan. Every card is a `Link` on every target and in every
-/// position — swapping element types between lead and non-lead would make the
-/// diff replace the node and drop the handlers on its siblings (rule 07), and
-/// the `href` is what keeps middle-click and open-in-new-tab working on the
-/// resume affordance. The lead's click resumes; the rest suppress the
-/// navigation (`onclick_only`) and bring themselves forward instead.
+/// position (rule 07), and the `href` keeps middle-click and open-in-new-tab
+/// working on the resume affordance. The lead's click resumes; the rest
+/// suppress the navigation (`onclick_only`) and bring themselves forward.
 #[component]
 fn FanCard(entry: StackEntry, index: usize, is_lead: bool, mut lead: Signal<usize>) -> Element {
     let StackEntry {

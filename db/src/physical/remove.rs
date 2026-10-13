@@ -10,18 +10,10 @@ use crate::covers::delete_cover_files_for;
 use crate::metadata_overrides::delete_override_cover;
 
 /// Hard-delete a book that has no `book_files`, taking **every** uuid-keyed row
-/// with it (ratings, shelves, progress, journals, …) via the canonical
-/// [`purge_book`] sweep — not just the physical/wishlist/override rows — plus
-/// the `books` row, its FTS twin, orphan taxonomy, and cover files.
-///
-/// Refuses a file-backed book with [`PhysicalError::BookHasFiles`]: those are
-/// owned by the reindex diff, and deleting one here would resurrect it on the
-/// next scan while destroying user data keyed on its uuid. A caller that wants
-/// a file-backed book gone removes the file and lets the ghosting path run.
-///
-/// Cover unlink is best-effort and runs after the commit — covers are a
-/// rebuildable cache, so a failed unlink must not fail the delete (mirrors
-/// `gc_books_missing_files`).
+/// with it via the canonical [`purge_book`] sweep, plus the `books` row, FTS
+/// twin, orphan taxonomy and cover files. Refuses a file-backed book with
+/// [`PhysicalError::BookHasFiles`]: the reindex diff owns those and would
+/// resurrect it on the next scan. Cover unlink is best-effort, after the commit.
 pub async fn delete_fileless_book(pool: &SqlitePool, book_uuid: &str) -> Result<(), PhysicalError> {
     let canonical = resolve_canonical_book_uuid(pool, book_uuid)
         .await?

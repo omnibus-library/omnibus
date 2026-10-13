@@ -27,28 +27,15 @@ use crate::Route;
 pub(super) const PEEK_COVERS: usize = 3;
 
 /// Which shelves the row shows, mirroring the iOS rail's `railShelves`: the
-/// viewer's own — whatever their visibility or kind — plus other readers'
-/// *shared* shelves, minus any wishlist nobody has put a book in.
-///
-/// Three exclusions fall out of that, and each is deliberate: another reader's
-/// private shelf (only an admin's read returns one at all), another reader's
-/// wishlist (auto-provisioned per account, so it is noise rather than a
-/// choice they made), and an empty wishlist of the viewer's own.
-///
-/// The order is left exactly as the server sent it — the viewer's own first,
-/// then each owner's shelves in creation order — because that ordering is the
-/// contract `db::shelves::read::summary` writes for this row, and the iOS rail
-/// likewise applies no sort of its own.
-///
-/// Unlike that rail there is **no cap**: iOS takes the first 8 because a phone
-/// rail cannot scroll far, while this row pages horizontally, so truncating
-/// would hide shelves the arrows can already reach.
-///
-/// `viewer_id` is `None` until the boot effect resolves the viewer; nothing
-/// counts as "yours" until it lands, which is the same concession the iOS rail
-/// makes rather than guessing.
+/// viewer's own plus other readers' *shared* shelves, minus any wishlist nobody
+/// has put a book in. The server's order is kept and, unlike iOS, there is
+/// **no cap**, as this row pages horizontally. `viewer_id` is `None` until the
+/// boot effect resolves; nothing counts as "yours" until it lands.
 pub(super) fn rail_shelves(all: &[ShelfSummary], viewer_id: Option<i64>) -> Vec<ShelfSummary> {
     all.iter()
+        // Excluded on purpose: another reader's private shelf (only an admin's read
+        // returns one), their auto-provisioned wishlist (noise), and the viewer's own
+        // empty wishlist.
         .filter(|s| {
             let is_own = viewer_id == Some(s.owner_user_id);
             let shared_by_another = s.visibility == Visibility::Public && !s.kind.is_system();
@@ -105,9 +92,9 @@ pub(super) fn attributed_owner(shelf: &ShelfSummary, viewer_id: Option<i64>) -> 
 }
 
 /// The slab line above the row, which doubles as the receipt for what the
-/// current pick is doing to the list below.
-pub(super) fn slab_line(filtering: bool) -> &'static str {
-    if filtering {
+/// current pick and the active filters are doing to the list below.
+pub(super) fn slab_line(shelf_picked: bool, filters_active: bool) -> &'static str {
+    if shelf_picked || filters_active {
         "Shelves \u{2014} filtering the list below"
     } else {
         "Shelves \u{2014} showing everything"
@@ -122,6 +109,8 @@ pub(super) struct ShelfGalleryProps {
     pub shelves: Vec<ShelfSummary>,
     /// False until the shelves fetch has answered; placeholders hold the row.
     pub loaded: bool,
+    /// Filter clauses are narrowing the list below, whichever tile is picked.
+    pub filtered: bool,
     pub selection: ShelfSelection,
     pub all_count: Option<i64>,
     pub all_cover_uuids: Vec<String>,
@@ -137,6 +126,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
     let ShelfGalleryProps {
         shelves,
         loaded,
+        filtered,
         selection,
         all_count,
         all_cover_uuids,
@@ -163,7 +153,7 @@ pub(super) fn ShelfGallery(props: ShelfGalleryProps) -> Element {
             "data-testid": "shelf-gallery",
             aria_label: "Shelves",
             div { class: "lmq-slab",
-                span { class: "k", "{slab_line(!all_active)}" }
+                span { class: "k", "{slab_line(!all_active, filtered)}" }
                 div { class: "lmq-slab-acts",
                     button {
                         r#type: "button",

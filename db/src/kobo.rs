@@ -61,14 +61,10 @@ const SELECT_COLS: &str = "b.id AS id,
                     WHERE bf.book_id = b.id AND bf.format = 'CBZ'
                 ) AS has_cbz";
 
-/// A book only belongs in the sync set if the download route can actually
-/// serve it: `resources::download` resolves EPUB, else CBZ, else PDF, else
-/// 404s.
-///
-/// Without this an audiobook-only book on a `sync_to_kobo` shelf syncs as an
-/// entitlement advertising a format with `download_size_bytes = 0`, and then
-/// 404s on every download the device attempts — which the device retries
-/// indefinitely rather than giving up.
+/// A book only belongs in the sync set if the download route can serve it:
+/// `resources::download` resolves EPUB, else CBZ, else PDF, else 404s.
+// Without it, an audiobook-only book on a `sync_to_kobo` shelf is advertised
+// with `download_size_bytes = 0` and 404s on every download, retried forever.
 const DOWNLOADABLE_PREDICATE: &str = "EXISTS(
                     SELECT 1 FROM book_files bf
                     WHERE bf.book_id = b.id AND bf.format IN ('EPUB', 'CBZ', 'PDF')
@@ -219,20 +215,10 @@ impl From<crate::metadata_overrides::MetadataOverridesError> for KoboError {
 }
 
 /// The books `user_id`'s Kobo devices may sync, newest-modified first: the
-/// union of membership across that user's shelves flagged `sync_to_kobo`.
-///
-/// Sync is **never whole-library** — a user with no opted-in shelf gets
-/// an empty set, which is the correct answer, not a degenerate one. A book
-/// with no authors carries an empty list — Kobo tolerates that.
-///
-/// Membership alone is not enough: a member with no EPUB and no CBZ is
-/// filtered out by [`DOWNLOADABLE_PREDICATE`], because the device can only
-/// 404 on it. A book that leaves the set this way is reported to a device
-/// already holding it as a removal, which `delta::sync_delta` derives from
-/// its absence here.
-///
-/// Scoped through shelf ownership, so a device token can only ever reach books
-/// its own user opted in.
+/// union of membership across that user's shelves flagged `sync_to_kobo`. Never
+/// whole-library: no opted-in shelf means an empty set. Members failing
+/// [`DOWNLOADABLE_PREDICATE`] are filtered out, so `delta::sync_delta` reports
+/// such a book as a removal to a device already holding it.
 pub async fn sync_books(pool: &SqlitePool, user_id: i64) -> Result<Vec<KoboBookRow>, KoboError> {
     let uuids = crate::shelves::kobo_synced_book_uuids(pool, user_id).await?;
     if uuids.is_empty() {
@@ -415,13 +401,9 @@ pub struct KoboBookState {
     pub statistics: Option<crate::progress::KoboStatistics>,
 }
 
-/// Per-user reading state for `uuids`, keyed by book uuid.
-///
-/// Books with neither a read-status nor a progress row are simply absent —
-/// the caller treats a miss as "unread, no position", which is what a fresh
-/// book is. Chunked at 900 for the same SQLite bound-parameter ceiling
-/// [`sync_books`] works around (each uuid binds twice here, so the chunk is
-/// halved to 450).
+/// Per-user reading state for `uuids`, keyed by book uuid. Books with neither a
+/// read-status nor a progress row are absent; treat a miss as "unread, no
+/// position", which is what a fresh book is.
 pub async fn reading_state_for(
     pool: &SqlitePool,
     user_id: i64,
@@ -431,6 +413,7 @@ pub async fn reading_state_for(
     if uuids.is_empty() {
         return Ok(out);
     }
+    // Each uuid binds twice, so half of `sync_books`'s 900 under SQLite's bind cap.
     for chunk in uuids.chunks(450) {
         for row in fetch_reading_state_chunk(pool, user_id, chunk).await? {
             let (uuid, state) = row_to_kobo_state(&row)?;

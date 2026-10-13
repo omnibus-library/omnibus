@@ -12,12 +12,9 @@ use zip::read::ZipFile;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-/// Hard cap on the bytes read from any single zip entry. A crafted EPUB can
-/// declare an arbitrary (and false) [`ZipFile::size`], or rely on deflate's
-/// ~1000:1 worst-case ratio to make a small archive decompress to gigabytes
-/// (a "zip bomb") — this bounds memory regardless of what the entry claims
-/// or how well it compresses. 200 MiB comfortably covers any real EPUB
-/// resource (fonts, images, video) while staying far below an OOM.
+/// Hard cap on the bytes read from any single zip entry, bounding memory against
+/// a "zip bomb" (a crafted EPUB with a false [`ZipFile::size`] or deflate's
+/// ~1000:1 ratio). 200 MiB covers any real EPUB resource (fonts, images, video).
 #[cfg(not(test))]
 pub(super) const MAX_ENTRY_BYTES: u64 = 200 * 1024 * 1024;
 /// Test builds use a much smaller cap so the zip-bomb regression test isn't
@@ -53,12 +50,10 @@ fn read_entry_bounded<R: Read>(entry: &mut ZipFile<'_, R>, name: &str) -> anyhow
 }
 
 /// Rewrite `src` into `dst`, replacing the `opf_path` entry with the output of
-/// `opf_transform` and — when `cover` is `Some((path, bytes))` — the cover
-/// entry at `path` with `bytes`. All other entries are copied verbatim.
-///
-/// `opf_transform` runs on the raw OPF bytes read from the archive; its failure
-/// aborts the whole rewrite (a half-written `dst` is the caller's to discard —
-/// it writes to a temp path and only promotes on success).
+/// `opf_transform` and, when `cover` is `Some((path, bytes))`, the cover entry
+/// at `path` with `bytes`. All other entries are copied verbatim. A failing
+/// `opf_transform` aborts the whole rewrite; the caller discards the half-written
+/// `dst` (it writes to a temp path and promotes only on success).
 pub(super) fn rewrite_archive(
     src: &Path,
     dst: &Path,

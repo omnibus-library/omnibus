@@ -28,10 +28,10 @@ pub mod keys {
         "library".into()
     }
     /// First page of `GET /api/ebooks` (landing's initial fetch).
-    pub fn ebooks_first(sort: &str, dir: &str, formats: &str, exclude: &str) -> String {
+    pub fn ebooks_first(sort: &str, dir: &str, filter: &str, exclude: &str) -> String {
         // `exclude` keys the viewer's hidden-formats pref: a pref change must
         // miss the cached first page or a stale page serves after a toggle.
-        format!("ebooks_first:{sort}:{dir}:{formats}:x={exclude}")
+        format!("ebooks_first:{sort}:{dir}:f={filter}:x={exclude}")
     }
     /// The full-library replica (every row, background-synced).
     pub fn ebooks_all() -> String {
@@ -85,9 +85,10 @@ pub mod keys {
     pub fn shelf(id: i64) -> String {
         format!("shelf:{id}")
     }
-    /// `GET /api/shelves/{id}/page?sort=&dir=`.
-    pub fn shelf_page(id: i64, sort: &str, dir: &str) -> String {
-        format!("shelf_page:{id}:{sort}:{dir}")
+    /// `GET /api/shelves/{id}/page?sort=&dir=&filter=`; `filter` is the
+    /// `?filter=` value, empty for the whole shelf.
+    pub fn shelf_page(id: i64, sort: &str, dir: &str, filter: &str) -> String {
+        format!("shelf_page:{id}:{sort}:{dir}:f={filter}")
     }
     /// `GET /api/authors`.
     pub fn authors() -> String {
@@ -208,11 +209,10 @@ pub(crate) fn notify_changed() {
 }
 
 /// Force an immediate, awaitable server round-trip for `key` (the
-/// pull-to-refresh path): bypasses the freshness window and lands the
-/// result through the same compare-put-notify flow as a background
-/// revalidation. No-ops when offline, when queued mutations are pending
-/// (same guard as [`spawn_revalidation`]), or when a revalidation for the
-/// key is already in flight.
+/// pull-to-refresh path): bypasses the freshness window and lands the result
+/// like a background revalidation. No-ops when offline, when queued mutations
+/// are pending (same guard as [`spawn_revalidation`]), or when a revalidation
+/// for the key is already in flight.
 pub async fn refresh<T, Fut>(key: String, fetch: Fut)
 where
     T: Serialize + DeserializeOwned + Send + 'static,

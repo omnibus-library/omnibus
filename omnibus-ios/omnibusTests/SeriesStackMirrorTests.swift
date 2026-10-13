@@ -15,19 +15,6 @@ private func book(_ id: Int64, _ title: String, series: String? = nil, index: St
     return b
 }
 
-/// A scratch mirror holding `books`, promoted the way a sync pass does; returns it and its path.
-private func mirror(_ books: [Book]) async throws -> (OfflineStore, String) {
-    let path = FileManager.default.temporaryDirectory
-        .appendingPathComponent("stack-mirror-\(UUID().uuidString).sqlite").path
-    let store = OfflineStore(path: path)
-    await store.open()
-    let encoder = JSONEncoder()
-    let rows = try books.map { LibraryIndex.row(for: $0, payload: try encoder.encode($0)) }
-    await store.appendStagedBooks(rows)
-    await store.promoteCompletedStaging()
-    return (store, path)
-}
-
 private func read(
     _ store: OfflineStore, _ direction: SortDirection = .asc,
     filter: LibraryFilter = .none, limit: Int = 60, offset: Int = 0
@@ -49,7 +36,7 @@ struct SeriesStackMirrorTests {
     ]
 
     @Test func foldsEachSeriesOntoItsFirstSortingMember() async throws {
-        let (store, path) = try await mirror(library)
+        let (store, path) = try await scratchMirror(library, filePrefix: "stack-mirror")
         defer { try? FileManager.default.removeItem(atPath: path) }
 
         let asc = await read(store)
@@ -63,10 +50,13 @@ struct SeriesStackMirrorTests {
     }
 
     @Test func stacksOnTheTrimmedCaseFoldedName() async throws {
-        let (store, path) = try await mirror([
-            book(1, "A", series: "Saga", index: "1"),
-            book(2, "B", series: " saga ", index: "2"),
-        ])
+        let (store, path) = try await scratchMirror(
+            [
+                book(1, "A", series: "Saga", index: "1"),
+                book(2, "B", series: " saga ", index: "2"),
+            ],
+            filePrefix: "stack-mirror"
+        )
         defer { try? FileManager.default.removeItem(atPath: path) }
 
         let page = await read(store)
@@ -75,7 +65,7 @@ struct SeriesStackMirrorTests {
     }
 
     @Test func pagesByTileSoASeriesAppearsOnce() async throws {
-        let (store, path) = try await mirror(library)
+        let (store, path) = try await scratchMirror(library, filePrefix: "stack-mirror")
         defer { try? FileManager.default.removeItem(atPath: path) }
 
         let first = await read(store, limit: 2, offset: 0)
@@ -88,7 +78,7 @@ struct SeriesStackMirrorTests {
         audio.formats = ["m4b"]
         var text = book(1, "Saga Two", series: "Saga", index: "2")
         text.formats = ["epub"]
-        let (store, path) = try await mirror([audio, text])
+        let (store, path) = try await scratchMirror([audio, text], filePrefix: "stack-mirror")
         defer { try? FileManager.default.removeItem(atPath: path) }
 
         var filter = LibraryFilter()

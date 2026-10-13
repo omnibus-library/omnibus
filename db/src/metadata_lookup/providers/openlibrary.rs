@@ -176,15 +176,10 @@ struct OlSearchDoc {
     subject: Vec<String>,
 }
 
-/// Build the title-search URL. The query is user text, so it goes through
-/// `Url`'s percent-encoding rather than string interpolation.
-/// Build the search URL for a structured query.
-///
-/// `title` and `author` are **separate parameters**, which is the whole point:
-/// Open Library matches `title=` against the title field alone, so handing it
-/// "Dune Frank Herbert" asks for a book whose *title* contains the author's
-/// name — and duly returns "The secrets of Frank Herbert's Dune" and four
-/// more books about the novel, with the novel itself nowhere in the page.
+/// Build the search URL for a structured query. The query is user text, so it
+/// goes through `Url`'s percent-encoding. `title` and `author` are **separate
+/// parameters**: Open Library matches `title=` against the title field alone,
+/// so "Dune Frank Herbert" would return books *about* the novel and bury it.
 pub(in crate::metadata_lookup) fn search_url(
     config: &MetadataLookupConfig,
     query: &SearchQuery,
@@ -238,14 +233,11 @@ pub async fn search(
     Ok(body.docs.into_iter().filter_map(map_search_doc).collect())
 }
 
-/// Map one search doc into `ProviderEdition`. A doc without a title, or with
-/// no handle to re-fetch it by, maps to `None`.
-///
-/// An ISBN is **not** required. `search.json` answers with *works*, and a work
-/// that predates the ISBN — or whose editions Open Library has not catalogued
-/// with one — is still a book a reader is editing; requiring one here dropped
-/// those rows silently. What is required is the work key, which is what the
-/// hydrate step re-asks by.
+/// Map one search doc into `ProviderEdition`. A doc without a title, or with no
+/// handle to re-fetch it by, maps to `None`. An ISBN is **not** required:
+/// `search.json` answers with *works*, which may predate the ISBN, and
+/// requiring one dropped those rows silently. The work key is what the hydrate
+/// step re-asks by.
 fn map_search_doc(doc: OlSearchDoc) -> Option<ProviderEdition> {
     let title = doc.title.filter(|t| !t.trim().is_empty())?;
     let isbn13 = doc.isbn.iter().find_map(|v| normalize_isbn(v).ok());
@@ -289,13 +281,11 @@ pub struct OlEnrichment {
     pub first_publish_year: Option<i64>,
 }
 
-/// Fetch [`OlEnrichment`] for an ISBN. Never fails — a provider hiccup or an
-/// ISBN Open Library doesn't know just means fewer fields. The two lookups
-/// run concurrently and each is bounded by the config timeout.
-///
-/// `isbn13` is interpolated into a URL path, so callers must pass a
-/// **canonicalized** ISBN; the percent-encoding here is the second line of
-/// defence, not a licence to pass wire input straight through.
+/// Fetch [`OlEnrichment`] for an ISBN. Never fails: a provider hiccup or an
+/// ISBN Open Library doesn't know just means fewer fields. The two lookups run
+/// concurrently, each bounded by the config timeout. `isbn13` goes into a URL
+/// path, so callers must pass a **canonicalized** ISBN; percent-encoding here is
+/// only a second line of defence.
 pub async fn enrich(config: &MetadataLookupConfig, isbn13: &str) -> OlEnrichment {
     let (series, first_publish_year) = tokio::join!(
         edition_series(config, isbn13),
@@ -401,13 +391,10 @@ struct OlWork {
 }
 
 /// Whether `key` is shaped like an Open Library record path this crate is
-/// willing to address.
-///
-/// `key` reaches here from the client, which is echoing back a `provider_ref`
-/// the search handed out — but "echoing back" is a claim, not a guarantee, so
-/// the shape is checked rather than trusted. Anything else (a bare `isbn:`
-/// fallback ref, a path with a `..` segment, an absolute URL) is refused, so
-/// the request can only ever address a record under the configured base.
+/// willing to address. `key` is echoed back by the client from a `provider_ref`,
+/// a claim not a guarantee, so anything else (a bare `isbn:` ref, a `..`
+/// segment, an absolute URL) is refused: requests can only address a record
+/// under the configured base.
 fn is_record_key(key: &str) -> bool {
     (key.starts_with("/works/") || key.starts_with("/books/"))
         && key.len() <= 64
@@ -417,16 +404,11 @@ fn is_record_key(key: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '-'))
 }
 
-/// Re-fetch one candidate by its Open Library record key.
-///
-/// The hydrate path for a candidate with no ISBN. `Ok(None)` when the key
-/// isn't a record path this crate will address (see [`is_record_key`], which
-/// is the SSRF guard — the key is a claim from the client, not a fact) or the
-/// record has no title.
-///
-/// A work record carries no authors, only author *references*, and resolving
-/// those would be one extra request each for a field the search hit already
-/// has — so they are left empty and `fill_missing_from` restores them.
+/// Re-fetch one candidate by its Open Library record key: the hydrate path for
+/// a candidate with no ISBN. `Ok(None)` when the key isn't a record path this
+/// crate will address (see [`is_record_key`], the SSRF guard) or the record has
+/// no title. Authors are left empty (a work record only references them) and
+/// `fill_missing_from` restores them from the search hit.
 pub async fn by_ref(
     config: &MetadataLookupConfig,
     key: &str,
@@ -479,11 +461,9 @@ pub async fn by_ref(
     }))
 }
 
-/// The description behind one selected candidate, fetched best-effort from
-/// its own record.
-///
-/// This is the field hydrate-on-select exists for: neither `search.json` nor
-/// `api/books?jscmd=data` carries a description, so without this call Open
+/// The description behind one selected candidate, fetched best-effort from its
+/// own record. This is what hydrate-on-select exists for: neither `search.json`
+/// nor `api/books?jscmd=data` carries a description, so without this call Open
 /// Library can never fill the compare view's largest row.
 pub async fn describe(config: &MetadataLookupConfig, key: &str) -> Option<String> {
     if !is_record_key(key) {

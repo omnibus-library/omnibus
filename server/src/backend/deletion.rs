@@ -21,11 +21,9 @@ use crate::auth::AdminUser;
 mod tests;
 
 /// `GET /api/books/{uuid}/deletion-manifest` — the book's deletable items
-/// (files + physical copies) and the user data a total delete would take
-/// with them. Mirrors `rpc_book_deletion_manifest` in
-/// `omnibus_frontend::rpc::books`, whose `AdminUser` gate this repeats —
-/// there is no shared gate helper between the two crates, so changing one
-/// side's gate means changing the other.
+/// (files + physical copies) and the user data a total delete would take with
+/// them. Repeats the `AdminUser` gate of `rpc_book_deletion_manifest` in
+/// `omnibus_frontend::rpc::books`; changing one side's gate means changing the other.
 pub(super) async fn get_deletion_manifest(
     _admin: AdminUser,
     State(state): State<AppState>,
@@ -53,12 +51,11 @@ pub(super) async fn get_deletion_manifest(
     }
 }
 
-/// `POST /api/books/{uuid}/delete-files` — delete the given items:
-/// `file_ids` are `book_files` rows (removed from disk too), `copy_ids` are
-/// physical copies (un-recorded only). When every item goes, the book and
-/// everything keyed to its uuid go with it — irreversible, which is why the
-/// client confirms first. Mirrors `rpc_delete_book_files`, with the same
-/// gate-parity note as [`get_deletion_manifest`].
+/// `POST /api/books/{uuid}/delete-files` — delete the given items: `file_ids` are
+/// `book_files` rows (removed from disk too), `copy_ids` physical copies
+/// (un-recorded only). When every item goes, the book and everything keyed to its
+/// uuid go too, irreversibly. Mirrors `rpc_delete_book_files`; same gate-parity
+/// note as [`get_deletion_manifest`].
 pub(super) async fn post_delete_book_files(
     _admin: AdminUser,
     State(state): State<AppState>,

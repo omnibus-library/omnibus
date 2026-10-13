@@ -15,6 +15,7 @@ use crate::books::BooksError;
 use crate::metadata_overrides::sql::{
     effective_text_sql, effective_value_sql, override_present_sql, overrides_win_sql,
 };
+use crate::shelves::filter::Viewer;
 
 use super::{
     axis_sort_columns, bind_all, dir_keyword, exclude_formats_predicate, fetch_page,
@@ -55,10 +56,10 @@ pub async fn list_books_page_stacked(
     sort: SortKey,
     dir: SortDir,
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
     cursor: Option<&PageCursor>,
     limit: i64,
-    viewer_id: i64,
     projection: Projection,
 ) -> Result<StackedBookPage, BooksError> {
     let page = fetch_page(
@@ -67,6 +68,7 @@ pub async fn list_books_page_stacked(
         sort,
         dir,
         filters,
+        viewer,
         exclude_formats,
         cursor,
         limit,
@@ -81,9 +83,9 @@ pub async fn list_books_page_stacked(
             pool,
             library_paths,
             filters,
+            viewer,
             exclude_formats,
             &page.books,
-            viewer_id,
             projection,
         )
         .await?
@@ -102,6 +104,7 @@ pub(super) fn representative_predicate(
     dir: SortDir,
     library_paths: &[&str],
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
     binds: &mut Vec<SqlVal>,
 ) -> String {
@@ -112,7 +115,7 @@ pub(super) fn representative_predicate(
         None => format!("{primary} {d}, b.id {d}"),
     };
     let visible = visible_book_sql(library_paths, binds);
-    let filter_sql = filter_predicates(filters, binds);
+    let filter_sql = filter_predicates(filters, viewer, binds);
     let exclude_sql = exclude_formats_predicate(exclude_formats, binds);
     format!(
         " AND b.id IN (
@@ -133,9 +136,9 @@ async fn build_stacks(
     pool: &SqlitePool,
     library_paths: &[&str],
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
     page: &[EbookMetadata],
-    viewer_id: i64,
     projection: Projection,
 ) -> Result<Vec<SeriesStack>, BooksError> {
     let rep_ids: Vec<i64> = page.iter().map(|b| b.id).collect();
@@ -143,6 +146,7 @@ async fn build_stacks(
         pool,
         library_paths,
         filters,
+        viewer,
         exclude_formats,
         &rep_ids,
         projection,
@@ -163,7 +167,7 @@ async fn build_stacks(
         });
     }
     resolve_series_ids(pool, &mut stacks).await?;
-    attach_states(pool, viewer_id, &mut stacks).await?;
+    attach_states(pool, viewer.user_id, &mut stacks).await?;
     Ok(stacks)
 }
 
@@ -173,6 +177,7 @@ async fn fetch_member_groups(
     pool: &SqlitePool,
     library_paths: &[&str],
     filters: &ViewFilters,
+    viewer: Viewer,
     exclude_formats: &[String],
     rep_ids: &[i64],
     projection: Projection,
@@ -186,7 +191,7 @@ async fn fetch_member_groups(
     for chunk in rep_ids.chunks(IN_CHUNK) {
         let mut binds: Vec<SqlVal> = Vec::new();
         let visible = visible_book_sql(library_paths, &mut binds);
-        let filter_sql = filter_predicates(filters, &mut binds);
+        let filter_sql = filter_predicates(filters, viewer, &mut binds);
         let exclude_sql = exclude_formats_predicate(exclude_formats, &mut binds);
         let ids = placeholders(chunk.len());
         binds.extend(chunk.iter().map(|id| SqlVal::Int(*id)));

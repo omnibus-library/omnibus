@@ -28,23 +28,10 @@ const SYNC_PAGE_SIZE: usize = 100;
 const SPAN_DERIVATIONS_PER_SYNC: usize = 8;
 
 /// `GET library/sync` — the per-device delta, streamed as a JSON array via
-/// [`Body::from_stream`] with no item cap, so a large library syncs whole.
-/// First sync emits the whole opted-in set as
-/// `NewEntitlement`s; later syncs emit only `ChangedProductMetadata` +
-/// `ChangedReadingState` for modified books and `ChangedEntitlement
-/// {IsRemoved:true}` for books that left the opted-in set.
-///
-/// The device's snapshot advances in the stream's final poll — the same one
-/// that emits the closing `]`, so commit and completion are a single step the
-/// transport can't split. A connection dropped mid-body never reaches that
-/// poll, and the device replays the same delta on the next sync instead of
-/// silently losing books.
-///
-/// Responses are paged at [`SYNC_PAGE_SIZE`] changes: only the first page is
-/// emitted (and committed), and `x-kobo-sync: continue` tells the device to
-/// re-hit the route for the rest. Pagination needs no extra cursor — a
-/// committed page is in the snapshot, so the next request's delta *is* the
-/// remainder.
+/// [`Body::from_stream`] with no item cap. First sync emits `NewEntitlement`s for the
+/// opted-in set; later ones only changes and `ChangedEntitlement {IsRemoved:true}`. Paged
+/// at [`SYNC_PAGE_SIZE`] (`x-kobo-sync: continue`). The snapshot advances in the final
+/// poll, so a connection dropped mid-body replays the same delta rather than losing books.
 pub async fn library_sync(
     auth: KoboAuthUser,
     State(state): State<AppState>,
@@ -55,6 +42,8 @@ pub async fn library_sync(
         Err(e) => return internal("kobo sync_delta", e),
     };
     let mut changes = delta.changes;
+    // No page cursor needed: a committed page is in the snapshot, so the next
+    // request's delta is the remainder.
     let has_more = changes.len() > SYNC_PAGE_SIZE;
     changes.truncate(SYNC_PAGE_SIZE);
 
@@ -98,12 +87,9 @@ async fn load_sync_page_states(
     Ok(states)
 }
 
-/// Serialize one sync page as the lazily-streamed JSON-array response body,
-/// setting `x-kobo-sync: continue` when more pages remain. No second buffer
-/// of the whole payload — each poll dispatches to the step function for the
-/// current `SyncPhase` (below); the dispatcher itself stays a one-line match
-/// so the phase logic reads as ordinary functions rather than a nested
-/// `move async` closure.
+/// Serialize one sync page as the lazily-streamed JSON-array response body, setting
+/// `x-kobo-sync: continue` when more pages remain. Each poll dispatches to the step
+/// function for the current `SyncPhase`, so there is no second buffer of the payload.
 fn build_sync_response(
     changes: Vec<db::kobo::SyncChange>,
     base: String,
@@ -196,26 +182,19 @@ async fn enrich_states_with_derived_spans(
     }
 }
 
-/// Follow-mode lane: when the audiobook holds the freshest position on a
-/// follow link, serve the mapped spot instead of the reader's older CFI.
-/// Response-only — the progress row keeps its real provenance; the
-/// device's own PUT makes the position real once the reader picks it up
-/// there. Returns `true` (a budget unit consumed) once a follow-linked
-/// resume candidate with a fraction is found — even when
-/// `derive_span_for_fraction` comes back `None`, since `percent` may still
-/// be updated from the candidate. `false` only means this lane was skipped
-/// entirely (not follow-linked, no eligible candidate, or no fraction).
-///
-/// Cheap pre-filter before the multi-query mapping composition: most
-/// changed books have no follow link, and one indexed `get_link` read
-/// skips the timeline/progress/structure reads for all of them (a large
-/// first sync touches every book).
+/// Follow-mode lane: when the audiobook holds the freshest position on a follow link,
+/// serve the mapped spot instead of the reader's older CFI. Response-only: the progress
+/// row keeps its provenance. Returns `true` (a budget unit consumed) once a follow-linked
+/// resume candidate with a fraction is found, even if `derive_span_for_fraction` returns
+/// `None`; `false` means the lane was skipped entirely.
 async fn apply_follow_link_span(
     state: &AppState,
     user_id: i64,
     book: &db::kobo::KoboBookRow,
     states: &mut HashMap<String, db::kobo::KoboBookState>,
 ) -> bool {
+    // Cheap pre-filter: most changed books have no follow link, and one indexed `get_link`
+    // read skips the timeline/progress/structure reads for all of them.
     let follow_linked = matches!(
         db::cross_format::get_link(state.pool(), user_id, &book.uuid).await,
         Ok(Some(link)) if link.follow
@@ -421,12 +400,10 @@ fn sync_stream_open(mut st: SyncStreamState) -> (Result<Bytes, std::io::Error>, 
     (ok(Bytes::from_static(b"[")), st)
 }
 
-/// `SyncPhase::Item` step: serialize the current change's DTOs (a change can
-/// fan out into two items) and advance to the next change or `Close`. A JSON
-/// serialization failure — never expected, since every DTO is owned
-/// Strings/primitives, but handled rather than unwrapped — aborts the body
-/// via `SyncPhase::End` instead of emitting malformed JSON: `record_synced`
-/// then never runs, and the device retries the same delta next sync.
+/// `SyncPhase::Item` step: serialize the current change's DTOs (a change can fan out
+/// into two items) and advance to the next change or `Close`. A JSON serialization
+/// failure (never expected) aborts the body via `SyncPhase::End`, so `record_synced`
+/// never runs and the device retries the same delta next sync.
 fn sync_stream_item(
     mut st: SyncStreamState,
     change: usize,
@@ -502,16 +479,11 @@ pub async fn library_metadata(
     }
 }
 
-/// `GET library/<uuid>/state` — the device's pull of the server-side reading
-/// state for one book, the request the firmware adopts a position from: a
-/// one-element array of the same `ReadingState` shape the PUT consumes and
-/// `library/sync` emits.
-///
-/// Deliberately shares `library/sync`'s span enrichment, side effects
-/// included: a CFI-only position goes out as an exact KoboSpan, the derived
-/// halves are persisted so later syncs skip the work, and a missing kepub
-/// cache queues a fire-and-forget conversion — all idempotent, mirroring
-/// what the same book would get on its next `library/sync`.
+/// `GET library/<uuid>/state` — the device's pull of the server-side reading state for
+/// one book, the request the firmware adopts a position from: a one-element array of the
+/// same `ReadingState` shape the PUT consumes and `library/sync` emits. Shares
+/// `library/sync`'s span enrichment, side effects included: derived halves are persisted
+/// and a missing kepub cache queues a fire-and-forget conversion, all idempotent.
 pub async fn get_state(
     auth: KoboAuthUser,
     State(state): State<AppState>,

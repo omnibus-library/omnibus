@@ -6,15 +6,11 @@
 
 use dioxus::prelude::*;
 
-/// SSR-render an rsx `Element` to an HTML string. The workhorse for
-/// render-smoke tests: pass `rsx! { SomeComponent { ..props } }` and assert on
-/// substrings of the returned markup.
-///
-/// Testing `#[cfg(feature = "mobile")]`-only markup needs both features at
-/// once (`cargo test -p omnibus-frontend --features mobile,server` — a combo
-/// neither CI matrix leg runs alone): gate the test module
-/// `#[cfg(all(test, feature = "mobile", feature = "server"))]`, dropping the
-/// `mobile` half when the file's module root already sits behind it.
+/// SSR-render an rsx `Element` to an HTML string: the workhorse for
+/// render-smoke tests (pass `rsx! { SomeComponent { ..props } }`, assert on
+/// substrings). Testing `mobile`-only markup needs `--features mobile,server`
+/// together (no single CI leg runs that): gate the test module
+/// `#[cfg(all(test, feature = "mobile", feature = "server"))]`.
 pub fn render(element: Element) -> String {
     dioxus::ssr::render_element(element)
 }
@@ -36,6 +32,28 @@ pub fn test_user(is_admin: bool, can_upload: bool) -> omnibus_shared::UserSummar
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+    }
+}
+
+/// A private, empty shelf row for render tests. Its owner's username is
+/// `user-{owner_user_id}`, which is what an attribution line reads.
+pub fn test_shelf_summary(
+    id: i64,
+    owner_user_id: i64,
+    kind: omnibus_shared::ShelfKind,
+    name: &str,
+) -> omnibus_shared::ShelfSummary {
+    omnibus_shared::ShelfSummary {
+        id,
+        owner_user_id,
+        owner_username: format!("user-{owner_user_id}"),
+        owner_has_avatar: false,
+        kind,
+        name: name.to_string(),
+        visibility: omnibus_shared::Visibility::Private,
+        accent: None,
+        book_count: 0,
+        cover_uuids: Vec::new(),
     }
 }
 

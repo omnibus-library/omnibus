@@ -66,11 +66,9 @@ fn build_spark(summary: &StatsSummary, anchor: i64) -> Vec<SparkBar> {
 }
 
 /// The line under the headline: where this run stands against the record.
-/// `yours` picks first- or third-person phrasing — `false` on another
-/// reader's page.
-///
-/// `None` when the reader has neither a live run nor a record — there is
-/// nothing to compare, and a sentence saying so is furniture.
+/// `yours` picks first- or third-person phrasing (`false` on another reader's
+/// page). `None` when the reader has neither a live run nor a record, since
+/// there is nothing to compare.
 fn streak_line(current: i64, longest: i64, yours: bool) -> Option<String> {
     if longest <= 0 {
         return None;
@@ -90,14 +88,11 @@ fn streak_line(current: i64, longest: i64, yours: bool) -> Option<String> {
     })
 }
 
-/// The standing hero. `summary` is the all-time summary — the one fetch a
-/// period switch never re-runs — and is `None` only while it is in flight.
-/// `who` is [`super::picker::Viewing::heading`] — `None` on the caller's own
-/// page, `Some("{name}'s stats")` on another reader's. `children` is the
-/// reader picker, rendered as the hero's first row.
-///
-/// The goals are read straight off it rather than owned as signals: nothing on
-/// this page writes them any more, so there is no save to fold back in.
+/// The standing hero. `summary` is the all-time summary (the one fetch a period
+/// switch never re-runs), `None` only while in flight. `who` is
+/// [`super::picker::Viewing::heading`]: `None` on the caller's own page,
+/// `Some("{name}'s stats")` on another reader's. `children` is the reader
+/// picker, rendered as the hero's first row. Goals are read straight off `summary`.
 #[component]
 pub(super) fn StatsHero(
     summary: Option<StatsSummary>,

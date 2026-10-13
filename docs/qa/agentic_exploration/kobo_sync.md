@@ -3,8 +3,9 @@
 A runner-driven scenario, like the iOS lane's offline outbox: it is **not** in
 the catalog's draw, one web agent is handed it when the run is started with
 `--kobo`, and the runner does half the work. A Kobo is a device, and no agent
-has one — so the runner speaks the device's protocol with `curl` while the
-agent watches the app.
+has one — so the runner plays the device with `mock-kobo`, the repo's fake
+e-reader, and with `curl` for the reading-position steps until it models
+reading state (#2725), while the agent watches the app.
 
 Two halves, in this order: the **shelf** half proves a shelf marked for Kobo
 sync reaches the device; the **sync** half proves a position written by the
@@ -27,8 +28,9 @@ person does.
    reader follows; if they do not make sense to you, that is a finding about
    the copy.
 3. Create a **Smart** shelf with a rule that matches three or four books — an
-   author, a genre — and confirm it fills. The web cannot fill a hand-picked
-   shelf, and a Kobo can only be sent a shelf with books on it.
+   author, a genre — and confirm it fills. A hand-picked shelf works too once
+   you have added books to it, and a Kobo can only be sent a shelf with books
+   on it.
 4. Open **Edit shelf** on it and tick the Kobo sync opt-in. Save. Reload and
    confirm the opt-in stuck. A system shelf (the wishlist) must not offer the
    opt-in at all; check that once.
@@ -37,23 +39,48 @@ person does.
 
 ## Part 2 — the device syncs (runner)
 
-With the endpoint URL from the agent, `$KOBO` below:
+With the endpoint URL from the agent, `$KOBO` below, split it and start the
+device. Every Bash call is a fresh shell, so pick the scratch dir once and note
+what it prints. The temp state file keeps the scenario off this worktree's own
+device, and the token goes in the environment, never on the command line:
 
 ```bash
-curl -sS "$KOBO/v1/library/sync" | python3 -m json.tool | head -80
+ORIGIN="${KOBO%%/kobo/*}"
+TOKEN="${KOBO##*/kobo/}"
+STATE_DIR=$(mktemp -d); echo "$STATE_DIR"
+OMNIBUS_MOCK_KOBO_TOKEN="$TOKEN" scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- serve \
+  --url "$ORIGIN" --port 0 --state "$STATE_DIR/kobo.json" > "$STATE_DIR/serve.log" 2>&1 &
+timeout 600 sh -c 'until grep -q MOCK_KOBO_READY "$1"; do sleep 1; done' _ "$STATE_DIR/serve.log"
+PORT=$(sed -n 's/.*MOCK_KOBO_READY port=\([0-9]*\).*/\1/p' "$STATE_DIR/serve.log")
+PID=$(sed -n 's/.*MOCK_KOBO_READY .*pid=\([0-9]*\).*/\1/p' "$STATE_DIR/serve.log")
 ```
 
-The first sync returns every book on the opted-in shelf as a `NewEntitlement`,
-each carrying a title, a download URL, and a `ReadingState`. Check three
-things and journal them under the agent's actor with `surface` `kobo`:
+If the wait times out, read `$STATE_DIR/serve.log`, journal what it says as a
+failure, and stop: the device never started. Otherwise the line it waits for
+looks like `MOCK_KOBO_READY port=<n> hardware_id=<id> state=<path> pid=<pid>`.
+Later calls set `STATE_DIR` to the printed path again and re-derive `PORT` and
+`PID` from `$STATE_DIR/serve.log` with the same `sed` lines.
 
-- every book on the shelf is present, and **no book off it** is;
-- each entitlement's title and author are the book's;
-- the response ends and does not repeat forever — a header `x-kobo-sync:
-  continue` means more pages, and a second call must eventually return
-  none.
+Press Sync now, then read what the device holds:
 
-Then, on one of those books, write a position the way the device does:
+```bash
+curl -sS -X POST 127.0.0.1:$PORT/actions/sync
+curl -sS 127.0.0.1:$PORT/device | python3 -m json.tool | head -80
+curl -sS 127.0.0.1:$PORT/requests | python3 -m json.tool
+```
+
+Check three things and journal them under the agent's actor with `surface`
+`kobo`:
+
+- the sync answers `"code":"synced"`, and `details.library` of `GET /device`
+  holds every book on the shelf and **no book off it**;
+- each book carries the right `title` and `authors`;
+- the sync ends and does not page forever — a sync that never ends answers
+  `sync_failed` with quirk `SyncPaging`. `GET /requests` shows what the device
+  asked for.
+
+Then, on one of those books (a key of `details.library` is its uuid), write a
+position the way the device does:
 
 ```bash
 curl -sS -X PUT "$KOBO/v1/library/<uuid>/state" \
@@ -87,11 +114,14 @@ Part 2. It carries **no `Location`**: the server stores a Kobo location
 verbatim when a *device* sends one and derives a CFI from it, and nothing
 synthesises a location in the other direction, so a browser position reaches
 the device as a whole-book percent alone. Do not file its absence. Journal what
-came back. Then run the sync once more: the book
-should come back as a `ChangedReadingState`, not as a new entitlement.
+came back. Then sync once more with `POST /actions/sync`: it answers
+`synced`. Whether the re-sync sends the book as a `ChangedReadingState` and
+**not as a new entitlement** is checked with #2725, with the rest of the
+device's reading state: the mock's library cannot show which kind arrived.
 
 Finally, ask the agent to untick the Kobo opt-in on the shelf and sync once
-more: each book should return as a `ChangedEntitlement` marked removed.
+more with `POST /actions/sync`: `GET /device` shows each book with
+`"archived": true`.
 
 ## Journal
 
@@ -130,6 +160,10 @@ existing under the name it carries; the opt-in itself is not audited.
   at the top of the right page is agreement.
 - The shelf half sends only opted-in shelves. A book in the library but on no
   synced shelf is correctly absent from the device.
+- Stop the mock-kobo process (`kill $PID`, the `pid` on its READY line) after
+  the final sync of Part 4 and before removing the device: it holds the
+  device's token, and a device that outlives its removal only logs failed
+  syncs.
 - The device token is per device and persists. Remove the device from the
   account page at the end of the scenario, and journal that you did —
   **after** the final sync of Part 4, never before. The token is the only way
@@ -138,8 +172,8 @@ existing under the name it carries; the opt-in itself is not audited.
   removal as `device.remove`; neither is audited.
 - The **Kobo opt-in is not on the create form**, only on Edit shelf — so a
   shelf made for a Kobo has to be created and then immediately reopened. The
-  opt-in is also offered on a hand-picked shelf, which the web can fill only at
-  creation, so a reader can opt in a shelf they cannot later add to.
+  opt-in is also offered on a hand-picked shelf, which may still be empty, so a
+  reader can opt in a shelf that holds nothing yet.
 - The wishlist offers no opt-in because it has **no edit affordance at all**,
   which is a stronger thing than the form omitting the toggle. Check an empty
   hand-picked shelf of your own to be sure you are seeing system-ness rather

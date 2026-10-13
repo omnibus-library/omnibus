@@ -40,16 +40,9 @@ impl VocabularyTable {
 
 /// When an override sets a series name, ensure a `series` row and
 /// `books_series_link` exist so the browse index and detail-page breadcrumb
-/// resolve. Without this, override-only series are invisible to
-/// `list_series` (which requires a canonical link for visibility) and the
-/// book detail page's `series_id` backfill can't find the `series.id`.
-///
-/// Takes `&mut SqliteConnection` so the caller can run the four statements
-/// (book lookup, series upsert, series read, link insert) inside an open
-/// transaction — pass `&mut tx` from a `sqlx::Transaction`. Running
-/// outside a transaction would let each statement commit independently
-/// in autocommit mode, reopening the partial-failure window this helper
-/// exists to close.
+/// resolve; override-only series are otherwise invisible to `list_series`.
+/// Takes `&mut SqliteConnection` so the caller runs all four statements in one
+/// transaction (`&mut tx`): autocommit would reopen the partial-failure window.
 pub(super) async fn materialize_series_link(
     conn: &mut SqliteConnection,
     book_uuid: &str,
@@ -70,19 +63,11 @@ pub(super) async fn materialize_series_link(
     link_book_to_series(&mut *conn, book_id, series_id).await
 }
 
-/// When an override sets a subjects list, ensure a `tags` row exists for
-/// every tag in it, so `get_tag_cloud` — which feeds `/api/tags` and the
-/// inline-edit autocomplete pool — has a canonical row to surface a tag
-/// created through the override path.
-///
-/// Deliberately rows-only, **not** `books_tags_link` rows: the canonical
-/// link table is the sole record of a book's *scanned* tags, so writing
-/// override memberships into it would make "delete overrides → revert to
-/// scanned" impossible. Memberships stay in the override JSON, which
-/// `get_tag_cloud` already counts via `json_each`. The orphan sweep
-/// (`delete_orphan_tags`) counts those memberships too, so a materialized
-/// row lives exactly as long as a canonical link or a live book's override
-/// still names it — and is deleted the moment neither does.
+/// When an override sets a subjects list, ensure a `tags` row exists for every
+/// tag in it, so `get_tag_cloud` (`/api/tags` and the inline-edit autocomplete)
+/// can surface a tag created through the override path. Rows-only, **not**
+/// `books_tags_link`: that table is the sole record of *scanned* tags, so
+/// writing overrides there would make "delete overrides" unable to revert.
 pub(super) async fn materialize_tag_rows(
     conn: &mut SqliteConnection,
     overrides: &MetadataOverrides,
@@ -93,17 +78,11 @@ pub(super) async fn materialize_tag_rows(
     insert_vocabulary_rows(conn, VocabularyTable::Tags, subjects).await
 }
 
-/// When an override sets a genres list, ensure a `genres` row exists for
-/// every entry, so `get_genre_cloud` — which feeds the `/api/genres` read
-/// and the chip-editor autocomplete pool — can surface a genre the moment a
-/// user coins it.
-///
-/// Rows-only, like [`materialize_tag_rows`], but for a different reason:
-/// tags keep memberships override-side to preserve revert-to-scanned, while
-/// genres have no scanned baseline at all (migration `0066`), so the
-/// override JSON is simply their only storage. The orphan sweep
-/// (`delete_orphan_genres`) reaps a row the moment no live book's override
-/// still names it.
+/// When an override sets a genres list, ensure a `genres` row exists for every
+/// entry, so `get_genre_cloud` (`/api/genres` and the chip-editor autocomplete)
+/// can surface a genre the moment a user coins it. Rows-only, like
+/// [`materialize_tag_rows`], because genres have no scanned baseline: the
+/// override JSON is their only storage.
 pub(super) async fn materialize_genre_rows(
     conn: &mut SqliteConnection,
     overrides: &MetadataOverrides,
@@ -115,17 +94,10 @@ pub(super) async fn materialize_genre_rows(
 }
 
 /// When an override sets a creators list, ensure an `authors` row exists for
-/// every name in it. Every read resolves override creators **by name** —
-/// `backfill_creator_ids`, `list_authors`' override arm, the effective-author
-/// CTE — so a name that lived only in override JSON had no id, no author page
-/// and no `/api/authors` entry: an inert, link-coloured byline.
-///
-/// Rows-only, like [`materialize_tag_rows`] and for the same reason: the
-/// `books_authors_link` table is the sole record of a book's *scanned*
-/// creators, which revert-to-scanned depends on. `delete_orphan_authors`
-/// counts override memberships too, so the row lives exactly as long as a
-/// canonical link or a live book's override still names it. The override's
-/// `file_as` seeds `sort` when the row is new; an existing row keeps its own.
+/// every name in it. Every read resolves override creators **by name**, so a
+/// name living only in override JSON would have no id, author page or
+/// `/api/authors` entry. Rows-only, like [`materialize_tag_rows`]; `file_as`
+/// seeds `sort` when the row is new, and an existing row keeps its own.
 pub(super) async fn materialize_author_rows(
     conn: &mut SqliteConnection,
     overrides: &MetadataOverrides,
@@ -163,16 +135,10 @@ pub(super) async fn materialize_author_rows(
 }
 
 /// `INSERT OR IGNORE` every name in `names` into a single-column vocabulary
-/// table (`tags` / `genres`), one multi-row statement per
-/// [`INSERT_CHUNK`]-sized chunk instead of one statement per name.
-///
-/// `table` is a [`VocabularyTable`], not a string — the one part of the
-/// statement that isn't a bind therefore can't carry user input. Names are
-/// trimmed, blanks
-/// dropped, and duplicates collapsed case-insensitively to match the
-/// `UNIQUE COLLATE NOCASE` column the insert lands on, so a list naming the
-/// same tag twice stays one row (as it did per-statement) and can't make a
-/// single batch conflict with itself.
+/// table (`tags` / `genres`), one multi-row statement per [`INSERT_CHUNK`] chunk.
+/// Names are trimmed, blanks dropped, and duplicates collapsed
+/// case-insensitively to match the `UNIQUE COLLATE NOCASE` column, so a list
+/// naming a tag twice can't make a batch conflict with itself.
 async fn insert_vocabulary_rows(
     conn: &mut SqliteConnection,
     table: VocabularyTable,

@@ -534,13 +534,11 @@ fn read_text_sample(file: &mut std::fs::File, offset: u64, size: u64) -> Option<
     Some(decode_text_sample(&buf[2..end]))
 }
 
-/// UTF-16 when the sample carries a byte-order mark, UTF-8 otherwise.
-///
-/// A sample may instead declare its encoding in a trailing `encd` atom, which
-/// this deliberately ignores: ffmpeg's own chapter reader notes the samples
-/// are only ever UTF-8 or UTF-16 in practice and distinguishes them by BOM
-/// alone, so honoring `encd` would add a path no real file exercises.
+/// UTF-16 when the sample carries a byte-order mark, UTF-8 otherwise. A trailing
+/// `encd` atom declaring another encoding is deliberately ignored.
 fn decode_text_sample(bytes: &[u8]) -> String {
+    // BOM alone suffices: ffmpeg's chapter reader says samples are only ever UTF-8
+    // or UTF-16, so honoring `encd` would add a path no real file exercises.
     match bytes {
         [0xFE, 0xFF, rest @ ..] => decode_utf16(rest, true),
         [0xFF, 0xFE, rest @ ..] => decode_utf16(rest, false),
@@ -608,14 +606,10 @@ fn be_u64(bytes: &[u8]) -> u64 {
     u64::from_be_bytes(buf)
 }
 
-/// Extract ID3v2 CHAP frames from an MP3 file.
-///
-/// MP3 audiobooks are almost always folder-of-files where each file IS a
-/// chapter — the synthetic fallback handles that perfectly. Embedded CHAP
-/// frames in a single-file MP3 are extremely rare for audiobooks, so this
-/// path reads the raw bytes directly rather than fighting lofty's unified
-/// tag abstraction (which doesn't expose CHAP frame timing data).
+/// Extract ID3v2 CHAP frames from an MP3 file. Rare for audiobooks: MP3 books
+/// are usually a folder of files, which the synthetic fallback handles.
 fn extract_id3_chapters(path: &Path) -> Option<Vec<RawChapter>> {
+    // Raw bytes: lofty's unified tag abstraction doesn't expose CHAP frame timing.
     let data = std::fs::read(path).ok()?;
     parse_id3v2_chap_frames(&data)
 }

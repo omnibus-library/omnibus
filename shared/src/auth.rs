@@ -162,16 +162,11 @@ pub struct SessionView {
     pub created_at: i64,
     pub last_used_at: i64,
     pub expires_at: i64,
-    /// `true` when this is the session the request authenticated with. Only
-    /// ever set by the self-service listing (`GET /api/auth/sessions`); the
-    /// admin listing (`GET /api/admin/users/{id}/sessions`) always returns
-    /// `false` here — including when an admin lists their own account, where
-    /// the viewed row *could* be the admin's own request session — because
-    /// that endpoint's builder never checks the requester's own session id
-    /// against the row. Enforcement lives on the write side, not this flag:
-    /// the self-service `DELETE /api/auth/sessions/{id}` refuses (400) to
-    /// revoke the id the request itself authenticated with (AC2), regardless
-    /// of whether a listing ever marked it current.
+    /// `true` when this is the session the request authenticated with. Only set by
+    /// the self-service listing; the admin listing always returns `false`, even for
+    /// the admin's own session. Enforcement lives on the write side: the self-service
+    /// `DELETE /api/auth/sessions/{id}` refuses (400) to revoke the request's own
+    /// session id.
     #[serde(default)]
     pub is_current: bool,
 }

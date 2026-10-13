@@ -1,0 +1,142 @@
+//! Running a TUI job against the device: each [`Job`] the key handler asks for
+//! becomes calls on `Control` and `autowire`, and a [`Status`] saying how it went.
+//! The only place the TUI waits on the network, so the loop runs it off the
+//! draw thread. Wiring, its loopback-only guard and device naming stay in `autowire`.
+
+use std::fmt::Display;
+use std::sync::Arc;
+
+use crate::autowire::{self, AutoWireError, SeedUser};
+use crate::control::{Control, ControlError, LastSync, Retarget, Retargeted, RESET_MESSAGE};
+use crate::tui::app::{Job, Status};
+
+/// What `w` needs to wire a token: the dev seed admin and the device's Omnibus name.
+pub struct Wiring {
+    /// `OMNIBUS_DEV_SEED_USER` as read at startup.
+    pub seed_user: Option<String>,
+    /// `autowire::device_name` of the state file.
+    pub device_name: String,
+}
+
+/// Run `job` against `control` to its end; how the status line reports it.
+pub async fn perform(control: &Arc<Control>, wiring: &Wiring, job: Job) -> Status {
+    match job {
+        Job::Sync => sync(control).await,
+        Job::Reset => reset(control).await,
+        Job::SetUrl(url) => set_url(control, wiring, &url).await,
+        Job::SetToken(token) => set_token(control, token).await,
+        Job::Wire => wire(control, wiring).await,
+    }
+}
+
+async fn sync(control: &Arc<Control>) -> Status {
+    match control.sync().await {
+        Ok(LastSync::Synced { .. }) => Status::Info("sync complete".to_owned()),
+        Ok(LastSync::Failed { message, .. }) => Status::Error(message),
+        Err(error) => failure(error),
+    }
+}
+
+async fn reset(control: &Control) -> Status {
+    match control.reset().await {
+        Ok(_) => Status::Info(RESET_MESSAGE.to_owned()),
+        Err(error) => failure(error),
+    }
+}
+
+async fn set_token(control: &Control, token: String) -> Status {
+    match control.retarget(Retarget::Token(token)).await {
+        Ok(_) => Status::Info("token saved".to_owned()),
+        Err(error) => failure(error),
+    }
+}
+
+/// Point the device at `url`; a token auto-wired for another server is wired again for this one.
+/// A failed re-wire keeps the new URL and the old token, and says so.
+async fn set_url(control: &Control, wiring: &Wiring, url: &str) -> Status {
+    let retargeted = match control.retarget(Retarget::Url(url.to_owned())).await {
+        Ok(retargeted) => retargeted,
+        Err(error) => return failure(error),
+    };
+    if !retargeted.needs_wire {
+        return Status::Info(format!("now syncing against {url}"));
+    }
+    match wire(control, wiring).await {
+        Status::Info(wired) => Status::Info(format!("now syncing against {url}; {wired}")),
+        Status::Error(error) => Status::Error(format!(
+            "now syncing against {url}, but its token was wired for another server: {error}"
+        )),
+    }
+}
+
+/// Wire a token for the device's current URL and keep it, with the URL it was minted against.
+/// Turned away before any request while a sync runs, since the token could not be saved.
+async fn wire(control: &Control, wiring: &Wiring) -> Status {
+    let view = control.view();
+    if view.syncing {
+        return failure(ControlError::SyncInProgress);
+    }
+    let url = view.url;
+    let seed = match SeedUser::parse(wiring.seed_user.as_deref()) {
+        Ok(seed) => seed,
+        Err(error) => return wire_failure(error),
+    };
+    let wired = match autowire::wire(&url, &seed, &wiring.device_name).await {
+        Ok(wired) => wired,
+        Err(error) => return wire_failure(error),
+    };
+    let to = Retarget::Wired {
+        token: wired.token,
+        url,
+    };
+    let saved = control.retarget(to).await;
+    wired_status(saved, &wiring.device_name, wired.reused)
+}
+
+/// How saving a freshly wired token went.
+fn wired_status(
+    saved: Result<Retargeted, ControlError>,
+    device_name: &str,
+    reused: bool,
+) -> Status {
+    match saved {
+        Ok(_) => Status::Info(wired_message(device_name, reused)),
+        Err(ControlError::SyncInProgress) => Status::Error(format!(
+            "wired \"{device_name}\", but a sync started before its token could be saved; \
+             press w again when it finishes"
+        )),
+        Err(error) => failure(error),
+    }
+}
+
+fn wired_message(device_name: &str, reused: bool) -> String {
+    if reused {
+        format!(
+            "wired to the existing Omnibus device \"{device_name}\": its next sync sends only \
+             changes until #2743; for a full resend, remove it in Account settings and press w"
+        )
+    } else {
+        format!("wired to the new Omnibus device \"{device_name}\"")
+    }
+}
+
+/// A wiring failure in the TUI's terms: its fix is `t`, not a command-line flag.
+fn wire_failure(error: AutoWireError) -> Status {
+    match error {
+        AutoWireError::NotLocal { url } => Status::Error(format!(
+            "auto-wire only logs in to a local dev server, not {url}: press t to enter a token"
+        )),
+        AutoWireError::NoSeedUser => Status::Error(
+            "can't auto-wire: OMNIBUS_DEV_SEED_USER is not set; press t to enter a token"
+                .to_owned(),
+        ),
+        other => failure(other),
+    }
+}
+
+fn failure(error: impl Display) -> Status {
+    Status::Error(error.to_string())
+}
+
+#[cfg(test)]
+mod tests;

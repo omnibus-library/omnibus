@@ -196,10 +196,29 @@ pub use edit_shelf_modal::EditShelfModal;
 pub mod add_books_modal;
 pub use add_books_modal::AddBooksModal;
 
+// The "Add to shelf" picker: lists the hand-picked shelves a reader may change
+// and reports the tile they pick. Web-only — the mobile apps queue their own
+// shelf writes through the offline outbox.
+#[cfg(not(feature = "mobile"))]
+pub mod shelf_picker;
+#[cfg(not(feature = "mobile"))]
+pub use shelf_picker::ShelfPickerModal;
+
+// The shelf tile — covers on an accent-lit ledge, then the name, kind,
+// visibility and count — shared by the shelves index, the book page's shelves
+// and the "Add to shelf" picker. Web-only, like the surfaces that draw it.
+#[cfg(not(feature = "mobile"))]
+pub mod shelf_tile;
+
 // Facet row (kind / visibility / rule chips) shown under shelf titles on the
 // landing header and the shelf detail header.
 pub mod shelf_facets;
 pub use shelf_facets::ShelfFacets;
+
+// The library filter chip bar (chips, add-filter picker, Clear all) and the
+// candidate-value mappers the mobile sheet shares. Platform-agnostic markup.
+pub mod filter_bar;
+pub use filter_bar::{FilterBar, ShelfList};
 
 // "Fetch Summary" button — pulls a book blurb from Hardcover/OpenLibrary on
 // demand. Mounted by the metadata editor (always) and the web book-detail hero

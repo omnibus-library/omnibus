@@ -53,9 +53,6 @@ enum OpenSheet {
 /// Renders the mobile audiobook player for `uuid`. Retargets the app-wide
 /// playback context and renders its state; the heavy lifting (fetch, audio
 /// surface, event drain) lives in the app-root [`host::MobileAudioHost`].
-/// The two route-driven effects are split into [`use_retarget_playback`]
-/// and [`use_marquee_title_refresh`]; what remains here is hook wiring that
-/// must run unconditionally before the early returns.
 #[component]
 pub fn MobilePlayer(uuid: String, file_id: Option<i64>) -> Element {
     let server_url = use_server_url();
@@ -183,12 +180,9 @@ fn persist_position(uuid: &str, file_id: Option<i64>, server_url: &str, seconds:
 }
 
 /// Marquee-ready title markup: `.m-player-title` is the fixed-width clipping
-/// container; `.m-player-title-track` holds two identical copies of the
-/// title (CSS hides the second by default). [`interop::refresh_title_marquee`]
-/// measures only the first copy and toggles `.is-overflowing` (which reveals
-/// the second copy and starts the loop) only when the title is wider than
-/// its container, so a short title stays static and never shows duplicated
-/// text before the measurement JS runs.
+/// container; `.m-player-title-track` holds two identical copies of the title,
+/// the second hidden until [`interop::refresh_title_marquee`] measures the first
+/// and toggles `.is-overflowing`, so a short title stays static.
 fn player_title(title: &str) -> Element {
     rsx! {
         h1 { class: "m-player-title",
@@ -284,10 +278,8 @@ struct PlayerDerived {
 
 /// Compute [`PlayerDerived`] for one render. While dragging, every readout
 /// previews the drag position (`scrub_target`) and the current chapter is
-/// re-derived from it, so the bar/times track the thumb; at rest `effective`
-/// is the true elapsed. The transport handlers still act on the real
-/// `elapsed`/`chapter_index`, never the preview. Shared with the web player
-/// via `effective_scrub_position` so the two derivations can't diverge.
+/// re-derived from it; at rest `effective` is the true elapsed. Transport
+/// handlers still act on the real `elapsed`/`chapter_index`, never the preview.
 fn derive_player_state(
     view: &PlayerView,
     elapsed: f64,

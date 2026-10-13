@@ -151,13 +151,11 @@ impl PagerDisplay {
 
 /// The full-page comic pager: top bar (back, title, fit modes), the image
 /// stage with edge page-turn buttons, and a footer slider + page label.
-/// Over the line cap by design: three hooks (session tracking, auto
-/// read-status, the bootstrap effect) must run unconditionally before a
-/// large declarative rsx! tree mirroring the pager's layout — splitting
-/// further would only thread the same signals through another component
-/// boundary, the same shape as `BdCtaRow` in `pages/book_detail/hero.rs`.
 #[component]
 pub fn ComicReadPage(uuid: String) -> Element {
+    // Over the line cap by design: three hooks (session tracking, read status,
+    // bootstrap) run unconditionally before one declarative rsx! tree, and a split
+    // would only thread the same signals through another component.
     let server_url = use_server_url();
     let nav = use_navigator();
     let mut meta: Signal<Option<EbookMetadata>> = use_signal(|| None);

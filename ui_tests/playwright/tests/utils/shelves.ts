@@ -1,6 +1,20 @@
-import type { APIRequestContext, Locator, Page } from "@playwright/test";
-import { expect } from "../fixtures/test";
+import type {
+  APIRequest,
+  APIRequestContext,
+  Locator,
+  Page,
+} from "@playwright/test";
+import { expect, test } from "../fixtures/test";
 import { gotoReady } from "./nav";
+
+/** The empty private hand-picked shelf a create request starts from. */
+const SHELF_DEFAULTS = {
+  description: null,
+  visibility: "private",
+  match_mode: null,
+  rules: [],
+  book_uuids: [],
+};
 
 /**
  * Create a shelf owned by the suite's admin straight through the API and
@@ -11,22 +25,77 @@ export async function createShelf(
   body: Record<string, unknown>,
 ): Promise<number> {
   const resp = await request.post("/api/rpc/shelves/create", {
-    data: {
-      req: {
-        description: null,
-        visibility: "private",
-        match_mode: null,
-        rules: [],
-        book_uuids: [],
-        ...body,
-      },
-    },
+    data: { req: { ...SHELF_DEFAULTS, ...body } },
   });
   expect(
     resp.status(),
     `POST /api/rpc/shelves/create failed for ${body.name}`,
   ).toBe(200);
   return ((await resp.json()) as { id: number }).id;
+}
+
+/**
+ * Create a shelf owned by `username`, on a bearer session of its own, and
+ * return its id — for a reader who signs in on a cookie-less browser context
+ * and so has no admin request fixture to create with.
+ */
+export async function createShelfAs(
+  api: APIRequest,
+  baseURL: string,
+  username: string,
+  password: string,
+  body: Record<string, unknown>,
+): Promise<number> {
+  const ctx = await api.newContext({ baseURL });
+  try {
+    const login = await ctx.post("/api/auth/login", {
+      data: { username, password, client_kind: "bearer" },
+    });
+    expect(login.status(), `bearer login failed for ${username}`).toBe(200);
+    const { token } = (await login.json()) as { token: string };
+    const resp = await ctx.post("/api/rpc/shelves/create", {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { req: { ...SHELF_DEFAULTS, ...body } },
+    });
+    expect(resp.status(), `shelf create failed for ${username}`).toBe(200);
+    return ((await resp.json()) as { id: number }).id;
+  } finally {
+    await ctx.dispose();
+  }
+}
+
+/**
+ * Run `body` against a fresh private shelf built from `shelf`, named `label`
+ * plus a suffix unique to this test, then delete it — even when `body` throws —
+ * so a parallel spec never sees it left behind.
+ */
+export async function withOwnShelf(
+  request: APIRequestContext,
+  label: string,
+  shelf: Record<string, unknown>,
+  body: (shelf: { id: number; name: string }) => Promise<void>,
+): Promise<void> {
+  const name = `${label} ${Date.now()}-${test.info().workerIndex}`;
+  const id = await createShelf(request, { ...shelf, name });
+  try {
+    await body({ id, name });
+  } finally {
+    const resp = await request.post("/api/rpc/shelves/delete", {
+      data: { id },
+    });
+    expect(resp.status(), `cleanup delete of shelf ${id} must succeed`).toBe(
+      200,
+    );
+  }
+}
+
+/** Run `body` against a fresh private hand-picked shelf (see `withOwnShelf`). */
+export function withManualShelf(
+  request: APIRequestContext,
+  label: string,
+  body: (shelf: { id: number; name: string }) => Promise<void>,
+): Promise<void> {
+  return withOwnShelf(request, label, { kind: "manual" }, body);
 }
 
 // A shelf opens two ways on web, and they are different surfaces. Both start

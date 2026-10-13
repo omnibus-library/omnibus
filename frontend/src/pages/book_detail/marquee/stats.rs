@@ -1,4 +1,4 @@
-//! Stop 03 · Stats — the at-a-glance record: the 2×2 record grid
+//! Stop 02 · Stats — the at-a-glance record: the 2×2 record grid
 //! (Started / Time in book / Pickups / Longest sit), a time-left note, the
 //! per-day activity spark over the last 22 days, the session log behind those
 //! figures, and the rating widget.
@@ -132,11 +132,8 @@ fn render_stats(
 }
 
 /// The "Started" tile's sub-label: how long the book has been in progress,
-/// counting *elapsed* days. A book started within the last day reads "today"
-/// rather than "1 day in" — the old inclusive `+ 1` count printed "1 day in"
-/// the moment a book was opened, which reads as an off-by-one. A full
-/// day or more elapsed reads "N day(s) in". `now` is injected so the label is
-/// testable on a fixed clock.
+/// counting *elapsed* days. Within the last day it reads "today", else "N
+/// day(s) in". `now` is injected so the label is testable on a fixed clock.
 fn days_in_label(now: i64, started_at: i64) -> String {
     let days = ((now - started_at) / 86_400).max(0);
     if days == 0 {
@@ -189,14 +186,10 @@ fn time_left_note(i: &BookInsights, progress: &MarqueeProgress) -> Option<String
     ))
 }
 
-/// Short "Mon D" date from unix seconds, shifted by `offset_secs`.
-///
-/// **Pass an offset only for a real instant.** A raw `started_at` is one, and
-/// dating it in UTC put a 23:36 sitting on the following day while the spark
-/// beside it — bucketed on the reader's own calendar by the server — drew it
-/// on the right one. A value already derived from a *local day
-/// number* (`day * 86_400`) is midnight of a day that has been placed
-/// already; shifting it again moves it off that day.
+/// Short "Mon D" date from unix seconds, shifted by `offset_secs`. **Pass an
+/// offset only for a real instant** (a raw `started_at`), dated on the reader's
+/// calendar. A value derived from a local day number (`day * 86_400`) is
+/// already placed; shifting it again moves it off that day.
 pub(super) fn short_date(unix_secs: i64, offset_secs: i64) -> String {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -224,20 +217,11 @@ fn spark_buckets(daily: &[DayActivity], as_of_day: &str) -> Vec<i64> {
     out
 }
 
-/// The spark's text alternative: what the bars say, in a sentence.
-///
-/// Totals and a peak rather than 22 readings — the picture's job is the shape
-/// of a reading habit, and "143 minutes across 6 days, most on Aug 24" carries
-/// that where an announced list of numbers would not.
-///
-/// Ties on the peak break to the **earliest** day, matching how
-/// `db::stats::book_insights` picks the longest sitting, so the two figures on
-/// one card can't name different days for the same data.
-///
-/// `audio_only` picks the verb off the same flag the "Time listened" tile
-/// above reads: the buckets union `reading_sessions` and `listening_sessions`,
-/// so a book with only an audiobook is minutes *listened*, and calling them
-/// minutes read is the one thing this sentence can state that is false.
+/// The spark's text alternative: totals and a peak in a sentence, not every
+/// reading. Ties on the peak break to the **earliest** day, matching
+/// `db::stats::book_insights`'s longest sitting. `audio_only` picks "listened"
+/// vs "read", off the flag the "Time listened" tile reads: the buckets union
+/// reading and listening sessions, so an audio-only book is minutes *listened*.
 fn spark_summary(spark: &[i64], as_of_day: &str, audio_only: bool) -> String {
     let verb = if audio_only { "listened" } else { "read" };
     let window = count_label(spark.len() as i64, "day");

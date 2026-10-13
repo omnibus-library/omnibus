@@ -137,13 +137,9 @@ fn resume_state(
 }
 
 /// The anchor pairs the mapping will run through, plus the confidence they
-/// justify.
-///
-/// The anchored tier engages when the served EPUB has extracted structure
-/// and its chapters match the audio marks; otherwise every path below
-/// falls through to the linear tier. User-declared sync points outrank
-/// both — they seed the anchor set and chapter anchors survive only where
-/// they agree.
+/// justify. The anchored tier engages when the served EPUB has extracted
+/// structure and its chapters match the audio marks; otherwise every path falls
+/// through to the linear tier. User-declared sync points outrank both.
 async fn anchor_context(
     pool: &SqlitePool,
     book_id: i64,
@@ -283,12 +279,9 @@ async fn epub_candidate(
     (Some(candidate), aligned)
 }
 
-/// Positions closer than this fraction of the whole book count as "the
-/// same spot" — an offer inside it is quantization noise, not signal.
-/// Base 0.5%, widened to two reader locations (~1024 visible chars each,
-/// the epub.js jump granularity) on short books where one location is a
-/// large slice, and capped at 5% so a tiny book can't suppress every
-/// offer outright.
+/// Positions closer than this fraction of the whole book count as "the same
+/// spot". Base 0.5%, widened to two reader locations on short books and capped
+/// at 5% so a tiny book can't suppress every offer.
 pub(super) fn equivalence_fraction(total_chars: Option<i64>) -> f64 {
     const BASE: f64 = 0.005;
     const READER_LOCATION_CHARS: f64 = 1024.0;

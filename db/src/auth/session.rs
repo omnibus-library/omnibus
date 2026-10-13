@@ -1,4 +1,9 @@
 //! Sessions.
+//!
+//! `validate_session` is the one place every HTTP auth extractor (REST and
+//! Dioxus) resolves a request to a session, so expiry and revocation checks
+//! cannot drift. It takes raw header strings to keep this crate free of
+//! axum/http types.
 
 use sqlx::{Executor, Row, Sqlite, SqlitePool};
 
@@ -42,12 +47,9 @@ fn clamp_user_agent(user_agent: Option<&str>) -> Option<String> {
     Some(trimmed.chars().take(MAX_USER_AGENT_CHARS).collect())
 }
 
-/// Create a new session for `user_id`, returning the session record and the raw (unhashed) token.
-///
-/// Accepts any `sqlx::Executor` so callers can pass either a `&SqlitePool` for
-/// a standalone insert or `&mut *tx` from within a transaction — the login
-/// path in `server::auth::handlers::issue_session` uses the latter to keep the
-/// device + session inserts atomic.
+/// Create a new session for `user_id`, returning the session record and the
+/// raw (unhashed) token. Accepts any `sqlx::Executor`: pass `&mut *tx` to keep
+/// the device + session inserts atomic.
 pub async fn create_session<'e, E>(
     executor: E,
     user_id: i64,
@@ -210,18 +212,11 @@ async fn touch_last_used(pool: &SqlitePool, session_id: i64, now: i64) -> AuthRe
     Ok(())
 }
 
-/// Outcome of [`validate_session`], collapsed to the only two dispositions
-/// an HTTP auth extractor cares about:
-///
-/// * [`SessionAuthError::Unauthenticated`] — no usable token on the request,
-///   or the token doesn't resolve to a live session (missing / expired /
-///   idle-expired / revoked). HTTP callers map this to `401 Unauthorized`.
-/// * [`SessionAuthError::Internal`] — an infrastructure failure (e.g. the DB
-///   query itself errored). HTTP callers map this to `500`.
-///
-/// Keeping this enum here (rather than re-deriving the 401-vs-500 split in
-/// each extractor) is the whole point of the consolidation: the
-/// cookie/bearer → live-session contract lives in exactly one place.
+/// Outcome of [`validate_session`], collapsed to the two dispositions an HTTP
+/// auth extractor cares about: [`SessionAuthError::Unauthenticated`] (no usable
+/// token, or it doesn't resolve to a live session; map to `401`) and
+/// [`SessionAuthError::Internal`] (infrastructure failure such as the DB query
+/// erroring; map to `500`).
 #[derive(Debug, thiserror::Error)]
 pub enum SessionAuthError {
     #[error("unauthenticated")]
@@ -230,26 +225,11 @@ pub enum SessionAuthError {
     Internal(AuthError),
 }
 
-/// Resolve an authenticated `(User, Session)` from raw HTTP header values,
-/// preferring an `Authorization: Bearer …` token over the `omnibus_session`
-/// cookie (see [`parse_session_token`]). This is the single consolidated
-/// session-validation surface shared by every HTTP auth extractor — both the
-/// REST `AuthUser`/`AdminUser` extractors (`server::auth::extractor`) and the
-/// Dioxus server-function extractors (`omnibus_frontend::rpc`) delegate here
-/// so the token precedence, SHA-256 hashing, absolute + idle expiry, and
-/// revocation checks (all enforced by [`lookup_session`]) cannot drift between
-/// the two code paths.
-///
-/// Pure-string API by design — `omnibus-db` stays free of axum/http types, so
-/// each caller does only the thin work of pulling the header strings out of
-/// its own request representation before delegating.
-///
-/// Bearer values with the `omni_` prefix resolve as long-lived API tokens
-/// rather than sessions — see [`resolve_token`] for the routing.
-///
-/// * `None` token → [`SessionAuthError::Unauthenticated`].
-/// * [`AuthError::SessionNotFound`] → [`SessionAuthError::Unauthenticated`].
-/// * any other [`AuthError`] → [`SessionAuthError::Internal`].
+/// Resolve an authenticated `(User, Session)` from raw header values, preferring
+/// `Authorization: Bearer …` over the `omnibus_session` cookie (see
+/// [`parse_session_token`]); `omni_` bearers resolve as API tokens via
+/// [`resolve_token`]. No token or [`AuthError::SessionNotFound`] is
+/// `Unauthenticated`; any other [`AuthError`] is `Internal`.
 pub async fn validate_session(
     pool: &SqlitePool,
     authorization: Option<&str>,
@@ -265,23 +245,16 @@ pub async fn validate_session(
     }
 }
 
-/// Resolve a raw token into `(User, Session)`, routing on the token's shape:
-/// an `omni_…` value of the exact minted length is an API token
-/// (`api_tokens` table, no expiry, revoked via the management UI), anything
-/// else is a session token. Shape routing (prefix **and** length — see
-/// [`is_api_token_shaped`]) means neither table is ever probed for the
-/// other's credentials, and a freak session token starting with `omni_`
-/// still resolves as a session.
-///
-/// An API token has no `sessions` row, so its principal is synthesized:
-/// `kind` is [`SessionKind::ApiToken`], `id` is the `0` sentinel (matching
-/// the OPDS Basic principal in `server::auth::basic` — real session ids
-/// start at 1, so the sentinel can never collide with one in "revoke all
-/// sessions except mine" sweeps), and `expires_at` is `i64::MAX` because
-/// revocation is the token's whole lifecycle.
+/// Resolve a raw token into `(User, Session)`, routing on its shape: an `omni_…`
+/// value of the exact minted length (see [`is_api_token_shaped`]) is an API
+/// token (no expiry, revoked via the management UI), anything else a session
+/// token. An API token has no `sessions` row, so its principal is synthesized:
+/// `kind` [`SessionKind::ApiToken`], `id` the `0` sentinel, `expires_at` `i64::MAX`.
 pub async fn resolve_token(pool: &SqlitePool, raw_token: &str) -> AuthResult<(User, Session)> {
     if is_api_token_shaped(raw_token) {
         let (user, token) = lookup_api_token(pool, raw_token).await?;
+        // Id `0` never collides with a real session id (they start at 1) in
+        // "revoke all sessions except mine" sweeps.
         let session = Session {
             id: 0,
             user_id: user.id,
@@ -352,18 +325,13 @@ where
 }
 
 /// List every currently-live session for `user_id` (not revoked, not past its
-/// absolute expiry, and not idle-expired), most-recently-used first, up to
-/// [`LIST_SESSIONS_LIMIT`]. Used by both the self-service `GET
-/// /api/auth/sessions` and the admin `GET /api/admin/users/{id}/sessions` —
-/// the two differ only in which `user_id` the caller is authorized to pass in.
-///
-/// The idle-expiry predicate (`last_used_at >= now - SESSION_IDLE_TIMEOUT_SECS`)
-/// mirrors `check_session_validity`'s pass condition (and, equivalently,
-/// `prune_expired_sessions`'s idle DELETE) so a listing can't show a session
-/// that would no longer actually authenticate — without it, an idle-expired
-/// row lingers in admin/self-service listings until the next prune sweep.
+/// absolute expiry, not idle-expired), most-recently-used first, up to
+/// [`LIST_SESSIONS_LIMIT`]. Shared by the self-service and admin listings; they
+/// differ only in which `user_id` the caller may pass.
 pub async fn list_sessions_for_user(pool: &SqlitePool, user_id: i64) -> AuthResult<Vec<Session>> {
     let now = now_unix();
+    // Same idle predicate as `check_session_validity`, so a listing never shows
+    // a session that would no longer authenticate.
     let idle_cutoff = now - SESSION_IDLE_TIMEOUT_SECS;
     let rows = sqlx::query(
         "SELECT id, user_id, device_id, kind, created_at, last_used_at, expires_at, user_agent
@@ -430,12 +398,10 @@ pub async fn revoke_session_for_user(
     Ok(())
 }
 
-/// Revoke a session by id with no ownership scoping — the admin
-/// `DELETE /api/admin/sessions/{id}` (AC1), which may target any user's
-/// session. Unlike [`revoke_session`] (used by logout, where the session was
-/// already resolved from its own token) this checks `rows_affected` so an
-/// unknown or already-revoked id surfaces as [`AuthError::SessionNotFound`]
-/// rather than a silent no-op.
+/// Revoke a session by id with no ownership scoping (admin `DELETE
+/// /api/admin/sessions/{id}`). Unlike [`revoke_session`] it checks
+/// `rows_affected`, so an unknown or already-revoked id is
+/// [`AuthError::SessionNotFound`] rather than a silent no-op.
 pub async fn revoke_session_checked(pool: &SqlitePool, session_id: i64) -> AuthResult<()> {
     let r = sqlx::query("UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
         .bind(now_unix())
@@ -448,21 +414,11 @@ pub async fn revoke_session_checked(pool: &SqlitePool, session_id: i64) -> AuthR
     Ok(())
 }
 
-/// Hard-delete every session [`lookup_session`] would reject: revoked
-/// (`revoked_at IS NOT NULL`), past its absolute `expires_at`, or idle-expired
-/// (`last_used_at` older than [`SESSION_IDLE_TIMEOUT_SECS`]). Revocation marks
-/// rows rather than deleting them (see `revoke_session`), so without this
-/// prune the `sessions` table grows unboundedly — a permanent row per
-/// login/logout that slows `lookup_session` and `revoke_all_sessions_for_user`.
-///
-/// The predicate is kept in lockstep with `lookup_session` (same `<=` absolute
-/// boundary, same idle cutoff) so the table only ever retains rows that can
-/// still authenticate. Returns the number of rows deleted; intended to run on
-/// a periodic schedule (see the prune task in `server::main`).
-///
-/// Issued as three single-predicate DELETEs (one per index from migrations 0004
-/// and 0012): SQLite scans the table for the OR'd form unless every branch is
-/// indexed.
+/// Hard-delete every session [`lookup_session`] would reject: revoked, past its
+/// absolute `expires_at`, or idle-expired (older than
+/// [`SESSION_IDLE_TIMEOUT_SECS`]). Revocation only marks rows, so without this
+/// prune the `sessions` table grows unboundedly. Returns the number of rows
+/// deleted; meant to run on a periodic schedule.
 pub async fn prune_expired_sessions(pool: &SqlitePool) -> AuthResult<u64> {
     let now = now_unix();
     let idle_cutoff = now - SESSION_IDLE_TIMEOUT_SECS;
@@ -470,6 +426,8 @@ pub async fn prune_expired_sessions(pool: &SqlitePool) -> AuthResult<u64> {
     // One transaction keeps the prune atomic; a row matching several predicates
     // is removed by the first matching DELETE, so the counts don't overlap.
     let mut tx = pool.begin().await?;
+    // Three single-predicate DELETEs: SQLite scans the table for an OR'd form
+    // unless every branch is indexed.
     let revoked = sqlx::query("DELETE FROM sessions WHERE revoked_at IS NOT NULL")
         .execute(&mut *tx)
         .await?

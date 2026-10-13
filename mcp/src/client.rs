@@ -14,24 +14,11 @@ use omnibus_shared::{LoginRequest, LoginResponse};
 
 use crate::config::Config;
 
-/// The complete set of mutating requests this crate is permitted to issue.
-///
-/// This is the write policy from `.claude/rules/08-offline-writes.md`, stated
-/// once so later issues extend a list instead of inventing a policy: tools may
-/// eventually write **content state** (progress, ratings, read status,
-/// highlights, bookmarks, journals, shelf membership), and each such write
-/// lands here as it ships. **Instance configuration** (`/api/settings`, API
-/// keys, SMTP, registration) and **commands** (`/api/reindex`,
-/// `/api/scan-library`, `/api/fts/rebuild`, `/api/kindle/send`) are never
-/// added. API-token management (`/api/auth/api-tokens*`) is **permanently
-/// excluded** on both grounds — it is configuration *and* credential
-/// minting: an MCP session must never be able to mint itself new
-/// credentials or revoke the ones it rode in on. Enforcement matches the statement: [`OmnibusClient`]'s public read
-/// surface builds only `GET` requests, and every non-`GET` routes through
-/// [`OmnibusClient::write_json`] / [`OmnibusClient::write_no_content`], which
-/// assert membership here (a `{param}` segment matches any single path
-/// segment) — a request outside the list is a bug in this crate and fails
-/// loudly before it reaches the instance.
+/// The complete set of mutating requests this crate may issue, per rule 08
+/// (`.claude/rules/08-offline-writes.md`). Every write but `login()` goes through
+/// [`OmnibusClient::write_json`] / [`OmnibusClient::write_no_content`], which assert
+/// membership here (`{param}` matches one path segment) and fail before sending.
+/// Never add instance configuration (settings, SMTP, API keys), commands or API-token endpoints.
 pub const WRITE_ALLOWLIST: &[&str] = &[
     // The session itself (the one write the read-only crate shipped with).
     "POST /api/auth/login",

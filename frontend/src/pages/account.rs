@@ -579,12 +579,11 @@ fn ThemeControl() -> Element {
     }
 }
 
-/// Server + app version lines at the bottom of the "You" tab (AC2): the
-/// server's release (fetched from `/api/_health`, showing a placeholder
-/// until the post-mount fetch in `account_body` resolves) above the app's
-/// own compile-time build version. Deliberately no "update available"
-/// prompt — see the effect comment in `account_body` for why a version gap
-/// doesn't reliably indicate a pending update.
+/// Server + app version lines at the bottom of the "You" tab: the server's
+/// release (from `/api/_health`, a placeholder until the post-mount fetch in
+/// `account_body` resolves) above the app's compile-time build version.
+/// Deliberately no "update available" prompt (see the effect comment in
+/// `account_body`).
 #[cfg(feature = "mobile")]
 #[component]
 fn VersionBlock(server_version: Option<String>, failed: bool) -> Element {

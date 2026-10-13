@@ -15,16 +15,10 @@ use crate::metadata_overrides::{
 
 use super::BooksError;
 
-/// Hard server-side cap on the number of books any single list/search
-/// response returns. 50k is well above the client-side sort/filter
-/// ceiling (anything beyond needs server-side pagination anyway) and
-/// small enough that JSON-encoding the response stays in a sensible
-/// memory envelope.
-///
-/// Callers that need the *full* count (for "X books truncated" UI or the
-/// `X-Total-Count` header) should reach for `library_from_db_with_total`
-/// / `count_search_books`, which return the underlying count alongside
-/// the capped vec. Cursor-based pagination is intentionally deferred.
+/// Hard server-side cap on the number of books any single list/search response
+/// returns; 50k is above the client-side sort/filter ceiling and keeps the JSON
+/// response in a sensible memory envelope. Callers needing the *full* count use
+/// `library_from_db_with_total` / `count_search_books`.
 pub const MAX_BOOKS_RETURNED: i64 = 50_000;
 
 /// Which book columns a list read hydrates.
@@ -128,17 +122,10 @@ macro_rules! book_columns_body {
     };
 }
 
-/// The shared book-column SELECT for read-path queries. Same scalar-subquery
-/// pattern as `list_books` / `search_books` — one row per `books.id` with
-/// all m2m relations inlined as JSON aggregates. Re-used by the discovery
-/// read paths (`get_author`, `get_series`) via `pub(crate)`.
-///
-/// Single-valued joins that need two columns from the *same* picked row
-/// (the primary `book_files` row, the primary `books_series_link` row) are
-/// pulled as one `json_object` subquery rather than two correlated scalar
-/// subqueries scanning the same table twice — mirroring the `json_object`
-/// shape already used for creators/identifiers. `row_to_ebook` decodes
-/// these blobs.
+/// The shared book-column SELECT for read-path queries: one row per `books.id`
+/// with all m2m relations inlined as JSON aggregates (`row_to_ebook` decodes
+/// them). Re-used by the discovery read paths (`get_author`, `get_series`) via
+/// `pub(crate)`.
 pub(crate) const BOOK_COLUMNS: &str = concat!("b.description, ", book_columns_body!());
 
 /// [`BOOK_COLUMNS`] with `description` replaced by `NULL`, so the text is
@@ -225,14 +212,10 @@ pub fn derive_isbn13(identifiers: &[Identifier]) -> Option<String> {
 }
 
 /// Sanitize an EPUB `<dc:description>` payload for safe rendering via
-/// `dangerous_inner_html`. OPF descriptions are commonly HTML fragments
-/// (`<p>`, `<b>`, `<em>`, lists, links). We rely on ammonia's default
-/// allowlist: it strips `<script>`, event handlers, `javascript:` URLs,
-/// `<style>`, `<iframe>`, etc., while preserving inline formatting.
-///
-/// Applied at read time in `get_book` so existing DB rows benefit without a
-/// reindex. Empty/whitespace-only output collapses to `None` so the book
-/// detail page hides the description block entirely.
+/// `dangerous_inner_html`, using ammonia's default allowlist (strips scripts,
+/// event handlers, `javascript:` URLs, `<style>`, `<iframe>`; keeps inline
+/// formatting). Applied at read time in `get_book`. Empty or whitespace-only
+/// output collapses to `None`, so the detail page hides the description block.
 pub(crate) fn sanitize_description(raw: Option<String>) -> Option<String> {
     let raw = raw?;
     let cleaned = ammonia::clean(&raw);

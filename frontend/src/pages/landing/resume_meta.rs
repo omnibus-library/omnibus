@@ -10,15 +10,8 @@ use crate::pages::listen::remaining_at_rate;
 
 /// The point's key in a keyed list of resume points.
 ///
-/// Progress is stored `UNIQUE(user_id, book_uuid, format)`, so one book open
-/// in both formats is two points — the uuid alone is not unique across such a
-/// list, and duplicate keyed siblings corrupt Dioxus's keyed diff (#2633,
-/// rule 07).
-///
-/// Keyed on the **progress row's own** `book_uuid`, never on the resolved
-/// `point.book`: `get_book_by_uuid` falls back through `merged_uuids`, so two
-/// rows filed under different uuids can resolve to one surviving book and
-/// would key alike again.
+/// Built from the progress row's own `book_uuid` and format, never the
+/// resolved `point.book` (rule 07).
 pub(crate) fn resume_key(point: &ResumePoint) -> String {
     format!(
         "{}:{}",
