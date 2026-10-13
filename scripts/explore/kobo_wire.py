@@ -97,11 +97,14 @@ def pick_account(path: Path, agent: int) -> Account:
 
 
 def instance_url() -> str:
-    """The normalised `OMNIBUS_EXPLORE_URL`; an exported value beats `.env`."""
+    """The normalised `OMNIBUS_EXPLORE_URL`, which must be a bare origin; an exported value beats `.env`."""
     env.load()
     url = os.environ.get("OMNIBUS_EXPLORE_URL", "")
     if not url:
         raise UsageError("set OMNIBUS_EXPLORE_URL in .env — see .env.example")
+    parts = urlsplit(url.strip())
+    if parts.path.strip("/") or parts.query or parts.fragment or parts.username or parts.password:
+        raise UsageError("OMNIBUS_EXPLORE_URL must be an origin (scheme://host[:port]): no path, query, fragment or credentials")
     return normalise_origin(url)
 
 

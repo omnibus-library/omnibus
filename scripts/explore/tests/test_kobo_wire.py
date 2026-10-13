@@ -283,6 +283,23 @@ class UsageErrorTests(KoboWireCliTests):
     def test_exits_2_when_the_instance_url_is_empty(self):
         self.assert_refused_before_any_request(self.wire(url=""), "OMNIBUS_EXPLORE_URL")
 
+    def test_exits_2_when_the_instance_url_is_more_than_an_origin(self):
+        host = self.fake.origin.removeprefix("http://")
+        for name, url in {
+            "a path": f"http://{host}/omnibus",
+            "a query": f"http://{host}?tenant=1",
+            "a fragment": f"http://{host}#top",
+            "credentials": f"http://reader:secret@{host}",
+        }.items():
+            with self.subTest(name):
+                self.assert_refused_before_any_request(self.wire(url=url), "OMNIBUS_EXPLORE_URL")
+
+    def test_exits_2_without_echoing_the_credentials_in_the_instance_url(self):
+        proc = self.wire(url=self.fake.origin.replace("http://", "http://reader:secret@"))
+
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertNotIn("secret", proc.stderr)
+
 
 class InstanceFailureTests(KoboWireCliTests):
     def assert_failed_cleanly(self, proc):
