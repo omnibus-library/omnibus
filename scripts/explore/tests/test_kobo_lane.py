@@ -253,6 +253,26 @@ class UpRestartTests(KoboLaneTestCase):
         self.assertEqual(again.stdout, first.stdout)
         self.assertEqual(len(self.fake.requests), requests_before)
 
+    def test_up_rewires_a_running_device_when_the_exploration_instance_changes(self):
+        first = self.up(agent=1)
+
+        with FakeOmnibus(PASSWORDS) as elsewhere:
+            second = self.up(agent=1, env={"OMNIBUS_EXPLORE_URL": elsewhere.origin})
+
+            self.assertFalse(is_running(first["pid"]))
+            self.assertTrue(is_running(second["pid"]))
+            self.assertEqual(second["url"], elsewhere.origin)
+            self.assertEqual(elsewhere.logins(), ["explorer-1"])
+
+    def test_up_for_a_running_device_refuses_an_unusable_instance_url_and_leaves_it_running(self):
+        first = self.up(agent=1)
+
+        proc = self.kobo("up", "--agent", 1, "--accounts", self.accounts, env={"OMNIBUS_EXPLORE_URL": self.fake.origin + "/library"})
+
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("OMNIBUS_EXPLORE_URL", proc.stderr)
+        self.assertTrue(is_running(first["pid"]))
+
     def test_up_restarts_a_dead_device_with_its_hardware_id(self):
         first = self.up(agent=1)
         self.stop_abruptly(first)

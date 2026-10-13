@@ -4,6 +4,7 @@
 #
 # Usage:
 #   kobo.sh up --agent <k> --accounts <provision.json>   runner only: wire and start the device
+#                                                        (a running one is kept, unless the instance changed)
 #   kobo.sh act --agent <k> <action>                     drive the device (actions below)
 #   kobo.sh state --agent <k>                            the manifest plus "running", as JSON
 #   kobo.sh requests --agent <k>                         what the device asked Omnibus for
@@ -75,6 +76,18 @@ kobo::is_device() {
   return 1
 }
 
+# The exploration instance's origin as kobo_wire.py normalises it; exits 2 when it is unusable.
+kobo::instance_url() {
+  python3 -c 'import sys
+sys.path.insert(0, sys.argv[1])
+import kobo_wire
+try:
+    print(kobo_wire.instance_url())
+except kobo_wire.UsageError as exc:
+    print(f"kobo_wire: {exc}", file=sys.stderr)
+    sys.exit(2)' "$HERE"
+}
+
 # Whether agent $1 has a manifest whose process is still its device.
 kobo::running() {
   local manifest
@@ -125,7 +138,7 @@ print(found)')"
 }
 
 kobo::up() {
-  local k="$1" accounts="$2" dir state log manifest bin wire token wired url username device_name
+  local k="$1" accounts="$2" dir state log manifest bin wire token wired url username device_name current
   dir="$KOBO_DIR/agent-$k"
   state="$(kobo::state_path "$k")"
   log="$dir/serve.log"
@@ -133,8 +146,13 @@ kobo::up() {
   (umask 077; mkdir -p "$dir")
   chmod 700 "$dir"
   if kobo::running "$k"; then
-    cat "$manifest"
-    return 0
+    current="$(kobo::instance_url)" || return $?
+    if [ "$(kobo::field "$manifest" url)" = "$current" ]; then
+      cat "$manifest"
+      return 0
+    fi
+    # A device wired to another instance would keep syncing against the old one.
+    kobo::stop "$(kobo::field "$manifest" pid)" "$(kobo::field "$manifest" bin)" "$state"
   fi
   rm -f "$manifest"
   bin="$(kobo::mock_kobo_bin)" || return 1
