@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -114,11 +115,8 @@ class FakeOmnibus:
 
 
 def _cookie(header: str, name: str) -> str | None:
-    for part in header.split(";"):
-        key, _, value = part.strip().partition("=")
-        if key == name:
-            return value
-    return None
+    jar = SimpleCookie(header)
+    return jar[name].value if name in jar else None
 
 
 class _Handler(BaseHTTPRequestHandler):

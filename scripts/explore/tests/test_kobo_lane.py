@@ -37,6 +37,22 @@ KOBO_SH = HERE.parent / "kobo.sh"
 STUB = HERE / "fixtures" / "mock-kobo"
 PASSWORDS = {"explorer-1": "pw-one", "explorer-2": "pw-two"}
 
+USAGE_CASES = {
+    "no command": [],
+    "an unknown command": ["frobnicate", "--agent", "1"],
+    "a missing agent": ["state"],
+    "agent zero": ["state", "--agent", "0"],
+    "agent with a leading zero": ["state", "--agent", "01"],
+    "an agent that is not a number": ["state", "--agent", "x"],
+    "a negative agent": ["state", "--agent", "-1"],
+    "an agent that climbs out of the directory": ["state", "--agent", "../x"],
+    "an agent flag with no value": ["state", "--agent"],
+    "an unknown flag": ["state", "--agent", "1", "--bogus"],
+    "down with a bad agent": ["down", "--agent", "0"],
+    "up without accounts": ["up", "--agent", "1"],
+    "up with an accounts file that does not exist": ["up", "--agent", "1", "--accounts", "/nonexistent/provision.json"],
+}
+
 
 def is_running(pid: int) -> bool:
     """Whether `pid` is a live process; a zombie awaiting its reaper is not."""
@@ -113,7 +129,7 @@ class KoboLaneTestCase(unittest.TestCase):
 
 
 class UpTests(KoboLaneTestCase):
-    def test_up_prints_one_manifest_line_and_starts_the_device(self):
+    def test_up_prints_one_manifest_line_describing_the_running_device(self):
         proc = self.kobo("up", "--agent", 1, "--accounts", self.accounts)
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -189,7 +205,7 @@ class SettingsTests(KoboLaneTestCase):
         script = self.checkout / "scripts" / "explore" / "kobo.sh"
         return self.kobo(*args, script=script, env={**unset, **(env or {})}, cwd=cwd)
 
-    def test_up_starts_the_mock_kobo_and_uses_the_directory_named_in_dotenv(self):
+    def test_up_reads_its_settings_from_dotenv(self):
         self.write_dotenv(OMNIBUS_EXPLORE_MOCK_KOBO=STUB, OMNIBUS_EXPLORE_KOBO_DIR=self.kobo_dir)
 
         proc = self.kobo_in_checkout("up", "--agent", 1, "--accounts", self.accounts)
@@ -227,7 +243,7 @@ class SettingsTests(KoboLaneTestCase):
 
 
 class UpRestartTests(KoboLaneTestCase):
-    def test_up_for_a_running_device_prints_the_same_manifest_and_starts_nothing(self):
+    def test_up_for_a_running_device_prints_its_manifest_without_touching_the_instance(self):
         first = self.kobo("up", "--agent", 1, "--accounts", self.accounts)
         requests_before = len(self.fake.requests)
 
@@ -237,7 +253,7 @@ class UpRestartTests(KoboLaneTestCase):
         self.assertEqual(again.stdout, first.stdout)
         self.assertEqual(len(self.fake.requests), requests_before)
 
-    def test_up_starts_a_device_whose_process_has_died_and_keeps_its_hardware_id(self):
+    def test_up_restarts_a_dead_device_with_its_hardware_id(self):
         first = self.up(agent=1)
         self.stop_abruptly(first)
 
@@ -273,7 +289,7 @@ class UpRestartTests(KoboLaneTestCase):
 
 
 class UpFailureTests(KoboLaneTestCase):
-    def test_up_exits_with_the_wire_failure_code_and_starts_nothing(self):
+    def test_up_exits_with_the_wire_failure_code_leaving_no_device(self):
         wrong = self.dir / "wrong.json"
         wrong.write_text(json.dumps([{"actor": "agent-1", "username": "explorer-1", "password": "nope"}]))
         for accounts, agent, code in ((wrong, 1, 1), (self.accounts, 5, 2)):
@@ -330,7 +346,7 @@ class UpPermissionTests(KoboLaneTestCase):
 
 
 class ActTests(KoboLaneTestCase):
-    def test_act_sync_posts_to_the_sync_route_and_prints_the_reply(self):
+    def test_act_sync_prints_the_reply_of_the_sync_route(self):
         manifest = self.up(agent=1)
 
         proc = self.kobo("act", "--agent", 1, "sync")
@@ -341,7 +357,7 @@ class ActTests(KoboLaneTestCase):
         self.assertEqual(reply["details"], {"pages": 1})
         self.assertEqual(self.stub_get(manifest, "/__calls"), [["POST", "/actions/sync"]])
 
-    def test_act_sync_prints_a_failed_sync_with_its_quirk_and_exits_1(self):
+    def test_act_sync_exits_1_with_the_quirk_of_a_failed_sync_on_stdout(self):
         self.up(agent=1, mode="sync_failed")
 
         proc = self.kobo("act", "--agent", 1, "sync")
@@ -352,7 +368,7 @@ class ActTests(KoboLaneTestCase):
         self.assertIn("404", reply["message"])
         self.assertEqual(reply["details"]["quirk"], "StorePaths")
 
-    def test_act_show_gets_the_device_and_prints_its_library_and_last_sync(self):
+    def test_act_show_prints_the_device_library_and_last_sync(self):
         manifest = self.up(agent=1)
         self.kobo("act", "--agent", 1, "sync")
 
@@ -365,7 +381,7 @@ class ActTests(KoboLaneTestCase):
         self.assertEqual(details["last_sync"]["result"], "synced")
         self.assertEqual(len(details["library"]), 1)
 
-    def test_requests_gets_the_request_log_and_prints_it(self):
+    def test_requests_prints_the_request_log(self):
         manifest = self.up(agent=1)
         self.kobo("act", "--agent", 1, "sync")
 
@@ -375,7 +391,7 @@ class ActTests(KoboLaneTestCase):
         self.assertEqual(json.loads(proc.stdout), self.stub_get(manifest, "/requests"))
         self.assertEqual(self.stub_get(manifest, "/__calls")[-1], ["GET", "/requests"])
 
-    def test_act_refuses_an_unknown_action_or_extra_argument_and_lists_the_actions(self):
+    def test_act_exits_2_listing_the_actions_when_given_an_unknown_action_or_extra_argument(self):
         manifest = self.up(agent=1)
         for name, args in {
             "reset, which is withheld": ["act", "--agent", "1", "reset"],
@@ -439,23 +455,6 @@ class ActTests(KoboLaneTestCase):
         self.assertIn("agent-1", proc.stderr)
 
 
-USAGE_CASES = {
-    "no command": [],
-    "an unknown command": ["frobnicate", "--agent", "1"],
-    "a missing agent": ["state"],
-    "agent zero": ["state", "--agent", "0"],
-    "agent with a leading zero": ["state", "--agent", "01"],
-    "an agent that is not a number": ["state", "--agent", "x"],
-    "a negative agent": ["state", "--agent", "-1"],
-    "an agent that climbs out of the directory": ["state", "--agent", "../x"],
-    "an agent flag with no value": ["state", "--agent"],
-    "an unknown flag": ["state", "--agent", "1", "--bogus"],
-    "down with a bad agent": ["down", "--agent", "0"],
-    "up without accounts": ["up", "--agent", "1"],
-    "up with an accounts file that does not exist": ["up", "--agent", "1", "--accounts", "/nonexistent/provision.json"],
-}
-
-
 class UsageTests(KoboLaneTestCase):
     def test_a_bad_command_line_exits_2_with_usage_before_touching_anything(self):
         for name, args in USAGE_CASES.items():
@@ -503,7 +502,7 @@ class StateTests(KoboLaneTestCase):
 
 
 class DownTests(KoboLaneTestCase):
-    def test_down_for_an_agent_stops_only_that_device_and_keeps_its_files(self):
+    def test_down_for_an_agent_stops_only_that_device(self):
         first = self.up(agent=1)
         second = self.up(agent=2)
 
@@ -514,6 +513,12 @@ class DownTests(KoboLaneTestCase):
         self.assertTrue(is_running(second["pid"]))
         self.assertFalse((self.agent_dir(1) / "manifest.json").exists())
         self.assertTrue((self.agent_dir(2) / "manifest.json").exists())
+
+    def test_down_keeps_the_devices_state_file_and_log(self):
+        self.up(agent=1)
+
+        self.kobo("down", "--agent", 1)
+
         self.assertTrue((self.agent_dir(1) / "state.json").exists())
         self.assertTrue((self.agent_dir(1) / "serve.log").exists())
 
@@ -564,7 +569,7 @@ class DownTests(KoboLaneTestCase):
         self.assertTrue(is_running(other["pid"]))
         self.assertFalse((self.agent_dir(1) / "manifest.json").exists())
 
-    def test_up_after_down_reuses_the_device_and_creates_nothing(self):
+    def test_up_after_down_reuses_the_device_without_creating_another(self):
         first = self.up(agent=1)
         self.kobo("down", "--agent", 1)
 
