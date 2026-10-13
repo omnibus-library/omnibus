@@ -3,10 +3,10 @@
 Everything here is a *projection*: the small set of facts an audit finding can
 be phrased in terms of, not a mirror of the database. It is deliberately
 narrow — progress, read status, ratings, playback rate, journal entries,
-highlights, bookmarks, shelves and wishlist — because those are the writes
-`start.md` asks an agent to journal. Metadata overrides, genres and covers are
-excluded by design: they are free-for-all edits, so no single intent owns the
-final value.
+highlights, bookmarks, shelves (and the books a Kobo sync would deliver) and
+wishlist — because those are the writes `start.md` asks an agent to journal.
+Metadata overrides, genres and covers are excluded by design: they are
+free-for-all edits, so no single intent owns the final value.
 
 Reads are cached per `(actor, book)` because a run journals many entries
 against the same handful of books, and an audit that re-fetched per entry
@@ -15,7 +15,7 @@ would make more requests than the run did.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable
 
 from .client import Account, ApiError, Client
 
@@ -26,6 +26,10 @@ RPC_RATE = "/api/rpc/audiobooks/playback-rate/get"
 RPC_JOURNALS = "/api/rpc/journals/list"
 RPC_HIGHLIGHTS = "/api/rpc/highlights/list"
 RPC_BOOKMARKS = "/api/rpc/bookmarks/list"
+
+# The formats the Kobo download route can serve, as DOWNLOADABLE_PREDICATE in
+# db/src/kobo.rs spells them: an audiobook-only book is never synced.
+KOBO_FORMATS = frozenset({"EPUB", "CBZ", "PDF"})
 
 
 class ActorState:
@@ -94,6 +98,27 @@ class ActorState:
     def shelf_members(self, shelf_id: int) -> list[str]:
         page = self._memo("shelf", str(shelf_id), lambda: self.client.get_json(f"/api/shelves/{shelf_id}/page", {}))
         return _uuids_in(page)
+
+    def kobo_synced(self) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+        """`(shelf detail, shelf page)` for each of this actor's shelves with Sync to Kobo on."""
+
+        def fetch() -> list[tuple[dict[str, Any], dict[str, Any]]]:
+            out = []
+            for shelf in self.shelves():
+                detail = self.client.get_json(f"/api/shelves/{shelf['id']}", {}) or {}
+                if detail.get("sync_to_kobo") is True:
+                    out.append((detail, self.client.get_json(f"/api/shelves/{shelf['id']}/page", {}) or {}))
+            return out
+
+        return self._memo("kobo_synced", "", fetch)
+
+    def kobo_books(self) -> set[str]:
+        """The books a sync would put on this actor's Kobo."""
+        return kobo_synced_books(self.kobo_synced())
+
+    def kobo_smart_shelves(self) -> list[str]:
+        """Names of this actor's Kobo-synced smart shelves, whose members move with the library."""
+        return [str(detail.get("name")) for detail, _ in self.kobo_synced() if detail.get("kind") == "smart"]
 
     def wishlist(self) -> list[str]:
         """Book uuids on this actor's wishlist shelf."""
@@ -176,6 +201,26 @@ def _titles_in(payload: Any) -> dict[str, list[str]]:
         title = row.get("title")
         if uuid and isinstance(title, str) and title.strip():
             out.setdefault(normalise_title(title), []).append(str(uuid))
+    return out
+
+
+def kobo_synced_books(pairs: Iterable[tuple[dict[str, Any], dict[str, Any]]]) -> set[str]:
+    """Book uuids on the Kobo-synced shelves among `(shelf detail, shelf page)` pairs.
+
+    Only a shelf with `sync_to_kobo` on counts, and only a row with an EPUB,
+    CBZ or PDF file: that is what the server delivers.
+    """
+    out: set[str] = set()
+    for detail, page in pairs:
+        if detail.get("sync_to_kobo") is not True:
+            continue
+        for row in _rows_in(page):
+            if not isinstance(row, dict):
+                continue
+            formats = {str(f).upper() for f in row.get("formats") or []}
+            uuid = row.get("unique_identifier") or row.get("uuid") or row.get("book_uuid")
+            if uuid and formats & KOBO_FORMATS:
+                out.add(str(uuid))
     return out
 
 

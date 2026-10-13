@@ -43,6 +43,13 @@ DUPLICATE = "duplicate"
 
 RATE_TOLERANCE = 0.01
 
+# How many uuids a Kobo-library finding lists before it says there are more.
+UUID_LIST_CAP = 5
+
+
+class NotJudged(Exception):
+    """The live state makes an expectation undecidable; the message says why."""
+
 
 @dataclass
 class Finding:
@@ -91,6 +98,9 @@ def check_all(
             finding = check(exp, state)
         except ApiError as exc:
             failed.append((exp, f"{exp.what} on {exp.target}: state read failed — {exc}"))
+            continue
+        except NotJudged as skip:
+            failed.append((exp, str(skip)))
             continue
         if finding is not None:
             findings.append(finding)
@@ -243,6 +253,31 @@ def _check_book_add(exp: Expectation, state: ActorState) -> Finding | None:
     return _finding(exp, MISSING, "book is not in the library listing")
 
 
+def _uuid_list(uuids: set[str]) -> str:
+    shown = sorted(uuids)[:UUID_LIST_CAP]
+    return "[" + ", ".join(shown + (["…"] if len(uuids) > UUID_LIST_CAP else [])) + "]"
+
+
+def _check_kobo_library(exp: Expectation, state: ActorState) -> Finding | None:
+    smart = state.kobo_smart_shelves()
+    if smart:
+        names = ", ".join(repr(name) for name in smart)
+        raise NotJudged(
+            f"{exp.what}: Kobo-synced smart shelf {names} changes with the library, "
+            "so the device cannot be compared with it"
+        )
+    on_device, synced = set(exp.value), state.kobo_books()
+    if on_device == synced:
+        return None
+    return _finding(
+        exp,
+        MISMATCH,
+        f"{len(on_device)} book(s) on the device; "
+        f"on a Kobo-synced shelf but not on the device: {_uuid_list(synced - on_device)}; "
+        f"on the device but on no Kobo-synced shelf: {_uuid_list(on_device - synced)}",
+    )
+
+
 _HANDLERS = {
     "rating": _check_rating,
     "read_status": _check_read_status,
@@ -255,6 +290,7 @@ _HANDLERS = {
     "shelf_member": _check_shelf_member,
     "wishlist": _check_wishlist,
     "book_add": _check_book_add,
+    "kobo_library": _check_kobo_library,
 }
 
 

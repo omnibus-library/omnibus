@@ -68,7 +68,7 @@ class ExpectationTests(unittest.TestCase):
         self.assertIn("did not add", unver[0].why)
 
     def test_classify_reads_the_device_scenario_nouns_as_observations(self) -> None:
-        # ios_lane.md's offline names and kobo_sync.md's sync check: device
+        # ios_lane.md's offline names and kobo_lane.md's sync check: device
         # state, not per-user state, so they must not land in `unverifiable`.
         for action in ("offline.on", "offline.off", "outbox.queued", "outbox.drained",
                        "probe.refused", "sync.delta"):
@@ -609,3 +609,71 @@ class ConfirmedWriteTests(unittest.TestCase):
         exps, unver, _, _ = expectations.expectations_for("agent-1", entries)
         self.assertEqual(sorted(e.target for e in exps), sorted([BOOK, OTHER]))
         self.assertEqual([u.seq for u in unver], [3, 4])
+
+
+class KoboLibraryFoldTests(unittest.TestCase):
+    def _fold(self, *entries):
+        return expectations.expectations_for("agent-4", list(entries))
+
+    def test_the_last_ok_sync_folds_to_one_expectation_holding_its_books(self) -> None:
+        exps, unver, _, _ = self._fold(
+            entry("kobo.sync", seq=1, params={"code": "synced", "books": [BOOK]}),
+            entry("kobo.sync", seq=2, params={"code": "synced", "books": [BOOK, OTHER]}),
+        )
+        self.assertEqual([(e.family, e.seq, e.value) for e in exps], [("kobo_library", 2, {BOOK, OTHER})])
+        self.assertEqual(unver, [])
+
+    def test_a_sync_that_left_the_device_empty_is_still_judged(self) -> None:
+        exps, _, _, _ = self._fold(entry("kobo.sync", seq=1, params={"code": "synced", "books": []}))
+        self.assertEqual([e.value for e in exps], [set()])
+
+    def test_the_books_come_from_the_library_object_minus_archived_ones(self) -> None:
+        library = {BOOK: {"title": "Kept", "archived": False}, OTHER: {"title": "Gone", "archived": True}}
+        exps, _, _, _ = self._fold(entry("kobo.sync", seq=1, params={"code": "synced", "library": library}))
+        self.assertEqual([e.value for e in exps], [{BOOK}])
+
+    def test_a_books_list_wins_over_the_library_object(self) -> None:
+        params = {"books": [BOOK], "library": {OTHER: {"archived": False}}}
+        exps, _, _, _ = self._fold(entry("kobo.sync", seq=1, params=params))
+        self.assertEqual([e.value for e in exps], [{BOOK}])
+
+    def test_a_sync_naming_no_readable_books_is_not_judged_and_says_so(self) -> None:
+        for params in ({"code": "synced"}, {"books": "a,b"}, {"books": [1, 2]}, {"library": [BOOK]}):
+            with self.subTest(params=params):
+                exps, unver, _, _ = self._fold(entry("kobo.sync", seq=4, params=params))
+                self.assertEqual(exps, [])
+                self.assertEqual([u.seq for u in unver], [4])
+                self.assertIn("books", unver[0].why)
+
+    def test_a_sync_that_errored_or_is_uncertain_is_not_judged(self) -> None:
+        for outcome in ("error", "uncertain"):
+            with self.subTest(outcome=outcome):
+                exps, unver, _, _ = self._fold(
+                    entry("kobo.sync", seq=1, outcome=outcome, params={"books": [BOOK]})
+                )
+                self.assertEqual(exps, [])
+                self.assertIn(outcome, unver[0].why)
+
+    def test_a_shelf_write_after_the_last_sync_leaves_it_unjudged_naming_both_seqs(self) -> None:
+        writes = {
+            "an edit": entry("shelf.edit", seq=3, params={"name": "On Kobo", "sync_to_kobo": True}),
+            "a membership add": entry("shelf.add", seq=3, target=BOOK, params={"shelf": "On Kobo"}),
+            "a failed create": entry("shelf.create", seq=3, outcome="error", params={"name": "On Kobo"}),
+        }
+        for name, write in writes.items():
+            with self.subTest(name):
+                exps, unver, _, _ = self._fold(entry("kobo.sync", seq=1, params={"books": [BOOK]}), write)
+                self.assertEqual([e for e in exps if e.family == "kobo_library"], [])
+                [stale] = [u for u in unver if u.seq == 1]
+                for needle in ("seq 1", "seq 3", "sync again"):
+                    self.assertIn(needle, stale.why)
+
+    def test_a_shelf_write_before_the_last_sync_does_not_stop_it_being_judged(self) -> None:
+        exps, unver, _, _ = self._fold(
+            entry("shelf.edit", seq=1, params={"name": "On Kobo", "sync_to_kobo": True}),
+            entry("kobo.sync", seq=2, params={"books": [BOOK]}),
+            entry("shelf.edit", seq=3, params={"name": "On Kobo", "sync_to_kobo": False}),
+            entry("kobo.sync", seq=4, params={"books": []}),
+        )
+        self.assertEqual([(e.seq, e.value) for e in exps if e.family == "kobo_library"], [(4, set())])
+        self.assertEqual([u for u in unver if "kobo.sync" in u.why], [])

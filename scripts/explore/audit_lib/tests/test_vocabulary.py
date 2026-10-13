@@ -74,6 +74,32 @@ class VocabularyTests(unittest.TestCase):
         self.assertEqual(vocabulary.classify("player.rate").family, "playback_rate")
 
 
+class KoboVocabularyTests(unittest.TestCase):
+    def test_a_kobo_sync_is_a_write_to_the_kobo_library(self) -> None:
+        cls = vocabulary.classify("kobo.sync")
+        self.assertTrue(cls.is_write)
+        self.assertEqual(cls.family, "kobo_library")
+
+    def test_showing_the_device_or_its_requests_is_a_look(self) -> None:
+        for name in ("kobo.show", "kobo.requests"):
+            self.assertEqual(vocabulary.classify(name).kind, vocabulary.OBSERVATION, name)
+
+    def test_checking_a_kobo_sync_stuck_is_a_look(self) -> None:
+        self.assertEqual(vocabulary.classify("kobo.sync.verify").kind, vocabulary.OBSERVATION)
+
+    def test_an_unlisted_kobo_verb_is_unknown_and_names_where_to_add_it(self) -> None:
+        cls = vocabulary.classify("kobo.reset")
+        self.assertEqual(cls.kind, vocabulary.UNKNOWN)
+        self.assertIn("audit_lib/vocabulary.py", cls.reason or "")
+
+    def test_the_sync_lookups_stay_observations(self) -> None:
+        for name in ("sync.check", "sync.delta"):
+            self.assertEqual(vocabulary.classify(name).kind, vocabulary.OBSERVATION, name)
+
+    def test_kobo_is_no_longer_excluded_by_scope(self) -> None:
+        self.assertNotIn("kobo", vocabulary.SCOPE_FOR_NOUN)
+
+
 class ParserTests(unittest.TestCase):
     def test_parse_rating_reads_prose_and_explicit_clears(self) -> None:
         self.assertEqual(expectations.parse_rating("3.5 of 5"), 3.5)

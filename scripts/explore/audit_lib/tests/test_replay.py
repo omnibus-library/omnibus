@@ -15,6 +15,16 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(step.action, "refused")
         self.assertIn("ISBN-lookup", step.detail)
 
+    def test_a_kobo_sync_is_refused_with_the_command_that_redoes_it(self) -> None:
+        exp = expectations.Expectation(
+            "agent-4", 6, "kobo_library", "Kobo library", None, "x", frozenset({BOOK})
+        )
+        client = FakeClient()
+        step = replay.replay_one(exp, FakeState(client=client))
+        self.assertEqual(step.action, "refused")
+        self.assertIn("kobo.sh act sync", step.detail)
+        self.assertEqual(client.calls, [])
+
     def test_a_percent_only_epub_position_replays_as_a_valid_update(self) -> None:
         # ProgressUpdate::validate accepts a cfi OR a percent for epub — a Kobo
         # has no CFI to give — so percent-only is a first-class position and
