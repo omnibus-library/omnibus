@@ -634,14 +634,14 @@ class KoboLibraryFoldTests(unittest.TestCase):
         self.assertEqual([e.value for e in exps], [{BOOK}])
 
     def test_a_books_list_wins_over_the_library_object(self) -> None:
-        params = {"books": [BOOK], "library": {OTHER: {"archived": False}}}
+        params = {"code": "synced", "books": [BOOK], "library": {OTHER: {"archived": False}}}
         exps, _, _, _ = self._fold(entry("kobo.sync", seq=1, params=params))
         self.assertEqual([e.value for e in exps], [{BOOK}])
 
     def test_a_sync_naming_no_readable_books_is_not_judged_and_says_so(self) -> None:
-        for params in ({"code": "synced"}, {"books": "a,b"}, {"books": [1, 2]}, {"library": [BOOK]}):
+        for params in ({}, {"books": "a,b"}, {"books": [1, 2]}, {"library": [BOOK]}):
             with self.subTest(params=params):
-                exps, unver, _, _ = self._fold(entry("kobo.sync", seq=4, params=params))
+                exps, unver, _, _ = self._fold(entry("kobo.sync", seq=4, params={"code": "synced", **params}))
                 self.assertEqual(exps, [])
                 self.assertEqual([u.seq for u in unver], [4])
                 self.assertIn("books", unver[0].why)
@@ -653,6 +653,12 @@ class KoboLibraryFoldTests(unittest.TestCase):
         self.assertEqual(exps, [])
         self.assertEqual([u.seq for u in unver], [1])
         self.assertIn("sync_failed", unver[0].why)
+
+    def test_a_sync_recording_no_reply_code_is_not_judged_and_says_so(self) -> None:
+        exps, unver, _, _ = self._fold(entry("kobo.sync", seq=1, params={"books": [BOOK]}))
+        self.assertEqual(exps, [])
+        self.assertEqual([u.seq for u in unver], [1])
+        self.assertIn("no reply code", unver[0].why)
 
     def test_a_sync_that_errored_or_is_uncertain_is_not_judged(self) -> None:
         for outcome in ("error", "uncertain"):
@@ -671,7 +677,7 @@ class KoboLibraryFoldTests(unittest.TestCase):
         }
         for name, write in writes.items():
             with self.subTest(name):
-                exps, unver, _, _ = self._fold(entry("kobo.sync", seq=1, params={"books": [BOOK]}), write)
+                exps, unver, _, _ = self._fold(entry("kobo.sync", seq=1, params={"code": "synced", "books": [BOOK]}), write)
                 self.assertEqual([e for e in exps if e.family == "kobo_library"], [])
                 [stale] = [u for u in unver if u.seq == 1]
                 for needle in ("seq 1", "seq 3", "sync again"):
@@ -679,7 +685,7 @@ class KoboLibraryFoldTests(unittest.TestCase):
 
     def test_a_shelf_verb_the_vocabulary_does_not_list_also_leaves_the_sync_unjudged(self) -> None:
         exps, unver, _, _ = self._fold(
-            entry("kobo.sync", seq=1, params={"books": [BOOK]}),
+            entry("kobo.sync", seq=1, params={"code": "synced", "books": [BOOK]}),
             entry("shelf.update", seq=2, params={"name": "On Kobo"}),
         )
         self.assertEqual([e for e in exps if e.family == "kobo_library"], [])
@@ -689,9 +695,9 @@ class KoboLibraryFoldTests(unittest.TestCase):
     def test_a_shelf_write_before_the_last_sync_does_not_stop_it_being_judged(self) -> None:
         exps, unver, _, _ = self._fold(
             entry("shelf.edit", seq=1, params={"name": "On Kobo", "sync_to_kobo": True}),
-            entry("kobo.sync", seq=2, params={"books": [BOOK]}),
+            entry("kobo.sync", seq=2, params={"code": "synced", "books": [BOOK]}),
             entry("shelf.edit", seq=3, params={"name": "On Kobo", "sync_to_kobo": False}),
-            entry("kobo.sync", seq=4, params={"books": []}),
+            entry("kobo.sync", seq=4, params={"code": "synced", "books": []}),
         )
         self.assertEqual([(e.seq, e.value) for e in exps if e.family == "kobo_library"], [(4, set())])
         self.assertEqual([u for u in unver if "kobo.sync" in u.why], [])

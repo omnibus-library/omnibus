@@ -620,8 +620,13 @@ def _fold_entry(fold: _Fold, entry: Entry, cls: vocabulary.Classification) -> No
 
     if family == "kobo_library":
         code = p.get("code")
-        if code is not None and code != "synced":
-            fold.skip(entry, f"{entry.action}: the sync answered {code!r}, not 'synced' — the device was not updated")
+        if code != "synced":
+            why = (
+                "the entry has no reply code (params.code) — cannot tell the device was updated"
+                if code is None
+                else f"the sync answered {code!r}, not 'synced' — the device was not updated"
+            )
+            fold.skip(entry, f"{entry.action}: {why}")
             return
         books = _kobo_books(entry)
         if books is UNPARSED:
