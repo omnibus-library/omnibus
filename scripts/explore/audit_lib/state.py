@@ -95,9 +95,13 @@ class ActorState:
         rows = self._memo("shelves", "", lambda: self.client.get_json("/api/shelves", []) or [])
         return [s for s in rows if self.client.user_id is None or s.get("owner_user_id") == self.client.user_id]
 
+    def _shelf_page(self, shelf_id: int) -> dict[str, Any]:
+        return self._memo(
+            "shelf", str(shelf_id), lambda: self.client.get_json(f"/api/shelves/{shelf_id}/page", {}) or {}
+        )
+
     def shelf_members(self, shelf_id: int) -> list[str]:
-        page = self._memo("shelf", str(shelf_id), lambda: self.client.get_json(f"/api/shelves/{shelf_id}/page", {}))
-        return _uuids_in(page)
+        return _uuids_in(self._shelf_page(shelf_id))
 
     def kobo_synced(self) -> list[tuple[dict[str, Any], dict[str, Any]]]:
         """`(shelf detail, shelf page)` for each of this actor's shelves with Sync to Kobo on."""
@@ -107,7 +111,7 @@ class ActorState:
             for shelf in self.shelves():
                 detail = self.client.get_json(f"/api/shelves/{shelf['id']}", {}) or {}
                 if detail.get("sync_to_kobo") is True:
-                    out.append((detail, self.client.get_json(f"/api/shelves/{shelf['id']}/page", {}) or {}))
+                    out.append((detail, self._shelf_page(shelf["id"])))
             return out
 
         return self._memo("kobo_synced", "", fetch)
@@ -191,13 +195,18 @@ def _rows_in(payload: Any) -> list[Any]:
     return rows if isinstance(rows, list) else []
 
 
+def _row_uuid(row: dict[str, Any]) -> Any:
+    """The book uuid a library or shelf row carries, under whichever name it spells it."""
+    return row.get("unique_identifier") or row.get("uuid") or row.get("book_uuid")
+
+
 def _titles_in(payload: Any) -> dict[str, list[str]]:
     """Normalised title → uuids, from a library listing."""
     out: dict[str, list[str]] = {}
     for row in _rows_in(payload):
         if not isinstance(row, dict):
             continue
-        uuid = row.get("unique_identifier") or row.get("uuid") or row.get("book_uuid")
+        uuid = _row_uuid(row)
         title = row.get("title")
         if uuid and isinstance(title, str) and title.strip():
             out.setdefault(normalise_title(title), []).append(str(uuid))
@@ -218,7 +227,7 @@ def kobo_synced_books(pairs: Iterable[tuple[dict[str, Any], dict[str, Any]]]) ->
             if not isinstance(row, dict):
                 continue
             formats = {str(f).upper() for f in row.get("formats") or []}
-            uuid = row.get("unique_identifier") or row.get("uuid") or row.get("book_uuid")
+            uuid = _row_uuid(row)
             if uuid and formats & KOBO_FORMATS:
                 out.add(str(uuid))
     return out
@@ -236,7 +245,7 @@ def _uuids_in(payload: Any) -> list[str]:
         if isinstance(row, str):
             out.append(row)
         elif isinstance(row, dict):
-            uuid = row.get("unique_identifier") or row.get("uuid") or row.get("book_uuid")
+            uuid = _row_uuid(row)
             if uuid:
                 out.append(str(uuid))
     return out

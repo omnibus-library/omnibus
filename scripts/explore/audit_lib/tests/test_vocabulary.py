@@ -96,8 +96,8 @@ class KoboVocabularyTests(unittest.TestCase):
         for name in ("sync.check", "sync.delta"):
             self.assertEqual(vocabulary.classify(name).kind, vocabulary.OBSERVATION, name)
 
-    def test_kobo_is_no_longer_excluded_by_scope(self) -> None:
-        self.assertNotIn("kobo", vocabulary.SCOPE_FOR_NOUN)
+    def test_an_unlisted_kobo_verb_is_not_out_of_scope(self) -> None:
+        self.assertNotEqual(vocabulary.classify("kobo.reset").kind, vocabulary.OUT_OF_SCOPE)
 
 
 class ParserTests(unittest.TestCase):

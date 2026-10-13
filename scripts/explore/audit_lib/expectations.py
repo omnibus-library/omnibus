@@ -619,6 +619,10 @@ def _fold_entry(fold: _Fold, entry: Entry, cls: vocabulary.Classification) -> No
         return Expectation(actor, seq, family or "", what, target, expected, value, extra)
 
     if family == "kobo_library":
+        code = p.get("code")
+        if code is not None and code != "synced":
+            fold.skip(entry, f"{entry.action}: the sync answered {code!r}, not 'synced' — the device was not updated")
+            return
         books = _kobo_books(entry)
         if books is UNPARSED:
             fold.skip(entry, f"{entry.action}: no readable books list (params.books) or library in params")
@@ -903,7 +907,7 @@ def expectations_for(
         cls = vocabulary.classify(entry.action)
         tally[cls.kind] = tally.get(cls.kind, 0) + 1
         _claim(claims, entry, cls)
-        if cls.family in SHELF_FAMILIES and entry.seq is not None:
+        if entry.seq is not None and _may_write_a_shelf(entry, cls):
             last_shelf_write = entry.seq
         if cls.kind == vocabulary.OBSERVATION:
             confirmed = unsettled.pop(_confirmed_write(entry), None)
@@ -929,6 +933,13 @@ def expectations_for(
     _drop_stale_kobo_library(fold, last_shelf_write)
     exps, unver = fold.result()
     return exps, unver, tally, claims
+
+
+def _may_write_a_shelf(entry: Entry, cls: vocabulary.Classification) -> bool:
+    """Whether `entry` wrote a shelf, or names a shelf verb the vocabulary can't place."""
+    if cls.family in SHELF_FAMILIES:
+        return True
+    return cls.kind == vocabulary.UNKNOWN and vocabulary.noun_of(entry.action or "") == "shelf"
 
 
 def _drop_stale_kobo_library(fold: _Fold, last_shelf_write: int | None) -> None:

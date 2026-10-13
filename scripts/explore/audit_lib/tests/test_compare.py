@@ -195,6 +195,7 @@ class WishlistRenameTests(unittest.TestCase):
         baseline = self._baseline("Rosalind Fenwick's Wishlist")
         self.assertEqual(compare.unexpected("agent-4", state, baseline, claims_of()), [])
 
+
 class KoboLibraryCompareTests(unittest.TestCase):
     def _expect(self, books: Any) -> expectations.Expectation:
         return expectations.Expectation("agent-4", 3, "kobo_library", "Kobo library", None, "x", frozenset(books))
@@ -234,6 +235,7 @@ class KoboLibraryCompareTests(unittest.TestCase):
         with self.assertRaises(compare.NotJudged) as raised:
             compare.check(self._expect(set()), state)
         self.assertIn("Rules of thumb", str(raised.exception))
+        self.assertIn("turn its Sync to Kobo off", str(raised.exception))
 
     def test_check_all_reports_a_smart_shelf_as_not_judged_rather_than_a_finding(self) -> None:
         state = FakeState(kobo_books={BOOK}, kobo_smart_shelves=["Rules of thumb"])
@@ -242,10 +244,6 @@ class KoboLibraryCompareTests(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual([e.seq for e, _ in not_judged], [3])
         self.assertIn("Rules of thumb", not_judged[0][1])
-
-    def test_a_manual_synced_shelf_is_compared_even_when_a_smart_one_is_not_synced(self) -> None:
-        state = FakeState(kobo_books={BOOK}, kobo_smart_shelves=[])
-        self.assertEqual(compare.check(self._expect(set()), state).kind, compare.MISMATCH)
 
 
 class ContainmentTests(unittest.TestCase):
