@@ -136,6 +136,42 @@ test.describe("check-in chooser", () => {
     });
   });
 
+  // Deleting a fileless book takes its wishlist entries with it.
+  test("drop a deleted book from the wishlist", async ({
+    scanRequests,
+    physicalRequests,
+    shelfPage,
+    adminWishlist,
+    createdBookUuids,
+  }) => {
+    const book = buildExternalBook();
+
+    const uuid =
+      await test.step("wish for a book through the api", async () => {
+        const added = await scanRequests.postWishlistEntry(book);
+        await expect(added).toBeOK();
+        const { book_uuid }: BookRef = await added.json();
+        createdBookUuids.add(book_uuid);
+        return book_uuid;
+      });
+
+    await test.step("check the wishlist lists it", async () => {
+      await shelfPage.goto(adminWishlist.id);
+      await expect(shelfPage.bookTile(book.title)).toBeVisible();
+    });
+
+    await test.step("delete the book through the api", async () => {
+      await expect(await physicalRequests.deleteBook(uuid)).toBeOK();
+      createdBookUuids.delete(uuid);
+    });
+
+    // An emptied wishlist leaves the library row, so check its own page.
+    await test.step("check the wishlist no longer lists it", async () => {
+      await shelfPage.goto(adminWishlist.id);
+      await expect(shelfPage.bookTile(book.title)).toHaveCount(0);
+    });
+  });
+
   // Wishlists are public, but other readers' library rows leave them out, so
   // another reader opens one from the shelves index.
   test("show the wishlist to another reader", async ({

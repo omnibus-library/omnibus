@@ -45,6 +45,7 @@ type PageFixtures = {
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
   checkInPage: CheckInPage;
+  shelfPage: ShelfPage;
   scanRequests: ScanRequests;
   physicalRequests: PhysicalRequests;
   createdBookUuids: Set<string>;
@@ -108,6 +109,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
   checkInPage: async ({ page }, use) => {
     await use(new CheckInPage(page));
+  },
+  shelfPage: async ({ page }, use) => {
+    await use(new ShelfPage(page));
   },
 
   scanRequests: async ({ request }, use) => {
