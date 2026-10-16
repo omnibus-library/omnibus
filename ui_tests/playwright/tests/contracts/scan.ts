@@ -1,3 +1,4 @@
+import type { ExternalBookMeta, WishlistSource } from "../data/scan";
 import { expect } from "../fixtures/test";
 import type { ExpectMutationOptions } from "../utils/api";
 
@@ -12,19 +13,22 @@ export const scanUrls = {
   googleBooksConfigured: /\/api\/rpc\/scan\/google-books-configured$/,
 };
 
-/** The request each check-in action must send, for `expectMutation`. */
+/**
+ * The request each check-in action must send, for `expectMutation`. Dioxus
+ * keys a server-fn body by its parameter name, so `req` wraps each one.
+ */
 export const scan = {
-  /** Dioxus keys a server-fn body by parameter name, so `req` wraps it. */
-  resolve: (isbn?: string): ExpectMutationOptions => ({
+  resolve: (isbn: string): ExpectMutationOptions => ({
     method: "POST",
     url: scanUrls.resolve,
-    ...(isbn === undefined ? {} : { expectedBody: { req: { isbn } } }),
+    expectedBody: { req: { isbn } },
     expectedStatus: 200,
   }),
 
-  resolveMeta: (): ExpectMutationOptions => ({
+  resolveMeta: (meta: ExternalBookMeta): ExpectMutationOptions => ({
     method: "POST",
     url: scanUrls.resolveMeta,
+    expectedBody: { req: { meta } },
     expectedStatus: 200,
   }),
 
@@ -45,21 +49,17 @@ export const scan = {
     expectedStatus: 200,
   }),
 
-  physicalOnly: (): ExpectMutationOptions => ({
+  physicalOnly: (meta: ExternalBookMeta): ExpectMutationOptions => ({
     method: "POST",
     url: scanUrls.physicalOnly,
+    expectedBody: { req: { meta, note: null } },
     expectedStatus: 200,
   }),
 
-  /** `source` is how the reader found the book (`WishlistSource`). */
-  wishlist: (
-    source?: "scan" | "detail" | "manual" | "search",
-  ): ExpectMutationOptions => ({
+  wishlist: (source: WishlistSource): ExpectMutationOptions => ({
     method: "POST",
     url: scanUrls.wishlist,
-    ...(source === undefined
-      ? {}
-      : { expectedBody: { req: expect.objectContaining({ source }) } }),
+    expectedBody: { req: expect.objectContaining({ source }) },
     expectedStatus: 200,
   }),
 

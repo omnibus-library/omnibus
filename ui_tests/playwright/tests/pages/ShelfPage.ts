@@ -15,11 +15,6 @@ export class ShelfPage extends BasePage {
     return this.titleHeading;
   }
 
-  /** The `/shelves` index card that opens the shelf. */
-  shelfCard(shelfId: number): Locator {
-    return this.page.getByTestId(`shelf-card-${shelfId}`);
-  }
-
   /** A book's grid tile: a `listitem`, not a link (see `landing/grid.rs`). */
   bookTile(title: string): Locator {
     return this.page.getByRole("listitem", {
@@ -32,5 +27,10 @@ export class ShelfPage extends BasePage {
     await this.open("/shelves");
     await this.shelfCard(shelfId).click();
     await this.page.waitForURL(new RegExp(`/shelves/${shelfId}$`));
+  }
+
+  /** The shelf's card on the `/shelves` index, the only way in. */
+  private shelfCard(shelfId: number): Locator {
+    return this.page.getByTestId(`shelf-card-${shelfId}`);
   }
 }

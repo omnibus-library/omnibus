@@ -1,7 +1,9 @@
 import type { Locator, Page } from "@playwright/test";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { physicalUrls } from "../contracts/physical";
 import { expect } from "../fixtures/test";
+import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 export class BookDetailPage extends BasePage {
@@ -15,7 +17,7 @@ export class BookDetailPage extends BasePage {
   readonly checkInWhenAcquiredButton: Locator;
   readonly physicalCopyCards: Locator;
   readonly physicalPill: Locator;
-  readonly deleteCopyButton: Locator;
+  readonly removeCopyButton: Locator;
   readonly lastCopyDialog: Locator;
   readonly removeFromLibraryButton: Locator;
 
@@ -30,7 +32,7 @@ export class BookDetailPage extends BasePage {
     });
     this.physicalCopyCards = page.getByTestId("physical-copy-card");
     this.physicalPill = page.getByTestId("physical-pill");
-    this.deleteCopyButton = page.getByTestId("copy-delete");
+    this.removeCopyButton = page.getByTestId("copy-delete");
     this.lastCopyDialog = page.getByTestId("last-copy-modal");
     this.removeFromLibraryButton = this.lastCopyDialog.getByRole("button", {
       name: "Remove from library",
@@ -54,13 +56,18 @@ export class BookDetailPage extends BasePage {
     await this.checkInWhenAcquiredButton.click();
   }
 
-  /** Deletes the only copy; a fileless book then asks what to do with it. */
-  async deleteCopy(): Promise<void> {
-    await this.deleteCopyButton.click();
+  /** Asks to remove a copy; the last copy of a fileless book offers choices. */
+  async openRemoveCopyDialog(): Promise<void> {
+    await this.removeCopyButton.click();
   }
 
+  /** Removes the last copy and then its book, which waits on the second. */
   async removeFromLibrary(): Promise<void> {
+    const removed = this.page.waitForResponse(
+      isPostTo(physicalUrls.deleteBook),
+    );
     await this.removeFromLibraryButton.click();
+    await removed;
   }
 
   /** Checks the page is showing the book `bookUuid`, not just any book. */

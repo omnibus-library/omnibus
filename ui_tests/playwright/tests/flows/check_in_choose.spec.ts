@@ -1,16 +1,13 @@
 import { physical } from "../contracts/physical";
-import { scan, scanUrls } from "../contracts/scan";
+import { scan } from "../contracts/scan";
 import { type BookRef, buildExternalBook, notInLibrary } from "../data/scan";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/libraryFixtures";
+import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// The "not in your library" chooser: own it (a fileless book plus its first
-// copy) or wish for it (a fileless book on the wishlist). The lookup is
-// stubbed, but each write is real: every test mints a book no other spec
-// reads, and `createdBookUuids` deletes it afterwards. They run as the suite
-// admin, because only an editor may remove a book with its last copy.
+// Each write is real, on a book no other spec reads. These run as the admin,
+// since only an editor may remove a book along with its last copy.
 
 test.describe("check-in chooser", () => {
   // A fileless book only lists once a library path is set.
@@ -25,28 +22,28 @@ test.describe("check-in chooser", () => {
     createdBookUuids,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const book = buildExternalBook();
 
     await test.step("look up a book only the providers know", async () => {
-      await checkIn.stubIsbnLookup(notInLibrary(book));
+      await flow.stubIsbnLookup(notInLibrary(book));
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () =>
-        checkIn.lookUpIsbn(book.isbn13),
+      await expectMutation(scan.resolve(book.isbn13), () =>
+        flow.lookUpIsbn(book.isbn13),
       );
-      await expect(checkIn.chooseScreen).toBeVisible();
+      await expect(flow.chooseScreen).toBeVisible();
     });
 
     const uuid = await test.step("add it to the collection", async () => {
-      const { response } = await expectMutation(scan.physicalOnly(), () =>
-        checkIn.addToCollection(),
+      const { response } = await expectMutation(scan.physicalOnly(book), () =>
+        flow.addToCollection(),
       );
       const added: BookRef = await response.json();
-      createdBookUuids.push(added.book_uuid);
-      await expect(checkIn.successScreen).toContainText(
+      createdBookUuids.add(added.book_uuid);
+      await expect(flow.successScreen).toContainText(
         "In your physical collection",
       );
-      await expect(checkIn.successScreen).toContainText(book.title);
+      await expect(flow.successScreen).toContainText(book.title);
       return added.book_uuid;
     });
 
@@ -76,25 +73,25 @@ test.describe("check-in chooser", () => {
       const added = await scanRequests.postPhysicalOnly(book);
       await expect(added).toBeOK();
       const { book_uuid }: BookRef = await added.json();
-      createdBookUuids.push(book_uuid);
+      createdBookUuids.add(book_uuid);
       return book_uuid;
     });
 
-    await test.step("open the book", async () => {
+    await test.step("ask to remove its only copy", async () => {
       await bookDetailPage.goto(uuid);
       await expect(bookDetailPage.physicalPill).toBeVisible();
+      await bookDetailPage.openRemoveCopyDialog();
+      await expect(bookDetailPage.lastCopyDialog).toBeVisible();
     });
 
-    // The copy goes, then the book it leaves empty, so both waits are armed
-    // before the first click.
-    await test.step("delete the copy and the book with it", async () => {
+    // One click deletes the copy, then the book it leaves without one.
+    await test.step("remove the book from the library", async () => {
       await expectMutation(physical.deleteCopy(), () =>
-        expectMutation(physical.deleteBook(uuid), async () => {
-          await bookDetailPage.deleteCopy();
-          await expect(bookDetailPage.lastCopyDialog).toBeVisible();
-          await bookDetailPage.removeFromLibrary();
-        }),
+        expectMutation(physical.deleteBook(uuid), () =>
+          bookDetailPage.removeFromLibrary(),
+        ),
       );
+      createdBookUuids.delete(uuid);
     });
 
     await test.step("check it left all books", async () => {
@@ -110,26 +107,26 @@ test.describe("check-in chooser", () => {
     createdBookUuids,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const book = buildExternalBook();
 
     await test.step("look up a book only the providers know", async () => {
-      await checkIn.stubIsbnLookup(notInLibrary(book));
+      await flow.stubIsbnLookup(notInLibrary(book));
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () =>
-        checkIn.lookUpIsbn(book.isbn13),
+      await expectMutation(scan.resolve(book.isbn13), () =>
+        flow.lookUpIsbn(book.isbn13),
       );
-      await expect(checkIn.chooseScreen).toBeVisible();
+      await expect(flow.chooseScreen).toBeVisible();
     });
 
     await test.step("add it to the wishlist", async () => {
-      const { response } = await expectMutation(scan.wishlist(), () =>
-        checkIn.addToWishlist(),
+      const { response } = await expectMutation(scan.wishlist("manual"), () =>
+        flow.addToWishlist(),
       );
       const added: BookRef = await response.json();
-      createdBookUuids.push(added.book_uuid);
-      await expect(checkIn.successScreen).toContainText("On your wishlist");
-      await expect(checkIn.successScreen).toContainText(book.title);
+      createdBookUuids.add(added.book_uuid);
+      await expect(flow.successScreen).toContainText("On your wishlist");
+      await expect(flow.successScreen).toContainText(book.title);
     });
 
     await test.step("check the wishlist shelf lists it", async () => {
@@ -139,8 +136,8 @@ test.describe("check-in chooser", () => {
     });
   });
 
-  // Public by design (`provision_wishlist_shelf`), but kept off other readers'
-  // library row, so they reach it through the shelves index.
+  // Public by design, but kept off other readers' library row, so they reach
+  // it through the shelves index.
   test("show the wishlist to another reader", async ({
     scanRequests,
     adminWishlist,
@@ -153,7 +150,7 @@ test.describe("check-in chooser", () => {
       const added = await scanRequests.postWishlistEntry(book);
       await expect(added).toBeOK();
       const { book_uuid }: BookRef = await added.json();
-      createdBookUuids.push(book_uuid);
+      createdBookUuids.add(book_uuid);
     });
 
     await test.step("open the wishlist as a plain reader", async () => {
@@ -169,28 +166,28 @@ test.describe("check-in chooser", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const book = buildExternalBook();
 
     await test.step("look up a book only the providers know", async () => {
-      await checkIn.stubIsbnLookup(notInLibrary(book));
+      await flow.stubIsbnLookup(notInLibrary(book));
+      await flow.forceServerError(scan.physicalOnly(book));
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () =>
-        checkIn.lookUpIsbn(book.isbn13),
+      await expectMutation(scan.resolve(book.isbn13), () =>
+        flow.lookUpIsbn(book.isbn13),
       );
-      await expect(checkIn.chooseScreen).toBeVisible();
+      await expect(flow.chooseScreen).toBeVisible();
     });
 
     await test.step("add it while adds fail", async () => {
-      await checkIn.forceServerError(scanUrls.physicalOnly);
-      await expectMutation(failing(scan.physicalOnly()), () =>
-        checkIn.addToCollection(),
+      await expectMutation(failing(scan.physicalOnly(book)), () =>
+        flow.addToCollection(),
       );
     });
 
     await test.step("check the error shows over the chooser", async () => {
-      await expect(checkIn.errorMessage).toBeVisible();
-      await expect(checkIn.chooseScreen).toBeVisible();
+      await expect(flow.errorMessage).toBeVisible();
+      await expect(flow.chooseScreen).toBeVisible();
     });
   });
 
@@ -198,28 +195,28 @@ test.describe("check-in chooser", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const book = buildExternalBook();
 
     await test.step("look up a book only the providers know", async () => {
-      await checkIn.stubIsbnLookup(notInLibrary(book));
+      await flow.stubIsbnLookup(notInLibrary(book));
+      await flow.forceServerError(scan.wishlist("manual"));
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () =>
-        checkIn.lookUpIsbn(book.isbn13),
+      await expectMutation(scan.resolve(book.isbn13), () =>
+        flow.lookUpIsbn(book.isbn13),
       );
-      await expect(checkIn.chooseScreen).toBeVisible();
+      await expect(flow.chooseScreen).toBeVisible();
     });
 
     await test.step("wish for it while wishes fail", async () => {
-      await checkIn.forceServerError(scanUrls.wishlist);
-      await expectMutation(failing(scan.wishlist()), () =>
-        checkIn.addToWishlist(),
+      await expectMutation(failing(scan.wishlist("manual")), () =>
+        flow.addToWishlist(),
       );
     });
 
     await test.step("check the error shows over the chooser", async () => {
-      await expect(checkIn.errorMessage).toBeVisible();
-      await expect(checkIn.chooseScreen).toBeVisible();
+      await expect(flow.errorMessage).toBeVisible();
+      await expect(flow.chooseScreen).toBeVisible();
     });
   });
 });

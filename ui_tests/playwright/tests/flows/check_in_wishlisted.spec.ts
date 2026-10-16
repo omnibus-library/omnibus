@@ -61,7 +61,7 @@ test.describe("wishlist check-in", () => {
     });
 
     await test.step("find the wishlist entry", async () => {
-      await expectMutation(scan.resolve(), () => overlay.findBook());
+      await expectMutation(scan.resolve(wish.isbn13), () => overlay.findBook());
       await expect(overlay.confirmScreen).toContainText("on your wishlist");
       await expect(overlay.bookCards).toContainText(wish.title);
     });
@@ -127,8 +127,9 @@ test.describe("wishlist check-in", () => {
       // A filed book resolves as already owned, which navigates, not confirms.
       await overlay.stubIsbnLookup(inLibraryUnowned(filedBook(wish)));
       await bookDetailPage.topNav.openCheckIn();
-      await overlay.enterIsbn(wish.isbn13);
-      await expectMutation(scan.resolve(), () => overlay.findBook());
+      await expectMutation(scan.resolve(wish.isbn13), () =>
+        overlay.lookUpIsbn(wish.isbn13),
+      );
       await expectMutation(scan.checkIn(wish), () => overlay.checkInCopy());
       await overlay.close();
     });
@@ -160,13 +161,14 @@ test.describe("wishlist check-in", () => {
       // The providers would answer this lookup; the wishlist write is real.
       await overlay.stubIsbnLookup(notInLibrary(added));
       await libraryPage.topNav.openCheckIn();
-      await overlay.enterIsbn(added.isbn13);
-      await expectMutation(scan.resolve(), () => overlay.findBook());
-      const { response } = await expectMutation(scan.wishlist(), () =>
+      await expectMutation(scan.resolve(added.isbn13), () =>
+        overlay.lookUpIsbn(added.isbn13),
+      );
+      const { response } = await expectMutation(scan.wishlist("manual"), () =>
         overlay.addToWishlist(),
       );
       const created: BookRef = await response.json();
-      createdBookUuids.push(created.book_uuid);
+      createdBookUuids.add(created.book_uuid);
       await expect(overlay.successScreen).toContainText(added.title);
       await overlay.close();
     });

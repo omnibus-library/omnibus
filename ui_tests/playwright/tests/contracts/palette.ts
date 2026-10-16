@@ -1,5 +1,6 @@
 import type { ExpectMutationOptions } from "../utils/api";
 
+/** The search palette endpoint the link picker posts to. */
 export const paletteUrls = {
   search: /\/api\/rpc\/search-palette$/,
 };

@@ -10,11 +10,8 @@ import { expect, test } from "../fixtures/pageFixtures";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// The flow as a dialog over the current page, raised from the top nav at the
-// desktop width that renders it. The `/check-in` deep link is covered by
-// `check_in_lookup`, the camera by `check_in_scan`. Every scan call is stubbed,
-// the write included, for the reason `check_in_confirm` gives: these tests
-// assert the overlay's own state, which the stubs don't touch.
+// Every scan call is stubbed, writes included: these tests assert the
+// overlay's own state, and `physical_collection.spec.ts` reads TARGET.
 
 const ISBN = "9780441013593";
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-island")!;
@@ -66,7 +63,7 @@ test.describe("check-in overlay", () => {
 
     await test.step("close it", async () => {
       await overlay.close();
-      await expect(overlay.scrim).toHaveCount(0);
+      await overlay.assertDismissed();
       await libraryPage.assertDisplayed();
     });
   });
@@ -80,9 +77,9 @@ test.describe("check-in overlay", () => {
       await expect(overlay.scrim).toBeVisible();
     });
 
-    await test.step("click the scrim", async () => {
+    await test.step("click outside the dialog", async () => {
       await overlay.closeByClickingOutside();
-      await expect(overlay.scrim).toHaveCount(0);
+      await overlay.assertDismissed();
     });
   });
 
@@ -99,26 +96,26 @@ test.describe("check-in overlay", () => {
 
     await test.step("press escape", async () => {
       await overlay.closeWithEscape();
-      await expect(overlay.scrim).toHaveCount(0);
+      await overlay.assertDismissed();
     });
   });
 
   // The clicked button unmounts with its stage, so focus is put back on the
   // panel or Escape is lost to `body` (#2525).
   test("close the overlay with escape after changing stage", async ({
-    request,
     libraryPage,
     expectMutation,
   }) => {
     const overlay = libraryPage.checkInOverlay;
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("look up a library book in the overlay", async () => {
-      await overlay.stubIsbnLookup(inLibraryUnowned(libraryBook(TARGET, uuid)));
+      await overlay.stubIsbnLookup(
+        inLibraryUnowned(libraryBook(TARGET, "island-uuid")),
+      );
       await libraryPage.goto();
       await libraryPage.topNav.openCheckIn();
       await expect(overlay.scrim).toBeVisible();
-      await expectMutation(scan.resolve(), () => overlay.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => overlay.lookUpIsbn(ISBN));
       await expect(overlay.confirmScreen).toBeVisible();
       await expect(overlay.root).toBeFocused();
     });
@@ -147,14 +144,17 @@ test.describe("check-in overlay", () => {
     const overlay = libraryPage.checkInOverlay;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-    await test.step("check in a library book in the overlay", async () => {
+    await test.step("look up a library book in the overlay", async () => {
       await overlay.stubIsbnLookup(inLibraryUnowned(libraryBook(TARGET, uuid)));
       await overlay.stubCheckIn(uuid);
       await libraryPage.goto();
       await libraryPage.topNav.openCheckIn();
       await expect(overlay.scrim).toBeVisible();
-      await expectMutation(scan.resolve(), () => overlay.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => overlay.lookUpIsbn(ISBN));
       await expect(overlay.confirmScreen).toBeVisible();
+    });
+
+    await test.step("check in the copy", async () => {
       await expectMutation(scan.checkIn({ uuid, isbn13: ISBN }), () =>
         overlay.checkInCopy(),
       );
@@ -188,7 +188,7 @@ test.describe("check-in overlay", () => {
       await libraryPage.goto();
       await libraryPage.topNav.openCheckIn();
       await expect(overlay.scrim).toBeVisible();
-      await expectMutation(scan.resolve(), () => overlay.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => overlay.lookUpIsbn(ISBN));
     });
 
     await test.step("check its page shows without the overlay", async () => {
@@ -226,9 +226,9 @@ test.describe("check-in overlay", () => {
       );
     });
 
-    await test.step("pick it", async () => {
-      await expectMutation(scan.resolveMeta(), () =>
-        overlay.pickSearchResult(0),
+    await test.step("pick the book from the results", async () => {
+      await expectMutation(scan.resolveMeta(found), () =>
+        overlay.pickSearchResult(found.title),
       );
     });
 

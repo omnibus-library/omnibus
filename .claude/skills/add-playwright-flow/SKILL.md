@@ -16,8 +16,8 @@ One file per user flow: `ui_tests/playwright/tests/flows/<flow-name>.spec.ts`.
 
 New specs use page objects; see
 [04d-playwright-page-objects.md](../../rules/04d-playwright-page-objects.md) for
-the layout and rules, and `tests/flows/check_in_wishlisted.spec.ts` for a worked
-example. Import `test`
+the layout and rules, and the `tests/flows/check_in_*.spec.ts` specs for worked
+examples. Import `test`
 and `expect` from a fixtures file, never from `@playwright/test`:
 
 ```ts

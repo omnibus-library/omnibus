@@ -1,4 +1,4 @@
-import { scan, scanUrls } from "../contracts/scan";
+import { scan } from "../contracts/scan";
 import {
   buildExternalBook,
   closeMatch,
@@ -8,9 +8,7 @@ import {
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 
-// The title search rides on the providers, so its search and its pick
-// (`resolve-meta`) are stubbed; the `omnibus_db` wiremock suites cover the
-// providers themselves. The form's layout is asserted in `check_in_lookup`.
+// The search and its pick ride on the providers, so both are stubbed.
 
 const QUERY = "name of the wind";
 const NAME_OF_THE_WIND = buildExternalBook({
@@ -28,7 +26,7 @@ test.describe("check-in title search", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const sequel = buildExternalBook({
       title: "The Wise Man's Fear",
       authors: ["Patrick Rothfuss"],
@@ -36,40 +34,33 @@ test.describe("check-in title search", () => {
     });
 
     await test.step("search by title", async () => {
+      await flow.stubTitleSearch([NAME_OF_THE_WIND, sequel]);
       await checkInPage.goto();
-      await expect(checkIn.titleSearchForm).toBeVisible();
-      await checkIn.stubTitleSearch([NAME_OF_THE_WIND, sequel]);
-      await expectMutation(scan.search(QUERY), () =>
-        checkIn.searchByTitle(QUERY),
-      );
+      await expectMutation(scan.search(QUERY), () => flow.searchByTitle(QUERY));
     });
 
     await test.step("check each result shows its provider facts", async () => {
-      await expect(checkIn.searchResultButtons).toHaveCount(2);
-      const first = checkIn.searchResultButtons.first();
-      await expect(first).toContainText("The Kingkiller Chronicle");
-      await expect(first).toContainText("First published 2007");
-      await expect(first).toContainText("DAW Books");
-      await expect(first).toContainText("662 pages");
+      const result = flow.searchResultButton(NAME_OF_THE_WIND.title);
+      await expect(flow.searchResultButtons).toHaveCount(2);
+      await expect(result).toContainText("The Kingkiller Chronicle");
+      await expect(result).toContainText("First published 2007");
+      await expect(result).toContainText("DAW Books");
+      await expect(result).toContainText("662 pages");
     });
 
-    await test.step("pick the first result", async () => {
-      await checkIn.stubSearchPick(notInLibrary(NAME_OF_THE_WIND));
-      await expectMutation(scan.resolveMeta(), () =>
-        checkIn.pickSearchResult(0),
+    await test.step("pick the book from the results", async () => {
+      await flow.stubSearchPick(notInLibrary(NAME_OF_THE_WIND));
+      await expectMutation(scan.resolveMeta(NAME_OF_THE_WIND), () =>
+        flow.pickSearchResult(NAME_OF_THE_WIND.title),
       );
     });
 
     await test.step("check the chooser shows the richer card", async () => {
-      await expect(checkIn.chooseScreen).toBeVisible();
-      await expect(checkIn.bookSeriesText).toHaveText(
-        "The Kingkiller Chronicle",
-      );
-      await expect(checkIn.bookDetailText).toContainText(
-        "First published 2007",
-      );
-      await expect(checkIn.ownItButton).toBeVisible();
-      await expect(checkIn.addToWishlistButton).toBeVisible();
+      await expect(flow.chooseScreen).toBeVisible();
+      await expect(flow.bookSeriesText).toHaveText("The Kingkiller Chronicle");
+      await expect(flow.bookDetailText).toContainText("First published 2007");
+      await expect(flow.ownItButton).toBeVisible();
+      await expect(flow.addToWishlistButton).toBeVisible();
     });
   });
 
@@ -78,31 +69,32 @@ test.describe("check-in title search", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
 
     await test.step("open the title search from the scanner", async () => {
+      await flow.stubTitleSearch([NAME_OF_THE_WIND]);
+      await flow.stubSearchPick(notInLibrary(NAME_OF_THE_WIND));
       await checkInPage.goto();
-      await checkIn.openScanner();
-      await checkIn.openTitleSearch();
-      await expect(checkIn.titleSearchForm).toBeVisible();
+      await flow.openScanner();
+      await flow.openTitleSearch();
+      await expect(flow.titleSearchForm).toBeVisible();
     });
 
     await test.step("check nothing carried over from a lookup", async () => {
-      await expect(checkIn.errorMessage).toHaveCount(0);
-      await expect(checkIn.searchEmptyMessage).toHaveCount(0);
+      await expect(flow.errorMessage).toHaveCount(0);
+      await expect(flow.searchEmptyMessage).toHaveCount(0);
     });
 
-    await test.step("search by title and pick the result", async () => {
-      await checkIn.stubTitleSearch([NAME_OF_THE_WIND]);
-      await checkIn.stubSearchPick(notInLibrary(NAME_OF_THE_WIND));
-      await expectMutation(scan.search(QUERY), () =>
-        checkIn.searchByTitle(QUERY),
+    await test.step("search by title", async () => {
+      await expectMutation(scan.search(QUERY), () => flow.searchByTitle(QUERY));
+      await expect(flow.searchResultButtons).toHaveCount(1);
+    });
+
+    await test.step("pick the book from the results", async () => {
+      await expectMutation(scan.resolveMeta(NAME_OF_THE_WIND), () =>
+        flow.pickSearchResult(NAME_OF_THE_WIND.title),
       );
-      await expect(checkIn.searchResultButtons).toHaveCount(1);
-      await expectMutation(scan.resolveMeta(), () =>
-        checkIn.pickSearchResult(0),
-      );
-      await expect(checkIn.chooseScreen).toBeVisible();
+      await expect(flow.chooseScreen).toBeVisible();
     });
   });
 
@@ -112,63 +104,55 @@ test.describe("check-in title search", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const libraryCopy = libraryBook(NAME_OF_THE_WIND, "close-match-uuid", {
       isbn: "9780000000000",
     });
 
     await test.step("pick a result that matches a library book", async () => {
+      await flow.stubTitleSearch([NAME_OF_THE_WIND]);
+      await flow.stubSearchPick(closeMatch(NAME_OF_THE_WIND, [libraryCopy]));
       await checkInPage.goto();
-      await expect(checkIn.titleSearchForm).toBeVisible();
-      await checkIn.stubTitleSearch([NAME_OF_THE_WIND]);
-      await checkIn.stubSearchPick(closeMatch(NAME_OF_THE_WIND, [libraryCopy]));
-      await expectMutation(scan.search(QUERY), () =>
-        checkIn.searchByTitle(QUERY),
-      );
-      await expectMutation(scan.resolveMeta(), () =>
-        checkIn.pickSearchResult(0),
+      await expectMutation(scan.search(QUERY), () => flow.searchByTitle(QUERY));
+      await expectMutation(scan.resolveMeta(NAME_OF_THE_WIND), () =>
+        flow.pickSearchResult(NAME_OF_THE_WIND.title),
       );
     });
 
     await test.step("check the match names the isbn as found", async () => {
-      await expect(checkIn.closeMatchScreen).toBeVisible();
-      await expect(checkIn.closeMatchScreen).toContainText(
+      await expect(flow.closeMatchScreen).toBeVisible();
+      await expect(flow.closeMatchScreen).toContainText(
         NAME_OF_THE_WIND.isbn13,
       );
-      await expect(checkIn.closeMatchScreen).not.toContainText("you entered");
-      await expect(checkIn.closeMatchScreen).not.toContainText("you scanned");
-      await expect(checkIn.closeMatchScreen).not.toContainText("Scanned ISBN");
-      await expect(checkIn.closeMatchScreen).not.toContainText("Entered ISBN");
+      await expect(flow.closeMatchScreen).not.toContainText("you entered");
+      await expect(flow.closeMatchScreen).not.toContainText("you scanned");
+      await expect(flow.closeMatchScreen).not.toContainText("Scanned ISBN");
+      await expect(flow.closeMatchScreen).not.toContainText("Entered ISBN");
     });
 
     await test.step("wishlist it as a title search", async () => {
-      await checkIn.declineCloseMatch();
-      await checkIn.stubWishlistEntry(libraryCopy.uuid);
-      await expectMutation(scan.wishlist("search"), () =>
-        checkIn.addToWishlist(),
-      );
+      await flow.declineCloseMatch();
+      await flow.stubWishlistEntry(libraryCopy.uuid);
+      await expectMutation(scan.wishlist("search"), () => flow.addToWishlist());
     });
   });
 
-  test("say so when no title matches", async ({
+  test("show the empty state when no title matches", async ({
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const query = "no such book anywhere";
 
     await test.step("search for a title nobody has", async () => {
+      await flow.stubTitleSearch([]);
       await checkInPage.goto();
-      await expect(checkIn.titleSearchForm).toBeVisible();
-      await checkIn.stubTitleSearch([]);
-      await expectMutation(scan.search(query), () =>
-        checkIn.searchByTitle(query),
-      );
+      await expectMutation(scan.search(query), () => flow.searchByTitle(query));
     });
 
     await test.step("check the empty state shows", async () => {
-      await expect(checkIn.searchEmptyMessage).toBeVisible();
-      await expect(checkIn.searchResultButtons).toHaveCount(0);
+      await expect(flow.searchEmptyMessage).toBeVisible();
+      await expect(flow.searchResultButtons).toHaveCount(0);
     });
   });
 
@@ -176,20 +160,19 @@ test.describe("check-in title search", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
 
     await test.step("search while searches fail", async () => {
+      await flow.forceServerError(scan.search(QUERY));
       await checkInPage.goto();
-      await expect(checkIn.titleSearchForm).toBeVisible();
-      await checkIn.forceServerError(scanUrls.search);
       await expectMutation(failing(scan.search(QUERY)), () =>
-        checkIn.searchByTitle(QUERY),
+        flow.searchByTitle(QUERY),
       );
     });
 
     await test.step("check the error shows over the search", async () => {
-      await expect(checkIn.errorMessage).toBeVisible();
-      await expect(checkIn.titleSearchForm).toBeVisible();
+      await expect(flow.errorMessage).toBeVisible();
+      await expect(flow.titleSearchForm).toBeVisible();
     });
   });
 
@@ -197,21 +180,18 @@ test.describe("check-in title search", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
 
     await test.step("search by title", async () => {
+      await flow.stubTitleSearch([NAME_OF_THE_WIND]);
       await checkInPage.goto();
-      await expect(checkIn.titleSearchForm).toBeVisible();
-      await checkIn.stubTitleSearch([NAME_OF_THE_WIND]);
-      await expectMutation(scan.search(QUERY), () =>
-        checkIn.searchByTitle(QUERY),
-      );
+      await expectMutation(scan.search(QUERY), () => flow.searchByTitle(QUERY));
     });
 
     await test.step("check both ways in are still on screen", async () => {
-      await expect(checkIn.searchResultButtons).toHaveCount(1);
-      await expect(checkIn.isbnField).toBeVisible();
-      await expect(checkIn.scanBarcodeButton).toBeVisible();
+      await expect(flow.searchResultButtons).toHaveCount(1);
+      await expect(flow.isbnField).toBeVisible();
+      await expect(flow.scanBarcodeButton).toBeVisible();
     });
   });
 });

@@ -20,18 +20,15 @@ export class CheckInOverlayComponent extends CheckInFlowComponent {
 
   async close(): Promise<void> {
     await this.closeButton.click();
-    await this.root.waitFor({ state: "hidden" });
   }
 
   async closeByClickingOutside(): Promise<void> {
     // The top-left corner is scrim, well outside the centred card.
     await this.scrim.click({ position: { x: 8, y: 8 } });
-    await this.root.waitFor({ state: "hidden" });
   }
 
   async closeWithEscape(): Promise<void> {
     await this.page.keyboard.press("Escape");
-    await this.root.waitFor({ state: "hidden" });
   }
 
   /** The overlay is gone and left nothing of itself on the page. */

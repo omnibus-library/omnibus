@@ -11,8 +11,9 @@ export type ExternalBookMeta = {
   publisher: string | null;
   description: string | null;
   cover_url: string | null;
-  series: string | null;
-  first_publish_year: number | null;
+  /** Omitted on the wire when unknown, as is `first_publish_year`. */
+  series?: string;
+  first_publish_year?: number;
   source: "open_library";
 };
 
@@ -43,6 +44,9 @@ export type ScanOutcome =
     }
   | { kind: "not_in_library"; online: ExternalBookMeta }
   | { kind: "unresolved" };
+
+/** How the reader found a book they wished for (`WishlistSource`). */
+export type WishlistSource = "scan" | "detail" | "manual" | "search";
 
 /** What every check-in write answers (`BookRef`): the book it filed against. */
 export type BookRef = { book_uuid: string };
@@ -130,8 +134,6 @@ export function buildExternalBook(
     publisher: null,
     description: null,
     cover_url: null,
-    series: null,
-    first_publish_year: null,
     source: "open_library",
     ...overrides,
   };

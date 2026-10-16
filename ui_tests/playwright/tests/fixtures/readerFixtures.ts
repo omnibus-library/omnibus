@@ -2,8 +2,8 @@ import type { APIRequestContext } from "@playwright/test";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import type { ExternalBookMeta, Wish } from "../data/scan";
-import type { Shelf } from "../data/shelves";
-import { test as base, expect } from "./libraryFixtures";
+import { wishlistOf } from "../data/shelves";
+import { test as base, expect } from "./pageFixtures";
 import { newBearerContext } from "./test";
 
 type ReaderFixtures = {
@@ -53,19 +53,12 @@ export const test = base.extend<ReaderFixtures>({
       const added = await readerScanRequests.postWishlistEntry(book);
       await expect(added).toBeOK();
       const { book_uuid: uuid } = await added.json();
-      createdBookUuids.push(uuid);
+      createdBookUuids.add(uuid);
 
       const listed = await readerShelvesRequests.getShelves();
       await expect(listed).toBeOK();
-      const shelves: Shelf[] = await listed.json();
-      const wishlist = shelves.find(
-        (shelf) =>
-          shelf.kind === "wishlist" && shelf.owner_user_id === readerAccount.id,
-      );
-      if (!wishlist) {
-        throw new Error(`${readerAccount.username} has no Wishlist shelf`);
-      }
-      return { ...book, uuid, shelf: { id: wishlist.id, name: wishlist.name } };
+      const shelf = wishlistOf(await listed.json(), readerAccount.id);
+      return { ...book, uuid, shelf };
     });
   },
 });

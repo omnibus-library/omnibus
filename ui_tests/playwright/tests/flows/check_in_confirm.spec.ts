@@ -1,4 +1,4 @@
-import { scan, scanUrls } from "../contracts/scan";
+import { scan } from "../contracts/scan";
 import {
   alreadyOwned,
   buildExternalBook,
@@ -13,85 +13,82 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Where a resolved ISBN lands past the lookup: the in-library confirm, the
-// fuzzy (title, author) close match, the wishlist check-in, and the
-// already-owned jump to the book's page. The providers are stubbed, and so is
-// the check-in write: `physical_collection.spec.ts` reads `standalone-island`,
-// so a real copy filed on it here would leak into that spec. The real write
-// runs in `check_in_link_existing.spec.ts`, on a book reserved for it.
+// Check-ins are stubbed: `physical_collection.spec.ts` reads TARGET, so a real
+// copy filed here would leak into it. `check_in_link_existing` writes for real.
 
 const ISBN = "9780441013593";
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-island")!;
+const STUB_UUID = "island-uuid";
 const LIBRARY_ISBN = "9780000000000";
 
-test.describe("check-in confirm and close match", () => {
+test.describe("check-in lookup outcomes", () => {
   test.beforeAll("seed the library", async ({ request }) => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  test("word the confirm for a print-only book", async ({
-    request,
+  test("call a print-only book a print copy", async ({
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const flow = checkInPage.flow;
 
     // A paper-only row: no file, a copy already filed (#2525).
     await test.step("look up a print-only library book", async () => {
-      await checkIn.stubIsbnLookup(
+      await flow.stubIsbnLookup(
         inLibraryUnowned(
-          libraryBook(TARGET, uuid, { has_files: false, has_physical: true }),
+          libraryBook(TARGET, STUB_UUID, {
+            has_files: false,
+            has_physical: true,
+          }),
         ),
       );
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
     });
 
     await test.step("check the confirm calls it a print copy", async () => {
-      await expect(checkIn.confirmScreen).not.toContainText("digitally");
-      await expect(checkIn.confirmScreen).toContainText("print copy");
+      await expect(flow.confirmScreen).not.toContainText("digitally");
+      await expect(flow.confirmScreen).toContainText("print copy");
     });
   });
 
   test("check in a copy of a digital book after an exact isbn match", async ({
-    request,
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const flow = checkInPage.flow;
+    const book = { uuid: STUB_UUID, isbn13: ISBN };
     const note = "Trade paperback, 2nd printing";
 
     await test.step("look up the digital book", async () => {
-      await checkIn.stubIsbnLookup(inLibraryUnowned(libraryBook(TARGET, uuid)));
+      await flow.stubIsbnLookup(
+        inLibraryUnowned(libraryBook(TARGET, book.uuid)),
+      );
+      await flow.stubCheckIn(book.uuid);
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
     });
 
     // Typed at the lookup field, so the line must not call it a scan (#2247).
     await test.step("check the confirm describes the match", async () => {
-      await expect(checkIn.bookCards).toContainText(TARGET.title);
-      await expect(checkIn.confirmScreen).toContainText(
+      await expect(flow.bookCards).toContainText(TARGET.title);
+      await expect(flow.confirmScreen).toContainText(
         "You already have this one digitally",
       );
-      await expect(checkIn.confirmScreen).toContainText(`Entered ISBN ${ISBN}`);
+      await expect(flow.confirmScreen).toContainText(`Entered ISBN ${ISBN}`);
     });
 
     await test.step("check in the copy with an edition note", async () => {
-      await checkIn.enterNote(note);
-      await checkIn.stubCheckIn(uuid);
-      await expectMutation(scan.checkIn({ uuid, isbn13: ISBN }, note), () =>
-        checkIn.checkInCopy(),
-      );
+      await flow.enterNote(note);
+      await expectMutation(scan.checkIn(book, note), () => flow.checkInCopy());
     });
 
-    await test.step("check the success screen", async () => {
-      await expect(checkIn.successScreen).toContainText(
+    await test.step("check the copy joined the collection", async () => {
+      await expect(flow.successScreen).toContainText(
         "In your physical collection",
       );
-      await expect(checkIn.successScreen).toContainText(TARGET.title);
-      await expect(checkIn.viewBookLink).toBeVisible();
+      await expect(flow.successScreen).toContainText(TARGET.title);
+      await expect(flow.viewBookLink).toBeVisible();
     });
   });
 
@@ -99,21 +96,21 @@ test.describe("check-in confirm and close match", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
 
     await test.step("look up a library book", async () => {
-      await checkIn.stubIsbnLookup(
-        inLibraryUnowned(libraryBook(TARGET, "island-uuid")),
+      await flow.stubIsbnLookup(
+        inLibraryUnowned(libraryBook(TARGET, STUB_UUID)),
       );
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
-      await expect(checkIn.confirmScreen).toBeVisible();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+      await expect(flow.confirmScreen).toBeVisible();
     });
 
     await test.step("cancel the confirm", async () => {
-      await checkIn.cancelConfirmation();
-      await expect(checkIn.lookupScreen).toBeVisible();
-      await expect(checkIn.isbnField).toHaveValue("");
+      await flow.cancelConfirmation();
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.isbnField).toHaveValue("");
     });
   });
 
@@ -121,36 +118,36 @@ test.describe("check-in confirm and close match", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
-    const book = { uuid: "island-uuid", isbn13: ISBN };
+    const flow = checkInPage.flow;
+    const book = { uuid: STUB_UUID, isbn13: ISBN };
 
     await test.step("look up a library book", async () => {
-      await checkIn.stubIsbnLookup(
+      await flow.stubIsbnLookup(
         inLibraryUnowned(libraryBook(TARGET, book.uuid)),
       );
+      await flow.forceServerError(scan.checkIn(book));
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
-      await expect(checkIn.confirmScreen).toBeVisible();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+      await expect(flow.confirmScreen).toBeVisible();
     });
 
     await test.step("check in while check-ins fail", async () => {
-      await checkIn.forceServerError(scanUrls.checkIn);
       await expectMutation(failing(scan.checkIn(book)), () =>
-        checkIn.checkInCopy(),
+        flow.checkInCopy(),
       );
     });
 
     await test.step("check the error shows over the confirm", async () => {
-      await expect(checkIn.errorMessage).toBeVisible();
-      await expect(checkIn.confirmScreen).toBeVisible();
+      await expect(flow.errorMessage).toBeVisible();
+      await expect(flow.confirmScreen).toBeVisible();
     });
   });
 
-  test("confirm a close match into the check-in confirm", async ({
+  test("confirm a close match before checking in", async ({
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const scanned = buildExternalBook({
       isbn13: ISBN,
       title: "A Fuzzy-Matched Title",
@@ -158,30 +155,30 @@ test.describe("check-in confirm and close match", () => {
     });
 
     await test.step("look up an isbn with one close match", async () => {
-      await checkIn.stubIsbnLookup(
+      await flow.stubIsbnLookup(
         closeMatch(scanned, [
-          libraryBook(TARGET, "island-uuid", { isbn: LIBRARY_ISBN }),
+          libraryBook(TARGET, STUB_UUID, { isbn: LIBRARY_ISBN }),
         ]),
       );
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
     });
 
     await test.step("check both isbns are shown", async () => {
-      await expect(checkIn.closeMatchScreen).toBeVisible();
-      await expect(checkIn.screenHeading).toHaveText("Is this the book?");
-      await expect(checkIn.closeMatchScreen).toContainText(
+      await expect(flow.closeMatchScreen).toBeVisible();
+      await expect(flow.screenHeading).toHaveText("Is this the book?");
+      await expect(flow.closeMatchScreen).toContainText(
         `Entered ISBN ${scanned.isbn13}`,
       );
-      await expect(checkIn.closeMatchScreen).toContainText(
+      await expect(flow.closeMatchScreen).toContainText(
         `Library edition ISBN ${LIBRARY_ISBN}`,
       );
     });
 
     await test.step("confirm the match", async () => {
-      await checkIn.pickCloseMatch(0);
-      await expect(checkIn.confirmScreen).toBeVisible();
-      await expect(checkIn.confirmScreen).toContainText(
+      await flow.pickCloseMatch(TARGET.title);
+      await expect(flow.confirmScreen).toBeVisible();
+      await expect(flow.confirmScreen).toContainText(
         `Entered ISBN ${scanned.isbn13}`,
       );
     });
@@ -193,7 +190,7 @@ test.describe("check-in confirm and close match", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const scanned = buildExternalBook({
       isbn13: ISBN,
       title: "A Fuzzy-Matched Title",
@@ -202,7 +199,7 @@ test.describe("check-in confirm and close match", () => {
     const audiobookTitle = `${TARGET.title} (Unabridged)`;
 
     await test.step("look up an isbn with two close matches", async () => {
-      await checkIn.stubIsbnLookup(
+      await flow.stubIsbnLookup(
         closeMatch(scanned, [
           libraryBook(TARGET, "epub-uuid", { isbn: LIBRARY_ISBN }),
           libraryBook(
@@ -212,20 +209,20 @@ test.describe("check-in confirm and close match", () => {
         ]),
       );
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
     });
 
     await test.step("check both books are offered", async () => {
-      await expect(checkIn.screenHeading).toHaveText("Which one is this?");
-      await expect(checkIn.closeMatchPickButtons).toHaveCount(2);
-      await expect(checkIn.bookCards).toHaveCount(2);
+      await expect(flow.screenHeading).toHaveText("Which one is this?");
+      await expect(flow.closeMatchPickButtons).toHaveCount(2);
+      await expect(flow.bookCards).toHaveCount(2);
     });
 
     // The second candidate is the one only a picker can reach.
-    await test.step("pick the second book", async () => {
-      await checkIn.pickCloseMatch(1);
-      await expect(checkIn.confirmScreen).toBeVisible();
-      await expect(checkIn.bookCards).toContainText(audiobookTitle);
+    await test.step("pick the audiobook", async () => {
+      await flow.pickCloseMatch(audiobookTitle);
+      await expect(flow.confirmScreen).toBeVisible();
+      await expect(flow.bookCards).toContainText(audiobookTitle);
     });
   });
 
@@ -233,7 +230,7 @@ test.describe("check-in confirm and close match", () => {
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const scanned = buildExternalBook({
       isbn13: ISBN,
       title: "Definitely Not That Book",
@@ -241,18 +238,18 @@ test.describe("check-in confirm and close match", () => {
     });
 
     await test.step("look up an isbn with a close match", async () => {
-      await checkIn.stubIsbnLookup(
-        closeMatch(scanned, [libraryBook(TARGET, "island-uuid")]),
+      await flow.stubIsbnLookup(
+        closeMatch(scanned, [libraryBook(TARGET, STUB_UUID)]),
       );
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
-      await expect(checkIn.closeMatchScreen).toBeVisible();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+      await expect(flow.closeMatchScreen).toBeVisible();
     });
 
     await test.step("decline the match", async () => {
-      await checkIn.declineCloseMatch();
-      await expect(checkIn.chooseScreen).toBeVisible();
-      await expect(checkIn.bookCards).toContainText(scanned.title);
+      await flow.declineCloseMatch();
+      await expect(flow.chooseScreen).toBeVisible();
+      await expect(flow.bookCards).toContainText(scanned.title);
     });
   });
 
@@ -262,63 +259,58 @@ test.describe("check-in confirm and close match", () => {
     bookDetailPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
+    const flow = checkInPage.flow;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("look up a book that already has a copy", async () => {
-      await checkIn.stubIsbnLookup(
+      await flow.stubIsbnLookup(
         alreadyOwned(libraryBook(TARGET, uuid, { has_physical: true })),
       );
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
     });
 
     await test.step("check the book's page opens instead", async () => {
       await bookDetailPage.assertDisplayedFor(uuid);
       await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
-      await expect(checkIn.root).toHaveCount(0);
+      await expect(flow.root).toHaveCount(0);
     });
   });
 
   // The book they wished for is the one they now hold, so the flow offers to
   // file it rather than sending them to its page.
   test("check in a wishlisted book from the lookup", async ({
-    request,
     checkInPage,
     expectMutation,
   }) => {
-    const checkIn = checkInPage.flow;
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const flow = checkInPage.flow;
+    const book = { uuid: STUB_UUID, isbn13: ISBN };
 
     await test.step("look up a book on the wishlist", async () => {
-      await checkIn.stubIsbnLookup(
-        onWishlist(libraryBook(TARGET, uuid, { has_files: false })),
+      await flow.stubIsbnLookup(
+        onWishlist(libraryBook(TARGET, book.uuid, { has_files: false })),
       );
+      await flow.stubCheckIn(book.uuid);
       await checkInPage.goto();
-      await expectMutation(scan.resolve(), () => checkIn.lookUpIsbn(ISBN));
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
     });
 
     await test.step("check the confirm offers to file it", async () => {
       await checkInPage.assertDisplayed();
-      await expect(checkIn.confirmScreen).toContainText("on your wishlist");
-      await expect(checkIn.bookCards).toContainText(TARGET.title);
+      await expect(flow.confirmScreen).toContainText("on your wishlist");
+      await expect(flow.bookCards).toContainText(TARGET.title);
     });
 
     await test.step("check in the copy", async () => {
-      await checkIn.stubCheckIn(uuid);
-      await expectMutation(scan.checkIn({ uuid, isbn13: ISBN }), () =>
-        checkIn.checkInCopy(),
-      );
+      await expectMutation(scan.checkIn(book), () => flow.checkInCopy());
     });
 
-    await test.step("check the entry left the wishlist", async () => {
-      await expect(checkIn.successScreen).toContainText(
+    await test.step("check the copy left the wishlist", async () => {
+      await expect(flow.successScreen).toContainText(
         "In your physical collection",
       );
-      await expect(checkIn.successScreen).toContainText(TARGET.title);
-      await expect(checkIn.offWishlistMessage).toContainText(
-        "off your wishlist",
-      );
+      await expect(flow.successScreen).toContainText(TARGET.title);
+      await expect(flow.offWishlistMessage).toContainText("off your wishlist");
     });
   });
 });

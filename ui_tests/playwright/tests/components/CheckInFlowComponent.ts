@@ -2,7 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import { paletteUrls } from "../contracts/palette";
 import { scanUrls } from "../contracts/scan";
 import type { ExternalBookMeta, ScanOutcome } from "../data/scan";
-import { isPostTo } from "../utils/api";
+import { type ExpectMutationOptions, isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /**
@@ -34,8 +34,8 @@ export class CheckInFlowComponent extends BaseComponent {
   readonly searchByTitleButton: Locator;
 
   readonly keypadScreen: Locator;
-  readonly keypad: Locator;
   readonly isbnProgressStrip: Locator;
+  private readonly keypad: Locator;
 
   readonly unresolvedScreen: Locator;
   readonly searchByTitleInsteadButton: Locator;
@@ -76,7 +76,7 @@ export class CheckInFlowComponent extends BaseComponent {
     super(page);
     this.screenHeading = root.getByRole("heading", { level: 1 });
     this.errorMessage = root.getByRole("alert");
-    this.cancelLink = root.getByRole("link", { name: "Cancel check-in" });
+    this.cancelLink = root.getByTestId("check-in-close");
 
     this.lookupScreen = root.getByTestId("check-in-lookup");
     this.isbnField = root.getByLabel("ISBN");
@@ -107,8 +107,8 @@ export class CheckInFlowComponent extends BaseComponent {
     });
 
     this.keypadScreen = root.getByTestId("check-in-entry");
-    this.keypad = root.getByTestId("check-in-keypad");
     this.isbnProgressStrip = root.getByTestId("check-in-isbn-progress");
+    this.keypad = root.getByTestId("check-in-keypad");
 
     this.unresolvedScreen = root.getByTestId("check-in-unresolved");
     this.searchByTitleInsteadButton = root.getByRole("button", {
@@ -165,6 +165,25 @@ export class CheckInFlowComponent extends BaseComponent {
     return this.keypad.getByRole("button", { name: key, exact: true });
   }
 
+  /** The title search result for the book titled exactly `title`. */
+  searchResultButton(title: string): Locator {
+    return this.searchResultButtons.filter({ has: this.titleText(title) });
+  }
+
+  /** The pick button beside the close match titled exactly `title`. */
+  closeMatchPickButton(title: string): Locator {
+    return this.pickerRow(this.closeMatchScreen, title).getByTestId(
+      "check-in-close-match-pick",
+    );
+  }
+
+  /** The pick button beside the library book titled exactly `title`. */
+  linkPickButton(title: string): Locator {
+    return this.pickerRow(this.linkResultsList, title).getByTestId(
+      "check-in-link-pick",
+    );
+  }
+
   /** Answers every ISBN lookup from this page with `outcome`. */
   async stubIsbnLookup(outcome: ScanOutcome): Promise<void> {
     await this.stubPost(scanUrls.resolve, outcome);
@@ -195,10 +214,10 @@ export class CheckInFlowComponent extends BaseComponent {
     await this.stubPost(scanUrls.wishlist, { book_uuid: bookUuid });
   }
 
-  /** Fails every POST to `url` from this page with a 500. */
-  async forceServerError(url: RegExp): Promise<void> {
-    await this.page.route(url, (route) =>
-      route.request().method() === "POST"
+  /** Fails every request `contract` describes from this page with a 500. */
+  async forceServerError(contract: ExpectMutationOptions): Promise<void> {
+    await this.page.route(contract.url, (route) =>
+      route.request().method() === contract.method
         ? route.fulfill({
             status: 500,
             contentType: "text/plain",
@@ -230,9 +249,9 @@ export class CheckInFlowComponent extends BaseComponent {
     await searched;
   }
 
-  async pickSearchResult(index: number): Promise<void> {
+  async pickSearchResult(title: string): Promise<void> {
     const picked = this.page.waitForResponse(isPostTo(scanUrls.resolveMeta));
-    await this.searchResultButtons.nth(index).click();
+    await this.searchResultButton(title).click();
     await picked;
   }
 
@@ -276,8 +295,8 @@ export class CheckInFlowComponent extends BaseComponent {
     await this.cancelButton.click();
   }
 
-  async pickCloseMatch(index: number): Promise<void> {
-    await this.closeMatchPickButtons.nth(index).click();
+  async pickCloseMatch(title: string): Promise<void> {
+    await this.closeMatchPickButton(title).click();
   }
 
   async declineCloseMatch(): Promise<void> {
@@ -308,8 +327,8 @@ export class CheckInFlowComponent extends BaseComponent {
     await searched;
   }
 
-  async pickLinkResult(index: number): Promise<void> {
-    await this.linkPickButtons.nth(index).click();
+  async pickLinkResult(title: string): Promise<void> {
+    await this.linkPickButton(title).click();
   }
 
   async backToChooser(): Promise<void> {
@@ -323,6 +342,15 @@ export class CheckInFlowComponent extends BaseComponent {
   /** Leaves the flow through its own × link, back to the library. */
   async cancelCheckIn(): Promise<void> {
     await this.cancelLink.click();
+  }
+
+  private titleText(title: string): Locator {
+    return this.page.getByText(title, { exact: true });
+  }
+
+  /** A picker row: a library book's card beside its own pick button. */
+  private pickerRow(list: Locator, title: string): Locator {
+    return list.getByRole("listitem").filter({ has: this.titleText(title) });
   }
 
   private async stubPost(url: RegExp, json: unknown): Promise<void> {
