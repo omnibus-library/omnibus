@@ -101,10 +101,18 @@ test.describe("settings page", () => {
 });
 ```
 
-**Error path:** add a stub method to the page object that fulfils the route
-with a 500, call it before the action, and keep the `expectMutation` with
-`expectedStatus: 500` so the request is still proven to fire. Assert the UI
-surfaces the error.
+**Error path:** call the page object's `forceServerError(url)` (or add a stub
+method like it) before the action, and keep the `expectMutation`, wrapping its
+contract in `failing(…)` from `utils/api.ts` so the request is still proven to
+fire with a 500. Assert the UI surfaces the error.
+
+```ts
+await checkIn.forceServerError(scanUrls.search);
+await expectMutation(failing(scan.search(query)), () =>
+  checkIn.searchByTitle(query),
+);
+await expect(checkIn.errorMessage).toBeVisible();
+```
 
 ## 5. Selector preference order
 

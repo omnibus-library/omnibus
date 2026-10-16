@@ -63,8 +63,8 @@ control that no longer exists.
 
 - The section's `gallery-all-shelves` link **navigates** to the `/shelves`
   index, whose cards (`shelf-card-<id>`) then open `/shelves/:id` — use
-  `openShelfFromIndex()` from `utils/shelves.ts`, never a bare `page.goto` to
-  an id.
+  `openShelfFromIndex()` from `utils/shelves.ts` (`ShelfPage.goto(id)` in a
+  page-object spec), never a bare `page.goto` to an id.
 - Selecting a shelf *card* in that same section **does not navigate**: it
   filters the book list in place. Open one with `selectShelfInGallery()` and
   assert against the landing surface — `lib-section-title` for the name,
