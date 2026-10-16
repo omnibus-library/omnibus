@@ -2,8 +2,13 @@ import type { APIResponse } from "@playwright/test";
 import type { Credentials } from "../data/users";
 import { BaseRequests } from "./BaseRequests";
 
-/** Sign-in. Rate limited to 10 calls a minute per IP, so call it sparingly. */
+/** Sign-in, rate limited to 10 calls a minute per IP, and who is signed in. */
 export class AuthRequests extends BaseRequests {
+  /** Returns the context's user, `{ id, username, is_admin, … }`. */
+  getMe(): Promise<APIResponse> {
+    return this.get("/api/auth/me");
+  }
+
   /** Sets the session cookie on this context. */
   postCookieLogin(credentials: Credentials): Promise<APIResponse> {
     return this.post("/api/auth/login", credentials);

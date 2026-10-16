@@ -1,6 +1,8 @@
 import type { Request, Response } from "@playwright/test";
 import { BookDetailPage } from "../pages/BookDetailPage";
+import { CheckInPage } from "../pages/CheckInPage";
 import { LibraryPage } from "../pages/LibraryPage";
+import { ShelfPage } from "../pages/ShelfPage";
 import {
   type ExpectMutationOptions,
   expectMutation as expectMutationOn,
@@ -17,6 +19,8 @@ type PageFixtures = {
   expectMutation: ExpectMutation;
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
+  checkInPage: CheckInPage;
+  shelfPage: ShelfPage;
 };
 
 export const test = base.extend<PageFixtures>({
@@ -28,6 +32,12 @@ export const test = base.extend<PageFixtures>({
   },
   bookDetailPage: async ({ page }, use) => {
     await use(new BookDetailPage(page));
+  },
+  checkInPage: async ({ page }, use) => {
+    await use(new CheckInPage(page));
+  },
+  shelfPage: async ({ page }, use) => {
+    await use(new ShelfPage(page));
   },
 });
 

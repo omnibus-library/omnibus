@@ -68,3 +68,10 @@ export function isPostTo(url: RegExp): (response: Response) => boolean {
   return (response) =>
     response.request().method() === "POST" && url.test(response.url());
 }
+
+/** `contract` answered by a server error, as a forced-failure stub returns. */
+export function failing(
+  contract: ExpectMutationOptions,
+): ExpectMutationOptions {
+  return { ...contract, expectedStatus: 500 };
+}

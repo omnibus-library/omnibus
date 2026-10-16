@@ -30,30 +30,80 @@ export type ScanBook = {
   isbn?: string;
 };
 
-/** What an ISBN lookup answers (`ScanOutcome`), for the outcomes specs stub. */
+/** What an ISBN lookup or a search pick answers (`ScanOutcome`). */
 export type ScanOutcome =
+  | { kind: "already_owned"; book: ScanBook }
+  | { kind: "on_wishlist"; book: ScanBook }
   | { kind: "in_library_unowned"; book: ScanBook }
-  | { kind: "not_in_library"; online: ExternalBookMeta };
+  | {
+      kind: "close_match";
+      book: ScanBook;
+      others: ScanBook[];
+      scanned: ExternalBookMeta;
+    }
+  | { kind: "not_in_library"; online: ExternalBookMeta }
+  | { kind: "unresolved" };
+
+/** What every check-in write answers (`BookRef`): the book it filed against. */
+export type BookRef = { book_uuid: string };
+
+/** `uuid`'s row as a lookup reports it: a book with files and no copy yet. */
+export function libraryBook(
+  book: Pick<ScanBook, "title" | "authors">,
+  uuid: string,
+  overrides: Partial<ScanBook> = {},
+): ScanBook {
+  return {
+    uuid,
+    title: book.title,
+    authors: book.authors,
+    cover_url: null,
+    has_physical: false,
+    has_files: true,
+    ...overrides,
+  };
+}
+
+/** A wished-for book's row once its first copy is filed. */
+export function filedBook(wish: Wish): ScanBook {
+  return libraryBook(wish, wish.uuid, {
+    has_physical: true,
+    has_files: false,
+    isbn: wish.isbn13,
+  });
+}
+
+/** The lookup of a book that already has a physical copy. */
+export function alreadyOwned(book: ScanBook): ScanOutcome {
+  return { kind: "already_owned", book };
+}
+
+/** The lookup of a book on the reader's wishlist. */
+export function onWishlist(book: ScanBook): ScanOutcome {
+  return { kind: "on_wishlist", book };
+}
+
+/** The lookup of a book in the library with no copy of the reader's. */
+export function inLibraryUnowned(book: ScanBook): ScanOutcome {
+  return { kind: "in_library_unowned", book };
+}
+
+/** A provider answer whose title and author matched these library books. */
+export function closeMatch(
+  scanned: ExternalBookMeta,
+  [book, ...others]: [ScanBook, ...ScanBook[]],
+): ScanOutcome {
+  return { kind: "close_match", book, others, scanned };
+}
 
 /** The lookup of a book only the metadata providers know. */
 export function notInLibrary(book: ExternalBookMeta): ScanOutcome {
   return { kind: "not_in_library", online: book };
 }
 
-/** The lookup of a book in the library with no copy of the reader's. */
-export function inLibraryUnowned(wish: Wish): ScanOutcome {
-  return {
-    kind: "in_library_unowned",
-    book: {
-      uuid: wish.uuid,
-      title: wish.title,
-      authors: wish.authors,
-      cover_url: null,
-      has_physical: true,
-      has_files: false,
-      isbn: wish.isbn13,
-    },
-  };
+/** The lookup of an ISBN neither the library nor any provider knows. */
+export function unresolved(): ScanOutcome {
+  return { kind: "unresolved" };
 }
 
 /** A valid ISBN-13 under the 979 prefix, which no fixture uses. */

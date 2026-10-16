@@ -10,12 +10,14 @@ export class LibraryPage extends BasePage {
   readonly topNav: TopNavComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
 
+  readonly titleHeading: Locator;
   readonly sectionTitle: Locator;
 
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
+    this.titleHeading = page.getByRole("heading", { level: 1 });
     this.sectionTitle = page.getByTestId("lib-section-title");
   }
 

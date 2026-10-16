@@ -1,7 +1,9 @@
 import { scan } from "../contracts/scan";
 import type { PhysicalCopy } from "../data/physical";
 import {
+  type BookRef,
   buildExternalBook,
+  filedBook,
   inLibraryUnowned,
   notInLibrary,
 } from "../data/scan";
@@ -61,7 +63,7 @@ test.describe("wishlist check-in", () => {
     await test.step("find the wishlist entry", async () => {
       await expectMutation(scan.resolve(), () => overlay.findBook());
       await expect(overlay.confirmScreen).toContainText("on your wishlist");
-      await expect(overlay.bookCard).toContainText(wish.title);
+      await expect(overlay.bookCards).toContainText(wish.title);
     });
 
     await test.step("check in the copy", async () => {
@@ -123,7 +125,7 @@ test.describe("wishlist check-in", () => {
 
     await test.step("check in a second copy from the top nav", async () => {
       // A filed book resolves as already owned, which navigates, not confirms.
-      await overlay.stubIsbnLookup(inLibraryUnowned(wish));
+      await overlay.stubIsbnLookup(inLibraryUnowned(filedBook(wish)));
       await bookDetailPage.topNav.openCheckIn();
       await overlay.enterIsbn(wish.isbn13);
       await expectMutation(scan.resolve(), () => overlay.findBook());
@@ -160,10 +162,11 @@ test.describe("wishlist check-in", () => {
       await libraryPage.topNav.openCheckIn();
       await overlay.enterIsbn(added.isbn13);
       await expectMutation(scan.resolve(), () => overlay.findBook());
-      const { result } = await expectMutation(scan.wishlist(), () =>
+      const { response } = await expectMutation(scan.wishlist(), () =>
         overlay.addToWishlist(),
       );
-      createdBookUuids.push(result.book_uuid);
+      const created: BookRef = await response.json();
+      createdBookUuids.push(created.book_uuid);
       await expect(overlay.successScreen).toContainText(added.title);
       await overlay.close();
     });
