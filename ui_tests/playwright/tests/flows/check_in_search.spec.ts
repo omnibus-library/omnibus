@@ -1,295 +1,197 @@
-import type { Page } from "@playwright/test";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { gotoReady } from "../utils/nav";
+import { scan } from "../contracts/scan";
+import {
+  buildExternalBook,
+  closeMatch,
+  libraryBook,
+  notInLibrary,
+} from "../data/scan";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 
-// The title search rides on provider RPCs, so every network edge is mocked:
-// search (candidate list) and resolve-meta (the pick). Real provider behavior
-// is covered by the `omnibus_db` wiremock suites. The search form lives on the
-// lookup front door — its layout is asserted in `check_in_lookup.spec.ts`.
+// The title search and its pick call the providers, so these tests stub both.
 
-function candidate(
-  over: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    isbn13: "9780756404741",
-    title: "The Name of the Wind",
-    authors: ["Patrick Rothfuss"],
-    year: "2008",
-    pages: 662,
-    publisher: "DAW Books",
-    description: null,
-    cover_url: null,
-    series: "The Kingkiller Chronicle",
-    first_publish_year: 2007,
-    source: "open_library",
-    ...over,
-  };
-}
-
-async function mockJsonPost(
-  page: Page,
-  url: string | RegExp,
-  body: unknown,
-): Promise<void> {
-  await page.route(url, (route) =>
-    route.request().method() === "POST"
-      ? route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(body),
-        })
-      : route.continue(),
-  );
-}
-
-/// The search form is on the flow's front door, so reaching it is just
-/// opening check-in — no ISBN has to fail first.
-async function reachSearch(page: Page): Promise<void> {
-  await gotoReady(page, "/check-in");
-  await expect(page.getByTestId("check-in-search")).toBeVisible();
-}
-
-/// The other route onto the same form: off the scanner's "Search by title",
-/// which is how the mobile shell — where the camera is the front door — gets
-/// here without attempting an ISBN at all.
-async function reachSearchFromScanner(page: Page): Promise<void> {
-  await gotoReady(page, "/check-in");
-  await page.getByTestId("check-in-scan-instead").click();
-  await page.getByTestId("check-in-search-by-title").click();
-  await expect(page.getByTestId("check-in-search")).toBeVisible();
-}
+const QUERY = "name of the wind";
+const NAME_OF_THE_WIND = buildExternalBook({
+  title: "The Name of the Wind",
+  authors: ["Patrick Rothfuss"],
+  year: "2008",
+  pages: 662,
+  publisher: "DAW Books",
+  series: "The Kingkiller Chronicle",
+  first_publish_year: 2007,
+});
 
 test.describe("check-in title search", () => {
-  test("searches by title and picks a candidate into the chooser", async ({
-    page,
+  test("pick a title search result into the chooser", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    await reachSearch(page);
-    await mockJsonPost(page, "**/api/rpc/scan/search", {
-      results: [
-        candidate(),
-        candidate({
-          isbn13: "9780756405892",
-          title: "The Wise Man's Fear",
-          series: null,
-          first_publish_year: 2011,
-        }),
-      ],
+    const flow = checkInPage.flow;
+    const sequel = buildExternalBook({
+      title: "The Wise Man's Fear",
+      authors: ["Patrick Rothfuss"],
+      first_publish_year: 2011,
     });
 
-    await page.getByLabel("Title").fill("name of the wind");
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/scan/search",
-        expectedBody: { req: { query: "name of the wind" } },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-search-submit").click(),
-    );
-
-    const rows = page.getByTestId("check-in-search-result");
-    await expect(rows).toHaveCount(2);
-    // The provider facts the scan asked for: series + first-publish year.
-    await expect(rows.nth(0)).toContainText("The Kingkiller Chronicle");
-    await expect(rows.nth(0)).toContainText("First published 2007");
-    await expect(rows.nth(0)).toContainText("DAW Books");
-    await expect(rows.nth(0)).toContainText("662 pages");
-
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve-meta$/, {
-      kind: "not_in_library",
-      online: candidate(),
+    await test.step("search by title", async () => {
+      await flow.stubTitleSearch([NAME_OF_THE_WIND, sequel]);
+      await checkInPage.goto();
+      await expectMutation(scan.search(QUERY), () => flow.searchByTitle(QUERY));
     });
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve-meta$/,
-        expectedStatus: 200,
-      },
-      async () => rows.nth(0).click(),
-    );
 
-    // The pick lands on the normal 3c chooser, richer card included.
-    await expect(page.getByTestId("check-in-choose")).toBeVisible();
-    await expect(page.getByTestId("check-in-book-series")).toHaveText(
-      "The Kingkiller Chronicle",
-    );
-    await expect(page.getByTestId("check-in-book-detail")).toContainText(
-      "First published 2007",
-    );
-    await expect(page.getByTestId("check-in-own-it")).toBeVisible();
-    await expect(page.getByTestId("check-in-wishlist")).toBeVisible();
+    await test.step("check each result shows its provider facts", async () => {
+      const result = flow.searchResultButton(NAME_OF_THE_WIND.title);
+      await expect(flow.searchResultButtons).toHaveCount(2);
+      await expect(result).toContainText("The Kingkiller Chronicle");
+      await expect(result).toContainText("First published 2007");
+      await expect(result).toContainText("DAW Books");
+      await expect(result).toContainText("662 pages");
+    });
+
+    await test.step("pick the book from the results", async () => {
+      await flow.stubSearchPick(notInLibrary(NAME_OF_THE_WIND));
+      await expectMutation(scan.resolveMeta(NAME_OF_THE_WIND), () =>
+        flow.pickSearchResult(NAME_OF_THE_WIND.title),
+      );
+    });
+
+    await test.step("check the chooser shows the richer card", async () => {
+      await expect(flow.chooseScreen).toBeVisible();
+      await expect(flow.bookSeriesText).toHaveText("The Kingkiller Chronicle");
+      await expect(flow.bookDetailText).toContainText("First published 2007");
+      await expect(flow.ownItButton).toBeVisible();
+      await expect(flow.addToWishlistButton).toBeVisible();
+    });
   });
 
-  test("searches and picks after arriving from the scanner", async ({
-    page,
+  // The mobile shell opens on the camera, so it reaches the search this way.
+  test("pick a title search result reached from the scanner", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    await reachSearchFromScanner(page);
-    await mockJsonPost(page, "**/api/rpc/scan/search", {
-      results: [candidate()],
+    const flow = checkInPage.flow;
+
+    await test.step("open the title search from the scanner", async () => {
+      await flow.stubTitleSearch([NAME_OF_THE_WIND]);
+      await flow.stubSearchPick(notInLibrary(NAME_OF_THE_WIND));
+      await checkInPage.goto();
+      await flow.openScanner();
+      await flow.openTitleSearch();
+      await expect(flow.titleSearchForm).toBeVisible();
     });
 
-    // Nothing was looked up on the way here, so the screen must arrive clean.
-    await expect(page.getByTestId("check-in-error")).toHaveCount(0);
-    await expect(page.getByTestId("check-in-search-empty")).toHaveCount(0);
-
-    await page.getByLabel("Title").fill("name of the wind");
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/scan/search",
-        expectedBody: { req: { query: "name of the wind" } },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-search-submit").click(),
-    );
-
-    const rows = page.getByTestId("check-in-search-result");
-    await expect(rows).toHaveCount(1);
-
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve-meta$/, {
-      kind: "not_in_library",
-      online: candidate(),
+    await test.step("check nothing carried over from a lookup", async () => {
+      await expect(flow.errorMessage).toHaveCount(0);
+      await expect(flow.searchEmptyMessage).toHaveCount(0);
     });
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve-meta$/,
-        expectedStatus: 200,
-      },
-      async () => rows.nth(0).click(),
-    );
 
-    await expect(page.getByTestId("check-in-choose")).toBeVisible();
+    await test.step("search by title", async () => {
+      await expectMutation(scan.search(QUERY), () => flow.searchByTitle(QUERY));
+      await expect(flow.searchResultButtons).toHaveCount(1);
+    });
+
+    await test.step("pick the book from the results", async () => {
+      await expectMutation(scan.resolveMeta(NAME_OF_THE_WIND), () =>
+        flow.pickSearchResult(NAME_OF_THE_WIND.title),
+      );
+      await expect(flow.chooseScreen).toBeVisible();
+    });
   });
 
-  // #2247: after a title search the reader supplied no ISBN at all — the one
-  // on screen came back from the provider — so neither the match copy nor the
-  // recorded provenance may call it entered or scanned.
-  test("never describes a title-searched book as an entered or scanned ISBN", async ({
-    page,
+  // After a title search the ISBN came from the provider, so neither the
+  // screen text nor the recorded source may call it entered or scanned (#2247).
+  test("never call a title search result an entered isbn", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    await reachSearch(page);
-    await mockJsonPost(page, "**/api/rpc/scan/search", {
-      results: [candidate()],
+    const flow = checkInPage.flow;
+    const libraryCopy = libraryBook(NAME_OF_THE_WIND, "close-match-uuid", {
+      isbn: "9780000000000",
     });
 
-    await page.getByLabel("Title").fill("name of the wind");
-    await expectMutation(
-      page,
-      { method: "POST", url: "/api/rpc/scan/search", expectedStatus: 200 },
-      async () => page.getByTestId("check-in-search-submit").click(),
-    );
-
-    await mockJsonPost(page, /\/api\/rpc\/scan\/resolve-meta$/, {
-      kind: "close_match",
-      book: {
-        uuid: "close-match-uuid",
-        title: "The Name of the Wind",
-        authors: ["Patrick Rothfuss"],
-        cover_url: null,
-        has_physical: false,
-        isbn: "9780000000000",
-      },
-      others: [],
-      scanned: candidate(),
+    await test.step("pick a result that matches a library book", async () => {
+      await flow.stubTitleSearch([NAME_OF_THE_WIND]);
+      await flow.stubSearchPick(closeMatch(NAME_OF_THE_WIND, [libraryCopy]));
+      await checkInPage.goto();
+      await expectMutation(scan.search(QUERY), () => flow.searchByTitle(QUERY));
+      await expectMutation(scan.resolveMeta(NAME_OF_THE_WIND), () =>
+        flow.pickSearchResult(NAME_OF_THE_WIND.title),
+      );
     });
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/scan\/resolve-meta$/,
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("check-in-search-result").first().click(),
-    );
 
-    const screen = page.getByTestId("check-in-close-match");
-    await expect(screen).toBeVisible();
-    await expect(screen).toContainText("9780756404741");
-    await expect(screen).not.toContainText("you entered");
-    await expect(screen).not.toContainText("you scanned");
-    await expect(screen).not.toContainText("Scanned ISBN");
-    await expect(screen).not.toContainText("Entered ISBN");
-
-    // And the entry it files records the title search, not a scan.
-    await page.getByTestId("check-in-close-match-no").click();
-    await mockJsonPost(page, "**/api/rpc/scan/wishlist", {
-      book_uuid: "close-match-uuid",
+    await test.step("check the match names the isbn as found", async () => {
+      await expect(flow.closeMatchScreen).toBeVisible();
+      await expect(flow.closeMatchScreen).toContainText(
+        NAME_OF_THE_WIND.isbn13,
+      );
+      await expect(flow.closeMatchScreen).not.toContainText("you entered");
+      await expect(flow.closeMatchScreen).not.toContainText("you scanned");
+      await expect(flow.closeMatchScreen).not.toContainText("Scanned ISBN");
+      await expect(flow.closeMatchScreen).not.toContainText("Entered ISBN");
     });
-    const { request } = await expectMutation(
-      page,
-      { method: "POST", url: "/api/rpc/scan/wishlist", expectedStatus: 200 },
-      async () => page.getByTestId("check-in-wishlist").click(),
-    );
-    expect(
-      (request.postDataJSON() as { req: { source: string } }).req.source,
-    ).toBe("search");
+
+    await test.step("wishlist it as a title search", async () => {
+      await flow.declineCloseMatch();
+      await flow.stubWishlistEntry(libraryCopy.uuid);
+      await expectMutation(scan.wishlist("search"), () => flow.addToWishlist());
+    });
   });
 
-  test("shows the empty-state line when nothing matches", async ({ page }) => {
-    await reachSearch(page);
-    await mockJsonPost(page, "**/api/rpc/scan/search", { results: [] });
-
-    await page.getByLabel("Title").fill("no such book anywhere");
-    await expectMutation(
-      page,
-      { method: "POST", url: "/api/rpc/scan/search", expectedStatus: 200 },
-      async () => page.getByTestId("check-in-search-submit").click(),
-    );
-
-    await expect(page.getByTestId("check-in-search-empty")).toBeVisible();
-    await expect(page.getByTestId("check-in-search-result")).toHaveCount(0);
-  });
-
-  test("surfaces a search failure and stays on the search screen", async ({
-    page,
+  test("show the empty state when no title matches", async ({
+    checkInPage,
+    expectMutation,
   }) => {
-    await reachSearch(page);
-    await page.route("**/api/rpc/scan/search", (route) =>
-      route.request().method() === "POST"
-        ? route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          })
-        : route.continue(),
-    );
+    const flow = checkInPage.flow;
+    const query = "no such book anywhere";
 
-    await page.getByLabel("Title").fill("name of the wind");
-    await expectMutation(
-      page,
-      { method: "POST", url: "/api/rpc/scan/search", expectedStatus: 500 },
-      async () => page.getByTestId("check-in-search-submit").click(),
-    );
-
-    await expect(page.getByTestId("check-in-error")).toBeVisible();
-    await expect(page.getByTestId("check-in-search")).toBeVisible();
-  });
-
-  test("results survive alongside the ISBN field on the same screen", async ({
-    page,
-  }) => {
-    await reachSearch(page);
-    await mockJsonPost(page, "**/api/rpc/scan/search", {
-      results: [candidate()],
+    await test.step("search for a title nobody has", async () => {
+      await flow.stubTitleSearch([]);
+      await checkInPage.goto();
+      await expectMutation(scan.search(query), () => flow.searchByTitle(query));
     });
 
-    await page.getByLabel("Title").fill("name of the wind");
-    await expectMutation(
-      page,
-      { method: "POST", url: "/api/rpc/scan/search", expectedStatus: 200 },
-      async () => page.getByTestId("check-in-search-submit").click(),
-    );
+    await test.step("check the empty state shows", async () => {
+      await expect(flow.searchEmptyMessage).toBeVisible();
+      await expect(flow.searchResultButtons).toHaveCount(0);
+    });
+  });
 
-    // Searching by title never costs the reader the ISBN field — both ways in
-    // stay on screen together.
-    await expect(page.getByTestId("check-in-search-result")).toHaveCount(1);
-    await expect(page.getByTestId("check-in-isbn")).toBeVisible();
-    await expect(page.getByTestId("check-in-scan-instead")).toBeVisible();
+  test("stay on the search when it fails", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+
+    await test.step("search while searches fail", async () => {
+      await flow.forceServerError(scan.search(QUERY));
+      await checkInPage.goto();
+      await expectMutation(failing(scan.search(QUERY)), () =>
+        flow.searchByTitle(QUERY),
+      );
+    });
+
+    await test.step("check the error shows over the search", async () => {
+      await expect(flow.errorMessage).toBeVisible();
+      await expect(flow.titleSearchForm).toBeVisible();
+    });
+  });
+
+  test("keep the isbn field beside the search results", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+
+    await test.step("search by title", async () => {
+      await flow.stubTitleSearch([NAME_OF_THE_WIND]);
+      await checkInPage.goto();
+      await expectMutation(scan.search(QUERY), () => flow.searchByTitle(QUERY));
+    });
+
+    await test.step("check both ways in are still on screen", async () => {
+      await expect(flow.searchResultButtons).toHaveCount(1);
+      await expect(flow.isbnField).toBeVisible();
+      await expect(flow.scanBarcodeButton).toBeVisible();
+    });
   });
 });

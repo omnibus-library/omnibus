@@ -1,116 +1,134 @@
-import type { Page } from "@playwright/test";
-import { expect, test } from "../fixtures/test";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
 
-// Headless Chromium refuses `getUserMedia` without a fake device, so every run
-// here lands on the permission-denied branch — which is exactly the fallback
-// contract worth pinning (a scanner nobody can grant the camera to must still
-// reach manual entry). The happy-path decode needs a real camera and is
-// covered by the decoder's own unit tests plus device QA.
-
-// The camera is never the web flow's front door — it sits one explicit button
-// away from the lookup screen, which `check_in_lookup.spec.ts` covers.
-async function reachScanner(page: Page): Promise<void> {
-  await gotoReady(page, "/check-in");
-  await page.getByTestId("check-in-scan-instead").click();
-  await expect(page.getByTestId("check-in-scan")).toBeVisible();
-}
+// Headless Chromium refuses the camera, so every test here covers the
+// fallback to manual entry. The decoder's unit tests cover decoding.
 
 test.describe("check-in scanner", () => {
-  test("renders the scan layout", async ({ page }) => {
-    await reachScanner(page);
-    await expectNavVisible(page);
+  test("show the scanner layout", async ({ checkInPage }) => {
+    const flow = checkInPage.flow;
 
-    await expect(
-      page.getByRole("heading", { name: "Scan a barcode" }),
-    ).toBeVisible();
-    // The viewfinder and its escape hatch mount together, so a reader who
-    // opened the camera always has the keypad within reach.
-    await expect(page.getByTestId("barcode-scanner")).toBeVisible();
-    await expect(page.getByTestId("barcode-scanner-manual")).toBeVisible();
+    await test.step("open the scanner", async () => {
+      await checkInPage.goto();
+      await flow.openScanner();
+      await expect(flow.scanScreen).toBeVisible();
+    });
+
+    // The viewfinder and its keypad link mount together, so manual entry is
+    // always one click away.
+    await test.step("check the viewfinder and its way out", async () => {
+      await checkInPage.topNav.assertDisplayed();
+      await expect(flow.screenHeading).toHaveText("Scan a barcode");
+      await expect(flow.scannerPanel).toBeVisible();
+      await expect(flow.enterIsbnInsteadButton).toBeVisible();
+    });
   });
 
-  test("a camera the browser won't grant lands on manual entry", async ({
-    page,
+  test("fall back to manual entry when the camera is refused", async ({
+    checkInPage,
   }) => {
-    await reachScanner(page);
+    const flow = checkInPage.flow;
 
-    // The glue reports the refusal, and the status line names the fallback.
-    await expect(page.getByTestId("barcode-scanner-status")).toContainText(
-      "ISBN",
-    );
-    // With no camera coming, the dead viewfinder is dropped and the keypad
-    // link is promoted to the primary action.
-    await expect(page.getByTestId("barcode-scanner-video")).toBeHidden();
-    await expect(page.getByTestId("barcode-scanner-manual")).toHaveClass(
-      /primary/,
-    );
+    await test.step("open the scanner", async () => {
+      await checkInPage.goto();
+      await flow.openScanner();
+      await expect(flow.scanScreen).toBeVisible();
+    });
 
-    await page.getByTestId("barcode-scanner-manual").click();
-    await expect(page.getByTestId("check-in-entry")).toBeVisible();
+    await test.step("check the keypad link takes over", async () => {
+      await expect(flow.scannerStatusMessage).toContainText("ISBN");
+      await expect(flow.scannerVideo).toBeHidden();
+      await expect(flow.enterIsbnInsteadButton).toHaveClass(/primary/);
+    });
+
+    await test.step("enter the isbn by hand", async () => {
+      await flow.enterIsbnInstead();
+      await expect(flow.keypadScreen).toBeVisible();
+    });
   });
 
-  test("the keypad gates Find book on a valid check digit", async ({
-    page,
+  test("enable find book on the keypad once the check digit validates", async ({
+    checkInPage,
   }) => {
-    await reachScanner(page);
-    await page.getByTestId("barcode-scanner-manual").click();
+    const flow = checkInPage.flow;
 
-    const submit = page.getByTestId("check-in-submit");
-    await expect(submit).toBeDisabled();
+    await test.step("open the keypad", async () => {
+      await checkInPage.goto();
+      await flow.openScanner();
+      await expect(flow.scanScreen).toBeVisible();
+      await flow.enterIsbnInstead();
+      await expect(flow.findBookButton).toBeDisabled();
+    });
 
-    // Twelve of thirteen digits: complete-looking, but not yet an ISBN.
-    for (const key of "978044101359") {
-      await page.getByTestId(`check-in-key-${key}`).click();
-    }
-    await expect(page.getByTestId("check-in-isbn-progress")).toHaveAttribute(
-      "data-filled",
-      "12",
-    );
-    await expect(submit).toBeDisabled();
+    await test.step("type twelve of the thirteen digits", async () => {
+      await flow.typeOnKeypad("978044101359");
+      await expect(flow.isbnProgressStrip).toHaveAttribute("data-filled", "12");
+      await expect(flow.findBookButton).toBeDisabled();
+    });
 
-    // Thirteenth digit, wrong: right length, so only the check digit can
-    // catch it.
-    await page.getByTestId("check-in-key-7").click();
-    await expect(submit).toBeDisabled();
+    // The length is right, so only the check digit rejects it.
+    await test.step("type a wrong check digit", async () => {
+      await flow.typeOnKeypad("7");
+      await expect(flow.findBookButton).toBeDisabled();
+    });
 
-    // Backspace and enter the real check digit.
-    await page.getByTestId("check-in-key-⌫").click();
-    await page.getByTestId("check-in-key-3").click();
-    await expect(page.getByTestId("check-in-isbn")).toHaveValue(
-      "9780441013593",
-    );
-    await expect(submit).toBeEnabled();
+    await test.step("replace it with the right one", async () => {
+      await flow.deleteLastDigit();
+      await flow.typeOnKeypad("3");
+      await expect(flow.isbnField).toHaveValue("9780441013593");
+      await expect(flow.findBookButton).toBeEnabled();
+    });
   });
 
-  test("returns to the scanner from manual entry", async ({ page }) => {
-    await reachScanner(page);
-    await page.getByTestId("barcode-scanner-manual").click();
-    await expect(page.getByTestId("check-in-entry")).toBeVisible();
+  test("return to the scanner from manual entry", async ({ checkInPage }) => {
+    const flow = checkInPage.flow;
 
-    await page.getByTestId("check-in-scan-instead").click();
-    await expect(page.getByTestId("check-in-scan")).toBeVisible();
+    await test.step("open the keypad from the scanner", async () => {
+      await checkInPage.goto();
+      await flow.openScanner();
+      await expect(flow.scanScreen).toBeVisible();
+      await flow.enterIsbnInstead();
+      await expect(flow.keypadScreen).toBeVisible();
+    });
+
+    await test.step("go back to the scanner", async () => {
+      await flow.openScanner();
+      await expect(flow.scanScreen).toBeVisible();
+    });
   });
 
-  // The title search is a first-class entry point, not a consolation prize for
-  // a failed lookup: plenty of copies carry a barcode no ISBN index knows, so
-  // reaching it must not cost a doomed round trip first. Both routes land on
-  // the lookup screen, which is where the search field lives.
-  test("opens the title search from the scanner", async ({ page }) => {
-    await reachScanner(page);
+  // Many copies have a barcode no ISBN index knows, so the title search must
+  // open without a failed lookup first.
+  test("open the title search from the scanner", async ({ checkInPage }) => {
+    const flow = checkInPage.flow;
 
-    await page.getByTestId("check-in-search-by-title").click();
-    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
-    await expect(page.getByTestId("check-in-search")).toBeVisible();
+    await test.step("open the scanner", async () => {
+      await checkInPage.goto();
+      await flow.openScanner();
+      await expect(flow.scanScreen).toBeVisible();
+    });
+
+    await test.step("search by title", async () => {
+      await flow.openTitleSearch();
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.titleSearchForm).toBeVisible();
+    });
   });
 
-  test("opens the title search from manual entry", async ({ page }) => {
-    await reachScanner(page);
-    await page.getByTestId("barcode-scanner-manual").click();
-    await expect(page.getByTestId("check-in-entry")).toBeVisible();
+  test("open the title search from manual entry", async ({ checkInPage }) => {
+    const flow = checkInPage.flow;
 
-    await page.getByTestId("check-in-search-by-title").click();
-    await expect(page.getByTestId("check-in-lookup")).toBeVisible();
-    await expect(page.getByTestId("check-in-search")).toBeVisible();
+    await test.step("open the keypad from the scanner", async () => {
+      await checkInPage.goto();
+      await flow.openScanner();
+      await expect(flow.scanScreen).toBeVisible();
+      await flow.enterIsbnInstead();
+      await expect(flow.keypadScreen).toBeVisible();
+    });
+
+    await test.step("search by title", async () => {
+      await flow.openTitleSearch();
+      await expect(flow.lookupScreen).toBeVisible();
+      await expect(flow.titleSearchForm).toBeVisible();
+    });
   });
 });

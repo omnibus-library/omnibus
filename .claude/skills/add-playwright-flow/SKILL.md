@@ -16,8 +16,8 @@ One file per user flow: `ui_tests/playwright/tests/flows/<flow-name>.spec.ts`.
 
 New specs use page objects; see
 [04d-playwright-page-objects.md](../../rules/04d-playwright-page-objects.md) for
-the layout and rules, and `tests/flows/check_in_wishlisted.spec.ts` for a worked
-example. Import `test`
+the layout and rules, and the `tests/flows/check_in_*.spec.ts` specs for worked
+examples. Import `test`
 and `expect` from a fixtures file, never from `@playwright/test`:
 
 ```ts
@@ -101,10 +101,19 @@ test.describe("settings page", () => {
 });
 ```
 
-**Error path:** add a stub method to the page object that fulfils the route
-with a 500, call it before the action, and keep the `expectMutation` with
-`expectedStatus: 500` so the request is still proven to fire. Assert the UI
-surfaces the error.
+**Error path:** before the action, pass the contract to the page object's
+`forceServerError(contract)`, or add a stub method like it. Keep the
+`expectMutation`, and wrap its contract in `failing(…)` from `utils/api.ts` so
+the test still proves the request fires and gets a 500. Then assert the UI
+shows the error.
+
+```ts
+await flow.forceServerError(scan.search(query));
+await expectMutation(failing(scan.search(query)), () =>
+  flow.searchByTitle(query),
+);
+await expect(flow.errorMessage).toBeVisible();
+```
 
 ## 5. Selector preference order
 

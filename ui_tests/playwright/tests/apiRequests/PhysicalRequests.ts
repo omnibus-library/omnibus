@@ -11,4 +11,8 @@ export class PhysicalRequests extends BaseRequests {
   deleteBook(bookUuid: string): Promise<APIResponse> {
     return this.post("/api/rpc/physical/book/delete", { uuid: bookUuid });
   }
+
+  deleteCopy(copyId: number): Promise<APIResponse> {
+    return this.post("/api/rpc/physical/copies/delete", { copy_id: copyId });
+  }
 }
