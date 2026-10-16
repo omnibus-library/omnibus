@@ -38,7 +38,7 @@ Auto-discoverable skills in [.claude/skills/](.claude/skills/) — Claude Code l
 - [agentic-exploration](.claude/skills/agentic-exploration/SKILL.md) — run the exploratory testing swarm against the persistent instance: snapshot, provision accounts, sample flows from [docs/qa/agentic_exploration/](docs/qa/agentic_exploration/start.md), fan out one agent per reader.
 - [add-playwright-flow](.claude/skills/add-playwright-flow/SKILL.md) — adding a new E2E spec.
 - [create-github-issue](.claude/skills/create-github-issue/SKILL.md) — filing GitHub issues in the omnibus house style: bracketed `[Scope]` title prefixes, a standard body template, consistent labels, and native sub-issue linking.
-- [ui-validate](.claude/skills/ui-validate/SKILL.md) — bring up a port-walking dev server, log in as the seeded admin, drive the browser, poll `/api/_health` for rebuild signal.
+- [ui-validate](.claude/skills/ui-validate/SKILL.md) — bring up a port-walking dev server, log in as the seeded admin, drive the browser, poll `/api/_health` for rebuild signal, and check the change against its flow doc.
 
 ### Browser tools
 
