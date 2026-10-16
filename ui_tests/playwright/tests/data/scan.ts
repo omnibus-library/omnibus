@@ -11,7 +11,7 @@ export type ExternalBookMeta = {
   publisher: string | null;
   description: string | null;
   cover_url: string | null;
-  /** Omitted on the wire when unknown, as is `first_publish_year`. */
+  /** The server leaves this out when unknown, and `first_publish_year` too. */
   series?: string;
   first_publish_year?: number;
   source: "open_library";
@@ -31,7 +31,7 @@ export type ScanBook = {
   isbn?: string;
 };
 
-/** What an ISBN lookup or a search pick answers (`ScanOutcome`). */
+/** What an ISBN lookup or a search pick returns (`ScanOutcome`). */
 export type ScanOutcome =
   | { kind: "already_owned"; book: ScanBook }
   | { kind: "on_wishlist"; book: ScanBook }
@@ -48,10 +48,10 @@ export type ScanOutcome =
 /** How the reader found a book they wished for (`WishlistSource`). */
 export type WishlistSource = "scan" | "detail" | "manual" | "search";
 
-/** What every check-in write answers (`BookRef`): the book it filed against. */
+/** What every check-in write returns (`BookRef`), naming the book it filed. */
 export type BookRef = { book_uuid: string };
 
-/** `uuid`'s row as a lookup reports it: a book with files and no copy yet. */
+/** `uuid`'s row as a lookup reports it, by default with files and no copy. */
 export function libraryBook(
   book: Pick<ScanBook, "title" | "authors">,
   uuid: string,

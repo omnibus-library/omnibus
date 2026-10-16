@@ -10,7 +10,7 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // since only an editor may remove a book along with its last copy.
 
 test.describe("check-in chooser", () => {
-  // A fileless book only lists once a library path is set.
+  // A fileless book only shows in the library once a library path is set.
   test.beforeAll("seed the library", async ({ request }) => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
@@ -84,7 +84,7 @@ test.describe("check-in chooser", () => {
       await expect(bookDetailPage.lastCopyDialog).toBeVisible();
     });
 
-    // One click deletes the copy, then the book it leaves without one.
+    // One click deletes the copy and then the book, which has no copy left.
     await test.step("remove the book from the library", async () => {
       await expectMutation(physical.deleteCopy(), () =>
         expectMutation(physical.deleteBook(uuid), () =>
@@ -136,8 +136,8 @@ test.describe("check-in chooser", () => {
     });
   });
 
-  // Public by design, but kept off other readers' library row, so they reach
-  // it through the shelves index.
+  // Wishlists are public, but other readers' library rows leave them out, so
+  // another reader opens one from the shelves index.
   test("show the wishlist to another reader", async ({
     scanRequests,
     adminWishlist,

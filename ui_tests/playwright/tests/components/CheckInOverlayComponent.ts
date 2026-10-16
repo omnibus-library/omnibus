@@ -23,7 +23,7 @@ export class CheckInOverlayComponent extends CheckInFlowComponent {
   }
 
   async closeByClickingOutside(): Promise<void> {
-    // The top-left corner is scrim, well outside the centred card.
+    // The top-left corner is scrim, well outside the centered card.
     await this.scrim.click({ position: { x: 8, y: 8 } });
   }
 
@@ -31,7 +31,7 @@ export class CheckInOverlayComponent extends CheckInFlowComponent {
     await this.page.keyboard.press("Escape");
   }
 
-  /** The overlay is gone and left nothing of itself on the page. */
+  /** Checks the scrim, the dialog and the flow card are all gone. */
   async assertDismissed(): Promise<void> {
     await expect(this.scrim).toHaveCount(0);
     await expect(this.root).toHaveCount(0);

@@ -56,12 +56,12 @@ export class BookDetailPage extends BasePage {
     await this.checkInWhenAcquiredButton.click();
   }
 
-  /** Asks to remove a copy; the last copy of a fileless book offers choices. */
+  /** Opens the remove dialog, with extra choices for a book's last copy. */
   async openRemoveCopyDialog(): Promise<void> {
     await this.removeCopyButton.click();
   }
 
-  /** Removes the last copy and then its book, which waits on the second. */
+  /** Deletes the last copy and its book, then waits for the book delete. */
   async removeFromLibrary(): Promise<void> {
     const removed = this.page.waitForResponse(
       isPostTo(physicalUrls.deleteBook),

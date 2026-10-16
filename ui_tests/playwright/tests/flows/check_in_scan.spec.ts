@@ -1,7 +1,7 @@
 import { expect, test } from "../fixtures/pageFixtures";
 
-// Headless Chromium refuses the camera, so every test lands on the denied
-// branch: the fallback worth pinning. Decoding is covered by unit tests.
+// Headless Chromium refuses the camera, so every test here covers the
+// fallback to manual entry. The decoder's unit tests cover decoding.
 
 test.describe("check-in scanner", () => {
   test("show the scanner layout", async ({ checkInPage }) => {
@@ -14,7 +14,7 @@ test.describe("check-in scanner", () => {
     });
 
     // The viewfinder and its keypad link mount together, so manual entry is
-    // always within reach.
+    // always one click away.
     await test.step("check the viewfinder and its way out", async () => {
       await checkInPage.topNav.assertDisplayed();
       await expect(flow.screenHeading).toHaveText("Scan a barcode");
@@ -65,7 +65,7 @@ test.describe("check-in scanner", () => {
       await expect(flow.findBookButton).toBeDisabled();
     });
 
-    // Right length, so only the check digit can catch it.
+    // The length is right, so only the check digit rejects it.
     await test.step("type a wrong check digit", async () => {
       await flow.typeOnKeypad("7");
       await expect(flow.findBookButton).toBeDisabled();
@@ -96,8 +96,8 @@ test.describe("check-in scanner", () => {
     });
   });
 
-  // Plenty of copies carry a barcode no ISBN index knows, so the title search
-  // must not cost a doomed lookup first.
+  // Many copies have a barcode no ISBN index knows, so the title search must
+  // open without a failed lookup first.
   test("open the title search from the scanner", async ({ checkInPage }) => {
     const flow = checkInPage.flow;
 

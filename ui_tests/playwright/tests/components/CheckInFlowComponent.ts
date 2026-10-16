@@ -7,8 +7,8 @@ import { BaseComponent } from "./BaseComponent";
 
 /**
  * The check-in wizard, one screen at a time: lookup, scanner, keypad, then
- * whichever outcome the ISBN resolves to. Rooted on its host, which is the
- * `/check-in` page's card or the overlay's dialog.
+ * the screen for whatever the ISBN resolves to. Its locators are scoped to
+ * its host, the `/check-in` page's card or the overlay's dialog.
  */
 export class CheckInFlowComponent extends BaseComponent {
   readonly screenHeading: Locator;
@@ -160,7 +160,7 @@ export class CheckInFlowComponent extends BaseComponent {
     this.viewBookLink = root.getByRole("link", { name: "View book" });
   }
 
-  /** A keypad key: a digit, or `"Delete"` for backspace. */
+  /** The keypad key named `key`, a digit or `"Delete"` for backspace. */
   keypadButton(key: string): Locator {
     return this.keypad.getByRole("button", { name: key, exact: true });
   }
@@ -303,7 +303,7 @@ export class CheckInFlowComponent extends BaseComponent {
     await this.declineCloseMatchButton.click();
   }
 
-  /** "I own it": adds the looked-up book with its first copy. */
+  /** Clicks "I own it", which adds the looked-up book with its first copy. */
   async addToCollection(): Promise<void> {
     const added = this.page.waitForResponse(isPostTo(scanUrls.physicalOnly));
     await this.ownItButton.click();
@@ -348,7 +348,7 @@ export class CheckInFlowComponent extends BaseComponent {
     return this.page.getByText(title, { exact: true });
   }
 
-  /** A picker row: a library book's card beside its own pick button. */
+  /** A picker row, which holds a library book's card and its pick button. */
   private pickerRow(list: Locator, title: string): Locator {
     return list.getByRole("listitem").filter({ has: this.titleText(title) });
   }

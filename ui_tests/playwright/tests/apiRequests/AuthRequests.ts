@@ -2,7 +2,7 @@ import type { APIResponse } from "@playwright/test";
 import type { Credentials } from "../data/users";
 import { BaseRequests } from "./BaseRequests";
 
-/** Sign-in, rate limited to 10 calls a minute per IP, and who is signed in. */
+/** Sign-in, which allows 10 calls a minute per IP, and the signed-in user. */
 export class AuthRequests extends BaseRequests {
   /** Returns the context's user, `{ id, username, is_admin, … }`. */
   getMe(): Promise<APIResponse> {

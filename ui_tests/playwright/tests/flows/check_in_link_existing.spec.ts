@@ -8,8 +8,8 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// For a copy no matching rung can place (#1790). Only the lookup is stubbed;
-// TARGET is reserved for this spec, since ISBN stays bound to it once filed.
+// Links a copy no rung of the matching ladder can place (#1790). Only the
+// lookup is stubbed. TARGET is reserved here, as ISBN stays bound to it.
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "polyglot-2")!;
 const TARGET_QUERY = "Cuentos";
@@ -39,7 +39,7 @@ test.describe("check-in link to an existing book", () => {
       await expect(flow.chooseScreen).toBeVisible();
     });
 
-    // It sits on the chooser, the screen that would otherwise mint a duplicate.
+    // The chooser's other options would each add a duplicate book.
     await test.step("open the link picker from the chooser", async () => {
       await expect(flow.linkExistingButton).toBeVisible();
       await flow.openLinkPicker();
@@ -85,8 +85,8 @@ test.describe("check-in link to an existing book", () => {
       await expect(flow.linkPickButtons).toHaveCount(1);
     });
 
-    // The pick lands on the ordinary confirm, so the copy goes through the one
-    // existing write path.
+    // Picking a book opens the ordinary confirm, so the copy uses the same
+    // check-in write as any other.
     await test.step("pick it and check in the copy", async () => {
       await flow.pickLinkResult(TARGET.title);
       await expect(flow.confirmScreen).toBeVisible();
@@ -112,7 +112,7 @@ test.describe("check-in link to an existing book", () => {
       await expect(bookDetailPage.physicalCopyCard(note)).toBeVisible();
     });
 
-    // The exact-identifier rung now answers, so no provider and no chooser.
+    // The ISBN now matches the book directly, without asking the providers.
     await test.step("check the isbn now resolves to the book", async () => {
       const rescan = await scanRequests.postResolve(ISBN);
       await expect(rescan).toBeOK();
@@ -158,7 +158,7 @@ test.describe("check-in link to an existing book", () => {
       );
     });
 
-    // The reader keeps the picked book, free to retry.
+    // The reader keeps the picked book and can retry.
     await test.step("check the error shows over the confirm", async () => {
       await expect(flow.errorMessage).toBeVisible();
       await expect(flow.confirmScreen).toBeVisible();
@@ -192,7 +192,7 @@ test.describe("check-in link to an existing book", () => {
       await expect(flow.linkResultsList).toHaveCount(0);
     });
 
-    // Back to the outcome they left, still holding the looked-up book.
+    // Back returns to the chooser, which still shows the looked-up book.
     await test.step("go back to the chooser", async () => {
       await flow.backToChooser();
       await expect(flow.chooseScreen).toBeVisible();

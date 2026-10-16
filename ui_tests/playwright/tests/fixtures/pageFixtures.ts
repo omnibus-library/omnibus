@@ -54,13 +54,13 @@ type PageFixtures = {
 };
 
 /**
- * The suite admin's page and page objects, the admin's API calls into the
- * shared library with cleanup for what a test adds, and the worker's reader
- * in a browser of their own. `readerFixtures.ts` signs the page in as them.
+ * The suite admin's page and its page objects. Also the admin's API calls,
+ * the cleanup for what a test adds, and the worker's reader in a browser
+ * context of their own. `readerFixtures.ts` signs the page in as that reader.
  */
 export const test = base.extend<PageFixtures, PageWorkerFixtures>({
-  // One account per worker rather than per test: sign-in allows ten calls a
-  // minute per IP, and a worker runs its tests one at a time.
+  // One account per worker rather than per test, because sign-in allows ten
+  // calls a minute per IP and a worker runs its tests one at a time.
   readerAccount: [
     async ({ playwright }, use, workerInfo) => {
       const options = workerInfo.project.use;

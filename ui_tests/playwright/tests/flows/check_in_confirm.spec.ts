@@ -13,8 +13,8 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Check-ins are stubbed: `physical_collection.spec.ts` reads TARGET, so a real
-// copy filed here would leak into it. `check_in_link_existing` writes for real.
+// Check-ins are stubbed because `physical_collection.spec.ts` reads TARGET and
+// would see a real copy. `check_in_link_existing` makes the real write.
 
 const ISBN = "9780441013593";
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-island")!;
@@ -184,8 +184,8 @@ test.describe("check-in lookup outcomes", () => {
     });
   });
 
-  // An EPUB and its unattached audiobook share a (title, author), so the
-  // ladder offers both rather than minting a physical-only duplicate (#1791).
+  // An EPUB and its unattached audiobook share a title and author, so the
+  // flow offers both instead of creating a print-only duplicate (#1791).
   test("pick between two library books that matched", async ({
     checkInPage,
     expectMutation,

@@ -3,7 +3,7 @@ import { CheckInFlowComponent } from "../components/CheckInFlowComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { BasePage } from "./BasePage";
 
-/** The check-in flow full-page: the deep link the overlay falls back to. */
+/** The check-in flow as a full page, the deep-link fallback to the overlay. */
 export class CheckInPage extends BasePage {
   protected readonly urlPattern = /\/check-in$/;
 

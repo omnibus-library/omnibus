@@ -8,7 +8,7 @@ import {
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 
-// The search and its pick ride on the providers, so both are stubbed.
+// The title search and its pick call the providers, so these tests stub both.
 
 const QUERY = "name of the wind";
 const NAME_OF_THE_WIND = buildExternalBook({
@@ -64,7 +64,7 @@ test.describe("check-in title search", () => {
     });
   });
 
-  // How the mobile shell, whose front door is the camera, reaches the form.
+  // The mobile shell opens on the camera, so it reaches the search this way.
   test("pick a title search result reached from the scanner", async ({
     checkInPage,
     expectMutation,
@@ -98,8 +98,8 @@ test.describe("check-in title search", () => {
     });
   });
 
-  // #2247: after a title search the ISBN on screen came from the provider, so
-  // neither the copy nor the recorded source may call it entered or scanned.
+  // After a title search the ISBN came from the provider, so neither the
+  // screen text nor the recorded source may call it entered or scanned (#2247).
   test("never call a title search result an entered isbn", async ({
     checkInPage,
     expectMutation,

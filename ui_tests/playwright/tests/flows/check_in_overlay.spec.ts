@@ -10,8 +10,8 @@ import { expect, test } from "../fixtures/pageFixtures";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Every scan call is stubbed, writes included: these tests assert the
-// overlay's own state, and `physical_collection.spec.ts` reads TARGET.
+// Every scan call is stubbed, writes included. These tests check the overlay
+// itself, and `physical_collection.spec.ts` reads TARGET.
 
 const ISBN = "9780441013593";
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-island")!;
@@ -36,7 +36,7 @@ test.describe("check-in overlay", () => {
       await libraryPage.topNav.openCheckIn();
     });
 
-    // Raising the overlay must never start a webcam, so it opens on the fields.
+    // The overlay opens on the fields, so it never starts the camera.
     await test.step("check the flow floats over the library", async () => {
       await expect(overlay.scrim).toBeVisible();
       await expect(overlay.flowCard).toBeVisible();
@@ -83,7 +83,7 @@ test.describe("check-in overlay", () => {
     });
   });
 
-  // Opening moves focus into the dialog, so a keyboard user's Escape lands.
+  // Opening moves focus into the dialog, so Escape works without a click first.
   test("close the overlay with escape", async ({ libraryPage }) => {
     const overlay = libraryPage.checkInOverlay;
 
@@ -100,8 +100,8 @@ test.describe("check-in overlay", () => {
     });
   });
 
-  // The clicked button unmounts with its stage, so focus is put back on the
-  // panel or Escape is lost to `body` (#2525).
+  // The clicked button unmounts with its stage, so the flow moves focus back
+  // to the panel. Otherwise Escape goes to `body` (#2525).
   test("close the overlay with escape after changing stage", async ({
     libraryPage,
     expectMutation,

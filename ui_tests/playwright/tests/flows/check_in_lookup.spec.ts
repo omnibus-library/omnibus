@@ -3,7 +3,7 @@ import { unresolved } from "../data/scan";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 
-// Provider answers are stubbed so nothing rides on ambient server config.
+// These tests stub provider answers so server settings can't change them.
 
 const ISBN = "9780441013593";
 
@@ -72,7 +72,7 @@ test.describe("check-in lookup", () => {
       await expect(flow.findBookButton).toBeDisabled();
     });
 
-    // Right length, wrong check digit: the case a shape-only gate misses.
+    // Right length but wrong check digit, which a length check alone misses.
     await test.step("enter an isbn with a wrong check digit", async () => {
       await flow.enterIsbn("9780441013539");
       await expect(flow.findBookButton).toBeDisabled();
@@ -118,7 +118,7 @@ test.describe("check-in lookup", () => {
       );
     });
 
-    // Back where they typed, digits intact, not on a keypad they never chose.
+    // The reader stays on the lookup with their digits, not on the keypad.
     await test.step("check the error shows over the same fields", async () => {
       await expect(flow.errorMessage).toBeVisible();
       await expect(flow.lookupScreen).toBeVisible();
