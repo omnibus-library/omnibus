@@ -100,13 +100,10 @@ fn reject_oversized_uuid(uuid: &str) -> Option<Response> {
         .then(|| StatusCode::BAD_REQUEST.into_response())
 }
 
-/// Runs [`origin_for`] over the cached `OMNIBUS_PUBLIC_ORIGIN` list.
+/// Runs [`origin_for`] over the state's public origins.
 /// Shared across [`auth`] and [`sync`] handlers.
-fn origin_from_headers(headers: &HeaderMap) -> String {
-    origin_for(
-        headers,
-        crate::auth::csrf::allowed_origins().unwrap_or_default(),
-    )
+fn origin_from_headers(state: &AppState, headers: &HeaderMap) -> String {
+    origin_for(headers, state.public_origins())
 }
 
 /// The request origin (`scheme://host`), so download/image URLs are absolute.

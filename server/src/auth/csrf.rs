@@ -105,7 +105,7 @@ fn parse_origin_allowlist(raw: &str) -> Option<Vec<String>> {
     (!list.is_empty()).then_some(list)
 }
 
-/// Read `OMNIBUS_PUBLIC_ORIGIN` once on first request and cache the
+/// Read `OMNIBUS_PUBLIC_ORIGIN` once, on first use, and cache the
 /// parsed allowlist. Empty / unset returns `None`, which preserves the
 /// legacy `Host`-based check for direct (non-proxied) deployments.
 pub fn allowed_origins() -> Option<&'static [String]> {
