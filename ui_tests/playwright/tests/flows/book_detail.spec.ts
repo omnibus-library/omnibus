@@ -10,11 +10,7 @@ import {
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { expectMutation } from "../utils/api";
-import {
-  fetchBookUuidByTitle,
-  getRow,
-  switchToTableView,
-} from "../utils/ebooks";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
 import { gotoReady } from "../utils/nav";
 import {
@@ -45,6 +41,9 @@ const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 
 // The dot rail and the back to the book pill mark themselves with this class.
 const ON_CLASS = /\bon\b/;
+
+// `beta` is the first of the "Pioneers" series.
+const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
 
 // Niklaus Wirth has four books in FIXTURE_BOOKS (the Code Quartet) — three
 // where he's the sole/lead author and one (Quartet III) where he's the lead
@@ -288,7 +287,7 @@ test.describe("book detail page", () => {
 
       await test.step("return to the book through the library", async () => {
         await settingsPage.topNav.openLibrary();
-        await libraryPage.openBook(TARGET.title);
+        await libraryPage.openBookFromGrid(TARGET.title);
       });
 
       // The save refreshes the app-wide viewer, so the marquee is already in
@@ -405,25 +404,142 @@ test.describe("book detail page", () => {
       });
     });
   });
-});
 
-// ---------------------------------------------------------------------------
-// Action — start reading (ebook)
-// ---------------------------------------------------------------------------
+  test.describe("navigation", () => {
+    test("open the reader from start reading", async ({
+      bookDetailPage,
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-test("Start reading navigates to /read/:uuid for ebook-format books", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-  // The hero CTA is a router Link — clicking it triggers SPA navigation.
-  // The reader page mounts the full-screen reader chrome, so we just
-  // assert the URL flips to /read/:uuid; the reader spec covers its
-  // contents in detail.
-  await page.getByTestId("start-reading").click();
-  await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
+      // Opening an unread EPUB writes `reading`. That write is the reader's,
+      // so this test leaves it unasserted.
+      await test.step("start reading", async () => {
+        await bookDetailPage.startReading();
+        await epubReaderPage.assertDisplayedFor(uuid);
+      });
+    });
+
+    test("open a book's details from its library table row", async ({
+      libraryPage,
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("show the library as a table", async () => {
+        await libraryPage.goto();
+        await libraryPage.switchToTableView();
+        await expect(libraryPage.bookTable).toBeVisible();
+      });
+
+      // #2350: only the cover cell's link opens details, not the row itself.
+      await test.step("open the book from its row", async () => {
+        await expect(libraryPage.tableDetailsLink(TARGET.title)).toBeVisible();
+        await libraryPage.openBookFromTable(TARGET.title);
+      });
+
+      await test.step("check the book shows", async () => {
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+    });
+
+    test("return to the library table view from a book's details", async ({
+      libraryPage,
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open a book from the table view", async () => {
+        await libraryPage.goto();
+        await libraryPage.switchToTableView();
+        await expect(libraryPage.bookTable).toBeVisible();
+        await expect(libraryPage.tableDetailsLink(TARGET.title)).toBeVisible();
+        await libraryPage.openBookFromTable(TARGET.title);
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+
+      await test.step("return through the top nav", async () => {
+        await bookDetailPage.topNav.openLibrary();
+      });
+
+      await test.step("check the library shows as a table", async () => {
+        await libraryPage.assertDisplayed();
+        await expect(libraryPage.bookTable).toBeVisible();
+      });
+    });
+
+    test("return to the library grid from the top nav", async ({
+      bookDetailPage,
+      libraryPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("return through the top nav", async () => {
+        await bookDetailPage.topNav.openLibrary();
+      });
+
+      await test.step("check the library shows as a grid", async () => {
+        await libraryPage.assertDisplayed();
+        await expect(libraryPage.bookGrid).toBeVisible();
+      });
+    });
+
+    test("open the author page from the authors line", async ({
+      bookDetailPage,
+      authorPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const author = TARGET.authors[0]!;
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.authorLink(author)).toBeVisible();
+      });
+
+      await test.step("open the author", async () => {
+        await bookDetailPage.openAuthor(author);
+      });
+
+      await test.step("check the author page shows", async () => {
+        await authorPage.assertDisplayed();
+      });
+    });
+
+    test("open the series page from the series kicker", async ({
+      bookDetailPage,
+      seriesPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, SERIES_BOOK.title);
+      const series = SERIES_BOOK.series!;
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.seriesLink(series)).toBeVisible();
+      });
+
+      await test.step("open the series", async () => {
+        await bookDetailPage.openSeries(series);
+      });
+
+      await test.step("check the series page shows", async () => {
+        await seriesPage.assertDisplayed();
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -539,36 +655,6 @@ test("the author block states no count until its fetch has landed", async ({
 // for the book detail page. These post-date the original landing-row entry
 // from #297; the new tests above were added for #385.
 // ---------------------------------------------------------------------------
-
-test("navigates from a landing row to the detail page and back", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  // #2350: the row is a plain <tr> — its editable cells (title, author, …)
-  // are separate interactive controls, so it is no longer a role="button"
-  // that claims to "open details" while a click on those cells edits instead.
-  // The announced, keyboard-reachable navigate affordance is the cover cell's
-  // link; assert its accessible name matches its action, then activate it.
-  const openLink = getRow(page, TARGET.slug).getByRole("link", {
-    name: `Open details for ${TARGET.title}`,
-  });
-  await expect(openLink).toBeVisible();
-  await openLink.click();
-  // `/books/:uuid` — UUIDv5 in canonical 8-4-4-4-12 hyphenated form.
-  await expect(page).toHaveURL(/\/books\/[0-9a-fA-F-]{36}$/);
-
-  // The detail page should render the marquee title heading.
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-
-  // The topbar's Library link is the way back on the marquee stage (the old
-  // footer link is gone). Assert URL plus that the table view (persisted
-  // above) comes back.
-  await page.getByRole("link", { name: "Library", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId("ebook-table")).toBeVisible();
-});
 
 test("renders the detail contents for the selected book", async ({
   page,
@@ -1309,33 +1395,6 @@ test("lists every saved passage with no show-more control", async ({
   for (const id of ids) {
     expect((await request.delete(`/api/highlights/${id}`)).status()).toBe(204);
   }
-});
-
-test("authors line links to the author page", async ({ page, request }) => {
-  // `alpha` has a single author (Ada Lovelace); the "by …" line renders the
-  // name as a router link to /authors/:id.
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const authorLink = page
-    .getByTestId("book-authors")
-    .getByRole("link", { name: TARGET.authors[0] });
-  await expect(authorLink).toBeVisible();
-  await authorLink.click();
-  await expect(page).toHaveURL(/\/authors\/\d+$/);
-});
-
-test("series kicker links to the series page", async ({ page, request }) => {
-  // `beta` is "Beta in the Series" #1 of "Pioneers" — the Home stop's kicker
-  // leads with the series name as a router link to /series/:id.
-  const beta = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
-  const uuid = await fetchBookUuidByTitle(request, beta.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const seriesLink = page.getByRole("link", { name: /Pioneers/ }).first();
-  await expect(seriesLink).toBeVisible();
-  await seriesLink.click();
-  await expect(page).toHaveURL(/\/series\/\d+$/);
 });
 
 // ---------------------------------------------------------------------------

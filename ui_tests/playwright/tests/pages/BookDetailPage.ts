@@ -140,6 +140,11 @@ export class BookDetailPage extends BasePage {
     return this.authorsLine.getByRole("link", { name, exact: true });
   }
 
+  /** The kicker's link to `series`; exact, so the More stop's covers miss. */
+  seriesLink(series: string): Locator {
+    return this.page.getByRole("link", { name: series, exact: true });
+  }
+
   /** The dot rail's button for `section`; its label reads "NN · Name". */
   sectionDot(section: MarqueeSection): Locator {
     return this.sectionsNav.getByRole("button", {
@@ -166,6 +171,18 @@ export class BookDetailPage extends BasePage {
    */
   async goto(bookUuid: string): Promise<void> {
     await this.openAndSettle(`/books/${bookUuid}`);
+  }
+
+  async startReading(): Promise<void> {
+    await this.startReadingButton.click();
+  }
+
+  async openAuthor(name: string): Promise<void> {
+    await this.authorLink(name).click();
+  }
+
+  async openSeries(series: string): Promise<void> {
+    await this.seriesLink(series).click();
   }
 
   /** Scrolls to `section` through its dot on the rail. */

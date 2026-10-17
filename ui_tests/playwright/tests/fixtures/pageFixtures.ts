@@ -23,12 +23,14 @@ import type { BookProgress, ProgressRecord } from "../data/progress";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { type ShelfRef, wishlistOf } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
+import { AuthorPage } from "../pages/AuthorPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
+import { SeriesPage } from "../pages/SeriesPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import {
@@ -64,6 +66,8 @@ type PageFixtures = {
   expectMutation: ExpectMutation;
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
+  authorPage: AuthorPage;
+  seriesPage: SeriesPage;
   checkInPage: CheckInPage;
   epubReaderPage: EpubReaderPage;
   comicReaderPage: ComicReaderPage;
@@ -152,6 +156,12 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
   bookDetailPage: async ({ page }, use) => {
     await use(new BookDetailPage(page));
+  },
+  authorPage: async ({ page }, use) => {
+    await use(new AuthorPage(page));
+  },
+  seriesPage: async ({ page }, use) => {
+    await use(new SeriesPage(page));
   },
   checkInPage: async ({ page }, use) => {
     await use(new CheckInPage(page));
