@@ -2,8 +2,11 @@ import type { Locator, Page } from "@playwright/test";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
 import { ReaderContentsDrawerComponent } from "../components/ReaderContentsDrawerComponent";
 import { ReaderDisplayPanelComponent } from "../components/ReaderDisplayPanelComponent";
+import { progressUrls } from "../contracts/progress";
 import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
+
+export type ContentsEntry = { label: string; href: string; level: number };
 
 /**
  * The EPUB reader at `/read/:uuid`: its chrome, drawers and page turns. The
@@ -27,6 +30,9 @@ export class EpubReaderPage extends BasePage {
   readonly nextPageButton: Locator;
   readonly annotationsButton: Locator;
   readonly chapterCounterLabel: Locator;
+  readonly headerChapterLabel: Locator;
+  readonly loadingOverlay: Locator;
+  readonly navErrorMessage: Locator;
 
   readonly searchDrawer: Locator;
   readonly searchField: Locator;
@@ -52,6 +58,9 @@ export class EpubReaderPage extends BasePage {
     this.nextPageButton = page.getByTestId("reader-next");
     this.annotationsButton = page.getByTestId("reader-annotations");
     this.chapterCounterLabel = page.getByTestId("reader-chapter-counter");
+    this.headerChapterLabel = page.getByTestId("reader-header-chapter");
+    this.loadingOverlay = page.getByTestId("reader-loading");
+    this.navErrorMessage = page.getByTestId("reader-nav-error");
     this.searchDrawer = page.getByTestId("reader-search-drawer");
     this.searchField = page.getByTestId("reader-search-input");
     this.bookmarksDrawer = page.getByTestId("reader-bookmarks-drawer");
@@ -67,10 +76,15 @@ export class EpubReaderPage extends BasePage {
     return this.viewerPanel;
   }
 
-  /** Opens the book, then waits for the page's first fetches to settle. */
   async goto(bookUuid: string): Promise<void> {
-    await this.open(`/read/${bookUuid}`);
-    await this.page.waitForLoadState("networkidle");
+    await this.openAndSettle(`/read/${bookUuid}`);
+  }
+
+  /** Opens the book at `cfi`, as a saved passage's link does. */
+  async gotoPassage(bookUuid: string, cfi: string): Promise<void> {
+    await this.openAndSettle(
+      `/read/${bookUuid}?cfi=${encodeURIComponent(cfi)}`,
+    );
   }
 
   async goBack(): Promise<void> {
@@ -120,9 +134,54 @@ export class EpubReaderPage extends BasePage {
     return (await element.boundingBox())?.width ?? 0;
   }
 
+  /** Whether the failed-jump notice would swallow a click at its own centre. */
+  async navErrorInterceptsPointer(): Promise<boolean> {
+    const box = await this.navErrorMessage.boundingBox();
+    if (!box) throw new Error("reader-nav-error has no bounding box");
+    return this.page.evaluate(
+      ({ x, y }) =>
+        !!document
+          .elementFromPoint(x, y)
+          ?.closest('[data-testid="reader-nav-error"]'),
+      { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    );
+  }
+
+  /** Replaces the contents entries; call it once the loading overlay clears. */
+  async stubContents(entries: ContentsEntry[]): Promise<void> {
+    await this.page.evaluate((json) => {
+      const onToc = Reflect.get(window, "__omnibusOnToc");
+      if (typeof onToc !== "function") throw new Error("no contents glue");
+      onToc(json);
+    }, JSON.stringify(entries));
+  }
+
+  /** Serves `epub` as the book's file and keeps progress off the server. */
+  async stubBookFile(bookUuid: string, epub: Buffer): Promise<void> {
+    await this.page.route(`**/api/ebooks/${bookUuid}/file**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/epub+zip",
+        body: epub,
+      }),
+    );
+    await this.page.route(progressUrls.get, (route) =>
+      route.fulfill({ json: null }),
+    );
+    await this.page.route(progressUrls.save, (route) =>
+      route.fulfill({ json: {} }),
+    );
+  }
+
   /** Checks the page is reading the book `bookUuid`, not just any book. */
   async assertDisplayedFor(bookUuid: string): Promise<void> {
     await expect(this.page).toHaveURL(new RegExp(`/read/${bookUuid}$`));
     await expect(this.viewerPanel).toBeVisible();
+  }
+
+  /** Opens `path`, then waits for the page's first fetches to settle. */
+  private async openAndSettle(path: string): Promise<void> {
+    await this.open(path);
+    await this.page.waitForLoadState("networkidle");
   }
 }

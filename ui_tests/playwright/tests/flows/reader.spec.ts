@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { TYPEFACES } from "../components/ReaderDisplayPanelComponent";
+import { progress } from "../contracts/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { buildSubfolderNavEpub } from "../fixtures/subfolder_nav_epub";
@@ -55,13 +56,12 @@ const DEEP_LINK_BOOK = FIXTURE_BOOKS.find(
 const PERCENT_ONLY_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "picture-of-dorian-gray",
 )!;
-// Reserved for the TOC-jump loading-state regression (see the reservation
-// comment on this fixture in fixtures/epubs.ts) — a real multi-chapter book,
-// so the contents drawer lists more than one row to jump between. The
-// subfolder-nav-hrefs test below also opens this uuid, but intercepts its
-// `/file` and `/api/rpc/progress` routes wholesale, so it never touches the
-// real dracula file or writes a position onto it.
+// A multi-chapter book, so the contents drawer has rows to jump between. The
+// subfolder test opens its uuid too, but stubs the file and progress routes.
 const TOC_JUMP_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "dracula")!;
+// Two entries in Dracula's contents drawer.
+const CHAPTER_ONE = "CHAPTER I JONATHAN HARKER’S JOURNAL";
+const CHAPTER_FOUR = "CHAPTER IV JONATHAN HARKER’S JOURNAL—continued";
 // Reserved for the paging-race / blank-front-matter regression (issue
 // #1895) — five one-page sections (two full-page images, three text) ahead
 // of chapter1, so paging through it repeatedly crosses section boundaries.
@@ -92,12 +92,10 @@ const GUTTER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "room-with-a-view")!;
 // the open's nudge read Chapter II's first page as past the target and turned
 // back onto Chapter I's last spread — prose on the left page only.
 const GUTTER_CFI = "epubcfi(/6/10!/4/2/92/1:0)";
-// Reserved for the shared-spine chapter test: its front matter and first
-// eight chapters are one spine document, so only their anchors tell them
-// apart. Opened at a deep link; nothing else opens it.
+// Its front matter and first eight chapters share one spine document, so only
+// anchors tell them apart.
 const SHARED_SPINE_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "moby-dick")!;
-// Well into "CHAPTER 1. Loomings." — the seventh of that document's fourteen
-// anchors, where naming the last would read "CHAPTER 8. The Pulpit.".
+// Mid-way through "CHAPTER 1. Loomings.": the last anchor would name Chapter 8.
 const SHARED_SPINE_CFI = "epubcfi(/6/4!/4/50/1:0)";
 
 // The epub.js progress POST fires on the reader's relocate events; pin the
@@ -634,7 +632,181 @@ test.describe("epub reader", () => {
     });
   });
 
-  // The phone shell renders this same reader in a WebView, so check its layout here.
+  test.describe("contents", () => {
+    test("name the chapter the page is in when several share its spine document", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const contents = epubReaderPage.contentsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, SHARED_SPINE_BOOK.title);
+
+      await test.step("open the book inside the first chapter", async () => {
+        await epubReaderPage.gotoPassage(uuid, SHARED_SPINE_CFI);
+      });
+
+      await test.step("check the header names the chapter", async () => {
+        await expect(epubReaderPage.headerChapterLabel).toHaveText(
+          "CHAPTER 1. Loomings.",
+          { timeout: 20_000 },
+        );
+      });
+
+      await test.step("check the contents drawer marks the same entry", async () => {
+        await epubReaderPage.openContents();
+        await expect(contents.root).toBeVisible();
+        await expect(contents.currentEntryButton).toHaveText(
+          "CHAPTER 1. Loomings.",
+        );
+      });
+    });
+
+    // #1909: a jump shows loading, never the outgoing chapter beside new text.
+    test("show a loading state in place of the outgoing chapter during a contents jump", async ({
+      epubReaderPage,
+      request,
+      expectMutation,
+    }) => {
+      test.setTimeout(90_000);
+      const contents = epubReaderPage.contentsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
+
+      // The book opens on its cover, which has no entry and no header chapter.
+      // A first jump gives the header something to clear.
+      await test.step("jump to a first chapter", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openContents();
+        await expect(contents.root).toBeVisible();
+        await expect(contents.entryButton(CHAPTER_ONE)).toBeVisible();
+        await expectMutation(progress.saveAfterJump(), () =>
+          contents.jumpTo(CHAPTER_ONE),
+        );
+        await expect(contents.root).toHaveCount(0);
+        await expect(epubReaderPage.headerChapterLabel).toBeVisible({
+          timeout: 20_000,
+        });
+      });
+
+      // The jump lands with the relocate that saves progress, so that save is
+      // the strongest sign it landed.
+      await test.step("jump further into the book", async () => {
+        await epubReaderPage.openContents();
+        await expect(contents.root).toBeVisible();
+        await expect(contents.entryButton(CHAPTER_FOUR)).toBeVisible();
+        await expectMutation(progress.saveAfterJump(), async () => {
+          await contents.jumpTo(CHAPTER_FOUR);
+          // The click closes the drawer and shows loading at once, so no race.
+          await expect(contents.root).toHaveCount(0);
+          await expect(epubReaderPage.loadingOverlay).toBeVisible();
+          await expect(epubReaderPage.headerChapterLabel).toHaveCount(0);
+        });
+      });
+
+      await test.step("check the jump lands", async () => {
+        await expect(epubReaderPage.loadingOverlay).toHaveCount(0);
+        await expect(epubReaderPage.headerChapterLabel).toBeVisible({
+          timeout: 20_000,
+        });
+      });
+    });
+
+    // #2450: a jump that cannot resolve clears loading and says so.
+    test("report a contents jump that cannot land", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
+
+      await test.step("open the book", async () => {
+        await epubReaderPage.goto(uuid);
+        await expect(epubReaderPage.loadingOverlay).toHaveCount(0, {
+          timeout: 20_000,
+        });
+      });
+
+      // An entry whose href matches no spine item, the #2450 shape.
+      await test.step("jump to an entry that matches no section", async () => {
+        await epubReaderPage.stubContents([
+          { label: "Nowhere", href: "missing.xhtml", level: 0 },
+        ]);
+        await epubReaderPage.openContents();
+        await epubReaderPage.contentsDrawer.jumpTo("Nowhere");
+      });
+
+      await test.step("check the reader says so", async () => {
+        await expect(epubReaderPage.navErrorMessage).toBeVisible();
+        await expect(epubReaderPage.loadingOverlay).toHaveCount(0);
+      });
+    });
+
+    // #2450: the failed-jump notice takes no pointer events.
+    test("let clicks pass through the failed-jump notice", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
+
+      await test.step("open the book", async () => {
+        await epubReaderPage.goto(uuid);
+        await expect(epubReaderPage.loadingOverlay).toHaveCount(0, {
+          timeout: 20_000,
+        });
+      });
+
+      await test.step("jump to an entry that matches no section", async () => {
+        await epubReaderPage.stubContents([
+          { label: "Nowhere", href: "missing.xhtml", level: 0 },
+        ]);
+        await epubReaderPage.openContents();
+        await epubReaderPage.contentsDrawer.jumpTo("Nowhere");
+        await expect(epubReaderPage.navErrorMessage).toBeVisible();
+      });
+
+      await test.step("check a click at the notice lands beneath it", async () => {
+        expect(await epubReaderPage.navErrorInterceptsPointer()).toBe(false);
+      });
+    });
+
+    // #2450: an entry relative to a subfolder nav doc resolves on the spine.
+    test("resolve a contents jump relative to a nav doc in a subfolder", async ({
+      epubReaderPage,
+      request,
+      expectMutation,
+    }) => {
+      const contents = epubReaderPage.contentsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
+
+      // The stand-in leaves the real file and its saved position untouched.
+      await test.step("open the stand-in book", async () => {
+        await epubReaderPage.stubBookFile(uuid, await buildSubfolderNavEpub());
+        await epubReaderPage.goto(uuid);
+        await expect(epubReaderPage.loadingOverlay).toHaveCount(0, {
+          timeout: 20_000,
+        });
+      });
+
+      await test.step("jump to its third chapter", async () => {
+        await epubReaderPage.openContents();
+        await expect(contents.root).toBeVisible();
+        await expectMutation(progress.saveAfterJump(), () =>
+          contents.jumpTo("Chapter Three"),
+        );
+        await expect(contents.root).toHaveCount(0);
+      });
+
+      await test.step("check the jump landed", async () => {
+        await expect(epubReaderPage.loadingOverlay).toHaveCount(0, {
+          timeout: 20_000,
+        });
+        await expect(epubReaderPage.navErrorMessage).toHaveCount(0);
+        await expect(epubReaderPage.headerChapterLabel).toHaveText(
+          "Chapter Three",
+          { timeout: 20_000 },
+        );
+      });
+    });
+  });
+
+  // The phone shell renders this reader in a WebView, so check its layout here.
   test.describe("phone viewport", () => {
     test.use({ viewport: { width: 390, height: 844 } });
 
@@ -654,7 +826,7 @@ test.describe("epub reader", () => {
         await expect(epubReaderPage.contentsButton).toBeVisible();
       });
 
-      // Phones turn pages by swipe and tap, so the buttons would only cover prose.
+      // Phones turn pages by swipe or tap, so the buttons would cover prose.
       await test.step("check the page-turn buttons are hidden", async () => {
         await expect(epubReaderPage.previousPageButton).toBeHidden();
         await expect(epubReaderPage.nextPageButton).toBeHidden();
@@ -827,28 +999,6 @@ test("keeps the page-turn buttons clear of the prose in one- and two-page view",
   }
 });
 
-test("names the chapter the page is in when several share its spine document", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, SHARED_SPINE_BOOK.title);
-  await gotoReady(
-    page,
-    `/read/${uuid}?cfi=${encodeURIComponent(SHARED_SPINE_CFI)}`,
-  );
-  await expect(page.getByTestId("reader-header-chapter")).toHaveText(
-    "CHAPTER 1. Loomings.",
-    { timeout: 20_000 },
-  );
-
-  // The Contents drawer marks the same row.
-  await page.getByTestId("reader-toc").click();
-  await expect(page.getByTestId("reader-toc-drawer")).toBeVisible();
-  await expect(
-    page.locator('[data-testid="reader-toc-row"].current'),
-  ).toHaveText("CHAPTER 1. Loomings.");
-});
-
 test("black theme overrides a publisher color on the EPUB body", async ({
   page,
   request,
@@ -868,163 +1018,6 @@ test("black theme overrides a publisher color on the EPUB body", async ({
   await expect
     .poll(() => prose.evaluate((el) => getComputedStyle(el).color))
     .toBe("rgb(255, 255, 255)");
-});
-
-// Regression for issue #1909 (AC3): a TOC jump must show a loading
-// affordance, and the header must never show the outgoing chapter alongside
-// the target's content. `dracula` (reserved above in fixtures/epubs.ts) is a
-// real multi-chapter book so the contents drawer lists more than one row.
-test("shows a loading state during a TOC jump and blanks the outgoing chapter in the header", async ({
-  page,
-  request,
-}) => {
-  test.setTimeout(90_000);
-  const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  const headerChapter = page.getByTestId("reader-header-chapter");
-  const drawer = page.getByTestId("reader-toc-drawer");
-  const rows = page.getByTestId("reader-toc-row");
-
-  // The book opens on its cover — a spine item with no direct TOC entry, so
-  // the header renders nothing there. Jump to a real TOC row first to
-  // establish a genuine baseline chapter in the header, so the assertion
-  // below is about the readout actually clearing, not just never having had
-  // anything to clear in the first place.
-  await page.getByTestId("reader-toc").click();
-  await expect(drawer).toBeVisible();
-  await expect(rows.nth(3)).toBeVisible();
-  await expectMutation(page, { ...PROGRESS_POST, timeout: 20_000 }, async () =>
-    rows.nth(3).click(),
-  );
-  await expect(drawer).toHaveCount(0);
-  await expect(headerChapter).toBeVisible({ timeout: 20_000 });
-
-  // Jump again, further into the book — this is the transition under test.
-  await page.getByTestId("reader-toc").click();
-  await expect(drawer).toBeVisible();
-  await expect(rows.nth(6)).toBeVisible();
-
-  // The jump lands via the same relocate that fires the progress-save POST,
-  // so asserting that mutation is also the strongest signal the jump landed.
-  await expectMutation(
-    page,
-    { ...PROGRESS_POST, timeout: 20_000 },
-    async () => {
-      await rows.nth(6).click();
-
-      // The drawer closes and the loading affordance appears immediately —
-      // this is synchronous with the click (`overlays::render_toc_overlay`),
-      // so it never races the epub.js render — and the header must not show
-      // the outgoing chapter alongside it.
-      await expect(drawer).toHaveCount(0);
-      await expect(page.getByTestId("reader-loading")).toBeVisible();
-      await expect(headerChapter).toHaveCount(0);
-    },
-  );
-
-  // Once the jump lands, the loading overlay clears and the header shows a
-  // chapter again — never stuck blank, never stuck loading.
-  await expect(page.getByTestId("reader-loading")).toHaveCount(0);
-  await expect(headerChapter).toBeVisible({ timeout: 20_000 });
-});
-
-// Regression for issue #2450 (AC2): a TOC jump epub.js can't resolve must
-// clear the loading overlay and say so, not hang the reader. Writes nothing —
-// a rejected display emits no relocate — so it shares the TOC-jump book.
-test("a TOC jump that cannot land clears the loading overlay and says so", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-loading")).toHaveCount(0, {
-    timeout: 20_000,
-  });
-
-  // Stand in for a TOC whose href matches no spine item (the #2450 shape).
-  await page.evaluate(() => {
-    const onToc = (window as unknown as Record<string, (json: string) => void>)
-      .__omnibusOnToc!;
-    onToc(
-      JSON.stringify([{ label: "Nowhere", href: "missing.xhtml", level: 0 }]),
-    );
-  });
-
-  await page.getByTestId("reader-toc").click();
-  await page
-    .getByTestId("reader-toc-row")
-    .filter({ hasText: "Nowhere" })
-    .click();
-
-  await expect(page.getByTestId("reader-nav-error")).toBeVisible();
-  await expect(page.getByTestId("reader-loading")).toHaveCount(0);
-  // The notice takes no pointer events: a hit test at its own centre must
-  // land on whatever sits beneath it, never on the notice itself.
-  const notice = page.getByTestId("reader-nav-error");
-  const box = await notice.boundingBox();
-  if (!box) throw new Error("reader-nav-error has no bounding box");
-  const hitsNotice = await page.evaluate(
-    ({ x, y }) =>
-      !!document
-        .elementFromPoint(x, y)
-        ?.closest('[data-testid="reader-nav-error"]'),
-    { x: box.x + box.width / 2, y: box.y + box.height / 2 },
-  );
-  expect(hitsNotice).toBe(false);
-});
-
-// Regression for #2450 (AC1): a TOC href relative to a nav doc in a
-// subfolder must resolve against the spine rather than reject. Intercepts
-// /file and progress so it never reads the real dracula file or restores
-// its real position's CFI against this stand-in book.
-test("resolves a TOC jump whose href is relative to a nav doc in a subfolder", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TOC_JUMP_BOOK.title);
-  const epub = await buildSubfolderNavEpub();
-  await page.route(`**/api/ebooks/${uuid}/file**`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/epub+zip",
-      body: epub,
-    }),
-  );
-  await page.route("**/api/rpc/progress/get", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: "null",
-    }),
-  );
-  await page.route("**/api/rpc/progress", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
-  );
-
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-loading")).toHaveCount(0, {
-    timeout: 20_000,
-  });
-
-  const drawer = page.getByTestId("reader-toc-drawer");
-  await page.getByTestId("reader-toc").click();
-  await expect(drawer).toBeVisible();
-  await page
-    .getByTestId("reader-toc-row")
-    .filter({ hasText: "Chapter Three" })
-    .click();
-  await expect(drawer).toHaveCount(0);
-
-  await expect(page.getByTestId("reader-loading")).toHaveCount(0, {
-    timeout: 20_000,
-  });
-  await expect(page.getByTestId("reader-nav-error")).toHaveCount(0);
-  await expect(page.getByTestId("reader-header-chapter")).toHaveText(
-    "Chapter Three",
-    { timeout: 20_000 },
-  );
 });
 
 test("seeds a highlight and deletes it from the highlights drawer", async ({
