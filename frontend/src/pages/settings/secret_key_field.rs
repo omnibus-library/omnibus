@@ -8,7 +8,10 @@ use dioxus::prelude::*;
 use omnibus_shared::{GoogleBooksKeyStatus, HardcoverKeyStatus};
 
 use crate::components::credential_card::{credential_status_line, credential_status_message};
-use crate::data::DataError;
+use crate::components::{
+    confirm_modal_body, BusyLabel, ConfirmModal, ConfirmModalAction, ConfirmModalTone,
+};
+use crate::data::{server_error_message, DataError};
 use crate::{data, use_server_url};
 
 /// Which server-wide secret this card manages. `Copy` so every async handler
@@ -79,8 +82,20 @@ impl SecretKeyKind {
     /// Card heading.
     fn heading(self) -> &'static str {
         match self {
-            Self::Hardcover => "Suggestions",
-            Self::GoogleBooks => "Book metadata lookup",
+            Self::Hardcover => "Hardcover suggestions",
+            Self::GoogleBooks => "Google Books lookup",
+        }
+    }
+
+    /// What clearing the key stops, for the confirm dialog.
+    fn clear_consequence(self) -> &'static str {
+        match self {
+            Self::Hardcover => {
+                "\u{201c}Readers also enjoyed\u{201d} suggestions stop until a new key is saved."
+            }
+            Self::GoogleBooks => {
+                "ISBN check-ins fall back to the shared anonymous quota, which runs out quickly."
+            }
         }
     }
 
@@ -97,8 +112,8 @@ impl SecretKeyKind {
     /// `<label>` text (also the Playwright `getByLabel` selector).
     fn label(self) -> &'static str {
         match self {
-            Self::Hardcover => "Hardcover API Key",
-            Self::GoogleBooks => "Google Books API Key",
+            Self::Hardcover => "Hardcover API key",
+            Self::GoogleBooks => "Google Books API key",
         }
     }
 
@@ -144,6 +159,8 @@ struct SecretKeyFieldSignals {
     status: Signal<Option<KeyStatus>>,
     /// Set when the status read failed, so the line stops saying "Checking".
     status_failed: Signal<bool>,
+    /// Bumped by "Try again" to re-run the status read.
+    reload: Signal<u32>,
     key_input: Signal<String>,
     msg: Signal<Option<String>>,
     msg_is_error: Signal<bool>,
@@ -170,10 +187,11 @@ fn apply_key_write_outcome(
                 .set(Some(format!("{} key {verb_past}.", kind.noun())));
             sigs.msg_is_error.set(false);
         }
-        Err(_) => {
+        Err(e) => {
             sigs.msg.set(Some(format!(
-                "Failed to {verb_infinitive} {} key.",
-                kind.noun()
+                "Couldn\u{2019}t {verb_infinitive} the {} key: {}",
+                kind.noun(),
+                server_error_message(&e)
             )));
             sigs.msg_is_error.set(true);
         }
@@ -185,6 +203,9 @@ fn apply_key_write_outcome(
 /// "Clear" button's job, so this never silently wipes the key and reports
 /// "saved".
 async fn save_key(kind: SecretKeyKind, url: String, mut sigs: SecretKeyFieldSignals) {
+    if (sigs.in_flight)() || (sigs.status)().is_none() {
+        return;
+    }
     let value = (sigs.key_input)().trim().to_string();
     if value.is_empty() {
         sigs.msg
@@ -197,11 +218,20 @@ async fn save_key(kind: SecretKeyKind, url: String, mut sigs: SecretKeyFieldSign
     apply_key_write_outcome(sigs, kind, "save", "saved", result);
 }
 
-/// Clear handler body.
-async fn clear_key(kind: SecretKeyKind, url: String, mut sigs: SecretKeyFieldSignals) {
+/// Confirmed Clear handler body; closes the confirm dialog either way.
+async fn clear_key(
+    kind: SecretKeyKind,
+    url: String,
+    mut sigs: SecretKeyFieldSignals,
+    mut confirm_clear: Signal<bool>,
+) {
+    if (sigs.in_flight)() {
+        return;
+    }
     sigs.in_flight.set(true);
     let result = kind.save(&url, None).await;
     apply_key_write_outcome(sigs, kind, "clear", "cleared", result);
+    confirm_clear.set(false);
 }
 
 /// Display-ready fields derived from the loaded [`KeyStatus`] (or its
@@ -247,11 +277,17 @@ fn use_load_key_status(kind: SecretKeyKind, server_url: String, sigs: SecretKeyF
     let SecretKeyFieldSignals {
         mut status,
         mut status_failed,
+        reload,
         mut msg,
         mut msg_is_error,
         ..
     } = sigs;
     use_effect(move || {
+        let _ = reload();
+        if *status_failed.peek() {
+            status_failed.set(false);
+            msg.set(None);
+        }
         let url = server_url.clone();
         spawn(async move {
             match kind.fetch(&url).await {
@@ -260,7 +296,8 @@ fn use_load_key_status(kind: SecretKeyKind, server_url: String, sigs: SecretKeyF
                 Err(e) => {
                     status_failed.set(true);
                     msg.set(Some(format!(
-                        "Couldn\u{2019}t read the current status: {e}"
+                        "Couldn\u{2019}t read the current status: {}",
+                        server_error_message(&e)
                     )));
                     msg_is_error.set(true);
                 }
@@ -277,6 +314,7 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
     let sigs = SecretKeyFieldSignals {
         status: use_signal(|| None),
         status_failed: use_signal(|| false),
+        reload: use_signal(|| 0u32),
         key_input: use_signal(String::new),
         msg: use_signal(|| None::<String>),
         msg_is_error: use_signal(|| false),
@@ -285,13 +323,16 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
     let mut key_input = sigs.key_input;
     use_load_key_status(kind, server_url.clone(), sigs);
 
+    let mut confirm_clear = use_signal(|| false);
+    let mut reload = sigs.reload;
     let save_url = server_url.clone();
-    let on_save = move |_| {
+    let on_save = move |evt: FormEvent| {
+        evt.prevent_default();
         spawn(save_key(kind, save_url.clone(), sigs));
     };
     let clear_url = server_url.clone();
-    let on_clear = move |_| {
-        spawn(clear_key(kind, clear_url.clone(), sigs));
+    let on_clear = move |()| {
+        spawn(clear_key(kind, clear_url.clone(), sigs, confirm_clear));
     };
 
     let SecretKeyFieldView {
@@ -303,12 +344,13 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
     let testid = kind.testid();
     let msg = sigs.msg;
     let msg_is_error = sigs.msg_is_error;
-    let in_flight = sigs.in_flight;
+    let busy = (sigs.in_flight)();
 
     rsx! {
         section { class: "card", "data-testid": "{testid}-key-card",
-            h2 { "{kind.heading()}" }
+            h3 { "{kind.heading()}" }
             p { class: "subtitle", "{kind.subtitle()}" }
+            form { class: "settings-form", onsubmit: on_save,
             div { class: "settings-field",
                 label { r#for: kind.input_id(), "{kind.label()}" }
                 input {
@@ -328,26 +370,104 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
             }
             div { class: "settings-actions",
                 button {
-                    r#type: "button",
+                    r#type: "submit",
                     class: "btn",
-                    disabled: in_flight(),
+                    disabled: busy || known.is_none(),
+                    "aria-busy": if busy { "true" } else { "false" },
                     "data-testid": "{testid}-save",
-                    onclick: on_save,
-                    "Save"
+                    BusyLabel { busy, label: format!("Save {} key", kind.noun()), busy_label: "Saving\u{2026}" }
+                }
+                if (sigs.status_failed)() {
+                    button {
+                        r#type: "button",
+                        class: "btn ghost",
+                        "data-testid": "{testid}-retry",
+                        onclick: move |_| reload += 1,
+                        "Try again"
+                    }
                 }
                 if configured {
                     button {
                         r#type: "button",
                         class: "btn ghost",
-                        disabled: in_flight(),
+                        disabled: busy,
                         "data-testid": "{testid}-clear",
-                        onclick: on_clear,
-                        "Clear"
+                        onclick: move |_| confirm_clear.set(true),
+                        "Clear\u{2026}"
                     }
                 }
             }
             {credential_status_line(&format!("{testid}-status"), known, (sigs.status_failed)(), &detail, "Not connected")}
             {credential_status_message(&format!("{testid}-key-status"), msg().as_deref(), msg_is_error())}
+            }
+            if confirm_clear() {
+                ClearCredentialModal {
+                    testid,
+                    title: format!("Remove the {} key?", kind.noun()),
+                    body: format!(
+                        "{} The key can\u{2019}t be shown again, so you\u{2019}ll need the original to put it back.",
+                        kind.clear_consequence()
+                    ),
+                    confirm_label: format!("Remove {} key", kind.noun()),
+                    busy,
+                    on_confirm: on_clear,
+                    on_cancel: move |()| confirm_clear.set(false),
+                }
+            }
         }
     }
 }
+
+/// Confirm before a server-wide credential goes: names what is cleared and what
+/// stops working, since a cleared secret can't be read back to restore it.
+/// Testids hang off `testid`: `{testid}-clear-modal`, `-clear-cancel`,
+/// `-clear-confirm`.
+#[component]
+pub(super) fn ClearCredentialModal(
+    testid: &'static str,
+    #[props(into)] title: String,
+    #[props(into)] body: String,
+    #[props(into)] confirm_label: String,
+    busy: bool,
+    on_confirm: EventHandler<()>,
+    on_cancel: EventHandler<()>,
+) -> Element {
+    rsx! {
+        ConfirmModal {
+            testid: format!("{testid}-clear-modal"),
+            aria_label: title.clone(),
+            dialog_class: "mg-modal del-modal".to_string(),
+            busy,
+            focus_on_open: true,
+            on_dismiss: move |_| on_cancel.call(()),
+            {confirm_modal_body(
+                &title,
+                &body,
+                None,
+                vec![
+                    ConfirmModalAction {
+                        testid: format!("{testid}-clear-cancel"),
+                        label: "Keep it".to_string(),
+                        busy_label: None,
+                        busy: false,
+                        tone: ConfirmModalTone::Ghost,
+                        disabled: busy,
+                        on_click: EventHandler::new(move |_| on_cancel.call(())),
+                    },
+                    ConfirmModalAction {
+                        testid: format!("{testid}-clear-confirm"),
+                        label: confirm_label,
+                        busy_label: Some("Clearing\u{2026}".to_string()),
+                        busy,
+                        tone: ConfirmModalTone::Danger,
+                        disabled: busy,
+                        on_click: EventHandler::new(move |_| on_confirm.call(())),
+                    },
+                ],
+            )}
+        }
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests;

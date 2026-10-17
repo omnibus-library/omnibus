@@ -8,6 +8,8 @@ use dioxus::prelude::*;
 use omnibus_shared::{EbookConvertStatus, DEFAULT_EBOOK_CONVERT_BIN};
 
 use crate::components::credential_card::{credential_status_line, credential_status_message};
+use crate::components::BusyLabel;
+use crate::data::server_error_message;
 use crate::{data, use_server_url};
 
 /// The input's placeholder: the resolved command once the status lands, else
@@ -88,6 +90,9 @@ fn use_load_ebook_convert_status(server_url: String, sigs: EbookConvertFieldSign
 /// Save handler body: empty input is a no-op with a hint — reverting to
 /// auto-detection is the "Use auto-detection" button's job.
 async fn save_ebook_convert_path(url: String, mut sigs: EbookConvertFieldSignals) {
+    if (sigs.in_flight)() {
+        return;
+    }
     let value = (sigs.path_input)().trim().to_string();
     if value.is_empty() {
         sigs.msg
@@ -104,9 +109,11 @@ async fn save_ebook_convert_path(url: String, mut sigs: EbookConvertFieldSignals
             sigs.msg.set(Some(text));
             sigs.msg_is_error.set(is_error);
         }
-        Err(_) => {
-            sigs.msg
-                .set(Some("Failed to save ebook-convert path.".to_string()));
+        Err(e) => {
+            sigs.msg.set(Some(format!(
+                "Couldn\u{2019}t save the ebook-convert path: {}",
+                server_error_message(&e)
+            )));
             sigs.msg_is_error.set(true);
         }
     }
@@ -125,9 +132,11 @@ async fn clear_ebook_convert_path(url: String, mut sigs: EbookConvertFieldSignal
             ));
             sigs.msg_is_error.set(false);
         }
-        Err(_) => {
-            sigs.msg
-                .set(Some("Failed to clear ebook-convert path.".to_string()));
+        Err(e) => {
+            sigs.msg.set(Some(format!(
+                "Couldn\u{2019}t clear the ebook-convert path: {}",
+                server_error_message(&e)
+            )));
             sigs.msg_is_error.set(true);
         }
     }
@@ -151,7 +160,8 @@ pub fn EbookConvertField() -> Element {
     use_load_ebook_convert_status(server_url.clone(), sigs);
 
     let save_url = server_url.clone();
-    let on_save = move |_| {
+    let on_save = move |evt: FormEvent| {
+        evt.prevent_default();
         spawn(save_ebook_convert_path(save_url.clone(), sigs));
     };
     let clear_url = server_url.clone();
@@ -161,7 +171,7 @@ pub fn EbookConvertField() -> Element {
 
     let msg = sigs.msg;
     let msg_is_error = sigs.msg_is_error;
-    let in_flight = sigs.in_flight;
+    let busy = (sigs.in_flight)();
     let st = (sigs.status)();
     let available = st.as_ref().map(|s| s.available);
     let overridden = is_overridden(st.as_ref());
@@ -170,18 +180,21 @@ pub fn EbookConvertField() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "ebook-convert-card",
-            h2 { "Format conversion" }
+            h3 { "Calibre format conversion" }
             p { class: "subtitle",
                 "Omnibus converts between ebook formats with Calibre\u{2019}s ebook-convert. "
                 "Calibre is optional \u{2014} without it, conversion stays disabled and "
                 "everything else works as usual."
             }
+            form { class: "settings-form", onsubmit: on_save,
             div { class: "settings-field",
-                label { r#for: "ebook-convert-path", "ebook-convert Path" }
+                label { r#for: "ebook-convert-path", translate: "no", "ebook-convert path" }
                 input {
                     r#type: "text",
                     id: "ebook-convert-path",
                     name: "ebook_convert_path",
+                    autocomplete: "off",
+                    translate: "no",
                     autocapitalize: "none",
                     autocorrect: "off",
                     spellcheck: "false",
@@ -192,18 +205,18 @@ pub fn EbookConvertField() -> Element {
             }
             div { class: "settings-actions",
                 button {
-                    r#type: "button",
+                    r#type: "submit",
                     class: "btn",
-                    disabled: in_flight(),
+                    disabled: busy,
+                    "aria-busy": if busy { "true" } else { "false" },
                     "data-testid": "ebook-convert-save",
-                    onclick: on_save,
-                    "Save"
+                    BusyLabel { busy, label: "Save ebook-convert path", busy_label: "Saving\u{2026}" }
                 }
                 if overridden {
                     button {
                         r#type: "button",
                         class: "btn ghost",
-                        disabled: in_flight(),
+                        disabled: busy,
                         "data-testid": "ebook-convert-clear",
                         onclick: on_clear,
                         "Use auto-detection"
@@ -212,6 +225,7 @@ pub fn EbookConvertField() -> Element {
             }
             {credential_status_line("ebook-convert-status", available, (sigs.status_failed)(), &detail, "Not detected")}
             {credential_status_message("ebook-convert-save-status", msg().as_deref(), msg_is_error())}
+            }
         }
     }
 }
