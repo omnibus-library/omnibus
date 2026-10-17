@@ -1,12 +1,13 @@
 import type { Page } from "@playwright/test";
 import { progress } from "../contracts/progress";
+import { readStatus } from "../contracts/readStatus";
+import { pagePercent, pdfPageAnchor } from "../data/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { buildJpxPdf, JPX_FILL } from "../fixtures/jpx_pdf";
 import { expect, test } from "../fixtures/pageFixtures";
 import { expectMutation, failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
-import { storedProgress } from "../utils/progress";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Both PDF fixtures are reserved for this spec (see fixtures/epubs.ts), and
@@ -54,15 +55,6 @@ const PROGRESS_POST = {
   expectedStatus: 200,
 };
 
-// Automatic read-status transitions (open → reading, last page → finished)
-// go through the read-status set RPC. The exact-path string cannot match
-// the sibling `/api/rpc/read-status/get` fetch the reader issues on open.
-const READ_STATUS_POST = {
-  method: "POST" as const,
-  url: "/api/rpc/read-status/set",
-  expectedStatus: 200,
-};
-
 async function openPdf(page: Page, path: string) {
   await gotoReady(page, path);
   // The glue reports ready once the first page rasterised; the loading
@@ -75,14 +67,6 @@ async function openPdf(page: Page, path: string) {
 
 function pageLabel(page: Page) {
   return page.getByTestId("pdf-page-label");
-}
-
-/** The document's page count, as the footer reports it. */
-async function pageCount(page: Page): Promise<number> {
-  const label = (await pageLabel(page).textContent()) ?? "";
-  const match = /of (\d+)$/.exec(label);
-  expect(match, `page label "${label}"`).not.toBeNull();
-  return Number(match![1]);
 }
 
 /**
@@ -313,122 +297,171 @@ test.describe("pdf reader", () => {
       });
     });
   });
+
+  test.describe("writes on the reserved pdf", () => {
+    // Every test writes the one reserved pdf, so they run one at a time.
+    test.describe.configure({ mode: "default" });
+
+    test("mark an unread pdf reading when it opens", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+      await test.step("park the book unread on page 1", async () => {
+        await parkBook(uuid, pdfPageAnchor(0), "unread");
+      });
+
+      // The write fires once the page load and its fetches settle.
+      await test.step("open the book", async () => {
+        await expectMutation(readStatus.setOnOpen(uuid, "reading"), () =>
+          pdfReaderPage.goto(uuid),
+        );
+      });
+    });
+
+    test("save the position on every page turn", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+      storedPosition,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+      await test.step("park the book reading on page 1", async () => {
+        await parkBook(uuid, pdfPageAnchor(0), "reading");
+      });
+
+      const count = await test.step("open the book", async () => {
+        await pdfReaderPage.goto(uuid);
+        const pages = await pdfReaderPage.pageCount();
+        expect(pages, "page count from the label").toBeGreaterThan(4);
+        return pages;
+      });
+
+      await test.step("turn three pages", async () => {
+        for (let target = 1; target <= 3; target++) {
+          await expectMutation(
+            progress.savePage(
+              uuid,
+              pdfPageAnchor(target),
+              pagePercent(target, count),
+            ),
+            () => pdfReaderPage.turnPage(),
+          );
+          await expect(pdfReaderPage.pageLabel).toHaveText(
+            `Page ${target + 1} of ${count}`,
+          );
+        }
+      });
+
+      await test.step("check the server holds page 4", async () => {
+        const record = await storedPosition(uuid);
+        expect(record?.epub_cfi).toBe("pdf-page:3");
+        expect(record?.progress_percent).toBe(Math.round(400 / count));
+      });
+    });
+
+    test("open a pdf on its saved page", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+      await test.step("park the book reading on page 4", async () => {
+        await parkBook(uuid, pdfPageAnchor(3), "reading");
+      });
+
+      await test.step("open the book", async () => {
+        await pdfReaderPage.goto(uuid);
+      });
+
+      await test.step("check the reader restored page 4", async () => {
+        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of \d+$/);
+      });
+    });
+
+    test("mark a pdf finished on reaching its last page", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+      await test.step("park the book reading on page 4", async () => {
+        await parkBook(uuid, pdfPageAnchor(3), "reading");
+      });
+
+      const count = await test.step("open the book", async () => {
+        await pdfReaderPage.goto(uuid);
+        return pdfReaderPage.pageCount();
+      });
+
+      // The position saves, and the last page marks the book finished.
+      await test.step("slide to the last page", async () => {
+        await expectMutation(readStatus.set(uuid, "finished"), () =>
+          expectMutation(progress.save(), () =>
+            pdfReaderPage.slideToPage(count - 1),
+          ),
+        );
+      });
+
+      await test.step("check the reader is on the last page", async () => {
+        await expect(pdfReaderPage.pageLabel).toHaveText(
+          `Page ${count} of ${count}`,
+        );
+        await expect(pdfReaderPage.nextPageButton).toBeDisabled();
+      });
+    });
+
+    test("keep a finished pdf finished when paging back", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+      storedReadStatus,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+      // The page count is PDF.js's, so the park cannot name the last page.
+      await test.step("park the book finished on page 4", async () => {
+        await parkBook(uuid, pdfPageAnchor(3), "finished");
+      });
+
+      const count = await test.step("open the book", async () => {
+        await pdfReaderPage.goto(uuid);
+        return pdfReaderPage.pageCount();
+      });
+
+      await test.step("slide to the last page", async () => {
+        await expectMutation(progress.save(), () =>
+          pdfReaderPage.slideToPage(count - 1),
+        );
+      });
+
+      await test.step("slide back to the first page", async () => {
+        await expectMutation(progress.save(), () =>
+          pdfReaderPage.slideToPage(0),
+        );
+      });
+
+      // Paging back saves the position but must not downgrade the status.
+      await test.step("check the book is still finished", async () => {
+        expect(await storedReadStatus(uuid)).toBe("finished");
+      });
+    });
+  });
 });
 
 // The write-path tests all mutate PDF's rows, so they run one after another
 // even though the suite is fullyParallel.
 test.describe("writes on the reserved PDF", () => {
   test.describe.configure({ mode: "serial" });
-
-  test("pages forward, saves each turn, resumes, and auto-marks reading then finished", async ({
-    page,
-    request,
-  }) => {
-    const uuid = await fetchBookUuidByTitle(request, PDF.title);
-
-    // Reset the state a previous run left behind — a run that died mid-test
-    // never reaches the tail resets, and the leftovers change this test's
-    // behavior: a saved position reopens on the last page (auto-finishing on
-    // open instead of marking reading), and a leftover finished status never
-    // auto-downgrades.
-    const progressReset = await request.post("/api/progress", {
-      data: {
-        book_uuid: uuid,
-        format: "epub",
-        epub_cfi: "pdf-page:0",
-        progress_percent: 1,
-      },
-    });
-    expect(progressReset.status()).toBe(200);
-    const reset = await request.put("/api/read-status", {
-      data: { book_uuid: uuid, status: "unread" },
-    });
-    expect(reset.status()).toBe(200);
-
-    // Opening an unread PDF marks it reading, exactly once. The write fires
-    // after hydration + the metadata/status fetches settle, so give it the
-    // full-page-load allowance.
-    await expectMutation(
-      page,
-      {
-        ...READ_STATUS_POST,
-        expectedBody: { update: { book_uuid: uuid, status: "reading" } },
-        timeout: 20_000,
-      },
-      async () => openPdf(page, `/pdf/${uuid}`),
-    );
-    const count = await pageCount(page);
-    expect(count).toBeGreaterThan(4);
-
-    // Three forward turns; each must POST the exact page anchor + percent.
-    for (let target = 1; target <= 3; target++) {
-      await expectMutation(
-        page,
-        {
-          ...PROGRESS_POST,
-          expectedBody: {
-            update: {
-              book_uuid: uuid,
-              format: "epub",
-              epub_cfi: `pdf-page:${target}`,
-              progress_percent: Math.round(((target + 1) * 100) / count),
-            },
-          },
-        },
-        async () => page.getByRole("button", { name: "Next page" }).click(),
-      );
-      await expect(pageLabel(page)).toHaveText(
-        `Page ${target + 1} of ${count}`,
-      );
-    }
-
-    // The server now holds the anchor for page index 3.
-    const record = await storedProgress(request, uuid);
-    expect(record?.epub_cfi).toBe("pdf-page:3");
-    expect(record?.progress_percent).toBe(Math.round(400 / count));
-
-    // Leave, reopen: the reader restores the saved page, not page 1.
-    await gotoReady(page, `/books/${uuid}`);
-    await openPdf(page, `/pdf/${uuid}`);
-    await expect(pageLabel(page)).toHaveText(`Page 4 of ${count}`);
-
-    // The slider jumps to the last page: the position saves, and landing on
-    // the final page auto-marks the book finished.
-    await expectMutation(
-      page,
-      {
-        ...READ_STATUS_POST,
-        expectedBody: { update: { book_uuid: uuid, status: "finished" } },
-      },
-      async () =>
-        expectMutation(page, PROGRESS_POST, async () =>
-          page
-            .getByRole("slider", { name: "Page slider" })
-            .fill(String(count - 1)),
-        ),
-    );
-    await expect(pageLabel(page)).toHaveText(`Page ${count} of ${count}`);
-    await expect(
-      page.getByRole("button", { name: "Next page" }),
-    ).toBeDisabled();
-
-    // Paging back off the last page saves the position but must not
-    // downgrade the status: the server still reports finished afterwards.
-    await expectMutation(page, PROGRESS_POST, async () =>
-      page.getByRole("slider", { name: "Page slider" }).fill("0"),
-    );
-    const after = await request.get(`/api/read-status/${uuid}`);
-    expect(after.status()).toBe(200);
-    const statusAfter = (await after.json()) as { status: string } | null;
-    expect(statusAfter?.status).toBe("finished");
-
-    // Reset the status for the next run (the page-0 save above already reset
-    // the position).
-    const cleanup = await request.put("/api/read-status", {
-      data: { book_uuid: uuid, status: "unread" },
-    });
-    expect(cleanup.status()).toBe(200);
-  });
 
   test("highlights a text-layer selection, paints it on reload, lists it, and deep-links back to its page", async ({
     page,
