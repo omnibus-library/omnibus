@@ -207,7 +207,7 @@ test.describe("check-in chooser", () => {
 
     await test.step("look up a book only the providers know", async () => {
       await flow.stubIsbnLookup(notInLibrary(book));
-      await flow.forceServerError(scan.physicalOnly(book));
+      await checkInPage.forceServerError(scan.physicalOnly(book));
       await checkInPage.goto();
       await expectMutation(scan.resolve(book.isbn13), () =>
         flow.lookUpIsbn(book.isbn13),
@@ -236,7 +236,7 @@ test.describe("check-in chooser", () => {
 
     await test.step("look up a book only the providers know", async () => {
       await flow.stubIsbnLookup(notInLibrary(book));
-      await flow.forceServerError(scan.wishlist("manual"));
+      await checkInPage.forceServerError(scan.wishlist("manual"));
       await checkInPage.goto();
       await expectMutation(scan.resolve(book.isbn13), () =>
         flow.lookUpIsbn(book.isbn13),

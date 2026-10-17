@@ -2,7 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import { paletteUrls } from "../contracts/palette";
 import { scanUrls } from "../contracts/scan";
 import type { ExternalBookMeta, ScanOutcome } from "../data/scan";
-import { type ExpectMutationOptions, isPostTo } from "../utils/api";
+import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /**
@@ -212,19 +212,6 @@ export class CheckInFlowComponent extends BaseComponent {
   /** Accepts a wishlist entry without writing it. */
   async stubWishlistEntry(bookUuid: string): Promise<void> {
     await this.stubPost(scanUrls.wishlist, { book_uuid: bookUuid });
-  }
-
-  /** Fails every request `contract` describes from this page with a 500. */
-  async forceServerError(contract: ExpectMutationOptions): Promise<void> {
-    await this.page.route(contract.url, (route) =>
-      route.request().method() === contract.method
-        ? route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          })
-        : route.continue(),
-    );
   }
 
   async enterIsbn(isbn: string): Promise<void> {

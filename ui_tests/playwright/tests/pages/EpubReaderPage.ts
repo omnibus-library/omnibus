@@ -1,5 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
+import { BookmarksDrawerComponent } from "../components/BookmarksDrawerComponent";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
+import { MiniDockComponent } from "../components/MiniDockComponent";
 import { ReaderContentsDrawerComponent } from "../components/ReaderContentsDrawerComponent";
 import {
   ReaderDisplayPanelComponent,
@@ -9,7 +11,6 @@ import { ReaderGesturesComponent } from "../components/ReaderGesturesComponent";
 import { ReaderSectionComponent } from "../components/ReaderSectionComponent";
 import { progressUrls } from "../contracts/progress";
 import { expect } from "../fixtures/test";
-import type { ExpectMutationOptions } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /**
@@ -33,7 +34,9 @@ export class EpubReaderPage extends BasePage {
   readonly displayPanel: ReaderDisplayPanelComponent;
   readonly contentsDrawer: ReaderContentsDrawerComponent;
   readonly highlightsDrawer: HighlightsDrawerComponent;
+  readonly bookmarksDrawer: BookmarksDrawerComponent;
   readonly gestures: ReaderGesturesComponent;
+  readonly miniDock: MiniDockComponent;
 
   readonly viewerPanel: Locator;
   readonly backButton: Locator;
@@ -55,8 +58,6 @@ export class EpubReaderPage extends BasePage {
 
   readonly searchDrawer: Locator;
   readonly searchField: Locator;
-  readonly bookmarksDrawer: Locator;
-  readonly addBookmarkButton: Locator;
   readonly annotationsSheet: Locator;
   readonly bookmarksFilterButton: Locator;
   readonly addAnnotationButton: Locator;
@@ -67,7 +68,9 @@ export class EpubReaderPage extends BasePage {
     this.displayPanel = new ReaderDisplayPanelComponent(page);
     this.contentsDrawer = new ReaderContentsDrawerComponent(page);
     this.highlightsDrawer = new HighlightsDrawerComponent(page);
+    this.bookmarksDrawer = new BookmarksDrawerComponent(page);
     this.gestures = new ReaderGesturesComponent(page);
+    this.miniDock = new MiniDockComponent(page);
     this.viewerPanel = page.getByTestId("reader-viewer");
     this.backButton = page.getByTestId("reader-back");
     this.contentsButton = page.getByTestId("reader-toc");
@@ -89,8 +92,6 @@ export class EpubReaderPage extends BasePage {
     this.navErrorMessage = page.getByTestId("reader-nav-error");
     this.searchDrawer = page.getByTestId("reader-search-drawer");
     this.searchField = page.getByTestId("reader-search-input");
-    this.bookmarksDrawer = page.getByTestId("reader-bookmarks-drawer");
-    this.addBookmarkButton = page.getByTestId("reader-bookmark-add");
     this.annotationsSheet = page.getByTestId("reader-annotations-drawer");
     this.bookmarksFilterButton = page.getByTestId(
       "annotations-filter-bookmarks",
@@ -254,6 +255,24 @@ export class EpubReaderPage extends BasePage {
     await this.presetLocalStorage("omn.typeface", face);
   }
 
+  /**
+   * Where the stage, footer and docked player first overlap, or "clear". The
+   * stage reflows once playback resolves the book, so a spec polls it.
+   */
+  async dockStacking(): Promise<
+    "clear" | "missing-box" | "stage-overlaps-footer" | "footer-overlaps-dock"
+  > {
+    const [stage, dock, footer] = await Promise.all([
+      this.viewerPanel.boundingBox(),
+      this.miniDock.root.boundingBox(),
+      this.footerBar.boundingBox(),
+    ]);
+    if (!stage || !dock || !footer) return "missing-box";
+    if (stage.y + stage.height > footer.y + 0.5) return "stage-overlaps-footer";
+    if (footer.y + footer.height > dock.y + 0.5) return "footer-overlaps-dock";
+    return "clear";
+  }
+
   /** Whether the failed-jump notice would swallow a click at its own centre. */
   async navErrorInterceptsPointer(): Promise<boolean> {
     const box = await this.navErrorMessage.boundingBox();
@@ -292,19 +311,6 @@ export class EpubReaderPage extends BasePage {
       aborted = true;
       await route.abort();
     });
-  }
-
-  /** Fails every request `contract` describes from this page with a 500. */
-  async forceServerError(contract: ExpectMutationOptions): Promise<void> {
-    await this.page.route(contract.url, (route) =>
-      route.request().method() === contract.method
-        ? route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          })
-        : route.continue(),
-    );
   }
 
   /** Serves `epub` as the book's file and keeps progress off the server. */
@@ -347,11 +353,5 @@ export class EpubReaderPage extends BasePage {
       }
     });
     return refusals;
-  }
-
-  /** Opens `path`, then waits for the page's first fetches to settle. */
-  private async openAndSettle(path: string): Promise<void> {
-    await this.open(path);
-    await this.page.waitForLoadState("networkidle");
   }
 }

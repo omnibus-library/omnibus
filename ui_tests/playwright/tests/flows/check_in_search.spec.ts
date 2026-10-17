@@ -163,7 +163,7 @@ test.describe("check-in title search", () => {
     const flow = checkInPage.flow;
 
     await test.step("search while searches fail", async () => {
-      await flow.forceServerError(scan.search(QUERY));
+      await checkInPage.forceServerError(scan.search(QUERY));
       await checkInPage.goto();
       await expectMutation(failing(scan.search(QUERY)), () =>
         flow.searchByTitle(QUERY),

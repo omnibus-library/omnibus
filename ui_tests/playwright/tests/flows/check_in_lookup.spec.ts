@@ -111,7 +111,7 @@ test.describe("check-in lookup", () => {
     const flow = checkInPage.flow;
 
     await test.step("look up an isbn while lookups fail", async () => {
-      await flow.forceServerError(scan.resolve(ISBN));
+      await checkInPage.forceServerError(scan.resolve(ISBN));
       await checkInPage.goto();
       await expectMutation(failing(scan.resolve(ISBN)), () =>
         flow.lookUpIsbn(ISBN),

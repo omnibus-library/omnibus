@@ -101,14 +101,14 @@ test.describe("settings page", () => {
 });
 ```
 
-**Error path:** before the action, pass the contract to the page object's
-`forceServerError(contract)`, or add a stub method like it. Keep the
-`expectMutation`, and wrap its contract in `failing(…)` from `utils/api.ts` so
-the test still proves the request fires and gets a 500. Then assert the UI
-shows the error.
+**Error path:** before the action, pass the contract to
+`forceServerError(contract)`, which every page object inherits from
+`BasePage`. Keep the `expectMutation`, and wrap its contract in `failing(…)`
+from `utils/api.ts` so the test still proves the request fires and gets a 500.
+Then assert the UI shows the error.
 
 ```ts
-await flow.forceServerError(scan.search(query));
+await checkInPage.forceServerError(scan.search(query));
 await expectMutation(failing(scan.search(query)), () =>
   flow.searchByTitle(query),
 );
