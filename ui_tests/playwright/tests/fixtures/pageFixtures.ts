@@ -25,6 +25,7 @@ import { CheckInPage } from "../pages/CheckInPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
+import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import {
   type ExpectMutationOptions,
@@ -62,6 +63,7 @@ type PageFixtures = {
   checkInPage: CheckInPage;
   epubReaderPage: EpubReaderPage;
   comicReaderPage: ComicReaderPage;
+  pdfReaderPage: PdfReaderPage;
   shelfPage: ShelfPage;
   scanRequests: ScanRequests;
   physicalRequests: PhysicalRequests;
@@ -149,6 +151,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
   comicReaderPage: async ({ page }, use) => {
     await use(new ComicReaderPage(page));
+  },
+  pdfReaderPage: async ({ page }, use) => {
+    await use(new PdfReaderPage(page));
   },
   shelfPage: async ({ page }, use) => {
     await use(new ShelfPage(page));

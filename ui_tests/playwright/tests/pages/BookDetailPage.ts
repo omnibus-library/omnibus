@@ -17,6 +17,8 @@ export class BookDetailPage extends BasePage {
   readonly readButton: Locator;
   readonly startReadingButton: Locator;
   readonly startReadingComicButton: Locator;
+  readonly startReadingPdfButton: Locator;
+  readonly readPdfButton: Locator;
   readonly listenButton: Locator;
   readonly immersiveReadButton: Locator;
   readonly noFilesMessage: Locator;
@@ -37,6 +39,8 @@ export class BookDetailPage extends BasePage {
     // The labels change with reading progress, so the row is found by test id.
     this.startReadingButton = page.getByTestId("start-reading");
     this.startReadingComicButton = page.getByTestId("start-reading-comic");
+    this.startReadingPdfButton = page.getByTestId("start-reading-pdf");
+    this.readPdfButton = page.getByTestId("action-read-pdf");
     this.listenButton = page.getByTestId("listen-secondary");
     this.immersiveReadButton = page.getByTestId("immersive-read");
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
@@ -78,6 +82,11 @@ export class BookDetailPage extends BasePage {
   /** Opens the comic pager through the CBZ's Start reading action. */
   async startReadingComic(): Promise<void> {
     await this.startReadingComicButton.click();
+  }
+
+  /** Opens the PDF reader through the PDF's Start reading action. */
+  async startReadingPdf(): Promise<void> {
+    await this.startReadingPdfButton.click();
   }
 
   async checkInWhenAcquired(): Promise<void> {

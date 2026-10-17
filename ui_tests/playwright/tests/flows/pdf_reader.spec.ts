@@ -1,8 +1,9 @@
 import type { Page } from "@playwright/test";
+import { progress } from "../contracts/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { buildJpxPdf, JPX_FILL } from "../fixtures/jpx_pdf";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { expectMutation, failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
 import { storedProgress } from "../utils/progress";
@@ -110,158 +111,207 @@ async function selectFirstTextRun(page: Page): Promise<string> {
   return selected.trim();
 }
 
-test("renders the PDF reader layout and opens a pristine book on page 1", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await openPdf(page, `/pdf/${uuid}`);
+test.describe("pdf reader", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
 
-  // Chrome: back, title block, the annotation tools, fit-mode toggle group.
-  await expect(page.getByTestId("pdf-back")).toBeVisible();
-  await expect(page.getByText(PRISTINE.title)).toBeVisible();
-  await expect(page.getByTestId("pdf-highlights")).toBeVisible();
-  await expect(page.getByTestId("pdf-bookmarks")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Fit width" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Fit height" })).toBeVisible();
-
-  // Stage: PDF.js rasterised a canvas and laid its text layer over it —
-  // proves the file route served real bytes and the worker ran.
-  const canvas = page.locator(".pr-canvas");
-  await expect(canvas).toHaveCount(1);
-  await expect
-    .poll(() => canvas.evaluate((el) => (el as HTMLCanvasElement).width))
-    .toBeGreaterThan(0);
-  // The cover is a scan with no text, so the layer is present but empty
-  // here; the highlight test drives it on a prose page.
-  await expect(page.locator(".pr-textlayer")).toHaveCount(1);
-
-  // Page-turn buttons and the slider; prev is disabled on page 1.
-  await expect(
-    page.getByRole("button", { name: "Previous page" }),
-  ).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Next page" })).toBeEnabled();
-  await expect(page.getByRole("slider", { name: "Page slider" })).toBeVisible();
-  const count = await pageCount(page);
-  expect(count).toBeGreaterThan(1);
-  await expect(pageLabel(page)).toHaveText(`Page 1 of ${count}`);
-});
-
-test("decodes a JPEG 2000 image through the bundled OpenJPEG module", async ({
-  page,
-  request,
-}) => {
-  // PDF.js 6 decodes JPXDecode in a WASM module it fetches from `wasmUrl`;
-  // when that is unset (or the folder asset, filename, or MIME type is
-  // wrong) it drops the image *silently* and the page paints blank. Serve
-  // the pristine book's `/file` route from an in-memory JPX-only PDF so the
-  // decoder is exercised — nothing in the seeded library carries JPX.
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await page.route(`**/api/ebooks/${uuid}/file**`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/pdf",
-      body: buildJpxPdf(),
-    }),
-  );
-  const decoder = page.waitForResponse((res) =>
-    res.url().includes("/pdfjs-wasm/openjpeg.wasm"),
+  // An unread book is marked reading on open, a write PRISTINE's tests would
+  // leave unasserted.
+  test.beforeAll(
+    "mark the pristine pdf reading",
+    async ({ request, presetReadStatus }) => {
+      const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+      await presetReadStatus(uuid, "reading");
+    },
   );
 
-  await openPdf(page, `/pdf/${uuid}`);
-  await expect(pageLabel(page)).toHaveText("Page 1 of 2");
+  test("show the pdf reader layout", async ({ pdfReaderPage, request }) => {
+    const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
 
-  // The worker asked for the decoder at the bundled directory and the
-  // server answered with a WASM body, not a 404 page.
-  const res = await decoder;
-  expect(res.status()).toBe(200);
-  expect(res.headers()["content-type"]).toContain("application/wasm");
-
-  // And it decoded: the page is the image, so the canvas centre carries the
-  // image's fill rather than the white a dropped image leaves behind.
-  const canvas = page.locator(".pr-canvas");
-  const centrePixel = () =>
-    canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const px = c
-        .getContext("2d")!
-        .getImageData(
-          Math.floor(c.width / 2),
-          Math.floor(c.height / 2),
-          1,
-          1,
-        ).data;
-      return [px[0]!, px[1]!, px[2]!];
+    await test.step("open the book", async () => {
+      await pdfReaderPage.goto(uuid);
     });
-  // A small tolerance: the codestream is lossless, but the canvas is
-  // colour-managed on the way to the backing store.
-  await expect
-    .poll(async () =>
-      (await centrePixel()).every((v, i) => Math.abs(v - JPX_FILL[i]!) <= 8),
-    )
-    .toBe(true);
-});
 
-test("fit modes toggle the stage layout class", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await openPdf(page, `/pdf/${uuid}`);
+    await test.step("check the chrome shows", async () => {
+      await expect(pdfReaderPage.backButton).toBeVisible();
+      await expect(pdfReaderPage.titleHeading).toHaveText(PRISTINE.title);
+      await expect(pdfReaderPage.highlightsButton).toBeVisible();
+      await expect(pdfReaderPage.bookmarksButton).toBeVisible();
+      await expect(pdfReaderPage.fitWidthButton).toBeVisible();
+      await expect(pdfReaderPage.fitHeightButton).toBeVisible();
+    });
 
-  const stage = page.getByTestId("pdf-stage");
-  // Fit-height is the default.
-  await expect(stage).toHaveClass(/cr-fit-height/);
-  await expect(
-    page.getByRole("button", { name: "Fit height" }),
-  ).toHaveAttribute("aria-pressed", "true");
+    // PDF.js rasterised a canvas and laid its text layer over it, which proves
+    // the file route served real bytes and the worker ran.
+    await test.step("check the page renders", async () => {
+      await expect(pdfReaderPage.pageCanvas).toHaveCount(1);
+      await expect.poll(() => pdfReaderPage.canvasWidth()).toBeGreaterThan(0);
+      // The cover is a scan with no text, so the layer is present but empty.
+      await expect(pdfReaderPage.textLayer).toHaveCount(1);
+    });
 
-  await page.getByRole("button", { name: "Fit width" }).click();
-  await expect(stage).toHaveClass(/cr-fit-width/);
-  await expect(page.getByRole("button", { name: "Fit width" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  // The re-render keeps the page painted at the new size.
-  await expect(page.locator(".pr-canvas")).toHaveCount(1);
-});
+    await test.step("check the page controls show", async () => {
+      await expect(pdfReaderPage.previousPageButton).toBeDisabled();
+      await expect(pdfReaderPage.nextPageButton).toBeEnabled();
+      await expect(pdfReaderPage.pageSlider).toBeVisible();
+      const count = await pdfReaderPage.pageCount();
+      expect(count, "page count from the label").toBeGreaterThan(1);
+      await expect(pdfReaderPage.pageLabel).toHaveText(`Page 1 of ${count}`);
+    });
+  });
 
-// PRISTINE stays progress-free here: the route interception answers the
-// save before it reaches the server, so no position is ever stored.
-test("a failed progress save leaves the reader usable", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await openPdf(page, `/pdf/${uuid}`);
-  const before = await pageLabel(page).textContent();
+  // PDF.js drops a JPX image silently when its WASM decoder is missing, and
+  // nothing in the seeded library carries one, so the book's file is stubbed.
+  test("decode a jpeg 2000 image through the bundled openjpeg module", async ({
+    pdfReaderPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
 
-  // Force the save to fail; the turn itself must still render.
-  await page.route("**/api/rpc/progress", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await expectMutation(
-    page,
-    { ...PROGRESS_POST, expectedStatus: 500 },
-    async () => page.getByRole("button", { name: "Next page" }).click(),
-  );
-  await expect(pageLabel(page)).not.toHaveText(before ?? "");
-  await expect(page.locator(".pr-canvas")).toHaveCount(1);
-  await page.unroute("**/api/rpc/progress");
-});
+    await test.step("serve a jpeg 2000 pdf as the book", async () => {
+      await pdfReaderPage.stubBookFile(uuid, buildJpxPdf());
+    });
 
-test("book detail shows the PDF Start reading CTA for a PDF-only book", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await gotoReady(page, `/books/${uuid}`);
+    const decoder = pdfReaderPage.waitForJpxDecoder();
+    await test.step("open the book", async () => {
+      await pdfReaderPage.goto(uuid);
+      await expect(pdfReaderPage.pageLabel).toHaveText("Page 1 of 2");
+    });
 
-  const cta = page.getByTestId("start-reading-pdf");
-  await expect(cta).toBeVisible();
-  await expect(page.getByTestId("no-files-disclaimer")).not.toBeVisible();
-  await expect(page.getByTestId("action-read-pdf")).toBeVisible();
-  await cta.click();
-  await expect(page).toHaveURL(`/pdf/${uuid}`);
-  await expect(pageLabel(page)).toHaveText(/^Page 1 of \d+$/, {
-    timeout: 20_000,
+    // The worker asked for the decoder at the bundled directory and the server
+    // answered with a WASM body, not a 404 page.
+    await test.step("check the decoder downloaded", async () => {
+      const response = await decoder;
+      expect(response.status()).toBe(200);
+      expect(response.headers()["content-type"]).toContain("application/wasm");
+    });
+
+    // The page is the image, so the canvas centre carries its fill rather than
+    // the white a dropped image leaves. The canvas is colour-managed, hence 8.
+    await test.step("check the image decoded", async () => {
+      await expect
+        .poll(async () =>
+          (await pdfReaderPage.canvasCentrePixel()).every(
+            (value, channel) => Math.abs(value - JPX_FILL[channel]!) <= 8,
+          ),
+        )
+        .toBe(true);
+    });
+  });
+
+  test("fit the page to the stage width", async ({
+    pdfReaderPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+    await test.step("open the book", async () => {
+      await pdfReaderPage.goto(uuid);
+    });
+
+    // Fit height is the default.
+    await test.step("check the stage fits the height", async () => {
+      await expect(pdfReaderPage.stagePanel).toHaveClass(/cr-fit-height/);
+      await expect(pdfReaderPage.fitHeightButton).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    await test.step("fit it to the width", async () => {
+      await pdfReaderPage.fitToWidth();
+      await expect(pdfReaderPage.stagePanel).toHaveClass(/cr-fit-width/);
+      await expect(pdfReaderPage.fitWidthButton).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      // The re-render keeps the page painted at the new size.
+      await expect(pdfReaderPage.pageCanvas).toHaveCount(1);
+    });
+  });
+
+  // PRISTINE stays progress-free: the forced failure answers every save
+  // before it reaches the server.
+  test("keep turning pages when progress saves fail", async ({
+    pdfReaderPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+    await test.step("open the book while saves fail", async () => {
+      await pdfReaderPage.forceServerError(progress.save());
+      await pdfReaderPage.goto(uuid);
+    });
+
+    await test.step("turn the page", async () => {
+      await expectMutation(failing(progress.save()), () =>
+        pdfReaderPage.turnPage(),
+      );
+    });
+
+    await test.step("check the reader moved on", async () => {
+      await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 2 of \d+$/);
+      await expect(pdfReaderPage.pageCanvas).toHaveCount(1);
+    });
+  });
+
+  test("close the highlights drawer with escape", async ({
+    pdfReaderPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+    await test.step("open the highlights drawer", async () => {
+      await pdfReaderPage.goto(uuid);
+      await pdfReaderPage.openHighlights();
+      await expect(pdfReaderPage.highlightsDrawer.root).toBeVisible();
+    });
+
+    await test.step("close it with escape", async () => {
+      await pdfReaderPage.closeWithEscape();
+      await expect(pdfReaderPage.highlightsDrawer.root).toHaveCount(0);
+    });
+  });
+
+  test.describe("book detail", () => {
+    test("show the pdf start reading action on a pdf-only book", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the pdf actions show", async () => {
+        await expect(bookDetailPage.startReadingPdfButton).toBeVisible();
+        await expect(bookDetailPage.noFilesMessage).toBeHidden();
+        await expect(bookDetailPage.readPdfButton).toBeVisible();
+      });
+    });
+
+    test("open the pdf reader from the book detail start reading action", async ({
+      bookDetailPage,
+      pdfReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("start reading", async () => {
+        await bookDetailPage.startReadingPdf();
+        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 1 of \d+$/, {
+          timeout: 20_000,
+        });
+        await pdfReaderPage.assertDisplayedFor(uuid);
+      });
+    });
   });
 });
 
