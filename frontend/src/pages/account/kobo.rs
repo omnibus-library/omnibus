@@ -1,15 +1,51 @@
-//! Kobo wireless-sync device card (web Settings → Kobo section).
+//! Kobo wireless-sync device card (Settings › Devices).
 //!
 //! Lists the caller's registered Kobos with their re-displayable `api_endpoint`
-//! URL (AC2), per-device Regenerate/Remove, and an "Add a Kobo" form. The
-//! list starts unanswered so SSR and the first WASM paint agree (rule 07).
+//! URL and a copy button, per-device Regenerate/Remove — each confirmed, since
+//! either breaks the device's sync until it is re-set over USB — and an add
+//! form. The list starts unanswered so SSR and the first WASM paint agree.
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 use omnibus_shared::KoboDeviceView;
 
+use super::{confirm_dialog, live_status, Confirm};
+use crate::components::clipboard::CopyButton;
 use crate::components::loading::RowSkeletons;
+use crate::components::BusyLabel;
 use crate::pages::settings::use_instance_origin;
-use crate::{data, use_server_url};
+use crate::{data, use_server_url, Route};
+
+/// A device action that needs confirming.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KoboAction {
+    Regenerate,
+    Remove,
+}
+
+/// The device action awaiting confirmation.
+#[derive(Clone, Debug, PartialEq)]
+struct PendingKobo {
+    action: KoboAction,
+    id: i64,
+    name: String,
+}
+
+/// A confirm dialog's title and body for `action` on the device `name`.
+fn kobo_confirm_text(action: KoboAction, name: &str) -> (String, String) {
+    match action {
+        KoboAction::Regenerate => (
+            format!("Regenerate the token for {name}?"),
+            format!(
+                "{name} stops syncing until you replace its api_endpoint with the new URL over USB."
+            ),
+        ),
+        KoboAction::Remove => (
+            format!("Remove {name}?"),
+            format!("{name} stops syncing with Omnibus. To sync it again, add it as a new device."),
+        ),
+    }
+}
 
 /// The `api_endpoint` a Kobo is pointed at: `{origin}/kobo/{token}`. The reader
 /// appends `/v1/…` itself.
@@ -25,21 +61,21 @@ fn render_kobo_setup_steps() -> Element {
         ol { class: "subtitle kobo-setup-steps", "data-testid": "kobo-setup-steps",
             li {
                 "Give your Kobo a name and click "
-                b { "Add a Kobo" }
+                b { "Add device" }
             }
             li {
                 "Copy the whole "
                 b { "Wireless sync endpoint" }
-                " URL shown for it below. It must be reachable from the Kobo's own Wi-Fi."
+                " URL shown for it below. It must be reachable from the Kobo\u{2019}s own Wi-Fi."
             }
             li { "Connect the Kobo over USB and tap Connect on the device." }
             li {
                 "Edit "
-                code { ".kobo/Kobo/Kobo eReader.conf" }
+                code { translate: "no", ".kobo/Kobo/Kobo eReader.conf" }
                 " and set "
-                code { "api_endpoint=" }
+                code { translate: "no", "api_endpoint=" }
                 " under "
-                code { "[OneStoreServices]" }
+                code { translate: "no", "[OneStoreServices]" }
                 " to the URL you copied."
             }
             li { "Eject safely. Your next sync on the device talks to Omnibus." }
@@ -47,7 +83,8 @@ fn render_kobo_setup_steps() -> Element {
         p { class: "subtitle kobo-shelf-rule", "data-testid": "kobo-shelf-rule",
             "Only shelves marked "
             b { "Sync to Kobo" }
-            " are synced — set that on a shelf before the first sync."
+            " are synced — set that on a shelf before the first sync. "
+            Link { to: Route::Shelves {}, "data-testid": "kobo-shelves-link", "Choose shelves to sync" }
         }
     }
 }
@@ -56,7 +93,7 @@ fn render_kobo_setup_steps() -> Element {
 fn render_kobo_warning() -> Element {
     rsx! {
         div { class: "kobo-warning", "data-testid": "kobo-data-loss-warning",
-            p { class: "kobo-warning-title", "First sync can erase your Kobo's highlights" }
+            p { class: "kobo-warning-title", "First sync can erase your Kobo\u{2019}s highlights" }
             p {
                 "An improper sync can potentially wipe data on the Kobo like your "
                 "annotations, notes, bookmarks, reading progress, and books."
@@ -85,7 +122,7 @@ fn render_kobo_warning() -> Element {
             }
             p {
                 "At minimum, copy "
-                code { ".kobo/KoboReader.sqlite" }
+                code { translate: "no", ".kobo/KoboReader.sqlite" }
                 " off the device over USB."
             }
         }
@@ -144,7 +181,7 @@ fn render_kobo_add_form(
                     name: "kobo_device_name",
                     "data-testid": "kobo-device-name-input",
                     autocomplete: "off",
-                    placeholder: "Kobo Clara",
+                    placeholder: "e.g. Kobo Clara\u{2026}",
                     maxlength: "100",
                     value: "{name_input}",
                     oninput: move |e| { let mut name_input = name_input; name_input.set(e.value()) },
@@ -155,8 +192,9 @@ fn render_kobo_add_form(
                     r#type: "submit",
                     class: "btn",
                     disabled: in_flight,
+                    "aria-busy": "{in_flight}",
                     "data-testid": "kobo-device-add",
-                    "Add a Kobo"
+                    BusyLabel { busy: in_flight, label: "Add device", busy_label: "Adding\u{2026}" }
                 }
             }
         }
@@ -178,6 +216,7 @@ pub fn KoboDevicesCard() -> Element {
     let mut msg = use_signal(|| None::<String>);
     let mut msg_is_error = use_signal(|| false);
     let mut in_flight = use_signal(|| false);
+    let mut pending = use_signal(|| None::<PendingKobo>);
 
     let load_url = server_url.clone();
     use_effect(move || {
@@ -223,6 +262,22 @@ pub fn KoboDevicesCard() -> Element {
 
     // `use_callback` handles are `Copy`, so they survive being passed into each
     // row inside the `for` loop below (a plain closure would move on first use).
+    // The row buttons only ask; the dialog's confirm runs the action.
+    let ask = move |action: KoboAction| {
+        move |id: i64| {
+            let name = devices
+                .peek()
+                .iter()
+                .flatten()
+                .find(|d| d.id == id)
+                .map(|d| d.name.clone())
+                .unwrap_or_default();
+            pending.set(Some(PendingKobo { action, id, name }));
+        }
+    };
+    let on_ask_regenerate = use_callback(ask(KoboAction::Regenerate));
+    let on_ask_remove = use_callback(ask(KoboAction::Remove));
+
     let regen_url = server_url.clone();
     let on_regenerate = use_callback(move |id: i64| {
         let url = regen_url.clone();
@@ -244,6 +299,7 @@ pub fn KoboDevicesCard() -> Element {
                 }
             }
             in_flight.set(false);
+            pending.set(None);
         });
     });
 
@@ -266,6 +322,7 @@ pub fn KoboDevicesCard() -> Element {
                 }
             }
             in_flight.set(false);
+            pending.set(None);
         });
     });
 
@@ -273,12 +330,12 @@ pub fn KoboDevicesCard() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "kobo-devices-card",
-            h2 { "Kobo wireless sync" }
+            h3 { "Kobo wireless sync" }
             {render_kobo_setup_steps()}
             // Unconditional: the hazard applies the moment a URL is copied.
             {render_kobo_warning()}
             match device_list.as_deref() {
-                Some(list) => render_kobo_device_list(list, &endpoint_origin(), in_flight(), on_regenerate, on_remove),
+                Some(list) => render_kobo_device_list(list, &endpoint_origin(), in_flight(), on_ask_regenerate, on_ask_remove),
                 // The status line below carries the failure.
                 None if msg_is_error() => rsx! {},
                 None => rsx! {
@@ -290,20 +347,55 @@ pub fn KoboDevicesCard() -> Element {
             }
             {render_kobo_add_form(name_input, in_flight(), on_add)}
 
-            if let Some(m) = msg() {
-                p {
-                    role: "status",
-                    "data-testid": "kobo-devices-status",
-                    class: if msg_is_error() { "settings-status error" } else { "settings-status success" },
-                    "{m}"
-                }
+            {live_status("kobo-devices-status", msg().as_deref(), msg_is_error())}
+
+            if let Some(ask) = pending() {
+                {kobo_confirm(ask, in_flight(), pending, on_regenerate, on_remove)}
             }
         }
     }
 }
 
-/// One device row: label, the readonly endpoint URL (for copy), and the
-/// Regenerate / Remove actions.
+/// The dialog confirming a pending Regenerate or Remove, naming the device.
+fn kobo_confirm(
+    ask: PendingKobo,
+    busy: bool,
+    mut pending: Signal<Option<PendingKobo>>,
+    on_regenerate: Callback<i64>,
+    on_remove: Callback<i64>,
+) -> Element {
+    let (title, body) = kobo_confirm_text(ask.action, &ask.name);
+    let (testid, action, busy_label, run) = match ask.action {
+        KoboAction::Regenerate => (
+            "kobo-regenerate-dialog",
+            "Regenerate token",
+            "Regenerating\u{2026}",
+            on_regenerate,
+        ),
+        KoboAction::Remove => (
+            "kobo-remove-dialog",
+            "Remove device",
+            "Removing\u{2026}",
+            on_remove,
+        ),
+    };
+    let id = ask.id;
+    confirm_dialog(
+        Confirm {
+            testid,
+            title: &title,
+            body: &body,
+            action,
+            busy_label,
+        },
+        busy,
+        EventHandler::new(move |()| pending.set(None)),
+        EventHandler::new(move |()| run.call(id)),
+    )
+}
+
+/// One device row: label, the readonly endpoint URL and its copy button, and
+/// the Regenerate / Remove actions, which ask before acting.
 #[component]
 fn KoboDeviceRow(
     device: KoboDeviceView,
@@ -313,20 +405,31 @@ fn KoboDeviceRow(
     on_remove: Callback<i64>,
 ) -> Element {
     let id = device.id;
+    let name = device.name;
     rsx! {
         li { class: "kobo-device-row", "data-testid": "kobo-device-row",
             div { class: "kobo-device-head",
-                span { class: "kobo-device-name", "{device.name}" }
+                span { class: "kobo-device-name", "{name}" }
             }
             div { class: "settings-field",
                 label { r#for: "kobo-endpoint-{id}", "Wireless sync endpoint" }
-                input {
-                    r#type: "text",
-                    id: "kobo-endpoint-{id}",
-                    class: "kobo-endpoint-url",
-                    "data-testid": "kobo-endpoint-url",
-                    readonly: true,
-                    value: "{endpoint}",
+                div { class: "kobo-endpoint-row",
+                    input {
+                        r#type: "text",
+                        id: "kobo-endpoint-{id}",
+                        class: "kobo-endpoint-url",
+                        "data-testid": "kobo-endpoint-url",
+                        translate: "no",
+                        spellcheck: "false",
+                        readonly: true,
+                        value: "{endpoint}",
+                    }
+                    CopyButton {
+                        text: endpoint.clone(),
+                        label: "Copy URL",
+                        testid: "kobo-endpoint-copy",
+                        aria_label: format!("Copy the endpoint URL for {name}"),
+                    }
                 }
             }
             div { class: "settings-actions",
@@ -334,6 +437,7 @@ fn KoboDeviceRow(
                     r#type: "button",
                     class: "btn ghost",
                     disabled,
+                    "aria-label": "Regenerate token for {name}",
                     "data-testid": "kobo-device-regenerate",
                     onclick: move |_| on_regenerate.call(id),
                     "Regenerate"
@@ -342,6 +446,7 @@ fn KoboDeviceRow(
                     r#type: "button",
                     class: "btn ghost danger",
                     disabled,
+                    "aria-label": "Remove {name}",
                     "data-testid": "kobo-device-remove",
                     onclick: move |_| on_remove.call(id),
                     "Remove"
@@ -352,143 +457,4 @@ fn KoboDeviceRow(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn endpoint_url_joins_origin_and_token() {
-        assert_eq!(
-            endpoint_url("https://omni.example.com", "tok123"),
-            "https://omni.example.com/kobo/tok123"
-        );
-    }
-
-    #[test]
-    fn endpoint_url_trims_a_trailing_slash_on_the_origin() {
-        assert_eq!(
-            endpoint_url("http://localhost:3000/", "abc"),
-            "http://localhost:3000/kobo/abc"
-        );
-    }
-}
-
-// SSR render-smoke coverage. These need the `server` feature (`dioxus::ssr`).
-#[cfg(all(test, feature = "server"))]
-mod render_tests {
-    use super::*;
-    use crate::test_support::render_in_vdom;
-
-    fn card() -> Element {
-        rsx! {
-            KoboDevicesCard {}
-        }
-    }
-
-    /// `Callback::new` needs a live runtime, so the row is built inside the
-    /// throwaway `VirtualDom` rather than via a bare `render`.
-    fn device_row() -> Element {
-        rsx! {
-            KoboDeviceRow {
-                device: KoboDeviceView {
-                    id: 1,
-                    name: "Kobo Clara".to_string(),
-                    token: "tok123".to_string(),
-                    created_at: 0,
-                    last_seen_at: 0,
-                },
-                endpoint: "https://omni.example.com/kobo/tok123".to_string(),
-                disabled: false,
-                on_regenerate: Callback::new(|_| {}),
-                on_remove: Callback::new(|_| {}),
-            }
-        }
-    }
-
-    /// The warning sits at card level, above the list, so it is present on the
-    /// very first paint — before any device row (and therefore any endpoint
-    /// URL) can render. `KoboDeviceRow` is only ever mounted inside this card,
-    /// so covering the card covers every path that shows a URL (#927 AC1/AC4).
-    #[test]
-    fn kobo_card_renders_the_data_loss_warning_on_first_paint() {
-        let html = render_in_vdom(card);
-        assert!(html.contains("data-testid=\"kobo-data-loss-warning\""));
-        assert!(html.contains("First sync can erase your Kobo&#39;s highlights"));
-        assert!(html.contains("KoboReader.sqlite"));
-    }
-
-    /// The setup steps must name the real procedure — the USB edit of
-    /// `Kobo eReader.conf` — and never a nonexistent on-device setting
-    /// (the pre-#1499 copy pointed at "Settings → Beta Features").
-    #[test]
-    fn kobo_card_walks_through_the_conf_file_setup() {
-        let html = render_in_vdom(card);
-        assert!(html.contains("data-testid=\"kobo-setup-steps\""));
-        assert!(html.contains("Kobo eReader.conf"));
-        assert!(html.contains("api_endpoint="));
-        assert!(!html.contains("Beta Features"));
-    }
-
-    /// The warning must not be gated on having registered a device — a user
-    /// reads it *before* adding their first Kobo, not after. First paint hasn't
-    /// heard back yet, so the list is loading rather than claiming none.
-    #[test]
-    fn kobo_card_warns_before_the_device_list_has_answered() {
-        let html = render_in_vdom(card);
-        assert!(
-            html.contains("data-testid=\"kobo-devices-loading\""),
-            "{html}"
-        );
-        assert!(!html.contains("data-testid=\"kobo-devices-empty\""));
-        assert!(html.contains("data-testid=\"kobo-data-loss-warning\""));
-    }
-
-    fn empty_device_list() -> Element {
-        render_kobo_device_list(&[], "", false, Callback::new(|_| {}), Callback::new(|_| {}))
-    }
-
-    #[test]
-    fn render_kobo_device_list_says_none_registered_once_the_list_is_empty() {
-        let html = render_in_vdom(empty_device_list);
-        assert!(
-            html.contains("data-testid=\"kobo-devices-empty\""),
-            "{html}"
-        );
-    }
-
-    /// The row is what actually exposes the endpoint URL; assert it renders so
-    /// the card-level warning test above is anchored to a real URL surface.
-    #[test]
-    fn kobo_device_row_renders_the_endpoint_url() {
-        let html = render_in_vdom(device_row);
-        assert!(html.contains("https://omni.example.com/kobo/tok123"));
-    }
-
-    /// The standing "only flagged shelves sync" rule is a constraint, not a
-    /// step — a reader working the numbered list has nothing to *do* at that
-    /// number (#2511 AC2).
-    #[test]
-    fn kobo_card_states_the_shelf_rule_outside_the_numbered_steps() {
-        let html = render_in_vdom(card);
-        let ol_end = html.find("</ol>").expect("the setup list closes");
-        let rule_at = html
-            .find("data-testid=\"kobo-shelf-rule\"")
-            .expect("the standing shelf rule renders");
-        assert!(
-            rule_at > ol_end,
-            "the shelf rule must sit after the procedure list, not inside it"
-        );
-        assert!(html.contains("Sync to Kobo"));
-    }
-
-    /// Step 2 and step 4 must name the same thing: the whole URL the field
-    /// below shows. The old copy pointed step 2 at a bare path and step 4 at a
-    /// placeholder origin, so a reader could follow both and still write an
-    /// unresolvable `api_endpoint=` (#2511 AC1).
-    #[test]
-    fn kobo_card_steps_name_the_endpoint_the_field_shows() {
-        let html = render_in_vdom(card);
-        assert!(html.contains("api_endpoint="));
-        assert!(!html.contains("your_omnibus_server_url"));
-        assert!(!html.contains("/kobo/&lt;token&gt;"));
-    }
-}
+mod tests;

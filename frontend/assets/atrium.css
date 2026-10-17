@@ -5594,6 +5594,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .kobo-device-head { display: flex; justify-content: space-between; align-items: baseline; }
 .kobo-device-name { font-weight: 600; color: var(--ink-0); }
 .kobo-endpoint-url { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; }
+.kobo-endpoint-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.kobo-endpoint-row .kobo-endpoint-url { flex: 1 1 16rem; min-width: 0; }
 .btn.ghost.danger { color: var(--bad); }
 @media (hover: hover) {
   .btn.ghost.danger:hover { background: color-mix(in oklch, var(--bad) 12%, transparent); }
@@ -13313,3 +13315,8 @@ html {
 .copy-feedback { font-size: 0.8rem; color: var(--ink-2); }
 .copy-feedback:not(:empty) { margin-left: 0.5rem; }
 .copy-feedback.error { color: var(--bad); }
+
+/* Kindle: the sender address to approve, with its copy button. */
+.kindle-delivery { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+.kindle-delivery .subtitle { margin-bottom: 0; }
+.kindle-delivery code { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; overflow-wrap: anywhere; }
