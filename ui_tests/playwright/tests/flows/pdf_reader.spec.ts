@@ -321,6 +321,7 @@ test.describe("pdf reader", () => {
         request,
         parkBook,
         expectMutation,
+        storedReadStatus,
       }) => {
         const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
@@ -347,6 +348,14 @@ test.describe("pdf reader", () => {
             `Page ${count} of ${count}`,
           );
           await expect(pdfReaderPage.nextPageButton).toBeDisabled();
+        });
+
+        await test.step("check the server holds the book finished", async () => {
+          await expect
+            .poll(() => storedReadStatus(uuid), {
+              message: "stored read status",
+            })
+            .toBe("finished");
         });
       });
 

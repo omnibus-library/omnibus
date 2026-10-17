@@ -263,6 +263,7 @@ test.describe("comic pager", () => {
       request,
       parkBook,
       expectMutation,
+      storedReadStatus,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, COMIC.title);
 
@@ -288,6 +289,12 @@ test.describe("comic pager", () => {
           `Page ${COMIC_PAGES} of ${COMIC_PAGES}`,
         );
         await expect(comicReaderPage.nextPageButton).toBeDisabled();
+      });
+
+      await test.step("check the server holds the book finished", async () => {
+        await expect
+          .poll(() => storedReadStatus(uuid), { message: "stored read status" })
+          .toBe("finished");
       });
     });
 
