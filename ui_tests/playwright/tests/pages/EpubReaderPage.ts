@@ -1,7 +1,10 @@
 import type { Locator, Page } from "@playwright/test";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
 import { ReaderContentsDrawerComponent } from "../components/ReaderContentsDrawerComponent";
-import { ReaderDisplayPanelComponent } from "../components/ReaderDisplayPanelComponent";
+import {
+  ReaderDisplayPanelComponent,
+  type Typeface,
+} from "../components/ReaderDisplayPanelComponent";
 import { ReaderSectionComponent } from "../components/ReaderSectionComponent";
 import { progressUrls } from "../contracts/progress";
 import { expect } from "../fixtures/test";
@@ -106,6 +109,10 @@ export class EpubReaderPage extends BasePage {
     await this.displayPanelButton.click();
   }
 
+  async reload(): Promise<void> {
+    await this.page.reload();
+  }
+
   async resizeViewport(size: { width: number; height: number }): Promise<void> {
     await this.page.setViewportSize(size);
   }
@@ -162,11 +169,30 @@ export class EpubReaderPage extends BasePage {
     return this.recordCspRefusals(/style-src|stylesheet/i);
   }
 
+  /** Listens for CSP refusals to load a font; the list fills as they come. */
+  recordFontCspRefusals(): string[] {
+    return this.recordCspRefusals(/font-src|load the font/i);
+  }
+
+  /** Listens for requests for a reader font, from this origin or Google. */
+  recordFontRequests(): string[] {
+    const urls: string[] = [];
+    this.page.on("request", (request) => {
+      if (/reader-fonts|fonts\.g(static|oogleapis)/.test(request.url())) {
+        urls.push(request.url());
+      }
+    });
+    return urls;
+  }
+
   /** Stores the theme before the next load, as if the reader chose it earlier. */
   async presetTheme(theme: Theme): Promise<void> {
-    await this.page.addInitScript((value) => {
-      window.localStorage.setItem("omn.theme", value);
-    }, theme);
+    await this.presetLocalStorage("omn.theme", theme);
+  }
+
+  /** Stores the typeface before the next load, as presetTheme does. */
+  async presetTypeface(face: Typeface): Promise<void> {
+    await this.presetLocalStorage("omn.typeface", face);
   }
 
   /** Whether the failed-jump notice would swallow a click at its own centre. */
@@ -212,6 +238,13 @@ export class EpubReaderPage extends BasePage {
   async assertDisplayedFor(bookUuid: string): Promise<void> {
     await expect(this.page).toHaveURL(new RegExp(`/read/${bookUuid}$`));
     await expect(this.viewerPanel).toBeVisible();
+  }
+
+  private async presetLocalStorage(key: string, value: string): Promise<void> {
+    await this.page.addInitScript(
+      (entry) => window.localStorage.setItem(entry.key, entry.value),
+      { key, value },
+    );
   }
 
   /** CSP violations reach the console as error entries, iframe ones included. */

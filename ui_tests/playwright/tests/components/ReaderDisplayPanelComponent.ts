@@ -37,8 +37,16 @@ export class ReaderDisplayPanelComponent extends BaseComponent {
     return this.root.getByTestId(`reader-typeface-${face}`);
   }
 
+  async increaseFontSize(): Promise<void> {
+    await this.increaseFontButton.click();
+  }
+
   async choosePageView(view: PageView): Promise<void> {
     await this.pageViewButton(view).click();
+  }
+
+  async chooseTypeface(face: Typeface): Promise<void> {
+    await this.typefaceButton(face).click();
   }
 
   async closeByClickingOutside(): Promise<void> {

@@ -852,3 +852,6 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     hasCover: true,
   },
 ] as const;
+
+/** The face `standalone-lagoon`'s publisher CSS embeds (tools/make_epub.ts). */
+export const EMBEDDED_FONT_FAMILY = "Fixture Serif";
