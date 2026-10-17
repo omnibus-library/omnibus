@@ -11681,9 +11681,13 @@ html {
 }
 
 /* ── Dot rail TOC ── */
-.bdmq-dots {
+/* The rail and the Scroll stops toggle under it, pinned to the stage's edge. */
+.bdmq-rail {
   position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   z-index: 6;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+}
+.bdmq-dots {
   display: flex; flex-direction: column; gap: 6px; align-items: stretch;
   padding: 10px 7px;
   background: color-mix(in oklch, var(--bg-0) 55%, transparent);
@@ -11699,7 +11703,7 @@ html {
    over (and take clicks through) a panel-hosted overlay's dimmed scrim, so it
    steps aside while one is up. */
 .bdmq-stage:has(:is(.bdmq-overlay, .author-photo-modal-backdrop, .shelf-modal-overlay))
-  :is(.bdmq-dots, .bdmq-flowtop, .bdmq-seclab, .bdmq-next) {
+  :is(.bdmq-rail, .bdmq-flowtop, .bdmq-seclab, .bdmq-next) {
   opacity: 0; pointer-events: none;
 }
 .bdmq-dotrow {
@@ -13333,4 +13337,38 @@ html {
 .lib-hidden-formats:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .lib-hidden-formats { transition: none; }
+}
+
+/* The book page's two readings swap inside one box that draws nothing, so
+   the stage lays out its children exactly as before. */
+.bdmq-mode { display: contents; }
+/* Scroll stops: glass to match the rail it hangs from. */
+.bdmq-mode-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 11px;
+  border: 1px solid var(--line-2); border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-0) 55%, transparent);
+  backdrop-filter: blur(8px);
+  color: var(--ink-2);
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; white-space: nowrap; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.bdmq-mode-toggle i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--bg-3);
+  transition: background .15s;
+}
+.bdmq-mode-toggle[aria-pressed="true"] { color: var(--ink-0); }
+.bdmq-mode-toggle[aria-pressed="true"] i { background: var(--accent); }
+.bdmq-mode-toggle:hover:not(:disabled) { color: var(--ink-0); border-color: var(--ink-3); }
+.bdmq-mode-toggle:disabled { cursor: default; opacity: .6; }
+.bdmq-mode-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bdmq-mode-error {
+  max-width: 200px; padding: 6px 10px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-0) 82%, transparent);
+  color: var(--bad); font-size: 11.5px; text-align: right;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bdmq-mode-toggle, .bdmq-mode-toggle i { transition: none; }
 }
