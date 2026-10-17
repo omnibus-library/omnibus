@@ -337,7 +337,7 @@ test.describe("epub reader", () => {
       await test.step("check no stylesheet was refused", async () => {
         expect(
           refusals,
-          `blob: stylesheet must load without a CSP refusal:\n${refusals.join("\n")}`,
+          "blob: stylesheet must load without a CSP refusal",
         ).toEqual([]);
       });
     });
@@ -966,10 +966,7 @@ test.describe("epub reader", () => {
 
       // Last, because the awaits above outlast the console's delivery.
       await test.step("check no font was refused by font-src", async () => {
-        expect(
-          fontRefusals,
-          `no font may be refused by font-src:\n${fontRefusals.join("\n")}`,
-        ).toEqual([]);
+        expect(fontRefusals, "no font may be refused by font-src").toEqual([]);
       });
     });
 
@@ -995,10 +992,7 @@ test.describe("epub reader", () => {
       });
 
       await test.step("check no font was refused by font-src", async () => {
-        expect(
-          fontRefusals,
-          `no font may be refused by font-src:\n${fontRefusals.join("\n")}`,
-        ).toEqual([]);
+        expect(fontRefusals, "no font may be refused by font-src").toEqual([]);
       });
     });
 
@@ -1071,10 +1065,7 @@ test.describe("epub reader", () => {
         await expect(
           epubReaderPage.displayPanel.typefaceButton("editorial"),
         ).toHaveClass(/\bon\b/);
-        expect(
-          fontRefusals,
-          `no font may be refused by font-src:\n${fontRefusals.join("\n")}`,
-        ).toEqual([]);
+        expect(fontRefusals, "no font may be refused by font-src").toEqual([]);
       });
     });
 
@@ -1112,10 +1103,7 @@ test.describe("epub reader", () => {
       });
 
       await test.step("check no font was refused by font-src", async () => {
-        expect(
-          fontRefusals,
-          `no font may be refused by font-src:\n${fontRefusals.join("\n")}`,
-        ).toEqual([]);
+        expect(fontRefusals, "no font may be refused by font-src").toEqual([]);
       });
     });
   });
