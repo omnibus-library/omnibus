@@ -16,8 +16,10 @@ export class BookDetailPage extends BasePage {
   readonly fromSameHandEmptyMessage: Locator;
   readonly readButton: Locator;
   readonly startReadingButton: Locator;
+  readonly startReadingComicButton: Locator;
   readonly listenButton: Locator;
   readonly immersiveReadButton: Locator;
+  readonly noFilesMessage: Locator;
   readonly checkInWhenAcquiredButton: Locator;
   readonly physicalCopyCards: Locator;
   readonly physicalPill: Locator;
@@ -34,8 +36,10 @@ export class BookDetailPage extends BasePage {
     this.readButton = page.getByTestId("action-read");
     // The labels change with reading progress, so the row is found by test id.
     this.startReadingButton = page.getByTestId("start-reading");
+    this.startReadingComicButton = page.getByTestId("start-reading-comic");
     this.listenButton = page.getByTestId("listen-secondary");
     this.immersiveReadButton = page.getByTestId("immersive-read");
+    this.noFilesMessage = page.getByTestId("no-files-disclaimer");
     this.checkInWhenAcquiredButton = page.getByRole("button", {
       name: "Check in when acquired",
     });
@@ -69,6 +73,11 @@ export class BookDetailPage extends BasePage {
   /** Opens the reader with the book's audiobook docked beside it. */
   async readImmersively(): Promise<void> {
     await this.immersiveReadButton.click();
+  }
+
+  /** Opens the comic pager through the CBZ's Start reading action. */
+  async startReadingComic(): Promise<void> {
+    await this.startReadingComicButton.click();
   }
 
   async checkInWhenAcquired(): Promise<void> {

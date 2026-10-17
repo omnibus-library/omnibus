@@ -5,6 +5,7 @@ import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
+import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
@@ -16,10 +17,12 @@ import {
 } from "../data/highlights";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
+import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { type ShelfRef, wishlistOf } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
+import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { ShelfPage } from "../pages/ShelfPage";
@@ -58,11 +61,13 @@ type PageFixtures = {
   bookDetailPage: BookDetailPage;
   checkInPage: CheckInPage;
   epubReaderPage: EpubReaderPage;
+  comicReaderPage: ComicReaderPage;
   shelfPage: ShelfPage;
   scanRequests: ScanRequests;
   physicalRequests: PhysicalRequests;
   highlightsRequests: HighlightsRequests;
   progressRequests: ProgressRequests;
+  readStatusRequests: ReadStatusRequests;
   createdBookUuids: Set<string>;
   filedCopies: FiledCopy[];
   seededHighlightIds: Set<number>;
@@ -71,6 +76,8 @@ type PageFixtures = {
     overrides?: Partial<NewHighlight>,
   ) => Promise<SeededHighlight>;
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
+  storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
+  presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
   adminWishlist: ShelfRef;
   dualFormatUuid: string;
   readerShelfPage: ShelfPage;
@@ -135,6 +142,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   epubReaderPage: async ({ page }, use) => {
     await use(new EpubReaderPage(page));
   },
+  comicReaderPage: async ({ page }, use) => {
+    await use(new ComicReaderPage(page));
+  },
   shelfPage: async ({ page }, use) => {
     await use(new ShelfPage(page));
   },
@@ -153,6 +163,10 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
 
   progressRequests: async ({ request }, use) => {
     await use(new ProgressRequests(request));
+  },
+
+  readStatusRequests: async ({ request }, use) => {
+    await use(new ReadStatusRequests(request));
   },
 
   createdBookUuids: async ({ physicalRequests }, use) => {
@@ -205,6 +219,37 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       if (!response.ok()) return null;
       const progress: BookProgress | null = await response.json();
       return progress?.records.find((r) => r.format === "epub") ?? null;
+    });
+  },
+
+  // Null on a failed read or no row, so it stays safe inside `expect.poll`.
+  storedReadStatus: async ({ readStatusRequests }, use) => {
+    await use(async (bookUuid) => {
+      const response = await readStatusRequests.getReadStatus(bookUuid);
+      if (!response.ok()) return null;
+      const record: ReadStatusRecord | null = await response.json();
+      return record?.status ?? null;
+    });
+  },
+
+  // Converges by read-then-write, because concurrent writes can hit SQLite's
+  // busy timeout while a seed reindex is still writing.
+  presetReadStatus: async ({ readStatusRequests, storedReadStatus }, use) => {
+    await use(async (bookUuid, status) => {
+      await expect
+        .poll(
+          async () => {
+            if ((await storedReadStatus(bookUuid)) === status) return status;
+            await readStatusRequests.putReadStatus(bookUuid, status);
+            return "pending";
+          },
+          {
+            message: `preset ${bookUuid} to ${status}`,
+            timeout: 15_000,
+            intervals: [200, 500, 1_000],
+          },
+        )
+        .toBe(status);
     });
   },
 

@@ -1,7 +1,8 @@
 import type { Page } from "@playwright/test";
+import { progress } from "../contracts/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { expectMutation, failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
 import { storedProgress } from "../utils/progress";
@@ -76,53 +77,150 @@ function pageLabel(page: Page) {
   return page.getByTestId("comic-footer").locator(".cr-page-label");
 }
 
-test("renders the comic pager layout", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await openComic(page, uuid);
+test.describe("comic pager", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
 
-  // Chrome: back, title block, fit-mode toggle group.
-  await expect(page.getByTestId("comic-back")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Fit width" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Fit height" })).toBeVisible();
-
-  // Stage: the page image is a plain `<img>` against the pages endpoint.
-  const img = page.getByTestId("comic-page-image");
-  await expect(img).toBeVisible();
-  await expect(img).toHaveAttribute("src", `/api/ebooks/${uuid}/pages/0`);
-  // The image must actually decode — proves the endpoint served real bytes.
-  await expect
-    .poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth))
-    .toBeGreaterThan(0);
-
-  // Page-turn buttons and the slider; prev is disabled on page 1.
-  await expect(
-    page.getByRole("button", { name: "Previous page" }),
-  ).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Next page" })).toBeEnabled();
-  await expect(page.getByRole("slider", { name: "Page slider" })).toBeVisible();
-  await expect(pageLabel(page)).toHaveText(`Page 1 of ${PRISTINE_PAGES}`);
-});
-
-test("fit modes toggle the stage layout class", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await openComic(page, uuid);
-
-  const stage = page.getByTestId("comic-stage");
-  // Fit-height is the default.
-  await expect(stage).toHaveClass(/cr-fit-height/);
-  await expect(
-    page.getByRole("button", { name: "Fit height" }),
-  ).toHaveAttribute("aria-pressed", "true");
-
-  await page.getByRole("button", { name: "Fit width" }).click();
-  await expect(stage).toHaveClass(/cr-fit-width/);
-  await expect(page.getByRole("button", { name: "Fit width" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  // An unread book is marked reading on open, a write PRISTINE's tests would
+  // leave unasserted.
+  test.beforeAll(
+    "mark the pristine comic reading",
+    async ({ request, presetReadStatus }) => {
+      const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+      await presetReadStatus(uuid, "reading");
+    },
   );
-  await expect(
-    page.getByRole("button", { name: "Fit height" }),
-  ).toHaveAttribute("aria-pressed", "false");
+
+  test("show the comic pager layout", async ({ comicReaderPage, request }) => {
+    const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+    await test.step("open the book", async () => {
+      await comicReaderPage.goto(uuid);
+    });
+
+    await test.step("check the chrome shows", async () => {
+      await expect(comicReaderPage.backButton).toBeVisible();
+      await expect(comicReaderPage.fitWidthButton).toBeVisible();
+      await expect(comicReaderPage.fitHeightButton).toBeVisible();
+    });
+
+    // The page image is a plain `<img>` against the pages endpoint.
+    await test.step("check the page image shows and decodes", async () => {
+      await expect(comicReaderPage.pageImage).toBeVisible();
+      await expect(comicReaderPage.pageImage).toHaveAttribute(
+        "src",
+        `/api/ebooks/${uuid}/pages/0`,
+      );
+      // Decoding proves the endpoint served real bytes.
+      await expect
+        .poll(() => comicReaderPage.pageImageWidth())
+        .toBeGreaterThan(0);
+    });
+
+    await test.step("check the page controls show", async () => {
+      await expect(comicReaderPage.previousPageButton).toBeDisabled();
+      await expect(comicReaderPage.nextPageButton).toBeEnabled();
+      await expect(comicReaderPage.pageSlider).toBeVisible();
+      await expect(comicReaderPage.pageLabel).toHaveText(
+        `Page 1 of ${PRISTINE_PAGES}`,
+      );
+    });
+  });
+
+  test("fit the page to the stage width", async ({
+    comicReaderPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+    await test.step("open the book", async () => {
+      await comicReaderPage.goto(uuid);
+    });
+
+    // Fit height is the default.
+    await test.step("check the stage fits the height", async () => {
+      await expect(comicReaderPage.stagePanel).toHaveClass(/cr-fit-height/);
+      await expect(comicReaderPage.fitHeightButton).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    await test.step("fit it to the width", async () => {
+      await comicReaderPage.fitToWidth();
+      await expect(comicReaderPage.stagePanel).toHaveClass(/cr-fit-width/);
+      await expect(comicReaderPage.fitWidthButton).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(comicReaderPage.fitHeightButton).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+  });
+
+  // PRISTINE stays progress-free: the forced failure answers every save
+  // before it reaches the server.
+  test("keep turning pages when progress saves fail", async ({
+    comicReaderPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+    await test.step("open the book while saves fail", async () => {
+      await comicReaderPage.forceServerError(progress.save());
+      await comicReaderPage.goto(uuid);
+    });
+
+    await test.step("turn the page", async () => {
+      await expectMutation(failing(progress.save()), () =>
+        comicReaderPage.turnPage(),
+      );
+    });
+
+    await test.step("check the pager moved on", async () => {
+      await expect(comicReaderPage.pageLabel).toHaveText("Page 2 of 5");
+      await expect(comicReaderPage.pageImage).toBeVisible();
+    });
+  });
+
+  test.describe("book detail", () => {
+    test("show the comic start reading action on a cbz-only book", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the comic action shows", async () => {
+        await expect(bookDetailPage.startReadingComicButton).toBeVisible();
+        await expect(bookDetailPage.noFilesMessage).toBeHidden();
+      });
+    });
+
+    test("open the comic pager from the book detail start reading action", async ({
+      bookDetailPage,
+      comicReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("start reading", async () => {
+        await bookDetailPage.startReadingComic();
+        await comicReaderPage.assertDisplayedFor(uuid);
+      });
+    });
+  });
 });
 
 test("pages forward, saves each turn, resumes, and auto-marks reading then finished", async ({
@@ -241,43 +339,4 @@ test("pages forward, saves each turn, resumes, and auto-marks reading then finis
     data: { book_uuid: uuid, status: "unread" },
   });
   expect(cleanup.status()).toBe(200);
-});
-
-// PRISTINE stays progress-free here: the route interception answers the
-// save before it reaches the server, so no position is ever stored.
-test("a failed progress save leaves the pager usable", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await openComic(page, uuid);
-  const before = await pageLabel(page).textContent();
-
-  // Force the save to fail; the turn itself must still render.
-  await page.route("**/api/rpc/progress", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
-  await expectMutation(
-    page,
-    { ...PROGRESS_POST, expectedStatus: 500 },
-    async () => page.getByRole("button", { name: "Next page" }).click(),
-  );
-  await expect(pageLabel(page)).not.toHaveText(before ?? "");
-  await expect(page.getByTestId("comic-page-image")).toBeVisible();
-  await page.unroute("**/api/rpc/progress");
-});
-
-test("book detail shows the comic Start reading CTA for a CBZ-only book", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const cta = page.getByTestId("start-reading-comic");
-  await expect(cta).toBeVisible();
-  await expect(page.getByTestId("no-files-disclaimer")).not.toBeVisible();
-  await cta.click();
-  await expect(page).toHaveURL(`/comic/${uuid}`);
-  await expect(page.getByTestId("comic-footer")).toBeVisible();
 });
