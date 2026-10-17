@@ -100,18 +100,21 @@ fn reject_oversized_uuid(uuid: &str) -> Option<Response> {
         .then(|| StatusCode::BAD_REQUEST.into_response())
 }
 
-/// Reconstruct the request origin (`scheme://host`) so download/image URLs are
-/// absolute. Prefers `X-Forwarded-Host` (reverse proxy) over `Host`, and
-/// `X-Forwarded-Proto` over a `http` default. A host without a port (a Kobo
-/// drops it) takes the `OMNIBUS_PUBLIC_ORIGIN` entry for that hostname instead.
-/// No resolvable host returns `""` so callers emit host-relative URLs, not
-/// `http:///…`. Shared across [`auth`] and [`sync`] handlers.
+/// Runs [`origin_for`] over the cached `OMNIBUS_PUBLIC_ORIGIN` list.
+/// Shared across [`auth`] and [`sync`] handlers.
 fn origin_from_headers(headers: &HeaderMap) -> String {
-    origin_for(headers, crate::auth::csrf::allowed_origins())
+    origin_for(
+        headers,
+        crate::auth::csrf::allowed_origins().unwrap_or_default(),
+    )
 }
 
-/// The precedence rule behind [`origin_from_headers`], with the allowlist passed in.
-fn origin_for(headers: &HeaderMap, public_origins: Option<&[String]>) -> String {
+/// The request origin (`scheme://host`), so download/image URLs are absolute.
+/// Prefers `X-Forwarded-Host` over `Host` and `X-Forwarded-Proto` over `http`.
+/// A host without a port (a Kobo drops it) that `public_origins` don't already
+/// list takes the first same-host entry that has a port. No resolvable host
+/// returns `""` so callers emit host-relative URLs, not `http:///…`.
+fn origin_for(headers: &HeaderMap, public_origins: &[String]) -> String {
     let host = headers
         .get("x-forwarded-host")
         .or_else(|| headers.get(header::HOST))
@@ -120,26 +123,28 @@ fn origin_for(headers: &HeaderMap, public_origins: Option<&[String]>) -> String 
     let Some(host) = host else {
         return String::new();
     };
-    let portless = host
-        .parse::<Authority>()
-        .ok()
-        .filter(|a| a.port().is_none());
-    if let Some(authority) = portless {
-        let matching = public_origins.into_iter().flatten().find(|origin| {
-            origin.parse::<Uri>().is_ok_and(|uri| {
-                uri.scheme().is_some()
-                    && uri
-                        .host()
-                        .is_some_and(|h| h.eq_ignore_ascii_case(authority.host()))
-            })
-        });
-        if let Some(origin) = matching {
-            return origin.clone();
-        }
-    }
     let scheme = headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("http");
-    format!("{scheme}://{host}")
+    let from_headers = format!("{scheme}://{host}");
+    let portless = host
+        .parse::<Authority>()
+        .ok()
+        .filter(|a| a.port().is_none());
+    let Some(portless) = portless else {
+        return from_headers;
+    };
+    if public_origins.contains(&from_headers) {
+        return from_headers;
+    }
+    public_origins
+        .iter()
+        .find_map(|origin| {
+            let uri = origin.parse::<Uri>().ok()?;
+            let (scheme, authority) = (uri.scheme_str()?, uri.authority()?);
+            (authority.port().is_some() && authority.host().eq_ignore_ascii_case(portless.host()))
+                .then(|| format!("{scheme}://{authority}"))
+        })
+        .unwrap_or(from_headers)
 }
