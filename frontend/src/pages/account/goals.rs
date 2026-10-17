@@ -491,6 +491,17 @@ pub(crate) fn ReadingGoalsCard(
                 {goals_form(signals.drafts, signals.msg, (signals.saving)(), inline, on_save, on_cancel)}
             } else if !inline {
                 {goals_readout((signals.targets)(), loaded, on_edit)}
+            } else {
+                // The read failed: nothing to edit, so offer the way back out.
+                div { class: "settings-actions",
+                    button {
+                        r#type: "button",
+                        class: "btn ghost",
+                        "data-testid": "goals-cancel",
+                        onclick: on_cancel,
+                        "Close"
+                    }
+                }
             }
             {credential_status_message(
                 "goals-status",
