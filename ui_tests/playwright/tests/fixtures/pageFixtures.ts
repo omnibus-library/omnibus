@@ -95,10 +95,9 @@ type PageFixtures = {
 };
 
 /**
- * The suite admin's page and the fixtures built on it: page and request
- * objects, `expectMutation`, cleanup sets, seeders and reading-state helpers,
- * and the worker's reader in a browser context of its own. `readerFixtures.ts`
- * signs the page in as that reader.
+ * The suite admin's fixtures: its page and page objects, its API calls and
+ * their cleanup, and the worker's reader in a browser context of its own.
+ * `readerFixtures.ts` signs the page in as that reader.
  */
 export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // One account per worker rather than per test, because sign-in allows ten
