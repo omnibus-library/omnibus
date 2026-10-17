@@ -252,7 +252,7 @@ async fn sync_leaves_the_server_when_resources_are_built_on_a_portless_host() {
     .await;
     let mut client = Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_secs(1)).unwrap();
 
-    // The stub now hands out port 80 URLs, so what answers there decides the outcome. It is not asserted.
+    // The stub hands out port 80 URLs, so what answers there decides the outcome. It is not asserted.
     let _ = run_sync(&mut client, &mut Device::new("HW-1")).await;
 
     let lines = request_lines(&client.into_requests());
