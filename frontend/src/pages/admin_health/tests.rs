@@ -22,13 +22,15 @@ fn should_poll_fetches_only_for_an_admin_viewer() {
     );
 }
 
-// ---------- live-poll merge logic (#955) ----------
-//
-// `apply_poll_result` reads/writes `Signal`s, which need an active Dioxus
-// scope (same reasoning as `read_status_auto::tests`'s
-// `apply_fetched_status` cases) — so each case runs inside a mounted dummy
-// component via `VirtualDom::rebuild_in_place` rather than constructing
-// bare `Signal`s at the top of a `#[test] fn`.
+// ---------- live-poll merge logic ----------
+
+/// Run `f` inside a live root scope, so it can create signals. Unlike a
+/// component body, a panic here fails the test instead of being caught.
+fn in_root_scope(f: impl FnOnce()) {
+    let mut dom = VirtualDom::new(|| rsx! {});
+    dom.rebuild_in_place();
+    dom.in_scope(ScopeId::ROOT, f);
+}
 
 fn sample_report(book_count: i64) -> AdminHealthReport {
     AdminHealthReport {
@@ -42,8 +44,7 @@ fn sample_report(book_count: i64) -> AdminHealthReport {
 
 #[test]
 fn apply_poll_result_populates_result_and_clears_error_on_first_success() {
-    #[component]
-    fn AssertFirstSuccessPopulates() -> Element {
+    in_root_scope(|| {
         let mut result = Signal::new(None::<AdminHealthReport>);
         let mut error = Signal::new(false);
 
@@ -51,15 +52,12 @@ fn apply_poll_result_populates_result_and_clears_error_on_first_success() {
 
         assert_eq!(result().map(|r| r.index.book_count), Some(1));
         assert!(!error());
-        rsx! {}
-    }
-    VirtualDom::new(AssertFirstSuccessPopulates).rebuild_in_place();
+    });
 }
 
 #[test]
 fn apply_poll_result_sets_error_when_the_first_fetch_fails() {
-    #[component]
-    fn AssertFirstFailureSetsError() -> Element {
+    in_root_scope(|| {
         let mut result = Signal::new(None::<AdminHealthReport>);
         let mut error = Signal::new(false);
 
@@ -71,15 +69,12 @@ fn apply_poll_result_sets_error_when_the_first_fetch_fails() {
 
         assert!(result().is_none());
         assert!(error());
-        rsx! {}
-    }
-    VirtualDom::new(AssertFirstFailureSetsError).rebuild_in_place();
+    });
 }
 
 #[test]
 fn apply_poll_result_keeps_the_last_known_report_when_a_later_poll_fails() {
-    #[component]
-    fn AssertTransientFailureKeepsReport() -> Element {
+    in_root_scope(|| {
         let mut result = Signal::new(None::<AdminHealthReport>);
         let mut error = Signal::new(false);
         apply_poll_result(Ok(sample_report(7)), &mut result, &mut error);
@@ -95,15 +90,12 @@ fn apply_poll_result_keeps_the_last_known_report_when_a_later_poll_fails() {
             !error(),
             "a transient poll failure must not flip an already-loaded page to the error state"
         );
-        rsx! {}
-    }
-    VirtualDom::new(AssertTransientFailureKeepsReport).rebuild_in_place();
+    });
 }
 
 #[test]
 fn apply_poll_result_replaces_a_stale_report_on_the_next_success() {
-    #[component]
-    fn AssertNextSuccessReplacesStaleReport() -> Element {
+    in_root_scope(|| {
         let mut result = Signal::new(None::<AdminHealthReport>);
         let mut error = Signal::new(false);
         apply_poll_result(Ok(sample_report(7)), &mut result, &mut error);
@@ -117,9 +109,7 @@ fn apply_poll_result_replaces_a_stale_report_on_the_next_success() {
 
         assert_eq!(result().map(|r| r.index.book_count), Some(9));
         assert!(!error());
-        rsx! {}
-    }
-    VirtualDom::new(AssertNextSuccessReplacesStaleReport).rebuild_in_place();
+    });
 }
 
 // ---------- pure formatters ----------
@@ -193,7 +183,21 @@ fn index_status_card_warns_when_books_are_ghosted() {
     status.ghosted_book_count = 2;
     let html = dioxus::ssr::render_element(rsx! { IndexStatusCard { status } });
     assert!(html.contains("data-testid=\"admin-health-ghosted-warning\""));
-    assert!(html.contains("2 book(s) have no file on disk"));
+    assert!(html.contains("2 books have no file on disk"), "{html}");
+}
+
+#[test]
+fn index_status_card_counts_one_ghosted_book_in_the_singular() {
+    let mut status = index_status();
+    status.ghosted_book_count = 1;
+    let html = dioxus::ssr::render_element(rsx! { IndexStatusCard { status } });
+    assert!(html.contains("1 book has no file on disk"), "{html}");
+}
+
+#[test]
+fn index_status_card_titles_itself_as_a_group() {
+    let html = dioxus::ssr::render_element(rsx! { IndexStatusCard { status: index_status() } });
+    assert!(html.contains("<h3>Index status</h3>"), "{html}");
 }
 
 #[test]
@@ -213,7 +217,29 @@ fn worker_queue_card_renders_a_row_per_entry() {
     let html = dioxus::ssr::render_element(rsx! { WorkerQueueCard { entries } });
     assert!(html.contains("data-testid=\"admin-health-worker-table\""));
     assert!(html.contains("Scanning library"));
-    assert!(html.contains("340 ms"));
+    assert!(html.contains("340\u{a0}ms"), "{html}");
+}
+
+#[test]
+fn worker_queue_card_scrolls_its_table_inside_the_card() {
+    let entries = vec![WorkerQueueEntry {
+        kind: TaskKind::Scan,
+        queue_depth: 0,
+        recent_completions_ms: vec![14_497],
+    }];
+    let html = dioxus::ssr::render_element(rsx! { WorkerQueueCard { entries } });
+    let wrap = html.find("table-scroll").expect("scroll wrapper");
+    assert!(
+        wrap < html.find("admin-health-worker-table").unwrap(),
+        "{html}"
+    );
+    assert!(html.contains("ah-num"), "{html}");
+}
+
+#[test]
+fn format_duration_ms_switches_to_seconds_past_one_second() {
+    assert_eq!(format_duration_ms(340), "340\u{a0}ms");
+    assert_eq!(format_duration_ms(14_497), "14.5\u{a0}s");
 }
 
 #[test]
@@ -237,7 +263,9 @@ fn fts_health_card_reports_out_of_sync() {
     };
     let html = dioxus::ssr::render_element(rsx! { FtsHealthCard { fts } });
     assert!(html.contains("data-testid=\"admin-health-fts-out-of-sync\""));
-    assert!(html.contains("rebuild is recommended"));
+    // Settings has no rebuild control; the copy names the one that exists.
+    assert!(!html.contains("Settings"), "{html}");
+    assert!(html.contains("/api/fts/rebuild"), "{html}");
 }
 
 #[test]
@@ -280,6 +308,35 @@ fn last_errors_card_renders_a_row_per_entry() {
     assert!(html.contains("data-testid=\"admin-health-errors-table\""));
     assert!(html.contains("boom"));
     assert!(html.contains("2023-11-14 22:13:20 UTC"));
+}
+
+#[derive(Clone, Debug, PartialEq, dioxus_router::Routable)]
+enum ErrorsRoute {
+    #[route("/")]
+    ErrorsHost {},
+}
+
+// The book link is a router `Link`, so the card mounts under a router.
+#[component]
+fn ErrorsHost() -> Element {
+    let entries = vec![CapturedError {
+        timestamp: 1_700_000_000,
+        target: "omnibus::scanner".into(),
+        message: "unreadable epub".into(),
+        book_uuid: Some("uuid-1".into()),
+        file: Some("/lib/broken.epub".into()),
+    }];
+    rsx! { LastErrorsCard { entries } }
+}
+
+#[test]
+fn last_errors_card_links_the_book_and_names_the_file() {
+    let html = crate::test_support::render_in_vdom(|| {
+        rsx! { dioxus_router::Router::<ErrorsRoute> {} }
+    });
+    assert!(html.contains("admin-health-errors-book-link"), "{html}");
+    assert!(html.contains(r#"href="/books/uuid-1""#), "{html}");
+    assert!(html.contains("/lib/broken.epub"), "{html}");
 }
 
 // ---------- access gate (first paint vs resolved) ----------

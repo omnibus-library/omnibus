@@ -128,7 +128,7 @@ pub fn CleanupReviewPage(kind: String) -> Element {
                             Loading {
                                 kind: LoadingKind::Section,
                                 testid: "cleanup-review-access-loading",
-                                label: "Checking your access",
+                                label: "Checking your access\u{2026}",
                             }
                         },
                         Access::Denied => rsx! {
@@ -425,7 +425,7 @@ fn CleanupReviewBody(kind: Option<CleanupKind>, state: QueueState) -> Element {
             Loading {
                 kind: LoadingKind::Section,
                 testid: "cleanup-review-loading",
-                label: "Gathering the suggestions",
+                label: "Gathering the suggestions\u{2026}",
             }
         } else if let Some(card) = card {
             SuggestionCardView {

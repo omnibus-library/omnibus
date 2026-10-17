@@ -1,11 +1,12 @@
-//! Admin server-health page — the first admin route in the app. Five
-//! read-only sections over one [`AdminHealthReport`], polled every
+//! The Overview tab of Administration › Health & activity. Five read-only
+//! groups over one [`AdminHealthReport`], polled every
 //! [`POLL_INTERVAL_MS`] from a post-mount `use_future` loop (never the
 //! render body, for hydration parity). Web/SSR-only; the real
 //! authorization boundary is the `AdminUser` extractor on `rpc_get_admin_health`.
 #![cfg(not(feature = "mobile"))]
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 use omnibus_shared::admin_health::{
     AdminHealthReport, FtsHealth, IndexStatus, StorageStats, WorkerQueueEntry,
 };
@@ -14,8 +15,9 @@ use omnibus_shared::error_ring::CapturedError;
 use crate::components::worker_status::kind_label;
 use crate::components::{Loading, LoadingKind};
 use crate::data::{self, DataError};
+use crate::date_fmt::fmt_timestamp;
 use crate::platform_sleep::async_sleep_ms;
-use crate::Access;
+use crate::{Access, Route};
 
 /// Polling cadence in milliseconds — AC1 asks for "approximately a
 /// 5-second cadence". Same self-hosted-single-admin reasoning as
@@ -37,7 +39,7 @@ pub fn HealthOverview() -> Element {
             match access() {
                 Access::Allowed => rsx! { AdminHealthBody { result, error } },
                 Access::Unknown => rsx! {
-                    Loading { kind: LoadingKind::Section, label: "Checking your access" }
+                    Loading { kind: LoadingKind::Section, label: "Checking your access\u{2026}" }
                 },
                 Access::Denied => rsx! {
                     p { class: "settings-status error", "data-testid": "admin-health-forbidden",
@@ -104,7 +106,7 @@ fn AdminHealthBody(result: Signal<Option<AdminHealthReport>>, error: Signal<bool
     if error() {
         return rsx! {
             p { class: "settings-status error", role: "status", "data-testid": "admin-health-error",
-                "Failed to load server health."
+                "Couldn\u{2019}t load server health. It\u{2019}s retried every few seconds."
             }
         };
     }
@@ -139,7 +141,7 @@ fn AdminHealthBody(result: Signal<Option<AdminHealthReport>>, error: Signal<bool
 fn IndexStatusCard(status: IndexStatus) -> Element {
     rsx! {
         section { class: "card ah-card", "data-testid": "admin-health-index-card",
-            h2 { "Index status" }
+            h3 { "Index status" }
             div { class: "ah-kv",
                 AhKvRow { label: "Ebook library", value: path_or_unconfigured(status.ebook_library_path.as_deref()) }
                 AhKvRow { label: "Audiobook library", value: path_or_unconfigured(status.audiobook_library_path.as_deref()) }
@@ -149,7 +151,7 @@ fn IndexStatusCard(status: IndexStatus) -> Element {
             }
             if status.ghosted_book_count > 0 {
                 p { class: "settings-status error", "data-testid": "admin-health-ghosted-warning",
-                    "{status.ghosted_book_count} book(s) have no file on disk (ghosted by a prior reindex)."
+                    "{ghosted_line(status.ghosted_book_count)}"
                 }
             } else {
                 p { class: "settings-status success", "data-testid": "admin-health-ghosted-ok",
@@ -158,6 +160,16 @@ fn IndexStatusCard(status: IndexStatus) -> Element {
             }
         }
     }
+}
+
+/// "N books have no file on disk …", agreeing with the count.
+fn ghosted_line(count: i64) -> String {
+    let (noun, verb) = if count == 1 {
+        ("book", "has")
+    } else {
+        ("books", "have")
+    };
+    format!("{count} {noun} {verb} no file on disk (ghosted by a prior reindex).")
 }
 
 fn path_or_unconfigured(path: Option<&str>) -> String {
@@ -174,24 +186,26 @@ fn path_or_unconfigured(path: Option<&str>) -> String {
 fn WorkerQueueCard(entries: Vec<WorkerQueueEntry>) -> Element {
     rsx! {
         section { class: "card ah-card", "data-testid": "admin-health-worker-card",
-            h2 { "Worker queue" }
+            h3 { "Worker queue" }
             if entries.is_empty() {
                 p { class: "settings-status", "data-testid": "admin-health-worker-empty",
                     "No active or recently completed background tasks."
                 }
             } else {
-                table { class: "users-table", "data-testid": "admin-health-worker-table",
-                    thead {
-                        tr {
-                            th { "Task" }
-                            th { "Queued / running" }
-                            th { "Recent completions" }
-                            th { "Last duration" }
+                div { class: "table-scroll",
+                    table { class: "users-table", "data-testid": "admin-health-worker-table",
+                        thead {
+                            tr {
+                                th { "Task" }
+                                th { class: "ah-num", "Queued" }
+                                th { class: "ah-num", "Done recently" }
+                                th { class: "ah-num", "Last took" }
+                            }
                         }
-                    }
-                    tbody {
-                        for entry in entries {
-                            WorkerQueueRow { key: "{entry.kind:?}", entry }
+                        tbody {
+                            for entry in entries {
+                                WorkerQueueRow { key: "{entry.kind:?}", entry }
+                            }
                         }
                     }
                 }
@@ -207,16 +221,26 @@ fn WorkerQueueRow(entry: WorkerQueueEntry) -> Element {
     rsx! {
         tr { "data-testid": "admin-health-worker-row",
             td { "{label}" }
-            td { "{entry.queue_depth}" }
-            td { "{entry.recent_completions_ms.len()}" }
-            td {
+            td { class: "ah-num", "{entry.queue_depth}" }
+            td { class: "ah-num", "{entry.recent_completions_ms.len()}" }
+            td { class: "ah-num",
                 match last_ms {
-                    Some(ms) => rsx! { "{ms} ms" },
+                    Some(ms) => rsx! { "{format_duration_ms(ms)}" },
                     None => rsx! { "\u{2014}" },
                 }
             }
         }
     }
+}
+
+/// A task's run time: milliseconds under a second, tenths of a second past it.
+fn format_duration_ms(ms: u64) -> String {
+    if ms < 1_000 {
+        return format!("{ms}\u{a0}ms");
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let secs = ms as f64 / 1_000.0;
+    format!("{secs:.1}\u{a0}s")
 }
 
 // ── FTS index health ─────────────────────────────────────────────
@@ -226,7 +250,7 @@ fn WorkerQueueRow(entry: WorkerQueueEntry) -> Element {
 fn FtsHealthCard(fts: FtsHealth) -> Element {
     rsx! {
         section { class: "card ah-card", "data-testid": "admin-health-fts-card",
-            h2 { "Search index (FTS)" }
+            h3 { "Search index (FTS)" }
             div { class: "ah-kv",
                 AhKvRow { label: "Books rows", value: fts.books_rows.to_string() }
                 AhKvRow { label: "FTS rows", value: fts.fts_rows.to_string() }
@@ -237,7 +261,9 @@ fn FtsHealthCard(fts: FtsHealth) -> Element {
                 }
             } else {
                 p { class: "settings-status error", "data-testid": "admin-health-fts-out-of-sync",
-                    "Out of sync — a rebuild is recommended (Settings \u{2192} Library)."
+                    "Out of sync \u{2014} search can miss or misreport books until the index is rebuilt with "
+                    code { translate: "no", "POST /api/fts/rebuild" }
+                    "."
                 }
             }
         }
@@ -251,7 +277,7 @@ fn FtsHealthCard(fts: FtsHealth) -> Element {
 fn StorageCard(storage: StorageStats) -> Element {
     rsx! {
         section { class: "card ah-card", "data-testid": "admin-health-storage-card",
-            h2 { "Storage" }
+            h3 { "Storage" }
             div { class: "ah-kv",
                 AhKvRow {
                     label: "Library content",
@@ -299,14 +325,13 @@ fn format_bytes(bytes: u64) -> String {
 
 // ── Last errors ───────────────────────────────────────────────────
 
-/// Section 5: the in-memory error ring, newest first. Same markup shape as
-/// `pages::settings::health::LastErrorsSection`, but prop-driven off the
-/// combined report instead of a second independent fetch.
+/// Section 5: the in-memory error ring, newest first, each line linking the
+/// book or naming the file it was about when the event recorded one.
 #[component]
 fn LastErrorsCard(entries: Vec<CapturedError>) -> Element {
     rsx! {
         section { class: "card ah-card", "data-testid": "admin-health-errors-card",
-            h2 { "Last errors" }
+            h3 { "Last errors" }
             p { class: "subtitle", "Most recent server errors captured in memory, newest first." }
             if entries.is_empty() {
                 p { class: "settings-status", "data-testid": "admin-health-errors-empty",
@@ -338,6 +363,19 @@ fn AhErrorLine(entry: CapturedError) -> Element {
             span { class: "logs-module-cell", "{entry.target}" }
             " "
             span { class: "logs-message", "{entry.message}" }
+            if let Some(uuid) = entry.book_uuid {
+                " "
+                Link {
+                    to: Route::BookDetail { uuid },
+                    class: "logs-ref-link",
+                    "data-testid": "admin-health-errors-book-link",
+                    "Open book"
+                }
+            }
+            if let Some(file) = entry.file {
+                " "
+                span { class: "logs-fields", translate: "no", "data-testid": "admin-health-errors-file", "{file}" }
+            }
         }
     }
 }
@@ -351,35 +389,6 @@ fn AhKvRow(label: &'static str, value: String) -> Element {
             span { class: "ah-kv-value", "{value}" }
         }
     }
-}
-
-/// Format a unix-seconds timestamp as `YYYY-MM-DD HH:MM:SS UTC`.
-/// Dependency-free and deterministic (no wall clock, no locale), so SSR and
-/// the first WASM paint render identically (rule 07). Duplicated from
-/// `pages::settings::health::fmt_timestamp`, which is `pub(super)`.
-fn fmt_timestamp(unix_secs: i64) -> String {
-    let days = unix_secs.div_euclid(86_400);
-    let secs_of_day = unix_secs.rem_euclid(86_400);
-    let (y, m, d) = civil_from_days(days);
-    let h = secs_of_day / 3600;
-    let mi = (secs_of_day % 3600) / 60;
-    let s = secs_of_day % 60;
-    format!("{y:04}-{m:02}-{d:02} {h:02}:{mi:02}:{s:02} UTC")
-}
-
-/// Convert days since the unix epoch to a `(year, month, day)` civil date
-/// (Howard Hinnant's `civil_from_days`).
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = u32::try_from(doy - (153 * mp + 2) / 5 + 1).unwrap_or(1);
-    let m = u32::try_from(if mp < 10 { mp + 3 } else { mp - 9 }).unwrap_or(1);
-    (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
 #[cfg(all(test, feature = "server"))]

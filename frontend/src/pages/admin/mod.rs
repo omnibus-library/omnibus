@@ -47,7 +47,7 @@ mod page {
                         Loading {
                             kind: LoadingKind::Section,
                             testid: "admin-loading",
-                            label: "Checking your access",
+                            label: "Checking your access\u{2026}",
                         }
                     },
                     Access::Denied => rsx! {
