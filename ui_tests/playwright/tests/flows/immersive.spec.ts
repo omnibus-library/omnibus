@@ -55,8 +55,8 @@ test.describe("immersive read", () => {
       await bookDetailPage.goto(dualFormatUuid);
     });
 
-    // The dock retargets client state, not a request. The reader's read-status
-    // write on open goes unasserted here.
+    // The dock retargets client state, not a request. Every EPUB open writes
+    // read status; that write is the reader's, so this flow leaves it unasserted.
     await test.step("read it immersively", async () => {
       await bookDetailPage.readImmersively();
       await epubReaderPage.assertDisplayedFor(dualFormatUuid);
@@ -80,7 +80,8 @@ test.describe("immersive read", () => {
       await bookDetailPage.goto(dualFormatUuid);
     });
 
-    // The reader's read-status write on open goes unasserted here.
+    // Every EPUB open writes read status; that write is the reader's, so this
+    // flow leaves it unasserted.
     await test.step("read it immersively", async () => {
       await bookDetailPage.readImmersively();
       await epubReaderPage.assertDisplayedFor(dualFormatUuid);

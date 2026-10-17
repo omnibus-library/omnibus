@@ -95,10 +95,10 @@ type PageFixtures = {
 };
 
 /**
- * The suite admin's page, with its page objects and request objects. Also the
- * cleanup sets for what a test adds, the reading-state helpers (`parkBook`,
- * `storedPosition`, `storedReadStatus`), and the worker's reader in a browser
- * context of their own. `readerFixtures.ts` signs the page in as that reader.
+ * The suite admin's page and the fixtures built on it: page and request
+ * objects, `expectMutation`, cleanup sets, seeders and reading-state helpers,
+ * and the worker's reader in a browser context of its own. `readerFixtures.ts`
+ * signs the page in as that reader.
  */
 export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // One account per worker rather than per test, because sign-in allows ten
