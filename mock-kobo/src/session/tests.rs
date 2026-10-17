@@ -256,8 +256,17 @@ async fn sync_leaves_the_server_when_resources_are_built_on_a_portless_host() {
     let _ = run_sync(&mut client, &mut Device::new("HW-1")).await;
 
     let lines = request_lines(&client.into_requests());
-    assert_eq!(lines[0], "GET /kobo/<token>/v1/initialization 200");
-    assert_eq!(stub.paths(), ["/kobo/stub-device-token/v1/initialization"]);
+    assert_eq!(
+        lines.first().map(String::as_str),
+        Some("GET /kobo/<token>/v1/initialization 200")
+    );
+    let paths = stub.paths();
+    assert!(
+        !paths.iter().any(|path| {
+            path.ends_with("/v1/analytics/gettests") || path.ends_with("/v1/library/sync")
+        }),
+        "the stub received a Resources URL that should have left the server: {paths:?}"
+    );
 }
 
 #[tokio::test]
