@@ -8,7 +8,7 @@ The suite is moving from functional helpers to page objects, one surface at a ti
 
 | Directory | Holds |
 |---|---|
-| `tests/pages/` | `<Name>Page.ts`, one class per page, extending `BasePage` |
+| `tests/pages/` | `<Name>Page.ts`, one class per page, extending `BasePage`, or a shared abstract base when pages draw the same chrome (`PagedReaderPage`) |
 | `tests/components/` | `<Name>Component.ts`, extending `BaseComponent`: widgets on several pages (top nav, the check-in flow and its overlay) |
 | `tests/apiRequests/` | `<Area>Requests.ts`, extending `BaseRequests`: the API calls a spec makes to seed, clean up or read back |
 | `tests/contracts/` | named `expectMutation` contracts per endpoint family (`scan.checkIn(book)`) and the URL patterns behind them |
