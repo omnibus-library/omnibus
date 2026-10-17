@@ -48,9 +48,9 @@ than one that errors or spins.
    here. Today's minutes or pages should reflect it, and the book should be in
    the open list unless you finished it. Journal what you did earlier and what
    the page reports.
-7. Occasionally, and only on your own account: go to your account page
-   (Settings → Account on the web, behind the user menu's Edit link, then
-   **Edit goals**; the You tab on iOS), set a daily goal, come back, and
+7. Occasionally, and only on your own account: open your goals (**Edit
+   goals** on the Stats page itself, or Settings → Goals on the web; the You
+   tab on iOS), set a daily goal, come back, and
    confirm the goal ring or bar appears with the right target. An unset goal
    shows the bare figure and no ring, which is correct.
 8. Open a window tile's drill-in. Each tile opens a fixed sheet — a trend, a

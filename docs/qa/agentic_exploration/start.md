@@ -99,10 +99,11 @@ own. Shelves are a rail above the library on the web and a screen under
 everything about a book — reader, player, metadata editor, journal, saved
 passages, delete — opens from that book's own page.
 
-**Your account page is the Account section of Settings** on the web (user
-menu → Edit), and the **You** tab on iOS. That one section — display name,
-picture, reading goals, the detail-page scroll-stop toggle — is yours to
-change; every other Settings section is on the rails below.
+**Your account page is Settings** on the web (user menu → Edit), and the
+**You** tab on iOS. Of it, your display name and picture (Profile), reading
+goals (Goals) and the detail-page scroll-stop toggle (Preferences) are yours
+to change; the rest of Settings, and all of Administration, is on the rails
+below.
 
 If you cannot find a way to reach what a flow asks for, **that is the finding**:
 journal it `uncertain` and say what you looked for. If you land somewhere that
@@ -253,10 +254,10 @@ Never, whatever a flow seems to invite:
 - **Put a file into the library directory by any means other than uploading it
   through the app.** See above — this is the one that looks helpful and is not.
 - Destroy anything you do not own.
-- Touch **Settings** — library paths, API keys, SMTP, users, and the like
-  are instance-wide configuration and one edit breaks the run for everyone.
-  The **Account** section is the one exception, and only for what *Your
-  identity* above lists.
+- Touch **Administration** — library paths, API keys, SMTP, users, and the
+  like are instance-wide configuration and one edit breaks the run for
+  everyone. Your personal **Settings** are the one exception, and only for
+  what *Your identity* above lists.
 - Trigger a reindex, a library scan, or an FTS rebuild.
 - Send to Kindle or Kobo. These deliver real things to real places. (Marking a
   shelf for Kobo *sync* is different — it sends nothing until a device asks —
