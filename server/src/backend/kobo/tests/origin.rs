@@ -79,11 +79,19 @@ fn origin_for_keeps_a_request_origin_that_is_already_listed() {
     ]);
     // The listing is matched without regard to the host's case.
     let mixed_case = origins(&["http://nas.lan:3000", "http://nas.lan"]);
+    // An explicit default port lists the same origin as the portless request.
+    let explicit_https = origins(&["https://nas.lan:8443", "https://nas.lan:443"]);
+    let explicit_http = origins(&["http://nas.lan:3000", "http://nas.lan:80"]);
 
     assert_eq!(origin_for(&req, &public), "https://nas.lan");
     assert_eq!(
         origin_for(&headers(&[("host", "NAS.lan")]), &mixed_case),
         "http://NAS.lan"
+    );
+    assert_eq!(origin_for(&req, &explicit_https), "https://nas.lan");
+    assert_eq!(
+        origin_for(&headers(&[("host", "nas.lan")]), &explicit_http),
+        "http://nas.lan"
     );
 }
 

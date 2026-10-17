@@ -131,9 +131,16 @@ fn origin_for(headers: &HeaderMap, public_origins: &[String]) -> String {
     let Ok(authority) = host.parse::<Authority>() else {
         return from_headers;
     };
-    let listed = public_origins
-        .iter()
-        .any(|o| o.eq_ignore_ascii_case(&from_headers));
+    // `https://h:443` lists the same origin as a portless `https://h`.
+    let default_port = if scheme.eq_ignore_ascii_case("https") {
+        443
+    } else {
+        80
+    };
+    let with_default_port = format!("{from_headers}:{default_port}");
+    let listed = public_origins.iter().any(|o| {
+        o.eq_ignore_ascii_case(&from_headers) || o.eq_ignore_ascii_case(&with_default_port)
+    });
     if authority.port().is_some() || listed {
         return from_headers;
     }
