@@ -122,8 +122,8 @@ test.describe("book detail page", () => {
     });
   });
 
+  // The preference is per account and outlives a test, so each sets it first.
   test.describe("scroll stops", () => {
-    // The preference is per account and outlives a test, so each sets it first.
     test("read the panel as one continuous flow by default", async ({
       bookDetailPage,
       request,
@@ -364,8 +364,8 @@ test.describe("book detail page", () => {
     });
   });
 
+  // The rail works in both modes, so these leave the preference alone.
   test.describe("dot rail", () => {
-    // The rail works in both modes, so these leave the preference alone.
     test("jump to a stop from the dot rail", async ({
       bookDetailPage,
       request,
@@ -641,7 +641,7 @@ test.describe("book detail page", () => {
       });
     });
 
-    test("send a book to kobo as a uuid named download", async ({
+    test("download a kobo copy named by the book's uuid", async ({
       bookDetailPage,
       request,
     }) => {
@@ -726,6 +726,7 @@ test.describe("book detail page", () => {
     test("dismiss a failed kindle send's error", async ({
       bookDetailPage,
       request,
+      expectMutation,
     }) => {
       const epubRow = bookDetailPage.formatRow("EPUB");
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
@@ -738,9 +739,8 @@ test.describe("book detail page", () => {
         await bookDetailPage.goto(uuid);
       });
 
-      // The stub answers the send request, so this test does not assert it.
       await test.step("send it to kindle", async () => {
-        await epubRow.sendToKindle();
+        await expectMutation(kindle.send(uuid), () => epubRow.sendToKindle());
         await expect(epubRow.kindleSendStatus).toHaveClass(/error/);
       });
 
@@ -821,7 +821,7 @@ test.describe("book detail page", () => {
 
     // #2478: the block called itself the only book by its author while the
     // author fetch was still in flight.
-    test("state no count until the author fetch lands", async ({
+    test("show a loading note until the author's books load", async ({
       bookDetailPage,
       request,
     }) => {
@@ -852,8 +852,8 @@ test.describe("book detail page", () => {
     });
   });
 
+  // Writing tests park the book first, since a rating outlives a test.
   test.describe("rating", () => {
-    // Writing tests park the book first, since a rating outlives a test.
     test("hide other ratings when nobody else rated the book", async ({
       bookDetailPage,
       request,
@@ -907,7 +907,7 @@ test.describe("book detail page", () => {
       });
     });
 
-    test("rate a book a half star", async ({
+    test("rate a book four and a half stars", async ({
       bookDetailPage,
       request,
       presetRating,
@@ -1031,8 +1031,8 @@ test.describe("book detail page", () => {
     });
   });
 
+  // Read status outlives a test, so the ones that rely on it park it first.
   test.describe("read status", () => {
-    // Read status outlives a test, so the ones that rely on it park it first.
     test("show the read status control with its three segments", async ({
       bookDetailPage,
       request,
@@ -1224,7 +1224,7 @@ test.describe("book detail page", () => {
       },
     );
 
-    test("list a saved passage with its locator note and date", async ({
+    test("list a saved passage with its locator, note and date", async ({
       bookDetailPage,
       request,
       highlightOn,
@@ -1258,7 +1258,6 @@ test.describe("book detail page", () => {
         await expect(card.root).toHaveCount(1);
         await expect(card.noteText).toHaveText("the line that stuck");
         await expect(card.metaText).toContainText(/^.+ · saved /);
-        await expect(card.metaText).toContainText("saved ");
       });
     });
 
@@ -1477,7 +1476,8 @@ test.describe("book detail page", () => {
     });
   });
 
-  // Last in the file, because its seed re-points the library at the audiobooks.
+  // Last in the file, because its seed adds the audiobooks to the library the
+  // earlier groups read.
   test.describe("listening", () => {
     test.beforeAll("seed the audiobook library", async ({ request }) => {
       await seedAudiobookLibrary(
@@ -1505,7 +1505,9 @@ test.describe("book detail page", () => {
           "href",
           new RegExp(`/listen/${uuid}$`),
         );
-        await expect(bookDetailPage.listenFilePicker.trigger).toHaveCount(0);
+        await expect(bookDetailPage.listenFilePicker.triggerButton).toHaveCount(
+          0,
+        );
       });
     });
 
@@ -1541,8 +1543,8 @@ test.describe("book detail page", () => {
       });
 
       await test.step("check start listening offers the picker", async () => {
-        await expect(picker.trigger).toBeVisible();
-        await expect(picker.trigger).toHaveText(/Start listening\s*▾/);
+        await expect(picker.triggerButton).toBeVisible();
+        await expect(picker.triggerButton).toHaveText(/Start listening\s*▾/);
         await expect(picker.panel).toHaveCount(0);
       });
 

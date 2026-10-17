@@ -4,15 +4,14 @@ import { BaseComponent } from "./BaseComponent";
 
 /** The file picker on Start listening, which a book with two audio files has. */
 export class ListenFilePickerComponent extends BaseComponent {
-  readonly trigger: Locator;
+  readonly triggerButton: Locator;
   readonly panel: Locator;
   readonly heading: Locator;
   readonly fileLinks: Locator;
 
   constructor(page: Page) {
     super(page);
-    // Asserted absent, so found by test id, not by label.
-    this.trigger = page.getByTestId("listen-file-picker-trigger");
+    this.triggerButton = page.getByTestId("listen-file-picker-trigger");
     this.panel = page.getByTestId("listen-file-picker-panel");
     this.heading = page.getByTestId("listen-file-picker-heading");
     this.fileLinks = this.panel.getByRole("link");
@@ -24,7 +23,7 @@ export class ListenFilePickerComponent extends BaseComponent {
   }
 
   async open(): Promise<void> {
-    await this.trigger.click();
+    await this.triggerButton.click();
   }
 
   /**

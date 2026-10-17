@@ -18,7 +18,6 @@ export class RatingComponent extends BaseComponent {
     this.starsGroup = page.getByRole("group", { name: "Your rating" });
     // Another status line shares the page, so the meta is found by test id.
     this.metaText = page.getByTestId("rating-meta");
-    // Asserted absent, so found by test id, not by label.
     this.otherRatingsList = page.getByTestId("other-ratings");
     this.otherRatingRow = page.getByTestId("other-rating-row");
     this.otherRatingByline = this.otherRatingRow.getByTestId(
@@ -66,11 +65,7 @@ export class RatingComponent extends BaseComponent {
   /** Answers the other readers' ratings with `ratings` on every later load. */
   async stubOtherRatings(ratings: AttributedRating[]): Promise<void> {
     await this.page.route(ratingsUrls.others, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(ratings),
-      }),
+      route.fulfill({ json: ratings }),
     );
   }
 }

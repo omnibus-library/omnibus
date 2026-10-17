@@ -17,7 +17,6 @@ export class QuoteCardModalComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
-    // Asserted absent, so found by test id, not by label.
     this.root = page.getByTestId("quote-card-modal");
     this.heading = this.root.getByRole("heading", {
       name: "Make a quote card",

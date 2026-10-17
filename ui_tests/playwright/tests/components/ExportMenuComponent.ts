@@ -17,8 +17,8 @@ export class ExportMenuComponent extends BaseComponent {
       name: "Export",
       exact: true,
     });
-    // Asserted absent, so these two are found by test id, not by label.
     this.panel = page.getByTestId("hero-export-panel");
+    // The scrim has no role or label, so it is found by test id.
     this.scrim = page.getByTestId("hero-export-scrim");
     this.downloadEpubLink = this.panel.getByRole("link", {
       name: "Download EPUB",

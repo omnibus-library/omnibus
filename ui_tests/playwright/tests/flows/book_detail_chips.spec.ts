@@ -86,7 +86,7 @@ test.describe("book detail chip editors", () => {
         metadata.saveOverrides(uuid, { subjects: ["Alpine Computing"] }),
         () => tagChips.addChip("Alpine Computing"),
       );
-      await expect(tagChips.editor).toContainText("Alpine Computing");
+      await expect(tagChips.editorPanel).toContainText("Alpine Computing");
     });
 
     await test.step("close the editor", async () => {
@@ -145,7 +145,7 @@ test.describe("book detail chip editors", () => {
     // what shows the editor opened with suggestions wired up.
     await test.step("open the tag editor", async () => {
       await tagChips.openEditor();
-      await expect(tagChips.suggestions).toContainText("ADD TAG");
+      await expect(tagChips.suggestionsList).toContainText("ADD TAG");
     });
   });
 
@@ -213,7 +213,7 @@ test.describe("book detail chip editors", () => {
     // A rejected save resyncs the editor from the book, so the chip clears
     // without a reload.
     await test.step("check the editor dropped the tag", async () => {
-      await expect(tagChips.editor).not.toContainText("Never Saved");
+      await expect(tagChips.editorPanel).not.toContainText("Never Saved");
     });
 
     await test.step("stop failing saves", async () => {

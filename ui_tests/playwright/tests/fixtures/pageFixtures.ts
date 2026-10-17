@@ -489,16 +489,15 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
 
   // A combined book count can land before the second scan attaches the other
   // format, so poll until the book lists both an ebook and an audio format.
-  dualFormatUuid: async ({ request }, use) => {
+  dualFormatUuid: async ({ ebooksRequests }, use) => {
     const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
     const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
-    const ebooks = new EbooksRequests(request);
 
     let match: LibraryBook | undefined;
     await expect
       .poll(
         async () => {
-          const listed = await ebooks.getEbooks();
+          const listed = await ebooksRequests.getEbooks();
           if (listed.status() !== 200) return false;
           const { books }: { books: LibraryBook[] } = await listed.json();
           match = books.find((b) => b.title === DUAL_FORMAT_BOOK.title);

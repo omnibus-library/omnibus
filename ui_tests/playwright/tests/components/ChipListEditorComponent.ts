@@ -13,14 +13,11 @@ export class ChipListEditorComponent extends BaseComponent {
   readonly addButton: Locator;
   readonly otherAddButton: Locator;
   readonly list: Locator;
-  readonly editor: Locator;
+  readonly editorPanel: Locator;
   readonly input: Locator;
-  readonly suggestions: Locator;
+  readonly suggestionsList: Locator;
 
-  constructor(
-    page: Page,
-    readonly kind: ChipKind,
-  ) {
+  constructor(page: Page, kind: ChipKind) {
     super(page);
     const noun = SINGULAR[kind];
     const otherKind = kind === "genres" ? "tags" : "genres";
@@ -29,10 +26,10 @@ export class ChipListEditorComponent extends BaseComponent {
     // #2257: the other kind's pill never sits in this row.
     this.otherAddButton = this.root.getByTestId(`bd-add-${otherKind}`);
     this.list = this.root.getByTestId(`bd-${noun}-list`);
-    this.editor = this.root.getByTestId(`bd-${kind}-editor`);
+    this.editorPanel = this.root.getByTestId(`bd-${kind}-editor`);
     // A test asserts the placeholder, so the input is found by test id.
     this.input = this.root.getByTestId(`bd-${kind}-input`);
-    this.suggestions = this.root.getByTestId(`bd-${kind}-suggestions`);
+    this.suggestionsList = this.root.getByTestId(`bd-${kind}-suggestions`);
   }
 
   async openEditor(): Promise<void> {

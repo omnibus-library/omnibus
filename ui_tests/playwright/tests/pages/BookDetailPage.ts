@@ -45,6 +45,7 @@ export class BookDetailPage extends BasePage {
 
   readonly titleHeading: Locator;
   readonly authorsLine: Locator;
+  readonly heroCoverFrame: Locator;
   readonly heroCover: Locator;
   readonly sectionsNav: Locator;
   readonly sectionDots: Locator;
@@ -105,7 +106,8 @@ export class BookDetailPage extends BasePage {
     this.authorsLine = page.getByTestId("book-authors");
     // The More stop's tiles draw covers too, so the hero's is found by its
     // wrapper, which is hidden from the accessibility tree.
-    this.heroCover = page.locator("#bdmq-coverpx").getByTestId("cover");
+    this.heroCoverFrame = page.locator("#bdmq-coverpx");
+    this.heroCover = this.heroCoverFrame.getByTestId("cover");
     this.sectionsNav = page.getByRole("navigation", { name: "Page sections" });
     this.sectionDots = this.sectionsNav.getByRole("button");
     // The scrollers and their sections carry no role, and the `bdmq-sec-{i}`
@@ -122,7 +124,6 @@ export class BookDetailPage extends BasePage {
     this.formatSwitcher = page.getByRole("group", {
       name: "Available formats",
     });
-    // Asserted absent, so found by test id, not by label.
     this.formatListenLinks = this.formatSwitcher.getByTestId("action-listen");
     this.savedPassagesHeading = page.getByRole("heading", {
       name: "Passages you saved",
@@ -130,7 +131,6 @@ export class BookDetailPage extends BasePage {
     this.savedPassagesSection = page.getByTestId("highlights-section");
     this.savedPassageCards = page.getByTestId("highlight-card");
     this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
-    // Asserted absent, so found by test id, not by label.
     this.showMorePassagesButton = page.getByTestId("highlights-show-more");
     this.moreStop = page.getByTestId("bdmq-more");
     this.fromSameHandHeading = page.getByRole("heading", {
@@ -288,20 +288,12 @@ export class BookDetailPage extends BasePage {
   async stubKindleSend(outcome: KindleSendStatus): Promise<void> {
     await this.page.route(kindleUrls.send, (route) =>
       route.request().method() === "POST"
-        ? route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: "1",
-          })
+        ? route.fulfill({ json: 1 })
         : route.continue(),
     );
     await this.page.route(kindleUrls.status, (route) =>
       route.request().method() === "POST"
-        ? route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify(outcome),
-          })
+        ? route.fulfill({ json: outcome })
         : route.continue(),
     );
   }
@@ -387,9 +379,7 @@ export class BookDetailPage extends BasePage {
 
   /** The cover's inline transform, which the scroll glue rewrites as it runs. */
   async coverTransform(): Promise<string> {
-    return this.page
-      .locator("#bdmq-coverpx")
-      .evaluate((el) => el.style.transform);
+    return this.heroCoverFrame.evaluate((el) => el.style.transform);
   }
 
   /** Checks the page is showing the book `bookUuid`, not just any book. */
