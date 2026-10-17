@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { BookmarksDrawerComponent } from "../components/BookmarksDrawerComponent";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
 import { MiniDockComponent } from "../components/MiniDockComponent";
 import { ReaderContentsDrawerComponent } from "../components/ReaderContentsDrawerComponent";
@@ -33,6 +34,7 @@ export class EpubReaderPage extends BasePage {
   readonly displayPanel: ReaderDisplayPanelComponent;
   readonly contentsDrawer: ReaderContentsDrawerComponent;
   readonly highlightsDrawer: HighlightsDrawerComponent;
+  readonly bookmarksDrawer: BookmarksDrawerComponent;
   readonly gestures: ReaderGesturesComponent;
   readonly miniDock: MiniDockComponent;
 
@@ -56,8 +58,6 @@ export class EpubReaderPage extends BasePage {
 
   readonly searchDrawer: Locator;
   readonly searchField: Locator;
-  readonly bookmarksDrawer: Locator;
-  readonly addBookmarkButton: Locator;
   readonly annotationsSheet: Locator;
   readonly bookmarksFilterButton: Locator;
   readonly addAnnotationButton: Locator;
@@ -68,6 +68,7 @@ export class EpubReaderPage extends BasePage {
     this.displayPanel = new ReaderDisplayPanelComponent(page);
     this.contentsDrawer = new ReaderContentsDrawerComponent(page);
     this.highlightsDrawer = new HighlightsDrawerComponent(page);
+    this.bookmarksDrawer = new BookmarksDrawerComponent(page);
     this.gestures = new ReaderGesturesComponent(page);
     this.miniDock = new MiniDockComponent(page);
     this.viewerPanel = page.getByTestId("reader-viewer");
@@ -91,8 +92,6 @@ export class EpubReaderPage extends BasePage {
     this.navErrorMessage = page.getByTestId("reader-nav-error");
     this.searchDrawer = page.getByTestId("reader-search-drawer");
     this.searchField = page.getByTestId("reader-search-input");
-    this.bookmarksDrawer = page.getByTestId("reader-bookmarks-drawer");
-    this.addBookmarkButton = page.getByTestId("reader-bookmark-add");
     this.annotationsSheet = page.getByTestId("reader-annotations-drawer");
     this.bookmarksFilterButton = page.getByTestId(
       "annotations-filter-bookmarks",

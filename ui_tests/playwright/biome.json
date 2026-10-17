@@ -79,7 +79,6 @@
         "!tests/flows/metadata_edit_search.spec.ts",
         "!tests/flows/mini-dock.spec.ts",
         "!tests/flows/not_found.spec.ts",
-        "!tests/flows/pdf_reader.spec.ts",
         "!tests/flows/persistence.spec.ts",
         "!tests/flows/physical_collection.spec.ts",
         "!tests/flows/search-palette.spec.ts",

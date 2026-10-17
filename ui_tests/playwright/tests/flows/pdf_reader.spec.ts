@@ -1,78 +1,27 @@
-import type { Page } from "@playwright/test";
+import { bookmarks } from "../contracts/bookmarks";
 import { highlights } from "../contracts/highlights";
 import { progress } from "../contracts/progress";
 import { readStatus } from "../contracts/readStatus";
+import { pdfPageBookmark, type SeededBookmark } from "../data/bookmarks";
 import { pdfHighlightRange, sentHighlight } from "../data/highlights";
 import { pagePercent, pdfPageAnchor } from "../data/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { buildJpxPdf, JPX_FILL } from "../fixtures/jpx_pdf";
 import { expect, test } from "../fixtures/pageFixtures";
-import { expectMutation, failing } from "../utils/api";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Both PDF fixtures are reserved for this spec (see fixtures/epubs.ts), and
 // the split matters even within it: the suite is fullyParallel, so the
 // write-path tests (PDF, which takes the progress, read-status, highlight
-// and bookmark writes — serialised below) and the read-only tests
-// (PRISTINE, which assert a page-1 open) can run concurrently — a shared
-// book would race.
+// and bookmark writes) and the read-only tests (PRISTINE, which assert a
+// page-1 open) can run concurrently — a shared book would race.
 const PDF = FIXTURE_BOOKS.find((b) => b.slug === "time-machine")!;
 const PRISTINE = FIXTURE_BOOKS.find((b) => b.slug === "flatland")!;
 // A saved selection anchors as `pdf:{page}:{quads}`, eight coordinates a quad.
 const SELECTION_RANGE =
   /^pdf:8:(-?\d+(\.\d)?,){7}-?\d+(\.\d)?(;(-?\d+(\.\d)?,){7}-?\d+(\.\d)?)*$/;
-
-// Re-seed so the running server is indexed against the committed fixtures
-// before any assertion runs — independent of other specs in this worker.
-//
-// Then pre-set PRISTINE to `reading`: the reader auto-marks an unread book
-// `reading` on open, so PRISTINE's read-only tests would otherwise fire an
-// unasserted status mutation the moment they open it (rule 04). Converge
-// with a read-then-write poll — concurrent PUTs can hit SQLite's busy
-// timeout while the seed reindex is still writing.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await expect
-    .poll(
-      async () => {
-        const current = await request.get(`/api/read-status/${uuid}`);
-        if (current.status() === 200) {
-          const record = (await current.json()) as { status: string } | null;
-          if (record?.status === "reading") return "reading";
-        }
-        await request.put("/api/read-status", {
-          data: { book_uuid: uuid, status: "reading" },
-        });
-        return "pending";
-      },
-      { timeout: 15_000, intervals: [200, 500, 1_000] },
-    )
-    .toBe("reading");
-});
-
-// Every page turn saves through the shared progress RPC.
-const PROGRESS_POST = {
-  method: "POST" as const,
-  url: /\/api\/rpc\/progress(?:\?|$)/,
-  expectedStatus: 200,
-};
-
-async function openPdf(page: Page, path: string) {
-  await gotoReady(page, path);
-  // The glue reports ready once the first page rasterised; the loading
-  // overlay leaving and the page label filling in are the "ready" signal.
-  await expect(page.getByTestId("pdf-loading")).toHaveCount(0, {
-    timeout: 20_000,
-  });
-  await expect(pageLabel(page)).toHaveText(/^Page \d+ of \d+$/);
-}
-
-function pageLabel(page: Page) {
-  return page.getByTestId("pdf-page-label");
-}
 
 test.describe("pdf reader", () => {
   test.beforeAll("seed the library", async ({ request }) => {
@@ -582,72 +531,84 @@ test.describe("pdf reader", () => {
         await pdfReaderPage.assertDisplayedFor(uuid, 9);
       });
     });
-  });
-});
 
-// The write-path tests all mutate PDF's rows, so they run one after another
-// even though the suite is fullyParallel.
-test.describe("writes on the reserved PDF", () => {
-  test.describe.configure({ mode: "serial" });
+    test("bookmark the current page", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+      seededBookmarkIds,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-  test("saves a bookmark on the current page and jumps back to it", async ({
-    page,
-    request,
-  }) => {
-    const uuid = await fetchBookUuidByTitle(request, PDF.title);
-    const positioned = await request.post("/api/progress", {
-      data: {
-        book_uuid: uuid,
-        format: "epub",
-        epub_cfi: "pdf-page:3",
-        progress_percent: 5,
-      },
+      await test.step("park the book reading on page 4", async () => {
+        await parkBook(uuid, pdfPageAnchor(3), "reading");
+      });
+
+      await test.step("open the bookmarks drawer", async () => {
+        await pdfReaderPage.goto(uuid);
+        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of/);
+        await pdfReaderPage.openBookmarks();
+        await expect(pdfReaderPage.bookmarksDrawer.root).toBeVisible();
+      });
+
+      // "+ Bookmark" stores the page anchor, labelled by the page.
+      await test.step("add a bookmark", async () => {
+        const { response } = await expectMutation(
+          bookmarks.create(pdfPageBookmark(uuid, 3)),
+          () => pdfReaderPage.bookmarksDrawer.add(),
+        );
+        const { id }: SeededBookmark = await response.json();
+        seededBookmarkIds.add(id);
+      });
+
+      await test.step("check the drawer lists it", async () => {
+        await expect(pdfReaderPage.bookmarksDrawer.row("Page 4")).toHaveCount(
+          1,
+        );
+      });
     });
-    expect(positioned.status()).toBe(200);
-    await openPdf(page, `/pdf/${uuid}`);
-    await expect(pageLabel(page)).toHaveText(/^Page 4 of/);
 
-    // "+ Bookmark" stores the page anchor, labelled by the page.
-    await page.getByTestId("pdf-bookmarks").click();
-    await expect(page.getByTestId("reader-bookmarks-drawer")).toBeVisible();
-    const { response } = await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/bookmarks\/create(?:\?|$)/,
-        expectedBody: {
-          input: {
-            client_id: null,
-            book_uuid: uuid,
-            position: "pdf-page:3",
-            title: "Page 4",
-          },
-        },
-        expectedStatus: 200,
-      },
-      async () => page.getByTestId("reader-bookmark-add").click(),
-    );
-    const bookmark = (await response.json()) as { id: number };
-    const row = page
-      .getByTestId("reader-bookmark-row")
-      .filter({ hasText: "Page 4" });
-    await expect(row).toHaveCount(1);
-    await page.keyboard.press("Escape");
+    test("jump to a bookmarked page", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      bookmarksRequests,
+      expectMutation,
+      seededBookmarkIds,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-    // Move away, then jump back through the bookmark.
-    await expectMutation(page, PROGRESS_POST, async () =>
-      page.getByRole("slider", { name: "Page slider" }).fill("0"),
-    );
-    await expect(pageLabel(page)).toHaveText(/^Page 1 of/);
-    await page.getByTestId("pdf-bookmarks").click();
-    await expectMutation(page, PROGRESS_POST, async () =>
-      row.getByRole("button", { name: "Page 4" }).click(),
-    );
-    await expect(pageLabel(page)).toHaveText(/^Page 4 of/);
-    await expect(page.getByTestId("reader-bookmarks-drawer")).toHaveCount(0);
+      await test.step("park the book reading on page 1", async () => {
+        await parkBook(uuid, pdfPageAnchor(0), "reading");
+      });
 
-    expect(
-      (await request.delete(`/api/bookmarks/${bookmark.id}`)).status(),
-    ).toBe(204);
+      await test.step("save a bookmark on page 4", async () => {
+        const created = await bookmarksRequests.postBookmark(
+          pdfPageBookmark(uuid, 3),
+        );
+        expect(created.status(), "seed bookmark").toBe(200);
+        const { id }: SeededBookmark = await created.json();
+        seededBookmarkIds.add(id);
+      });
+
+      await test.step("open the bookmarks drawer", async () => {
+        await pdfReaderPage.goto(uuid);
+        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 1 of/);
+        await pdfReaderPage.openBookmarks();
+        await expect(pdfReaderPage.bookmarksDrawer.root).toBeVisible();
+      });
+
+      await test.step("jump to the bookmark", async () => {
+        await expectMutation(progress.save(), () =>
+          pdfReaderPage.bookmarksDrawer.jumpTo("Page 4"),
+        );
+      });
+
+      await test.step("check the reader is on page 4", async () => {
+        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of/);
+        await expect(pdfReaderPage.bookmarksDrawer.root).toHaveCount(0);
+      });
+    });
   });
 });

@@ -489,8 +489,8 @@ test.describe("epub reader", () => {
       });
 
       await test.step("check the drawer offers to add a bookmark", async () => {
-        await expect(epubReaderPage.bookmarksDrawer).toBeVisible();
-        await expect(epubReaderPage.addBookmarkButton).toBeVisible();
+        await expect(epubReaderPage.bookmarksDrawer.root).toBeVisible();
+        await expect(epubReaderPage.bookmarksDrawer.addButton).toBeVisible();
       });
     });
 

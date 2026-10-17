@@ -1,4 +1,5 @@
 import type { Locator, Page, Response } from "@playwright/test";
+import { BookmarksDrawerComponent } from "../components/BookmarksDrawerComponent";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
 import { highlightsUrls } from "../contracts/highlights";
 import type { HighlightColor } from "../data/highlights";
@@ -14,6 +15,7 @@ export class PdfReaderPage extends PagedReaderPage {
   protected readonly urlPattern = /\/pdf\/[^/?#]+(?:\?[^#]*)?$/;
 
   readonly highlightsDrawer: HighlightsDrawerComponent;
+  readonly bookmarksDrawer: BookmarksDrawerComponent;
 
   readonly loadingOverlay: Locator;
   readonly stagePanel: Locator;
@@ -27,6 +29,7 @@ export class PdfReaderPage extends PagedReaderPage {
   constructor(page: Page) {
     super(page);
     this.highlightsDrawer = new HighlightsDrawerComponent(page);
+    this.bookmarksDrawer = new BookmarksDrawerComponent(page);
     this.loadingOverlay = page.getByTestId("pdf-loading");
     this.stagePanel = page.getByTestId("pdf-stage");
     // PDF.js generates the canvas and the text layer with no role or test id.
@@ -68,6 +71,10 @@ export class PdfReaderPage extends PagedReaderPage {
 
   async openHighlights(): Promise<void> {
     await this.highlightsButton.click();
+  }
+
+  async openBookmarks(): Promise<void> {
+    await this.bookmarksButton.click();
   }
 
   async closeWithEscape(): Promise<void> {

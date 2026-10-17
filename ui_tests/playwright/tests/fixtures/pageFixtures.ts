@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { Request, Response } from "@playwright/test";
 import { AuthRequests } from "../apiRequests/AuthRequests";
+import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
@@ -70,9 +71,11 @@ type PageFixtures = {
   highlightsRequests: HighlightsRequests;
   progressRequests: ProgressRequests;
   readStatusRequests: ReadStatusRequests;
+  bookmarksRequests: BookmarksRequests;
   createdBookUuids: Set<string>;
   filedCopies: FiledCopy[];
   seededHighlightIds: Set<number>;
+  seededBookmarkIds: Set<number>;
   highlightOn: (
     bookUuid: string,
     overrides?: Partial<NewHighlight>,
@@ -179,6 +182,10 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     await use(new ReadStatusRequests(request));
   },
 
+  bookmarksRequests: async ({ request }, use) => {
+    await use(new BookmarksRequests(request));
+  },
+
   createdBookUuids: async ({ physicalRequests }, use) => {
     const uuids = new Set<string>();
     await use(uuids);
@@ -208,6 +215,15 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     for (const id of ids) {
       const deleted = await highlightsRequests.deleteHighlight(id);
       await expect(deleted, `delete highlight ${id}`).toBeOK();
+    }
+  },
+
+  seededBookmarkIds: async ({ bookmarksRequests }, use) => {
+    const ids = new Set<number>();
+    await use(ids);
+    for (const id of ids) {
+      const deleted = await bookmarksRequests.deleteBookmark(id);
+      await expect(deleted, `delete bookmark ${id}`).toBeOK();
     }
   },
 
