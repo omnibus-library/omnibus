@@ -346,7 +346,9 @@ test.describe("epub reader", () => {
     // #1895: paging through image front matter must never blank the rendition.
     test("page through image front matter without blanking the rendition", async ({
       epubReaderPage,
+      progressRequests,
       request,
+      expectMutation,
     }) => {
       const section = epubReaderPage.section;
       const uuid = await fetchBookUuidByTitle(request, FRONTMATTER_BOOK.title);
@@ -354,6 +356,12 @@ test.describe("epub reader", () => {
       // The title page is a full-page plain <img>, the commonest real shape.
       // A rendered height shows the image takes real space, not collapsed.
       await test.step("open the title page", async () => {
+        // Each run's saves move the stored position past the title page.
+        const parked = await progressRequests.postEpubPosition(
+          uuid,
+          "epubcfi(/6/2!/4/1:0)",
+        );
+        expect(parked.status(), "park saved progress").toBe(200);
         await epubReaderPage.goto(uuid);
         await expect(section.image("Title Page")).toBeVisible();
         await expect
@@ -368,7 +376,7 @@ test.describe("epub reader", () => {
 
       // A publisher scan wraps its image in SVG, and that page rendered blank.
       await test.step("turn to the svg-wrapped copyright page", async () => {
-        await epubReaderPage.turnPage();
+        await expectMutation(progress.save(), () => epubReaderPage.turnPage());
         await expect(section.svgImage).toBeVisible();
         await expect
           .poll(() => epubReaderPage.renderedHeight(section.svgImage), {
@@ -388,6 +396,7 @@ test.describe("epub reader", () => {
       });
 
       // A wedged rendition never recovers going backwards either.
+      // No save is awaited: its debounced write can merge with the turns' save.
       await test.step("turn back a page", async () => {
         await epubReaderPage.turnBack();
         await expect(epubReaderPage.errorMessage).toHaveCount(0);
