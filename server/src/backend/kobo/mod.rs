@@ -6,7 +6,7 @@
 
 use axum::{
     extract::Path,
-    http::{header, HeaderMap, StatusCode},
+    http::{header, uri::Authority, HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{any, get, post},
     Extension, Json, Router,
@@ -102,10 +102,16 @@ fn reject_oversized_uuid(uuid: &str) -> Option<Response> {
 
 /// Reconstruct the request origin (`scheme://host`) so download/image URLs are
 /// absolute. Prefers `X-Forwarded-Host` (reverse proxy) over `Host`, and
-/// `X-Forwarded-Proto` over a `http` default. When no host is resolvable,
-/// returns an empty string so callers emit host-relative URLs rather than an
-/// invalid `http:///…`. Shared across [`auth`] and [`sync`] handlers.
+/// `X-Forwarded-Proto` over a `http` default. A host without a port (a Kobo
+/// drops it) takes the `OMNIBUS_PUBLIC_ORIGIN` entry for that hostname instead.
+/// No resolvable host returns `""` so callers emit host-relative URLs, not
+/// `http:///…`. Shared across [`auth`] and [`sync`] handlers.
 fn origin_from_headers(headers: &HeaderMap) -> String {
+    origin_for(headers, crate::auth::csrf::allowed_origins())
+}
+
+/// The precedence rule behind [`origin_from_headers`], with the allowlist passed in.
+fn origin_for(headers: &HeaderMap, public_origins: Option<&[String]>) -> String {
     let host = headers
         .get("x-forwarded-host")
         .or_else(|| headers.get(header::HOST))
@@ -114,6 +120,23 @@ fn origin_from_headers(headers: &HeaderMap) -> String {
     let Some(host) = host else {
         return String::new();
     };
+    let portless = host
+        .parse::<Authority>()
+        .ok()
+        .filter(|a| a.port().is_none());
+    if let Some(authority) = portless {
+        let matching = public_origins.into_iter().flatten().find(|origin| {
+            origin.parse::<Uri>().is_ok_and(|uri| {
+                uri.scheme().is_some()
+                    && uri
+                        .host()
+                        .is_some_and(|h| h.eq_ignore_ascii_case(authority.host()))
+            })
+        });
+        if let Some(origin) = matching {
+            return origin.clone();
+        }
+    }
     let scheme = headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())

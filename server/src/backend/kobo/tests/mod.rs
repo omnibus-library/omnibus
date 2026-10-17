@@ -9,6 +9,7 @@ mod auth;
 mod content;
 mod device;
 mod metadata;
+mod origin;
 mod resources;
 mod state;
 mod state_statistics;
