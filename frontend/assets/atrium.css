@@ -128,6 +128,9 @@
      unreadable. Sepia can afford white ink because it drops the accent to
      0.58 L; light has to take the dark ink instead. */
   --accent-ink: oklch(0.16 0.02 65);
+  /* Light never set this, so it kept the dark theme's 0.30 L brown: an
+     accent-soft fill under dark ink was unreadable. */
+  --accent-soft: oklch(0.91 0.05 70);
   --cover-fallback-bg:  oklch(0.86 0.004 70);
   --cover-fallback-ink: oklch(0.28 0.006 70);
   --rd-page: #fcfbfa;
@@ -5274,6 +5277,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   max-width: 760px;
 }
 .settings-content > * { min-width: 0; }
+/* The health dashboard and the log viewer are grids and tables, not forms. */
+.settings-content:has(.ah-page, .logs-page) { max-width: 1120px; }
 .settings-sidebar {
   display: flex;
   flex-direction: column;
@@ -5281,7 +5286,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   position: sticky;
   top: 80px;
 }
-.settings-layout .settings-sidebar-head h1 { --lh: 1.05; font-size: 40px; margin: 0; }
+.settings-layout .settings-sidebar-head h1 { --lh: 1.05; font-size: 32px; margin: 0; }
 .settings-nav-group {
   display: flex;
   flex-direction: column;
@@ -5407,7 +5412,28 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
     font-size: 0.9rem;
     text-decoration: none;
   }
-  .settings-nav-item { padding: 0.85rem 0.75rem; }
+  .settings-layout:not(.has-section) .settings-nav-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.9rem 0.25rem;
+    border-radius: 0;
+    border-bottom: 1px solid var(--line-2);
+  }
+  .settings-layout:not(.has-section) .settings-nav-item::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-top: 1.5px solid var(--ink-3);
+    border-right: 1.5px solid var(--ink-3);
+    transform: rotate(45deg);
+  }
+  /* Nothing is open yet in the list view, so nothing reads as selected. */
+  .settings-layout:not(.has-section) .settings-nav-item.active {
+    background: none;
+    color: var(--ink-1);
+    font-weight: 400;
+  }
   .settings-section-head h2 { font-size: 28px; }
 }
 @media (prefers-reduced-motion: reduce) {
