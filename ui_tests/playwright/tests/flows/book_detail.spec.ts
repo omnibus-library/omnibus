@@ -2,6 +2,7 @@ import type { APIRequestContext } from "@playwright/test";
 import { account } from "../contracts/account";
 import { kindle } from "../contracts/kindle";
 import { ratings } from "../contracts/ratings";
+import { readStatus } from "../contracts/readStatus";
 import type { AttributedRating } from "../data/ratings";
 import {
   AUDIOBOOK_BOOK_COUNT,
@@ -60,9 +61,7 @@ const WIRTH_OTHERS = FIXTURE_BOOKS.filter(
 const SIBLING = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-2")!;
 const SOLO = FIXTURE_BOOKS.find((b) => b.slug === "gamma")!;
 
-// Reserved for the read/unread-status tests: read state is per-(user, book)
-// server state, so this book must be read by no other spec. `standalone-canyon`
-// (Annie Easley) appears in no other flow.
+// Only this spec opens `standalone-canyon`, so it can write its read status.
 const READ_STATUS_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "standalone-canyon",
 )!;
@@ -1011,106 +1010,168 @@ test.describe("book detail page", () => {
       });
     });
   });
-});
 
-test("renders the read-status control with three segments", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
-  await gotoReady(page, `/books/${uuid}`);
+  test.describe("read status", () => {
+    // Read status outlives a test, so the ones that rely on it park it first.
+    test("show the read status control with its three segments", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
 
-  const control = page.getByTestId("read-status-control");
-  await expect(control).toBeVisible();
-  await expect(control.getByTestId("read-status-unread")).toBeVisible();
-  await expect(control.getByTestId("read-status-reading")).toBeVisible();
-  await expect(control.getByTestId("read-status-finished")).toBeVisible();
-});
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-test("marks a book finished, persists across reload, then resets to unread", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("check the control shows", async () => {
+        const control = bookDetailPage.readStatus;
+        await expect(control.root).toBeVisible();
+        await expect(control.segmentButton("unread")).toBeVisible();
+        await expect(control.segmentButton("reading")).toBeVisible();
+        await expect(control.segmentButton("finished")).toBeVisible();
+      });
+    });
 
-  const control = page.getByTestId("read-status-control");
-  // Mark finished → POST set, the Finished segment activates, meta updates.
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 200 },
-    async () => control.getByTestId("read-status-finished").click(),
-  );
-  await expect(control.getByTestId("read-status-finished")).toHaveClass(
-    /active/,
-  );
-  await expect(page.getByTestId("read-status-meta")).toContainText("Finished");
+    test("mark a book finished", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+      expectMutation,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
 
-  // The saved state survives a reload (the post-mount effect refetches it).
-  await gotoReady(page, `/books/${uuid}`);
-  await expect(
-    page.getByTestId("read-status-control").getByTestId("read-status-finished"),
-  ).toHaveClass(/active/);
+      await test.step("park the book unread", async () => {
+        await presetReadStatus(uuid, "unread");
+      });
 
-  // Reset to unread so the shared server state is clean for the next run.
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 200 },
-    async () =>
-      page
-        .getByTestId("read-status-control")
-        .getByTestId("read-status-unread")
-        .click(),
-  );
-  await expect(page.getByTestId("read-status-meta")).toHaveText("Not started");
-});
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-test("reverts the read status and reports an error when the save fails", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("mark it finished", async () => {
+        await expectMutation(readStatus.set(uuid, "finished"), () =>
+          control.mark("finished"),
+        );
+      });
 
-  // Establish a known baseline (reading), then force the next save to fail.
-  const control = page.getByTestId("read-status-control");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 200 },
-    async () => control.getByTestId("read-status-reading").click(),
-  );
-  await expect(control.getByTestId("read-status-reading")).toHaveClass(
-    /active/,
-  );
+      await test.step("check the control shows finished", async () => {
+        await expect(control.segmentButton("finished")).toHaveClass(/active/);
+        await expect(control.metaText).toContainText("Finished");
+      });
+    });
 
-  await page.route("**/api/rpc/read-status/set", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "read-status exploded",
-    }),
-  );
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 500 },
-    async () => control.getByTestId("read-status-finished").click(),
-  );
+    test("show the saved read status when the book opens", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
 
-  // The optimistic pick rolls back to reading and the status line reports it.
-  await expect(control.getByTestId("read-status-reading")).toHaveClass(
-    /active/,
-  );
-  await expect(page.getByTestId("read-status-meta")).toHaveText(
-    "Couldn't save — try again",
-  );
+      await test.step("park the book finished", async () => {
+        await presetReadStatus(uuid, "finished");
+      });
 
-  // Clean up shared state: drop the route override and reset to unread.
-  await page.unroute("**/api/rpc/read-status/set");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/read-status/set", expectedStatus: 200 },
-    async () => control.getByTestId("read-status-unread").click(),
-  );
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the control shows finished", async () => {
+        await expect(control.segmentButton("finished")).toHaveClass(/active/);
+      });
+    });
+
+    test("mark a finished book unread", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+      expectMutation,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("park the book finished", async () => {
+        await presetReadStatus(uuid, "finished");
+      });
+
+      // The parked segment is active only once the saved status has loaded.
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(control.segmentButton("finished")).toHaveClass(/active/);
+      });
+
+      await test.step("mark it unread", async () => {
+        await expectMutation(readStatus.set(uuid, "unread"), () =>
+          control.mark("unread"),
+        );
+      });
+
+      await test.step("check the control shows not started", async () => {
+        await expect(control.metaText).toHaveText("Not started");
+      });
+    });
+
+    test("mark an unread book reading", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+      expectMutation,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("park the book unread", async () => {
+        await presetReadStatus(uuid, "unread");
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("mark it reading", async () => {
+        await expectMutation(readStatus.set(uuid, "reading"), () =>
+          control.mark("reading"),
+        );
+      });
+
+      await test.step("check the control shows reading", async () => {
+        await expect(control.segmentButton("reading")).toHaveClass(/active/);
+      });
+    });
+
+    test("keep the read status when its save fails", async ({
+      bookDetailPage,
+      request,
+      presetReadStatus,
+      expectMutation,
+    }) => {
+      const control = bookDetailPage.readStatus;
+      const uuid = await fetchBookUuidByTitle(request, READ_STATUS_BOOK.title);
+
+      await test.step("park the book reading", async () => {
+        await presetReadStatus(uuid, "reading");
+      });
+
+      await test.step("open the book while saves fail", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(control.segmentButton("reading")).toHaveClass(/active/);
+        await bookDetailPage.forceServerError(readStatus.set(uuid, "finished"));
+      });
+
+      await test.step("mark it finished", async () => {
+        await expectMutation(failing(readStatus.set(uuid, "finished")), () =>
+          control.mark("finished"),
+        );
+      });
+
+      // The optimistic pick rolls back and the line under the control says so.
+      await test.step("check the control still shows reading", async () => {
+        await expect(control.segmentButton("reading")).toHaveClass(/active/);
+        await expect(control.metaText).toHaveText("Couldn't save — try again");
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

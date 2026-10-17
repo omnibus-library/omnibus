@@ -4,6 +4,7 @@ import { ChipListEditorComponent } from "../components/ChipListEditorComponent";
 import { ExportMenuComponent } from "../components/ExportMenuComponent";
 import { FormatRowComponent } from "../components/FormatRowComponent";
 import { RatingComponent } from "../components/RatingComponent";
+import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { kindleUrls } from "../contracts/kindle";
@@ -34,6 +35,7 @@ export class BookDetailPage extends BasePage {
   readonly checkInOverlay: CheckInOverlayComponent;
   readonly exportMenu: ExportMenuComponent;
   readonly rating: RatingComponent;
+  readonly readStatus: ReadStatusControlComponent;
   readonly genreChips: ChipListEditorComponent;
   readonly tagChips: ChipListEditorComponent;
 
@@ -86,6 +88,7 @@ export class BookDetailPage extends BasePage {
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.exportMenu = new ExportMenuComponent(page);
     this.rating = new RatingComponent(page);
+    this.readStatus = new ReadStatusControlComponent(page);
     this.genreChips = new ChipListEditorComponent(page, "genres");
     this.tagChips = new ChipListEditorComponent(page, "tags");
     this.titleHeading = page.getByRole("heading", { level: 1 });
