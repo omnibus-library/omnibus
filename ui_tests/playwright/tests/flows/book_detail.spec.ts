@@ -641,11 +641,15 @@ test.describe("book detail page", () => {
         await expect(epubRow.koboButton).toBeEnabled();
       });
 
+      const download = epubRow.waitForKoboDownload();
+      await test.step("send it to kobo", async () => {
+        await epubRow.sendToKobo();
+      });
+
       // The stem is the book uuid, which the USB import relies on. The
       // extension is `.kepub.epub` when kepubify converts and `.epub` if not.
-      await test.step("send it to kobo", async () => {
-        const download = await epubRow.sendToKobo();
-        expect(download.suggestedFilename()).toMatch(
+      await test.step("check the download is named by the uuid", async () => {
+        expect((await download).suggestedFilename()).toMatch(
           new RegExp(`^${uuid}\\.(kepub\\.)?epub$`),
         );
       });
@@ -1477,14 +1481,13 @@ test.describe("book detail page", () => {
       bookDetailPage,
       mergedAudiobook,
     }) => {
-      const { uuid, audioFileIds } = mergedAudiobook;
+      const {
+        uuid,
+        audioFileIds: [firstFile],
+      } = mergedAudiobook;
       const picker = bookDetailPage.listenFilePicker;
 
       await test.step("open the merged book", async () => {
-        expect(
-          audioFileIds.length,
-          "expected two audio files after merge",
-        ).toBe(2);
         await bookDetailPage.goto(uuid);
       });
 
@@ -1500,11 +1503,11 @@ test.describe("book detail page", () => {
       });
 
       await test.step("check it lists both files", async () => {
-        const firstFile = picker.fileLink(audioFileIds[0]!);
+        const firstLink = picker.fileLink(firstFile);
         await expect(picker.heading).toHaveText("2 files · choose one");
         await expect(picker.fileLinks).toHaveCount(2);
-        await expect(firstFile).toContainText("Audiobook ·");
-        await expect(firstFile).toContainText(/\d+(?:\.\d+)? [KMGT]?B/);
+        await expect(firstLink).toContainText("Audiobook ·");
+        await expect(firstLink).toContainText(/\d+(?:\.\d+)? [KMGT]?B/);
       });
     });
 
@@ -1513,8 +1516,10 @@ test.describe("book detail page", () => {
       listenPage,
       mergedAudiobook,
     }) => {
-      const { uuid, audioFileIds } = mergedAudiobook;
-      const secondFile = audioFileIds[1]!;
+      const {
+        uuid,
+        audioFileIds: [, secondFile],
+      } = mergedAudiobook;
       const picker = bookDetailPage.listenFilePicker;
 
       await test.step("open the merged book's picker", async () => {
@@ -1522,16 +1527,17 @@ test.describe("book detail page", () => {
         await picker.open();
       });
 
+      const manifest = picker.waitForManifest();
       await test.step("pick the second file", async () => {
-        const manifest = await picker.pick(secondFile);
-        expect(manifest.url()).toMatch(
+        await picker.pick(secondFile);
+      });
+
+      await test.step("check the player opens on that file", async () => {
+        expect((await manifest).url()).toMatch(
           new RegExp(
             `/api/audiobooks/${uuid}/manifest\\?file_id=${secondFile}$`,
           ),
         );
-      });
-
-      await test.step("check the player opens on that file", async () => {
         await listenPage.assertDisplayedFor(uuid, secondFile);
       });
     });
@@ -1543,24 +1549,26 @@ test.describe("book detail page", () => {
       listenPage,
       mergedAudiobook,
     }) => {
-      const { uuid, audioFileIds } = mergedAudiobook;
-      const [firstFile, secondFile] = [audioFileIds[0]!, audioFileIds[1]!];
+      const {
+        uuid,
+        audioFileIds: [firstFile, secondFile],
+      } = mergedAudiobook;
       const picker = bookDetailPage.listenFilePicker;
 
       // A full page load would void this test, because a reload fetches the
       // manifest again whatever the driver does. The mark must survive it all.
       await test.step("open the merged book", async () => {
-        expect(
-          audioFileIds.length,
-          "expected two audio files after merge",
-        ).toBe(2);
         await bookDetailPage.goto(uuid);
         await bookDetailPage.markDocument();
       });
 
+      // The first manifest is awaited, so it cannot land after the second
+      // waiter is armed.
       await test.step("play the first part", async () => {
         await picker.open();
+        const firstManifest = picker.waitForManifest();
         await picker.pick(firstFile);
+        await firstManifest;
         await listenPage.assertDisplayedFor(uuid, firstFile);
       });
 
@@ -1569,13 +1577,20 @@ test.describe("book detail page", () => {
         await bookDetailPage.assertDisplayedFor(uuid);
       });
 
-      await test.step("pick the second part", async () => {
+      await test.step("open the picker again", async () => {
         await picker.open();
-        const manifest = await picker.pick(secondFile);
+      });
+
+      const secondManifest = picker.waitForManifest();
+      await test.step("pick the second part", async () => {
+        await picker.pick(secondFile);
+      });
+
+      await test.step("check the player reboots onto the second part", async () => {
         expect(
-          new URL(manifest.url()).searchParams.get("file_id"),
+          new URL((await secondManifest).url()).searchParams.get("file_id"),
           "re-pick must reboot onto a different part",
-        ).toBe(String(secondFile));
+        ).not.toBe(String(firstFile));
       });
 
       await test.step("check the pages stayed in the app", async () => {

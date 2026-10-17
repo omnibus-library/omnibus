@@ -1,4 +1,5 @@
 import type { Locator, Page, Request } from "@playwright/test";
+import { audiobookUrls } from "../contracts/audiobooks";
 import { BaseComponent } from "./BaseComponent";
 
 /** The file picker on Start listening, which a book with two audio files has. */
@@ -26,12 +27,17 @@ export class ListenFilePickerComponent extends BaseComponent {
     await this.trigger.click();
   }
 
-  /** Picks the file and returns the manifest request for that file. */
-  async pick(fileId: number): Promise<Request> {
-    const manifest = this.page.waitForRequest(
-      new RegExp(`/api/audiobooks/[^/]+/manifest\\?file_id=${fileId}$`),
-    );
+  /**
+   * Waits for the player's manifest request; call it before `pick`. Bounded,
+   * so a pick that boots nothing fails in 10 s, not the slowed test's 180 s.
+   */
+  waitForManifest(): Promise<Request> {
+    return this.page.waitForRequest(audiobookUrls.manifest, {
+      timeout: 10_000,
+    });
+  }
+
+  async pick(fileId: number): Promise<void> {
     await this.fileLink(fileId).click();
-    return manifest;
   }
 }

@@ -20,7 +20,11 @@ import {
   type NewHighlight,
   type SeededHighlight,
 } from "../data/highlights";
-import type { MergedAudiobook, MergeLog } from "../data/merge";
+import {
+  isAudioPair,
+  type MergedAudiobook,
+  type MergeLog,
+} from "../data/merge";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
@@ -105,6 +109,7 @@ type PageFixtures = {
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
   presetRating: (bookUuid: string, stars: number | null) => Promise<void>;
   sweepHighlights: (bookUuid: string) => Promise<void>;
+  audiobookMerge: { uuid: string };
   mergedAudiobook: MergedAudiobook;
   presetScrollStops: (enabled: boolean) => Promise<void>;
   parkBook: (
@@ -356,11 +361,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // Merges the reserved audiobook pair for one test and undoes it after, so
   // the pair is restored however the test ends. `merge.spec.ts` mutates the
   // same pair, hence the lock, and the wait for it counts toward the timeout.
-  mergedAudiobook: async (
-    { request, ebooksRequests, mergeRequests },
-    use,
-    testInfo,
-  ) => {
+  audiobookMerge: async ({ request, mergeRequests }, use, testInfo) => {
     testInfo.slow();
     await withLock("audiobook-merge", async () => {
       const uuid = await fetchBookUuidByTitle(request, MERGE_PRIMARY.title);
@@ -371,23 +372,35 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       const merged = await mergeRequests.postMerge(sourceUuid, uuid);
       expect(merged.status(), "POST /api/rpc/merge-books failed").toBe(200);
       const { merge_log_id }: MergeLog = await merged.json();
+      expect(typeof merge_log_id, "merge_log_id must be a number").toBe(
+        "number",
+      );
 
-      // Read without asserting: a throw here would skip the undo below.
-      const detail = await ebooksRequests.getEbook(uuid);
-      const book: EbookDetail = detail.ok()
-        ? await detail.json()
-        : { subjects: [] };
-      const audioFileIds = (book.book_files ?? [])
-        .filter((file) => /^(mp3|m4b|m4a)$/i.test(file.format))
-        .map((file) => file.id);
-
-      await use({ uuid, audioFileIds });
+      await use({ uuid });
 
       const undone = await mergeRequests.postMergeUndo(merge_log_id);
       expect(undone.status(), "POST /api/rpc/merge-books/undo failed").toBe(
         200,
       );
     });
+  },
+
+  // Reads the merged book in its own fixture, so a setup failure here still
+  // runs `audiobookMerge`'s undo.
+  mergedAudiobook: async ({ audiobookMerge, ebooksRequests }, use) => {
+    const { uuid } = audiobookMerge;
+    const detail = await ebooksRequests.getEbook(uuid);
+    await expect(detail, `read the merged book ${uuid}`).toBeOK();
+    const book: EbookDetail = await detail.json();
+    const audioFileIds = (book.book_files ?? [])
+      .filter((file) => /^(mp3|m4b|m4a)$/i.test(file.format))
+      .map((file) => file.id);
+    if (!isAudioPair(audioFileIds)) {
+      throw new Error(
+        `expected two audio files after merge, got ${audioFileIds.length}`,
+      );
+    }
+    await use({ uuid, audioFileIds });
   },
 
   // Every other test reads the default layout, so the preference goes back

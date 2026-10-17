@@ -36,11 +36,13 @@ export class FormatRowComponent extends BaseComponent {
     await sent;
   }
 
-  /** Clicks Send to Kobo and returns the file the browser downloads. */
-  async sendToKobo(): Promise<Download> {
-    const download = this.page.waitForEvent("download");
+  /** Waits for the file Send to Kobo downloads; call it before `sendToKobo`. */
+  waitForKoboDownload(): Promise<Download> {
+    return this.page.waitForEvent("download");
+  }
+
+  async sendToKobo(): Promise<void> {
     await this.koboButton.click();
-    return download;
   }
 
   async dismissKindleToast(): Promise<void> {
