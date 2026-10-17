@@ -57,7 +57,7 @@ const FONT_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-lagoon")!;
 // other spec may write its position. Small, for the cold-open reason above.
 const TWO_FINGER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "mariucha")!;
 // Mid-way through its long seventh chapter. Opened at the book's start, the
-// first taps save nothing, which fails an awaited save.
+// first taps save nothing for a reason not yet found, so the tests park here.
 const TWO_FINGER_CFI = "epubcfi(/6/4!/4/80/3:209)";
 // Read-only: the page-turn gutter tests open it at a deep link.
 const GUTTER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "room-with-a-view")!;
