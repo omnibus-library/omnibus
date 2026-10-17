@@ -9,3 +9,6 @@ export type AttributedRating = {
   stars: number;
   updated_at: number;
 };
+
+/** One book's rating, as `GET /api/ratings/{uuid}` reports it. */
+export type RatingRecord = { book_uuid: string; stars: number };

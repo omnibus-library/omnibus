@@ -27,6 +27,7 @@ import {
 } from "../data/merge";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
+import type { RatingRecord } from "../data/ratings";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { type ShelfRef, wishlistOf } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
@@ -106,6 +107,7 @@ type PageFixtures = {
   ) => Promise<SeededHighlight>;
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
+  storedRating: (bookUuid: string) => Promise<number | null>;
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
   presetRating: (bookUuid: string, stars: number | null) => Promise<void>;
   sweepHighlights: (bookUuid: string) => Promise<void>;
@@ -312,6 +314,16 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       if (!response.ok()) return null;
       const record: ReadStatusRecord | null = await response.json();
       return record?.status ?? null;
+    });
+  },
+
+  // Null on a failed read or no rating, so it stays safe inside `expect.poll`.
+  storedRating: async ({ ratingsRequests }, use) => {
+    await use(async (bookUuid) => {
+      const response = await ratingsRequests.getRating(bookUuid);
+      if (!response.ok()) return null;
+      const record: RatingRecord | null = await response.json();
+      return record?.stars ?? null;
     });
   },
 

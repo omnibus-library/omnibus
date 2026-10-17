@@ -911,6 +911,7 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
       presetRating,
+      storedRating,
       expectMutation,
     }) => {
       const { rating } = bookDetailPage;
@@ -932,6 +933,12 @@ test.describe("book detail page", () => {
 
       await test.step("check the rating shows", async () => {
         await expect(rating.metaText).toContainText("4.5 of 5");
+      });
+
+      await test.step("check the server stored the rating", async () => {
+        await expect
+          .poll(() => storedRating(uuid), { message: "stored rating" })
+          .toBe(4.5);
       });
     });
 
@@ -962,6 +969,7 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
       presetRating,
+      storedRating,
       expectMutation,
     }) => {
       const { rating } = bookDetailPage;
@@ -981,6 +989,12 @@ test.describe("book detail page", () => {
 
       await test.step("check the book shows unrated", async () => {
         await expect(rating.metaText).toHaveText("Not rated yet");
+      });
+
+      await test.step("check the server cleared the rating", async () => {
+        await expect
+          .poll(() => storedRating(uuid), { message: "stored rating" })
+          .toBeNull();
       });
     });
 
@@ -1042,6 +1056,7 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
       presetReadStatus,
+      storedReadStatus,
       expectMutation,
     }) => {
       const control = bookDetailPage.readStatus;
@@ -1064,6 +1079,12 @@ test.describe("book detail page", () => {
       await test.step("check the control shows finished", async () => {
         await expect(control.segmentButton("finished")).toHaveClass(/active/);
         await expect(control.metaText).toContainText("Finished");
+      });
+
+      await test.step("check the server stored finished", async () => {
+        await expect
+          .poll(() => storedReadStatus(uuid), { message: "stored status" })
+          .toBe("finished");
       });
     });
 
@@ -1092,6 +1113,7 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
       presetReadStatus,
+      storedReadStatus,
       expectMutation,
     }) => {
       const control = bookDetailPage.readStatus;
@@ -1116,12 +1138,19 @@ test.describe("book detail page", () => {
       await test.step("check the control shows not started", async () => {
         await expect(control.metaText).toHaveText("Not started");
       });
+
+      await test.step("check the server stored unread", async () => {
+        await expect
+          .poll(() => storedReadStatus(uuid), { message: "stored status" })
+          .toBe("unread");
+      });
     });
 
     test("mark an unread book reading", async ({
       bookDetailPage,
       request,
       presetReadStatus,
+      storedReadStatus,
       expectMutation,
     }) => {
       const control = bookDetailPage.readStatus;
@@ -1143,6 +1172,12 @@ test.describe("book detail page", () => {
 
       await test.step("check the control shows reading", async () => {
         await expect(control.segmentButton("reading")).toHaveClass(/active/);
+      });
+
+      await test.step("check the server stored reading", async () => {
+        await expect
+          .poll(() => storedReadStatus(uuid), { message: "stored status" })
+          .toBe("reading");
       });
     });
 
