@@ -3,6 +3,7 @@ import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { ChipListEditorComponent } from "../components/ChipListEditorComponent";
 import { ExportMenuComponent } from "../components/ExportMenuComponent";
 import { FormatRowComponent } from "../components/FormatRowComponent";
+import { QuoteCardModalComponent } from "../components/QuoteCardModalComponent";
 import { RatingComponent } from "../components/RatingComponent";
 import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
@@ -36,6 +37,7 @@ export class BookDetailPage extends BasePage {
   readonly exportMenu: ExportMenuComponent;
   readonly rating: RatingComponent;
   readonly readStatus: ReadStatusControlComponent;
+  readonly quoteCardModal: QuoteCardModalComponent;
   readonly genreChips: ChipListEditorComponent;
   readonly tagChips: ChipListEditorComponent;
 
@@ -57,6 +59,9 @@ export class BookDetailPage extends BasePage {
   readonly formatListenLinks: Locator;
   readonly savedPassagesHeading: Locator;
   readonly savedPassagesSection: Locator;
+  readonly savedPassageCards: Locator;
+  readonly savedPassagesEmptyMessage: Locator;
+  readonly showMorePassagesButton: Locator;
   readonly moreStop: Locator;
   readonly fromSameHandHeading: Locator;
   readonly fromSameHandRow: Locator;
@@ -89,6 +94,7 @@ export class BookDetailPage extends BasePage {
     this.exportMenu = new ExportMenuComponent(page);
     this.rating = new RatingComponent(page);
     this.readStatus = new ReadStatusControlComponent(page);
+    this.quoteCardModal = new QuoteCardModalComponent(page);
     this.genreChips = new ChipListEditorComponent(page, "genres");
     this.tagChips = new ChipListEditorComponent(page, "tags");
     this.titleHeading = page.getByRole("heading", { level: 1 });
@@ -118,6 +124,10 @@ export class BookDetailPage extends BasePage {
       name: "Passages you saved",
     });
     this.savedPassagesSection = page.getByTestId("highlights-section");
+    this.savedPassageCards = page.getByTestId("highlight-card");
+    this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
+    // Asserted absent, so found by test id, not by label.
+    this.showMorePassagesButton = page.getByTestId("highlights-show-more");
     this.moreStop = page.getByTestId("bdmq-more");
     this.fromSameHandHeading = page.getByRole("heading", {
       name: "From the same hand",
@@ -207,7 +217,7 @@ export class BookDetailPage extends BasePage {
   savedPassageCard(quote: string): SavedPassageCardComponent {
     return new SavedPassageCardComponent(
       this.page,
-      this.page.getByTestId("highlight-card").filter({ hasText: quote }),
+      this.savedPassageCards.filter({ hasText: quote }),
     );
   }
 

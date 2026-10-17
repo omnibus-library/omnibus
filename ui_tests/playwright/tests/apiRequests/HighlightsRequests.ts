@@ -9,6 +9,11 @@ export class HighlightsRequests extends BaseRequests {
     return this.post("/api/highlights", highlight);
   }
 
+  /** Sets the note on a highlight, which creating one cannot carry. */
+  patchHighlightNote(id: number, note: string): Promise<APIResponse> {
+    return this.patch(`/api/highlights/${id}/note`, { note });
+  }
+
   /** Every highlight the signed-in user has on the book. */
   getHighlights(bookUuid: string): Promise<APIResponse> {
     return this.get(`/api/highlights/book/${bookUuid}`);

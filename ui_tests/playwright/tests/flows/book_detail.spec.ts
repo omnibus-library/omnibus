@@ -1,5 +1,5 @@
-import type { APIRequestContext } from "@playwright/test";
 import { account } from "../contracts/account";
+import { highlights } from "../contracts/highlights";
 import { kindle } from "../contracts/kindle";
 import { ratings } from "../contracts/ratings";
 import { readStatus } from "../contracts/readStatus";
@@ -13,7 +13,7 @@ import {
 } from "../fixtures/audiobooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
-import { expectMutation, failing } from "../utils/api";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
 import { gotoReady } from "../utils/nav";
@@ -66,10 +66,9 @@ const READ_STATUS_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "standalone-canyon",
 )!;
 
-// Reserved for the saved-passages tests: highlights are per-(user, book)
-// server state, so seeding one here must not disturb another spec's counts.
-// `standalone-garden` is read by no other flow, and the reader spec's own
-// highlight books (beta / gamma / pioneers-3) stay untouched.
+// Only this spec seeds highlights on `standalone-garden`.
+// `shelf_gallery.spec.ts` reads only its progress, so no test here parks the
+// book.
 const PASSAGES_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "standalone-garden",
 )!;
@@ -1172,257 +1171,269 @@ test.describe("book detail page", () => {
       });
     });
   });
-});
 
-// ---------------------------------------------------------------------------
-// Action — saved passages (highlights)
-// ---------------------------------------------------------------------------
-
-/// Seed one highlight on PASSAGES_BOOK and return its uuid, id and quote. The
-/// quote is stamped so a re-run never collides with a leftover row on the
-/// shared, persistent dev DB. `note` needs a follow-up PATCH — `CreateHighlight`
-/// carries no note field, so passing one to the POST would be silently dropped.
-async function seedPassage(
-  request: APIRequestContext,
-  cfi: string,
-  note?: string,
-): Promise<{ uuid: string; id: number; quote: string }> {
-  const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
-  const quote = `saved passage ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const created = await request.post("/api/highlights", {
-    data: {
-      book_uuid: uuid,
-      epub_cfi_range: cfi,
-      color: "violet",
-      text: quote,
-    },
-  });
-  expect(created.status(), "seed highlight").toBe(200);
-  const { id } = (await created.json()) as { id: number };
-  if (note !== undefined) {
-    const patched = await request.patch(`/api/highlights/${id}/note`, {
-      data: { note },
-    });
-    expect(patched.status(), "seed highlight note").toBe(204);
-  }
-  return { uuid, id, quote };
-}
-
-/// Delete every highlight on `uuid`.
-async function clearPassages(request: APIRequestContext, uuid: string) {
-  const list = await request.get(`/api/highlights/book/${uuid}`);
-  expect(list.status(), "list highlights").toBe(200);
-  for (const h of (await list.json()) as { id: number }[]) {
-    expect((await request.delete(`/api/highlights/${h.id}`)).status()).toBe(
-      204,
+  test.describe("saved passages", () => {
+    // Passages outlive a test, so each starts from none and seeds its own.
+    test.beforeEach(
+      "clear the book's saved passages",
+      async ({ request, sweepHighlights }) => {
+        const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+        await sweepHighlights(uuid);
+      },
     );
-  }
-}
 
-// Start from a known-empty book. These tests assert the empty state *returns*
-// after a delete, so residue from an interrupted earlier run would fail them
-// for the wrong reason.
-test.beforeAll(async ({ request }) => {
-  await clearPassages(
-    request,
-    await fetchBookUuidByTitle(request, PASSAGES_BOOK.title),
-  );
-});
+    test("list a saved passage with its locator note and date", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+      highlightsRequests,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
 
-test("lists a saved passage with its locator, note and date, then deletes it", async ({
-  page,
-  request,
-}) => {
-  const { uuid, quote } = await seedPassage(
-    request,
-    "epubcfi(/6/14[chap03]!/4/2,/1:0,/1:40)",
-    "the line that stuck",
-  );
+      const passage =
+        await test.step("save a passage with a note", async () => {
+          const seeded = await highlightOn(uuid, {
+            epub_cfi_range: "epubcfi(/6/14[chap03]!/4/2,/1:0,/1:40)",
+          });
+          const noted = await highlightsRequests.patchHighlightNote(
+            seeded.id,
+            "the line that stuck",
+          );
+          expect(noted.status(), "seed highlight note").toBe(204);
+          return seeded;
+        });
 
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-  // The empty state must give way to the list.
-  await expect(page.getByTestId("highlights-empty")).toHaveCount(0);
-  const card = page.getByTestId("highlight-card").filter({ hasText: quote });
-  await expect(card).toHaveCount(1);
-  await expect(card.getByTestId("highlight-note")).toHaveText(
-    "the line that stuck",
-  );
-  // The locator names the chapter's own TOC title once the book's structure
-  // is known (#2463), and falls back to the CFI's raw spine step
-  // (/14 → section 7) until then (#2356) — either is a valid locator for the
-  // same position, so assert the shape rather than one of the two. The date
-  // comes from the server-assigned created_at.
-  await expect(card.getByTestId("highlight-meta")).toContainText(
-    /^.+ · saved /,
-  );
-  await expect(card.getByTestId("highlight-meta")).toContainText("saved ");
+      // The locator names the chapter's TOC title once the book's structure is
+      // known (#2463) and the raw spine section until then (#2356), so only
+      // its shape is asserted. The date is the server's `created_at`.
+      await test.step("check the passage shows", async () => {
+        const card = bookDetailPage.savedPassageCard(passage.text);
+        await expect(bookDetailPage.savedPassagesEmptyMessage).toHaveCount(0);
+        await expect(card.root).toHaveCount(1);
+        await expect(card.noteText).toHaveText("the line that stuck");
+        await expect(card.metaText).toContainText(/^.+ · saved /);
+        await expect(card.metaText).toContainText("saved ");
+      });
+    });
 
-  // Delete it — the RPC must fire and the card must leave the list.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/delete(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => card.getByTestId("highlight-delete").click(),
-  );
-  await expect(page.getByText(quote)).toHaveCount(0);
-  await expect(page.getByTestId("highlights-empty")).toBeVisible();
-});
+    test("delete a saved passage", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+      seededHighlightIds,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+      const card = bookDetailPage.savedPassageCard(passage.text);
 
-test("keeps the passage listed when the delete request fails", async ({
-  page,
-  request,
-}) => {
-  const { uuid, quote } = await seedPassage(
-    request,
-    "epubcfi(/6/6!/4/2,/1:0,/1:20)",
-  );
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-  await gotoReady(page, `/books/${uuid}`);
-  const card = page.getByTestId("highlight-card").filter({ hasText: quote });
-  await expect(card).toHaveCount(1);
+      await test.step("delete the passage", async () => {
+        await expectMutation(highlights.delete(), () => card.delete());
+        seededHighlightIds.delete(passage.id);
+      });
 
-  await page.route("**/api/rpc/highlights/delete*", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "delete exploded",
-    }),
-  );
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/delete(?:\?|$)/,
-      expectedStatus: 500,
-    },
-    async () => card.getByTestId("highlight-delete").click(),
-  );
+      await test.step("check the list is empty", async () => {
+        await expect(card.root).toHaveCount(0);
+        await expect(bookDetailPage.savedPassagesEmptyMessage).toBeVisible();
+      });
+    });
 
-  // The row is only dropped once the server confirms, so it survives.
-  await expect(card).toHaveCount(1);
+    test("keep a saved passage listed when its delete fails", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+      const card = bookDetailPage.savedPassageCard(passage.text);
 
-  // Clean up shared state: drop the override and delete for real.
-  await page.unroute("**/api/rpc/highlights/delete*");
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/delete(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => card.getByTestId("highlight-delete").click(),
-  );
-  await expect(page.getByText(quote)).toHaveCount(0);
-});
+      await test.step("open the book while deletes fail", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(card.root).toHaveCount(1);
+        await bookDetailPage.forceServerError(highlights.delete());
+      });
 
-test("opens the reader at the passage via a cfi deep link", async ({
-  page,
-  request,
-}) => {
-  const cfi = "epubcfi(/6/4!/4/2,/1:0,/1:30)";
-  const { uuid, id, quote } = await seedPassage(request, cfi);
+      await test.step("delete the passage", async () => {
+        await expectMutation(failing(highlights.delete()), () => card.delete());
+      });
 
-  await gotoReady(page, `/books/${uuid}`);
-  const card = page.getByTestId("highlight-card").filter({ hasText: quote });
-  const open = card.getByTestId("highlight-open");
+      // The row is only dropped once the server confirms.
+      await test.step("check the passage is still listed", async () => {
+        await expect(card.root).toHaveCount(1);
+      });
+    });
 
-  // The link carries the percent-encoded CFI so the reader boots at the
-  // passage rather than resuming wherever this book was last left off.
-  // Assert the decoded contract, not the escaping style — the Rust encoder
-  // escapes `!()` too, which `encodeURIComponent` leaves alone.
-  const href = await open.getAttribute("href");
-  expect(href).not.toBeNull();
-  const linked = new URL(href as string, page.url());
-  expect(linked.pathname).toBe(`/read/${uuid}`);
-  expect(linked.searchParams.get("cfi")).toBe(cfi);
+    // Opening an unread EPUB writes `reading`. That write is the reader's, so
+    // this test leaves it unasserted.
+    test("open the reader at a saved passage", async ({
+      bookDetailPage,
+      epubReaderPage,
+      request,
+      highlightOn,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const cfi = "epubcfi(/6/4!/4/2,/1:0,/1:30)";
+      const passage = await highlightOn(uuid, { epub_cfi_range: cfi });
+      const card = bookDetailPage.savedPassageCard(passage.text);
 
-  await open.click();
-  await expect(page).toHaveURL(
-    (url) =>
-      url.pathname === `/read/${uuid}` && url.searchParams.get("cfi") === cfi,
-  );
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-  // Clean up the seeded highlight so re-runs start from the empty state.
-  expect((await request.delete(`/api/highlights/${id}`)).status()).toBe(204);
-});
+      // The link carries the percent-encoded position, so the reader opens at
+      // the passage and not at the saved one. Only the decoded form is checked.
+      await test.step("check the passage links to its position", async () => {
+        await expect
+          .poll(() => card.linkedPassage(), { message: "passage link" })
+          .toEqual({ path: `/read/${uuid}`, cfi });
+      });
 
-test("opens the quote-card editor in a modal and closes it again", async ({
-  page,
-  request,
-}) => {
-  const { uuid, id, quote } = await seedPassage(
-    request,
-    "epubcfi(/6/10!/4/2,/1:0,/1:25)",
-  );
+      await test.step("open it in the book", async () => {
+        await card.openInBook();
+        await epubReaderPage.assertDisplayedFor(uuid, cfi);
+      });
+    });
 
-  await gotoReady(page, `/books/${uuid}`);
-  const card = page.getByTestId("highlight-card").filter({ hasText: quote });
-  await card.getByTestId("highlight-quote").click();
+    test("open a passage's quote card editor", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+    }) => {
+      const { quoteCardModal } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+      const card = bookDetailPage.savedPassageCard(passage.text);
 
-  // The shared quote-card editor mounts in the app modal shell with the
-  // passage on the preview and the export actions available.
-  const modal = page.getByTestId("quote-card-modal");
-  await expect(modal).toBeVisible();
-  await expect(
-    modal.getByRole("heading", { name: "Make a quote card" }),
-  ).toBeVisible();
-  await expect(modal).toContainText(quote);
-  await expect(modal.getByTestId("quote-download")).toBeVisible();
-  await expect(modal.getByTestId("quote-copy-image")).toBeVisible();
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-  // Typography controls restyle the preview in place — no request fires, so
-  // assert the rendered card rather than a network contract.
-  const preview = modal.getByTestId("quote-preview");
-  const previewBody = modal.getByTestId("quote-preview-body");
-  await expect(preview).toHaveCSS("font-family", /Cormorant Garamond/);
-  await modal.getByRole("button", { name: "Sans", exact: true }).click();
-  await expect(preview).toHaveCSS("font-family", /Instrument Sans/);
+      await test.step("open the quote card editor", async () => {
+        await card.openQuoteCard();
+      });
 
-  await expect(previewBody).toHaveCSS("font-style", "italic");
-  await modal.getByRole("button", { name: "Italic", exact: true }).click();
-  await expect(previewBody).toHaveCSS("font-style", "normal");
-  await modal.getByRole("button", { name: "Bold", exact: true }).click();
-  await expect(previewBody).toHaveCSS("font-weight", "700");
-  await modal.getByRole("button", { name: "L", exact: true }).click();
-  await expect(previewBody).toHaveCSS("font-size", "27px");
+      await test.step("check the editor shows the passage", async () => {
+        await expect(quoteCardModal.root).toBeVisible();
+        await expect(quoteCardModal.heading).toBeVisible();
+        await expect(quoteCardModal.root).toContainText(passage.text);
+        await expect(quoteCardModal.downloadButton).toBeVisible();
+        await expect(quoteCardModal.copyButton).toBeVisible();
+      });
+    });
 
-  // Close via the X — no mutation fires; the card stays listed.
-  await modal.getByRole("button", { name: "Close" }).click();
-  await expect(modal).toHaveCount(0);
-  await expect(card).toHaveCount(1);
+    // The controls restyle the preview in place and send no request.
+    test("restyle the quote card preview", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+    }) => {
+      const { quoteCardModal } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
 
-  // Clean up the seeded highlight so re-runs start from the empty state.
-  expect((await request.delete(`/api/highlights/${id}`)).status()).toBe(204);
-});
+      await test.step("open the quote card editor", async () => {
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.savedPassageCard(passage.text).openQuoteCard();
+        await expect(quoteCardModal.root).toBeVisible();
+      });
 
-test("lists every saved passage with no show-more control", async ({
-  page,
-  request,
-}) => {
-  // Earlier tests in this serial file leave passages behind on PASSAGES_BOOK,
-  // so clear it first — the visible count is the whole assertion here.
-  const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
-  await clearPassages(request, uuid);
-  const ids: number[] = [];
-  for (let i = 0; i < 8; i++) {
-    ids.push((await seedPassage(request, `epubcfi(/6/${4 + i * 2}!/4/2)`)).id);
-  }
+      await test.step("pick the sans font", async () => {
+        await expect(quoteCardModal.preview).toHaveCSS(
+          "font-family",
+          /Cormorant Garamond/,
+        );
+        await quoteCardModal.chooseFont("Sans");
+        await expect(quoteCardModal.preview).toHaveCSS(
+          "font-family",
+          /Instrument Sans/,
+        );
+      });
 
-  await gotoReady(page, `/books/${uuid}`);
-  // The stop scrolls the list rather than holding rows back, so all eight
-  // are in the DOM and nothing offers to load more.
-  await expect(page.getByTestId("highlight-card")).toHaveCount(8);
-  await expect(page.getByTestId("highlights-show-more")).toHaveCount(0);
+      await test.step("toggle italic and bold", async () => {
+        await expect(quoteCardModal.previewBody).toHaveCSS(
+          "font-style",
+          "italic",
+        );
+        await quoteCardModal.toggleStyle("Italic");
+        await expect(quoteCardModal.previewBody).toHaveCSS(
+          "font-style",
+          "normal",
+        );
+        await quoteCardModal.toggleStyle("Bold");
+        await expect(quoteCardModal.previewBody).toHaveCSS(
+          "font-weight",
+          "700",
+        );
+      });
 
-  // Clean up shared state so the next run starts from the empty state.
-  for (const id of ids) {
-    expect((await request.delete(`/api/highlights/${id}`)).status()).toBe(204);
-  }
+      await test.step("pick the large size", async () => {
+        await quoteCardModal.chooseSize("L");
+        await expect(quoteCardModal.previewBody).toHaveCSS("font-size", "27px");
+      });
+    });
+
+    test("close the quote card editor", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+    }) => {
+      const { quoteCardModal } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+      const passage = await highlightOn(uuid);
+      const card = bookDetailPage.savedPassageCard(passage.text);
+
+      await test.step("open the quote card editor", async () => {
+        await bookDetailPage.goto(uuid);
+        await card.openQuoteCard();
+        await expect(quoteCardModal.root).toBeVisible();
+      });
+
+      await test.step("close it", async () => {
+        await quoteCardModal.close();
+      });
+
+      await test.step("check the passage is still listed", async () => {
+        await expect(quoteCardModal.root).toHaveCount(0);
+        await expect(card.root).toHaveCount(1);
+      });
+    });
+
+    test("list every saved passage with no show more control", async ({
+      bookDetailPage,
+      request,
+      highlightOn,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
+
+      await test.step("save eight passages", async () => {
+        for (let i = 0; i < 8; i++) {
+          await highlightOn(uuid, {
+            epub_cfi_range: `epubcfi(/6/${4 + i * 2}!/4/2)`,
+          });
+        }
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      // The stop scrolls the list rather than holding rows back, so all eight
+      // are in the page and nothing offers to load more.
+      await test.step("check every passage is listed", async () => {
+        await expect(bookDetailPage.savedPassageCards).toHaveCount(8);
+        await expect(bookDetailPage.showMorePassagesButton).toHaveCount(0);
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

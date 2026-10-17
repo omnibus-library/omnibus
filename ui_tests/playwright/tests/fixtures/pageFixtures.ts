@@ -96,6 +96,7 @@ type PageFixtures = {
   storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
   presetRating: (bookUuid: string, stars: number | null) => Promise<void>;
+  sweepHighlights: (bookUuid: string) => Promise<void>;
   presetScrollStops: (enabled: boolean) => Promise<void>;
   parkBook: (
     bookUuid: string,
@@ -351,25 +352,28 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     }
   },
 
-  // Parks the read status, the page and no highlights or bookmarks, so a
-  // leftover from an earlier run cannot change what a test sees or writes.
-  parkBook: async (
-    {
-      presetReadStatus,
-      progressRequests,
-      highlightsRequests,
-      bookmarksRequests,
-    },
-    use,
-  ) => {
-    await use(async (bookUuid, anchor, status) => {
-      const listedHighlights = await highlightsRequests.getHighlights(bookUuid);
-      await expect(listedHighlights, "list highlights").toBeOK();
-      const strayHighlights: SeededHighlight[] = await listedHighlights.json();
-      for (const { id } of strayHighlights) {
+  // Deletes every highlight the admin has on the book, so a leftover from an
+  // earlier run cannot change what a test lists.
+  sweepHighlights: async ({ highlightsRequests }, use) => {
+    await use(async (bookUuid) => {
+      const listed = await highlightsRequests.getHighlights(bookUuid);
+      await expect(listed, "list highlights").toBeOK();
+      const strays: SeededHighlight[] = await listed.json();
+      for (const { id } of strays) {
         const deleted = await highlightsRequests.deleteHighlight(id);
         await expect(deleted, `delete highlight ${id}`).toBeOK();
       }
+    });
+  },
+
+  // Parks the read status, the page and no highlights or bookmarks, so a
+  // leftover from an earlier run cannot change what a test sees or writes.
+  parkBook: async (
+    { presetReadStatus, progressRequests, sweepHighlights, bookmarksRequests },
+    use,
+  ) => {
+    await use(async (bookUuid, anchor, status) => {
+      await sweepHighlights(bookUuid);
 
       const listedBookmarks = await bookmarksRequests.getBookmarks(bookUuid);
       await expect(listedBookmarks, "list bookmarks").toBeOK();

@@ -330,9 +330,17 @@ export class EpubReaderPage extends BasePage {
     );
   }
 
-  /** Checks the page is reading the book `bookUuid`, not just any book. */
-  async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/read/${bookUuid}$`));
+  /** Checks the page is reading the book `bookUuid`, at `cfi` when given. */
+  async assertDisplayedFor(bookUuid: string, cfi?: string): Promise<void> {
+    if (cfi === undefined) {
+      await expect(this.page).toHaveURL(new RegExp(`/read/${bookUuid}$`));
+    } else {
+      await expect(this.page).toHaveURL(
+        (url) =>
+          url.pathname === `/read/${bookUuid}` &&
+          url.searchParams.get("cfi") === cfi,
+      );
+    }
     await expect(this.viewerPanel).toBeVisible();
   }
 
