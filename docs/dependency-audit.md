@@ -1,6 +1,6 @@
 # Dependency Audit — Cargo.lock Duplicate Families
 
-Last updated: 2026-10-12 (issue #2724 — the mock-kobo TUI adds the `lru` family; previously issue #522 — Dioxus now resolves from crates.io, not a git tag — and issues #2054, #1767, #1710, #1621, #1529, #1530, #1100, #1268, #1147, #643).
+Last updated: 2026-10-17 (issue #2756, accepts the three `zip` `extract()` advisories pinned by `epub`; previously issue #2724 — the mock-kobo TUI adds the `lru` family; issue #522 — Dioxus now resolves from crates.io, not a git tag — and issues #2054, #1767, #1710, #1621, #1529, #1530, #1100, #1268, #1147, #643).
 
 Run `cargo tree -d` and inspect the output any time Dioxus or Axum are bumped.
 The `deny.toml` `[bans]` section has matching `skip` entries for all accepted
@@ -92,6 +92,18 @@ this list.
   do this pruning) — its exemption lives on the `--ignore RUSTSEC-2023-0071`
   flag on the cargo-audit step in `rust.yml`, which is the tool that
   actually encounters it.
+- `zip 3.0.0`, RUSTSEC-2026-0367 (`extract()` keeps SUID/SGID bits),
+  RUSTSEC-2026-0368 (`extract()` creates symlinks whose targets escape the
+  destination) and RUSTSEC-2026-0369 (`ZipStreamReader::extract()` applies
+  permissions through symlinks). Fixed only in zip >= 9.0.0. `zip 3.0.0`
+  reaches the production graph via `epub 2.1.5` (the latest `epub`, which pins
+  `zip = "3.0.0"`) and our own `zip = "3"` pins in `db/` and `frontend/`, so
+  bumping ours alone would not drop it. Accepted. All three hit only
+  `ZipArchive::extract()` / `ZipStreamReader::extract()`, and neither this repo
+  nor `epub` calls them (archives are read entry by entry, never extracted to
+  disk). `deny.toml` ignores all three with a matching comment, and the
+  cargo-audit step in `rust.yml` passes `--ignore` for each. Revisit when
+  `epub` moves to zip >= 9.
 
 ## Yanked crates
 

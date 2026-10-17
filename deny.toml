@@ -111,6 +111,19 @@ ignore = [
     # not exercise. Triaged 2026-08-12 (issue #1859). Revisit when Dioxus
     # bumps its `lru` dependency to >= 0.18.2.
     { id = "RUSTSEC-2026-0253", reason = "lru 0.16.4 LruCache::pop() use-after-free under a panicking Drop — reachable via the dioxus-server 0.7.9 -> dioxus dependency; requires catch_unwind plus a panicking key Drop during a cache pop, which dioxus-server's internal use does not trigger" },
+
+    # ---- zip `extract()` advisories (SUID/SGID bits, symlink targets, perms
+    # applied through symlinks), fixed only in zip >= 9.0.0. `zip 3.0.0` is
+    # reachable in the default build via `epub 2.1.5` (the latest epub, which
+    # pins `zip = "3.0.0"`) and our own `zip = "3"` pins in db/ and frontend/.
+    # All three hit only `ZipArchive::extract()` / `ZipStreamReader::extract()`,
+    # and neither this repo nor epub calls them (archives are read entry by
+    # entry, never extracted to disk). Triaged 2026-10-17 (issue #2756).
+    # Revisit when epub moves to zip >= 9. Unlike rsa above these entries
+    # match, so they are listed here and on the cargo-audit step in rust.yml.
+    { id = "RUSTSEC-2026-0367", reason = "zip 3.0.0 extract() SUID/SGID bits, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
+    { id = "RUSTSEC-2026-0368", reason = "zip 3.0.0 extract() symlink targets, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
+    { id = "RUSTSEC-2026-0369", reason = "zip 3.0.0 extract() permissions applied through symlinks, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
 ]
 
 # NB: RUSTSEC-2026-0221 (event-listener unsoundness, reachable via sqlx-core)

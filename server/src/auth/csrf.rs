@@ -108,7 +108,7 @@ fn parse_origin_allowlist(raw: &str) -> Option<Vec<String>> {
 /// Read `OMNIBUS_PUBLIC_ORIGIN` once on first request and cache the
 /// parsed allowlist. Empty / unset returns `None`, which preserves the
 /// legacy `Host`-based check for direct (non-proxied) deployments.
-fn allowed_origins() -> Option<&'static [String]> {
+pub fn allowed_origins() -> Option<&'static [String]> {
     use std::sync::OnceLock;
     static SLOT: OnceLock<Option<Vec<String>>> = OnceLock::new();
     SLOT.get_or_init(|| parse_origin_allowlist(&std::env::var("OMNIBUS_PUBLIC_ORIGIN").ok()?))

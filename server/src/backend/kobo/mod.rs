@@ -6,7 +6,7 @@
 
 use axum::{
     extract::Path,
-    http::{header, HeaderMap, StatusCode},
+    http::{header, uri::Authority, HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{any, get, post},
     Extension, Json, Router,
@@ -100,12 +100,21 @@ fn reject_oversized_uuid(uuid: &str) -> Option<Response> {
         .then(|| StatusCode::BAD_REQUEST.into_response())
 }
 
-/// Reconstruct the request origin (`scheme://host`) so download/image URLs are
-/// absolute. Prefers `X-Forwarded-Host` (reverse proxy) over `Host`, and
-/// `X-Forwarded-Proto` over a `http` default. When no host is resolvable,
-/// returns an empty string so callers emit host-relative URLs rather than an
-/// invalid `http:///…`. Shared across [`auth`] and [`sync`] handlers.
+/// Runs [`origin_for`] over the cached `OMNIBUS_PUBLIC_ORIGIN` list.
+/// Shared across [`auth`] and [`sync`] handlers.
 fn origin_from_headers(headers: &HeaderMap) -> String {
+    origin_for(
+        headers,
+        crate::auth::csrf::allowed_origins().unwrap_or_default(),
+    )
+}
+
+/// The request origin (`scheme://host`), so download/image URLs are absolute.
+/// Prefers `X-Forwarded-Host` over `Host` and `X-Forwarded-Proto` over `http`.
+/// A portless host (a Kobo drops the port) whose origin isn't in `public_origins`
+/// takes the first listed origin with the same scheme and host. No resolvable
+/// host returns `""` so callers emit host-relative URLs, not `http:///…`.
+fn origin_for(headers: &HeaderMap, public_origins: &[String]) -> String {
     let host = headers
         .get("x-forwarded-host")
         .or_else(|| headers.get(header::HOST))
@@ -118,5 +127,34 @@ fn origin_from_headers(headers: &HeaderMap) -> String {
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("http");
-    format!("{scheme}://{host}")
+    let from_headers = format!("{scheme}://{host}");
+    let Ok(authority) = host.parse::<Authority>() else {
+        return from_headers;
+    };
+    // `https://h:443` lists the same origin as a portless `https://h`.
+    let default_port = if scheme.eq_ignore_ascii_case("https") {
+        443
+    } else {
+        80
+    };
+    let with_default_port = format!("{from_headers}:{default_port}");
+    let listed = public_origins.iter().any(|o| {
+        o.eq_ignore_ascii_case(&from_headers) || o.eq_ignore_ascii_case(&with_default_port)
+    });
+    if authority.port().is_some() || listed {
+        return from_headers;
+    }
+    // A Kobo drops the port, never the scheme, so only an entry with the request's scheme may supply it.
+    public_origins
+        .iter()
+        .find_map(|origin| {
+            let uri = origin.parse::<Uri>().ok()?;
+            let (entry_scheme, entry_authority) = (uri.scheme_str()?, uri.authority()?);
+            let same = entry_scheme.eq_ignore_ascii_case(scheme)
+                && entry_authority
+                    .host()
+                    .eq_ignore_ascii_case(authority.host());
+            same.then(|| format!("{entry_scheme}://{entry_authority}"))
+        })
+        .unwrap_or(from_headers)
 }
