@@ -183,6 +183,11 @@ test.describe("book detail page", () => {
 
       // The glue paints a transform at install, so only a change proves a drift.
       const before = await test.step("read the cover at the top", async () => {
+        await expect
+          .poll(() => bookDetailPage.coverTransform(), {
+            message: "cover transform once the glue installs",
+          })
+          .toMatch(/translateY/);
         return bookDetailPage.coverTransform();
       });
 
@@ -655,15 +660,18 @@ test.describe("book detail page", () => {
         await expect(epubRow.koboButton).toBeEnabled();
       });
 
-      const download = epubRow.waitForKoboDownload();
-      await test.step("send it to kobo", async () => {
-        await epubRow.sendToKobo();
+      const download = await test.step("send it to kobo", async () => {
+        const [file] = await Promise.all([
+          epubRow.waitForKoboDownload(),
+          epubRow.sendToKobo(),
+        ]);
+        return file;
       });
 
       // The stem is the book uuid, which the USB import relies on. The
       // extension is `.kepub.epub` when kepubify converts and `.epub` if not.
       await test.step("check the download is named by the uuid", async () => {
-        expect((await download).suggestedFilename()).toMatch(
+        expect(download.suggestedFilename()).toMatch(
           new RegExp(`^${uuid}\\.(kepub\\.)?epub$`),
         );
       });
@@ -1578,13 +1586,16 @@ test.describe("book detail page", () => {
         await picker.open();
       });
 
-      const manifest = picker.waitForManifest();
-      await test.step("pick the second file", async () => {
-        await picker.pick(secondFile);
+      const manifest = await test.step("pick the second file", async () => {
+        const [request] = await Promise.all([
+          picker.waitForManifest(),
+          picker.pick(secondFile),
+        ]);
+        return request;
       });
 
       await test.step("check the player opens on that file", async () => {
-        expect((await manifest).url()).toMatch(
+        expect(manifest.url()).toMatch(
           new RegExp(
             `/api/audiobooks/${uuid}/manifest\\?file_id=${secondFile}$`,
           ),
@@ -1632,16 +1643,20 @@ test.describe("book detail page", () => {
         await picker.open();
       });
 
-      const secondManifest = picker.waitForManifest();
-      await test.step("pick the second part", async () => {
-        await picker.pick(secondFile);
-      });
+      const secondManifest =
+        await test.step("pick the second part", async () => {
+          const [request] = await Promise.all([
+            picker.waitForManifest(),
+            picker.pick(secondFile),
+          ]);
+          return request;
+        });
 
       await test.step("check the player reboots onto the second part", async () => {
         expect(
-          new URL((await secondManifest).url()).searchParams.get("file_id"),
+          new URL(secondManifest.url()).searchParams.get("file_id"),
           "re-pick must reboot onto a different part",
-        ).not.toBe(String(firstFile));
+        ).toBe(String(secondFile));
       });
 
       await test.step("check the pages stayed in the app", async () => {

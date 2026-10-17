@@ -107,7 +107,7 @@ type PageFixtures = {
   ) => Promise<SeededHighlight>;
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
-  storedRating: (bookUuid: string) => Promise<number | null>;
+  storedRating: (bookUuid: string) => Promise<number | null | undefined>;
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
   presetRating: (bookUuid: string, stars: number | null) => Promise<void>;
   sweepHighlights: (bookUuid: string) => Promise<void>;
@@ -317,11 +317,11 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     });
   },
 
-  // Null on a failed read or no rating, so it stays safe inside `expect.poll`.
+  // Undefined on a failed read, so only a real unrated 200 reads as null.
   storedRating: async ({ ratingsRequests }, use) => {
     await use(async (bookUuid) => {
       const response = await ratingsRequests.getRating(bookUuid);
-      if (!response.ok()) return null;
+      if (!response.ok()) return undefined;
       const record: RatingRecord | null = await response.json();
       return record?.stars ?? null;
     });

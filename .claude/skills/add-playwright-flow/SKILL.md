@@ -40,7 +40,10 @@ export class SettingsPage extends BasePage {
 
   constructor(page: Page) {
     // …
-    this.saveLibraryButton = page.getByRole("button", { name: "Save" });
+    // Scoped, because the page has other Save buttons.
+    this.saveLibraryButton = page
+      .locator("#settings-form")
+      .getByRole("button", { name: "Save" });
     this.libraryStatus = page.getByTestId("settings-status");
   }
 
