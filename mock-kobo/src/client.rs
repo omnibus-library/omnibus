@@ -120,12 +120,12 @@ impl Client {
             .header(HARDWARE_ID_HEADER, &self.hardware_id)
             .build()
             .map_err(|e| self.transport(e))?;
-        // The firmware drops the port, and hyper keeps a `Host` that is already set.
-        let host = request
+        // The firmware drops the port ([`Quirk::PortlessHost`]), and hyper keeps a `Host` that is already set.
+        if let Some(host) = request
             .url()
             .host_str()
-            .and_then(|h| h.parse::<HeaderValue>().ok());
-        if let Some(host) = host {
+            .and_then(|h| h.parse::<HeaderValue>().ok())
+        {
             request.headers_mut().insert(HOST, host);
         }
         let method = request.method().to_string();
