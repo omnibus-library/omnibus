@@ -552,6 +552,195 @@ test.describe("epub reader", () => {
       });
     });
   });
+
+  test.describe("drawers", () => {
+    test("open the search drawer from the top chrome", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the search drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openSearch();
+      });
+
+      await test.step("check the drawer offers a query field", async () => {
+        await expect(epubReaderPage.searchDrawer).toBeVisible();
+        await expect(epubReaderPage.searchField).toBeVisible();
+      });
+
+      await test.step("close it with escape", async () => {
+        await epubReaderPage.closeWithEscape();
+        await expect(epubReaderPage.searchDrawer).toHaveCount(0);
+      });
+    });
+
+    test("open the bookmarks drawer from the top chrome", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the bookmarks drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openBookmarks();
+      });
+
+      await test.step("check the drawer offers to add a bookmark", async () => {
+        await expect(epubReaderPage.bookmarksDrawer).toBeVisible();
+        await expect(epubReaderPage.addBookmarkButton).toBeVisible();
+      });
+    });
+
+    test("open the highlights drawer on its empty state", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const drawer = epubReaderPage.highlightsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the highlights drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openHighlights();
+      });
+
+      await test.step("check the drawer is empty", async () => {
+        await expect(drawer.root).toBeVisible();
+        await expect(drawer.emptyMessage).toBeVisible();
+      });
+
+      // The drawer's scrim otherwise covers the chrome.
+      await test.step("close it with escape", async () => {
+        await epubReaderPage.closeWithEscape();
+        await expect(drawer.root).toHaveCount(0);
+      });
+    });
+
+    test("open the contents drawer from the top chrome", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the contents drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openContents();
+      });
+
+      await test.step("check the drawer shows", async () => {
+        await expect(epubReaderPage.contentsDrawer.root).toBeVisible();
+      });
+    });
+  });
+
+  // The phone shell renders this same reader in a WebView, so check its layout here.
+  test.describe("phone viewport", () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test("show the mobile reader layout", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await epubReaderPage.goto(uuid);
+      });
+
+      await test.step("check the viewer and top tools show", async () => {
+        await epubReaderPage.assertDisplayed();
+        await expect(epubReaderPage.backButton).toBeVisible();
+        await expect(epubReaderPage.contentsButton).toBeVisible();
+      });
+
+      // Phones turn pages by swipe and tap, so the buttons would only cover prose.
+      await test.step("check the page-turn buttons are hidden", async () => {
+        await expect(epubReaderPage.previousPageButton).toBeHidden();
+        await expect(epubReaderPage.nextPageButton).toBeHidden();
+      });
+
+      // One Annotations tool replaces the separate highlights and bookmark tools.
+      await test.step("check the annotations tool replaces highlights and bookmark", async () => {
+        await expect(epubReaderPage.annotationsButton).toBeVisible();
+        await expect(epubReaderPage.highlightsButton).toBeHidden();
+        await expect(epubReaderPage.bookmarkButton).toBeHidden();
+      });
+    });
+
+    test("open the combined annotations sheet with its kind filters", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the annotations sheet", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openAnnotations();
+      });
+
+      await test.step("check the sheet offers a bookmarks filter and an add", async () => {
+        await expect(epubReaderPage.annotationsSheet).toBeVisible();
+        await expect(epubReaderPage.bookmarksFilterButton).toBeVisible();
+        await expect(epubReaderPage.addAnnotationButton).toBeVisible();
+      });
+
+      await test.step("filter the sheet to bookmarks", async () => {
+        await epubReaderPage.filterAnnotationsToBookmarks();
+        await expect(epubReaderPage.annotationsSheet).toBeVisible();
+      });
+
+      await test.step("close it with escape", async () => {
+        await epubReaderPage.closeWithEscape();
+        await expect(epubReaderPage.annotationsSheet).toHaveCount(0);
+      });
+    });
+
+    test("stretch the contents drawer across a phone screen", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const drawer = epubReaderPage.contentsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the contents drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openContents();
+        await expect(drawer.root).toBeVisible();
+      });
+
+      // On a desktop the drawer is a 380px side panel.
+      await test.step("check the drawer spans the screen", async () => {
+        const width = await epubReaderPage.renderedWidth(drawer.root);
+        expect(width).toBeGreaterThan(370);
+      });
+
+      await test.step("close it with escape", async () => {
+        await epubReaderPage.closeWithEscape();
+        await expect(drawer.root).toHaveCount(0);
+      });
+    });
+
+    test("pin the display panel under the top bar on a phone", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const panel = epubReaderPage.displayPanel;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the display panel", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openDisplayPanel();
+        await expect(panel.increaseFontButton).toBeVisible();
+      });
+
+      // On a desktop the panel is a 320px popover beside its tool.
+      await test.step("check the panel spans the screen", async () => {
+        const width = await epubReaderPage.renderedWidth(panel.root);
+        expect(width).toBeGreaterThan(340);
+      });
+    });
+  });
 });
 
 /**
@@ -679,49 +868,6 @@ test("black theme overrides a publisher color on the EPUB body", async ({
   await expect
     .poll(() => prose.evaluate((el) => getComputedStyle(el).color))
     .toBe("rgb(255, 255, 255)");
-});
-
-test("opens the search and bookmarks drawers from the top chrome", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Search drawer opens with its query input visible.
-  await page.getByTestId("reader-search").click();
-  await expect(page.getByTestId("reader-search-drawer")).toBeVisible();
-  await expect(page.getByTestId("reader-search-input")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("reader-search-drawer")).toHaveCount(0);
-
-  // Bookmarks drawer: empty state + the "+ Bookmark" affordance.
-  await page.getByTestId("reader-bookmark").click();
-  await expect(page.getByTestId("reader-bookmarks-drawer")).toBeVisible();
-  await expect(page.getByTestId("reader-bookmark-add")).toBeVisible();
-});
-
-test("opens the contents and highlights drawers from the top chrome", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Highlights drawer opens with the (empty) palette filter rail.
-  await page.getByTestId("reader-highlights").click();
-  await expect(page.getByTestId("reader-highlights-drawer")).toBeVisible();
-  await expect(page.getByText("No highlights yet")).toBeVisible();
-
-  // Escape peels the drawer back (its scrim otherwise covers the chrome).
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("reader-highlights-drawer")).toHaveCount(0);
-
-  // Contents drawer opens from the top chrome.
-  await page.getByTestId("reader-toc").click();
-  await expect(page.getByTestId("reader-toc-drawer")).toBeVisible();
 });
 
 // Regression for issue #1909 (AC3): a TOC jump must show a loading
@@ -1707,88 +1853,6 @@ test("reads a book whose stylesheet becomes a blob: URL without a CSP refusal", 
     cspStyleViolations,
     `blob: stylesheet must load without a CSP refusal:\n${cspStyleViolations.join("\n")}`,
   ).toEqual([]);
-});
-
-// The reader is one shared component: the native mobile shell renders the
-// same tree in a WebView, so the phone-width layout (F6.2 mobile ereader) is
-// verified here at a phone viewport. Chrome is SSR markup, robust to the
-// epub.js render not painting headlessly.
-test.describe("mobile reader (phone viewport)", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-
-  test("renders the mobile reader layout", async ({ page, request }) => {
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/read/${uuid}`);
-
-    // Same chrome contract as desktop — the viewer and top tools stay present.
-    await expect(page.getByTestId("reader-viewer")).toBeVisible();
-    await expect(page.getByTestId("reader-back")).toBeVisible();
-    await expect(page.getByTestId("reader-toc")).toBeVisible();
-
-    // The circular page-turn gutters are suppressed on phone widths (mobile
-    // turns pages by swipe/tap; the buttons would sit over the prose).
-    await expect(page.getByTestId("reader-prev")).toBeHidden();
-    await expect(page.getByTestId("reader-next")).toBeHidden();
-
-    // Phone toolbar swaps the separate highlights + bookmarks tools for the
-    // single combined Annotations tool.
-    await expect(page.getByTestId("reader-annotations")).toBeVisible();
-    await expect(page.getByTestId("reader-highlights")).toBeHidden();
-    await expect(page.getByTestId("reader-bookmark")).toBeHidden();
-  });
-
-  test("opens the combined annotations sheet with kind filters", async ({
-    page,
-    request,
-  }) => {
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/read/${uuid}`);
-    await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-    // One sheet for highlights + notes + bookmarks, with an All / Bookmarks
-    // kind filter and the add-bookmark affordance in its header.
-    await page.getByTestId("reader-annotations").click();
-    const sheet = page.getByTestId("reader-annotations-drawer");
-    await expect(sheet).toBeVisible();
-    await expect(
-      page.getByTestId("annotations-filter-bookmarks"),
-    ).toBeVisible();
-    await expect(page.getByTestId("reader-annotations-add")).toBeVisible();
-
-    // Kind filter narrows to bookmarks (empty on the shared dev DB, so the
-    // empty state holds) and Escape dismisses the sheet.
-    await page.getByTestId("annotations-filter-bookmarks").click();
-    await expect(sheet).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(sheet).toHaveCount(0);
-  });
-
-  test("drawers and the display panel span the full width", async ({
-    page,
-    request,
-  }) => {
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/read/${uuid}`);
-    await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-    // Contents drawer stretches edge to edge instead of a 380px side panel.
-    await page.getByTestId("reader-toc").click();
-    const drawer = page.getByTestId("reader-toc-drawer");
-    await expect(drawer).toBeVisible();
-    const drawerBox = await drawer.boundingBox();
-    expect(drawerBox, "toc drawer box").not.toBeNull();
-    expect(drawerBox!.width).toBeGreaterThan(370);
-    await page.keyboard.press("Escape");
-    await expect(drawer).toHaveCount(0);
-
-    // The Aa display panel becomes a sheet pinned under the top bar, not a
-    // 320px tool-anchored popover.
-    await page.getByTestId("reader-aa").click();
-    await expect(page.getByTestId("reader-font-increase")).toBeVisible();
-    const aaBox = await page.locator(".rd-aa-panel").boundingBox();
-    expect(aaBox, "aa panel box").not.toBeNull();
-    expect(aaBox!.width).toBeGreaterThan(340);
-  });
 });
 
 // A touch context, because the gesture is the subject: without `hasTouch`
