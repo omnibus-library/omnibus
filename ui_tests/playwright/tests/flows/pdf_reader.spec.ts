@@ -442,6 +442,7 @@ test.describe("pdf reader", () => {
 
         await test.step("check the highlight saved and painted", async () => {
           const sent = sentHighlight(saved);
+          expect(sent.book_uuid).toBe(uuid);
           expect(sent.color).toBe("green");
           expect(sent.epub_cfi_range).toMatch(SELECTION_RANGE);
           expect(sent.text?.trim()).toBe(selected);
