@@ -1,15 +1,24 @@
 import { join } from "node:path";
 import type { Request, Response } from "@playwright/test";
 import { AuthRequests } from "../apiRequests/AuthRequests";
+import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
+import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
+import {
+  buildHighlight,
+  type NewHighlight,
+  type SeededHighlight,
+} from "../data/highlights";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
+import type { BookProgress, ProgressRecord } from "../data/progress";
 import { type ShelfRef, wishlistOf } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
+import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import {
@@ -45,11 +54,20 @@ type PageFixtures = {
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
   checkInPage: CheckInPage;
+  epubReaderPage: EpubReaderPage;
   shelfPage: ShelfPage;
   scanRequests: ScanRequests;
   physicalRequests: PhysicalRequests;
+  highlightsRequests: HighlightsRequests;
+  progressRequests: ProgressRequests;
   createdBookUuids: Set<string>;
   filedCopies: FiledCopy[];
+  seededHighlightIds: Set<number>;
+  highlightOn: (
+    bookUuid: string,
+    overrides?: Partial<NewHighlight>,
+  ) => Promise<SeededHighlight>;
+  storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   adminWishlist: ShelfRef;
   readerShelfPage: ShelfPage;
 };
@@ -110,6 +128,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   checkInPage: async ({ page }, use) => {
     await use(new CheckInPage(page));
   },
+  epubReaderPage: async ({ page }, use) => {
+    await use(new EpubReaderPage(page));
+  },
   shelfPage: async ({ page }, use) => {
     await use(new ShelfPage(page));
   },
@@ -120,6 +141,14 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
 
   physicalRequests: async ({ request }, use) => {
     await use(new PhysicalRequests(request));
+  },
+
+  highlightsRequests: async ({ request }, use) => {
+    await use(new HighlightsRequests(request));
+  },
+
+  progressRequests: async ({ request }, use) => {
+    await use(new ProgressRequests(request));
   },
 
   createdBookUuids: async ({ physicalRequests }, use) => {
@@ -143,6 +172,36 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
         await expect(deleted, `delete copy ${copy.id}`).toBeOK();
       }
     }
+  },
+
+  seededHighlightIds: async ({ highlightsRequests }, use) => {
+    const ids = new Set<number>();
+    await use(ids);
+    for (const id of ids) {
+      const deleted = await highlightsRequests.deleteHighlight(id);
+      await expect(deleted, `delete highlight ${id}`).toBeOK();
+    }
+  },
+
+  highlightOn: async ({ highlightsRequests, seededHighlightIds }, use) => {
+    await use(async (bookUuid, overrides) => {
+      const highlight = buildHighlight(bookUuid, overrides);
+      const created = await highlightsRequests.postHighlight(highlight);
+      expect(created.status(), "seed highlight").toBe(200);
+      const { id } = await created.json();
+      seededHighlightIds.add(id);
+      return { ...highlight, id };
+    });
+  },
+
+  // Null on a failed read, so it stays safe inside `expect.poll`.
+  storedPosition: async ({ progressRequests }, use) => {
+    await use(async (bookUuid) => {
+      const response = await progressRequests.getProgress(bookUuid);
+      if (!response.ok()) return null;
+      const progress: BookProgress | null = await response.json();
+      return progress?.records.find((r) => r.format === "epub") ?? null;
+    });
   },
 
   adminWishlist: async ({ request }, use) => {

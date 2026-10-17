@@ -1,32 +1,5 @@
 import type { APIRequestContext } from "@playwright/test";
-
-/** One stored position, as `GET /api/progress/{uuid}` reports it. */
-export interface ProgressRecord {
-  format: "epub" | "audio";
-  epub_cfi: string | null;
-  audio_position_seconds: number | null;
-  progress_percent: number | null;
-  /** Where a percent-only epub row opens — read paths only, never stored. */
-  derived_epub_cfi?: string;
-  total_duration_seconds?: number;
-  resolved?: {
-    spine_index?: number;
-    chapter_title?: string;
-    chapter_ordinal?: number;
-    chapters_total?: number;
-    percent_through_chapter?: number;
-    percent_through_book?: number;
-    confidence: "high" | "low";
-  };
-}
-
-/** Every position the signed-in reader holds in one book. */
-export interface BookProgress {
-  book_uuid: string;
-  records: ProgressRecord[];
-  furthest: "epub" | "audio" | null;
-  linked?: boolean;
-}
+import type { BookProgress, ProgressRecord } from "../data/progress";
 
 /**
  * The reader's stored position in one format, or `null` when they have none.

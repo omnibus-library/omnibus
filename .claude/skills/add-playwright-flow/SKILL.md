@@ -132,6 +132,7 @@ migrating an existing spec, delete its `!` line from `biome.json`'s `overrides`.
 | You need | Put it in |
 |---|---|
 | a locator or a UI action | the page or component object |
+| a read of rendered content (an iframe, geometry) or a `page.on` listener | a page or component query or `record*` method |
 | an API call to seed, clean up or read back | an `apiRequests/` class |
 | a mutation's method, URL, body and status | a `contracts/` builder |
 | a payload type or a unique test value | `data/` |

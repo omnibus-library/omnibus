@@ -23,7 +23,8 @@
 //     through the same scheme handler as the scripts, so this is the offline
 //     proof — with no network, the face has to come from `Reader/Web/`.
 //
-//  Mirrors `sectionFontState` in `ui_tests/playwright/tests/flows/reader.spec.ts`
+//  Mirrors `fontState` in
+//  `ui_tests/playwright/tests/components/ReaderSectionComponent.ts`
 //  deliberately: the two clients run the same glue and must assert the same
 //  contract. Keep them in step.
 
@@ -410,8 +411,9 @@ private func waitUntil(
     return try await condition()
 }
 
-/// What the section document says about its fonts. The Swift half of
-/// `sectionFontState` in the Playwright spec — same fields, same reasons.
+/// What the section document says about its fonts. The Swift half of `fontState`
+/// in `ui_tests/playwright/tests/components/ReaderSectionComponent.ts` — same
+/// fields, same reasons.
 private struct SectionFontState {
     /// Every `src` declared for `embeddedFamily`, across every stylesheet the
     /// section holds (the blob-linked one included).

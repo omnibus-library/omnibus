@@ -84,7 +84,6 @@
         "!tests/flows/pdf_reader.spec.ts",
         "!tests/flows/persistence.spec.ts",
         "!tests/flows/physical_collection.spec.ts",
-        "!tests/flows/reader.spec.ts",
         "!tests/flows/search-palette.spec.ts",
         "!tests/flows/search.spec.ts",
         "!tests/flows/settings.spec.ts",
