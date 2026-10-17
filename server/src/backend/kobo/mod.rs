@@ -103,7 +103,7 @@ fn reject_oversized_uuid(uuid: &str) -> Option<Response> {
 /// Runs [`origin_for`] over the state's public origins.
 /// Shared across [`auth`] and [`sync`] handlers.
 fn origin_from_headers(state: &AppState, headers: &HeaderMap) -> String {
-    origin_for(headers, state.public_origins())
+    origin_for(headers, &state.public_origins)
 }
 
 /// The request origin (`scheme://host`), so download/image URLs are absolute.

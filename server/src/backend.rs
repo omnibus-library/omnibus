@@ -251,7 +251,8 @@ pub struct AppState {
     remote_image_config: Arc<db::author_photos::RemoteImageConfig>,
     /// Whether the per-IP limiters built from this state enforce their budgets.
     rate_limits: RateLimits,
-    /// `OMNIBUS_PUBLIC_ORIGIN`, read once at boot. An `Arc` keeps the per-request state clone cheap.
+    /// Feeds the Kobo URL origin only. CSRF still reads `auth::csrf::allowed_origins()`.
+    /// An `Arc` keeps the per-request clone cheap.
     public_origins: Arc<[String]>,
 }
 
@@ -264,9 +265,7 @@ impl AppState {
             worker,
             remote_image_config: Arc::new(db::author_photos::RemoteImageConfig::default()),
             rate_limits: RateLimits::default(),
-            public_origins: crate::auth::csrf::allowed_origins()
-                .unwrap_or_default()
-                .into(),
+            public_origins: Arc::default(),
         }
     }
 
@@ -294,9 +293,8 @@ impl AppState {
         }
     }
 
-    /// Test-only: replace the public origins `new` read from the environment.
-    #[cfg(test)]
-    pub(crate) fn with_public_origins(self, origins: Vec<String>) -> Self {
+    /// Replace the public origins; `new` defaults to none.
+    pub fn with_public_origins(self, origins: &[String]) -> Self {
         Self {
             public_origins: origins.into(),
             ..self
@@ -316,11 +314,6 @@ impl AppState {
     /// SSRF guard config consulted before fetching admin-supplied URLs.
     pub fn remote_image_config(&self) -> &db::author_photos::RemoteImageConfig {
         &self.remote_image_config
-    }
-
-    /// The origins a port-less Kobo `Host` takes its port from (`OMNIBUS_PUBLIC_ORIGIN`).
-    pub fn public_origins(&self) -> &[String] {
-        &self.public_origins
     }
 
     /// Whether the per-IP limiters wired from this state enforce or admit everything.

@@ -93,7 +93,9 @@ mod server {
         let rate_limits = rate_limit::RateLimits::at_boot(
             std::env::var_os(rate_limit::DEV_DISABLE_RATE_LIMITS_ENV).as_deref(),
         );
-        let state = backend::AppState::new(pool.clone()).with_rate_limits(rate_limits);
+        let state = backend::AppState::new(pool.clone())
+            .with_rate_limits(rate_limits)
+            .with_public_origins(auth::csrf::allowed_origins().unwrap_or_default());
         let worker: Arc<Worker> = state.worker().clone();
 
         kick_recovery_scans(&pool, &worker).await;
