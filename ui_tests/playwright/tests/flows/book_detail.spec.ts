@@ -181,6 +181,11 @@ test.describe("book detail page", () => {
         await bookDetailPage.goto(uuid);
       });
 
+      // The glue paints a transform at install, so only a change proves a drift.
+      const before = await test.step("read the cover at the top", async () => {
+        return bookDetailPage.coverTransform();
+      });
+
       await test.step("scroll the flow", async () => {
         await bookDetailPage.scrollFlowTo(900);
       });
@@ -190,7 +195,7 @@ test.describe("book detail page", () => {
           .poll(() => bookDetailPage.coverTransform(), {
             message: "cover transform after the flow scrolls",
           })
-          .toMatch(/translateY/);
+          .not.toBe(before);
       });
     });
 
@@ -272,6 +277,7 @@ test.describe("book detail page", () => {
 
       await test.step("turn scroll stops on in settings", async () => {
         await settingsPage.goto("account");
+        await settingsPage.markDocument();
         await expectMutation(account.setScrollStops(true), () =>
           settingsPage.toggleScrollStops(),
         );
@@ -287,6 +293,14 @@ test.describe("book detail page", () => {
       await test.step("check the marquee replaces the flow", async () => {
         await expect(bookDetailPage.snapScroller).toBeAttached();
         await expect(bookDetailPage.flowScroller).toHaveCount(0);
+      });
+
+      await test.step("check the trip stayed in the app", async () => {
+        await bookDetailPage.assertDisplayedFor(uuid);
+        expect(
+          await bookDetailPage.documentIsMarked(),
+          "the trip back must stay in-app",
+        ).toBe(true);
       });
     });
 
