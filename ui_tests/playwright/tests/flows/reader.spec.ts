@@ -458,6 +458,19 @@ test.describe("epub reader", () => {
         await expect(epubReaderPage.searchDrawer).toBeVisible();
         await expect(epubReaderPage.searchField).toBeVisible();
       });
+    });
+
+    test("close the search drawer with escape", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the search drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openSearch();
+        await expect(epubReaderPage.searchDrawer).toBeVisible();
+      });
 
       await test.step("close it with escape", async () => {
         await epubReaderPage.closeWithEscape();
@@ -498,8 +511,21 @@ test.describe("epub reader", () => {
         await expect(drawer.root).toBeVisible();
         await expect(drawer.emptyMessage).toBeVisible();
       });
+    });
 
-      // The drawer's scrim otherwise covers the chrome.
+    test("close the highlights drawer with escape", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const drawer = epubReaderPage.highlightsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the highlights drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openHighlights();
+        await expect(drawer.root).toBeVisible();
+      });
+
       await test.step("close it with escape", async () => {
         await epubReaderPage.closeWithEscape();
         await expect(drawer.root).toHaveCount(0);
@@ -1405,6 +1431,19 @@ test.describe("epub reader", () => {
         await epubReaderPage.filterAnnotationsToBookmarks();
         await expect(epubReaderPage.annotationsSheet).toBeVisible();
       });
+    });
+
+    test("close the annotations sheet with escape", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the annotations sheet", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openAnnotations();
+        await expect(epubReaderPage.annotationsSheet).toBeVisible();
+      });
 
       await test.step("close it with escape", async () => {
         await epubReaderPage.closeWithEscape();
@@ -1429,6 +1468,20 @@ test.describe("epub reader", () => {
       await test.step("check the drawer spans the screen", async () => {
         const width = await epubReaderPage.renderedWidth(drawer.root);
         expect(width).toBeGreaterThan(370);
+      });
+    });
+
+    test("close the contents drawer with escape", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const drawer = epubReaderPage.contentsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the contents drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openContents();
+        await expect(drawer.root).toBeVisible();
       });
 
       await test.step("close it with escape", async () => {
