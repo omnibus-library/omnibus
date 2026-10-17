@@ -120,7 +120,9 @@ test.describe("comic pager", () => {
     });
 
     await test.step("check the pager moved on", async () => {
-      await expect(comicReaderPage.pageLabel).toHaveText("Page 2 of 5");
+      await expect(comicReaderPage.pageLabel).toHaveText(
+        `Page 2 of ${PRISTINE_PAGES}`,
+      );
       await expect(comicReaderPage.pageImage).toBeVisible();
     });
   });
@@ -220,7 +222,7 @@ test.describe("comic pager", () => {
 
       await test.step("check the server holds page 4", async () => {
         const record = await storedPosition(uuid);
-        expect(record?.epub_cfi).toBe("comic-page:3");
+        expect(record?.epub_cfi).toBe(comicPageAnchor(3));
         expect(record?.progress_percent).toBe(50);
         // A comic has no spine to resolve against, so the block reports the
         // percent it carries rather than inventing a chapter.

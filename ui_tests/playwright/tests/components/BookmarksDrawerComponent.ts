@@ -14,11 +14,15 @@ export class BookmarksDrawerComponent extends BaseComponent {
     this.addButton = this.root.getByRole("button", { name: "+ Bookmark" });
   }
 
-  /** The row of the bookmark titled `title`. */
+  /**
+   * The row of the bookmark titled exactly `title`, so "Page 4" never matches
+   * "Page 40". The button's own name starts with a flag glyph, so the exact
+   * match goes on the label.
+   */
   row(title: string): Locator {
     return this.root
       .getByTestId("reader-bookmark-row")
-      .filter({ hasText: title });
+      .filter({ has: this.page.getByText(title, { exact: true }) });
   }
 
   /** Bookmarks the current page, then waits for the server's answer. */

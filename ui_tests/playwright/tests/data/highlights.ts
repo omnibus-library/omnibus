@@ -40,8 +40,11 @@ export function pdfHighlightRange(index: number): string {
   return `pdf:${index}:72,500,288,500,72,488,288,488`;
 }
 
+/** What the reader sends: it leaves `text` out when the selection has none. */
+export type SentHighlight = Omit<NewHighlight, "text"> & { text?: string };
+
 /** The highlight the reader sent, read off its highlights/create request. */
-export function sentHighlight(request: Request): NewHighlight {
-  const { input }: { input: NewHighlight } = request.postDataJSON();
+export function sentHighlight(request: Request): SentHighlight {
+  const { input }: { input: SentHighlight } = request.postDataJSON();
   return input;
 }

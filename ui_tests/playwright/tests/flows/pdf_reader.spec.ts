@@ -3,7 +3,11 @@ import { highlights } from "../contracts/highlights";
 import { progress } from "../contracts/progress";
 import { readStatus } from "../contracts/readStatus";
 import { pdfPageBookmark, type SeededBookmark } from "../data/bookmarks";
-import { pdfHighlightRange, sentHighlight } from "../data/highlights";
+import {
+  pdfHighlightRange,
+  type SeededHighlight,
+  sentHighlight,
+} from "../data/highlights";
 import { pagePercent, pdfPageAnchor } from "../data/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { buildJpxPdf, JPX_FILL } from "../fixtures/jpx_pdf";
@@ -288,8 +292,8 @@ test.describe("pdf reader", () => {
 
         await test.step("check the server holds page 4", async () => {
           const record = await storedPosition(uuid);
-          expect(record?.epub_cfi).toBe("pdf-page:3");
-          expect(record?.progress_percent).toBe(Math.round(400 / count));
+          expect(record?.epub_cfi).toBe(pdfPageAnchor(3));
+          expect(record?.progress_percent).toBe(pagePercent(3, count));
         });
       });
 
@@ -328,7 +332,9 @@ test.describe("pdf reader", () => {
 
         const count = await test.step("open the book", async () => {
           await pdfReaderPage.goto(uuid);
-          return pdfReaderPage.pageCount();
+          const pages = await pdfReaderPage.pageCount();
+          expect(pages, "page count from the label").toBeGreaterThan(4);
+          return pages;
         });
 
         await test.step("slide to the last page", async () => {
@@ -371,7 +377,9 @@ test.describe("pdf reader", () => {
 
         const count = await test.step("open the book", async () => {
           await pdfReaderPage.goto(uuid);
-          return pdfReaderPage.pageCount();
+          const pages = await pdfReaderPage.pageCount();
+          expect(pages, "page count from the label").toBeGreaterThan(4);
+          return pages;
         });
 
         await test.step("slide to the last page", async () => {
@@ -427,7 +435,7 @@ test.describe("pdf reader", () => {
             const created = await expectMutation(highlights.create(), () =>
               pdfReaderPage.highlightSelection("green"),
             );
-            const { id } = await created.response.json();
+            const { id }: SeededHighlight = await created.response.json();
             seededHighlightIds.add(id);
             return created;
           });
@@ -436,7 +444,7 @@ test.describe("pdf reader", () => {
           const sent = sentHighlight(saved);
           expect(sent.color).toBe("green");
           expect(sent.epub_cfi_range).toMatch(SELECTION_RANGE);
-          expect(sent.text.trim()).toBe(selected);
+          expect(sent.text?.trim()).toBe(selected);
           await expect(pdfReaderPage.selectionPopover).toHaveCount(0);
           await expect(
             pdfReaderPage.paintedHighlight(sent.epub_cfi_range, "green"),
@@ -552,6 +560,7 @@ test.describe("pdf reader", () => {
         seededBookmarkIds,
       }) => {
         const uuid = await fetchBookUuidByTitle(request, PDF.title);
+        const bookmark = pdfPageBookmark(uuid, 3);
 
         await test.step("park the book reading on page 4", async () => {
           await parkBook(uuid, pdfPageAnchor(3), "reading");
@@ -567,7 +576,7 @@ test.describe("pdf reader", () => {
         // "+ Bookmark" stores the page anchor, labelled by the page.
         await test.step("add a bookmark", async () => {
           const { response } = await expectMutation(
-            bookmarks.create(pdfPageBookmark(uuid, 3)),
+            bookmarks.create(bookmark),
             () => pdfReaderPage.bookmarksDrawer.add(),
           );
           const { id }: SeededBookmark = await response.json();
@@ -575,9 +584,9 @@ test.describe("pdf reader", () => {
         });
 
         await test.step("check the drawer lists it", async () => {
-          await expect(pdfReaderPage.bookmarksDrawer.row("Page 4")).toHaveCount(
-            1,
-          );
+          await expect(
+            pdfReaderPage.bookmarksDrawer.row(bookmark.title),
+          ).toHaveCount(1);
         });
       });
 
@@ -590,15 +599,14 @@ test.describe("pdf reader", () => {
         seededBookmarkIds,
       }) => {
         const uuid = await fetchBookUuidByTitle(request, PDF.title);
+        const bookmark = pdfPageBookmark(uuid, 3);
 
         await test.step("park the book reading on page 1", async () => {
           await parkBook(uuid, pdfPageAnchor(0), "reading");
         });
 
         await test.step("save a bookmark on page 4", async () => {
-          const created = await bookmarksRequests.postBookmark(
-            pdfPageBookmark(uuid, 3),
-          );
+          const created = await bookmarksRequests.postBookmark(bookmark);
           expect(created.status(), "seed bookmark").toBe(200);
           const { id }: SeededBookmark = await created.json();
           seededBookmarkIds.add(id);
@@ -613,7 +621,7 @@ test.describe("pdf reader", () => {
 
         await test.step("jump to the bookmark", async () => {
           await expectMutation(progress.save(), () =>
-            pdfReaderPage.bookmarksDrawer.jumpTo("Page 4"),
+            pdfReaderPage.bookmarksDrawer.jumpTo(bookmark.title),
           );
         });
 
