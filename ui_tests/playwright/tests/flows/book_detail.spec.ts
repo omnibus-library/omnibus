@@ -7,7 +7,7 @@ import {
   MERGE_SECONDARY,
 } from "../fixtures/audiobooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
+import { expect, test } from "../fixtures/pageFixtures";
 import { expectMutation } from "../utils/api";
 import {
   fetchBookUuidByTitle,
@@ -71,66 +71,65 @@ const PASSAGES_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "standalone-garden",
 )!;
 
-// ---------------------------------------------------------------------------
-// Layout
-// ---------------------------------------------------------------------------
+test.describe("book detail page", () => {
+  // Its groups share the admin's scroll stops preference and one book each,
+  // so they run one at a time in file order.
+  test.describe.configure({ mode: "default" });
 
-test("renders the book detail layout", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
 
-  // Hero — title heading is the H1.
-  await expect(
-    page.getByRole("heading", { level: 1, name: TARGET.title }),
-  ).toBeVisible();
+  test("show the book detail layout", async ({ bookDetailPage, request }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const author = TARGET.authors[0]!;
 
-  // Hero — author appears in the dedicated authors line as a router link
-  // (creators[0] has an id in the seeded DB). Scoped to `book-authors`
-  // because the breadcrumb also renders the same name.
-  const primaryAuthor = TARGET.authors[0]!;
-  const authorsLine = page.getByTestId("book-authors");
-  await expect(authorsLine).toContainText(primaryAuthor);
-  await expect(
-    authorsLine.getByRole("link", { name: primaryAuthor }),
-  ).toBeVisible();
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+    });
 
-  // Hero — cover renders inside the cover column. There's also one cover
-  // per "From the same hand" tile when populated, so scope to `.first()`
-  // — it's the hero cover (alpha's empty-state case has no tile covers).
-  await expect(page.getByTestId("cover").first()).toBeVisible();
+    await test.step("check the hero shows", async () => {
+      await bookDetailPage.assertDisplayedFor(uuid);
+      await bookDetailPage.topNav.assertDisplayed();
+      await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
+      await expect(bookDetailPage.authorsLine).toContainText(author);
+      await expect(bookDetailPage.authorLink(author)).toBeVisible();
+      await expect(bookDetailPage.heroCover).toBeVisible();
+      await expect(bookDetailPage.rating.starsGroup).toBeVisible();
+    });
 
-  // Hero — primary CTA: alpha is EPUB-only, so the "Start reading" link
-  // must be present and href into the /read/:uuid reader route.
-  const startReading = page.getByTestId("start-reading");
-  await expect(startReading).toBeVisible();
-  await expect(startReading).toHaveAttribute(
-    "href",
-    new RegExp(`/read/${uuid}$`),
-  );
+    // Alpha is EPUB-only, so the primary action reads the book.
+    await test.step("check the primary action shows", async () => {
+      await expect(bookDetailPage.startReadingButton).toBeVisible();
+      await expect(bookDetailPage.startReadingButton).toHaveAttribute(
+        "href",
+        new RegExp(`/read/${uuid}$`),
+      );
+    });
 
-  // marquee stage — the dot-rail TOC renders one row per stop, with the first
-  // stop active on load.
-  const dots = page.getByTestId("bdmq-dots");
-  await expect(dots).toBeVisible();
-  await expect(dots.getByRole("button")).toHaveCount(6);
-  await expect(page.getByTestId("bdmq-dot-0")).toHaveClass(/\bon\b/);
+    await test.step("check the dot rail shows", async () => {
+      await expect(bookDetailPage.sectionsNav).toBeVisible();
+      await expect(bookDetailPage.sectionDots).toHaveCount(6);
+      await expect(bookDetailPage.sectionDot("Home")).toHaveClass(/\bon\b/);
+    });
 
-  // Stops — "Passages you saved" (stop 03) is always rendered. Only its
-  // presence is asserted here: `journal.spec.ts` seeds a highlight on this
-  // same book, so whether the list or the empty state fills it depends on
-  // run order. The empty and populated states are covered by the
-  // saved-passages action tests below, on a book reserved for them.
-  await expect(
-    page.getByRole("heading", { name: "Passages you saved" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("highlights-section")).toBeVisible();
+    // The saved passages stop always renders, but whether its list or its
+    // empty state fills it depends on `journal.spec.ts`, so only the stop is
+    // checked here.
+    await test.step("check the stops show", async () => {
+      await expect(bookDetailPage.savedPassagesHeading).toBeVisible();
+      await expect(bookDetailPage.savedPassagesSection).toBeVisible();
+      await expect(bookDetailPage.moreStop).toBeAttached();
+      await expect(bookDetailPage.fromSameHandHeading).toBeVisible();
+    });
 
-  // Stops — the More stop (06) carries the shelf, the author's other work
-  // and the suggestions in one run, so its heading is always rendered.
-  await expect(page.getByTestId("bdmq-more")).toBeAttached();
-  await expect(
-    page.getByRole("heading", { name: "From the same hand" }),
-  ).toBeVisible();
+    // Its contents depend on a Hardcover key and the external API, so only
+    // the section and its heading are checked.
+    await test.step("check the suggestions show", async () => {
+      await expect(bookDetailPage.suggestionsStrip).toBeAttached();
+      await expect(bookDetailPage.suggestionsHeading).toBeVisible();
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

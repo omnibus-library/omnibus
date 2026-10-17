@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
+import { RatingComponent } from "../components/RatingComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { physicalUrls } from "../contracts/physical";
@@ -7,13 +8,33 @@ import { expect } from "../fixtures/test";
 import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
+/** The six stops of the page, as the dot rail names them. */
+export type MarqueeSection =
+  | "Home"
+  | "Stats"
+  | "Highlights"
+  | "Journals"
+  | "The files"
+  | "More";
+
 export class BookDetailPage extends BasePage {
   protected readonly urlPattern = /\/books\/[^/?#]+$/;
 
   readonly topNav: TopNavComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
+  readonly rating: RatingComponent;
 
   readonly titleHeading: Locator;
+  readonly authorsLine: Locator;
+  readonly heroCover: Locator;
+  readonly sectionsNav: Locator;
+  readonly sectionDots: Locator;
+  readonly savedPassagesHeading: Locator;
+  readonly savedPassagesSection: Locator;
+  readonly moreStop: Locator;
+  readonly fromSameHandHeading: Locator;
+  readonly suggestionsStrip: Locator;
+  readonly suggestionsHeading: Locator;
   readonly fromSameHandEmptyMessage: Locator;
   readonly readButton: Locator;
   readonly startReadingButton: Locator;
@@ -34,7 +55,26 @@ export class BookDetailPage extends BasePage {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
+    this.rating = new RatingComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
+    this.authorsLine = page.getByTestId("book-authors");
+    // The More stop's tiles draw covers too, so the hero's is found by its
+    // wrapper, which is hidden from the accessibility tree.
+    this.heroCover = page.locator("#bdmq-coverpx").getByTestId("cover");
+    this.sectionsNav = page.getByRole("navigation", { name: "Page sections" });
+    this.sectionDots = this.sectionsNav.getByRole("button");
+    this.savedPassagesHeading = page.getByRole("heading", {
+      name: "Passages you saved",
+    });
+    this.savedPassagesSection = page.getByTestId("highlights-section");
+    this.moreStop = page.getByTestId("bdmq-more");
+    this.fromSameHandHeading = page.getByRole("heading", {
+      name: "From the same hand",
+    });
+    this.suggestionsStrip = page.getByTestId("suggestions-strip");
+    this.suggestionsHeading = page.getByRole("heading", {
+      name: "Suggested for you",
+    });
     this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
     this.readButton = page.getByTestId("action-read");
     // The labels change with reading progress, so the row is found by test id.
@@ -61,6 +101,18 @@ export class BookDetailPage extends BasePage {
     return this.titleHeading;
   }
 
+  /** The authors line's link to the author called `name`. */
+  authorLink(name: string): Locator {
+    return this.authorsLine.getByRole("link", { name, exact: true });
+  }
+
+  /** The dot rail's button for `section`; its label reads "NN · Name". */
+  sectionDot(section: MarqueeSection): Locator {
+    return this.sectionsNav.getByRole("button", {
+      name: new RegExp(`${section}$`, "i"),
+    });
+  }
+
   /** The copy card a test filed, picked out by its unique note. */
   physicalCopyCard(note: string): Locator {
     return this.physicalCopyCards.filter({ hasText: note });
@@ -74,8 +126,12 @@ export class BookDetailPage extends BasePage {
     );
   }
 
+  /**
+   * Settles because the page fills its widgets from fetches after mount, and
+   * a click that lands before they do gets overwritten.
+   */
   async goto(bookUuid: string): Promise<void> {
-    await this.open(`/books/${bookUuid}`);
+    await this.openAndSettle(`/books/${bookUuid}`);
   }
 
   /** Opens the reader through the EPUB format's Read action. */
