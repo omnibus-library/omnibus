@@ -11,13 +11,6 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Re-seed in this spec's beforeAll so the running server is indexed against
-// the committed EPUB fixtures before any assertion runs — independent of
-// whatever other specs in the same worker did before us.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
 // A fixture with predictable, distinctive metadata to drive most tests.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 // One book per highlight test, so no seeded highlight reaches TARGET's empty
@@ -111,7 +104,7 @@ test.describe("epub reader", () => {
       await epubReaderPage.assertDisplayed();
       // #2249: the counter never opens on a `Ch 0` that cannot reach its total.
       await expect(epubReaderPage.chapterCounterLabel).toHaveText(
-        /^Ch [1-9]\d* of \d+$/,
+        /^Ch\u00a0[1-9]\d* of \d+$/,
       );
       await expect(epubReaderPage.backButton).toBeVisible();
       await expect(epubReaderPage.contentsButton).toBeVisible();
@@ -237,7 +230,7 @@ test.describe("epub reader", () => {
   });
 
   test.describe("script loading", () => {
-    // #2449: epub.js ran before a late JSZip and failed every open until a reload.
+    // #2449: a late JSZip let epub.js run first and fail every open.
     test("open the reader from the book detail read action", async ({
       epubReaderPage,
       bookDetailPage,
@@ -912,7 +905,7 @@ test.describe("epub reader", () => {
         // Present but empty: any declaration on `body *`, `inherit` included,
         // would flatten the publisher's faces.
         expect(state?.override).toBe("");
-        // epub.js's `themes.font` wrote the stack inline on <body> once.
+        // epub.js's `themes.font` once wrote the stack inline on <body>.
         expect(state?.bodyInline).toBe("");
         expect(state?.paragraphFamily).toMatch(/^"?Fixture Serif"?/);
       });
@@ -1584,10 +1577,9 @@ test.describe("epub reader", () => {
         return epubReaderPage.pageLabel();
       });
 
-      // The system takes a gesture away with `touchcancel`, not a lift, and
-      // the multi-finger gate must come down on that too. The gate is a
-      // per-document closure, so cancel where the tap will land. Two
-      // mechanisms heal it; this goes red only when both are removed.
+      // A taken-over gesture ends in `touchcancel`, and the multi-finger gate
+      // must come down on that too. Cancel where the tap lands, since the gate
+      // is per-document. Two mechanisms heal it, so only losing both fails this.
       await test.step("cancel two fingers on the forward gutter", async () => {
         await gestures.cancelTwoFingersOnForwardGutter();
       });

@@ -4,7 +4,7 @@ Companion to [04-playwright.md](04-playwright.md), which owns the toolchain
 and the general conventions. This file is how a spec is built: page,
 component and request objects, injected by fixtures.
 
-The suite is moving from functional helpers to page objects, one surface at a time (#2744). The `tests/flows/check_in_*.spec.ts` specs are the worked examples: `check_in_wishlisted` for a reader's own data, `check_in_choose` for admin writes the test cleans up. **New specs use page objects**; an unmigrated spec keeps its helpers in `utils/` until its surface moves, and a change to one doesn't have to migrate it.
+The suite is moving from functional helpers to page objects, one surface at a time (#2744). The `tests/flows/check_in_*.spec.ts` specs are the worked examples: `check_in_wishlisted` for a reader's own data, `check_in_choose` for admin writes the test cleans up, `reader.spec.ts` for an iframe, `evaluate` probes and listeners. **New specs use page objects**; an unmigrated spec keeps its helpers in `utils/` until its surface moves, and a change to one doesn't have to migrate it.
 
 | Directory | Holds |
 |---|---|
@@ -20,6 +20,7 @@ The suite is moving from functional helpers to page objects, one surface at a ti
 - **Navigation:** a page's `goto()` calls `BasePage.open(path)`, which waits for hydration and then the page's `readyLocator`. `assertDisplayed()` checks the URL and that marker.
 - **Actions** are verbs, never assert and return nothing. One that fires a request starts `waitForResponse` before it clicks and awaits it. A test that needs the body reads it from the `response` that `expectMutation` returns, so the same action also runs the forced-failure path. `assert*` methods are only for grouped checks several specs would repeat.
 - **Stubs** (`page.route`) live in page-object methods (`stubIsbnLookup`, `forceServerError`), and only force a state the server can't produce on demand: an answer from the metadata providers, a forced error, or a write to a fixture other specs read (`stubCheckIn`).
+- **Frames and probes:** a same-origin iframe is a component holding `locator(…).contentFrame()`; a `page.evaluate` read is a query method returning a value the spec polls; a `page.on` listener is a `record*()` method returning a live list.
 - **Mutations** go through the `expectMutation` fixture, already bound to the page, with a named contract from `tests/contracts/`: `await expectMutation(scan.checkIn(wish), () => overlay.checkInCopy())`. Against a forced error, wrap the contract: `failing(scan.checkIn(wish))`.
 - **Fixtures** construct objects but never navigate. One that creates data deletes it after `use` (`createdBookUuids`), so cleanup runs when a test fails. A test that deletes the data itself takes it off the list (`createdBookUuids.delete(uuid)`).
 - **Specs** read as `test.describe("<subject>")` → imperative lowercase titles (`check in a wishlisted book from its own page`) → one `test.step` per phase. Hooks are titled: `test.beforeAll("seed the library", …)`.

@@ -111,8 +111,8 @@ each learned by getting it wrong:
 - **A drag offset lands in a `requestAnimationFrame` callback**, so points
   dispatched back to back never paint one. Asserting on a transform (or on
   its cleanup) means letting a frame run between moves — `nextFrame` in
-  `reader.spec.ts`. Skip it and the assertion is about a transform that was
-  never written, which passes for the wrong reason.
+  `components/ReaderGesturesComponent.ts`. Skip it and the assertion is about
+  a transform that was never written, which passes for the wrong reason.
 
 ## Network — every mutation must be asserted
 
