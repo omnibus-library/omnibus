@@ -125,8 +125,8 @@ Back up the device first — see the warning above.
    so treat the URL as a secret and use a different one per Kobo. If the
    server is on a port other than 80 or 443, such as
    `http://192.168.1.10:3001`, also list that address in
-   `OMNIBUS_PUBLIC_ORIGIN`. The Kobo asks for downloads without the port, so
-   they fail otherwise.
+   `OMNIBUS_PUBLIC_ORIGIN`. The Kobo leaves the port off its requests, and
+   without that entry its download links point at the wrong port.
 3. Connect the Kobo over USB and tap **Connect** on the device. It appears as a
    USB drive.
 4. Open `.kobo/Kobo/Kobo eReader.conf` on that drive and set `api_endpoint=`
