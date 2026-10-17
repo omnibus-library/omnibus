@@ -55,7 +55,6 @@
         "!tests/flows/book_detail.spec.ts",
         "!tests/flows/book_detail_chips.spec.ts",
         "!tests/flows/book_detail_shelves.spec.ts",
-        "!tests/flows/book_url_stability.spec.ts",
         "!tests/flows/boot.spec.ts",
         "!tests/flows/browse_indices.spec.ts",
         "!tests/flows/chart_builder.spec.ts",

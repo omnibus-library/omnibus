@@ -35,6 +35,7 @@ export class BookDetailPage extends BasePage {
   readonly fromSameHandHeading: Locator;
   readonly suggestionsStrip: Locator;
   readonly suggestionsHeading: Locator;
+  readonly bookNotFoundMessage: Locator;
   readonly fromSameHandEmptyMessage: Locator;
   readonly readButton: Locator;
   readonly startReadingButton: Locator;
@@ -75,6 +76,7 @@ export class BookDetailPage extends BasePage {
     this.suggestionsHeading = page.getByRole("heading", {
       name: "Suggested for you",
     });
+    this.bookNotFoundMessage = page.getByText("Book not found.");
     this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
     this.readButton = page.getByTestId("action-read");
     // The labels change with reading progress, so the row is found by test id.
