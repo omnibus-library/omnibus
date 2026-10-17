@@ -1,10 +1,16 @@
 import { join } from "node:path";
 import type { Request, Response } from "@playwright/test";
 import { AuthRequests } from "../apiRequests/AuthRequests";
+import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
+import {
+  buildHighlight,
+  type NewHighlight,
+  type SeededHighlight,
+} from "../data/highlights";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import { type ShelfRef, wishlistOf } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
@@ -50,8 +56,14 @@ type PageFixtures = {
   shelfPage: ShelfPage;
   scanRequests: ScanRequests;
   physicalRequests: PhysicalRequests;
+  highlightsRequests: HighlightsRequests;
   createdBookUuids: Set<string>;
   filedCopies: FiledCopy[];
+  seededHighlightIds: Set<number>;
+  highlightOn: (
+    bookUuid: string,
+    overrides?: Partial<NewHighlight>,
+  ) => Promise<SeededHighlight>;
   adminWishlist: ShelfRef;
   readerShelfPage: ShelfPage;
 };
@@ -127,6 +139,10 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     await use(new PhysicalRequests(request));
   },
 
+  highlightsRequests: async ({ request }, use) => {
+    await use(new HighlightsRequests(request));
+  },
+
   createdBookUuids: async ({ physicalRequests }, use) => {
     const uuids = new Set<string>();
     await use(uuids);
@@ -148,6 +164,26 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
         await expect(deleted, `delete copy ${copy.id}`).toBeOK();
       }
     }
+  },
+
+  seededHighlightIds: async ({ highlightsRequests }, use) => {
+    const ids = new Set<number>();
+    await use(ids);
+    for (const id of ids) {
+      const deleted = await highlightsRequests.deleteHighlight(id);
+      await expect(deleted, `delete highlight ${id}`).toBeOK();
+    }
+  },
+
+  highlightOn: async ({ highlightsRequests, seededHighlightIds }, use) => {
+    await use(async (bookUuid, overrides) => {
+      const highlight = buildHighlight(bookUuid, overrides);
+      const created = await highlightsRequests.postHighlight(highlight);
+      expect(created.status(), "seed highlight").toBe(200);
+      const { id } = await created.json();
+      seededHighlightIds.add(id);
+      return { ...highlight, id };
+    });
   },
 
   adminWishlist: async ({ request }, use) => {

@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { TYPEFACES } from "../components/ReaderDisplayPanelComponent";
+import { highlights } from "../contracts/highlights";
 import { progress } from "../contracts/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -19,14 +20,10 @@ test.beforeAll(async ({ request }) => {
 
 // A fixture with predictable, distinctive metadata to drive most tests.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
-// A separate book for the highlight action test so seeding/deleting highlights
-// doesn't pollute the empty-state assertions on TARGET (tests run in parallel).
+// One book per highlight test, so no seeded highlight reaches TARGET's empty
+// state or another test's drawer.
 const HL_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
-// A third book for the note-editing test so its persisted highlight never
-// collides with the seed/delete cycle on HL_BOOK.
 const NOTE_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "gamma")!;
-// A fourth book for the recolor test so its seeded highlight is isolated from
-// the other highlight specs running in parallel.
 const RECOLOR_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "pioneers-3")!;
 // A fifth book, reserved for the highlight-overlay regression: it asserts on
 // where the highlight SVG is painted, so no other spec may write highlights
@@ -806,6 +803,122 @@ test.describe("epub reader", () => {
     });
   });
 
+  test.describe("highlights", () => {
+    test("delete a highlight from the highlights drawer", async ({
+      epubReaderPage,
+      request,
+      highlightOn,
+      seededHighlightIds,
+      expectMutation,
+    }) => {
+      const drawer = epubReaderPage.highlightsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, HL_BOOK.title);
+      const highlight = await highlightOn(uuid);
+      const row = drawer.row(highlight.text);
+
+      await test.step("open the highlights drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openHighlights();
+        await expect(drawer.root).toBeVisible();
+        await expect(row.root).toHaveCount(1);
+      });
+
+      await test.step("delete the highlight", async () => {
+        await expectMutation(highlights.delete(), () => row.delete());
+        seededHighlightIds.delete(highlight.id);
+      });
+
+      await test.step("check the quote is gone", async () => {
+        await expect(drawer.quoteText(highlight.text)).toHaveCount(0);
+      });
+    });
+
+    test("add a note to a highlight from the drawer", async ({
+      epubReaderPage,
+      request,
+      highlightOn,
+      expectMutation,
+    }) => {
+      const drawer = epubReaderPage.highlightsDrawer;
+      const note = "a thought worth keeping";
+      const uuid = await fetchBookUuidByTitle(request, NOTE_BOOK.title);
+      const highlight = await highlightOn(uuid);
+      const row = drawer.row(highlight.text);
+
+      await test.step("open the highlights drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openHighlights();
+        await expect(drawer.root).toBeVisible();
+        await expect(row.root).toHaveCount(1);
+        await expect(row.noteButton).toHaveText("Add note");
+      });
+
+      await test.step("write a note in the composer", async () => {
+        await row.openNoteComposer();
+        await expect(drawer.noteComposerPanel).toBeVisible();
+        await drawer.enterNote(note);
+      });
+
+      await test.step("save the note", async () => {
+        await expectMutation(highlights.updateNote(), () => drawer.saveNote());
+        await expect(drawer.noteComposerPanel).toHaveCount(0);
+      });
+
+      await test.step("check the row shows the saved note", async () => {
+        await epubReaderPage.openHighlights();
+        await expect(row.noteText(note)).toBeVisible();
+        await expect(row.noteButton).toHaveText("Edit note");
+      });
+    });
+
+    test("recolor a highlight from the drawer", async ({
+      epubReaderPage,
+      request,
+      highlightOn,
+      expectMutation,
+    }) => {
+      const drawer = epubReaderPage.highlightsDrawer;
+      const uuid = await fetchBookUuidByTitle(request, RECOLOR_BOOK.title);
+      const highlight = await highlightOn(uuid);
+      const row = drawer.row(highlight.text);
+
+      await test.step("open the highlights drawer", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openHighlights();
+        await expect(drawer.root).toBeVisible();
+        await expect(row.root).toHaveCount(1);
+      });
+
+      await test.step("check amber is the selected color", async () => {
+        await expect(row.recolorButton("amber")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(row.recolorButton("green")).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      });
+
+      await test.step("pick green", async () => {
+        await expectMutation(highlights.updateColor(), () =>
+          row.recolor("green"),
+        );
+      });
+
+      await test.step("check green is the selected color", async () => {
+        await expect(row.recolorButton("green")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(row.recolorButton("amber")).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      });
+    });
+  });
+
   // The phone shell renders this reader in a WebView, so check its layout here.
   test.describe("phone viewport", () => {
     test.use({ viewport: { width: 390, height: 844 } });
@@ -1018,163 +1131,6 @@ test("black theme overrides a publisher color on the EPUB body", async ({
   await expect
     .poll(() => prose.evaluate((el) => getComputedStyle(el).color))
     .toBe("rgb(255, 255, 255)");
-});
-
-test("seeds a highlight and deletes it from the highlights drawer", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, HL_BOOK.title);
-
-  // Seed a highlight via the REST API (bearer-authed request fixture) so the
-  // reader loads it into the drawer on mount. A unique quote keeps the test
-  // robust against the shared, persistent dev DB.
-  const quote = `seeded passage ${Date.now()}`;
-  const created = await request.post("/api/highlights", {
-    data: {
-      book_uuid: uuid,
-      epub_cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:40)",
-      color: "amber",
-      text: quote,
-    },
-  });
-  expect(created.status(), "seed highlight").toBe(200);
-
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Open the highlights drawer — the seeded highlight is listed.
-  await page.getByTestId("reader-highlights").click();
-  await expect(page.getByTestId("reader-highlights-drawer")).toBeVisible();
-  const row = page
-    .getByTestId("reader-highlight-row")
-    .filter({ hasText: quote });
-  await expect(row).toHaveCount(1);
-
-  // Delete it — the delete RPC must fire, and the row disappears.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/delete(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => row.getByTestId("highlight-delete").click(),
-  );
-  await expect(page.getByText(quote)).toHaveCount(0);
-});
-
-test("adds a note to an existing highlight from the drawer", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, NOTE_BOOK.title);
-
-  // Seed a note-less highlight so the drawer offers the "Add note" affordance.
-  const quote = `note passage ${Date.now()}`;
-  const created = await request.post("/api/highlights", {
-    data: {
-      book_uuid: uuid,
-      epub_cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:40)",
-      color: "green",
-      text: quote,
-    },
-  });
-  expect(created.status(), "seed highlight").toBe(200);
-
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Open the drawer; the seeded highlight shows an "Add note" button.
-  await page.getByTestId("reader-highlights").click();
-  await expect(page.getByTestId("reader-highlights-drawer")).toBeVisible();
-  const row = page
-    .getByTestId("reader-highlight-row")
-    .filter({ hasText: quote });
-  await expect(row).toHaveCount(1);
-  await expect(row.getByTestId("highlight-note")).toHaveText("Add note");
-
-  // The note button opens the shared composer over the drawer.
-  await row.getByTestId("highlight-note").click();
-  await expect(page.getByTestId("reader-note-composer")).toBeVisible();
-
-  const note = `a thought worth keeping ${Date.now()}`;
-  await page.getByTestId("reader-note-input").fill(note);
-
-  // Saving persists via the update-note RPC and closes the composer.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/update-note(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("reader-note-save").click(),
-  );
-  await expect(page.getByTestId("reader-note-composer")).toHaveCount(0);
-
-  // Reopen the drawer: the note now renders on the row, and the button flips
-  // to "Edit note" to reflect the persisted note.
-  await page.getByTestId("reader-highlights").click();
-  const savedRow = page
-    .getByTestId("reader-highlight-row")
-    .filter({ hasText: quote });
-  await expect(savedRow.getByText(note)).toBeVisible();
-  await expect(savedRow.getByTestId("highlight-note")).toHaveText("Edit note");
-});
-
-test("recolors an existing highlight from the drawer", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, RECOLOR_BOOK.title);
-
-  // Seed an amber highlight so the drawer offers its recolor swatches.
-  const quote = `recolor passage ${Date.now()}`;
-  const created = await request.post("/api/highlights", {
-    data: {
-      book_uuid: uuid,
-      epub_cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:40)",
-      color: "amber",
-      text: quote,
-    },
-  });
-  expect(created.status(), "seed highlight").toBe(200);
-
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  await page.getByTestId("reader-highlights").click();
-  await expect(page.getByTestId("reader-highlights-drawer")).toBeVisible();
-  const row = page
-    .getByTestId("reader-highlight-row")
-    .filter({ hasText: quote });
-  await expect(row).toHaveCount(1);
-
-  // Amber is the current color; green is not yet selected.
-  await expect(
-    row.getByTestId("reader-highlight-recolor-amber"),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    row.getByTestId("reader-highlight-recolor-green"),
-  ).toHaveAttribute("aria-pressed", "false");
-
-  // Picking green fires the update-color RPC and moves the selected swatch.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/highlights\/update-color(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => row.getByTestId("reader-highlight-recolor-green").click(),
-  );
-  await expect(
-    row.getByTestId("reader-highlight-recolor-green"),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    row.getByTestId("reader-highlight-recolor-amber"),
-  ).toHaveAttribute("aria-pressed", "false");
 });
 
 test("keeps a seeded highlight glued to its text across font-size changes", async ({
