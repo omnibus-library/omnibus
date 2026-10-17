@@ -14,6 +14,7 @@ export class BookDetailPage extends BasePage {
 
   readonly titleHeading: Locator;
   readonly fromSameHandEmptyMessage: Locator;
+  readonly readButton: Locator;
   readonly checkInWhenAcquiredButton: Locator;
   readonly physicalCopyCards: Locator;
   readonly physicalPill: Locator;
@@ -27,6 +28,7 @@ export class BookDetailPage extends BasePage {
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
+    this.readButton = page.getByTestId("action-read");
     this.checkInWhenAcquiredButton = page.getByRole("button", {
       name: "Check in when acquired",
     });
@@ -50,6 +52,11 @@ export class BookDetailPage extends BasePage {
 
   async goto(bookUuid: string): Promise<void> {
     await this.open(`/books/${bookUuid}`);
+  }
+
+  /** Opens the reader through the EPUB format's Read action. */
+  async read(): Promise<void> {
+    await this.readButton.click();
   }
 
   async checkInWhenAcquired(): Promise<void> {

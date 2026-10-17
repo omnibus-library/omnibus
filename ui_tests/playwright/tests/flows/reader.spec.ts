@@ -427,6 +427,61 @@ test.describe("epub reader", () => {
     });
   });
 
+  test.describe("script loading", () => {
+    // #2449: epub.js ran before a late JSZip and failed every open until a reload.
+    test("open the reader from the book detail read action", async ({
+      epubReaderPage,
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book page with JSZip held back", async () => {
+        await epubReaderPage.holdBackJsZip();
+        await bookDetailPage.goto(uuid);
+      });
+
+      // A client-side navigation with no mutation, so follow the route change.
+      await test.step("open the reader with the read action", async () => {
+        await bookDetailPage.read();
+      });
+
+      await test.step("check the reader opens", async () => {
+        await epubReaderPage.assertDisplayedFor(uuid);
+        await expect(epubReaderPage.section.frameElement).toBeAttached({
+          timeout: 20_000,
+        });
+        await expect(epubReaderPage.loadingOverlay).toHaveCount(0);
+        await expect(epubReaderPage.errorMessage).toHaveCount(0);
+      });
+    });
+
+    test("open the book after retrying a reader script that failed to load", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book with epub.js failing to load", async () => {
+        await epubReaderPage.failEpubScriptOnce();
+        await epubReaderPage.goto(uuid);
+        await expect(epubReaderPage.errorMessage).toBeVisible();
+      });
+
+      await test.step("retry", async () => {
+        await epubReaderPage.retry();
+      });
+
+      await test.step("check the book opens", async () => {
+        await expect(epubReaderPage.section.frameElement).toBeAttached({
+          timeout: 20_000,
+        });
+        await expect(epubReaderPage.loadingOverlay).toHaveCount(0);
+        await expect(epubReaderPage.errorMessage).toHaveCount(0);
+      });
+    });
+  });
+
   test.describe("rendering", () => {
     test("override a publisher body color with the black theme", async ({
       epubReaderPage,
@@ -1337,55 +1392,6 @@ test.describe("epub reader", () => {
       });
     });
   });
-});
-
-// Holding JSZip back is the #2449 regression: a client-side navigation ran
-// the reader scripts in download order, and an epub.js that ran before JSZip
-// failed every open until a reload.
-test("opens the reader from the book detail Read action", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await page.route(/\/jszip[^/]*\.js$/, async (route) => {
-    await new Promise((r) => setTimeout(r, 1500));
-    await route.continue();
-  });
-  await gotoReady(page, `/books/${uuid}`);
-
-  // The EPUB "Read" CTA in the format switcher routes into the immersive
-  // reader. This is a read-only client-side navigation (no mutation), so we
-  // follow the SPA route change and assert on the destination chrome.
-  await page.getByTestId("action-read").click();
-  await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-  await expect(page.locator("#omnibus-viewer iframe")).toBeAttached({
-    timeout: 20_000,
-  });
-  await expect(page.getByTestId("reader-loading")).toHaveCount(0);
-  await expect(page.getByTestId("reader-error")).toHaveCount(0);
-});
-
-test("Retry reloads a reader script that failed and opens the book", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  let aborted = false;
-  await page.route(/\/epub\.min[^/]*\.js$/, async (route) => {
-    if (aborted) return route.continue();
-    aborted = true;
-    await route.abort();
-  });
-  await gotoReady(page, `/read/${uuid}`);
-
-  await expect(page.getByTestId("reader-error")).toBeVisible();
-  await page.getByTestId("reader-retry").click();
-  await expect(page.locator("#omnibus-viewer iframe")).toBeAttached({
-    timeout: 20_000,
-  });
-  await expect(page.getByTestId("reader-loading")).toHaveCount(0);
-  await expect(page.getByTestId("reader-error")).toHaveCount(0);
 });
 
 test("restores the exact reading position when the reader is reopened", async ({

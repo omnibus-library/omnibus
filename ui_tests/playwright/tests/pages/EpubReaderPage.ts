@@ -39,6 +39,7 @@ export class EpubReaderPage extends BasePage {
   readonly headerChapterLabel: Locator;
   readonly loadingOverlay: Locator;
   readonly errorMessage: Locator;
+  readonly retryButton: Locator;
   readonly navErrorMessage: Locator;
 
   readonly searchDrawer: Locator;
@@ -69,6 +70,7 @@ export class EpubReaderPage extends BasePage {
     this.headerChapterLabel = page.getByTestId("reader-header-chapter");
     this.loadingOverlay = page.getByTestId("reader-loading");
     this.errorMessage = page.getByTestId("reader-error");
+    this.retryButton = page.getByTestId("reader-retry");
     this.navErrorMessage = page.getByTestId("reader-nav-error");
     this.searchDrawer = page.getByTestId("reader-search-drawer");
     this.searchField = page.getByTestId("reader-search-input");
@@ -123,6 +125,10 @@ export class EpubReaderPage extends BasePage {
 
   async turnBack(): Promise<void> {
     await this.previousPageButton.click();
+  }
+
+  async retry(): Promise<void> {
+    await this.retryButton.click();
   }
 
   async openContents(): Promise<void> {
@@ -215,6 +221,24 @@ export class EpubReaderPage extends BasePage {
       if (typeof onToc !== "function") throw new Error("no contents glue");
       onToc(json);
     }, JSON.stringify(entries));
+  }
+
+  /** Delays the JSZip script, so epub.js can run first (#2449). */
+  async holdBackJsZip(): Promise<void> {
+    await this.page.route(/\/jszip[^/]*\.js$/, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.continue();
+    });
+  }
+
+  /** Aborts the first load of epub.js and lets every later one through. */
+  async failEpubScriptOnce(): Promise<void> {
+    let aborted = false;
+    await this.page.route(/\/epub\.min[^/]*\.js$/, async (route) => {
+      if (aborted) return route.continue();
+      aborted = true;
+      await route.abort();
+    });
   }
 
   /** Serves `epub` as the book's file and keeps progress off the server. */
