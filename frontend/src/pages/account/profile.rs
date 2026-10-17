@@ -1,15 +1,24 @@
-//! Profile card at the top of Settings → Account: display name + avatar.
-//! Both writes are account configuration, so they go straight to the server
-//! and surface failures inline (rule 08). Signals start empty so SSR and the
-//! first WASM paint agree (rule 07).
+//! Profile card (Settings › Profile): display name + avatar. Both writes are
+//! account configuration, so they go straight to the server and surface
+//! failures inline (rule 08). Signals start empty so SSR and the first WASM
+//! paint agree (rule 07); the name's Save waits for the seeded value and
+//! reports unsaved edits to the settings shell.
 
 use dioxus::prelude::*;
 use omnibus_shared::UserSummary;
 
-use crate::components::credential_card::credential_status_message;
+use super::{confirm_dialog, live_status, Confirm};
 use crate::components::image_upload::use_file_upload;
+use crate::components::unsaved::use_unsaved_guard;
 use crate::components::user_avatar::UserAvatar;
+use crate::components::BusyLabel;
 use crate::{data, use_server_url};
+
+/// Whether the name field holds an edit worth saving: never before it has
+/// been seeded from the saved name, and never for whitespace alone.
+fn display_name_changed(seeded: bool, input: &str, saved: Option<&str>) -> bool {
+    seeded && input.trim() != saved.unwrap_or_default()
+}
 
 /// Signals backing the profile card — grouped so the seeding effect and the
 /// three write-handler builders don't each take seven signal params. Mirrors
@@ -22,6 +31,7 @@ struct ProfileSignals {
     in_flight: Signal<bool>,
     uploading: Signal<bool>,
     upload_error: Signal<Option<String>>,
+    confirm_remove: Signal<bool>,
     // Seeded once from the resolved user; a later refresh must not clobber
     // what the user is mid-way through typing.
     seeded: Signal<bool>,
@@ -85,10 +95,17 @@ fn profile_save_handler(
         signals.in_flight.set(true);
         clear_profile_status(signals);
         spawn(async move {
-            match data::set_display_name(&url, value).await {
+            match data::set_display_name(&url, value.clone()).await {
                 Ok(()) => {
                     report_profile_saved(signals, "Profile saved.");
-                    refresh_current_user(current_user);
+                    // Written from what the server accepted, so Save settles
+                    // at once instead of waiting on a refetch.
+                    let mut current_user = current_user;
+                    current_user.with_mut(|slot| {
+                        if let Some(Some(user)) = slot.as_mut() {
+                            user.display_name = value;
+                        }
+                    });
                 }
                 Err(e) => {
                     signals.msg.set(Some(e.to_string()));
@@ -129,14 +146,14 @@ fn profile_avatar_upload_handler(
     )
 }
 
-/// Click handler for the avatar remove button.
+/// The confirmed avatar removal; the dialog closes once the server answers.
 fn profile_avatar_remove_handler(
     server_url: String,
     current_user: Signal<Option<Option<UserSummary>>>,
     bust: Signal<u32>,
     mut signals: ProfileSignals,
-) -> impl FnMut(Event<MouseData>) + 'static {
-    move |_| {
+) -> EventHandler<()> {
+    EventHandler::new(move |()| {
         let url = server_url.clone();
         let mut bust = bust;
         signals.uploading.set(true);
@@ -154,8 +171,9 @@ fn profile_avatar_remove_handler(
                     .set(Some(format!("Remove failed: {e}"))),
             }
             signals.uploading.set(false);
+            signals.confirm_remove.set(false);
         });
-    }
+    })
 }
 
 /// Read-only display values for `profile_avatar_section`, grouped so the
@@ -176,7 +194,7 @@ struct ProfileAvatarView<'a> {
 fn profile_avatar_section(
     view: ProfileAvatarView<'_>,
     on_pick_avatar: impl FnMut(Event<FormData>) + 'static,
-    on_remove_avatar: impl FnMut(Event<MouseData>) + 'static,
+    mut confirm_remove: Signal<bool>,
 ) -> Element {
     let ProfileAvatarView {
         user_id,
@@ -199,22 +217,20 @@ fn profile_avatar_section(
             }
             div { class: "profile-avatar-actions",
                 div { class: "profile-avatar-buttons",
-                    // A `<label>` rather than a button: it forwards the
-                    // click to the hidden file input, which is the only
-                    // element that can open the picker.
-                    label {
-                        class: "btn sm",
-                        r#for: "avatar-file",
+                    // The file input is the only element that can open the
+                    // picker; inside its label it stays in the tab order
+                    // (visually hidden) and the label shows its focus.
+                    label { class: "btn sm profile-avatar-pick",
+                        input {
+                            r#type: "file",
+                            id: "avatar-file",
+                            class: "profile-avatar-input",
+                            "data-testid": "avatar-file-input",
+                            accept: "image/jpeg,image/png,image/webp,image/gif",
+                            disabled: uploading,
+                            onchange: on_pick_avatar,
+                        }
                         "Change picture"
-                    }
-                    input {
-                        r#type: "file",
-                        id: "avatar-file",
-                        class: "profile-avatar-input",
-                        "data-testid": "avatar-file-input",
-                        accept: "image/jpeg,image/png,image/webp,image/gif",
-                        disabled: uploading,
-                        onchange: on_pick_avatar,
                     }
                     if has_avatar {
                         button {
@@ -222,16 +238,16 @@ fn profile_avatar_section(
                             class: "btn ghost sm",
                             "data-testid": "avatar-remove",
                             disabled: uploading,
-                            onclick: on_remove_avatar,
-                            "Remove"
+                            onclick: move |_| confirm_remove.set(true),
+                            "Remove picture"
                         }
                     }
                 }
-                p { class: "subtitle", "JPEG, PNG, WebP or GIF, up to 10 MB." }
+                p { class: "subtitle", "JPEG, PNG, WebP or GIF, up to 10\u{a0}MB." }
             }
         }
 
-        {credential_status_message("avatar-status", upload_error, true)}
+        {live_status("avatar-status", upload_error, true)}
     }
 }
 
@@ -241,6 +257,7 @@ fn profile_name_form(
     mut name_input: Signal<String>,
     mut msg: Signal<Option<String>>,
     in_flight: bool,
+    changed: bool,
     display: &str,
     on_save: impl FnMut(Event<FormData>) + 'static,
 ) -> Element {
@@ -273,9 +290,10 @@ fn profile_name_form(
                 button {
                     r#type: "submit",
                     class: "btn",
-                    disabled: in_flight,
+                    disabled: in_flight || !changed,
+                    "aria-busy": "{in_flight}",
                     "data-testid": "display-name-save",
-                    "Save"
+                    BusyLabel { busy: in_flight, label: "Save display name", busy_label: "Saving\u{2026}" }
                 }
             }
         }
@@ -300,15 +318,26 @@ pub(crate) fn ProfileCard() -> Element {
         in_flight: use_signal(|| false),
         uploading: use_signal(|| false),
         upload_error: use_signal(|| None::<String>),
+        confirm_remove: use_signal(|| false),
         seeded: use_signal(|| false),
     };
     use_profile_seed_hydration(current_user, signals);
+    let changed = use_memo(move || {
+        let saved = current_user().flatten().and_then(|u| u.display_name);
+        display_name_changed(
+            (signals.seeded)(),
+            &(signals.name_input)(),
+            saved.as_deref(),
+        )
+    });
+    use_unsaved_guard("display-name", changed);
 
     let user = current_user().flatten();
     let on_save = profile_save_handler(server_url.clone(), current_user, signals);
     let on_pick_avatar =
         profile_avatar_upload_handler(server_url.clone(), current_user, bust, signals);
     let on_remove_avatar = profile_avatar_remove_handler(server_url, current_user, bust, signals);
+    let mut confirm_remove = signals.confirm_remove;
 
     let has_avatar = user.as_ref().is_some_and(|u| u.has_avatar);
     let display = user
@@ -318,7 +347,7 @@ pub(crate) fn ProfileCard() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "account-profile-card",
-            h2 { "Account" }
+            h3 { "Profile" }
             p { class: "subtitle", "How you appear across the library." }
 
             {profile_avatar_section(
@@ -331,12 +360,27 @@ pub(crate) fn ProfileCard() -> Element {
                     upload_error: (signals.upload_error)().as_deref(),
                 },
                 on_pick_avatar,
-                on_remove_avatar,
+                confirm_remove,
             )}
 
-            {profile_name_form(signals.name_input, signals.msg, (signals.in_flight)(), &display, on_save)}
+            {profile_name_form(signals.name_input, signals.msg, (signals.in_flight)(), changed(), &display, on_save)}
 
-            {credential_status_message("profile-status", (signals.msg)().as_deref(), (signals.msg_is_error)())}
+            {live_status("profile-status", (signals.msg)().as_deref(), (signals.msg_is_error)())}
+
+            if confirm_remove() {
+                {confirm_dialog(
+                    Confirm {
+                        testid: "avatar-remove-dialog",
+                        title: "Remove your profile picture?",
+                        body: "Other readers will see your initials instead.",
+                        action: "Remove picture",
+                        busy_label: "Removing\u{2026}",
+                    },
+                    (signals.uploading)(),
+                    EventHandler::new(move |()| confirm_remove.set(false)),
+                    on_remove_avatar,
+                )}
+            }
         }
     }
 }

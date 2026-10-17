@@ -64,10 +64,10 @@ fn profile_card_renders_the_unresolved_steady_state_before_current_user_resolves
     assert!(html.contains("data-testid=\"display-name-input\""));
     assert!(html.contains("value=\"\""));
     // Nothing to remove and nothing to report until a resolved user says
-    // otherwise.
+    // otherwise — the status regions are mounted, but empty.
     assert!(!html.contains("data-testid=\"avatar-remove\""));
-    assert!(!html.contains("data-testid=\"avatar-status\""));
-    assert!(!html.contains("data-testid=\"profile-status\""));
+    assert!(html.contains(r#"class="settings-status" data-testid="avatar-status"></p>"#));
+    assert!(html.contains(r#"class="settings-status" data-testid="profile-status"></p>"#));
 }
 
 /// The `seeded` guard means `name_input` stays empty on first paint even
@@ -107,12 +107,12 @@ fn profile_card_hides_remove_and_the_avatar_url_when_the_user_has_none() {
 }
 
 /// `on_remove_avatar`'s error arm writes `"Remove failed: {e}"` into the
-/// same `avatar-status` slot rendered here via `credential_status_message`.
+/// same `avatar-status` slot rendered here via `live_status`.
 /// Unlike the upload-failure path, no Playwright spec drives a remove
 /// failure end-to-end, so this is the only coverage of this branch.
 #[test]
 fn avatar_status_slot_renders_a_remove_failure_with_error_styling() {
-    let html = render(credential_status_message(
+    let html = render(live_status(
         "avatar-status",
         Some("Remove failed: connection refused"),
         true,
@@ -126,7 +126,7 @@ fn avatar_status_slot_renders_a_remove_failure_with_error_styling() {
 /// same slot for a failed avatar pick.
 #[test]
 fn avatar_status_slot_renders_an_upload_failure_with_error_styling() {
-    let html = render(credential_status_message(
+    let html = render(live_status(
         "avatar-status",
         Some("Upload failed: 413 Payload Too Large"),
         true,
@@ -138,12 +138,65 @@ fn avatar_status_slot_renders_an_upload_failure_with_error_styling() {
 /// The confirmation `on_save` writes into `profile-status` on `Ok(())`.
 #[test]
 fn profile_status_slot_renders_the_save_confirmation_without_error_styling() {
-    let html = render(credential_status_message(
-        "profile-status",
-        Some("Profile saved."),
-        false,
-    ));
+    let html = render(live_status("profile-status", Some("Profile saved."), false));
     assert!(html.contains("data-testid=\"profile-status\""));
     assert!(html.contains("settings-status success"));
     assert!(!html.contains("settings-status error"));
+}
+
+#[test]
+fn display_name_changed_waits_for_the_name_to_seed() {
+    assert!(!display_name_changed(false, "Jane", Some("Old")));
+}
+
+#[test]
+fn display_name_changed_ignores_an_unchanged_name() {
+    assert!(!display_name_changed(true, " Jane Doe ", Some("Jane Doe")));
+}
+
+#[test]
+fn display_name_changed_sees_a_new_name() {
+    assert!(display_name_changed(true, "Jane", Some("Jane Doe")));
+}
+
+#[test]
+fn display_name_changed_sees_a_cleared_name() {
+    assert!(display_name_changed(true, "", Some("Jane Doe")));
+}
+
+#[test]
+fn profile_card_titles_itself_profile() {
+    let html = render_in_vdom(card_with_avatar);
+    assert!(html.contains("<h3>Profile</h3>"), "{html}");
+}
+
+#[test]
+fn profile_card_keeps_save_disabled_until_the_name_has_seeded() {
+    let html = render_in_vdom(card_with_avatar);
+    let at = html
+        .find(r#"data-testid="display-name-save""#)
+        .expect("the save button renders");
+    let button = &html[html[..at].rfind("<button").unwrap_or(0)..];
+    let button = &button[..button.find("</button>").unwrap_or(button.len())];
+    assert!(button.contains("disabled"), "{button}");
+    assert!(button.contains("Save display name"), "{button}");
+}
+
+#[test]
+fn profile_card_puts_the_avatar_picker_inside_its_label_for_the_keyboard() {
+    let html = render_in_vdom(card_with_avatar);
+    let label = html
+        .find("profile-avatar-pick")
+        .expect("the picker label renders");
+    let input = html
+        .find(r#"data-testid="avatar-file-input""#)
+        .expect("the file input renders");
+    let close = label + html[label..].find("</label>").unwrap_or(0);
+    assert!(label < input && input < close, "{html}");
+}
+
+#[test]
+fn profile_card_keeps_the_size_limit_on_one_line() {
+    let html = render_in_vdom(card_with_avatar);
+    assert!(html.contains("10\u{a0}MB"), "{html}");
 }

@@ -10955,7 +10955,19 @@ html {
 }
 .profile-avatar-buttons { display: flex; align-items: center; gap: 8px; }
 .profile-avatar-actions .subtitle { margin: 0; }
-.profile-avatar-input { display: none; }
+/* Visually hidden but focusable, inside its label: the label shows the focus. */
+.profile-avatar-pick { position: relative; }
+.profile-avatar-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  opacity: 0;
+}
+.profile-avatar-pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.profile-avatar-pick:has(input:disabled) { opacity: .5; cursor: default; }
 
 /* ── Cross-format alignment (modal + book-detail entry row) ─────────── */
 .al-modal {
