@@ -6,7 +6,10 @@ use omnibus_shared::{CleanupAction, CleanupKind, SuggestionCard};
 
 use super::card::{action_sentence, initial_value, is_editable, SuggestionCardView};
 use super::frame::{kind_label, kind_title, CleanupProgress};
-use super::{edited_value, review_key_action, ReviewKey};
+use super::{
+    applied_summary, edited_value, review_key_action, skip, Applied, PassDone, QueueState,
+    ReviewKey, Tally, UndoBar, UndoState,
+};
 use crate::test_support::{provide_current_user, render, render_in_vdom, test_user};
 
 fn card(kind: CleanupKind, action: CleanupAction) -> SuggestionCard {
@@ -280,4 +283,107 @@ fn suggestion_card_view_gives_a_delete_no_proposed_side() {
     assert!(!html.contains("cleanup-card-proposed"));
     assert_eq!(html.matches("calibre (0.7.23)").count(), 1);
     assert!(html.contains("accepting removes the record"));
+}
+
+/// A queue holding one card, with `in_flight` set as given.
+fn queue_with_one_card(in_flight: bool) -> QueueState {
+    QueueState {
+        cards: Signal::new(Some(vec![card(CleanupKind::Author, CleanupAction::Merge)])),
+        cursor: Signal::new(0),
+        error: Signal::new(None),
+        in_flight: Signal::new(in_flight),
+        draft: Signal::new(String::new()),
+        typing: Signal::new(false),
+        tally: Signal::new(Tally::default()),
+        undo: Signal::new(UndoState::None),
+        generation: Signal::new(0),
+    }
+}
+
+/// Run `f` inside a live root scope, so it can create signals. Unlike a
+/// component body, a panic here fails the test instead of being caught.
+fn in_root_scope(f: impl FnOnce()) {
+    let mut dom = VirtualDom::new(|| rsx! {});
+    dom.rebuild_in_place();
+    dom.in_scope(ScopeId::ROOT, f);
+}
+
+#[test]
+fn skip_stays_on_the_card_while_its_decision_is_in_flight() {
+    in_root_scope(|| {
+        let state = queue_with_one_card(true);
+        skip(state);
+        // The decide's own success advances; a skip on top would pass the next
+        // card unreviewed.
+        assert_eq!((state.cursor)(), 0);
+        assert_eq!((state.tally)().skipped, 0);
+    });
+}
+
+#[test]
+fn applied_summary_names_what_each_action_changed() {
+    let merge = card(CleanupKind::Author, CleanupAction::Merge);
+    assert_eq!(
+        applied_summary(&merge, "Mary Shelley"),
+        "Merged into \u{201c}Mary Shelley\u{201d}."
+    );
+    assert_eq!(
+        applied_summary(&rename_card(), "Frankenstein; or, The Modern Prometheus"),
+        "Renamed to \u{201c}Frankenstein; or, The Modern Prometheus\u{201d}."
+    );
+    let mut del = card(CleanupKind::Author, CleanupAction::Delete);
+    del.primary_name = "calibre (0.7.23)".into();
+    assert_eq!(
+        applied_summary(&del, ""),
+        "Deleted \u{201c}calibre (0.7.23)\u{201d}."
+    );
+    let mut split = card(CleanupKind::Tag, CleanupAction::Split);
+    split.primary_name = "Fiction; Poland".into();
+    assert_eq!(
+        applied_summary(&split, ""),
+        "Split \u{201c}Fiction; Poland\u{201d}."
+    );
+}
+
+/// Supplies the bar's handler from inside a component, where one can exist.
+#[component]
+fn UndoHarness(state: UndoState) -> Element {
+    rsx! { UndoBar { state, busy: false, on_undo: move |()| {} } }
+}
+
+#[test]
+fn undo_bar_offers_to_undo_the_last_applied_change() {
+    let state = UndoState::Offer(Applied {
+        log_id: 7,
+        summary: "Merged into \u{201c}Mary Shelley\u{201d}.".into(),
+    });
+    let html = render(rsx! { UndoHarness { state } });
+    assert!(
+        html.contains("Merged into \u{201c}Mary Shelley\u{201d}."),
+        "{html}"
+    );
+    assert!(html.contains(r#"data-testid="cleanup-undo""#), "{html}");
+}
+
+#[test]
+fn undo_bar_reports_an_undone_change_without_offering_it_again() {
+    let html = render(rsx! { UndoHarness { state: UndoState::Undone } });
+    assert!(html.contains("cleanup-undone"), "{html}");
+    assert!(!html.contains(r#"data-testid="cleanup-undo""#), "{html}");
+}
+
+#[test]
+fn undo_bar_renders_nothing_before_a_change_is_applied() {
+    let html = render(rsx! { UndoHarness { state: UndoState::None } });
+    assert!(!html.contains("cleanup-undo"), "{html}");
+}
+
+#[test]
+fn pass_done_no_longer_promises_an_undo_from_logs() {
+    let tally = Tally {
+        accepted: 1,
+        ..Tally::default()
+    };
+    let html = render(rsx! { PassDone { tally } });
+    assert!(!html.contains("Logs"), "{html}");
 }

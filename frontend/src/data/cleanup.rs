@@ -86,14 +86,14 @@ pub async fn get_cleanup_queue(
 
 /// Web/SSR: record an Accept / Reject on one suggestion. Accepting also runs
 /// the apply primitive server-side, so this returns only once the library has
-/// actually changed.
+/// actually changed — with the `cleanup_log` id [`undo_cleanup`] takes.
 #[cfg(not(feature = "mobile"))]
 pub async fn decide_cleanup_suggestion(
     _server_url: &str,
     id: i64,
     decision: Decision,
     value: Option<String>,
-) -> Result<(), DataError> {
+) -> Result<Option<i64>, DataError> {
     crate::rpc::rpc_cleanup_decide(id, decision, value)
         .await
         .map_err(note_server_fn_err)
@@ -108,7 +108,7 @@ pub async fn decide_cleanup_suggestion(
     id: i64,
     decision: Decision,
     value: Option<String>,
-) -> Result<(), DataError> {
+) -> Result<Option<i64>, DataError> {
     post_cleanup(
         server_url,
         "decide",

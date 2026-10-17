@@ -181,6 +181,7 @@ pub fn DecideBar(
             button {
                 class: "btn ghost",
                 "data-testid": "cleanup-skip",
+                disabled: in_flight,
                 onclick: move |_| on_skip.call(()),
                 "Skip (Space)"
             }
@@ -197,7 +198,7 @@ fn decide_note(edited: bool, editable: bool) -> &'static str {
     if edited {
         "your wording replaces the proposal"
     } else if editable {
-        "accepting applies at once \u{b7} undo from Logs"
+        "accepting applies at once \u{b7} you can undo it"
     } else {
         "accepting applies at once"
     }

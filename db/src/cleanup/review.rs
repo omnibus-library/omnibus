@@ -132,14 +132,15 @@ pub async fn review_queue(
 /// applies first and stamps after, so a failed accept never records as applied;
 /// [`Decision::Rejected`] only stamps; [`Decision::Pending`] is refused.
 /// `edited_value` replaces the detector's proposal; only a book-title rename
-/// honours it, any other kind refuses it, and a reject ignores it.
+/// honours it, any other kind refuses it, and a reject ignores it. Returns the
+/// applied change's `cleanup_log` id (what [`super::undo`] takes), `None` for a reject.
 pub async fn decide_suggestion(
     pool: &SqlitePool,
     id: i64,
     decision: Decision,
     admin_id: i64,
     edited_value: Option<&str>,
-) -> Result<(), CleanupStoreError> {
+) -> Result<Option<i64>, CleanupStoreError> {
     if decision == Decision::Pending {
         return Err(CleanupStoreError::Refused(
             "decision must be accepted or rejected".to_string(),
@@ -153,11 +154,12 @@ pub async fn decide_suggestion(
             "suggestion has already been reviewed".to_string(),
         ));
     }
-    if decision == Decision::Accepted {
-        apply_suggestion(pool, &row, admin_id, edited_value).await?;
-    }
+    let log_id = match decision {
+        Decision::Accepted => Some(apply_suggestion(pool, &row, admin_id, edited_value).await?),
+        _ => None,
+    };
     record_decision(pool, id, decision, admin_id).await?;
-    Ok(())
+    Ok(log_id)
 }
 
 /// The title an accepted rename writes: the reviewer's wording when they typed
@@ -348,15 +350,16 @@ async fn card_photo_url(
     Ok(has_photo.map(|_| format!("/api/authors/{author_id}/photo")))
 }
 
-/// Run the apply primitive an accepted suggestion names. Every unsupported
-/// `(kind, action)` pair is a stored row this build has no primitive for, so
-/// it reports rather than silently recording an accept that did nothing.
+/// Run the apply primitive an accepted suggestion names, returning its
+/// `cleanup_log` id. Every unsupported `(kind, action)` pair is a stored row
+/// this build has no primitive for, so it reports rather than silently
+/// recording an accept that did nothing.
 async fn apply_suggestion(
     pool: &SqlitePool,
     row: &SuggestionRow,
     admin_id: i64,
     edited_value: Option<&str>,
-) -> Result<(), CleanupStoreError> {
+) -> Result<i64, CleanupStoreError> {
     let id = Some(row.id);
     let by = Some(admin_id);
     if edited_value.is_some()
@@ -366,7 +369,7 @@ async fn apply_suggestion(
             "this suggestion's value cannot be edited yet".to_string(),
         ));
     }
-    match (row.kind, row.action, &row.payload) {
+    let log_id = match (row.kind, row.action, &row.payload) {
         (
             CleanupKind::Author,
             CleanupAction::Merge,
@@ -425,7 +428,7 @@ async fn apply_suggestion(
             ))
         }
     };
-    Ok(())
+    Ok(log_id)
 }
 
 /// Stamp the decision, the reviewing admin, and the review time onto the row.
