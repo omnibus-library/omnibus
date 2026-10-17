@@ -135,6 +135,8 @@ pub use delete_book_dialog::DeleteBookDialog;
 
 #[cfg(not(feature = "mobile"))]
 pub mod search_palette;
+pub mod setting_row;
+pub mod unsaved;
 
 // F0.5 / issue #69 worker-progress indicator. Mounted on the settings
 // page today; the data plane is generic so future surfaces (e.g. the

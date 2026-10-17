@@ -7,7 +7,7 @@ use dioxus_router::{use_navigator, Link};
 use omnibus_shared::{ProgressFormat, ResumePoint, UserSummary};
 
 use crate::components::atrium::{Cover, Theme};
-use crate::components::glyphs::{book_glyph, play_glyph};
+use crate::components::glyphs::{book_glyph, play_glyph, server_glyph, sliders_glyph};
 use crate::components::loading::{Skeleton, SkeletonShape};
 use crate::components::user_avatar::UserAvatar;
 use crate::focus_after_paint::focus_after_paint;
@@ -219,7 +219,7 @@ fn UmHeader(user: UserSummary, open: Signal<bool>) -> Element {
             }
             Link {
                 class: "um-edit",
-                to: Route::Settings { section: Some("account".to_string()) },
+                to: Route::Settings { section: Some("profile".to_string()) },
                 onclick: move |_| open.set(false),
                 "Edit"
             }
@@ -340,11 +340,9 @@ fn um_now_reading_row(point: ResumePoint) -> Element {
     }
 }
 
-/// Account-scoped linear rows. Everything an account needs now lives under
-/// Settings (Account, server config, and Logs are all sections there), so this
-/// is a single Settings row that closes the menu on click. Admins also get a
-/// "Server health" row to `/admin/health` — hidden for everyone else,
-/// mirroring how the Settings sidebar hides its own admin-only sections.
+/// Account-scoped linear rows: personal Settings for everyone, and
+/// Administration (server configuration, health and logs) for admins only.
+/// Each closes the menu on click.
 #[cfg(any(feature = "web", feature = "server"))]
 #[component]
 fn UmAccountRows(open: Signal<bool>, is_admin: bool) -> Element {
@@ -355,17 +353,17 @@ fn UmAccountRows(open: Signal<bool>, is_admin: bool) -> Element {
                 to: crate::routes::link_target(Route::Settings { section: None }),
                 class: "um-row",
                 onclick: move |_| open.set(false),
-                span { class: "um-row-icon", "⚙" }
+                span { class: "um-row-icon", {sliders_glyph(16)} }
                 span { class: "um-row-label", "Settings" }
             }
             if is_admin {
                 Link {
-                    to: Route::AdminHealth {},
+                    to: crate::routes::link_target(Route::Admin { section: None, tab: None }),
                     class: "um-row",
-                    "data-testid": "user-menu-admin-health",
+                    "data-testid": "user-menu-admin",
                     onclick: move |_| open.set(false),
-                    span { class: "um-row-icon", "⚕" }
-                    span { class: "um-row-label", "Server health" }
+                    span { class: "um-row-icon", {server_glyph(16)} }
+                    span { class: "um-row-label", "Administration" }
                 }
             }
         }

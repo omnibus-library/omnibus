@@ -15,7 +15,7 @@ pub(crate) mod hidden_formats;
 // The one place all three reading goals are set (annual + the two dailies).
 // The stats page renders them and never edits them.
 #[cfg(not(feature = "mobile"))]
-mod goals;
+pub(crate) mod goals;
 // Send-to-Kindle address card, rendered as its own Settings section.
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod kindle;
@@ -23,13 +23,13 @@ pub(crate) mod kindle;
 pub(crate) mod kobo;
 // Display name + avatar, at the top of the Account section.
 #[cfg(not(feature = "mobile"))]
-mod profile;
+pub(crate) mod profile;
 // The per-user feature switches table, above the goals it sits beside.
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod user_settings;
 // Self-service "Your sessions" card (F5.4, #910).
 #[cfg(not(feature = "mobile"))]
-mod sessions;
+pub(crate) mod sessions;
 
 #[cfg(not(feature = "mobile"))]
 use crate::components::auth::{score_password, PasswordRequirements, StrengthMeter};
@@ -207,7 +207,7 @@ fn change_password_submit_handler(
 /// wrong current password or a policy rejection without clearing the form.
 #[cfg(not(feature = "mobile"))]
 #[component]
-fn ChangePasswordCard() -> Element {
+pub(crate) fn ChangePasswordCard() -> Element {
     let server_url = use_server_url();
     let signals = ChangePasswordSignals {
         current: use_signal(String::new),

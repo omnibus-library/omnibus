@@ -23,9 +23,9 @@ use crate::Access;
 /// small and this page has one viewer at a time.
 const POLL_INTERVAL_MS: u32 = 5_000;
 
-/// The `/admin/health` page.
+/// The Overview tab of Administration › Health & activity.
 #[component]
-pub fn AdminHealthPage() -> Element {
+pub fn HealthOverview() -> Element {
     let access = crate::use_admin_access();
     let result = use_signal(|| None::<AdminHealthReport>);
     let error = use_signal(|| false);
@@ -34,16 +34,10 @@ pub fn AdminHealthPage() -> Element {
 
     rsx! {
         div { class: "ah-page", "data-testid": "admin-health-page",
-            header { class: "ah-head",
-                h1 { "Server health" }
-                p { class: "subtitle",
-                    "Index status, worker queue, search index, storage, and recent errors."
-                }
-            }
             match access() {
                 Access::Allowed => rsx! { AdminHealthBody { result, error } },
                 Access::Unknown => rsx! {
-                    Loading { kind: LoadingKind::Page, label: "Checking your access" }
+                    Loading { kind: LoadingKind::Section, label: "Checking your access" }
                 },
                 Access::Denied => rsx! {
                     p { class: "settings-status error", "data-testid": "admin-health-forbidden",

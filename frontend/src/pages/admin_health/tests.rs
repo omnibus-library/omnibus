@@ -285,19 +285,19 @@ fn last_errors_card_renders_a_row_per_entry() {
 // ---------- access gate (first paint vs resolved) ----------
 
 #[test]
-fn admin_health_page_first_paint_checks_access_rather_than_refusing() {
-    let html = crate::test_support::render_in_vdom(|| rsx! { AdminHealthPage {} });
+fn health_overview_first_paint_checks_access_rather_than_refusing() {
+    let html = crate::test_support::render_in_vdom(|| rsx! { HealthOverview {} });
     assert!(html.contains("Checking your access"), "{html}");
     assert!(!html.contains("admin-health-forbidden"), "{html}");
 }
 
 #[test]
-fn admin_health_page_refuses_a_resolved_reader_who_is_not_an_admin() {
+fn health_overview_refuses_a_resolved_reader_who_is_not_an_admin() {
     fn app() -> Element {
         crate::test_support::provide_current_user(Some(Some(crate::test_support::test_user(
             false, true,
         ))));
-        rsx! { AdminHealthPage {} }
+        rsx! { HealthOverview {} }
     }
     let html = crate::test_support::render_in_vdom(app);
     assert!(html.contains("admin-health-forbidden"), "{html}");

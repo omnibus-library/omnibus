@@ -44,7 +44,11 @@ mod stats;
 pub use account::AccountPage;
 pub use add_books::AddBooksPage;
 #[cfg(not(feature = "mobile"))]
-pub use admin_health::AdminHealthPage;
+pub(crate) use admin::sections::admin_page_title;
+#[cfg(not(feature = "mobile"))]
+pub use admin::AdminPage;
+#[cfg(not(feature = "mobile"))]
+pub use admin_health::HealthOverview;
 pub use auth::{LoginPage, RegisterPage};
 pub use author::AuthorPage;
 pub use authors_index::AuthorsIndexPage;
@@ -79,6 +83,7 @@ pub use search_mobile::MobileSearchPage;
 pub use series::SeriesPage;
 pub use series_index::SeriesIndexPage;
 pub use server_connect::ServerConnectPage;
+pub(crate) use settings::sections::settings_page_title;
 pub use settings::SettingsPage;
 pub use shelf_detail::ShelfDetailPage;
 pub use shelves_index::ShelvesIndexPage;

@@ -24,6 +24,13 @@ pub enum Route {
     #[route("/settings?:section")]
     Settings { section: Option<String> },
     #[route("/settings/cleanup/:kind")]
+    LegacyCleanupReview { kind: String },
+    #[route("/admin?:section&:tab")]
+    Admin {
+        section: Option<String>,
+        tab: Option<String>,
+    },
+    #[route("/admin/cleanup/:kind")]
     CleanupReview { kind: String },
     #[route("/logs")]
     Logs {},
@@ -110,13 +117,55 @@ pub fn Landing() -> Element {
 /// section on web; the mobile shell ignores it.
 #[component]
 pub fn Settings(section: Option<String>) -> Element {
-    use_page_title(|| Some("Settings".into()));
+    let title = use_memo(use_reactive!(|section| {
+        crate::pages::settings_page_title(section.as_deref())
+    }));
+    use_page_title(move || Some(title()));
     rsx! {
         ScreenLayout { SettingsPage { section } }
     }
 }
 
-/// Route target for `/settings/cleanup/:kind` — the one-card-at-a-time
+/// Route target for `/admin` — server administration, wrapped in the platform
+/// screen layout. `section` and `tab` pick the sidebar section and, inside
+/// Health & activity, its tab.
+#[cfg(not(feature = "mobile"))]
+#[component]
+pub fn Admin(section: Option<String>, tab: Option<String>) -> Element {
+    let title = use_memo(use_reactive!(|section, tab| {
+        crate::pages::admin_page_title(section.as_deref(), tab.as_deref())
+    }));
+    use_page_title(move || Some(title()));
+    rsx! {
+        ScreenLayout { AdminPage { section, tab } }
+    }
+}
+
+/// Mobile stub for `/admin`: the native shell's flat settings page carries the
+/// admin cards it supports, so open that.
+#[cfg(feature = "mobile")]
+#[component]
+pub fn Admin(section: Option<String>, tab: Option<String>) -> Element {
+    let _ = (section, tab);
+    let nav = dioxus_router::use_navigator();
+    use_effect(move || {
+        nav.replace(Route::Settings { section: None });
+    });
+    redirecting("Opening settings")
+}
+
+/// Route target for `/settings/cleanup/:kind`, the review queue's address
+/// before it moved under `/admin`; redirects so old links keep working.
+#[component]
+pub fn LegacyCleanupReview(kind: String) -> Element {
+    let nav = dioxus_router::use_navigator();
+    use_effect(move || {
+        nav.replace(Route::CleanupReview { kind: kind.clone() });
+    });
+    redirecting("Opening library cleanup")
+}
+
+/// Route target for `/admin/cleanup/:kind` — the one-card-at-a-time
 /// library-cleanup review queue, wrapped in the platform screen layout.
 /// Web/server only; the in-page `use_is_admin` gate (backed by the
 /// `AdminUser`-gated `cleanup/*` server functions) keeps the chrome off a
@@ -130,7 +179,7 @@ pub fn CleanupReview(kind: String) -> Element {
     }
 }
 
-/// Mobile stub for `/settings/cleanup/:kind`: redirect to the landing page —
+/// Mobile stub for `/admin/cleanup/:kind`: redirect to the landing page —
 /// there is no cleanup review surface on mobile.
 #[cfg(feature = "mobile")]
 #[component]
@@ -143,17 +192,18 @@ pub fn CleanupReview(kind: String) -> Element {
     redirecting(TO_LIBRARY)
 }
 
-/// Route target for `/logs` — the server log viewer now lives inside Settings
-/// as the admin-only Logs section, so the standalone route is a redirect that
-/// keeps old bookmarks working. Mobile has no log viewer, so it redirects to
-/// the landing page instead.
+/// Route target for `/logs` — the server log viewer is the Logs tab of
+/// Administration › Health & activity, so the standalone route is a redirect
+/// that keeps old bookmarks working. Mobile has no log viewer, so it
+/// redirects to the landing page instead.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn Logs() -> Element {
     let nav = dioxus_router::use_navigator();
     use_effect(move || {
-        nav.replace(Route::Settings {
-            section: Some("logs".into()),
+        nav.replace(Route::Admin {
+            section: Some("health".into()),
+            tab: Some("logs".into()),
         });
     });
     redirecting("Opening the logs")
@@ -171,17 +221,19 @@ pub fn Logs() -> Element {
     redirecting(TO_LIBRARY)
 }
 
-/// Route target for `/admin/health` — wraps [`AdminHealthPage`] in
-/// the platform screen layout. Web/server only; the in-page `use_is_admin`
-/// gate (backed by the `AdminUser`-gated `rpc_get_admin_health`) keeps the
-/// chrome off a non-admin screen (AC2/AC4).
+/// Route target for `/admin/health` — server health is the Overview tab of
+/// Administration › Health & activity now, so this redirects there.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn AdminHealth() -> Element {
-    use_page_title(|| Some("Server health".into()));
-    rsx! {
-        ScreenLayout { AdminHealthPage {} }
-    }
+    let nav = dioxus_router::use_navigator();
+    use_effect(move || {
+        nav.replace(Route::Admin {
+            section: Some("health".into()),
+            tab: None,
+        });
+    });
+    redirecting("Opening server health")
 }
 
 /// Mobile stub for `/admin/health`: redirect to the landing page — there is
@@ -628,6 +680,65 @@ mod tests {
         assert_eq!(
             Route::from_str("/stats?user=7").unwrap(),
             Route::Stats { user: Some(7) }
+        );
+    }
+
+    #[test]
+    fn route_from_str_parses_admin_with_its_section_and_tab() {
+        assert_eq!(
+            Route::from_str("/admin").unwrap(),
+            Route::Admin {
+                section: None,
+                tab: None
+            }
+        );
+        assert_eq!(
+            Route::from_str("/admin?section=health&tab=logs").unwrap(),
+            Route::Admin {
+                section: Some("health".into()),
+                tab: Some("logs".into())
+            }
+        );
+    }
+
+    #[test]
+    fn route_from_str_parses_the_cleanup_review_under_admin() {
+        assert_eq!(
+            Route::from_str("/admin/cleanup/authors").unwrap(),
+            Route::CleanupReview {
+                kind: "authors".into()
+            }
+        );
+        assert_eq!(
+            Route::from_str("/settings/cleanup/authors").unwrap(),
+            Route::LegacyCleanupReview {
+                kind: "authors".into()
+            }
+        );
+    }
+
+    #[test]
+    fn link_target_writes_only_the_admin_arguments_that_are_set() {
+        assert_eq!(
+            link_target(Route::Admin {
+                section: None,
+                tab: None
+            }),
+            NavigationTarget::Internal("/admin".into())
+        );
+        assert_eq!(
+            link_target(Route::Admin {
+                section: Some("people".into()),
+                tab: None
+            }),
+            NavigationTarget::Internal("/admin?section=people".into())
+        );
+        assert_eq!(
+            link_target(Route::Admin {
+                section: Some("health".into()),
+                tab: Some("logs".into())
+            }),
+            NavigationTarget::Internal("/admin?section=health&tab=logs".into())
         );
     }
 

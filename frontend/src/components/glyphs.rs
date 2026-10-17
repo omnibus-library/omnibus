@@ -79,3 +79,32 @@ pub fn sparkle_glyph(size: u32) -> Element {
         }
     }
 }
+
+/// Three sliders — the user menu's way into personal settings.
+pub fn sliders_glyph(size: u32) -> Element {
+    rsx! {
+        svg {
+            width: "{size}", height: "{size}", view_box: "0 0 24 24", fill: "none",
+            stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
+            "aria-hidden": "true",
+            path { d: "M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" }
+            circle { cx: "15", cy: "6", r: "2" }
+            circle { cx: "9", cy: "12", r: "2" }
+            circle { cx: "17", cy: "18", r: "2" }
+        }
+    }
+}
+
+/// Two stacked server units — the user menu's way into Administration.
+pub fn server_glyph(size: u32) -> Element {
+    rsx! {
+        svg {
+            width: "{size}", height: "{size}", view_box: "0 0 24 24", fill: "none",
+            stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
+            "aria-hidden": "true",
+            rect { x: "3", y: "4", width: "18", height: "7", rx: "2" }
+            rect { x: "3", y: "13", width: "18", height: "7", rx: "2" }
+            path { d: "M7 7.5h.01M7 16.5h.01" }
+        }
+    }
+}

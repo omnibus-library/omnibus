@@ -2,8 +2,11 @@
 //! older `?section=` links (from before server administration moved to
 //! `/admin`) find their new home. Pure, so routing decisions are unit-tested
 //! apart from any render.
+// The mobile shell has no sidebar or `/admin`; it reads only the page title.
+#![cfg_attr(feature = "mobile", allow(dead_code))]
 
 use crate::pages::admin::sections::{AdminSection, HealthTab};
+use crate::Route;
 
 /// A section of the personal `/settings` page. Every reader sees all five.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,6 +97,19 @@ impl SettingsTarget {
     /// Whether only an administrator can open this target.
     pub(crate) fn requires_admin(self) -> bool {
         matches!(self, SettingsTarget::Admin(..))
+    }
+
+    /// The route that opens this target.
+    pub(crate) fn route(self) -> Route {
+        match self {
+            SettingsTarget::Personal(section) => Route::Settings {
+                section: Some(section.slug().to_string()),
+            },
+            SettingsTarget::Admin(section, tab) => Route::Admin {
+                section: Some(section.slug().to_string()),
+                tab: tab.map(|tab| tab.slug().to_string()),
+            },
+        }
     }
 }
 

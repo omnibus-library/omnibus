@@ -22,10 +22,6 @@ pub fn TopNav() -> Element {
     let route = use_route::<Route>();
     let nav = use_navigator();
     let mut check_in_open = use_context::<CheckInOpen>().0;
-    // Hide the search trigger on `/settings` — the page has its own dense
-    // form layout and a search button wedged into the nav above it just
-    // clutters the chrome.
-    let on_settings = matches!(route, Route::Settings { .. });
     let is_library = matches!(route, Route::Landing {});
     let is_authors = matches!(route, Route::AuthorsIndex {} | Route::AuthorDetail { .. });
     let is_series = matches!(route, Route::SeriesIndex {} | Route::SeriesDetail { .. });
@@ -62,9 +58,7 @@ pub fn TopNav() -> Element {
                     "Stats"
                 }
             }
-            if !on_settings {
-                SearchPaletteTrigger {}
-            }
+            SearchPaletteTrigger {}
             div { class: "atrium-actions",
                 button {
                     class: "btn sm",

@@ -226,7 +226,7 @@ mod tests {
         let html = render_in_vdom(|| rsx! { Router::<RowRoute> {} });
         assert!(html.contains("Tags"));
         assert!(html.contains("4 pending"));
-        assert!(html.contains("/settings/cleanup/tag"));
+        assert!(html.contains("/admin/cleanup/tag"));
     }
 
     #[derive(Clone, Debug, PartialEq, Routable)]

@@ -104,3 +104,32 @@ fn matching_settings_returns_nothing_for_a_blank_query() {
 fn matching_settings_returns_at_most_five_entries() {
     assert_eq!(matching_settings("e", true).len(), 5);
 }
+
+#[test]
+fn settings_target_route_opens_a_personal_section_under_settings() {
+    assert_eq!(
+        SettingsTarget::Personal(SettingsSection::Devices).route(),
+        Route::Settings {
+            section: Some("devices".into())
+        }
+    );
+}
+
+#[test]
+fn settings_target_route_opens_an_admin_section_and_tab_under_admin() {
+    use crate::pages::admin::sections::{AdminSection, HealthTab};
+    assert_eq!(
+        SettingsTarget::Admin(AdminSection::Sources, None).route(),
+        Route::Admin {
+            section: Some("sources".into()),
+            tab: None
+        }
+    );
+    assert_eq!(
+        SettingsTarget::Admin(AdminSection::Health, Some(HealthTab::Logs)).route(),
+        Route::Admin {
+            section: Some("health".into()),
+            tab: Some("logs".into())
+        }
+    );
+}

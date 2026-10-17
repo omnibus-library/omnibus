@@ -1,6 +1,8 @@
 //! The sections of server administration (`/admin`) and the tabs of its
 //! Health & activity section. Pure, so the routing decisions are unit-tested
 //! apart from any render.
+// The mobile shell has no sidebar or `/admin`; it reads only the page title.
+#![cfg_attr(feature = "mobile", allow(dead_code))]
 
 /// A section of `/admin`, grouped in the sidebar as Library and Server.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

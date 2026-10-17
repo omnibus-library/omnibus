@@ -1,8 +1,7 @@
-//! Library Location settings section — the library-path form plus live file
-//! summaries. The card an admin uses to point Omnibus at ebook and audiobook
-//! directories, set the automatic-rescan interval, and kick off one-off
-//! maintenance jobs. Recursive per-extension counts from the scanner let path
-//! changes be eyeballed before saving.
+//! Library sources — the library-path form plus live file summaries, and the
+//! separate maintenance panel. The form points Omnibus at ebook and audiobook
+//! directories and sets the automatic-rescan interval; recursive per-extension
+//! counts from the scanner let path changes be eyeballed before saving.
 
 use dioxus::prelude::*;
 use omnibus_shared::{LibraryContents, LibrarySection, Settings, SCAN_INTERVAL_MIN_HOURS};
@@ -22,10 +21,6 @@ pub fn LibraryLocationSection() -> Element {
     let status = use_signal(|| None::<String>);
     let status_is_error = use_signal(|| false);
     let library = use_signal(LibraryContents::default);
-    let refetch_in_flight = use_signal(|| false);
-    let backfill_in_flight = use_signal(|| false);
-    let scan_in_flight = use_signal(|| false);
-    let rewrite_in_flight = use_signal(|| false);
     // Bumped after a successful save to re-trigger the library-refresh effect.
     let library_refresh = use_signal(|| 0u32);
 
@@ -64,27 +59,48 @@ pub fn LibraryLocationSection() -> Element {
                     library,
                 }
                 ScanIntervalField { scan_interval_hours }
-                {worker_status_slot()}
 
                 div { class: "settings-actions",
                     button { r#type: "submit", class: "btn", "Save" }
-                    MaintenanceActions {
-                        io: MaintenanceIo {
-                            status,
-                            status_is_error,
-                            refetch_in_flight,
-                            backfill_in_flight,
-                            scan_in_flight,
-                            rewrite_in_flight,
-                            library_refresh,
-                        },
-                    }
                 }
             }
 
             p {
                 id: "settings-status",
                 "data-testid": "settings-status",
+                role: "status",
+                class: if status_is_error() { "settings-status error" } else { "settings-status success" },
+                if let Some(msg) = status() { "{msg}" }
+            }
+        }
+    }
+}
+
+/// The one-off maintenance jobs (rescan, author photos, chapters, EPUB
+/// overrides) with their shared status line and the worker's live status.
+/// Commands, not configuration, so they sit apart from the library form.
+#[component]
+pub(crate) fn MaintenancePanel() -> Element {
+    let status = use_signal(|| None::<String>);
+    let status_is_error = use_signal(|| false);
+    let io = MaintenanceIo {
+        status,
+        status_is_error,
+        refetch_in_flight: use_signal(|| false),
+        backfill_in_flight: use_signal(|| false),
+        scan_in_flight: use_signal(|| false),
+        rewrite_in_flight: use_signal(|| false),
+        library_refresh: use_signal(|| 0u32),
+    };
+
+    rsx! {
+        section { class: "card", "data-testid": "maintenance-card",
+            h3 { "Maintenance" }
+            p { class: "subtitle", "One-off jobs that run on the server's background worker." }
+            {worker_status_slot()}
+            div { class: "settings-actions", MaintenanceActions { io } }
+            p {
+                "data-testid": "maintenance-status",
                 role: "status",
                 class: if status_is_error() { "settings-status error" } else { "settings-status success" },
                 if let Some(msg) = status() { "{msg}" }
