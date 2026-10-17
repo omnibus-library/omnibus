@@ -87,6 +87,7 @@ test.describe("immersive read", () => {
       await bookDetailPage.goto(dualFormatUuid);
     });
 
+    // The reader's read-status write on open goes unasserted here.
     await test.step("read it immersively", async () => {
       await bookDetailPage.readImmersively();
       await epubReaderPage.assertDisplayedFor(dualFormatUuid);

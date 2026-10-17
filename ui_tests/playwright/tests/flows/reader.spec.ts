@@ -1442,6 +1442,7 @@ test.describe("epub reader", () => {
         await epubReaderPage.openAnnotations();
         await expect(epubReaderPage.annotationsSheet).toBeVisible();
         await epubReaderPage.filterAnnotationsToBookmarks();
+        await expect(epubReaderPage.annotationsSheet).toBeVisible();
       });
 
       await test.step("close it with escape", async () => {

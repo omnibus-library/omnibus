@@ -8,7 +8,7 @@ export class MiniDockComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
-    this.root = page.getByTestId("mini-dock");
+    this.root = page.getByRole("region", { name: "Now playing" });
     this.titleLabel = this.root.getByTestId("mini-dock-title");
   }
 }
