@@ -136,7 +136,7 @@ test.describe("check-in link to an existing book", () => {
 
     await test.step("look up the placeholder isbn", async () => {
       await flow.stubIsbnLookup(notInLibrary(PLACEHOLDER));
-      await flow.forceServerError(scan.checkIn(book));
+      await checkInPage.forceServerError(scan.checkIn(book));
       await checkInPage.goto();
       await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
       await expect(flow.chooseScreen).toBeVisible();

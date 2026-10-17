@@ -9,7 +9,6 @@ import { ReaderGesturesComponent } from "../components/ReaderGesturesComponent";
 import { ReaderSectionComponent } from "../components/ReaderSectionComponent";
 import { progressUrls } from "../contracts/progress";
 import { expect } from "../fixtures/test";
-import type { ExpectMutationOptions } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /**
@@ -294,19 +293,6 @@ export class EpubReaderPage extends BasePage {
     });
   }
 
-  /** Fails every request `contract` describes from this page with a 500. */
-  async forceServerError(contract: ExpectMutationOptions): Promise<void> {
-    await this.page.route(contract.url, (route) =>
-      route.request().method() === contract.method
-        ? route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          })
-        : route.continue(),
-    );
-  }
-
   /** Serves `epub` as the book's file and keeps progress off the server. */
   async stubBookFile(bookUuid: string, epub: Buffer): Promise<void> {
     await this.page.route(`**/api/ebooks/${bookUuid}/file**`, (route) =>
@@ -347,11 +333,5 @@ export class EpubReaderPage extends BasePage {
       }
     });
     return refusals;
-  }
-
-  /** Opens `path`, then waits for the page's first fetches to settle. */
-  private async openAndSettle(path: string): Promise<void> {
-    await this.open(path);
-    await this.page.waitForLoadState("networkidle");
   }
 }

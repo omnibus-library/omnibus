@@ -125,7 +125,7 @@ test.describe("check-in lookup outcomes", () => {
       await flow.stubIsbnLookup(
         inLibraryUnowned(libraryBook(TARGET, book.uuid)),
       );
-      await flow.forceServerError(scan.checkIn(book));
+      await checkInPage.forceServerError(scan.checkIn(book));
       await checkInPage.goto();
       await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
       await expect(flow.confirmScreen).toBeVisible();
