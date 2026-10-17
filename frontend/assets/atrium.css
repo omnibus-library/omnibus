@@ -13272,3 +13272,32 @@ html {
   .mes-scrim, .mes-panel,
   .check-in-overlay-scrim, .check-in-overlay-panel { animation: none; }
 }
+
+/* ── Settings · personal sections (#2763) ── */
+
+/* An autosaving control: its inline status, then the control. The status
+   span stays mounted (a live region) and only takes room once it speaks. */
+.pref-control { display: flex; align-items: center; }
+.pref-status { font-size: 0.8rem; color: var(--ink-2); }
+.pref-status:not(:empty) { margin-right: 0.75rem; }
+.pref-status.error { color: var(--bad); }
+
+/* Hidden formats: a fieldset drawn as one more settings row. The floated
+   legend lays out as ordinary content instead of sitting on the border. */
+.pref-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0.9rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.pref-fieldset:last-child { border-bottom: 0; }
+.pref-fieldset > legend { float: left; width: 100%; padding: 0; cursor: default; }
+.pref-fieldset > legend + * { clear: both; }
+.pref-fieldset .hidden-formats-list { margin-top: 0.75rem; }
+.pref-fieldset .pref-status { display: block; margin: 0.5rem 0 0; }
+
+/* A copy button's outcome, beside it. */
+.copy-feedback { font-size: 0.8rem; color: var(--ink-2); }
+.copy-feedback:not(:empty) { margin-left: 0.5rem; }
+.copy-feedback.error { color: var(--bad); }

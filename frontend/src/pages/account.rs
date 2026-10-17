@@ -142,11 +142,9 @@ pub fn AccountPage() -> Element {
 fn account_web_body() -> Element {
     rsx! {
         profile::ProfileCard {}
-        user_settings::UserSettingsCard {}
         goals::ReadingGoalsCard {}
         ChangePasswordCard {}
         sessions::SessionsCard {}
-        hidden_formats::HiddenFormatsCard {}
     }
 }
 
