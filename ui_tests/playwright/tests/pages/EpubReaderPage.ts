@@ -75,15 +75,17 @@ export class EpubReaderPage extends BasePage {
     this.displayPanelButton = page.getByTestId("reader-aa");
     this.highlightsButton = page.getByTestId("reader-highlights");
     this.bookmarkButton = page.getByTestId("reader-bookmark");
-    this.previousPageButton = page.getByTestId("reader-prev");
-    this.nextPageButton = page.getByTestId("reader-next");
+    this.previousPageButton = page.getByRole("button", {
+      name: "Previous page",
+    });
+    this.nextPageButton = page.getByRole("button", { name: "Next page" });
     this.annotationsButton = page.getByTestId("reader-annotations");
     this.footerBar = page.getByTestId("reader-footer");
     this.chapterCounterLabel = page.getByTestId("reader-chapter-counter");
     this.headerChapterLabel = page.getByTestId("reader-header-chapter");
     this.loadingOverlay = page.getByTestId("reader-loading");
     this.errorMessage = page.getByTestId("reader-error");
-    this.retryButton = page.getByTestId("reader-retry");
+    this.retryButton = page.getByRole("button", { name: "Retry" });
     this.navErrorMessage = page.getByTestId("reader-nav-error");
     this.searchDrawer = page.getByTestId("reader-search-drawer");
     this.searchField = page.getByTestId("reader-search-input");
