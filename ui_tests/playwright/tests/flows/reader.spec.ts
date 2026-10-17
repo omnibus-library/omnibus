@@ -1152,19 +1152,24 @@ test.describe("epub reader", () => {
           return { cfi, label };
         });
 
+      const reopenSaves =
+        await test.step("leave and reopen the reader", async () => {
+          const saves = epubReaderPage.recordProgressSaves();
+          await bookDetailPage.goto(uuid);
+          await epubReaderPage.goto(uuid);
+          return saves;
+        });
+
       // The restore settle only echoes a position the server holds. An echo
       // write would stamp a fresh clock on it and shadow a newer audiobook
       // position, so a reopen must write nothing.
-      await test.step("leave and reopen the reader", async () => {
-        const saves = epubReaderPage.recordProgressSaves();
-        await bookDetailPage.goto(uuid);
-        await epubReaderPage.goto(uuid);
+      await test.step("check it reopens on the page it was left, writing nothing", async () => {
         await expect
           .poll(() => epubReaderPage.pageLabel(), { timeout: 20_000 })
           .toBe(left.label);
         await expect.poll(storedCfi, { timeout: 10_000 }).toBe(left.cfi);
         // Last, because the polls above outlast the debounce and the POST.
-        expect(saves, "a reopen must not write progress").toEqual([]);
+        expect(reopenSaves, "a reopen must not write progress").toEqual([]);
       });
 
       // The echo skip must not mute a genuine move.
@@ -1178,15 +1183,20 @@ test.describe("epub reader", () => {
         };
       });
 
-      await test.step("leave and reopen the reader again", async () => {
-        const saves = epubReaderPage.recordProgressSaves();
-        await bookDetailPage.goto(uuid);
-        await epubReaderPage.goto(uuid);
+      const secondSaves =
+        await test.step("leave and reopen the reader again", async () => {
+          const saves = epubReaderPage.recordProgressSaves();
+          await bookDetailPage.goto(uuid);
+          await epubReaderPage.goto(uuid);
+          return saves;
+        });
+
+      await test.step("check it reopens on the page it was turned to, writing nothing", async () => {
         await expect
           .poll(() => epubReaderPage.pageLabel(), { timeout: 20_000 })
           .toBe(turned.label);
         await expect.poll(storedCfi, { timeout: 10_000 }).toBe(turned.cfi);
-        expect(saves, "a reopen must not write progress").toEqual([]);
+        expect(secondSaves, "a reopen must not write progress").toEqual([]);
       });
     });
 
