@@ -143,7 +143,7 @@ async fn dev_server_url_reads_port_from_runtime_dir() {
 
     let url = dev_server_url(dir.path()).await;
 
-    assert_eq!(url, Some("http://127.0.0.1:3456".to_owned()));
+    assert_eq!(url, Some("http://localhost:3456".to_owned()));
 }
 
 #[tokio::test]

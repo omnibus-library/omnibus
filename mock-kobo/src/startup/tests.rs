@@ -53,11 +53,19 @@ fn auto_wired(token: &str, wired_url: &str) -> SavedState {
     }
 }
 
+fn port_of(stub: &RunningStub) -> &str {
+    stub.origin.rsplit(':').next().unwrap()
+}
+
 /// Publish `stub` as this worktree's dev server, as `just dev-up` does.
 fn publish_dev_server(runtime: &Path, stub: &RunningStub) {
     std::fs::create_dir_all(runtime).unwrap();
-    let port = stub.origin.rsplit(':').next().unwrap();
-    std::fs::write(runtime.join("port"), format!("{port}\n")).unwrap();
+    std::fs::write(runtime.join("port"), format!("{}\n", port_of(stub))).unwrap();
+}
+
+/// The URL a device follows to `stub` once `publish_dev_server` has published it.
+fn published_url(stub: &RunningStub) -> String {
+    format!("http://localhost:{}", port_of(stub))
 }
 
 fn dev_server() -> Option<String> {
@@ -103,7 +111,7 @@ fn resolve_target_prefers_dev_server_over_default() {
 fn resolve_target_defaults_url_when_nothing_known() {
     let target = resolve_target(&serve_args(None, None), None, None);
 
-    assert_eq!(target.url, "http://127.0.0.1:3000");
+    assert_eq!(target.url, "http://localhost:3000");
 }
 
 #[test]
@@ -324,7 +332,7 @@ async fn start_follows_dev_server_port_without_saving_it() {
 
     let control = start(&args, None, &runtime).await.unwrap().control;
 
-    assert_eq!(control.view().url, stub.origin);
+    assert_eq!(control.view().url, published_url(&stub));
     let saved = state::load(&args.state).await.unwrap().unwrap();
     assert_eq!(saved.url, None);
 }
@@ -414,7 +422,7 @@ async fn start_rewires_when_dev_server_moves_to_another_server() {
     assert_eq!(server_b.requests_to("/api/auth/login").len(), 1);
     let saved = state::load(&args.state).await.unwrap().unwrap();
     assert_eq!(saved.token, "tok-b");
-    assert_eq!(saved.wired_url, Some(server_b.origin.clone()));
+    assert_eq!(saved.wired_url, Some(published_url(&server_b)));
 }
 
 #[tokio::test]

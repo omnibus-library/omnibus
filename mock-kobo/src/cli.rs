@@ -39,7 +39,7 @@ KEYS IN THE TUI:
 
 WITH NO ARGUMENTS:
     The device follows this worktree's dev server (.claude/runtime/port, else
-    http://127.0.0.1:3000). With no token it logs in as OMNIBUS_DEV_SEED_USER
+    http://localhost:3000). With no token it logs in as OMNIBUS_DEV_SEED_USER
     (<user>:<password>) and reuses or creates the device named \"Mock Kobo\".
     A new state file reusing an existing device syncs only changes until #2743.
     The state file defaults to .claude/runtime/mock-kobo.json.

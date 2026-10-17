@@ -43,7 +43,7 @@ pub async fn dev_server_url(runtime_dir: &Path) -> Option<String> {
         .await
         .ok()?;
     let port: u16 = port.trim().parse().ok()?;
-    Some(format!("http://127.0.0.1:{port}"))
+    Some(format!("http://localhost:{port}"))
 }
 
 /// Whether `url` names this machine: `localhost`, a `127.0.0.0/8` address or `::1`.
