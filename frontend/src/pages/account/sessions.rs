@@ -1,16 +1,21 @@
-//! Self-service "Your sessions" card in the web Account section. Tabulates the
+//! Self-service "Sessions" card (Settings › Sign-in & security). Tabulates the
 //! caller's own live sessions — which client holds each one, when it was
-//! signed in, when it was last used — with a per-row Revoke action; the
-//! session authenticating this page has no Revoke button, because the server
-//! refuses that revoke anyway and the control is better hidden than offered
-//! and rejected. The list starts unanswered so SSR and the first WASM paint
-//! agree on the loading rows.
+//! signed in, when it was last used — with a per-row Revoke that asks first,
+//! naming the client; the session authenticating this page has no Revoke
+//! button, because the server refuses that revoke anyway. The list starts
+//! unanswered so SSR and the first WASM paint agree on the loading rows.
 
 use dioxus::prelude::*;
 use omnibus_shared::SessionView;
 
+use super::{confirm_dialog, live_status, Confirm};
 use crate::components::loading::RowSkeletons;
 use crate::data;
+
+/// The revoke dialog's title, naming the client it signs out.
+fn revoke_title(client: &str) -> String {
+    format!("Sign out {client}?")
+}
 
 /// Card body: session list, loaded on mount and reloaded after every revoke.
 #[component]
@@ -21,6 +26,8 @@ pub fn SessionsCard() -> Element {
     let mut msg_is_error = use_signal(|| false);
     let mut busy_id = use_signal(|| None::<i64>);
     let mut reload = use_signal(|| 0u32);
+    // The session awaiting the reader's go-ahead to revoke.
+    let mut confirming = use_signal(|| None::<SessionView>);
 
     use_effect(move || {
         let _ = reload();
@@ -53,18 +60,28 @@ pub fn SessionsCard() -> Element {
                 }
             }
             busy_id.set(None);
+            confirming.set(None);
         });
+    });
+    let on_ask_revoke = use_callback(move |id: i64| {
+        let session = sessions
+            .peek()
+            .iter()
+            .flatten()
+            .find(|s| s.id == id)
+            .cloned();
+        confirming.set(session);
     });
 
     let session_list = sessions();
 
     rsx! {
         section { class: "card", "data-testid": "account-sessions-card",
-            h2 { "Sessions" }
+            h3 { "Sessions" }
             p { class: "subtitle", "Devices and browsers currently signed in to your account." }
 
             match session_list.as_deref() {
-                Some(rows) => render_session_list(rows, busy_id(), on_revoke),
+                Some(rows) => render_session_list(rows, busy_id(), on_ask_revoke),
                 // The status line below carries the failure.
                 None if msg_is_error() => rsx! {},
                 None => rsx! {
@@ -75,13 +92,21 @@ pub fn SessionsCard() -> Element {
                 },
             }
 
-            if let Some(m) = msg() {
-                p {
-                    role: "status",
-                    "data-testid": "account-sessions-status",
-                    class: if msg_is_error() { "settings-status error" } else { "settings-status success" },
-                    "{m}"
-                }
+            {live_status("account-sessions-status", msg().as_deref(), msg_is_error())}
+
+            if let Some(session) = confirming() {
+                {confirm_dialog(
+                    Confirm {
+                        testid: "session-revoke-dialog",
+                        title: &revoke_title(&session.client),
+                        body: "It is signed out at once and has to sign in again.",
+                        action: "Revoke session",
+                        busy_label: "Revoking\u{2026}",
+                    },
+                    busy_id().is_some(),
+                    EventHandler::new(move |()| confirming.set(None)),
+                    EventHandler::new(move |()| on_revoke.call(session.id)),
+                )}
             }
         }
     }
@@ -100,22 +125,24 @@ fn render_session_list(
         };
     }
     rsx! {
-        table { class: "users-table", "data-testid": "account-sessions-list",
-            thead {
-                tr {
-                    th { "Client" }
-                    th { "Signed in" }
-                    th { "Last used" }
-                    th { class: "users-col-actions", "Actions" }
+        div { class: "table-scroll",
+            table { class: "users-table", "data-testid": "account-sessions-list",
+                thead {
+                    tr {
+                        th { "Client" }
+                        th { "Signed in" }
+                        th { "Last used" }
+                        th { class: "users-col-actions", "Actions" }
+                    }
                 }
-            }
-            tbody {
-                for s in rows.iter().cloned() {
-                    SessionRow {
-                        key: "{s.id}",
-                        session: s,
-                        disabled: busy_id.is_some(),
-                        on_revoke,
+                tbody {
+                    for s in rows.iter().cloned() {
+                        SessionRow {
+                            key: "{s.id}",
+                            session: s,
+                            disabled: busy_id.is_some(),
+                            on_revoke,
+                        }
                     }
                 }
             }
@@ -124,7 +151,7 @@ fn render_session_list(
 }
 
 /// One session row: which client holds it, when it was created, when it was
-/// last used, and a Revoke button — hidden on the current session (AC2).
+/// last used, and a Revoke button — hidden on the current session.
 #[component]
 fn SessionRow(session: SessionView, disabled: bool, on_revoke: Callback<i64>) -> Element {
     let id = session.id;
@@ -144,6 +171,7 @@ fn SessionRow(session: SessionView, disabled: bool, on_revoke: Callback<i64>) ->
                         r#type: "button",
                         class: "btn ghost danger sm",
                         disabled,
+                        "aria-label": "Revoke the session on {session.client}",
                         "data-testid": "account-session-revoke-{id}",
                         onclick: move |_| on_revoke.call(id),
                         "Revoke"
@@ -186,6 +214,41 @@ mod tests {
     fn fmt_timestamp_renders_iso_date() {
         // 2024-01-15T00:00:00Z
         assert_eq!(fmt_timestamp(1_705_276_800), "2024-01-15");
+    }
+
+    #[test]
+    fn revoke_title_names_the_client_being_signed_out() {
+        assert_eq!(
+            revoke_title("Firefox on Linux"),
+            "Sign out Firefox on Linux?"
+        );
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn session_row_names_the_client_on_its_revoke_button() {
+        let html = crate::test_support::render_in_vdom(|| {
+            rsx! {
+                SessionRow {
+                    session: SessionView {
+                        id: 3,
+                        device_id: None,
+                        kind: "cookie".to_string(),
+                        client: "Firefox on Linux".to_string(),
+                        created_at: 0,
+                        last_used_at: 0,
+                        expires_at: 0,
+                        is_current: false,
+                    },
+                    disabled: false,
+                    on_revoke: Callback::new(|_| {}),
+                }
+            }
+        });
+        assert!(
+            html.contains(r#"aria-label="Revoke the session on Firefox on Linux""#),
+            "{html}"
+        );
     }
 
     #[cfg(feature = "server")]
