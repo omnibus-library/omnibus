@@ -7,6 +7,7 @@ import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
+import { RatingsRequests } from "../apiRequests/RatingsRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
@@ -80,6 +81,7 @@ type PageFixtures = {
   physicalRequests: PhysicalRequests;
   highlightsRequests: HighlightsRequests;
   progressRequests: ProgressRequests;
+  ratingsRequests: RatingsRequests;
   readStatusRequests: ReadStatusRequests;
   bookmarksRequests: BookmarksRequests;
   createdBookUuids: Set<string>;
@@ -93,6 +95,7 @@ type PageFixtures = {
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
+  presetRating: (bookUuid: string, stars: number | null) => Promise<void>;
   presetScrollStops: (enabled: boolean) => Promise<void>;
   parkBook: (
     bookUuid: string,
@@ -206,6 +209,10 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     await use(new ProgressRequests(request));
   },
 
+  ratingsRequests: async ({ request }, use) => {
+    await use(new RatingsRequests(request));
+  },
+
   readStatusRequests: async ({ request }, use) => {
     await use(new ReadStatusRequests(request));
   },
@@ -305,6 +312,28 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
         )
         .toBe(status);
     });
+  },
+
+  // Leaves every book it rated unrated, as the tests that read ratings expect.
+  presetRating: async ({ ratingsRequests }, use) => {
+    const touched = new Set<string>();
+    await use(async (bookUuid, stars) => {
+      touched.add(bookUuid);
+      if (stars === null) {
+        const cleared = await ratingsRequests.deleteRating(bookUuid);
+        expect(cleared.status(), `clear the rating of ${bookUuid}`).toBe(204);
+        return;
+      }
+      const rated = await ratingsRequests.postRating({
+        book_uuid: bookUuid,
+        stars,
+      });
+      expect(rated.status(), `rate ${bookUuid} ${stars} stars`).toBe(200);
+    });
+    for (const bookUuid of touched) {
+      const deleted = await ratingsRequests.deleteRating(bookUuid);
+      await expect(deleted, `delete the rating of ${bookUuid}`).toBeOK();
+    }
   },
 
   // Every other test reads the default layout, so the preference goes back

@@ -1,6 +1,8 @@
 import type { APIRequestContext } from "@playwright/test";
 import { account } from "../contracts/account";
 import { kindle } from "../contracts/kindle";
+import { ratings } from "../contracts/ratings";
+import type { AttributedRating } from "../data/ratings";
 import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
@@ -10,7 +12,7 @@ import {
 } from "../fixtures/audiobooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
-import { expectMutation } from "../utils/api";
+import { expectMutation, failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
 import { gotoReady } from "../utils/nav";
@@ -844,131 +846,171 @@ test.describe("book detail page", () => {
       });
     });
   });
-});
 
-// ---------------------------------------------------------------------------
-// Action — star rating (F3.2)
-// ---------------------------------------------------------------------------
+  test.describe("rating", () => {
+    // Writing tests park the book first, since a rating outlives a test.
+    test("hide other ratings when nobody else rated the book", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const { rating } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-test("hides other ratings when no one else has rated the book", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await page.route("**/api/rpc/ratings/others", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
-  );
+      await test.step("open the book with no other ratings", async () => {
+        await rating.stubOtherRatings([]);
+        await bookDetailPage.goto(uuid);
+      });
 
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("check no other ratings show", async () => {
+        await expect(rating.otherRatingsList).toHaveCount(0);
+      });
+    });
 
-  await expect(page.getByTestId("other-ratings")).toHaveCount(0);
-});
+    test("show another reader's rating with its byline", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const { rating } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const twoDaysAgo = Math.floor(Date.now() / 1000) - 2 * 86_400;
+      const other: AttributedRating = {
+        user_id: 42,
+        username: "reader",
+        has_avatar: false,
+        stars: 4.5,
+        updated_at: twoDaysAgo,
+      };
 
-test("shows attributed ratings from other users", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  const twoDaysAgo = Math.floor(Date.now() / 1000) - 2 * 86_400;
-  await page.route("**/api/rpc/ratings/others", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify([
-        {
-          user_id: 42,
-          username: "reader",
-          stars: 4.5,
-          updated_at: twoDaysAgo,
-        },
-      ]),
-    }),
-  );
+      await test.step("open the book with another reader's rating", async () => {
+        await rating.stubOtherRatings([other]);
+        await bookDetailPage.goto(uuid);
+      });
 
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("check the rating shows", async () => {
+        await expect(rating.otherRatingRow).toBeVisible();
+        await expect(rating.otherRatingRow).toContainText("R");
+        await expect(rating.otherRatingByline).toHaveText(
+          "reader rated 2 days ago",
+        );
+        await expect(rating.otherRatingContent).toHaveCSS(
+          "flex-direction",
+          "column",
+        );
+        await expect(
+          rating.otherRatingStars("4.5 out of 5 stars"),
+        ).toBeVisible();
+      });
+    });
 
-  const row = page.getByTestId("other-rating-row");
-  await expect(row).toBeVisible();
-  await expect(row).toContainText("R");
-  await expect(row.getByTestId("other-rating-byline")).toHaveText(
-    "reader rated 2 days ago",
-  );
-  await expect(row.getByTestId("other-rating-content")).toHaveCSS(
-    "flex-direction",
-    "column",
-  );
-  await expect(row.getByLabel("4.5 out of 5 stars")).toBeVisible();
-});
+    test("rate a book a half star", async ({
+      bookDetailPage,
+      request,
+      presetRating,
+      expectMutation,
+    }) => {
+      const { rating } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
 
-test("rates a book a half-star, persists across reload, then un-rates", async ({
-  page,
-  request,
-}) => {
-  // Use a Wirth book so the rating never collides with the alpha-focused
-  // assertions elsewhere in this serial file.
-  const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("clear the rating through the api", async () => {
+        await presetRating(uuid, null);
+      });
 
-  const stars = page.getByTestId("rating-stars");
-  await expect(stars).toBeVisible();
-  await expect(page.getByTestId("rating-meta")).toHaveText("Not rated yet");
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(rating.starsGroup).toBeVisible();
+        await expect(rating.metaText).toHaveText("Not rated yet");
+      });
 
-  // Click the left half of the 5th star → 4.5 → POST set, meta shows "of 5".
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/ratings/set", expectedStatus: 200 },
-    async () => stars.getByRole("button", { name: "Rate 4.5 stars" }).click(),
-  );
-  await expect(page.getByTestId("rating-meta")).toContainText("4.5 of 5");
+      await test.step("rate it 4.5 stars", async () => {
+        await expectMutation(ratings.set(uuid, 4.5), () => rating.rate(4.5));
+      });
 
-  // The saved rating survives a reload (the post-mount effect refetches it).
-  await gotoReady(page, `/books/${uuid}`);
-  await expect(page.getByTestId("rating-meta")).toContainText("4.5 of 5");
+      await test.step("check the rating shows", async () => {
+        await expect(rating.metaText).toContainText("4.5 of 5");
+      });
+    });
 
-  // #2352: once rated, the active half-star becomes the un-rate control and
-  // announces it — "Clear your 4.5-star rating" — instead of keeping the
-  // misleading "Rate 4.5 stars". Re-clicking it clears the rating (and cleans
-  // up shared server state for the next run).
-  await expect(
-    page
-      .getByTestId("rating-stars")
-      .getByRole("button", { name: "Clear your 4.5-star rating" }),
-  ).toBeVisible();
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/ratings/clear", expectedStatus: 200 },
-    async () =>
-      page
-        .getByTestId("rating-stars")
-        .getByRole("button", { name: "Clear your 4.5-star rating" })
-        .click(),
-  );
-  await expect(page.getByTestId("rating-meta")).toHaveText("Not rated yet");
-});
+    // #2352: the rated half star announces that it un-rates, not "Rate 4.5".
+    test("show the saved rating when the book opens", async ({
+      bookDetailPage,
+      request,
+      presetRating,
+    }) => {
+      const { rating } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
 
-test("surfaces an error and leaves the rating unchanged when the save fails", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("rate the book 4.5 stars through the api", async () => {
+        await presetRating(uuid, 4.5);
+      });
 
-  await page.route("**/api/rpc/ratings/set", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "rating exploded",
-    }),
-  );
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-  const stars = page.getByTestId("rating-stars");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/ratings/set", expectedStatus: 500 },
-    async () => stars.getByRole("button", { name: "Rate 3 stars" }).click(),
-  );
+      await test.step("check the rating shows", async () => {
+        await expect(rating.metaText).toContainText("4.5 of 5");
+        await expect(rating.clearButton(4.5)).toBeVisible();
+      });
+    });
 
-  // The optimistic pick rolls back and the status line reports the failure.
-  await expect(page.getByTestId("rating-meta")).toHaveText(
-    "Couldn't save rating — try again",
-  );
+    test("clear a rating", async ({
+      bookDetailPage,
+      request,
+      presetRating,
+      expectMutation,
+    }) => {
+      const { rating } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
+
+      await test.step("rate the book 4.5 stars through the api", async () => {
+        await presetRating(uuid, 4.5);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("clear the rating", async () => {
+        await expectMutation(ratings.clear(uuid), () => rating.clear(4.5));
+      });
+
+      await test.step("check the book shows unrated", async () => {
+        await expect(rating.metaText).toHaveText("Not rated yet");
+      });
+    });
+
+    test("show an error when a rating fails to save", async ({
+      bookDetailPage,
+      request,
+      presetRating,
+      expectMutation,
+    }) => {
+      const { rating } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
+
+      await test.step("clear the rating through the api", async () => {
+        await presetRating(uuid, null);
+      });
+
+      await test.step("open the book while saves fail", async () => {
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.forceServerError(ratings.set(uuid, 3));
+      });
+
+      await test.step("rate it 3 stars", async () => {
+        await expectMutation(failing(ratings.set(uuid, 3)), () =>
+          rating.rate(3),
+        );
+      });
+
+      // The optimistic pick rolls back and the status line reports the failure.
+      await test.step("check the rating reports the failure", async () => {
+        await expect(rating.metaText).toHaveText(
+          "Couldn't save rating — try again",
+        );
+      });
+    });
+  });
 });
 
 test("renders the read-status control with three segments", async ({
