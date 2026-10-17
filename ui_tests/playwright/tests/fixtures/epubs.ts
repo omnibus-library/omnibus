@@ -731,8 +731,8 @@ export const FIXTURE_BOOKS: readonly ExpectedBook[] = [
     hasCover: true,
   },
   {
-    // Reserved for reader.spec.ts's two-finger gesture test: it parks a
-    // position and asserts nothing carried it back, so any other spec writing
+    // Reserved for reader.spec.ts's two-finger gesture tests: they park a
+    // position and assert nothing carried it back, so any other spec writing
     // a position on it would be asserting against a moving target. The
     // smallest multi-chapter public-domain fixture, for the same cold-open
     // reason as `romeo-and-juliet` above — epub.js regenerates whole-book
