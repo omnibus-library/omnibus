@@ -54,7 +54,7 @@ pub async fn library_sync(
 
     build_sync_response(
         changes,
-        origin_from_headers(&headers),
+        origin_from_headers(&state, &headers),
         auth.token,
         states,
         state.pool().clone(),
@@ -471,7 +471,7 @@ pub async fn library_metadata(
     }
     match db::kobo::book_for_sync(state.pool(), &uuid).await {
         Ok(Some(book)) => {
-            let base = origin_from_headers(&headers);
+            let base = origin_from_headers(&state, &headers);
             Json(vec![dto::book_metadata(&base, &auth.token, &book)]).into_response()
         }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),

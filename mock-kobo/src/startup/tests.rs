@@ -103,7 +103,7 @@ fn resolve_target_prefers_dev_server_over_default() {
 fn resolve_target_defaults_url_when_nothing_known() {
     let target = resolve_target(&serve_args(None, None), None, None);
 
-    assert_eq!(target.url, "http://127.0.0.1:3000");
+    assert_eq!(target.url, "http://localhost:3000");
 }
 
 #[test]

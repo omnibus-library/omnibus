@@ -14,7 +14,7 @@ async fn set_overrides(omnibus: &Omnibus, uuid: &str, overrides: MetadataOverrid
 }
 
 #[tokio::test]
-async fn sync_now_completes_handshake_against_real_routers() {
+async fn sync_now_completes_handshake_on_a_non_standard_port() {
     let omnibus = spawn_omnibus().await;
 
     let result = sync_now(&mut Device::new("HW-1"), &omnibus.endpoint).await;
