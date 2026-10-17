@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 
 use super::model::{facet_query, FlatItem};
 use super::PaletteOpen;
+use crate::routes::link_target;
 use crate::Route;
 
 /// Inputs read or mutated by the palette's keydown handler.
@@ -85,8 +86,9 @@ fn move_selection(
 }
 
 /// Handle Enter: open the highlighted row once the user has engaged keyboard
-/// nav (Books/Authors/Series to their detail pages; Tags and Genres fall
-/// through to `/search`), else route to the full-page `/search/:query` view.
+/// nav (Books/Authors/Series to their detail pages, a setting to its section;
+/// Tags and Genres fall through to `/search`), else route to the full-page
+/// `/search/:query` view.
 fn handle_enter(
     mut open: PaletteOpen,
     selected: Signal<usize>,
@@ -117,6 +119,9 @@ fn handle_enter(
                     nav.push(Route::Search {
                         query: facet_query("genre", name),
                     });
+                }
+                FlatItem::Setting(entry) => {
+                    nav.push(link_target(entry.target.route()));
                 }
             }
             open.0.set(false);
