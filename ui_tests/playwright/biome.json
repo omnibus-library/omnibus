@@ -67,7 +67,6 @@
         "!tests/flows/fetch_summary.spec.ts",
         "!tests/flows/genres.spec.ts",
         "!tests/flows/hidden_formats.spec.ts",
-        "!tests/flows/immersive.spec.ts",
         "!tests/flows/journal.spec.ts",
         "!tests/flows/landing.spec.ts",
         "!tests/flows/landing_bulk_edit.spec.ts",

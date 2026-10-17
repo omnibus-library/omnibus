@@ -1,12 +1,14 @@
 import { join } from "node:path";
 import type { Request, Response } from "@playwright/test";
 import { AuthRequests } from "../apiRequests/AuthRequests";
+import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
+import type { LibraryBook } from "../data/ebooks";
 import {
   buildHighlight,
   type NewHighlight,
@@ -25,6 +27,7 @@ import {
   type ExpectMutationOptions,
   expectMutation as expectMutationOn,
 } from "../utils/api";
+import { DUAL_FORMAT_BOOK } from "./dual_format";
 import {
   test as base,
   expect,
@@ -69,6 +72,7 @@ type PageFixtures = {
   ) => Promise<SeededHighlight>;
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   adminWishlist: ShelfRef;
+  dualFormatUuid: string;
   readerShelfPage: ShelfPage;
 };
 
@@ -211,6 +215,40 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     const listed = await new ShelvesRequests(request).getShelves();
     await expect(listed).toBeOK();
     await use(wishlistOf(await listed.json(), id));
+  },
+
+  // A combined book count can land before the second scan attaches the other
+  // format, so poll until the book lists both an ebook and an audio format.
+  dualFormatUuid: async ({ request }, use) => {
+    const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
+    const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
+    const ebooks = new EbooksRequests(request);
+
+    let match: LibraryBook | undefined;
+    await expect
+      .poll(
+        async () => {
+          const listed = await ebooks.getEbooks();
+          if (listed.status() !== 200) return false;
+          const { books }: { books: LibraryBook[] } = await listed.json();
+          match = books.find((b) => b.title === DUAL_FORMAT_BOOK.title);
+          if (match === undefined) return false;
+          return match.formats.some(isEbook) && match.formats.some(isAudio);
+        },
+        {
+          message: `book ${JSON.stringify(DUAL_FORMAT_BOOK.title)} never surfaced with both an ebook and an audio format`,
+          timeout: 20_000,
+          intervals: [100, 200, 500, 1_000, 2_000],
+        },
+      )
+      .toBe(true);
+
+    if (!match?.unique_identifier) {
+      throw new Error(
+        `dual-format book ${JSON.stringify(DUAL_FORMAT_BOOK.title)} is missing its uuid`,
+      );
+    }
+    await use(match.unique_identifier);
   },
 
   readerShelfPage: async ({ browser, readerAccount }, use) => {

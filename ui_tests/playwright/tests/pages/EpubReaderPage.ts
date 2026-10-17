@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
+import { MiniDockComponent } from "../components/MiniDockComponent";
 import { ReaderContentsDrawerComponent } from "../components/ReaderContentsDrawerComponent";
 import {
   ReaderDisplayPanelComponent,
@@ -33,6 +34,7 @@ export class EpubReaderPage extends BasePage {
   readonly contentsDrawer: ReaderContentsDrawerComponent;
   readonly highlightsDrawer: HighlightsDrawerComponent;
   readonly gestures: ReaderGesturesComponent;
+  readonly miniDock: MiniDockComponent;
 
   readonly viewerPanel: Locator;
   readonly backButton: Locator;
@@ -67,6 +69,7 @@ export class EpubReaderPage extends BasePage {
     this.contentsDrawer = new ReaderContentsDrawerComponent(page);
     this.highlightsDrawer = new HighlightsDrawerComponent(page);
     this.gestures = new ReaderGesturesComponent(page);
+    this.miniDock = new MiniDockComponent(page);
     this.viewerPanel = page.getByTestId("reader-viewer");
     this.backButton = page.getByTestId("reader-back");
     this.contentsButton = page.getByTestId("reader-toc");
@@ -251,6 +254,24 @@ export class EpubReaderPage extends BasePage {
   /** Stores the typeface before every load of this page, as presetTheme does. */
   async presetTypeface(face: Typeface): Promise<void> {
     await this.presetLocalStorage("omn.typeface", face);
+  }
+
+  /**
+   * Where the stage, footer and docked player first overlap, or "clear". The
+   * stage reflows once playback resolves the book, so a spec polls it.
+   */
+  async dockStacking(): Promise<
+    "clear" | "missing-box" | "stage-overlaps-footer" | "footer-overlaps-dock"
+  > {
+    const [stage, dock, footer] = await Promise.all([
+      this.viewerPanel.boundingBox(),
+      this.miniDock.root.boundingBox(),
+      this.footerBar.boundingBox(),
+    ]);
+    if (!stage || !dock || !footer) return "missing-box";
+    if (stage.y + stage.height > footer.y + 0.5) return "stage-overlaps-footer";
+    if (footer.y + footer.height > dock.y + 0.5) return "footer-overlaps-dock";
+    return "clear";
   }
 
   /** Whether the failed-jump notice would swallow a click at its own centre. */

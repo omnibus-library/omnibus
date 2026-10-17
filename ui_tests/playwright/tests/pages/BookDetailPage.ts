@@ -15,6 +15,9 @@ export class BookDetailPage extends BasePage {
   readonly titleHeading: Locator;
   readonly fromSameHandEmptyMessage: Locator;
   readonly readButton: Locator;
+  readonly startReadingButton: Locator;
+  readonly listenButton: Locator;
+  readonly immersiveReadButton: Locator;
   readonly checkInWhenAcquiredButton: Locator;
   readonly physicalCopyCards: Locator;
   readonly physicalPill: Locator;
@@ -29,6 +32,10 @@ export class BookDetailPage extends BasePage {
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
     this.readButton = page.getByTestId("action-read");
+    // The labels change with reading progress, so the row is found by test id.
+    this.startReadingButton = page.getByTestId("start-reading");
+    this.listenButton = page.getByTestId("listen-secondary");
+    this.immersiveReadButton = page.getByTestId("immersive-read");
     this.checkInWhenAcquiredButton = page.getByRole("button", {
       name: "Check in when acquired",
     });
@@ -57,6 +64,11 @@ export class BookDetailPage extends BasePage {
   /** Opens the reader through the EPUB format's Read action. */
   async read(): Promise<void> {
     await this.readButton.click();
+  }
+
+  /** Opens the reader with the book's audiobook docked beside it. */
+  async readImmersively(): Promise<void> {
+    await this.immersiveReadButton.click();
   }
 
   async checkInWhenAcquired(): Promise<void> {

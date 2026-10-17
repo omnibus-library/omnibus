@@ -8,12 +8,10 @@
 // therefore seeded here, as two sequential settings writes (mirroring
 // `mini-dock.spec.ts`).
 
-import type { APIRequestContext } from "@playwright/test";
 import { AUDIOBOOK_BOOK_COUNT } from "../fixtures/audiobooks";
 import { AUTO_ATTACHED_PAIRS, DUAL_FORMAT_BOOK } from "../fixtures/dual_format";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
 import {
   audiobookFixturesDir,
   fixturesDir,
@@ -21,159 +19,86 @@ import {
   seedLibrary,
 } from "../utils/seed";
 
-test.beforeAll(async ({ request }) => {
-  // Two sequential seed polls (ebooks then audiobooks), up to 45s each, so
-  // this hook needs more than the 60s config default.
-  test.setTimeout(120_000);
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  await seedAudiobookLibrary(
-    request,
-    audiobookFixturesDir(),
-    FIXTURE_BOOKS.length + AUDIOBOOK_BOOK_COUNT - AUTO_ATTACHED_PAIRS,
-  );
-});
-
-/**
- * Resolve the dual-format book's uuid once the indexer has attached BOTH
- * formats to it. Seeding gates on a combined *count*, which a single-format
- * scan can satisfy before the second library's scan attaches the other
- * format — so poll `/api/rpc/ebooks` until the book reports an ebook format
- * *and* an audio format, then return its uuid. Without this the Immersive
- * Read CTA (gated on `has_ebook && has_audio`) may not have rendered yet.
- */
-async function fetchDualFormatUuid(
-  request: APIRequestContext,
-): Promise<string> {
-  const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
-  const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
-
-  let match:
-    | { unique_identifier: string | null; formats: string[] }
-    | undefined;
-  await expect
-    .poll(
-      async () => {
-        const resp = await request.get("/api/rpc/ebooks");
-        if (resp.status() !== 200) return false;
-        const body = (await resp.json()) as {
-          books: {
-            title: string | null;
-            unique_identifier: string | null;
-            formats: string[];
-          }[];
-        };
-        match = body.books.find((b) => b.title === DUAL_FORMAT_BOOK.title);
-        if (match === undefined) return false;
-        return match.formats.some(isEbook) && match.formats.some(isAudio);
-      },
-      {
-        message: `book ${JSON.stringify(DUAL_FORMAT_BOOK.title)} never surfaced with both an ebook and an audio format`,
-        timeout: 20_000,
-        intervals: [100, 200, 500, 1_000, 2_000],
-      },
-    )
-    .toBe(true);
-
-  if (!match?.unique_identifier) {
-    throw new Error(
-      `dual-format book ${JSON.stringify(DUAL_FORMAT_BOOK.title)} is missing its uuid`,
+test.describe("immersive read", () => {
+  test.beforeAll("seed both libraries", async ({ request }) => {
+    // Two sequential seed polls (ebooks then audiobooks), up to 45s each, so
+    // this hook needs more than the 60s config default.
+    test.setTimeout(120_000);
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+    await seedAudiobookLibrary(
+      request,
+      audiobookFixturesDir(),
+      FIXTURE_BOOKS.length + AUDIOBOOK_BOOK_COUNT - AUTO_ATTACHED_PAIRS,
     );
-  }
-  return match.unique_identifier;
-}
+  });
 
-// ---------------------------------------------------------------------------
-// Layout — the dual-format CTA row carries the Immersive Read button
-// ---------------------------------------------------------------------------
+  test("show the immersive read action on a dual-format book", async ({
+    bookDetailPage,
+    dualFormatUuid,
+  }) => {
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(dualFormatUuid);
+    });
 
-test("renders the Immersive Read CTA on a dual-format book detail", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchDualFormatUuid(request);
-  await gotoReady(page, `/books/${uuid}`);
+    await test.step("check the nav and both formats' actions show", async () => {
+      await bookDetailPage.topNav.assertDisplayed();
+      await expect(bookDetailPage.startReadingButton).toBeVisible();
+      await expect(bookDetailPage.listenButton).toBeVisible();
+    });
 
-  await expectNavVisible(page);
+    // The marquee row uses the design's terser label.
+    await test.step("check the both-formats action shows", async () => {
+      await expect(bookDetailPage.immersiveReadButton).toBeVisible();
+      await expect(bookDetailPage.immersiveReadButton).toHaveText(/Immersive/);
+    });
+  });
 
-  // Both single-format CTAs plus the both-formats-only Immersive Read button.
-  await expect(page.getByTestId("start-reading")).toBeVisible();
-  await expect(page.getByTestId("listen-secondary")).toBeVisible();
+  test("open the reader with the audiobook docked", async ({
+    bookDetailPage,
+    epubReaderPage,
+    dualFormatUuid,
+  }) => {
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(dualFormatUuid);
+    });
 
-  const immersive = page.getByTestId("immersive-read");
-  await expect(immersive).toBeVisible();
-  // The marquee CTA row uses the design's terser label.
-  await expect(immersive).toHaveText(/Immersive/);
-});
+    // The dock retargets client state, not a request. The reader's read-status
+    // write on open goes unasserted here.
+    await test.step("read it immersively", async () => {
+      await bookDetailPage.readImmersively();
+      await epubReaderPage.assertDisplayedFor(dualFormatUuid);
+    });
 
-// ---------------------------------------------------------------------------
-// Action — Immersive Read opens the reader with the audiobook docked
-// ---------------------------------------------------------------------------
+    // The reader has no transport, so the dock shows the listening half.
+    await test.step("check the same book's audiobook is docked", async () => {
+      await expect(epubReaderPage.miniDock.root).toBeVisible();
+      await expect(epubReaderPage.miniDock.titleLabel).toHaveText(
+        DUAL_FORMAT_BOOK.title,
+      );
+    });
+  });
 
-test("Immersive Read opens the reader with the audiobook player docked", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchDualFormatUuid(request);
-  await gotoReady(page, `/books/${uuid}`);
+  test("stack the reader above the docked player", async ({
+    bookDetailPage,
+    epubReaderPage,
+    dualFormatUuid,
+  }) => {
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(dualFormatUuid);
+    });
 
-  // The button retargets the app-wide playback state at this book and
-  // client-side navigates to the reader — a real rsx onclick, so the page
-  // must be hydrated (gotoReady waited on networkidle). No mutation fires;
-  // the manifest load is a GET, so assert the resulting UI state directly.
-  await page.getByTestId("immersive-read").click();
-  await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
+    await test.step("read it immersively", async () => {
+      await bookDetailPage.readImmersively();
+      await epubReaderPage.assertDisplayedFor(dualFormatUuid);
+      await expect(epubReaderPage.miniDock.root).toBeVisible();
+      await expect(epubReaderPage.footerBar).toBeVisible();
+    });
 
-  // The reader renders the EPUB and the mini-dock surfaces the SAME book's
-  // audiobook — the reader has no transport of its own, so the docked player
-  // is how "read + listen together" is exercised.
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-  const dock = page.getByTestId("mini-dock");
-  await expect(dock).toBeVisible();
-  await expect(page.getByTestId("mini-dock-title")).toHaveText(
-    DUAL_FORMAT_BOOK.title,
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Action — the reading stage reflows above the docked player (F-1131)
-// ---------------------------------------------------------------------------
-
-test("reader prose reflows above the docked player with the footer clear beneath it", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchDualFormatUuid(request);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await page.getByTestId("immersive-read").click();
-  await expect(page).toHaveURL(new RegExp(`/read/${uuid}$`));
-
-  const viewer = page.getByTestId("reader-viewer");
-  const dock = page.getByTestId("mini-dock");
-  const footer = page.getByTestId("reader-footer");
-  await expect(viewer).toBeVisible();
-  await expect(dock).toBeVisible();
-  await expect(footer).toBeVisible();
-
-  // The `rd-immersive` reflow class lands asynchronously (once playback state
-  // resolves the book), so poll the geometry rather than asserting once. The
-  // AudioDockBar stacking: prose clears the footer (AC1 — no occluded prose),
-  // the slim progress footer sits directly above the dock (AC2 — it stays
-  // visible and interactive), and the dock is flush with the bottom edge.
-  await expect
-    .poll(
-      async () => {
-        const [v, d, f] = await Promise.all([
-          viewer.boundingBox(),
-          dock.boundingBox(),
-          footer.boundingBox(),
-        ]);
-        if (!v || !d || !f) return "missing-box";
-        if (v.y + v.height > f.y + 0.5) return "stage-overlaps-footer";
-        if (f.y + f.height > d.y + 0.5) return "footer-overlaps-dock";
-        return "clear";
-      },
-      { timeout: 10_000 },
-    )
-    .toBe("clear");
+    // The rd-immersive reflow lands once playback resolves the book.
+    await test.step("check the stage and footer clear the dock", async () => {
+      await expect
+        .poll(() => epubReaderPage.dockStacking(), { timeout: 10_000 })
+        .toBe("clear");
+    });
+  });
 });
