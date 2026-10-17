@@ -237,7 +237,9 @@ wrong.
 
 For development: `mock-kobo` is a fake Kobo e-reader that syncs against the
 same `/kobo/<token>/v1/*` routes a real device uses, so wireless sync can be
-tried, and its bugs reproduced, with no hardware.
+tried, and its bugs reproduced, with no hardware. Like a real Kobo, it leaves
+the port off `Host`, so a server on a port other than 80 or 443 must list its
+address in `OMNIBUS_PUBLIC_ORIGIN`.
 
 ### In a terminal
 

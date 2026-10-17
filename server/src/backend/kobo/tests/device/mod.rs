@@ -16,14 +16,15 @@ struct Omnibus {
 
 async fn spawn_omnibus() -> Omnibus {
     let pool = db::init_db("sqlite::memory:").await.unwrap();
-    let state = AppState::new(pool.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    // The device's `Host` carries no port, so the server needs its origin listed, as an operator lists it.
+    let state = AppState::new(pool.clone()).with_public_origins(std::slice::from_ref(&base));
     let app = kobo_router(state.clone()).merge(reading_services_router(state));
     let user = auth_test_support::create_user(&pool, "kobo-reader").await;
     let device = db::kobo_devices::create_device(&pool, user.id, "Mock Kobo")
         .await
         .unwrap();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     Omnibus {
         endpoint: format!("{base}/kobo/{}", device.token),
