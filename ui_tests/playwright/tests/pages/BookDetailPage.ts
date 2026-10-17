@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
+import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { physicalUrls } from "../contracts/physical";
 import { expect } from "../fixtures/test";
@@ -63,6 +64,14 @@ export class BookDetailPage extends BasePage {
   /** The copy card a test filed, picked out by its unique note. */
   physicalCopyCard(note: string): Locator {
     return this.physicalCopyCards.filter({ hasText: note });
+  }
+
+  /** The saved-passage card whose quote contains `quote`. */
+  savedPassageCard(quote: string): SavedPassageCardComponent {
+    return new SavedPassageCardComponent(
+      this.page,
+      this.page.getByTestId("highlight-card").filter({ hasText: quote }),
+    );
   }
 
   async goto(bookUuid: string): Promise<void> {

@@ -1,6 +1,8 @@
 import type { Page } from "@playwright/test";
+import { highlights } from "../contracts/highlights";
 import { progress } from "../contracts/progress";
 import { readStatus } from "../contracts/readStatus";
+import { pdfHighlightRange, sentHighlight } from "../data/highlights";
 import { pagePercent, pdfPageAnchor } from "../data/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { buildJpxPdf, JPX_FILL } from "../fixtures/jpx_pdf";
@@ -18,6 +20,9 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // book would race.
 const PDF = FIXTURE_BOOKS.find((b) => b.slug === "time-machine")!;
 const PRISTINE = FIXTURE_BOOKS.find((b) => b.slug === "flatland")!;
+// A saved selection anchors as `pdf:{page}:{quads}`, eight coordinates a quad.
+const SELECTION_RANGE =
+  /^pdf:8:(-?\d+(\.\d)?,){7}-?\d+(\.\d)?(;(-?\d+(\.\d)?,){7}-?\d+(\.\d)?)*$/;
 
 // Re-seed so the running server is indexed against the committed fixtures
 // before any assertion runs — independent of other specs in this worker.
@@ -67,32 +72,6 @@ async function openPdf(page: Page, path: string) {
 
 function pageLabel(page: Page) {
   return page.getByTestId("pdf-page-label");
-}
-
-/**
- * Drag-select the first run of text on the current page's text layer and
- * return the selected prose. PDF.js lays one absolutely positioned span per
- * text run, so a drag from the left edge of a span to past its right edge
- * selects that run.
- */
-async function selectFirstTextRun(page: Page): Promise<string> {
-  const span = page
-    .locator(".pr-textlayer span")
-    .filter({ hasText: /\S{3,}/ })
-    .first();
-  await expect(span).toBeAttached({ timeout: 15_000 });
-  const box = await span.boundingBox();
-  expect(box, "text run has a box").not.toBeNull();
-  const { x, y, width, height } = box!;
-  const midY = y + height / 2;
-  await page.mouse.move(x + 1, midY);
-  await page.mouse.down();
-  await page.mouse.move(x + width * 0.5, midY, { steps: 4 });
-  await page.mouse.move(x + width - 1, midY, { steps: 4 });
-  await page.mouse.up();
-  const selected = await page.evaluate(() => String(window.getSelection()));
-  expect(selected.trim().length, "selection has text").toBeGreaterThan(0);
-  return selected.trim();
 }
 
 test.describe("pdf reader", () => {
@@ -455,6 +434,154 @@ test.describe("pdf reader", () => {
         expect(await storedReadStatus(uuid)).toBe("finished");
       });
     });
+
+    test("highlight a text-layer selection", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+      seededHighlightIds,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+      await test.step("park the book reading on page 9", async () => {
+        await parkBook(uuid, pdfPageAnchor(8), "reading");
+      });
+
+      // Page 9 is real prose: the first pages of the Calibre conversion carry
+      // only a page number.
+      await test.step("open the book", async () => {
+        await pdfReaderPage.goto(uuid);
+        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 9 of/);
+      });
+
+      const selected = await test.step("select a text run", async () => {
+        await pdfReaderPage.selectFirstTextRun();
+        const text = await pdfReaderPage.selectedText();
+        expect(text.length, "selection has text").toBeGreaterThan(0);
+        await expect(pdfReaderPage.selectionPopover).toBeVisible();
+        return text;
+      });
+
+      const { request: saved } =
+        await test.step("highlight it green", async () => {
+          const created = await expectMutation(highlights.create(), () =>
+            pdfReaderPage.highlightSelection("green"),
+          );
+          const { id } = await created.response.json();
+          seededHighlightIds.add(id);
+          return created;
+        });
+
+      await test.step("check the highlight saved and painted", async () => {
+        const sent = sentHighlight(saved);
+        expect(sent.color).toBe("green");
+        expect(sent.epub_cfi_range).toMatch(SELECTION_RANGE);
+        expect(sent.text.trim()).toBe(selected);
+        await expect(pdfReaderPage.selectionPopover).toHaveCount(0);
+        await expect(
+          pdfReaderPage.paintedHighlight(sent.epub_cfi_range, "green"),
+        ).not.toHaveCount(0);
+      });
+    });
+
+    test("paint a saved highlight when its page opens", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      highlightOn,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+      const range = pdfHighlightRange(8);
+
+      await test.step("park the book reading on page 9", async () => {
+        await parkBook(uuid, pdfPageAnchor(8), "reading");
+      });
+
+      await test.step("save a green highlight on page 9", async () => {
+        await highlightOn(uuid, { epub_cfi_range: range, color: "green" });
+      });
+
+      await test.step("open the book", async () => {
+        await pdfReaderPage.goto(uuid);
+      });
+
+      await test.step("check the highlight is painted", async () => {
+        await expect(
+          pdfReaderPage.paintedHighlight(range, "green"),
+        ).not.toHaveCount(0, { timeout: 15_000 });
+      });
+    });
+
+    test("list a saved highlight in the highlights drawer", async ({
+      pdfReaderPage,
+      request,
+      parkBook,
+      highlightOn,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+      await test.step("park the book reading on page 1", async () => {
+        await parkBook(uuid, pdfPageAnchor(0), "reading");
+      });
+
+      const highlight =
+        await test.step("save a highlight on page 9", async () => {
+          return highlightOn(uuid, { epub_cfi_range: pdfHighlightRange(8) });
+        });
+
+      await test.step("open the highlights drawer", async () => {
+        await pdfReaderPage.goto(uuid);
+        await pdfReaderPage.openHighlights();
+        await expect(pdfReaderPage.highlightsDrawer.root).toBeVisible();
+      });
+
+      await test.step("check the drawer lists it with its prose", async () => {
+        await expect(
+          pdfReaderPage.highlightsDrawer.row(highlight.text).root,
+        ).toHaveCount(1);
+      });
+    });
+
+    test("open a saved passage from the book detail page at its page", async ({
+      bookDetailPage,
+      pdfReaderPage,
+      request,
+      parkBook,
+      highlightOn,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+      // Resume would land on page 1, so landing on page 9 proves the link won.
+      await test.step("park the book reading on page 1", async () => {
+        await parkBook(uuid, pdfPageAnchor(0), "reading");
+      });
+
+      const highlight =
+        await test.step("save a highlight on page 9", async () => {
+          return highlightOn(uuid, { epub_cfi_range: pdfHighlightRange(8) });
+        });
+
+      // The card names the page, or the outline entry covering it.
+      const card = bookDetailPage.savedPassageCard(highlight.text);
+      await test.step("check the book detail page lists it", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(card.root).toHaveCount(1);
+        await expect(card.metaText).toContainText(/^.+ · saved /);
+        await expect(card.openLink).toHaveAttribute(
+          "href",
+          `/pdf/${uuid}?page=9`,
+        );
+      });
+
+      await test.step("open it in the book", async () => {
+        await card.openInBook();
+        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 9 of/, {
+          timeout: 20_000,
+        });
+        await pdfReaderPage.assertDisplayedFor(uuid, 9);
+      });
+    });
   });
 });
 
@@ -462,118 +589,6 @@ test.describe("pdf reader", () => {
 // even though the suite is fullyParallel.
 test.describe("writes on the reserved PDF", () => {
   test.describe.configure({ mode: "serial" });
-
-  test("highlights a text-layer selection, paints it on reload, lists it, and deep-links back to its page", async ({
-    page,
-    request,
-  }) => {
-    const uuid = await fetchBookUuidByTitle(request, PDF.title);
-    // Land on page 9 (index 8): past the front matter, on real prose — the
-    // first pages of the Calibre conversion carry only a page number.
-    const positioned = await request.post("/api/progress", {
-      data: {
-        book_uuid: uuid,
-        format: "epub",
-        epub_cfi: "pdf-page:8",
-        progress_percent: 5,
-      },
-    });
-    expect(positioned.status()).toBe(200);
-    await openPdf(page, `/pdf/${uuid}`);
-    await expect(pageLabel(page)).toHaveText(/^Page 9 of/);
-
-    // Drag-select on the text layer: the popover offers the swatches.
-    const selected = await selectFirstTextRun(page);
-    const popover = page.locator(".rd-selection-popover");
-    await expect(popover).toBeVisible();
-
-    // Saving POSTs a `pdf:{page}:{quads}` anchor with the selected prose.
-    const { request: created } = await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: /\/api\/rpc\/highlights\/create(?:\?|$)/,
-        expectedStatus: 200,
-      },
-      async () =>
-        popover.getByRole("button", { name: "Highlight green" }).click(),
-    );
-    const body = created.postDataJSON() as {
-      input: { epub_cfi_range: string; color: string; text?: string };
-    };
-    expect(body.input.color).toBe("green");
-    expect(body.input.epub_cfi_range).toMatch(
-      /^pdf:8:(-?\d+(\.\d)?,){7}-?\d+(\.\d)?(;(-?\d+(\.\d)?,){7}-?\d+(\.\d)?)*$/,
-    );
-    expect(body.input.text?.trim()).toBe(selected);
-    await expect(popover).toHaveCount(0);
-
-    // Painted on this page, and again after a reload from the stored anchor.
-    await expect(page.locator(".pr-hl[data-color='green']")).not.toHaveCount(0);
-    await openPdf(page, `/pdf/${uuid}`);
-    await expect(page.locator(".pr-hl[data-color='green']")).not.toHaveCount(
-      0,
-      {
-        timeout: 15_000,
-      },
-    );
-
-    // Listed in the drawer with its prose.
-    await page.getByTestId("pdf-highlights").click();
-    await expect(page.getByTestId("reader-highlights-drawer")).toBeVisible();
-    const row = page
-      .getByTestId("reader-highlight-row")
-      .filter({ hasText: selected });
-    await expect(row).toHaveCount(1);
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("reader-highlights-drawer")).toHaveCount(0);
-
-    // The book-detail saved-passages card names the page (or the outline
-    // entry covering it) and its "open in book" lands on that page.
-    await gotoReady(page, `/books/${uuid}`);
-    const card = page
-      .getByTestId("highlight-card")
-      .filter({ hasText: selected });
-    await expect(card).toHaveCount(1);
-    await expect(card.getByTestId("highlight-meta")).toContainText(
-      /^.+ · saved /,
-    );
-    const open = card.getByTestId("highlight-open");
-    const href = await open.getAttribute("href");
-    expect(href).not.toBeNull();
-    const linked = new URL(href as string, page.url());
-    expect(linked.pathname).toBe(`/pdf/${uuid}`);
-    expect(linked.searchParams.get("page")).toBe("9");
-    // Move the saved position away first, so landing on page 9 proves the
-    // deep link won over resume.
-    const moved = await request.post("/api/progress", {
-      data: {
-        book_uuid: uuid,
-        format: "epub",
-        epub_cfi: "pdf-page:0",
-        progress_percent: 1,
-      },
-    });
-    expect(moved.status()).toBe(200);
-    await open.click();
-    await expect(page).toHaveURL(
-      (url) =>
-        url.pathname === `/pdf/${uuid}` && url.searchParams.get("page") === "9",
-    );
-    await expect(pageLabel(page)).toHaveText(/^Page 9 of/, { timeout: 20_000 });
-
-    // Clean up the highlight so re-runs start from an empty list.
-    const list = await request.get(`/api/highlights/book/${uuid}`);
-    expect(list.status()).toBe(200);
-    const mine = (
-      (await list.json()) as { id: number; text?: string }[]
-    ).filter((h) => h.text?.trim() === selected);
-    for (const h of mine) {
-      expect((await request.delete(`/api/highlights/${h.id}`)).status()).toBe(
-        204,
-      );
-    }
-  });
 
   test("saves a bookmark on the current page and jumps back to it", async ({
     page,

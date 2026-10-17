@@ -1,3 +1,4 @@
+import type { Request } from "@playwright/test";
 import { uniqueSuffix } from "./unique";
 
 export type HighlightColor = "amber" | "green" | "blue" | "rose" | "violet";
@@ -32,4 +33,15 @@ export function buildHighlight(
     text: `E2E passage ${uniqueSuffix()}`,
     ...overrides,
   };
+}
+
+/** A one-quad range on the 0-based PDF page `index`, in PDF user space. */
+export function pdfHighlightRange(index: number): string {
+  return `pdf:${index}:72,500,288,500,72,488,288,488`;
+}
+
+/** The highlight the reader sent, read off its highlights/create request. */
+export function sentHighlight(request: Request): NewHighlight {
+  const { input }: { input: NewHighlight } = request.postDataJSON();
+  return input;
 }

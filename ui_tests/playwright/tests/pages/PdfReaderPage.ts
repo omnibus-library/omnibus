@@ -1,6 +1,9 @@
 import type { Locator, Page, Response } from "@playwright/test";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
+import { highlightsUrls } from "../contracts/highlights";
+import type { HighlightColor } from "../data/highlights";
 import { expect } from "../fixtures/test";
+import { isPostTo } from "../utils/api";
 import { PagedReaderPage } from "./PagedReaderPage";
 
 /**
@@ -19,6 +22,7 @@ export class PdfReaderPage extends PagedReaderPage {
   readonly pageLabel: Locator;
   readonly highlightsButton: Locator;
   readonly bookmarksButton: Locator;
+  readonly selectionPopover: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -35,11 +39,26 @@ export class PdfReaderPage extends PagedReaderPage {
     this.bookmarksButton = page
       .getByRole("group", { name: "Annotations" })
       .getByRole("button", { name: "Bookmarks" });
+    this.selectionPopover = page.locator(".rd-selection-popover");
   }
 
   /** The label reads "Page N of M" once the first page has rasterised. */
   protected get readyLocator(): Locator {
     return this.pageLabel.filter({ hasText: /^Page \d+ of \d+$/ });
+  }
+
+  /** The swatch in the selection popover that highlights in `color`. */
+  highlightSwatch(color: HighlightColor): Locator {
+    return this.selectionPopover.getByRole("button", {
+      name: `Highlight ${color}`,
+    });
+  }
+
+  /** The marks PDF.js painted for the highlight saved at `range` in `color`. */
+  paintedHighlight(range: string, color: HighlightColor): Locator {
+    return this.page.locator(
+      `.pr-hl[data-anchor="${range}"][data-color="${color}"]`,
+    );
   }
 
   async goto(bookUuid: string): Promise<void> {
@@ -53,6 +72,33 @@ export class PdfReaderPage extends PagedReaderPage {
 
   async closeWithEscape(): Promise<void> {
     await this.page.keyboard.press("Escape");
+  }
+
+  /**
+   * Drags across the first run of text on the page. PDF.js lays one span per
+   * run, so a drag from its left edge to past its right edge selects it.
+   */
+  async selectFirstTextRun(): Promise<void> {
+    const run = this.textLayer
+      .locator("span")
+      .filter({ hasText: /\S{3,}/ })
+      .first();
+    await run.waitFor({ state: "attached", timeout: 15_000 });
+    const box = await run.boundingBox();
+    if (!box) throw new Error("the text run has no bounding box");
+    const midY = box.y + box.height / 2;
+    await this.page.mouse.move(box.x + 1, midY);
+    await this.page.mouse.down();
+    await this.page.mouse.move(box.x + box.width * 0.5, midY, { steps: 4 });
+    await this.page.mouse.move(box.x + box.width - 1, midY, { steps: 4 });
+    await this.page.mouse.up();
+  }
+
+  /** Saves the selection in `color`, then waits for the server's answer. */
+  async highlightSelection(color: HighlightColor): Promise<void> {
+    const created = this.page.waitForResponse(isPostTo(highlightsUrls.create));
+    await this.highlightSwatch(color).click();
+    await created;
   }
 
   /** Serves `pdf` as the book's file. */
@@ -78,6 +124,14 @@ export class PdfReaderPage extends PagedReaderPage {
     const label = (await this.pageLabel.textContent()) ?? "";
     const count = /of (\d+)$/.exec(label);
     return count ? Number(count[1]) : Number.NaN;
+  }
+
+  /** The selected text, trimmed. */
+  async selectedText(): Promise<string> {
+    const selection = await this.page.evaluate(() =>
+      String(window.getSelection()),
+    );
+    return selection.trim();
   }
 
   /** The canvas's backing width, so 0 until PDF.js has painted. */
