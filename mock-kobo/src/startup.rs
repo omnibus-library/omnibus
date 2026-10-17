@@ -9,8 +9,8 @@ use crate::control::Control;
 use crate::device::{mint_hardware_id, Device};
 use crate::state::{self, SavedState, StateError};
 
-/// Where a device syncs when nothing else names a server. It says `localhost`
-/// because the `OMNIBUS_PUBLIC_ORIGIN` lists the repo ships all name that host.
+/// Where a device syncs when nothing else names a server. `localhost`, because
+/// every shipped `OMNIBUS_PUBLIC_ORIGIN` list names it.
 pub const DEFAULT_URL: &str = "http://localhost:3000";
 
 /// Where the device points before any auto-wire.
