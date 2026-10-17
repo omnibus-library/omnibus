@@ -13,11 +13,12 @@ import { PagedReaderPage } from "./PagedReaderPage";
  */
 export class PdfReaderPage extends PagedReaderPage {
   protected readonly urlPattern = /\/pdf\/[^/?#]+(?:\?[^#]*)?$/;
+  // PDF.js fetches, parses and rasterises the file before the label shows.
+  protected readonly readyTimeout = 20_000;
 
   readonly highlightsDrawer: HighlightsDrawerComponent;
   readonly bookmarksDrawer: BookmarksDrawerComponent;
 
-  readonly loadingOverlay: Locator;
   readonly stagePanel: Locator;
   readonly pageCanvas: Locator;
   readonly textLayer: Locator;
@@ -30,7 +31,6 @@ export class PdfReaderPage extends PagedReaderPage {
     super(page);
     this.highlightsDrawer = new HighlightsDrawerComponent(page);
     this.bookmarksDrawer = new BookmarksDrawerComponent(page);
-    this.loadingOverlay = page.getByTestId("pdf-loading");
     this.stagePanel = page.getByTestId("pdf-stage");
     // PDF.js generates the canvas and the text layer with no role or test id.
     this.pageCanvas = page.locator(".pr-canvas");
@@ -66,7 +66,6 @@ export class PdfReaderPage extends PagedReaderPage {
 
   async goto(bookUuid: string): Promise<void> {
     await this.openAndSettle(`/pdf/${bookUuid}`);
-    await this.loadingOverlay.waitFor({ state: "detached", timeout: 20_000 });
   }
 
   async openHighlights(): Promise<void> {

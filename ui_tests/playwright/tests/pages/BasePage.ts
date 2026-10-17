@@ -7,6 +7,9 @@ import { waitForHydration } from "../utils/nav";
 export abstract class BasePage {
   protected abstract readonly urlPattern: RegExp;
 
+  /** Bounds `open`'s wait for `readyLocator`, in ms; unset keeps the default. */
+  protected readonly readyTimeout?: number;
+
   constructor(readonly page: Page) {}
 
   protected abstract get readyLocator(): Locator;
@@ -34,7 +37,7 @@ export abstract class BasePage {
   protected async open(path: string): Promise<void> {
     await this.page.goto(path);
     await waitForHydration(this.page);
-    await this.readyLocator.waitFor();
+    await this.readyLocator.waitFor({ timeout: this.readyTimeout });
   }
 
   /** Opens `path`, then waits for the page's first fetches to settle. */
