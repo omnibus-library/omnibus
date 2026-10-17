@@ -1,9 +1,9 @@
-//! Send-to-Kindle client wrappers: the per-user send + Kindle-email, and
-//! the admin SMTP config (get/set/clear/test). Each has a web/SSR
+//! Send-to-Kindle client wrappers: the per-user send + Kindle-email, delivery
+//! readiness, and the admin SMTP config (get/set/clear/test). Each has a web/SSR
 //! server-function wrapper and a mobile `reqwest` variant with identical
 //! signatures across the `#[cfg]` split.
 
-use omnibus_shared::{KindleSendStatus, SmtpConfigStatus, SmtpConfigUpdate};
+use omnibus_shared::{KindleDelivery, KindleSendStatus, SmtpConfigStatus, SmtpConfigUpdate};
 
 #[cfg(not(feature = "mobile"))]
 use super::note_server_fn_err;
@@ -85,6 +85,27 @@ pub async fn kindle_send_status(
         return Err(drain_error(response, status).await);
     }
     Ok(Some(response.json::<KindleSendStatus>().await?))
+}
+
+/// Web/SSR: whether this server can deliver to a Kindle, and from which
+/// sender address.
+#[cfg(not(feature = "mobile"))]
+pub async fn kindle_delivery(_server_url: &str) -> Result<KindleDelivery, DataError> {
+    crate::rpc::rpc_kindle_delivery()
+        .await
+        .map_err(note_server_fn_err)
+}
+
+/// Mobile: GET `/api/kindle/delivery`.
+#[cfg(feature = "mobile")]
+pub async fn kindle_delivery(server_url: &str) -> Result<KindleDelivery, DataError> {
+    let url = format!("{server_url}/api/kindle/delivery");
+    let response = with_bearer(http_client().get(&url)).send().await?;
+    let status = note_status(response.status());
+    if !status.is_success() {
+        return Err(drain_error(response, status).await);
+    }
+    Ok(response.json::<KindleDelivery>().await?)
 }
 
 // ── Per-user Kindle email ────────────────────────────────────────

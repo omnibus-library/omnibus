@@ -243,7 +243,7 @@ pub async fn rpc_send_smtp_test() -> Result<()> {
         .map_err(|e| internal_rpc_error("get kindle email", e))?;
     let Some(email) = email else {
         return Err(ServerFnError::new(
-            "set your Kindle email on your account page first, then send a test",
+            "set your Kindle email in Settings › Devices first, then send a test",
         )
         .into());
     };

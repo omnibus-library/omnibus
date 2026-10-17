@@ -1,7 +1,7 @@
-use super::send_to_kindle;
+use super::{kindle_delivery, send_to_kindle};
 use omnibus_db::test_support::seed_synced_ebook;
 use omnibus_db::worker::{Worker, WorkerConfig};
-use omnibus_shared::{SmtpConfigUpdate, SmtpSecurity};
+use omnibus_shared::{KindleDelivery, SmtpConfigUpdate, SmtpSecurity};
 
 async fn pool_with_user() -> (sqlx::SqlitePool, i64) {
     let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
@@ -54,7 +54,9 @@ async fn send_to_kindle_requires_a_kindle_email_on_the_account() {
     let err = send_to_kindle(&pool, &w, user_id, &uuid, None)
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("Kindle email"));
+    assert!(err
+        .to_string()
+        .contains("Kindle email in Settings › Devices"));
 }
 
 #[tokio::test]
@@ -142,4 +144,33 @@ async fn send_to_kindle_task_owner_scoping_hides_status_from_another_user() {
         w.owned_task_state(task_id, other_id).is_none(),
         "a different user must not be able to poll another user's send"
     );
+}
+
+#[tokio::test]
+async fn kindle_delivery_names_the_sender_when_smtp_is_configured() {
+    let (pool, _) = pool_with_user().await;
+    configure_smtp(&pool).await;
+
+    let delivery = kindle_delivery(&pool).await.unwrap();
+
+    let expected = KindleDelivery {
+        sender_address: Some("library@example.com".to_string()),
+        delivery_ready: true,
+    };
+    assert_eq!(delivery, expected);
+}
+
+#[tokio::test]
+async fn kindle_delivery_reports_not_ready_when_smtp_is_unset() {
+    let _env = omnibus_db::test_support::EnvVarGuard::set("SMTP_HOST", None)
+        .also_set("SMTP_FROM_EMAIL", None);
+    let (pool, _) = pool_with_user().await;
+
+    let delivery = kindle_delivery(&pool).await.unwrap();
+
+    let expected = KindleDelivery {
+        sender_address: None,
+        delivery_ready: false,
+    };
+    assert_eq!(delivery, expected);
 }
