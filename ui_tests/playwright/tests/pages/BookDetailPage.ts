@@ -57,6 +57,10 @@ export class BookDetailPage extends BasePage {
   readonly savedPassagesSection: Locator;
   readonly moreStop: Locator;
   readonly fromSameHandHeading: Locator;
+  readonly fromSameHandRow: Locator;
+  readonly fromSameHandTiles: Locator;
+  readonly fromSameHandLoadingMessage: Locator;
+  readonly onlyBookByNote: Locator;
   readonly suggestionsStrip: Locator;
   readonly suggestionsHeading: Locator;
   readonly bookNotFoundMessage: Locator;
@@ -115,6 +119,14 @@ export class BookDetailPage extends BasePage {
     this.fromSameHandHeading = page.getByRole("heading", {
       name: "From the same hand",
     });
+    this.fromSameHandRow = page.getByTestId("from-same-hand");
+    this.fromSameHandTiles = this.fromSameHandRow.getByTestId(
+      "from-same-hand-tile",
+    );
+    this.fromSameHandLoadingMessage = page.getByTestId(
+      "from-same-hand-loading",
+    );
+    this.onlyBookByNote = page.getByText(/only book by/);
     this.suggestionsStrip = page.getByTestId("suggestions-strip");
     this.suggestionsHeading = page.getByRole("heading", {
       name: "Suggested for you",
@@ -149,6 +161,18 @@ export class BookDetailPage extends BasePage {
   /** The authors line's link to the author called `name`. */
   authorLink(name: string): Locator {
     return this.authorsLine.getByRole("link", { name, exact: true });
+  }
+
+  /** The tile for the book called `title` in the "From the same hand" row. */
+  fromSameHandTile(title: string): Locator {
+    return this.fromSameHandTiles.filter({ hasText: title });
+  }
+
+  /** The cover image the "From the same hand" row draws for `title`. */
+  fromSameHandCover(title: string): Locator {
+    return this.fromSameHandRow.getByRole("img", {
+      name: `Cover of ${title}`,
+    });
   }
 
   /** The row the switcher draws for `format`. */
@@ -244,6 +268,20 @@ export class BookDetailPage extends BasePage {
     );
   }
 
+  /** Holds the author fetch open until the returned function lets it go. */
+  async holdAuthorFetch(): Promise<() => void> {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Web fetches the author through the server function, not the REST route.
+    await this.page.route("**/api/rpc/author", async (route) => {
+      await held;
+      await route.continue();
+    });
+    return release;
+  }
+
   /** Scrolls to `section` through its dot on the rail. */
   async jumpToSection(section: MarqueeSection): Promise<void> {
     await this.sectionDot(section).click();
@@ -265,6 +303,23 @@ export class BookDetailPage extends BasePage {
 
   async backToBook(): Promise<void> {
     await this.backToBookButton.click();
+  }
+
+  /**
+   * Opens the book without waiting for the network to settle, for a test that
+   * holds a request open: the page never goes idle while it is held.
+   */
+  async gotoWhileLoading(bookUuid: string): Promise<void> {
+    await this.open(`/books/${bookUuid}`);
+  }
+
+  /**
+   * Hovers the row first: until then the stack overlaps its tiles behind the
+   * author card, which would take the click.
+   */
+  async openSameHandBook(title: string): Promise<void> {
+    await this.fromSameHandRow.hover();
+    await this.fromSameHandTile(title).click();
   }
 
   /** Opens the reader through the EPUB format's Read action. */

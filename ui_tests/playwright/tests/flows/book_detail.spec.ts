@@ -55,6 +55,8 @@ const WIRTH_LEAD = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-1")!;
 const WIRTH_OTHERS = FIXTURE_BOOKS.filter(
   (b) => b.authors[0] === "Niklaus Wirth" && b.slug !== WIRTH_LEAD.slug,
 );
+const SIBLING = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-2")!;
+const SOLO = FIXTURE_BOOKS.find((b) => b.slug === "gamma")!;
 
 // Reserved for the read/unread-status tests: read state is per-(user, book)
 // server state, so this book must be read by no other spec. `standalone-canyon`
@@ -742,114 +744,106 @@ test.describe("book detail page", () => {
       });
     });
   });
-});
 
-// ---------------------------------------------------------------------------
-// Action — "From the same hand" populated row
-// ---------------------------------------------------------------------------
+  test.describe("from the same hand", () => {
+    test("show the author's other books", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
 
-test("From the same hand row renders other books by the same author", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-  // The author-fetch is awaited after the initial render, so poll for the
-  // populated row rather than asserting visibility synchronously.
-  const row = page.getByTestId("from-same-hand");
-  await expect(row).toBeVisible();
-  // Empty-state marker must NOT be present once the row is populated.
-  await expect(page.getByTestId("from-same-hand-empty")).toHaveCount(0);
+      await test.step("check the row shows", async () => {
+        await expect(bookDetailPage.fromSameHandRow).toBeVisible();
+        await expect(bookDetailPage.fromSameHandEmptyMessage).toHaveCount(0);
+      });
 
-  // The row should hold exactly the other Wirth books — never the current
-  // book (the page filters by `unique_identifier` to drop the self-tile).
-  const tiles = row.getByTestId("from-same-hand-tile");
-  await expect(tiles).toHaveCount(WIRTH_OTHERS.length);
+      // The page drops the book's own tile, so only the others show.
+      await test.step("check the row holds the other books", async () => {
+        await expect(bookDetailPage.fromSameHandTiles).toHaveCount(
+          WIRTH_OTHERS.length,
+        );
+        await expect(
+          bookDetailPage.fromSameHandCover(WIRTH_LEAD.title),
+        ).toHaveCount(0);
+      });
+    });
 
-  // The current book's cover-of-{title} alt must not appear under any of
-  // the row's tiles — verifies the self-exclusion behaviour from
-  // `pages/book_detail.rs::BookDetailPage`.
-  await expect(
-    row.getByRole("img", { name: `Cover of ${WIRTH_LEAD.title}` }),
-  ).toHaveCount(0);
+    test("open another book by the author from its cover", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
+      const siblingUuid = await fetchBookUuidByTitle(request, SIBLING.title);
 
-  // Clicking any sibling tile must navigate to its /books/:uuid page —
-  // tiles are router Links that swap the route param in place. The Atrium
-  // stack overlaps the tiles behind the author-lead card and only spreads
-  // them apart on row hover, so hover first to settle the layout before
-  // clicking — otherwise the tile's centre sits under the lead card and the
-  // click is intercepted (matches the "Hover the row to spread" affordance).
-  await row.hover();
-  await tiles.first().click();
-  await expect(page).toHaveURL(/\/books\/[0-9a-fA-F-]{36}$/);
-  await expect(page).not.toHaveURL(new RegExp(`/books/${uuid}$`));
-});
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.fromSameHandRow).toBeVisible();
+      });
 
-// ---------------------------------------------------------------------------
-// Action — "From the same hand" empty state
-// ---------------------------------------------------------------------------
+      await test.step("open a sibling from the row", async () => {
+        await bookDetailPage.openSameHandBook(SIBLING.title);
+      });
 
-test("From the same hand shows empty state for single-book authors", async ({
-  page,
-  request,
-}) => {
-  // Hedy Lamarr authors exactly one work across the *entire* fixture set —
-  // the standalone `gamma` ebook, and (unlike Ada Lovelace) no audiobook. So
-  // even when a parallel spec has seeded the audiobook library, her
-  // author-fetch stays single-book: the row filters to empty and the page
-  // renders `from-same-hand-empty`. `alpha`/Ada can't be used here — Ada also
-  // authors "The Analytical Audiobook", which flips her to multi-book the
-  // moment audiobooks are indexed, so this assertion raced audiobook seeding.
-  const SOLO = FIXTURE_BOOKS.find((b) => b.slug === "gamma")!;
-  const uuid = await fetchBookUuidByTitle(request, SOLO.title);
-  await gotoReady(page, `/books/${uuid}`);
+      await test.step("check the sibling shows", async () => {
+        await bookDetailPage.assertDisplayedFor(siblingUuid);
+      });
+    });
 
-  // Wait for the heading to confirm the section rendered.
-  await expect(
-    page.getByRole("heading", { name: "From the same hand" }),
-  ).toBeVisible();
+    // Hedy Lamarr is single-book across both libraries. Ada Lovelace is not,
+    // since the audiobook seed gives her a second book.
+    test("show the empty state for an author's only book", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, SOLO.title);
 
-  // Empty-state card must be visible; the populated row must be absent.
-  await expect(page.getByTestId("from-same-hand-empty")).toBeVisible();
-  await expect(page.getByTestId("from-same-hand")).toHaveCount(0);
-});
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-// Regression for #2478: while the author fetch was in flight the block read
-// "1 book in your library · this is the only book by <author> so far", then
-// corrected itself once the real count arrived. Holding the request open makes
-// that window the whole test rather than a race.
-test("the author block states no count until its fetch has landed", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
+      await test.step("check the empty state shows", async () => {
+        await expect(bookDetailPage.fromSameHandHeading).toBeVisible();
+        await expect(bookDetailPage.fromSameHandEmptyMessage).toBeVisible();
+        await expect(bookDetailPage.fromSameHandRow).toHaveCount(0);
+      });
+    });
 
-  let release: (() => void) | undefined;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
+    // #2478: the block called itself the only book by its author while the
+    // author fetch was still in flight.
+    test("state no count until the author fetch lands", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, WIRTH_LEAD.title);
+
+      const release = await test.step("hold the author fetch", async () => {
+        return bookDetailPage.holdAuthorFetch();
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.gotoWhileLoading(uuid);
+      });
+
+      await test.step("check the section says it is still looking", async () => {
+        await expect(bookDetailPage.fromSameHandLoadingMessage).toBeVisible();
+        await expect(bookDetailPage.fromSameHandEmptyMessage).toHaveCount(0);
+        await expect(bookDetailPage.onlyBookByNote).toHaveCount(0);
+      });
+
+      await test.step("let the fetch land", async () => {
+        release();
+      });
+
+      await test.step("check the row replaces the note", async () => {
+        await expect(bookDetailPage.fromSameHandRow).toBeVisible();
+        await expect(bookDetailPage.fromSameHandLoadingMessage).toHaveCount(0);
+      });
+    });
   });
-  // Web fetches the author through the server function, not the REST route.
-  await page.route("**/api/rpc/author", async (route) => {
-    await held;
-    await route.continue();
-  });
-
-  // Plain `goto`, not `gotoReady`: the held request means the page never
-  // reaches `networkidle`, which is the state this test exists to inspect.
-  await page.goto(`/books/${uuid}`);
-
-  // The section is up, and says it is still looking — not that this is the
-  // only book by them.
-  await expect(page.getByTestId("from-same-hand-loading")).toBeVisible();
-  await expect(page.getByTestId("from-same-hand-empty")).toHaveCount(0);
-  await expect(page.getByText(/only book by/)).toHaveCount(0);
-
-  release?.();
-
-  // And once it lands, the real row replaces the note.
-  await expect(page.getByTestId("from-same-hand")).toBeVisible();
-  await expect(page.getByTestId("from-same-hand-loading")).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------------------
