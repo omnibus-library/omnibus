@@ -1,5 +1,6 @@
 import type { APIRequestContext } from "@playwright/test";
 import { account } from "../contracts/account";
+import { kindle } from "../contracts/kindle";
 import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
@@ -540,6 +541,207 @@ test.describe("book detail page", () => {
       });
     });
   });
+
+  test.describe("formats", () => {
+    test("list the epub format with its actions", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the epub row shows", async () => {
+        await expect(bookDetailPage.formatSwitcher).toBeVisible();
+        await expect(epubRow.root).toBeVisible();
+        await expect(epubRow.root).toHaveAttribute("data-format", "EPUB");
+        // The row draws the format as a glyph tile, so the code is in the
+        // badge's accessible name rather than its text.
+        await expect(epubRow.badge).toHaveAttribute("aria-label", "EPUB");
+      });
+
+      await test.step("check the epub actions show", async () => {
+        await expect(epubRow.readLink).toBeVisible();
+        await expect(epubRow.readLink).toHaveAttribute("href", /\/read\//);
+        await expect(epubRow.kindleButton).toBeVisible();
+        await expect(epubRow.kindleButton).toBeEnabled();
+      });
+
+      // Alpha has no audio file, so no row in the switcher offers Listen.
+      await test.step("check no listen action shows", async () => {
+        await expect(bookDetailPage.formatListenLinks).toHaveCount(0);
+      });
+    });
+
+    test("open the export menu with the ebook's exports", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const { exportMenu } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the menu starts closed", async () => {
+        await expect(exportMenu.triggerButton).toBeVisible();
+        await expect(exportMenu.panel).toHaveCount(0);
+      });
+
+      await test.step("open the menu", async () => {
+        await exportMenu.open();
+        await expect(exportMenu.panel).toBeVisible();
+      });
+
+      await test.step("check the ebook exports show", async () => {
+        await expect(exportMenu.downloadEpubLink).toHaveAttribute(
+          "href",
+          /\/api\/ebooks\/.+\/download$/,
+        );
+        await expect(exportMenu.downloadEpubLink).toHaveAttribute("download");
+        await expect(exportMenu.sendToKindleButton).toBeVisible();
+        await expect(exportMenu.sendToKindleButton).toBeEnabled();
+        await expect(exportMenu.sendToKoboButton).toBeVisible();
+        await expect(exportMenu.sendToKoboButton).toBeEnabled();
+      });
+
+      await test.step("check no audiobook download shows", async () => {
+        await expect(exportMenu.downloadAudiobookLink).toHaveCount(0);
+      });
+    });
+
+    test("close the export menu by clicking outside it", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const { exportMenu } = bookDetailPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the menu", async () => {
+        await bookDetailPage.goto(uuid);
+        await exportMenu.open();
+        await expect(exportMenu.panel).toBeVisible();
+      });
+
+      await test.step("click outside it", async () => {
+        await exportMenu.closeByClickingOutside();
+      });
+
+      await test.step("check the menu closed", async () => {
+        await expect(exportMenu.panel).toHaveCount(0);
+      });
+    });
+
+    test("send a book to kobo as a uuid named download", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book without a directory picker", async () => {
+        await bookDetailPage.presetNoDirectoryPicker();
+        await bookDetailPage.goto(uuid);
+        await expect(epubRow.koboButton).toBeVisible();
+        await expect(epubRow.koboButton).toBeEnabled();
+      });
+
+      // The stem is the book uuid, which the USB import relies on. The
+      // extension is `.kepub.epub` when kepubify converts and `.epub` if not.
+      await test.step("send it to kobo", async () => {
+        const download = await epubRow.sendToKobo();
+        expect(download.suggestedFilename()).toMatch(
+          new RegExp(`^${uuid}\\.(kepub\\.)?epub$`),
+        );
+      });
+    });
+
+    test("send the epub to kindle", async ({
+      bookDetailPage,
+      request,
+      expectMutation,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book with kindle sends answered", async () => {
+        await bookDetailPage.stubKindleSend({ status: "sent" });
+        await bookDetailPage.goto(uuid);
+        await expect(epubRow.kindleButton).toBeEnabled();
+      });
+
+      await test.step("send it to kindle", async () => {
+        await expectMutation(kindle.send(uuid), () => epubRow.sendToKindle());
+      });
+
+      await test.step("check the send reports success", async () => {
+        await expect(epubRow.kindleSendStatus).toHaveText(
+          "Sent to your Kindle.",
+        );
+        await expect(epubRow.kindleSendStatus).toHaveClass(/success/);
+      });
+    });
+
+    test("show an error when a kindle send fails", async ({
+      bookDetailPage,
+      request,
+      expectMutation,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book with kindle sends failing", async () => {
+        await bookDetailPage.stubKindleSend({
+          status: "failed",
+          message: "SMTP delivery failed",
+        });
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("send it to kindle", async () => {
+        await expectMutation(kindle.send(uuid), () => epubRow.sendToKindle());
+      });
+
+      await test.step("check the send reports the failure", async () => {
+        await expect(epubRow.kindleSendStatus).toHaveClass(/error/);
+        await expect(epubRow.kindleSendStatus).toContainText(
+          "SMTP delivery failed",
+        );
+      });
+    });
+
+    test("dismiss a failed kindle send's error", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const epubRow = bookDetailPage.formatRow("EPUB");
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book with kindle sends failing", async () => {
+        await bookDetailPage.stubKindleSend({
+          status: "failed",
+          message: "SMTP delivery failed",
+        });
+        await bookDetailPage.goto(uuid);
+      });
+
+      // The stub answers the send request, so this test does not assert it.
+      await test.step("send it to kindle", async () => {
+        await epubRow.sendToKindle();
+        await expect(epubRow.kindleSendStatus).toHaveClass(/error/);
+      });
+
+      // An error toast stays up until dismissed, unlike the success toast.
+      await test.step("dismiss the error", async () => {
+        await epubRow.dismissKindleToast();
+        await expect(epubRow.kindleSendStatus).toHaveCount(0);
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -648,277 +850,6 @@ test("the author block states no count until its fetch has landed", async ({
   // And once it lands, the real row replaces the note.
   await expect(page.getByTestId("from-same-hand")).toBeVisible();
   await expect(page.getByTestId("from-same-hand-loading")).toHaveCount(0);
-});
-
-// ---------------------------------------------------------------------------
-// Pre-existing coverage — kept so the spec remains a single source of truth
-// for the book detail page. These post-date the original landing-row entry
-// from #297; the new tests above were added for #385.
-// ---------------------------------------------------------------------------
-
-test("renders the detail contents for the selected book", async ({
-  page,
-  request,
-}) => {
-  // Resolve the backend uuid the same way a real click would: read it out
-  // of the same RPC the landing page consumes. Deep-linking by uuid keeps
-  // this test independent of the landing page's row order.
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-  await gotoReady(page, `/books/${uuid}`);
-
-  // Title heading matches the fixture
-  await expect(
-    page.getByRole("heading", { level: 1, name: TARGET.title }),
-  ).toBeVisible();
-
-  // At least the first author is visible. Scoped to the dedicated authors
-  // line because the breadcrumb falls back to the first author when the book
-  // has no series, so a bare getByText(...) matches twice.
-  await expect(page.getByTestId("book-authors")).toContainText(
-    TARGET.authors[0]!,
-  );
-
-  // Format switcher renders one row per available format (F1.4).
-  const switcher = page.getByTestId("format-switcher");
-  await expect(switcher).toBeVisible();
-
-  // All fixture books are EPUB; the EPUB row must exist with its badge and
-  // the per-format CTAs grouped underneath. Use getByTestId rather than CSS
-  // attribute/class locators per `04-playwright.md` ("semantic first").
-  const epubRow = switcher.getByTestId("format-row-epub");
-  await expect(epubRow).toBeVisible();
-  await expect(epubRow).toHaveAttribute("data-format", "EPUB");
-  // The marquee copies row draws the format as a glyph tile, so the code lives in
-  // the badge's accessible name rather than its text.
-  await expect(epubRow.getByTestId("format-badge")).toHaveAttribute(
-    "aria-label",
-    "EPUB",
-  );
-
-  // Read now routes into the F2.2 immersive reader (an enabled link to
-  // /read/:uuid on web); F4.3 Send-to-Kindle is now an enabled action button
-  // (the send flow is exercised in its own action test below).
-  const readBtn = epubRow.getByTestId("action-read");
-  await expect(readBtn).toBeVisible();
-  await expect(readBtn).toHaveAttribute("href", /\/read\//);
-  const kindleBtn = epubRow.getByTestId("action-kindle");
-  await expect(kindleBtn).toBeVisible();
-  await expect(kindleBtn).toBeEnabled();
-
-  // The hero CTA row condenses the per-device actions behind an "Export"
-  // dropdown. It's closed by default; opening it reveals the EPUB download
-  // link and the Send-to-Kindle button (enabled because the book has an
-  // EPUB), which carries its own testid so it doesn't collide with the
-  // per-format-row button above.
-  const exportTrigger = page.getByTestId("hero-export");
-  await expect(exportTrigger).toBeVisible();
-  await expect(page.getByTestId("hero-export-panel")).toHaveCount(0);
-  await exportTrigger.click();
-  const exportPanel = page.getByTestId("hero-export-panel");
-  await expect(exportPanel).toBeVisible();
-  const downloadEpub = exportPanel.getByTestId("export-download-epub");
-  await expect(downloadEpub).toHaveAttribute(
-    "href",
-    /\/api\/ebooks\/.+\/download$/,
-  );
-  await expect(downloadEpub).toHaveAttribute("download");
-  const heroKindleBtn = exportPanel.getByTestId("hero-send-kindle");
-  await expect(heroKindleBtn).toBeVisible();
-  await expect(heroKindleBtn).toBeEnabled();
-  // Send-to-Kobo is the interactive button (writes the KEPUB onto a plugged-in
-  // Kobo on Chromium, or downloads it to copy over elsewhere); enabled because
-  // the book has an EPUB. Its own testid keeps it distinct from the per-format
-  // action-kobo above.
-  const koboExport = exportPanel.getByTestId("hero-send-kobo");
-  await expect(koboExport).toBeVisible();
-  await expect(koboExport).toBeEnabled();
-  // The audiobook download only appears for books with an audio file; the
-  // ebook-only seed must not render it. Close the menu again via the scrim.
-  // The scrim fills the viewport, so click a spot clear of the panel — below
-  // the sticky topbar (which sits above the scrim and intercepts a corner
-  // click) and left of the dropdown.
-  await expect(exportPanel.getByTestId("export-download-audio")).toHaveCount(0);
-  await page
-    .getByTestId("hero-export-scrim")
-    .click({ position: { x: 10, y: 300 } });
-  await expect(page.getByTestId("hero-export-panel")).toHaveCount(0);
-
-  // No M4B fixture in the ebook seed — the per-format Listen CTA must NOT
-  // render. (Scoped to the format switcher; the hero "Listen" secondary
-  // button only renders when both formats are present.)
-  await expect(switcher.getByTestId("action-listen")).toHaveCount(0);
-
-  // F3.2 ratings ship as the interactive hero rating card; F3.3 suggestions
-  // renders the "Readers also enjoyed" strip below the metadata. (Its inner
-  // state — connect message / pending / results — depends on whether a
-  // Hardcover key is configured and on the external API, so we only assert the
-  // section + heading are present here, not the resolved contents.)
-  await expect(page.getByTestId("rating-stars")).toBeVisible();
-  await expect(page.getByTestId("suggestions-strip")).toBeAttached();
-  await expect(
-    page.getByRole("heading", { name: "Suggested for you" }),
-  ).toBeVisible();
-
-  // The topbar Library link still navigates to landing (default Grid view).
-  await page.getByRole("link", { name: "Library", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId("lib-grid")).toBeVisible();
-});
-
-// Action — Send to Kobo (F4.1 KEPUB direct write / download fallback)
-// ---------------------------------------------------------------------------
-
-test("Send to Kobo delivers the book with a uuid-named file", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-  // Force the download fallback path: without the File System Access API the
-  // button fetches the KEPUB and triggers a normal browser download. The native
-  // directory picker can't be driven headlessly (and isn't present in every
-  // Chromium build), so nulling `showDirectoryPicker` makes the path
-  // deterministic in CI. Must run before navigation so it applies to the page.
-  await page.addInitScript(() => {
-    Object.defineProperty(window, "showDirectoryPicker", {
-      configurable: true,
-      value: undefined,
-    });
-  });
-  await gotoReady(page, `/books/${uuid}`);
-
-  const epubRow = page
-    .getByTestId("format-switcher")
-    .getByTestId("format-row-epub");
-  const koboBtn = epubRow.getByTestId("action-kobo");
-  await expect(koboBtn).toBeVisible();
-  await expect(koboBtn).toBeEnabled();
-
-  // Clicking downloads the file (the fallback anchor keeps the page put). The
-  // filename stem is the canonical book uuid; the extension is `.kepub.epub`
-  // when kepubify converts, or `.epub` on fallback — assert the uuid-embedded
-  // contract that F4.4's USB import relies on, tolerant of both.
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    koboBtn.click(),
-  ]);
-  expect(download.suggestedFilename()).toMatch(
-    new RegExp(`^${uuid}\\.(kepub\\.)?epub$`),
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Action — Send to Kindle (F4.3)
-// ---------------------------------------------------------------------------
-
-test("sends the EPUB to Kindle and shows a sent status", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const kindleBtn = page
-    .getByTestId("format-row-epub")
-    .getByTestId("action-kindle");
-  await expect(kindleBtn).toBeEnabled();
-
-  // Send is enqueue-and-poll: the POST returns a worker task id, then the button
-  // polls the status endpoint. Mock both so the test never touches a real SMTP
-  // relay or a configured Kindle email.
-  await page.route("**/api/rpc/kindle/send", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "1",
-      });
-    }
-    return route.continue();
-  });
-  await page.route("**/api/rpc/kindle/send/status", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ status: "sent" }),
-      });
-    }
-    return route.continue();
-  });
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/kindle/send",
-      expectedBody: { book_uuid: uuid, file_id: null },
-      expectedStatus: 200,
-    },
-    async () => kindleBtn.click(),
-  );
-
-  await expect(page.getByTestId("kindle-send-status")).toHaveText(
-    "Sent to your Kindle.",
-  );
-  await expect(page.getByTestId("kindle-send-status")).toHaveClass(/success/);
-});
-
-test("shows an error when the Kindle send fails", async ({ page, request }) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  const kindleBtn = page
-    .getByTestId("format-row-epub")
-    .getByTestId("action-kindle");
-
-  // Enqueue succeeds (returns a task id); the worker delivery then fails,
-  // surfaced by the status poll. This is the path that previously hung the
-  // button on "Sending…" instead of ever raising an error.
-  await page.route("**/api/rpc/kindle/send", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "7",
-      });
-    }
-    return route.continue();
-  });
-  await page.route("**/api/rpc/kindle/send/status", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          status: "failed",
-          message: "SMTP delivery failed",
-        }),
-      });
-    }
-    return route.continue();
-  });
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/kindle/send",
-      expectedBody: { book_uuid: uuid, file_id: null },
-      expectedStatus: 200,
-    },
-    async () => kindleBtn.click(),
-  );
-
-  // The error surfaces as a persistent toast (it does not auto-dismiss like the
-  // success toast) and can be cleared via its dismiss button.
-  await expect(page.getByTestId("kindle-send-status")).toHaveClass(/error/);
-  await expect(page.getByTestId("kindle-send-status")).toContainText(
-    "SMTP delivery failed",
-  );
-  await page.getByTestId("kindle-toast-dismiss").click();
-  await expect(page.getByTestId("kindle-send-status")).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------------------

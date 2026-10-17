@@ -1,10 +1,14 @@
 import type { Locator, Page } from "@playwright/test";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { ChipListEditorComponent } from "../components/ChipListEditorComponent";
+import { ExportMenuComponent } from "../components/ExportMenuComponent";
+import { FormatRowComponent } from "../components/FormatRowComponent";
 import { RatingComponent } from "../components/RatingComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { kindleUrls } from "../contracts/kindle";
 import { physicalUrls } from "../contracts/physical";
+import type { KindleSendStatus } from "../data/kindle";
 import { expect } from "../fixtures/test";
 import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
@@ -21,11 +25,14 @@ const MARQUEE_SECTIONS = [
 
 export type MarqueeSection = (typeof MARQUEE_SECTIONS)[number];
 
+export type FormatLabel = "EPUB" | "PDF" | "MP3" | "M4B";
+
 export class BookDetailPage extends BasePage {
   protected readonly urlPattern = /\/books\/[^/?#]+$/;
 
   readonly topNav: TopNavComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
+  readonly exportMenu: ExportMenuComponent;
   readonly rating: RatingComponent;
   readonly genreChips: ChipListEditorComponent;
   readonly tagChips: ChipListEditorComponent;
@@ -45,6 +52,7 @@ export class BookDetailPage extends BasePage {
   readonly snapSections: Locator;
   readonly backToBookButton: Locator;
   readonly formatSwitcher: Locator;
+  readonly formatListenLinks: Locator;
   readonly savedPassagesHeading: Locator;
   readonly savedPassagesSection: Locator;
   readonly moreStop: Locator;
@@ -72,6 +80,7 @@ export class BookDetailPage extends BasePage {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
+    this.exportMenu = new ExportMenuComponent(page);
     this.rating = new RatingComponent(page);
     this.genreChips = new ChipListEditorComponent(page, "genres");
     this.tagChips = new ChipListEditorComponent(page, "tags");
@@ -96,6 +105,8 @@ export class BookDetailPage extends BasePage {
     this.formatSwitcher = page.getByRole("group", {
       name: "Available formats",
     });
+    // Asserted absent, so found by test id, not by label.
+    this.formatListenLinks = this.formatSwitcher.getByTestId("action-listen");
     this.savedPassagesHeading = page.getByRole("heading", {
       name: "Passages you saved",
     });
@@ -138,6 +149,14 @@ export class BookDetailPage extends BasePage {
   /** The authors line's link to the author called `name`. */
   authorLink(name: string): Locator {
     return this.authorsLine.getByRole("link", { name, exact: true });
+  }
+
+  /** The row the switcher draws for `format`. */
+  formatRow(format: FormatLabel): FormatRowComponent {
+    return new FormatRowComponent(
+      this.page,
+      this.formatSwitcher.getByTestId(`format-row-${format.toLowerCase()}`),
+    );
   }
 
   /** The kicker's link to `series`; exact, so the More stop's covers miss. */
@@ -183,6 +202,46 @@ export class BookDetailPage extends BasePage {
 
   async openSeries(series: string): Promise<void> {
     await this.seriesLink(series).click();
+  }
+
+  /**
+   * Removes the directory picker on every later load, so Send to Kobo
+   * downloads the file: a headless run cannot drive the picker. Call it
+   * before `goto`.
+   */
+  async presetNoDirectoryPicker(): Promise<void> {
+    await this.page.addInitScript(() => {
+      Object.defineProperty(window, "showDirectoryPicker", {
+        configurable: true,
+        value: undefined,
+      });
+    });
+  }
+
+  /**
+   * Answers a Kindle send, then its status poll with `outcome`, so no SMTP
+   * relay or Kindle address is needed. Send is enqueue-and-poll: the POST
+   * returns a task id and the button polls the status of that task.
+   */
+  async stubKindleSend(outcome: KindleSendStatus): Promise<void> {
+    await this.page.route(kindleUrls.send, (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: "1",
+          })
+        : route.continue(),
+    );
+    await this.page.route(kindleUrls.status, (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(outcome),
+          })
+        : route.continue(),
+    );
   }
 
   /** Scrolls to `section` through its dot on the rail. */
