@@ -16,7 +16,7 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // the split matters even within it: the suite is fullyParallel, so the
 // write-path tests (PDF, which takes the progress, read-status, highlight
 // and bookmark writes) and the read-only tests (PRISTINE, which assert a
-// page-1 open) can run concurrently — a shared book would race.
+// page-1 open) can run concurrently, and a shared book would race.
 const PDF = FIXTURE_BOOKS.find((b) => b.slug === "time-machine")!;
 const PRISTINE = FIXTURE_BOOKS.find((b) => b.slug === "flatland")!;
 // A saved selection anchors as `pdf:{page}:{quads}`, eight coordinates a quad.
