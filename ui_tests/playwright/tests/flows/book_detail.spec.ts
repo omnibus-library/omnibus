@@ -39,7 +39,7 @@ const WIRTH_OTHERS = FIXTURE_BOOKS.filter(
   (b) => b.authors[0] === "Niklaus Wirth" && b.slug !== WIRTH_LEAD.slug,
 );
 const SIBLING = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-2")!;
-const SOLO = FIXTURE_BOOKS.find((b) => b.slug === "gamma")!;
+const LAMARR_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "gamma")!;
 
 // Only this spec opens `standalone-canyon`, so it can write its read status.
 const READ_STATUS_BOOK = FIXTURE_BOOKS.find(
@@ -788,7 +788,7 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
     }) => {
-      const uuid = await fetchBookUuidByTitle(request, SOLO.title);
+      const uuid = await fetchBookUuidByTitle(request, LAMARR_BOOK.title);
 
       await test.step("open the book", async () => {
         await bookDetailPage.goto(uuid);

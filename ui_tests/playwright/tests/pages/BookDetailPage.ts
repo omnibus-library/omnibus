@@ -234,6 +234,14 @@ export class BookDetailPage extends BasePage {
     await this.openAndSettle(`/books/${bookUuid}`);
   }
 
+  /**
+   * Opens the book without waiting for the network to settle, for a test that
+   * holds a request open: the page never goes idle while it is held.
+   */
+  async gotoWhileLoading(bookUuid: string): Promise<void> {
+    await this.open(`/books/${bookUuid}`);
+  }
+
   async startReading(): Promise<void> {
     await this.startReadingButton.click();
   }
@@ -251,6 +259,15 @@ export class BookDetailPage extends BasePage {
   }
 
   /**
+   * Hovers the row first: until then the stack overlaps its tiles behind the
+   * author card, which would take the click.
+   */
+  async openSameHandBook(title: string): Promise<void> {
+    await this.fromSameHandRow.hover();
+    await this.fromSameHandTile(title).click();
+  }
+
+  /**
    * Removes the directory picker on every later load, so Send to Kobo
    * downloads the file: a headless run cannot drive the picker. Call it
    * before `goto`.
@@ -265,9 +282,8 @@ export class BookDetailPage extends BasePage {
   }
 
   /**
-   * Answers a Kindle send, then its status poll with `outcome`, so no SMTP
-   * relay or Kindle address is needed. Send is enqueue-and-poll: the POST
-   * returns a task id and the button polls the status of that task.
+   * Answers the Kindle send with a task id and the status poll after it with
+   * `outcome`, so no SMTP relay or Kindle address is needed.
    */
   async stubKindleSend(outcome: KindleSendStatus): Promise<void> {
     await this.page.route(kindleUrls.send, (route) =>
@@ -325,23 +341,6 @@ export class BookDetailPage extends BasePage {
 
   async backToBook(): Promise<void> {
     await this.backToBookButton.click();
-  }
-
-  /**
-   * Opens the book without waiting for the network to settle, for a test that
-   * holds a request open: the page never goes idle while it is held.
-   */
-  async gotoWhileLoading(bookUuid: string): Promise<void> {
-    await this.open(`/books/${bookUuid}`);
-  }
-
-  /**
-   * Hovers the row first: until then the stack overlaps its tiles behind the
-   * author card, which would take the click.
-   */
-  async openSameHandBook(title: string): Promise<void> {
-    await this.fromSameHandRow.hover();
-    await this.fromSameHandTile(title).click();
   }
 
   /** Opens the reader through the EPUB format's Read action. */
