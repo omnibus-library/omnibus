@@ -53,8 +53,8 @@ const BLOB_CSS_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-reef")!;
 // The one fixture whose publisher CSS embeds a font and applies it on
 // elements, so Original versus a named face is assertable at all.
 const FONT_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-lagoon")!;
-// The gesture tests park a position here and assert nothing moved it, so no
-// other spec may write its position. Small, for the cold-open reason above.
+// The gesture tests park a position here and assert where the page lands, so
+// no other spec may write its position. Small, for the cold-open reason above.
 const TWO_FINGER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "mariucha")!;
 // Mid-way through its long seventh chapter. Opened at the book's start, the
 // first taps save nothing for a reason not yet found, so the tests park here.
@@ -188,7 +188,6 @@ test.describe("epub reader", () => {
       });
     });
 
-    // #2252: lifting the top bar over the scrim must not cost this dismissal.
     test("close the display panel with escape", async ({
       epubReaderPage,
       request,
@@ -208,6 +207,7 @@ test.describe("epub reader", () => {
       });
     });
 
+    // #2252: lifting the top bar over the scrim must not cost this dismissal.
     test("close the display panel by clicking outside it", async ({
       epubReaderPage,
       request,
@@ -1430,16 +1430,18 @@ test.describe("epub reader", () => {
       });
     });
 
+    // #2354: Escape must survive the click that filters the sheet.
     test("close the annotations sheet with escape", async ({
       epubReaderPage,
       request,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the annotations sheet", async () => {
+      await test.step("open the annotations sheet filtered to bookmarks", async () => {
         await epubReaderPage.goto(uuid);
         await epubReaderPage.openAnnotations();
         await expect(epubReaderPage.annotationsSheet).toBeVisible();
+        await epubReaderPage.filterAnnotationsToBookmarks();
       });
 
       await test.step("close it with escape", async () => {
