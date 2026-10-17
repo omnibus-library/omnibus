@@ -111,9 +111,9 @@ fn origin_from_headers(headers: &HeaderMap) -> String {
 
 /// The request origin (`scheme://host`), so download/image URLs are absolute.
 /// Prefers `X-Forwarded-Host` over `Host` and `X-Forwarded-Proto` over `http`.
-/// A host without a port (a Kobo drops it) that `public_origins` don't already
-/// list takes the first same-host entry that has a port. No resolvable host
-/// returns `""` so callers emit host-relative URLs, not `http:///…`.
+/// A portless host (a Kobo drops the port) whose origin isn't in `public_origins`
+/// takes the first listed origin with the same scheme and host. No resolvable
+/// host returns `""` so callers emit host-relative URLs, not `http:///…`.
 fn origin_for(headers: &HeaderMap, public_origins: &[String]) -> String {
     let host = headers
         .get("x-forwarded-host")
@@ -128,23 +128,26 @@ fn origin_for(headers: &HeaderMap, public_origins: &[String]) -> String {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("http");
     let from_headers = format!("{scheme}://{host}");
-    let portless = host
-        .parse::<Authority>()
-        .ok()
-        .filter(|a| a.port().is_none());
-    let Some(portless) = portless else {
+    let Ok(authority) = host.parse::<Authority>() else {
         return from_headers;
     };
-    if public_origins.contains(&from_headers) {
+    let listed = public_origins
+        .iter()
+        .any(|o| o.eq_ignore_ascii_case(&from_headers));
+    if authority.port().is_some() || listed {
         return from_headers;
     }
+    // A Kobo drops the port, never the scheme, so only an entry with the request's scheme may supply it.
     public_origins
         .iter()
         .find_map(|origin| {
             let uri = origin.parse::<Uri>().ok()?;
-            let (scheme, authority) = (uri.scheme_str()?, uri.authority()?);
-            (authority.port().is_some() && authority.host().eq_ignore_ascii_case(portless.host()))
-                .then(|| format!("{scheme}://{authority}"))
+            let (entry_scheme, entry_authority) = (uri.scheme_str()?, uri.authority()?);
+            let same = entry_scheme.eq_ignore_ascii_case(scheme)
+                && entry_authority
+                    .host()
+                    .eq_ignore_ascii_case(authority.host());
+            same.then(|| format!("{entry_scheme}://{entry_authority}"))
         })
         .unwrap_or(from_headers)
 }

@@ -77,18 +77,33 @@ fn origin_for_keeps_a_request_origin_that_is_already_listed() {
         ("x-forwarded-host", "nas.lan"),
         ("x-forwarded-proto", "https"),
     ]);
+    // The listing is matched without regard to the host's case.
+    let mixed_case = origins(&["http://nas.lan:3000", "http://nas.lan"]);
 
     assert_eq!(origin_for(&req, &public), "https://nas.lan");
+    assert_eq!(
+        origin_for(&headers(&[("host", "NAS.lan")]), &mixed_case),
+        "http://NAS.lan"
+    );
 }
 
 #[test]
-fn origin_for_ignores_a_public_origin_without_a_port() {
-    // The Kobo drops only the port, so an http-only Kobo must not be moved to https.
-    let public = origins(&["https://nas.lan"]);
+fn origin_for_keeps_the_request_scheme() {
+    // The Kobo drops only the port, so a differently-schemed entry must not win.
+    let proxied = headers(&[
+        ("x-forwarded-host", "nas.lan"),
+        ("x-forwarded-proto", "https"),
+    ]);
+    let direct = headers(&[("host", "nas.lan")]);
+    let both = origins(&["http://nas.lan:3000", "https://nas.lan:8443"]);
+    let both_reversed = origins(&["https://nas.lan:8443", "http://nas.lan:3000"]);
 
-    let origin = origin_for(&headers(&[("host", "nas.lan")]), &public);
-
-    assert_eq!(origin, "http://nas.lan");
+    assert_eq!(origin_for(&proxied, &both), "https://nas.lan:8443");
+    assert_eq!(origin_for(&direct, &both_reversed), "http://nas.lan:3000");
+    assert_eq!(
+        origin_for(&direct, &origins(&["https://nas.lan"])),
+        "http://nas.lan"
+    );
 }
 
 #[test]
