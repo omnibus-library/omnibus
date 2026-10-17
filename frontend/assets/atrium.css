@@ -9517,12 +9517,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    clipped by the same overflow that keeps the gradient inside the hero. */
 .st-hero:has(.st-reader-menu:not([hidden])) { overflow: visible; }
 /* ── Reader picker: who the hero is showing ──────────────────────── */
-.st-reader-bar {
-  position: relative;
-  max-width: var(--st-max);
-  margin: 0 auto;
-  padding: 14px var(--st-gutter) 0;
-}
+.st-reader-bar { position: relative; }
 .st-reader-trigger {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 12px 6px 8px;
@@ -9542,8 +9537,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   font-family: var(--mono); font-size: 8.5px; font-weight: 700; color: var(--ink-1);
 }
 .st-reader-menu {
-  position: absolute; z-index: 6; top: calc(100% + 6px); left: var(--st-gutter);
-  min-width: 220px; max-width: calc(100% - 2 * var(--st-gutter));
+  position: absolute; z-index: 6; top: calc(100% + 6px); left: 0;
+  min-width: 220px; max-width: min(360px, calc(100vw - 2 * var(--st-gutter)));
   /* A long household scrolls inside the menu rather than off-screen. */
   max-height: min(70vh, 420px); overflow-y: auto;
   list-style: none; margin: 0; padding: 6px;
@@ -13269,4 +13264,52 @@ html {
   .sp-scrim, .sp-panel,
   .mes-scrim, .mes-panel,
   .check-in-overlay-scrim, .check-in-overlay-panel { animation: none; }
+}
+
+/* ── Settings findability (#2763) ───────────────────────────────────
+   Preferences offered where they take effect: the stats hero's sharing
+   switch and inline goals editor, the library's hidden-formats note, and the
+   book page's scroll-stops toggle. */
+
+/* The hero's top row: who the page shows, and whether others may see it. */
+.st-hero-bar {
+  max-width: var(--st-max);
+  margin: 0 auto;
+  padding: 14px var(--st-gutter) 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px;
+}
+.st-hero-bar:not(:has(> *)) { display: none; }
+.st-share {
+  margin-left: auto;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+  gap: 6px 12px;
+}
+.st-share-switch { color: var(--ink-1); }
+.st-share-error { font-size: 0.8rem; color: var(--bad); }
+
+/* Edit goals: a quiet control under the goal cards, swapped in place for the
+   editor it opens. */
+.st-goals-edit-slot { display: flex; flex-direction: column; }
+.st-goals-edit {
+  align-self: flex-end;
+  padding: 6px 14px;
+  border: 1px solid var(--line-2); border-radius: 999px;
+  background: transparent; color: var(--ink-1);
+  font: inherit; font-size: 0.8rem; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.st-goals-edit:hover {
+  color: var(--ink-0);
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--line-2));
+}
+.st-goals-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-goals-editor {
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  padding: 4px 18px 16px;
+}
+.st-goals-editor .settings-form { margin-top: 0.75rem; gap: 1rem; }
+@media (prefers-reduced-motion: reduce) {
+  .st-goals-edit { transition: none; }
 }

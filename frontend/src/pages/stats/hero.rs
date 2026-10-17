@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use dioxus::prelude::*;
 use omnibus_shared::StatsSummary;
 
-use super::goal::{AnnualGoalRing, DailyGoalsCard};
+use super::goal::{AnnualGoalRing, DailyGoalsCard, GoalsEditor};
 use super::heatmap::{day_number, streak_span};
 use crate::format::plural_noun;
 
@@ -92,16 +92,17 @@ fn streak_line(current: i64, longest: i64, yours: bool) -> Option<String> {
 /// switch never re-runs), `None` only while in flight. `who` is
 /// [`super::picker::Viewing::heading`]: `None` on the caller's own page,
 /// `Some("{name}'s stats")` on another reader's. `children` is the reader
-/// picker, rendered as the hero's first row. Goals are read straight off `summary`.
+/// picker, rendered as the hero's first row. Goals are read straight off
+/// `summary`; `on_goals_saved` fires after the caller edits them here.
 #[component]
 pub(super) fn StatsHero(
     summary: Option<StatsSummary>,
     #[props(default)] who: Option<String>,
+    #[props(default)] on_goals_saved: Option<EventHandler<()>>,
     children: Element,
 ) -> Element {
-    // Goals are read-only on another reader's page — all three are set
-    // together in Settings → Account, which is reachable only from the
-    // caller's own.
+    // Goals are read-only on another reader's page: nobody edits someone
+    // else's targets.
     let editable = who.is_none();
     let as_of_day = summary
         .as_ref()
@@ -179,6 +180,9 @@ pub(super) fn StatsHero(
                 div { class: "st-hero-goals",
                     AnnualGoalRing { goal, finished, year, as_of_day, editable }
                     DailyGoalsCard { daily, editable }
+                    if editable {
+                        GoalsEditor { on_saved: on_goals_saved }
+                    }
                 }
             }
         }

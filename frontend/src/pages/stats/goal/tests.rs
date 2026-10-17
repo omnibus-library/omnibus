@@ -245,8 +245,8 @@ mod render_tests {
         }
     }
 
-    /// The stats page reports goals and never edits them: all three are set
-    /// together in Settings → Account, so no editor may reappear here.
+    /// The cluster reports goals and never edits them: the one editor opens
+    /// from the hero's own control, so none may reappear per goal.
     #[test]
     fn the_goal_cluster_offers_no_editor_only_a_link_to_the_one_that_exists() {
         let set = render_in_vdom(|| rsx! { Router::<SetRingRoute> {} });
@@ -271,9 +271,9 @@ mod render_tests {
         assert!(!unset.contains("This year"), "{unset}");
         assert!(unset.contains("stats-goal-set-link"), "{unset}");
         assert!(!unset.contains("stats-goal-progress"), "{unset}");
-        // Goals live in the Account section, so the link has to open it.
+        // Goals have their own Settings section, so the link opens it.
         assert!(
-            unset.contains(r#"href="/settings?section=account""#),
+            unset.contains(r#"href="/settings?section=goals""#),
             "{unset}"
         );
     }
@@ -305,10 +305,7 @@ mod render_tests {
         assert!(!html.contains("Pages today"), "{html}");
         // One short call to action for the card, not one per row.
         assert_eq!(html.matches("stats-daily-set-link").count(), 1, "{html}");
-        assert!(
-            html.contains(r#"href="/settings?section=account""#),
-            "{html}"
-        );
+        assert!(html.contains(r#"href="/settings?section=goals""#), "{html}");
         // Every session is placeable on the reader's own day now, so there is
         // no disclosure left to draw — not even for the non-zero figure an
         // older server would still send.

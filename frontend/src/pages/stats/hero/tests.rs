@@ -148,6 +148,7 @@ mod render_tests {
         assert!(html.contains("The longest ever is 20 days."), "{html}");
         assert!(!html.contains("stats-goal-set-link"), "{html}");
         assert!(!html.contains("stats-daily-set-link"), "{html}");
+        assert!(!html.contains("stats-goals-edit"), "{html}");
     }
 
     #[derive(Clone, Debug, PartialEq, Routable)]
@@ -171,5 +172,18 @@ mod render_tests {
         assert!(html.contains("Your longest ever is 20 days."), "{html}");
         assert!(html.contains("stats-goal-set-link"), "{html}");
         assert!(html.contains("stats-daily-set-link"), "{html}");
+    }
+
+    /// The editor stays behind its control until asked for: the hero
+    /// reports goals first.
+    #[test]
+    fn stats_hero_offers_the_goals_editor_behind_one_control_on_the_callers_own_page() {
+        let html = render_in_vdom(|| rsx! { Router::<OwnPageRoute> {} });
+        assert_eq!(
+            html.matches("data-testid=\"stats-goals-edit\"").count(),
+            1,
+            "{html}"
+        );
+        assert!(!html.contains("stats-goals-editor"), "{html}");
     }
 }

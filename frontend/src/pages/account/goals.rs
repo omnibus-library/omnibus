@@ -1,5 +1,6 @@
-//! Reading-goals card in Settings → Account: the annual books target and the
-//! two standing daily targets, edited together behind one control.
+//! Reading-goals card in Settings → Goals: the annual books target and the
+//! two standing daily targets, edited together behind one control. The stats
+//! page hosts the same card inline, opened from its own Edit goals control.
 //!
 //! One editor rather than three, even though the write path is per-kind: a
 //! reader setting up their year thinks about all three at once, and three
@@ -19,6 +20,8 @@ use omnibus_shared::{
 };
 
 use crate::components::credential_card::credential_status_message;
+use crate::components::{Loading, LoadingKind};
+use crate::focus_after_paint::focus_after_paint;
 use crate::{data, use_server_url};
 
 /// One editable goal: which kind it is, what it's called, and what bounds it.
@@ -190,6 +193,28 @@ fn use_goal_hydration(server_url: String, mut signals: GoalSignals) {
     });
 }
 
+/// What the card tells its host: a save landed (`on_saved`), or an inline
+/// card is finished and can be put away (`on_close`, inline hosts only).
+#[derive(Clone, Copy)]
+struct GoalHost {
+    on_saved: Option<EventHandler<()>>,
+    on_close: Option<EventHandler<()>>,
+}
+
+impl GoalHost {
+    fn saved(self) {
+        if let Some(saved) = self.on_saved {
+            saved.call(());
+        }
+    }
+
+    fn close(self) {
+        if let Some(close) = self.on_close {
+            close.call(());
+        }
+    }
+}
+
 /// Write every changed goal and fold the results back into the card.
 ///
 /// The writes run in sequence rather than concurrently: they are three
@@ -198,6 +223,7 @@ fn use_goal_hydration(server_url: String, mut signals: GoalSignals) {
 fn save_handler(
     server_url: String,
     mut signals: GoalSignals,
+    host: GoalHost,
 ) -> impl FnMut(Event<FormData>) + 'static {
     move |evt: Event<FormData>| {
         evt.prevent_default();
@@ -217,6 +243,7 @@ fn save_handler(
         if pending.is_empty() {
             signals.editing.set(false);
             signals.msg.set(None);
+            host.close();
             return;
         }
         let url = server_url.clone();
@@ -224,6 +251,7 @@ fn save_handler(
         spawn(async move {
             let mut landed = (signals.targets)();
             let mut failed: Vec<&'static str> = Vec::new();
+            let attempted = pending.len();
             for (i, value) in pending {
                 let ok = match FIELDS[i].kind {
                     None => write_annual(&url, value).await,
@@ -253,6 +281,12 @@ fn save_handler(
             signals.msg_is_error.set(is_error);
             signals.editing.set(!failed.is_empty());
             signals.saving.set(false);
+            if failed.len() < attempted {
+                host.saved();
+            }
+            if failed.is_empty() {
+                host.close();
+            }
         });
     }
 }
@@ -324,11 +358,14 @@ fn goals_readout(
 }
 
 /// The three fields as one form. A blank field clears that goal, which is why
-/// there is no Clear button per row.
+/// there is no Clear button per row. `focus_first` puts the caret in the first
+/// field once it paints, for a form that opens in place of the control that
+/// asked for it.
 fn goals_form(
     mut drafts: Signal<[String; 3]>,
     mut msg: Signal<Option<String>>,
     saving: bool,
+    focus_first: bool,
     on_save: impl FnMut(Event<FormData>) + 'static,
     on_cancel: impl FnMut(Event<MouseData>) + 'static,
 ) -> Element {
@@ -356,6 +393,11 @@ fn goals_form(
                         placeholder: "No target",
                         value: "{current[i]}",
                         disabled: saving,
+                        onmounted: move |evt| {
+                            if focus_first && i == 0 {
+                                focus_after_paint(&evt);
+                            }
+                        },
                         oninput: move |e| {
                             let mut next = drafts();
                             next[i] = e.value();
@@ -391,13 +433,17 @@ fn goals_form(
     }
 }
 
-/// Reading goals for the signed-in user — the one place all three are set.
+/// Reading goals for the signed-in user, all three behind one editor.
 ///
-/// The stats page renders them but never edits them: a goal is account
-/// configuration, and scattering its editors across the surface that *reports*
-/// it is what made a single decision feel like three.
+/// `on_saved` fires once any change lands, so a host showing the goals can
+/// refetch them. A host that opens the card from its own control passes
+/// `on_close`: the card then drops its heading, opens straight into the form
+/// once the goals are read, and calls `on_close` on Cancel or a clean save.
 #[component]
-pub(crate) fn ReadingGoalsCard() -> Element {
+pub(crate) fn ReadingGoalsCard(
+    #[props(default)] on_saved: Option<EventHandler<()>>,
+    #[props(default)] on_close: Option<EventHandler<()>>,
+) -> Element {
     let server_url = use_server_url();
     let mut signals = GoalSignals {
         drafts: use_signal(|| [const { String::new() }; 3]),
@@ -410,7 +456,9 @@ pub(crate) fn ReadingGoalsCard() -> Element {
     };
     use_goal_hydration(server_url.clone(), signals);
 
-    let on_save = save_handler(server_url, signals);
+    let host = GoalHost { on_saved, on_close };
+    let inline = on_close.is_some();
+    let on_save = save_handler(server_url, signals, host);
     let on_edit = move |_| {
         signals.msg.set(None);
         signals.editing.set(true);
@@ -423,18 +471,26 @@ pub(crate) fn ReadingGoalsCard() -> Element {
             .set((signals.targets)().map(|t| t.map(|n| n.to_string()).unwrap_or_default()));
         signals.msg.set(None);
         signals.editing.set(false);
+        host.close();
     };
+    let loaded = (signals.loaded)();
 
     rsx! {
-        section { class: "card", "data-testid": "account-goals-card",
-            h2 { "Reading goals" }
-            p { class: "subtitle",
-                "One target for the year and two for the day. They show on your Stats page."
+        section {
+            class: if inline { "goals-inline" } else { "card" },
+            "data-testid": "account-goals-card",
+            if !inline {
+                h2 { "Reading goals" }
+                p { class: "subtitle",
+                    "One target for the year and two for the day. They show on your Stats page."
+                }
             }
-            if (signals.editing)() {
-                {goals_form(signals.drafts, signals.msg, (signals.saving)(), on_save, on_cancel)}
-            } else {
-                {goals_readout((signals.targets)(), (signals.loaded)(), on_edit)}
+            if inline && loaded.is_none() {
+                Loading { kind: LoadingKind::Section, testid: "goals-loading", label: "Reading your goals" }
+            } else if (signals.editing)() || (inline && loaded == Some(true)) {
+                {goals_form(signals.drafts, signals.msg, (signals.saving)(), inline, on_save, on_cancel)}
+            } else if !inline {
+                {goals_readout((signals.targets)(), loaded, on_edit)}
             }
             {credential_status_message(
                 "goals-status",
