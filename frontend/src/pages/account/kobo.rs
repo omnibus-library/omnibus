@@ -348,10 +348,9 @@ pub fn KoboDevicesCard() -> Element {
             {render_kobo_add_form(name_input, in_flight(), on_add)}
 
             {live_status("kobo-devices-status", msg().as_deref(), msg_is_error())}
-
-            if let Some(ask) = pending() {
-                {kobo_confirm(ask, in_flight(), pending, on_regenerate, on_remove)}
-            }
+        }
+        if let Some(ask) = pending() {
+            {kobo_confirm(ask, in_flight(), pending, on_regenerate, on_remove)}
         }
     }
 }

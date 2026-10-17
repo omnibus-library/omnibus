@@ -290,7 +290,7 @@ pub fn ApiTokensSection() -> Element {
             if show_empty {
                 section { class: "card tkx-empty", "data-testid": "api-tokens-empty",
                     div {
-                        h3 { class: "tkx-empty-title", "No tokens yet" }
+                        h4 { class: "tkx-empty-title", "No tokens yet" }
                         p { class: "tkx-lede", "You only need one if something outside this \
                                                 browser has to reach your library." }
                     }
@@ -400,7 +400,7 @@ fn SecretHandOff(
     rsx! {
         div { class: "tkx-secret", "data-testid": "api-token-secret-field",
             div { class: "tkx-secret-head",
-                h3 { "{name}" }
+                h4 { "{name}" }
                 span { class: "tkx-secret-once", "shown once" }
             }
             p { class: "tkx-secret-sub",

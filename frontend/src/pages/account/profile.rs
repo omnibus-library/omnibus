@@ -366,21 +366,20 @@ pub(crate) fn ProfileCard() -> Element {
             {profile_name_form(signals.name_input, signals.msg, (signals.in_flight)(), changed(), &display, on_save)}
 
             {live_status("profile-status", (signals.msg)().as_deref(), (signals.msg_is_error)())}
-
-            if confirm_remove() {
-                {confirm_dialog(
-                    Confirm {
-                        testid: "avatar-remove-dialog",
-                        title: "Remove your profile picture?",
-                        body: "Other readers will see your initials instead.",
-                        action: "Remove picture",
-                        busy_label: "Removing\u{2026}",
-                    },
-                    (signals.uploading)(),
-                    EventHandler::new(move |()| confirm_remove.set(false)),
-                    on_remove_avatar,
-                )}
-            }
+        }
+        if confirm_remove() {
+            {confirm_dialog(
+                Confirm {
+                    testid: "avatar-remove-dialog",
+                    title: "Remove your profile picture?",
+                    body: "Other readers will see your initials instead.",
+                    action: "Remove picture",
+                    busy_label: "Removing\u{2026}",
+                },
+                (signals.uploading)(),
+                EventHandler::new(move |()| confirm_remove.set(false)),
+                on_remove_avatar,
+            )}
         }
     }
 }

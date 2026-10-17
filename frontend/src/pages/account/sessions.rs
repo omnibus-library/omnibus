@@ -93,21 +93,20 @@ pub fn SessionsCard() -> Element {
             }
 
             {live_status("account-sessions-status", msg().as_deref(), msg_is_error())}
-
-            if let Some(session) = confirming() {
-                {confirm_dialog(
-                    Confirm {
-                        testid: "session-revoke-dialog",
-                        title: &revoke_title(&session.client),
-                        body: "It is signed out at once and has to sign in again.",
-                        action: "Revoke session",
-                        busy_label: "Revoking\u{2026}",
-                    },
-                    busy_id().is_some(),
-                    EventHandler::new(move |()| confirming.set(None)),
-                    EventHandler::new(move |()| on_revoke.call(session.id)),
-                )}
-            }
+        }
+        if let Some(session) = confirming() {
+            {confirm_dialog(
+                Confirm {
+                    testid: "session-revoke-dialog",
+                    title: &revoke_title(&session.client),
+                    body: "It is signed out at once and has to sign in again.",
+                    action: "Revoke session",
+                    busy_label: "Revoking\u{2026}",
+                },
+                busy_id().is_some(),
+                EventHandler::new(move |()| confirming.set(None)),
+                EventHandler::new(move |()| on_revoke.call(session.id)),
+            )}
         }
     }
 }
