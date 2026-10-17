@@ -1,7 +1,8 @@
 import type { Page } from "@playwright/test";
+import { TYPEFACES } from "../components/ReaderDisplayPanelComponent";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
+import { expect, test } from "../fixtures/pageFixtures";
 import { buildSubfolderNavEpub } from "../fixtures/subfolder_nav_epub";
-import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
@@ -410,91 +411,147 @@ function collectFontCspViolations(page: Page): string[] {
   return violations;
 }
 
-test("renders the reader layout", async ({ page, request }) => {
-  // Deep-link straight to the immersive reader by the book's stable uuid,
-  // resolved the same way a real click would.
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/read/${uuid}`);
+test.describe("epub reader", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
 
-  // The immersive reader mounts a viewer container plus chrome bars. We
-  // assert only on the chrome — never on rendered EPUB text — because the
-  // epub.js render is JS-engine-driven and may not paint headlessly (and the
-  // book file may be absent in some seed states). The container/controls are
-  // SSR markup and are robust to that.
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
+  test("show the reader layout", async ({ epubReaderPage, request }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-  // The chapter counter is 1-based against a 1-based total (issue #2249):
-  // it must never open on `Ch 0 of N`, a readout that can never reach its
-  // own total.
-  await expect(page.getByTestId("reader-chapter-counter")).toHaveText(
-    /^Ch\u00a0[1-9]\d* of \d+$/,
-  );
+    await test.step("open the book", async () => {
+      await epubReaderPage.goto(uuid);
+    });
 
-  // Top chrome: back, contents, search, Aa, highlights, bookmark.
-  await expect(page.getByTestId("reader-back")).toBeVisible();
-  await expect(page.getByTestId("reader-toc")).toBeVisible();
-  await expect(page.getByTestId("reader-search")).toBeVisible();
-  await expect(page.getByTestId("reader-aa")).toBeVisible();
-  await expect(page.getByTestId("reader-highlights")).toBeVisible();
-  await expect(page.getByTestId("reader-bookmark")).toBeVisible();
+    // Only the chrome: epub.js may not paint headlessly, the chrome is SSR.
+    await test.step("check the chrome shows", async () => {
+      await epubReaderPage.assertDisplayed();
+      // #2249: the counter never opens on a `Ch 0` that cannot reach its total.
+      await expect(epubReaderPage.chapterCounterLabel).toHaveText(
+        /^Ch [1-9]\d* of \d+$/,
+      );
+      await expect(epubReaderPage.backButton).toBeVisible();
+      await expect(epubReaderPage.contentsButton).toBeVisible();
+      await expect(epubReaderPage.searchButton).toBeVisible();
+      await expect(epubReaderPage.displayPanelButton).toBeVisible();
+      await expect(epubReaderPage.highlightsButton).toBeVisible();
+      await expect(epubReaderPage.bookmarkButton).toBeVisible();
+      await expect(epubReaderPage.previousPageButton).toBeVisible();
+      await expect(epubReaderPage.nextPageButton).toBeVisible();
+    });
+  });
 
-  // Page-turn gutters.
-  await expect(page.getByTestId("reader-prev")).toBeVisible();
-  await expect(page.getByTestId("reader-next")).toBeVisible();
+  test("leave the reader for the book detail page with the back button", async ({
+    epubReaderPage,
+    bookDetailPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-  // Font + page-view controls are inside the Aa panel — open it first.
-  await page.getByTestId("reader-aa").click();
-  await expect(page.getByTestId("reader-font-decrease")).toBeVisible();
-  await expect(page.getByTestId("reader-font-increase")).toBeVisible();
-  await expect(page.getByTestId("reader-spread-single")).toBeVisible();
-  await expect(page.getByTestId("reader-spread-double")).toBeVisible();
+    await test.step("open the book", async () => {
+      await epubReaderPage.goto(uuid);
+      await expect(epubReaderPage.backButton).toBeVisible();
+    });
 
-  // Six typefaces, Original selected — the publisher's own faces, which is
-  // what a reader who has never touched the picker gets.
-  for (const token of [
-    "original",
-    "editorial",
-    "classic",
-    "modern",
-    "sans",
-    "mono",
-  ]) {
-    await expect(page.getByTestId(`reader-typeface-${token}`)).toBeVisible();
-  }
-  await expect(page.getByTestId("reader-typeface-original")).toHaveClass(
-    /\bon\b/,
-  );
-});
+    // Back always lands on the book's page, whichever entry opened the reader.
+    await test.step("go back", async () => {
+      await epubReaderPage.goBack();
+    });
 
-// Regression for issue #2252: the Aa panel drops a full-surface `rd-scrim`
-// that used to intercept the Aa button, so the control that opened the panel
-// could not close it. All three dismissals are asserted together — the fix
-// lifts the top bar over the scrim, which must not cost the other two.
-test("the Aa button closes the display panel it opened", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/read/${uuid}`);
-  const aa = page.getByTestId("reader-aa");
-  const panel = page.getByTestId("reader-aa-panel");
+    await test.step("check the book detail page shows", async () => {
+      await bookDetailPage.assertDisplayedFor(uuid);
+    });
+  });
 
-  await aa.click();
-  await expect(panel).toBeVisible();
-  await aa.click();
-  await expect(panel).toHaveCount(0);
+  test.describe("display panel", () => {
+    test("open the display panel with the original typeface selected", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const panel = epubReaderPage.displayPanel;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-  // Escape still dismisses.
-  await aa.click();
-  await expect(panel).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(panel).toHaveCount(0);
+      await test.step("open the book", async () => {
+        await epubReaderPage.goto(uuid);
+      });
 
-  // …and so does a click on the scrim.
-  await aa.click();
-  await expect(panel).toBeVisible();
-  await page.locator(".rd-scrim").click();
-  await expect(panel).toHaveCount(0);
+      await test.step("open the display panel", async () => {
+        await epubReaderPage.openDisplayPanel();
+        await expect(panel.decreaseFontButton).toBeVisible();
+        await expect(panel.increaseFontButton).toBeVisible();
+        await expect(panel.pageViewButton("single")).toBeVisible();
+        await expect(panel.pageViewButton("double")).toBeVisible();
+      });
+
+      // Original keeps the publisher's faces, which a new reader gets.
+      await test.step("check every typeface shows, Original selected", async () => {
+        for (const face of TYPEFACES) {
+          await expect(panel.typefaceButton(face)).toBeVisible();
+        }
+        await expect(panel.typefaceButton("original")).toHaveClass(/\bon\b/);
+      });
+    });
+
+    // #2252: the scrim covered the Aa button, so it could not close its panel.
+    test("close the display panel with its button", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const panel = epubReaderPage.displayPanel;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the display panel", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openDisplayPanel();
+        await expect(panel.root).toBeVisible();
+      });
+
+      await test.step("close it with the same button", async () => {
+        await epubReaderPage.closeDisplayPanel();
+        await expect(panel.root).toHaveCount(0);
+      });
+    });
+
+    // #2252: lifting the top bar over the scrim must not cost this dismissal.
+    test("close the display panel with escape", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const panel = epubReaderPage.displayPanel;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the display panel", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openDisplayPanel();
+        await expect(panel.root).toBeVisible();
+      });
+
+      await test.step("close it with escape", async () => {
+        await epubReaderPage.closeWithEscape();
+        await expect(panel.root).toHaveCount(0);
+      });
+    });
+
+    // #2252: lifting the top bar over the scrim must not cost this dismissal.
+    test("close the display panel by clicking outside it", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const panel = epubReaderPage.displayPanel;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the display panel", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openDisplayPanel();
+        await expect(panel.root).toBeVisible();
+      });
+
+      await test.step("click the scrim", async () => {
+        await panel.closeByClickingOutside();
+        await expect(panel.root).toHaveCount(0);
+      });
+    });
+  });
 });
 
 /**
@@ -601,20 +658,6 @@ test("names the chapter the page is in when several share its spine document", a
   await expect(
     page.locator('[data-testid="reader-toc-row"].current'),
   ).toHaveText("CHAPTER 1. Loomings.");
-});
-
-test("the back button leaves the reader for the book detail page", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-back")).toBeVisible();
-
-  // Back always routes to the book's detail page — never to whatever entry
-  // point (landing, search, Continue hero) the reader was opened from.
-  await page.getByTestId("reader-back").click();
-  await expect(page).toHaveURL(new RegExp(`/books/${uuid}$`));
 });
 
 test("black theme overrides a publisher color on the EPUB body", async ({

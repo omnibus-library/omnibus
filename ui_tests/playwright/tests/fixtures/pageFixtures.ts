@@ -10,6 +10,7 @@ import { type ShelfRef, wishlistOf } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
+import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import {
@@ -45,6 +46,7 @@ type PageFixtures = {
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
   checkInPage: CheckInPage;
+  epubReaderPage: EpubReaderPage;
   shelfPage: ShelfPage;
   scanRequests: ScanRequests;
   physicalRequests: PhysicalRequests;
@@ -109,6 +111,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   },
   checkInPage: async ({ page }, use) => {
     await use(new CheckInPage(page));
+  },
+  epubReaderPage: async ({ page }, use) => {
+    await use(new EpubReaderPage(page));
   },
   shelfPage: async ({ page }, use) => {
     await use(new ShelfPage(page));
