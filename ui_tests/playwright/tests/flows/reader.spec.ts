@@ -208,7 +208,6 @@ test.describe("epub reader", () => {
       });
     });
 
-    // #2252: lifting the top bar over the scrim must not cost this dismissal.
     test("close the display panel by clicking outside it", async ({
       epubReaderPage,
       request,

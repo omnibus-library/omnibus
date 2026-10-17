@@ -38,10 +38,9 @@ export class ReaderSectionComponent extends BaseComponent {
   }
 
   /**
-   * The worst axis drift in px between the painted highlight marks and the
-   * first paragraph's chars 10 to 24 (`MID_PARAGRAPH_RANGE`), or Infinity while
-   * unmeasurable. It reads rendered prose on purpose: the defect is epub.js
-   * painting marks at a stale layout's rects.
+   * The worst px drift between the painted highlight marks and the first
+   * paragraph's chars 10 to 24 (`MID_PARAGRAPH_RANGE`), or Infinity while
+   * unmeasurable. It reads rendered prose, since epub.js paints stale rects.
    */
   overlayDrift(): Promise<number> {
     return this.page.evaluate(() => {
@@ -85,12 +84,9 @@ export class ReaderSectionComponent extends BaseComponent {
   }
 
   /**
-   * The section's typeface state, or null before it has a paragraph.
-   * `override` is the reader's own font layer: "" under Original, where the
-   * absence of a declaration is the contract. A rendered glyph proves little,
-   * since a browser falls through from a refused `@font-face` to the next
-   * copy, so `embeddedSrcs` lists every src declared for the embedded family
-   * (a `blob:` among them is a copy CSP refuses) and `faces` each face's status.
+   * The section's typeface state, or null before it has a paragraph. A glyph
+   * proves little, as a refused `@font-face` falls through to the next copy, so
+   * this lists each embedded src (a `blob:` one is refused) and face status.
    */
   fontState(): Promise<SectionFontState | null> {
     return this.page.evaluate((family: string) => {

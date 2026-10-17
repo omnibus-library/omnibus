@@ -4,10 +4,9 @@ import { BaseComponent } from "./BaseComponent";
 type TouchPoint = { x: number; y: number; id: number };
 
 /**
- * Touch input on the reader. Playwright's touchscreen drives one point, so the
- * multi-finger gestures go through CDP, which the Chromium-only suite has. The
- * page needs `hasTouch`, or Chromium answers a touch with synthesized mouse
- * events and the page's touch listeners never run.
+ * Touch input on the reader, through CDP because Playwright's touchscreen
+ * drives one point. The page needs `hasTouch`, or Chromium sends mouse events
+ * and the page's touch listeners never run.
  */
 export class ReaderGesturesComponent extends BaseComponent {
   private readonly topBar: Locator;
