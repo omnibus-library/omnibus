@@ -164,6 +164,8 @@ test.describe("comic pager", () => {
 
   test.describe("reading progress", () => {
     // Every test writes the one reserved comic, so they run one at a time.
+    // Each parks its own start state, so a leftover from an earlier run
+    // cannot change what it writes.
     test.describe.configure({ mode: "default" });
 
     test("mark an unread comic reading when it opens", async ({

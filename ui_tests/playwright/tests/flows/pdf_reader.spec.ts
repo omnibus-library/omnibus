@@ -226,388 +226,396 @@ test.describe("pdf reader", () => {
     });
   });
 
-  test.describe("writes on the reserved pdf", () => {
+  test.describe(() => {
     // Every test writes the one reserved pdf, so they run one at a time.
+    // Each parks its own start state, so a leftover from an earlier run
+    // cannot change what it writes.
     test.describe.configure({ mode: "default" });
 
-    test("mark an unread pdf reading when it opens", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      expectMutation,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+    test.describe("reading progress", () => {
+      test("mark an unread pdf reading when it opens", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        expectMutation,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-      await test.step("park the book unread on page 1", async () => {
-        await parkBook(uuid, pdfPageAnchor(0), "unread");
+        await test.step("park the book unread on page 1", async () => {
+          await parkBook(uuid, pdfPageAnchor(0), "unread");
+        });
+
+        // The write fires once the page load and its fetches settle.
+        await test.step("open the book", async () => {
+          await expectMutation(readStatus.setOnOpen(uuid, "reading"), () =>
+            pdfReaderPage.goto(uuid),
+          );
+        });
       });
 
-      // The write fires once the page load and its fetches settle.
-      await test.step("open the book", async () => {
-        await expectMutation(readStatus.setOnOpen(uuid, "reading"), () =>
-          pdfReaderPage.goto(uuid),
-        );
+      test("save the position on every page turn", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        expectMutation,
+        storedPosition,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+        await test.step("park the book reading on page 1", async () => {
+          await parkBook(uuid, pdfPageAnchor(0), "reading");
+        });
+
+        const count = await test.step("open the book", async () => {
+          await pdfReaderPage.goto(uuid);
+          const pages = await pdfReaderPage.pageCount();
+          expect(pages, "page count from the label").toBeGreaterThan(4);
+          return pages;
+        });
+
+        await test.step("turn three pages", async () => {
+          for (let target = 1; target <= 3; target++) {
+            await expectMutation(
+              progress.savePage(
+                uuid,
+                pdfPageAnchor(target),
+                pagePercent(target, count),
+              ),
+              () => pdfReaderPage.turnPage(),
+            );
+            await expect(pdfReaderPage.pageLabel).toHaveText(
+              `Page ${target + 1} of ${count}`,
+            );
+          }
+        });
+
+        await test.step("check the server holds page 4", async () => {
+          const record = await storedPosition(uuid);
+          expect(record?.epub_cfi).toBe("pdf-page:3");
+          expect(record?.progress_percent).toBe(Math.round(400 / count));
+        });
       });
-    });
 
-    test("save the position on every page turn", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      expectMutation,
-      storedPosition,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+      test("open a pdf on its saved page", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-      await test.step("park the book reading on page 1", async () => {
-        await parkBook(uuid, pdfPageAnchor(0), "reading");
+        await test.step("park the book reading on page 4", async () => {
+          await parkBook(uuid, pdfPageAnchor(3), "reading");
+        });
+
+        await test.step("open the book", async () => {
+          await pdfReaderPage.goto(uuid);
+        });
+
+        await test.step("check the reader restored page 4", async () => {
+          await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of \d+$/);
+        });
       });
 
-      const count = await test.step("open the book", async () => {
-        await pdfReaderPage.goto(uuid);
-        const pages = await pdfReaderPage.pageCount();
-        expect(pages, "page count from the label").toBeGreaterThan(4);
-        return pages;
-      });
+      test("mark a pdf finished on reaching its last page", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        expectMutation,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-      await test.step("turn three pages", async () => {
-        for (let target = 1; target <= 3; target++) {
-          await expectMutation(
-            progress.savePage(
-              uuid,
-              pdfPageAnchor(target),
-              pagePercent(target, count),
+        await test.step("park the book reading on page 4", async () => {
+          await parkBook(uuid, pdfPageAnchor(3), "reading");
+        });
+
+        const count = await test.step("open the book", async () => {
+          await pdfReaderPage.goto(uuid);
+          return pdfReaderPage.pageCount();
+        });
+
+        // The position saves, and the last page marks the book finished.
+        await test.step("slide to the last page", async () => {
+          await expectMutation(readStatus.set(uuid, "finished"), () =>
+            expectMutation(progress.save(), () =>
+              pdfReaderPage.slideToPage(count - 1),
             ),
-            () => pdfReaderPage.turnPage(),
           );
+        });
+
+        await test.step("check the reader is on the last page", async () => {
           await expect(pdfReaderPage.pageLabel).toHaveText(
-            `Page ${target + 1} of ${count}`,
+            `Page ${count} of ${count}`,
           );
-        }
+          await expect(pdfReaderPage.nextPageButton).toBeDisabled();
+        });
       });
 
-      await test.step("check the server holds page 4", async () => {
-        const record = await storedPosition(uuid);
-        expect(record?.epub_cfi).toBe("pdf-page:3");
-        expect(record?.progress_percent).toBe(Math.round(400 / count));
-      });
-    });
+      test("keep a finished pdf finished when paging back", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        expectMutation,
+        storedReadStatus,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-    test("open a pdf on its saved page", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+        // The page count is PDF.js's, so the park cannot name the last page.
+        await test.step("park the book finished on page 4", async () => {
+          await parkBook(uuid, pdfPageAnchor(3), "finished");
+        });
 
-      await test.step("park the book reading on page 4", async () => {
-        await parkBook(uuid, pdfPageAnchor(3), "reading");
-      });
+        const count = await test.step("open the book", async () => {
+          await pdfReaderPage.goto(uuid);
+          return pdfReaderPage.pageCount();
+        });
 
-      await test.step("open the book", async () => {
-        await pdfReaderPage.goto(uuid);
-      });
-
-      await test.step("check the reader restored page 4", async () => {
-        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of \d+$/);
-      });
-    });
-
-    test("mark a pdf finished on reaching its last page", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      expectMutation,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
-
-      await test.step("park the book reading on page 4", async () => {
-        await parkBook(uuid, pdfPageAnchor(3), "reading");
-      });
-
-      const count = await test.step("open the book", async () => {
-        await pdfReaderPage.goto(uuid);
-        return pdfReaderPage.pageCount();
-      });
-
-      // The position saves, and the last page marks the book finished.
-      await test.step("slide to the last page", async () => {
-        await expectMutation(readStatus.set(uuid, "finished"), () =>
-          expectMutation(progress.save(), () =>
+        await test.step("slide to the last page", async () => {
+          await expectMutation(progress.save(), () =>
             pdfReaderPage.slideToPage(count - 1),
-          ),
-        );
-      });
-
-      await test.step("check the reader is on the last page", async () => {
-        await expect(pdfReaderPage.pageLabel).toHaveText(
-          `Page ${count} of ${count}`,
-        );
-        await expect(pdfReaderPage.nextPageButton).toBeDisabled();
-      });
-    });
-
-    test("keep a finished pdf finished when paging back", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      expectMutation,
-      storedReadStatus,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
-
-      // The page count is PDF.js's, so the park cannot name the last page.
-      await test.step("park the book finished on page 4", async () => {
-        await parkBook(uuid, pdfPageAnchor(3), "finished");
-      });
-
-      const count = await test.step("open the book", async () => {
-        await pdfReaderPage.goto(uuid);
-        return pdfReaderPage.pageCount();
-      });
-
-      await test.step("slide to the last page", async () => {
-        await expectMutation(progress.save(), () =>
-          pdfReaderPage.slideToPage(count - 1),
-        );
-      });
-
-      await test.step("slide back to the first page", async () => {
-        await expectMutation(progress.save(), () =>
-          pdfReaderPage.slideToPage(0),
-        );
-      });
-
-      // Paging back saves the position but must not downgrade the status.
-      await test.step("check the book is still finished", async () => {
-        expect(await storedReadStatus(uuid)).toBe("finished");
-      });
-    });
-
-    test("highlight a text-layer selection", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      expectMutation,
-      seededHighlightIds,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
-
-      await test.step("park the book reading on page 9", async () => {
-        await parkBook(uuid, pdfPageAnchor(8), "reading");
-      });
-
-      // Page 9 is real prose: the first pages of the Calibre conversion carry
-      // only a page number.
-      await test.step("open the book", async () => {
-        await pdfReaderPage.goto(uuid);
-        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 9 of/);
-      });
-
-      const selected = await test.step("select a text run", async () => {
-        await pdfReaderPage.selectFirstTextRun();
-        const text = await pdfReaderPage.selectedText();
-        expect(text.length, "selection has text").toBeGreaterThan(0);
-        await expect(pdfReaderPage.selectionPopover).toBeVisible();
-        return text;
-      });
-
-      const { request: saved } =
-        await test.step("highlight it green", async () => {
-          const created = await expectMutation(highlights.create(), () =>
-            pdfReaderPage.highlightSelection("green"),
           );
-          const { id } = await created.response.json();
-          seededHighlightIds.add(id);
-          return created;
         });
 
-      await test.step("check the highlight saved and painted", async () => {
-        const sent = sentHighlight(saved);
-        expect(sent.color).toBe("green");
-        expect(sent.epub_cfi_range).toMatch(SELECTION_RANGE);
-        expect(sent.text.trim()).toBe(selected);
-        await expect(pdfReaderPage.selectionPopover).toHaveCount(0);
-        await expect(
-          pdfReaderPage.paintedHighlight(sent.epub_cfi_range, "green"),
-        ).not.toHaveCount(0);
-      });
-    });
-
-    test("paint a saved highlight when its page opens", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      highlightOn,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
-      const range = pdfHighlightRange(8);
-
-      await test.step("park the book reading on page 9", async () => {
-        await parkBook(uuid, pdfPageAnchor(8), "reading");
-      });
-
-      await test.step("save a green highlight on page 9", async () => {
-        await highlightOn(uuid, { epub_cfi_range: range, color: "green" });
-      });
-
-      await test.step("open the book", async () => {
-        await pdfReaderPage.goto(uuid);
-      });
-
-      await test.step("check the highlight is painted", async () => {
-        await expect(
-          pdfReaderPage.paintedHighlight(range, "green"),
-        ).not.toHaveCount(0, { timeout: 15_000 });
-      });
-    });
-
-    test("list a saved highlight in the highlights drawer", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      highlightOn,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
-
-      await test.step("park the book reading on page 1", async () => {
-        await parkBook(uuid, pdfPageAnchor(0), "reading");
-      });
-
-      const highlight =
-        await test.step("save a highlight on page 9", async () => {
-          return highlightOn(uuid, { epub_cfi_range: pdfHighlightRange(8) });
+        await test.step("slide back to the first page", async () => {
+          await expectMutation(progress.save(), () =>
+            pdfReaderPage.slideToPage(0),
+          );
         });
 
-      await test.step("open the highlights drawer", async () => {
-        await pdfReaderPage.goto(uuid);
-        await pdfReaderPage.openHighlights();
-        await expect(pdfReaderPage.highlightsDrawer.root).toBeVisible();
-      });
-
-      await test.step("check the drawer lists it with its prose", async () => {
-        await expect(
-          pdfReaderPage.highlightsDrawer.row(highlight.text).root,
-        ).toHaveCount(1);
+        // Paging back saves the position but must not downgrade the status.
+        await test.step("check the book is still finished", async () => {
+          expect(await storedReadStatus(uuid)).toBe("finished");
+        });
       });
     });
 
-    test("open a saved passage from the book detail page at its page", async ({
-      bookDetailPage,
-      pdfReaderPage,
-      request,
-      parkBook,
-      highlightOn,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+    test.describe("highlights", () => {
+      test("highlight a text-layer selection", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        expectMutation,
+        seededHighlightIds,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-      // Resume would land on page 1, so landing on page 9 proves the link won.
-      await test.step("park the book reading on page 1", async () => {
-        await parkBook(uuid, pdfPageAnchor(0), "reading");
-      });
-
-      const highlight =
-        await test.step("save a highlight on page 9", async () => {
-          return highlightOn(uuid, { epub_cfi_range: pdfHighlightRange(8) });
+        await test.step("park the book reading on page 9", async () => {
+          await parkBook(uuid, pdfPageAnchor(8), "reading");
         });
 
-      // The card names the page, or the outline entry covering it.
-      const card = bookDetailPage.savedPassageCard(highlight.text);
-      await test.step("check the book detail page lists it", async () => {
-        await bookDetailPage.goto(uuid);
-        await expect(card.root).toHaveCount(1);
-        await expect(card.metaText).toContainText(/^.+ · saved /);
-        await expect(card.openLink).toHaveAttribute(
-          "href",
-          `/pdf/${uuid}?page=9`,
-        );
-      });
-
-      await test.step("open it in the book", async () => {
-        await card.openInBook();
-        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 9 of/, {
-          timeout: 20_000,
+        // Page 9 is real prose: the first pages of the Calibre conversion carry
+        // only a page number.
+        await test.step("open the book", async () => {
+          await pdfReaderPage.goto(uuid);
+          await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 9 of/);
         });
-        await pdfReaderPage.assertDisplayedFor(uuid, 9);
+
+        const selected = await test.step("select a text run", async () => {
+          await pdfReaderPage.selectFirstTextRun();
+          const text = await pdfReaderPage.selectedText();
+          expect(text.length, "selection has text").toBeGreaterThan(0);
+          await expect(pdfReaderPage.selectionPopover).toBeVisible();
+          return text;
+        });
+
+        const { request: saved } =
+          await test.step("highlight it green", async () => {
+            const created = await expectMutation(highlights.create(), () =>
+              pdfReaderPage.highlightSelection("green"),
+            );
+            const { id } = await created.response.json();
+            seededHighlightIds.add(id);
+            return created;
+          });
+
+        await test.step("check the highlight saved and painted", async () => {
+          const sent = sentHighlight(saved);
+          expect(sent.color).toBe("green");
+          expect(sent.epub_cfi_range).toMatch(SELECTION_RANGE);
+          expect(sent.text.trim()).toBe(selected);
+          await expect(pdfReaderPage.selectionPopover).toHaveCount(0);
+          await expect(
+            pdfReaderPage.paintedHighlight(sent.epub_cfi_range, "green"),
+          ).not.toHaveCount(0);
+        });
+      });
+
+      test("paint a saved highlight when its page opens", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        highlightOn,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
+        const range = pdfHighlightRange(8);
+
+        await test.step("park the book reading on page 9", async () => {
+          await parkBook(uuid, pdfPageAnchor(8), "reading");
+        });
+
+        await test.step("save a green highlight on page 9", async () => {
+          await highlightOn(uuid, { epub_cfi_range: range, color: "green" });
+        });
+
+        await test.step("open the book", async () => {
+          await pdfReaderPage.goto(uuid);
+        });
+
+        await test.step("check the highlight is painted", async () => {
+          await expect(
+            pdfReaderPage.paintedHighlight(range, "green"),
+          ).not.toHaveCount(0, { timeout: 15_000 });
+        });
+      });
+
+      test("list a saved highlight in the highlights drawer", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        highlightOn,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+        await test.step("park the book reading on page 1", async () => {
+          await parkBook(uuid, pdfPageAnchor(0), "reading");
+        });
+
+        const highlight =
+          await test.step("save a highlight on page 9", async () => {
+            return highlightOn(uuid, { epub_cfi_range: pdfHighlightRange(8) });
+          });
+
+        await test.step("open the highlights drawer", async () => {
+          await pdfReaderPage.goto(uuid);
+          await pdfReaderPage.openHighlights();
+          await expect(pdfReaderPage.highlightsDrawer.root).toBeVisible();
+        });
+
+        await test.step("check the drawer lists it with its prose", async () => {
+          await expect(
+            pdfReaderPage.highlightsDrawer.row(highlight.text).root,
+          ).toHaveCount(1);
+        });
+      });
+
+      test("open a saved passage from the book detail page at its page", async ({
+        bookDetailPage,
+        pdfReaderPage,
+        request,
+        parkBook,
+        highlightOn,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
+
+        // Resume would land on page 1, so landing on page 9 proves the link won.
+        await test.step("park the book reading on page 1", async () => {
+          await parkBook(uuid, pdfPageAnchor(0), "reading");
+        });
+
+        const highlight =
+          await test.step("save a highlight on page 9", async () => {
+            return highlightOn(uuid, { epub_cfi_range: pdfHighlightRange(8) });
+          });
+
+        // The card names the page, or the outline entry covering it.
+        const card = bookDetailPage.savedPassageCard(highlight.text);
+        await test.step("check the book detail page lists it", async () => {
+          await bookDetailPage.goto(uuid);
+          await expect(card.root).toHaveCount(1);
+          await expect(card.metaText).toContainText(/^.+ · saved /);
+          await expect(card.openLink).toHaveAttribute(
+            "href",
+            `/pdf/${uuid}?page=9`,
+          );
+        });
+
+        await test.step("open it in the book", async () => {
+          await card.openInBook();
+          await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 9 of/, {
+            timeout: 20_000,
+          });
+          await pdfReaderPage.assertDisplayedFor(uuid, 9);
+        });
       });
     });
 
-    test("bookmark the current page", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      expectMutation,
-      seededBookmarkIds,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+    test.describe("bookmarks", () => {
+      test("bookmark the current page", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        expectMutation,
+        seededBookmarkIds,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-      await test.step("park the book reading on page 4", async () => {
-        await parkBook(uuid, pdfPageAnchor(3), "reading");
+        await test.step("park the book reading on page 4", async () => {
+          await parkBook(uuid, pdfPageAnchor(3), "reading");
+        });
+
+        await test.step("open the bookmarks drawer", async () => {
+          await pdfReaderPage.goto(uuid);
+          await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of/);
+          await pdfReaderPage.openBookmarks();
+          await expect(pdfReaderPage.bookmarksDrawer.root).toBeVisible();
+        });
+
+        // "+ Bookmark" stores the page anchor, labelled by the page.
+        await test.step("add a bookmark", async () => {
+          const { response } = await expectMutation(
+            bookmarks.create(pdfPageBookmark(uuid, 3)),
+            () => pdfReaderPage.bookmarksDrawer.add(),
+          );
+          const { id }: SeededBookmark = await response.json();
+          seededBookmarkIds.add(id);
+        });
+
+        await test.step("check the drawer lists it", async () => {
+          await expect(pdfReaderPage.bookmarksDrawer.row("Page 4")).toHaveCount(
+            1,
+          );
+        });
       });
 
-      await test.step("open the bookmarks drawer", async () => {
-        await pdfReaderPage.goto(uuid);
-        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of/);
-        await pdfReaderPage.openBookmarks();
-        await expect(pdfReaderPage.bookmarksDrawer.root).toBeVisible();
-      });
+      test("jump to a bookmarked page", async ({
+        pdfReaderPage,
+        request,
+        parkBook,
+        bookmarksRequests,
+        expectMutation,
+        seededBookmarkIds,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, PDF.title);
 
-      // "+ Bookmark" stores the page anchor, labelled by the page.
-      await test.step("add a bookmark", async () => {
-        const { response } = await expectMutation(
-          bookmarks.create(pdfPageBookmark(uuid, 3)),
-          () => pdfReaderPage.bookmarksDrawer.add(),
-        );
-        const { id }: SeededBookmark = await response.json();
-        seededBookmarkIds.add(id);
-      });
+        await test.step("park the book reading on page 1", async () => {
+          await parkBook(uuid, pdfPageAnchor(0), "reading");
+        });
 
-      await test.step("check the drawer lists it", async () => {
-        await expect(pdfReaderPage.bookmarksDrawer.row("Page 4")).toHaveCount(
-          1,
-        );
-      });
-    });
+        await test.step("save a bookmark on page 4", async () => {
+          const created = await bookmarksRequests.postBookmark(
+            pdfPageBookmark(uuid, 3),
+          );
+          expect(created.status(), "seed bookmark").toBe(200);
+          const { id }: SeededBookmark = await created.json();
+          seededBookmarkIds.add(id);
+        });
 
-    test("jump to a bookmarked page", async ({
-      pdfReaderPage,
-      request,
-      parkBook,
-      bookmarksRequests,
-      expectMutation,
-      seededBookmarkIds,
-    }) => {
-      const uuid = await fetchBookUuidByTitle(request, PDF.title);
+        await test.step("open the bookmarks drawer", async () => {
+          await pdfReaderPage.goto(uuid);
+          await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 1 of/);
+          await pdfReaderPage.openBookmarks();
+          await expect(pdfReaderPage.bookmarksDrawer.root).toBeVisible();
+        });
 
-      await test.step("park the book reading on page 1", async () => {
-        await parkBook(uuid, pdfPageAnchor(0), "reading");
-      });
+        await test.step("jump to the bookmark", async () => {
+          await expectMutation(progress.save(), () =>
+            pdfReaderPage.bookmarksDrawer.jumpTo("Page 4"),
+          );
+        });
 
-      await test.step("save a bookmark on page 4", async () => {
-        const created = await bookmarksRequests.postBookmark(
-          pdfPageBookmark(uuid, 3),
-        );
-        expect(created.status(), "seed bookmark").toBe(200);
-        const { id }: SeededBookmark = await created.json();
-        seededBookmarkIds.add(id);
-      });
-
-      await test.step("open the bookmarks drawer", async () => {
-        await pdfReaderPage.goto(uuid);
-        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 1 of/);
-        await pdfReaderPage.openBookmarks();
-        await expect(pdfReaderPage.bookmarksDrawer.root).toBeVisible();
-      });
-
-      await test.step("jump to the bookmark", async () => {
-        await expectMutation(progress.save(), () =>
-          pdfReaderPage.bookmarksDrawer.jumpTo("Page 4"),
-        );
-      });
-
-      await test.step("check the reader is on page 4", async () => {
-        await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of/);
-        await expect(pdfReaderPage.bookmarksDrawer.root).toHaveCount(0);
+        await test.step("check the reader is on page 4", async () => {
+          await expect(pdfReaderPage.pageLabel).toHaveText(/^Page 4 of/);
+          await expect(pdfReaderPage.bookmarksDrawer.root).toHaveCount(0);
+        });
       });
     });
   });
