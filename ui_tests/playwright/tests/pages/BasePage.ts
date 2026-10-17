@@ -50,6 +50,11 @@ export abstract class BasePage {
     );
   }
 
+  /** Lets the requests `forceServerError` failed for `contract` through again. */
+  async clearServerError(contract: ExpectMutationOptions): Promise<void> {
+    await this.page.unroute(contract.url);
+  }
+
   /** Navigates to `path` and waits until the hydrated page is ready. */
   protected async open(path: string): Promise<void> {
     await this.page.goto(path);

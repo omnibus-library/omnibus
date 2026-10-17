@@ -216,6 +216,10 @@ test.describe("book detail chip editors", () => {
       await expect(tagChips.editor).not.toContainText("Never Saved");
     });
 
+    await test.step("stop failing saves", async () => {
+      await bookDetailPage.clearServerError(unsaved);
+    });
+
     await test.step("check nothing was saved", async () => {
       await bookDetailPage.goto(uuid);
       await expect(tagChips.list).not.toContainText("Never Saved");
