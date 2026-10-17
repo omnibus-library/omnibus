@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use reqwest::header::{HeaderValue, HOST};
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -115,10 +116,18 @@ impl Client {
     }
 
     async fn send(&mut self, request: RequestBuilder) -> Result<Response, SyncFailure> {
-        let request = request
+        let mut request = request
             .header(HARDWARE_ID_HEADER, &self.hardware_id)
             .build()
             .map_err(|e| self.transport(e))?;
+        // The firmware drops the port, and hyper keeps a `Host` that is already set.
+        let host = request
+            .url()
+            .host_str()
+            .and_then(|h| h.parse::<HeaderValue>().ok());
+        if let Some(host) = host {
+            request.headers_mut().insert(HOST, host);
+        }
         let method = request.method().to_string();
         let path = self.redact(request.url().path());
         let response = self

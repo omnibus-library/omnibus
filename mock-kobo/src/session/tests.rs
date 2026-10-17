@@ -224,6 +224,37 @@ async fn sync_now_sends_hardware_id_on_every_request() {
 }
 
 #[tokio::test]
+async fn sync_now_sends_host_without_port_on_every_request() {
+    let stub = spawn_stub(Stub::default()).await;
+
+    sync_now(&mut Device::new("HW-1"), &stub.endpoint)
+        .await
+        .unwrap();
+
+    let requests = stub.requests.lock().unwrap();
+    let hosts: Vec<Option<&str>> = requests
+        .iter()
+        .map(|r| r.headers.get("host").and_then(|v| v.to_str().ok()))
+        .collect();
+    assert_eq!(hosts, vec![Some("127.0.0.1"); 7]);
+}
+
+#[tokio::test]
+async fn sync_now_fails_when_resources_are_built_on_portless_host() {
+    let stub = spawn_stub(Stub {
+        resources_from_host: true,
+        ..Stub::default()
+    })
+    .await;
+
+    let result = sync_now(&mut Device::new("HW-1"), &stub.endpoint).await;
+
+    // What fails depends on what listens on 127.0.0.1:80, so the variant stays open.
+    assert!(result.is_err());
+    assert!(!stub.paths().iter().any(|p| p.ends_with("/v1/library/sync")));
+}
+
+#[tokio::test]
 async fn sync_now_follows_urls_from_adopted_resources() {
     let stub = spawn_stub(Stub {
         resources_under: "/moved",
