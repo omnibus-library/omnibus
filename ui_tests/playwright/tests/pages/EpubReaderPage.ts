@@ -5,6 +5,7 @@ import {
   ReaderDisplayPanelComponent,
   type Typeface,
 } from "../components/ReaderDisplayPanelComponent";
+import { ReaderGesturesComponent } from "../components/ReaderGesturesComponent";
 import { ReaderSectionComponent } from "../components/ReaderSectionComponent";
 import { progressUrls } from "../contracts/progress";
 import { expect } from "../fixtures/test";
@@ -32,6 +33,7 @@ export class EpubReaderPage extends BasePage {
   readonly displayPanel: ReaderDisplayPanelComponent;
   readonly contentsDrawer: ReaderContentsDrawerComponent;
   readonly highlightsDrawer: HighlightsDrawerComponent;
+  readonly gestures: ReaderGesturesComponent;
 
   readonly viewerPanel: Locator;
   readonly backButton: Locator;
@@ -65,6 +67,7 @@ export class EpubReaderPage extends BasePage {
     this.displayPanel = new ReaderDisplayPanelComponent(page);
     this.contentsDrawer = new ReaderContentsDrawerComponent(page);
     this.highlightsDrawer = new HighlightsDrawerComponent(page);
+    this.gestures = new ReaderGesturesComponent(page);
     this.viewerPanel = page.getByTestId("reader-viewer");
     this.backButton = page.getByTestId("reader-back");
     this.contentsButton = page.getByTestId("reader-toc");
@@ -173,6 +176,11 @@ export class EpubReaderPage extends BasePage {
   /** The width `element` paints at, or 0 when it paints no box at all. */
   async renderedWidth(element: Locator): Promise<number> {
     return (await element.boundingBox())?.width ?? 0;
+  }
+
+  /** The footer's chapter counter, "Ch 3 of 24", trimmed. */
+  async chapterCounterText(): Promise<string> {
+    return ((await this.chapterCounterLabel.textContent()) ?? "").trim();
   }
 
   /** The footer's `PAGE_LABEL` match, or "" before one shows. */
