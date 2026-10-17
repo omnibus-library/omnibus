@@ -59,16 +59,13 @@ const TOC_JUMP_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "dracula")!;
 // Two entries in Dracula's contents drawer.
 const CHAPTER_ONE = "CHAPTER I JONATHAN HARKER’S JOURNAL";
 const CHAPTER_FOUR = "CHAPTER IV JONATHAN HARKER’S JOURNAL—continued";
-// Reserved for the paging-race / blank-front-matter regression (issue
-// #1895) — five one-page sections (two full-page images, three text) ahead
-// of chapter1, so paging through it repeatedly crosses section boundaries.
+// Five one-page sections (two full-page images) ahead of chapter 1, so paging
+// through it crosses section boundaries.
 const FRONTMATTER_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "frontmatter-relay",
 )!;
-// Reserved for the CSP blob-stylesheet regression (issue #2213): its
-// publisher.css references an embedded asset via a relative url(), so epub.js
-// mints a blob: stylesheet on render — the one fixture that exercises the
-// `style-src blob:` CSP path. No other spec may open it in the reader.
+// Its publisher.css has a relative url(), so epub.js renders it as a blob:
+// stylesheet: the one fixture that exercises the `style-src blob:` CSP path.
 const BLOB_CSS_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-reef")!;
 // Reserved for the typeface tests below: the one fixture whose publisher CSS
 // embeds a font and applies it at element level, so "Original keeps the
@@ -80,14 +77,11 @@ const FONT_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-lagoon")!;
 // nothing moved it, so no other spec may write this book's position. Small,
 // for the cold-open reason on DEEP_LINK_BOOK above.
 const TWO_FINGER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "mariucha")!;
-// Reserved for the page-turn gutter test, which opens it at a deep link and
-// reads layout alone; nothing else opens it.
+// Read-only: the page-turn gutter tests open it at a deep link.
 const GUTTER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "room-with-a-view")!;
-// A paragraph a third of the way into its Chapter II, so a spread of drift
-// either way still has prose on both pages. Not the chapter's own element
-// (`/6/10!/4/2`): epub.js orders an element before every point inside it, so
-// the open's nudge read Chapter II's first page as past the target and turned
-// back onto Chapter I's last spread — prose on the left page only.
+// A paragraph a third of the way into Chapter II, so drift either way still
+// leaves prose on both pages. Not the chapter's own element: epub.js orders
+// that before every point inside it, so the open turned back to Chapter I.
 const GUTTER_CFI = "epubcfi(/6/10!/4/2/92/1:0)";
 // Its front matter and first eight chapters share one spine document, so only
 // anchors tell them apart.
@@ -546,6 +540,155 @@ test.describe("epub reader", () => {
         await expect(panel.root).toHaveCount(0);
       });
     });
+  });
+
+  test.describe("rendering", () => {
+    test("override a publisher body color with the black theme", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book in the black theme", async () => {
+        await epubReaderPage.presetTheme("black");
+        await epubReaderPage.goto(uuid);
+      });
+
+      // Reads rendered prose on purpose: the point is that the theme beats
+      // the publisher's body color.
+      await test.step("check the prose is white", async () => {
+        const prose = epubReaderPage.section.text("Synthetic test content.");
+        await expect(prose).toBeVisible();
+        await expect(prose).toHaveCSS("color", "rgb(255, 255, 255)");
+      });
+    });
+
+    // #2213: a blob: stylesheet needs `style-src blob:`, or page turns break.
+    test("read a book whose stylesheet becomes a blob url without a csp refusal", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const refusals = epubReaderPage.recordStylesheetCspRefusals();
+      const uuid = await fetchBookUuidByTitle(request, BLOB_CSS_BOOK.title);
+
+      await test.step("open the book", async () => {
+        await epubReaderPage.goto(uuid);
+      });
+
+      // The link exists whether or not CSP blocks it, so it proves the blob
+      // path ran and the guard below is not vacuous.
+      await test.step("check epub.js linked a blob stylesheet", async () => {
+        await expect
+          .poll(() => epubReaderPage.section.blobStylesheetCount(), {
+            timeout: 20_000,
+          })
+          .toBeGreaterThan(0);
+      });
+
+      // No save is awaited: a one-page synthetic book need not move.
+      await test.step("turn the page", async () => {
+        await epubReaderPage.turnPage();
+        await expect(epubReaderPage.errorMessage).toHaveCount(0);
+        await expect(epubReaderPage.viewerPanel).toBeVisible();
+      });
+
+      // Last, because the awaits above outlast the console's delivery.
+      await test.step("check no stylesheet was refused", async () => {
+        expect(
+          refusals,
+          `blob: stylesheet must load without a CSP refusal:\n${refusals.join("\n")}`,
+        ).toEqual([]);
+      });
+    });
+
+    // #1895: paging through image front matter must never blank the rendition.
+    test("page through image front matter without blanking the rendition", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const section = epubReaderPage.section;
+      const uuid = await fetchBookUuidByTitle(request, FRONTMATTER_BOOK.title);
+
+      // The title page is a full-page plain <img>, the commonest real shape.
+      // A rendered height shows the image takes real space, not collapsed.
+      await test.step("open the title page", async () => {
+        await epubReaderPage.goto(uuid);
+        await expect(section.image("Title Page")).toBeVisible();
+        await expect
+          .poll(
+            () => epubReaderPage.renderedHeight(section.image("Title Page")),
+            {
+              timeout: 15_000,
+            },
+          )
+          .toBeGreaterThan(10);
+      });
+
+      // A publisher scan wraps its image in SVG, and that page rendered blank.
+      await test.step("turn to the svg-wrapped copyright page", async () => {
+        await epubReaderPage.turnPage();
+        await expect(section.svgImage).toBeVisible();
+        await expect
+          .poll(() => epubReaderPage.renderedHeight(section.svgImage), {
+            timeout: 15_000,
+          })
+          .toBeGreaterThan(10);
+      });
+
+      // About one click a second wedged a real book. No save is awaited,
+      // since that would serialise the clicks under test.
+      await test.step("turn five pages with no wait between clicks", async () => {
+        for (let i = 0; i < 5; i++) {
+          await epubReaderPage.turnPage();
+        }
+        await expect(epubReaderPage.errorMessage).toHaveCount(0);
+        await expect(epubReaderPage.viewerPanel).toBeVisible();
+      });
+
+      // A wedged rendition never recovers going backwards either.
+      await test.step("turn back a page", async () => {
+        await epubReaderPage.turnBack();
+        await expect(epubReaderPage.errorMessage).toHaveCount(0);
+        await expect(epubReaderPage.viewerPanel).toBeVisible();
+      });
+    });
+  });
+
+  test.describe("page view", () => {
+    for (const { view, name } of [
+      { view: "single", name: "one-page" },
+      { view: "double", name: "two-page" },
+    ] as const) {
+      test(`keep the page-turn buttons clear of the prose in ${name} view`, async ({
+        epubReaderPage,
+        request,
+      }) => {
+        const uuid = await fetchBookUuidByTitle(request, GUTTER_BOOK.title);
+
+        await test.step(`choose ${name} view`, async () => {
+          await epubReaderPage.resizeViewport({ width: 1920, height: 900 });
+          await epubReaderPage.gotoPassage(uuid, GUTTER_CFI);
+          await epubReaderPage.openDisplayPanel();
+          await epubReaderPage.displayPanel.choosePageView(view);
+          await epubReaderPage.closeWithEscape();
+        });
+
+        // Reopened at the passage per width, not resized into it: a resize
+        // re-displays wherever the last layout left the reader.
+        for (const width of [1920, 1280, 800]) {
+          await test.step(`check the buttons are clear at ${width}px`, async () => {
+            await epubReaderPage.resizeViewport({ width, height: 900 });
+            await epubReaderPage.gotoPassage(uuid, GUTTER_CFI);
+            await expect
+              .poll(() => epubReaderPage.section.turnButtonClearance(), {
+                message: `${view} view at ${width}px`,
+                timeout: 20_000,
+              })
+              .toBe("clear");
+          });
+        }
+      });
+    }
   });
 
   test.describe("drawers", () => {
@@ -1026,111 +1169,6 @@ test.describe("epub reader", () => {
       });
     });
   });
-});
-
-/**
- * Whether the prose on screen stays clear of both page-turn buttons, as a
- * sentence a failed poll can print. A page without a spread of prose on it
- * proves nothing, so it is not clear either.
- */
-async function turnButtonClearance(page: Page): Promise<string> {
-  const m = await page.evaluate(() => {
-    const clip = document
-      .querySelector("#omnibus-viewer")
-      ?.getBoundingClientRect();
-    const prev = document
-      .querySelector("[data-testid=reader-prev]")
-      ?.getBoundingClientRect();
-    const next = document
-      .querySelector("[data-testid=reader-next]")
-      ?.getBoundingClientRect();
-    const frame = document.querySelector<HTMLIFrameElement>(
-      "#omnibus-viewer iframe",
-    );
-    const doc = frame?.contentDocument;
-    if (!clip || !prev || !next || !frame || !doc?.body) return null;
-    const off = frame.getBoundingClientRect();
-    let left = Number.POSITIVE_INFINITY;
-    let right = Number.NEGATIVE_INFINITY;
-    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      if (!(n as Text).data.trim()) continue;
-      const range = doc.createRange();
-      range.selectNodeContents(n);
-      for (const box of Array.from(range.getClientRects())) {
-        const l = off.left + box.left;
-        const r = off.left + box.right;
-        // The rest of the section sits beside the page, clipped by the viewer.
-        if (box.width === 0 || r <= clip.left || l >= clip.right) continue;
-        left = Math.min(left, l);
-        right = Math.max(right, r);
-      }
-    }
-    return {
-      underPrev: prev.right - left,
-      underNext: right - next.left,
-      span: (right - left) / clip.width,
-    };
-  });
-  if (!m || !(m.span > 0.6)) return "no page of prose on screen";
-  if (m.underPrev > 0) {
-    return `prose runs ${Math.ceil(m.underPrev)}px under the previous-page button`;
-  }
-  if (m.underNext > 0) {
-    return `prose runs ${Math.ceil(m.underNext)}px under the next-page button`;
-  }
-  return "clear";
-}
-
-test("keeps the page-turn buttons clear of the prose in one- and two-page view", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, GUTTER_BOOK.title);
-  const passage = `/read/${uuid}?cfi=${encodeURIComponent(GUTTER_CFI)}`;
-  await page.setViewportSize({ width: 1920, height: 900 });
-  await gotoReady(page, passage);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  for (const spread of ["single", "double"] as const) {
-    await page.getByTestId("reader-aa").click();
-    await page.getByTestId(`reader-spread-${spread}`).click();
-    await page.keyboard.press("Escape");
-    // Reopened at the passage for each width rather than resized into it: a
-    // resize re-displays wherever the last layout left the reader, so the
-    // spread measured would depend on every width before it.
-    for (const width of [1920, 1280, 800]) {
-      await page.setViewportSize({ width, height: 900 });
-      await gotoReady(page, passage);
-      await expect
-        .poll(() => turnButtonClearance(page), {
-          message: `${spread} view at ${width}px`,
-          timeout: 20_000,
-        })
-        .toBe("clear");
-    }
-  }
-});
-
-test("black theme overrides a publisher color on the EPUB body", async ({
-  page,
-  request,
-}) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("omn.theme", "black");
-  });
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/read/${uuid}`);
-
-  // Intentional exception: this regression must inspect rendered EPUB prose
-  // to verify a publisher body colour cannot override the reader theme.
-  const prose = page
-    .frameLocator("#omnibus-viewer iframe")
-    .getByText("Synthetic test content.");
-  await expect(prose).toBeVisible();
-  await expect
-    .poll(() => prose.evaluate((el) => getComputedStyle(el).color))
-    .toBe("rgb(255, 255, 255)");
 });
 
 test("keeps a seeded highlight glued to its text across font-size changes", async ({
@@ -1674,134 +1712,6 @@ test("keeps reading when the progress save POST fails", async ({
   );
   await expect(page.getByTestId("reader-viewer")).toBeVisible();
   await expect(page.getByTestId("reader-error")).toHaveCount(0);
-});
-
-// Regression for issue #1895: real publisher front matter is full-page image
-// markup (a plain <img> or an SVG-wrapped <image>), and paging through
-// several short sections in a row — at any speed — must never leave the
-// rendition blank or wedged.
-test("pages through image front matter without blanking the rendition, even at rapid clicks", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, FRONTMATTER_BOOK.title);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Intentional exception: this regression must inspect rendered EPUB
-  // markup to confirm the front-matter images actually occupy real space,
-  // not collapse to nothing (AC2 — "render as completely empty spreads" is
-  // the issue's own description of the symptom). A rendered bounding box is
-  // the more robust signal here than a manual decode probe: it's what a
-  // reader actually sees, and it doesn't race the async blob->data URI
-  // repair the way polling `naturalWidth` on a throwaway Image() does —
-  // Playwright's own `boundingBox()` already waits for layout to settle.
-  const viewerFrame = page.frameLocator("#omnibus-viewer iframe");
-
-  // Title page: a full-page plain <img> — the most common real-world shape.
-  const titleImg = viewerFrame.locator("img").first();
-  await expect(titleImg).toBeVisible();
-  await expect
-    .poll(async () => (await titleImg.boundingBox())?.height ?? 0, {
-      timeout: 15_000,
-    })
-    .toBeGreaterThan(10);
-
-  // Copyright page: an SVG-wrapped <image> — the shape a real publisher
-  // scan uses, and the one that rendered blank while the plain <img> page
-  // worked.
-  await page.getByTestId("reader-next").click();
-  const svgImage = viewerFrame.locator("image").first();
-  await expect(svgImage).toBeVisible();
-  await expect
-    .poll(async () => (await svgImage.boundingBox())?.height ?? 0, {
-      timeout: 15_000,
-    })
-    .toBeGreaterThan(10);
-
-  // Rapid-fire the remaining turns with no waiting between clicks — the
-  // condition (~1 click/sec or faster) that wedged the rendition on a real
-  // book with no console error (AC1). Three text sections plus the final
-  // chapter: five more section-boundary crossings.
-  for (let i = 0; i < 5; i++) {
-    await page.getByTestId("reader-next").click();
-  }
-  await expect(page.getByTestId("reader-error")).toHaveCount(0);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // A wedged rendition never recovers going backwards either — the other
-  // reported symptom ("prev does not restore it").
-  await page.getByTestId("reader-prev").click();
-  await expect(page.getByTestId("reader-error")).toHaveCount(0);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-});
-
-// Regression for issue #2213: epub.js renders a book's own stylesheets
-// through URL.createObjectURL when a rule references an internal asset (a
-// relative url()), so reading such a book loads a blob: stylesheet. If
-// style-src omits blob:, the browser refuses it and every forward page-turn
-// breaks with "This book couldn't be loaded." No generated fixture exercised
-// this before `standalone-reef`, whose publisher.css carries a relative
-// url() — the trivial inlined rule the other fixtures ship (alpha's
-// `.calibre { color }`) is never rewritten to a blob, so 54 specs missed the
-// broken CSP entirely.
-test("reads a book whose stylesheet becomes a blob: URL without a CSP refusal", async ({
-  page,
-  request,
-}) => {
-  // Capture only stylesheet CSP refusals — an unrelated CSP console message
-  // must neither mask this guard nor falsely trip it. CSP violations reach
-  // page.on("console") as browser-emitted error entries, section-iframe ones
-  // included.
-  const cspStyleViolations: string[] = [];
-  page.on("console", (msg) => {
-    const text = msg.text();
-    if (
-      /content security policy/i.test(text) &&
-      /style-src|stylesheet/i.test(text)
-    ) {
-      cspStyleViolations.push(text);
-    }
-  });
-
-  const uuid = await fetchBookUuidByTitle(request, BLOB_CSS_BOOK.title);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Prove the blob path is actually exercised (not a vacuous pass): epub.js
-  // rewrites publisher.css's url() and links the rewritten sheet as a blob:
-  // inside the section iframe. That link is present whether or not the CSP
-  // then blocks it, so it is the honest precondition for the guard below —
-  // and its render is what loads (or refuses) the blob stylesheet.
-  const blobStylesheetCount = () =>
-    page.evaluate(() => {
-      const iframe = document.querySelector(
-        "#omnibus-viewer iframe",
-      ) as HTMLIFrameElement | null;
-      const doc = iframe?.contentDocument;
-      if (!doc) return -1;
-      return Array.from(doc.querySelectorAll("link")).filter((l) =>
-        (l as HTMLLinkElement).href.startsWith("blob:"),
-      ).length;
-    });
-  await expect
-    .poll(blobStylesheetCount, { timeout: 20_000 })
-    .toBeGreaterThan(0);
-
-  // Turn forward — the reported symptom is a forward page-turn breaking on
-  // the blob stylesheet load. The reader must stay on its content, never
-  // dropping into the "couldn't be loaded" error surface.
-  await page.getByTestId("reader-next").click();
-  await expect(page.getByTestId("reader-error")).toHaveCount(0);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // The blob: stylesheet loaded without a style-src refusal (issue #2213).
-  // Asserted last: the awaits above outlast the browser's console delivery,
-  // so a refusal that fired on the styled render is already collected.
-  expect(
-    cspStyleViolations,
-    `blob: stylesheet must load without a CSP refusal:\n${cspStyleViolations.join("\n")}`,
-  ).toEqual([]);
 });
 
 // A touch context, because the gesture is the subject: without `hasTouch`

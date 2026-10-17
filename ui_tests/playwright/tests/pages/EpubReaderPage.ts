@@ -2,11 +2,13 @@ import type { Locator, Page } from "@playwright/test";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
 import { ReaderContentsDrawerComponent } from "../components/ReaderContentsDrawerComponent";
 import { ReaderDisplayPanelComponent } from "../components/ReaderDisplayPanelComponent";
+import { ReaderSectionComponent } from "../components/ReaderSectionComponent";
 import { progressUrls } from "../contracts/progress";
 import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
 export type ContentsEntry = { label: string; href: string; level: number };
+export type Theme = "dark" | "black" | "light" | "sepia";
 
 /**
  * The EPUB reader at `/read/:uuid`: its chrome, drawers and page turns. The
@@ -15,6 +17,7 @@ export type ContentsEntry = { label: string; href: string; level: number };
 export class EpubReaderPage extends BasePage {
   protected readonly urlPattern = /\/read\/[^/?#]+(?:\?[^#]*)?$/;
 
+  readonly section: ReaderSectionComponent;
   readonly displayPanel: ReaderDisplayPanelComponent;
   readonly contentsDrawer: ReaderContentsDrawerComponent;
   readonly highlightsDrawer: HighlightsDrawerComponent;
@@ -32,6 +35,7 @@ export class EpubReaderPage extends BasePage {
   readonly chapterCounterLabel: Locator;
   readonly headerChapterLabel: Locator;
   readonly loadingOverlay: Locator;
+  readonly errorMessage: Locator;
   readonly navErrorMessage: Locator;
 
   readonly searchDrawer: Locator;
@@ -44,6 +48,7 @@ export class EpubReaderPage extends BasePage {
 
   constructor(page: Page) {
     super(page);
+    this.section = new ReaderSectionComponent(page);
     this.displayPanel = new ReaderDisplayPanelComponent(page);
     this.contentsDrawer = new ReaderContentsDrawerComponent(page);
     this.highlightsDrawer = new HighlightsDrawerComponent(page);
@@ -60,6 +65,7 @@ export class EpubReaderPage extends BasePage {
     this.chapterCounterLabel = page.getByTestId("reader-chapter-counter");
     this.headerChapterLabel = page.getByTestId("reader-header-chapter");
     this.loadingOverlay = page.getByTestId("reader-loading");
+    this.errorMessage = page.getByTestId("reader-error");
     this.navErrorMessage = page.getByTestId("reader-nav-error");
     this.searchDrawer = page.getByTestId("reader-search-drawer");
     this.searchField = page.getByTestId("reader-search-input");
@@ -100,6 +106,18 @@ export class EpubReaderPage extends BasePage {
     await this.displayPanelButton.click();
   }
 
+  async resizeViewport(size: { width: number; height: number }): Promise<void> {
+    await this.page.setViewportSize(size);
+  }
+
+  async turnPage(): Promise<void> {
+    await this.nextPageButton.click();
+  }
+
+  async turnBack(): Promise<void> {
+    await this.previousPageButton.click();
+  }
+
   async openContents(): Promise<void> {
     await this.contentsButton.click();
   }
@@ -132,6 +150,23 @@ export class EpubReaderPage extends BasePage {
   /** The width `element` paints at, or 0 when it paints no box at all. */
   async renderedWidth(element: Locator): Promise<number> {
     return (await element.boundingBox())?.width ?? 0;
+  }
+
+  /** The height `element` paints at, or 0 when it paints no box at all. */
+  async renderedHeight(element: Locator): Promise<number> {
+    return (await element.boundingBox())?.height ?? 0;
+  }
+
+  /** Listens for CSP refusals to load a stylesheet; the list fills as they come. */
+  recordStylesheetCspRefusals(): string[] {
+    return this.recordCspRefusals(/style-src|stylesheet/i);
+  }
+
+  /** Stores the theme before the next load, as if the reader chose it earlier. */
+  async presetTheme(theme: Theme): Promise<void> {
+    await this.page.addInitScript((value) => {
+      window.localStorage.setItem("omn.theme", value);
+    }, theme);
   }
 
   /** Whether the failed-jump notice would swallow a click at its own centre. */
@@ -177,6 +212,18 @@ export class EpubReaderPage extends BasePage {
   async assertDisplayedFor(bookUuid: string): Promise<void> {
     await expect(this.page).toHaveURL(new RegExp(`/read/${bookUuid}$`));
     await expect(this.viewerPanel).toBeVisible();
+  }
+
+  /** CSP violations reach the console as error entries, iframe ones included. */
+  private recordCspRefusals(directive: RegExp): string[] {
+    const refusals: string[] = [];
+    this.page.on("console", (message) => {
+      const text = message.text();
+      if (/content security policy/i.test(text) && directive.test(text)) {
+        refusals.push(text);
+      }
+    });
+    return refusals;
   }
 
   /** Opens `path`, then waits for the page's first fetches to settle. */

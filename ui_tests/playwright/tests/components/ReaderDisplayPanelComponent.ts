@@ -37,6 +37,10 @@ export class ReaderDisplayPanelComponent extends BaseComponent {
     return this.root.getByTestId(`reader-typeface-${face}`);
   }
 
+  async choosePageView(view: PageView): Promise<void> {
+    await this.pageViewButton(view).click();
+  }
+
   async closeByClickingOutside(): Promise<void> {
     await this.scrim.click();
   }
