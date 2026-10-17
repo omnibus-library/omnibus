@@ -6,6 +6,7 @@
 
 mod account;
 mod add_books;
+mod admin;
 #[cfg(not(feature = "mobile"))]
 mod admin_health;
 mod auth;

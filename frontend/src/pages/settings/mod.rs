@@ -36,6 +36,7 @@ mod library;
 #[cfg(not(feature = "mobile"))]
 mod metadata_precedence;
 mod secret_key_field;
+pub(crate) mod sections;
 mod smtp;
 // Web/server only: the admin Users surface calls the web-only `data::users`
 // REST wrappers (no mobile admin surface).
