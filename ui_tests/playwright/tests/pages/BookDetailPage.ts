@@ -9,14 +9,17 @@ import { expect } from "../fixtures/test";
 import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
-/** The six stops of the page, as the dot rail names them. */
-export type MarqueeSection =
-  | "Home"
-  | "Stats"
-  | "Highlights"
-  | "Journals"
-  | "The files"
-  | "More";
+/** The six stops of the page in running order, as the dot rail names them. */
+const MARQUEE_SECTIONS = [
+  "Home",
+  "Stats",
+  "Highlights",
+  "Journals",
+  "The files",
+  "More",
+] as const;
+
+export type MarqueeSection = (typeof MARQUEE_SECTIONS)[number];
 
 export class BookDetailPage extends BasePage {
   protected readonly urlPattern = /\/books\/[^/?#]+$/;
@@ -32,6 +35,16 @@ export class BookDetailPage extends BasePage {
   readonly heroCover: Locator;
   readonly sectionsNav: Locator;
   readonly sectionDots: Locator;
+  readonly flowScroller: Locator;
+  readonly snapScroller: Locator;
+  readonly flowSections: Locator;
+  readonly leadFlowSection: Locator;
+  readonly leadFlowSectionLabels: Locator;
+  readonly flowSectionLabels: Locator;
+  readonly nextStopCues: Locator;
+  readonly snapSections: Locator;
+  readonly backToBookButton: Locator;
+  readonly formatSwitcher: Locator;
   readonly savedPassagesHeading: Locator;
   readonly savedPassagesSection: Locator;
   readonly moreStop: Locator;
@@ -69,6 +82,20 @@ export class BookDetailPage extends BasePage {
     this.heroCover = page.locator("#bdmq-coverpx").getByTestId("cover");
     this.sectionsNav = page.getByRole("navigation", { name: "Page sections" });
     this.sectionDots = this.sectionsNav.getByRole("button");
+    // The scrollers and their sections carry no role, and the `bdmq-sec-{i}`
+    // ids render in both modes, so the modes are told apart by class.
+    this.flowScroller = page.locator("#bdmq-flow");
+    this.snapScroller = page.locator("#bdmq-snap");
+    this.flowSections = page.locator(".bdmq-flowsec");
+    this.leadFlowSection = page.locator(".bdmq-flowsec.lead");
+    this.leadFlowSectionLabels = this.leadFlowSection.locator(".bdmq-flowlab");
+    this.flowSectionLabels = page.locator(".bdmq-flowlab");
+    this.nextStopCues = page.locator(".bdmq-next");
+    this.snapSections = page.locator(".bdmq-sec");
+    this.backToBookButton = page.getByTestId("bdmq-flowtop");
+    this.formatSwitcher = page.getByRole("group", {
+      name: "Available formats",
+    });
     this.savedPassagesHeading = page.getByRole("heading", {
       name: "Passages you saved",
     });
@@ -141,6 +168,29 @@ export class BookDetailPage extends BasePage {
     await this.openAndSettle(`/books/${bookUuid}`);
   }
 
+  /** Scrolls to `section` through its dot on the rail. */
+  async jumpToSection(section: MarqueeSection): Promise<void> {
+    await this.sectionDot(section).click();
+  }
+
+  /** Scrolls the continuous flow to `top` pixels from its start. */
+  async scrollFlowTo(top: number): Promise<void> {
+    await this.flowScroller.evaluate((el, top) => {
+      el.scrollTop = top;
+    }, top);
+  }
+
+  /** Scrolls the snap marquee to the screen holding `section`. */
+  async scrollMarqueeToStop(section: MarqueeSection): Promise<void> {
+    await this.snapScroller.evaluate((el, index) => {
+      el.scrollTop = index * el.clientHeight;
+    }, MARQUEE_SECTIONS.indexOf(section));
+  }
+
+  async backToBook(): Promise<void> {
+    await this.backToBookButton.click();
+  }
+
   /** Opens the reader through the EPUB format's Read action. */
   async read(): Promise<void> {
     await this.readButton.click();
@@ -177,6 +227,17 @@ export class BookDetailPage extends BasePage {
     );
     await this.removeFromLibraryButton.click();
     await removed;
+  }
+
+  async flowScrollTop(): Promise<number> {
+    return this.flowScroller.evaluate((el) => el.scrollTop);
+  }
+
+  /** The cover's inline transform, which the scroll glue rewrites as it runs. */
+  async coverTransform(): Promise<string> {
+    return this.page
+      .locator("#bdmq-coverpx")
+      .evaluate((el) => el.style.transform);
   }
 
   /** Checks the page is showing the book `bookUuid`, not just any book. */

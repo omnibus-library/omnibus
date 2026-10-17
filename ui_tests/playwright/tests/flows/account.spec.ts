@@ -660,9 +660,9 @@ test.describe
 test.describe
   .serial("share stats", () => {
     /**
-     * Set the caller's `share_stats` preference, asserting it landed. A silent
-     * setup failure would otherwise surface as a confusing assertion about
-     * which state rendered — the `setScrollStops` shape in `book_detail.spec.ts`.
+     * Set the caller's `share_stats` preference, asserting it landed, as
+     * `presetScrollStops` does. A silent setup failure would otherwise surface
+     * as a confusing assertion about which state rendered.
      */
     async function setShareStats(request: APIRequestContext, enabled: boolean) {
       const resp = await request.post("/api/account/share-stats", {

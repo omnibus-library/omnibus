@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { Request, Response } from "@playwright/test";
+import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
@@ -28,6 +29,7 @@ import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
+import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import {
   type ExpectMutationOptions,
@@ -67,7 +69,9 @@ type PageFixtures = {
   comicReaderPage: ComicReaderPage;
   pdfReaderPage: PdfReaderPage;
   shelfPage: ShelfPage;
+  settingsPage: SettingsPage;
   scanRequests: ScanRequests;
+  accountRequests: AccountRequests;
   ebooksRequests: EbooksRequests;
   physicalRequests: PhysicalRequests;
   highlightsRequests: HighlightsRequests;
@@ -85,6 +89,7 @@ type PageFixtures = {
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
+  presetScrollStops: (enabled: boolean) => Promise<void>;
   parkBook: (
     bookUuid: string,
     anchor: string,
@@ -163,9 +168,16 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   shelfPage: async ({ page }, use) => {
     await use(new ShelfPage(page));
   },
+  settingsPage: async ({ page }, use) => {
+    await use(new SettingsPage(page));
+  },
 
   scanRequests: async ({ request }, use) => {
     await use(new ScanRequests(request));
+  },
+
+  accountRequests: async ({ request }, use) => {
+    await use(new AccountRequests(request));
   },
 
   ebooksRequests: async ({ request }, use) => {
@@ -283,6 +295,21 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
         )
         .toBe(status);
     });
+  },
+
+  // Every other test reads the default layout, so the preference goes back
+  // off however the test ends.
+  presetScrollStops: async ({ accountRequests }, use) => {
+    let preset = false;
+    await use(async (enabled) => {
+      preset = true;
+      const saved = await accountRequests.postScrollStops(enabled);
+      expect(saved.status(), `set scroll stops to ${enabled}`).toBe(200);
+    });
+    if (preset) {
+      const reset = await accountRequests.postScrollStops(false);
+      expect(reset.status(), "turn scroll stops back off").toBe(200);
+    }
   },
 
   // Parks the read status, the page and no highlights or bookmarks, so a

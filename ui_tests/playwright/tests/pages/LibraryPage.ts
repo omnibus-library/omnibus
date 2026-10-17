@@ -41,6 +41,11 @@ export class LibraryPage extends BasePage {
     await this.open("/");
   }
 
+  /** Opens the book's details from its grid tile, as a click does in the app. */
+  async openBook(title: string): Promise<void> {
+    await this.bookTile(title).click();
+  }
+
   /** Filters the book list to `shelf` in place; the page does not navigate. */
   async selectShelf(shelf: ShelfRef): Promise<void> {
     await this.galleryShelfTile(shelf.id).click();

@@ -1,4 +1,5 @@
 import type { APIRequestContext } from "@playwright/test";
+import { account } from "../contracts/account";
 import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
@@ -39,12 +40,11 @@ test.beforeAll(async ({ request }) => {
   await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
 });
 
-// A fixture with predictable, distinctive metadata to drive the layout and
-// breadcrumb tests. `alpha` is a single-author standalone ebook (Ada
-// Lovelace) so the breadcrumb is Home > Ada Lovelace > Alpha — and we can
-// reuse it for the "From the same hand" empty-state test because it's the
-// only book by that author in the seed.
+// An EPUB-only book with one author, Ada Lovelace.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
+
+// The dot rail and the back to the book pill mark themselves with this class.
+const ON_CLASS = /\bon\b/;
 
 // Niklaus Wirth has four books in FIXTURE_BOOKS (the Code Quartet) — three
 // where he's the sole/lead author and one (Quartet III) where he's the lead
@@ -110,7 +110,7 @@ test.describe("book detail page", () => {
     await test.step("check the dot rail shows", async () => {
       await expect(bookDetailPage.sectionsNav).toBeVisible();
       await expect(bookDetailPage.sectionDots).toHaveCount(6);
-      await expect(bookDetailPage.sectionDot("Home")).toHaveClass(/\bon\b/);
+      await expect(bookDetailPage.sectionDot("Home")).toHaveClass(ON_CLASS);
     });
 
     // The saved passages stop always renders, but whether its list or its
@@ -130,176 +130,281 @@ test.describe("book detail page", () => {
       await expect(bookDetailPage.suggestionsHeading).toBeVisible();
     });
   });
-});
 
-// ---------------------------------------------------------------------------
-// Scroll stops — the panel reads two ways (#2395's preference, default off)
-// ---------------------------------------------------------------------------
+  test.describe("scroll stops", () => {
+    // The preference is per account and outlives a test, so each sets it first.
+    test("read the panel as one continuous flow by default", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-/**
- * Set the caller's `book_detail_scroll_stops` preference, asserting it landed.
- * A silent setup failure would otherwise surface as a confusing assertion
- * about which layout rendered.
- */
-async function setScrollStops(request: APIRequestContext, enabled: boolean) {
-  const resp = await request.post("/api/account/book-detail-scroll-stops", {
-    data: { enabled },
-  });
-  expect(resp.status(), `setting scroll stops to ${enabled} failed`).toBe(200);
-}
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
 
-test.describe("scroll stops preference", () => {
-  // Every other test in this file reads the default layout, so the switch
-  // must go back off however these two finish.
-  test.afterAll(async ({ request }) => {
-    await setScrollStops(request, false);
-  });
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-  test("defaults to one continuous flow with numbered section rules", async ({
-    page,
-    request,
-  }) => {
-    await setScrollStops(request, false);
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/books/${uuid}`);
+      await test.step("check the flow replaces the marquee", async () => {
+        await expect(bookDetailPage.flowScroller).toBeAttached();
+        await expect(bookDetailPage.snapScroller).toHaveCount(0);
+        await expect(bookDetailPage.flowSections).toHaveCount(6);
+      });
 
-    // The flow owns the scrolling; the snap container is not rendered at all.
-    await expect(page.locator("#bdmq-flow")).toBeAttached();
-    await expect(page.locator("#bdmq-snap")).toHaveCount(0);
-    await expect(page.locator(".bdmq-flowsec")).toHaveCount(6);
+      // The first section is the book itself, headed by its own title, so only
+      // the five after it are introduced by a rule.
+      await test.step("check each later section has a rule", async () => {
+        await expect(bookDetailPage.leadFlowSection).toHaveCount(1);
+        await expect(bookDetailPage.leadFlowSectionLabels).toHaveCount(0);
+        await expect(bookDetailPage.flowSectionLabels).toHaveCount(5);
+        await expect(bookDetailPage.flowSectionLabels).toContainText([
+          "Stats",
+          "Highlights",
+          "Journals",
+          "The files",
+          "More",
+        ]);
+      });
 
-    // The first section is the book itself and carries no rule — its own
-    // title is the heading. Every later section is introduced by one.
-    await expect(page.locator(".bdmq-flowsec.lead")).toHaveCount(1);
-    await expect(page.locator(".bdmq-flowsec.lead .bdmq-flowlab")).toHaveCount(
-      0,
-    );
-    await expect(page.locator(".bdmq-flowlab")).toHaveCount(5);
-    await expect(page.locator(".bdmq-flowlab").first()).toContainText("Stats");
-
-    // Nothing snaps, so the per-stop "scroll — next" cue has no meaning.
-    await expect(page.locator(".bdmq-next")).toHaveCount(0);
-
-    // The back-to-the-book pill stays hidden until the top is out of sight,
-    // then appears — and takes the reader back to it.
-    const backToBook = page.getByTestId("bdmq-flowtop");
-    await expect(backToBook).toBeAttached();
-    await expect(backToBook).not.toHaveClass(/\bon\b/);
-
-    await page.locator("#bdmq-flow").evaluate((el) => {
-      el.scrollTop = 900;
-    });
-    await expect(backToBook).toHaveClass(/\bon\b/);
-
-    // The cover drifts with the scroll rather than panning stop to stop, so
-    // its transform tracks the position instead of sitting at one offset.
-    const drifted = await page
-      .locator("#bdmq-coverpx")
-      .evaluate((el) => el.style.transform);
-    expect(drifted).toMatch(/translateY/);
-
-    await backToBook.click();
-    await expect
-      .poll(() => page.locator("#bdmq-flow").evaluate((el) => el.scrollTop))
-      .toBe(0);
-    await expect(backToBook).not.toHaveClass(/\bon\b/);
-  });
-
-  test("flipping the switch in Settings changes the next detail page without a reload", async ({
-    page,
-    request,
-  }) => {
-    await setScrollStops(request, false);
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-    // Arrive at the book first, so the app-wide viewer is already resolved
-    // and holding the old value — the state the stale read came from.
-    await gotoReady(page, `/books/${uuid}`);
-    await expect(page.locator("#bdmq-flow")).toBeAttached();
-
-    // Flip it in Settings the way a reader would, then come back by
-    // navigating rather than reloading.
-    await gotoReady(page, "/settings?section=account");
-    await expectMutation(
-      page,
-      {
-        method: "POST",
-        url: "/api/rpc/account/book-detail-scroll-stops",
-        expectedStatus: 200,
-      },
-      async () =>
-        page
-          .getByRole("switch", { name: "Use book details scroll stops" })
-          .click(),
-    );
-
-    await page.getByRole("link", { name: "Library" }).first().click();
-    await gotoReady(page, `/books/${uuid}`);
-
-    // The save refreshes the app-wide viewer, so the marquee is already in
-    // place — no reload needed to see the setting take effect.
-    await expect(page.locator("#bdmq-snap")).toBeAttached();
-    await expect(page.locator("#bdmq-flow")).toHaveCount(0);
-  });
-
-  test("the marquee's own scroll glue is installed when the preference is on", async ({
-    page,
-    request,
-  }) => {
-    await setScrollStops(request, true);
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/books/${uuid}`);
-    await expect(page.locator("#bdmq-snap")).toBeAttached();
-
-    // The mode is only known once the viewer resolves, so the first paint is
-    // the flow and the marquee replaces it. The glue has to follow that swap:
-    // if the flow's listeners stay bound, the snap container scrolls with no
-    // dot tracking and no parallax, and the rail goes dead.
-    await page.locator("#bdmq-snap").evaluate((el) => {
-      el.scrollTop = 3 * el.clientHeight;
+      // Nothing snaps, so the per-stop "scroll, next" cue has no meaning.
+      await test.step("check no snap cues show", async () => {
+        await expect(bookDetailPage.nextStopCues).toHaveCount(0);
+      });
     });
 
-    await expect(page.getByTestId("bdmq-dot-3")).toHaveClass(/\bon\b/);
-    await expect(page.getByTestId("bdmq-dot-0")).not.toHaveClass(/\bon\b/);
+    test("drift the cover as the flow scrolls", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("scroll the flow", async () => {
+        await bookDetailPage.scrollFlowTo(900);
+      });
+
+      await test.step("check the cover drifts", async () => {
+        await expect
+          .poll(() => bookDetailPage.coverTransform(), {
+            message: "cover transform after the flow scrolls",
+          })
+          .toMatch(/translateY/);
+      });
+    });
+
+    test("show the back to the book pill once the top scrolls away", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the pill is hidden at the top", async () => {
+        await expect(bookDetailPage.backToBookButton).toBeAttached();
+        await expect(bookDetailPage.backToBookButton).not.toHaveClass(ON_CLASS);
+      });
+
+      await test.step("scroll the top out of sight", async () => {
+        await bookDetailPage.scrollFlowTo(900);
+        await expect(bookDetailPage.backToBookButton).toHaveClass(ON_CLASS);
+      });
+    });
+
+    test("scroll back to the top with the back to the book pill", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("scroll the top out of sight", async () => {
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.scrollFlowTo(900);
+        await expect(bookDetailPage.backToBookButton).toHaveClass(ON_CLASS);
+      });
+
+      await test.step("go back to the book", async () => {
+        await bookDetailPage.backToBook();
+      });
+
+      await test.step("check the flow is back at the top", async () => {
+        await expect
+          .poll(() => bookDetailPage.flowScrollTop(), {
+            message: "flow scroll position after the pill",
+          })
+          .toBe(0);
+        await expect(bookDetailPage.backToBookButton).not.toHaveClass(ON_CLASS);
+      });
+    });
+
+    test("switch to the marquee from settings without a reload", async ({
+      bookDetailPage,
+      settingsPage,
+      libraryPage,
+      request,
+      presetScrollStops,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops off through the api", async () => {
+        await presetScrollStops(false);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.flowScroller).toBeAttached();
+      });
+
+      await test.step("turn scroll stops on in settings", async () => {
+        await settingsPage.goto("account");
+        await expectMutation(account.setScrollStops(true), () =>
+          settingsPage.toggleScrollStops(),
+        );
+      });
+
+      await test.step("return to the book through the library", async () => {
+        await settingsPage.topNav.openLibrary();
+        await libraryPage.openBook(TARGET.title);
+      });
+
+      // The save refreshes the app-wide viewer, so the marquee is already in
+      // place with no reload.
+      await test.step("check the marquee replaces the flow", async () => {
+        await expect(bookDetailPage.snapScroller).toBeAttached();
+        await expect(bookDetailPage.flowScroller).toHaveCount(0);
+      });
+    });
+
+    test("track the active stop as the marquee scrolls", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops on through the api", async () => {
+        await presetScrollStops(true);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+        await expect(bookDetailPage.snapScroller).toBeAttached();
+      });
+
+      // The first paint is the flow, and the marquee replaces it once the
+      // viewer resolves. The glue must follow that swap, or the rail goes dead.
+      await test.step("scroll the marquee to the journals stop", async () => {
+        await bookDetailPage.scrollMarqueeToStop("Journals");
+      });
+
+      await test.step("check the dot rail follows", async () => {
+        await expect(bookDetailPage.sectionDot("Journals")).toHaveClass(
+          ON_CLASS,
+        );
+        await expect(bookDetailPage.sectionDot("Home")).not.toHaveClass(
+          ON_CLASS,
+        );
+      });
+    });
+
+    test("show the snap stop marquee when scroll stops are on", async ({
+      bookDetailPage,
+      request,
+      presetScrollStops,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("turn scroll stops on through the api", async () => {
+        await presetScrollStops(true);
+      });
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check the marquee replaces the flow", async () => {
+        await expect(bookDetailPage.snapScroller).toBeAttached();
+        await expect(bookDetailPage.flowScroller).toHaveCount(0);
+        await expect(bookDetailPage.snapSections).toHaveCount(6);
+        await expect(bookDetailPage.backToBookButton).toHaveCount(0);
+      });
+
+      await test.step("check the dot rail is the same", async () => {
+        await expect(bookDetailPage.sectionDots).toHaveCount(6);
+      });
+    });
   });
 
-  test("turning the preference on restores the snap-stop marquee", async ({
-    page,
-    request,
-  }) => {
-    await setScrollStops(request, true);
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    await gotoReady(page, `/books/${uuid}`);
+  test.describe("dot rail", () => {
+    // The rail works in both modes, so these leave the preference alone.
+    test("jump to a stop from the dot rail", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-    // The snap container is back and the flow is gone — the same six
-    // sections either way, only the mechanics differ.
-    await expect(page.locator("#bdmq-snap")).toBeAttached();
-    await expect(page.locator("#bdmq-flow")).toHaveCount(0);
-    await expect(page.locator(".bdmq-sec")).toHaveCount(6);
-    await expect(page.getByTestId("bdmq-flowtop")).toHaveCount(0);
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
 
-    // The dot rail is common to both readings.
-    await expect(page.getByTestId("bdmq-dots").getByRole("button")).toHaveCount(
-      6,
-    );
+      await test.step("jump to the files stop", async () => {
+        await bookDetailPage.jumpToSection("The files");
+      });
+
+      await test.step("check the stop's content is in view", async () => {
+        await expect(bookDetailPage.formatSwitcher).toBeInViewport();
+      });
+    });
+
+    test("mark the jumped-to stop on the dot rail", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("jump to the files stop", async () => {
+        await bookDetailPage.jumpToSection("The files");
+      });
+
+      // The scroll is smooth, so the marker moves a moment after the click.
+      await test.step("check the rail marks the files stop", async () => {
+        await expect(bookDetailPage.sectionDot("The files")).toHaveClass(
+          ON_CLASS,
+        );
+        await expect(bookDetailPage.sectionDot("Home")).not.toHaveClass(
+          ON_CLASS,
+        );
+      });
+    });
   });
-});
-
-test("dot rail jumps between stops and tracks the active section", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  // Jumping to stop 05 (The files) via the rail scrolls the snap container
-  // and moves the active marker. The scroll is smooth, so poll for the flip.
-  await page.getByTestId("bdmq-dot-4").click();
-  await expect(page.getByTestId("bdmq-dot-4")).toHaveClass(/\bon\b/);
-  await expect(page.getByTestId("bdmq-dot-0")).not.toHaveClass(/\bon\b/);
-
-  // The files stop's content is on screen once the snap settles.
-  await expect(page.getByTestId("format-switcher")).toBeInViewport();
 });
 
 // ---------------------------------------------------------------------------
