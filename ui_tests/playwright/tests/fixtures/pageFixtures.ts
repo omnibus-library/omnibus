@@ -68,6 +68,7 @@ type PageFixtures = {
   pdfReaderPage: PdfReaderPage;
   shelfPage: ShelfPage;
   scanRequests: ScanRequests;
+  ebooksRequests: EbooksRequests;
   physicalRequests: PhysicalRequests;
   highlightsRequests: HighlightsRequests;
   progressRequests: ProgressRequests;
@@ -165,6 +166,10 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
 
   scanRequests: async ({ request }, use) => {
     await use(new ScanRequests(request));
+  },
+
+  ebooksRequests: async ({ request }, use) => {
+    await use(new EbooksRequests(request));
   },
 
   physicalRequests: async ({ request }, use) => {

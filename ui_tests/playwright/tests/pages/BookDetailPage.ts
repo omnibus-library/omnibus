@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
+import { ChipListEditorComponent } from "../components/ChipListEditorComponent";
 import { RatingComponent } from "../components/RatingComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
@@ -23,6 +24,8 @@ export class BookDetailPage extends BasePage {
   readonly topNav: TopNavComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
   readonly rating: RatingComponent;
+  readonly genreChips: ChipListEditorComponent;
+  readonly tagChips: ChipListEditorComponent;
 
   readonly titleHeading: Locator;
   readonly authorsLine: Locator;
@@ -57,6 +60,8 @@ export class BookDetailPage extends BasePage {
     this.topNav = new TopNavComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.rating = new RatingComponent(page);
+    this.genreChips = new ChipListEditorComponent(page, "genres");
+    this.tagChips = new ChipListEditorComponent(page, "tags");
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.authorsLine = page.getByTestId("book-authors");
     // The More stop's tiles draw covers too, so the hero's is found by its

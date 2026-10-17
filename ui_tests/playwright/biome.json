@@ -53,7 +53,6 @@
         "!tests/flows/author_photo.spec.ts",
         "!tests/flows/book_delete.spec.ts",
         "!tests/flows/book_detail.spec.ts",
-        "!tests/flows/book_detail_chips.spec.ts",
         "!tests/flows/book_detail_shelves.spec.ts",
         "!tests/flows/boot.spec.ts",
         "!tests/flows/browse_indices.spec.ts",
