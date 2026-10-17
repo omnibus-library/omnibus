@@ -6,9 +6,10 @@ use dioxus::prelude::*;
 use dioxus_router::{use_navigator, Link};
 use omnibus_shared::{ProgressFormat, ResumePoint, UserSummary};
 
-use crate::components::atrium::{Cover, Theme};
+use crate::components::atrium::Cover;
 use crate::components::glyphs::{book_glyph, play_glyph, server_glyph, sliders_glyph};
 use crate::components::loading::{Skeleton, SkeletonShape};
+use crate::components::theme_picker::ThemePicker;
 use crate::components::user_avatar::UserAvatar;
 use crate::focus_after_paint::focus_after_paint;
 use crate::{use_current_user, Route};
@@ -127,7 +128,6 @@ fn UserMenuTrigger(user: Option<UserSummary>, open: Signal<bool>) -> Element {
 fn UserMenuPanel(user: UserSummary, open: Signal<bool>) -> Element {
     let mut open = open;
     let nav = use_navigator();
-    let theme = use_context::<Signal<Theme>>();
     let on_signout = build_on_signout(open, nav);
     // Captured before `UmHeader { user, .. }` moves `user` below.
     let is_admin = user.is_admin;
@@ -167,7 +167,7 @@ fn UserMenuPanel(user: UserSummary, open: Signal<bool>) -> Element {
             UmAccountRows { open, is_admin }
             UmSessionRows { on_signout }
 
-            UmThemeSeg { theme }
+            UmThemeSeg {}
             UmVersion {}
         }
     }
@@ -396,64 +396,14 @@ fn UmSessionRows(on_signout: EventHandler<()>) -> Element {
     }
 }
 
+/// The theme section: the shared segmented control under its label.
 #[cfg(any(feature = "web", feature = "server"))]
 #[component]
-fn UmThemeSeg(theme: Signal<Theme>) -> Element {
-    let snap = use_context::<crate::components::atrium::ThemeSnap>();
-    let current = *theme.read();
-    let dark_on = matches!(current, Theme::Dark);
-    let black_on = matches!(current, Theme::Black);
-    let light_on = matches!(current, Theme::Light);
-    let sepia_on = matches!(current, Theme::Sepia);
+fn UmThemeSeg() -> Element {
     rsx! {
         div { class: "um-theme",
             div { class: "um-section-label", "THEME" }
-            div { class: "um-theme-seg", role: "group", "aria-label": "Theme",
-                button {
-                    class: if dark_on { "um-theme-btn on" } else { "um-theme-btn" },
-                    r#type: "button",
-                    "data-testid": "theme-dark",
-                    onclick: move |_| crate::components::atrium::apply_theme(
-                        theme,
-                        snap,
-                        Theme::Dark,
-                    ),
-                    "Dark"
-                }
-                button {
-                    class: if black_on { "um-theme-btn on" } else { "um-theme-btn" },
-                    r#type: "button",
-                    "data-testid": "theme-black",
-                    onclick: move |_| crate::components::atrium::apply_theme(
-                        theme,
-                        snap,
-                        Theme::Black,
-                    ),
-                    "Black"
-                }
-                button {
-                    class: if light_on { "um-theme-btn on" } else { "um-theme-btn" },
-                    r#type: "button",
-                    "data-testid": "theme-light",
-                    onclick: move |_| crate::components::atrium::apply_theme(
-                        theme,
-                        snap,
-                        Theme::Light,
-                    ),
-                    "Light"
-                }
-                button {
-                    class: if sepia_on { "um-theme-btn on" } else { "um-theme-btn" },
-                    r#type: "button",
-                    "data-testid": "theme-sepia",
-                    onclick: move |_| crate::components::atrium::apply_theme(
-                        theme,
-                        snap,
-                        Theme::Sepia,
-                    ),
-                    "Sepia"
-                }
-            }
+            ThemePicker {}
         }
     }
 }
