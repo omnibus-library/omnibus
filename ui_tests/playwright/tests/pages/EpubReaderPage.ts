@@ -244,12 +244,12 @@ export class EpubReaderPage extends BasePage {
     return urls;
   }
 
-  /** Stores the theme before the next load, as if the reader chose it earlier. */
+  /** Stores the theme before every load of this page, as if chosen earlier. */
   async presetTheme(theme: Theme): Promise<void> {
     await this.presetLocalStorage("omn.theme", theme);
   }
 
-  /** Stores the typeface before the next load, as presetTheme does. */
+  /** Stores the typeface before every load of this page, as presetTheme does. */
   async presetTypeface(face: Typeface): Promise<void> {
     await this.presetLocalStorage("omn.typeface", face);
   }
