@@ -7,8 +7,8 @@ import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Journals are public + global per book: every test here lands on the same
-// `alpha` book and mutates the shared per-book feed, so run serially (mirrors
-// book_detail.spec.ts) — `playwright.config.ts` is otherwise `fullyParallel`,
+// `alpha` book and mutates the shared per-book feed, so run serially —
+// `playwright.config.ts` is otherwise `fullyParallel`,
 // which would interleave these and let one test's entries race another's
 // assertions. Each test still creates a uniquely-marked entry and deletes it.
 test.describe.configure({ mode: "serial" });

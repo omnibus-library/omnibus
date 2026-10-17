@@ -3,6 +3,7 @@ import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { ChipListEditorComponent } from "../components/ChipListEditorComponent";
 import { ExportMenuComponent } from "../components/ExportMenuComponent";
 import { FormatRowComponent } from "../components/FormatRowComponent";
+import { ListenFilePickerComponent } from "../components/ListenFilePickerComponent";
 import { QuoteCardModalComponent } from "../components/QuoteCardModalComponent";
 import { RatingComponent } from "../components/RatingComponent";
 import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
@@ -38,6 +39,7 @@ export class BookDetailPage extends BasePage {
   readonly rating: RatingComponent;
   readonly readStatus: ReadStatusControlComponent;
   readonly quoteCardModal: QuoteCardModalComponent;
+  readonly listenFilePicker: ListenFilePickerComponent;
   readonly genreChips: ChipListEditorComponent;
   readonly tagChips: ChipListEditorComponent;
 
@@ -74,6 +76,7 @@ export class BookDetailPage extends BasePage {
   readonly fromSameHandEmptyMessage: Locator;
   readonly readButton: Locator;
   readonly startReadingButton: Locator;
+  readonly startListeningButton: Locator;
   readonly startReadingComicButton: Locator;
   readonly startReadingPdfButton: Locator;
   readonly readPdfButton: Locator;
@@ -95,6 +98,7 @@ export class BookDetailPage extends BasePage {
     this.rating = new RatingComponent(page);
     this.readStatus = new ReadStatusControlComponent(page);
     this.quoteCardModal = new QuoteCardModalComponent(page);
+    this.listenFilePicker = new ListenFilePickerComponent(page);
     this.genreChips = new ChipListEditorComponent(page, "genres");
     this.tagChips = new ChipListEditorComponent(page, "tags");
     this.titleHeading = page.getByRole("heading", { level: 1 });
@@ -149,6 +153,7 @@ export class BookDetailPage extends BasePage {
     this.readButton = page.getByTestId("action-read");
     // The labels change with reading progress, so the row is found by test id.
     this.startReadingButton = page.getByTestId("start-reading");
+    this.startListeningButton = page.getByTestId("start-listening");
     this.startReadingComicButton = page.getByTestId("start-reading-comic");
     this.startReadingPdfButton = page.getByTestId("start-reading-pdf");
     this.readPdfButton = page.getByTestId("action-read-pdf");
@@ -231,6 +236,10 @@ export class BookDetailPage extends BasePage {
 
   async startReading(): Promise<void> {
     await this.startReadingButton.click();
+  }
+
+  async startListening(): Promise<void> {
+    await this.startListeningButton.click();
   }
 
   async openAuthor(name: string): Promise<void> {

@@ -3,6 +3,8 @@ import { expect } from "../fixtures/test";
 import type { ExpectMutationOptions } from "../utils/api";
 import { waitForHydration } from "../utils/nav";
 
+const DOCUMENT_MARK = "__omnibusE2eDocument";
+
 /** Navigation and the displayed check that every page object shares. */
 export abstract class BasePage {
   protected abstract readonly urlPattern: RegExp;
@@ -18,6 +20,21 @@ export abstract class BasePage {
   async assertDisplayed(): Promise<void> {
     await expect(this.page).toHaveURL(this.urlPattern);
     await expect(this.readyLocator).toBeVisible();
+  }
+
+  /** Marks the loaded document; a full page load replaces it and drops the mark. */
+  async markDocument(): Promise<void> {
+    await this.page.evaluate((key) => {
+      Reflect.set(window, key, true);
+    }, DOCUMENT_MARK);
+  }
+
+  /** True while the marked document is still loaded, so no full page load ran. */
+  async documentIsMarked(): Promise<boolean> {
+    return this.page.evaluate(
+      (key) => Reflect.get(window, key) === true,
+      DOCUMENT_MARK,
+    );
   }
 
   /** Fails every request `contract` describes from this page with a 500. */

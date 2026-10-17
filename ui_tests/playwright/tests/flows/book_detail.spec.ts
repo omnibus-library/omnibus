@@ -8,37 +8,17 @@ import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
   MERGE_ONLY_TITLES,
-  MERGE_PRIMARY,
-  MERGE_SECONDARY,
 } from "../fixtures/audiobooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { withLock } from "../utils/lock";
-import { gotoReady } from "../utils/nav";
 import {
   audiobookFixturesDir,
   fixturesDir,
   seedAudiobookLibrary,
   seedLibrary,
 } from "../utils/seed";
-
-// Force serial mode for this file. The audiobook re-seed inside the
-// `describe("audiobook-only seed", …)` block below mutates shared server
-// state (re-points the library at the audiobook fixtures), so it must
-// not race the ebook-seeded tests above — `playwright.config.ts` runs
-// with `fullyParallel: true`, which otherwise interleaves them.
-test.describe.configure({ mode: "serial" });
-
-// Re-seed in this spec's beforeAll so the running server is indexed against
-// the committed EPUB fixtures before any assertion runs — independent of
-// whatever other specs in the same worker did before us. The audiobook
-// library is seeded in a separate beforeAll (sharded by test.describe) so the
-// listen-CTA test gets MP3/M4B-only books to land on.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
 
 // An EPUB-only book with one author, Ada Lovelace.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
@@ -71,6 +51,15 @@ const READ_STATUS_BOOK = FIXTURE_BOOKS.find(
 // book.
 const PASSAGES_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "standalone-garden",
+)!;
+
+// An MP3 with no ebook companion, so Start listening is its primary action.
+// It is not in the merge pair, whose picker a merge would falsify.
+const SOLO_MP3 = AUDIOBOOK_BOOKS.find(
+  (b) =>
+    b.format === "MP3" &&
+    b.source === "generated" &&
+    !MERGE_ONLY_TITLES.includes(b.title),
 )!;
 
 test.describe("book detail page", () => {
@@ -1434,284 +1423,167 @@ test.describe("book detail page", () => {
       });
     });
   });
-});
 
-// ---------------------------------------------------------------------------
-// Audiobook-only seed: re-seeds the server with the audiobook fixtures so
-// the audio-only "Start listening" CTA can be exercised. Sharded into a
-// `describe` block so the audiobook re-seed only runs for the listen-CTA
-// test — the rest of the spec keeps the ebook library it set up above.
-// ---------------------------------------------------------------------------
-
-test.describe("audiobook-only seed", () => {
-  test.beforeAll(async ({ request }) => {
-    await seedAudiobookLibrary(
-      request,
-      audiobookFixturesDir(),
-      AUDIOBOOK_BOOK_COUNT,
-    );
-  });
-
-  // The merge-only MP3 pair. Merging them (F5.10 allows same-format merges)
-  // is what produces a real multi-file `book_files` group for #1005's
-  // file-picker coverage below. They are reserved for the merge tests
-  // precisely so this mutation stays invisible to the specs running in
-  // parallel against the same server — see `fixtures/audiobooks.ts`.
-  const PRIMARY_MP3 = MERGE_PRIMARY;
-  const SECOND_MP3 = MERGE_SECONDARY;
-
-  // Read-only audiobook for the non-mutating CTA test below. It must NOT be
-  // one of the merge pair: that test asserts the *absence* of a file picker,
-  // which a concurrent merge would falsify.
-  const SOLO_MP3 = AUDIOBOOK_BOOKS.find(
-    (b) =>
-      b.format === "MP3" &&
-      b.source === "generated" &&
-      !MERGE_ONLY_TITLES.includes(b.title),
-  )!;
-
-  test("Start listening navigates to /listen/:uuid for audio-only books", async ({
-    page,
-    request,
-  }) => {
-    // Pick an MP3 audiobook with no ebook companion — has_audio is true
-    // and has_ebook is false, so the hero renders "Start listening" as
-    // the primary CTA (the secondary "Listen" button only appears when
-    // both formats coexist).
-    const uuid = await fetchBookUuidByTitle(request, SOLO_MP3.title);
-    await gotoReady(page, `/books/${uuid}`);
-
-    const startListening = page.getByTestId("start-listening");
-    await expect(startListening).toBeVisible();
-    await expect(startListening).toHaveAttribute(
-      "href",
-      new RegExp(`/listen/${uuid}$`),
-    );
-
-    // AC2 (#1005): a single-file audiobook shows no file picker next to
-    // the CTA — the picker only appears once a book has >1 file of the
-    // format that CTA opens (see the merge-based test below).
-    await expect(page.getByTestId("listen-file-picker-trigger")).toHaveCount(0);
-
-    // Clicking the primary CTA must SPA-navigate to the listen page — with
-    // no trailing `?`, per #2256.
-    await startListening.click();
-    await expect(page).toHaveURL(new RegExp(`/listen/${uuid}$`));
-  });
-
-  // ---------------------------------------------------------------------------
-  // #1005 — Listen file picker for a multi-file (duplicate-format) audiobook
-  // ---------------------------------------------------------------------------
-
-  test("shows a Listen file picker after merging two same-format audiobooks, and picking a file navigates with its file_id", async ({
-    page,
-    request,
-  }) => {
-    // Serialize against merge.spec's audiobook merge: both mutate "The
-    // Analytical Audiobook" on the shared per-shard server, so running them in
-    // parallel workers corrupts this test's two-file state. The lock leaves the
-    // fixture restored (via the finally undo) before releasing. `test.slow()`
-    // covers the worst case of waiting out the other holder plus this run.
-    test.slow();
-    await withLock("audiobook-merge", async () => {
-      const primaryUuid = await fetchBookUuidByTitle(
+  // Last in the file, because its seed re-points the library at the audiobooks.
+  test.describe("listening", () => {
+    test.beforeAll("seed the audiobook library", async ({ request }) => {
+      await seedAudiobookLibrary(
         request,
-        PRIMARY_MP3.title,
+        audiobookFixturesDir(),
+        AUDIOBOOK_BOOK_COUNT,
       );
-      const secondUuid = await fetchBookUuidByTitle(request, SECOND_MP3.title);
-
-      // Arrange: merge SECOND into PRIMARY via the RPC directly (the merge
-      // dialog UI itself is covered by merge.spec.ts) so PRIMARY ends up with
-      // two MP3 `book_files` rows — the duplicate-format scenario #1005's
-      // picker targets. `merge_log_id` is the undo handle used in `finally`.
-      const mergeResp = await request.post("/api/rpc/merge-books", {
-        data: { source_uuid: secondUuid, target_uuid: primaryUuid },
-      });
-      expect(mergeResp.status(), "POST /api/rpc/merge-books failed").toBe(200);
-      const { merge_log_id: mergeLogId } = (await mergeResp.json()) as {
-        merge_log_id: number;
-      };
-
-      try {
-        await gotoReady(page, `/books/${primaryUuid}`);
-
-        // AC1: a book with >1 file of the format the CTA opens shows a way
-        // to pick which file to open before listening.
-        const trigger = page.getByTestId("listen-file-picker-trigger");
-        await expect(trigger).toBeVisible();
-        await expect(trigger).toHaveText(/Start listening\s*▾/);
-        await expect(page.getByTestId("listen-file-picker-panel")).toHaveCount(
-          0,
-        );
-        await trigger.click();
-        const panel = page.getByTestId("listen-file-picker-panel");
-        await expect(panel).toBeVisible();
-        await expect(page.getByTestId("listen-file-picker-heading")).toHaveText(
-          "2 files · choose one",
-        );
-        await expect(panel.getByRole("link")).toHaveCount(2);
-        await expect(panel.getByRole("link").first()).toContainText(
-          "Audiobook ·",
-        );
-        await expect(panel.getByRole("link").first()).toContainText(
-          /\d+(?:\.\d+)? [KMGT]?B/,
-        );
-
-        // Picking the second (non-default) file navigates to /listen/:uuid
-        // with that file's id, and the manifest fetch carries the same id.
-        const [manifestReq] = await Promise.all([
-          page.waitForRequest((req) =>
-            req
-              .url()
-              .includes(`/api/audiobooks/${primaryUuid}/manifest?file_id=`),
-          ),
-          panel.getByRole("link").nth(1).click(),
-        ]);
-        expect(manifestReq.url()).toMatch(
-          new RegExp(`/api/audiobooks/${primaryUuid}/manifest\\?file_id=\\d+$`),
-        );
-        await expect(page).toHaveURL(
-          new RegExp(`/listen/${primaryUuid}\\?file_id=\\d+$`),
-        );
-      } finally {
-        // Undo — restores SECOND as its own book so later specs (and re-runs
-        // of this one) see the pre-merge fixture state, mirroring
-        // merge.spec.ts's own undo-as-cleanup pattern.
-        const undoResp = await request.post("/api/rpc/merge-books/undo", {
-          data: { merge_log_id: mergeLogId },
-        });
-        expect(undoResp.status(), "POST /api/rpc/merge-books/undo failed").toBe(
-          200,
-        );
-      }
     });
-  });
 
-  // ---------------------------------------------------------------------------
-  // Regression: picking a different part of the *already-playing* book must
-  // switch parts. The app-root web driver used to react only to the book uuid
-  // (constant across a book's files), so re-picking a file on the active book
-  // silently kept part 1. Assert a fresh manifest fetch fires for the newly
-  // selected file_id even when the uuid is unchanged.
-  // ---------------------------------------------------------------------------
+    test("show start listening with no file picker on a single file audiobook", async ({
+      bookDetailPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, SOLO_MP3.title);
 
-  test("re-picking a different part of the already-active audiobook reloads onto that part", async ({
-    page,
-    request,
-  }) => {
-    test.slow();
-    await withLock("audiobook-merge", async () => {
-      const primaryUuid = await fetchBookUuidByTitle(
-        request,
-        PRIMARY_MP3.title,
-      );
-      const secondUuid = await fetchBookUuidByTitle(request, SECOND_MP3.title);
-
-      const mergeResp = await request.post("/api/rpc/merge-books", {
-        data: { source_uuid: secondUuid, target_uuid: primaryUuid },
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
       });
-      expect(mergeResp.status(), "POST /api/rpc/merge-books failed").toBe(200);
-      const { merge_log_id: mergeLogId } = (await mergeResp.json()) as {
-        merge_log_id: number;
-      };
 
-      try {
-        // The two audio `book_files` rows the merge produced, in file-picker
-        // order (`GET /api/ebooks/:uuid` returns them by ordinal).
-        const detailResp = await request.get(`/api/ebooks/${primaryUuid}`);
-        expect(detailResp.status(), "GET /api/ebooks/:uuid failed").toBe(200);
-        const detail = (await detailResp.json()) as {
-          book_files: { id: number; format: string }[];
-        };
-        const audioIds = detail.book_files
-          .filter((f) => /^(mp3|m4b|m4a)$/i.test(f.format))
-          .map((f) => f.id);
-        expect(audioIds.length, "expected two audio files after merge").toBe(2);
+      // #1005: the picker appears only once a book has more than one file of
+      // the format the action opens.
+      await test.step("check start listening shows without a picker", async () => {
+        await expect(bookDetailPage.startListeningButton).toBeVisible();
+        await expect(bookDetailPage.startListeningButton).toHaveAttribute(
+          "href",
+          new RegExp(`/listen/${uuid}$`),
+        );
+        await expect(bookDetailPage.listenFilePicker.trigger).toHaveCount(0);
+      });
+    });
 
-        // The whole flow below is one single-page-app session: a single full
-        // load of the book-detail page, then every navigation is a real Dioxus
-        // `<Link>` (the file picker) or an in-app history transition
-        // (`goBack`). The `__repickSentinel` on `window` is set once after that
-        // initial load and must survive to the end — a full page load anywhere
-        // clears it, and a full reload refetches the manifest regardless of the
-        // app-root driver fix, so the sentinel is what proves the *driver* (not
-        // a reload) rebooted onto the newly-picked part.
-        //
-        // (A raw injected `<a>` is NOT usable here: dioxus-web routes clicks
-        // through its `Link` components, not a document-level delegated
-        // listener, so an injected anchor full-page-loads and defeats the
-        // sentinel. The real picker links are the only faithful in-app nav.)
-        const manifestFor = (fid: string) =>
+    test("open the listen page from start listening", async ({
+      bookDetailPage,
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, SOLO_MP3.title);
+
+      await test.step("open the book", async () => {
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("start listening", async () => {
+        await bookDetailPage.startListening();
+        await listenPage.assertDisplayedFor(uuid);
+      });
+    });
+
+    test("show a file picker for an audiobook with two files", async ({
+      bookDetailPage,
+      mergedAudiobook,
+    }) => {
+      const { uuid, audioFileIds } = mergedAudiobook;
+      const picker = bookDetailPage.listenFilePicker;
+
+      await test.step("open the merged book", async () => {
+        expect(
+          audioFileIds.length,
+          "expected two audio files after merge",
+        ).toBe(2);
+        await bookDetailPage.goto(uuid);
+      });
+
+      await test.step("check start listening offers the picker", async () => {
+        await expect(picker.trigger).toBeVisible();
+        await expect(picker.trigger).toHaveText(/Start listening\s*▾/);
+        await expect(picker.panel).toHaveCount(0);
+      });
+
+      await test.step("open the picker", async () => {
+        await picker.open();
+        await expect(picker.panel).toBeVisible();
+      });
+
+      await test.step("check it lists both files", async () => {
+        const firstFile = picker.fileLink(audioFileIds[0]!);
+        await expect(picker.heading).toHaveText("2 files · choose one");
+        await expect(picker.fileLinks).toHaveCount(2);
+        await expect(firstFile).toContainText("Audiobook ·");
+        await expect(firstFile).toContainText(/\d+(?:\.\d+)? [KMGT]?B/);
+      });
+    });
+
+    test("listen to the file picked from the file picker", async ({
+      bookDetailPage,
+      listenPage,
+      mergedAudiobook,
+    }) => {
+      const { uuid, audioFileIds } = mergedAudiobook;
+      const secondFile = audioFileIds[1]!;
+      const picker = bookDetailPage.listenFilePicker;
+
+      await test.step("open the merged book's picker", async () => {
+        await bookDetailPage.goto(uuid);
+        await picker.open();
+      });
+
+      await test.step("pick the second file", async () => {
+        const manifest = await picker.pick(secondFile);
+        expect(manifest.url()).toMatch(
           new RegExp(
-            `/api/audiobooks/${primaryUuid}/manifest\\?file_id=${fid}$`,
-          );
-        const pickerLinks = async () => {
-          await page.getByTestId("listen-file-picker-trigger").click();
-          await expect(
-            page.getByTestId("listen-file-picker-panel"),
-          ).toBeVisible();
-          return page.getByTestId("listen-file-picker-panel").getByRole("link");
-        };
-        const fileIdOf = (manifestUrl: string) =>
-          new URL(manifestUrl).searchParams.get("file_id");
-
-        await gotoReady(page, `/books/${primaryUuid}`);
-        await page.evaluate(() => {
-          (
-            window as unknown as { __repickSentinel?: boolean }
-          ).__repickSentinel = true;
-        });
-
-        // Pick the FIRST part via the picker → SPA-navigate to /listen and make
-        // the book the active playback book (uuid now set on the app-root
-        // PlaybackState).
-        const [firstManifest] = await Promise.all([
-          page.waitForRequest((req) => manifestFor("\\d+").test(req.url())),
-          (await pickerLinks()).nth(0).click(),
-        ]);
-        const firstFileId = fileIdOf(firstManifest.url());
-        await expect(page).toHaveURL(
-          new RegExp(`/listen/${primaryUuid}\\?file_id=\\d+$`),
+            `/api/audiobooks/${uuid}/manifest\\?file_id=${secondFile}$`,
+          ),
         );
+      });
 
-        // Back to the detail page in-app (history popstate — no full load).
-        await page.goBack();
-        await expect(page).toHaveURL(new RegExp(`/books/${primaryUuid}$`));
+      await test.step("check the player opens on that file", async () => {
+        await listenPage.assertDisplayedFor(uuid, secondFile);
+      });
+    });
 
-        // Re-pick the SECOND part of the *already-active* book. Before the fix
-        // the driver keyed only on the (unchanged) uuid, so this fired no fresh
-        // manifest and stayed on part 1.
-        const [secondManifest] = await Promise.all([
-          page.waitForRequest((req) => manifestFor("\\d+").test(req.url()), {
-            timeout: 10_000,
-          }),
-          (await pickerLinks()).nth(1).click(),
-        ]);
-        const secondFileId = fileIdOf(secondManifest.url());
+    // The app-root player once keyed only on the book's uuid, so re-picking a
+    // part of the book already playing kept the first part.
+    test("switch to another part of the audiobook already playing", async ({
+      bookDetailPage,
+      listenPage,
+      mergedAudiobook,
+    }) => {
+      const { uuid, audioFileIds } = mergedAudiobook;
+      const [firstFile, secondFile] = [audioFileIds[0]!, audioFileIds[1]!];
+      const picker = bookDetailPage.listenFilePicker;
+
+      // A full page load would void this test, because a reload fetches the
+      // manifest again whatever the driver does. The mark must survive it all.
+      await test.step("open the merged book", async () => {
         expect(
-          secondFileId,
+          audioFileIds.length,
+          "expected two audio files after merge",
+        ).toBe(2);
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.markDocument();
+      });
+
+      await test.step("play the first part", async () => {
+        await picker.open();
+        await picker.pick(firstFile);
+        await listenPage.assertDisplayedFor(uuid, firstFile);
+      });
+
+      await test.step("go back to the book", async () => {
+        await listenPage.historyBack();
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+
+      await test.step("pick the second part", async () => {
+        await picker.open();
+        const manifest = await picker.pick(secondFile);
+        expect(
+          new URL(manifest.url()).searchParams.get("file_id"),
           "re-pick must reboot onto a different part",
-        ).not.toBe(firstFileId);
+        ).toBe(String(secondFile));
+      });
 
-        // The whole session stayed client-side — if any hop fully reloaded, the
-        // manifest fetch above would prove nothing.
-        const stayedInApp = await page.evaluate(
-          () =>
-            (window as unknown as { __repickSentinel?: boolean })
-              .__repickSentinel === true,
-        );
+      await test.step("check the pages stayed in the app", async () => {
         expect(
-          stayedInApp,
+          await bookDetailPage.documentIsMarked(),
           "re-pick nav must stay in-app (no full page load)",
         ).toBe(true);
-      } finally {
-        const undoResp = await request.post("/api/rpc/merge-books/undo", {
-          data: { merge_log_id: mergeLogId },
-        });
-        expect(undoResp.status(), "POST /api/rpc/merge-books/undo failed").toBe(
-          200,
-        );
-      }
+      });
     });
   });
 });
