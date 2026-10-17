@@ -63,6 +63,9 @@ const FONT_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-lagoon")!;
 // The gesture tests park a position here and assert nothing moved it, so no
 // other spec may write its position. Small, for the cold-open reason above.
 const TWO_FINGER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "mariucha")!;
+// Mid-way through its long seventh chapter. Opened at the book's start, the
+// first taps save nothing, which fails an awaited save.
+const TWO_FINGER_CFI = "epubcfi(/6/4!/4/80/3:209)";
 // Read-only: the page-turn gutter tests open it at a deep link.
 const GUTTER_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "room-with-a-view")!;
 // A paragraph a third of the way into Chapter II, so drift either way still
@@ -1461,6 +1464,18 @@ test.describe("epub reader", () => {
     // All three park a position on the one reserved book, and in parallel they
     // would read each other's turns.
     test.describe.configure({ mode: "default" });
+
+    test.beforeEach(
+      "park the book inside a long chapter",
+      async ({ request, progressRequests }) => {
+        const uuid = await fetchBookUuidByTitle(request, TWO_FINGER_BOOK.title);
+        const parked = await progressRequests.postEpubPosition(
+          uuid,
+          TWO_FINGER_CFI,
+        );
+        expect(parked.status(), "park saved progress").toBe(200);
+      },
+    );
 
     test("leave the page where it is after a two-finger swipe over the chrome", async ({
       epubReaderPage,
