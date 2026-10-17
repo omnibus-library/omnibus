@@ -8,7 +8,15 @@ import {
 import { ReaderSectionComponent } from "../components/ReaderSectionComponent";
 import { progressUrls } from "../contracts/progress";
 import { expect } from "../fixtures/test";
+import type { ExpectMutationOptions } from "../utils/api";
 import { BasePage } from "./BasePage";
+
+/**
+ * The footer's page label, "p. 3 of 12 · 25%" with a NBSP after "p.". It shows
+ * once epub.js has painted and the first relocate landed (#1896: the percent
+ * reads "~25%" until whole-book pagination resolves).
+ */
+export const PAGE_LABEL = /p\.\u00a0\d+ of \d+/;
 
 export type ContentsEntry = { label: string; href: string; level: number };
 export type Theme = "dark" | "black" | "light" | "sepia";
@@ -35,6 +43,7 @@ export class EpubReaderPage extends BasePage {
   readonly previousPageButton: Locator;
   readonly nextPageButton: Locator;
   readonly annotationsButton: Locator;
+  readonly footerBar: Locator;
   readonly chapterCounterLabel: Locator;
   readonly headerChapterLabel: Locator;
   readonly loadingOverlay: Locator;
@@ -66,6 +75,7 @@ export class EpubReaderPage extends BasePage {
     this.previousPageButton = page.getByTestId("reader-prev");
     this.nextPageButton = page.getByTestId("reader-next");
     this.annotationsButton = page.getByTestId("reader-annotations");
+    this.footerBar = page.getByTestId("reader-footer");
     this.chapterCounterLabel = page.getByTestId("reader-chapter-counter");
     this.headerChapterLabel = page.getByTestId("reader-header-chapter");
     this.loadingOverlay = page.getByTestId("reader-loading");
@@ -165,9 +175,42 @@ export class EpubReaderPage extends BasePage {
     return (await element.boundingBox())?.width ?? 0;
   }
 
+  /** The footer's `PAGE_LABEL` match, or "" before one shows. */
+  async pageLabel(): Promise<string> {
+    const text = (await this.footerBar.textContent()) ?? "";
+    return text.match(PAGE_LABEL)?.[0] ?? "";
+  }
+
+  /** The N of "p. N of M", or NaN before a label shows. */
+  async pageNumber(): Promise<number> {
+    const digits = (await this.pageLabel()).match(/\d+/);
+    return digits ? Number(digits[0]) : Number.NaN;
+  }
+
+  /** The footer's "· N%" once pagination settles, or -1 while it reads "~". */
+  async settledPercent(): Promise<number> {
+    const text = (await this.footerBar.textContent()) ?? "";
+    const percent = text.match(/\u00b7\u00a0(\d+)%/);
+    return percent ? Number(percent[1]) : -1;
+  }
+
   /** The height `element` paints at, or 0 when it paints no box at all. */
   async renderedHeight(element: Locator): Promise<number> {
     return (await element.boundingBox())?.height ?? 0;
+  }
+
+  /** Listens for progress saves from now on; the list holds each POST body. */
+  recordProgressSaves(): string[] {
+    const bodies: string[] = [];
+    this.page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        progressUrls.save.test(request.url())
+      ) {
+        bodies.push(request.postData() ?? "");
+      }
+    });
+    return bodies;
   }
 
   /** Listens for CSP refusals to load a stylesheet; the list fills as they come. */
@@ -239,6 +282,19 @@ export class EpubReaderPage extends BasePage {
       aborted = true;
       await route.abort();
     });
+  }
+
+  /** Fails every request `contract` describes from this page with a 500. */
+  async forceServerError(contract: ExpectMutationOptions): Promise<void> {
+    await this.page.route(contract.url, (route) =>
+      route.request().method() === contract.method
+        ? route.fulfill({
+            status: 500,
+            contentType: "text/plain",
+            body: "forced failure",
+          })
+        : route.continue(),
+    );
   }
 
   /** Serves `epub` as the book's file and keeps progress off the server. */

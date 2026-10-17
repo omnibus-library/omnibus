@@ -8,11 +8,16 @@ export const progressUrls = {
 
 /** The writes the reader makes to the reader's saved position. */
 export const progress = {
-  /** The save a contents jump makes, once the new chapter has rendered. */
-  saveAfterJump: (): ExpectMutationOptions => ({
+  /** The save a page turn makes. */
+  save: (): ExpectMutationOptions => ({
     method: "POST",
     url: progressUrls.save,
     expectedStatus: 200,
+  }),
+
+  /** The save a contents jump makes, once the new chapter has rendered. */
+  saveAfterJump: (): ExpectMutationOptions => ({
+    ...progress.save(),
     timeout: 20_000,
   }),
 };

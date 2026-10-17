@@ -3,6 +3,7 @@ import type { Request, Response } from "@playwright/test";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
+import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
@@ -12,6 +13,7 @@ import {
   type SeededHighlight,
 } from "../data/highlights";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
+import type { BookProgress, ProgressRecord } from "../data/progress";
 import { type ShelfRef, wishlistOf } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
 import { BookDetailPage } from "../pages/BookDetailPage";
@@ -57,6 +59,7 @@ type PageFixtures = {
   scanRequests: ScanRequests;
   physicalRequests: PhysicalRequests;
   highlightsRequests: HighlightsRequests;
+  progressRequests: ProgressRequests;
   createdBookUuids: Set<string>;
   filedCopies: FiledCopy[];
   seededHighlightIds: Set<number>;
@@ -64,6 +67,7 @@ type PageFixtures = {
     bookUuid: string,
     overrides?: Partial<NewHighlight>,
   ) => Promise<SeededHighlight>;
+  storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   adminWishlist: ShelfRef;
   readerShelfPage: ShelfPage;
 };
@@ -143,6 +147,10 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     await use(new HighlightsRequests(request));
   },
 
+  progressRequests: async ({ request }, use) => {
+    await use(new ProgressRequests(request));
+  },
+
   createdBookUuids: async ({ physicalRequests }, use) => {
     const uuids = new Set<string>();
     await use(uuids);
@@ -183,6 +191,16 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       const { id } = await created.json();
       seededHighlightIds.add(id);
       return { ...highlight, id };
+    });
+  },
+
+  // Null on a failed read, so it stays safe inside `expect.poll`.
+  storedPosition: async ({ progressRequests }, use) => {
+    await use(async (bookUuid) => {
+      const response = await progressRequests.getProgress(bookUuid);
+      if (!response.ok()) return null;
+      const progress: BookProgress | null = await response.json();
+      return progress?.records.find((r) => r.format === "epub") ?? null;
     });
   },
 

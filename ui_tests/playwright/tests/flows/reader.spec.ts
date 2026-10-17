@@ -3,13 +3,14 @@ import { TYPEFACES } from "../components/ReaderDisplayPanelComponent";
 import { highlights } from "../contracts/highlights";
 import { progress } from "../contracts/progress";
 import { MID_PARAGRAPH_RANGE } from "../data/highlights";
+import { koboPosition, savedCfi } from "../data/progress";
 import { EMBEDDED_FONT_FAMILY, FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { buildSubfolderNavEpub } from "../fixtures/subfolder_nav_epub";
-import { expectMutation } from "../utils/api";
+import { PAGE_LABEL } from "../pages/EpubReaderPage";
+import { expectMutation, failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { gotoReady } from "../utils/nav";
-import { storedProgress } from "../utils/progress";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Re-seed in this spec's beforeAll so the running server is indexed against
@@ -29,27 +30,18 @@ const RECOLOR_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "pioneers-3")!;
 // Its highlight overlay is measured, so no other spec may write highlights or
 // drive typography on it.
 const OVERLAY_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "standalone-river")!;
-// Reserved books for the progress-restore tests (see fixtures/epubs.ts):
-// saved position is per-book state on the shared server, so any other spec
-// opening these in the reader would race the restore assertions. They must
-// be real multi-page books (public-domain fixtures) — the synthetic
-// one-paragraph EPUBs render as a single page with no page turns.
+// The position tests need real multi-page books, since the synthetic ones
+// render a single page, and nothing else may open them in the reader.
 const PROGRESS_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "frankenstein")!;
 const PROGRESS_ERR_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "great-gatsby")!;
-// Reserved for the `?cfi=` deep-link test — book detail's saved-passages list
-// opens the reader that way. Same isolation rationale as the two above (the
-// test drives and reads saved position) and the same multi-page requirement.
-// Deliberately one of the *smaller* public-domain fixtures: this test opens
-// the book twice, and epub.js regenerates whole-book locations on the first
-// cold open (later opens hit the localStorage cache). On a fresh CI shard a
-// large fixture blows the pagination poll before a single page turn lands.
+// One of the smaller public-domain books: the deep-link test opens it twice,
+// and epub.js paginates the whole book on a cold open, which a large book
+// would stretch past the poll.
 const DEEP_LINK_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "romeo-and-juliet",
 )!;
-// Reserved for the percent-only restore test (#2446): it stores a position
-// with a percent and no CFI — a Kobo's shape — and asserts the open leaves it
-// untouched, so no other spec may open it in the reader or write its
-// position. A small multi-page book, for the same cold-open reason as above.
+// Holds a percent with no CFI, a Kobo's shape (#2446), so nothing else may
+// open it in the reader. Small, for the cold-open reason above.
 const PERCENT_ONLY_BOOK = FIXTURE_BOOKS.find(
   (b) => b.slug === "picture-of-dorian-gray",
 )!;
@@ -109,12 +101,6 @@ const PROGRESS_POST = {
   url: /\/api\/rpc\/progress(?:\?|$)/,
   expectedStatus: 200,
 };
-
-// The bottom-bar page label ("p. 3 of 12 · 25%" — or "· ~25%" while the
-// whole-book pagination still resolves in the background, issue #1896)
-// renders once epub.js has painted and the first relocate landed — the
-// signal that relocates are flowing. Note the NBSP after "p." in the label.
-const PAGE_LABEL = /p\.\u00a0\d+ of \d+/;
 
 async function footerPageLabel(page: Page): Promise<string> {
   const text = (await page.getByTestId("reader-footer").textContent()) ?? "";
@@ -1285,6 +1271,261 @@ test.describe("epub reader", () => {
     });
   });
 
+  test.describe("reading position", () => {
+    test("reopen the reader at the exact page it was left", async ({
+      epubReaderPage,
+      bookDetailPage,
+      request,
+      expectMutation,
+      storedPosition,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PROGRESS_BOOK.title);
+      const storedCfi = async () => (await storedPosition(uuid))?.epub_cfi;
+
+      // Page turns change the label only once whole-book pagination has
+      // resolved: the first open generates it, later opens read the cache.
+      const start = await test.step("open the book", async () => {
+        await epubReaderPage.goto(uuid);
+        await expect
+          .poll(() => epubReaderPage.pageLabel(), { timeout: 20_000 })
+          .toMatch(PAGE_LABEL);
+        return epubReaderPage.pageLabel();
+      });
+
+      // Boundary CFIs restore coarsely in epub.js and mid-text ones exactly,
+      // so turn past the front matter until the page starts mid-paragraph.
+      // Each save is awaited, or the relocate debounce merges two turns.
+      const left =
+        await test.step("turn pages until one starts mid-paragraph", async () => {
+          const midTextCfi = /:[1-9]\d*\)$/;
+          let cfi = "";
+          for (let turn = 0; turn < 12; turn++) {
+            const { request: save } = await expectMutation(
+              progress.save(),
+              () => epubReaderPage.turnPage(),
+            );
+            cfi = savedCfi(save);
+            if (turn >= 7 && midTextCfi.test(cfi)) break;
+          }
+          expect(cfi, "should reach a mid-paragraph position").toMatch(
+            midTextCfi,
+          );
+          const label = await epubReaderPage.pageLabel();
+          expect(label, "the turns should move the page label").not.toBe(start);
+          return { cfi, label };
+        });
+
+      // The restore settle only echoes a position the server holds. An echo
+      // write would stamp a fresh clock on it and shadow a newer audiobook
+      // position, so a reopen must write nothing.
+      await test.step("leave and reopen the reader", async () => {
+        const saves = epubReaderPage.recordProgressSaves();
+        await bookDetailPage.goto(uuid);
+        await epubReaderPage.goto(uuid);
+        await expect
+          .poll(() => epubReaderPage.pageLabel(), { timeout: 20_000 })
+          .toBe(left.label);
+        await expect.poll(storedCfi, { timeout: 10_000 }).toBe(left.cfi);
+        // Last, because the polls above outlast the debounce and the POST.
+        expect(saves, "a reopen must not write progress").toEqual([]);
+      });
+
+      // The echo skip must not mute a genuine move.
+      const turned = await test.step("turn a page", async () => {
+        const { request: save } = await expectMutation(progress.save(), () =>
+          epubReaderPage.turnPage(),
+        );
+        return {
+          cfi: savedCfi(save),
+          label: await epubReaderPage.pageLabel(),
+        };
+      });
+
+      await test.step("leave and reopen the reader again", async () => {
+        const saves = epubReaderPage.recordProgressSaves();
+        await bookDetailPage.goto(uuid);
+        await epubReaderPage.goto(uuid);
+        await expect
+          .poll(() => epubReaderPage.pageLabel(), { timeout: 20_000 })
+          .toBe(turned.label);
+        await expect.poll(storedCfi, { timeout: 10_000 }).toBe(turned.cfi);
+        expect(saves, "a reopen must not write progress").toEqual([]);
+      });
+    });
+
+    // Two sequential paginated opens and eight debounced turns outlast 60s.
+    test("open a deep-linked passage instead of the resume point", async ({
+      epubReaderPage,
+      bookDetailPage,
+      progressRequests,
+      request,
+      expectMutation,
+    }) => {
+      test.setTimeout(120_000);
+      const uuid = await fetchBookUuidByTitle(request, DEEP_LINK_BOOK.title);
+
+      // The passage CFI comes off the progress save, so it is what a highlight
+      // taken here would store. This is the cold open that generates the
+      // book's locations, hence the longer wait.
+      const passage = await test.step("read a way into the book", async () => {
+        await epubReaderPage.goto(uuid);
+        await expect
+          .poll(() => epubReaderPage.pageLabel(), { timeout: 45_000 })
+          .toMatch(PAGE_LABEL);
+        const opened = await epubReaderPage.pageLabel();
+        let cfi = "";
+        for (let turn = 0; turn < 8; turn++) {
+          const { request: save } = await expectMutation(progress.save(), () =>
+            epubReaderPage.turnPage(),
+          );
+          cfi = savedCfi(save);
+        }
+        const label = await epubReaderPage.pageLabel();
+        expect(label, "the turns should move the page label").not.toBe(opened);
+        return { cfi, label };
+      });
+
+      // So that "resume" and "the passage" are unmistakably different places.
+      await test.step("rewind the saved position to the front of the book", async () => {
+        await bookDetailPage.goto(uuid);
+        const rewound = await progressRequests.postEpubPosition(
+          uuid,
+          "epubcfi(/6/2!/4/2/1:0)",
+        );
+        expect(rewound.status(), "rewind saved progress").toBe(200);
+      });
+
+      await test.step("open the passage", async () => {
+        await epubReaderPage.gotoPassage(uuid, passage.cfi);
+        await expect
+          .poll(() => epubReaderPage.pageLabel(), { timeout: 20_000 })
+          .toBe(passage.label);
+      });
+    });
+
+    test("keep turning pages when progress saves fail", async ({
+      epubReaderPage,
+      request,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, PROGRESS_ERR_BOOK.title);
+
+      // Armed before the first open, so this test never writes real progress.
+      await test.step("fail every progress save", async () => {
+        await epubReaderPage.forceServerError(progress.save());
+        await epubReaderPage.goto(uuid);
+        await expect
+          .poll(() => epubReaderPage.pageLabel(), { timeout: 20_000 })
+          .toMatch(PAGE_LABEL);
+      });
+
+      // Saving is fire-and-forget: each turn still tries its save and sees the
+      // 500, and no error shows.
+      await test.step("turn two pages", async () => {
+        await expectMutation(failing(progress.save()), () =>
+          epubReaderPage.turnPage(),
+        );
+        await expectMutation(failing(progress.save()), () =>
+          epubReaderPage.turnPage(),
+        );
+      });
+
+      await test.step("check the reader is still reading", async () => {
+        await expect(epubReaderPage.viewerPanel).toBeVisible();
+        await expect(epubReaderPage.errorMessage).toHaveCount(0);
+      });
+    });
+  });
+
+  test.describe("percent-only position", () => {
+    // The second test's turn writes a CFI that the first asserts is absent.
+    test.describe.configure({ mode: "default" });
+
+    test("open a percent-only position without rewriting it", async ({
+      epubReaderPage,
+      request,
+      progressRequests,
+      storedPosition,
+    }) => {
+      // The structure wait below can outlast the 60s default on a cold shard.
+      test.setTimeout(180_000);
+      const saves = epubReaderPage.recordProgressSaves();
+      const uuid = await fetchBookUuidByTitle(request, PERCENT_ONLY_BOOK.title);
+
+      // The server places the percent once the book's structure is extracted,
+      // a worker task queued behind the seed scan's passes over every book.
+      await test.step("seed a percent-only position, as a Kobo sends", async () => {
+        const seeded = await progressRequests.postProgress(
+          koboPosition(uuid, 40),
+        );
+        expect(seeded.status(), "seed a percent-only position").toBe(200);
+        await expect
+          .poll(async () => (await storedPosition(uuid))?.derived_epub_cfi, {
+            timeout: 120_000,
+            intervals: [2_000],
+          })
+          .toMatch(/^epubcfi\(/);
+      });
+
+      // Read off the reader's own ruler once pagination resolves, not at the
+      // cover (0%). The two rulers differ by a little, never by a tenth.
+      await test.step("open the book where the position is", async () => {
+        await epubReaderPage.goto(uuid);
+        await expect
+          .poll(() => epubReaderPage.settledPercent(), { timeout: 45_000 })
+          .toBeGreaterThan(30);
+        expect(await epubReaderPage.settledPercent()).toBeLessThan(46);
+      });
+
+      // After the slow poll above, which outlasts the relocate debounce.
+      await test.step("check the open wrote nothing", async () => {
+        expect(saves, "opening must not write progress").toEqual([]);
+        const stored = await storedPosition(uuid);
+        expect(stored?.epub_cfi ?? null).toBeNull();
+        expect(stored?.progress_percent).toBe(40);
+      });
+    });
+
+    test("save a turn made from a percent-only landing", async ({
+      epubReaderPage,
+      request,
+      progressRequests,
+      storedPosition,
+      expectMutation,
+    }) => {
+      test.setTimeout(180_000);
+      const uuid = await fetchBookUuidByTitle(request, PERCENT_ONLY_BOOK.title);
+
+      await test.step("seed a percent-only position, as a Kobo sends", async () => {
+        const seeded = await progressRequests.postProgress(
+          koboPosition(uuid, 40),
+        );
+        expect(seeded.status(), "seed a percent-only position").toBe(200);
+        await expect
+          .poll(async () => (await storedPosition(uuid))?.derived_epub_cfi, {
+            timeout: 120_000,
+            intervals: [2_000],
+          })
+          .toMatch(/^epubcfi\(/);
+      });
+
+      await test.step("open the book where the position is", async () => {
+        await epubReaderPage.goto(uuid);
+        await expect
+          .poll(() => epubReaderPage.settledPercent(), { timeout: 45_000 })
+          .toBeGreaterThan(30);
+      });
+
+      // Moving off the landing is the reader's own position, and it saves.
+      await test.step("turn a page", async () => {
+        const { request: save } = await expectMutation(progress.save(), () =>
+          epubReaderPage.turnPage(),
+        );
+        expect(savedCfi(save)).toMatch(/^epubcfi\(/);
+      });
+    });
+  });
+
   // The phone shell renders this reader in a WebView, so check its layout here.
   test.describe("phone viewport", () => {
     test.use({ viewport: { width: 390, height: 844 } });
@@ -1392,259 +1633,6 @@ test.describe("epub reader", () => {
       });
     });
   });
-});
-
-test("restores the exact reading position when the reader is reopened", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, PROGRESS_BOOK.title);
-
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Page turns only produce label changes once whole-book pagination has
-  // resolved (the first open generates it; later opens hit the locations
-  // cache in localStorage).
-  await expect
-    .poll(async () => footerPageLabel(page), { timeout: 20_000 })
-    .toMatch(PAGE_LABEL);
-  const start = await footerPageLabel(page);
-
-  // Turn eight spreads — far enough past the front matter to be in prose —
-  // then keep turning (bounded) until the viewport start sits mid-paragraph:
-  // a text-position CFI with a non-zero character offset (`…:469)`). Leaving
-  // from the title/contents pages or an element boundary would under-test
-  // the restore, since boundary CFIs restore at coarser granularity in
-  // epub.js (a pre-existing display() limitation) while mid-text CFIs
-  // restore exactly. The offset check is fixture- and version-agnostic, and
-  // an environment that never yields one fails the guard below loudly
-  // instead of silently under-testing. Each turn's save is awaited via
-  // expectMutation so the 400 ms relocate debounce never coalesces two
-  // turns into one save.
-  const midTextCfi = /:[1-9]\d*\)$/;
-  let leftCfi = "";
-  for (let turn = 0; turn < 12; turn++) {
-    const saved = await expectMutation(page, PROGRESS_POST, async () =>
-      page.getByTestId("reader-next").click(),
-    );
-    leftCfi = saved.request.postDataJSON().update.epub_cfi as string;
-    if (turn >= 7 && midTextCfi.test(leftCfi)) break;
-  }
-  expect(leftCfi, "should reach a mid-paragraph position").toMatch(midTextCfi);
-  const leftAt = await footerPageLabel(page);
-  expect(leftAt, "the turns should move the page label").not.toBe(start);
-
-  // The stored position after a reopen must converge back on exactly where
-  // we left: the restore may briefly persist a pre-correction snapshot, but
-  // the settled landing (and the one-spread nudge for boundary CFIs) always
-  // wins the last write.
-  const storedCfi = async () =>
-    (await storedProgress(request, uuid))?.epub_cfi ?? "";
-
-  // Leave the reader (explicit navigation — equivalent to the reader-back
-  // button, which routes to the book's detail page), then
-  // reopen: it must land on the exact page we left, not a page drifted by
-  // the first-pass display's pre-webfont layout. The restore settle is an
-  // ECHO — it re-states a position the server already holds — so the
-  // reopen must issue NO progress write at all: an echo write stamps a
-  // fresh clock on an unmoved position, which shadows a newer audiobook
-  // position at the cross-format clock gate.
-  const progressPosts: string[] = [];
-  page.on("request", (req) => {
-    if (
-      req.method() === "POST" &&
-      /\/api\/rpc\/progress(?:\?|$)/.test(req.url())
-    ) {
-      progressPosts.push(req.postData() ?? "");
-    }
-  });
-  await gotoReady(page, `/books/${uuid}`);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect
-    .poll(async () => footerPageLabel(page), { timeout: 20_000 })
-    .toBe(leftAt);
-  await expect.poll(storedCfi, { timeout: 10_000 }).toBe(leftCfi);
-  // Asserted last in the phase: the slower polls above outlast the glue's
-  // relocate debounce + async POST spawn, so a straggler echo write would
-  // have landed in the collector by now.
-  expect(progressPosts, "a reopen must not write progress").toEqual([]);
-
-  // A real page turn after the restore still persists — the echo skip
-  // must not mute genuine movement.
-  const turned = await expectMutation(page, PROGRESS_POST, async () =>
-    page.getByTestId("reader-next").click(),
-  );
-  const turnedCfi = turned.request.postDataJSON().update.epub_cfi as string;
-  const turnedAt = await footerPageLabel(page);
-  progressPosts.length = 0;
-
-  // And again: the reopen lands on the turned page, still without writing.
-  await gotoReady(page, `/books/${uuid}`);
-  await gotoReady(page, `/read/${uuid}`);
-  await expect
-    .poll(async () => footerPageLabel(page), { timeout: 20_000 })
-    .toBe(turnedAt);
-  await expect.poll(storedCfi, { timeout: 10_000 }).toBe(turnedCfi);
-  expect(progressPosts, "a reopen must not write progress").toEqual([]);
-});
-
-test("opens a percent-only position where it is and never writes over it", async ({
-  page,
-  request,
-}) => {
-  // The structure wait below can outlast the 60s default on a cold shard.
-  test.setTimeout(180_000);
-  const uuid = await fetchBookUuidByTitle(request, PERCENT_ONLY_BOOK.title);
-
-  // What a Kobo sends: a whole-book percent and no CFI.
-  const seeded = await request.post("/api/progress", {
-    data: { book_uuid: uuid, format: "epub", progress_percent: 40 },
-  });
-  expect(seeded.status(), "seed a percent-only position").toBe(200);
-  // The server places it once the book's structure is extracted — a worker
-  // task queued behind the seed scan's word-count and page-count passes over
-  // the whole public-domain set, so a cold server takes a while to get here.
-  await expect
-    .poll(async () => (await storedProgress(request, uuid))?.derived_epub_cfi, {
-      timeout: 120_000,
-      intervals: [2_000],
-    })
-    .toMatch(/^epubcfi\(/);
-
-  const progressPosts: string[] = [];
-  page.on("request", (req) => {
-    if (
-      req.method() === "POST" &&
-      /\/api\/rpc\/progress(?:\?|$)/.test(req.url())
-    ) {
-      progressPosts.push(req.postData() ?? "");
-    }
-  });
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-
-  // Lands at the stored place, read off the reader's own ruler once
-  // whole-book pagination resolves (no "~") — not at the cover, which reads
-  // 0%. The two rulers differ by a little, never by a tenth of the book.
-  const settledPercent = async () => {
-    const text = (await page.getByTestId("reader-footer").textContent()) ?? "";
-    const m = text.match(/\u00b7\u00a0(\d+)%/);
-    return m ? Number(m[1]) : -1;
-  };
-  await expect.poll(settledPercent, { timeout: 45_000 }).toBeGreaterThan(30);
-  expect(await settledPercent()).toBeLessThan(46);
-
-  // Asserted after the slow poll above, which outlasts the relocate
-  // debounce: the open wrote nothing, so the Kobo's row stands as it was.
-  expect(progressPosts, "opening must not write progress").toEqual([]);
-  const stored = await storedProgress(request, uuid);
-  expect(stored?.epub_cfi ?? null).toBeNull();
-  expect(stored?.progress_percent).toBe(40);
-
-  // Moving off the landing is the reader's own position, and it saves.
-  const turned = await expectMutation(page, PROGRESS_POST, async () =>
-    page.getByTestId("reader-next").click(),
-  );
-  expect(turned.request.postDataJSON().update.epub_cfi).toMatch(/^epubcfi\(/);
-});
-
-test("a ?cfi= deep link opens the reader at that passage, not the resume point", async ({
-  page,
-  request,
-}) => {
-  // Two sequential paginated opens (cold generate, then a cached reopen) plus
-  // eight debounced page turns don't fit the 60s file default — the config
-  // points such tests at their own budget.
-  test.setTimeout(120_000);
-  const uuid = await fetchBookUuidByTitle(request, DEEP_LINK_BOOK.title);
-
-  // Read a way in and capture both the CFI and the page it renders on. The
-  // CFI comes off the progress save, so it's exactly what a highlight taken
-  // here would store.
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-  // Cold-open headroom: this is the run that generates whole-book locations
-  // (the sibling restore test's 20s assumes a book already paginated earlier
-  // in the file; this book is opened for the first time here).
-  await expect
-    .poll(async () => footerPageLabel(page), { timeout: 45_000 })
-    .toMatch(PAGE_LABEL);
-  const opened = await footerPageLabel(page);
-
-  let passageCfi = "";
-  for (let turn = 0; turn < 8; turn++) {
-    const saved = await expectMutation(page, PROGRESS_POST, async () =>
-      page.getByTestId("reader-next").click(),
-    );
-    passageCfi = saved.request.postDataJSON().update.epub_cfi as string;
-  }
-  const passagePage = await footerPageLabel(page);
-  expect(passagePage, "the turns should move the page label").not.toBe(opened);
-
-  // Now rewind the saved position to the front of the book, so "resume" and
-  // "the passage" are unmistakably different destinations.
-  await gotoReady(page, `/books/${uuid}`);
-  const reset = await request.post("/api/rpc/progress", {
-    data: {
-      update: {
-        book_uuid: uuid,
-        format: "epub",
-        epub_cfi: "epubcfi(/6/2!/4/2/1:0)",
-      },
-    },
-  });
-  expect(reset.status(), "rewind saved progress").toBe(200);
-
-  // Opening with ?cfi= must land on the passage's page, not the rewound one.
-  await gotoReady(page, `/read/${uuid}?cfi=${encodeURIComponent(passageCfi)}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-  await expect
-    .poll(async () => footerPageLabel(page), { timeout: 20_000 })
-    .toBe(passagePage);
-});
-
-test("keeps reading when the progress save POST fails", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, PROGRESS_ERR_BOOK.title);
-
-  // Force 500 on every progress save from this page — armed before the first
-  // navigation so this test never writes real progress for its book. Pin the
-  // exact pathname so `/api/rpc/progress/get` reads pass through untouched.
-  await page.route(
-    (url) => url.pathname === "/api/rpc/progress",
-    async (route) => {
-      if (route.request().method() === "POST") {
-        await route.fulfill({ status: 500, body: "forced failure" });
-      } else {
-        await route.continue();
-      }
-    },
-  );
-
-  await gotoReady(page, `/read/${uuid}`);
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-  await expect
-    .poll(async () => footerPageLabel(page), { timeout: 20_000 })
-    .toMatch(PAGE_LABEL);
-
-  // Each turn still fires its save (observing the forced 500), and the
-  // reader keeps paging normally — persistence is fire-and-forget, so a
-  // second turn still attempts its save and no error UI appears.
-  await expectMutation(
-    page,
-    { ...PROGRESS_POST, expectedStatus: 500 },
-    async () => page.getByTestId("reader-next").click(),
-  );
-  await expectMutation(
-    page,
-    { ...PROGRESS_POST, expectedStatus: 500 },
-    async () => page.getByTestId("reader-next").click(),
-  );
-  await expect(page.getByTestId("reader-viewer")).toBeVisible();
-  await expect(page.getByTestId("reader-error")).toHaveCount(0);
 });
 
 // A touch context, because the gesture is the subject: without `hasTouch`
