@@ -1,81 +1,21 @@
-import type { Page } from "@playwright/test";
 import { progress } from "../contracts/progress";
+import { readStatus } from "../contracts/readStatus";
+import { comicPageAnchor, pagePercent } from "../data/progress";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
-import { expectMutation, failing } from "../utils/api";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
-import { storedProgress } from "../utils/progress";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Both CBZ fixtures are reserved for this spec (see fixtures/epubs.ts), and
 // the split matters even within it: the suite is fullyParallel, so the
-// write-path test (COMIC, which takes the progress AND read-status writes)
+// write-path tests (COMIC, which takes the progress AND read-status writes)
 // and the read-only tests (PRISTINE, which assert a page-1 open) can run
 // concurrently — a shared book would race.
 const COMIC = FIXTURE_BOOKS.find((b) => b.slug === "aurora-station-01")!;
 const COMIC_PAGES = 8;
 const PRISTINE = FIXTURE_BOOKS.find((b) => b.slug === "aurora-station-02")!;
 const PRISTINE_PAGES = 5;
-
-// Re-seed so the running server is indexed against the committed fixtures
-// before any assertion runs — independent of other specs in this worker.
-//
-// Then pre-set PRISTINE to `reading`: the pager auto-marks an unread book
-// `reading` on open, so PRISTINE's read-only tests would otherwise fire an
-// unasserted status mutation the moment they open it (rule 04). With the
-// status pre-set, the open path is mutation-free — the pager fetches the
-// status, sees nothing to transition, and writes nothing. beforeAll runs
-// once per worker, and concurrent PUTs can hit SQLite's busy timeout while
-// the seed reindex is still writing, so converge with a read-then-write
-// poll instead of asserting a single PUT.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-  await expect
-    .poll(
-      async () => {
-        const current = await request.get(`/api/read-status/${uuid}`);
-        if (current.status() === 200) {
-          const record = (await current.json()) as { status: string } | null;
-          if (record?.status === "reading") return "reading";
-        }
-        await request.put("/api/read-status", {
-          data: { book_uuid: uuid, status: "reading" },
-        });
-        return "pending";
-      },
-      { timeout: 15_000, intervals: [200, 500, 1_000] },
-    )
-    .toBe("reading");
-});
-
-// Every page turn saves through the shared progress RPC.
-const PROGRESS_POST = {
-  method: "POST" as const,
-  url: /\/api\/rpc\/progress(?:\?|$)/,
-  expectedStatus: 200,
-};
-
-// Automatic read-status transitions (open → reading, last page → finished)
-// go through the read-status set RPC. The exact-path string cannot match
-// the sibling `/api/rpc/read-status/get` fetch the pager issues on open.
-const READ_STATUS_POST = {
-  method: "POST" as const,
-  url: "/api/rpc/read-status/set",
-  expectedStatus: 200,
-};
-
-async function openComic(page: Page, uuid: string) {
-  await gotoReady(page, `/comic/${uuid}`);
-  // The pager renders its chrome only after the metadata + saved-position
-  // fetch resolves; the footer label is the "ready" signal.
-  await expect(page.getByTestId("comic-footer")).toBeVisible();
-}
-
-function pageLabel(page: Page) {
-  return page.getByTestId("comic-footer").locator(".cr-page-label");
-}
 
 test.describe("comic pager", () => {
   test.beforeAll("seed the library", async ({ request }) => {
@@ -221,122 +161,164 @@ test.describe("comic pager", () => {
       });
     });
   });
-});
 
-test("pages forward, saves each turn, resumes, and auto-marks reading then finished", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, COMIC.title);
+  test.describe("reading progress", () => {
+    // Every test writes the one reserved comic, so they run one at a time.
+    test.describe.configure({ mode: "default" });
 
-  // Reset the state a previous run left behind — a run that died mid-test
-  // never reaches the tail resets, and the leftovers change this test's
-  // behavior: a saved position reopens on the last page (auto-finishing on
-  // open instead of marking reading), and a leftover finished status never
-  // auto-downgrades. Reset both up front so the transitions are
-  // deterministic.
-  const progressReset = await request.post("/api/progress", {
-    data: {
-      book_uuid: uuid,
-      format: "epub",
-      epub_cfi: "comic-page:0",
-      progress_percent: Math.round(100 / COMIC_PAGES),
-    },
+    test("mark an unread comic reading when it opens", async ({
+      comicReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, COMIC.title);
+
+      await test.step("park the book unread on page 1", async () => {
+        await parkBook(uuid, comicPageAnchor(0), "unread");
+      });
+
+      // The write fires once the page load and its fetches settle.
+      await test.step("open the book", async () => {
+        await expectMutation(readStatus.setOnOpen(uuid, "reading"), () =>
+          comicReaderPage.goto(uuid),
+        );
+      });
+    });
+
+    test("save the position on every page turn", async ({
+      comicReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+      storedPosition,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, COMIC.title);
+
+      await test.step("park the book reading on page 1", async () => {
+        await parkBook(uuid, comicPageAnchor(0), "reading");
+      });
+
+      await test.step("open the book", async () => {
+        await comicReaderPage.goto(uuid);
+      });
+
+      await test.step("turn three pages", async () => {
+        for (let target = 1; target <= 3; target++) {
+          await expectMutation(
+            progress.savePage(
+              uuid,
+              comicPageAnchor(target),
+              pagePercent(target, COMIC_PAGES),
+            ),
+            () => comicReaderPage.turnPage(),
+          );
+          await expect(comicReaderPage.pageLabel).toHaveText(
+            `Page ${target + 1} of ${COMIC_PAGES}`,
+          );
+        }
+      });
+
+      await test.step("check the server holds page 4", async () => {
+        const record = await storedPosition(uuid);
+        expect(record?.epub_cfi).toBe("comic-page:3");
+        expect(record?.progress_percent).toBe(50);
+        // A comic has no spine to resolve against, so the block reports the
+        // percent it carries rather than inventing a chapter.
+        expect(record?.resolved?.percent_through_book).toBe(50);
+        expect(record?.resolved?.chapter_title).toBeUndefined();
+      });
+    });
+
+    test("open a comic on its saved page", async ({
+      comicReaderPage,
+      request,
+      parkBook,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, COMIC.title);
+
+      await test.step("park the book reading on page 4", async () => {
+        await parkBook(uuid, comicPageAnchor(3), "reading");
+      });
+
+      await test.step("open the book", async () => {
+        await comicReaderPage.goto(uuid);
+      });
+
+      await test.step("check the pager restored page 4", async () => {
+        await expect(comicReaderPage.pageLabel).toHaveText(
+          `Page 4 of ${COMIC_PAGES}`,
+        );
+        await expect(comicReaderPage.pageImage).toHaveAttribute(
+          "src",
+          `/api/ebooks/${uuid}/pages/3`,
+        );
+      });
+    });
+
+    test("mark a comic finished on reaching its last page", async ({
+      comicReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, COMIC.title);
+
+      await test.step("park the book reading on page 4", async () => {
+        await parkBook(uuid, comicPageAnchor(3), "reading");
+      });
+
+      await test.step("open the book", async () => {
+        await comicReaderPage.goto(uuid);
+      });
+
+      // The position saves, and the last page marks the book finished.
+      await test.step("slide to the last page", async () => {
+        await expectMutation(readStatus.set(uuid, "finished"), () =>
+          expectMutation(progress.save(), () =>
+            comicReaderPage.slideToPage(COMIC_PAGES - 1),
+          ),
+        );
+      });
+
+      await test.step("check the pager is on the last page", async () => {
+        await expect(comicReaderPage.pageLabel).toHaveText(
+          `Page ${COMIC_PAGES} of ${COMIC_PAGES}`,
+        );
+        await expect(comicReaderPage.nextPageButton).toBeDisabled();
+      });
+    });
+
+    test("keep a finished comic finished when paging back", async ({
+      comicReaderPage,
+      request,
+      parkBook,
+      expectMutation,
+      storedReadStatus,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, COMIC.title);
+
+      await test.step("park the book finished on page 8", async () => {
+        await parkBook(uuid, comicPageAnchor(COMIC_PAGES - 1), "finished");
+      });
+
+      await test.step("open the book", async () => {
+        await comicReaderPage.goto(uuid);
+        await expect(comicReaderPage.pageLabel).toHaveText(
+          `Page ${COMIC_PAGES} of ${COMIC_PAGES}`,
+        );
+      });
+
+      await test.step("slide back to the first page", async () => {
+        await expectMutation(progress.save(), () =>
+          comicReaderPage.slideToPage(0),
+        );
+      });
+
+      // Paging back saves the position but must not downgrade the status.
+      await test.step("check the book is still finished", async () => {
+        expect(await storedReadStatus(uuid)).toBe("finished");
+      });
+    });
   });
-  expect(progressReset.status()).toBe(200);
-  const reset = await request.put("/api/read-status", {
-    data: { book_uuid: uuid, status: "unread" },
-  });
-  expect(reset.status()).toBe(200);
-
-  // Opening an unread comic marks it reading, exactly once. The write fires
-  // after hydration + the metadata/status fetches settle, so give it the
-  // full-page-load allowance.
-  await expectMutation(
-    page,
-    {
-      ...READ_STATUS_POST,
-      expectedBody: { update: { book_uuid: uuid, status: "reading" } },
-      timeout: 15_000,
-    },
-    async () => openComic(page, uuid),
-  );
-
-  // Three forward turns; each must POST the exact page anchor + percent.
-  for (let target = 1; target <= 3; target++) {
-    const { request: saved } = await expectMutation(
-      page,
-      {
-        ...PROGRESS_POST,
-        expectedBody: {
-          update: {
-            book_uuid: uuid,
-            format: "epub",
-            epub_cfi: `comic-page:${target}`,
-            progress_percent: Math.round(((target + 1) * 100) / COMIC_PAGES),
-          },
-        },
-      },
-      async () => page.getByRole("button", { name: "Next page" }).click(),
-    );
-    void saved;
-    await expect(pageLabel(page)).toHaveText(
-      `Page ${target + 1} of ${COMIC_PAGES}`,
-    );
-  }
-
-  // The server now holds the anchor for page index 3.
-  const record = await storedProgress(request, uuid);
-  expect(record?.epub_cfi).toBe("comic-page:3");
-  expect(record?.progress_percent).toBe(50);
-  // A comic has no spine to resolve against, so the block reports the percent
-  // it does carry rather than inventing a chapter.
-  expect(record?.resolved?.percent_through_book).toBe(50);
-  expect(record?.resolved?.chapter_title).toBeUndefined();
-
-  // Leave, reopen: the pager restores the saved page, not page 1.
-  await gotoReady(page, `/books/${uuid}`);
-  await openComic(page, uuid);
-  await expect(pageLabel(page)).toHaveText(`Page 4 of ${COMIC_PAGES}`);
-  await expect(page.getByTestId("comic-page-image")).toHaveAttribute(
-    "src",
-    `/api/ebooks/${uuid}/pages/3`,
-  );
-
-  // The slider jumps to the last page: the position saves, and landing on
-  // the final page auto-marks the book finished.
-  await expectMutation(
-    page,
-    {
-      ...READ_STATUS_POST,
-      expectedBody: { update: { book_uuid: uuid, status: "finished" } },
-    },
-    async () =>
-      expectMutation(page, PROGRESS_POST, async () =>
-        page
-          .getByRole("slider", { name: "Page slider" })
-          .fill(String(COMIC_PAGES - 1)),
-      ),
-  );
-  await expect(pageLabel(page)).toHaveText(
-    `Page ${COMIC_PAGES} of ${COMIC_PAGES}`,
-  );
-  await expect(page.getByRole("button", { name: "Next page" })).toBeDisabled();
-
-  // Paging back off the last page saves the position but must not
-  // downgrade the status: the server still reports finished afterwards.
-  await expectMutation(page, PROGRESS_POST, async () =>
-    page.getByRole("slider", { name: "Page slider" }).fill("0"),
-  );
-  const after = await request.get(`/api/read-status/${uuid}`);
-  expect(after.status()).toBe(200);
-  const statusAfter = (await after.json()) as { status: string } | null;
-  expect(statusAfter?.status).toBe("finished");
-
-  // Reset the status for the next run (the page-0 save above already reset
-  // the position).
-  const cleanup = await request.put("/api/read-status", {
-    data: { book_uuid: uuid, status: "unread" },
-  });
-  expect(cleanup.status()).toBe(200);
 });

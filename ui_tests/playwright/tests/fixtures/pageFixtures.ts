@@ -78,6 +78,11 @@ type PageFixtures = {
   storedPosition: (bookUuid: string) => Promise<ProgressRecord | null>;
   storedReadStatus: (bookUuid: string) => Promise<ReadStatus | null>;
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
+  parkBook: (
+    bookUuid: string,
+    anchor: string,
+    status: ReadStatus,
+  ) => Promise<void>;
   adminWishlist: ShelfRef;
   dualFormatUuid: string;
   readerShelfPage: ShelfPage;
@@ -250,6 +255,16 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
           },
         )
         .toBe(status);
+    });
+  },
+
+  // Parks the book where a test starts, so a leftover from an earlier run
+  // cannot change what an open writes.
+  parkBook: async ({ presetReadStatus, progressRequests }, use) => {
+    await use(async (bookUuid, anchor, status) => {
+      await presetReadStatus(bookUuid, status);
+      const parked = await progressRequests.postEpubPosition(bookUuid, anchor);
+      expect(parked.status(), "park saved progress").toBe(200);
     });
   },
 

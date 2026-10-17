@@ -48,3 +48,18 @@ export function savedCfi(request: Request): string {
   const { update }: { update: { epub_cfi: string } } = request.postDataJSON();
   return update.epub_cfi;
 }
+
+/** The anchor the comic pager saves for the 0-based page `index`. */
+export function comicPageAnchor(index: number): string {
+  return `comic-page:${index}`;
+}
+
+/** The anchor the PDF reader saves for the 0-based page `index`. */
+export function pdfPageAnchor(index: number): string {
+  return `pdf-page:${index}`;
+}
+
+/** The whole-book percent a paged reader saves on page `index` of `pages`. */
+export function pagePercent(index: number, pages: number): number {
+  return Math.round(((index + 1) * 100) / pages);
+}

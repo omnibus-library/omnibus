@@ -15,6 +15,23 @@ export const progress = {
     expectedStatus: 200,
   }),
 
+  /** The save a paged reader makes, with the page anchor and percent it sends. */
+  savePage: (
+    bookUuid: string,
+    epubCfi: string,
+    percent: number,
+  ): ExpectMutationOptions => ({
+    ...progress.save(),
+    expectedBody: {
+      update: {
+        book_uuid: bookUuid,
+        format: "epub",
+        epub_cfi: epubCfi,
+        progress_percent: percent,
+      },
+    },
+  }),
+
   /** The save a contents jump makes, once the new chapter has rendered. */
   saveAfterJump: (): ExpectMutationOptions => ({
     ...progress.save(),

@@ -60,7 +60,6 @@
         "!tests/flows/browse_indices.spec.ts",
         "!tests/flows/chart_builder.spec.ts",
         "!tests/flows/cleanup_review.spec.ts",
-        "!tests/flows/comic_reader.spec.ts",
         "!tests/flows/cross_format_link.spec.ts",
         "!tests/flows/cross_format_prompts.spec.ts",
         "!tests/flows/discovery.spec.ts",

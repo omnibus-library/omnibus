@@ -32,12 +32,12 @@ export abstract class PagedReaderPage extends BasePage {
     await this.fitWidthButton.click();
   }
 
-  /** Only clicks: a test that asserts the save wraps this in `expectMutation`. */
+  /** Only clicks: a test that asserts the save wraps it in `expectMutation`. */
   async turnPage(): Promise<void> {
     await this.nextPageButton.click();
   }
 
-  /** Jumps to the 0-based page `index`; only fills, as `turnPage` only clicks. */
+  /** Jumps to the 0-based page `index`; the test awaits any save. */
   async slideToPage(index: number): Promise<void> {
     await this.pageSlider.fill(String(index));
   }
