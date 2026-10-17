@@ -95,8 +95,9 @@ type PageFixtures = {
 };
 
 /**
- * The suite admin's page and its page objects. Also the admin's API calls,
- * the cleanup for what a test adds, and the worker's reader in a browser
+ * The suite admin's page, with its page objects and request objects. Also the
+ * cleanup sets for what a test adds, the reading-state helpers (`parkBook`,
+ * `storedPosition`, `storedReadStatus`), and the worker's reader in a browser
  * context of their own. `readerFixtures.ts` signs the page in as that reader.
  */
 export const test = base.extend<PageFixtures, PageWorkerFixtures>({

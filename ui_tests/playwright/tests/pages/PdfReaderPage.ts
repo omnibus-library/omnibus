@@ -107,7 +107,10 @@ export class PdfReaderPage extends PagedReaderPage {
     await created;
   }
 
-  /** Serves `pdf` as the book's file. */
+  /**
+   * Answers every request for the book's file with `pdf`; call it before
+   * `goto`.
+   */
   async stubBookFile(bookUuid: string, pdf: Buffer): Promise<void> {
     await this.page.route(`**/api/ebooks/${bookUuid}/file**`, (route) =>
       route.fulfill({

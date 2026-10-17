@@ -12,11 +12,9 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Both PDF fixtures are reserved for this spec (see fixtures/epubs.ts), and
-// the split matters even within it: the suite is fullyParallel, so the
-// write-path tests (PDF, which takes the progress, read-status, highlight
-// and bookmark writes) and the read-only tests (PRISTINE, which assert a
-// page-1 open) can run concurrently, and a shared book would race.
+// Both PDFs are reserved for this spec (see fixtures/epubs.ts). PDF takes the
+// writes and PRISTINE stays untouched for the read-only tests, so parallel
+// tests never share a book.
 const PDF = FIXTURE_BOOKS.find((b) => b.slug === "time-machine")!;
 const PRISTINE = FIXTURE_BOOKS.find((b) => b.slug === "flatland")!;
 // A saved selection anchors as `pdf:{page}:{quads}`, eight coordinates a quad.
@@ -245,7 +243,6 @@ test.describe("pdf reader", () => {
           await parkBook(uuid, pdfPageAnchor(0), "unread");
         });
 
-        // The write fires once the page load and its fetches settle.
         await test.step("open the book", async () => {
           await expectMutation(readStatus.setOnOpen(uuid, "reading"), () =>
             pdfReaderPage.goto(uuid),
@@ -334,7 +331,6 @@ test.describe("pdf reader", () => {
           return pdfReaderPage.pageCount();
         });
 
-        // The position saves, and the last page marks the book finished.
         await test.step("slide to the last page", async () => {
           await expectMutation(readStatus.set(uuid, "finished"), () =>
             expectMutation(progress.save(), () =>

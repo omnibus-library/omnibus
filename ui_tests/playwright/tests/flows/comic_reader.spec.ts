@@ -7,11 +7,9 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Both CBZ fixtures are reserved for this spec (see fixtures/epubs.ts), and
-// the split matters even within it: the suite is fullyParallel, so the
-// write-path tests (COMIC, which takes the progress AND read-status writes)
-// and the read-only tests (PRISTINE, which assert a page-1 open) can run
-// concurrently — a shared book would race.
+// Both CBZs are reserved for this spec (see fixtures/epubs.ts). COMIC takes the
+// writes and PRISTINE stays untouched for the read-only tests, so parallel
+// tests never share a book.
 const COMIC = FIXTURE_BOOKS.find((b) => b.slug === "aurora-station-01")!;
 const COMIC_PAGES = 8;
 const PRISTINE = FIXTURE_BOOKS.find((b) => b.slug === "aurora-station-02")!;
@@ -180,7 +178,6 @@ test.describe("comic pager", () => {
         await parkBook(uuid, comicPageAnchor(0), "unread");
       });
 
-      // The write fires once the page load and its fetches settle.
       await test.step("open the book", async () => {
         await expectMutation(readStatus.setOnOpen(uuid, "reading"), () =>
           comicReaderPage.goto(uuid),
@@ -275,7 +272,6 @@ test.describe("comic pager", () => {
         await comicReaderPage.goto(uuid);
       });
 
-      // The position saves, and the last page marks the book finished.
       await test.step("slide to the last page", async () => {
         await expectMutation(readStatus.set(uuid, "finished"), () =>
           expectMutation(progress.save(), () =>

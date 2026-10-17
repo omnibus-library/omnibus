@@ -1,12 +1,5 @@
-// F-1130 (AC4): Immersive Read — open the EPUB reader with the audiobook
-// player docked, for a book that has BOTH formats.
-//
-// The precondition is a single book carrying an ebook AND an audiobook. The
-// "Immersive Voyage" fixture is the one intentional (title, author) collision
-// across the two libraries, so the indexer auto-attaches its EPUB and MP3 into
-// one dual-format book (see `fixtures/dual_format.ts`). Both libraries are
-// therefore seeded here, as two sequential settings writes (mirroring
-// `mini-dock.spec.ts`).
+// One book with both formats, auto-attached from the ebook and audiobook
+// libraries; see fixtures/dual_format.ts.
 
 import { AUDIOBOOK_BOOK_COUNT } from "../fixtures/audiobooks";
 import { AUTO_ATTACHED_PAIRS, DUAL_FORMAT_BOOK } from "../fixtures/dual_format";
@@ -40,14 +33,14 @@ test.describe("immersive read", () => {
       await bookDetailPage.goto(dualFormatUuid);
     });
 
-    await test.step("check the nav and both formats' actions show", async () => {
+    await test.step("check the nav and the read and listen actions show", async () => {
       await bookDetailPage.topNav.assertDisplayed();
       await expect(bookDetailPage.startReadingButton).toBeVisible();
       await expect(bookDetailPage.listenButton).toBeVisible();
     });
 
     // The marquee row uses the design's terser label.
-    await test.step("check the both-formats action shows", async () => {
+    await test.step("check the immersive read action shows", async () => {
       await expect(bookDetailPage.immersiveReadButton).toBeVisible();
       await expect(bookDetailPage.immersiveReadButton).toHaveText(/Immersive/);
     });
