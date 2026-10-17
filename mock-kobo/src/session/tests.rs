@@ -1,5 +1,7 @@
 //! `sync_now` against a stub Omnibus, one test per firmware rule the device enforces.
 
+use std::time::Duration;
+
 use axum::http::StatusCode;
 use serde_json::json;
 
@@ -20,6 +22,20 @@ fn library_sync_tokens(stub: &RunningStub) -> Vec<Option<String>> {
         .map(|r| {
             r.headers
                 .get("x-kobo-synctoken")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+/// The `name` header each request carried, in order.
+fn header_on_every_request(stub: &RunningStub, name: &str) -> Vec<Option<String>> {
+    let requests = stub.requests.lock().unwrap();
+    requests
+        .iter()
+        .map(|r| {
+            r.headers
+                .get(name)
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_owned)
         })
@@ -211,16 +227,8 @@ async fn sync_now_sends_hardware_id_on_every_request() {
         .await
         .unwrap();
 
-    let requests = stub.requests.lock().unwrap();
-    let ids: Vec<Option<&str>> = requests
-        .iter()
-        .map(|r| {
-            r.headers
-                .get("x-kobo-deviceid")
-                .and_then(|v| v.to_str().ok())
-        })
-        .collect();
-    assert_eq!(ids, vec![Some("HW-1"); 7]);
+    let ids = header_on_every_request(&stub, "x-kobo-deviceid");
+    assert_eq!(ids, vec![Some("HW-1".to_owned()); 7]);
 }
 
 #[tokio::test]
@@ -231,27 +239,25 @@ async fn sync_now_sends_host_without_port_on_every_request() {
         .await
         .unwrap();
 
-    let requests = stub.requests.lock().unwrap();
-    let hosts: Vec<Option<&str>> = requests
-        .iter()
-        .map(|r| r.headers.get("host").and_then(|v| v.to_str().ok()))
-        .collect();
-    assert_eq!(hosts, vec![Some("127.0.0.1"); 7]);
+    let hosts = header_on_every_request(&stub, "host");
+    assert_eq!(hosts, vec![Some("127.0.0.1".to_owned()); 7]);
 }
 
 #[tokio::test]
-async fn sync_now_fails_when_resources_are_built_on_portless_host() {
+async fn sync_leaves_the_server_when_resources_are_built_on_a_portless_host() {
     let stub = spawn_stub(Stub {
         resources_from_host: true,
         ..Stub::default()
     })
     .await;
+    let mut client = Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_secs(1)).unwrap();
 
-    let result = sync_now(&mut Device::new("HW-1"), &stub.endpoint).await;
+    // The stub now hands out port 80 URLs, so what answers there decides the outcome. It is not asserted.
+    let _ = run_sync(&mut client, &mut Device::new("HW-1")).await;
 
-    // What fails depends on what listens on 127.0.0.1:80, so the variant stays open.
-    assert!(result.is_err());
-    assert!(!stub.paths().iter().any(|p| p.ends_with("/v1/library/sync")));
+    let lines = request_lines(&client.into_requests());
+    assert_eq!(lines[0], "GET /kobo/<token>/v1/initialization 200");
+    assert_eq!(stub.paths(), ["/kobo/stub-device-token/v1/initialization"]);
 }
 
 #[tokio::test]
