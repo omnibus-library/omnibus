@@ -9,6 +9,11 @@ export class HighlightsRequests extends BaseRequests {
     return this.post("/api/highlights", highlight);
   }
 
+  /** Every highlight the signed-in user has on the book. */
+  getHighlights(bookUuid: string): Promise<APIResponse> {
+    return this.get(`/api/highlights/book/${bookUuid}`);
+  }
+
   deleteHighlight(id: number): Promise<APIResponse> {
     return this.delete(`/api/highlights/${id}`);
   }

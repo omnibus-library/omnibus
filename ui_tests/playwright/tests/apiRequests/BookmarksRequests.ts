@@ -9,6 +9,11 @@ export class BookmarksRequests extends BaseRequests {
     return this.post("/api/bookmarks", bookmark);
   }
 
+  /** Every bookmark the signed-in user has on the book. */
+  getBookmarks(bookUuid: string): Promise<APIResponse> {
+    return this.get(`/api/bookmarks/book/${bookUuid}`);
+  }
+
   deleteBookmark(id: number): Promise<APIResponse> {
     return this.delete(`/api/bookmarks/${id}`);
   }

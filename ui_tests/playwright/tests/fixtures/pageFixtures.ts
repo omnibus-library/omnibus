@@ -10,6 +10,7 @@ import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
+import type { SeededBookmark } from "../data/bookmarks";
 import type { LibraryBook } from "../data/ebooks";
 import {
   buildHighlight,
@@ -279,13 +280,48 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     });
   },
 
-  // Parks the book where a test starts, so a leftover from an earlier run
-  // cannot change what an open writes.
-  parkBook: async ({ presetReadStatus, progressRequests }, use) => {
+  // Parks the read status, the page and no highlights or bookmarks, so a
+  // leftover from an earlier run cannot change what a test sees or writes.
+  parkBook: async (
+    {
+      presetReadStatus,
+      progressRequests,
+      highlightsRequests,
+      bookmarksRequests,
+    },
+    use,
+  ) => {
     await use(async (bookUuid, anchor, status) => {
+      const listedHighlights = await highlightsRequests.getHighlights(bookUuid);
+      await expect(listedHighlights, "list highlights").toBeOK();
+      const strayHighlights: SeededHighlight[] = await listedHighlights.json();
+      for (const { id } of strayHighlights) {
+        const deleted = await highlightsRequests.deleteHighlight(id);
+        await expect(deleted, `delete highlight ${id}`).toBeOK();
+      }
+
+      const listedBookmarks = await bookmarksRequests.getBookmarks(bookUuid);
+      await expect(listedBookmarks, "list bookmarks").toBeOK();
+      const strayBookmarks: SeededBookmark[] = await listedBookmarks.json();
+      for (const { id } of strayBookmarks) {
+        const deleted = await bookmarksRequests.deleteBookmark(id);
+        await expect(deleted, `delete bookmark ${id}`).toBeOK();
+      }
+
       await presetReadStatus(bookUuid, status);
-      const parked = await progressRequests.postEpubPosition(bookUuid, anchor);
-      expect(parked.status(), "park saved progress").toBe(200);
+      await expect
+        .poll(
+          async () =>
+            (
+              await progressRequests.postEpubPosition(bookUuid, anchor)
+            ).status(),
+          {
+            message: "park saved progress",
+            timeout: 15_000,
+            intervals: [200, 500, 1_000],
+          },
+        )
+        .toBe(200);
     });
   },
 
