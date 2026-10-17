@@ -62,25 +62,19 @@ function withSmartShelf(
   );
 }
 
-/** Set the reader's Use book details scroll stops switch through Settings. */
+/**
+ * Set the reader's scroll stops preference through the API. The switches
+ * that write it belong to the specs for Settings and the book page; every
+ * body below opens its book with a full load, so it reads the new value.
+ */
 async function setScrollStops(page: Page, on: boolean) {
-  await gotoReady(page, "/settings?section=account");
-  const toggle = page.getByRole("switch", {
-    name: "Use book details scroll stops",
-  });
-  await expect(toggle).toBeEnabled();
-  if ((await toggle.isChecked()) === on) return;
-  await expectMutation(
-    page,
+  const resp = await page.request.post(
+    "/api/account/book-detail-scroll-stops",
     {
-      method: "POST",
-      url: "/api/rpc/account/book-detail-scroll-stops",
-      expectedBody: { enabled: on },
-      expectedStatus: 200,
+      data: { enabled: on },
     },
-    async () => toggle.click(),
   );
-  await expect(toggle).toBeChecked({ checked: on });
+  expect(resp.status(), `setting scroll stops to ${on} failed`).toBe(200);
 }
 
 /**

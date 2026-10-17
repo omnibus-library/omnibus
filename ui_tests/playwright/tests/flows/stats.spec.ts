@@ -17,7 +17,7 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expectMutation, isPostTo } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
@@ -147,6 +147,13 @@ test("renders the stats page layout", async ({ page }) => {
   // the switcher entirely.
   await expect(page.getByTestId("stats-hero")).toBeVisible();
   await expect(page.getByTestId("stats-current-streak")).toContainText(/\d/);
+  // The reader's own page carries the two preferences it reports on: who may
+  // see it, and the goals it measures against.
+  await expect(
+    page.getByRole("switch", { name: "Visible to your household" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("stats-goals-edit")).toBeVisible();
+  await expect(page.getByTestId("stats-goals-editor")).toHaveCount(0);
 
   // The scope switch, then the windowed band with its own pills. All four
   // periods are offered, Month pre-selected (the default range).
@@ -1128,13 +1135,12 @@ async function clearAllGoals(request: APIRequestContext) {
   }
 }
 
-test("the stats page reports goals but never edits them", async ({
+test("edit goals in place and the hero redraws against them", async ({
   page,
   request,
 }) => {
-  // Goals are account configuration and all three are set together in
-  // Settings → Account. The page that *reports* them must not grow an editor
-  // back: that split is the whole reason there is one Edit button.
+  // All three goals are set together behind one control — the same editor
+  // Settings → Goals hosts — never one editor per goal.
   await request.put("/api/stats/goal", { data: { target: 24 } });
   await request.put("/api/stats/goal/daily", {
     data: { kind: "pages", target: 30 },
@@ -1168,9 +1174,90 @@ test("the stats page reports goals but never edits them", async ({
   ]) {
     await expect(page.getByTestId(gone)).toHaveCount(0);
   }
+
+  await page.getByTestId("stats-goals-edit").click();
+  const editor = page.getByTestId("stats-goals-editor");
+  await expect(editor).toBeVisible();
+  const books = editor.getByTestId("goal-books-input");
+  await expect(books).toHaveValue("24");
+  await expect(books).toBeFocused();
+  await books.fill("25");
+
+  // The save is followed by a refetch of the standing summary, which is what
+  // moves the ring — the editor never paints a figure of its own.
+  const refetch = page.waitForResponse(
+    (resp) =>
+      isPostTo(/\/api\/rpc\/stats$/)(resp) &&
+      (resp.request().postDataJSON() as { range: string }).range === "all_time",
+  );
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/stats-goal",
+      expectedBody: { update: { target: 25 }, utc_offset_minutes: 0 },
+      expectedStatus: 200,
+    },
+    async () => editor.getByTestId("goals-save").click(),
+  );
+  await refetch;
+
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByTestId("stats-goals-edit")).toBeFocused();
+  await expect(page.getByTestId("stats-goal-figure")).toContainText(
+    /of 25 books/,
+  );
+  await expect(page.getByTestId("stats-goal-progress")).toHaveAttribute(
+    "aria-valuemax",
+    "25",
+  );
 });
 
-test("with no goals the hero reports the real figures and links to the editor", async ({
+test("a refused goal save keeps the editor open and the ring unchanged", async ({
+  page,
+  request,
+}) => {
+  await request.put("/api/stats/goal", { data: { target: 24 } });
+  await gotoReady(page, "/stats");
+  await page.route("**/api/rpc/stats-goal", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "text/plain",
+      body: "forced failure",
+    }),
+  );
+
+  await page.getByTestId("stats-goals-edit").click();
+  const editor = page.getByTestId("stats-goals-editor");
+  await editor.getByTestId("goal-books-input").fill("40");
+  await expectMutation(
+    page,
+    {
+      method: "POST",
+      url: "/api/rpc/stats-goal",
+      expectedBody: { update: { target: 40 }, utc_offset_minutes: 0 },
+      expectedStatus: 500,
+    },
+    async () => editor.getByTestId("goals-save").click(),
+  );
+
+  // The failed kind is named, its draft kept for the retry, and nothing on
+  // the hero claims a target the server refused.
+  await expect(editor.getByTestId("goals-status")).toContainText(
+    "Books this year",
+  );
+  await expect(editor.getByTestId("goal-books-input")).toHaveValue("40");
+  await expect(page.getByTestId("stats-goal-figure")).toContainText(
+    /of 24 books/,
+  );
+
+  await editor.getByTestId("goals-cancel").click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByTestId("stats-goals-edit")).toBeFocused();
+  await page.unroute("**/api/rpc/stats-goal");
+});
+
+test("with no goals the hero reports the real figures and links to the goals section", async ({
   page,
   request,
 }) => {
@@ -1195,9 +1282,9 @@ test("with no goals the hero reports the real figures and links to the editor", 
     "Pages a day",
   );
 
-  // Both halves link to the one place goals are set.
+  // Both halves link to the Goals section of Settings.
   await expect(page.getByTestId("stats-daily-set-link")).toBeVisible();
   await page.getByTestId("stats-goal-set-link").click();
-  await expect(page).toHaveURL(/\/settings\?section=account$/);
+  await expect(page).toHaveURL(/\/settings\?section=goals$/);
   await expect(page.getByTestId("account-goals-card")).toBeVisible();
 });

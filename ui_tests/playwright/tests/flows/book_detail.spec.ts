@@ -220,7 +220,7 @@ test.describe("scroll stops preference", () => {
 
     // Flip it in Settings the way a reader would, then come back by
     // navigating rather than reloading.
-    await gotoReady(page, "/settings?section=account");
+    await gotoReady(page, "/settings?section=preferences");
     await expectMutation(
       page,
       {
@@ -228,10 +228,7 @@ test.describe("scroll stops preference", () => {
         url: "/api/rpc/account/book-detail-scroll-stops",
         expectedStatus: 200,
       },
-      async () =>
-        page
-          .getByRole("switch", { name: "Use book details scroll stops" })
-          .click(),
+      async () => page.getByTestId("scroll-stops-toggle").click(),
     );
 
     await page.getByRole("link", { name: "Library" }).first().click();
@@ -241,6 +238,92 @@ test.describe("scroll stops preference", () => {
     // place — no reload needed to see the setting take effect.
     await expect(page.locator("#bdmq-snap")).toBeAttached();
     await expect(page.locator("#bdmq-flow")).toHaveCount(0);
+  });
+
+  test("the page's own toggle flips between the flow and the stops in place", async ({
+    page,
+    request,
+  }) => {
+    await setScrollStops(request, false);
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    await gotoReady(page, `/books/${uuid}`);
+
+    const toggle = page.getByTestId("bdmq-mode-toggle");
+    await expect(toggle).toBeEnabled();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("#bdmq-flow")).toBeAttached();
+
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/account/book-detail-scroll-stops",
+        expectedBody: { enabled: true },
+        expectedStatus: 200,
+      },
+      async () => toggle.click(),
+    );
+
+    // No reload: the stage re-renders in the other reading, the toggle keeps
+    // focus, and the marquee's glue follows the swap — the rail tracks the
+    // snapped stops.
+    await expect(page.locator("#bdmq-snap")).toBeAttached();
+    await expect(page.locator("#bdmq-flow")).toHaveCount(0);
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(toggle).toBeFocused();
+    await page.locator("#bdmq-snap").evaluate((el) => {
+      el.scrollTop = 3 * el.clientHeight;
+    });
+    await expect(page.getByTestId("bdmq-dot-3")).toHaveClass(/\bon\b/);
+
+    // And back again, with the toggle still live after the swap.
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/account/book-detail-scroll-stops",
+        expectedBody: { enabled: false },
+        expectedStatus: 200,
+      },
+      async () => toggle.click(),
+    );
+    await expect(page.locator("#bdmq-flow")).toBeAttached();
+    await expect(page.locator("#bdmq-snap")).toHaveCount(0);
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("a refused toggle keeps the reading it had and says so", async ({
+    page,
+    request,
+  }) => {
+    await setScrollStops(request, false);
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    await gotoReady(page, `/books/${uuid}`);
+    await page.route("**/api/rpc/account/book-detail-scroll-stops", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "forced failure",
+      }),
+    );
+
+    const toggle = page.getByTestId("bdmq-mode-toggle");
+    await expectMutation(
+      page,
+      {
+        method: "POST",
+        url: "/api/rpc/account/book-detail-scroll-stops",
+        expectedBody: { enabled: true },
+        expectedStatus: 500,
+      },
+      async () => toggle.click(),
+    );
+
+    await expect(page.getByTestId("bdmq-mode-error")).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("#bdmq-flow")).toBeAttached();
+    await expect(page.locator("#bdmq-snap")).toHaveCount(0);
+    await page.unroute("**/api/rpc/account/book-detail-scroll-stops");
   });
 
   test("the marquee's own scroll glue is installed when the preference is on", async ({
