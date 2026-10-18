@@ -187,8 +187,8 @@ async fn touch_state_changed(
     Ok(())
 }
 
-/// Drop every `kobo_books_sync` row for a book no longer opted in, chunked to
-/// stay under SQLite's bound-parameter limit.
+/// Drop the device's `kobo_books_sync` rows for `uuids`, chunked to stay under
+/// SQLite's bound-parameter limit.
 async fn delete_removed(
     tx: &mut Transaction<'_, Sqlite>,
     device_id: i64,
@@ -210,13 +210,19 @@ async fn delete_removed(
     Ok(())
 }
 
-/// Forget everything a device is holding, so its next sync re-sends the whole
-/// opted-in set. `library/sync` calls it when a request doesn't echo Omnibus's sync token.
-pub async fn clear_snapshot(pool: &SqlitePool, device_id: i64) -> Result<(), KoboError> {
-    sqlx::query("DELETE FROM kobo_books_sync WHERE device_id = ?")
-        .bind(device_id)
-        .execute(pool)
-        .await?;
+/// Forget the books `user_id` still syncs that `device_id` holds, so its next
+/// sync resends them as new. Rows for books no longer synced stay, so
+/// [`sync_delta`] still owes the device their removal.
+pub async fn clear_snapshot(
+    pool: &SqlitePool,
+    user_id: i64,
+    device_id: i64,
+) -> Result<(), KoboError> {
+    let wanted = sync_books(pool, user_id).await?;
+    let uuids: Vec<&str> = wanted.iter().map(|b| b.uuid.as_str()).collect();
+    let mut tx = pool.begin().await?;
+    delete_removed(&mut tx, device_id, &uuids).await?;
+    tx.commit().await?;
     Ok(())
 }
 

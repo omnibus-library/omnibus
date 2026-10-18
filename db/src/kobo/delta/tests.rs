@@ -241,9 +241,35 @@ async fn clear_snapshot_makes_the_next_sync_resend_everything() {
     sync_once(&pool, user, device).await;
     assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
 
-    clear_snapshot(&pool, device).await.unwrap();
+    clear_snapshot(&pool, user, device).await.unwrap();
 
     assert_eq!(sync_delta(&pool, user, device).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn clear_snapshot_keeps_the_removal_owed_for_a_book_no_longer_synced() {
+    // A device that kept its library but arrives without our sync token must
+    // still be told about a book unshelved meanwhile, or it keeps it forever.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let device = make_device(&pool, user, "Clara").await;
+    let kept = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    let gone = seed_synced_ebook(&pool, "emma.epub", "Emma", "Austen").await;
+    let shelf = synced_shelf(&pool, user, "Kobo", &[kept.clone(), gone.clone()]).await;
+    sync_once(&pool, user, device).await;
+    crate::shelves::remove_book(&pool, shelf, &gone)
+        .await
+        .unwrap();
+
+    clear_snapshot(&pool, user, device).await.unwrap();
+
+    let delta = sync_delta(&pool, user, device).await.unwrap();
+    assert_eq!(delta.len(), 2);
+    assert!(matches!(&delta.changes[0], SyncChange::New(b) if b.uuid == kept));
+    assert!(matches!(
+        &delta.changes[1],
+        SyncChange::Removed { book_uuid } if *book_uuid == gone
+    ));
 }
 
 #[tokio::test]

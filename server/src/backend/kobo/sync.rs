@@ -27,27 +27,25 @@ const SYNC_PAGE_SIZE: usize = 100;
 /// monotonically, so the remainder heals across subsequent syncs.
 const SPAN_DERIVATIONS_PER_SYNC: usize = 8;
 
-/// The sync token header, which the device echoes back, and the token's one value.
+/// The sync token header and its one value.
 const SYNC_TOKEN_HEADER: &str = "x-kobo-synctoken";
 const SYNC_TOKEN: &str = "omnibus";
 
-/// `GET library/sync` — the per-device delta, streamed as a JSON array via
-/// [`Body::from_stream`] with no item cap. A request without our sync token emits
-/// `NewEntitlement`s for the opted-in set; one that echoes it gets only changes and
-/// `ChangedEntitlement {IsRemoved:true}`. Paged at [`SYNC_PAGE_SIZE`] (`x-kobo-sync: continue`).
-/// The snapshot advances in the final poll, so a connection dropped mid-body replays the
-/// same delta rather than losing books.
+/// `GET library/sync`: the per-device delta, streamed as a JSON array via [`Body::from_stream`].
+/// A request without our sync token is a fresh library: it clears the device's still-synced books
+/// up front, so they resend as `NewEntitlement`s while owed `IsRemoved` entitlements still go out.
+/// One that echoes the token gets only changes and removals, paged at [`SYNC_PAGE_SIZE`]
+/// (`x-kobo-sync: continue`). The snapshot advances in the final poll, so a dropped body replays.
 pub async fn library_sync(
     auth: KoboAuthUser,
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    // A device with no token of ours holds no library (first sync, reset, re-sign-in, or a token from the Kobo store).
     if headers
         .get(SYNC_TOKEN_HEADER)
         .is_none_or(|v| v != SYNC_TOKEN)
     {
-        if let Err(e) = db::kobo::clear_snapshot(state.pool(), auth.device_id).await {
+        if let Err(e) = db::kobo::clear_snapshot(state.pool(), auth.user_id, auth.device_id).await {
             return internal("kobo clear_snapshot", e);
         }
     }
@@ -140,8 +138,7 @@ fn build_sync_response(
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, "application/json"),
-            // The device echoes this on every later request, and a request without it is a
-            // fresh library (see `library_sync`). The delta cursor is still the snapshot.
+            // The device echoes this back; see `library_sync`.
             (
                 header::HeaderName::from_static(SYNC_TOKEN_HEADER),
                 SYNC_TOKEN,
