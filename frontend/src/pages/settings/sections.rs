@@ -50,6 +50,13 @@ impl SettingsSection {
         }
     }
 
+    /// The route that opens this section.
+    pub(crate) fn route(self) -> Route {
+        Route::Settings {
+            section: Some(self.slug().to_string()),
+        }
+    }
+
     /// Resolve a `?section=` slug; anything unrecognised opens Profile.
     pub(crate) fn parse(raw: Option<&str>) -> SettingsSection {
         SettingsSection::ALL
@@ -101,12 +108,16 @@ impl SettingsTarget {
     /// The route that opens this target.
     pub(crate) fn route(self) -> Route {
         match self {
-            SettingsTarget::Personal(section) => Route::Settings {
-                section: Some(section.slug().to_string()),
-            },
-            SettingsTarget::Admin(section) => Route::Admin {
-                section: Some(section.slug().to_string()),
-            },
+            SettingsTarget::Personal(section) => section.route(),
+            SettingsTarget::Admin(section) => section.route(),
+        }
+    }
+
+    /// Where this target sits, as copy names it: "Settings › Goals".
+    pub(crate) fn place(self) -> String {
+        match self {
+            SettingsTarget::Personal(section) => format!("Settings \u{203a} {}", section.label()),
+            SettingsTarget::Admin(section) => section.place(),
         }
     }
 }

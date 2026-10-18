@@ -1,6 +1,8 @@
 //! Tests for the Administration sections: slugs, order, titles and where copy
 //! sends an admin.
 
+use crate::Route;
+
 use super::*;
 
 #[test]
@@ -52,4 +54,22 @@ fn admin_section_place_names_the_administration_section_on_the_web() {
 #[test]
 fn admin_section_place_names_the_native_settings_screen_on_mobile() {
     assert_eq!(AdminSection::Integrations.place(), "Settings");
+}
+
+#[test]
+fn admin_section_route_opens_its_own_section() {
+    assert_eq!(
+        AdminSection::Logs.route(),
+        Route::Admin {
+            section: Some("logs".to_string())
+        }
+    );
+}
+
+#[test]
+fn admin_section_group_files_the_library_sections_before_the_server_ones() {
+    assert_eq!(
+        AdminSection::ALL.map(AdminSection::group),
+        ["Library", "Library", "Library", "Library", "Server", "Server", "Server", "Server"]
+    );
 }

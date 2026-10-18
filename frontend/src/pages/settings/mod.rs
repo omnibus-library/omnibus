@@ -131,7 +131,7 @@ fn PersonalNav(active: SettingsSection, is_admin: bool) -> Element {
             for section in SettingsSection::ALL {
                 NavItem {
                     key: "{section.slug()}",
-                    to: Route::Settings { section: Some(section.slug().to_string()) },
+                    to: section.route(),
                     label: section.label(),
                     testid: format!("settings-nav-{}", section.slug()),
                     active: section == active,

@@ -43,21 +43,15 @@ fn palette_row_year_keeps_a_real_year() {
 }
 
 #[test]
-fn setting_breadcrumb_names_a_personal_section_under_settings() {
+fn settings_target_place_names_a_personal_section_under_settings() {
     let theme = crate::pages::matching_settings("theme", false)[0];
-    assert_eq!(
-        setting_breadcrumb(theme.target),
-        "Settings \u{203A} Preferences"
-    );
+    assert_eq!(theme.target.place(), "Settings \u{203A} Preferences");
 }
 
 #[test]
-fn setting_breadcrumb_names_an_admin_section_under_administration() {
+fn settings_target_place_names_an_admin_section_under_administration() {
     let smtp = crate::pages::matching_settings("smtp", true)[0];
-    assert_eq!(
-        setting_breadcrumb(smtp.target),
-        "Administration \u{203A} Integrations"
-    );
+    assert_eq!(smtp.target.place(), "Administration \u{203A} Integrations");
 }
 
 #[cfg(feature = "server")]

@@ -13,7 +13,8 @@ use crate::components::confirm_modal::{confirm_dialog, Confirm};
 use crate::components::credential_card::live_status;
 use crate::components::unsaved::use_unsaved_guard;
 use crate::components::{BusyLabel, Loading, LoadingKind};
-use crate::{data, use_server_url, Access, Route};
+use crate::pages::admin::sections::AdminSection;
+use crate::{data, use_server_url, Access};
 
 /// Signals backing the Kindle email form — grouped so the hydration effect
 /// and the save/clear handler builders don't each take five signal params.
@@ -329,9 +330,7 @@ fn kindle_delivery_line(delivery: Option<Option<KindleDelivery>>, access: Access
             p { class: "subtitle", "data-testid": "kindle-delivery",
                 "Email delivery isn\u{2019}t set up on this server yet. "
                 Link {
-                    to: crate::routes::link_target(Route::Admin {
-                        section: Some("integrations".to_string()),
-                    }),
+                    to: crate::routes::link_target(AdminSection::Integrations.route()),
                     "Set up email delivery"
                 }
             }

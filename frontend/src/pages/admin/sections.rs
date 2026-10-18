@@ -4,6 +4,8 @@
 // The mobile shell has no sidebar or `/admin`; it reads only the page title.
 #![cfg_attr(feature = "mobile", allow(dead_code))]
 
+use crate::Route;
+
 /// A section of `/admin`, grouped in the sidebar as Library and Server.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AdminSection {
@@ -55,6 +57,27 @@ impl AdminSection {
             AdminSection::Integrations => "Integrations",
             AdminSection::Health => "Health",
             AdminSection::Logs => "Logs",
+        }
+    }
+
+    /// The sidebar group this section sits under.
+    pub(crate) fn group(self) -> &'static str {
+        match self {
+            AdminSection::Sources
+            | AdminSection::Maintenance
+            | AdminSection::Metadata
+            | AdminSection::Cleanup => "Library",
+            AdminSection::People
+            | AdminSection::Integrations
+            | AdminSection::Health
+            | AdminSection::Logs => "Server",
+        }
+    }
+
+    /// The route that opens this section.
+    pub(crate) fn route(self) -> Route {
+        Route::Admin {
+            section: Some(self.slug().to_string()),
         }
     }
 

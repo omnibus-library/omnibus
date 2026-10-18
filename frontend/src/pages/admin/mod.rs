@@ -72,20 +72,20 @@ mod page {
             rsx! {
                 NavItem {
                     key: "{section.slug()}",
-                    to: Route::Admin { section: Some(section.slug().to_string()) },
+                    to: section.route(),
                     label: section.label(),
                     testid: format!("admin-nav-{}", section.slug()),
                     active: section == active,
                 }
             }
         };
-        let (library, server) = AdminSection::ALL.split_at(4);
         rsx! {
-            NavGroup { label: "Library",
-                for section in library.iter().copied() { {item(section)} }
-            }
-            NavGroup { label: "Server",
-                for section in server.iter().copied() { {item(section)} }
+            for group in ["Library", "Server"] {
+                NavGroup { key: "{group}", label: group,
+                    for section in AdminSection::ALL.into_iter().filter(|s| s.group() == group) {
+                        {item(section)}
+                    }
+                }
             }
             NavGroup { divided: true,
                 NavItem {

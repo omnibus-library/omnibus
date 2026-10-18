@@ -90,9 +90,14 @@ pub enum Route {
 /// Caption for a stub that bounces to the library.
 const TO_LIBRARY: &str = "Returning to the library";
 
-/// What a redirect stub paints for the frame before its effect navigates:
-/// the app's chrome around a page loader, never an empty body.
-fn redirecting(label: &'static str) -> Element {
+/// A stub route's body: replace this history entry with `to`, painting the
+/// app's chrome around a page loader (never an empty body) until it lands.
+#[component]
+fn Redirect(to: Route, label: &'static str) -> Element {
+    let nav = dioxus_router::use_navigator();
+    use_effect(use_reactive!(|to| {
+        nav.replace(link_target(to));
+    }));
     rsx! {
         ScreenLayout {
             Loading { kind: LoadingKind::Page, label }
@@ -143,22 +148,14 @@ pub fn Admin(section: Option<String>) -> Element {
 #[component]
 pub fn Admin(section: Option<String>) -> Element {
     let _ = section;
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(link_target(Route::Settings { section: None }));
-    });
-    redirecting("Opening settings")
+    rsx! { Redirect { to: Route::Settings { section: None }, label: "Opening settings" } }
 }
 
 /// Route target for `/settings/cleanup/:kind`, the review queue's address
 /// before it moved under `/admin`; redirects so old links keep working.
 #[component]
 pub fn LegacyCleanupReview(kind: String) -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::CleanupReview { kind: kind.clone() });
-    });
-    redirecting("Opening library cleanup")
+    rsx! { Redirect { to: Route::CleanupReview { kind }, label: "Opening library cleanup" } }
 }
 
 /// Route target for `/admin/cleanup/:kind` — the one-card-at-a-time
@@ -181,11 +178,7 @@ pub fn CleanupReview(kind: String) -> Element {
 #[component]
 pub fn CleanupReview(kind: String) -> Element {
     let _ = kind;
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
 /// Route target for `/logs` — the server log viewer is Administration › Logs,
@@ -194,13 +187,7 @@ pub fn CleanupReview(kind: String) -> Element {
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn Logs() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(link_target(Route::Admin {
-            section: Some("logs".into()),
-        }));
-    });
-    redirecting("Opening the logs")
+    rsx! { Redirect { to: AdminSection::Logs.route(), label: "Opening the logs" } }
 }
 
 /// Mobile stub for `/logs`: redirect to the landing page (no log viewer on
@@ -208,11 +195,7 @@ pub fn Logs() -> Element {
 #[cfg(feature = "mobile")]
 #[component]
 pub fn Logs() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
 /// Route target for `/admin/health` — server health is Administration ›
@@ -220,13 +203,7 @@ pub fn Logs() -> Element {
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn AdminHealth() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(link_target(Route::Admin {
-            section: Some("health".into()),
-        }));
-    });
-    redirecting("Opening server health")
+    rsx! { Redirect { to: AdminSection::Health.route(), label: "Opening server health" } }
 }
 
 /// Mobile stub for `/admin/health`: redirect to the landing page — there is
@@ -234,26 +211,16 @@ pub fn AdminHealth() -> Element {
 #[cfg(feature = "mobile")]
 #[component]
 pub fn AdminHealth() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
-/// Route target for `/account` on web/server — the Account content now lives
-/// inside Settings (the same [`AccountPage`], `embedded: true`, behind the
-/// sidebar), so this is a redirect that keeps old bookmarks and the bottom
-/// nav's "You" tab working, mirroring how `/logs` redirects into Settings
-/// above.
+/// Route target for `/account` on web/server — the account controls live in
+/// Settings now, so this redirect keeps old bookmarks and the bottom nav's
+/// "You" tab working.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn Account() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(link_target(Route::Settings { section: None }));
-    });
-    redirecting("Opening your account")
+    rsx! { Redirect { to: Route::Settings { section: None }, label: "Opening your account" } }
 }
 
 /// Route target for `/account` on mobile — wraps [`AccountPage`] in the
@@ -518,11 +485,7 @@ pub fn StatsChart() -> Element {
 #[cfg(feature = "mobile")]
 #[component]
 pub fn StatsChart() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
 /// Route target for `/shelves` — the shelves index: a searchable, owner-grouped
@@ -562,11 +525,7 @@ pub fn MobileSearch() -> Element {
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn MobileSearch() -> Element {
-    let nav = dioxus_router::use_navigator();
-    use_effect(move || {
-        nav.replace(Route::Landing {});
-    });
-    redirecting(TO_LIBRARY)
+    rsx! { Redirect { to: Route::Landing {}, label: TO_LIBRARY } }
 }
 
 /// Route target for `/search/:query` — full-page search results.

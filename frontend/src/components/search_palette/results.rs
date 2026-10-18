@@ -367,24 +367,13 @@ fn SpSettingRow(
             div { class: "sp-avatar", {glyph} }
             div { class: "sp-row-body",
                 div { class: "sp-row-title", "{entry.label}" }
-                div { class: "sp-row-sub", {setting_breadcrumb(entry.target)} }
+                div { class: "sp-row-sub", {entry.target.place()} }
             }
         }
     }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
-
-/// Where a setting lives, as the page and section a reader would click
-/// through: "Settings › Preferences", "Administration › Integrations".
-fn setting_breadcrumb(target: SettingsTarget) -> String {
-    match target {
-        SettingsTarget::Personal(section) => format!("Settings \u{203A} {}", section.label()),
-        SettingsTarget::Admin(section) => {
-            format!("Administration \u{203A} {}", section.label())
-        }
-    }
-}
 
 /// The year shown in a palette book row, gated through the shared sentinel
 /// rule so Calibre's `0101-01-01` placeholder (which `PaletteBookHit.year`

@@ -30,9 +30,9 @@ pub fn CleanupCrumb(kind: Option<CleanupKind>) -> Element {
             }
             span { class: "bd-crumb-sep", "aria-hidden": "true", "\u{203a}" }
             Link {
-                to: crate::routes::link_target(Route::Admin {
-                    section: Some("cleanup".to_string()),
-                }),
+                to: crate::routes::link_target(
+                    crate::pages::admin::sections::AdminSection::Cleanup.route(),
+                ),
                 class: "bd-crumb-step",
                 "Cleanup"
             }

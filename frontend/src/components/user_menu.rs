@@ -219,7 +219,7 @@ fn UmHeader(user: UserSummary, open: Signal<bool>) -> Element {
             }
             Link {
                 class: "um-edit",
-                to: Route::Settings { section: Some("profile".to_string()) },
+                to: crate::pages::SettingsSection::Profile.route(),
                 onclick: move |_| open.set(false),
                 "Edit"
             }

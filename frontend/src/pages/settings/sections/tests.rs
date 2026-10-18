@@ -122,3 +122,13 @@ fn settings_target_route_opens_an_admin_section_under_admin() {
         }
     );
 }
+
+#[test]
+fn settings_section_route_opens_its_own_section() {
+    assert_eq!(
+        SettingsSection::Goals.route(),
+        Route::Settings {
+            section: Some("goals".to_string())
+        }
+    );
+}
