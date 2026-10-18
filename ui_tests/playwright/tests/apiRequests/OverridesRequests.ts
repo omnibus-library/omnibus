@@ -10,8 +10,22 @@ export class OverridesRequests extends BaseRequests {
     return this.post("/api/rpc/ebook/overrides", { uuid, overrides });
   }
 
-  /** Drops every override on the book. */
+  /** Drops every override on the book, its cover included. */
   deleteOverrides(uuid: string): Promise<APIResponse> {
     return this.post("/api/rpc/ebook/overrides/delete", { uuid });
+  }
+
+  /** Uploads `png` as the book's cover override; the REST route takes multipart. */
+  postCover(uuid: string, png: Buffer): Promise<APIResponse> {
+    return this.request.post(`/api/ebooks/${uuid}/cover`, {
+      multipart: {
+        cover: { name: "cover.png", mimeType: "image/png", buffer: png },
+      },
+    });
+  }
+
+  /** The book with its override flags and genres. */
+  getEbook(uuid: string): Promise<APIResponse> {
+    return this.get(`/api/ebooks/${uuid}`);
   }
 }

@@ -1,824 +1,626 @@
+import { covers } from "../contracts/covers";
+import { overrides } from "../contracts/overrides";
+import { TINY_PNG } from "../data/covers";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { fetchBookIdByTitle } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Minimal valid 1x1 PNG. detect_image_format only inspects magic bytes, so
-// the body can be tiny — duplicates the constant already used by
-// author_photo.spec.ts for the same reason.
-const TINY_PNG = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
-  0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06,
-  0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44,
-  0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d,
-  0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42,
-  0x60, 0x82,
-]);
-
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-// Alpha fixture: standalone, single author, has cover.
+// Alpha: standalone, single author, has cover.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 
-// Paste-a-URL cover tests mock every mutating request, so nothing is written
-// to the shared Alpha fixture — the server's SSRF gate can't reach a test
-// origin anyway (`metadata_edit_search.spec.ts`'s compare-view apply mirrors this).
+// The paste-a-URL tests stub every write, since the server's SSRF gate cannot reach a test origin.
 const PASTED_COVER_URL = "https://images.example.com/custom-cover.jpg";
 
-// Every test in this file mutates / reads override state on the same
-// `Alpha` book (the layout test reads the title, "edits title and saves"
-// writes "Alpha Edited", "reverts" deletes that override, "adds and
-// removes tags" writes + reverts a tag-only override, "discard" enters
-// the form). Under Playwright's default `fullyParallel: true` these tests
-// race across workers — "reverts" runs before "edits" commits the
-// override, so `fetchBookIdByTitle("Alpha Edited")` 404s and the revert
-// button never appears. `describe.serial` pins them to a single worker so
-// the source order is also the execution order.
-test.describe
-  .serial("metadata edit flow", () => {
-    // ---------------------------------------------------------------------------
-    // Layout test
-    // ---------------------------------------------------------------------------
+test.describe("metadata edit page", () => {
+  // Every test reads or writes override state on the same book, so they run one at a time.
+  test.describe.configure({ mode: "serial" });
 
-    test("renders the metadata edit form with pre-populated fields", async ({
-      page,
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+  });
+
+  test("show the metadata edit page layout", async ({
+    metadataEditPage,
+    request,
+  }) => {
+    const { form } = metadataEditPage;
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+    await test.step("open the edit page", async () => {
+      await metadataEditPage.goto(uuid);
+    });
+
+    await test.step("check the page, its nav and its header", async () => {
+      await metadataEditPage.assertDisplayed();
+      await metadataEditPage.topNav.assertDisplayed();
+      await expect(metadataEditPage.bookHeading(TARGET.title)).toBeVisible();
+      await expect(metadataEditPage.breadcrumbHomeLink).toBeVisible();
+    });
+
+    await test.step("check the form is pre-populated", async () => {
+      await expect(form.titleField).toBeVisible();
+      await expect(form.titleField).toHaveValue(TARGET.title);
+      await expect(form.authorChip(TARGET.authors[0]!)).toBeVisible();
+    });
+
+    // The discard link names what it drops: a replaced cover is written at once and it cannot undo one.
+    await test.step("check the save bar and the cover URL field", async () => {
+      await expect(form.saveButton).toBeVisible();
+      await expect(form.discardButton).toHaveText("Discard edits");
+      await expect(form.saveButton).toBeDisabled();
+      await expect(form.coverUrlField).toBeVisible();
+      await expect(form.coverUrlField).toHaveAttribute("type", "url");
+      await expect(form.applyCoverUrlButton).toBeDisabled();
+    });
+  });
+
+  test("open the edit page from the book detail page", async ({
+    bookDetailPage,
+    metadataEditPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(bookDetailPage.editMetadataLink).toBeVisible();
+    });
+
+    await test.step("follow the edit metadata link", async () => {
+      await bookDetailPage.openEditMetadata();
+      await metadataEditPage.assertDisplayedFor(uuid);
+    });
+  });
+
+  test.describe("overrides", () => {
+    test("edit the title and save", async ({
+      metadataEditPage,
+      bookDetailPage,
+      overriddenBookUuids,
+      expectMutation,
       request,
     }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      overriddenBookUuids.add(uuid);
 
-      // Page header renders with the book title and "Edit metadata" label.
-      // Disambiguated by testid: "Edit metadata" also appears in the breadcrumb tail.
-      await expect(page.getByTestId("me-page-title-label")).toBeVisible();
-      // Title text appears in the breadcrumb link, the page heading, and the
-      // identifier "urn:omnibus-test:alpha" — substring-match it under the h2 so
-      // strict mode resolves to a single element.
-      await expect(
-        page.getByRole("heading", { level: 2 }).getByText(TARGET.title),
-      ).toBeVisible();
-
-      // Breadcrumb navigation is present with "Home" link.
-      await expect(
-        page
-          .getByRole("navigation", { name: "breadcrumb" })
-          .getByRole("link", { name: "Home" }),
-      ).toBeVisible();
-
-      // Title input is pre-populated with the fixture's title.
-      const titleInput = page.getByLabel("Title");
-      await expect(titleInput).toBeVisible();
-      await expect(titleInput).toHaveValue(TARGET.title);
-
-      // Author chip is visible. "Ada Lovelace" appears in the breadcrumb,
-      // page heading, and chip — scope to the chip via its enclosing class.
-      await expect(
-        page.locator(".me-chip-item").getByText(TARGET.authors[0]!),
-      ).toBeVisible();
-
-      // Save bar is present. The discard link names what it actually drops
-      // — a replaced cover is written immediately and it cannot undo one.
-      await expect(page.getByTestId("me-save")).toBeVisible();
-      await expect(page.getByTestId("me-discard")).toHaveText("Discard edits");
-
-      // Save is initially disabled (no dirty fields).
-      await expect(page.getByTestId("me-save")).toBeDisabled();
-
-      // Paste-a-URL cover field is present, and Apply starts disabled (empty).
-      const urlInput = page.getByLabel("Or paste an image URL");
-      await expect(urlInput).toBeVisible();
-      await expect(urlInput).toHaveAttribute("type", "url");
-      await expect(
-        page.getByRole("button", { name: "Apply", exact: true }),
-      ).toBeDisabled();
-    });
-
-    // ---------------------------------------------------------------------------
-    // Edit title -> save -> detail page reflects change
-    // ---------------------------------------------------------------------------
-
-    test("edits title and saves overrides", async ({ page, request }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      // Change the title.
-      const titleInput = page.getByLabel("Title");
-      await titleInput.clear();
-      await titleInput.fill("Alpha Edited");
-
-      // Save bar should show 1 field edited and button should be enabled.
-      await expect(page.getByTestId("me-save")).toBeEnabled();
-      await expect(page.getByText("1 field edited")).toBeVisible();
-
-      // Click save; expect the POST to the RPC endpoint.
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides/,
-          expectedStatus: 200,
-        },
-        async () => page.getByTestId("me-save").click(),
-      );
-
-      // Should navigate to the book detail page.
-      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-
-      // The detail page should show the edited title.
-      await expect(
-        page.getByRole("heading", { level: 1, name: "Alpha Edited" }),
-      ).toBeVisible();
-    });
-
-    // ---------------------------------------------------------------------------
-    // Revert to scanned values after the above test created an override
-    // ---------------------------------------------------------------------------
-
-    test("reverts overrides to scanned values", async ({ page, request }) => {
-      // First fetch the book to confirm the override is still active.
-      const id = await fetchBookIdByTitle(request, "Alpha Edited");
-      await gotoReady(page, `/books/${id}/edit`);
-
-      // The revert button should be visible since overrides exist.
-      const revertBtn = page.getByTestId("revert-overrides");
-      await expect(revertBtn).toBeVisible();
-
-      // Click revert.
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides\/delete/,
-          expectedStatus: 200,
-        },
-        async () => revertBtn.click(),
-      );
-
-      // Should navigate to the book detail page with the original title.
-      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-      await expect(
-        page.getByRole("heading", { level: 1, name: TARGET.title }),
-      ).toBeVisible();
-    });
-
-    // ---------------------------------------------------------------------------
-    // Add/remove tags -> save
-    // ---------------------------------------------------------------------------
-
-    test("adds and removes tags via chip row", async ({ page, request }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      // Add a new tag via the inline input.
-      const tagInput = page.getByPlaceholder("+ add tag…");
-      await tagInput.fill("test-tag");
-      await tagInput.press("Enter");
-
-      // The new tag chip should be visible.
-      await expect(page.getByText("test-tag")).toBeVisible();
-
-      // Save bar should indicate a dirty field.
-      await expect(page.getByTestId("me-save")).toBeEnabled();
-
-      // Save.
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides/,
-          expectedStatus: 200,
-        },
-        async () => page.getByTestId("me-save").click(),
-      );
-
-      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-
-      // Clean up: revert so other tests are not affected.
-      await gotoReady(page, `/books/${id}/edit`);
-      const revertBtn = page.getByTestId("revert-overrides");
-      if (await revertBtn.isVisible()) {
-        await revertBtn.click();
-        await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-      }
-    });
-
-    // ---------------------------------------------------------------------------
-    // ISBN-10 + print page count overrides (#1658)
-    // ---------------------------------------------------------------------------
-
-    test("edits ISBN-10 and print page count and persists them", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      const isbn10Input = page.getByLabel("ISBN-10");
-      await expect(isbn10Input).toBeVisible();
-      await isbn10Input.fill("0134685997");
-
-      const printPagesInput = page.getByLabel("Print Pages");
-      await printPagesInput.fill("412");
-
-      await expect(page.getByTestId("me-save")).toBeEnabled();
-      await expect(page.getByText("2 fields edited")).toBeVisible();
-
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides/,
-          expectedStatus: 200,
-        },
-        async () => page.getByTestId("me-save").click(),
-      );
-
-      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-
-      // Re-open the edit form and confirm both fields persisted.
-      await gotoReady(page, `/books/${id}/edit`);
-      await expect(page.getByLabel("ISBN-10")).toHaveValue("0134685997");
-      await expect(page.getByLabel("Print Pages")).toHaveValue("412");
-
-      // Clean up: revert so other tests are not affected.
-      const revertBtn = page.getByTestId("revert-overrides");
-      await expect(revertBtn).toBeVisible();
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides\/delete/,
-          expectedStatus: 200,
-        },
-        async () => revertBtn.click(),
-      );
-      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-    });
-
-    // ---------------------------------------------------------------------------
-    // Discard reverts unsaved changes
-    // ---------------------------------------------------------------------------
-
-    test("discard navigates back without saving", async ({ page, request }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      // Edit the title.
-      const titleInput = page.getByLabel("Title");
-      await titleInput.clear();
-      await titleInput.fill("Should Not Be Saved");
-
-      // Click discard — should navigate back to the detail page.
-      await page.getByTestId("me-discard").click();
-      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-
-      // The detail page should show the original title, not the unsaved one.
-      await expect(
-        page.getByRole("heading", { level: 1, name: TARGET.title }),
-      ).toBeVisible();
-    });
-
-    // ---------------------------------------------------------------------------
-    // Edit button on book detail page
-    // ---------------------------------------------------------------------------
-
-    test("book detail page has a working edit metadata link", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}`);
-
-      // The edit button should be visible.
-      const editLink = page.getByTestId("edit-metadata");
-      await expect(editLink).toBeVisible();
-
-      // Clicking it should navigate to the edit page.
-      await editLink.click();
-      await expect(page).toHaveURL(new RegExp(`/books/${id}/edit$`));
-      await expect(page.getByTestId("me-page-title-label")).toBeVisible();
-    });
-
-    // ---------------------------------------------------------------------------
-    // Error paths — force 500 on the save / delete RPC and assert the UI does
-    // not navigate away from the edit form. The metadata edit page renders the
-    // `save_error` as visible text near the save bar (no `role=status` /
-    // `role=alert` today — see PR body for the missing-error-UX finding), so
-    // the most concrete observable state is that the URL still matches
-    // `/books/:id/edit` and the save button has come out of its "Saving…"
-    // state (re-enabled, label restored).
-    // ---------------------------------------------------------------------------
-
-    test("surfaces error and stays on edit form when save mutation fails", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      // Dirty a field so Save is enabled and a POST will fire.
-      const titleInput = page.getByLabel("Title");
-      await titleInput.clear();
-      await titleInput.fill("Alpha Should Not Persist");
-      await expect(page.getByTestId("me-save")).toBeEnabled();
-
-      // Force-fail the override-save RPC. Match the trailing path explicitly so
-      // we don't accidentally intercept the `/delete` sibling.
-      await page.route("**/api/rpc/ebook/overrides", (route) => {
-        if (route.request().method() === "POST") {
-          return route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          });
-        }
-        return route.continue();
+      await test.step("open the edit page and change the title", async () => {
+        await metadataEditPage.goto(uuid);
+        await form.enterTitle("Alpha Edited");
       });
 
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides$/,
-          expectedStatus: 500,
-        },
-        async () => page.getByTestId("me-save").click(),
-      );
-
-      // URL must not have navigated away from the edit form.
-      await expect(page).toHaveURL(new RegExp(`/books/${id}/edit$`));
-
-      // Edited title is still in the input (state preserved).
-      await expect(titleInput).toHaveValue("Alpha Should Not Persist");
-
-      // Save button has come out of its "Saving…" state and is re-enabled so
-      // the user can retry. `toBeEnabled` auto-retries until the signal settles.
-      await expect(page.getByTestId("me-save")).toBeEnabled();
-    });
-
-    // ---------------------------------------------------------------------------
-    // ChipEditor autocomplete (F5.9-lite PR 3)
-    //
-    // The author and tag chip inputs now consult `data::list_authors` /
-    // `data::get_tag_cloud` on mount and surface up to 5 case-insensitive
-    // substring matches in a dropdown anchored under the input. ↓ + Enter
-    // commits the highlighted suggestion. Typing a string with no match
-    // suppresses the dropdown but Enter still commits the raw text.
-    // ---------------------------------------------------------------------------
-
-    test("surfaces existing authors as chip-editor suggestions and adds via ↓+Enter", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      const authorInput = page.getByTestId("me-authors-input");
-      await expect(authorInput).toBeVisible();
-
-      // "Niklaus Wirth" is one of the Code Quartet fixture authors — typing a
-      // prefix should surface it.
-      await authorInput.fill("Nik");
-
-      const dropdown = page.getByTestId("me-authors-suggestions");
-      await expect(dropdown).toBeVisible();
-      await expect(
-        dropdown.getByRole("option", { name: /Niklaus Wirth/ }),
-      ).toBeVisible();
-      // Each suggestion row now carries a book-count badge. Confirm the
-      // count text renders alongside the name — Niklaus Wirth shows up
-      // in 4 Code Quartet fixtures (and possibly elsewhere). Just assert
-      // the suffix shape ("N book" or "N books") is present on the row.
-      await expect(
-        dropdown.getByRole("option", { name: /Niklaus Wirth.*books?/ }),
-      ).toBeVisible();
-      // Five-row suggestion cap (`MAX_SUGGESTIONS=5`) PLUS the optional
-      // "+ Create '<query>'" footer row → at most 6 options when the
-      // query isn't an exact match.
-      await expect
-        .poll(async () => dropdown.getByRole("option").count(), {
-          message:
-            "ChipEditor dropdown options must cap at MAX_SUGGESTIONS=5 + 1 create row",
-        })
-        .toBeLessThanOrEqual(6);
-
-      await authorInput.press("ArrowDown");
-      await authorInput.press("Enter");
-
-      // Chip rendered. Use the chip's me-avatar host (the chip container) so we
-      // don't accidentally match the original "Ada Lovelace" chip text.
-      await expect(
-        page.getByText("Niklaus Wirth", { exact: true }),
-      ).toBeVisible();
-      // Input cleared; dropdown gone.
-      await expect(authorInput).toHaveValue("");
-      await expect(dropdown).toHaveCount(0);
-
-      // Discard so the test doesn't leak an override into subsequent runs.
-      await page.getByTestId("me-discard").click();
-    });
-
-    test("chip-editor surfaces the +Create row when no suggestion matches and Enter commits the typed value", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      const authorInput = page.getByTestId("me-authors-input");
-      await authorInput.fill("ZzzMatchesNothing");
-
-      // No filtered matches, but the "+ Create '<query>'" footer renders so
-      // the user can commit a brand-new value without dismissing the dropdown.
-      const dropdown = page.getByTestId("me-authors-suggestions");
-      await expect(dropdown).toBeVisible();
-      await expect(
-        dropdown.getByRole("option", { name: /\+ Create.*ZzzMatchesNothing/ }),
-      ).toBeVisible();
-      await expect(dropdown.getByRole("option")).toHaveCount(1);
-
-      // Enter commits the typed value as a new chip (free-text fallback).
-      await authorInput.press("Enter");
-      await expect(
-        page.getByText("ZzzMatchesNothing", { exact: true }),
-      ).toBeVisible();
-      await expect(authorInput).toHaveValue("");
-
-      // Discard the unsaved chip so we don't drift fixture state.
-      await page.getByTestId("me-discard").click();
-    });
-
-    // ---------------------------------------------------------------------------
-    // Series field autocomplete (#990)
-    //
-    // Unlike the author/tag chip editors, Series is a single-value field
-    // (`SuggestField`) — no chip list, but the same substring-match dropdown:
-    // typing surfaces matches, picking one overwrites the field with the exact
-    // existing name, and typed text with no match is still accepted as free
-    // text (creates a new series on save).
-    // ---------------------------------------------------------------------------
-
-    test("surfaces existing series as suggestions and fills the field on selection", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      // Alpha is a standalone fixture (no series), so the field starts empty.
-      const seriesInput = page.getByLabel("Series");
-      await expect(seriesInput).toBeVisible();
-      await expect(seriesInput).toHaveValue("");
-
-      // "Code Quartet" is the fixture series backing the four Code Quartet
-      // books (Niklaus Wirth et al.) — typing a prefix should surface it, same
-      // interaction shape as the Author(s) field's dropdown.
-      await seriesInput.fill("Cod");
-
-      const dropdown = page.getByTestId("me-series-suggestions");
-      await expect(dropdown).toBeVisible();
-      await expect(
-        dropdown.getByRole("option", { name: /Code Quartet/ }),
-      ).toBeVisible();
-
-      await seriesInput.press("ArrowDown");
-      await seriesInput.press("Enter");
-
-      // Selecting the suggestion fills the field with the exact existing name
-      // and the dropdown closes.
-      await expect(seriesInput).toHaveValue("Code Quartet");
-      await expect(dropdown).toHaveCount(0);
-
-      // Save bar reflects the dirty Series field.
-      await expect(page.getByTestId("me-save")).toBeEnabled();
-
-      // Discard so the test doesn't leak an override into subsequent runs.
-      await page.getByTestId("me-discard").click();
-      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-    });
-
-    test("accepts a series name with no matching suggestion as free text", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      const seriesInput = page.getByLabel("Series");
-      await seriesInput.fill("ZzzBrandNewSeries");
-
-      // No existing series matches, so no dropdown surfaces — free text is
-      // still accepted directly in the field (no separate "create" row, unlike
-      // the multi-chip author/tag editors, since there's no committed list to
-      // add to).
-      await expect(page.getByTestId("me-series-suggestions")).toHaveCount(0);
-      await expect(seriesInput).toHaveValue("ZzzBrandNewSeries");
-
-      await page.getByTestId("me-discard").click();
-    });
-
-    test("surfaces error and stays on edit form when revert mutation fails", async ({
-      page,
-      request,
-    }) => {
-      // First, create an override on the fixture so the revert button shows up.
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      const titleInput = page.getByLabel("Title");
-      await titleInput.clear();
-      await titleInput.fill("Alpha Revert Setup");
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides$/,
-          expectedStatus: 200,
-        },
-        async () => page.getByTestId("me-save").click(),
-      );
-      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
-
-      // Re-open the edit form — the revert button should now be visible.
-      const editId = await fetchBookIdByTitle(request, "Alpha Revert Setup");
-      await gotoReady(page, `/books/${editId}/edit`);
-      const revertBtn = page.getByTestId("revert-overrides");
-      await expect(revertBtn).toBeVisible();
-
-      // Force-fail the delete RPC.
-      await page.route("**/api/rpc/ebook/overrides/delete", (route) => {
-        if (route.request().method() === "POST") {
-          return route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          });
-        }
-        return route.continue();
+      await test.step("check the save bar counts the edit", async () => {
+        await expect(form.saveButton).toBeEnabled();
+        await expect(form.editedSummary(1)).toBeVisible();
       });
 
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides\/delete$/,
-          expectedStatus: 500,
-        },
-        async () => revertBtn.click(),
-      );
-
-      // URL must not have navigated away from the edit form.
-      await expect(page).toHaveURL(new RegExp(`/books/${editId}/edit$`));
-
-      // Revert button is still visible (override still active) and re-enabled.
-      await expect(revertBtn).toBeVisible();
-      await expect(revertBtn).toBeEnabled();
-
-      // Clean up: stop intercepting and revert successfully so subsequent runs
-      // start from a clean fixture state. `page.unroute` removes our handler.
-      await page.unroute("**/api/rpc/ebook/overrides/delete");
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/overrides\/delete$/,
-          expectedStatus: 200,
-        },
-        async () => revertBtn.click(),
-      );
-      await expect(page).toHaveURL(new RegExp(`/books/${editId}$`));
-
-      // Verify the override was actually removed, not just that the delete
-      // returned 200 — the detail page should now show the original scanned
-      // title, and re-opening /edit should hide the revert button.
-      await expect(
-        page.getByRole("heading", { level: 1, name: TARGET.title }),
-      ).toBeVisible();
-      await gotoReady(page, `/books/${editId}/edit`);
-      await expect(page.getByTestId("revert-overrides")).toHaveCount(0);
-    });
-
-    // ---------------------------------------------------------------------------
-    // Cover upload / revert (sidebar CoverEditor)
-    // ---------------------------------------------------------------------------
-
-    // Seeding the override via a direct multipart POST (rather than driving the
-    // sidebar's `<input type=file>`) mirrors `author_photo.spec.ts`'s proven
-    // pattern for this same "web FormData/Blob upload" mechanism, so the test
-    // exercises the real REST contract without depending on a Playwright
-    // synthetic file-change event reaching the Dioxus web upload path.
-    async function uploadCover(
-      request: import("@playwright/test").APIRequestContext,
-      id: string,
-    ) {
-      const resp = await request.post(`/api/ebooks/${id}/cover`, {
-        multipart: {
-          cover: { name: "cover.png", mimeType: "image/png", buffer: TINY_PNG },
-        },
-      });
-      expect(resp.status(), "POST cover should succeed").toBe(200);
-    }
-
-    test("shows an uploaded cover override and reverts it", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await gotoReady(page, `/books/${id}/edit`);
-      await expect(page.getByTestId("cover-hint")).toHaveText(
-        "extracted from file",
-      );
-      await expect(page.getByTestId("cover-remove-override")).toHaveCount(0);
-
-      await uploadCover(request, id);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      await expect(page.getByTestId("cover-hint")).toHaveText("custom upload");
-      const revertBtn = page.getByTestId("cover-remove-override");
-      await expect(revertBtn).toBeVisible();
-
-      // Revert via the real UI control so subsequent tests see the original
-      // state. Unlike upload, the no-body DELETE rides the Dioxus server-function
-      // transport (`rpc_delete_ebook_cover`), not a raw REST DELETE — it's a POST
-      // to a fixed RPC path with the uuid in the body, not the URL.
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/cover\/delete$/,
-          expectedStatus: 200,
-        },
-        async () => revertBtn.click(),
-      );
-      await expect(page.getByTestId("cover-hint")).toHaveText(
-        "extracted from file",
-      );
-      await expect(page.getByTestId("cover-remove-override")).toHaveCount(0);
-    });
-
-    test("surfaces an error and keeps the override active when revert fails", async ({
-      page,
-      request,
-    }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await uploadCover(request, id);
-      await gotoReady(page, `/books/${id}/edit`);
-
-      const revertBtn = page.getByTestId("cover-remove-override");
-      await expect(revertBtn).toBeVisible();
-
-      await page.route("**/api/rpc/ebook/cover/delete", (route) => {
-        if (route.request().method() === "POST") {
-          return route.fulfill({
-            status: 500,
-            contentType: "text/plain",
-            body: "forced failure",
-          });
-        }
-        return route.continue();
+      await test.step("save", async () => {
+        await expectMutation(overrides.save(), () => form.save());
       });
 
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/cover\/delete$/,
-          expectedStatus: 500,
-        },
-        async () => revertBtn.click(),
-      );
-
-      // The override is still active (the delete failed) — status line surfaces
-      // the failure and the revert control stays visible and re-enabled so the
-      // user can retry.
-      await expect(page.getByTestId("cover-upload-status")).toContainText(
-        "Revert failed",
-      );
-      await expect(page.getByTestId("cover-hint")).toHaveText("custom upload");
-      await expect(revertBtn).toBeVisible();
-      await expect(revertBtn).toBeEnabled();
-
-      // Clean up: stop intercepting and revert successfully.
-      await page.unroute("**/api/rpc/ebook/cover/delete");
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: /\/api\/rpc\/ebook\/cover\/delete$/,
-          expectedStatus: 200,
-        },
-        async () => revertBtn.click(),
-      );
-      await expect(page.getByTestId("cover-hint")).toHaveText(
-        "extracted from file",
-      );
+      await test.step("check the book page shows the edited title", async () => {
+        await bookDetailPage.assertDisplayedFor(uuid);
+        await expect(bookDetailPage.titleHeading).toHaveText("Alpha Edited");
+      });
     });
 
-    // ---------------------------------------------------------------------------
-    // Paste an image URL (sidebar CoverEditor)
-    // ---------------------------------------------------------------------------
+    test("revert the overrides to the scanned values", async ({
+      metadataEditPage,
+      bookDetailPage,
+      overridesRequests,
+      overriddenBookUuids,
+      expectMutation,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-    test("applies a pasted cover URL", async ({ page, request }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await page.route("**/api/ebooks/*/cover/from-url", async (route) => {
-        if (route.request().method() !== "POST") return route.continue();
-        const resp = await request.get(`/api/ebooks/${id}`);
-        const book = (await resp.json()) as Record<string, unknown>;
-        return route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            ...book,
-            has_cover_override: true,
-            has_override: true,
-          }),
+      await test.step("override the title through the api", async () => {
+        const saved = await overridesRequests.postOverrides(uuid, {
+          title: "Alpha Edited",
         });
+        await expect(saved).toBeOK();
+        overriddenBookUuids.add(uuid);
       });
 
-      await gotoReady(page, `/books/${id}/edit`);
-      const urlInput = page.getByLabel("Or paste an image URL");
-      const applyBtn = page.getByRole("button", {
-        name: "Apply",
-        exact: true,
+      await test.step("open the edit page", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(metadataEditPage.revertButton).toBeVisible();
       });
 
-      await expect(applyBtn).toBeDisabled();
-      await urlInput.fill(PASTED_COVER_URL);
-      await expect(applyBtn).toBeEnabled();
-      await urlInput.fill("");
-      await expect(applyBtn).toBeDisabled();
-      await urlInput.fill(PASTED_COVER_URL);
+      await test.step("revert", async () => {
+        await expectMutation(overrides.revert(), () =>
+          metadataEditPage.revertOverrides(),
+        );
+      });
 
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: new RegExp(`/api/ebooks/${id}/cover/from-url$`),
-          expectedBody: { url: PASTED_COVER_URL },
-          expectedStatus: 200,
-        },
-        async () => applyBtn.click(),
-      );
-
-      await expect(page.getByTestId("cover-upload-status")).toHaveText(
-        "Cover updated.",
-      );
-      await expect(page.getByTestId("cover-hint")).toHaveText("custom upload");
-      await expect(urlInput).toHaveValue("");
-      await expect(page.getByTestId("cover-remove-override")).toBeVisible();
-      await expect(page.locator(".me-cover-preview img")).toHaveAttribute(
-        "src",
-        /[?&]v=\d+/,
-      );
-      await expect(page.getByTestId("me-cover-replaced")).toBeVisible();
+      await test.step("check the book page shows the scanned title", async () => {
+        await bookDetailPage.assertDisplayedFor(uuid);
+        await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
+      });
     });
 
-    test("surfaces a forced failure and keeps the typed URL", async ({
-      page,
+    test("add a tag in the chip row", async ({
+      metadataEditPage,
+      bookDetailPage,
+      overriddenBookUuids,
+      expectMutation,
       request,
     }) => {
-      const id = await fetchBookIdByTitle(request, TARGET.title);
-      await page.route("**/api/ebooks/*/cover/from-url", (route) =>
-        route.request().method() === "POST"
-          ? route.fulfill({
-              status: 500,
-              contentType: "text/plain",
-              body: "forced failure",
-            })
-          : route.continue(),
-      );
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      overriddenBookUuids.add(uuid);
 
-      await gotoReady(page, `/books/${id}/edit`);
-      const urlInput = page.getByLabel("Or paste an image URL");
-      await urlInput.fill(PASTED_COVER_URL);
+      await test.step("open the edit page and add a tag", async () => {
+        await metadataEditPage.goto(uuid);
+        await form.addTag("test-tag");
+      });
 
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: new RegExp(`/api/ebooks/${id}/cover/from-url$`),
-          expectedBody: { url: PASTED_COVER_URL },
-          expectedStatus: 500,
-        },
-        async () => urlInput.press("Enter"),
-      );
+      await test.step("check the chip landed and the save bar is dirty", async () => {
+        await expect(form.tagChip("test-tag")).toBeVisible();
+        await expect(form.saveButton).toBeEnabled();
+      });
 
-      await expect(page.getByTestId("cover-upload-status")).toContainText(
-        "Couldn't apply that URL",
-      );
-      await expect(page.getByTestId("cover-upload-status")).toContainText(
-        "forced failure",
-      );
-      await expect(urlInput).toHaveValue(PASTED_COVER_URL);
-      await expect(page.getByTestId("cover-hint")).toHaveText(
-        "extracted from file",
-      );
-      await expect(page.getByTestId("cover-remove-override")).toHaveCount(0);
-      await expect(
-        page.getByRole("button", { name: "Apply", exact: true }),
-      ).toBeEnabled();
+      await test.step("save", async () => {
+        await expectMutation(overrides.save(), () => form.save());
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
     });
-  }); // test.describe.serial
+
+    test("edit the ISBN-10 and print page count", async ({
+      metadataEditPage,
+      bookDetailPage,
+      overriddenBookUuids,
+      expectMutation,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      overriddenBookUuids.add(uuid);
+
+      await test.step("open the edit page and edit both fields", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(form.isbn10Field).toBeVisible();
+        await form.enterIsbn10("0134685997");
+        await form.enterPrintPages("412");
+      });
+
+      await test.step("check the save bar counts both edits", async () => {
+        await expect(form.saveButton).toBeEnabled();
+        await expect(form.editedSummary(2)).toBeVisible();
+      });
+
+      await test.step("save", async () => {
+        await expectMutation(overrides.save(), () => form.save());
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+
+      await test.step("reopen the form and check both fields persisted", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(form.isbn10Field).toHaveValue("0134685997");
+        await expect(form.printPagesField).toHaveValue("412");
+        await expect(metadataEditPage.revertButton).toBeVisible();
+      });
+
+      await test.step("revert the overrides", async () => {
+        await expectMutation(overrides.revert(), () =>
+          metadataEditPage.revertOverrides(),
+        );
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+    });
+
+    test("discard the edits without saving", async ({
+      metadataEditPage,
+      bookDetailPage,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the edit page and change the title", async () => {
+        await metadataEditPage.goto(uuid);
+        await form.enterTitle("Should Not Be Saved");
+      });
+
+      await test.step("discard", async () => {
+        await form.discard();
+      });
+
+      await test.step("check the book page shows the original title", async () => {
+        await bookDetailPage.assertDisplayedFor(uuid);
+        await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
+      });
+    });
+
+    // The page shows no status or alert for the failure, so what is observable
+    // is that it stays on the form and Save comes out of "Saving…".
+    test("stay on the edit form when the save fails", async ({
+      metadataEditPage,
+      expectMutation,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("change the title so Save will fire", async () => {
+        await metadataEditPage.goto(uuid);
+        await form.enterTitle("Alpha Should Not Persist");
+        await expect(form.saveButton).toBeEnabled();
+      });
+
+      await test.step("save while the server fails the write", async () => {
+        await metadataEditPage.forceServerError(overrides.save());
+        await expectMutation(failing(overrides.save()), () => form.save());
+      });
+
+      await test.step("check the form keeps the edit and Save can retry", async () => {
+        await metadataEditPage.assertDisplayedFor(uuid);
+        await expect(form.titleField).toHaveValue("Alpha Should Not Persist");
+        await expect(form.saveButton).toBeEnabled();
+      });
+    });
+
+    test("stay on the edit form when the revert fails", async ({
+      metadataEditPage,
+      bookDetailPage,
+      overriddenBookUuids,
+      expectMutation,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      overriddenBookUuids.add(uuid);
+
+      await test.step("override the title through the form", async () => {
+        await metadataEditPage.goto(uuid);
+        await metadataEditPage.form.enterTitle("Alpha Revert Setup");
+        await expectMutation(overrides.save(), () =>
+          metadataEditPage.form.save(),
+        );
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+
+      await test.step("reopen the edit page, where Revert shows", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(metadataEditPage.revertButton).toBeVisible();
+      });
+
+      await test.step("revert while the server fails the write", async () => {
+        await metadataEditPage.forceServerError(overrides.revert());
+        await expectMutation(failing(overrides.revert()), () =>
+          metadataEditPage.revertOverrides(),
+        );
+      });
+
+      await test.step("check the override is still active", async () => {
+        await metadataEditPage.assertDisplayedFor(uuid);
+        await expect(metadataEditPage.revertButton).toBeVisible();
+        await expect(metadataEditPage.revertButton).toBeEnabled();
+      });
+
+      await test.step("retry once the server recovers", async () => {
+        await metadataEditPage.stopForcingServerError(overrides.revert());
+        await expectMutation(overrides.revert(), () =>
+          metadataEditPage.revertOverrides(),
+        );
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+
+      // The 200 alone does not show the override went: the scanned title is back and Revert is gone.
+      await test.step("check the override was actually removed", async () => {
+        await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
+        await metadataEditPage.goto(uuid);
+        await expect(metadataEditPage.revertButton).toHaveCount(0);
+      });
+    });
+  });
+
+  test.describe("suggestions", () => {
+    test("add an author from the suggestions with the arrow keys", async ({
+      metadataEditPage,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the edit page and type an author prefix", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(form.authorsInput).toBeVisible();
+        await form.typeAuthor("Nik");
+      });
+
+      // Niklaus Wirth is a Code Quartet author, and each row carries a book count.
+      await test.step("check existing authors are suggested", async () => {
+        await expect(form.authorSuggestions).toBeVisible();
+        await expect(form.authorSuggestion(/Niklaus Wirth/)).toBeVisible();
+        await expect(
+          form.authorSuggestion(/Niklaus Wirth.*books?/),
+        ).toBeVisible();
+        // At most MAX_SUGGESTIONS=5 rows plus the "+ Create" footer.
+        await expect
+          .poll(() => form.authorSuggestionCount(), {
+            message: "the dropdown must cap at 5 suggestions + 1 create row",
+          })
+          .toBeLessThanOrEqual(6);
+      });
+
+      await test.step("pick the first suggestion", async () => {
+        await form.pickFirstAuthorSuggestion();
+      });
+
+      await test.step("check the chip landed and the input cleared", async () => {
+        await expect(form.authorChip("Niklaus Wirth")).toBeVisible();
+        await expect(form.authorsInput).toHaveValue("");
+        await expect(form.authorSuggestions).toHaveCount(0);
+      });
+    });
+
+    test("add a typed author when no suggestion matches", async ({
+      metadataEditPage,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the edit page and type an unknown author", async () => {
+        await metadataEditPage.goto(uuid);
+        await form.typeAuthor("ZzzMatchesNothing");
+      });
+
+      // The footer lets the reader commit a new value without dismissing the dropdown.
+      await test.step("check only the create row is offered", async () => {
+        await expect(form.authorSuggestions).toBeVisible();
+        await expect(
+          form.authorSuggestion(/\+ Create.*ZzzMatchesNothing/),
+        ).toBeVisible();
+        await expect(form.authorSuggestionOptions).toHaveCount(1);
+      });
+
+      await test.step("commit the typed value", async () => {
+        await form.commitAuthor();
+        await expect(form.authorChip("ZzzMatchesNothing")).toBeVisible();
+        await expect(form.authorsInput).toHaveValue("");
+      });
+    });
+
+    test("fill the series from a suggestion", async ({
+      metadataEditPage,
+      bookDetailPage,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the edit page and type a series prefix", async () => {
+        await metadataEditPage.goto(uuid);
+        // Alpha is standalone, so the field starts empty.
+        await expect(form.seriesField).toBeVisible();
+        await expect(form.seriesField).toHaveValue("");
+        await form.typeSeries("Cod");
+      });
+
+      // Code Quartet backs four fixture books, like the Author(s) field's dropdown.
+      await test.step("check the existing series is suggested", async () => {
+        await expect(form.seriesSuggestions).toBeVisible();
+        await expect(form.seriesSuggestion(/Code Quartet/)).toBeVisible();
+      });
+
+      await test.step("pick the suggestion", async () => {
+        await form.pickFirstSeriesSuggestion();
+        await expect(form.seriesField).toHaveValue("Code Quartet");
+        await expect(form.seriesSuggestions).toHaveCount(0);
+        await expect(form.saveButton).toBeEnabled();
+      });
+
+      await test.step("discard", async () => {
+        await form.discard();
+        await bookDetailPage.assertDisplayedFor(uuid);
+      });
+    });
+
+    // Series takes free text like the chip editors but has no committed list, so no create row.
+    test("accept a series name no suggestion matches", async ({
+      metadataEditPage,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the edit page and type an unknown series", async () => {
+        await metadataEditPage.goto(uuid);
+        await form.typeSeries("ZzzBrandNewSeries");
+      });
+
+      await test.step("check no dropdown shows and the text stays", async () => {
+        await expect(form.seriesSuggestions).toHaveCount(0);
+        await expect(form.seriesField).toHaveValue("ZzzBrandNewSeries");
+      });
+    });
+  });
+
+  test.describe("cover", () => {
+    test("show an uploaded cover override", async ({
+      metadataEditPage,
+      overridesRequests,
+      overriddenBookUuids,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the edit page on the scanned cover", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(form.coverHintText).toHaveText("extracted from file");
+        await expect(form.removeCoverOverrideButton).toHaveCount(0);
+      });
+
+      // The upload goes by direct multipart POST, as author_photo does, so no synthetic file-change event is needed.
+      await test.step("upload a cover through the api", async () => {
+        const uploaded = await overridesRequests.postCover(uuid, TINY_PNG);
+        await expect(uploaded).toBeOK();
+        overriddenBookUuids.add(uuid);
+        await metadataEditPage.reload();
+      });
+
+      await test.step("check the cover is marked as an upload", async () => {
+        await expect(form.coverHintText).toHaveText("custom upload");
+        await expect(form.removeCoverOverrideButton).toBeVisible();
+      });
+    });
+
+    // The no-body revert rides the server-function transport: a POST with the uuid in its body.
+    test("revert an uploaded cover override", async ({
+      metadataEditPage,
+      overridesRequests,
+      overriddenBookUuids,
+      expectMutation,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("upload a cover through the api", async () => {
+        const uploaded = await overridesRequests.postCover(uuid, TINY_PNG);
+        await expect(uploaded).toBeOK();
+        overriddenBookUuids.add(uuid);
+      });
+
+      await test.step("open the edit page", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(form.removeCoverOverrideButton).toBeVisible();
+      });
+
+      await test.step("revert the cover", async () => {
+        await expectMutation(covers.revert(), () => form.removeCoverOverride());
+      });
+
+      await test.step("check the scanned cover is back", async () => {
+        await expect(form.coverHintText).toHaveText("extracted from file");
+        await expect(form.removeCoverOverrideButton).toHaveCount(0);
+      });
+    });
+
+    test("keep the cover override when the revert fails", async ({
+      metadataEditPage,
+      overridesRequests,
+      overriddenBookUuids,
+      expectMutation,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("upload a cover through the api", async () => {
+        const uploaded = await overridesRequests.postCover(uuid, TINY_PNG);
+        await expect(uploaded).toBeOK();
+        overriddenBookUuids.add(uuid);
+      });
+
+      await test.step("open the edit page", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(form.removeCoverOverrideButton).toBeVisible();
+      });
+
+      await test.step("revert while the server fails the write", async () => {
+        await metadataEditPage.forceServerError(covers.revert());
+        await expectMutation(failing(covers.revert()), () =>
+          form.removeCoverOverride(),
+        );
+      });
+
+      // The status line names the failure and the control stays usable for a retry.
+      await test.step("check the override is still active", async () => {
+        await expect(form.coverUploadStatus).toContainText("Revert failed");
+        await expect(form.coverHintText).toHaveText("custom upload");
+        await expect(form.removeCoverOverrideButton).toBeVisible();
+        await expect(form.removeCoverOverrideButton).toBeEnabled();
+      });
+
+      await test.step("retry once the server recovers", async () => {
+        await metadataEditPage.stopForcingServerError(covers.revert());
+        await expectMutation(covers.revert(), () => form.removeCoverOverride());
+        await expect(form.coverHintText).toHaveText("extracted from file");
+      });
+    });
+
+    test("apply a pasted cover URL", async ({
+      metadataEditPage,
+      overridesRequests,
+      expectMutation,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("stub the write with the book as the server returns it", async () => {
+        const book = await overridesRequests.getEbook(uuid);
+        await expect(book).toBeOK();
+        await metadataEditPage.stubCoverFromUrl(await book.json());
+      });
+
+      await test.step("open the edit page and check Apply follows the field", async () => {
+        await metadataEditPage.goto(uuid);
+        await expect(form.applyCoverUrlButton).toBeDisabled();
+        await form.enterCoverUrl(PASTED_COVER_URL);
+        await expect(form.applyCoverUrlButton).toBeEnabled();
+        await form.enterCoverUrl("");
+        await expect(form.applyCoverUrlButton).toBeDisabled();
+      });
+
+      await test.step("apply the URL", async () => {
+        await form.enterCoverUrl(PASTED_COVER_URL);
+        await expectMutation(covers.fromUrl(uuid, PASTED_COVER_URL), () =>
+          form.applyCoverUrl(),
+        );
+      });
+
+      await test.step("check the cover shows as replaced", async () => {
+        await expect(form.coverUploadStatus).toHaveText("Cover updated.");
+        await expect(form.coverHintText).toHaveText("custom upload");
+        await expect(form.coverUrlField).toHaveValue("");
+        await expect(form.removeCoverOverrideButton).toBeVisible();
+        await expect(form.currentCoverImage).toHaveAttribute(
+          "src",
+          /[?&]v=\d+/,
+        );
+        await expect(form.coverReplacedNote).toBeVisible();
+      });
+    });
+
+    test("keep the typed URL when applying it fails", async ({
+      metadataEditPage,
+      expectMutation,
+      request,
+    }) => {
+      const { form } = metadataEditPage;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the edit page and type a URL while the server fails the write", async () => {
+        await metadataEditPage.forceServerError(
+          covers.fromUrl(uuid, PASTED_COVER_URL),
+        );
+        await metadataEditPage.goto(uuid);
+        await form.enterCoverUrl(PASTED_COVER_URL);
+      });
+
+      await test.step("submit it with Enter", async () => {
+        await expectMutation(
+          failing(covers.fromUrl(uuid, PASTED_COVER_URL)),
+          () => form.submitCoverUrl(),
+        );
+      });
+
+      await test.step("check the failure shows and nothing changed", async () => {
+        await expect(form.coverUploadStatus).toContainText(
+          "Couldn't apply that URL",
+        );
+        await expect(form.coverUploadStatus).toContainText("forced failure");
+        await expect(form.coverUrlField).toHaveValue(PASTED_COVER_URL);
+        await expect(form.coverHintText).toHaveText("extracted from file");
+        await expect(form.removeCoverOverrideButton).toHaveCount(0);
+        await expect(form.applyCoverUrlButton).toBeEnabled();
+      });
+    });
+  });
+});

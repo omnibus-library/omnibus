@@ -74,6 +74,47 @@ export class LibraryPage extends BasePage {
   // #endregion batch-C
 
   // #region batch-E: metadata edit
+  /** The Genres cell of a book's table row, a chip editor once clicked. */
+  genresCell(slug: string): Locator {
+    return this.table.cell(slug, "genres");
+  }
+
+  /** The chip editor an open Genres cell shows. */
+  genresCellInput(slug: string): Locator {
+    return this.table.cellInput(slug, "genres");
+  }
+
+  async openGenresCell(slug: string): Promise<void> {
+    await this.genresCell(slug).click();
+  }
+
+  async typeGenreInCell(slug: string, genre: string): Promise<void> {
+    await this.genresCellInput(slug).fill(genre);
+  }
+
+  /** Commits the typed genre with Enter; a test that asserts the write wraps it. */
+  async commitGenreInCell(slug: string): Promise<void> {
+    await this.genresCellInput(slug).press("Enter");
+  }
+
+  /** Leaves the cell's editor with Escape, saving nothing. */
+  async closeGenresCell(slug: string): Promise<void> {
+    await this.genresCellInput(slug).press("Escape");
+  }
+
+  /** The palette's rows for genres, whose click refines the search to one. */
+  get paletteGenreRows(): Locator {
+    return this.topNav.searchPalette.row("genre");
+  }
+
+  async refineToPaletteGenre(): Promise<void> {
+    await this.paletteGenreRows.click();
+  }
+
+  /** The text of every book row the palette lists. */
+  async paletteBookRowTexts(): Promise<string[]> {
+    return this.topNav.searchPalette.row("book").allInnerTexts();
+  }
   // #endregion batch-E
 
   // #region batch-F: landing and add books

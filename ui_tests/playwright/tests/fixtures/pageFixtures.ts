@@ -64,9 +64,11 @@ import { CheckInPage } from "../pages/CheckInPage";
 import { CleanupReviewPage } from "../pages/CleanupReviewPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
+import { GenreSearchPage } from "../pages/GenreSearchPage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { ListenPage } from "../pages/ListenPage";
 import { LoginPage } from "../pages/LoginPage";
+import { MetadataEditPage } from "../pages/MetadataEditPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { RegisterPage } from "../pages/RegisterPage";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -226,6 +228,10 @@ type PageFixtures = {
   // #endregion batch-D
 
   // #region batch-E: metadata edit
+  metadataEditPage: MetadataEditPage;
+  genreSearchPage: GenreSearchPage;
+  overriddenBookUuids: Set<string>;
+  assignGenres: (bookUuid: string, genres: string[]) => Promise<void>;
   // #endregion batch-E
 
   // #region batch-F: landing and add books
@@ -1054,6 +1060,33 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-D
 
   // #region batch-E: metadata edit
+  metadataEditPage: async ({ page }, use) => {
+    await use(new MetadataEditPage(page));
+  },
+  genreSearchPage: async ({ page }, use) => {
+    await use(new GenreSearchPage(page));
+  },
+
+  // Drops what a test left on the books it registers, covers included, so the
+  // next test starts from the scanned values.
+  overriddenBookUuids: async ({ overridesRequests }, use) => {
+    const uuids = new Set<string>();
+    await use(uuids);
+    for (const uuid of uuids) {
+      const reverted = await overridesRequests.deleteOverrides(uuid);
+      await expect(reverted, `revert overrides on ${uuid}`).toBeOK();
+    }
+  },
+
+  assignGenres: async ({ overridesRequests, overriddenBookUuids }, use) => {
+    await use(async (bookUuid, genres) => {
+      const assigned = await overridesRequests.postOverrides(bookUuid, {
+        genres,
+      });
+      await expect(assigned, "assign genres").toBeOK();
+      overriddenBookUuids.add(bookUuid);
+    });
+  },
   // #endregion batch-E
 
   // #region batch-F: landing and add books
