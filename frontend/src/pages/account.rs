@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 
 #[cfg(feature = "mobile")]
 mod downloads;
-// The one place all three reading goals are set (annual + the two dailies).
+// The one goals editor (annual + the two dailies), on Settings › Goals and inline on Stats.
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod goals;
 #[cfg(not(feature = "mobile"))]

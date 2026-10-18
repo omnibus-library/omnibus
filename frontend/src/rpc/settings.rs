@@ -235,7 +235,7 @@ pub async fn rpc_clear_smtp_config() -> Result<SmtpConfigStatus> {
 
 /// Admin-only: send a test email to the admin's own configured Kindle address
 /// to verify the SMTP config works. Requires the admin to have set their Kindle
-/// email on their account page first.
+/// email in Settings › Devices first.
 #[post("/api/rpc/smtp/test", pool: PoolExt, admin: AdminUser)]
 pub async fn rpc_send_smtp_test() -> Result<()> {
     let email = db::auth::get_kindle_email(&pool.0, admin.0.id)
