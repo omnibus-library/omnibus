@@ -606,14 +606,22 @@ async fn api_get_ebook_image_file_returns_401_for_a_signed_link_without_a_usable
     let (_, _, pool) = fixture().await;
     let (epub, _, _) = epub_with_two_images();
     let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let key = db::auth::load_or_create_session_key(&pool).await.unwrap();
+    // Signed over the value a missing or garbled expiry could default to, so only the guard rejects it.
+    let sig = sign_image_link(&key, &uuid, "map.png", i64::MAX).unwrap();
     let app = crate::backend::rest_router(AppState::new(pool));
+    let file = format!("/api/ebooks/{uuid}/images/file?href=map.png");
 
+    let control = app
+        .clone()
+        .oneshot(get_anon(&format!("{file}&expires={}&sig={sig}", i64::MAX)))
+        .await
+        .expect("request should succeed");
+    assert_eq!(control.status(), StatusCode::OK, "the signature is real");
     for expiry in ["", "&expires=soon"] {
         let res = app
             .clone()
-            .oneshot(get_anon(&format!(
-                "/api/ebooks/{uuid}/images/file?href=map.png{expiry}&sig=abc"
-            )))
+            .oneshot(get_anon(&format!("{file}{expiry}&sig={sig}")))
             .await
             .expect("request should succeed");
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{expiry:?}");
@@ -665,4 +673,49 @@ async fn api_get_ebook_image_file_never_falls_back_to_a_session_when_the_signatu
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 
     std::fs::remove_dir_all(&tmp).ok();
+}
+
+/// GET `path` as a signed-in reader after dropping `books`, so the uuid lookup every
+/// image route starts with fails. FKs off on the one connection, as `books` is referenced.
+async fn status_when_the_book_lookup_fails(path: &str) -> StatusCode {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query("DROP TABLE books")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    drop(conn);
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(path, &token))
+        .await
+        .expect("request should succeed");
+    res.status()
+}
+
+#[tokio::test]
+async fn api_get_ebook_images_returns_500_when_the_book_lookup_fails() {
+    let status = status_when_the_book_lookup_fails("/api/ebooks/any-uuid/images").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_link_returns_500_when_the_book_lookup_fails() {
+    let status =
+        status_when_the_book_lookup_fails("/api/ebooks/any-uuid/images/link?href=map.png").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_500_when_the_book_lookup_fails() {
+    let status =
+        status_when_the_book_lookup_fails("/api/ebooks/any-uuid/images/file?href=map.png").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
 }

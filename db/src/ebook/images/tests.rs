@@ -133,6 +133,25 @@ fn list_images_reads_an_image_and_spine_document_whose_manifest_hrefs_are_percen
 }
 
 #[test]
+fn list_images_keeps_the_first_alt_when_a_document_shows_an_image_twice() {
+    let png = solid_color_png(1, 2, 3, 2, 2);
+    let path = write_epub(
+        &[(
+            "c1.xhtml",
+            &page(r#"<img src="a.png" alt="First"/><img src="a.png" alt="Second"/>"#),
+        )],
+        &[("a.png", "image/png", &png)],
+    );
+
+    let images = list_images(&path).unwrap();
+
+    assert_eq!(
+        image(&images, "a.png").references,
+        vec![reference(0, Some("First"))]
+    );
+}
+
+#[test]
 fn list_images_counts_an_svg_image_element_as_a_reference() {
     let png = solid_color_png(1, 2, 3, 2, 2);
     let path = write_epub(

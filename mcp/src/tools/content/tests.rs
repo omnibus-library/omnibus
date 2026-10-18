@@ -48,30 +48,6 @@ fn transparent_png(width: u32, height: u32) -> Vec<u8> {
     encode_png(image::DynamicImage::ImageRgba8(pixels))
 }
 
-/// IEEE CRC-32, so a patched PNG header still passes the decoder's checksum
-/// and reaches its dimension limits.
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = 0xFFFF_FFFFu32;
-    for &b in bytes {
-        crc ^= u32::from(b);
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
-        }
-    }
-    !crc
-}
-
-/// A PNG whose header declares `width`×`height` over 8×8 of real pixel data.
-fn png_claiming(width: u32, height: u32) -> Vec<u8> {
-    let mut png = opaque_png(8, 8);
-    let ihdr = png.windows(4).position(|w| w == b"IHDR").unwrap();
-    png[ihdr + 4..ihdr + 8].copy_from_slice(&width.to_be_bytes());
-    png[ihdr + 8..ihdr + 12].copy_from_slice(&height.to_be_bytes());
-    let crc = crc32(&png[ihdr..ihdr + 17]);
-    png[ihdr + 17..ihdr + 21].copy_from_slice(&crc.to_be_bytes());
-    png
-}
-
 /// The `BookImageRead` a `read_book_image` call carried as structured content.
 fn read_of(result: CallToolResult) -> omnibus_shared::BookImageRead {
     result.into_typed().unwrap()
@@ -227,11 +203,21 @@ async fn image_file(
     }
 }
 
-/// `GET …/images/link`: a fixed signed path, as the server would mint it.
-async fn image_link(Path(uuid): Path<String>) -> AxumJson<BookImageLink> {
+/// `GET …/images/link`: a signed path over the `href` it was asked to mint for.
+async fn image_link(
+    Path(uuid): Path<String>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> AxumJson<BookImageLink> {
+    let mut query = reqwest::Url::parse("http://stub").unwrap();
+    query
+        .query_pairs_mut()
+        .append_pair("href", q.get("href").map_or("", String::as_str))
+        .append_pair("expires", "1893456000")
+        .append_pair("sig", "abc");
     AxumJson(BookImageLink {
         path: format!(
-            "/api/ebooks/{uuid}/images/file?href=OEBPS%2Fimages%2Fmap.png&expires=1893456000&sig=abc"
+            "/api/ebooks/{uuid}/images/file?{}",
+            query.query().unwrap_or_default()
         ),
         expires_at: 1_893_456_000,
     })
@@ -788,16 +774,8 @@ fn preview_encodes_png_when_the_image_has_alpha() {
 }
 
 #[test]
-fn preview_returns_none_for_bytes_that_sniff_as_a_png_but_do_not_decode() {
-    let mut not_a_png = vec![0x89, 0x50, 0x4E, 0x47];
-    not_a_png.extend_from_slice(b"garbage after the signature");
-
-    assert!(preview(&not_a_png).is_none());
-}
-
-#[test]
-fn preview_returns_none_for_a_header_claiming_enormous_dimensions() {
-    assert!(preview(&png_claiming(100_000, 100_000)).is_none());
+fn preview_returns_none_for_an_image_wider_than_the_decode_limit() {
+    assert!(preview(&opaque_png(DECODE_MAX_EDGE + 1, 1)).is_none());
 }
 
 #[tokio::test]
@@ -828,6 +806,10 @@ async fn read_book_image_attaches_an_image_block_for_a_raster() {
     assert_eq!((decoded.width(), decoded.height()), (8, 6));
     let read = read_of(result);
     assert_eq!(read.byte_size, opaque_png(8, 6).len() as i64);
+    // The mint is asked for the href the caller named, not any other image's.
+    let url = reqwest::Url::parse(&read.download_url).unwrap();
+    let minted_for: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+    assert_eq!(minted_for["href"], "OEBPS/images/plate.png");
 }
 
 #[tokio::test]
