@@ -28,9 +28,9 @@ type Archive = zip::ZipArchive<File>;
 /// at the front, so a listing never decompresses a whole multi-megabyte plate.
 const DIMENSION_PREFIX_BYTES: u64 = 1024 * 1024;
 
-/// Decompressed bytes one listing may read across image headers and spine
-/// documents, so a book of thousands of items cannot cost thousands of cap-sized
-/// inflations per call.
+/// Decompressed bytes one listing pass may read, so a book of thousands of items
+/// cannot cost thousands of cap-sized inflations per call. Image headers and
+/// spine documents each get their own, so plates cannot starve the references.
 const LISTING_BUDGET: u64 = 4 * MAX_PAGE_BYTES;
 
 /// One image reference in an XHTML page.
@@ -46,9 +46,10 @@ pub struct ImageRef {
 pub fn list_images(path: &Path) -> anyhow::Result<Vec<BookImage>> {
     let file = File::open(path).with_context(|| format!("open epub {}", path.display()))?;
     let (doc, mut archive) = open(file).with_context(|| format!("read epub {}", path.display()))?;
-    let mut budget = LISTING_BUDGET;
-    let mut images = manifest_images(&doc, &mut archive, &mut budget);
-    attach_references(&doc, &mut archive, &mut images, &mut budget);
+    let mut header_budget = LISTING_BUDGET;
+    let mut spine_budget = LISTING_BUDGET;
+    let mut images = manifest_images(&doc, &mut archive, &mut header_budget);
+    attach_references(&doc, &mut archive, &mut images, &mut spine_budget);
     // BTreeMap order is href order, and the sort is stable.
     let mut images: Vec<BookImage> = images.into_values().collect();
     images.sort_by_key(|i| i.references.first().map_or(i64::MAX, |r| r.spine_index));

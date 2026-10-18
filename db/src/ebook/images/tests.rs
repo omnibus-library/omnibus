@@ -288,6 +288,29 @@ fn list_images_lists_images_past_the_byte_budget_without_pixel_dimensions() {
 }
 
 #[test]
+fn list_images_still_records_references_after_the_header_budget_is_spent() {
+    // Same plates as above: their header reads spend the whole test budget.
+    let mut plate = solid_color_png(1, 2, 3, 4, 3);
+    plate.resize(100 * 1024, 0);
+    let names: Vec<String> = (0..5).map(|i| format!("plate{i}.png")).collect();
+    let images: Vec<(&str, &str, &[u8])> = names
+        .iter()
+        .map(|n| (n.as_str(), "image/png", plate.as_slice()))
+        .collect();
+    let path = write_epub(
+        &[("c1.xhtml", &page(r#"<img src="plate0.png" alt="First"/>"#))],
+        &images,
+    );
+
+    let listed = list_images(&path).unwrap();
+
+    assert_eq!(
+        image(&listed, "plate0.png").references,
+        vec![reference(0, Some("First"))]
+    );
+}
+
+#[test]
 fn list_images_lists_an_unreferenced_image_with_no_references() {
     let png = solid_color_png(1, 2, 3, 2, 2);
     let path = write_epub(
