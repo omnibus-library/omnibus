@@ -117,8 +117,8 @@ pub struct BookReading {
     pub format: Option<ProgressFormat>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book_file_id: Option<i64>,
-    /// Unix seconds of the latest position, or of the status if it is newer
-    /// and not `Unread`.
+    /// Unix seconds of the latest position (client time), else of the status
+    /// change; `None` for a book marked `Unread`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_read_at: Option<i64>,
 }
