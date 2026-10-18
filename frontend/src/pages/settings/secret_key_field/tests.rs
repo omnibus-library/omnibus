@@ -1,7 +1,7 @@
 //! Render tests for the server-wide key cards and their clear confirm.
 
 use super::*;
-use crate::test_support::{render, render_in_vdom};
+use crate::test_support::render_in_vdom;
 
 /// The opening tag of the element carrying `testid`.
 fn tag_with_testid<'a>(html: &'a str, testid: &str) -> &'a str {

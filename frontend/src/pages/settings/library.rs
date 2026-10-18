@@ -6,8 +6,8 @@
 use dioxus::prelude::*;
 use omnibus_shared::{LibraryContents, LibrarySection, Settings, SCAN_INTERVAL_MIN_HOURS};
 
-#[cfg(not(feature = "mobile"))]
 use crate::components::unsaved::use_saved_snapshot;
+#[cfg(not(feature = "mobile"))]
 use crate::components::worker_status::WorkerStatusIndicator;
 use crate::components::BusyLabel;
 use crate::data::server_error_message;

@@ -18,7 +18,7 @@ thread_local! {
 fn GuardedShell() -> Element {
     let changes = provide_unsaved_changes();
     let draft = use_signal(String::new);
-    let saved = use_saved_snapshot("name", move || draft());
+    let saved = use_saved_snapshot("name", move || draft.read().clone());
     FORM.with(|form| form.set(Some((changes, draft, saved))));
     rsx! {}
 }
