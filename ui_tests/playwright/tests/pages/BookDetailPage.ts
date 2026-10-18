@@ -249,7 +249,6 @@ export class BookDetailPage extends BasePage {
   // #endregion batch-D
 
   // #region batch-E: metadata edit
-  readonly editMetadataLink = this.page.getByTestId("edit-metadata");
   readonly genreList = this.page.getByTestId("bd-genre-list");
 
   async openEditMetadata(): Promise<void> {
