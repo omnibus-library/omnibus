@@ -5322,7 +5322,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .settings-back { display: none; }
 
 .settings-section-head h2 { --lh: 1.1; font-size: 32px; }
-.settings-content > .card {
+.settings-content > .card,
+.settings-content .ah-card,
+.settings-content .logs-page > .card {
   background: none;
   border: 0;
   border-top: 1px solid var(--line-2);
@@ -5331,6 +5333,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 }
 .settings-content > .card h2,
 .settings-content > .card h3,
+.settings-content .logs-page > .card h3,
 .settings-content .tkx-title {
   --lh: 1.3;
   font-family: var(--sans);
@@ -5415,16 +5418,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 
 /* Small print in settings stays legible: the muted ink and an 11px floor. */
 .settings-nav-group-label,
-.settings-content .settings-hint,
-.settings-content .tkx-create-hint,
-.settings-content .tkx-row-id,
-.settings-content .tkx-admin-tag,
-.settings-content .tkx-count { color: var(--ink-2); }
-.settings-content .tkx-count,
-.settings-content .tkx-scope-chip,
-.settings-content .tkx-pill,
-.settings-content .tkx-switch-state,
-.settings-content .tkx-admin-tag,
+.settings-content .settings-hint { color: var(--ink-2); }
 .settings-content .users-table .mono { font-size: 11px; }
 
 .users-created { white-space: nowrap; }
@@ -5643,16 +5637,16 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    section's title, not a card heading. */
 .tkx-title { font-family: var(--serif); font-size: 30px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 .tkx-lede { margin: 8px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); max-width: 62ch; }
-.tkx-count { margin-left: auto; font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
+.tkx-count { margin-left: auto; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
 .tkx-scope { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg-2); }
 .tkx-scope-who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-1); }
 .tkx-scope-avatar { width: 22px; height: 22px; border-radius: 999px; background: var(--bg-3); display: grid; place-items: center; font-family: var(--mono); font-size: 9px; font-weight: 700; color: var(--ink-1); }
 .tkx-scope-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-left: auto; }
-.tkx-scope-chip { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.tkx-scope-chip { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 
 /* create form: the field, its hint, then the footer's Create token */
 .tkx-create.settings-form { margin-top: 0; }
-.tkx-create-hint { margin: 0; font-size: 11.5px; color: var(--ink-3); }
+.tkx-create-hint { margin: 0; font-size: 11.5px; color: var(--ink-2); }
 
 /* the one-time secret */
 .tkx-secret { border: 1px solid color-mix(in oklch, var(--accent) 55%, transparent); background: color-mix(in oklch, var(--accent) 8%, var(--bg-1)); border-radius: var(--r-lg); padding: 20px 22px; }
@@ -5678,8 +5672,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .tkx-row:hover { border-color: var(--line); }
 .tkx-row-name { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .tkx-row-title { font-size: 14px; font-weight: 500; color: var(--ink-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tkx-row-id { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
-.tkx-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line-2); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; justify-self: start; }
+.tkx-row-id { font-family: var(--mono); font-size: 10px; color: var(--ink-2); }
+.tkx-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line-2); font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; justify-self: start; }
 .tkx-pill::before { content: ''; width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
 .tkx-pill-active { color: var(--ok); border-color: color-mix(in oklch, var(--ok) 35%, transparent); }
 .tkx-pill-idle { color: var(--warn); border-color: color-mix(in oklch, var(--warn) 35%, transparent); }
@@ -5714,9 +5708,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
 .tkx-mcp { display: flex; flex-direction: column; gap: 12px; }
 .tkx-mcp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .tkx-mcp-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink-0); }
-.tkx-admin-tag { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 8px; }
+.tkx-admin-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 8px; }
 .tkx-switch { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.tkx-switch-state { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); }
+.tkx-switch-state { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
 /* The track is a real <button role="switch">, so zero out the .btn-less
    button UA styles it would otherwise carry. */
 .tkx-track { width: 40px; height: 22px; border-radius: 999px; background: var(--bg-3); border: 1px solid var(--line-2); position: relative; cursor: pointer; flex: none; padding: 0; }
@@ -13422,24 +13416,6 @@ html {
 .kindle-delivery code { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; overflow-wrap: anywhere; }
 
 /* ── Administration sections (#2763) ── */
-/* Overview and Logs wrap their groups, so they miss `.settings-content > .card`;
-   give them the same hairline treatment. */
-.settings-content .ah-card,
-.settings-content .logs-page > .card {
-  background: none;
-  border: 0;
-  border-top: 1px solid var(--line-2);
-  border-radius: 0;
-  padding: 1.75rem 0 0;
-}
-.settings-content .logs-page > .card h3 {
-  --lh: 1.3;
-  font-family: var(--sans);
-  font-size: 1.125rem;
-  font-weight: 600;
-  letter-spacing: 0;
-  line-height: var(--lh);
-}
 /* A card's actions are its last row: the primary action rightmost, a
    destructive one (`settings-action-start`) and the form's status at the
    far left. */
@@ -13533,12 +13509,6 @@ html {
 /* A field a save refused: the reason under it, the input outlined. */
 .settings-field-error { margin: 0; font-size: 0.8rem; color: var(--bad); }
 .settings-field input[aria-invalid="true"] { border-color: var(--bad); }
-
-/* A value not read yet: disabled and tinted, never an empty "no target". */
-.settings-field input.ld-unknown {
-  cursor: progress;
-  background: color-mix(in oklch, var(--ink-3) 14%, var(--bg-2));
-}
 
 /* Kobo setup: the steps behind a quiet disclosure under the warning. */
 .kobo-setup {
