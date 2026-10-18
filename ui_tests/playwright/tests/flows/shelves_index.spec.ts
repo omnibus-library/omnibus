@@ -301,7 +301,7 @@ test.describe("shelves index", () => {
     shelvesIndexPage,
   }) => {
     await test.step("fail the shelf list and open the index", async () => {
-      await shelvesIndexPage.stubShelfListError();
+      await shelvesIndexPage.forceServerError(shelves.list());
       await shelvesIndexPage.gotoUnavailable();
     });
 

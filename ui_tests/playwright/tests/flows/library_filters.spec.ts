@@ -1,5 +1,9 @@
 import { ebooks } from "../contracts/ebooks";
-import { shelves } from "../contracts/shelves";
+import {
+  filteredShelfRead,
+  shelves,
+  unfilteredShelfRead,
+} from "../contracts/shelves";
 import {
   authoredBy,
   clauses,
@@ -434,7 +438,7 @@ test.describe("library filters", () => {
     // The stale filter must not trap the reader: once the server answers again,
     // one Clear all both recovers the list and forgets the saved filter.
     await test.step("clear all once the server answers", async () => {
-      await libraryPage.restoreLibraryReads();
+      await libraryPage.stopForcingServerError(ebooks.page());
       await expectMutation(ebooks.page(), () => filterBar.clearAll());
       await expect(libraryPage.pageError).toHaveCount(0);
       await expect(filterBar.chips).toHaveCount(0);
@@ -606,7 +610,6 @@ test.describe("library filters", () => {
 
     test("keep the filter bar when a shelf's narrowed fetch fails on the landing page", async ({
       readerLibraryPage,
-      readerShelfPage,
       readerExpectMutation,
       filterShelf,
     }) => {
@@ -618,7 +621,10 @@ test.describe("library filters", () => {
       });
 
       await test.step("filter it to Lam while narrowed reads fail", async () => {
-        await readerShelfPage.failFilteredShelfReads();
+        await readerLibraryPage.forceServerErrorWhere(
+          shelves.page(),
+          filteredShelfRead,
+        );
         await readerExpectMutation(failing(shelves.page()), () =>
           filterBar.addClause(clauses.includeLam),
         );
@@ -654,7 +660,10 @@ test.describe("library filters", () => {
       });
 
       await test.step("filter it to Lam while narrowed reads fail", async () => {
-        await readerShelfPage.failFilteredShelfReads();
+        await readerShelfPage.forceServerErrorWhere(
+          shelves.page(),
+          filteredShelfRead,
+        );
         await readerExpectMutation(failing(shelves.page()), () =>
           filterBar.addClause(clauses.includeLam),
         );
@@ -747,14 +756,17 @@ test.describe("library filters", () => {
       });
 
       await test.step("open the shelf while narrowed reads fail", async () => {
-        await readerShelfPage.failFilteredShelfReads();
+        await readerShelfPage.forceServerErrorWhere(
+          shelves.page(),
+          filteredShelfRead,
+        );
         await readerShelfPage.goto(filterShelf.id);
         await expect(readerShelfPage.refetchError).toBeVisible();
       });
 
       const release =
         await test.step("drop the PDF clause while its read is held", async () => {
-          await readerShelfPage.restoreShelfReads();
+          await readerShelfPage.stopForcingServerError(shelves.page());
           const release = await filterBar.holdShelfReads(1);
           await filterBar.removeClause("format");
           await expect
@@ -824,7 +836,6 @@ test.describe("library filters", () => {
 
     test("keep the narrowed count when the shelf's full list fails and retry it on Clear all", async ({
       readerLibraryPage,
-      readerShelfPage,
       readerExpectMutation,
       filterShelf,
     }) => {
@@ -838,7 +849,10 @@ test.describe("library filters", () => {
       });
 
       await test.step("select the shelf while its full list fails", async () => {
-        await readerShelfPage.failUnfilteredShelfReads();
+        await readerLibraryPage.forceServerErrorWhere(
+          shelves.page(),
+          unfilteredShelfRead,
+        );
         await readerLibraryPage.selectShelf(filterShelf);
       });
 
@@ -853,7 +867,7 @@ test.describe("library filters", () => {
       });
 
       await test.step("clear all once the full list can load", async () => {
-        await readerShelfPage.restoreShelfReads();
+        await readerLibraryPage.stopForcingServerError(shelves.page());
         await readerExpectMutation(shelves.page(), () => filterBar.clearAll());
       });
 

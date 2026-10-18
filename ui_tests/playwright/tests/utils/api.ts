@@ -3,6 +3,12 @@ import { expect } from "../fixtures/test";
 
 export type MutationMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 
+/** A request a test can force to fail: any mutation, or a read. */
+export interface ForcedRequest {
+  method: "GET" | MutationMethod;
+  url: string | RegExp;
+}
+
 export interface ExpectMutationOptions {
   method: MutationMethod;
   url: string | RegExp;

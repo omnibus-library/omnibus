@@ -1,8 +1,8 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, Request } from "@playwright/test";
 import type { Theme } from "../components/TopNavComponent";
 import { authUrls } from "../contracts/auth";
 import { expect } from "../fixtures/test";
-import type { ExpectMutationOptions } from "../utils/api";
+import type { ForcedRequest } from "../utils/api";
 import { waitForHydration } from "../utils/nav";
 
 /** Navigation and the displayed check that every page object shares. */
@@ -23,9 +23,17 @@ export abstract class BasePage {
   }
 
   /** Fails every request `contract` describes from this page with a 500. */
-  async forceServerError(contract: ExpectMutationOptions): Promise<void> {
+  async forceServerError(contract: ForcedRequest): Promise<void> {
+    await this.forceServerErrorWhere(contract, () => true);
+  }
+
+  /** Fails the requests `contract` describes that `when` accepts; the rest go through. */
+  async forceServerErrorWhere(
+    contract: ForcedRequest,
+    when: (request: Request) => boolean,
+  ): Promise<void> {
     await this.page.route(contract.url, (route) =>
-      route.request().method() === contract.method
+      route.request().method() === contract.method && when(route.request())
         ? route.fulfill({
             status: 500,
             contentType: "text/plain",
@@ -36,7 +44,7 @@ export abstract class BasePage {
   }
 
   /** Lets requests `contract` describes through again after a forced error. */
-  async stopForcingServerError(contract: ExpectMutationOptions): Promise<void> {
+  async stopForcingServerError(contract: ForcedRequest): Promise<void> {
     await this.page.unroute(contract.url);
   }
 

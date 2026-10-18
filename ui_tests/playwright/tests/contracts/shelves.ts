@@ -1,5 +1,5 @@
 import type { Request } from "@playwright/test";
-import type { ExpectMutationOptions } from "../utils/api";
+import type { ExpectMutationOptions, ForcedRequest } from "../utils/api";
 
 /** The shelf endpoints the library and shelf pages call. */
 export const shelvesUrls = {
@@ -16,6 +16,14 @@ export const shelvesUrls = {
 export function clauseCount(request: Request): number {
   return request.postDataJSON().filters.clauses.length;
 }
+
+/** A member read that carries a filter. */
+export const filteredShelfRead = (request: Request): boolean =>
+  clauseCount(request) > 0;
+
+/** A member read that carries none, the full list. */
+export const unfilteredShelfRead = (request: Request): boolean =>
+  clauseCount(request) === 0;
 
 function shelfWrite(
   url: RegExp,
@@ -43,6 +51,9 @@ export const shelves = {
 
   removeBook: (id?: number, bookUuid?: string): ExpectMutationOptions =>
     shelfWrite(shelvesUrls.removeBook, bookUuid && { id, book_uuid: bookUuid }),
+
+  /** The shelf list read behind the `/shelves` index. */
+  list: (): ForcedRequest => ({ method: "GET", url: shelvesUrls.list }),
 
   /** A shelf's member read, a POST that changes nothing. */
   page: (): ExpectMutationOptions => shelfWrite(shelvesUrls.page),

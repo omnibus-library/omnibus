@@ -1,5 +1,4 @@
 import type { Locator, Page } from "@playwright/test";
-import { crossFormatUrls } from "../contracts/crossFormat";
 import { BaseComponent } from "./BaseComponent";
 
 /** The book page's cross-format row: whether the formats are linked, the follow switch, and the progress ruler. */
@@ -40,16 +39,5 @@ export class SyncLinkComponent extends BaseComponent {
 
   async toggleFollow(): Promise<void> {
     await this.followSwitch.click();
-  }
-
-  /** Fails the alignment re-read that follows a flip, which keeps the write itself intact. */
-  async failAlignmentReads(): Promise<void> {
-    await this.page.route(crossFormatUrls.alignment, (route) =>
-      route.fulfill({ status: 500, body: "boom" }),
-    );
-  }
-
-  async restoreAlignmentReads(): Promise<void> {
-    await this.page.unroute(crossFormatUrls.alignment);
   }
 }

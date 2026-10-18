@@ -288,11 +288,6 @@ export class LibraryPage extends BasePage {
     await this.clearFiltersButton.click();
   }
 
-  /** Lets the page fetch answer again after `forceServerError(ebooks.page())`. */
-  async restoreLibraryReads(): Promise<void> {
-    await this.page.unroute(ebooksUrls.page);
-  }
-
   /** The slugs of the book tiles on the grid, sorted. */
   async tileSlugs(): Promise<string[]> {
     return this.bookTiles.evaluateAll((tiles) =>

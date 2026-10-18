@@ -1,7 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { CreateShelfModalComponent } from "../components/CreateShelfModalComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
-import { shelvesUrls } from "../contracts/shelves";
 import { BasePage } from "./BasePage";
 
 /** `/shelves`: every shelf the viewer can see, grouped by owner. */
@@ -84,13 +83,6 @@ export class ShelvesIndexPage extends BasePage {
   /** Opens the index when its list fails, which draws an alert and no page. */
   async gotoUnavailable(): Promise<void> {
     await this.page.goto("/shelves");
-  }
-
-  /** Answers the shelf list with a 500, whatever the app asks for. */
-  async stubShelfListError(): Promise<void> {
-    await this.page.route(shelvesUrls.list, (route) =>
-      route.fulfill({ status: 500, body: "boom" }),
-    );
   }
 
   async openShelf(shelfId: number): Promise<void> {

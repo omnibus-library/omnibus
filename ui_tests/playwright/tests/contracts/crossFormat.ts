@@ -26,4 +26,7 @@ export const crossFormat = {
 
   /** The player's "sync here" declaration. */
   syncPoint: (): ExpectMutationOptions => write(crossFormatUrls.syncPoint),
+
+  /** The alignment re-read that follows a flip, a POST that changes nothing. */
+  alignment: (): ExpectMutationOptions => write(crossFormatUrls.alignment),
 };

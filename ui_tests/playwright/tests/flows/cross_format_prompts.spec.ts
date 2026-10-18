@@ -349,7 +349,7 @@ test.describe("cross-format resume prompts", () => {
     });
 
     await test.step("turn follow off while the alignment re-read fails", async () => {
-      await syncLink.failAlignmentReads();
+      await bookDetailPage.forceServerError(crossFormat.alignment());
       await expectMutation(crossFormat.follow(uuid, false), () =>
         syncLink.toggleFollow(),
       );
@@ -363,7 +363,7 @@ test.describe("cross-format resume prompts", () => {
     // the switch must follow the server back to on rather than hold what it
     // wrote.
     await test.step("confirm the alignment again", async () => {
-      await syncLink.restoreAlignmentReads();
+      await bookDetailPage.stopForcingServerError(crossFormat.alignment());
       await syncLink.manageAlignment();
       await expectMutation(crossFormat.link(), () => alignmentModal.confirm());
       await expect(syncLink.followSwitch).toHaveAttribute(

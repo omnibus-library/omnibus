@@ -3,7 +3,7 @@ import { AddBooksModalComponent } from "../components/AddBooksModalComponent";
 import { EditShelfModalComponent } from "../components/EditShelfModalComponent";
 import { FilterBarComponent } from "../components/FilterBarComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
-import { clauseCount, shelvesUrls } from "../contracts/shelves";
+import { shelvesUrls, unfilteredShelfRead } from "../contracts/shelves";
 import { expect } from "../fixtures/test";
 import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
@@ -177,7 +177,7 @@ export class ShelfPage extends BasePage {
     const isShelfRead = isPostTo(shelvesUrls.page);
     const reread = this.page.waitForResponse(
       (response) =>
-        isShelfRead(response) && clauseCount(response.request()) === 0,
+        isShelfRead(response) && unfilteredShelfRead(response.request()),
     );
     await this.removeButton(bookUuid).click();
     await reread;
@@ -197,21 +197,6 @@ export class ShelfPage extends BasePage {
           )
           .sort(),
       );
-  }
-
-  /** Answers 500 to member reads that carry a filter; the rest go through. */
-  async failFilteredShelfReads(): Promise<void> {
-    await this.failShelfReadsWhere((clauses) => clauses > 0);
-  }
-
-  /** Answers 500 to the member read with no filter; the rest go through. */
-  async failUnfilteredShelfReads(): Promise<void> {
-    await this.failShelfReadsWhere((clauses) => clauses === 0);
-  }
-
-  /** Lets member reads through again after a `fail*ShelfReads` stub. */
-  async restoreShelfReads(): Promise<void> {
-    await this.page.unroute(shelvesUrls.page);
   }
 
   /** Records whether a member's remove button is disabled on each DOM change. */
@@ -242,19 +227,6 @@ export class ShelfPage extends BasePage {
         (window as unknown as { __removeButtonStates: boolean[] })
           .__removeButtonStates,
     );
-  }
-
-  private async failShelfReadsWhere(
-    fails: (clauses: number) => boolean,
-  ): Promise<void> {
-    await this.page.route(shelvesUrls.page, async (route) => {
-      const { filters } = route.request().postDataJSON();
-      if (fails(filters.clauses.length)) {
-        await route.fulfill({ status: 500, body: "boom" });
-      } else {
-        await route.continue();
-      }
-    });
   }
 
   /** Checks the page is showing shelf `shelfId`, not just any shelf. */
