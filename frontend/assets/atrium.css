@@ -13497,6 +13497,7 @@ html {
 .settings-layout .settings-actions .settings-action-start,
 .settings-layout .settings-actions .settings-action-status,
 .settings-layout .settings-actions .api-key-status { margin-right: auto; }
+.settings-layout .settings-actions .api-key-status { margin-top: 0; }
 
 /* Maintenance: each command says what it does beside the button that runs it. */
 .maint-list { list-style: none; margin: 1rem 0 0; padding: 0; }
