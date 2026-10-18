@@ -202,9 +202,7 @@ impl OmnibusClient {
     /// holds no credentials — the hosted `/mcp` loopback shape. The caller
     /// already authenticated the token; this client passes it through
     /// verbatim, never logs in, and surfaces a 401 as
-    /// [`ClientError::TokenRejected`] instead of re-logging-in. `public_url` is
-    /// the origin the caller reached the instance on, which differs from the
-    /// loopback `base_url` the calls go through.
+    /// [`ClientError::TokenRejected`] instead of re-logging-in.
     pub fn with_bearer(
         base_url: String,
         token: String,

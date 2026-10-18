@@ -103,6 +103,8 @@ too:
 - `/opds/*` — a session, else HTTP Basic.
 - `/metrics` — `OMNIBUS_METRICS_TOKEN`; the route does not exist until it is set.
 - `/mcp` — a bearer token, gated per request on the admin `mcp_enabled` setting.
+- `/api/ebooks/{uuid}/images/file?sig=…` — exempted from the gate and authenticated
+  by a per-image HMAC link (`backend::ebooks::images`).
 
 ## Database
 
