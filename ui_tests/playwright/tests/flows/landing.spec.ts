@@ -57,6 +57,32 @@ test.describe("library page", () => {
     });
   });
 
+  // A browser draws an image as its bytes arrive, so the plate must hide that
+  // half-drawn cover until the watcher stamps it decoded.
+  test("keep a cover hidden until its image has decoded", async ({
+    libraryPage,
+  }) => {
+    await test.step("open the library while every thumbnail is held", async () => {
+      await libraryPage.holdThumbnails();
+      await libraryPage.gotoUnsettled();
+    });
+
+    await test.step("check the cover waits, transparent and unstamped", async () => {
+      await expect(libraryPage.firstCover).toBeAttached();
+      await expect(libraryPage.firstCover).not.toHaveAttribute("data-loaded");
+      await expect(libraryPage.firstCover).toHaveCSS("opacity", "0");
+    });
+
+    await test.step("release the thumbnails", async () => {
+      await libraryPage.releaseThumbnails();
+    });
+
+    await test.step("check the cover is stamped and shows", async () => {
+      await expect(libraryPage.firstCover).toHaveAttribute("data-loaded", "");
+      await expect(libraryPage.firstCover).toHaveCSS("opacity", "1");
+    });
+  });
+
   test("show every fixture book with its metadata", async ({ libraryPage }) => {
     const table = libraryPage.table;
 

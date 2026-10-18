@@ -86,6 +86,16 @@ test.describe("book detail page", () => {
       await expect(stops.dot(0)).toHaveClass(/\bon\b/);
     });
 
+    // The Scroll stops switch sits at the top of the stage, apart from the rail.
+    await test.step("check the scroll stops switch sits above the rail", async () => {
+      const { stops } = bookDetailPage;
+      await expect(stops.modeToggle).toBeVisible();
+      await expect(stops.modeToggleInRail).toHaveCount(0);
+      expect(await stops.bottomEdge(stops.modeToggle)).toBeLessThan(
+        await stops.topEdge(stops.dotRail),
+      );
+    });
+
     // Only presence: journal.spec saves a highlight on this book, so whether
     // the list or the empty state fills it depends on run order.
     await test.step("check the passages and more stops show", async () => {
@@ -166,7 +176,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("flip the switch in settings", async () => {
-        await settingsPage.goto("account");
+        await settingsPage.goto("preferences");
         await expectMutation(account.scrollStops(), () =>
           settingsPage.account.toggleScrollStops(),
         );
@@ -180,6 +190,93 @@ test.describe("book detail page", () => {
       await test.step("check the snapped marquee shows", async () => {
         await expect(stops.snap).toBeAttached();
         await expect(stops.flow).toHaveCount(0);
+      });
+    });
+
+    test("flip between the flow and the stops with the page's own switch", async ({
+      bookDetailPage,
+      request,
+      setScrollStops,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const { stops } = bookDetailPage;
+
+      await test.step("open the book with the preference off", async () => {
+        await setScrollStops(false);
+        await bookDetailPage.goto(uuid);
+        await expect(stops.modeToggle).toBeEnabled();
+        await expect(stops.modeToggle).toHaveAttribute("aria-pressed", "false");
+        await expect(stops.flow).toBeAttached();
+      });
+
+      // A flip keeps the reader in place, so read down to the journal first.
+      await test.step("read down to the journal", async () => {
+        await stops.scrollFlowToStop(3);
+        await expect(stops.dot(3)).toHaveClass(/\bon\b/);
+      });
+
+      await test.step("flip to the stops", async () => {
+        await expectMutation(account.scrollStops(true), () => stops.flipMode());
+      });
+
+      // No reload: the stage re-renders in the other reading on the same stop,
+      // the switch keeps focus and the marquee's glue follows the swap.
+      await test.step("check the snapped marquee shows on the same stop", async () => {
+        await expect(stops.snap).toBeAttached();
+        await expect(stops.flow).toHaveCount(0);
+        await expect(stops.modeToggle).toHaveAttribute("aria-pressed", "true");
+        await expect(stops.modeToggle).toBeFocused();
+        await expect(stops.section(3)).toBeInViewport();
+        await expect(stops.dot(3)).toHaveClass(/\bon\b/);
+      });
+
+      await test.step("check the rail tracks the snapped stops", async () => {
+        await stops.scrollSnapToStop(4);
+        await expect(stops.dot(4)).toHaveClass(/\bon\b/);
+      });
+
+      await test.step("flip back to the flow", async () => {
+        await expectMutation(account.scrollStops(false), () =>
+          stops.flipMode(),
+        );
+      });
+
+      await test.step("check the switch is still live after the swap", async () => {
+        await expect(stops.flow).toBeAttached();
+        await expect(stops.snap).toHaveCount(0);
+        await expect(stops.modeToggle).toHaveAttribute("aria-pressed", "false");
+        await expect(stops.section(4)).toBeInViewport();
+        await expect(stops.dot(4)).toHaveClass(/\bon\b/);
+      });
+    });
+
+    test("keep the reading and say so when a flip is refused", async ({
+      bookDetailPage,
+      request,
+      setScrollStops,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const { stops } = bookDetailPage;
+
+      await test.step("open the book with the preference off", async () => {
+        await setScrollStops(false);
+        await bookDetailPage.goto(uuid);
+        await bookDetailPage.forceServerError(account.scrollStops(true));
+      });
+
+      await test.step("try to flip to the stops", async () => {
+        await expectMutation(failing(account.scrollStops(true)), () =>
+          stops.flipMode(),
+        );
+      });
+
+      await test.step("check the flow stays and the error shows", async () => {
+        await expect(stops.modeError).toBeVisible();
+        await expect(stops.modeToggle).toHaveAttribute("aria-pressed", "false");
+        await expect(stops.flow).toBeAttached();
+        await expect(stops.snap).toHaveCount(0);
       });
     });
 
@@ -256,6 +353,39 @@ test.describe("book detail page", () => {
 
     await test.step("check the files are on screen", async () => {
       await expect(formats.root).toBeInViewport();
+    });
+  });
+
+  // The rail floats over the panel's right edge, so a box any wider than its
+  // six dots takes the clicks meant for whatever scrolls beside it.
+  test("leave the journal's new entry button beside the dot rail clickable", async ({
+    bookDetailPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const { stops, journal } = bookDetailPage;
+
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+      await expect(journal.newEntryButton).toBeVisible();
+    });
+
+    // Park the button level with the rail, where the reader's click went dead.
+    await test.step("scroll the button level with the rail", async () => {
+      await stops.levelWithDotRail(journal.newEntryButton);
+    });
+
+    // A real pointer at the button's rail-side end, because `click()` would
+    // scroll and retry until it found a spot the rail doesn't cover.
+    await test.step("click the end of the button nearest the rail", async () => {
+      await journal.clickNewEntryRailEnd();
+      await expect(journal.composer).toBeVisible();
+    });
+
+    // Nothing was typed, so closing writes nothing.
+    await test.step("close the composer", async () => {
+      await journal.closeEmptyComposer();
+      await expect(journal.composer).toHaveCount(0);
     });
   });
 

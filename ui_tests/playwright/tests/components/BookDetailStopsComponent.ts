@@ -10,6 +10,9 @@ export class BookDetailStopsComponent extends BaseComponent {
   readonly snap: Locator;
   readonly dotRail: Locator;
   readonly dotButtons: Locator;
+  readonly modeToggle: Locator;
+  readonly modeToggleInRail: Locator;
+  readonly modeError: Locator;
   readonly flowTopPill: Locator;
   readonly flowSections: Locator;
   readonly leadFlowSection: Locator;
@@ -29,6 +32,9 @@ export class BookDetailStopsComponent extends BaseComponent {
     this.snap = page.locator("#bdmq-snap");
     this.dotRail = page.getByTestId("bdmq-dots");
     this.dotButtons = this.dotRail.getByRole("button");
+    this.modeToggle = page.getByTestId("bdmq-mode-toggle");
+    this.modeToggleInRail = this.dotRail.getByTestId("bdmq-mode-toggle");
+    this.modeError = page.getByTestId("bdmq-mode-error");
     this.flowTopPill = page.getByTestId("bdmq-flowtop");
     this.flowSections = page.locator(".bdmq-flowsec");
     this.leadFlowSection = page.locator(".bdmq-flowsec.lead");
@@ -71,6 +77,33 @@ export class BookDetailStopsComponent extends BaseComponent {
     await this.flow.evaluate((element, top) => {
       element.scrollTop = top;
     }, pixels);
+  }
+
+  /** Scrolls the flow to the top of stop `index`, as a reader reading down would arrive. */
+  async scrollFlowToStop(index: number): Promise<void> {
+    await this.flow.evaluate((element, stop) => {
+      const section = element.querySelector<HTMLElement>(
+        `[data-testid="bdmq-sec-${stop}"]`,
+      )!;
+      element.scrollTop = section.offsetTop;
+    }, index);
+  }
+
+  /** Scrolls the flow until `target` is level with the middle of the dot rail. */
+  async levelWithDotRail(target: Locator): Promise<void> {
+    const middle = async (locator: Locator) => {
+      const box = (await locator.boundingBox())!;
+      return box.y + box.height / 2;
+    };
+    const distance = (await middle(target)) - (await middle(this.dotRail));
+    await this.flow.evaluate((element, by) => {
+      element.scrollTop += by;
+    }, distance);
+  }
+
+  /** Flips the reading in place with the stage's own switch. */
+  async flipMode(): Promise<void> {
+    await this.modeToggle.click();
   }
 
   /** Scrolls the snap container to the top of stop `index`. */

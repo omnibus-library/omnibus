@@ -156,6 +156,17 @@ export class JournalSectionComponent extends BaseComponent {
     await this.clickAndAwait(this.saveDraftButton, journalsUrls.save);
   }
 
+  /** Clicks the end of the New entry button nearest the dot rail, as a real pointer would. */
+  async clickNewEntryRailEnd(): Promise<void> {
+    const box = (await this.newEntryButton.boundingBox())!;
+    await this.page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+  }
+
+  /** Closes a composer nothing was typed in, so no draft is written to delete. */
+  async closeEmptyComposer(): Promise<void> {
+    await this.cancelButton.click();
+  }
+
   /** Cancels the composer, which deletes the draft the autosave created. */
   async discardDraft(): Promise<void> {
     await this.clickAndAwait(this.cancelButton, journalsUrls.delete);

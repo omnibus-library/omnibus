@@ -1,4 +1,3 @@
-import { account } from "../contracts/account";
 import { readStatus } from "../contracts/readStatus";
 import { shelves } from "../contracts/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
@@ -402,23 +401,16 @@ test.describe("book detail shelves", () => {
 
   test("open the picker over the whole window when the page snaps between stops", async ({
     request,
-    readerSettingsPage,
     readerBookDetailPage,
-    readerExpectMutation,
     setScrollStops,
   }) => {
     const { stops, shelfPicker } = readerBookDetailPage;
-    const { scrollStopsSwitch } = readerSettingsPage.account;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
+    // The switches that write the preference belong to the settings and book
+    // page specs; this one opens its book with a full load, so it reads the value.
     await test.step("turn scroll stops on", async () => {
-      await setScrollStops(false, "reader");
-      await readerSettingsPage.goto("account");
-      await expect(scrollStopsSwitch).toBeEnabled();
-      await readerExpectMutation(account.scrollStops(true), () =>
-        readerSettingsPage.account.toggleScrollStops(),
-      );
-      await expect(scrollStopsSwitch).toBeChecked();
+      await setScrollStops(true, "reader");
     });
 
     await test.step("open the book and jump to the last stop", async () => {
@@ -450,17 +442,14 @@ test.describe("book detail shelves", () => {
 
   test("hide the back-to-the-book pill while the picker is open", async ({
     request,
-    readerSettingsPage,
     readerBookDetailPage,
+    setScrollStops,
   }) => {
     const { stops } = readerBookDetailPage;
-    const { scrollStopsSwitch } = readerSettingsPage.account;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-    await test.step("check scroll stops are off", async () => {
-      await readerSettingsPage.goto("account");
-      await expect(scrollStopsSwitch).toBeEnabled();
-      await expect(scrollStopsSwitch).not.toBeChecked();
+    await test.step("turn scroll stops off", async () => {
+      await setScrollStops(false, "reader");
     });
 
     await test.step("open the book and jump to the last stop", async () => {
