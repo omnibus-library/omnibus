@@ -11,7 +11,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::any,
     Router,
@@ -27,13 +27,21 @@ use rmcp::transport::streamable_http_server::tower::{
 use crate::backend::AppState;
 use crate::http_errors::internal;
 
+/// Who is calling the `/mcp` request being served: their raw bearer, and the origin
+/// a link handed back to them must be built on (not the loopback the tools call through).
+#[derive(Clone)]
+struct Caller {
+    token: String,
+    public_url: String,
+}
+
 tokio::task_local! {
-    /// The caller's raw bearer for the request being served. rmcp's service
-    /// factory takes no request context, so the handler scopes the token
-    /// around `StreamableHttpService::handle` and the factory reads it back
-    /// — the factory runs synchronously inside that scoped future, both for
-    /// stateless per-request services and at legacy session creation.
-    static CALLER_TOKEN: String;
+    /// The caller of the request being served. rmcp's service factory takes no
+    /// request context, so the handler scopes the caller around
+    /// `StreamableHttpService::handle` and the factory reads it back — the factory
+    /// runs synchronously inside that scoped future, both for stateless per-request
+    /// services and at legacy session creation.
+    static CALLER: Caller;
 }
 
 /// Everything the `/mcp` handler needs: the app state (pool for the toggle
@@ -59,11 +67,12 @@ pub fn mcp_router(app: AppState, loopback_url: String) -> Router {
         .disable_allowed_origins();
     let service = StreamableHttpService::new(
         move || {
-            let token = CALLER_TOKEN
+            let caller = CALLER
                 .try_with(Clone::clone)
-                .map_err(|_| std::io::Error::other("caller token not in scope"))?;
-            let client = OmnibusClient::with_bearer(loopback_url.clone(), token)
-                .map_err(std::io::Error::other)?;
+                .map_err(|_| std::io::Error::other("caller not in scope"))?;
+            let client =
+                OmnibusClient::with_bearer(loopback_url.clone(), caller.token, caller.public_url)
+                    .map_err(std::io::Error::other)?;
             Ok(OmnibusMcp::new(Arc::new(client)))
         },
         Arc::new(LocalSessionManager::default()),
@@ -107,10 +116,19 @@ async fn mcp_handler(State(state): State<McpHttpState>, req: Request) -> Respons
     }
 
     let service = state.service.clone();
-    let response = CALLER_TOKEN
-        .scope(token, async move { service.handle(req).await })
+    let caller = caller(&state.app, req.headers(), token);
+    let response = CALLER
+        .scope(caller, async move { service.handle(req).await })
         .await;
     response.map(Body::new)
+}
+
+/// The caller of `req`: their bearer plus the public origin they reached us on.
+fn caller(state: &AppState, headers: &HeaderMap, token: String) -> Caller {
+    Caller {
+        token,
+        public_url: state.request_origin(headers),
+    }
 }
 
 /// 401 with a `WWW-Authenticate` challenge naming the expected scheme, so a

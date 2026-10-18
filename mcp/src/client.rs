@@ -202,13 +202,19 @@ impl OmnibusClient {
     /// holds no credentials — the hosted `/mcp` loopback shape. The caller
     /// already authenticated the token; this client passes it through
     /// verbatim, never logs in, and surfaces a 401 as
-    /// [`ClientError::TokenRejected`] instead of re-logging-in.
-    pub fn with_bearer(base_url: String, token: String) -> Result<Self, ClientError> {
+    /// [`ClientError::TokenRejected`] instead of re-logging-in. `public_url` is
+    /// the origin the caller reached the instance on, which differs from the
+    /// loopback `base_url` the calls go through.
+    pub fn with_bearer(
+        base_url: String,
+        token: String,
+        public_url: String,
+    ) -> Result<Self, ClientError> {
         let http = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
         Ok(Self {
             http,
-            public_url: base_url.clone(),
             base_url,
+            public_url,
             credentials: None,
             token: RwLock::new(Some(token)),
             login_lock: Mutex::new(()),

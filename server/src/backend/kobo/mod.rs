@@ -111,7 +111,7 @@ fn origin_from_headers(state: &AppState, headers: &HeaderMap) -> String {
 /// A portless host (a Kobo drops the port) whose origin isn't in `public_origins`
 /// takes the first listed origin with the same scheme and host. No resolvable
 /// host returns `""` so callers emit host-relative URLs, not `http:///…`.
-fn origin_for(headers: &HeaderMap, public_origins: &[String]) -> String {
+pub fn origin_for(headers: &HeaderMap, public_origins: &[String]) -> String {
     let host = headers
         .get("x-forwarded-host")
         .or_else(|| headers.get(header::HOST))

@@ -174,8 +174,8 @@ async fn image_link(Path(uuid): Path<String>) -> AxumJson<BookImageLink> {
     })
 }
 
-/// Boot a stub instance serving the content read routes.
-async fn stub_service() -> OmnibusMcp {
+/// Boot a stub instance serving the content read routes; returns its origin.
+async fn spawn_stub() -> String {
     let app = Router::new()
         .route("/api/auth/login", post(login))
         .route("/api/ebooks/{uuid}/chapters", get(chapters))
@@ -192,8 +192,13 @@ async fn stub_service() -> OmnibusMcp {
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
+    format!("http://{addr}")
+}
+
+/// A service logged in to the stub instance.
+async fn stub_service() -> OmnibusMcp {
     let client = OmnibusClient::new(Config {
-        base_url: format!("http://{addr}"),
+        base_url: spawn_stub().await,
         username: "reader".into(),
         password: "correct horse battery".into(),
     })
@@ -650,4 +655,32 @@ async fn read_book_image_rejects_an_empty_href_locally() {
             .await,
     );
     assert!(err.message.contains("href"), "got: {}", err.message);
+}
+
+#[tokio::test]
+async fn read_book_image_builds_the_download_url_on_the_public_url_not_the_base_url() {
+    // The hosted `/mcp` shape: calls go through a loopback base URL, but the link
+    // goes to a person, so it must carry the origin they reached the server on.
+    let client = OmnibusClient::with_bearer(
+        spawn_stub().await,
+        "caller-token".into(),
+        "https://omnibus.example.com".into(),
+    )
+    .unwrap();
+    let service = OmnibusMcp::new(Arc::new(client));
+
+    let read = service
+        .read_book_image(Parameters(ReadBookImageParams {
+            book_uuid: "uuid-frank".into(),
+            href: "OEBPS/images/map.png".into(),
+        }))
+        .await
+        .unwrap()
+        .0;
+
+    assert_eq!(
+        read.download_url,
+        "https://omnibus.example.com/api/ebooks/uuid-frank/images/file\
+         ?href=OEBPS%2Fimages%2Fmap.png&expires=1893456000&sig=abc"
+    );
 }

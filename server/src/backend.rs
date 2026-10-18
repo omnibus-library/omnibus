@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use axum::{
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Extension, Router,
 };
@@ -251,7 +251,8 @@ pub struct AppState {
     remote_image_config: Arc<db::author_photos::RemoteImageConfig>,
     /// Whether the per-IP limiters built from this state enforce their budgets.
     rate_limits: RateLimits,
-    /// Feeds the Kobo URL origin only. CSRF still reads `auth::csrf::allowed_origins()`.
+    /// Feeds [`AppState::request_origin`], the origin Kobo download URLs and hosted-MCP
+    /// image links are built on. CSRF still reads `auth::csrf::allowed_origins()`.
     /// An `Arc` keeps the per-request clone cheap.
     public_origins: Arc<[String]>,
 }
@@ -299,6 +300,12 @@ impl AppState {
             public_origins: origins.into(),
             ..self
         }
+    }
+
+    /// The origin (`scheme://host`) a request reached the server on, for URLs a
+    /// client outside this process will open; `""` when no host is resolvable.
+    pub fn request_origin(&self, headers: &HeaderMap) -> String {
+        kobo::origin_for(headers, &self.public_origins)
     }
 
     /// SQLite connection pool used by every handler.
