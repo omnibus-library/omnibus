@@ -78,6 +78,7 @@ fn get_info_declares_tools_and_the_confirm_gated_write_surface() {
     assert!(instructions.contains("propose_metadata_changes"));
     assert!(instructions.contains("merge_books"));
     assert!(instructions.contains("search_book_content"));
+    assert!(instructions.contains("list_book_images"));
     assert!(instructions.contains("list_household_readers"));
 }
 

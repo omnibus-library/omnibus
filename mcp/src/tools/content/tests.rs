@@ -7,8 +7,8 @@ use axum::{Json as AxumJson, Router};
 use rmcp::handler::server::wrapper::Parameters;
 
 use omnibus_shared::{
-    ChapterListEntry, ChapterListResponse, ChapterTextResponse, ContentSearchHit,
-    ContentSearchResults,
+    BookImage, BookImageList, BookImageReference, ChapterListEntry, ChapterListResponse,
+    ChapterTextResponse, ContentSearchHit, ContentSearchResults,
 };
 
 use super::*;
@@ -16,7 +16,12 @@ use crate::client::OmnibusClient;
 use crate::config::Config;
 
 /// Every content tool this issue ships, by MCP tool name.
-const EXPECTED_TOOLS: &[&str] = &["list_chapters", "read_chapter_text", "search_book_content"];
+const EXPECTED_TOOLS: &[&str] = &[
+    "list_chapters",
+    "read_chapter_text",
+    "search_book_content",
+    "list_book_images",
+];
 
 async fn login() -> AxumJson<serde_json::Value> {
     AxumJson(serde_json::json!({
@@ -117,6 +122,27 @@ async fn content_search(
     }
 }
 
+async fn images(Path(uuid): Path<String>) -> Result<AxumJson<BookImageList>, StatusCode> {
+    match uuid.as_str() {
+        "uuid-frank" => Ok(AxumJson(BookImageList {
+            book_uuid: uuid,
+            images: vec![BookImage {
+                href: "OEBPS/images/map.png".into(),
+                media_type: "image/png".into(),
+                byte_size: 2048,
+                width: Some(640),
+                height: Some(480),
+                references: vec![BookImageReference {
+                    spine_index: 1,
+                    alt: Some("A map".into()),
+                }],
+            }],
+        })),
+        "uuid-comic" => Err(StatusCode::UNPROCESSABLE_ENTITY),
+        _ => Err(StatusCode::NOT_FOUND),
+    }
+}
+
 /// Boot a stub instance serving the content read routes.
 async fn stub_service() -> OmnibusMcp {
     let app = Router::new()
@@ -126,6 +152,7 @@ async fn stub_service() -> OmnibusMcp {
             "/api/ebooks/{uuid}/chapters/{spine_index}/text",
             get(chapter_text),
         )
+        .route("/api/ebooks/{uuid}/images", get(images))
         .route("/api/search/content", get(content_search));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -414,4 +441,57 @@ async fn read_chapter_text_forwards_stop_at_progress_only_when_asked() {
         .expect("read should succeed");
     assert_eq!(text.0.offset, 10);
     assert!(!text.0.truncated_by_progress, "the stub reports no cut");
+}
+
+#[tokio::test]
+async fn list_book_images_returns_each_image_with_its_references() {
+    let service = stub_service().await;
+    let list = service
+        .list_book_images(Parameters(ListBookImagesParams {
+            book_uuid: "uuid-frank".into(),
+        }))
+        .await
+        .unwrap();
+    assert_eq!(list.0.book_uuid, "uuid-frank");
+    assert_eq!(list.0.images.len(), 1);
+    let image = &list.0.images[0];
+    assert_eq!(image.href, "OEBPS/images/map.png");
+    assert_eq!(image.media_type, "image/png");
+    assert_eq!(
+        (image.byte_size, image.width, image.height),
+        (2048, Some(640), Some(480))
+    );
+    assert_eq!(image.references[0].spine_index, 1);
+    assert_eq!(image.references[0].alt.as_deref(), Some("A map"));
+}
+
+#[tokio::test]
+async fn list_book_images_reports_not_found_for_an_unknown_uuid() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .list_book_images(Parameters(ListBookImagesParams {
+                book_uuid: "uuid-missing".into(),
+            }))
+            .await,
+    );
+    assert_eq!(err.message, "book uuid-missing not found");
+}
+
+#[tokio::test]
+async fn list_book_images_reports_a_book_without_an_epub() {
+    let service = stub_service().await;
+    let err = expect_err(
+        service
+            .list_book_images(Parameters(ListBookImagesParams {
+                book_uuid: "uuid-comic".into(),
+            }))
+            .await,
+    );
+    assert!(
+        err.message.contains("has no EPUB file"),
+        "got: {}",
+        err.message
+    );
+    assert!(err.message.contains("CBZ"), "names what is not covered");
 }

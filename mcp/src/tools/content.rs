@@ -1,7 +1,7 @@
 //! The book-content read tool family: list an EPUB's chapters, read one
-//! chapter's plain text in bounded slices, and full-text search the
-//! library's indexed chapter text. Pure reads over existing `GET` endpoints
-//! — nothing here touches the [`crate::client::WRITE_ALLOWLIST`].
+//! chapter's plain text in bounded slices, full-text search the library's
+//! indexed chapter text, and list an EPUB's images. Pure reads over existing
+//! `GET` endpoints — nothing here touches the [`crate::client::WRITE_ALLOWLIST`].
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router, ErrorData, Json};
@@ -9,15 +9,23 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use omnibus_shared::{
-    ChapterListResponse, ChapterTextResponse, ContentSearchResults, SpoilerFilter,
+    BookImageList, ChapterListResponse, ChapterTextResponse, ContentSearchResults, SpoilerFilter,
 };
 
+use crate::client::ClientError;
 use crate::server::OmnibusMcp;
 
 /// Parameters for the chapter listing.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListChaptersParams {
     /// The book's uuid (the `unique_identifier` field on book records).
+    pub book_uuid: String,
+}
+
+/// Parameters for the image listing.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListBookImagesParams {
+    /// The book's uuid.
     pub book_uuid: String,
 }
 
@@ -53,6 +61,26 @@ fn non_negative(value: i64, what: &str) -> Result<i64, ErrorData> {
         ));
     }
     Ok(value)
+}
+
+/// Map an image endpoint's status to the message that tells the model what to
+/// do next; any other failure surfaces as the client's own error.
+fn image_error(e: ClientError, uuid: &str) -> ErrorData {
+    let message = match &e {
+        ClientError::Status { status: 404, .. } => format!("book {uuid} not found"),
+        ClientError::Status { status: 422, .. } => format!(
+            "book {uuid} has no EPUB file — images are listed from EPUBs only; \
+             CBZ pages and PDF pages are not covered"
+        ),
+        ClientError::Status { status: 400, .. } => "href is not an image in this book's EPUB \
+             manifest; call list_book_images for valid hrefs"
+            .to_string(),
+        ClientError::Status { status: 403, .. } => {
+            "this account is not permitted to download files".to_string()
+        }
+        _ => return ErrorData::from(e),
+    };
+    ErrorData::invalid_params(message, None)
 }
 
 /// Parameters for the content search.
@@ -163,6 +191,23 @@ impl OmnibusMcp {
         let hits: ContentSearchResults =
             self.client.get_json("/api/search/content", &query).await?;
         Ok(Json(hits))
+    }
+
+    #[tool(
+        description = "List the images in a book's EPUB — maps, plates, illustrations, diagrams — each with its href (the image's path inside the EPUB, the handle to fetch it by), media type, byte size, pixel dimensions (absent for an SVG or a header that will not decode) and references: one per spine document that shows it, giving that document's spine_index (the same index list_chapters and read_chapter_text use) and the image's alt text when it has any. Images are ordered by where the book first shows them; ones no chapter shows come last with no references. Covers EPUB only: a book with no EPUB file (CBZ pages, PDF pages, audiobooks) errors rather than answering an empty list. Errors if the uuid is unknown."
+    )]
+    pub async fn list_book_images(
+        &self,
+        Parameters(p): Parameters<ListBookImagesParams>,
+    ) -> Result<Json<BookImageList>, ErrorData> {
+        let uuid = crate::tools::path_segment(&p.book_uuid, "book_uuid")?;
+        let path = format!("/api/ebooks/{uuid}/images");
+        let list = self
+            .client
+            .get_json(&path, &[])
+            .await
+            .map_err(|e| image_error(e, uuid))?;
+        Ok(Json(list))
     }
 }
 
