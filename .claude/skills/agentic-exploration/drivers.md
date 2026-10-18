@@ -114,8 +114,7 @@ with cargo through `scripts/with-dev-env.sh`, which needs Nix.
 Start the devices one at a time — two `up`s for one agent race. A device keeps
 its account's "Mock Kobo" and its `state.json` across runs on purpose: `up`
 reuses it when the state file names this instance and that device's token, and
-otherwise revokes the old one and registers a new one, because a fresh device
-wired to an old server record would sync only changes and miss books (#2743).
+otherwise revokes the old one and registers a new one.
 Teardown includes `kobo.sh down`, which stops every device and keeps the state
 files and logs.
 Give a Kobo agent `surface: kobo`, [`kobo_lane.md`](../../../docs/qa/agentic_exploration/kobo_lane.md)

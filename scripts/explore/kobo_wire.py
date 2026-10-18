@@ -11,8 +11,7 @@ Logs in as `explorer-<k>`, then reuses, creates or recreates the device named
 
 `mock-kobo serve` cannot do this itself: its auto-wire refuses a remote
 instance. A device is reused only when exactly one "Mock Kobo" exists and the
-state file records this instance and that device's token; otherwise a fresh
-device on an old server record would sync only changes (#2743), so the old
+state file records this instance and that device's token; otherwise the old
 ones are revoked first.
 
 Exit 1 means the instance refused or failed; exit 2 is a usage or accounts

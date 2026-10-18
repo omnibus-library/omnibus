@@ -438,7 +438,7 @@ async fn start_reuses_auto_wired_token_when_dev_server_is_unchanged() {
 }
 
 #[tokio::test]
-async fn start_warns_when_new_device_reuses_server_device() {
+async fn start_notes_when_new_device_reuses_server_device() {
     let stub = spawn_stub(Stub {
         devices: vec![("Mock Kobo (kobo)".to_owned(), "tok-a".to_owned())],
         ..Stub::default()
@@ -451,11 +451,10 @@ async fn start_warns_when_new_device_reuses_server_device() {
         .await
         .unwrap();
 
-    let notice = started.notice.unwrap();
-    assert!(notice.contains("Mock Kobo (kobo)"));
-    assert!(notice.contains("only changes"));
-    assert!(notice.contains("#2743"));
-    assert!(notice.contains("remove the device in Account settings"));
+    assert_eq!(
+        started.notice.as_deref(),
+        Some("wired a new local device to the existing Omnibus device \"Mock Kobo (kobo)\"")
+    );
 }
 
 #[tokio::test]

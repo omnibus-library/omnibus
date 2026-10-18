@@ -112,8 +112,8 @@ fn wired_status(
 fn wired_message(device_name: &str, reused: bool) -> String {
     if reused {
         format!(
-            "wired to the existing Omnibus device \"{device_name}\": its next sync sends only \
-             changes until #2743; for a full resend, remove it in Account settings and press w"
+            "wired to the existing Omnibus device \"{device_name}\"; press r before the next \
+             sync for a full resend"
         )
     } else {
         format!("wired to the new Omnibus device \"{device_name}\"")

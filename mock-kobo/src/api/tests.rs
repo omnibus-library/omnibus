@@ -441,7 +441,7 @@ fn empty_device_view() -> DeviceView {
 }
 
 #[test]
-fn reset_reply_is_reset_with_full_resend_workaround() {
+fn reset_reply_is_reset_and_promises_a_full_resend() {
     let reply = reset_reply(Ok(empty_device_view()));
 
     let body = wire(&reply);
@@ -458,9 +458,10 @@ fn reset_reply_is_reset_with_full_resend_workaround() {
             "library": {},
         })
     );
-    let message = body["message"].as_str().unwrap();
-    assert!(message.contains("#2743"));
-    assert!(message.contains("remove the device in Account settings and add it again"));
+    assert_eq!(
+        body["message"],
+        "device reset; the next sync sends every opted-in book again"
+    );
 }
 
 #[test]

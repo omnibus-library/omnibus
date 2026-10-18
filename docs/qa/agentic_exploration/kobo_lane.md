@@ -41,10 +41,7 @@ The actions today:
 | `show` | Reads the device | `details.library` (every book, keyed by uuid) and `details.last_sync` |
 
 Reading position, highlights and downloads arrive as new rows in this table
-with #2725, #2726 and #2738. **A reset is deliberately not there.** A reset
-wipes the device, but Omnibus still remembers what it sent, so the next sync
-would send only changes and leave books missing (#2743), and the audit would
-blame Omnibus for it.
+with #2725, #2726 and #2738. **A reset is deliberately not there.**
 
 ## Reading a reply
 
@@ -113,9 +110,7 @@ is never judged.
   shelf stopped syncing, and a shelf an earlier run left switched on still
   counts. When a checkout's state file does not match the account's "Mock Kobo"
   (a new worktree, a changed `OMNIBUS_EXPLORE_URL`, another checkout that wired
-  the account since), `kobo.sh up` revokes it and registers a new one: a fresh
-  device reusing an old server record would sync only changes (#2743) and miss
-  books.
+  the account since), `kobo.sh up` revokes it and registers a new one.
 - **Newest wins by event time, not arrival time.** Once reading state is
   driven from the device, the `LastModified` on a device write is what the
   server arbitrates against, and a write older than the browser's own last

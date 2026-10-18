@@ -273,10 +273,8 @@ sync is always waited for, so the pages Omnibus recorded are saved; one more
 <kbd>Ctrl-C</kbd> kills the process.
 
 > [!NOTE]
-> Reset empties the device, but Omnibus still remembers what it delivered, so
-> the next sync sends only changes (until #2743). For a full resend, remove the
-> device in **Account settings** and press <kbd>w</kbd> (or point a fresh state
-> file at it).
+> Reset empties the device and drops its sync token, so the next sync sends
+> every opted-in book again.
 
 For a second device, give it its own state file; inside the gitignored
 `.claude/runtime/`, because a state file holds the device token:
