@@ -93,7 +93,7 @@ pub fn CleanupReviewPage(kind: String) -> Element {
     let counts = use_signal(|| None::<Vec<(CleanupKind, CleanupCounts)>>);
 
     spawn_queue_fetch(access, server_url.clone(), parsed, state);
-    spawn_counts_fetch(access, server_url.clone(), counts);
+    spawn_counts_fetch(access, server_url.clone(), counts, state.generation);
     sync_draft_to_card(state);
 
     rsx! {
@@ -174,6 +174,8 @@ fn spawn_queue_fetch(
         }
         let server_url = server_url.clone();
         error.set(None);
+        // Back to loading, so a refetch after an undo never shows the list it replaces.
+        cards.set(None);
         cursor.set(0);
         spawn(async move {
             let Some(kind) = kind else {
@@ -198,8 +200,10 @@ fn spawn_counts_fetch(
     access: ReadSignal<Access>,
     server_url: String,
     mut counts: Signal<Option<Vec<(CleanupKind, CleanupCounts)>>>,
+    generation: Signal<u32>,
 ) {
     use_effect(move || {
+        let _ = generation();
         if access() != Access::Allowed {
             return;
         }
