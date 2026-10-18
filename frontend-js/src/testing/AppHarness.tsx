@@ -22,6 +22,8 @@ type AppHarnessProps = {
   children: ReactNode;
   user?: User | null;
   path?: string;
+  /** False for a story that brings its own data router (an error page). */
+  router?: boolean;
 };
 
 /** What a screen expects around it in the app: a session and a router. */
@@ -29,11 +31,16 @@ export function AppHarness({
   children,
   user = ADA,
   path = "/",
+  router = true,
 }: AppHarnessProps) {
   const [client] = useState(() => harnessClient(user));
   return (
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+      {router ? (
+        <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+      ) : (
+        children
+      )}
     </QueryClientProvider>
   );
 }

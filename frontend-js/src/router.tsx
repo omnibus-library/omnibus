@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
+import { RouteError } from "./components/RouteError/RouteError";
 import { AppShell } from "./layouts/AppShell";
 import { RequireAuth } from "./layouts/RequireAuth";
 import { Account } from "./pages/Account/Account";
@@ -29,45 +30,60 @@ import { Stats } from "./pages/Stats/Stats";
 import { StatsChart } from "./pages/StatsChart/StatsChart";
 
 // Mirrors frontend/src/routes.rs: the readers and the player fill the screen,
-// everything else sits under the top bar.
+// everything else sits under the top bar. Two error boundaries: one inside the
+// shell, so a page that throws keeps the top bar, and one at the root for
+// everything else (the session gate, the shell itself, the readers).
 export const routes: RouteObject[] = [
-  { path: "/login", element: <Login /> },
-  { path: "/register", element: <Register /> },
-  { path: "/connect", element: <Connect /> },
   {
-    element: <RequireAuth />,
+    errorElement: <RouteError />,
     children: [
-      { path: "/read/:uuid", element: <Reader /> },
-      { path: "/comic/:uuid", element: <ComicReader /> },
-      { path: "/pdf/:uuid", element: <PdfReader /> },
-      { path: "/listen/:uuid", element: <Listen /> },
+      { path: "/login", element: <Login /> },
+      { path: "/register", element: <Register /> },
+      { path: "/connect", element: <Connect /> },
       {
-        path: "/logs",
-        element: <Navigate to="/settings?section=logs" replace />,
-      },
-      {
-        element: <AppShell />,
+        element: <RequireAuth />,
         children: [
-          { path: "/", element: <Library /> },
-          { path: "/books/:uuid", element: <BookDetail /> },
-          { path: "/books/:uuid/edit", element: <BookEdit /> },
-          { path: "/authors", element: <Authors /> },
-          { path: "/authors/:id", element: <AuthorDetail /> },
-          { path: "/series", element: <Series /> },
-          { path: "/series/:id", element: <SeriesDetail /> },
-          { path: "/stats", element: <Stats /> },
-          { path: "/stats/chart", element: <StatsChart /> },
-          { path: "/shelves", element: <Shelves /> },
-          { path: "/shelves/:id", element: <ShelfDetail /> },
-          { path: "/search", element: <Search /> },
-          { path: "/search/:query", element: <Search /> },
-          { path: "/settings", element: <Settings /> },
-          { path: "/settings/cleanup/:kind", element: <CleanupReview /> },
-          { path: "/admin/health", element: <AdminHealth /> },
-          { path: "/account", element: <Account /> },
-          { path: "/add-books", element: <AddBooks /> },
-          { path: "/check-in", element: <CheckIn /> },
-          { path: "*", element: <NotFound /> },
+          { path: "/read/:uuid", element: <Reader /> },
+          { path: "/comic/:uuid", element: <ComicReader /> },
+          { path: "/pdf/:uuid", element: <PdfReader /> },
+          { path: "/listen/:uuid", element: <Listen /> },
+          {
+            path: "/logs",
+            element: <Navigate to="/settings?section=logs" replace />,
+          },
+          {
+            element: <AppShell />,
+            children: [
+              {
+                errorElement: <RouteError />,
+                children: [
+                  { path: "/", element: <Library /> },
+                  { path: "/books/:uuid", element: <BookDetail /> },
+                  { path: "/books/:uuid/edit", element: <BookEdit /> },
+                  { path: "/authors", element: <Authors /> },
+                  { path: "/authors/:id", element: <AuthorDetail /> },
+                  { path: "/series", element: <Series /> },
+                  { path: "/series/:id", element: <SeriesDetail /> },
+                  { path: "/stats", element: <Stats /> },
+                  { path: "/stats/chart", element: <StatsChart /> },
+                  { path: "/shelves", element: <Shelves /> },
+                  { path: "/shelves/:id", element: <ShelfDetail /> },
+                  { path: "/search", element: <Search /> },
+                  { path: "/search/:query", element: <Search /> },
+                  { path: "/settings", element: <Settings /> },
+                  {
+                    path: "/settings/cleanup/:kind",
+                    element: <CleanupReview />,
+                  },
+                  { path: "/admin/health", element: <AdminHealth /> },
+                  { path: "/account", element: <Account /> },
+                  { path: "/add-books", element: <AddBooks /> },
+                  { path: "/check-in", element: <CheckIn /> },
+                  { path: "*", element: <NotFound /> },
+                ],
+              },
+            ],
+          },
         ],
       },
     ],

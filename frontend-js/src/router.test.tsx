@@ -1,21 +1,48 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router";
-import { describe, expect, it } from "vitest";
+import {
+  createMemoryRouter,
+  type RouteObject,
+  RouterProvider,
+} from "react-router";
+import { describe, expect, it, vi } from "vitest";
 import type { User } from "./api";
 import { routes } from "./router";
 import { ADA, harnessClient } from "./testing/AppHarness";
 
 const UUID = "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0";
 
-function renderRoute(path: string, user: User | null = ADA) {
-  const router = createMemoryRouter(routes, { initialEntries: [path] });
+function renderRoute(
+  path: string,
+  user: User | null = ADA,
+  table: RouteObject[] = routes,
+) {
+  const router = createMemoryRouter(table, { initialEntries: [path] });
   render(
     <QueryClientProvider client={harnessClient(user)}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
   return router;
+}
+
+function Collapse(): never {
+  throw new Error("The shelf collapsed.");
+}
+
+// A copy of `table` with `extra` added to the route list that holds `sibling`.
+function withRoute(
+  table: RouteObject[],
+  sibling: string,
+  extra: RouteObject,
+): RouteObject[] {
+  return table.map((route) => {
+    if (route.index || !route.children) return route;
+    if (route.children.some((child) => child.path === sibling)) {
+      return { ...route, children: [extra, ...route.children] };
+    }
+    return { ...route, children: withRoute(route.children, sibling, extra) };
+  });
 }
 
 describe("routes", () => {
@@ -91,6 +118,44 @@ describe("routes", () => {
         expect(router.state.location.pathname).toBe("/login"),
       );
       expect(router.state.location.search).toBe("?next=%2Fshelves%2F9");
+    });
+  });
+
+  describe("error pages", () => {
+    it("keeps the top bar when a page throws", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const table = withRoute(routes, "*", {
+        path: "/boom",
+        element: <Collapse />,
+      });
+
+      renderRoute("/boom", ADA, table);
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "The shelf collapsed.",
+      );
+      expect(
+        screen.getByRole("navigation", { name: "Primary" }),
+      ).toBeInTheDocument();
+      vi.restoreAllMocks();
+    });
+
+    it("shows a full-screen route's error without the top bar", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const table = withRoute(routes, "/read/:uuid", {
+        path: "/boom",
+        element: <Collapse />,
+      });
+
+      renderRoute("/boom", ADA, table);
+
+      expect(
+        await screen.findByRole("heading", { name: "Something went wrong" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("navigation", { name: "Primary" }),
+      ).not.toBeInTheDocument();
+      vi.restoreAllMocks();
     });
   });
 

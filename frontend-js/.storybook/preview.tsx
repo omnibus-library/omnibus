@@ -49,13 +49,15 @@ const preview = {
     a11y: { test: "todo" },
   },
   // Every story renders inside the app's session, router and `.atrium` root.
-  // A story sets `parameters.user` or `parameters.path` to change either.
+  // A story sets `parameters.user` or `parameters.path` to change either, or
+  // `parameters.ownRouter` when it renders a data router of its own.
   decorators: [
     (Story, { id, globals, parameters }) => (
       <AppHarness
         key={id}
         user={storyUser(parameters.user)}
         path={typeof parameters.path === "string" ? parameters.path : "/"}
+        router={parameters.ownRouter !== true}
       >
         <div
           className="atrium"

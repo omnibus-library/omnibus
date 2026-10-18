@@ -30,6 +30,8 @@ same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 the library, book detail and Not Found are ported; every other route renders
 `Unported`, which shows its parsed parameters and names its Dioxus source.
+A page that throws renders `RouteError` inside the top bar; anything else that
+throws (the session gate, the shell, a reader) renders it full-screen.
 
 ## Styling, copied out of Atrium
 
@@ -60,6 +62,10 @@ IP=127.0.0.1 PORT=3460 OMNIBUS_DEV_SEED_USER=admin:poc-password-2026 \
 cd frontend-js && pnpm install
 OMNIBUS_PORT=3460 pnpm exec vite --port 3461
 ```
+
+**Or beside `just serve`.** Its `react` pane (suspended until you start it),
+or `just react` in another terminal, waits for this worktree's server and runs
+Vite on the port the server pane reserved for it, proxying `/api` there.
 
 **Or let the server serve it.** `pnpm run build` writes `dist/` for `/react/`;
 start the server with `OMNIBUS_REACT_DIR=$PWD/frontend-js/dist` and the React
