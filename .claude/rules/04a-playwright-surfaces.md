@@ -170,6 +170,21 @@ POSTs nothing for position (the ready report is treated as already saved) but
 does write read status `reading` on an unread book — pre-set `flatland` to
 `reading` in `beforeAll` (the comic spec's pattern) or assert that write.
 
+**Settings and Administration are one shell, two routes.** `/settings?section=`
+holds the five personal sections (`settings-nav-<slug>`), `/admin?section=&tab=`
+the server ones (`admin-nav-<slug>`, Health's `health-tab-<slug>`); pre-split
+slugs redirect, so a spec opens the new URL directly. Three things trip specs:
+
+- **Under 720px the list and the section never share the screen.** With no
+  `?section=` only the sidebar renders; with one, only the section and its
+  `settings-back` link. A narrow spec names the section in the URL.
+- **A sidebar click over unsaved edits doesn't navigate** — it opens
+  `unsaved-confirm` (`unsaved-keep` / `unsaved-discard`).
+- **Preferences has no Save button.** Each switch saves on change and reports
+  in `{slug}-status`; hidden formats is a `fieldset` (`getByRole("group")`) of
+  `hidden-format-toggle-<fmt>` that POSTs on every change, and All Books shows
+  `lib-hidden-formats` only while the viewer hides one.
+
 **The filter bar and what reads its saved filter** (chips, the Add filter
 dialog, the shelf lens and `/shelves/:id` states) have their own file:
 [04c-playwright-filters.md](04c-playwright-filters.md).

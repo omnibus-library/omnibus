@@ -4658,16 +4658,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   cursor: pointer;
 }
 
-/* The per-user feature switches, one row each — the list is expected to
-   grow, so the name and its current meaning read as a column rather than as
-   a heading per setting. */
-.settings-table .settings-row-name { color: var(--ink-0); }
-.settings-table .settings-row-note {
-  margin-top: 3px;
-  font-size: 0.8rem;
-  color: var(--ink-3);
-}
-.settings-table .settings-col-switch { text-align: right; width: 1%; white-space: nowrap; }
 .settings-switch input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
