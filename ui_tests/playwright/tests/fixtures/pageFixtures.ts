@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type {
   APIRequest,
@@ -19,6 +19,7 @@ import { BookRatingRequests } from "../apiRequests/BookRatingRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { GoalsRequests } from "../apiRequests/GoalsRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
+import { JournalsRequests } from "../apiRequests/JournalsRequests";
 import { LogViewerRequests } from "../apiRequests/LogViewerRequests";
 import { McpRequests } from "../apiRequests/McpRequests";
 import { MergeRequests } from "../apiRequests/MergeRequests";
@@ -29,6 +30,7 @@ import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
+import { UploadsRequests } from "../apiRequests/UploadsRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
 import type {
   CreatedApiToken,
@@ -37,12 +39,13 @@ import type {
 } from "../data/account";
 import { type BookRecord, isAudioFormat } from "../data/bookDetail";
 import type { SeededBookmark } from "../data/bookmarks";
-import type { LibraryBook } from "../data/ebooks";
+import type { LibraryBook, UploadedEbook } from "../data/ebooks";
 import {
   buildHighlight,
   type NewHighlight,
   type SeededHighlight,
 } from "../data/highlights";
+import type { JournalEntryRef, JournalStatus } from "../data/journals";
 import type { MetadataProvider } from "../data/metadataKeys";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
@@ -74,6 +77,7 @@ import {
 } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
+import { fixturesDir } from "../utils/seed";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK } from "./dual_format";
 import {
@@ -209,6 +213,16 @@ type PageFixtures = {
   // #endregion batch-C
 
   // #region batch-D: book detail writes
+  journalsRequests: JournalsRequests;
+  uploadsRequests: UploadsRequests;
+  createdJournalIds: Set<number>;
+  journalEntryOn: (
+    bookUuid: string,
+    body: string,
+    status?: JournalStatus,
+  ) => Promise<JournalEntryRef>;
+  uploadedEbook: UploadedEbook;
+  bookExists: (bookUuid: string) => Promise<boolean>;
   // #endregion batch-D
 
   // #region batch-E: metadata edit
@@ -983,6 +997,60 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-C
 
   // #region batch-D: book detail writes
+  journalsRequests: async ({ request }, use) => {
+    await use(new JournalsRequests(request));
+  },
+  uploadsRequests: async ({ request }, use) => {
+    await use(new UploadsRequests(request));
+  },
+
+  createdJournalIds: async ({ journalsRequests }, use) => {
+    const ids = new Set<number>();
+    await use(ids);
+    for (const id of ids) {
+      const deleted = await journalsRequests.deleteJournal(id);
+      await expect(deleted, `delete journal entry ${id}`).toBeOK();
+    }
+  },
+
+  journalEntryOn: async ({ journalsRequests, createdJournalIds }, use) => {
+    await use(async (bookUuid, body, status = "published") => {
+      const created = await journalsRequests.postJournal(
+        bookUuid,
+        body,
+        status,
+      );
+      await expect(created, "seed journal entry").toBeOK();
+      const entry: JournalEntryRef = await created.json();
+      createdJournalIds.add(entry.id);
+      return entry;
+    });
+  },
+
+  // Removes the folder after a failure too, so no upload outlives the run
+  // inside the committed fixtures tree.
+  uploadedEbook: async ({ uploadsRequests }, use) => {
+    const folder = join(fixturesDir(), "delete-spec");
+    const uploaded = await uploadsRequests.postEbook({
+      fileName: "deletable.epub",
+      epub: readFileSync(join(fixturesDir(), "generated", "alpha.epub")),
+      title: "Deletable Test Volume",
+      author: "Delete Spec",
+    });
+    expect(uploaded.status(), "upload the deletable ebook").toBe(201);
+    const { uuid }: { uuid: string } = await uploaded.json();
+    await use({ uuid, folder });
+    rmSync(folder, { recursive: true, force: true });
+  },
+
+  bookExists: async ({ request }, use) => {
+    const ebooks = new EbooksRequests(request);
+    await use(async (bookUuid) => {
+      const detail = await ebooks.postEbookDetail(bookUuid);
+      if (detail.status() !== 200) return false;
+      return (await detail.json()) !== null;
+    });
+  },
   // #endregion batch-D
 
   // #region batch-E: metadata edit

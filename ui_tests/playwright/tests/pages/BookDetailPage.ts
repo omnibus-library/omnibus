@@ -3,10 +3,15 @@ import { BookDetailStopsComponent } from "../components/BookDetailStopsComponent
 import { BookExportComponent } from "../components/BookExportComponent";
 import { BookSummaryComponent } from "../components/BookSummaryComponent";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
+import { DeleteFilesDialogComponent } from "../components/DeleteFilesDialogComponent";
 import { FormatSwitcherComponent } from "../components/FormatSwitcherComponent";
 import { FromSameHandComponent } from "../components/FromSameHandComponent";
 import { HeroChipsComponent } from "../components/HeroChipsComponent";
+import { JournalEntryOverlayComponent } from "../components/JournalEntryOverlayComponent";
+import { JournalSectionComponent } from "../components/JournalSectionComponent";
 import { ListenFilePickerComponent } from "../components/ListenFilePickerComponent";
+import { MergeDialogComponent } from "../components/MergeDialogComponent";
+import { PhysicalCopyCardComponent } from "../components/PhysicalCopyCardComponent";
 import { QuoteCardModalComponent } from "../components/QuoteCardModalComponent";
 import { RatingComponent } from "../components/RatingComponent";
 import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
@@ -14,9 +19,11 @@ import { SavedPassageCardComponent } from "../components/SavedPassageCardCompone
 import { SavedPassagesComponent } from "../components/SavedPassagesComponent";
 import { SuggestionsStripComponent } from "../components/SuggestionsStripComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { WishlistCardComponent } from "../components/WishlistCardComponent";
 import { physicalUrls } from "../contracts/physical";
+import type { CopyRow, WishlistRow } from "../data/physical";
 import { expect } from "../fixtures/test";
-import { isPostTo } from "../utils/api";
+import { type ExpectMutationOptions, isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 export class BookDetailPage extends BasePage {
@@ -210,6 +217,35 @@ export class BookDetailPage extends BasePage {
   // #endregion batch-C
 
   // #region batch-D: book detail writes
+  readonly journal = new JournalSectionComponent(this.page);
+  readonly journalEntry = new JournalEntryOverlayComponent(this.page);
+  readonly deleteFilesDialog = new DeleteFilesDialogComponent(this.page);
+  readonly mergeDialog = new MergeDialogComponent(this.page);
+  readonly wishlist = new WishlistCardComponent(this.page);
+  readonly physicalCopy = new PhysicalCopyCardComponent(this.page);
+
+  readonly editMetadataLink = this.page.getByTestId("edit-metadata");
+  readonly formatBadges = this.page.getByTestId("format-badge");
+  readonly notFoundMessage = this.page.getByText("Book not found.");
+
+  /** The copies-list row for a format, such as `MP3`. */
+  formatRow(format: string): Locator {
+    return this.page.locator(`[data-format="${format}"]`).first();
+  }
+
+  /** Answers the panel's two on-mount reads, so a stub fixes what it settles on. */
+  async stubPhysicalLoad(
+    copies: CopyRow[],
+    wishlist: WishlistRow | null,
+  ): Promise<void> {
+    await this.physicalCopy.stubLoad(copies);
+    await this.wishlist.stubLoad(wishlist);
+  }
+
+  /** Lets requests `contract` describes through again after a forced error. */
+  async stopForcingServerError(contract: ExpectMutationOptions): Promise<void> {
+    await this.page.unroute(contract.url);
+  }
   // #endregion batch-D
 
   // #region batch-E: metadata edit
