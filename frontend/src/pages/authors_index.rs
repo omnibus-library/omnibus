@@ -1,485 +1,471 @@
-//! Authors index page. Lists every author in the library as a browsable
-//! surface, mirroring the `AuthorsIndex` design comp from
-//! `screens/indices.jsx`.
+//! The authors browser: every author in a surname-ordered list beside the
+//! chosen author's page. [`AuthorsBrowser`] is drawn by the router layout both
+//! `/authors` and `/authors/:id` render inside, so the list — its scroll,
+//! filter and sort — stays put while the reader moves between authors; the
+//! route only swaps the pane. `/authors` itself previews
+//! [`order::default_author`] in that pane ([`AuthorsIndexPage`]).
+//!
+//! The list's rows are library-wide; the reader's own progress through each
+//! author (the bars, the Reading filter, the Recent sort) is a second,
+//! per-reader request, and stays unknown — never zero — until it lands.
 
 use dioxus::prelude::*;
-use dioxus_router::Link;
-use omnibus_shared::sort_order::{creator_sort_key, dictionary_cmp};
-use omnibus_shared::{text_fold::fold_for_match, AuthorSummary, IndexSort};
+use dioxus_router::{Link, Outlet};
+use omnibus_shared::{AuthorReading, AuthorSort, AuthorSummary};
 
-use super::index_shell::{
-    index_card_stats, index_page_early_return, use_index_page_shell, IndexFilterInput,
-    IndexPageState, IndexSortToggle,
-};
+use super::index_shell::{use_index_page_shell, IndexPageState};
+use super::AuthorPage;
+use crate::components::loading::RowSkeletons;
+use crate::components::{Loading, LoadingKind};
 use crate::{data, index_prefs, use_server_url, Route};
 
-/// Library-wide totals rendered in the header's subtitle. Grouped so the
-/// header doesn't grow a long `total_*` prop list.
-#[derive(Clone, PartialEq, Eq)]
-struct AuthorIndexCounts {
-    total_authors: usize,
-    /// Σ of each author's `book_count` — author–book *credits*, not distinct
-    /// titles: a two-creator book contributes one credit per creator. Named
-    /// and labelled for what it holds so the header can't misreport it as a
-    /// book count. A true distinct-book total isn't derivable here —
-    /// the `AuthorSummary` list carries no per-book identity.
-    total_credits: usize,
-}
+mod order;
+mod rail;
 
-/// Owned output of the filter/sort/group-by-letter pipeline, memoized as a
-/// single unit (mirrors `landing.rs`'s `visible = use_memo(...)`) so none of
-/// the three steps reruns on a render the filter/sort/source didn't touch.
+use order::{
+    compute_author_groups, default_author, first_letter, letter_frag, name_parts, AuthorGroups,
+    ListQuery, ReadingMap,
+};
+use rail::LetterRail;
+
+/// The reader's progress per author: unknown until its request returns, and
+/// unknown for good if it fails — never an empty map, which would claim
+/// "read nothing".
 #[derive(Clone, PartialEq)]
-struct AuthorGroups {
-    filtered: Vec<AuthorSummary>,
-    letters: Vec<(char, Vec<AuthorSummary>)>,
+enum ReadingState {
+    Pending,
+    Ready(ReadingMap),
+    Failed,
 }
 
-/// Filter + sort + alphabet-strip state for the header. The strip's
-/// visibility, glyphs, and footnote totals all change together as the
-/// filtered set changes, so they ride the same struct.
-#[derive(Clone, PartialEq, Eq)]
-struct AuthorIndexFilter {
-    filter: String,
-    sort: IndexSort,
-    show_letters: bool,
-    alphabet: Vec<char>,
-    present_letters: std::collections::HashSet<char>,
-    letter_count: usize,
-    filtered_count: usize,
+impl ReadingState {
+    fn ready(&self) -> Option<&ReadingMap> {
+        match self {
+            Self::Ready(map) => Some(map),
+            _ => None,
+        }
+    }
 }
 
-/// Authors index page — browse all authors in the library.
+/// Which author `/authors` previews before the reader picks one.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Preview {
+    /// The list or the reader's progress is still loading.
+    Pending,
+    /// No author to show: an empty library, or a list that failed to load.
+    Empty,
+    Author(i64),
+}
+
+/// What the layout shares with the pane below it: `/authors`' [`Preview`],
+/// and the rows, so a delete can drop its author from the mounted list.
+#[derive(Clone, Copy)]
+struct AuthorsListContext {
+    preview: Memo<Preview>,
+    // Read only by the web-only delete, through `use_forget_author`.
+    #[cfg_attr(feature = "mobile", allow(dead_code))]
+    authors: Signal<Vec<AuthorSummary>>,
+}
+
+/// Drops a deleted author from the mounted list, so neither its row nor the
+/// preview outlives the delete. A no-op outside the authors layout.
+#[cfg(not(feature = "mobile"))]
+pub fn use_forget_author() -> impl FnMut(i64) + Copy {
+    let ctx = try_use_context::<AuthorsListContext>();
+    move |id| {
+        if let Some(mut ctx) = ctx {
+            ctx.authors.write().retain(|a| a.id != id);
+        }
+    }
+}
+
+/// List + pane for both author routes; `routed` is `/authors/:id`'s id.
 #[component]
-pub fn AuthorsIndexPage() -> Element {
+pub fn AuthorsBrowser(routed: Option<i64>) -> Element {
     let server_url = use_server_url();
-    let server_url_for_cards = server_url.clone();
-    let fetch_url = server_url;
-    let shell = use_index_page_shell(
-        move || {
-            let url = fetch_url.clone();
-            async move { data::list_authors(&url).await }
-        },
-        || index_prefs::load().authors_sort,
-    );
+    let fetch_url = server_url.clone();
     let IndexPageState {
         items: authors,
         loading,
         error,
         mut filter,
         mut sort,
-    } = shell;
+    } = use_index_page_shell(
+        move || {
+            let url = fetch_url.clone();
+            async move { data::list_authors(&url).await }
+        },
+        || index_prefs::load().authors_sort,
+    );
+    let reading = use_author_reading(server_url);
+    let mut only_reading = use_signal(|| false);
 
-    if let Some(early) = index_page_early_return(loading, error, "Gathering every author") {
-        return early;
-    }
-
-    // Borrow the signal's contents instead of cloning. The list can hold
-    // up to `INDEX_LIMIT` (10k) rows; copying the whole `Vec` on every
-    // re-render (which fires on each keystroke in the filter input) would
-    // be wasted work. `Signal::read` hands back a guard that derefs to
-    // `&Vec<AuthorSummary>` and the rsx! tree only needs borrowed views.
-    let all = authors.read();
-    let total_authors = all.len();
-    let any_in_library = !all.is_empty();
-    drop(all);
-
-    // Σ per-author book counts = author–book credits (a multi-creator book
-    // adds one credit per creator), NOT distinct titles — the header labels
-    // it "credits" so the figure isn't a wrong book count (#2292). Memoized
-    // separately from the filter/sort/group-by pipeline below: unaffected by
-    // the filter text or sort key, so tying it to that memo would recompute it
-    // on every keystroke for no reason.
-    let total_credits =
-        use_memo(move || authors.read().iter().map(|a| a.book_count).sum::<usize>());
-
-    // Group by first letter of sort key (last name when available, else
-    // name); only meaningful when sorting by name. Folded into the same
-    // memo as filter/sort so none of the three steps reruns on a render
-    // that didn't touch authors/filter/sort (mirrors `landing.rs`'s
-    // `visible = use_memo(...)`).
-    let show_letters = matches!(sort(), IndexSort::Name);
-    let groups = use_memo(move || {
-        let all = authors.read();
-        compute_author_groups(&all, &filter.read(), sort())
+    // Waits for the progress too, so the preview never lands on one author
+    // and then jumps to the one the reader was actually reading.
+    let preview = use_memo(move || {
+        if error.read().is_some() {
+            return Preview::Empty;
+        }
+        if loading() || *reading.read() == ReadingState::Pending {
+            return Preview::Pending;
+        }
+        default_author(&authors.read(), reading.read().ready())
+            .map_or(Preview::Empty, Preview::Author)
     });
-    let groups_ref = groups.read();
-    let AuthorGroups { filtered, letters } = &*groups_ref;
+    use_context_provider(|| AuthorsListContext { preview, authors });
+    let shown = routed.or(match preview() {
+        Preview::Author(id) => Some(id),
+        _ => None,
+    });
 
-    let counts = AuthorIndexCounts {
-        total_authors,
-        total_credits: total_credits(),
-    };
-    let filter_state = build_filter_state(filter(), sort(), show_letters, letters, filtered.len());
+    let groups = use_memo(move || {
+        let state = reading.read();
+        compute_author_groups(
+            &authors.read(),
+            ListQuery {
+                text: &filter.read(),
+                sort: sort(),
+                reading: state.ready(),
+                only_reading: only_reading(),
+            },
+        )
+    });
+    let reading_count = reading
+        .read()
+        .ready()
+        .map(|m| m.values().filter(|r| r.reading > 0).count());
+    let total = (!loading() && error.read().is_none()).then(|| authors.read().len());
+    use_reveal_current_row(loading);
 
     rsx! {
-        div { class: "idx-page",
-            AuthorsIndexHeader {
-                counts,
-                filter_state,
-                on_filter: move |v| filter.set(v),
-                on_sort: move |s: IndexSort| {
-                    sort.set(s);
-                    let mut prefs = index_prefs::load();
-                    prefs.authors_sort = s;
-                    index_prefs::save(&prefs);
-                },
-            }
-            {authors_index_body(filtered, letters, show_letters, any_in_library, &server_url_for_cards)}
-        }
-    }
-}
-
-/// Assembles the alphabet-strip + filter/sort state passed to the header.
-/// The A–Z run gets a single `#` bucket after Z for names whose
-/// surname-equivalent doesn't start with an ASCII letter (digits,
-/// punctuation, accented mononyms).
-fn build_filter_state(
-    filter_text: String,
-    sort: IndexSort,
-    show_letters: bool,
-    letters: &[(char, Vec<AuthorSummary>)],
-    filtered_count: usize,
-) -> AuthorIndexFilter {
-    let alphabet: Vec<char> = ('A'..='Z').chain(std::iter::once('#')).collect();
-    let present_letters: std::collections::HashSet<char> =
-        letters.iter().map(|(l, _)| *l).collect();
-    AuthorIndexFilter {
-        filter: filter_text,
-        sort,
-        show_letters,
-        alphabet,
-        present_letters,
-        letter_count: letters.len(),
-        filtered_count,
-    }
-}
-
-/// Header subtitle. The second figure counts author–book *credits* (Σ of each
-/// author's book count), not distinct titles — a multi-creator book adds one
-/// credit per creator — so it is labelled "credits" rather than "books" to
-/// avoid a count that inflates past the real title total.
-fn index_subtitle(total_authors: usize, total_credits: usize) -> String {
-    format!(
-        "{total_authors} authors \u{b7} {total_credits} author credits \u{b7} the people in your shelves."
-    )
-}
-
-/// Filter → sort → group-by-letter pipeline, folded into one step so the
-/// `use_memo` above reruns once per authors/filter/sort change rather than
-/// three times (mirrors `landing.rs`'s `visible = use_memo(...)`).
-fn compute_author_groups(all: &[AuthorSummary], query: &str, sort: IndexSort) -> AuthorGroups {
-    let q = fold_for_match(query);
-    let mut filtered = filter_authors(all, &q);
-    sort_authors(&mut filtered, sort);
-    let filtered: Vec<AuthorSummary> = filtered.into_iter().cloned().collect();
-    let letters = group_by_letter(&filtered, matches!(sort, IndexSort::Name));
-    AuthorGroups { filtered, letters }
-}
-
-/// Client-side name filter (case-insensitive substring match).
-fn filter_authors<'a>(all: &'a [AuthorSummary], query: &str) -> Vec<&'a AuthorSummary> {
-    if query.is_empty() {
-        all.iter().collect()
-    } else {
-        all.iter()
-            .filter(|a| fold_for_match(&a.name).contains(query))
-            .collect()
-    }
-}
-
-/// Sorts `filtered` in place along the selected axis.
-fn sort_authors(filtered: &mut [&AuthorSummary], sort: IndexSort) {
-    match sort {
-        // Within IndexSort::Name the primary axis is the sort_key bucket:
-        // alpha first (`is_alpha_bucket` → false sorts before true),
-        // non-alpha (digits, punctuation, non-Latin scripts, etc.)
-        // trail at the end under the '#' section. Secondary axis is
-        // the key in the library's dictionary order, so cards stay
-        // alphabetical within their letter group and agree with the
-        // library's Author sort.
-        IndexSort::Name => filtered.sort_by(|a, b| {
-            let ka = sort_key(a);
-            let kb = sort_key(b);
-            is_non_alpha_key(&ka)
-                .cmp(&is_non_alpha_key(&kb))
-                .then_with(|| dictionary_cmp(&ka, &kb))
-        }),
-        IndexSort::BookCount => filtered.sort_by(|a, b| {
-            b.book_count
-                .cmp(&a.book_count)
-                .then_with(|| dictionary_cmp(&sort_key(a), &sort_key(b)))
-        }),
-    }
-}
-
-/// Buckets `filtered` by first letter of `sort_key`; empty when `show_letters`
-/// is false. Owned (not borrowed) so the result can live inside the
-/// `use_memo` pipeline in `AuthorsIndexPage` alongside `filtered`.
-fn group_by_letter(
-    filtered: &[AuthorSummary],
-    show_letters: bool,
-) -> Vec<(char, Vec<AuthorSummary>)> {
-    let mut letters: Vec<(char, Vec<AuthorSummary>)> = Vec::new();
-    if show_letters {
-        for a in filtered {
-            let l = first_letter(a);
-            match letters.last_mut() {
-                Some((existing, group)) if *existing == l => group.push(a.clone()),
-                _ => letters.push((l, vec![a.clone()])),
-            }
-        }
-    }
-    letters
-}
-
-/// Body section (plain fn, not `#[component]`, so it can borrow `filtered`
-/// and `letters` directly instead of cloning them again for a child prop).
-fn authors_index_body<'a>(
-    filtered: &'a [AuthorSummary],
-    letters: &'a [(char, Vec<AuthorSummary>)],
-    show_letters: bool,
-    any_in_library: bool,
-    server_url: &str,
-) -> Element {
-    rsx! {
-        div { class: "idx-body",
-            if filtered.is_empty() {
-                p { class: "subtitle idx-empty",
-                    if !any_in_library {
-                        "No authors yet \u{2014} the library is empty."
-                    } else {
-                        "No authors match that filter."
-                    }
+        div {
+            class: "au-page",
+            "data-pane": if routed.is_some() { "author" } else { "index" },
+            aside { class: "au-list", "aria-label": "Authors",
+                AuthorsListHead {
+                    total,
+                    filter: filter(),
+                    sort: sort(),
+                    reading_count,
+                    only_reading: only_reading(),
+                    on_filter: move |v| filter.set(v),
+                    on_sort: move |s: AuthorSort| {
+                        sort.set(s);
+                        let mut prefs = index_prefs::load();
+                        prefs.authors_sort = s;
+                        index_prefs::save(&prefs);
+                    },
+                    on_only_reading: move |on| only_reading.set(on),
                 }
-            } else if show_letters {
-                for (letter, group) in letters.iter() {
-                    section {
-                        key: "{letter}",
-                        id: "letter-{letter_frag(*letter)}",
-                        class: "idx-letter-section",
-                        div { class: "idx-letter-rail",
-                            div { class: "idx-letter-rail-glyph", "{letter}" }
-                            div { class: "idx-letter-rail-count mono", "{group.len()}" }
-                        }
-                        div { class: "idx-card-grid",
-                            for a in group.iter() {
-                                div { key: "{a.id}", {render_author_card(a, server_url)} }
-                            }
-                        }
-                    }
-                }
-            } else {
-                div { class: "idx-card-grid idx-card-grid--flat",
-                    for a in filtered.iter() {
-                        div { key: "{a.id}", {render_author_card(a, server_url)} }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Header: hero, filter/sort toolbar, optional A–Z letter strip.
-#[component]
-fn AuthorsIndexHeader(
-    counts: AuthorIndexCounts,
-    filter_state: AuthorIndexFilter,
-    on_filter: EventHandler<String>,
-    on_sort: EventHandler<IndexSort>,
-) -> Element {
-    let AuthorIndexCounts {
-        total_authors,
-        total_credits,
-    } = counts;
-    let AuthorIndexFilter {
-        filter,
-        sort,
-        show_letters,
-        alphabet,
-        present_letters,
-        letter_count,
-        filtered_count,
-    } = filter_state;
-    rsx! {
-        div { class: "idx-header",
-            div { class: "idx-head-row",
-                div {
-                    span { class: "label", "Library lens" }
-                    h1 { class: "disc-hero-title",
-                        "By "
-                        em { "author" }
-                        "."
-                    }
-                    p { class: "idx-subtitle", "{index_subtitle(total_authors, total_credits)}" }
-                }
-            }
-            div { class: "idx-toolbar",
-                IndexFilterInput {
-                    filter,
-                    placeholder: "Filter authors by name\u{2026}",
-                    aria_label: "Filter authors by name",
-                    testid: "authors-filter",
-                    on_filter,
-                }
-                IndexSortToggle {
-                    sort,
-                    name_label: "Last name A\u{2013}Z",
-                    testid_prefix: "authors",
-                    on_sort,
-                }
-            }
-            if show_letters {
-                LetterNav {
-                    alphabet: alphabet.clone(),
-                    present_letters: present_letters.clone(),
-                    letter_count,
-                    filtered_count,
-                }
-            }
-        }
-    }
-}
-
-/// A–Z (plus `#`) jump strip; present letters become same-page anchors targeting `id="letter-{L}"` sections.
-#[component]
-fn LetterNav(
-    alphabet: Vec<char>,
-    present_letters: std::collections::HashSet<char>,
-    letter_count: usize,
-    filtered_count: usize,
-) -> Element {
-    // Present letters become real `<a href="#letter-{frag}">` anchors so the
-    // browser's native fragment scroll handles the jump (no JS); absent
-    // letters stay as plain spans to avoid dead links.
-    rsx! {
-        div { class: "idx-letters",
-            for l in alphabet.iter() {
                 {
-                    let has = present_letters.contains(l);
-                    // `#` is not valid inside a URL fragment, so the
-                    // non-alpha bucket gets a textual slug instead.
-                    let frag = letter_frag(*l);
-                    if has {
-                        rsx! {
-                            a {
-                                key: "{l}",
-                                class: "idx-letter idx-letter-on",
-                                href: "#letter-{frag}",
-                                "data-testid": "authors-letter-{frag}",
-                                "{l}"
-                            }
-                        }
-                    } else {
-                        rsx! {
-                            span { key: "{l}", class: "idx-letter", "{l}" }
-                        }
+                    let state = reading.read();
+                    let groups = groups.read();
+                    list_body(ListView {
+                        groups: &groups,
+                        sort: sort(),
+                        reading: &state,
+                        shown,
+                        routed,
+                        loading: loading(),
+                        error: error(),
+                        any: !authors.read().is_empty(),
+                    })
+                }
+            }
+            section { class: "au-detail", Outlet::<Route> {} }
+        }
+    }
+}
+
+/// `/authors`' pane: the [`Preview`] author's page, without claiming the
+/// route (no page title, no `aria-current` on its row).
+#[component]
+pub fn AuthorsIndexPage() -> Element {
+    let AuthorsListContext { preview, .. } = use_context::<AuthorsListContext>();
+    match preview() {
+        Preview::Pending => rsx! {
+            Loading { kind: LoadingKind::Section, label: "Gathering every author" }
+        },
+        Preview::Empty => rsx! {
+            p { class: "au-pane-empty subtitle", "No authors yet \u{2014} the library is empty." }
+        },
+        Preview::Author(id) => rsx! { AuthorPage { id, preview: true } },
+    }
+}
+
+/// Fetches the reader's progress through each author, on mount and on every
+/// cache-revalidation bump; a failed refetch keeps the last good answer.
+fn use_author_reading(server_url: String) -> Signal<ReadingState> {
+    let mut state = use_signal(|| ReadingState::Pending);
+    let generation = crate::use_cache_generation();
+    use_effect(move || {
+        let _ = generation();
+        let url = server_url.clone();
+        spawn(async move {
+            match data::list_author_reading(&url).await {
+                Ok(rows) => state.set(ReadingState::Ready(by_author(rows))),
+                Err(_) if *state.peek() == ReadingState::Pending => state.set(ReadingState::Failed),
+                Err(_) => {}
+            }
+        });
+    });
+    state
+}
+
+/// Keys the progress rows by author id.
+fn by_author(rows: Vec<AuthorReading>) -> ReadingMap {
+    rows.into_iter().map(|r| (r.author_id, r)).collect()
+}
+
+/// Once the list first renders, scrolls the pane's author to the middle of
+/// the list's own scroller, so a deep link to someone under W doesn't open on
+/// the A's. Only that scroller moves: on a phone the list scrolls with the
+/// page, and moving the page would hide the filter.
+fn use_reveal_current_row(loading: Signal<bool>) {
+    let mut done = use_signal(|| false);
+    use_effect(move || {
+        if loading() || done() {
+            return;
+        }
+        done.set(true);
+        let _ = dioxus::document::eval(
+            "requestAnimationFrame(() => {
+               const row = document.querySelector('.au-row.is-shown');
+               const list = row?.closest('.au-scroll');
+               if (list && list.scrollHeight > list.clientHeight)
+                 list.scrollTop = row.offsetTop - (list.clientHeight - row.offsetHeight) / 2;
+             })",
+        );
+    });
+}
+
+/// Title, filter, sort and the Reading filter above the list.
+#[component]
+fn AuthorsListHead(
+    total: Option<usize>,
+    filter: String,
+    sort: AuthorSort,
+    reading_count: Option<usize>,
+    only_reading: bool,
+    on_filter: EventHandler<String>,
+    on_sort: EventHandler<AuthorSort>,
+    on_only_reading: EventHandler<bool>,
+) -> Element {
+    let sorts = [
+        (AuthorSort::Name, "Surname", "authors-sort-name"),
+        (AuthorSort::BookCount, "Most books", "authors-sort-count"),
+        (AuthorSort::Recent, "Recent", "authors-sort-recent"),
+    ];
+    rsx! {
+        header { class: "au-list-head",
+            h1 { class: "au-title",
+                "Authors"
+                span { class: "au-title-count",
+                    if let Some(n) = total {
+                        "{n}"
                     }
                 }
             }
-            span { class: "idx-letters-spacer" }
-            span { class: "mono idx-letters-count",
-                "{letter_count} letters \u{b7} {filtered_count} authors"
+            label { class: "au-search",
+                svg {
+                    class: "au-search-icon",
+                    view_box: "0 0 16 16",
+                    "aria-hidden": "true",
+                    circle { cx: "7", cy: "7", r: "4.75" }
+                    path { d: "M10.5 10.5 14 14" }
+                }
+                input {
+                    r#type: "search",
+                    placeholder: "Filter by name\u{2026}",
+                    "aria-label": "Filter authors by name",
+                    value: "{filter}",
+                    "data-testid": "authors-filter",
+                    oninput: move |e| on_filter.call(e.value()),
+                }
+            }
+            div { class: "au-controls",
+                div { class: "au-sort", role: "group", "aria-label": "Sort authors",
+                    for (axis, label, testid) in sorts {
+                        button {
+                            key: "{testid}",
+                            r#type: "button",
+                            class: "au-sort-btn",
+                            "aria-pressed": if sort == axis { "true" } else { "false" },
+                            "data-testid": testid,
+                            onclick: move |_| on_sort.call(axis),
+                            "{label}"
+                        }
+                    }
+                }
+                button {
+                    r#type: "button",
+                    class: "au-chip",
+                    "aria-pressed": if only_reading { "true" } else { "false" },
+                    "aria-busy": if reading_count.is_none() { "true" } else { "false" },
+                    disabled: reading_count.is_none(),
+                    "data-testid": "authors-reading-filter",
+                    onclick: move |_| on_only_reading.call(!only_reading),
+                    span { class: if reading_count.is_none() { "ld-sheen" } else { "au-chip-label" }, "Reading" }
+                    span { class: "au-chip-count",
+                        if let Some(n) = reading_count {
+                            "{n}"
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-fn render_author_card(a: &AuthorSummary, server_url: &str) -> Element {
-    let accent = a.accent.clone().unwrap_or_else(|| "var(--accent)".into());
-    let name = a.name.clone();
-    let id = a.id;
-    let count = a.book_count;
-    let parts: Vec<&str> = name.rsplitn(2, ' ').collect();
-    // `rsplitn(2)` reverses; last name is parts[0], rest is parts[1] when present.
-    let (rest, last) = if parts.len() == 2 {
-        (parts[1].to_string(), parts[0].to_string())
-    } else {
-        (String::new(), name.clone())
-    };
-    let initial = name
-        .chars()
-        .next()
-        .unwrap_or('?')
-        .to_uppercase()
-        .next()
-        .unwrap_or('?');
+/// What [`list_body`] draws from, bundled to keep its signature short.
+struct ListView<'a> {
+    groups: &'a AuthorGroups,
+    sort: AuthorSort,
+    reading: &'a ReadingState,
+    /// The author in the pane: the route's, or `/authors`' preview.
+    shown: Option<i64>,
+    /// The route's author alone — the row `aria-current` belongs to.
+    routed: Option<i64>,
+    loading: bool,
+    error: Option<String>,
+    any: bool,
+}
 
+/// The scrolling list: skeleton rows while loading, letter groups under the
+/// surname sort, one flat run under the others, and the A–Z rail beside it.
+fn list_body(view: ListView<'_>) -> Element {
+    let ListView {
+        groups,
+        sort,
+        reading,
+        shown,
+        routed,
+        loading,
+        error,
+        any,
+    } = view;
+    // Recent orders by progress, so it has no order to show until that lands.
+    let waiting = loading || (sort == AuthorSort::Recent && *reading == ReadingState::Pending);
+    let row = |a: &AuthorSummary| {
+        author_row(
+            a,
+            RowState {
+                shown: shown == Some(a.id),
+                current: routed == Some(a.id),
+                reading,
+            },
+        )
+    };
+    let active = shown
+        .and_then(|id| groups.filtered.iter().find(|a| a.id == id))
+        .map(first_letter);
+    let show_rail = sort == AuthorSort::Name && !waiting && !groups.letters.is_empty();
     rsx! {
-        Link {
-            to: Route::AuthorDetail { id },
-            class: "idx-card idx-card-author",
-            style: "--accent: {accent}",
-            "data-testid": "author-card",
-            // F1.11: one stable div swaps only its child (rule 07 — a `has_photo` flip must never swap element types); `media_url` makes the photo fetch work on both web and mobile.
-            div { class: "idx-card-avatar",
-                if a.has_photo {
-                    img {
-                        class: "idx-card-avatar--photo",
-                        src: crate::media_url(server_url, &format!("/api/authors/{id}/photo")),
-                        alt: "{name}",
+        div { class: "au-list-body",
+            div { class: "au-scroll", "data-testid": "authors-list",
+                if waiting {
+                    RowSkeletons { count: 12, avatar: false }
+                } else if let Some(msg) = error {
+                    p { class: "au-list-note error", role: "alert", "Couldn\u{2019}t load authors: {msg}" }
+                } else if groups.filtered.is_empty() {
+                    p { class: "au-list-note subtitle",
+                        if any { "No authors match." } else { "No authors yet \u{2014} the library is empty." }
+                    }
+                } else if sort == AuthorSort::Name {
+                    for (letter, group) in groups.letters.iter() {
+                        section {
+                            key: "{letter}",
+                            id: "letter-{letter_frag(*letter)}",
+                            class: "au-group",
+                            div { class: "au-group-head",
+                                span { "{letter}" }
+                                span { "{group.len()}" }
+                            }
+                            for a in group.iter() {
+                                {row(a)}
+                            }
+                        }
                     }
                 } else {
-                    "{initial}"
+                    div { class: "au-group",
+                        for a in groups.filtered.iter() {
+                            {row(a)}
+                        }
+                    }
                 }
             }
-            div { class: "idx-card-body",
-                div { class: "idx-card-title",
-                    if !rest.is_empty() {
-                        span { class: "idx-card-name-rest", "{rest} " }
-                    }
-                    span { class: "idx-card-name-last", "{last}" }
+            if show_rail {
+                LetterRail {
+                    present: groups.letters.iter().map(|(l, _)| *l).collect::<Vec<_>>(),
+                    active,
                 }
-                {index_card_stats(count)}
             }
         }
     }
 }
 
-/// URL-fragment-safe slug for a letter glyph. `#` cannot appear inside a
-/// fragment identifier — it would be parsed as a second fragment — so the
-/// non-alpha bucket renders as `letter-hash` instead.
-fn letter_frag(c: char) -> String {
-    if c == '#' {
-        "hash".to_string()
-    } else {
-        c.to_string()
+/// How one row relates to the pane and the reader.
+#[derive(Clone, Copy)]
+struct RowState<'a> {
+    shown: bool,
+    current: bool,
+    reading: &'a ReadingState,
+}
+
+/// One author: surname-first name, the reader's progress bar, book count.
+fn author_row(a: &AuthorSummary, state: RowState<'_>) -> Element {
+    let (last, rest) = name_parts(a);
+    let accent = a.accent.as_deref().unwrap_or("var(--accent)");
+    let progress = state.reading.ready().and_then(|m| m.get(&a.id));
+    let count = a.book_count;
+    let books = if count == 1 { "book" } else { "books" };
+    let label = match progress {
+        Some(p) if p.finished > 0 => {
+            format!("{}, {count} {books}, {} finished", a.name, p.finished)
+        }
+        _ => format!("{}, {count} {books}", a.name),
+    };
+    rsx! {
+        Link {
+            key: "{a.id}",
+            to: Route::AuthorDetail { id: a.id },
+            class: if state.shown { "au-row is-shown" } else { "au-row" },
+            style: "--au-accent: {accent}",
+            "aria-current": state.current.then_some("page"),
+            "aria-label": "{label}",
+            "data-testid": "author-card",
+            span { class: "au-row-name",
+                span { class: "au-row-last", "{last}" }
+                if !rest.is_empty() {
+                    span { class: "au-row-rest", ", {rest}" }
+                }
+            }
+            {row_bar(count, progress, state.reading)}
+            span { class: "au-row-count", "{count}" }
+        }
     }
 }
 
-fn first_letter(a: &AuthorSummary) -> char {
-    // Anything whose folded initial is not in A–Z (digits, punctuation,
-    // CJK, …) collapses into a single '#' bucket rendered after Z so
-    // the alpha range stays uncluttered. An accented initial files under
-    // its letter (`Éluard` under E), where dictionary order sorts it.
-    match folded_initial(&sort_key(a)) {
-        Some(c) if c.is_ascii_alphabetic() => c.to_ascii_uppercase(),
-        _ => '#',
+/// The row's progress: finished in the author's accent, in-progress in a
+/// lighter tint of it. A skeleton while pending; blank if it never loads.
+fn row_bar(count: usize, progress: Option<&AuthorReading>, state: &ReadingState) -> Element {
+    let class = match state {
+        ReadingState::Pending => "au-bar ld-skel",
+        ReadingState::Ready(_) => "au-bar",
+        ReadingState::Failed => "au-bar is-unknown",
+    };
+    let pct = |n: usize| {
+        if count == 0 {
+            0.0
+        } else {
+            (n.min(count) as f64 * 100.0 / count as f64).floor()
+        }
+    };
+    let (done, now) = progress.map_or((0.0, 0.0), |p| (pct(p.finished), pct(p.reading)));
+    rsx! {
+        span { class, "aria-hidden": "true",
+            span { class: "au-bar-done", style: "width: {done}%" }
+            span { class: "au-bar-now", style: "width: {now}%" }
+        }
     }
 }
-
-/// Whether the given sort key would land in the `#` bucket rather
-/// than under A–Z. Used as the primary sort axis for `IndexSort::Name` so
-/// the non-alpha tail trails the alphabet.
-fn is_non_alpha_key(key: &str) -> bool {
-    !folded_initial(key).is_some_and(|c| c.is_ascii_alphabetic())
-}
-
-/// The key's first character with accents and case folded away.
-fn folded_initial(key: &str) -> Option<char> {
-    fold_for_match(key.chars().next()?.encode_utf8(&mut [0; 4]))
-        .chars()
-        .next()
-}
-
-/// Surname-first key driving both alphabetical ordering and the letter glyph
-/// above each section: `creator_sort_key`, the rule the library's Author axis
-/// keys books by, so both surfaces file an author alike. A comma-form `sort`
-/// is used verbatim; a comma-less one is ignored (dumps store a bare surname
-/// or pseudonym there) and the key derives from the display name instead.
-fn sort_key(a: &AuthorSummary) -> String {
-    creator_sort_key(a.sort.as_deref(), &a.name)
-}
-
-#[cfg(test)]
-mod tests;

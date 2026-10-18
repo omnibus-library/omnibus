@@ -18,8 +18,9 @@ test.beforeAll(async ({ request }) => {
 test("renders the authors index layout", async ({ page }) => {
   await gotoReady(page, "/authors");
 
-  // Hero — "By author."
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("author");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Authors",
+  );
 
   // No breadcrumb — /authors is a top-level route, so the shared nav is the
   // only wayfinding it needs.
@@ -29,6 +30,11 @@ test("renders the authors index layout", async ({ page }) => {
   await expect(page.getByTestId("authors-filter")).toBeVisible();
   await expect(page.getByTestId("authors-sort-name")).toBeVisible();
   await expect(page.getByTestId("authors-sort-count")).toBeVisible();
+  await expect(page.getByTestId("authors-sort-recent")).toBeVisible();
+  await expect(page.getByTestId("authors-reading-filter")).toBeEnabled();
+
+  // `/authors` previews an author in the pane beside the list.
+  await expect(page.getByTestId("author-name")).toBeVisible();
 
   // At least one author card was rendered.
   const cards = page.getByTestId("author-card");
@@ -82,6 +88,36 @@ test("authors index letter strip jumps to the matching section", async ({
   await expect(page).toHaveURL(/#letter-L$/);
   const section = page.locator("#letter-L");
   await expect(section).toBeInViewport();
+});
+
+test("authors index opens an author beside the list", async ({ page }) => {
+  await gotoReady(page, "/authors");
+
+  await page.getByTestId("authors-filter").fill("Lovelace");
+  const card = page.getByTestId("author-card").first();
+  await card.click();
+
+  await expect(page).toHaveURL(/\/authors\/\d+$/);
+  await expect(page.getByTestId("author-name")).toHaveText("Ada Lovelace");
+  // The list stays mounted, filter and all, with the row marked current.
+  await expect(page.getByTestId("authors-filter")).toHaveValue("Lovelace");
+  await expect(card).toHaveAttribute("aria-current", "page");
+});
+
+test("authors index leaves progress unknown when it fails to load", async ({
+  page,
+}) => {
+  await page.route("**/api/rpc/authors/reading", (route) =>
+    route.fulfill({ status: 500, body: "boom" }),
+  );
+  await gotoReady(page, "/authors");
+
+  await expect(page.getByTestId("author-card").first()).toBeVisible();
+  // Can't tell is not "read nothing": no empty bars, no Reading count.
+  await expect(page.getByTestId("authors-reading-filter")).toBeDisabled();
+  await expect(
+    page.getByTestId("authors-list").locator(".au-bar:not(.is-unknown)"),
+  ).toHaveCount(0);
 });
 
 test("authors index card navigates to the detail page", async ({ page }) => {

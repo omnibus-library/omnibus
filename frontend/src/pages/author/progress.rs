@@ -1,0 +1,205 @@
+//! How far the reader is through an author: one segment per book (finished,
+//! then in progress, then unread), the three counts under it, and the book
+//! they're reading now with a Resume. All from the pane's one payload.
+
+use dioxus::prelude::*;
+use dioxus_router::Link;
+use omnibus_shared::{BookReading, EbookMetadata, ReadStatus};
+
+use super::BookStates;
+use crate::components::atrium::Cover;
+use crate::components::cover_tile::thumb_srcs;
+use crate::{reader_route, Route};
+
+/// Past this many books a segment per book is too thin to read, so the strip
+/// draws one proportional bar instead.
+const MAX_SEGMENTS: usize = 24;
+
+/// Finished / reading / unread counts over the author's books.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Tally {
+    pub finished: usize,
+    pub reading: usize,
+    pub unread: usize,
+}
+
+/// A book's status for the reader; a book with no state is unread.
+pub fn status_of(book: &EbookMetadata, states: &BookStates) -> ReadStatus {
+    state_of(book, states).map_or(ReadStatus::Unread, |s| s.status)
+}
+
+/// The reader's state on `book`, if they have any.
+pub fn state_of<'a>(book: &EbookMetadata, states: &'a BookStates) -> Option<&'a BookReading> {
+    states.get(book.unique_identifier.as_deref()?)
+}
+
+/// Counts each status across `books`.
+pub fn tally(books: &[EbookMetadata], states: &BookStates) -> Tally {
+    books.iter().fold(Tally::default(), |mut t, b| {
+        match status_of(b, states) {
+            ReadStatus::Finished => t.finished += 1,
+            ReadStatus::Reading => t.reading += 1,
+            ReadStatus::Unread => t.unread += 1,
+        }
+        t
+    })
+}
+
+/// The book in progress the reader touched last.
+pub fn current_book<'a>(
+    books: &'a [EbookMetadata],
+    states: &'a BookStates,
+) -> Option<(&'a EbookMetadata, &'a BookReading)> {
+    books
+        .iter()
+        .filter_map(|b| Some((b, state_of(b, states)?)))
+        .filter(|(_, s)| s.status == ReadStatus::Reading)
+        .max_by_key(|(_, s)| s.last_read_at)
+}
+
+/// The meta line under the current book: "Earthsea 2 · 42% · read 3 days ago",
+/// each part dropped when unknown.
+pub fn current_meta(book: &EbookMetadata, state: &BookReading, now: i64) -> String {
+    let series = book.series.as_ref().map(|s| match &book.series_index {
+        Some(i) => format!("{s} {i}"),
+        None => s.clone(),
+    });
+    let percent = state.percent.map(|p| format!("{p}%"));
+    let when = state
+        .last_read_at
+        .map(|at| format!("read {}", ago(now, at)));
+    [series, percent, when]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" \u{b7} ")
+}
+
+/// "today", "yesterday", "3 days ago", "5 weeks ago", "2 years ago".
+pub fn ago(now: i64, then: i64) -> String {
+    let days = (now - then).max(0) / 86_400;
+    let plural = |n: i64, unit: &str| format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" });
+    match days {
+        0 => "today".to_string(),
+        1 => "yesterday".to_string(),
+        2..=13 => plural(days, "day"),
+        14..=59 => plural(days / 7, "week"),
+        60..=729 => plural(days / 30, "month"),
+        _ => plural(days / 365, "year"),
+    }
+}
+
+/// The progress strip and, when there is one, the book in progress.
+pub fn reading_strip(books: &[EbookMetadata], states: &BookStates, server_url: &str) -> Element {
+    if books.is_empty() {
+        return rsx! {};
+    }
+    let t = tally(books, states);
+    let current = current_book(books, states);
+    rsx! {
+        section { class: "au-reading", "data-testid": "author-reading",
+            div { class: "au-progress",
+                {segments(books, states, t)}
+                p { class: "au-tally",
+                    span { b { "{t.finished}" } " finished" }
+                    span { b { "{t.reading}" } " reading" }
+                    span { b { "{t.unread}" } " unread" }
+                }
+            }
+            if let Some((book, state)) = current {
+                {current_card(book, state, server_url)}
+            }
+        }
+    }
+}
+
+/// One segment per book, finished first; past [`MAX_SEGMENTS`], one bar.
+fn segments(books: &[EbookMetadata], states: &BookStates, t: Tally) -> Element {
+    let label = format!(
+        "{} of {} finished, {} reading",
+        t.finished,
+        books.len(),
+        t.reading
+    );
+    if books.len() > MAX_SEGMENTS {
+        let pct = |n: usize| (n as f64 * 100.0 / books.len() as f64).floor();
+        return rsx! {
+            div { class: "au-segs is-bar", role: "img", "aria-label": "{label}",
+                span { class: "au-seg-fill is-done", style: "width: {pct(t.finished)}%" }
+                span { class: "au-seg-fill is-now", style: "width: {pct(t.reading)}%" }
+            }
+        };
+    }
+    let mut order: Vec<(ReadStatus, Option<i64>)> = books
+        .iter()
+        .map(|b| {
+            (
+                status_of(b, states),
+                state_of(b, states).and_then(|s| s.percent),
+            )
+        })
+        .collect();
+    let rank = |s: ReadStatus| match s {
+        ReadStatus::Finished => 0,
+        ReadStatus::Reading => 1,
+        ReadStatus::Unread => 2,
+    };
+    order.sort_by_key(|(s, _)| rank(*s));
+    rsx! {
+        div { class: "au-segs", role: "img", "aria-label": "{label}",
+            for (i, (status, percent)) in order.into_iter().enumerate() {
+                span {
+                    key: "{i}",
+                    class: match status {
+                        ReadStatus::Finished => "au-seg is-done",
+                        ReadStatus::Reading => "au-seg is-now",
+                        ReadStatus::Unread => "au-seg",
+                    },
+                    if status == ReadStatus::Reading {
+                        span { class: "au-seg-fill", style: "width: {percent.unwrap_or(0).clamp(0, 100)}%" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The book in progress: cover, title, where the reader is, and Resume.
+fn current_card(book: &EbookMetadata, state: &BookReading, server_url: &str) -> Element {
+    let uuid = book.unique_identifier.clone().unwrap_or_default();
+    let title = book.display_title();
+    let meta = current_meta(book, state, crate::time::now_unix());
+    let resume = reader_route(
+        uuid.clone(),
+        state.format,
+        state.book_file_id,
+        &book.formats,
+    );
+    let (src, srcset) = thumb_srcs(book, &uuid, server_url, 0);
+    rsx! {
+        div { class: "au-current", "data-testid": "author-current",
+            Link {
+                to: Route::BookDetail { uuid: uuid.clone() },
+                class: "au-current-cover",
+                "aria-hidden": "true",
+                tabindex: "-1",
+                Cover {
+                    book: book.clone(),
+                    src_override: src,
+                    srcset,
+                    sizes: Some("64px".to_string()),
+                }
+            }
+            div { class: "au-current-body",
+                Link { to: Route::BookDetail { uuid }, class: "au-current-title", "{title}" }
+                p { class: "au-current-meta", "{meta}" }
+            }
+            Link {
+                to: crate::routes::link_target(resume),
+                class: "au-resume",
+                "data-testid": "author-resume",
+                "Resume"
+            }
+        }
+    }
+}

@@ -51,7 +51,7 @@ pub use admin::AdminPage;
 pub use admin_health::HealthOverview;
 pub use auth::{LoginPage, RegisterPage};
 pub use author::AuthorPage;
-pub use authors_index::AuthorsIndexPage;
+pub use authors_index::{AuthorsBrowser, AuthorsIndexPage};
 #[cfg(not(feature = "mobile"))]
 pub(crate) use book_detail::retarget_and_open_immersive;
 pub use book_detail::BookDetailPage;

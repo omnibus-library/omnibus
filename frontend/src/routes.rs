@@ -55,10 +55,12 @@ pub enum Route {
     },
     #[route("/listen/:uuid?:file_id")]
     BookListen { uuid: String, file_id: Option<i64> },
+    #[layout(AuthorsShell)]
     #[route("/authors")]
     AuthorsIndex {},
     #[route("/authors/:id")]
     AuthorDetail { id: i64 },
+    #[end_layout]
     #[route("/series")]
     SeriesIndex {},
     #[route("/series/:id")]
@@ -424,21 +426,30 @@ pub fn Login(next: Option<String>) -> Element {
     rsx! { LoginPage { next } }
 }
 
-/// Route target for `/authors/:id` — single author discovery page.
+/// Layout for both author routes: the authors list stays mounted beside
+/// their pane, so moving between authors keeps its scroll and filter.
 #[component]
-pub fn AuthorDetail(id: i64) -> Element {
+pub fn AuthorsShell() -> Element {
+    let routed = match dioxus_router::use_route::<Route>() {
+        Route::AuthorDetail { id } => Some(id),
+        _ => None,
+    };
     rsx! {
-        ScreenLayout { AuthorPage { id } }
+        ScreenLayout { AuthorsBrowser { routed } }
     }
 }
 
-/// Route target for `/authors` — browse-all authors index.
+/// Route target for `/authors/:id` — one author's pane beside the list.
+#[component]
+pub fn AuthorDetail(id: i64) -> Element {
+    rsx! { AuthorPage { id } }
+}
+
+/// Route target for `/authors` — the list, previewing a default author.
 #[component]
 pub fn AuthorsIndex() -> Element {
     use_page_title(|| Some("Authors".into()));
-    rsx! {
-        ScreenLayout { AuthorsIndexPage {} }
-    }
+    rsx! { AuthorsIndexPage {} }
 }
 
 /// Route target for `/series/:id` — single series discovery page.
@@ -583,11 +594,33 @@ fn trim_query_separators(url: &str) -> String {
 /// `book_file_id` as `?file_id=`, since a bare `/listen/:uuid` opens the
 /// first audio file) or the reader.
 pub fn resume_route(point: &omnibus_shared::ResumePoint) -> Route {
-    let uuid = point.record.book_uuid.clone();
-    match point.record.format {
-        omnibus_shared::ProgressFormat::Audio => Route::BookListen {
+    reader_route(
+        point.record.book_uuid.clone(),
+        Some(point.record.format),
+        point.record.book_file_id,
+        &point.book.formats,
+    )
+}
+
+/// Where a book opens to read or listen. `format` and `book_file_id` are its
+/// latest position's; with no position, an audio-only book opens in the
+/// player and anything else in its reader.
+pub fn reader_route(
+    uuid: String,
+    format: Option<omnibus_shared::ProgressFormat>,
+    book_file_id: Option<i64>,
+    formats: &[String],
+) -> Route {
+    let has = |ext: &str| formats.iter().any(|f| f.eq_ignore_ascii_case(ext));
+    let readable = has("epub") || has("cbz") || has("pdf");
+    match format {
+        Some(omnibus_shared::ProgressFormat::Audio) => Route::BookListen {
             uuid,
-            file_id: point.record.book_file_id,
+            file_id: book_file_id,
+        },
+        None if !readable && (has("m4b") || has("m4a") || has("mp3")) => Route::BookListen {
+            uuid,
+            file_id: None,
         },
         // Comics and PDFs reuse the Epub-format progress record (see
         // `omnibus_shared::comic_page_anchor` / `pdf_page_anchor`), so the
@@ -595,9 +628,7 @@ pub fn resume_route(point: &omnibus_shared::ResumePoint) -> Route {
         // EPUB > CBZ > PDF: anything with a real EPUB keeps the epub.js
         // reader (a `pdf-page:` anchor must never reach it), a CBZ-only book
         // resumes into the pager, and a PDF-only book into the PDF reader.
-        omnibus_shared::ProgressFormat::Epub => {
-            let formats = &point.book.formats;
-            let has = |ext: &str| formats.iter().any(|f| f.eq_ignore_ascii_case(ext));
+        _ => {
             if has("epub") {
                 Route::BookRead { uuid }
             } else if has("cbz") {

@@ -63,14 +63,16 @@ test("renders the author page layout", async ({ page, request }) => {
 
   await gotoReady(page, `/authors/${authorId}`);
 
-  // H1 contains the author's name (split first/last, both upright)
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Ada");
+  // The pane sits beside the list, whose title is the page's h1.
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "Lovelace",
+    "Authors",
   );
+  await expect(page.getByTestId("author-name")).toHaveText(authorName);
 
-  // Book count stat is visible
-  await expect(page.getByText("In your library")).toBeVisible();
+  // Book count, the reader's progress strip, and the library shortcut.
+  await expect(page.locator(".au-meta")).toContainText("book");
+  await expect(page.getByTestId("author-reading")).toBeVisible();
+  await expect(page.getByTestId("author-show-in-library")).toBeVisible();
 });
 
 test("author page shows books by the author", async ({ page, request }) => {
@@ -80,7 +82,7 @@ test("author page shows books by the author", async ({ page, request }) => {
 
   await gotoReady(page, `/authors/${authorId}`);
 
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Wirth");
+  await expect(page.getByTestId("author-name")).toContainText("Wirth");
 
   // Should show the series section for "Code Quartet"
   await expect(page.getByText("Code Quartet")).toBeVisible();
@@ -94,12 +96,14 @@ test("author series section heading links to the series page", async ({
   request,
 }) => {
   // Niklaus Wirth's four books all belong to "Code Quartet", so the author
-  // page renders a single series section whose heading is a router Link to
-  // /series/:id, and it's the only "Code Quartet" link role on the page.
+  // page renders a single series shelf whose "Series page" link opens
+  // /series/:id.
   const authorId = await fetchAuthorIdByName(request, "Niklaus Wirth");
   await gotoReady(page, `/authors/${authorId}`);
 
-  const seriesLink = page.getByRole("link", { name: "Code Quartet" });
+  const seriesLink = page.getByRole("link", {
+    name: "Code Quartet series page",
+  });
   await expect(seriesLink).toBeVisible();
   await seriesLink.click();
 

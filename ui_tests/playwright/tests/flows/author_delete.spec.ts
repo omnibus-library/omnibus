@@ -97,7 +97,7 @@ async function restoreDeletedAuthor(
     .toBe(true);
 }
 
-test("renders Delete author button for admin viewers", async ({
+test("renders the Delete author action for admin viewers", async ({
   page,
   request,
 }) => {
@@ -108,6 +108,7 @@ test("renders Delete author button for admin viewers", async ({
   const id = await fetchAuthorIdByName(request, targetName);
   await gotoReady(page, `/authors/${id}`);
 
+  await page.getByTestId("author-more").click();
   const deleteBtn = page.getByTestId("author-delete-btn");
   await expect(deleteBtn).toBeVisible();
 });
@@ -120,6 +121,7 @@ test("clicking Delete opens the confirmation modal with the author name and book
   const id = await fetchAuthorIdByName(request, targetName);
   await gotoReady(page, `/authors/${id}`);
 
+  await page.getByTestId("author-more").click();
   await page.getByTestId("author-delete-btn").click();
   const modal = page.getByTestId("author-delete-modal");
   await expect(modal).toBeVisible();
@@ -140,6 +142,7 @@ test("confirming Delete posts to rpc_delete_author and redirects to /authors", a
   const id = await fetchAuthorIdByName(request, targetName);
   await gotoReady(page, `/authors/${id}`);
 
+  await page.getByTestId("author-more").click();
   await page.getByTestId("author-delete-btn").click();
   await expect(page.getByTestId("author-delete-modal")).toBeVisible();
 
@@ -159,6 +162,11 @@ test("confirming Delete posts to rpc_delete_author and redirects to /authors", a
     // The redirect should land on the /authors index page. Match
     // trailing slash optional to accept either form.
     await expect(page).toHaveURL(/\/authors\/?$/);
+    // The list stays mounted across that redirect, so it must drop the row
+    // itself rather than wait for a refetch that never comes.
+    await expect(
+      page.getByRole("link", { name: new RegExp(`^${targetName},`) }),
+    ).toHaveCount(0);
 
     // The deleted author should no longer be linked to any book in the
     // /api/rpc/ebooks response — confirms the blocklist + link
@@ -186,6 +194,7 @@ test("surfaces an error and stays on the page when delete fails", async ({
   const id = await fetchAuthorIdByName(request, targetName);
   await gotoReady(page, `/authors/${id}`);
 
+  await page.getByTestId("author-more").click();
   await page.getByTestId("author-delete-btn").click();
 
   await page.route("**/api/rpc/author/delete", (route) => {

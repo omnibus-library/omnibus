@@ -1,8 +1,30 @@
-//! Tests for the authors-index sort/grouping helpers: `sort_key` prefers
-//! the explicit sort field, `first_letter` groups by that same key, and
-//! names sort in the library's dictionary order.
+//! Tests for the authors-list ordering helpers: `sort_key` prefers the
+//! explicit sort field, `first_letter` groups by that same key, names sort in
+//! the library's dictionary order, and the Recent sort, Reading filter and
+//! default author follow the reader's progress.
 
 use super::*;
+
+fn reading(id: i64, reading: usize, last: Option<i64>) -> (i64, AuthorReading) {
+    (
+        id,
+        AuthorReading {
+            author_id: id,
+            finished: 0,
+            reading,
+            last_read_at: last,
+        },
+    )
+}
+
+fn query(sort: AuthorSort) -> ListQuery<'static> {
+    ListQuery {
+        text: "",
+        sort,
+        reading: None,
+        only_reading: false,
+    }
+}
 
 fn author(name: &str, sort: Option<&str>) -> AuthorSummary {
     AuthorSummary {
@@ -135,7 +157,7 @@ fn compute_author_groups_keeps_an_accented_name_in_its_existing_letter_bucket() 
         author("Benito Pérez Galdós", None),
         author("Ada Lovelace", None),
     ];
-    let groups = compute_author_groups(&all, "", IndexSort::Name);
+    let groups = compute_author_groups(&all, query(AuthorSort::Name));
 
     let letters: Vec<(char, Vec<&str>)> = groups
         .letters
@@ -160,7 +182,7 @@ fn compute_author_groups_keeps_an_accented_name_in_its_existing_letter_bucket() 
 fn sort_authors_by_name_orders_alpha_before_non_alpha_bucket() {
     let all = [author("1984", None), author("Ada Lovelace", None)];
     let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, IndexSort::Name);
+    sort_authors(&mut filtered, AuthorSort::Name, None);
     assert_eq!(filtered[0].name, "Ada Lovelace");
     assert_eq!(filtered[1].name, "1984");
 }
@@ -177,7 +199,7 @@ fn sort_authors_by_name_orders_accented_surnames_in_dictionary_order() {
         author("Ana Perez", Some("Perez, Ana")),
     ];
     let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, IndexSort::Name);
+    sort_authors(&mut filtered, AuthorSort::Name, None);
     let names: Vec<&str> = filtered.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(
         names,
@@ -209,7 +231,7 @@ fn sort_authors_by_book_count_orders_descending_then_name() {
     high.book_count = 7;
     let all = [low, high];
     let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
-    sort_authors(&mut filtered, IndexSort::BookCount);
+    sort_authors(&mut filtered, AuthorSort::BookCount, None);
     assert_eq!(filtered[0].name, "Bravo");
     assert_eq!(filtered[1].name, "Alpha");
 }
@@ -236,12 +258,79 @@ fn group_by_letter_returns_empty_when_show_letters_is_false() {
 }
 
 #[test]
-fn index_subtitle_labels_the_second_figure_as_credits_not_books() {
-    // #2292: the figure is Σ per-author book counts (author–book credits),
-    // which a multi-creator book inflates past the distinct-title total, so
-    // the header must not call it "books".
-    let sub = index_subtitle(23, 27);
-    assert!(sub.contains("23 authors"), "{sub}");
-    assert!(sub.contains("27 author credits"), "{sub}");
-    assert!(!sub.contains("books"), "must not claim a book count: {sub}");
+fn sort_authors_by_recent_puts_the_latest_read_first_and_the_unread_after() {
+    let mut all = [
+        author("Ada Lovelace", None),
+        author("Bob Lowe", None),
+        author("Cy Twombly", None),
+    ];
+    for (i, a) in all.iter_mut().enumerate() {
+        a.id = i as i64 + 1;
+    }
+    let map: ReadingMap = [reading(1, 0, Some(10)), reading(3, 1, Some(20))].into();
+    let mut filtered: Vec<&AuthorSummary> = all.iter().collect();
+    sort_authors(&mut filtered, AuthorSort::Recent, Some(&map));
+    let names: Vec<&str> = filtered.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["Cy Twombly", "Ada Lovelace", "Bob Lowe"]);
+}
+
+#[test]
+fn compute_author_groups_keeps_only_authors_in_progress_when_asked() {
+    let mut all = [author("Ada Lovelace", None), author("Bob Lowe", None)];
+    all[0].id = 1;
+    all[1].id = 2;
+    let map: ReadingMap = [reading(1, 0, Some(10)), reading(2, 1, Some(5))].into();
+    let groups = compute_author_groups(
+        &all,
+        ListQuery {
+            reading: Some(&map),
+            only_reading: true,
+            ..query(AuthorSort::Name)
+        },
+    );
+    let names: Vec<&str> = groups.filtered.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["Bob Lowe"]);
+}
+
+#[test]
+fn compute_author_groups_ignores_the_reading_filter_until_progress_loads() {
+    let all = [author("Ada Lovelace", None)];
+    let groups = compute_author_groups(
+        &all,
+        ListQuery {
+            only_reading: true,
+            ..query(AuthorSort::Name)
+        },
+    );
+    assert_eq!(groups.filtered.len(), 1);
+}
+
+#[test]
+fn default_author_is_the_one_read_most_recently() {
+    let mut all = [author("Ada Lovelace", None), author("Bob Lowe", None)];
+    all[0].id = 1;
+    all[1].id = 2;
+    let map: ReadingMap = [reading(1, 0, Some(10)), reading(2, 0, Some(50))].into();
+    assert_eq!(default_author(&all, Some(&map)), Some(2));
+}
+
+#[test]
+fn default_author_falls_back_to_the_first_by_surname() {
+    let mut all = [author("Bob Lowe", None), author("Ada Abbott", None)];
+    all[0].id = 1;
+    all[1].id = 2;
+    assert_eq!(default_author(&all, None), Some(2));
+    assert_eq!(default_author(&[], None), None);
+}
+
+#[test]
+fn name_parts_splits_the_surname_key_and_keeps_a_mononym_whole() {
+    assert_eq!(
+        name_parts(&author("Ursula K. Le Guin", Some("Le Guin, Ursula K."))),
+        ("Le Guin".to_string(), "Ursula K.".to_string())
+    );
+    assert_eq!(
+        name_parts(&author("Plato", None)),
+        ("Plato".to_string(), String::new())
+    );
 }
