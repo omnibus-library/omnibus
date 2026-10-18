@@ -420,5 +420,5 @@ fn read_image_errors_when_an_image_exceeds_the_byte_cap() {
 
     let err = read_image(File::open(&path).unwrap(), "huge.png").unwrap_err();
 
-    assert!(err.to_string().contains("exceeds"), "{err}");
+    assert!(err.to_string().contains("entry huge.png exceeds"), "{err}");
 }

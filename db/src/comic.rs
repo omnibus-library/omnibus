@@ -121,7 +121,7 @@ pub fn read_capped(entry: impl Read, name: &str) -> anyhow::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     let read = entry.take(MAX_PAGE_BYTES + 1).read_to_end(&mut bytes)?;
     if read as u64 > MAX_PAGE_BYTES {
-        anyhow::bail!("page {name} exceeds {MAX_PAGE_BYTES} byte cap");
+        anyhow::bail!("entry {name} exceeds {MAX_PAGE_BYTES} byte cap");
     }
     Ok(bytes)
 }
