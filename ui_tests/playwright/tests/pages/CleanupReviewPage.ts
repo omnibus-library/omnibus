@@ -75,6 +75,11 @@ export class CleanupReviewPage extends BasePage {
     return this.page.getByTestId(`cleanup-kindchip-${kind}`);
   }
 
+  /** Checks the address names the review at `slug`, such as "authors". */
+  async assertDisplayedFor(slug: string): Promise<void> {
+    await this.assertDisplayedAt(new RegExp(`/admin/cleanup/${slug}$`));
+  }
+
   async accept(): Promise<void> {
     await this.acceptButton.click();
   }

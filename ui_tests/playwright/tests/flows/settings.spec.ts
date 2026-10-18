@@ -154,7 +154,7 @@ test.describe("administration page", () => {
     });
 
     await test.step("check the review shows under administration", async () => {
-      await cleanupReviewPage.assertDisplayed();
+      await cleanupReviewPage.assertDisplayedFor("authors");
     });
   });
 });

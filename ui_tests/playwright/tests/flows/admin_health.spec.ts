@@ -51,6 +51,7 @@ test.describe("health section", () => {
 
   test("update the index stats and worker queue after a poll tick", async ({
     adminPage,
+    expectMutation,
   }) => {
     const { health } = adminPage;
     const before = buildAdminHealthReport();
@@ -65,7 +66,7 @@ test.describe("health section", () => {
 
     await test.step("open the section with a small library", async () => {
       await health.stubReport(before);
-      await adminPage.goto("health");
+      await expectMutation(adminHealth.poll(), () => adminPage.goto("health"));
     });
 
     await test.step("check the first report shows", async () => {
@@ -92,6 +93,7 @@ test.describe("health section", () => {
 
   test("link a captured error to its book and name its file", async ({
     adminPage,
+    expectMutation,
   }) => {
     const { health } = adminPage;
     const bookUuid = "00000000-0000-4000-8000-000000000001";
@@ -110,7 +112,7 @@ test.describe("health section", () => {
           ],
         }),
       );
-      await adminPage.goto("health");
+      await expectMutation(adminHealth.poll(), () => adminPage.goto("health"));
     });
 
     await test.step("check the error links its book and names its file", async () => {

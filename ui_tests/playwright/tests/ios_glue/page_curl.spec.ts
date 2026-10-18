@@ -243,6 +243,9 @@ test.describe("ios reader page curl", () => {
 
       await test.step("swipe left and leave it to the host", async () => {
         expect(await iosGluePage.swipeLeft(), "the glue drew no drag").toBe("");
+        expect((await iosGluePage.sectionPosition()).scroll).toBe(
+          before.scroll,
+        );
       });
 
       await test.step("tell the glue the host curls no page", async () => {

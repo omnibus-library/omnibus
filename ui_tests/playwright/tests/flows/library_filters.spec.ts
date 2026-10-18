@@ -869,6 +869,14 @@ test.describe("library filters", () => {
         readerLibraryPage,
         readerExpectMutation,
       }) => {
+        await test.step("check the full list has failed first", async () => {
+          await readerLibraryPage.assertShowsBooks(["compiler-compendium-2"]);
+          await expect(readerLibraryPage.shelfAddBooksButton).toHaveAttribute(
+            "aria-disabled",
+            "true",
+          );
+        });
+
         await test.step("clear all once the full list can load", async () => {
           await readerLibraryPage.stopForcingServerError(shelves.page());
           await readerExpectMutation(shelves.page(), () =>
