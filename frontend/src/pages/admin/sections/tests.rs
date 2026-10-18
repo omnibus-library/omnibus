@@ -47,3 +47,9 @@ fn admin_section_place_names_the_administration_section_on_the_web() {
         "Administration \u{203a} Integrations"
     );
 }
+
+#[cfg(feature = "mobile")]
+#[test]
+fn admin_section_place_names_the_native_settings_screen_on_mobile() {
+    assert_eq!(AdminSection::Integrations.place(), "Settings");
+}

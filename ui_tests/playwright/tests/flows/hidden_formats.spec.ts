@@ -72,9 +72,8 @@ async function logInAs(page: Page, username: string): Promise<void> {
 }
 
 /**
- * Save the user's hidden formats straight through the API. The Preferences
- * card that writes them is account.spec.ts's to drive; this spec is about
- * what the library does with the preference.
+ * Save the user's hidden formats straight through the API, to set up what the
+ * library test reads; the Preferences tests below drive the card itself.
  */
 async function saveHiddenFormats(page: Page, formats: string[]): Promise<void> {
   const status = await postFromPage(page, HIDDEN_FORMATS_RPC, { formats });

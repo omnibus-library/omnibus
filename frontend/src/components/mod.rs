@@ -71,9 +71,8 @@ pub use page_state::{PageError, PageNotFound};
 pub mod cover_tile;
 pub use cover_tile::{CoverTile, CoverTileKind};
 
-// Shared "credential card" status primitives (the configured dot line + the
-// save/clear/test result message) used by the Hardcover/Google Books secret
-// key cards, the SMTP relay card, and the account Kindle-email card.
+// Shared settings-card status primitives: the credential cards' configured dot
+// line and every settings card's save/clear/test result line.
 pub mod credential_card;
 
 // The mobile-only `←` "back to index" link shared by the series/author
