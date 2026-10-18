@@ -7,8 +7,7 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Journals are public and global per book, so every test here shares `alpha`'s
-// feed and the file runs serially; each test marks its own entries.
+// Every test writes alpha's shared journal feed, so the file runs serially.
 test.describe.configure({ mode: "serial" });
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
