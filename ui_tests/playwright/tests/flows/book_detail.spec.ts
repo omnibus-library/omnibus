@@ -115,6 +115,16 @@ test("renders the book detail layout", async ({ page, request }) => {
   await expect(dots.getByRole("button")).toHaveCount(6);
   await expect(page.getByTestId("bdmq-dot-0")).toHaveClass(/\bon\b/);
 
+  // The Scroll stops switch sits at the top of the stage, apart from the rail.
+  const modeToggle = page.getByTestId("bdmq-mode-toggle");
+  await expect(modeToggle).toBeVisible();
+  await expect(dots.getByTestId("bdmq-mode-toggle")).toHaveCount(0);
+  const [toggleBox, dotsBox] = await Promise.all([
+    modeToggle.boundingBox(),
+    dots.boundingBox(),
+  ]);
+  expect(toggleBox!.y + toggleBox!.height).toBeLessThan(dotsBox!.y);
+
   // Stops — "Passages you saved" (stop 03) is always rendered. Only its
   // presence is asserted here: `journal.spec.ts` seeds a highlight on this
   // same book, so whether the list or the empty state fills it depends on

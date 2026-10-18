@@ -2,7 +2,8 @@
 //! sections in a translucent panel on the right, a dot-rail TOC. The panel
 //! reads two ways on the viewer's `book_detail_scroll_stops` preference — off
 //! (the default) is one continuous flow, on is the snapped marquee, same
-//! content either way. A toggle under the dot rail flips it in place.
+//! content either way. A switch in the stage's top-right corner flips it in
+//! place.
 //! Mechanics: `flow.js` / `marquee.js`, post-mount.
 
 use dioxus::prelude::*;
@@ -268,24 +269,10 @@ pub(super) fn MarqueeStage(
                     Cover { book: b.clone() }
                 }
             }
-            div { class: "bdmq-rail",
-                nav { class: "bdmq-dots", "aria-label": "Page sections", "data-testid": "bdmq-dots",
-                    for (i, (no, name)) in MARQUEE_SECTIONS.iter().enumerate() {
-                        button {
-                            key: "{no}",
-                            r#type: "button",
-                            class: if i == 0 { "bdmq-dotrow on" } else { "bdmq-dotrow" },
-                            title: "{name}",
-                            "data-testid": "bdmq-dot-{i}",
-                            i {}
-                            span { class: "lb", "{no} \u{b7} {name}" }
-                        }
-                    }
-                }
-                ScrollStopsToggle { view: mode_view, on_toggle: on_mode_toggle }
-            }
+            DotRail {}
+            ScrollStopsToggle { view: mode_view, on_toggle: on_mode_toggle }
             // One stable element around the mode swap, so the toggle beside it
-            // keeps its handler across a flip (rule 07).
+            // stays mounted, focused and live across a flip (rule 07).
             div { class: "bdmq-mode",
                 if scroll_stops() {
                     div { class: "bdmq-snap", id: "bdmq-snap",
@@ -348,6 +335,27 @@ pub(super) fn MarqueeStage(
     }
 }
 
+/// The dot-rail TOC: one button per stop, the first marked current. The
+/// scroll glue moves the marker and wires the jumps.
+#[component]
+fn DotRail() -> Element {
+    rsx! {
+        nav { class: "bdmq-dots", "aria-label": "Page sections", "data-testid": "bdmq-dots",
+            for (i, (no, name)) in MARQUEE_SECTIONS.iter().enumerate() {
+                button {
+                    key: "{no}",
+                    r#type: "button",
+                    class: if i == 0 { "bdmq-dotrow on" } else { "bdmq-dotrow" },
+                    title: "{name}",
+                    "data-testid": "bdmq-dot-{i}",
+                    i {}
+                    span { class: "lb", "{no} \u{b7} {name}" }
+                }
+            }
+        }
+    }
+}
+
 /// Shown when a save fails; the toggle has already gone back.
 const SCROLL_STOPS_SAVE_ERROR: &str = "Couldn't save scroll stops. Try again.";
 
@@ -362,26 +370,32 @@ struct ScrollStopsView {
     error: Option<String>,
 }
 
-/// The rail's Scroll stops toggle: pressed while the panel snaps section by
-/// section. Inert until the viewer resolves, like the library's Stack series.
+/// The stage's Scroll stops switch, pinned to its top-right corner: pressed
+/// while the panel snaps section by section. Until the viewer resolves it is
+/// inert and claims neither reading (rule 12).
 #[component]
 fn ScrollStopsToggle(view: ScrollStopsView, on_toggle: EventHandler<()>) -> Element {
-    let on = view.on && view.ready;
+    let pressed = view.ready.then_some(if view.on { "true" } else { "false" });
     rsx! {
-        button {
-            r#type: "button",
-            class: if view.ready { "bdmq-mode-toggle" } else { "bdmq-mode-toggle pending" },
-            "data-testid": "bdmq-mode-toggle",
-            "aria-pressed": "{on}",
-            title: "Snap through the page one section at a time",
-            disabled: !view.ready,
-            onclick: move |_| on_toggle.call(()),
-            i { aria_hidden: true }
-            "Scroll stops"
-        }
-        if let Some(message) = view.error.as_ref() {
-            span { class: "bdmq-mode-error", role: "alert", "data-testid": "bdmq-mode-error",
-                "{message}"
+        div { class: "bdmq-modebar",
+            button {
+                r#type: "button",
+                class: "bdmq-mode-toggle",
+                "data-testid": "bdmq-mode-toggle",
+                "aria-pressed": pressed,
+                title: "Snap through the page one section at a time",
+                disabled: !view.ready,
+                onclick: move |_| on_toggle.call(()),
+                "Scroll stops"
+                span {
+                    class: if view.ready { "bdmq-mode-sw" } else { "bdmq-mode-sw ld-toggle-unknown" },
+                    aria_hidden: true,
+                }
+            }
+            if let Some(message) = view.error.as_ref() {
+                span { class: "bdmq-mode-error", role: "alert", "data-testid": "bdmq-mode-error",
+                    "{message}"
+                }
             }
         }
     }

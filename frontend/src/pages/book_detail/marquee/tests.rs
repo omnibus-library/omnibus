@@ -68,12 +68,15 @@ mod scroll_stops_toggle {
         rsx! { ScrollStopsToggle { view, on_toggle: move |_| {} } }
     }
 
+    // Unknown is not off (rule 12): no pressed state either way, and the
+    // switch waits at centre until `/me` answers.
     #[test]
-    fn scroll_stops_toggle_holds_inert_until_the_viewer_resolves() {
+    fn scroll_stops_toggle_claims_neither_reading_until_the_viewer_resolves() {
         let html = render_in_vdom(PendingHost);
         assert!(html.contains("data-testid=\"bdmq-mode-toggle\""), "{html}");
         assert!(html.contains("disabled"), "{html}");
-        assert!(html.contains("aria-pressed=\"false\""), "{html}");
+        assert!(!html.contains("aria-pressed"), "{html}");
+        assert!(html.contains("ld-toggle-unknown"), "{html}");
     }
 
     #[test]
@@ -82,6 +85,7 @@ mod scroll_stops_toggle {
         assert!(html.contains("Scroll stops"), "{html}");
         assert!(html.contains("aria-pressed=\"true\""), "{html}");
         assert!(!html.contains("disabled"), "{html}");
+        assert!(!html.contains("ld-toggle-unknown"), "{html}");
     }
 
     #[test]
@@ -90,4 +94,15 @@ mod scroll_stops_toggle {
         assert!(html.contains("data-testid=\"bdmq-mode-error\""), "{html}");
         assert!(html.contains("role=\"alert\""), "{html}");
     }
+}
+
+// The rail is positioned over the panel's edge, so its box must be the dots'
+// own: anything sharing it widens the box over the panel and takes its clicks.
+#[cfg(feature = "server")]
+#[test]
+fn dot_rail_is_the_six_dots_alone() {
+    let html = crate::test_support::render_in_vdom(super::DotRail);
+    assert!(html.starts_with("<nav class=\"bdmq-dots\""), "{html}");
+    assert!(html.ends_with("</nav>"), "{html}");
+    assert_eq!(html.matches("<button").count(), 6, "{html}");
 }
