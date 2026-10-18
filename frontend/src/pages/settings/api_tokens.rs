@@ -8,7 +8,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::ApiTokenView;
 
-use crate::components::clipboard::{copy_text, CopyButton};
+use crate::components::clipboard::CopyButton;
 use crate::components::user_avatar::initials_for;
 use crate::components::BusyLabel;
 use crate::contexts::use_current_user_summary;
@@ -41,14 +41,6 @@ pub(crate) fn use_instance_origin() -> Signal<String> {
         });
     }
     origin
-}
-
-/// Copy `text` without on-screen feedback, for the hosted-MCP card.
-pub(super) fn copy_to_clipboard(text: &str) {
-    let text = text.to_string();
-    spawn(async move {
-        copy_text(&text).await;
-    });
 }
 
 /// The `claude mcp add` one-liner, pre-filled with the instance origin and

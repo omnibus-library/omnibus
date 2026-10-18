@@ -149,7 +149,7 @@ pub fn Admin(section: Option<String>, tab: Option<String>) -> Element {
     let _ = (section, tab);
     let nav = dioxus_router::use_navigator();
     use_effect(move || {
-        nav.replace(Route::Settings { section: None });
+        nav.replace(link_target(Route::Settings { section: None }));
     });
     redirecting("Opening settings")
 }
@@ -201,10 +201,10 @@ pub fn CleanupReview(kind: String) -> Element {
 pub fn Logs() -> Element {
     let nav = dioxus_router::use_navigator();
     use_effect(move || {
-        nav.replace(Route::Admin {
+        nav.replace(link_target(Route::Admin {
             section: Some("health".into()),
             tab: Some("logs".into()),
-        });
+        }));
     });
     redirecting("Opening the logs")
 }
@@ -228,10 +228,10 @@ pub fn Logs() -> Element {
 pub fn AdminHealth() -> Element {
     let nav = dioxus_router::use_navigator();
     use_effect(move || {
-        nav.replace(Route::Admin {
+        nav.replace(link_target(Route::Admin {
             section: Some("health".into()),
             tab: None,
-        });
+        }));
     });
     redirecting("Opening server health")
 }
@@ -258,7 +258,7 @@ pub fn AdminHealth() -> Element {
 pub fn Account() -> Element {
     let nav = dioxus_router::use_navigator();
     use_effect(move || {
-        nav.replace(Route::Settings { section: None });
+        nav.replace(link_target(Route::Settings { section: None }));
     });
     redirecting("Opening your account")
 }

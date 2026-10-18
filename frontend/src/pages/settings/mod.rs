@@ -68,7 +68,7 @@ pub fn SettingsPage(section: Option<String>) -> Element {
     let legacy = section.as_deref().and_then(legacy_settings_target);
     use_effect(use_reactive!(|legacy| {
         if let Some(target) = legacy {
-            nav.replace(target.route());
+            nav.replace(crate::routes::link_target(target.route()));
         }
     }));
     let is_admin = crate::use_admin_access()() == crate::Access::Allowed;
