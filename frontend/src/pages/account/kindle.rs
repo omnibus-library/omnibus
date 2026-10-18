@@ -8,8 +8,8 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::KindleDelivery;
 
-use super::live_status;
 use crate::components::clipboard::CopyButton;
+use crate::components::credential_card::live_status;
 use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::{data, use_server_url, Access, Route};
 

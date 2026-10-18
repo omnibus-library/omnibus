@@ -7,11 +7,10 @@
 use dioxus::prelude::*;
 use omnibus_shared::{GoogleBooksKeyStatus, HardcoverKeyStatus};
 
-use crate::components::credential_card::{credential_status_line, credential_status_message};
+use crate::components::confirm_modal::{confirm_dialog, Confirm};
+use crate::components::credential_card::{credential_status_line, live_status};
 use crate::components::unsaved::use_unsaved_guard;
-use crate::components::{
-    confirm_modal_body, BusyLabel, ConfirmModal, ConfirmModalAction, ConfirmModalTone,
-};
+use crate::components::BusyLabel;
 use crate::data::{server_error_message, DataError};
 use crate::{data, use_server_url};
 
@@ -401,75 +400,33 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
                     BusyLabel { busy, label: format!("Save {} key", kind.noun()), busy_label: "Saving\u{2026}" }
                 }
             }
-            {credential_status_message(&format!("{testid}-key-status"), msg().as_deref(), msg_is_error())}
+            {live_status(&format!("{testid}-key-status"), msg().as_deref(), msg_is_error())}
             }
             if confirm_clear() {
-                ClearCredentialModal {
-                    testid,
-                    title: format!("Remove the {} key?", kind.noun()),
-                    body: format!(
-                        "{} The key can\u{2019}t be shown again, so you\u{2019}ll need the original to put it back.",
-                        kind.clear_consequence()
-                    ),
-                    confirm_label: format!("Remove {} key", kind.noun()),
+                {confirm_dialog(
+                    Confirm {
+                        testid: &format!("{testid}-clear-dialog"),
+                        title: &format!("Remove the {} key?", kind.noun()),
+                        body: &clear_warning(kind),
+                        action: &format!("Remove {} key", kind.noun()),
+                        busy_label: "Clearing\u{2026}",
+                    },
                     busy,
-                    on_confirm: on_clear,
-                    on_cancel: move |()| confirm_clear.set(false),
-                }
+                    EventHandler::new(move |()| confirm_clear.set(false)),
+                    EventHandler::new(on_clear),
+                )}
             }
         }
     }
 }
 
-/// Confirm before a server-wide credential goes: names what is cleared and what
-/// stops working, since a cleared secret can't be read back to restore it.
-/// Testids hang off `testid`: `{testid}-clear-modal`, `-clear-cancel`,
-/// `-clear-confirm`.
-#[component]
-pub(super) fn ClearCredentialModal(
-    testid: &'static str,
-    #[props(into)] title: String,
-    #[props(into)] body: String,
-    #[props(into)] confirm_label: String,
-    busy: bool,
-    on_confirm: EventHandler<()>,
-    on_cancel: EventHandler<()>,
-) -> Element {
-    rsx! {
-        ConfirmModal {
-            testid: format!("{testid}-clear-modal"),
-            aria_label: title.clone(),
-            dialog_class: "mg-modal del-modal".to_string(),
-            busy,
-            focus_on_open: true,
-            on_dismiss: move |_| on_cancel.call(()),
-            {confirm_modal_body(
-                &title,
-                &body,
-                None,
-                vec![
-                    ConfirmModalAction {
-                        testid: format!("{testid}-clear-cancel"),
-                        label: "Keep it".to_string(),
-                        busy_label: None,
-                        busy: false,
-                        tone: ConfirmModalTone::Ghost,
-                        disabled: busy,
-                        on_click: EventHandler::new(move |_| on_cancel.call(())),
-                    },
-                    ConfirmModalAction {
-                        testid: format!("{testid}-clear-confirm"),
-                        label: confirm_label,
-                        busy_label: Some("Clearing\u{2026}".to_string()),
-                        busy,
-                        tone: ConfirmModalTone::Danger,
-                        disabled: busy,
-                        on_click: EventHandler::new(move |_| on_confirm.call(())),
-                    },
-                ],
-            )}
-        }
-    }
+/// What clearing `kind` stops, and why it can't simply be undone: a cleared
+/// secret can't be read back to restore it.
+fn clear_warning(kind: SecretKeyKind) -> String {
+    format!(
+        "{} The key can\u{2019}t be shown again, so you\u{2019}ll need the original to put it back.",
+        kind.clear_consequence()
+    )
 }
 
 #[cfg(all(test, feature = "server"))]

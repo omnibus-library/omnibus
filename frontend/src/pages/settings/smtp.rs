@@ -7,8 +7,8 @@
 use dioxus::prelude::*;
 use omnibus_shared::{SmtpConfigStatus, SmtpConfigUpdate, SmtpSecurity};
 
-use super::secret_key_field::ClearCredentialModal;
-use crate::components::credential_card::{credential_status_line, credential_status_message};
+use crate::components::confirm_modal::{confirm_dialog, Confirm};
+use crate::components::credential_card::{credential_status_line, live_status};
 use crate::components::unsaved::use_saved_snapshot;
 use crate::components::BusyLabel;
 use crate::data::server_error_message;
@@ -76,15 +76,18 @@ pub fn SmtpConfigField() -> Element {
                 }
             }
             if confirm_clear() {
-                ClearCredentialModal {
-                    testid: "smtp-clear",
-                    title: "Clear the SMTP settings?",
-                    body: "This removes the relay host, sign-in and stored password. Send-to-Kindle stops working until the relay is set up again.",
-                    confirm_label: "Clear SMTP settings",
-                    busy: (io.in_flight)(),
-                    on_confirm: move |()| on_clear(()),
-                    on_cancel: move |()| confirm_clear.set(false),
-                }
+                {confirm_dialog(
+                    Confirm {
+                        testid: "smtp-clear-dialog",
+                        title: "Clear the SMTP settings?",
+                        body: "This removes the relay host, sign-in and stored password. Send-to-Kindle stops working until the relay is set up again.",
+                        action: "Clear SMTP settings",
+                        busy_label: "Clearing\u{2026}",
+                    },
+                    (io.in_flight)(),
+                    EventHandler::new(move |()| confirm_clear.set(false)),
+                    EventHandler::new(move |()| on_clear(())),
+                )}
             }
         }
     }
@@ -517,7 +520,7 @@ fn SmtpTestActions(
                 BusyLabel { busy, label: "Save SMTP settings", busy_label: "Saving\u{2026}" }
             }
         }
-        {credential_status_message("smtp-config-status", msg().as_deref(), msg_is_error())}
+        {live_status("smtp-config-status", msg().as_deref(), msg_is_error())}
     }
 }
 

@@ -8,7 +8,8 @@
 use dioxus::prelude::*;
 use omnibus_shared::SessionView;
 
-use super::{confirm_dialog, live_status, Confirm};
+use crate::components::confirm_modal::{confirm_dialog, Confirm};
+use crate::components::credential_card::live_status;
 use crate::components::loading::RowSkeletons;
 use crate::data;
 

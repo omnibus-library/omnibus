@@ -126,6 +126,57 @@ pub fn confirm_modal_body(
     }
 }
 
+/// What a destructive action's confirm dialog says. The dialog is `testid`,
+/// its buttons `{testid}-cancel` and `{testid}-confirm`.
+pub struct Confirm<'a> {
+    pub testid: &'a str,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub action: &'a str,
+    pub busy_label: &'a str,
+}
+
+/// A confirm dialog for one destructive action, focused when it opens so
+/// Escape and Tab work inside it.
+pub fn confirm_dialog(
+    confirm: Confirm<'_>,
+    busy: bool,
+    on_cancel: EventHandler<()>,
+    on_confirm: EventHandler<()>,
+) -> Element {
+    let actions = vec![
+        ConfirmModalAction {
+            testid: format!("{}-cancel", confirm.testid),
+            label: "Cancel".to_string(),
+            busy_label: None,
+            busy: false,
+            tone: ConfirmModalTone::Ghost,
+            disabled: busy,
+            on_click: on_cancel,
+        },
+        ConfirmModalAction {
+            testid: format!("{}-confirm", confirm.testid),
+            label: confirm.action.to_string(),
+            busy_label: Some(confirm.busy_label.to_string()),
+            busy,
+            tone: ConfirmModalTone::Danger,
+            disabled: busy,
+            on_click: on_confirm,
+        },
+    ];
+    rsx! {
+        ConfirmModal {
+            testid: confirm.testid.to_string(),
+            aria_label: confirm.title.to_string(),
+            dialog_class: "mg-modal confirm-modal".to_string(),
+            busy,
+            on_dismiss: on_cancel,
+            focus_on_open: true,
+            {confirm_modal_body(confirm.title, confirm.body, None, actions)}
+        }
+    }
+}
+
 impl ConfirmModalAction {
     /// Whether this is the working action, mid-work.
     fn is_busy(&self) -> bool {

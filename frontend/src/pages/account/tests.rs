@@ -19,28 +19,6 @@ fn theme_order_matches_css_attrs() {
 }
 
 #[cfg(all(feature = "server", not(feature = "mobile")))]
-mod live_status_line {
-    use super::*;
-    use crate::test_support::render;
-
-    #[test]
-    fn live_status_mounts_empty_before_any_message() {
-        let html = render(live_status("s", None, false));
-        assert_eq!(
-            html,
-            r#"<p role="status" class="settings-status" data-testid="s"></p>"#
-        );
-    }
-
-    #[test]
-    fn live_status_marks_a_failure_as_an_error() {
-        let html = render(live_status("s", Some("Nope."), true));
-        assert!(html.contains(r#"class="settings-status error""#), "{html}");
-        assert!(html.contains("Nope."), "{html}");
-    }
-}
-
-#[cfg(all(feature = "server", not(feature = "mobile")))]
 mod change_password_card {
     use super::*;
     use crate::test_support::render_in_vdom;

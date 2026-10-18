@@ -1,6 +1,6 @@
-//! Shared "credential card" status primitives: the connected/configured dot
-//! line and the save/clear/test result message, reused by the Hardcover,
-//! Google Books, SMTP, and account Kindle-email cards. Plain functions rather
+//! Shared settings-card status primitives: the connected/configured dot line
+//! of the credential cards (Hardcover, Google Books, SMTP, Calibre), and the
+//! save/clear/test result line every settings card reports through. Plain functions rather
 //! than `#[component]`s, so callers can invoke them mid-render without
 //! perturbing their own hook order.
 
@@ -42,19 +42,36 @@ pub fn credential_status_line(
     }
 }
 
-/// The save/clear/test result line: a `role="status"` `<p>` styled success or
-/// error, absent until the first action produces a message.
-pub fn credential_status_message(testid: &str, msg: Option<&str>, is_error: bool) -> Element {
-    let Some(m) = msg else {
-        return rsx! {};
-    };
+/// The save/clear/test result line: a `role="status"` `<p>` in the DOM before
+/// its first message, so that message is announced too (a live region mounted
+/// with its text often isn't).
+pub fn live_status(testid: &str, msg: Option<&str>, is_error: bool) -> Element {
+    status_line(STATUS, testid, msg, is_error)
+}
+
+/// [`live_status`] for a card's footer row, where it sits beside the actions.
+pub fn action_status(testid: &str, msg: Option<&str>, is_error: bool) -> Element {
+    status_line(ACTION_STATUS, testid, msg, is_error)
+}
+
+/// A result line's base class.
+pub const STATUS: &str = "settings-status";
+/// A footer row's result line's base class.
+pub const ACTION_STATUS: &str = "settings-status settings-action-status";
+
+/// `base`, marked success or error once there is a message to style.
+pub fn status_class(base: &str, has_msg: bool, is_error: bool) -> String {
+    match (has_msg, is_error) {
+        (true, true) => format!("{base} error"),
+        (true, false) => format!("{base} success"),
+        (false, _) => base.to_string(),
+    }
+}
+
+fn status_line(base: &str, testid: &str, msg: Option<&str>, is_error: bool) -> Element {
+    let class = status_class(base, msg.is_some(), is_error);
     rsx! {
-        p {
-            role: "status",
-            "data-testid": "{testid}",
-            class: if is_error { "settings-status error" } else { "settings-status success" },
-            "{m}"
-        }
+        p { role: "status", class, "data-testid": "{testid}", {msg.unwrap_or_default()} }
     }
 }
 
@@ -101,6 +118,22 @@ mod tests {
             off.contains("Not connected") && !off.contains("pending"),
             "{off}"
         );
+    }
+
+    #[test]
+    fn live_status_mounts_empty_before_any_message() {
+        let html = render(live_status("s", None, false));
+        assert_eq!(
+            html,
+            r#"<p role="status" class="settings-status" data-testid="s"></p>"#
+        );
+    }
+
+    #[test]
+    fn live_status_marks_a_failure_as_an_error() {
+        let html = render(live_status("s", Some("Nope."), true));
+        assert!(html.contains(r#"class="settings-status error""#), "{html}");
+        assert!(html.contains("Nope."), "{html}");
     }
 
     #[test]

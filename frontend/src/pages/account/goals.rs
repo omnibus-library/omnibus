@@ -18,6 +18,7 @@ use omnibus_shared::{
     GOAL_KIND_PAGES, MAX_DAILY_MINUTES, MAX_DAILY_PAGES, MAX_GOAL_TARGET,
 };
 
+use crate::components::credential_card::{status_class, ACTION_STATUS};
 use crate::components::unsaved::use_unsaved_guard;
 use crate::components::BusyLabel;
 use crate::{data, use_server_url};
@@ -343,11 +344,7 @@ fn goal_field(i: usize, signals: GoalSignals, known: bool, saving: bool) -> Elem
 /// The footer's status: a sheen while the goals are read, then the last
 /// save's outcome. Always mounted, so its first message is announced.
 fn goals_status(loaded: Option<bool>, msg: Option<String>, is_error: bool) -> Element {
-    let class = match (&msg, is_error) {
-        (Some(_), true) => "settings-status settings-action-status error",
-        (Some(_), false) => "settings-status settings-action-status success",
-        (None, _) => "settings-status settings-action-status",
-    };
+    let class = status_class(ACTION_STATUS, msg.is_some(), is_error);
     rsx! {
         p { role: "status", class, "data-testid": "goals-status",
             if loaded.is_none() {

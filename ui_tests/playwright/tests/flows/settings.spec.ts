@@ -30,7 +30,7 @@ const hardcoverSaveButton = (page: Page) => page.getByTestId("hardcover-save");
 const hardcoverClearButton = (page: Page) =>
   page.getByTestId("hardcover-clear");
 const hardcoverClearConfirm = (page: Page) =>
-  page.getByTestId("hardcover-clear-confirm");
+  page.getByTestId("hardcover-clear-dialog-confirm");
 const hardcoverStatus = (page: Page) => page.getByTestId("hardcover-status");
 const hardcoverMessage = (page: Page) =>
   page.getByTestId("hardcover-key-status");
@@ -41,7 +41,7 @@ const googleBooksSaveButton = (page: Page) =>
 const googleBooksClearButton = (page: Page) =>
   page.getByTestId("google-books-clear");
 const googleBooksClearConfirm = (page: Page) =>
-  page.getByTestId("google-books-clear-confirm");
+  page.getByTestId("google-books-clear-dialog-confirm");
 const googleBooksStatus = (page: Page) =>
   page.getByTestId("google-books-status");
 const googleBooksMessage = (page: Page) =>

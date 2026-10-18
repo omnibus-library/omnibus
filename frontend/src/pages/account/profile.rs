@@ -7,7 +7,8 @@
 use dioxus::prelude::*;
 use omnibus_shared::UserSummary;
 
-use super::{confirm_dialog, live_status, Confirm};
+use crate::components::confirm_modal::{confirm_dialog, Confirm};
+use crate::components::credential_card::live_status;
 use crate::components::image_upload::use_file_upload;
 use crate::components::unsaved::use_unsaved_guard;
 use crate::components::user_avatar::UserAvatar;

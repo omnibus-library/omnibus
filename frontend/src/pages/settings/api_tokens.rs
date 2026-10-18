@@ -9,11 +9,11 @@ use dioxus::prelude::*;
 use omnibus_shared::ApiTokenView;
 
 use crate::components::clipboard::CopyButton;
+use crate::components::credential_card::live_status;
 use crate::components::user_avatar::initials_for;
 use crate::components::BusyLabel;
 use crate::contexts::use_current_user_summary;
 use crate::data;
-use crate::pages::account::live_status;
 use crate::time::now_unix;
 
 /// Idle threshold: a token unused for longer than this shows the amber

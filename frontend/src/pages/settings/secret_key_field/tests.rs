@@ -23,26 +23,9 @@ fn secret_key_field_holds_save_until_the_status_loads() {
     );
 }
 
-#[component]
-fn ClearHarness() -> Element {
-    rsx! {
-        ClearCredentialModal {
-            testid: "google-books",
-            title: "Remove the Google Books key?",
-            body: SecretKeyKind::GoogleBooks.clear_consequence(),
-            confirm_label: "Remove Google Books key",
-            busy: false,
-            on_confirm: move |()| {},
-            on_cancel: move |()| {},
-        }
-    }
-}
-
 #[test]
-fn clear_credential_modal_names_what_clearing_stops() {
-    let html = render(rsx! { ClearHarness {} });
-    assert!(html.contains("Remove the Google Books key?"), "{html}");
-    assert!(html.contains("shared anonymous quota"), "{html}");
-    assert!(html.contains("google-books-clear-confirm"), "{html}");
-    assert!(html.contains("google-books-clear-cancel"), "{html}");
+fn clear_warning_names_what_clearing_stops_and_that_it_cannot_be_read_back() {
+    let warning = clear_warning(SecretKeyKind::GoogleBooks);
+    assert!(warning.contains("shared anonymous quota"), "{warning}");
+    assert!(warning.contains("can\u{2019}t be shown again"), "{warning}");
 }

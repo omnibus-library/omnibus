@@ -29,9 +29,9 @@ pub(crate) mod user_settings;
 #[cfg(not(feature = "mobile"))]
 use crate::components::auth::{score_password, PasswordRequirements, StrengthMeter};
 #[cfg(not(feature = "mobile"))]
-use crate::components::{
-    confirm_modal_body, BusyLabel, ConfirmModal, ConfirmModalAction, ConfirmModalTone,
-};
+use crate::components::credential_card::live_status;
+#[cfg(not(feature = "mobile"))]
+use crate::components::BusyLabel;
 #[cfg(not(feature = "mobile"))]
 use crate::{data, use_server_url};
 
@@ -130,90 +130,6 @@ pub fn AccountPage() -> Element {
     #[cfg(not(feature = "mobile"))]
     {
         rsx! {}
-    }
-}
-
-/// A `role="status"` line that is in the DOM before its first message, so
-/// that message is announced too (a live region mounted with its text often
-/// isn't).
-#[cfg(not(feature = "mobile"))]
-pub(crate) fn live_status(testid: &str, msg: Option<&str>, is_error: bool) -> Element {
-    status_line("settings-status", testid, msg, is_error)
-}
-
-/// [`live_status`] for a card's footer row, where it sits beside the actions.
-#[cfg(not(feature = "mobile"))]
-pub(crate) fn action_status(testid: &str, msg: Option<&str>, is_error: bool) -> Element {
-    status_line(
-        "settings-status settings-action-status",
-        testid,
-        msg,
-        is_error,
-    )
-}
-
-#[cfg(not(feature = "mobile"))]
-fn status_line(base: &str, testid: &str, msg: Option<&str>, is_error: bool) -> Element {
-    let class = match (msg, is_error) {
-        (Some(_), true) => format!("{base} error"),
-        (Some(_), false) => format!("{base} success"),
-        (None, _) => base.to_string(),
-    };
-    rsx! {
-        p { role: "status", class, "data-testid": "{testid}", {msg.unwrap_or_default()} }
-    }
-}
-
-/// What a destructive action's confirm dialog says. Its buttons are
-/// `{testid}-cancel` and `{testid}-confirm`.
-#[cfg(not(feature = "mobile"))]
-pub(crate) struct Confirm<'a> {
-    pub testid: &'a str,
-    pub title: &'a str,
-    pub body: &'a str,
-    pub action: &'a str,
-    pub busy_label: &'a str,
-}
-
-/// A confirm dialog for one destructive action, focused when it opens so
-/// Escape and Tab work inside it.
-#[cfg(not(feature = "mobile"))]
-pub(crate) fn confirm_dialog(
-    confirm: Confirm<'_>,
-    busy: bool,
-    on_cancel: EventHandler<()>,
-    on_confirm: EventHandler<()>,
-) -> Element {
-    let actions = vec![
-        ConfirmModalAction {
-            testid: format!("{}-cancel", confirm.testid),
-            label: "Cancel".to_string(),
-            busy_label: None,
-            busy: false,
-            tone: ConfirmModalTone::Ghost,
-            disabled: busy,
-            on_click: on_cancel,
-        },
-        ConfirmModalAction {
-            testid: format!("{}-confirm", confirm.testid),
-            label: confirm.action.to_string(),
-            busy_label: Some(confirm.busy_label.to_string()),
-            busy,
-            tone: ConfirmModalTone::Danger,
-            disabled: busy,
-            on_click: on_confirm,
-        },
-    ];
-    rsx! {
-        ConfirmModal {
-            testid: confirm.testid.to_string(),
-            aria_label: confirm.title.to_string(),
-            dialog_class: "mg-modal confirm-modal".to_string(),
-            busy,
-            on_dismiss: on_cancel,
-            focus_on_open: true,
-            {confirm_modal_body(confirm.title, confirm.body, None, actions)}
-        }
     }
 }
 

@@ -7,7 +7,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::{EbookConvertStatus, DEFAULT_EBOOK_CONVERT_BIN};
 
-use crate::components::credential_card::{credential_status_line, credential_status_message};
+use crate::components::credential_card::{credential_status_line, live_status};
 use crate::components::unsaved::use_unsaved_guard;
 use crate::components::BusyLabel;
 use crate::data::server_error_message;
@@ -227,7 +227,7 @@ pub fn EbookConvertField() -> Element {
                     BusyLabel { busy, label: "Save ebook-convert path", busy_label: "Saving\u{2026}" }
                 }
             }
-            {credential_status_message("ebook-convert-save-status", msg().as_deref(), msg_is_error())}
+            {live_status("ebook-convert-save-status", msg().as_deref(), msg_is_error())}
             }
         }
     }

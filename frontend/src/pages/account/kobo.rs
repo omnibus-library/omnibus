@@ -11,8 +11,9 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::KoboDeviceView;
 
-use super::{action_status, confirm_dialog, Confirm};
 use crate::components::clipboard::CopyButton;
+use crate::components::confirm_modal::{confirm_dialog, Confirm};
+use crate::components::credential_card::action_status;
 use crate::components::loading::RowSkeletons;
 use crate::components::BusyLabel;
 use crate::pages::settings::use_instance_origin;
