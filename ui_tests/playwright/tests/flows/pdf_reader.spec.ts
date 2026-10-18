@@ -203,7 +203,7 @@ test.describe("pdf reader", () => {
       await test.step("check the pdf actions show", async () => {
         await expect(bookDetailPage.startReadingPdfButton).toBeVisible();
         await expect(bookDetailPage.noFilesMessage).toBeHidden();
-        await expect(bookDetailPage.readPdfButton).toBeVisible();
+        await expect(bookDetailPage.formatRow("PDF").readLink).toBeVisible();
       });
     });
 

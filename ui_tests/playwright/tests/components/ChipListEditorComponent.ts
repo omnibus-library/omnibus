@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { metadataUrls } from "../contracts/metadata";
+import { overridesUrls } from "../contracts/overrides";
 import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
@@ -39,9 +39,7 @@ export class ChipListEditorComponent extends BaseComponent {
   /** Types `value` and saves it with Enter, then waits for the save. */
   async addChip(value: string): Promise<void> {
     await this.input.fill(value);
-    const saved = this.page.waitForResponse(
-      isPostTo(metadataUrls.saveOverrides),
-    );
+    const saved = this.page.waitForResponse(isPostTo(overridesUrls.save));
     await this.input.press("Enter");
     await saved;
   }

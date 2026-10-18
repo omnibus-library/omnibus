@@ -424,18 +424,10 @@ export class ListenPage extends BasePage {
     );
   }
 
-  /**
-   * Checks the player is on `bookUuid`; `fileId` pins the part it plays, and
-   * "any" accepts whichever part a picker chose.
-   */
-  async assertDisplayedFor(
-    bookUuid: string,
-    fileId?: number | "any",
-  ): Promise<void> {
-    const query =
-      fileId === undefined
-        ? ""
-        : `\\?file_id=${fileId === "any" ? "\\d+" : fileId}`;
+  /** Checks the player is on `bookUuid`, at the part `fileId` when given. */
+  async assertDisplayedFor(bookUuid: string, fileId?: number): Promise<void> {
+    // #2256: without a file the url has no trailing `?`.
+    const query = fileId === undefined ? "" : `\\?file_id=${fileId}`;
     await expect(this.page).toHaveURL(
       new RegExp(`/listen/${bookUuid}${query}$`),
     );

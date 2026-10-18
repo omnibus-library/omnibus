@@ -1,7 +1,6 @@
 import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthorsRequests } from "../apiRequests/AuthorsRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
-import { BookRatingRequests } from "../apiRequests/BookRatingRequests";
 import { CrossFormatRequests } from "../apiRequests/CrossFormatRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { GoalsRequests } from "../apiRequests/GoalsRequests";
@@ -13,6 +12,7 @@ import { MetadataKeysRequests } from "../apiRequests/MetadataKeysRequests";
 import { OverridesRequests } from "../apiRequests/OverridesRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
+import { RatingsRequests } from "../apiRequests/RatingsRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { SettingsRequests } from "../apiRequests/SettingsRequests";
@@ -39,7 +39,7 @@ type RequestFixtures = {
   mcpRequests: McpRequests;
   usersRequests: UsersRequests;
   metadataKeysRequests: MetadataKeysRequests;
-  bookRatingRequests: BookRatingRequests;
+  ratingsRequests: RatingsRequests;
   ebooksRequests: EbooksRequests;
   journalsRequests: JournalsRequests;
   uploadsRequests: UploadsRequests;
@@ -114,8 +114,8 @@ export const test = base.extend<RequestFixtures>({
     await use(new MetadataKeysRequests(request));
   },
 
-  bookRatingRequests: async ({ request }, use) => {
-    await use(new BookRatingRequests(request));
+  ratingsRequests: async ({ request }, use) => {
+    await use(new RatingsRequests(request));
   },
 
   ebooksRequests: async ({ request }, use) => {

@@ -49,7 +49,7 @@ test.describe("wishlist check-in", () => {
 
     await test.step("open the wished-for book", async () => {
       await bookDetailPage.goto(wish.uuid);
-      await expect(bookDetailPage.fromSameHand.emptyMessage).toContainText(
+      await expect(bookDetailPage.fromSameHandEmptyMessage).toContainText(
         "0 books in your library",
       );
     });
@@ -99,7 +99,7 @@ test.describe("wishlist check-in", () => {
       await expect(bookDetailPage.physicalCopy.cards).toHaveCount(1);
       await expect(bookDetailPage.physicalCopy.cards).toContainText("by you");
       await expect(bookDetailPage.checkInWhenAcquiredButton).toHaveCount(0);
-      await expect(bookDetailPage.fromSameHand.emptyMessage).toContainText(
+      await expect(bookDetailPage.fromSameHandEmptyMessage).toContainText(
         "1 book in your library",
       );
     });

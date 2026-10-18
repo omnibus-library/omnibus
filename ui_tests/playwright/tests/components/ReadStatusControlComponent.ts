@@ -1,32 +1,37 @@
 import type { Locator, Page } from "@playwright/test";
+import { readStatusUrls } from "../contracts/readStatus";
+import type { ReadStatus } from "../data/readStatus";
+import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** The hero's unread, reading and finished segments, and the line under them. */
+const LABELS: Record<ReadStatus, string> = {
+  unread: "Unread",
+  reading: "Reading",
+  finished: "Finished",
+};
+
+/** The three-segment read status control in the hero, and the line under it. */
 export class ReadStatusControlComponent extends BaseComponent {
   readonly root: Locator;
-  readonly unreadSegment: Locator;
-  readonly readingSegment: Locator;
-  readonly finishedSegment: Locator;
-  readonly meta: Locator;
+  readonly metaText: Locator;
 
   constructor(page: Page) {
     super(page);
     this.root = page.getByTestId("read-status-control");
-    this.unreadSegment = this.root.getByTestId("read-status-unread");
-    this.readingSegment = this.root.getByTestId("read-status-reading");
-    this.finishedSegment = this.root.getByTestId("read-status-finished");
-    this.meta = page.getByTestId("read-status-meta");
+    this.metaText = this.root.getByRole("status");
   }
 
-  async markUnread(): Promise<void> {
-    await this.unreadSegment.click();
+  segmentButton(status: ReadStatus): Locator {
+    return this.root.getByRole("button", {
+      name: LABELS[status],
+      exact: true,
+    });
   }
 
-  async markReading(): Promise<void> {
-    await this.readingSegment.click();
-  }
-
-  async markFinished(): Promise<void> {
-    await this.finishedSegment.click();
+  /** Clicks the segment and waits for the save; the active one sends nothing. */
+  async mark(status: ReadStatus): Promise<void> {
+    const saved = this.page.waitForResponse(isPostTo(readStatusUrls.set));
+    await this.segmentButton(status).click();
+    await saved;
   }
 }

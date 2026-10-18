@@ -1,6 +1,3 @@
-/** The body that sets a rating, in `ratings/set` and `POST /api/ratings`. */
-export type RatingUpdate = { book_uuid: string; stars: number };
-
 /** Another reader's rating of a book; the server always sends `has_avatar`. */
 export type AttributedRating = {
   user_id: number;

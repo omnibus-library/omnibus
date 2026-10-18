@@ -1,22 +1,24 @@
 import type { Locator, Page } from "@playwright/test";
 import { ratingsUrls } from "../contracts/ratings";
-import type { OtherRating } from "../data/bookDetail";
+import type { AttributedRating } from "../data/ratings";
+import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** The hero's rating card: the reader's own stars and everyone else's. */
+/** The rating card in the book detail hero: your stars and what they say. */
 export class RatingComponent extends BaseComponent {
-  readonly stars: Locator;
-  readonly meta: Locator;
-  readonly otherRatings: Locator;
+  readonly starsGroup: Locator;
+  readonly metaText: Locator;
+  readonly otherRatingsList: Locator;
   readonly otherRatingRow: Locator;
   readonly otherRatingByline: Locator;
   readonly otherRatingContent: Locator;
 
   constructor(page: Page) {
     super(page);
-    this.stars = page.getByTestId("rating-stars");
-    this.meta = page.getByTestId("rating-meta");
-    this.otherRatings = page.getByTestId("other-ratings");
+    this.starsGroup = page.getByRole("group", { name: "Your rating" });
+    // Another status line shares the page, so the meta is found by test id.
+    this.metaText = page.getByTestId("rating-meta");
+    this.otherRatingsList = page.getByTestId("other-ratings");
     this.otherRatingRow = page.getByTestId("other-rating-row");
     this.otherRatingByline = this.otherRatingRow.getByTestId(
       "other-rating-byline",
@@ -26,33 +28,42 @@ export class RatingComponent extends BaseComponent {
     );
   }
 
-  /** The stars an attributed rating draws, found by their label. */
-  otherRatingStars(stars: number): Locator {
-    return this.otherRatingRow.getByLabel(`${stars} out of 5 stars`);
+  /** The other reader's star row, named by its label, "4.5 out of 5 stars". */
+  otherRatingStars(label: string): Locator {
+    return this.otherRatingRow.getByLabel(label);
   }
 
-  /** The star half that sets a rating of `stars`. */
   rateButton(stars: number): Locator {
-    return this.stars.getByRole("button", { name: `Rate ${stars} stars` });
-  }
-
-  /** The half a rating of `stars` leaves lit, which becomes the clear control. */
-  clearButton(stars: number): Locator {
-    return this.stars.getByRole("button", {
-      name: `Clear your ${stars}-star rating`,
+    return this.starsGroup.getByRole("button", {
+      name: stars === 1 ? "Rate 1 star" : `Rate ${stars} stars`,
+      exact: true,
     });
   }
 
+  /** The half star that holds the current rating; clicking it un-rates. */
+  clearButton(stars: number): Locator {
+    return this.starsGroup.getByRole("button", {
+      name: `Clear your ${stars}-star rating`,
+      exact: true,
+    });
+  }
+
+  /** Clicks the star and waits for the save to answer. */
   async rate(stars: number): Promise<void> {
+    const saved = this.page.waitForResponse(isPostTo(ratingsUrls.set));
     await this.rateButton(stars).click();
+    await saved;
   }
 
+  /** Clicks the rated star and waits for the clear to answer. */
   async clear(stars: number): Promise<void> {
+    const cleared = this.page.waitForResponse(isPostTo(ratingsUrls.clear));
     await this.clearButton(stars).click();
+    await cleared;
   }
 
-  /** Answers the other-readers read with `ratings`. */
-  async stubOthers(ratings: OtherRating[]): Promise<void> {
+  /** Answers the other readers' ratings with `ratings` on every later load. */
+  async stubOtherRatings(ratings: AttributedRating[]): Promise<void> {
     await this.page.route(ratingsUrls.others, (route) =>
       route.fulfill({ json: ratings }),
     );

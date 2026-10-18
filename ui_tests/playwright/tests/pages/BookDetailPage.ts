@@ -1,13 +1,11 @@
 import type { Locator, Page } from "@playwright/test";
 import { AlignmentModalComponent } from "../components/AlignmentModalComponent";
-import { BookDetailStopsComponent } from "../components/BookDetailStopsComponent";
-import { BookExportComponent } from "../components/BookExportComponent";
 import { BookSummaryComponent } from "../components/BookSummaryComponent";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
+import { ChipListEditorComponent } from "../components/ChipListEditorComponent";
 import { DeleteFilesDialogComponent } from "../components/DeleteFilesDialogComponent";
-import { FormatSwitcherComponent } from "../components/FormatSwitcherComponent";
-import { FromSameHandComponent } from "../components/FromSameHandComponent";
-import { HeroChipsComponent } from "../components/HeroChipsComponent";
+import { ExportMenuComponent } from "../components/ExportMenuComponent";
+import { FormatRowComponent } from "../components/FormatRowComponent";
 import { JournalEntryOverlayComponent } from "../components/JournalEntryOverlayComponent";
 import { JournalSectionComponent } from "../components/JournalSectionComponent";
 import { ListenFilePickerComponent } from "../components/ListenFilePickerComponent";
@@ -18,14 +16,32 @@ import { QuoteCardModalComponent } from "../components/QuoteCardModalComponent";
 import { RatingComponent } from "../components/RatingComponent";
 import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
-import { SavedPassagesComponent } from "../components/SavedPassagesComponent";
 import { ShelfPickerComponent } from "../components/ShelfPickerComponent";
 import { SuggestionsStripComponent } from "../components/SuggestionsStripComponent";
 import { SyncLinkComponent } from "../components/SyncLinkComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { WishlistCardComponent } from "../components/WishlistCardComponent";
+import { accountUrls } from "../contracts/account";
+import { authorBlockUrls } from "../contracts/authorBlock";
+import { kindleUrls } from "../contracts/kindle";
+import type { KindleSendStatus } from "../data/kindle";
 import type { CopyRow, WishlistRow } from "../data/physical";
+import { holdRequests, isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
+
+/** The six stops of the page in running order, as the dot rail names them. */
+const MARQUEE_SECTIONS = [
+  "Home",
+  "Stats",
+  "Highlights",
+  "Journals",
+  "The files",
+  "More",
+] as const;
+
+export type MarqueeSection = (typeof MARQUEE_SECTIONS)[number];
+
+export type FormatLabel = "EPUB" | "PDF" | "MP3" | "M4B";
 
 export class BookDetailPage extends BasePage {
   protected readonly urlPattern = /\/books\/[^/?#]+$/;
@@ -33,16 +49,13 @@ export class BookDetailPage extends BasePage {
   readonly topNav: TopNavComponent;
   readonly miniDock: MiniDockComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
-  readonly stops: BookDetailStopsComponent;
-  readonly formats: FormatSwitcherComponent;
-  readonly exportMenu: BookExportComponent;
+  readonly exportMenu: ExportMenuComponent;
   readonly rating: RatingComponent;
-  readonly readStatusControl: ReadStatusControlComponent;
-  readonly savedPassages: SavedPassagesComponent;
-  readonly quoteCard: QuoteCardModalComponent;
-  readonly fromSameHand: FromSameHandComponent;
+  readonly readStatus: ReadStatusControlComponent;
+  readonly quoteCardModal: QuoteCardModalComponent;
   readonly listenFilePicker: ListenFilePickerComponent;
-  readonly heroChips: HeroChipsComponent;
+  readonly genreChips: ChipListEditorComponent;
+  readonly tagChips: ChipListEditorComponent;
   readonly summary: BookSummaryComponent;
   readonly suggestions: SuggestionsStripComponent;
   readonly journal: JournalSectionComponent;
@@ -56,21 +69,51 @@ export class BookDetailPage extends BasePage {
   readonly alignmentModal: AlignmentModalComponent;
 
   readonly titleHeading: Locator;
-  readonly readButton: Locator;
+  readonly authorsLine: Locator;
+  readonly heroCoverFrame: Locator;
+  readonly heroCover: Locator;
+  readonly sectionsNav: Locator;
+  readonly sectionDots: Locator;
+  readonly scrollStopsToggleButton: Locator;
+  readonly railScrollStopsToggleButton: Locator;
+  readonly scrollStopsErrorMessage: Locator;
+  readonly flowScroller: Locator;
+  readonly snapScroller: Locator;
+  readonly flowSections: Locator;
+  readonly leadFlowSection: Locator;
+  readonly leadFlowSectionLabels: Locator;
+  readonly flowSectionLabels: Locator;
+  readonly nextStopCues: Locator;
+  readonly snapSections: Locator;
+  readonly backToBookButton: Locator;
+  readonly formatSwitcher: Locator;
+  readonly formatBadges: Locator;
+  readonly formatListenLinks: Locator;
+  readonly savedPassagesHeading: Locator;
+  readonly savedPassagesSection: Locator;
+  readonly savedPassageCards: Locator;
+  readonly savedPassagesEmptyMessage: Locator;
+  readonly showMorePassagesButton: Locator;
+  readonly moreStop: Locator;
+  readonly seriesShelf: Locator;
+  readonly seriesPageLink: Locator;
+  readonly fromSameHandHeading: Locator;
+  readonly fromSameHandRow: Locator;
+  readonly fromSameHandTiles: Locator;
+  readonly fromSameHandLoadingMessage: Locator;
+  readonly fromSameHandEmptyMessage: Locator;
+  readonly onlyBookByNote: Locator;
+  readonly bookNotFoundMessage: Locator;
   readonly startReadingButton: Locator;
+  readonly startListeningButton: Locator;
   readonly startReadingComicButton: Locator;
   readonly startReadingPdfButton: Locator;
-  readonly readPdfButton: Locator;
   readonly listenButton: Locator;
   readonly immersiveReadButton: Locator;
   readonly noFilesMessage: Locator;
   readonly checkInWhenAcquiredButton: Locator;
   readonly physicalPill: Locator;
-  readonly authorsLine: Locator;
-  readonly heroCover: Locator;
-  readonly startListeningButton: Locator;
   readonly editMetadataLink: Locator;
-  readonly notFoundMessage: Locator;
   readonly progressRuler: Locator;
   readonly addToShelfButton: Locator;
   readonly shelvesLoading: Locator;
@@ -80,16 +123,13 @@ export class BookDetailPage extends BasePage {
     this.topNav = new TopNavComponent(page);
     this.miniDock = new MiniDockComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
-    this.stops = new BookDetailStopsComponent(page);
-    this.formats = new FormatSwitcherComponent(page);
-    this.exportMenu = new BookExportComponent(page);
+    this.exportMenu = new ExportMenuComponent(page);
     this.rating = new RatingComponent(page);
-    this.readStatusControl = new ReadStatusControlComponent(page);
-    this.savedPassages = new SavedPassagesComponent(page);
-    this.quoteCard = new QuoteCardModalComponent(page);
-    this.fromSameHand = new FromSameHandComponent(page);
+    this.readStatus = new ReadStatusControlComponent(page);
+    this.quoteCardModal = new QuoteCardModalComponent(page);
     this.listenFilePicker = new ListenFilePickerComponent(page);
-    this.heroChips = new HeroChipsComponent(page);
+    this.genreChips = new ChipListEditorComponent(page, "genres");
+    this.tagChips = new ChipListEditorComponent(page, "tags");
     this.summary = new BookSummaryComponent(page);
     this.suggestions = new SuggestionsStripComponent(page);
     this.journal = new JournalSectionComponent(page);
@@ -102,12 +142,63 @@ export class BookDetailPage extends BasePage {
     this.syncLink = new SyncLinkComponent(page);
     this.alignmentModal = new AlignmentModalComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
-    this.readButton = this.formats.epubRow.getByTestId("action-read");
+    this.authorsLine = page.getByTestId("book-authors");
+    // The More stop's tiles draw covers too, so the hero's is found by its
+    // wrapper, which is hidden from the accessibility tree.
+    this.heroCoverFrame = page.locator("#bdmq-coverpx");
+    this.heroCover = this.heroCoverFrame.getByTestId("cover");
+    this.sectionsNav = page.getByRole("navigation", { name: "Page sections" });
+    this.sectionDots = this.sectionsNav.getByRole("button");
+    // A test asserts the toggle absent from the rail, so it keeps its test id.
+    this.scrollStopsToggleButton = page.getByTestId("bdmq-mode-toggle");
+    this.railScrollStopsToggleButton =
+      this.sectionsNav.getByTestId("bdmq-mode-toggle");
+    // Other alerts share the page, so the toggle's is found by test id.
+    this.scrollStopsErrorMessage = page.getByTestId("bdmq-mode-error");
+    // The scrollers and their sections carry no role, and the `bdmq-sec-{i}`
+    // ids render in both modes, so the modes are told apart by class.
+    this.flowScroller = page.locator("#bdmq-flow");
+    this.snapScroller = page.locator("#bdmq-snap");
+    this.flowSections = page.locator(".bdmq-flowsec");
+    this.leadFlowSection = page.locator(".bdmq-flowsec.lead");
+    this.leadFlowSectionLabels = this.leadFlowSection.locator(".bdmq-flowlab");
+    this.flowSectionLabels = page.locator(".bdmq-flowlab");
+    this.nextStopCues = page.locator(".bdmq-next");
+    this.snapSections = page.locator(".bdmq-sec");
+    this.backToBookButton = page.getByTestId("bdmq-flowtop");
+    this.formatSwitcher = page.getByRole("group", {
+      name: "Available formats",
+    });
+    this.formatBadges = this.formatSwitcher.getByTestId("format-badge");
+    this.formatListenLinks = this.formatSwitcher.getByTestId("action-listen");
+    this.savedPassagesHeading = page.getByRole("heading", {
+      name: "Passages you saved",
+    });
+    this.savedPassagesSection = page.getByTestId("highlights-section");
+    this.savedPassageCards = page.getByTestId("highlight-card");
+    this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
+    this.showMorePassagesButton = page.getByTestId("highlights-show-more");
+    this.moreStop = page.getByTestId("bdmq-more");
+    this.seriesShelf = page.getByTestId("bdmq-series-shelf");
+    this.seriesPageLink = page.getByRole("link", { name: /series page/ });
+    this.fromSameHandHeading = page.getByRole("heading", {
+      name: "From the same hand",
+    });
+    this.fromSameHandRow = page.getByTestId("from-same-hand");
+    this.fromSameHandTiles = this.fromSameHandRow.getByTestId(
+      "from-same-hand-tile",
+    );
+    this.fromSameHandLoadingMessage = page.getByTestId(
+      "from-same-hand-loading",
+    );
+    this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
+    this.onlyBookByNote = page.getByText(/only book by/);
+    this.bookNotFoundMessage = page.getByText("Book not found.");
     // The labels change with reading progress, so the row is found by test id.
     this.startReadingButton = page.getByTestId("start-reading");
+    this.startListeningButton = page.getByTestId("start-listening");
     this.startReadingComicButton = page.getByTestId("start-reading-comic");
     this.startReadingPdfButton = page.getByTestId("start-reading-pdf");
-    this.readPdfButton = page.getByTestId("action-read-pdf");
     this.listenButton = page.getByTestId("listen-secondary");
     this.immersiveReadButton = page.getByTestId("immersive-read");
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
@@ -115,12 +206,7 @@ export class BookDetailPage extends BasePage {
       name: "Check in when acquired",
     });
     this.physicalPill = page.getByTestId("physical-pill");
-    this.authorsLine = page.getByTestId("book-authors");
-    // "From the same hand" adds a cover per tile, so the first is the hero's.
-    this.heroCover = page.getByTestId("cover").first();
-    this.startListeningButton = page.getByTestId("start-listening");
     this.editMetadataLink = page.getByTestId("edit-metadata");
-    this.notFoundMessage = page.getByText("Book not found.");
     this.progressRuler = page.getByTestId("bdmq-ruler");
     this.addToShelfButton = page.getByTestId("bdmq-add-to-shelf");
     this.shelvesLoading = page.getByTestId("bdmq-shelves-loading");
@@ -130,22 +216,66 @@ export class BookDetailPage extends BasePage {
     return this.titleHeading;
   }
 
+  /** The authors line's link to the author called `name`. */
+  authorLink(name: string): Locator {
+    return this.authorsLine.getByRole("link", { name, exact: true });
+  }
+
+  /** The kicker's link to `series`; exact, so the More stop's covers miss. */
+  seriesLink(series: string): Locator {
+    return this.page.getByRole("link", { name: series, exact: true });
+  }
+
+  /** The tile for the book called `title` in the "From the same hand" row. */
+  fromSameHandTile(title: string): Locator {
+    return this.fromSameHandTiles.filter({ hasText: title });
+  }
+
+  /** The cover image the "From the same hand" row draws for `title`. */
+  fromSameHandCover(title: string): Locator {
+    return this.fromSameHandRow.getByRole("img", {
+      name: `Cover of ${title}`,
+    });
+  }
+
+  /** The row the switcher draws for `format`. */
+  formatRow(format: FormatLabel): FormatRowComponent {
+    return new FormatRowComponent(
+      this.page,
+      this.formatSwitcher.getByTestId(`format-row-${format.toLowerCase()}`),
+    );
+  }
+
+  /** The dot rail's button for `section`; its label reads "NN · Name". */
+  sectionDot(section: MarqueeSection): Locator {
+    return this.sectionsNav.getByRole("button", {
+      name: new RegExp(`${section}$`, "i"),
+    });
+  }
+
+  /** The panel holding `section`, in whichever reading the page is in. */
+  sectionPanel(section: MarqueeSection): Locator {
+    return this.page.getByTestId(
+      `bdmq-sec-${MARQUEE_SECTIONS.indexOf(section)}`,
+    );
+  }
+
+  /** The snapped screen's label for `section`, which fades as the screen leaves. */
+  sectionLabel(section: MarqueeSection): Locator {
+    return this.sectionPanel(section).locator(".bdmq-seclab");
+  }
+
+  /** The "scroll, next" cue under the snapped screen for `section`. */
+  nextStopCue(section: MarqueeSection): Locator {
+    return this.sectionPanel(section).locator(".bdmq-next");
+  }
+
   /** The saved-passage card whose quote contains `quote`. */
   savedPassageCard(quote: string): SavedPassageCardComponent {
     return new SavedPassageCardComponent(
       this.page,
-      this.savedPassages.cards.filter({ hasText: quote }),
+      this.savedPassageCards.filter({ hasText: quote }),
     );
-  }
-
-  /** The authors line's link to `name`'s page. */
-  authorLink(name: string): Locator {
-    return this.authorsLine.getByRole("link", { name });
-  }
-
-  /** The first link named for the series, which the kicker leads the page with. */
-  seriesLink(name: RegExp): Locator {
-    return this.page.getByRole("link", { name }).first();
   }
 
   /** The More stop's tile for a shelf that holds the book. */
@@ -169,7 +299,10 @@ export class BookDetailPage extends BasePage {
       .locator(".bd-meta-v");
   }
 
-  /** Opens the book and waits for its first fetches to settle. */
+  /**
+   * Settles because the page fills its widgets from fetches after mount, and
+   * a click that lands before they do gets overwritten.
+   */
   async goto(bookUuid: string): Promise<void> {
     await this.openAndSettle(`/books/${bookUuid}`);
   }
@@ -179,9 +312,12 @@ export class BookDetailPage extends BasePage {
     await this.open(`/books/${bookUuid}`);
   }
 
-  /** Opens the reader through the EPUB format's Read action. */
-  async read(): Promise<void> {
-    await this.readButton.click();
+  async startReading(): Promise<void> {
+    await this.startReadingButton.click();
+  }
+
+  async startListening(): Promise<void> {
+    await this.startListeningButton.click();
   }
 
   /** Opens the reader with the book's audiobook docked beside it. */
@@ -203,49 +339,25 @@ export class BookDetailPage extends BasePage {
     await this.checkInWhenAcquiredButton.click();
   }
 
-  /** Opens the reader through the Start reading action. */
-  async startReading(): Promise<void> {
-    await this.startReadingButton.click();
-  }
-
-  async startListening(): Promise<void> {
-    await this.startListeningButton.click();
-  }
-
   async openAuthor(name: string): Promise<void> {
     await this.authorLink(name).click();
   }
 
-  async openSeries(name: RegExp): Promise<void> {
-    await this.seriesLink(name).click();
+  async openSeries(series: string): Promise<void> {
+    await this.seriesLink(series).click();
   }
 
-  /** The path of the page's URL, for a spec to poll when a link leaves the book. */
-  async path(): Promise<string> {
-    return new URL(this.page.url()).pathname;
+  async openSeriesPage(): Promise<void> {
+    await this.seriesPageLink.click();
   }
 
-  /** Marks `window`, which a full page load clears, so a hop's staying in-app can be told. */
-  async plantFullLoadSentinel(): Promise<void> {
-    await this.page.evaluate(() =>
-      Reflect.set(window, "__fullLoadSentinel", true),
-    );
-  }
-
-  /** Whether the mark from `plantFullLoadSentinel` is still there. */
-  async fullLoadSentinelSurvived(): Promise<boolean> {
-    return this.page.evaluate(
-      () => Reflect.get(window, "__fullLoadSentinel") === true,
-    );
-  }
-
-  /** Answers the panel's two on-mount reads, so a stub fixes what it settles on. */
-  async stubPhysicalLoad(
-    copies: CopyRow[],
-    wishlist: WishlistRow | null,
-  ): Promise<void> {
-    await this.physicalCopy.stubLoad(copies);
-    await this.wishlist.stubLoad(wishlist);
+  /**
+   * Hovers the row first: until then the stack overlaps its tiles behind the
+   * author card, which would take the click.
+   */
+  async openSameHandBook(title: string): Promise<void> {
+    await this.fromSameHandRow.hover();
+    await this.fromSameHandTile(title).click();
   }
 
   async openEditMetadata(): Promise<void> {
@@ -258,8 +370,137 @@ export class BookDetailPage extends BasePage {
     await this.shelfPicker.root.waitFor();
   }
 
-  async openSeriesPage(): Promise<void> {
-    await this.stops.seriesPageLink.click();
+  /**
+   * Removes the directory picker on every later load, so Send to Kobo
+   * downloads the file: a headless run cannot drive the picker. Call it
+   * before `goto`.
+   */
+  async presetNoDirectoryPicker(): Promise<void> {
+    await this.page.addInitScript(() => {
+      Object.defineProperty(window, "showDirectoryPicker", {
+        configurable: true,
+        value: undefined,
+      });
+    });
+  }
+
+  /** Records the file name of every download the page starts from now on. */
+  recordDownloads(): string[] {
+    const names: string[] = [];
+    this.page.on("download", (download) =>
+      names.push(download.suggestedFilename()),
+    );
+    return names;
+  }
+
+  /**
+   * Answers the Kindle send with a task id and the status poll after it with
+   * `outcome`, so no SMTP relay or Kindle address is needed.
+   */
+  async stubKindleSend(outcome: KindleSendStatus): Promise<void> {
+    await this.page.route(kindleUrls.send, (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ json: 1 })
+        : route.continue(),
+    );
+    await this.page.route(kindleUrls.sendStatus, (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ json: outcome })
+        : route.continue(),
+    );
+  }
+
+  /** Answers the panel's two on-mount reads, so a stub fixes what it settles on. */
+  async stubPhysicalLoad(
+    copies: CopyRow[],
+    wishlist: WishlistRow | null,
+  ): Promise<void> {
+    await this.physicalCopy.stubLoad(copies);
+    await this.wishlist.stubLoad(wishlist);
+  }
+
+  /** Holds the author fetch open until the returned release lets it through. */
+  async holdAuthorFetch(): Promise<() => void> {
+    return holdRequests(this.page, authorBlockUrls.author);
+  }
+
+  /** Scrolls to `section` through its dot on the rail. */
+  async jumpToSection(section: MarqueeSection): Promise<void> {
+    await this.sectionDot(section).click();
+  }
+
+  /** Scrolls the continuous flow to `top` pixels from its start. */
+  async scrollFlowTo(top: number): Promise<void> {
+    await this.flowScroller.evaluate((el, top) => {
+      el.scrollTop = top;
+    }, top);
+  }
+
+  /** Scrolls the continuous flow until `section` starts at its top. */
+  async scrollFlowToSection(section: MarqueeSection): Promise<void> {
+    const top = await this.sectionPanel(section).evaluate(
+      (el: HTMLElement) => el.offsetTop,
+    );
+    await this.scrollFlowTo(top);
+  }
+
+  /** Scrolls the snap marquee to the screen holding `section`. */
+  async scrollMarqueeToStop(section: MarqueeSection): Promise<void> {
+    await this.snapScroller.evaluate((el, index) => {
+      el.scrollTop = index * el.clientHeight;
+    }, MARQUEE_SECTIONS.indexOf(section));
+  }
+
+  /** Flips the stage's scroll stops toggle and waits for the save. */
+  async toggleScrollStops(): Promise<void> {
+    const saved = this.page.waitForResponse(isPostTo(accountUrls.scrollStops));
+    await this.scrollStopsToggleButton.click();
+    await saved;
+  }
+
+  /** Scrolls the flow until the journal's new entry sits level with the rail. */
+  async alignNewJournalEntryWithRail(): Promise<void> {
+    const [entry, rail] = await Promise.all([
+      this.journal.newEntryButton.boundingBox(),
+      this.sectionsNav.boundingBox(),
+    ]);
+    if (!entry || !rail) {
+      throw new Error("the new journal entry and the dot rail must both show");
+    }
+    const offset = entry.y + entry.height / 2 - (rail.y + rail.height / 2);
+    await this.flowScroller.evaluate((el, by) => {
+      el.scrollTop += by;
+    }, offset);
+  }
+
+  async backToBook(): Promise<void> {
+    await this.backToBookButton.click();
+  }
+
+  async flowScrollTop(): Promise<number> {
+    return this.flowScroller.evaluate((el) => el.scrollTop);
+  }
+
+  /** The cover's inline transform, which the scroll glue rewrites as it runs. */
+  async coverTransform(): Promise<string> {
+    return this.heroCoverFrame.evaluate((el) => el.style.transform);
+  }
+
+  /** The scroll stops toggle's bottom edge and the dot rail's top edge, in px. */
+  async toggleAndRailEdges(): Promise<{
+    toggleBottom: number;
+    railTop: number;
+  }> {
+    const [toggle, rail] = await Promise.all([
+      this.scrollStopsToggleButton.boundingBox(),
+      this.sectionsNav.boundingBox(),
+    ]);
+    if (!toggle || !rail) {
+      throw new Error(
+        "the scroll stops toggle and the dot rail must both show",
+      );
+    }
+    return { toggleBottom: toggle.y + toggle.height, railTop: rail.y };
   }
 
   /** Checks the page is showing the book `bookUuid`, not just any book. */

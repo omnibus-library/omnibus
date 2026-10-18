@@ -1,11 +1,10 @@
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { APIRequestContext } from "@playwright/test";
-import { EbooksRequests } from "../apiRequests/EbooksRequests";
+import type { EbooksRequests } from "../apiRequests/EbooksRequests";
 import type { IndexedBook } from "../data/authors";
-import { type BookRecord, isAudioFormat } from "../data/bookDetail";
+import { isAudioFormat } from "../data/bookDetail";
 import type { SeededBookmark } from "../data/bookmarks";
-import type { LibraryBook, UploadedEbook } from "../data/ebooks";
+import type { EbookDetail, LibraryBook, UploadedEbook } from "../data/ebooks";
 import {
   buildHighlight,
   type NewHighlight,
@@ -17,6 +16,7 @@ import {
   FILTER_SHELF_SLUGS,
   type FilterShelf,
 } from "../data/libraryFilters";
+import { isAudioPair, type MergedAudiobook } from "../data/merge";
 import type { MetadataProvider } from "../data/metadataKeys";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import {
@@ -24,6 +24,7 @@ import {
   EventClock,
   type ProgressRecord,
 } from "../data/progress";
+import type { RatingRecord } from "../data/ratings";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { buildRecentPoint, type RecentBook } from "../data/recentProgress";
 import type { LibrarySettings, ServerLibrary } from "../data/settings";
@@ -50,12 +51,11 @@ export type MergeLock = {
 
 /** The uuid of `book` once it lists both an ebook and an audio format. */
 async function bothFormatsUuid(
-  request: APIRequestContext,
+  ebooks: EbooksRequests,
   book: { title: string },
   timeout: number,
 ): Promise<string> {
   const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
-  const ebooks = new EbooksRequests(request);
 
   let match: LibraryBook | undefined;
   await expect
@@ -119,10 +119,11 @@ type DataFixtures = {
     owner?: Owner,
   ) => Promise<ShelfRef>;
   mergeLock: MergeLock;
-  ratedBookUuids: Set<string>;
+  presetRating: (bookUuid: string, stars: number | null) => Promise<void>;
+  storedRating: (bookUuid: string) => Promise<number | null | undefined>;
   presetReadStatus: (bookUuid: string, status: ReadStatus) => Promise<void>;
-  clearHighlights: (bookUuid: string) => Promise<void>;
-  mergedMp3Book: string;
+  sweepHighlights: (bookUuid: string) => Promise<void>;
+  mergedAudiobook: MergedAudiobook;
   createdJournalIds: Set<number>;
   journalEntryOn: (
     bookUuid: string,
@@ -273,11 +274,11 @@ export const test = base.extend<DataFixtures>({
   // Parks the read status, the page and no highlights or bookmarks, so a
   // leftover from an earlier run cannot change what a test sees or writes.
   parkBook: async (
-    { setReadStatus, progressRequests, clearHighlights, bookmarksRequests },
+    { setReadStatus, progressRequests, sweepHighlights, bookmarksRequests },
     use,
   ) => {
     await use(async (bookUuid, anchor, status) => {
-      await clearHighlights(bookUuid);
+      await sweepHighlights(bookUuid);
 
       const listedBookmarks = await bookmarksRequests.getBookmarks(bookUuid);
       await expect(listedBookmarks, "list bookmarks").toBeOK();
@@ -312,8 +313,8 @@ export const test = base.extend<DataFixtures>({
 
   // A combined book count can land before the second scan attaches the other
   // format, so poll until the book lists both an ebook and an audio format.
-  dualFormatUuid: async ({ request }, use) => {
-    await use(await bothFormatsUuid(request, DUAL_FORMAT_BOOK, 20_000));
+  dualFormatUuid: async ({ ebooksRequests }, use) => {
+    await use(await bothFormatsUuid(ebooksRequests, DUAL_FORMAT_BOOK, 20_000));
   },
 
   createdShelfIds: async ({ shelvesRequests }, use) =>
@@ -354,8 +355,10 @@ export const test = base.extend<DataFixtures>({
   },
 
   // Holds the lock from setup to teardown, because a reader takes none and
-  // the merged fixture must be restored before the next writer starts.
-  mergeLock: async ({ mergeRequests }, use) => {
+  // the merged fixture must be restored before the next writer starts. The
+  // wait for the lock counts toward the test's timeout.
+  mergeLock: async ({ mergeRequests }, use, testInfo) => {
+    testInfo.slow();
     const merged = new Set<number>();
     await withLock("audiobook-merge", async () => {
       await use({
@@ -383,12 +386,34 @@ export const test = base.extend<DataFixtures>({
     });
   },
 
-  ratedBookUuids: async ({ bookRatingRequests }, use) =>
+  // Rates the book now, or unrates it for null, and unrates every book it
+  // touched after the test.
+  presetRating: async ({ ratingsRequests }, use) =>
     cleanupSet(
-      use,
-      (uuid: string) => bookRatingRequests.deleteRating(uuid),
+      (rated: Set<string>) =>
+        use(async (bookUuid, stars) => {
+          rated.add(bookUuid);
+          if (stars === null) {
+            const cleared = await ratingsRequests.deleteRating(bookUuid);
+            await expect(cleared, `clear the rating on ${bookUuid}`).toBeOK();
+            return;
+          }
+          const saved = await ratingsRequests.postRating(bookUuid, stars);
+          await expect(saved, `rate ${bookUuid} ${stars} stars`).toBeOK();
+        }),
+      (uuid) => ratingsRequests.deleteRating(uuid),
       (uuid) => `clear the rating on ${uuid}`,
     ),
+
+  // Undefined on a failed read, so only a real unrated answer reads as null.
+  storedRating: async ({ ratingsRequests }, use) => {
+    await use(async (bookUuid) => {
+      const response = await ratingsRequests.getRating(bookUuid);
+      if (!response.ok()) return undefined;
+      const record: RatingRecord | null = await response.json();
+      return record?.stars ?? null;
+    });
+  },
 
   // Sets the status now and puts the book back to unread after the test.
   presetReadStatus: async ({ setReadStatus }, use) => {
@@ -400,7 +425,7 @@ export const test = base.extend<DataFixtures>({
     for (const uuid of started) await setReadStatus(uuid, "unread");
   },
 
-  clearHighlights: async ({ highlightsRequests }, use) => {
+  sweepHighlights: async ({ highlightsRequests }, use) => {
     await use(async (bookUuid) => {
       const listed = await highlightsRequests.getHighlights(bookUuid);
       await expect(listed, "list highlights").toBeOK();
@@ -414,7 +439,7 @@ export const test = base.extend<DataFixtures>({
 
   // Merging the reserved MP3 pair gives its primary two audio files, the
   // scenario the Listen file picker is for; the lock fixture undoes the merge.
-  mergedMp3Book: async (
+  mergedAudiobook: async (
     { request, mergeRequests, mergeLock, ebooksRequests },
     use,
   ) => {
@@ -433,12 +458,16 @@ export const test = base.extend<DataFixtures>({
 
     const detail = await ebooksRequests.getEbook(primaryUuid);
     await expect(detail, "read the merged book").toBeOK();
-    const { book_files: files }: BookRecord = await detail.json();
-    expect(
-      files.filter((file) => isAudioFormat(file.format)),
-      "two audio files after the merge",
-    ).toHaveLength(2);
-    await use(primaryUuid);
+    const book: EbookDetail = await detail.json();
+    const audioFileIds = (book.book_files ?? [])
+      .filter((file) => isAudioFormat(file.format))
+      .map((file) => file.id);
+    if (!isAudioPair(audioFileIds)) {
+      throw new Error(
+        `expected two audio files after the merge, got ${audioFileIds.length}`,
+      );
+    }
+    await use({ uuid: primaryUuid, audioFileIds });
   },
 
   createdJournalIds: async ({ journalsRequests }, use) =>
@@ -658,9 +687,8 @@ export const test = base.extend<DataFixtures>({
     await use(async (bookUuid) => {
       const detail = await ebooksRequests.getEbook(bookUuid);
       await expect(detail, `read ${bookUuid}`).toBeOK();
-      const { book_files }: { book_files: { id: number; format: string }[] } =
-        await detail.json();
-      const audio = book_files.find((file) => isAudioFormat(file.format));
+      const book: EbookDetail = await detail.json();
+      const audio = book.book_files?.find((file) => isAudioFormat(file.format));
       if (!audio) throw new Error(`book ${bookUuid} has no audio file`);
       return audio.id;
     });
@@ -668,8 +696,10 @@ export const test = base.extend<DataFixtures>({
 
   // The reserved pair's two scans can land apart, so poll until it lists both
   // an ebook and an audio format.
-  resumePromptUuid: async ({ request }, use) => {
-    await use(await bothFormatsUuid(request, RESUME_PROMPT_BOOK, 45_000));
+  resumePromptUuid: async ({ ebooksRequests }, use) => {
+    await use(
+      await bothFormatsUuid(ebooksRequests, RESUME_PROMPT_BOOK, 45_000),
+    );
   },
 
   linkedBookUuids: async ({ crossFormatRequests }, use) =>

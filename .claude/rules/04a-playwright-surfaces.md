@@ -76,7 +76,7 @@ precedes either `from-same-hand` or `from-same-hand-empty` — it used to assert
 "the only book by X" while still fetching (#2478). Playwright's auto-wait
 handles the settled assertions, but a spec that wants the *loading* state must
 hold the request open rather than racing it
-(`FromSameHandComponent.holdAuthorFetch`), and the route held is the **server
+(`BookDetailPage.holdAuthorFetch`), and the route held is the **server
 function**, `POST /api/rpc/author`, not the REST `GET /api/authors/{id}` the
 mobile client uses. Holding it means `networkidle` never arrives, so open the
 page with `bookDetailPage.gotoUnsettled()`, not `goto()`. A spec asserting "no

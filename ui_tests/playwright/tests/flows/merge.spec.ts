@@ -92,8 +92,8 @@ test.describe("book merge", () => {
     await test.step("check the dialog shows the error and the book is unchanged", async () => {
       await expect(mergeDialog.errorAlert).toBeVisible();
       await mergeDialog.cancel();
-      await expect(bookDetailPage.formats.badges).toHaveCount(1);
-      await expect(bookDetailPage.formats.badges).toHaveAttribute(
+      await expect(bookDetailPage.formatBadges).toHaveCount(1);
+      await expect(bookDetailPage.formatBadges).toHaveAttribute(
         "aria-label",
         "EPUB",
       );
@@ -136,8 +136,10 @@ test.describe("book merge", () => {
 
       // The refetch lands with a copies row per format, both CTAs, and the toast.
       await test.step("check the book gains the audio format", async () => {
-        await expect(bookDetailPage.formats.badges).toHaveCount(2);
-        await expect(bookDetailPage.formats.row(SOURCE.format)).toBeVisible();
+        await expect(bookDetailPage.formatBadges).toHaveCount(2);
+        await expect(
+          bookDetailPage.formatRow(SOURCE.format).root,
+        ).toBeVisible();
         await expect(bookDetailPage.startReadingButton).toBeVisible();
         await expect(bookDetailPage.listenButton).toBeVisible();
         await expect(mergeDialog.mergedToast).toBeVisible();
@@ -172,8 +174,8 @@ test.describe("book merge", () => {
       });
 
       await test.step("check the formats are split again", async () => {
-        await expect(bookDetailPage.formats.badges).toHaveCount(1);
-        await expect(bookDetailPage.formats.badges).toHaveAttribute(
+        await expect(bookDetailPage.formatBadges).toHaveCount(1);
+        await expect(bookDetailPage.formatBadges).toHaveAttribute(
           "aria-label",
           "EPUB",
         );

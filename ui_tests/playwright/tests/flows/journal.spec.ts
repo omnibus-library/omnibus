@@ -611,7 +611,7 @@ test.describe("book journal", () => {
       await test.step("scroll the entry's row into view", async () => {
         await journal.scrollRowIntoView(marker);
         expect(
-          await bookDetailPage.stops.flowScrollTop(),
+          await bookDetailPage.flowScrollTop(),
           "the flow scroller must have scrolled for this to bite",
         ).toBeGreaterThan(0);
       });

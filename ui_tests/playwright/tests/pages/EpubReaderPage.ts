@@ -319,9 +319,18 @@ export class EpubReaderPage extends BasePage {
     );
   }
 
-  /** Checks the page is reading the book `bookUuid`, not just any book. */
-  async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await this.assertDisplayedAt(new RegExp(`/read/${bookUuid}$`));
+  /** Checks the page is reading the book `bookUuid`, at the passage `cfi` when given. */
+  async assertDisplayedFor(bookUuid: string, cfi?: string): Promise<void> {
+    if (cfi === undefined) {
+      await this.assertDisplayedAt(new RegExp(`/read/${bookUuid}$`));
+      return;
+    }
+    await expect(this.page).toHaveURL(
+      (url) =>
+        url.pathname === `/read/${bookUuid}` &&
+        url.searchParams.get("cfi") === cfi,
+    );
+    await expect(this.viewerPanel).toBeVisible();
   }
 
   /** CSP violations reach the console as error entries, iframe ones included. */
@@ -334,16 +343,6 @@ export class EpubReaderPage extends BasePage {
       }
     });
     return refusals;
-  }
-
-  /** Checks the reader opened `bookUuid` at the passage `cfi`, not where it left off. */
-  async assertPassageOpened(bookUuid: string, cfi: string): Promise<void> {
-    await expect(this.page).toHaveURL(
-      (url) =>
-        url.pathname === `/read/${bookUuid}` &&
-        url.searchParams.get("cfi") === cfi,
-    );
-    await expect(this.viewerPanel).toBeVisible();
   }
 
   /** The footer's bottom edge in viewport pixels. */

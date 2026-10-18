@@ -42,7 +42,7 @@ test.describe("book detail shelves", () => {
     });
 
     await test.step("check the More stop and its button", async () => {
-      await expect(bookDetailPage.stops.moreStop).toBeAttached();
+      await expect(bookDetailPage.moreStop).toBeAttached();
       await expect(bookDetailPage.addToShelfButton).toBeVisible();
     });
   });
@@ -51,7 +51,6 @@ test.describe("book detail shelves", () => {
     request,
     bookDetailPage,
   }) => {
-    const { stops } = bookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, SERIES_BOOK.title);
 
     await test.step("open the book", async () => {
@@ -61,10 +60,10 @@ test.describe("book detail shelves", () => {
     // The series shelf already fills the stop, so a book on no shelf gets the
     // button alone rather than a big "Not on a shelf yet." under the covers.
     await test.step("check the button sits beneath the series shelf", async () => {
-      await expect(stops.seriesShelf).toBeVisible();
+      await expect(bookDetailPage.seriesShelf).toBeVisible();
       await expect(bookDetailPage.addToShelfButton).toBeVisible();
-      await expect(stops.moreStop).toContainText("On your shelves");
-      await expect(stops.moreStop).not.toContainText(NO_SHELF_TEXT);
+      await expect(bookDetailPage.moreStop).toContainText("On your shelves");
+      await expect(bookDetailPage.moreStop).not.toContainText(NO_SHELF_TEXT);
     });
   });
 
@@ -152,7 +151,6 @@ test.describe("book detail shelves", () => {
     bookDetailPage,
     ownShelf,
   }) => {
-    const { stops } = bookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
     // Henri Poincare wrote no other fixture, so the rule matches this book only.
     const shelf =
@@ -172,7 +170,7 @@ test.describe("book detail shelves", () => {
         shelf.name,
       );
       await expect(bookDetailPage.shelfTileKind(shelf.id)).toHaveText("Smart");
-      await expect(stops.moreStop).not.toContainText(NO_SHELF_TEXT);
+      await expect(bookDetailPage.moreStop).not.toContainText(NO_SHELF_TEXT);
     });
   });
 
@@ -238,7 +236,7 @@ test.describe("book detail shelves", () => {
 
     await test.step("mark the book finished", async () => {
       await expectMutation(readStatus.set(), () =>
-        bookDetailPage.readStatusControl.markFinished(),
+        bookDetailPage.readStatus.mark("finished"),
       );
     });
 
@@ -246,9 +244,7 @@ test.describe("book detail shelves", () => {
     await test.step("check the shelf is listed", async () => {
       await expect(onPage).toBeVisible();
       await expect(onPage).not.toContainText("0 books");
-      await expect(bookDetailPage.stops.moreStop).not.toContainText(
-        NO_SHELF_TEXT,
-      );
+      await expect(bookDetailPage.moreStop).not.toContainText(NO_SHELF_TEXT);
     });
   });
 
@@ -418,7 +414,7 @@ test.describe("book detail shelves", () => {
     readerBookDetailPage,
     presetScrollStops,
   }) => {
-    const { stops, shelfPicker } = readerBookDetailPage;
+    const { shelfPicker } = readerBookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     // The switches that write the preference belong to the settings and book
@@ -430,9 +426,11 @@ test.describe("book detail shelves", () => {
     await test.step("open the book and jump to the last stop", async () => {
       await readerBookDetailPage.goto(uuid);
       // The mode is only known once the viewer resolves, so wait for the swap.
-      await expect(stops.snap).toBeAttached();
-      await stops.jumpTo(5);
-      await expect(stops.dot(5)).toHaveClass(/\bon\b/);
+      await expect(readerBookDetailPage.snapScroller).toBeAttached();
+      await readerBookDetailPage.jumpToSection("More");
+      await expect(readerBookDetailPage.sectionDot("More")).toHaveClass(
+        /\bon\b/,
+      );
     });
 
     await test.step("open the picker", async () => {
@@ -448,9 +446,13 @@ test.describe("book detail shelves", () => {
     // The section label and next cue sit above the panel's stacking layer, so
     // they would paint over the scrim and take clicks meant for the backdrop.
     await test.step("check the stop's chrome sits under the scrim", async () => {
-      await expect(stops.sectionLabel(5)).toHaveCSS("pointer-events", "none");
-      await expect(stops.sectionLabel(5)).toHaveCSS("opacity", "0");
-      await expect(stops.nextCue(4)).toHaveCSS("opacity", "0");
+      const label = readerBookDetailPage.sectionLabel("More");
+      await expect(label).toHaveCSS("pointer-events", "none");
+      await expect(label).toHaveCSS("opacity", "0");
+      await expect(readerBookDetailPage.nextStopCue("The files")).toHaveCSS(
+        "opacity",
+        "0",
+      );
     });
   });
 
@@ -459,7 +461,7 @@ test.describe("book detail shelves", () => {
     readerBookDetailPage,
     presetScrollStops,
   }) => {
-    const { stops } = readerBookDetailPage;
+    const { backToBookButton } = readerBookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("turn scroll stops off", async () => {
@@ -468,9 +470,9 @@ test.describe("book detail shelves", () => {
 
     await test.step("open the book and jump to the last stop", async () => {
       await readerBookDetailPage.goto(uuid);
-      await expect(stops.flow).toBeAttached();
-      await stops.jumpTo(5);
-      await expect(stops.flowTopPill).toHaveClass(/\bon\b/);
+      await expect(readerBookDetailPage.flowScroller).toBeAttached();
+      await readerBookDetailPage.jumpToSection("More");
+      await expect(backToBookButton).toHaveClass(/\bon\b/);
     });
 
     await test.step("open the picker", async () => {
@@ -479,8 +481,8 @@ test.describe("book detail shelves", () => {
 
     // The pill sits above the scrim, so it must not stay clickable through it.
     await test.step("check the pill is out of reach", async () => {
-      await expect(stops.flowTopPill).toHaveCSS("pointer-events", "none");
-      await expect(stops.flowTopPill).toHaveCSS("opacity", "0");
+      await expect(backToBookButton).toHaveCSS("pointer-events", "none");
+      await expect(backToBookButton).toHaveCSS("opacity", "0");
     });
   });
 });

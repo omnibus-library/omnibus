@@ -70,7 +70,7 @@ test.describe("book detail", () => {
       await bookDetailPage.goto(
         await fetchBookUuidByTitle(request, beta.title),
       );
-      await expect(bookDetailPage.stops.seriesShelf).toBeVisible();
+      await expect(bookDetailPage.seriesShelf).toBeVisible();
     });
 
     await test.step("click the series page link", async () => {

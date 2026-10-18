@@ -1,19 +1,19 @@
 import type { Locator, Page } from "@playwright/test";
 import { BaseComponent } from "./BaseComponent";
 
-/** The quote-card editor a saved passage opens in the app's modal shell. */
+export type QuoteFont = "Serif" | "Sans" | "Mono";
+export type QuoteSize = "S" | "M" | "L";
+export type QuoteStyle = "Bold" | "Italic";
+
+/** The quote card editor a saved passage opens, and its typography controls. */
 export class QuoteCardModalComponent extends BaseComponent {
   readonly root: Locator;
   readonly heading: Locator;
   readonly downloadButton: Locator;
-  readonly copyImageButton: Locator;
+  readonly copyButton: Locator;
+  readonly closeButton: Locator;
   readonly preview: Locator;
   readonly previewBody: Locator;
-  readonly sansButton: Locator;
-  readonly italicButton: Locator;
-  readonly boldButton: Locator;
-  readonly largeButton: Locator;
-  readonly closeButton: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -21,43 +21,47 @@ export class QuoteCardModalComponent extends BaseComponent {
     this.heading = this.root.getByRole("heading", {
       name: "Make a quote card",
     });
-    this.downloadButton = this.root.getByTestId("quote-download");
-    this.copyImageButton = this.root.getByTestId("quote-copy-image");
-    this.preview = this.root.getByTestId("quote-preview");
-    this.previewBody = this.root.getByTestId("quote-preview-body");
-    this.sansButton = this.root.getByRole("button", {
-      name: "Sans",
+    this.downloadButton = this.root.getByRole("button", {
+      name: "Download",
       exact: true,
     });
-    this.italicButton = this.root.getByRole("button", {
-      name: "Italic",
-      exact: true,
-    });
-    this.boldButton = this.root.getByRole("button", {
-      name: "Bold",
-      exact: true,
-    });
-    this.largeButton = this.root.getByRole("button", {
-      name: "L",
+    this.copyButton = this.root.getByRole("button", {
+      name: "Copy",
       exact: true,
     });
     this.closeButton = this.root.getByRole("button", { name: "Close" });
+    this.preview = this.root.getByTestId("quote-preview");
+    this.previewBody = this.root.getByTestId("quote-preview-body");
   }
 
-  async pickSans(): Promise<void> {
-    await this.sansButton.click();
+  fontButton(font: QuoteFont): Locator {
+    return this.root
+      .getByRole("group", { name: "Font" })
+      .getByRole("button", { name: font, exact: true });
   }
 
-  async toggleItalic(): Promise<void> {
-    await this.italicButton.click();
+  sizeButton(size: QuoteSize): Locator {
+    return this.root
+      .getByRole("group", { name: "Text size" })
+      .getByRole("button", { name: size, exact: true });
   }
 
-  async toggleBold(): Promise<void> {
-    await this.boldButton.click();
+  styleButton(style: QuoteStyle): Locator {
+    return this.root
+      .getByRole("group", { name: "Style" })
+      .getByRole("button", { name: style, exact: true });
   }
 
-  async pickLargeSize(): Promise<void> {
-    await this.largeButton.click();
+  async chooseFont(font: QuoteFont): Promise<void> {
+    await this.fontButton(font).click();
+  }
+
+  async chooseSize(size: QuoteSize): Promise<void> {
+    await this.sizeButton(size).click();
+  }
+
+  async toggleStyle(style: QuoteStyle): Promise<void> {
+    await this.styleButton(style).click();
   }
 
   async close(): Promise<void> {

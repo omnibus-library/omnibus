@@ -244,7 +244,7 @@ test.describe("epub reader", () => {
 
       // A client-side navigation with no mutation, so follow the route change.
       await test.step("open the reader with the read action", async () => {
-        await bookDetailPage.read();
+        await bookDetailPage.formatRow("EPUB").read();
       });
 
       await test.step("check the reader opens", async () => {

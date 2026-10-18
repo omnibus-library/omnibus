@@ -1,4 +1,4 @@
-import { metadata } from "../contracts/metadata";
+import { overrides } from "../contracts/overrides";
 import type { EbookDetail } from "../data/ebooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -17,20 +17,13 @@ test.describe("book detail chip editors", () => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
+  // The teardown clears them again, so the book also ends the run chip-free.
   test.beforeEach(
     "clear the book's overrides",
-    async ({ request, ebooksRequests }) => {
+    async ({ request, overridesRequests, overriddenBookUuids }) => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-      const cleared = await ebooksRequests.deleteOverrides(uuid);
-      expect(cleared.status(), "cleanup revert must succeed").toBe(200);
-    },
-  );
-
-  test.afterAll(
-    "clear the book's overrides",
-    async ({ request, ebooksRequests }) => {
-      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-      const cleared = await ebooksRequests.deleteOverrides(uuid);
+      overriddenBookUuids.add(uuid);
+      const cleared = await overridesRequests.deleteOverrides(uuid);
       expect(cleared.status(), "cleanup revert must succeed").toBe(200);
     },
   );
@@ -83,7 +76,7 @@ test.describe("book detail chip editors", () => {
 
     await test.step("add a tag", async () => {
       await expectMutation(
-        metadata.saveOverrides(uuid, { subjects: ["Alpine Computing"] }),
+        overrides.save({ uuid, overrides: { subjects: ["Alpine Computing"] } }),
         () => tagChips.addChip("Alpine Computing"),
       );
       await expect(tagChips.editorPanel).toContainText("Alpine Computing");
@@ -109,12 +102,12 @@ test.describe("book detail chip editors", () => {
   test("show a saved tag on the book", async ({
     bookDetailPage,
     request,
-    ebooksRequests,
+    overridesRequests,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("save a tag through the api", async () => {
-      const saved = await ebooksRequests.postOverrides(uuid, {
+      const saved = await overridesRequests.postOverrides(uuid, {
         subjects: ["Alpine Computing"],
       });
       expect(saved.status(), "seed the tag").toBe(200);
@@ -134,13 +127,13 @@ test.describe("book detail chip editors", () => {
   test("suggest tags when the tag editor opens", async ({
     bookDetailPage,
     request,
-    ebooksRequests,
+    overridesRequests,
   }) => {
     const { tagChips } = bookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
     await test.step("save a tag through the api", async () => {
-      const saved = await ebooksRequests.postOverrides(uuid, {
+      const saved = await overridesRequests.postOverrides(uuid, {
         subjects: ["Alpine Computing"],
       });
       expect(saved.status(), "seed the tag").toBe(200);
@@ -181,7 +174,7 @@ test.describe("book detail chip editors", () => {
 
     await test.step("add a genre", async () => {
       await expectMutation(
-        metadata.saveOverrides(uuid, { genres: ["Field Notes"] }),
+        overrides.save({ uuid, overrides: { genres: ["Field Notes"] } }),
         () => genreChips.addChip("Field Notes"),
       );
       await genreChips.closeEditor();
@@ -205,7 +198,10 @@ test.describe("book detail chip editors", () => {
   }) => {
     const { tagChips } = bookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    const unsaved = metadata.saveOverrides(uuid, { subjects: ["Never Saved"] });
+    const unsaved = overrides.save({
+      uuid,
+      overrides: { subjects: ["Never Saved"] },
+    });
 
     await test.step("open the book while saves fail", async () => {
       await bookDetailPage.goto(uuid);
@@ -226,7 +222,7 @@ test.describe("book detail chip editors", () => {
     });
 
     await test.step("stop failing saves", async () => {
-      await bookDetailPage.clearServerError(unsaved);
+      await bookDetailPage.stopForcingServerError(unsaved);
     });
 
     await test.step("check nothing was saved", async () => {

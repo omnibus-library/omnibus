@@ -1,13 +1,15 @@
 import type { Locator, Page } from "@playwright/test";
+import { highlightsUrls } from "../contracts/highlights";
+import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** One saved passage on the book detail page: where it sits, and its link. */
+/** One saved passage on the book detail page: its note, link and actions. */
 export class SavedPassageCardComponent extends BaseComponent {
   readonly metaText: Locator;
   readonly noteText: Locator;
-  readonly deleteButton: Locator;
-  readonly quoteButton: Locator;
   readonly openLink: Locator;
+  readonly quoteCardButton: Locator;
+  readonly deleteButton: Locator;
 
   constructor(
     page: Page,
@@ -16,28 +18,34 @@ export class SavedPassageCardComponent extends BaseComponent {
     super(page);
     this.metaText = root.getByTestId("highlight-meta");
     this.noteText = root.getByTestId("highlight-note");
-    this.deleteButton = root.getByTestId("highlight-delete");
-    this.quoteButton = root.getByTestId("highlight-quote");
     this.openLink = root.getByRole("link", { name: "open in book" });
+    this.quoteCardButton = root.getByRole("button", { name: "quote card" });
+    this.deleteButton = root.getByRole("button", {
+      name: "delete",
+      exact: true,
+    });
   }
 
   async openInBook(): Promise<void> {
     await this.openLink.click();
   }
 
-  async delete(): Promise<void> {
-    await this.deleteButton.click();
-  }
-
   async openQuoteCard(): Promise<void> {
-    await this.quoteButton.click();
+    await this.quoteCardButton.click();
   }
 
-  /** The reader path and cfi the link points at, resolved against this page. */
-  async openTarget(): Promise<{ pathname: string; cfi: string | null }> {
+  /** Clicks delete and waits for the request to answer, whatever it says. */
+  async delete(): Promise<void> {
+    const deleted = this.page.waitForResponse(isPostTo(highlightsUrls.delete));
+    await this.deleteButton.click();
+    await deleted;
+  }
+
+  /** Where "open in book" leads, or null when the passage has no position. */
+  async linkedPassage(): Promise<{ path: string; cfi: string | null } | null> {
     const href = await this.openLink.getAttribute("href");
-    if (href === null) throw new Error("the open in book link has no href");
-    const target = new URL(href, this.page.url());
-    return { pathname: target.pathname, cfi: target.searchParams.get("cfi") };
+    if (href === null) return null;
+    const url = new URL(href, this.page.url());
+    return { path: url.pathname, cfi: url.searchParams.get("cfi") };
   }
 }

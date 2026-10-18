@@ -138,7 +138,7 @@ test.describe("listen page", () => {
     // `routes::link_target` trims the bare trailing `?` dioxus-router writes
     // for an unset `?file_id` (#2256), so the URL is exactly `/listen/:uuid`.
     await test.step("press listen", async () => {
-      await bookDetailPage.formats.listen();
+      await bookDetailPage.formatRow(MP3_BOOK.format).listen();
       await listenPage.assertDisplayedFor(uuid);
       await expect(listenPage.playButton).toBeVisible();
     });

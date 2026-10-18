@@ -7,9 +7,11 @@ export const ratingsUrls = {
   others: /\/api\/rpc\/ratings\/others(?:\?|$)/,
 };
 
-/** The writes a reader makes by clicking the rating stars. */
+/** The writes a reader makes on their own rating of a book. */
 export const ratings = {
-  set: (): ExpectMutationOptions => post(ratingsUrls.set),
+  set: (bookUuid: string, stars: number): ExpectMutationOptions =>
+    post(ratingsUrls.set, { update: { book_uuid: bookUuid, stars } }),
 
-  clear: (): ExpectMutationOptions => post(ratingsUrls.clear),
+  clear: (bookUuid: string): ExpectMutationOptions =>
+    post(ratingsUrls.clear, { uuid: bookUuid }),
 };

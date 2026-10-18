@@ -1,11 +1,3 @@
-/** One row of `POST /api/rpc/ratings/others`: another reader's rating of the book. */
-export type OtherRating = {
-  user_id: number;
-  username: string;
-  stars: number;
-  updated_at: number;
-};
-
 /** A read-alike the suggestions strip renders; the cover is left off. */
 export type SuggestionItem = {
   hardcover_id: number;
@@ -33,13 +25,6 @@ export function mockSuggestion(rank: number): SuggestionItem {
     cover_url: null,
   };
 }
-
-/** The fields of `GET /api/ebooks/{uuid}` that the book detail specs read. */
-export type BookRecord = {
-  genres?: string[];
-  subjects: string[];
-  book_files: { id: number; format: string }[];
-};
 
 /** Whether a `book_files` format is one of the audiobook containers. */
 export function isAudioFormat(format: string): boolean {

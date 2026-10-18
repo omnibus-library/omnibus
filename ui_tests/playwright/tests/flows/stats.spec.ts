@@ -31,7 +31,7 @@ test.describe("stats page", () => {
       request,
       overridesRequests,
       statsRequests,
-      bookRatingRequests,
+      ratingsRequests,
       journalsRequests,
     }) => {
       await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
@@ -70,7 +70,7 @@ test.describe("stats page", () => {
       expect(recorded, "the session seeds were skipped").toBe(4);
 
       // Feeds the headline tiles: a star rating and a finished (100%) journal.
-      const rating = await bookRatingRequests.postRating(uuid, 4.5);
+      const rating = await ratingsRequests.postRating(uuid, 4.5);
       await expect(rating, "seed a rating").toBeOK();
       const journal = await journalsRequests.postJournal(
         uuid,

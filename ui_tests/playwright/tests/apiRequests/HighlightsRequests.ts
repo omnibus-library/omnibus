@@ -22,9 +22,4 @@ export class HighlightsRequests extends BaseRequests {
   deleteHighlight(id: number): Promise<APIResponse> {
     return this.delete(`/api/highlights/${id}`);
   }
-
-  /** Sets the note; `postHighlight` takes none and would drop it silently. */
-  patchNote(id: number, note: string): Promise<APIResponse> {
-    return this.request.patch(`/api/highlights/${id}/note`, { data: { note } });
-  }
 }

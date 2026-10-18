@@ -9,7 +9,7 @@
 // `tests/fixtures/epubs.ts`).
 
 import { overrides } from "../contracts/overrides";
-import type { OverriddenBook } from "../data/overrides";
+import type { EbookDetail } from "../data/ebooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
@@ -89,13 +89,11 @@ test.describe("genres", () => {
       // Genres render as their own chip list above the tags.
       await test.step("check the book page lists them", async () => {
         await bookDetailPage.assertDisplayedFor(uuid);
-        await expect(bookDetailPage.heroChips.genreList).toBeVisible();
-        await expect(bookDetailPage.heroChips.genreList).toContainText(
+        await expect(bookDetailPage.genreChips.list).toBeVisible();
+        await expect(bookDetailPage.genreChips.list).toContainText(
           "Hard Science Fiction",
         );
-        await expect(bookDetailPage.heroChips.genreList).toContainText(
-          "Adventure",
-        );
+        await expect(bookDetailPage.genreChips.list).toContainText("Adventure");
       });
     });
 
@@ -122,7 +120,7 @@ test.describe("genres", () => {
       await test.step("read the book back", async () => {
         const read = await ebooksRequests.getEbook(uuid);
         await expect(read).toBeOK();
-        const book: OverriddenBook = await read.json();
+        const book: EbookDetail = await read.json();
         expect(book.genres).toEqual(["Noir"]);
         expect(book.subjects).toEqual(TARGET.tags ?? []);
       });
