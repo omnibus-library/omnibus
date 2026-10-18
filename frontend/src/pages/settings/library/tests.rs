@@ -147,14 +147,12 @@ fn scan_library_handler_flips_in_flight_immediately_on_click() {
         let status = Signal::new(None::<String>);
         let status_is_error = Signal::new(false);
         let scan_in_flight = Signal::new(false);
-        let library_refresh = Signal::new(0u32);
 
         let mut handler = scan_library_handler(
             "http://127.0.0.1:0".to_string(),
             status,
             status_is_error,
             scan_in_flight,
-            library_refresh,
         );
         handler(blank_mouse_event());
 

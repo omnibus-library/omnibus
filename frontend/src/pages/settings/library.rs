@@ -170,7 +170,6 @@ pub(crate) fn MaintenancePanel() -> Element {
         backfill_in_flight: use_signal(|| false),
         scan_in_flight: use_signal(|| false),
         rewrite_in_flight: use_signal(|| false),
-        library_refresh: use_signal(|| 0u32),
     };
 
     rsx! {
@@ -434,7 +433,6 @@ fn scan_library_handler(
     mut status: Signal<Option<String>>,
     mut status_is_error: Signal<bool>,
     mut scan_in_flight: Signal<bool>,
-    mut library_refresh: Signal<u32>,
 ) -> impl FnMut(MouseEvent) {
     move |_evt: MouseEvent| {
         let url = url.clone();
@@ -444,7 +442,6 @@ fn scan_library_handler(
                 Ok(()) => {
                     status.set(Some("Library scan queued.".into()));
                     status_is_error.set(false);
-                    library_refresh.set(library_refresh() + 1);
                 }
                 Err(e) => {
                     status.set(Some(format!("Failed to start library scan: {e}")));
@@ -550,7 +547,6 @@ struct MaintenanceIo {
     backfill_in_flight: Signal<bool>,
     scan_in_flight: Signal<bool>,
     rewrite_in_flight: Signal<bool>,
-    library_refresh: Signal<u32>,
 }
 
 /// The one-off maintenance jobs (library rescan, author photo refetch, chapter
@@ -564,7 +560,6 @@ fn MaintenanceActions(io: MaintenanceIo) -> Element {
         backfill_in_flight,
         scan_in_flight,
         rewrite_in_flight,
-        library_refresh,
     } = io;
     let server_url = use_server_url();
     let on_scan = scan_library_handler(
@@ -572,7 +567,6 @@ fn MaintenanceActions(io: MaintenanceIo) -> Element {
         status,
         status_is_error,
         scan_in_flight,
-        library_refresh,
     );
     let on_refetch = refetch_author_photos_handler(
         server_url.clone(),
