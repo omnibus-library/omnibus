@@ -1,23 +1,34 @@
 //! The book-content read tool family: list an EPUB's chapters, read one
-//! chapter's plain text in bounded slices, and full-text search the
-//! library's indexed chapter text. Pure reads over existing `GET` endpoints
-//! — nothing here touches the [`crate::client::WRITE_ALLOWLIST`].
+//! chapter's plain text in bounded slices, full-text search the library's
+//! indexed chapter text, and list an EPUB's images. Pure reads over existing
+//! `GET` endpoints — nothing here touches the [`crate::client::WRITE_ALLOWLIST`].
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::{tool, tool_router, ErrorData, Json};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use omnibus_shared::{
-    ChapterListResponse, ChapterTextResponse, ContentSearchResults, SpoilerFilter,
+    BookImageLink, BookImageList, BookImageRead, ChapterListResponse, ChapterTextResponse,
+    ContentSearchResults, SpoilerFilter,
 };
 
+use crate::client::ClientError;
 use crate::server::OmnibusMcp;
 
 /// Parameters for the chapter listing.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListChaptersParams {
     /// The book's uuid (the `unique_identifier` field on book records).
+    pub book_uuid: String,
+}
+
+/// Parameters for the image listing.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListBookImagesParams {
+    /// The book's uuid.
     pub book_uuid: String,
 }
 
@@ -53,6 +64,89 @@ fn non_negative(value: i64, what: &str) -> Result<i64, ErrorData> {
         ));
     }
     Ok(value)
+}
+
+/// Parameters for the image read.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReadBookImageParams {
+    /// The book's uuid.
+    pub book_uuid: String,
+    /// The image's href from list_book_images.
+    pub href: String,
+}
+
+/// Longest edge of the viewable copy `read_book_image` attaches; a larger image
+/// is shrunk to fit, a smaller one is never enlarged.
+const PREVIEW_MAX_EDGE: u32 = 1568;
+
+/// Decode ceilings, as in `omnibus_db::thumbs::encode_cover_preview`: a header
+/// claiming a billion pixels is refused before anything is allocated for it.
+const DECODE_MAX_EDGE: u32 = 8192;
+const DECODE_MAX_ALLOC: u64 = 256 * 1024 * 1024;
+
+/// JPEG quality of an opaque preview.
+const PREVIEW_JPEG_QUALITY: u8 = 85;
+
+/// Largest encoded preview attached: base64 keeps it under the 5 MB per-image
+/// limit, so the block never costs the result its download URL.
+const PREVIEW_MAX_BYTES: usize = 3_500_000;
+
+/// A downscaled, viewable copy of `bytes` as `(bytes, media type)`: PNG when some
+/// pixel is not opaque, else JPEG. `None` unless the bytes themselves sniff as a
+/// raster (never the manifest's claim), decode within the limits and encode within
+/// [`PREVIEW_MAX_BYTES`], so an SVG or a crafted header gets the URL only.
+/// CPU-bound: call inside `spawn_blocking`.
+fn preview(bytes: &[u8]) -> Option<(Vec<u8>, &'static str)> {
+    omnibus_shared::detect_image_format(bytes)?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(DECODE_MAX_EDGE);
+    limits.max_image_height = Some(DECODE_MAX_EDGE);
+    limits.max_alloc = Some(DECODE_MAX_ALLOC);
+    reader.limits(limits);
+    let decoded = reader.decode().ok()?;
+    let fitted = if decoded.width().max(decoded.height()) > PREVIEW_MAX_EDGE {
+        decoded.thumbnail(PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE)
+    } else {
+        decoded
+    };
+    let translucent =
+        fitted.color().has_alpha() && fitted.to_rgba8().pixels().any(|p| p.0[3] != 255);
+    let mut out = Vec::new();
+    let media_type = if translucent {
+        fitted
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .ok()?;
+        "image/png"
+    } else {
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, PREVIEW_JPEG_QUALITY)
+            .encode_image(&fitted.to_rgb8())
+            .ok()?;
+        "image/jpeg"
+    };
+    (out.len() <= PREVIEW_MAX_BYTES).then_some((out, media_type))
+}
+
+/// Map an image endpoint's status to the message that tells the model what to
+/// do next; any other failure surfaces as the client's own error.
+fn image_error(e: ClientError, uuid: &str) -> ErrorData {
+    let message = match &e {
+        ClientError::Status { status: 404, .. } => format!("book {uuid} not found"),
+        ClientError::Status { status: 422, .. } => format!(
+            "book {uuid} has no EPUB file. Images are listed from EPUBs only; \
+             CBZ pages and PDF pages are not covered"
+        ),
+        ClientError::Status { status: 400, .. } => "href is not an image in this book's EPUB \
+             manifest; call list_book_images for valid hrefs"
+            .to_string(),
+        ClientError::Status { status: 403, .. } => {
+            "this account is not permitted to download files".to_string()
+        }
+        _ => return ErrorData::from(e),
+    };
+    ErrorData::invalid_params(message, None)
 }
 
 /// Parameters for the content search.
@@ -163,6 +257,70 @@ impl OmnibusMcp {
         let hits: ContentSearchResults =
             self.client.get_json("/api/search/content", &query).await?;
         Ok(Json(hits))
+    }
+
+    #[tool(
+        description = "List the images in a book's EPUB, such as maps, plates, illustrations and diagrams. Each has its href (the image's path inside the EPUB, which read_book_image takes), media type, byte size, pixel dimensions (absent for an SVG or a header that will not decode) and references. A reference names one spine document that shows the image, with that document's spine_index (the index list_chapters and read_chapter_text use) and the image's alt text when it has any. Images are ordered by where the book first shows them; images no chapter shows come last with no references. Covers EPUB only: a book with no EPUB file (CBZ pages, PDF pages, audiobooks) errors rather than answering an empty list. Errors if the uuid is unknown."
+    )]
+    pub async fn list_book_images(
+        &self,
+        Parameters(p): Parameters<ListBookImagesParams>,
+    ) -> Result<Json<BookImageList>, ErrorData> {
+        let uuid = crate::tools::path_segment(&p.book_uuid, "book_uuid")?;
+        let path = format!("/api/ebooks/{uuid}/images");
+        let list = self
+            .client
+            .get_json(&path, &[])
+            .await
+            .map_err(|e| image_error(e, uuid))?;
+        Ok(Json(list))
+    }
+
+    #[tool(
+        output_schema = rmcp::handler::server::tool::schema_for_output::<BookImageRead>(),
+        description = "Get one image from a book's EPUB, by the href from list_book_images. Returns the original's media_type and byte_size plus a download_url: a link on the instance's public address that fetches the full-resolution original with no further authentication and stops working at expires_at (15 minutes). Hand the URL to the user to save the file; it is the original, not a preview. The link opens that one image only. A raster image (JPEG, PNG, GIF, WebP) also comes back as an image block, a downscaled copy at most 1568 px on a side, so you can look at it; an SVG, or an image that will not decode, comes as the URL only. Errors if the uuid is unknown, the book has no EPUB file, href is not an image in that EPUB's manifest, or the account is not permitted to download files."
+    )]
+    pub async fn read_book_image(
+        &self,
+        Parameters(p): Parameters<ReadBookImageParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let uuid = crate::tools::path_segment(&p.book_uuid, "book_uuid")?;
+        let query = [("href", p.href.clone())];
+        // Fetching the original proves the href is a manifest image and gives its
+        // true size and type before a link is minted for it.
+        let (media_type, bytes) = self
+            .client
+            .get_bytes(&format!("/api/ebooks/{uuid}/images/file"), &query)
+            .await
+            .map_err(|e| image_error(e, uuid))?;
+        let link: BookImageLink = self
+            .client
+            .get_json(&format!("/api/ebooks/{uuid}/images/link"), &query)
+            .await
+            .map_err(|e| image_error(e, uuid))?;
+        let read = BookImageRead {
+            book_uuid: p.book_uuid.clone(),
+            href: p.href,
+            media_type,
+            byte_size: bytes.len() as i64,
+            download_url: format!("{}{}", self.client.public_url(), link.path),
+            expires_at: link.expires_at,
+            expires_at_iso: omnibus_shared::to_iso8601(link.expires_at),
+        };
+        let json = serde_json::to_value(&read)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let mut result = CallToolResult::structured(json);
+        // A failed or panicked decode costs the preview, not the download URL.
+        let shown = tokio::task::spawn_blocking(move || preview(&bytes))
+            .await
+            .ok()
+            .flatten();
+        if let Some((data, mime)) = shown {
+            result
+                .content
+                .push(ContentBlock::image(STANDARD.encode(data), mime));
+        }
+        Ok(result)
     }
 }
 

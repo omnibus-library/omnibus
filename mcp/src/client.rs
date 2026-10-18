@@ -171,6 +171,9 @@ struct Credentials {
 pub struct OmnibusClient {
     http: reqwest::Client,
     base_url: String,
+    // The origin a person opens a returned link on. Hosted, it differs from the
+    // loopback `base_url` the calls go through.
+    public_url: String,
     credentials: Option<Credentials>,
     token: RwLock<Option<String>>,
     // Serializes logins so N racing tool calls produce one session, not N.
@@ -184,6 +187,7 @@ impl OmnibusClient {
         let http = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
         Ok(Self {
             http,
+            public_url: config.base_url.clone(),
             base_url: config.base_url,
             credentials: Some(Credentials {
                 username: config.username,
@@ -199,15 +203,25 @@ impl OmnibusClient {
     /// already authenticated the token; this client passes it through
     /// verbatim, never logs in, and surfaces a 401 as
     /// [`ClientError::TokenRejected`] instead of re-logging-in.
-    pub fn with_bearer(base_url: String, token: String) -> Result<Self, ClientError> {
+    pub fn with_bearer(
+        base_url: String,
+        token: String,
+        public_url: String,
+    ) -> Result<Self, ClientError> {
         let http = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
         Ok(Self {
             http,
             base_url,
+            public_url,
             credentials: None,
             token: RwLock::new(Some(token)),
             login_lock: Mutex::new(()),
         })
+    }
+
+    /// The origin to put in a link a human will open.
+    pub fn public_url(&self) -> &str {
+        &self.public_url
     }
 
     /// The one allowlisted write: `POST /api/auth/login` for a bearer
@@ -285,19 +299,27 @@ impl OmnibusClient {
 
     /// `GET path`, re-logging-in transparently on a 401: bearer sessions
     /// idle-expire after 7 days, so a long-idle MCP server's next tool call
-    /// must re-establish the session without user intervention.
+    /// must re-establish the session without user intervention. Any other
+    /// non-success status is a [`ClientError::Status`].
     async fn get_with_relogin(
         &self,
         path: &str,
         query: &[(&str, String)],
     ) -> Result<reqwest::Response, ClientError> {
         let token = self.bearer().await?;
-        let resp = self.send_get(path, query, &token).await?;
-        if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
-            return Ok(resp);
+        let mut resp = self.send_get(path, query, &token).await?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            let token = self.login_once(Some(&token)).await?;
+            resp = self.send_get(path, query, &token).await?;
         }
-        let token = self.login_once(Some(&token)).await?;
-        self.send_get(path, query, &token).await
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(ClientError::Status {
+                path: path.to_string(),
+                status: status.as_u16(),
+            });
+        }
+        Ok(resp)
     }
 
     /// `GET path` and decode the body as `T`, with the pagination headers.
@@ -307,13 +329,6 @@ impl OmnibusClient {
         query: &[(&str, String)],
     ) -> Result<(T, PageMeta), ClientError> {
         let resp = self.get_with_relogin(path, query).await?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(ClientError::Status {
-                path: path.to_string(),
-                status: status.as_u16(),
-            });
-        }
         let header = |name: &str| {
             resp.headers()
                 .get(name)
@@ -339,6 +354,23 @@ impl OmnibusClient {
         query: &[(&str, String)],
     ) -> Result<T, ClientError> {
         Ok(self.get_json_with_meta(path, query).await?.0)
+    }
+
+    /// `GET path` as raw bytes plus the response's `Content-Type`
+    /// (`application/octet-stream` when it has none), for a body that is not JSON.
+    pub async fn get_bytes(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<(String, Vec<u8>), ClientError> {
+        let resp = self.get_with_relogin(path, query).await?;
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        Ok((content_type, resp.bytes().await?.to_vec()))
     }
 
     /// `GET path`, mapping a 404 to `Ok(None)` — for the by-id endpoints
@@ -372,10 +404,11 @@ impl OmnibusClient {
         Ok(req.send().await?)
     }
 
-    /// `method path`, re-logging-in transparently on a 401 (same contract as
-    /// [`Self::get_with_relogin`]). Panics when the request is not covered by
-    /// [`WRITE_ALLOWLIST`] — that is a bug in this crate, and failing loudly
-    /// beats letting an unvetted write reach the instance.
+    /// `method path`, re-logging-in transparently on a 401, as
+    /// [`Self::get_with_relogin`] does; other statuses are returned to the caller.
+    /// Panics when the request is not covered by [`WRITE_ALLOWLIST`]: that is a
+    /// bug in this crate, and failing loudly beats letting an unvetted write
+    /// reach the instance.
     async fn write_with_relogin<B: Serialize + ?Sized>(
         &self,
         method: Method,
