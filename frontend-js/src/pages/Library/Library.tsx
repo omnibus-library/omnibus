@@ -5,6 +5,7 @@ import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { BusyLabel, CoverSkeletons } from "../../components/Loading/Loading";
 import { PageError } from "../../components/PageState/PageState";
+import { PageTitle } from "../../components/PageTitle/PageTitle";
 import "./Library.css";
 
 const TILE_SIZES = "(max-width: 640px) 160px, (max-width: 1280px) 200px, 240px";
@@ -66,6 +67,7 @@ export function Library() {
 
   return (
     <div className="landing-col lmq" id="lmq-root">
+      <PageTitle />
       <header className="lib-header">
         <div className="lib-header-kicker">
           <h1 className="label lib-header-kicker-title">Your Library</h1>

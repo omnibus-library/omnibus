@@ -13,6 +13,7 @@ import { Chip } from "../../components/Chip/Chip";
 import { Cover } from "../../components/Cover/Cover";
 import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
+import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { descriptionOverflows, homeKicker } from "../../format";
 import "./BookDetail.css";
 
@@ -70,6 +71,7 @@ function Description({ book }: { book: Detail }) {
 function Marquee({ book }: { book: Detail }) {
   return (
     <div className="bdmq-stage" id="bdmq-stage">
+      <PageTitle page={book.title} />
       <div className="bdmq-coverwrap" aria-hidden="true">
         <div className="bdmq-coverpx" id="bdmq-coverpx">
           <Cover book={book} src={book.hasCover ? coverUrl(book.uuid) : null} />

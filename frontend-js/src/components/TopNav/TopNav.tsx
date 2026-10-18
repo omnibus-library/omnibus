@@ -1,9 +1,16 @@
 import { Link, NavLink } from "react-router";
 import brandMark from "../../assets/omnibus-stoat.png";
 import { useCurrentUser, useSignOut } from "../../session";
-import { Button } from "../Button/Button";
+import { Button, ButtonLink } from "../Button/Button";
 import { BusyLabel } from "../Loading/Loading";
 import "./TopNav.css";
+
+const SECTIONS = [
+  { to: "/", label: "Library", end: true },
+  { to: "/authors", label: "Authors", end: false },
+  { to: "/series", label: "Series", end: false },
+  { to: "/stats", label: "Stats", end: false },
+];
 
 const onWhenActive = ({ isActive }: { isActive: boolean }) =>
   isActive ? "on" : "";
@@ -19,12 +26,35 @@ export function TopNav() {
         <div className="atrium-brand-word">Omnibus</div>
       </Link>
       <div className="atrium-nav">
-        <NavLink to="/" end className={onWhenActive}>
-          Library
-        </NavLink>
+        {SECTIONS.map((section) => (
+          <NavLink
+            key={section.to}
+            to={section.to}
+            end={section.end}
+            className={onWhenActive}
+          >
+            {section.label}
+          </NavLink>
+        ))}
       </div>
       <div className="atrium-actions">
-        <span className="label">{user.name}</span>
+        <ButtonLink to="/search" variant="ghost" size="sm">
+          Search
+        </ButtonLink>
+        <ButtonLink to="/check-in" size="sm">
+          Check in
+        </ButtonLink>
+        {user.canUpload && (
+          <ButtonLink to="/add-books" variant="primary" size="sm">
+            Add books
+          </ButtonLink>
+        )}
+        <Link to="/account" className="label">
+          {user.name}
+        </Link>
+        <ButtonLink to="/settings" variant="ghost" size="sm">
+          Settings
+        </ButtonLink>
         <Button
           size="sm"
           onClick={() => signOut.mutate()}

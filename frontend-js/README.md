@@ -21,6 +21,14 @@ from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 A component imports its own CSS last, after its dependencies, so shared rules
 load before the screens that override them.
 
+## Routes
+
+`src/router.tsx` carries all 28 routes from `frontend/src/routes.rs`, with the
+same split: the readers and the player fill the screen, everything else sits
+under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
+the library, book detail and Not Found are ported; every other route renders
+`Unported`, which shows its parsed parameters and names its Dioxus source.
+
 ## Styling, copied out of Atrium
 
 Each CSS file holds only the `atrium.css` and `loading.css` rules its markup can

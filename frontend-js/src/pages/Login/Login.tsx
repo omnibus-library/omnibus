@@ -1,12 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { ApiError, login } from "../../api";
 import { AuthShell, Emphasis } from "../../components/AuthShell/AuthShell";
 import { Banner } from "../../components/Banner/Banner";
 import { Button } from "../../components/Button/Button";
 import { Field } from "../../components/Field/Field";
 import { BusyLabel } from "../../components/Loading/Loading";
+import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { safeNext } from "../../safeNext";
 import { meQuery } from "../../session";
 
 function loginErrorMessage(error: Error): string {
@@ -24,13 +26,14 @@ function loginErrorMessage(error: Error): string {
 export function Login() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [search] = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const signIn = useMutation({
     mutationFn: login,
     onSuccess: (user) => {
       queryClient.setQueryData(meQuery.queryKey, user);
-      navigate("/", { replace: true });
+      navigate(safeNext(search.get("next")) ?? "/", { replace: true });
     },
   });
 
@@ -49,6 +52,7 @@ export function Login() {
       }
       lede="Continue to your library."
     >
+      <PageTitle page="Sign in" />
       <form className="auth-form-inner" onSubmit={onSubmit}>
         {signIn.isError && (
           <Banner kind="err" title={loginErrorMessage(signIn.error)} />

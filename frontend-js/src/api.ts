@@ -17,8 +17,15 @@ export function parseBookUuid(raw: string | undefined): BookUuid | null {
 }
 
 const UserSchema = z
-  .object({ username: z.string(), display_name: z.string().nullish() })
-  .transform((u) => ({ name: u.display_name ?? u.username }));
+  .object({
+    username: z.string(),
+    display_name: z.string().nullish(),
+    can_upload: z.boolean(),
+  })
+  .transform((u) => ({
+    name: u.display_name ?? u.username,
+    canUpload: u.can_upload,
+  }));
 
 export type User = z.infer<typeof UserSchema>;
 

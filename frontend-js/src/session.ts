@@ -23,8 +23,11 @@ export function useSignOut() {
   return useMutation({
     mutationFn: logout,
     onSuccess: () => {
-      queryClient.clear();
       navigate("/login", { replace: true });
+      // Null, not cleared: the gate unmounts the signed-in screens before
+      // anything under it can read a missing user.
+      queryClient.setQueryData(meQuery.queryKey, null);
+      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
     },
   });
 }

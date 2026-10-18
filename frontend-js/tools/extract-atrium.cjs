@@ -23,6 +23,7 @@ const OWNERS = [
   ["components/AuthShell/AuthShell.css", (c) => c.startsWith("auth-")],
   ["components/TopNav/TopNav.css", (c) => c.startsWith("atrium-")],
   ["layouts/AppShell.css", (c) => c === "app-shell"],
+  ["components/DiscPage/DiscPage.css", (c) => c.startsWith("disc-")],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || ["landing-col", "library-empty", "cover-link"].includes(c)],
   ["pages/BookDetail/BookDetail.css", (c) => c.startsWith("bdmq") || c.startsWith("bd-")],
   ["styles/base.css", (c) => ["label", "mono", "subtitle"].includes(c)],
