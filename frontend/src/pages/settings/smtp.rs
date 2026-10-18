@@ -241,12 +241,18 @@ fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl Fn
         };
         let url = server_url.clone();
         in_flight.set(true);
+        // What was sent, not what the fields hold when the answer lands: an
+        // edit typed meanwhile must still read as unsaved.
+        let mut submitted = fields.values();
+        let sent_password = std::mem::take(&mut submitted.4);
         spawn(async move {
             match data::set_smtp_config(&url, update).await {
                 Ok(s) => {
                     status.set(Some(s));
-                    password.set(String::new());
-                    saved.set(Some(fields.values()));
+                    if *password.peek() == sent_password {
+                        password.set(String::new());
+                    }
+                    saved.set(Some(submitted));
                     msg.set(Some("SMTP settings saved.".to_string()));
                     msg_is_error.set(false);
                 }
