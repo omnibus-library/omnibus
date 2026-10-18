@@ -213,7 +213,7 @@ mod tests {
     use super::*;
     use crate::test_support::render;
 
-    use super::super::stack_toggle::{StackToggleView, STACK_SAVE_ERROR};
+    use super::super::stack_toggle::StackToggleView;
 
     #[component]
     fn ToolbarHarness(
@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn toolbar_shows_a_failed_stack_save_as_an_alert() {
         let stack = StackToggleView {
-            error: Some(STACK_SAVE_ERROR.to_string()),
+            failed: true,
             ..live_stack()
         };
         let html = render_toolbar_with(ViewPrefs::default(), None, stack);
