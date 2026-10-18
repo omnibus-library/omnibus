@@ -15,9 +15,9 @@ from `GET /api/ebooks`, thumbnails from `/api/thumbs`), and book detail.
 | `src/components/<Name>/` | shared building blocks: `<Name>.tsx` beside its `.css` and `.stories.tsx` |
 | `src/layouts/` | `RequireAuth` (the session gate) and `AppShell` (top bar + page) |
 | `src/pages/<Name>/` | one folder per route, its CSS beside it |
-| `src/api.ts` | every REST call, parsed at the boundary with zod |
-| `src/testing/` | `AppHarness` (a signed-in session and a router), sample books, the Vitest setup |
-| `.storybook/` | Storybook's config, and the preview every story renders inside |
+| `src/api.ts` | every REST call, parsed at the boundary with zod, and the form schemas |
+| `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW fake API (`handlers.ts`), the Vitest setup |
+| `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
 
 A component imports its own CSS last, after its dependencies, so shared rules
@@ -61,6 +61,11 @@ cd frontend-js && pnpm install
 OMNIBUS_PORT=3460 pnpm exec vite --port 3461
 ```
 
+**Or let the server serve it.** `pnpm run build` writes `dist/` for `/react/`;
+start the server with `OMNIBUS_REACT_DIR=$PWD/frontend-js/dist` and the React
+client is at `http://localhost:3460/react/`, beside the Dioxus UI at `/`, on
+the same origin and session. Off unless that variable is set.
+
 `pnpm exec biome check .`, `pnpm exec tsc --noEmit`, `pnpm exec vitest run`,
 `pnpm exec storybook build` and `pnpm exec vite build` are the gates; the
 `Frontend JS` workflow runs all of them when `frontend-js/` changes. The story
@@ -81,11 +86,20 @@ tests need Chromium: the `.#e2e` shell provides it.
   renders each one in Chromium, so a story that stops rendering fails. The
   a11y addon checks each story too; it reports without failing, because
   Atrium's muted inks fail colour contrast in six stories (as in the Dioxus app).
+- **The API is faked with MSW** (`src/testing/handlers.ts`). Stories for the
+  library, book detail and sign-in run against it, so their `play` tests cover
+  loading, empty, failing and success states. Each handler also checks the
+  request it receives, so those stories test `api.ts`'s half of the contract.
+- **Docs:** every component gets a Docs page in Storybook, built from its
+  stories, its TypeScript props and its doc comment.
+- **Forms** use react-hook-form with a zod resolver (`CredentialsSchema` on the
+  sign-in page), so a form's rules live in the same schema style as the API's.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
   formatting, `safeNext`, the theme root, and the real route table in
-  `src/router.test.tsx`: every page that renders without the API, the layout
-  split, the guest redirect and `/logs`. The library, book detail and the
-  sign-in submit call the API, so they need a local fake server first.
+  `src/router.test.tsx`: every unported page, the layout split, the guest
+  redirect and `/logs`.
+- **Coverage:** `pnpm exec vitest run --coverage` covers both projects; CI
+  uploads each one's lcov to Codecov under the `frontend-js` flag.
 
 ## What it showed
 

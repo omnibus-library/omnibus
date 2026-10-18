@@ -391,7 +391,17 @@ mod server {
             ),
         );
 
-        merge_route_surfaces(base, state.clone(), &limiters)
+        let surfaces = merge_route_surfaces(base, state.clone(), &limiters);
+        // Opt-in: the React client beside the Dioxus UI (backend::react_ui).
+        let surfaces = match backend::react_dir(std::env::var_os(backend::REACT_DIR_ENV)) {
+            Some(dir) => {
+                tracing::info!(dir = %dir.display(), "serving the React client at /react/");
+                surfaces.merge(backend::react_ui_router(dir))
+            }
+            None => surfaces,
+        };
+
+        surfaces
             // Apply require_auth and origin_check at the top level so
             // every cookie-authed /api/* request — not just /api/auth/* —
             // is origin-checked. Bearer requests and safe methods are

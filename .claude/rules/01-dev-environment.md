@@ -151,6 +151,8 @@ Export-with-overrides EPUB cache (read by `db::epub_rewrite`, for the "Send to K
 
 - `OMNIBUS_VERSION` — the running release tag (e.g. `v0.8.9`), read once at boot and returned as the `version` field on `GET /api/_health`; the mobile "You" screen fetches it there to show the server's release alongside the app's own compile-time build version (F-1055, `server::backend::app_version`). Also read at **compile time** via `option_env!` by `omnibus_frontend::version::app_version` so the web user-menu version line and a mobile build's own "App version" line report the real tag instead of the crate's pinned `0.1.0`. Baked into the Docker image build-arg (`Dockerfile`, `.github/workflows/docker.yml`) and into the TestFlight build env (`.github/workflows/testflight.yml`, mirroring its already-resolved `MARKETING_VERSION`). Leave unset for local dev — the server reports `"dev"` and the frontend falls back to `CARGO_PKG_VERSION`.
 
+- `OMNIBUS_REACT_DIR` — opt-in: a `vite build --base=/react/` output (`frontend-js/dist`, built by `pnpm --dir frontend-js run build`). When it holds an `index.html`, the server also serves the React client at `/react/` (`backend::react_ui`), beside the Dioxus UI on the same origin; a client route gets the app shell and a missing asset a 404. Unset (the default) mounts nothing; a directory without `index.html` logs one WARN at boot. Read once at boot.
+
 If `ANDROID_HOME` / `ANDROID_NDK_HOME` come back empty inside `nix develop .#mobile`, set them manually:
 
 ```bash

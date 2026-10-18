@@ -74,4 +74,7 @@ export const routes: RouteObject[] = [
   },
 ];
 
-export const router = createBrowserRouter(routes);
+// `vite build --base=/react/` for Axum, `/` under the dev server and Storybook.
+const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+
+export const router = createBrowserRouter(routes, { basename });
