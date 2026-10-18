@@ -1,3 +1,6 @@
+---
+paths: "ui_tests/**"
+---
 # 04e — Playwright: the stats page
 
 Companion to [04a-playwright-surfaces.md](04a-playwright-surfaces.md), for the
