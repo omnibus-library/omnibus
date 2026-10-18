@@ -1,400 +1,368 @@
+import { overrides } from "../contracts/overrides";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { fetchBookIdByTitle, switchToTableView } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// F5.9-lite PR 4 — admin inline-edit cells on the landing-page table.
-//
-// The seeded test user is admin via the first-user-admin promotion, so
-// every test in this file exercises the admin path. The shared landing
-// spec already covers the read-only render for the no-admin / no-edit
-// permission case; the only thing those users gain from this PR is the
-// absence of any inline-edit affordance, which we assert by checking
-// that the editable class isn't present on non-admin renders.
-//
-// All tests revert their override at the end so subsequent runs start
-// from a clean fixture state.
-
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-// Pick a fixture with a clean prefix-cruft simulation. Alpha is the
-// standard "small fixture" target used by metadata_edit.spec.ts.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 
-// The Tags-cell tests get their own reserved fixture: the suite is
-// `fullyParallel` (even within one file), and the Authors tests' cleanup
-// deletes ALL of TARGET's overrides — which would wipe an in-flight tags
-// override mid-test. standalone-ocean is read by no other spec.
+// Tags get a fixture of their own: the suite is fullyParallel even within a
+// file, and the authors tests' cleanup deletes all of TARGET's overrides,
+// which would wipe an in-flight tags override. No other spec reads this book.
 const TAGS_TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-ocean")!;
+const NEW_TAG = "Speculative Fiction";
 
-test("renders editable cell affordances on the landing table for admins", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const titleCell = page
-    .getByTestId(`ebook-row-${TARGET.slug}`)
-    .getByTestId("ebook-cell-title");
-  await expect(titleCell).toBeVisible();
-  // The `ebook-cell-editable` class is added only when the row's
-  // `is_admin` prop is true — its presence is the user-visible signal
-  // that inline editing is available.
-  await expect(titleCell).toHaveClass(/ebook-cell-editable/);
-});
-
-test("edits a title inline and saves the override via rpc_save_overrides", async ({
-  page,
-  request,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const row = page.getByTestId(`ebook-row-${TARGET.slug}`);
-  const titleCell = row.getByTestId("ebook-cell-title");
-  // Click on the cell — must NOT navigate to the detail page (the row
-  // click does); cell `stopPropagation` keeps us on /.
-  await titleCell.click();
-
-  const input = row.getByTestId("ebook-cell-title-input");
-  await expect(input).toBeVisible();
-  await input.fill("Alpha Inline Edited");
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/ebook\/overrides$/,
-      expectedStatus: 200,
-    },
-    async () => input.press("Enter"),
-  );
-
-  // URL stayed on the landing page (no navigation triggered).
-  await expect(page).toHaveURL(/\/$/);
-  // The cell reflects the optimistic update from the server-merged
-  // metadata returned by `rpc_save_overrides`.
-  await expect(titleCell).toContainText("Alpha Inline Edited");
-
-  // Cleanup: revert via the F5.1 RPC so subsequent tests start from
-  // pristine fixture state. Assert the delete succeeds rather than
-  // swallowing errors — a silent failure would leak the override
-  // across the suite and turn this into an order-dependent flake.
-  const uuid = await fetchBookIdByTitle(request, "Alpha Inline Edited");
-  const revertResp = await request.post(`/api/rpc/ebook/overrides/delete`, {
-    data: { uuid },
+test.describe("inline edit", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
-  expect(revertResp.status(), "cleanup revert must succeed").toBe(200);
-});
 
-test("inline edit save error keeps the row showing the prior value", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
+  test("show the inline edit layout", async ({ libraryPage }) => {
+    await test.step("open the table view", async () => {
+      await libraryPage.gotoSettled();
+      await libraryPage.table.switchTo();
+    });
 
-  const row = page.getByTestId(`ebook-row-${TARGET.slug}`);
-  const titleCell = row.getByTestId("ebook-cell-title");
-  const originalText = (await titleCell.innerText()).trim();
+    // The class is added only for admins, so it is the signal editing is on.
+    await test.step("check the title cell is editable", async () => {
+      const titleCell = libraryPage.table.cell(TARGET.slug, "title");
+      await expect(titleCell).toBeVisible();
+      await expect(titleCell).toHaveClass(/ebook-cell-editable/);
+    });
+  });
 
-  await titleCell.click();
-  const input = row.getByTestId("ebook-cell-title-input");
-  await input.fill("Should Not Persist");
+  test("edit a title inline", async ({
+    libraryPage,
+    expectMutation,
+    revertOverridesOf,
+  }) => {
+    const table = libraryPage.table;
+    await revertOverridesOf(TARGET.title);
 
-  // Force the save mutation to fail.
-  await page.route("**/api/rpc/ebook/overrides", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "forced failure",
+    await test.step("open the title editor", async () => {
+      await libraryPage.gotoSettled();
+      await table.switchTo();
+      await table.openCell(TARGET.slug, "title");
+      await expect(table.cellInput(TARGET.slug, "title")).toBeVisible();
+    });
+
+    await test.step("save a new title", async () => {
+      await table.fillCell(TARGET.slug, "title", "Alpha Inline Edited");
+      await expectMutation(overrides.save(), () =>
+        table.commitCell(TARGET.slug, "title"),
+      );
+    });
+
+    // The cell shows the metadata the save returned, and the click that
+    // opened the editor did not open the book.
+    await test.step("check the row shows the new title", async () => {
+      await libraryPage.assertDisplayed();
+      await expect(table.cell(TARGET.slug, "title")).toContainText(
+        "Alpha Inline Edited",
+      );
+    });
+  });
+
+  test("keep the prior value when an inline edit fails", async ({
+    libraryPage,
+    expectMutation,
+  }) => {
+    const table = libraryPage.table;
+
+    const priorTitle = await test.step("open the table view", async () => {
+      await libraryPage.gotoSettled();
+      await table.switchTo();
+      return table.cellText(TARGET.slug, "title");
+    });
+
+    await test.step("save a new title while the server fails", async () => {
+      await table.openCell(TARGET.slug, "title");
+      await table.fillCell(TARGET.slug, "title", "Should Not Persist");
+      await libraryPage.forceServerError(overrides.save());
+      await expectMutation(failing(overrides.save()), () =>
+        table.commitCell(TARGET.slug, "title"),
+      );
+    });
+
+    // A failed save triggers no refetch, so the cell falls back to its prior value.
+    await test.step("check the row shows the prior title", async () => {
+      await expect(table.cell(TARGET.slug, "title")).toContainText(priorTitle);
+    });
+  });
+
+  test("focus the inline title editor on open", async ({ libraryPage }) => {
+    const table = libraryPage.table;
+
+    await test.step("open the table view", async () => {
+      await libraryPage.gotoSettled();
+      await table.switchTo();
+    });
+
+    // `autofocus` does not focus a node a click handler mounts after hydration,
+    // so the editor once swallowed the first keystroke (#2351).
+    await test.step("open the title editor", async () => {
+      await table.openCell(TARGET.slug, "title");
+      await expect(table.cellInput(TARGET.slug, "title")).toBeFocused();
+    });
+
+    await test.step("close it with escape", async () => {
+      await table.cancelCell(TARGET.slug, "title");
+      await expect(table.cellInput(TARGET.slug, "title")).toHaveCount(0);
+    });
+  });
+
+  test("open the authors chip editor inline", async ({ libraryPage }) => {
+    const table = libraryPage.table;
+
+    await test.step("open the authors editor", async () => {
+      await libraryPage.gotoSettled();
+      await table.switchTo();
+      await table.openCell(TARGET.slug, "author");
+    });
+
+    // The editor renders inside the cell, not in a sub-row.
+    await test.step("check the editor shows the book's authors", async () => {
+      await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
+      for (const name of TARGET.authors) {
+        await expect(table.chip(TARGET.slug, "author", name)).toBeVisible();
+      }
+    });
+
+    // The dropdown opens on focus with the library-wide author pool.
+    await test.step("check the suggestions show", async () => {
+      await expect(table.cellSuggestions(TARGET.slug, "author")).toBeVisible();
+      await expect(
+        table.suggestionHeading(TARGET.slug, "author", "ADD AUTHOR"),
+      ).toBeVisible();
+    });
+
+    await test.step("close it with escape", async () => {
+      await table.cancelCell(TARGET.slug, "author");
+      await expect(table.cellInput(TARGET.slug, "author")).toHaveCount(0);
+    });
+  });
+
+  // The authors editor once closed only on Escape, so blurring away left its
+  // highlight stuck (#992).
+  test("close the authors editor on clicking away", async ({ libraryPage }) => {
+    const table = libraryPage.table;
+
+    await test.step("open the authors editor", async () => {
+      await libraryPage.gotoSettled();
+      await table.switchTo();
+      await table.openCell(TARGET.slug, "author");
+      await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
+      await expect(table.cell(TARGET.slug, "author")).toHaveClass(
+        /ebook-cell-editing/,
+      );
+    });
+
+    await test.step("click the page heading", async () => {
+      await libraryPage.clickAway();
+    });
+
+    await test.step("check the editor closed", async () => {
+      await expect(table.cellInput(TARGET.slug, "author")).toHaveCount(0);
+      await expect(table.cell(TARGET.slug, "author")).not.toHaveClass(
+        /ebook-cell-editing/,
+      );
+    });
+  });
+
+  test("tab back from the authors input to a remove button", async ({
+    libraryPage,
+  }) => {
+    const table = libraryPage.table;
+
+    await test.step("open the authors editor", async () => {
+      await libraryPage.gotoSettled();
+      await table.switchTo();
+      await table.openCell(TARGET.slug, "author");
+      await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
+    });
+
+    // The chips sit before the input, so Shift+Tab lands on a chip's Remove
+    // button, and the blur must not close an editor focus is still inside.
+    await test.step("tab back from the input", async () => {
+      await table.tabBackFromCell(TARGET.slug, "author");
+    });
+
+    await test.step("check the remove button has focus and the editor stays open", async () => {
+      await expect(
+        table.removeAuthorButton(TARGET.slug, TARGET.authors[0]!),
+      ).toBeFocused();
+      await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
+      await expect(table.cell(TARGET.slug, "author")).toHaveClass(
+        /ebook-cell-editing/,
+      );
+    });
+  });
+
+  test("pick an author suggestion without closing the editor", async ({
+    libraryPage,
+    expectMutation,
+    revertOverridesOf,
+  }) => {
+    const table = libraryPage.table;
+    const grace = /Grace Hopper/;
+    await revertOverridesOf(TARGET.title);
+
+    await test.step("search the authors editor for a suggestion", async () => {
+      await libraryPage.gotoSettled();
+      await table.switchTo();
+      await table.openCell(TARGET.slug, "author");
+      await table.fillCell(TARGET.slug, "author", "Grace");
+      await expect(
+        table.suggestion(TARGET.slug, "author", grace),
+      ).toBeVisible();
+    });
+
+    // Picking commits on `mousedown` with the default prevented, so the input
+    // never blurs and the editor must stay open for more authors.
+    await test.step("pick the suggestion", async () => {
+      await expectMutation(overrides.save(), () =>
+        table.chooseSuggestion(TARGET.slug, "author", grace),
+      );
+      await expect(
+        table.chip(TARGET.slug, "author", "Grace Hopper"),
+      ).toBeVisible();
+      await expect(table.cellInput(TARGET.slug, "author")).toBeVisible();
+      await expect(table.cell(TARGET.slug, "author")).toHaveClass(
+        /ebook-cell-editing/,
+      );
+    });
+
+    // A click away must still close an editor whose input skipped the blur.
+    await test.step("click away from the editor", async () => {
+      await libraryPage.clickAway();
+      await expect(table.cellInput(TARGET.slug, "author")).toHaveCount(0);
+      await expect(table.cell(TARGET.slug, "author")).not.toHaveClass(
+        /ebook-cell-editing/,
+      );
+    });
+  });
+
+  test.describe("tags cell", () => {
+    test.describe.configure({ mode: "default" });
+
+    test("open the tags chip editor inline", async ({ libraryPage }) => {
+      const table = libraryPage.table;
+
+      await test.step("open the tags editor", async () => {
+        await libraryPage.gotoSettled();
+        await table.switchTo();
+        await table.openCell(TAGS_TARGET.slug, "tags");
       });
-    }
-    return route.continue();
+
+      // The editor renders inside the cell, as the authors one does.
+      await test.step("check the editor shows", async () => {
+        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toBeVisible();
+        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toHaveAttribute(
+          "placeholder",
+          "+ add tag…",
+        );
+        await expect(table.cell(TAGS_TARGET.slug, "tags")).toHaveClass(
+          /ebook-cell-editing/,
+        );
+      });
+
+      await test.step("close it with escape", async () => {
+        await table.cancelCell(TAGS_TARGET.slug, "tags");
+        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toHaveCount(0);
+        await expect(table.cell(TAGS_TARGET.slug, "tags")).not.toHaveClass(
+          /ebook-cell-editing/,
+        );
+      });
+    });
+
+    test("create a new tag inline", async ({
+      libraryPage,
+      expectMutation,
+      revertOverridesOf,
+    }) => {
+      const table = libraryPage.table;
+      await revertOverridesOf(TAGS_TARGET.title);
+
+      await test.step("open the tags editor", async () => {
+        await libraryPage.gotoSettled();
+        await table.switchTo();
+        await table.openCell(TAGS_TARGET.slug, "tags");
+        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toBeVisible();
+      });
+
+      // Nothing in the pool matches, so Enter commits the typed text as a new
+      // tag and posts the full `subjects` override.
+      await test.step("type a new tag and save it", async () => {
+        await table.fillCell(TAGS_TARGET.slug, "tags", NEW_TAG);
+        await expectMutation(overrides.save(), () =>
+          table.commitCell(TAGS_TARGET.slug, "tags"),
+        );
+        await expect(
+          table.chip(TAGS_TARGET.slug, "tags", NEW_TAG),
+        ).toBeVisible();
+      });
+    });
+
+    // The override save materializes a `tags` row, so a page loaded after it
+    // finds the tag in the autocomplete pool.
+    test("autocomplete a tag from the pool", async ({
+      libraryPage,
+      overridesRequests,
+      expectMutation,
+      revertOverridesOf,
+      request,
+    }) => {
+      const table = libraryPage.table;
+      await revertOverridesOf(TAGS_TARGET.title);
+
+      await test.step("give the book the tag through the api", async () => {
+        const uuid = await fetchBookUuidByTitle(request, TAGS_TARGET.title);
+        const saved = await overridesRequests.postOverrides(uuid, {
+          subjects: [NEW_TAG],
+        });
+        await expect(saved).toBeOK();
+      });
+
+      await test.step("open the tags editor", async () => {
+        await libraryPage.gotoSettled();
+        await table.switchTo();
+        await table.openCell(TAGS_TARGET.slug, "tags");
+        await expect(table.cellInput(TAGS_TARGET.slug, "tags")).toBeVisible();
+      });
+
+      // The dropdown leaves out tags already on the book, so the chip goes first.
+      await test.step("remove the tag from the book", async () => {
+        await expectMutation(overrides.save(), () =>
+          table.removeTag(TAGS_TARGET.slug, NEW_TAG),
+        );
+      });
+
+      await test.step("type a prefix of the tag", async () => {
+        await table.fillCell(TAGS_TARGET.slug, "tags", "Specul");
+        await expect(
+          table.cellSuggestions(TAGS_TARGET.slug, "tags"),
+        ).toBeVisible();
+        await expect(
+          table.suggestionHeading(TAGS_TARGET.slug, "tags", "ADD TAG"),
+        ).toBeVisible();
+        await expect(
+          table.suggestion(TAGS_TARGET.slug, "tags", /Speculative Fiction/),
+        ).toBeVisible();
+      });
+
+      await test.step("pick the suggestion", async () => {
+        await expectMutation(overrides.save(), () =>
+          table.chooseSuggestion(
+            TAGS_TARGET.slug,
+            "tags",
+            /Speculative Fiction/,
+          ),
+        );
+        await expect(
+          table.chip(TAGS_TARGET.slug, "tags", NEW_TAG),
+        ).toBeVisible();
+      });
+    });
   });
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/ebook\/overrides$/,
-      expectedStatus: 500,
-    },
-    async () => input.press("Enter"),
-  );
-
-  // Optimistic update is intentionally light — the row reverts to its
-  // prior server-merged value on the next refetch. Since the failure
-  // path here doesn't trigger a refetch, the cell falls back to
-  // whatever `book_state` was before the save attempt: the original.
-  await page.unroute("**/api/rpc/ebook/overrides");
-  await expect(titleCell).toContainText(originalText);
-});
-
-test("opens the inline title editor already focused", async ({ page }) => {
-  // The `autofocus` attribute does not move DOM focus onto a node mounted
-  // post-hydration by a click handler, so the editor opened pre-filled but
-  // swallowed the first keystroke until a second click (#2351).
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const row = page.getByTestId(`ebook-row-${TARGET.slug}`);
-  await row.getByTestId("ebook-cell-title").click();
-
-  const input = row.getByTestId("ebook-cell-title-input");
-  await expect(input).toBeFocused();
-
-  // Escape still closes without saving.
-  await input.press("Escape");
-  await expect(input).toHaveCount(0);
-});
-
-test("clicking the Authors cell renders the chip editor inline", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const row = page.getByTestId(`ebook-row-${TARGET.slug}`);
-  const authorsCell = row.getByTestId("ebook-cell-author");
-  await authorsCell.click();
-
-  // The chip-editor input is rendered *inside* the cell (no sub-row).
-  // testid-prefixed `ebook-cell-author` per the AuthorsCell component.
-  const chipInput = authorsCell.getByTestId("ebook-cell-author-input");
-  await expect(chipInput).toBeVisible();
-
-  // Existing author chips render inside the same cell.
-  for (const name of TARGET.authors) {
-    await expect(authorsCell.getByText(name, { exact: true })).toBeVisible();
-  }
-
-  // The autocomplete dropdown auto-opens on focus, showing the
-  // library-wide author suggestion pool with an ADD AUTHOR header.
-  const dropdown = authorsCell.getByTestId("ebook-cell-author-suggestions");
-  await expect(dropdown).toBeVisible();
-  await expect(dropdown.getByText("ADD AUTHOR")).toBeVisible();
-
-  // Escape exits edit mode.
-  await chipInput.press("Escape");
-  await expect(chipInput).toHaveCount(0);
-});
-
-// #992 — the Authors cell's ChipEditor only closed on Escape; blurring away
-// (clicking elsewhere) left the amber `ebook-cell-editing` highlight stuck.
-
-test("clicking away from an open Authors cell editor closes it", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const row = page.getByTestId(`ebook-row-${TARGET.slug}`);
-  const authorsCell = row.getByTestId("ebook-cell-author");
-  await authorsCell.click();
-
-  const chipInput = authorsCell.getByTestId("ebook-cell-author-input");
-  await expect(chipInput).toBeVisible();
-  await expect(authorsCell).toHaveClass(/ebook-cell-editing/);
-
-  // Click a neutral, always-present element well outside the row/table —
-  // a genuine click-away, not a suggestion pick.
-  await page.getByRole("heading", { level: 1, name: "Your Library" }).click();
-
-  await expect(chipInput).toHaveCount(0);
-  await expect(authorsCell).not.toHaveClass(/ebook-cell-editing/);
-});
-
-test("Tab from the chip input reaches a chip's Remove button without closing the editor", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const row = page.getByTestId(`ebook-row-${TARGET.slug}`);
-  const authorsCell = row.getByTestId("ebook-cell-author");
-  await authorsCell.click();
-
-  const chipInput = authorsCell.getByTestId("ebook-cell-author-input");
-  await expect(chipInput).toBeVisible();
-
-  // ChipList (chips + Remove buttons) renders before the input in DOM
-  // order, so Shift+Tab moves focus backward onto the preceding chip's
-  // Remove button — the exact keyboard path the #992 follow-up fix
-  // protects (blur must not close the editor when the newly-focused
-  // element is still inside it).
-  await chipInput.press("Shift+Tab");
-
-  const removeButton = authorsCell.getByRole("button", {
-    name: `Remove ${TARGET.authors[0]}`,
-  });
-  await expect(removeButton).toBeFocused();
-  await expect(chipInput).toBeVisible();
-  await expect(authorsCell).toHaveClass(/ebook-cell-editing/);
-});
-
-test("selecting an author suggestion keeps the editor open; a later click away closes it", async ({
-  page,
-  request,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const row = page.getByTestId(`ebook-row-${TARGET.slug}`);
-  const authorsCell = row.getByTestId("ebook-cell-author");
-  await authorsCell.click();
-
-  const chipInput = authorsCell.getByTestId("ebook-cell-author-input");
-  await chipInput.fill("Grace");
-
-  const dropdown = authorsCell.getByTestId("ebook-cell-author-suggestions");
-  const suggestion = dropdown.getByRole("option", { name: /Grace Hopper/ });
-  await expect(suggestion).toBeVisible();
-
-  // AC1: picking a suggestion commits the chip via `onmousedown` +
-  // `preventDefault` (so the input never blurs) and must NOT close the
-  // editor — the admin can keep adding authors.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/ebook\/overrides$/,
-      expectedStatus: 200,
-    },
-    async () => suggestion.click(),
-  );
-  await expect(
-    authorsCell.getByText("Grace Hopper", { exact: true }),
-  ).toBeVisible();
-  await expect(chipInput).toBeVisible();
-  await expect(authorsCell).toHaveClass(/ebook-cell-editing/);
-
-  // AC2 (regression, chained): a genuine click-away after the pick still
-  // closes the editor and clears the highlight.
-  await page.getByRole("heading", { level: 1, name: "Your Library" }).click();
-  await expect(chipInput).toHaveCount(0);
-  await expect(authorsCell).not.toHaveClass(/ebook-cell-editing/);
-
-  // Cleanup: revert the accumulated authors override.
-  const uuid = await fetchBookIdByTitle(request, TARGET.title);
-  const revertResp = await request.post(`/api/rpc/ebook/overrides/delete`, {
-    data: { uuid },
-  });
-  expect(revertResp.status(), "cleanup revert must succeed").toBe(200);
-});
-
-test("clicking the Tags cell renders the chip editor inline", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const row = page.getByTestId(`ebook-row-${TAGS_TARGET.slug}`);
-  const tagsCell = row.getByTestId("ebook-cell-tags");
-  await tagsCell.click();
-
-  // The chip-editor input is rendered *inside* the cell, mirroring the
-  // Authors cell — testid-prefixed `ebook-cell-tags` per ChipCellDisplay.
-  const chipInput = tagsCell.getByTestId("ebook-cell-tags-input");
-  await expect(chipInput).toBeVisible();
-  await expect(chipInput).toHaveAttribute("placeholder", "+ add tag…");
-  await expect(tagsCell).toHaveClass(/ebook-cell-editing/);
-
-  // Escape exits edit mode.
-  await chipInput.press("Escape");
-  await expect(chipInput).toHaveCount(0);
-  await expect(tagsCell).not.toHaveClass(/ebook-cell-editing/);
-});
-
-test("creates a new tag inline, then autocompletes it from the pool after reload", async ({
-  page,
-  request,
-}) => {
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-
-  const row = page.getByTestId(`ebook-row-${TAGS_TARGET.slug}`);
-  const tagsCell = row.getByTestId("ebook-cell-tags");
-  await tagsCell.click();
-
-  const chipInput = tagsCell.getByTestId("ebook-cell-tags-input");
-  await expect(chipInput).toBeVisible();
-
-  // Create a brand-new tag. Nothing in the pool matches, so Enter commits
-  // the raw typed text and posts the full `subjects` override.
-  await chipInput.fill("Speculative Fiction");
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/ebook\/overrides$/,
-      expectedStatus: 200,
-    },
-    async () => chipInput.press("Enter"),
-  );
-  await expect(
-    tagsCell.getByText("Speculative Fiction", { exact: true }),
-  ).toBeVisible();
-
-  // Reload so the landing page refetches the tag suggestion pool — the
-  // override save materialized a `tags` row, so the freshly created tag now
-  // surfaces through `get_tag_cloud` (the autocomplete source).
-  await page.reload();
-  await page.waitForLoadState("networkidle");
-  await switchToTableView(page);
-
-  const rowAfter = page.getByTestId(`ebook-row-${TAGS_TARGET.slug}`);
-  const tagsCellAfter = rowAfter.getByTestId("ebook-cell-tags");
-  await tagsCellAfter.click();
-  const chipInputAfter = tagsCellAfter.getByTestId("ebook-cell-tags-input");
-  await expect(chipInputAfter).toBeVisible();
-
-  // Remove the chip first — the dropdown excludes values already on the
-  // chip list, so the tag must be off the book for its suggestion to show.
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/ebook\/overrides$/,
-      expectedStatus: 200,
-    },
-    async () =>
-      tagsCellAfter
-        .getByRole("button", { name: "Remove tag Speculative Fiction" })
-        .click(),
-  );
-
-  // Typing a prefix surfaces the pool entry under the ADD TAG header;
-  // picking it commits the chip and posts the override.
-  await chipInputAfter.fill("Specul");
-  const dropdown = tagsCellAfter.getByTestId("ebook-cell-tags-suggestions");
-  await expect(dropdown).toBeVisible();
-  await expect(dropdown.getByText("ADD TAG")).toBeVisible();
-  const suggestion = dropdown.getByRole("option", {
-    name: /Speculative Fiction/,
-  });
-  await expect(suggestion).toBeVisible();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/ebook\/overrides$/,
-      expectedStatus: 200,
-    },
-    async () => suggestion.click(),
-  );
-  await expect(
-    tagsCellAfter.getByText("Speculative Fiction", { exact: true }),
-  ).toBeVisible();
-
-  // Cleanup: revert the accumulated tags override.
-  const uuid = await fetchBookIdByTitle(request, TAGS_TARGET.title);
-  const revertResp = await request.post(`/api/rpc/ebook/overrides/delete`, {
-    data: { uuid },
-  });
-  expect(revertResp.status(), "cleanup revert must succeed").toBe(200);
 });

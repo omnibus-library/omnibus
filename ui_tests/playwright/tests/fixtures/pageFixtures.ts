@@ -23,7 +23,10 @@ import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
+import { ThumbsRequests } from "../apiRequests/ThumbsRequests";
 import { UsersRequests } from "../apiRequests/UsersRequests";
+import { BookMetaRowsComponent } from "../components/BookMetaRowsComponent";
+import { PreHydrationComponent } from "../components/PreHydrationComponent";
 import type { SeededBookmark } from "../data/bookmarks";
 import type { LibraryBook } from "../data/ebooks";
 import {
@@ -41,6 +44,7 @@ import {
   wishlistOf,
 } from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
+import { AddBooksPage } from "../pages/AddBooksPage";
 import { AuthorsIndexPage } from "../pages/AuthorsIndexPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
@@ -49,6 +53,7 @@ import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
 import { ListenPage } from "../pages/ListenPage";
 import { LoginPage } from "../pages/LoginPage";
+import { NotFoundPage } from "../pages/NotFoundPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
@@ -56,6 +61,7 @@ import {
   type ExpectMutationOptions,
   expectMutation as expectMutationOn,
 } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
 import { DUAL_FORMAT_BOOK } from "./dual_format";
 import {
@@ -166,6 +172,15 @@ type PageFixtures = {
   // #endregion batch-E
 
   // #region batch-F: landing and add books
+  readerExpectMutation: ExpectMutation;
+  addBooksPage: AddBooksPage;
+  notFoundPage: NotFoundPage;
+  preHydration: PreHydrationComponent;
+  bookMetaRows: BookMetaRowsComponent;
+  ebooksRequests: EbooksRequests;
+  thumbsRequests: ThumbsRequests;
+  revertOverridesOf: (...titles: string[]) => Promise<void>;
+  presetStackSeries: (enabled: boolean) => Promise<void>;
   // #endregion batch-F
 
   // #region batch-G: shelves
@@ -659,6 +674,53 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-E
 
   // #region batch-F: landing and add books
+  readerExpectMutation: async ({ readerPage }, use) => {
+    await use((contract, action) =>
+      expectMutationOn(readerPage, contract, action),
+    );
+  },
+  addBooksPage: async ({ page }, use) => {
+    await use(new AddBooksPage(page));
+  },
+  notFoundPage: async ({ page }, use) => {
+    await use(new NotFoundPage(page));
+  },
+  preHydration: async ({ page }, use) => {
+    await use(new PreHydrationComponent(page));
+  },
+  bookMetaRows: async ({ page }, use) => {
+    await use(new BookMetaRowsComponent(page));
+  },
+  ebooksRequests: async ({ request }, use) => {
+    await use(new EbooksRequests(request));
+  },
+  thumbsRequests: async ({ request }, use) => {
+    await use(new ThumbsRequests(request));
+  },
+
+  // Registered before the edit, so the revert runs even when the edit fails.
+  revertOverridesOf: async ({ request, overridesRequests }, use) => {
+    const uuids = new Set<string>();
+    await use(async (...titles) => {
+      for (const title of titles) {
+        uuids.add(await fetchBookUuidByTitle(request, title));
+      }
+    });
+    for (const uuid of uuids) {
+      const reverted = await overridesRequests.deleteOverrides(uuid);
+      await expect(reverted, `revert overrides on ${uuid}`).toBeOK();
+    }
+  },
+
+  // The reader's preference outlives the test, so it goes back to off after.
+  presetStackSeries: async ({ readerAccountRequests }, use) => {
+    const save = async (enabled: boolean) => {
+      const saved = await readerAccountRequests.postStackSeries(enabled);
+      await expect(saved, `save stack series ${enabled}`).toBeOK();
+    };
+    await use(save);
+    await save(false);
+  },
   // #endregion batch-F
 
   // #region batch-G: shelves
