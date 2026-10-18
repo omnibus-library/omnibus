@@ -17,11 +17,6 @@ const ADMIN_SECTIONS: SettingsSection[] = [
   "logs",
 ];
 
-const testLibrary: LibrarySettings = {
-  ebook_library_path: "/tmp/omnibus-test-ebooks",
-  audiobook_library_path: "/tmp/omnibus-test-audiobooks",
-};
-
 const placeholderLibrary: LibrarySettings = {
   ebook_library_path: "/tmp/whatever",
   audiobook_library_path: "/tmp/whatever-audio",
@@ -115,7 +110,11 @@ test.describe("library section", () => {
     });
   });
 
-  test("save the library paths", async ({ settingsPage, expectMutation }) => {
+  test("save the library paths", async ({
+    settingsPage,
+    expectMutation,
+    scratchLibrary,
+  }) => {
     const { library } = settingsPage;
 
     await test.step("open the library section", async () => {
@@ -123,11 +122,11 @@ test.describe("library section", () => {
     });
 
     await test.step("fill in the library paths", async () => {
-      await library.fillForm(testLibrary);
+      await library.fillForm(scratchLibrary);
     });
 
     await test.step("save the settings", async () => {
-      await expectMutation(settings.saveLibrary(testLibrary), () =>
+      await expectMutation(settings.saveLibrary(scratchLibrary), () =>
         library.save(),
       );
     });
@@ -140,9 +139,10 @@ test.describe("library section", () => {
   test("save an automatic rescan interval with the library paths", async ({
     settingsPage,
     expectMutation,
+    scratchLibrary,
   }) => {
     const { library } = settingsPage;
-    const withInterval = { ...testLibrary, scan_interval_hours: 24 };
+    const withInterval = { ...scratchLibrary, scan_interval_hours: 24 };
 
     await test.step("open the library section", async () => {
       await settingsPage.goto("library");

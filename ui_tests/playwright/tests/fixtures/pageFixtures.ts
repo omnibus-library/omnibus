@@ -32,6 +32,7 @@ import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
 import { ScanRequests } from "../apiRequests/ScanRequests";
+import { SettingsRequests } from "../apiRequests/SettingsRequests";
 import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import { StatsRequests } from "../apiRequests/StatsRequests";
 import { ThumbsRequests } from "../apiRequests/ThumbsRequests";
@@ -68,6 +69,7 @@ import {
 } from "../data/progress";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { buildRecentPoint, type RecentBook } from "../data/recentProgress";
+import type { LibrarySettings, ServerLibrary } from "../data/settings";
 import {
   buildShelf,
   type NewShelf,
@@ -207,6 +209,8 @@ type PageFixtures = {
     owner?: "admin" | "reader",
   ) => Promise<ShelfRef>;
   mergeLock: MergeLock;
+  settingsRequests: SettingsRequests;
+  scratchLibrary: LibrarySettings;
 
   registerPage: RegisterPage;
   mcpRequests: McpRequests;
@@ -719,6 +723,9 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   goalsRequests: async ({ request }, use) => {
     await use(new GoalsRequests(request));
   },
+  settingsRequests: async ({ request }, use) => {
+    await use(new SettingsRequests(request));
+  },
 
   createdShelfIds: async ({ shelvesRequests }, use) => {
     const ids = new Set<number>();
@@ -772,6 +779,23 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
           )
           .toBe(200);
       }
+    });
+  },
+
+  // Library paths are server-wide, so saving a test's own repoints every reader
+  // of the shared library until they are put back. The lock keeps two saving
+  // tests from taking each other's scratch paths for the original.
+  scratchLibrary: async ({ settingsRequests }, use) => {
+    await withLock("library-settings", async () => {
+      const before = await settingsRequests.getSettings();
+      await expect(before, "read the library settings").toBeOK();
+      const original: ServerLibrary = await before.json();
+      await use({
+        ebook_library_path: "/tmp/omnibus-test-ebooks",
+        audiobook_library_path: "/tmp/omnibus-test-audiobooks",
+      });
+      const restored = await settingsRequests.postSettings(original);
+      await expect(restored, "restore the library settings").toBeOK();
     });
   },
 
