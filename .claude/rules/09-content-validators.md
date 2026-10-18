@@ -1,5 +1,5 @@
 ---
-paths: "frontend/src/offline/**, frontend/src/data/books/library.rs, omnibus-ios/omnibus/Offline/**, shared/src/ebook/**, db/src/indexer/**, db/src/thumbs.rs, db/src/thumbs/**, server/src/backend.rs, server/src/backend/conditional.rs, server/src/backend/conditional/**, server/src/backend/ebooks.rs, server/src/backend/ebooks/**, server/src/backend/audiobooks.rs, server/src/backend/audiobooks/**, server/src/backend/covers.rs, server/src/backend/covers/**"
+paths: "frontend/src/offline/**, frontend/src/data/books/library.rs, omnibus-ios/omnibus/Offline/**, shared/src/ebook/**, db/src/indexer/**, db/src/thumbs.rs, db/src/thumbs/**, server/src/backend.rs, server/src/backend/conditional.rs, server/src/backend/conditional/**, server/src/backend/ebooks.rs, server/src/backend/ebooks/**, server/src/backend/audiobooks.rs, server/src/backend/audiobooks/**, server/src/backend/covers.rs, server/src/backend/covers/**, frontend/src/offline.rs, db/src/books/get.rs, omnibus-ios/omnibus/Design/Components/RemoteImage.swift"
 ---
 # 09 — Content validators
 
