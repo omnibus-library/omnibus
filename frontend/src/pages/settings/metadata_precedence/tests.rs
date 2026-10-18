@@ -4,6 +4,7 @@
 use omnibus_shared::MetadataSource::{
     EmbeddedTags, FolderStructure, OmnibusOverrides, OpfSidecar, ProviderMatch,
 };
+use omnibus_shared::DEFAULT_METADATA_PRECEDENCE;
 
 use super::*;
 use crate::test_support::{render, render_in_vdom};

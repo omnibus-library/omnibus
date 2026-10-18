@@ -5,7 +5,7 @@
 //! first would present an order nobody saved as the current one.
 
 use dioxus::prelude::*;
-use omnibus_shared::{MetadataSource, DEFAULT_METADATA_PRECEDENCE};
+use omnibus_shared::MetadataSource;
 
 use crate::components::{BusyLabel, Loading, LoadingKind};
 use crate::data::server_error_message;
@@ -233,7 +233,7 @@ fn PrecedenceList(
     let testid = format!("{library}-metadata-precedence");
     let sources = order().unwrap_or_default();
     let len = sources.len();
-    let mut reorder = move |from: usize, direction: Direction| {
+    let reorder = move |from: usize, direction: Direction| {
         let mut announcement = announcement;
         let mut current = order().unwrap_or_default();
         let Some(to) = move_source(&mut current, from, direction) else {
