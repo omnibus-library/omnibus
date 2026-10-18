@@ -170,14 +170,18 @@ pub(super) fn MarqueeStage(
     let scroll_stops = use_memo(move || viewer().is_some_and(|u| u.book_detail_scroll_stops));
     let (mode_view, on_mode_toggle) = use_scroll_stops_toggle();
 
-    // Install the scroll glue after mount, and re-run it when the book or the
-    // mode changes (resets to the top, replaces the other mode's listeners).
-    // Web-only interop — the eval is a no-op on SSR.
+    // Install the scroll glue after mount and re-run it when the book or mode
+    // changes, replacing the other mode's listeners: a new book opens at the
+    // top, a flip keeps the reader's section. The eval is a no-op on SSR.
     {
         let uuid = uuid.clone();
+        let mut glued_book = use_signal(String::new);
         use_effect(use_reactive!(|uuid, scroll_stops| {
-            let _ = uuid;
-            let _ = dioxus::document::eval(if scroll_stops() { MARQUEE_JS } else { FLOW_JS });
+            let flip = *glued_book.peek() == uuid;
+            glued_book.set(uuid.clone());
+            let glue = if scroll_stops() { MARQUEE_JS } else { FLOW_JS };
+            let _ =
+                dioxus::document::eval(&format!("window.__omnibusMarqueeKeep = {flip};\n{glue}"));
         }));
     }
 

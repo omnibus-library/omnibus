@@ -44,6 +44,12 @@
     for (var i = 0; i < dots.length; i++) dots[i].classList.toggle('on', i === at);
   }
 
+  // The stop the rail still marks from the reading this one replaced.
+  function marked() {
+    for (var i = 0; i < dots.length; i++) if (dots[i].classList.contains('on')) return i;
+    return 0;
+  }
+
   function onResize() {
     measureTopbar();
     paint();
@@ -69,8 +75,11 @@
   };
 
   measureTopbar();
-  // A fresh book always opens on stop 01 — without this, navigating from one
-  // book's stop 05 to another book leaves the old scroll offset behind.
-  snap.scrollTo({ top: 0, behavior: 'auto' });
+  // A fresh book opens on stop 01, not the last book's offset; a flip from the
+  // flow (the stage sets the flag) lands on the reader's stop at once rather
+  // than gliding past the stops above it.
+  var keep = window.__omnibusMarqueeKeep ? marked() : 0;
+  window.__omnibusMarqueeKeep = false;
+  snap.scrollTo({ top: keep * snap.clientHeight, behavior: keep ? 'instant' : 'auto' });
   paint();
 })();

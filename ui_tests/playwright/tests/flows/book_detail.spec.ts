@@ -250,7 +250,7 @@ test.describe("scroll stops preference", () => {
     await expect(page.locator("#bdmq-flow")).toHaveCount(0);
   });
 
-  test("the page's own toggle flips between the flow and the stops in place", async ({
+  test("the page's own toggle flips between the flow and the stops on the same section", async ({
     page,
     request,
   }) => {
@@ -263,6 +263,15 @@ test.describe("scroll stops preference", () => {
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(page.locator("#bdmq-flow")).toBeAttached();
 
+    // Read down to the journal first: a flip keeps the reader where they are.
+    await page.locator("#bdmq-flow").evaluate((el) => {
+      const journal = el.querySelector<HTMLElement>(
+        '[data-testid="bdmq-sec-3"]',
+      )!;
+      el.scrollTop = journal.offsetTop;
+    });
+    await expect(page.getByTestId("bdmq-dot-3")).toHaveClass(/\bon\b/);
+
     await expectMutation(
       page,
       {
@@ -274,17 +283,19 @@ test.describe("scroll stops preference", () => {
       async () => toggle.click(),
     );
 
-    // No reload: the stage re-renders in the other reading, the toggle keeps
-    // focus, and the marquee's glue follows the swap — the rail tracks the
-    // snapped stops.
+    // No reload: the stage re-renders in the other reading on the same stop,
+    // the toggle keeps focus, and the marquee's glue follows the swap — the
+    // rail tracks the snapped stops.
     await expect(page.locator("#bdmq-snap")).toBeAttached();
     await expect(page.locator("#bdmq-flow")).toHaveCount(0);
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(toggle).toBeFocused();
-    await page.locator("#bdmq-snap").evaluate((el) => {
-      el.scrollTop = 3 * el.clientHeight;
-    });
+    await expect(page.getByTestId("bdmq-sec-3")).toBeInViewport();
     await expect(page.getByTestId("bdmq-dot-3")).toHaveClass(/\bon\b/);
+    await page.locator("#bdmq-snap").evaluate((el) => {
+      el.scrollTop = 4 * el.clientHeight;
+    });
+    await expect(page.getByTestId("bdmq-dot-4")).toHaveClass(/\bon\b/);
 
     // And back again, with the toggle still live after the swap.
     await expectMutation(
@@ -300,6 +311,8 @@ test.describe("scroll stops preference", () => {
     await expect(page.locator("#bdmq-flow")).toBeAttached();
     await expect(page.locator("#bdmq-snap")).toHaveCount(0);
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("bdmq-sec-4")).toBeInViewport();
+    await expect(page.getByTestId("bdmq-dot-4")).toHaveClass(/\bon\b/);
   });
 
   test("a refused toggle keeps the reading it had and says so", async ({
