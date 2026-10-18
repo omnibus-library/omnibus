@@ -13,10 +13,12 @@ import type {
 } from "@playwright/test";
 import { STORAGE_STATE_PATH } from "../../globalSetup";
 import { AccountRequests } from "../apiRequests/AccountRequests";
+import { AudiobooksRequests } from "../apiRequests/AudiobooksRequests";
 import { AuthorsRequests } from "../apiRequests/AuthorsRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
 import { BookRatingRequests } from "../apiRequests/BookRatingRequests";
+import { CrossFormatRequests } from "../apiRequests/CrossFormatRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { GoalsRequests } from "../apiRequests/GoalsRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
@@ -58,7 +60,11 @@ import {
 } from "../data/libraryFilters";
 import type { MetadataProvider } from "../data/metadataKeys";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
-import type { BookProgress, ProgressRecord } from "../data/progress";
+import {
+  type BookProgress,
+  EventClock,
+  type ProgressRecord,
+} from "../data/progress";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
 import { buildRecentPoint, type RecentBook } from "../data/recentProgress";
 import {
@@ -99,7 +105,7 @@ import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
 import { fixturesDir } from "../utils/seed";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
-import { DUAL_FORMAT_BOOK } from "./dual_format";
+import { DUAL_FORMAT_BOOK, RESUME_PROMPT_BOOK } from "./dual_format";
 import { FIXTURE_BOOKS } from "./epubs";
 import {
   test as base,
@@ -293,6 +299,14 @@ type PageFixtures = {
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format
+  audiobooksRequests: AudiobooksRequests;
+  crossFormatRequests: CrossFormatRequests;
+  signedInUserId: number;
+  audioFileId: (bookUuid: string) => Promise<number>;
+  resumePromptUuid: string;
+  linkedBookUuids: Set<string>;
+  eventClock: EventClock;
+  newestStoredClock: (bookUuid: string) => Promise<number>;
   // #endregion batch-J
 
   // #region batch-K: stats
@@ -1369,6 +1383,97 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format
+  audiobooksRequests: async ({ request }, use) => {
+    await use(new AudiobooksRequests(request));
+  },
+  crossFormatRequests: async ({ request }, use) => {
+    await use(new CrossFormatRequests(request));
+  },
+
+  signedInUserId: async ({ request }, use) => {
+    const me = await new AuthRequests(request).getMe();
+    await expect(me).toBeOK();
+    const { id } = await me.json();
+    await use(id);
+  },
+
+  // Every audio progress save names the file the player loaded (#1888).
+  audioFileId: async ({ audiobooksRequests }, use) => {
+    await use(async (bookUuid) => {
+      const detail = await audiobooksRequests.getBookDetail(bookUuid);
+      await expect(detail, `read ${bookUuid}`).toBeOK();
+      const { book_files }: { book_files: { id: number; format: string }[] } =
+        await detail.json();
+      const audio = book_files.find((file) =>
+        /^(mp3|m4b|m4a)$/i.test(file.format),
+      );
+      if (!audio) throw new Error(`book ${bookUuid} has no audio file`);
+      return audio.id;
+    });
+  },
+
+  // The reserved pair's two scans can land apart, so poll until it lists both
+  // an ebook and an audio format.
+  resumePromptUuid: async ({ request }, use) => {
+    const isEbook = (f: string) => /^(epub|pdf)$/i.test(f);
+    const isAudio = (f: string) => /^(mp3|m4b)$/i.test(f);
+    const ebooks = new EbooksRequests(request);
+
+    let match: LibraryBook | undefined;
+    await expect
+      .poll(
+        async () => {
+          const listed = await ebooks.getEbooks();
+          if (listed.status() !== 200) return false;
+          const { books }: { books: LibraryBook[] } = await listed.json();
+          match = books.find((b) => b.title === RESUME_PROMPT_BOOK.title);
+          if (match === undefined) return false;
+          return match.formats.some(isEbook) && match.formats.some(isAudio);
+        },
+        {
+          message: `book ${JSON.stringify(RESUME_PROMPT_BOOK.title)} never surfaced with both an ebook and an audio format`,
+          timeout: 45_000,
+          intervals: [100, 200, 500, 1_000, 2_000],
+        },
+      )
+      .toBe(true);
+
+    if (!match?.unique_identifier) {
+      throw new Error(
+        `resume-prompt book ${JSON.stringify(RESUME_PROMPT_BOOK.title)} is missing its uuid`,
+      );
+    }
+    await use(match.unique_identifier);
+  },
+
+  linkedBookUuids: async ({ crossFormatRequests }, use) => {
+    const uuids = new Set<string>();
+    await use(uuids);
+    for (const uuid of uuids) {
+      const unlinked = await crossFormatRequests.postUnlink(uuid);
+      await expect(unlinked, `unlink ${uuid}`).toBeOK();
+    }
+  },
+
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's dependencies from this pattern.
+  eventClock: async ({}, use) => {
+    await use(new EventClock());
+  },
+
+  // The newest `client_updated_at` among a book's stored positions, or 0.
+  newestStoredClock: async ({ progressRequests }, use) => {
+    await use(async (bookUuid) => {
+      let newest = 0;
+      for (const format of ["epub", "audio"] as const) {
+        const stored = await progressRequests.postProgressGet(bookUuid, format);
+        if (stored.status() !== 200) continue;
+        const record: { client_updated_at: number | null } | null =
+          await stored.json();
+        newest = Math.max(newest, record?.client_updated_at ?? 0);
+      }
+      return newest;
+    });
+  },
   // #endregion batch-J
 
   // #region batch-K: stats

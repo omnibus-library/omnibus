@@ -47,4 +47,22 @@ export const progress = {
     url: progressUrls.recent,
     expectedStatus: 200,
   }),
+
+  // batch-J: audio and cross-format
+  /** The save the audio player makes for a position, filed under the part it plays. */
+  saveAudio: (
+    bookUuid: string,
+    seconds: number,
+    bookFileId: number,
+  ): ExpectMutationOptions => ({
+    ...progress.save(),
+    expectedBody: {
+      update: {
+        book_uuid: bookUuid,
+        format: "audio",
+        audio_position_seconds: seconds,
+        book_file_id: bookFileId,
+      },
+    },
+  }),
 };

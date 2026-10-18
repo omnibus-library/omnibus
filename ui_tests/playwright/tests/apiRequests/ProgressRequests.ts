@@ -30,4 +30,45 @@ export class ProgressRequests extends BaseRequests {
       epub_cfi: "epubcfi(/6/4!/4/2/2[c01]/2/1:0)",
     });
   }
+
+  // batch-J: audio and cross-format
+  /** Saves a whole-book epub percent stamped `clientUpdatedAt`, as another device would. */
+  postEpubPercent(
+    bookUuid: string,
+    percent: number,
+    clientUpdatedAt: number,
+  ): Promise<APIResponse> {
+    return this.post("/api/rpc/progress", {
+      update: {
+        book_uuid: bookUuid,
+        format: "epub",
+        progress_percent: percent,
+        client_updated_at: clientUpdatedAt,
+      },
+    });
+  }
+
+  /** Saves an audio position stamped `clientUpdatedAt`, as another device would. */
+  postAudioPosition(
+    bookUuid: string,
+    seconds: number,
+    clientUpdatedAt: number,
+  ): Promise<APIResponse> {
+    return this.post("/api/rpc/progress", {
+      update: {
+        book_uuid: bookUuid,
+        format: "audio",
+        audio_position_seconds: seconds,
+        client_updated_at: clientUpdatedAt,
+      },
+    });
+  }
+
+  /** The stored record for one format, or `null` when the reader has none. */
+  postProgressGet(
+    bookUuid: string,
+    format: "epub" | "audio",
+  ): Promise<APIResponse> {
+    return this.post("/api/rpc/progress/get", { uuid: bookUuid, format });
+  }
 }

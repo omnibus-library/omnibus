@@ -1,3 +1,8 @@
+import { bookmarks } from "../contracts/bookmarks";
+import { playback } from "../contracts/playback";
+import { progress } from "../contracts/progress";
+import type { SeededBookmark } from "../data/bookmarks";
+import { savedAudioPosition } from "../data/progress";
 import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
@@ -7,20 +12,10 @@ import {
   SLEEP_SEAM_BOOK,
   SLEEP_SEAM_SECONDS,
 } from "../fixtures/audiobooks";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
 import { audiobookFixturesDir, seedAudiobookLibrary } from "../utils/seed";
-import { commitRangeValue, setRangeValue } from "../utils/sliders";
-
-test.beforeAll(async ({ request }) => {
-  await seedAudiobookLibrary(
-    request,
-    audiobookFixturesDir(),
-    AUDIOBOOK_BOOK_COUNT,
-  );
-});
 
 // This spec only ever *reads* its books, so every selector below excludes the
 // merge-only fixtures — a merge in flight would change what they assert.
@@ -37,1307 +32,969 @@ const MULTIPART_MP3_BOOK = AUDIOBOOK_BOOKS.find(
 const LOCAL_SEED_BOOK = AUDIOBOOK_BOOKS.find(
   (b) => b.format === "MP3" && b.source === "public_domain",
 )!;
-// The one-clock spec needs chapters whose real lengths are minutes, not the
-// ~2.09s of a generated fixture: halving two seconds is invisible at the
-// second granularity `format_hms` renders, so a generated book would let a
-// 1x chapter list pass as a rate-adjusted one. The public-domain M4B is the
-// only long book no other spec persists a rate on — `LOCAL_SEED_BOOK` looks
-// like the better fit but the seed test leaves 1.80x saved on it.
+// The one-clock test needs chapters of minutes, not a generated book's ~2.09s,
+// which `format_hms` renders too coarsely to tell 1x from rate-adjusted. The
+// public-domain M4B is the only long book no other spec saves a rate on.
 const CHAPTERED_BOOK = M4B_BOOK;
 
-/**
- * Wait until the listen page's manifest fetch has resolved and
- * `OmnibusAudio.initDirect` has been called. The preparing overlay
- * (`listen-preparing`) is rendered while `hls_ready` is false; in direct
- * mode it flips true as soon as the manifest fetch returns, so its
- * absence is the canonical "player is ready to drive" signal.
- */
-async function waitForPlayerReady(
-  page: import("@playwright/test").Page,
-): Promise<void> {
-  await expect(page.getByTestId("listen-preparing")).toHaveCount(0);
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(() => {
-          const audio = (
-            window as unknown as { OmnibusAudio?: { _mode?: string | null } }
-          ).OmnibusAudio;
-          return audio?._mode ?? null;
-        }),
-      {
-        message:
-          "OmnibusAudio.initDirect should have run after the manifest fetch",
-        timeout: 10_000,
-        intervals: [50, 100, 250, 500],
-      },
-    )
-    .toBe("direct");
-}
-
-// ---------------------------------------------------------------------------
-// 1. Layout — MP3 audiobook
-// ---------------------------------------------------------------------------
-
-test("renders the listen page layout for an mp3 audiobook", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-
-  // Hidden <audio> element is in the DOM immediately.
-  await expect(page.getByTestId("listen-audio")).toBeAttached();
-
-  // Wait for the preparing overlay to clear — it covers the controls with
-  // position:absolute inset:0 until the JS bootstrap calls initDirect.
-  await waitForPlayerReady(page);
-  await expect(page.getByTestId("listen-failed")).toHaveCount(0);
-
-  // App-wide top-nav is mounted by ReadyPlayer.
-  await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
-
-  // "Now playing" kicker above the book title.
-  await expect(page.getByText("Now playing")).toBeVisible();
-
-  // Book metadata in the player stage — the title/byline block is a link
-  // back to the book's detail page.
-  await expect(
-    page.getByRole("heading", { name: MP3_BOOK.title }),
-  ).toBeVisible();
-  await expect(page.getByText(`by ${MP3_BOOK.author}`)).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: `Open details for ${MP3_BOOK.title}` }),
-  ).toBeVisible();
-
-  // Transport: chapter map + seek scrubber + skip-back / play / skip-forward / rate / volume.
-  await expect(page.getByTestId("chapter-map")).toBeVisible();
-  await expect(page.getByRole("slider", { name: "Seek" })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Back 30 seconds" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Forward 30 seconds" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Playback speed" }),
-  ).toBeVisible();
-  await expect(page.getByRole("slider", { name: "Volume" })).toBeVisible();
-});
-
-test("clicking the book title opens the book detail page", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-
-  await page
-    .getByRole("link", { name: `Open details for ${MP3_BOOK.title}` })
-    .click();
-  await expect(page).toHaveURL(new RegExp(`/books/${uuid}$`));
-});
-
-// ---------------------------------------------------------------------------
-// 2. Layout — M4B audiobook
-// ---------------------------------------------------------------------------
-
-test("renders the listen page layout for an m4b audiobook", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, M4B_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-
-  await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: M4B_BOOK.title }),
-  ).toBeVisible();
-  await expect(page.getByText(`by ${M4B_BOOK.author}`)).toBeVisible();
-
-  await waitForPlayerReady(page);
-});
-
-test("persists playback speed per audiobook across reloads", async ({
-  page,
-  request,
-}) => {
-  const uuidA = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  const uuidB = await fetchBookUuidByTitle(request, M4B_BOOK.title);
-  await gotoReady(page, `/listen/${uuidA}`);
-  await waitForPlayerReady(page);
-
-  await page.getByRole("button", { name: "Playback speed" }).click();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: PLAYBACK_RATE_SET_URL,
-      expectedStatus: 200,
-      expectedBody: {
-        uuid: uuidA,
-        update: { playback_rate: 1.5 },
-      },
-    },
-    async () => page.getByRole("button", { name: "1.5×", exact: true }).click(),
-  );
-  await expect(page.getByTestId("listen-rate")).toHaveText("1.50×");
-
-  await page.reload();
-  await waitForPlayerReady(page);
-  await expect(page.getByTestId("listen-rate")).toHaveText("1.50×");
-
-  // The UI label alone is not proof of restored speed: the regression was
-  // that the label showed 1.50× while the audio element played at 1.0,
-  // because a media load() resets playbackRate to its default. Assert the
-  // element's actual rate — it only survives if the shim re-applies the
-  // tracked rate on loadedmetadata.
-  await expect
-    .poll(
-      () =>
-        page.evaluate(
-          () =>
-            (
-              document.getElementById(
-                "omnibus-audio",
-              ) as HTMLAudioElement | null
-            )?.playbackRate ?? null,
-        ),
-      {
-        message:
-          "audio element should actually play at the restored 1.5× after reload",
-        timeout: 10_000,
-        intervals: [50, 100, 250, 500],
-      },
-    )
-    .toBe(1.5);
-
-  await gotoReady(page, `/listen/${uuidB}`);
-  await waitForPlayerReady(page);
-  await expect(page.getByTestId("listen-rate")).toHaveText("1.00×");
-});
-
-test("seeds an empty server preference from the account-scoped local speed", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, LOCAL_SEED_BOOK.title);
-  const meResponse = await request.get("/api/auth/me");
-  expect(meResponse.status()).toBe(200);
-  const user = (await meResponse.json()) as { id: number };
-  const storageKey = `omn.listening.rate::${user.id}::${uuid}`;
-  await page.addInitScript(({ key }) => localStorage.setItem(key, "1.8"), {
-    key: storageKey,
+test.describe("listen page", () => {
+  test.beforeAll("seed the audiobook library", async ({ request }) => {
+    await seedAudiobookLibrary(
+      request,
+      audiobookFixturesDir(),
+      AUDIOBOOK_BOOK_COUNT,
+    );
   });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: PLAYBACK_RATE_SET_URL,
-      expectedStatus: 200,
-      expectedBody: {
-        uuid,
-        update: { playback_rate: 1.8 },
-      },
-    },
-    async () => {
-      await gotoReady(page, `/listen/${uuid}`);
-      await waitForPlayerReady(page);
-    },
-  );
-  await expect(page.getByTestId("listen-rate")).toHaveText("1.80×");
+  test("show the listen page layout for an mp3 audiobook", async ({
+    listenPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-  await page.evaluate((key) => localStorage.removeItem(key), storageKey);
-  await page.reload();
-  await waitForPlayerReady(page);
-  await expect(page.getByTestId("listen-rate")).toHaveText("1.80×");
-});
+    // The preparing overlay covers the controls until the JS bootstrap wires
+    // the book, so the player is driven only once it clears.
+    await test.step("open the player", async () => {
+      await listenPage.goto(uuid);
+      await listenPage.waitUntilPlayerReady();
+    });
 
-test("surfaces playback speed persistence failures without reverting playback", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MULTIPART_MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-  await page.route(PLAYBACK_RATE_SET_URL, (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "forced-failure" }),
-    }),
-  );
+    await test.step("check the page and its nav", async () => {
+      await listenPage.assertDisplayedFor(uuid);
+      await listenPage.topNav.assertDisplayed();
+      await expect(listenPage.audioElement).toBeAttached();
+      await expect(listenPage.failedOverlay).toHaveCount(0);
+      await expect(listenPage.nowPlayingKicker).toBeVisible();
+    });
 
-  await page.getByRole("button", { name: "Playback speed" }).click();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: PLAYBACK_RATE_SET_URL,
-      expectedStatus: 500,
-      expectedBody: {
-        uuid,
-        update: { playback_rate: 1.8 },
-      },
-    },
-    async () => page.getByRole("button", { name: "1.8×", exact: true }).click(),
-  );
+    // The title and byline block links back to the book's detail page.
+    await test.step("check the book's title, byline and link show", async () => {
+      await expect(listenPage.titleHeading(MP3_BOOK.title)).toBeVisible();
+      await expect(listenPage.byline(MP3_BOOK.author)).toBeVisible();
+      await expect(listenPage.detailsLink(MP3_BOOK.title)).toBeVisible();
+    });
 
-  await expect(page.getByTestId("listen-rate")).toHaveText("1.80×");
-  await expect(page.getByRole("alert")).toContainText(
-    "Could not save playback speed",
-  );
-});
-
-/** Seconds behind an `H:MM:SS` / `M:SS` label. */
-function hmsToSeconds(label: string): number {
-  const parts = label.split(":").map(Number);
-  return parts.reduce((acc, part) => acc * 60 + part, 0);
-}
-
-/**
- * The three figures in the transport's scrub-time row, in seconds:
- * `[elapsed, remaining, total]`. Elapsed and total are the book's own running
- * time; the middle "… remaining" is the one rate-adjusted figure (#2344).
- */
-async function scrubStamps(
-  page: import("@playwright/test").Page,
-): Promise<{ elapsed: number; remaining: number; total: number }> {
-  const text = (await page.getByTestId("listen-scrub-times").innerText())
-    .replace(/\s+/g, " ")
-    .trim();
-  const stamps = text.match(/\d+(?::\d\d)+/g) ?? [];
-  expect(stamps.length, `scrub row should carry three stamps: ${text}`).toBe(3);
-  return {
-    elapsed: hmsToSeconds(stamps[0]!),
-    remaining: hmsToSeconds(stamps[1]!),
-    total: hmsToSeconds(stamps[2]!),
-  };
-}
-
-// Regression for issue #2344, superseding #2246. The transport's elapsed and
-// total are the book's own running time — the same basis as the bookmark
-// stamps and the book detail page — so a speed change must NOT move them. Only
-// the "time left" (the middle "… remaining" figure) is rate-adjusted. The
-// earlier #2246 fix rescaled the total too, which is exactly what disagreed
-// with a saved bookmark at any speed but 1x.
-test("a speed change keeps the transport total in book time and rescales only the time left", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, CHAPTERED_BOOK.title);
-  // The rate write is stubbed out: this asserts what the player *displays*,
-  // and a real write would set a speed every other test on this fixture sees.
-  await page.route(PLAYBACK_RATE_SET_URL, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({}),
-    }),
-  );
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-  await expect(page.getByTestId("listen-rate")).toHaveText("1.00×");
-
-  const at1x = await scrubStamps(page);
-  expect(at1x.total).toBeGreaterThan(0);
-  expect(at1x.remaining).toBeGreaterThan(0);
-
-  await page.getByRole("button", { name: "Playback speed" }).click();
-  await page.getByRole("button", { name: "2.0×", exact: true }).click();
-  await expect(page.getByTestId("listen-rate")).toHaveText("2.00×");
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("speed-panel")).toHaveCount(0);
-
-  const at2x = await scrubStamps(page);
-  // The total is book-time — it reads the same at 2x as at 1x (a second of
-  // slack absorbs `format_hms` truncation).
-  expect(Math.abs(at2x.total - at1x.total)).toBeLessThanOrEqual(1);
-  // The "time left" is the one rate-adjusted figure — halved at 2x.
-  expect(at2x.remaining).toBeLessThan(at1x.remaining);
-  expect(Math.abs(at2x.remaining - at1x.remaining / 2)).toBeLessThanOrEqual(1);
-});
-
-// ---------------------------------------------------------------------------
-// 3. Open from book detail
-// ---------------------------------------------------------------------------
-
-test("opens the listen page from the book detail Listen action", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/books/${uuid}`);
-
-  await page.getByTestId("action-listen").click();
-  // `routes::link_target` trims the bare trailing `?` dioxus-router writes
-  // for an unset `?file_id` (#2256), so the URL is exactly `/listen/:uuid`.
-  await expect(page).toHaveURL(new RegExp(`/listen/${uuid}$`));
-  await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
-  ).toBeVisible();
-});
-
-// ---------------------------------------------------------------------------
-// 4. SPA-nav between audiobooks resets player signals (#369)
-// ---------------------------------------------------------------------------
-
-test("SPA-nav between audiobooks resets player signals (#369)", async ({
-  page,
-  request,
-}) => {
-  const uuid1 = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  const uuid2 = await fetchBookUuidByTitle(request, M4B_BOOK.title);
-
-  // Navigate to the first audiobook and wait for the player to render.
-  await gotoReady(page, `/listen/${uuid1}`);
-  await expect(
-    page.getByRole("heading", { name: MP3_BOOK.title }),
-  ).toBeVisible();
-  await waitForPlayerReady(page);
-
-  // Delay the second audiobook's manifest fetch so the preparing overlay
-  // stays visible long enough to assert. Without this, direct-play books
-  // flip hls_ready=true in <10 ms and the overlay is never observable.
-  // The delay proves hls_ready was actually reset to false by the fix —
-  // if it leaked as true from the first book, the overlay would never
-  // appear regardless of the delay.
-  let releaseManifest!: () => void;
-  const manifestGate = new Promise<void>((resolve) => {
-    releaseManifest = resolve;
+    await test.step("check the transport shows", async () => {
+      await expect(listenPage.chapterMap).toBeVisible();
+      await expect(listenPage.seekSlider).toBeVisible();
+      await expect(listenPage.skipBackButton).toBeVisible();
+      await expect(listenPage.skipForwardButton).toBeVisible();
+      await expect(listenPage.playButton).toBeVisible();
+      await expect(listenPage.speedButton).toBeVisible();
+      await expect(listenPage.volumeSlider).toBeVisible();
+    });
   });
-  await page.route(
-    (url) => url.pathname.includes("/manifest") && url.pathname.includes(uuid2),
-    async (route) => {
-      await manifestGate;
-      await route.continue();
-    },
-  );
 
-  // SPA-navigate to the second audiobook via a client-side link click.
-  // Dioxus intercepts anchor clicks for same-origin routes, so this
-  // triggers a true SPA-nav (no full page reload). The anchor needs
-  // visible content + a fixed on-screen position because Playwright's
-  // actionability check requires the click target be visible — an empty
-  // anchor at the bottom of the document collapses to 0×0 and fails the
-  // visibility gate.
-  await page.evaluate((url) => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.id = "__test-spa-nav";
-    a.textContent = "spa-nav";
-    a.style.cssText =
-      "position:fixed;top:0;left:0;padding:8px;background:#000;color:#fff;z-index:99999;";
-    document.body.appendChild(a);
-  }, `/listen/${uuid2}`);
-  await page.locator("#__test-spa-nav").click();
+  test("show the listen page for an m4b audiobook", async ({
+    listenPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, M4B_BOOK.title);
 
-  // Wait for the second book's title to appear.
-  await expect(page.getByRole("heading", { name: M4B_BOOK.title })).toBeVisible(
-    {
-      timeout: 10_000,
-    },
-  );
+    await test.step("open the player", async () => {
+      await listenPage.goto(uuid);
+    });
 
-  // The preparing overlay MUST be visible while the manifest is held —
-  // this is the positive proof that hls_ready was reset to false. If the
-  // stale hls_ready=true from the first book leaked, this would fail.
-  await expect(page.getByTestId("listen-preparing")).toBeVisible();
-  await expect(page.getByTestId("listen-failed")).not.toBeVisible();
+    await test.step("check the play button and the book's title show", async () => {
+      await expect(listenPage.playButton).toBeVisible();
+      await expect(listenPage.titleHeading(M4B_BOOK.title)).toBeVisible();
+      await expect(listenPage.byline(M4B_BOOK.author)).toBeVisible();
+      await listenPage.waitUntilPlayerReady();
+    });
+  });
 
-  // Release the manifest and let the player finish initializing.
-  releaseManifest();
-  await waitForPlayerReady(page);
+  test("open the book detail page from the book title", async ({
+    listenPage,
+    bookDetailPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-  // After init completes: no failure overlay, toggle says "Play".
-  await expect(page.getByTestId("listen-failed")).not.toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
-  ).toBeVisible();
-});
+    await test.step("open the player", async () => {
+      await listenPage.goto(uuid);
+      await listenPage.waitUntilPlayerReady();
+    });
 
-// ---------------------------------------------------------------------------
-// 5. Progress POST happy path
-// ---------------------------------------------------------------------------
+    await test.step("click the book title", async () => {
+      await listenPage.openBookDetail(MP3_BOOK.title);
+    });
 
-test("persists listening progress when the audio element pauses", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  const bookFileId = await fetchAudioFileId(request, uuid);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
+    await test.step("check the book detail page shows", async () => {
+      await bookDetailPage.assertDisplayedFor(uuid);
+    });
+  });
 
-  // Drive the Rust __omnibusOnAudioPause callback directly — no real
-  // audio playback needed in headless Chromium.
-  const PAUSE_AT_SEC = 7.5;
-  await expectMutationProgress(
-    page,
-    {
-      uuid,
-      audioPositionSeconds: PAUSE_AT_SEC,
-      bookFileId,
-      expectedStatus: 200,
-    },
-    async () => {
-      await page.evaluate((secs) => {
-        const cb = (
-          window as unknown as {
-            __omnibusOnAudioPause?: (s: number, userActed: boolean) => void;
-          }
-        ).__omnibusOnAudioPause;
-        if (typeof cb !== "function") {
-          throw new Error("__omnibusOnAudioPause not installed");
-        }
-        // `true` mirrors the shim's user-acted gate: only a session the
-        // user actually drove persists its pause position (#1972).
-        cb(secs, true);
-      }, PAUSE_AT_SEC);
-    },
-  );
+  test("open the player from the book detail listen action", async ({
+    bookDetailPage,
+    listenPage,
+    request,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-  // Player chrome stays mounted, no failure overlay.
-  await expect(page.getByTestId("listen-failed")).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", { name: MP3_BOOK.title }),
-  ).toBeVisible();
-});
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(uuid);
+    });
 
-// ---------------------------------------------------------------------------
-// 6. Progress POST error path (500)
-// ---------------------------------------------------------------------------
+    // `routes::link_target` trims the bare trailing `?` dioxus-router writes
+    // for an unset `?file_id` (#2256), so the URL is exactly `/listen/:uuid`.
+    await test.step("press listen", async () => {
+      await bookDetailPage.listen();
+      await listenPage.assertDisplayedFor(uuid);
+      await expect(listenPage.playButton).toBeVisible();
+    });
+  });
 
-test("surfaces a 5xx progress POST without crashing the player", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  const bookFileId = await fetchAudioFileId(request, uuid);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
+  test("show a not-found message for an unknown audiobook", async ({
+    listenPage,
+  }) => {
+    await test.step("open the player for a uuid no book has", async () => {
+      await listenPage.goto("00000000-0000-0000-0000-000000000000");
+    });
 
-  // Force 500 on the progress POST only — pin by exact pathname so the
-  // sibling `/api/rpc/progress/get` (mount-time reconciliation) keeps
-  // hitting the real server.
-  await page.route(
-    (url) => url.pathname === "/api/rpc/progress",
-    (route) =>
-      route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "forced-failure" }),
-      }),
-  );
+    await test.step("check the not-found notice offers the way back", async () => {
+      await expect(listenPage.notFoundMessage).toBeVisible();
+      await expect(listenPage.backToLibraryLink).toBeVisible();
+    });
+  });
 
-  const PAUSE_AT_SEC = 12.25;
-  await expectMutationProgress(
-    page,
-    {
-      uuid,
-      audioPositionSeconds: PAUSE_AT_SEC,
-      bookFileId,
-      expectedStatus: 500,
-    },
-    async () => {
-      await page.evaluate((secs) => {
-        const cb = (
-          window as unknown as {
-            __omnibusOnAudioPause?: (s: number, userActed: boolean) => void;
-          }
-        ).__omnibusOnAudioPause;
-        if (typeof cb !== "function") {
-          throw new Error("__omnibusOnAudioPause not installed");
-        }
-        // `true` mirrors the shim's user-acted gate: only a session the
-        // user actually drove persists its pause position (#1972).
-        cb(secs, true);
-      }, PAUSE_AT_SEC);
-    },
-  );
+  test("reset the player when switching audiobooks client-side (#369)", async ({
+    listenPage,
+    request,
+  }) => {
+    const uuid1 = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+    const uuid2 = await fetchBookUuidByTitle(request, M4B_BOOK.title);
 
-  // Player stays up — fire-and-forget progress uses the local cache as
-  // the safety net, not the server response.
-  await expect(page.getByTestId("listen-failed")).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", { name: MP3_BOOK.title }),
-  ).toBeVisible();
-});
+    await test.step("open the first audiobook", async () => {
+      await listenPage.goto(uuid1);
+      await expect(listenPage.titleHeading(MP3_BOOK.title)).toBeVisible();
+      await listenPage.waitUntilPlayerReady();
+    });
 
-// ---------------------------------------------------------------------------
-// 7. Unknown UUID 404
-// ---------------------------------------------------------------------------
+    // Direct-play books flip hls_ready in <10 ms, so without the hold the
+    // overlay is never observable. The hold also proves hls_ready was reset: if
+    // it leaked as true from the first book, the overlay would never appear.
+    await test.step("hold the second audiobook's manifest", async () => {
+      await listenPage.holdManifest(uuid2);
+    });
 
-test("shows not-found message for unknown audiobook uuid", async ({ page }) => {
-  await gotoReady(page, "/listen/00000000-0000-0000-0000-000000000000");
+    await test.step("switch to the second audiobook", async () => {
+      await listenPage.switchToAudiobook(uuid2);
+      await expect(listenPage.titleHeading(M4B_BOOK.title)).toBeVisible({
+        timeout: 10_000,
+      });
+    });
 
-  await expect(page.getByText("Audiobook not found.")).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "Back to library" }),
-  ).toBeVisible();
-});
+    // Positive proof that hls_ready was reset: a stale true from the first
+    // book would fail this.
+    await test.step("check the player is preparing the second audiobook", async () => {
+      await expect(listenPage.preparingOverlay).toBeVisible();
+      await expect(listenPage.failedOverlay).not.toBeVisible();
+    });
 
-// ---------------------------------------------------------------------------
-// 8. Sleep panel
-// ---------------------------------------------------------------------------
+    await test.step("release the manifest", async () => {
+      listenPage.releaseHeld();
+      await listenPage.waitUntilPlayerReady();
+    });
 
-test("opens sleep panel and shows preset duration rail", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
+    await test.step("check the player is ready to play", async () => {
+      await expect(listenPage.failedOverlay).not.toBeVisible();
+      await expect(listenPage.playButton).toBeVisible();
+    });
+  });
 
-  // Open the sleep panel via the toolbar button.
-  await page.getByRole("button", { name: /^sleep/i }).click();
+  test.describe("playback speed", () => {
+    test("persist the speed per audiobook across reloads", async ({
+      listenPage,
+      request,
+      expectMutation,
+    }) => {
+      const uuidA = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+      const uuidB = await fetchBookUuidByTitle(request, M4B_BOOK.title);
 
-  // Panel container is in the DOM.
-  const panel = page.getByTestId("sleep-panel");
-  await expect(panel).toBeVisible();
+      await test.step("open the first audiobook", async () => {
+        await listenPage.goto(uuidA);
+        await listenPage.waitUntilPlayerReady();
+      });
 
-  // Preset rail: Off through 4 hours. Scope to the panel — the toolbar Sleep
-  // button reads "Sleep · off" when no timer is armed, which would otherwise
-  // also match a bare { name: "Off" } and trip Playwright's strict mode.
-  await expect(panel.getByRole("button", { name: "Off" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "15 min" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "30 min" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "45 min" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "1 hour" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "2 hours" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "3 hours" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "4 hours" })).toBeVisible();
-  await expect(
-    panel.getByRole("button", { name: "End of chapter" }),
-  ).toBeVisible();
-});
-
-// ---------------------------------------------------------------------------
-// 8a. Overlay panel dismissal (speed + sleep)
-// ---------------------------------------------------------------------------
-
-// Regression for issue #2242. Neither panel has a close button, so before
-// this the only way out was an unhinted click on empty space — Escape did
-// nothing — and both were laid out on top of the transport they belong to,
-// covering play/pause and their own trigger.
-test("escape dismisses the speed and sleep panels", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-
-  const speed = page.getByTestId("speed-panel");
-  await page.getByRole("button", { name: "Playback speed" }).click();
-  await expect(speed).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(speed).toHaveCount(0);
-
-  const sleep = page.getByTestId("sleep-panel");
-  await page.getByRole("button", { name: /^sleep/i }).click();
-  await expect(sleep).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(sleep).toHaveCount(0);
-});
-
-test("neither overlay panel covers play/pause or its own trigger", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-
-  // `elementFromPoint` at a control's centre is the honest test: a panel that
-  // merely *looks* clear still swallows the click if it is painted on top.
-  const covers = (panelTestId: string, control: string) =>
-    page.evaluate(
-      ([panelSel, controlSel]) => {
-        const panel = document.querySelector(`[data-testid="${panelSel}"]`);
-        const control = document.querySelector(controlSel);
-        if (!panel || !control) return "missing";
-        const box = control.getBoundingClientRect();
-        const hit = document.elementFromPoint(
-          box.left + box.width / 2,
-          box.top + box.height / 2,
+      await test.step("choose 1.5×", async () => {
+        await listenPage.openSpeedPanel();
+        await expectMutation(playback.setRate(uuidA, 1.5), () =>
+          listenPage.pickSpeed(1.5),
         );
-        return hit && panel.contains(hit) ? "covered" : "clear";
-      },
-      [panelTestId, control] as const,
-    );
+        await expect(listenPage.speedButton).toHaveText("1.50×");
+      });
 
-  await page.getByRole("button", { name: "Playback speed" }).click();
-  await expect(page.getByTestId("speed-panel")).toBeVisible();
-  expect(await covers("speed-panel", '[data-testid="listen-toggle"]')).toBe(
-    "clear",
-  );
-  expect(await covers("speed-panel", '[data-testid="listen-rate"]')).toBe(
-    "clear",
-  );
-  await page.keyboard.press("Escape");
+      await test.step("reload", async () => {
+        await listenPage.reload();
+        await listenPage.waitUntilPlayerReady();
+        await expect(listenPage.speedButton).toHaveText("1.50×");
+      });
 
-  await page.getByRole("button", { name: /^sleep/i }).click();
-  await expect(page.getByTestId("sleep-panel")).toBeVisible();
-  expect(await covers("sleep-panel", '[data-testid="listen-toggle"]')).toBe(
-    "clear",
-  );
-  expect(await covers("sleep-panel", '[data-testid="listen-sleep"]')).toBe(
-    "clear",
-  );
-});
+      // The label alone is no proof: the regression showed 1.50× while the
+      // audio played at 1.0, because a media load() resets playbackRate. The
+      // element only keeps the rate if the shim re-applies it on loadedmetadata.
+      await test.step("check the audio element plays at the restored speed", async () => {
+        await expect
+          .poll(async () => (await listenPage.audioState())?.rate, {
+            message:
+              "audio element should actually play at the restored 1.5× after reload",
+            timeout: 10_000,
+            intervals: [50, 100, 250, 500],
+          })
+          .toBe(1.5);
+      });
 
-// ---------------------------------------------------------------------------
-// 9. Bookmarks drawer
-// ---------------------------------------------------------------------------
+      await test.step("open the second audiobook", async () => {
+        await listenPage.goto(uuidB);
+        await listenPage.waitUntilPlayerReady();
+        await expect(listenPage.speedButton).toHaveText("1.00×");
+      });
+    });
 
-test("opens bookmarks drawer and shows empty state", async ({
-  page,
-  request,
-}) => {
-  // Use the multipart generated MP3 — it reaches direct-play mode reliably in
-  // headless (unlike the large public-domain M4B), and no other spec creates
-  // bookmarks against it, so the empty state holds on the shared dev DB. (The
-  // create flow below bookmarks MP3_BOOK, so reusing that here would be flaky.)
-  const uuid = await fetchBookUuidByTitle(request, MULTIPART_MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
+    // The server cannot go back to having no saved speed once it has one, so
+    // the empty preference is stubbed; the seeding write still reaches it.
+    test("seed an empty server preference from the account-scoped local speed", async ({
+      listenPage,
+      request,
+      signedInUserId,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, LOCAL_SEED_BOOK.title);
 
-  // Open the bookmarks drawer via the toolbar button.
-  await page.getByRole("button", { name: "Bookmark" }).click();
+      await test.step("remember 1.8× in this browser with no speed saved", async () => {
+        await listenPage.stubNoSavedSpeed();
+        await listenPage.presetLocalSpeed(signedInUserId, uuid, 1.8);
+      });
 
-  // Drawer container is in the DOM.
-  await expect(page.getByTestId("bookmarks-drawer")).toBeVisible();
+      await test.step("open the player", async () => {
+        await expectMutation(playback.setRate(uuid, 1.8), async () => {
+          await listenPage.goto(uuid);
+          await listenPage.waitUntilPlayerReady();
+        });
+        await expect(listenPage.speedButton).toHaveText("1.80×");
+      });
 
-  // Empty state copy — no bookmarks have been saved yet. It must name the
-  // control that saves ("+ Bookmark" inside the drawer), not the transport
-  // button that merely opened it (#2479).
-  await expect(page.getByText("No bookmarks yet")).toBeVisible();
-  await expect(page.getByText("Tap + Bookmark above")).toBeVisible();
-  await expect(page.getByTestId("bookmark-add")).toBeVisible();
-});
+      await test.step("reload", async () => {
+        await listenPage.reload();
+        await listenPage.waitUntilPlayerReady();
+        await expect(listenPage.speedButton).toHaveText("1.80×");
+      });
+    });
 
-// ---------------------------------------------------------------------------
-// 9b. Bookmark create → toast → row (PR4)
-// ---------------------------------------------------------------------------
+    test("surface a failed speed save without reverting playback", async ({
+      listenPage,
+      request,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(
+        request,
+        MULTIPART_MP3_BOOK.title,
+      );
 
-test("saves a bookmark from the drawer and shows a confirmation toast", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
+      await test.step("open the player while speed saves fail", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await listenPage.forceServerError(playback.setRate(uuid, 1.8));
+      });
 
-  // Open the drawer, then add a bookmark at the current position. The create
-  // RPC must fire with the book uuid before the row + toast appear.
-  await page.getByRole("button", { name: "Bookmark" }).click();
-  await expect(page.getByTestId("bookmarks-drawer")).toBeVisible();
+      await test.step("choose 1.8×", async () => {
+        await listenPage.openSpeedPanel();
+        await expectMutation(failing(playback.setRate(uuid, 1.8)), () =>
+          listenPage.pickSpeed(1.8),
+        );
+      });
 
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/bookmarks\/create(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => page.getByTestId("bookmark-add").click(),
-  );
+      await test.step("check the speed stays and the error shows", async () => {
+        await expect(listenPage.speedButton).toHaveText("1.80×");
+        await expect(listenPage.speedErrorAlert).toContainText(
+          "Could not save playback speed",
+        );
+      });
+    });
 
-  // The freshly-created bookmark row and the confirmation toast appear.
-  await expect(page.getByTestId("bookmark-row").first()).toBeVisible();
-  await expect(page.getByTestId("bookmark-toast")).toBeVisible();
-  await expect(page.getByText("Bookmark saved")).toBeVisible();
-});
+    // Regression for #2344: elapsed and total are the book's own running time,
+    // the basis of the bookmark stamps, so only the "time left" follows speed.
+    test("keep the transport total in book time and rescale only the time left", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, CHAPTERED_BOOK.title);
 
-// ---------------------------------------------------------------------------
-// 8b. Sleep timer countdown (PR5)
-// ---------------------------------------------------------------------------
+      // The rate write is stubbed: this asserts what the player *displays*, and
+      // a real write would set a speed every other test on this fixture sees.
+      await test.step("open the player with speed saves stubbed", async () => {
+        await listenPage.stubPlaybackRateSaved();
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await expect(listenPage.speedButton).toHaveText("1.00×");
+      });
 
-test("arms a sleep preset and shows a live countdown", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
+      const at1x = await listenPage.scrubStamps();
+      expect(at1x.total).toBeGreaterThan(0);
+      expect(at1x.remaining).toBeGreaterThan(0);
 
-  await page.getByRole("button", { name: /^sleep/i }).click();
-  await expect(page.getByTestId("sleep-panel")).toBeVisible();
+      await test.step("choose 2×", async () => {
+        await listenPage.openSpeedPanel();
+        await listenPage.pickSpeed(2);
+        await expect(listenPage.speedButton).toHaveText("2.00×");
+        await listenPage.closePanelWithEscape();
+        await expect(listenPage.speedPanel).toHaveCount(0);
+      });
 
-  // Selecting "15 min" arms the timer; the status shows a sub-15-minute
-  // countdown (it begins decrementing immediately).
-  await page.getByRole("button", { name: "15 min" }).click();
-  await expect(page.getByTestId("sleep-status")).toHaveText(/^1[45]:\d\d$/);
-
-  // The toolbar Sleep button reflects the live countdown.
-  await expect(
-    page.getByRole("button", { name: /^Sleep · 1[45]:/ }),
-  ).toBeVisible();
-});
-
-// ---------------------------------------------------------------------------
-// 9c. Volume slider (#989)
-// ---------------------------------------------------------------------------
-
-test("adjusts volume via the full player's slider", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-
-  const slider = page.getByRole("slider", { name: "Volume" });
-  await expect(slider).toBeVisible();
-  await expect(slider).toHaveValue("1");
-
-  await setRangeValue(slider, 0.3);
-
-  // The slider drives the shared `<audio>` element's volume in real time.
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (document.getElementById("omnibus-audio") as HTMLAudioElement | null)
-            ?.volume ?? null,
-      ),
-    )
-    .toBeCloseTo(0.3, 2);
-  await expect(slider).toHaveValue("0.3");
-});
-
-// ---------------------------------------------------------------------------
-// 9d. Seek scrubber (YouTube-style drag-to-seek)
-// ---------------------------------------------------------------------------
-
-// The scrubber previews on drag (`input`) but only seeks + persists on release
-// (`change`). Dragging must not move the audio; releasing must seek to the
-// exact target and POST the new position.
-test("scrubs to an arbitrary position and seeks only on release", async ({
-  page,
-  request,
-}) => {
-  // SCRUB_BOOK is reserved for this spec: seeking persists a position, so no
-  // other spec may read it (see fixtures/audiobooks.ts).
-  const uuid = await fetchBookUuidByTitle(request, SCRUB_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-
-  const seek = page.getByRole("slider", { name: "Seek" });
-  await expect(seek).toBeVisible();
-
-  const audioPos = () =>
-    page.evaluate(
-      () =>
-        (document.getElementById("omnibus-audio") as HTMLAudioElement | null)
-          ?.currentTime ?? -1,
-    );
-
-  // Normalize the start position. Scrubbing persists a per-(user, book)
-  // position, so a previous run — or a CI retry — can resume this book
-  // mid-way, which would defeat the "preview doesn't move the audio" baseline
-  // below. Poke the shim to seek back to 0 and wait for it to settle.
-  await page.evaluate(() => {
-    (
-      window as unknown as { OmnibusAudio?: { seek(s: number): void } }
-    ).OmnibusAudio?.seek(0);
-  });
-  await expect.poll(audioPos).toBeLessThan(1);
-
-  // Target ~60% in — a clear mid-book position. SCRUB_BOOK is single-part, so
-  // the audio element's currentTime is already the absolute position.
-  const max = Number(await seek.getAttribute("max"));
-  const target = Math.round(max * 0.6);
-
-  // Drag-preview (input only): the bar previews but the audio must NOT seek.
-  await setRangeValue(seek, target);
-  // Let any (incorrect) async seek settle before asserting — a bare
-  // synchronous read could let a next-tick seek slip through as a false pass.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
-  expect(await audioPos(), "preview must not move the audio").toBeLessThan(1);
-
-  // Release (input + change): now it seeks and persists the new position. The
-  // POST body isn't asserted exactly — MP3 seeks snap to frame boundaries, so
-  // the persisted position is target ± a frame — but the request must fire.
-  const { request: progressReq } = await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: /\/api\/rpc\/progress(?:\?|$)/,
-      expectedStatus: 200,
-    },
-    async () => commitRangeValue(seek, target),
-  );
-  const body = progressReq.postDataJSON() as {
-    update: { format: string; audio_position_seconds: number };
-  };
-  expect(body.update.format).toBe("audio");
-  expect(Math.abs(body.update.audio_position_seconds - target)).toBeLessThan(2);
-
-  // The audio element actually moved to (near) the target.
-  await expect
-    .poll(async () => Math.abs((await audioPos()) - target))
-    .toBeLessThan(2);
-});
-
-// ---------------------------------------------------------------------------
-// 10. Chapters drawer
-// ---------------------------------------------------------------------------
-
-/**
- * Park the player at the very start of the book, through the same shim call a
- * user seek takes.
- *
- * Both tests below need chapter 1 to be the current one, and they share
- * MULTIPART_MP3_BOOK with each other — the #1897 test seeks it to chapter 2
- * and persists that immediately, which is the behaviour it exists to prove.
- * The saved position then follows the book into the next test. That used to
- * go unnoticed because the transport painted 0:00 until the media metadata
- * landed, so the drawer rendered as though the book were at zero; #2458 made
- * the transport paint the restored position instead, which turned an
- * accidental precondition into a visible order dependency. State it outright.
- */
-async function parkAtStart(
-  page: import("@playwright/test").Page,
-): Promise<void> {
-  await page.evaluate(() => {
-    (
-      window as unknown as { OmnibusAudio: { seek(s: number): void } }
-    ).OmnibusAudio.seek(0);
-  });
-  await expect
-    .poll(async () =>
-      page.evaluate(() => {
-        const el = document.querySelector("audio") as HTMLAudioElement | null;
-        // Infinity, not -1: a missing element must FAIL the poll below. A
-        // sentinel that satisfies the assertion would let this helper skip
-        // the precondition it exists to establish.
-        return el ? el.currentTime : Number.POSITIVE_INFINITY;
-      }),
-    )
-    .toBeLessThan(0.5);
-}
-
-test("opens chapters drawer and shows played/current/upcoming row states", async ({
-  page,
-  request,
-}) => {
-  // Use the multi-part MP3 book so at least two synthetic chapters are
-  // present (one per part): the first is "current" at elapsed=0, the
-  // second is "upcoming". The synthetic fallback always produces
-  // file_chapters.len() >= 1, so even books without embedded markers work.
-  const uuid = await fetchBookUuidByTitle(request, MULTIPART_MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-  await parkAtStart(page);
-
-  // Open the chapters drawer via the toolbar button.
-  await page.getByRole("button", { name: /^chapters/i }).click();
-
-  // Drawer container is in the DOM.
-  await expect(page.getByTestId("chapters-drawer")).toBeVisible();
-
-  // At elapsed=0 the first chapter is current and the rest are upcoming.
-  // getByTestId returns all matching elements; we need at least one current
-  // and at least one upcoming row.
-  await expect(page.getByTestId("chapter-row-current").first()).toBeVisible();
-  await expect(page.getByTestId("chapter-row-upcoming").first()).toBeVisible();
-
-  // #2521: the playing row keeps its own book-time duration and adds the
-  // time left beside it. It used to replace one with the other, leaving a
-  // rate-adjusted figure unmarked in a column of book-time ones.
-  const current = page.getByTestId("chapter-row-current").first();
-  await expect(current).toContainText("left");
-  const upcoming = page.getByTestId("chapter-row-upcoming").first();
-  const upcomingDuration = (await upcoming.innerText()).match(
-    /\d+(?::\d\d)+/,
-  )?.[0];
-  expect(
-    upcomingDuration,
-    "an upcoming row should carry a duration",
-  ).toBeTruthy();
-  // Both rows carry a duration stamp; only the playing one names a "left".
-  await expect(current).toHaveText(/\d+(?::\d\d)+/);
-  await expect(upcoming).not.toContainText("left");
-});
-
-// ---------------------------------------------------------------------------
-// 10b. Paused chapter-list seek shows immediate transport feedback (#1897)
-// ---------------------------------------------------------------------------
-
-test("shows the target time immediately after a paused chapter-list seek (#1897)", async ({
-  page,
-  request,
-}) => {
-  // Two parts → two synthetic chapters, so a chapter-row click seeks to a
-  // real, non-zero target (see the "opens chapters drawer" test above).
-  const uuid = await fetchBookUuidByTitle(request, MULTIPART_MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-
-  // Chapter 1 must be current for an "upcoming" row to exist to click.
-  await parkAtStart(page);
-
-  // The player boots paused — the regression only reproduces on a seek
-  // issued while paused, so pin that precondition before seeking.
-  await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
-  ).toBeVisible();
-
-  const seek = page.getByRole("slider", { name: "Seek" });
-  await expect(seek).toBeVisible();
-  const before = await seek.inputValue();
-
-  await page.getByRole("button", { name: /^chapters/i }).click();
-  await expect(page.getByTestId("chapters-drawer")).toBeVisible();
-  await page.getByTestId("chapter-row-upcoming").first().click();
-
-  // Still paused — a seek must not itself start playback.
-  await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
-  ).toBeVisible();
-
-  // Bug #1897: without pushing the seek target into the transport display
-  // immediately, the scrub slider and elapsed readout stay at `before`
-  // until a `timeupdate` fires — which never happens while paused. Assert
-  // it updates right away, with no play() call anywhere in this test.
-  await expect
-    .poll(() => seek.inputValue(), {
-      message: "seek slider should reflect the chapter jump while paused",
-    })
-    .not.toBe(before);
-  const target = Number(await seek.inputValue());
-  expect(target).toBeGreaterThan(0);
-});
-
-// ---------------------------------------------------------------------------
-// 10c. Reopened player paints the saved position, not 0:00 (#2458)
-// ---------------------------------------------------------------------------
-
-test("paints the saved position before the media element seeks (#2458)", async ({
-  page,
-  request,
-}) => {
-  // RESUME_BOOK is reserved for this test: the position written below is
-  // per-(user, book) server state that outlives it, and every other listen
-  // test asserts a book opens at zero.
-  const uuid = await fetchBookUuidByTitle(request, RESUME_BOOK.title);
-  const savedSeconds = 18;
-  const resp = await request.post("/api/rpc/progress", {
-    data: {
-      update: {
-        book_uuid: uuid,
-        format: "audio",
-        audio_position_seconds: savedSeconds,
-        // Epoch seconds, anchored just behind wall clock — the server
-        // clamps a future clock to now.
-        client_updated_at: Math.floor(Date.now() / 1000) - 60,
-      },
-    },
-  });
-  expect(resp.status(), "audio progress write failed").toBe(200);
-
-  // Hold the media bytes so `loadedmetadata` — and therefore the element's
-  // own `timeupdate` — cannot fire while the assertions run. Without this
-  // the seek lands within milliseconds on a local server and the test would
-  // pass whether or not the transport was seeded.
-  let releaseMedia = (): void => {};
-  const mediaHeld = new Promise<void>((resolve) => {
-    releaseMedia = resolve;
-  });
-  await page.route("**/api/audiobooks/**/parts/**", async (route) => {
-    await mediaHeld;
-    await route.continue();
+      await test.step("check only the time left follows the speed", async () => {
+        const at2x = await listenPage.scrubStamps();
+        // The total is book time — the same at 2x as at 1x (a second of slack
+        // absorbs `format_hms` truncation).
+        expect(Math.abs(at2x.total - at1x.total)).toBeLessThanOrEqual(1);
+        // The time left is the one rate-adjusted figure — halved at 2x.
+        expect(at2x.remaining).toBeLessThan(at1x.remaining);
+        expect(
+          Math.abs(at2x.remaining - at1x.remaining / 2),
+        ).toBeLessThanOrEqual(1);
+      });
+    });
   });
 
-  // Plain `goto`, not `gotoReady`: that helper waits for `networkidle`,
-  // which the held media request never reaches. `waitForPlayerReady` is the
-  // real gate anyway — it waits for the transport to be on screen.
-  await page.goto(`/listen/${uuid}`);
-  await waitForPlayerReady(page);
+  test.describe("listening progress", () => {
+    test("save the position when the audio pauses", async ({
+      listenPage,
+      request,
+      audioFileId,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+      const bookFileId = await audioFileId(uuid);
 
-  // The transport is visible now and the element's clock is still 0. Bug
-  // #2458: the scrub row read "0:00 · <full duration> remaining" for a book
-  // the detail page had just offered to resume from 18 s.
-  await expect
-    .poll(async () => (await scrubStamps(page)).elapsed, {
-      message: "transport should open at the saved position, not 0:00",
-    })
-    .toBeGreaterThan(0);
-  const painted = await scrubStamps(page);
-  expect(painted.elapsed).toBe(savedSeconds);
-  expect(painted.remaining).toBe(painted.total - savedSeconds);
-  expect(
-    Number(await page.getByRole("slider", { name: "Seek" }).inputValue()),
-  ).toBeGreaterThan(0);
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+      });
 
-  // Releasing the media lets the element seek; the position it settles on is
-  // the one already on screen, so the readout confirms rather than jumps.
-  releaseMedia();
-  await expect
-    .poll(async () => (await scrubStamps(page)).elapsed, {
-      message: "the element's own seek must not move the painted position",
-    })
-    .toBe(savedSeconds);
-});
+      // No real audio plays in headless Chromium, so the pause callback is
+      // driven directly.
+      await test.step("pause at 7.5 seconds", async () => {
+        await expectMutation(progress.saveAudio(uuid, 7.5, bookFileId), () =>
+          listenPage.reportPause(7.5),
+        );
+      });
 
-// ---------------------------------------------------------------------------
-// 8c. End-of-chapter sleep timer stops at the seam (#2494)
-// ---------------------------------------------------------------------------
+      await test.step("check the player stays up", async () => {
+        await expect(listenPage.failedOverlay).toHaveCount(0);
+        await expect(listenPage.titleHeading(MP3_BOOK.title)).toBeVisible();
+      });
+    });
 
-/**
- * The book position and paused state, read off the media element.
- *
- * A multi-part book swaps `el.src` at a part boundary and `currentTime`
- * restarts from zero inside the new part, so the element's own clock is NOT
- * the book position — the shim's cumulative offsets are. Reading
- * `currentTime` alone makes a timer that fired at the seam look like one
- * that reset to zero.
- */
-async function audioState(page: import("@playwright/test").Page) {
-  return page.evaluate(() => {
-    const el = document.querySelector("audio") as HTMLAudioElement | null;
-    if (!el) return null;
-    const shim = (
-      window as unknown as {
-        OmnibusAudio?: { _cumOffsets?: number[]; _index?: number };
-      }
-    ).OmnibusAudio;
-    const base = shim?._cumOffsets?.[shim?._index ?? 0] ?? 0;
-    return {
-      paused: el.paused,
-      position: base + el.currentTime,
-      volume: el.volume,
-    };
+    test("keep the player up when the progress save fails", async ({
+      listenPage,
+      request,
+      audioFileId,
+      expectMutation,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+      const bookFileId = await audioFileId(uuid);
+      const failedSave = progress.saveAudio(uuid, 12.25, bookFileId);
+
+      // Only the save fails: the sibling `progress/get` that reconciles on
+      // mount keeps hitting the real server.
+      await test.step("open the player while progress saves fail", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await listenPage.forceServerError(failedSave);
+      });
+
+      await test.step("pause at 12.25 seconds", async () => {
+        await expectMutation(failing(failedSave), () =>
+          listenPage.reportPause(12.25),
+        );
+      });
+
+      // Fire-and-forget progress uses the local cache as its safety net, not
+      // the server response.
+      await test.step("check the player stays up", async () => {
+        await expect(listenPage.failedOverlay).toHaveCount(0);
+        await expect(listenPage.titleHeading(MP3_BOOK.title)).toBeVisible();
+      });
+    });
+
+    test("paint the saved position before the media element seeks (#2458)", async ({
+      listenPage,
+      request,
+      progressRequests,
+      eventClock,
+    }) => {
+      // RESUME_BOOK is reserved for this test: the position written below is
+      // per-(user, book) server state that outlives it, and every other listen
+      // test asserts a book opens at zero.
+      const uuid = await fetchBookUuidByTitle(request, RESUME_BOOK.title);
+      const savedSeconds = 18;
+
+      await test.step("save a position 18 seconds in", async () => {
+        const saved = await progressRequests.postAudioPosition(
+          uuid,
+          savedSeconds,
+          eventClock.next(),
+        );
+        await expect(saved, "audio progress write").toBeOK();
+      });
+
+      // Without the hold, the seek lands within milliseconds on a local server
+      // and the test would pass whether or not the transport was seeded. The
+      // held media request never idles, so the page is not settled on.
+      await test.step("open the player while the media bytes are held", async () => {
+        await listenPage.holdAudioParts();
+        await listenPage.gotoWithoutSettling(uuid);
+        await listenPage.waitUntilPlayerReady();
+      });
+
+      // Bug #2458: the scrub row read "0:00 · <full duration> remaining" for a
+      // book the detail page had just offered to resume from 18 s.
+      await test.step("check the transport opens at the saved position, not 0:00", async () => {
+        await expect
+          .poll(async () => (await listenPage.scrubStamps()).elapsed, {
+            message: "transport should open at the saved position, not 0:00",
+          })
+          .toBeGreaterThan(0);
+        const painted = await listenPage.scrubStamps();
+        expect(painted.elapsed).toBe(savedSeconds);
+        expect(painted.remaining).toBe(painted.total - savedSeconds);
+        expect(await listenPage.seekPosition()).toBeGreaterThan(0);
+      });
+
+      // The position the element settles on is the one already on screen, so
+      // the readout confirms rather than jumps.
+      await test.step("release the media bytes", async () => {
+        listenPage.releaseHeld();
+        await expect
+          .poll(async () => (await listenPage.scrubStamps()).elapsed, {
+            message:
+              "the element's own seek must not move the painted position",
+          })
+          .toBe(savedSeconds);
+      });
+    });
+
+    // The scrubber previews on drag (`input`) but only seeks and persists on
+    // release (`change`).
+    test("scrub to an arbitrary position and seek only on release", async ({
+      listenPage,
+      request,
+      expectMutation,
+    }) => {
+      // SCRUB_BOOK is reserved for this spec: seeking persists a position, so
+      // no other spec may read it (see fixtures/audiobooks.ts).
+      const uuid = await fetchBookUuidByTitle(request, SCRUB_BOOK.title);
+
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await expect(listenPage.seekSlider).toBeVisible();
+      });
+
+      // Scrubbing persists a per-(user, book) position, so an earlier run — or
+      // a CI retry — can resume mid-way and defeat the baseline below.
+      await test.step("park at the start", async () => {
+        await listenPage.parkAtStart();
+      });
+
+      // About 60% in is a clear mid-book position. SCRUB_BOOK is single-part,
+      // so the element's currentTime is already the absolute position.
+      const target = Math.round((await listenPage.seekLength()) * 0.6);
+
+      await test.step("drag the scrubber without releasing", async () => {
+        await listenPage.previewSeek(target);
+        expect(
+          await listenPage.audioPosition(),
+          "preview must not move the audio",
+        ).toBeLessThan(1);
+      });
+
+      // MP3 seeks snap to frame boundaries, so the persisted position is the
+      // target ± a frame and the body is not pinned exactly.
+      await test.step("release the scrubber", async () => {
+        const { request: save } = await expectMutation(progress.save(), () =>
+          listenPage.releaseSeek(target),
+        );
+        const saved = savedAudioPosition(save);
+        expect(saved.format).toBe("audio");
+        expect(Math.abs(saved.seconds - target)).toBeLessThan(2);
+      });
+
+      await test.step("check the audio moved to the target", async () => {
+        await expect
+          .poll(async () =>
+            Math.abs((await listenPage.audioPosition()) - target),
+          )
+          .toBeLessThan(2);
+      });
+    });
+
+    test("show the target time right after a paused chapter jump (#1897)", async ({
+      listenPage,
+      request,
+    }) => {
+      // Two parts → two synthetic chapters, so a chapter-row click seeks to a
+      // real, non-zero target.
+      const uuid = await fetchBookUuidByTitle(
+        request,
+        MULTIPART_MP3_BOOK.title,
+      );
+
+      // Chapter 1 must be current for an "upcoming" row to exist to click. The
+      // regression only reproduces on a seek issued while paused.
+      await test.step("open the player, parked at the start and paused", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await listenPage.parkAtStart();
+        await expect(listenPage.playButton).toBeVisible();
+        await expect(listenPage.seekSlider).toBeVisible();
+      });
+
+      const before = await listenPage.seekPosition();
+
+      await test.step("jump to the next chapter from the drawer", async () => {
+        await listenPage.drawers.openChapters();
+        await expect(listenPage.drawers.chaptersDrawer).toBeVisible();
+        await listenPage.drawers.jumpToNextChapter();
+      });
+
+      // Bug #1897: without pushing the seek target into the transport display
+      // immediately, the slider and elapsed readout stay at `before` until a
+      // `timeupdate` — which never fires while paused. No play() call is made.
+      await test.step("check the scrubber moved while still paused", async () => {
+        await expect(listenPage.playButton).toBeVisible();
+        await expect
+          .poll(() => listenPage.seekPosition(), {
+            message: "seek slider should reflect the chapter jump while paused",
+          })
+          .not.toBe(before);
+        expect(await listenPage.seekPosition()).toBeGreaterThan(0);
+      });
+    });
   });
-}
 
-test("an armed end-of-chapter timer stops the book at the seam (#2494)", async ({
-  page,
-  request,
-}) => {
-  // SLEEP_SEAM_BOOK is reserved for this test: it plays the book across a
-  // seam, which writes a position and flips read status.
-  const uuid = await fetchBookUuidByTitle(request, SLEEP_SEAM_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
+  test.describe("volume", () => {
+    test("adjust the volume with the full player's slider", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-  // Park 2.1s before the seam, through the same shim call a user seek takes.
-  // The fractional offset is the whole point: `ceil` gives a 3s countdown
-  // while the playhead needs only 2.1s, so the crossing happens with the
-  // countdown still above zero. That is the race the timer used to lose —
-  // it read the chapter under the playhead, found the *next* one, and
-  // re-armed to its full length instead of pausing.
-  const armAt = SLEEP_SEAM_SECONDS - 2.1;
-  await page.evaluate((t) => {
-    (
-      window as unknown as { OmnibusAudio: { seek(s: number): void } }
-    ).OmnibusAudio.seek(t);
-  }, armAt);
-  await expect
-    .poll(async () => (await audioState(page))?.position ?? 0)
-    .toBeGreaterThan(armAt - 1);
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await expect(listenPage.volumeSlider).toBeVisible();
+        await expect(listenPage.volumeSlider).toHaveValue("1");
+      });
 
-  await page.getByTestId("listen-sleep").click();
-  await page.getByRole("button", { name: "End of chapter" }).click();
-  // The panel's scrim covers the transport; clicking it dismisses the panel.
-  await page.locator(".lp-scrim").click();
-  await expect(page.locator(".lp-scrim")).toHaveCount(0);
+      // The slider drives the shared `<audio>` element's volume in real time.
+      await test.step("set the volume to 0.3", async () => {
+        await listenPage.setVolume(0.3);
+        await expect
+          .poll(async () => (await listenPage.audioState())?.volume)
+          .toBeCloseTo(0.3, 2);
+        await expect(listenPage.volumeSlider).toHaveValue("0.3");
+      });
+    });
+  });
 
-  await page.getByRole("button", { name: "Play", exact: true }).click();
+  test.describe("overlay panels", () => {
+    test("show the sleep panel's preset duration rail", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-  await expect
-    .poll(async () => (await audioState(page))?.paused ?? null, {
-      message: "the timer must pause the book at the chapter seam",
-      timeout: 20_000,
-      intervals: [150, 250, 500],
-    })
-    .toBe(true);
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+      });
 
-  const stopped = await audioState(page);
-  // AC1: it stopped AT the seam, not deep inside the next chapter. Before the
-  // fix this read ~13s past it, still playing.
-  expect(stopped?.position).toBeGreaterThan(SLEEP_SEAM_SECONDS - 1);
-  expect(stopped?.position).toBeLessThan(SLEEP_SEAM_SECONDS + 1);
-  // AC3/AC4: the fade ran on the way in, so the stop must put the volume
-  // back. It used to strand the element at 0.033 with the readout at 100%.
-  expect(stopped?.volume).toBeGreaterThan(0.9);
+      await test.step("open the sleep panel", async () => {
+        await listenPage.openSleepPanel();
+        await expect(listenPage.sleepPanel).toBeVisible();
+      });
 
-  // AC2: it stays stopped and does not re-arm to the following chapter.
-  await page.waitForTimeout(2500);
-  const later = await audioState(page);
-  expect(later?.paused, "must not re-arm and play on").toBe(true);
-  expect(later?.position).toBeLessThan(SLEEP_SEAM_SECONDS + 1);
+      await test.step("check the presets run from Off to four hours", async () => {
+        for (const label of [
+          "Off",
+          "15 min",
+          "30 min",
+          "45 min",
+          "1 hour",
+          "2 hours",
+          "3 hours",
+          "4 hours",
+          "End of chapter",
+        ]) {
+          await expect(listenPage.sleepPreset(label)).toBeVisible();
+        }
+      });
+    });
 
-  // And it disarmed itself.
-  await expect(page.getByTestId("listen-sleep")).toContainText(/off/i);
+    // Regression for #2242. Neither panel has a close button, so Escape was the
+    // way out, and it did nothing.
+    test("dismiss the speed and sleep panels with escape", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+      });
+
+      await test.step("dismiss the speed panel", async () => {
+        await listenPage.openSpeedPanel();
+        await expect(listenPage.speedPanel).toBeVisible();
+        await listenPage.closePanelWithEscape();
+        await expect(listenPage.speedPanel).toHaveCount(0);
+      });
+
+      await test.step("dismiss the sleep panel", async () => {
+        await listenPage.openSleepPanel();
+        await expect(listenPage.sleepPanel).toBeVisible();
+        await listenPage.closePanelWithEscape();
+        await expect(listenPage.sleepPanel).toHaveCount(0);
+      });
+    });
+
+    // Both panels were laid out over the transport they belong to, covering
+    // play/pause and their own trigger.
+    test("keep the speed and sleep panels off play/pause and their own trigger", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+      });
+
+      await test.step("check the speed panel leaves its controls clear", async () => {
+        await listenPage.openSpeedPanel();
+        await expect(listenPage.speedPanel).toBeVisible();
+        expect(
+          await listenPage.isCoveredBy(
+            listenPage.playButton,
+            listenPage.speedPanel,
+          ),
+        ).toBe(false);
+        expect(
+          await listenPage.isCoveredBy(
+            listenPage.speedButton,
+            listenPage.speedPanel,
+          ),
+        ).toBe(false);
+        await listenPage.closePanelWithEscape();
+      });
+
+      await test.step("check the sleep panel leaves its controls clear", async () => {
+        await listenPage.openSleepPanel();
+        await expect(listenPage.sleepPanel).toBeVisible();
+        expect(
+          await listenPage.isCoveredBy(
+            listenPage.playButton,
+            listenPage.sleepPanel,
+          ),
+        ).toBe(false);
+        expect(
+          await listenPage.isCoveredBy(
+            listenPage.sleepButton,
+            listenPage.sleepPanel,
+          ),
+        ).toBe(false);
+      });
+    });
+  });
+
+  test.describe("sleep timer", () => {
+    test("arm a sleep preset and show a live countdown", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+
+      await test.step("open the sleep panel", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await listenPage.openSleepPanel();
+        await expect(listenPage.sleepPanel).toBeVisible();
+      });
+
+      // The countdown begins decrementing immediately, so it reads under 15 minutes.
+      await test.step("arm 15 minutes", async () => {
+        await listenPage.armSleep("15 min");
+        await expect(listenPage.sleepStatus).toHaveText(/^1[45]:\d\d$/);
+      });
+
+      await test.step("check the toolbar button shows the countdown", async () => {
+        await expect(listenPage.sleepButton).toHaveText(/^Sleep · 1[45]:/);
+      });
+    });
+
+    test("stop the book at the seam when an end-of-chapter timer is armed (#2494)", async ({
+      listenPage,
+      request,
+    }) => {
+      // SLEEP_SEAM_BOOK is reserved for this test: it plays the book across a
+      // seam, which writes a position and flips read status.
+      const uuid = await fetchBookUuidByTitle(request, SLEEP_SEAM_BOOK.title);
+
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+      });
+
+      // The fractional offset is the point: `ceil` gives a 3s countdown while
+      // the playhead needs 2.1s, so the seam is crossed with the countdown above
+      // zero — the race where the timer re-armed to the next chapter instead.
+      await test.step("park 2.1 seconds before the seam", async () => {
+        const armAt = SLEEP_SEAM_SECONDS - 2.1;
+        await listenPage.seekTo(armAt);
+        await expect
+          .poll(() => listenPage.audioPosition())
+          .toBeGreaterThan(armAt - 1);
+      });
+
+      // The panel's scrim covers the transport; clicking it dismisses the panel.
+      await test.step("arm the end-of-chapter timer", async () => {
+        await listenPage.openSleepPanel();
+        await listenPage.armSleep("End of chapter");
+        await listenPage.dismissSleepScrim();
+        await expect(listenPage.sleepScrim).toHaveCount(0);
+      });
+
+      await test.step("play into the seam", async () => {
+        await listenPage.play();
+        await expect
+          .poll(async () => (await listenPage.audioState())?.paused, {
+            message: "the timer must pause the book at the chapter seam",
+            timeout: 20_000,
+            intervals: [150, 250, 500],
+          })
+          .toBe(true);
+      });
+
+      await test.step("check it stopped at the seam with the volume restored", async () => {
+        const stopped = await listenPage.audioState();
+        // AC1: it stopped AT the seam, not deep inside the next chapter.
+        // Before the fix this read ~13s past it, still playing.
+        expect(stopped?.position).toBeGreaterThan(SLEEP_SEAM_SECONDS - 1);
+        expect(stopped?.position).toBeLessThan(SLEEP_SEAM_SECONDS + 1);
+        // AC3/AC4: the fade ran on the way in, so the stop must put the volume
+        // back. It used to strand the element at 0.033 with the readout at 100%.
+        expect(stopped?.volume).toBeGreaterThan(0.9);
+      });
+
+      await test.step("check it stays stopped and disarms itself", async () => {
+        await listenPage.waitOutSleepRearm();
+        const later = await listenPage.audioState();
+        // AC2: it does not re-arm to the following chapter.
+        expect(later?.paused, "must not re-arm and play on").toBe(true);
+        expect(later?.position).toBeLessThan(SLEEP_SEAM_SECONDS + 1);
+        await expect(listenPage.sleepButton).toContainText(/off/i);
+      });
+    });
+  });
+
+  test.describe("bookmarks", () => {
+    test("show the bookmarks drawer's empty state", async ({
+      listenPage,
+      request,
+    }) => {
+      // The multipart generated MP3 reaches direct-play mode reliably in
+      // headless (unlike the large public-domain M4B), and no other spec
+      // creates bookmarks against it, so the empty state holds on a shared DB.
+      const uuid = await fetchBookUuidByTitle(
+        request,
+        MULTIPART_MP3_BOOK.title,
+      );
+
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+      });
+
+      await test.step("open the bookmarks drawer", async () => {
+        await listenPage.drawers.openBookmarks();
+        await expect(listenPage.drawers.bookmarksDrawer).toBeVisible();
+      });
+
+      // The copy must name the control that saves ("+ Bookmark" inside the
+      // drawer), not the transport button that merely opened it (#2479).
+      await test.step("check the empty state points at the add button", async () => {
+        await expect(listenPage.drawers.emptyBookmarksMessage).toBeVisible();
+        await expect(listenPage.drawers.addBookmarkHint).toBeVisible();
+        await expect(listenPage.drawers.addBookmarkButton).toBeVisible();
+      });
+    });
+
+    test("save a bookmark from the drawer and confirm it with a toast", async ({
+      listenPage,
+      request,
+      expectMutation,
+      seededBookmarkIds,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+
+      await test.step("open the bookmarks drawer", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await listenPage.drawers.openBookmarks();
+        await expect(listenPage.drawers.bookmarksDrawer).toBeVisible();
+      });
+
+      await test.step("add a bookmark at the playhead", async () => {
+        const { response } = await expectMutation(
+          bookmarks.createAtPlayhead(),
+          () => listenPage.drawers.addBookmark(),
+        );
+        const { id }: SeededBookmark = await response.json();
+        seededBookmarkIds.add(id);
+      });
+
+      await test.step("check the row and the confirmation toast show", async () => {
+        await expect(listenPage.drawers.firstBookmarkRow).toBeVisible();
+        await expect(listenPage.drawers.savedToast).toBeVisible();
+        await expect(listenPage.drawers.savedToastMessage).toBeVisible();
+      });
+    });
+  });
+
+  test.describe("chapters", () => {
+    test("show played, current and upcoming rows in the chapters drawer", async ({
+      listenPage,
+      request,
+    }) => {
+      // The multi-part MP3 has at least two synthetic chapters (one per part):
+      // the first is current at elapsed 0 and the second is upcoming. The
+      // synthetic fallback gives every book at least one.
+      const uuid = await fetchBookUuidByTitle(
+        request,
+        MULTIPART_MP3_BOOK.title,
+      );
+      const { drawers } = listenPage;
+
+      await test.step("open the chapters drawer at the start of the book", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await listenPage.parkAtStart();
+        await drawers.openChapters();
+        await expect(drawers.chaptersDrawer).toBeVisible();
+      });
+
+      await test.step("check the first chapter is current and a later one upcoming", async () => {
+        await expect(drawers.currentChapterRow).toBeVisible();
+        await expect(drawers.nextChapterRow).toBeVisible();
+      });
+
+      // #2521: the playing row keeps its own book-time duration and adds the
+      // time left beside it, where it used to replace one with the other and
+      // leave a rate-adjusted figure unmarked in a column of book-time ones.
+      await test.step("check only the playing row names its time left", async () => {
+        await expect(drawers.currentChapterRow).toContainText("left");
+        await expect(drawers.currentChapterRow).toHaveText(/\d+(?::\d\d)+/);
+        await expect(
+          drawers.nextChapterRow,
+          "an upcoming row should carry a duration",
+        ).toHaveText(/\d+(?::\d\d)+/);
+        await expect(drawers.nextChapterRow).not.toContainText("left");
+      });
+    });
+  });
+
+  test.describe("buffering and stalls", () => {
+    test("show a buffering badge while playing", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+      });
+
+      // The badge is gated on `playing && buffering`, so a paused book never
+      // shows it however loudly the watchdog reports. Asserting that first
+      // keeps the positive case below from passing on the wrong condition.
+      await test.step("report buffering while paused", async () => {
+        await listenPage.reportBuffering(true);
+        await expect(listenPage.bufferingBadge).toHaveCount(0);
+      });
+
+      // The watchdog's callbacks are driven directly: the point is the Rust
+      // wiring and the markup contract, and a real network stall is not
+      // reproducible without timing flake.
+      await test.step("report playing and buffering", async () => {
+        await listenPage.reportPlaying();
+        await listenPage.reportBuffering(true);
+      });
+
+      // A live region, so a screen reader announces the wait rather than a
+      // clock that merely looks stuck.
+      await test.step("check the badge shows as a status", async () => {
+        await expect(listenPage.bufferingBadge).toBeVisible();
+        await expect(listenPage.bufferingBadge).toHaveText("Buffering…");
+        await expect(listenPage.bufferingBadge).toHaveRole("status");
+      });
+    });
+
+    test("clear the buffering badge when data arrives", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+
+      await test.step("open the player while it buffers", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await listenPage.reportPlaying();
+        await listenPage.reportBuffering(true);
+        await expect(listenPage.bufferingBadge).toBeVisible();
+      });
+
+      await test.step("report data arriving", async () => {
+        await listenPage.reportBuffering(false);
+      });
+
+      await test.step("check the badge clears without claiming a failure", async () => {
+        await expect(listenPage.bufferingBadge).toHaveCount(0);
+        await expect(listenPage.failedOverlay).toHaveCount(0);
+      });
+    });
+
+    test("show the failure overlay when playback stalls with no progress", async ({
+      listenPage,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
+
+      await test.step("open the player", async () => {
+        await listenPage.goto(uuid);
+        await listenPage.waitUntilPlayerReady();
+        await expect(listenPage.failedOverlay).toHaveCount(0);
+      });
+
+      // The watchdog reports a stall after 15s without a `timeupdate`; waiting
+      // that out would be a sleep and a flake source, so the callback it would
+      // have fired is fired instead.
+      await test.step("report a stall", async () => {
+        await listenPage.reportPlaying();
+        await listenPage.reportStall();
+      });
+
+      // A stall reuses `playback_failed`: the same terminal overlay as an init
+      // timeout, because neither recovers without a reload.
+      await test.step("check the failure overlay shows", async () => {
+        await expect(listenPage.failedOverlay).toBeVisible();
+        await expect(listenPage.failedOverlay).toHaveRole("alert");
+        await expect(listenPage.failedOverlay).toContainText(
+          "Playback failed.",
+        );
+      });
+    });
+  });
 });
-
-// ---------------------------------------------------------------------------
-// 11. Buffering badge (#1903 AC2)
-// ---------------------------------------------------------------------------
-
-test("shows a buffering badge while playing and clears it when data arrives", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-
-  // The badge is gated on `playing && buffering`, so a paused book must
-  // never show it however loudly the watchdog reports — assert that first,
-  // otherwise the positive case below could pass on the wrong condition.
-  await fireAudioCallback(page, "__omnibusOnAudioBuffering", 1);
-  await expect(page.getByTestId("listen-buffering")).toHaveCount(0);
-
-  // Drive the JS watchdog's two callbacks directly rather than trying to
-  // provoke a real `readyState < HAVE_FUTURE_DATA` window: the point under
-  // test is the Rust wiring and the markup contract, and a genuine network
-  // stall is not reproducible without timing flake.
-  await fireAudioCallback(page, "__omnibusOnAudioPlay", 0);
-  await fireAudioCallback(page, "__omnibusOnAudioBuffering", 1);
-
-  const badge = page.getByTestId("listen-buffering");
-  await expect(badge).toBeVisible();
-  await expect(badge).toHaveText("Buffering…");
-  // Live region, so a screen reader announces the wait instead of leaving
-  // a clock that merely looks stuck.
-  await expect(badge).toHaveRole("status");
-
-  // Data arrives: the badge goes away and no failure is claimed.
-  await fireAudioCallback(page, "__omnibusOnAudioBuffering", 0);
-  await expect(page.getByTestId("listen-buffering")).toHaveCount(0);
-  await expect(page.getByTestId("listen-failed")).toHaveCount(0);
-});
-
-// ---------------------------------------------------------------------------
-// 12. Stall → failure overlay (#1903 AC3)
-// ---------------------------------------------------------------------------
-
-test("surfaces the failure overlay when playback stalls with no progress", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
-  await gotoReady(page, `/listen/${uuid}`);
-  await waitForPlayerReady(page);
-  await expect(page.getByTestId("listen-failed")).toHaveCount(0);
-
-  // The watchdog reports a stall after 15s without a `timeupdate`/`progress`
-  // — waiting that out for real would be a 15s sleep and a flake source, so
-  // fire the callback the watchdog would have fired.
-  await fireAudioCallback(page, "__omnibusOnAudioPlay", 0);
-  await fireAudioCallback(page, "__omnibusOnAudioStalled", 0);
-
-  // A stall reuses `playback_failed`: same terminal overlay as an init
-  // timeout, because neither recovers without a reload.
-  const failed = page.getByTestId("listen-failed");
-  await expect(failed).toBeVisible();
-  await expect(failed).toHaveRole("alert");
-  await expect(failed).toContainText("Playback failed.");
-});
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Invoke one of the JS→Rust audio callbacks the bootstrap installs on
- * `window`, failing loudly if it was never wired. The buffering/stall UI is
- * driven entirely by these, so calling them is how a spec reaches those
- * states without a real network stall — the same technique the progress
- * tests above use for `__omnibusOnAudioPause`.
- */
-async function fireAudioCallback(
-  page: import("@playwright/test").Page,
-  name: string,
-  arg: number,
-): Promise<void> {
-  await page.evaluate(
-    ([cbName, value]) => {
-      const cb = (
-        window as unknown as Record<string, ((n: number) => void) | undefined>
-      )[cbName as string];
-      if (typeof cb !== "function") {
-        throw new Error(`${cbName} not installed`);
-      }
-      cb(value as number);
-    },
-    [name, arg] as const,
-  );
-}
-
-interface ProgressMutationOpts {
-  uuid: string;
-  audioPositionSeconds: number;
-  /** The `book_files` row the player loaded — every audio progress POST
-   * names the file the manifest resolved (#1888). */
-  bookFileId: number;
-  expectedStatus: number;
-}
-
-/**
- * The first audio `book_files` id for a book, from `GET /api/ebooks/:uuid`
- * (returned in ordinal order — the same default the manifest resolves for a
- * bare `/listen/:uuid`). This is the id the player's progress POSTs must
- * carry, so the specs fetch it rather than hard-coding an AUTOINCREMENT id.
- */
-async function fetchAudioFileId(
-  request: import("@playwright/test").APIRequestContext,
-  uuid: string,
-): Promise<number> {
-  const resp = await request.get(`/api/ebooks/${uuid}`);
-  expect(resp.status(), "GET /api/ebooks/:uuid failed").toBe(200);
-  const detail = (await resp.json()) as {
-    book_files: { id: number; format: string }[];
-  };
-  const audio = detail.book_files.find((f) =>
-    /^(mp3|m4b|m4a)$/i.test(f.format),
-  );
-  if (!audio) {
-    throw new Error(`book ${uuid} has no audio book_files row`);
-  }
-  return audio.id;
-}
-
-const PROGRESS_URL = /\/api\/rpc\/progress(?:\?|$)/;
-const PLAYBACK_RATE_SET_URL =
-  /\/api\/rpc\/audiobooks\/playback-rate\/set(?:\?|$)/;
-
-async function expectMutationProgress(
-  page: import("@playwright/test").Page,
-  opts: ProgressMutationOpts,
-  action: () => Promise<void>,
-): Promise<void> {
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: PROGRESS_URL,
-      expectedStatus: opts.expectedStatus,
-      expectedBody: {
-        update: {
-          book_uuid: opts.uuid,
-          format: "audio",
-          audio_position_seconds: opts.audioPositionSeconds,
-          book_file_id: opts.bookFileId,
-        },
-      },
-    },
-    action,
-  );
-}

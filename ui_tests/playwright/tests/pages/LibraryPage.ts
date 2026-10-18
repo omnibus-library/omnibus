@@ -456,5 +456,25 @@ export class LibraryPage extends BasePage {
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format
+  /** Whether the continue fan shows a card for `bookUuid` within 3 s, rather than failing the wait. */
+  async showsResumeCard(bookUuid: string): Promise<boolean> {
+    return this.continueStack
+      .card(bookUuid)
+      .waitFor({ state: "visible", timeout: 3_000 })
+      .then(
+        () => true,
+        () => false,
+      );
+  }
+
+  /** Opens the book's reader with its audiobook docked, from the pill on the front card. */
+  async openImmersiveFromContinueStack(bookUuid: string): Promise<void> {
+    await this.continueStack.immersiveChip(bookUuid).click();
+  }
+
+  /** Opens a book's detail from its grid tile, a client-side hop. */
+  async openBook(title: string): Promise<void> {
+    await this.bookTile(title).click();
+  }
   // #endregion batch-J
 }

@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { AlignmentModalComponent } from "../components/AlignmentModalComponent";
 import { BookDetailStopsComponent } from "../components/BookDetailStopsComponent";
 import { BookExportComponent } from "../components/BookExportComponent";
 import { BookSummaryComponent } from "../components/BookSummaryComponent";
@@ -19,6 +20,7 @@ import { SavedPassageCardComponent } from "../components/SavedPassageCardCompone
 import { SavedPassagesComponent } from "../components/SavedPassagesComponent";
 import { ShelfPickerComponent } from "../components/ShelfPickerComponent";
 import { SuggestionsStripComponent } from "../components/SuggestionsStripComponent";
+import { SyncLinkComponent } from "../components/SyncLinkComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { WishlistCardComponent } from "../components/WishlistCardComponent";
 import { physicalUrls } from "../contracts/physical";
@@ -177,6 +179,7 @@ export class BookDetailPage extends BasePage {
     await this.openAndSettle(`/books/${bookUuid}`);
   }
 
+  /** Opens the reader through the Start reading action. */
   async startReading(): Promise<void> {
     await this.startReadingButton.click();
   }
@@ -298,5 +301,13 @@ export class BookDetailPage extends BasePage {
   // #endregion batch-I
 
   // #region batch-J: audio and cross-format
+  readonly syncLink = new SyncLinkComponent(this.page);
+  readonly alignmentModal = new AlignmentModalComponent(this.page);
+  readonly listenActionButton = this.page.getByTestId("action-listen");
+
+  /** Opens the audiobook player through the Listen action. */
+  async listen(): Promise<void> {
+    await this.listenActionButton.click();
+  }
   // #endregion batch-J
 }
