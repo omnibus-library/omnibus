@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use omnibus_shared::{LibraryContents, LibrarySection, Settings, SCAN_INTERVAL_MIN_HOURS};
 
 #[cfg(not(feature = "mobile"))]
+use crate::components::unsaved::use_saved_snapshot;
 use crate::components::worker_status::WorkerStatusIndicator;
 use crate::components::BusyLabel;
 use crate::data::server_error_message;
@@ -96,10 +97,11 @@ pub fn LibraryLocationSection() -> Element {
         library_refresh: use_signal(|| 0u32),
     };
     let library = use_signal(LibraryContents::default);
+    let saved = use_saved_snapshot("library-sources", move || source_values(form));
 
-    spawn_initial_settings_load(server_url.clone(), form);
+    spawn_initial_settings_load(server_url.clone(), form, saved);
     spawn_library_refresh(server_url.clone(), library, form.library_refresh);
-    let on_submit = save_settings_handler(server_url, form);
+    let on_submit = save_settings_handler(server_url, form, saved);
 
     let load = (form.load)();
     let saving = (form.saving)();
@@ -199,9 +201,22 @@ fn worker_status_slot() -> Element {
     }
 }
 
+/// The form's three fields, as the unsaved-edits guard compares them.
+fn source_values(form: SourcesForm) -> [String; 3] {
+    [
+        (form.ebook_path)(),
+        (form.audiobook_path)(),
+        (form.scan_interval_hours)(),
+    ]
+}
+
 /// Hydrates the saved [`Settings`] into the path inputs on mount, and again
 /// whenever "Try again" bumps `reload`.
-fn spawn_initial_settings_load(url: String, form: SourcesForm) {
+fn spawn_initial_settings_load(
+    url: String,
+    form: SourcesForm,
+    mut saved: Signal<Option<[String; 3]>>,
+) {
     let SourcesForm {
         mut ebook_path,
         mut audiobook_path,
@@ -230,6 +245,7 @@ fn spawn_initial_settings_load(url: String, form: SourcesForm) {
                             .map(|h| h.to_string())
                             .unwrap_or_default(),
                     );
+                    saved.set(Some(source_values(form)));
                     load.set(Load::Ready);
                 }
                 Err(e) => {
@@ -265,7 +281,11 @@ fn spawn_library_refresh(
 /// Returns the `<form onsubmit>` handler that POSTs the path + interval inputs,
 /// refusing (with the reason where the reader will look) a Save
 /// [`settings_payload`] rules out.
-fn save_settings_handler(url: String, form: SourcesForm) -> impl FnMut(FormEvent) {
+fn save_settings_handler(
+    url: String,
+    form: SourcesForm,
+    mut saved: Signal<Option<[String; 3]>>,
+) -> impl FnMut(FormEvent) {
     let SourcesForm {
         mut interval_error,
         mut saving,
@@ -300,9 +320,11 @@ fn save_settings_handler(url: String, form: SourcesForm) -> impl FnMut(FormEvent
         status.set(None);
         saving.set(true);
         let url = url.clone();
+        let submitted = source_values(form);
         spawn(async move {
             match data::save_settings(&url, payload).await {
                 Ok(_) => {
+                    saved.set(Some(submitted));
                     status.set(Some("Library settings saved.".to_string()));
                     status_is_error.set(false);
                     library_refresh.set(library_refresh() + 1);

@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use omnibus_shared::{GoogleBooksKeyStatus, HardcoverKeyStatus};
 
 use crate::components::credential_card::{credential_status_line, credential_status_message};
+use crate::components::unsaved::use_unsaved_guard;
 use crate::components::{
     confirm_modal_body, BusyLabel, ConfirmModal, ConfirmModalAction, ConfirmModalTone,
 };
@@ -321,6 +322,8 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
         in_flight: use_signal(|| false),
     };
     let mut key_input = sigs.key_input;
+    let typed = use_memo(move || !key_input().trim().is_empty());
+    use_unsaved_guard(kind.testid(), typed);
     use_load_key_status(kind, server_url.clone(), sigs);
 
     let mut confirm_clear = use_signal(|| false);

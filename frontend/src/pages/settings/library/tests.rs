@@ -102,7 +102,8 @@ fn settings_payload_trims_paths_and_drops_blank_fields() {
 fn save_settings_handler_refuses_to_save_blank_fields_after_a_failed_load() {
     in_root_scope(|| {
         let form = sources_form(Load::Failed, "", "");
-        let mut handler = save_settings_handler("http://127.0.0.1:0".to_string(), form);
+        let mut handler =
+            save_settings_handler("http://127.0.0.1:0".to_string(), form, Signal::new(None));
         handler(blank_form_event());
 
         // No save started: `saving` flips before any request is spawned.
@@ -118,7 +119,8 @@ fn save_settings_handler_shows_a_bad_interval_at_its_field() {
         let form = sources_form(Load::Ready, "/books", "");
         let mut interval = form.scan_interval_hours;
         interval.set("soon".to_string());
-        let mut handler = save_settings_handler("http://127.0.0.1:0".to_string(), form);
+        let mut handler =
+            save_settings_handler("http://127.0.0.1:0".to_string(), form, Signal::new(None));
         handler(blank_form_event());
 
         assert!(!(form.saving)());
@@ -130,7 +132,8 @@ fn save_settings_handler_shows_a_bad_interval_at_its_field() {
 fn save_settings_handler_starts_a_save_once_the_settings_have_loaded() {
     in_root_scope(|| {
         let form = sources_form(Load::Ready, "/books", "/audio");
-        let mut handler = save_settings_handler("http://127.0.0.1:0".to_string(), form);
+        let mut handler =
+            save_settings_handler("http://127.0.0.1:0".to_string(), form, Signal::new(None));
         handler(blank_form_event());
 
         assert!((form.saving)());

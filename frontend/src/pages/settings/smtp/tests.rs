@@ -34,6 +34,7 @@ fn unloaded_card() -> (SmtpFields, SmtpIo) {
         security: Signal::new(SmtpSecurity::Starttls),
     };
     let io = SmtpIo {
+        saved: Signal::new(None),
         status: Signal::new(None),
         status_failed: Signal::new(true),
         reload: Signal::new(0),

@@ -68,6 +68,24 @@ pub fn use_unsaved_guard(id: &'static str, dirty: Memo<bool>) {
     });
 }
 
+/// Guard form `id` against leaving with edits: it is dirty while `current()`
+/// differs from the returned snapshot, which the form sets to what it loaded
+/// and then to each value it saves. `None` (not loaded yet) is never dirty.
+pub fn use_saved_snapshot<T: Clone + PartialEq + 'static>(
+    id: &'static str,
+    current: impl Fn() -> T + 'static,
+) -> Signal<Option<T>> {
+    let saved = use_signal(|| None::<T>);
+    let dirty = use_memo(move || {
+        saved
+            .read()
+            .as_ref()
+            .is_some_and(|saved| *saved != current())
+    });
+    use_unsaved_guard(id, dirty);
+    saved
+}
+
 #[cfg(feature = "web")]
 fn arm_leave_prompt(dirty: bool) {
     let js = if dirty {

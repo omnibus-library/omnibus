@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use omnibus_shared::{EbookConvertStatus, DEFAULT_EBOOK_CONVERT_BIN};
 
 use crate::components::credential_card::{credential_status_line, credential_status_message};
+use crate::components::unsaved::use_unsaved_guard;
 use crate::components::BusyLabel;
 use crate::data::server_error_message;
 use crate::{data, use_server_url};
@@ -157,6 +158,8 @@ pub fn EbookConvertField() -> Element {
         in_flight: use_signal(|| false),
     };
     let mut path_input = sigs.path_input;
+    let typed = use_memo(move || !path_input().trim().is_empty());
+    use_unsaved_guard("ebook-convert", typed);
     use_load_ebook_convert_status(server_url.clone(), sigs);
 
     let save_url = server_url.clone();

@@ -9,6 +9,7 @@ use omnibus_shared::{SmtpConfigStatus, SmtpConfigUpdate, SmtpSecurity};
 
 use super::secret_key_field::ClearCredentialModal;
 use crate::components::credential_card::{credential_status_line, credential_status_message};
+use crate::components::unsaved::use_saved_snapshot;
 use crate::components::BusyLabel;
 use crate::data::server_error_message;
 use crate::{data, use_server_url};
@@ -31,6 +32,7 @@ pub fn SmtpConfigField() -> Element {
         security: use_signal(|| SmtpSecurity::Starttls),
     };
     let io = SmtpIo {
+        saved: use_saved_snapshot("smtp", move || fields.values()),
         status: use_signal(|| None),
         status_failed: use_signal(|| false),
         reload: use_signal(|| 0u32),
@@ -53,7 +55,9 @@ pub fn SmtpConfigField() -> Element {
         section { class: "card", "data-testid": "smtp-card",
             h3 { "Email delivery (SMTP)" }
             p { class: "subtitle", "The mail relay Send-to-Kindle sends books through." }
-            form { class: "settings-form", onsubmit: on_save,
+            // `novalidate`: the browser's own range check would refuse the
+            // submit before the port's message below could say why.
+            form { class: "settings-form", novalidate: true, onsubmit: on_save,
                 SmtpConnectionFields { fields, configured }
                 SmtpTestActions {
                     configured,
@@ -97,9 +101,27 @@ struct SmtpFields {
     security: Signal<SmtpSecurity>,
 }
 
+/// Every editable SMTP field, as the unsaved-edits guard compares them.
+type SmtpValues = (String, String, String, String, String, SmtpSecurity);
+
+impl SmtpFields {
+    fn values(self) -> SmtpValues {
+        (
+            (self.host)(),
+            (self.port)(),
+            (self.username)(),
+            (self.from_email)(),
+            (self.password)(),
+            (self.security)(),
+        )
+    }
+}
+
 /// Loaded status + save/test message + in-flight signals for the SMTP card.
 #[derive(Copy, Clone, PartialEq)]
 struct SmtpIo {
+    /// What the fields held when they were last loaded, saved or cleared.
+    saved: Signal<Option<SmtpValues>>,
     status: Signal<Option<SmtpConfigStatus>>,
     /// Set when the config read failed, so the line stops saying "Checking".
     status_failed: Signal<bool>,
@@ -113,6 +135,7 @@ struct SmtpIo {
 /// Load the masked SMTP config on mount and seed the editable fields.
 fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
     let SmtpIo {
+        mut saved,
         mut status,
         mut status_failed,
         reload,
@@ -159,6 +182,7 @@ fn spawn_smtp_config_load(server_url: String, fields: SmtpFields, io: SmtpIo) {
                 from_email.set(f);
             }
             security.set(s.security);
+            saved.set(Some(fields.values()));
             status.set(Some(s));
         });
     });
@@ -173,6 +197,7 @@ fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl Fn
     let from_email = fields.from_email;
     let mut password = fields.password;
     let security = fields.security;
+    let mut saved = io.saved;
     let mut status = io.status;
     let mut msg = io.msg;
     let mut msg_is_error = io.msg_is_error;
@@ -218,6 +243,7 @@ fn make_smtp_save(server_url: String, fields: SmtpFields, io: SmtpIo) -> impl Fn
                 Ok(s) => {
                     status.set(Some(s));
                     password.set(String::new());
+                    saved.set(Some(fields.values()));
                     msg.set(Some("SMTP settings saved.".to_string()));
                     msg_is_error.set(false);
                 }
@@ -248,6 +274,7 @@ fn make_smtp_clear(
     let mut from_email = fields.from_email;
     let mut password = fields.password;
     let mut security = fields.security;
+    let mut saved = io.saved;
     let mut status = io.status;
     let mut msg = io.msg;
     let mut msg_is_error = io.msg_is_error;
@@ -267,6 +294,7 @@ fn make_smtp_clear(
                     from_email.set(String::new());
                     password.set(String::new());
                     security.set(SmtpSecurity::Starttls);
+                    saved.set(Some(fields.values()));
                     status.set(Some(s));
                     msg.set(Some("SMTP settings cleared.".to_string()));
                     msg_is_error.set(false);
