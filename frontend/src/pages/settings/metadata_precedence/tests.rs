@@ -7,7 +7,7 @@ use omnibus_shared::MetadataSource::{
 use omnibus_shared::DEFAULT_METADATA_PRECEDENCE;
 
 use super::*;
-use crate::test_support::{render, render_in_vdom};
+use crate::test_support::{render, render_in_vdom, tag_with_testid};
 
 #[test]
 fn move_source_swaps_the_item_up_and_reports_where_it_landed() {
@@ -64,7 +64,14 @@ fn LoadedList() -> Element {
         ])
     });
     let announcement = use_signal(String::new);
-    rsx! { PrecedenceList { library: "ebook", label: "Ebook library", order, announcement } }
+    rsx! { PrecedenceList { library: "ebook", label: "Ebook library", order, announcement, busy: false } }
+}
+
+#[component]
+fn SavingList() -> Element {
+    let order = use_signal(|| Some(vec![FolderStructure, EmbeddedTags, OpfSidecar]));
+    let announcement = use_signal(String::new);
+    rsx! { PrecedenceList { library: "ebook", label: "Ebook library", order, announcement, busy: true } }
 }
 
 #[test]
@@ -130,4 +137,18 @@ fn save_summary_names_the_saved_order_beside_the_one_the_server_refused() {
             true
         )
     );
+}
+
+#[test]
+fn precedence_list_holds_every_move_while_a_save_is_out() {
+    let html = render(rsx! { SavingList {} });
+    for testid in [
+        "ebook-metadata-precedence-down-0",
+        "ebook-metadata-precedence-up-1",
+    ] {
+        assert!(
+            tag_with_testid(&html, testid).contains("disabled"),
+            "{testid}: {html}"
+        );
+    }
 }

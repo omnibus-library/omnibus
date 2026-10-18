@@ -158,12 +158,19 @@ pub fn MetadataPrecedenceField() -> Element {
 
     let load_url = server_url.clone();
     use_effect(move || {
-        let _ = reload();
+        let attempt = reload();
         failed.set(false);
-        for order in libraries {
+        for mut order in libraries {
+            order.draft.set(None);
+            order.saved.set(None);
             let url = load_url.clone();
             spawn(async move {
-                match data::get_metadata_precedence(&url, order.library).await {
+                let answer = data::get_metadata_precedence(&url, order.library).await;
+                // A retry supersedes whatever the attempt before it still had out.
+                if *reload.peek() != attempt {
+                    return;
+                }
+                match answer {
                     Ok(loaded) => order.settle(loaded),
                     Err(e) => {
                         msg.set(Some(format!(
@@ -222,8 +229,8 @@ pub fn MetadataPrecedenceField() -> Element {
                 "source in the list that has a value for a field is used."
             }
             if loaded {
-                PrecedenceList { library: "ebook", label: "Ebook library", order: libraries[0].draft, announcement }
-                PrecedenceList { library: "audiobook", label: "Audiobook library", order: libraries[1].draft, announcement }
+                PrecedenceList { library: "ebook", label: "Ebook library", order: libraries[0].draft, announcement, busy }
+                PrecedenceList { library: "audiobook", label: "Audiobook library", order: libraries[1].draft, announcement, busy }
             } else if !failed() {
                 Loading {
                     kind: LoadingKind::Section,
@@ -267,13 +274,15 @@ pub fn MetadataPrecedenceField() -> Element {
 }
 
 /// One library's ordered list. Items are keyed by source so a move carries the
-/// row (and its focus) rather than relabelling rows in place.
+/// row (and its focus) rather than relabelling rows in place. While `busy` a
+/// save is out, and a move then would be overwritten by its answer.
 #[component]
 fn PrecedenceList(
     library: &'static str,
     label: &'static str,
     order: Signal<Option<Vec<MetadataSource>>>,
     announcement: Signal<String>,
+    busy: bool,
 ) -> Element {
     let testid = format!("{library}-metadata-precedence");
     let sources = order().unwrap_or_default();
@@ -308,7 +317,7 @@ fn PrecedenceList(
                         button {
                             r#type: "button",
                             class: "btn ghost sm",
-                            disabled: i == 0,
+                            disabled: busy || i == 0,
                             "data-testid": "{testid}-up-{i}",
                             "aria-label": "Move {source_label(source)} up",
                             onclick: move |_| reorder(i, Direction::Up),
@@ -317,7 +326,7 @@ fn PrecedenceList(
                         button {
                             r#type: "button",
                             class: "btn ghost sm",
-                            disabled: i + 1 == len,
+                            disabled: busy || i + 1 == len,
                             "data-testid": "{testid}-down-{i}",
                             "aria-label": "Move {source_label(source)} down",
                             onclick: move |_| reorder(i, Direction::Down),
