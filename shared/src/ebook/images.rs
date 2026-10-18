@@ -32,3 +32,12 @@ pub struct BookImage {
     /// nothing in the spine does.
     pub references: Vec<BookImageReference>,
 }
+
+/// `GET /api/ebooks/{uuid}/images` response: every manifest image of the
+/// book's EPUB.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct BookImageList {
+    pub book_uuid: String,
+    pub images: Vec<BookImage>,
+}

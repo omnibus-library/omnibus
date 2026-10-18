@@ -23,6 +23,7 @@ async fn app() -> (Router, sqlx::SqlitePool) {
             get(|| async { "part ok" }),
         )
         .route("/api/ebooks/{uuid}/file", get(|| async { "file ok" }))
+        .route("/api/ebooks/{uuid}/images", get(|| async { "images ok" }))
         .route(
             "/api/ebooks/{uuid}/pages/{page}",
             get(|| async { "page ok" }),
@@ -372,6 +373,22 @@ async fn ebook_file_get_without_auth_is_401() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn ebook_images_get_with_query_token_passes() {
+    let (app, pool) = app().await;
+    let token = seed_bearer_token(&pool).await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/ebooks/some-uuid/images?token={token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
 }
 
 #[tokio::test]
