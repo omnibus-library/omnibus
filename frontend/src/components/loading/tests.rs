@@ -127,6 +127,14 @@ fn boot_script_paints_the_saved_theme_and_watches_images_load() {
         html.contains("setAttribute('data-loaded','')"),
         "no image watch: {html}"
     );
+    assert!(
+        html.contains("t.decode().then(d,d)"),
+        "stamps before the image decodes: {html}"
+    );
+    assert!(
+        html.contains("if(t.complete&&t.naturalWidth)w(t)"),
+        "misses images that loaded before the watcher: {html}"
+    );
     for theme in crate::components::atrium::Theme::ALL {
         assert!(html.contains(theme.as_attr()), "{theme:?} missing: {html}");
     }

@@ -64,6 +64,34 @@ test("the cover wall keeps its captions off the covers until hover", async ({
   await expect(caption).toHaveCSS("opacity", "1");
 });
 
+test("a cover stays hidden until its image has decoded", async ({ page }) => {
+  // Hold every thumbnail: a browser draws an image as its bytes arrive, and
+  // the plate must hide that half-drawn cover until the watcher stamps it.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/thumbs/**", async (route) => {
+    await held;
+    await route.continue();
+  });
+  // Not `gotoReady`: its `networkidle` never arrives while thumbnails are held.
+  await page.goto("/");
+
+  const cover = page
+    .getByTestId("lib-grid")
+    .getByRole("img", { name: /^Cover of / })
+    .first();
+  await expect(cover).toBeAttached();
+  await expect(cover).not.toHaveAttribute("data-loaded");
+  await expect(cover).toHaveCSS("opacity", "0");
+
+  release();
+  await page.unrouteAll({ behavior: "wait" });
+  await expect(cover).toHaveAttribute("data-loaded", "");
+  await expect(cover).toHaveCSS("opacity", "1");
+});
+
 test("renders every fixture book with the expected metadata", async ({
   page,
 }) => {
