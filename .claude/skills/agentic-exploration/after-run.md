@@ -118,6 +118,6 @@ is enough — before anyone reads its report as current.
 
 After a restore, remove each `agent-*/state.json` under the Kobo dir
 (`$OMNIBUS_EXPLORE_KOBO_DIR`, default `.claude/runtime/explore/kobo`): the
-instance forgot what its devices were sent, so the next `kobo.sh up` must
-register new ones (#2743).
+instance forgot what its devices were sent, so the next `kobo.sh up` registers
+new ones.
 

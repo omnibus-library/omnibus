@@ -269,9 +269,8 @@ async fn perform_wire_retargets_to_existing_device_and_reports_reuse() {
 
     let status = perform(&control, &wiring(), Job::Wire).await;
 
-    let expected = "wired to the existing Omnibus device \"Mock Kobo (kobo)\": its next sync \
-                    sends only changes until #2743; for a full resend, remove it in Account \
-                    settings and press w";
+    let expected = "wired to the existing Omnibus device \"Mock Kobo (kobo)\"; press r before \
+                    the next sync for a full resend";
     assert_eq!(status, Status::Info(expected.to_owned()));
     let saved = saved(&path).await;
     assert_eq!(saved.token, "existing-token");

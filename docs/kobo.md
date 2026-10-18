@@ -261,7 +261,7 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 | Key | Does |
 |---|---|
 | <kbd>s</kbd> | Sync now |
-| <kbd>r</kbd> | Reset the device: empty library, no sync token |
+| <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
 | <kbd>t</kbd> | Edit the device token (saved) |
 | <kbd>w</kbd> | Wire a token for the current URL, as startup does |
@@ -276,12 +276,6 @@ action runs (a sync, reset, edit or wire) waits for it, so nothing is left half
 done; press <kbd>q</kbd> or <kbd>Ctrl-C</kbd> again to quit at once. A running
 sync is always waited for, so the pages Omnibus recorded are saved; one more
 <kbd>Ctrl-C</kbd> kills the process.
-
-> [!NOTE]
-> Reset empties the device, but Omnibus still remembers what it delivered, so
-> the next sync sends only changes (until #2743). For a full resend, remove the
-> device in **Account settings** and press <kbd>w</kbd> (or point a fresh state
-> file at it).
 
 For a second device, give it its own state file; inside the gitignored
 `.claude/runtime/`, because a state file holds the device token:
