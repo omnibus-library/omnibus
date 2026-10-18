@@ -86,3 +86,45 @@ fn precedence_list_is_named_by_its_label_and_labels_every_source() {
         "{html}"
     );
 }
+
+#[test]
+fn changed_order_returns_the_draft_when_it_differs_from_the_saved_order() {
+    let saved = [FolderStructure, EmbeddedTags];
+    let draft = [EmbeddedTags, FolderStructure];
+    assert_eq!(
+        changed_order(Some(&draft), Some(&saved)),
+        Some(vec![EmbeddedTags, FolderStructure])
+    );
+}
+
+#[test]
+fn changed_order_skips_a_library_whose_order_was_not_touched() {
+    let saved = [FolderStructure, EmbeddedTags];
+    assert_eq!(changed_order(Some(&saved), Some(&saved)), None);
+    assert_eq!(changed_order(None, None), None);
+}
+
+#[test]
+fn save_summary_reports_success_when_every_changed_order_saved() {
+    let outcomes = [("ebook", Ok(())), ("audiobook", Ok(()))];
+    assert_eq!(
+        save_summary(&outcomes),
+        ("Metadata order saved.".to_string(), false)
+    );
+}
+
+#[test]
+fn save_summary_names_the_saved_order_beside_the_one_the_server_refused() {
+    let outcomes = [
+        ("ebook", Ok(())),
+        ("audiobook", Err("configure the library path first".to_string())),
+    ];
+    assert_eq!(
+        save_summary(&outcomes),
+        (
+            "Saved the ebook order. Couldn\u{2019}t save the audiobook order: configure the library path first"
+                .to_string(),
+            true
+        )
+    );
+}

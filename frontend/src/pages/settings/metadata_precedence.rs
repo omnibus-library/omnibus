@@ -1,7 +1,7 @@
 //! Per-library metadata-source precedence editor: two ordered lists (ebook /
-//! audiobook) reordered with up/down buttons and saved together by one Save to
-//! each scan root's `metadata_precedence` column, apart from the path-saving
-//! `Settings` form. The lists wait for the saved order: showing the defaults
+//! audiobook) reordered with up/down buttons. One Save writes each list that
+//! changed to its scan root's `metadata_precedence` column, so a library with
+//! no path (which the server refuses) is only sent when its list was edited. The lists wait for the saved order: showing the defaults
 //! first would present an order nobody saved as the current one.
 
 use dioxus::prelude::*;
@@ -79,94 +79,139 @@ fn focus_testid(testid: String) {
     ));
 }
 
-/// The two libraries' orders, `None` until their saved value arrives.
+/// One library's order: the draft being edited and the last order the server
+/// confirmed, both `None` until the saved value arrives.
 #[derive(Clone, Copy, PartialEq)]
-struct Orders {
-    ebook: Signal<Option<Vec<MetadataSource>>>,
-    audiobook: Signal<Option<Vec<MetadataSource>>>,
+struct LibraryOrder {
+    library: &'static str,
+    draft: Signal<Option<Vec<MetadataSource>>>,
+    saved: Signal<Option<Vec<MetadataSource>>>,
 }
 
-/// Card holding both libraries' precedence lists and their one Save.
-/// Admin-only — gated by the caller, like the other admin cards.
+impl LibraryOrder {
+    /// The draft, if it differs from the saved order.
+    fn changed(&self) -> Option<Vec<MetadataSource>> {
+        changed_order((self.draft)().as_deref(), self.saved.read().as_deref())
+    }
+
+    /// Record `order` as both the server's and the draft.
+    fn settle(mut self, order: Vec<MetadataSource>) {
+        self.saved.set(Some(order.clone()));
+        self.draft.set(Some(order));
+    }
+}
+
+/// `draft` when it is loaded and differs from `saved`.
+fn changed_order(
+    draft: Option<&[MetadataSource]>,
+    saved: Option<&[MetadataSource]>,
+) -> Option<Vec<MetadataSource>> {
+    let draft = draft?;
+    (Some(draft) != saved).then(|| draft.to_vec())
+}
+
+/// The status line and whether it is an error, from each changed library's save.
+fn save_summary(outcomes: &[(&'static str, Result<(), String>)]) -> (String, bool) {
+    let failures: Vec<String> = outcomes
+        .iter()
+        .filter_map(|(library, result)| {
+            let why = result.as_ref().err()?;
+            Some(format!("Couldn\u{2019}t save the {library} order: {why}"))
+        })
+        .collect();
+    if failures.is_empty() {
+        return ("Metadata order saved.".to_string(), false);
+    }
+    let saved = outcomes
+        .iter()
+        .filter(|(_, result)| result.is_ok())
+        .map(|(library, _)| format!("Saved the {library} order."));
+    let line: Vec<String> = saved.chain(failures).collect();
+    (line.join(" "), true)
+}
+
+/// Card holding both libraries' precedence lists and their one Save, which
+/// writes only the lists that changed. Admin-only — gated by the caller.
 #[component]
 pub fn MetadataPrecedenceField() -> Element {
     let server_url = use_server_url();
-    let orders = Orders {
-        ebook: use_signal(|| None),
-        audiobook: use_signal(|| None),
-    };
+    let libraries = [
+        LibraryOrder {
+            library: "ebook",
+            draft: use_signal(|| None),
+            saved: use_signal(|| None),
+        },
+        LibraryOrder {
+            library: "audiobook",
+            draft: use_signal(|| None),
+            saved: use_signal(|| None),
+        },
+    ];
     let mut failed = use_signal(|| false);
     let mut reload = use_signal(|| 0u32);
     let mut msg = use_signal(|| None::<String>);
     let mut msg_is_error = use_signal(|| false);
     let mut saving = use_signal(|| false);
     let announcement = use_signal(String::new);
+    let dirty = use_memo(move || libraries.iter().any(|order| order.changed().is_some()));
+    crate::components::unsaved::use_unsaved_guard("metadata-order", dirty);
 
     let load_url = server_url.clone();
     use_effect(move || {
         let _ = reload();
-        let url = load_url.clone();
         failed.set(false);
-        spawn(async move {
-            let (mut ebook, mut audiobook) = (orders.ebook, orders.audiobook);
-            let loaded = (
-                data::get_metadata_precedence(&url, "ebook").await,
-                data::get_metadata_precedence(&url, "audiobook").await,
-            );
-            match loaded {
-                (Ok(e), Ok(a)) => {
-                    ebook.set(Some(e));
-                    audiobook.set(Some(a));
+        for order in libraries {
+            let url = load_url.clone();
+            spawn(async move {
+                match data::get_metadata_precedence(&url, order.library).await {
+                    Ok(loaded) => order.settle(loaded),
+                    Err(e) => {
+                        msg.set(Some(format!(
+                            "Couldn\u{2019}t load the saved order: {}",
+                            server_error_message(&e)
+                        )));
+                        msg_is_error.set(true);
+                        failed.set(true);
+                    }
                 }
-                (Err(e), _) | (_, Err(e)) => {
-                    msg.set(Some(format!(
-                        "Couldn\u{2019}t load the saved order: {}",
-                        server_error_message(&e)
-                    )));
-                    msg_is_error.set(true);
-                    failed.set(true);
-                }
-            }
-        });
+            });
+        }
     });
 
     let on_save = move |_| {
-        let (Some(ebook), Some(audiobook)) = ((orders.ebook)(), (orders.audiobook)()) else {
-            return;
-        };
         if saving() {
+            return;
+        }
+        let pending: Vec<(LibraryOrder, Vec<MetadataSource>)> = libraries
+            .iter()
+            .filter_map(|order| Some((*order, order.changed()?)))
+            .collect();
+        if pending.is_empty() {
             return;
         }
         let url = server_url.clone();
         saving.set(true);
         spawn(async move {
-            let saved = match data::save_metadata_precedence(&url, "ebook", ebook).await {
-                Ok(e) => data::save_metadata_precedence(&url, "audiobook", audiobook)
-                    .await
-                    .map(|a| (e, a)),
-                Err(e) => Err(e),
-            };
-            match saved {
-                Ok((e, a)) => {
-                    let (mut ebook, mut audiobook) = (orders.ebook, orders.audiobook);
-                    ebook.set(Some(e));
-                    audiobook.set(Some(a));
-                    msg.set(Some("Metadata order saved.".to_string()));
-                    msg_is_error.set(false);
-                }
-                Err(e) => {
-                    msg.set(Some(format!(
-                        "Couldn\u{2019}t save the metadata order: {}",
-                        server_error_message(&e)
-                    )));
-                    msg_is_error.set(true);
-                }
+            let mut outcomes = Vec::new();
+            for (order, draft) in pending {
+                let result = match data::save_metadata_precedence(&url, order.library, draft).await
+                {
+                    Ok(saved) => {
+                        order.settle(saved);
+                        Ok(())
+                    }
+                    Err(e) => Err(server_error_message(&e)),
+                };
+                outcomes.push((order.library, result));
             }
+            let (line, is_error) = save_summary(&outcomes);
+            msg.set(Some(line));
+            msg_is_error.set(is_error);
             saving.set(false);
         });
     };
 
-    let loaded = (orders.ebook)().is_some() && (orders.audiobook)().is_some();
+    let loaded = libraries.iter().all(|order| order.draft.read().is_some());
     let busy = saving();
 
     rsx! {
@@ -177,8 +222,8 @@ pub fn MetadataPrecedenceField() -> Element {
                 "source in the list that has a value for a field is used."
             }
             if loaded {
-                PrecedenceList { library: "ebook", label: "Ebook library", order: orders.ebook, announcement }
-                PrecedenceList { library: "audiobook", label: "Audiobook library", order: orders.audiobook, announcement }
+                PrecedenceList { library: "ebook", label: "Ebook library", order: libraries[0].draft, announcement }
+                PrecedenceList { library: "audiobook", label: "Audiobook library", order: libraries[1].draft, announcement }
             } else if !failed() {
                 Loading {
                     kind: LoadingKind::Section,
@@ -204,7 +249,7 @@ pub fn MetadataPrecedenceField() -> Element {
                 button {
                     r#type: "button",
                     class: "btn primary",
-                    disabled: busy || !loaded,
+                    disabled: busy || !loaded || !dirty(),
                     "aria-busy": if busy { "true" } else { "false" },
                     "data-testid": "metadata-precedence-save",
                     onclick: on_save,
