@@ -1,8 +1,5 @@
-import { expect, test } from "../fixtures/test";
-import { buildChapterEpub, openGlue, relocates } from "../utils/ios_glue";
-
-// The chapter a relocate names when several table-of-contents anchors share
-// one spine item: the one the page is in, not the item's last.
+import { buildChapterEpub } from "../data/iosGlue";
+import { expect, test } from "../fixtures/pageFixtures";
 
 const PROSE = Array.from(
   { length: 40 },
@@ -20,23 +17,34 @@ const TOC: [string, string][] = [
   ["Three", "chapter.xhtml#three"],
 ];
 
-test.describe("iOS reader chapter label", () => {
+test.describe("ios reader chapter label", () => {
   test.use({ viewport: { width: 402, height: 874 } });
 
-  for (const [title, para] of [
-    ["One", 4],
-    ["Two", 8],
-  ] as const) {
-    test(`a page inside chapter ${title} of a shared spine item is named ${title}`, async ({
-      page,
-    }) => {
-      const epub = await buildChapterEpub(CHAPTER, { toc: TOC });
-      // Well into the chapter's paragraph, so the page starts inside it.
-      await openGlue(page, epub, { cfi: `epubcfi(/6/2!/4/${para}/1:1500)` });
+  // The chapter is the one the page is in, not the spine item's last.
+  test.describe("a spine item shared by several chapters", () => {
+    for (const [title, paragraph] of [
+      ["One", 4],
+      ["Two", 8],
+    ] as const) {
+      test(`name chapter ${title} for a page inside it`, async ({
+        iosGluePage,
+      }) => {
+        await test.step(`open the book inside chapter ${title}`, async () => {
+          const epub = await buildChapterEpub(CHAPTER, { toc: TOC });
+          // Well into the chapter's paragraph, so the page starts inside it.
+          await iosGluePage.openBook(epub, {
+            cfi: `epubcfi(/6/2!/4/${paragraph}/1:1500)`,
+          });
+        });
 
-      await expect
-        .poll(async () => (await relocates(page)).at(-1)?.chapterTitle)
-        .toBe(title);
-    });
-  }
+        await test.step("check the relocate names that chapter", async () => {
+          await expect
+            .poll(
+              async () => (await iosGluePage.relocates()).at(-1)?.chapterTitle,
+            )
+            .toBe(title);
+        });
+      });
+    }
+  });
 });
