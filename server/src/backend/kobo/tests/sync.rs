@@ -315,9 +315,9 @@ async fn library_sync_returns_an_empty_delta_once_the_device_is_current() {
     assert!(body_json(second).await.as_array().unwrap().is_empty());
 }
 
-#[tokio::test]
-async fn library_sync_resends_every_book_when_the_request_carries_no_sync_token() {
-    // A factory-reset Kobo has lost our token but we still hold its old snapshot.
+/// Syncs one opted-in book fresh, then syncs again with `token_header` (`None` = no header).
+/// Returns the book's uuid and the second response body.
+async fn second_sync_with_token(token_header: Option<HeaderValue>) -> (String, Value) {
     let (app, pool, token, uid) = fixture().await;
     let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
     opt_in(&pool, uid, std::slice::from_ref(&uuid)).await;
@@ -327,13 +327,18 @@ async fn library_sync_resends_every_book_when_the_request_carries_no_sync_token(
         .await
         .unwrap();
     assert_eq!(body_json(first).await.as_array().unwrap().len(), 1);
+    let mut second = get(format!("/kobo/{token}/v1/library/sync"));
+    if let Some(value) = token_header {
+        second.headers_mut().insert("x-kobo-synctoken", value);
+    }
+    (uuid, body_json(app.oneshot(second).await.unwrap()).await)
+}
 
-    let second = app
-        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-        .await
-        .unwrap();
+#[tokio::test]
+async fn library_sync_resends_every_book_when_the_request_carries_no_sync_token() {
+    // A factory-reset Kobo has lost our token but we still hold its old snapshot.
+    let (uuid, json) = second_sync_with_token(None).await;
 
-    let json = body_json(second).await;
     let items = json.as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["NewEntitlement"]["BookEntitlement"]["Id"], uuid);
@@ -341,28 +346,23 @@ async fn library_sync_resends_every_book_when_the_request_carries_no_sync_token(
 
 #[tokio::test]
 async fn library_sync_resends_every_book_when_the_sync_token_is_not_omnibus() {
-    // A Kobo that talked to the official store first arrives with the store's token.
-    let (app, pool, token, uid) = fixture().await;
-    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
-    opt_in(&pool, uid, std::slice::from_ref(&uuid)).await;
-    let first = app
-        .clone()
-        .oneshot(get(format!("/kobo/{token}/v1/library/sync")))
-        .await
-        .unwrap();
-    assert_eq!(body_json(first).await.as_array().unwrap().len(), 1);
-    let mut store_token = get(format!("/kobo/{token}/v1/library/sync"));
-    store_token.headers_mut().insert(
-        "x-kobo-synctoken",
+    // The official store's token, an empty value, and bytes that are not UTF-8 are all not ours.
+    let not_omnibus = [
         HeaderValue::from_static("eyJ0eXAi.eyJ2ZXIi"),
-    );
+        HeaderValue::from_static(""),
+        HeaderValue::from_bytes(b"\xff").unwrap(),
+    ];
 
-    let second = app.oneshot(store_token).await.unwrap();
+    for value in not_omnibus {
+        let (uuid, json) = second_sync_with_token(Some(value.clone())).await;
 
-    let json = body_json(second).await;
-    let items = json.as_array().unwrap();
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["NewEntitlement"]["BookEntitlement"]["Id"], uuid);
+        let items = json.as_array().unwrap();
+        assert_eq!(items.len(), 1, "{value:?}");
+        assert_eq!(
+            items[0]["NewEntitlement"]["BookEntitlement"]["Id"], uuid,
+            "{value:?}"
+        );
+    }
 }
 
 #[tokio::test]
