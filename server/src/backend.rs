@@ -303,18 +303,24 @@ impl AppState {
     }
 
     /// The origin (`scheme://host`) a request reached the server on, for URLs a
-    /// client outside this process will open; `""` when no host is resolvable.
+    /// client outside this process will open. With no host to read, the first
+    /// configured origin; `""` when none is configured either.
     pub fn request_origin(&self, headers: &HeaderMap) -> String {
-        let origin = kobo::origin_for(headers, &self.public_origins);
-        // Behind a TLS proxy that sends no X-Forwarded-Proto the header scheme is a guess; a configured origin on the same host knows it.
+        let configured = &self.public_origins;
+        let origin = kobo::origin_for(headers, configured);
+        if origin.is_empty() {
+            return configured.first().cloned().unwrap_or_default();
+        }
+        // A TLS proxy that sends no X-Forwarded-Proto leaves the scheme a guess, so a configured origin on the same host supplies it.
         let authority = origin.split_once("://").map_or("", |(_, a)| a);
-        let listed = |o: &&String| {
+        let same_host = |o: &&String| {
             o.split_once("://")
                 .is_some_and(|(_, a)| a.eq_ignore_ascii_case(authority))
         };
-        self.public_origins
+        configured
             .iter()
-            .find(listed)
+            .find(|o| o.eq_ignore_ascii_case(&origin))
+            .or_else(|| configured.iter().find(same_host))
             .cloned()
             .unwrap_or(origin)
     }

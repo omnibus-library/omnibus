@@ -370,3 +370,29 @@ async fn request_origin_prefers_a_configured_origin_on_the_same_host() {
         "https://omnibus.example.com"
     );
 }
+
+#[tokio::test]
+async fn request_origin_returns_the_configured_origin_matching_the_forwarded_scheme() {
+    let (_app, state, _pool) = fixture().await;
+    let state = state.with_public_origins(&["http://h".to_string(), "https://h".to_string()]);
+    let mut headers = HeaderMap::new();
+    headers.insert("host", HeaderValue::from_static("h"));
+    headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+
+    assert_eq!(state.request_origin(&headers), "https://h");
+}
+
+#[tokio::test]
+async fn request_origin_returns_the_first_configured_origin_when_no_host_is_sent() {
+    let (_app, state, _pool) = fixture().await;
+    let state = state.with_public_origins(&["https://h".to_string()]);
+
+    assert_eq!(state.request_origin(&HeaderMap::new()), "https://h");
+}
+
+#[tokio::test]
+async fn request_origin_returns_empty_when_no_host_is_sent_and_none_is_configured() {
+    let (_app, state, _pool) = fixture().await;
+
+    assert_eq!(state.request_origin(&HeaderMap::new()), "");
+}
