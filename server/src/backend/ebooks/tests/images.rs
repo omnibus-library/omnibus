@@ -1,6 +1,8 @@
-//! `GET /api/ebooks/{uuid}/images`: the EPUB image listing's auth gating,
-//! query-token auth, spine references, and its unknown-uuid 404 and
-//! no-EPUB 422.
+//! `GET /api/ebooks/{uuid}/images` and `.../images/file`: the EPUB image
+//! listing and the original-bytes fetch: auth gating, query-token auth, spine
+//! references, the attachment-and-validator headers, the 400 for an href that
+//! is no manifest image, the download-permission 403, and the unknown-uuid
+//! 404 and no-EPUB 422.
 
 use axum::{body::to_bytes, http::StatusCode};
 use omnibus_shared::{BookImage, BookImageList, BookImageReference};
@@ -136,6 +138,280 @@ async fn api_get_ebook_images_returns_422_for_a_book_without_an_epub() {
 
     assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body_text(res).await, "book has no EPUB file");
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+/// An EPUB with `map.png` and `plate.png` (different pixels, so different
+/// bytes), neither shown by any chapter, returning both PNGs.
+fn epub_with_two_images() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    let map = db::test_support::solid_color_png(1, 2, 3, 4, 3);
+    let plate = db::test_support::solid_color_png(9, 8, 7, 5, 5);
+    let epub = db::test_support::build_test_epub_with_images(
+        &[("c1.xhtml", "<html><body><p>Text.</p></body></html>")],
+        &[
+            ("map.png", "image/png", &map),
+            ("plate.png", "image/png", &plate),
+        ],
+    );
+    (epub, map, plate)
+}
+
+fn header(res: &axum::response::Response, name: axum::http::HeaderName) -> String {
+    res.headers()
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string()
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_the_original_bytes_as_an_attachment_with_validators() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, map, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/file?href=map.png"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(header(&res, axum::http::header::CONTENT_TYPE), "image/png");
+    assert_eq!(
+        header(&res, axum::http::header::CONTENT_DISPOSITION),
+        "attachment; filename=\"map.png\"; filename*=UTF-8''map.png"
+    );
+    assert_eq!(
+        header(&res, axum::http::header::CACHE_CONTROL),
+        "private, no-cache"
+    );
+    assert_eq!(
+        header(&res, axum::http::header::VARY),
+        "Cookie, Authorization"
+    );
+    assert_eq!(
+        header(&res, axum::http::header::X_CONTENT_TYPE_OPTIONS),
+        "nosniff"
+    );
+    let etag = header(&res, axum::http::header::ETAG);
+    assert!(
+        etag.starts_with('"') && etag.ends_with('"'),
+        "strong entity-tag, got: {etag}"
+    );
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&bytes[..], &map[..]);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_gives_each_href_its_own_etag() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool));
+
+    let mut etags = Vec::new();
+    for href in ["map.png", "plate.png"] {
+        let res = app
+            .clone()
+            .oneshot(get_with_bearer(
+                &format!("/api/ebooks/{uuid}/images/file?href={href}"),
+                &token,
+            ))
+            .await
+            .expect("request should succeed");
+        etags.push(header(&res, axum::http::header::ETAG));
+    }
+
+    assert_ne!(etags[0], etags[1]);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_answers_if_none_match_with_304_and_same_headers() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let uri = format!("/api/ebooks/{uuid}/images/file?href=map.png");
+
+    let first = app
+        .clone()
+        .oneshot(get_with_bearer(&uri, &token))
+        .await
+        .expect("request should succeed");
+    let etag = header(&first, axum::http::header::ETAG);
+    let second = app
+        .oneshot(get_with_bearer_and_if_none_match(&uri, &token, &etag))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(second.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(header(&second, axum::http::header::ETAG), etag);
+    assert_eq!(
+        header(&second, axum::http::header::VARY),
+        "Cookie, Authorization",
+        "304 carries MEDIA_VARY so a shared cache can't cross users"
+    );
+    assert_eq!(
+        header(&second, axum::http::header::CACHE_CONTROL),
+        "private, no-cache"
+    );
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_400_for_an_href_that_is_not_a_manifest_image() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/file?href=c1.xhtml"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body_text(res).await,
+        "href is not an image in this book's EPUB manifest"
+    );
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_falls_back_to_octet_stream_when_the_media_type_is_not_header_safe(
+) {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let png = db::test_support::solid_color_png(1, 2, 3, 2, 2);
+    // `&#10;` is a newline once parsed: a media type that cannot be a header value.
+    let epub = db::test_support::build_test_epub_with_images(
+        &[("c1.xhtml", "<html><body><p>Text.</p></body></html>")],
+        &[("odd.png", "image/png&#10;X-Injected: 1", &png)],
+    );
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/file?href=odd.png"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        header(&res, axum::http::header::CONTENT_TYPE),
+        "application/octet-stream"
+    );
+    assert!(res.headers().get("x-injected").is_none());
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_404_for_an_unknown_uuid() {
+    let (app, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer(
+            "/api/ebooks/00000000-0000-0000-0000-00000000dead/images/file?href=map.png",
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_422_for_a_book_without_an_epub() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (uuid, tmp) = seed_cbz_on_disk(&pool).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/file?href=map.png"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body_text(res).await, "book has no EPUB file");
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_403_without_download_permission() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    revoke_can_download(&pool, user.id).await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/ebooks/{uuid}/images/file?href=map.png"),
+            &token,
+        ))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[tokio::test]
+async fn api_get_ebook_image_file_returns_200_with_query_token() {
+    let (_, _, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (epub, _, _) = epub_with_two_images();
+    let (uuid, _, _, tmp) = seed_epub_with_bytes(&pool, &epub).await;
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let res = app
+        .oneshot(get_anon(&format!(
+            "/api/ebooks/{uuid}/images/file?href=map.png&token={token}"
+        )))
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(res.status(), StatusCode::OK);
 
     std::fs::remove_dir_all(&tmp).ok();
 }

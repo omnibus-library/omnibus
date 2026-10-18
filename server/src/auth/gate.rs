@@ -34,9 +34,11 @@ fn is_media_read_path(path: &str) -> bool {
         // a cross-origin XHR that carries neither cookie nor bearer header.
         // Only `/file` opts in; `/download` and `/kepub` stay header/cookie-only.
         || (path.starts_with("/api/ebooks/") && path.ends_with("/file"))
-        // The image listing, like the `/images/file` fetch above, is read by
-        // clients that cannot set headers, so it takes `?token=` too.
+        // The EPUB image listing and fetch are read by clients that cannot set
+        // headers, so both take `?token=`. `/images/file` already matches `/file`
+        // above; naming it keeps this list honest if that clause is ever narrowed.
         || (path.starts_with("/api/ebooks/") && path.ends_with("/images"))
+        || (path.starts_with("/api/ebooks/") && path.ends_with("/images/file"))
         // CBZ pages feed the comic pager's `<img src>`, which from the mobile
         // WebView can only carry the session as `?token=` — same as covers.
         || (path.starts_with("/api/ebooks/") && path.contains("/pages/"))
