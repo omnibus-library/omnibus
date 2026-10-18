@@ -1,26 +1,9 @@
-import type { Page } from "@playwright/test";
+import { buildChapterEpub } from "../data/iosGlue";
+import { expect, test } from "../fixtures/pageFixtures";
 
-import { expect, test } from "../fixtures/test";
-import {
-  buildChapterEpub,
-  dragSelect,
-  type GlueWindow,
-  openGlue,
-  settled,
-  wordPoint,
-} from "../utils/ios_glue";
-
-// The text an iOS reader selection reports — what a highlight stores, and what
-// Copy, Quote and the note composer are handed — driven through the native
-// app's own glue rather than the web reader's.
-//
-// `omnibus-ios/omnibus/Reader/Web/` is not served by the web app, so this spec
-// serves it itself, byte for byte off disk, on a routed origin, with an EPUB
-// built in memory — see rule 04b. The public-domain fixtures carry no hidden
-// markup to trip over; commercial and Calibre-converted books routinely do.
-
-// Every shape of text the page never shows, each beside words it is welded to
-// or sitting between two paragraphs a drag can span.
+// Commercial and Calibre-converted books carry hidden markup the public-domain
+// fixtures don't: every shape of text the page never shows, welded to words or
+// sitting between two paragraphs a drag can span.
 const CHAPTER = `
 <p id="harbour">It was the sort of evening that made the harbour look like a<span class="pagenum" epub:type="pagebreak" id="page147">147</span> postcard.</p>
 <style>.pagenum { display: none; }</style>
@@ -39,135 +22,205 @@ const CHAPTER = `
 <p id="foot">The foot<br class="pagenum"/>ball went long.</p>
 `;
 
-/** The raw DOM text of the range a settled selection's CFI names. */
-function rangeUnderCfi(page: Page, cfi: string): Promise<string> {
-  return page.evaluate((cfi) => {
-    const w = window as unknown as GlueWindow;
-    const frame = document.querySelector<HTMLIFrameElement>("#stage iframe");
-    const doc = frame?.contentDocument;
-    if (!doc) throw new Error("no section document");
-    return new w.ePub.CFI(cfi).toRange(doc).toString();
-  }, cfi);
-}
-
-test.describe("iOS reader selection text", () => {
+// What an iOS reader selection reports is what a highlight stores and what
+// Copy, Quote and the note composer are handed.
+test.describe("ios reader selection text", () => {
   // A phone-sized stage, as the host gives it.
   test.use({ viewport: { width: 402, height: 874 } });
 
-  test.beforeEach(async ({ page }) => {
-    await openGlue(page, await buildChapterEpub(CHAPTER));
-  });
+  test.beforeEach(
+    "open a chapter full of hidden markup",
+    async ({ iosGluePage }) => {
+      await iosGluePage.openBook(await buildChapterEpub(CHAPTER));
+    },
+  );
 
-  test("a drag across a hidden page break and an in-body stylesheet reports only the text on the page", async ({
-    page,
+  test("report only the text on the page for a drag across a hidden page break and an in-body stylesheet", async ({
+    iosGluePage,
   }) => {
-    const from = await wordPoint(page, "harbour", "evening");
-    const to = await wordPoint(page, "tide", "bad");
+    await test.step("drag from evening to bad", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("harbour", "evening"),
+        await iosGluePage.wordPoint("tide", "bad"),
+      );
+    });
 
-    await dragSelect(page, from, to);
-
-    const selection = await settled(page);
-    expect(selection.cfiRange).not.toBeNull();
-    expect(selection.text).toBe(
-      "evening that made the harbour look like a postcard. The tide came in the way bad",
-    );
+    await test.step("check the selection reports only the visible text", async () => {
+      const selection = await iosGluePage.settledSelection();
+      expect(selection.cfiRange).not.toBeNull();
+      expect(selection.text).toBe(
+        "evening that made the harbour look like a postcard. The tide came in the way bad",
+      );
+    });
   });
 
-  test("a drag across a hidden block and an in-body script reports only the text on the page", async ({
-    page,
+  test("report only the text on the page for a drag across a hidden block and an in-body script", async ({
+    iosGluePage,
   }) => {
-    const from = await wordPoint(page, "quay", "quay");
-    const to = await wordPoint(page, "road", "long");
+    await test.step("drag from quay to long", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("quay", "quay"),
+        await iosGluePage.wordPoint("road", "long"),
+      );
+    });
 
-    await dragSelect(page, from, to);
-
-    expect((await settled(page)).text).toBe(
-      "quay said a word about it. Marlow went home by the long",
-    );
+    await test.step("check the selection reports only the visible text", async () => {
+      expect((await iosGluePage.settledSelection()).text).toBe(
+        "quay said a word about it. Marlow went home by the long",
+      );
+    });
   });
 
-  test("a long press on a word welded to a hidden marker selects only the visible word", async ({
-    page,
+  test("select only the visible word on a long press on a word welded to a hidden marker", async ({
+    iosGluePage,
   }) => {
-    await dragSelect(page, await wordPoint(page, "shore", "shore"));
+    await test.step("long press shore", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("shore", "shore"),
+      );
+    });
 
-    const selection = await settled(page);
-    expect(selection.text).toBe("shore");
-    // The range itself, not only its text: a token run into the marker would
-    // report the same text and still anchor the highlight on `[Pg`.
-    expect(await rangeUnderCfi(page, selection.cfiRange!)).toBe("shore");
+    await test.step("check the selection is the visible word", async () => {
+      const selection = await iosGluePage.settledSelection();
+      expect(selection.text).toBe("shore");
+      // The range itself, not only its text: a token run into the marker would
+      // report the same text and still anchor the highlight on `[Pg`.
+      expect(await iosGluePage.rangeText(selection.cfiRange!)).toBe("shore");
+    });
   });
 
-  test("a long press on a word a hidden marker splits selects the whole visible word", async ({
-    page,
+  test("select the whole visible word on a long press on a word a hidden marker splits", async ({
+    iosGluePage,
   }) => {
-    await dragSelect(page, await wordPoint(page, "battle", "bat"));
+    await test.step("long press bat", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("battle", "bat"),
+      );
+    });
 
-    expect((await settled(page)).text).toBe("battle");
+    await test.step("check the selection is the whole word", async () => {
+      expect((await iosGluePage.settledSelection()).text).toBe("battle");
+    });
   });
 
-  test("a long press on a word straight after a hidden marker starts the range at the word", async ({
-    page,
+  test("start the range at the word on a long press on a word straight after a hidden marker", async ({
+    iosGluePage,
   }) => {
-    await dragSelect(page, await wordPoint(page, "page", "page"));
+    await test.step("long press page", async () => {
+      await iosGluePage.dragSelect(await iosGluePage.wordPoint("page", "page"));
+    });
 
-    const selection = await settled(page);
-    expect(selection.text).toBe("page");
-    expect(await rangeUnderCfi(page, selection.cfiRange!)).toBe("page");
+    await test.step("check the range starts at the word", async () => {
+      const selection = await iosGluePage.settledSelection();
+      expect(selection.text).toBe("page");
+      expect(await iosGluePage.rangeText(selection.cfiRange!)).toBe("page");
+    });
   });
 
-  test("text hidden by visibility is neither reported nor welded onto the word beside it", async ({
-    page,
+  test("select only the visible word beside text hidden by visibility", async ({
+    iosGluePage,
   }) => {
-    await dragSelect(page, await wordPoint(page, "veiled", "burned"));
+    await test.step("long press burned", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("veiled", "burned"),
+      );
+    });
 
-    const pressed = await settled(page);
-    expect(pressed.text).toBe("burned");
-    expect(await rangeUnderCfi(page, pressed.cfiRange!)).toBe("burned");
-
-    const from = await wordPoint(page, "veiled", "light");
-    const to = await wordPoint(page, "veiled", "point");
-    await dragSelect(page, from, to);
-
-    expect((await settled(page)).text).toBe("light burned on the point.");
+    await test.step("check the hidden text is not welded onto the word", async () => {
+      const pressed = await iosGluePage.settledSelection();
+      expect(pressed.text).toBe("burned");
+      expect(await iosGluePage.rangeText(pressed.cfiRange!)).toBe("burned");
+    });
   });
 
-  test("a drag between paragraphs with no whitespace in the source reports a space where the line breaks", async ({
-    page,
+  test("report only the visible text for a drag across text hidden by visibility", async ({
+    iosGluePage,
   }) => {
-    const from = await wordPoint(page, "over", "was");
-    const to = await wordPoint(page, "home", "went");
+    await test.step("drag from light to point", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("veiled", "light"),
+        await iosGluePage.wordPoint("veiled", "point"),
+      );
+    });
 
-    await dragSelect(page, from, to);
-
-    expect((await settled(page)).text).toBe("was over. Marlow went");
+    await test.step("check the hidden text is not reported", async () => {
+      expect((await iosGluePage.settledSelection()).text).toBe(
+        "light burned on the point.",
+      );
+    });
   });
 
-  test("a line break parts the words either side of it", async ({ page }) => {
-    await dragSelect(page, await wordPoint(page, "lines", "line"));
-
-    const pressed = await settled(page);
-    expect(pressed.text).toBe("line");
-    expect(await rangeUnderCfi(page, pressed.cfiRange!)).toBe("line");
-
-    const from = await wordPoint(page, "lines", "first");
-    const to = await wordPoint(page, "lines", "second");
-    await dragSelect(page, from, to);
-
-    expect((await settled(page)).text).toBe("first line the second");
-  });
-
-  test("a block the page sets in the line, like a floated drop cap, does not split its word", async ({
-    page,
+  test("report a space where the line breaks for a drag between paragraphs with no whitespace in the source", async ({
+    iosGluePage,
   }) => {
-    await dragSelect(page, await wordPoint(page, "dropcap", "he"));
+    await test.step("drag from was to went", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("over", "was"),
+        await iosGluePage.wordPoint("home", "went"),
+      );
+    });
 
-    expect((await settled(page)).text).toBe("The");
+    await test.step("check a space parts the paragraphs", async () => {
+      expect((await iosGluePage.settledSelection()).text).toBe(
+        "was over. Marlow went",
+      );
+    });
   });
 
-  test("a hidden line break parts nothing", async ({ page }) => {
-    await dragSelect(page, await wordPoint(page, "foot", "foot"));
+  test("select only the word beside a line break on a long press", async ({
+    iosGluePage,
+  }) => {
+    await test.step("long press line", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("lines", "line"),
+      );
+    });
 
-    expect((await settled(page)).text).toBe("football");
+    await test.step("check the break parts the word from its neighbours", async () => {
+      const pressed = await iosGluePage.settledSelection();
+      expect(pressed.text).toBe("line");
+      expect(await iosGluePage.rangeText(pressed.cfiRange!)).toBe("line");
+    });
+  });
+
+  test("part the words either side of a line break for a drag across it", async ({
+    iosGluePage,
+  }) => {
+    await test.step("drag from first to second", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("lines", "first"),
+        await iosGluePage.wordPoint("lines", "second"),
+      );
+    });
+
+    await test.step("check a space parts the words", async () => {
+      expect((await iosGluePage.settledSelection()).text).toBe(
+        "first line the second",
+      );
+    });
+  });
+
+  test("keep a floated drop cap in its word", async ({ iosGluePage }) => {
+    await test.step("long press he", async () => {
+      await iosGluePage.dragSelect(
+        await iosGluePage.wordPoint("dropcap", "he"),
+      );
+    });
+
+    await test.step("check the cap does not split the word", async () => {
+      expect((await iosGluePage.settledSelection()).text).toBe("The");
+    });
+  });
+
+  test("select the whole word across a hidden line break", async ({
+    iosGluePage,
+  }) => {
+    await test.step("long press foot", async () => {
+      await iosGluePage.dragSelect(await iosGluePage.wordPoint("foot", "foot"));
+    });
+
+    await test.step("check the hidden break does not part the word", async () => {
+      expect((await iosGluePage.settledSelection()).text).toBe("football");
+    });
   });
 });

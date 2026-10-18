@@ -1,17 +1,5 @@
-import type { Page } from "@playwright/test";
-
-import { expect, test } from "../fixtures/test";
-import {
-  buildChapterEpub,
-  type GlueWindow,
-  openGlue,
-  relocates,
-} from "../utils/ios_glue";
-
-// Reopening a book re-states a position the server already holds, so every
-// relocate the restore produces must be an echo: a write would stamp a fresh
-// clock on an unmoved position and shadow a newer audiobook one at the
-// cross-format clock gate.
+import { buildChapterEpub } from "../data/iosGlue";
+import { expect, test } from "../fixtures/pageFixtures";
 
 const PROSE = Array.from(
   { length: 60 },
@@ -21,56 +9,83 @@ const PROSE = Array.from(
 // The start of paragraph 30, several pages in.
 const RESTORE_CFI = "epubcfi(/6/2!/4/60/1:0)";
 
-/**
- * Nothing the restore reported was movement. An absence, so a window: long
- * enough for any relocate still in flight to clear the 400ms debounce.
- */
-async function expectOnlyEchoes(page: Page): Promise<void> {
-  await expect
-    .poll(async () => (await relocates(page)).length)
-    .toBeGreaterThan(0);
-  await page.waitForTimeout(1500);
-  const moved = (await relocates(page)).filter((r) => !r.echo);
-  expect(moved, "a reopen must report no movement").toEqual([]);
-}
-
-/** A genuine page turn after the restore still reports movement. */
-async function expectTurnWrites(page: Page): Promise<void> {
-  const before = (await relocates(page)).filter((r) => !r.echo).length;
-  await page.evaluate(() =>
-    (window as unknown as GlueWindow).OmnibusReader.next(),
-  );
-  await expect
-    .poll(async () => (await relocates(page)).filter((r) => !r.echo).length)
-    .toBe(before + 1);
-}
-
-test.describe("iOS reader restore", () => {
+// A reopen re-states a position the server already holds, so a relocate that
+// reports movement would stamp a fresh clock and shadow a newer audiobook one.
+test.describe("ios reader restore", () => {
   test.use({ viewport: { width: 402, height: 874 } });
 
-  test("a quick reopen reports only echoes, and a turn still writes", async ({
-    page,
-  }) => {
-    await openGlue(page, await buildChapterEpub(PROSE), { cfi: RESTORE_CFI });
+  test.describe("a quick reopen", () => {
+    test.beforeEach(
+      "reopen the book and let the restore settle",
+      async ({ iosGluePage }) => {
+        await iosGluePage.openBook(await buildChapterEpub(PROSE), {
+          cfi: RESTORE_CFI,
+        });
+        await iosGluePage.waitForFirstRelocate();
+        await iosGluePage.waitOutRelocateDebounce();
+      },
+    );
 
-    await expectOnlyEchoes(page);
-    await expectTurnWrites(page);
-  });
-
-  test("a reopen whose settle outlasts the relocate debounce reports only echoes, and a turn still writes", async ({
-    page,
-  }) => {
-    // A face still loading when the settle chain asks, held past the
-    // debounce — what a slow named face does on a device.
-    await page.addInitScript(() => {
-      if (window === window.top) return;
-      Object.defineProperty(FontFaceSet.prototype, "ready", {
-        get: () => new Promise((resolve) => setTimeout(resolve, 700)),
+    test("report only echoes", async ({ iosGluePage }) => {
+      await test.step("check no relocate reports movement", async () => {
+        expect(
+          await iosGluePage.movements(),
+          "a reopen must report no movement",
+        ).toEqual([]);
       });
     });
-    await openGlue(page, await buildChapterEpub(PROSE), { cfi: RESTORE_CFI });
 
-    await expectOnlyEchoes(page);
-    await expectTurnWrites(page);
+    test("report movement for a page turn", async ({ iosGluePage }) => {
+      const before = (await iosGluePage.movements()).length;
+
+      await test.step("turn the page", async () => {
+        await iosGluePage.next();
+      });
+
+      await test.step("check the turn reports one movement", async () => {
+        await expect
+          .poll(async () => (await iosGluePage.movements()).length)
+          .toBe(before + 1);
+      });
+    });
+  });
+
+  test.describe("a reopen whose settle outlasts the relocate debounce", () => {
+    test.beforeEach(
+      "reopen the book behind a slow font face and let the restore settle",
+      async ({ iosGluePage }) => {
+        // A face still loading when the settle chain asks, held past the
+        // debounce, is what a slow named face does on a device.
+        await iosGluePage.holdFontsReady(700);
+        await iosGluePage.openBook(await buildChapterEpub(PROSE), {
+          cfi: RESTORE_CFI,
+        });
+        await iosGluePage.waitForFirstRelocate();
+        await iosGluePage.waitOutRelocateDebounce();
+      },
+    );
+
+    test("report only echoes", async ({ iosGluePage }) => {
+      await test.step("check no relocate reports movement", async () => {
+        expect(
+          await iosGluePage.movements(),
+          "a reopen must report no movement",
+        ).toEqual([]);
+      });
+    });
+
+    test("report movement for a page turn", async ({ iosGluePage }) => {
+      const before = (await iosGluePage.movements()).length;
+
+      await test.step("turn the page", async () => {
+        await iosGluePage.next();
+      });
+
+      await test.step("check the turn reports one movement", async () => {
+        await expect
+          .poll(async () => (await iosGluePage.movements()).length)
+          .toBe(before + 1);
+      });
+    });
   });
 });

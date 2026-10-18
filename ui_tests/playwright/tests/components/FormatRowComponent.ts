@@ -1,12 +1,13 @@
-import type { Download, Locator, Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { kindleUrls } from "../contracts/kindle";
 import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** One format's row in the files stop: its read and send actions. */
+/** One format's row in the files stop: its read, listen and send actions. */
 export class FormatRowComponent extends BaseComponent {
   readonly badge: Locator;
   readonly readLink: Locator;
+  readonly listenLink: Locator;
   readonly kindleButton: Locator;
   readonly koboButton: Locator;
   readonly kindleSendStatus: Locator;
@@ -19,6 +20,7 @@ export class FormatRowComponent extends BaseComponent {
     super(page);
     this.badge = root.getByTestId("format-badge");
     this.readLink = root.getByRole("link", { name: "Read", exact: true });
+    this.listenLink = root.getByRole("link", { name: "Listen", exact: true });
     // The send buttons relabel to "Sending…" while busy, so they are found by
     // test id.
     this.kindleButton = root.getByTestId("action-kindle");
@@ -29,6 +31,14 @@ export class FormatRowComponent extends BaseComponent {
     });
   }
 
+  async read(): Promise<void> {
+    await this.readLink.click();
+  }
+
+  async listen(): Promise<void> {
+    await this.listenLink.click();
+  }
+
   /** Clicks Send to Kindle and waits for the send request to answer. */
   async sendToKindle(): Promise<void> {
     const sent = this.page.waitForResponse(isPostTo(kindleUrls.send));
@@ -36,11 +46,7 @@ export class FormatRowComponent extends BaseComponent {
     await sent;
   }
 
-  /** Waits for the file Send to Kobo downloads; call it before `sendToKobo`. */
-  waitForKoboDownload(): Promise<Download> {
-    return this.page.waitForEvent("download");
-  }
-
+  /** Clicks Send to Kobo, which the browser answers with a download. */
   async sendToKobo(): Promise<void> {
     await this.koboButton.click();
   }

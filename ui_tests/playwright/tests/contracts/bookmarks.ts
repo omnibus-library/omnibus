@@ -1,5 +1,5 @@
 import type { NewBookmark } from "../data/bookmarks";
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The bookmark endpoints the readers post to. */
 export const bookmarksUrls = {
@@ -8,11 +8,10 @@ export const bookmarksUrls = {
 
 /** The writes the bookmarks drawer makes. */
 export const bookmarks = {
-  /** The save "+ Bookmark" makes. */
-  create: (bookmark: NewBookmark): ExpectMutationOptions => ({
-    method: "POST",
-    url: bookmarksUrls.create,
-    expectedBody: { input: { client_id: null, ...bookmark } },
-    expectedStatus: 200,
-  }),
+  /** The save "+ Bookmark" makes. Pass no bookmark for one taken at the playhead, whose position a test cannot pin. */
+  create: (bookmark?: NewBookmark): ExpectMutationOptions =>
+    post(
+      bookmarksUrls.create,
+      bookmark && { input: { client_id: null, ...bookmark } },
+    ),
 };

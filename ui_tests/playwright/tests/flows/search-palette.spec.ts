@@ -1,386 +1,405 @@
+import { search } from "../contracts/search";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// ── Layout & interaction (no seeded data needed) ──────────────────────
+test.describe("search palette", () => {
+  test("show the search trigger layout", async ({ libraryPage }) => {
+    const { topNav } = libraryPage;
 
-test("renders search trigger button in nav", async ({ page }) => {
-  await gotoReady(page, "/");
-  await expectNavVisible(page);
-
-  const trigger = page.getByTestId("search-trigger");
-  await expect(trigger).toBeVisible();
-  await expect(trigger).toHaveText(/Search/);
-});
-
-test("palette opens on clicking search button", async ({ page }) => {
-  await gotoReady(page, "/");
-  await page.getByTestId("search-trigger").click();
-
-  const panel = page.getByTestId("sp-panel");
-  await expect(panel).toBeVisible();
-});
-
-test("palette opens on Cmd+K", async ({ page }) => {
-  await gotoReady(page, "/");
-  await page.keyboard.press("Meta+k");
-
-  const panel = page.getByTestId("sp-panel");
-  await expect(panel).toBeVisible();
-});
-
-// Regression: drive an in-app SPA navigation (not a full reload — which
-// would mask the bug by re-running App from scratch) into each of the
-// other pages that ship the search trigger, then verify ⌘K still opens
-// the palette.
-for (const route of ["/authors", "/series"]) {
-  test(`palette opens on Cmd+K after navigating to ${route}`, async ({
-    page,
-  }) => {
-    await gotoReady(page, "/");
-    // Click an in-app `<Link>` so the router transitions in-place.
-    const linkName = route === "/authors" ? "Authors" : "Series";
-    await page
-      .getByRole("navigation", { name: "Primary" })
-      .getByRole("link", { name: linkName })
-      .click();
-    await expect.poll(async () => new URL(page.url()).pathname).toBe(route);
-
-    await page.keyboard.press("Meta+k");
-    await expect(page.getByTestId("sp-panel")).toBeVisible();
-  });
-}
-
-test("palette closes on Escape", async ({ page }) => {
-  await gotoReady(page, "/");
-  await page.getByTestId("search-trigger").click();
-  await expect(page.getByTestId("sp-panel")).toBeVisible();
-  // The input is focused a frame after mount (requestAnimationFrame). The
-  // panel's onkeydown only sees Escape once focus is inside the panel, so
-  // wait for the input before pressing — otherwise Escape lands on <body>.
-  await expect(page.getByTestId("sp-input")).toBeFocused();
-
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("sp-panel")).toHaveCount(0);
-});
-
-test("palette closes on a click outside the panel", async ({ page }) => {
-  await gotoReady(page, "/");
-  await page.getByTestId("search-trigger").click();
-  await expect(page.getByTestId("sp-panel")).toBeVisible();
-
-  // Click a real viewport coordinate well below the header, not a position
-  // relative to the scrim's own box. `.atrium-topbar` sets
-  // `backdrop-filter`, which makes it the containing block for
-  // `position: fixed` descendants — an overlay rendered inside the nav
-  // collapses its `inset: 0` scrim to the header strip, which still
-  // satisfies a scrim-relative click while leaving the page below
-  // uncovered. Mouse coordinates catch that; scrim-relative ones don't.
-  await page.mouse.click(40, 500);
-
-  await expect(page.getByTestId("sp-panel")).toHaveCount(0);
-  // The scrim swallows the click — it must not fall through to the page.
-  await expect.poll(async () => new URL(page.url()).pathname).toBe("/");
-});
-
-// ── Autofocus ─────────────────────────────────────────────────────────
-
-test("input is focused after clicking trigger so typing works immediately", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await page.getByTestId("search-trigger").click();
-  await expect(page.getByTestId("sp-panel")).toBeVisible();
-  // Autofocus lands a frame after mount (requestAnimationFrame); typing before
-  // it does drops the leading keystroke. Waiting for focus is exactly what this
-  // test asserts — that typing works immediately once the palette is open.
-  await expect(page.getByTestId("sp-input")).toBeFocused();
-
-  // Type on the keyboard without clicking the input first.
-  await page.keyboard.type("dracula");
-
-  // The characters should have gone into the search input.
-  await expect(page.getByTestId("sp-input")).toHaveValue("dracula");
-});
-
-test("input is focused after Cmd+K so typing works immediately", async ({
-  page,
-}) => {
-  await gotoReady(page, "/");
-  await page.keyboard.press("Meta+k");
-  await expect(page.getByTestId("sp-panel")).toBeVisible();
-  // Autofocus lands a frame after mount (requestAnimationFrame); typing before
-  // it does drops the leading keystroke — wait for focus first.
-  await expect(page.getByTestId("sp-input")).toBeFocused();
-
-  // Type on the keyboard without clicking the input first.
-  await page.keyboard.type("hello");
-
-  // The characters should have gone into the search input.
-  await expect(page.getByTestId("sp-input")).toHaveValue("hello");
-});
-
-// ── Settings (matched in the browser, no library needed) ──────────────
-
-test.describe("settings results", () => {
-  test("a matching setting shows before the library answers and opens its section", async ({
-    page,
-  }) => {
-    await gotoReady(page, "/");
-    // Hold the library search open. Settings match in the browser, so they
-    // must not wait on it.
-    let release: () => void = () => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await page.route("**/api/rpc/search-palette", async (route) => {
-      await held;
-      await route.continue();
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
     });
 
-    await page.getByTestId("search-trigger").click();
-    await page.getByTestId("sp-input").fill("kobo");
-
-    const row = page.getByTestId("sp-setting-row");
-    await expect(row).toHaveCount(1);
-    await expect(row).toContainText("Kobo devices");
-    await expect(row).toContainText("Settings \u203A Devices");
-    await expect(page.getByTestId("sp-result-count")).toHaveCount(0);
-
-    await row.click();
-    await expect(page).toHaveURL(/\/settings\?section=devices$/);
-    await expect(page.getByTestId("sp-panel")).toHaveCount(0);
-
-    release();
-    await page.unrouteAll({ behavior: "wait" });
+    await test.step("check the nav offers search", async () => {
+      await libraryPage.assertDisplayed();
+      await topNav.assertDisplayed();
+      await expect(topNav.searchButton).toBeVisible();
+      await expect(topNav.searchButton).toHaveText(/Search/);
+    });
   });
 
-  test("arrow keys reach a server setting and Enter opens it", async ({
-    page,
+  test("open on clicking the search button", async ({ libraryPage }) => {
+    const palette = libraryPage.topNav.searchPalette;
+
+    await test.step("click the search button", async () => {
+      await libraryPage.goto();
+      await palette.open();
+    });
+
+    await test.step("check the palette is open", async () => {
+      await expect(palette.panel).toBeVisible();
+    });
+  });
+
+  test("open on Cmd+K", async ({ libraryPage }) => {
+    const palette = libraryPage.topNav.searchPalette;
+
+    await test.step("press Cmd+K", async () => {
+      await libraryPage.goto();
+      await palette.openWithShortcut();
+    });
+
+    await test.step("check the palette is open", async () => {
+      await expect(palette.panel).toBeVisible();
+    });
+  });
+
+  for (const destination of ["Authors", "Series"] as const) {
+    test(`open on Cmd+K after navigating to the ${destination.toLowerCase()} page`, async ({
+      libraryPage,
+    }) => {
+      const { topNav } = libraryPage;
+      const palette = topNav.searchPalette;
+
+      await test.step(`follow the nav link to ${destination}`, async () => {
+        await libraryPage.goto();
+        // In-app navigation, not a reload: a reload re-runs App and masks the bug.
+        await topNav.open(destination);
+      });
+
+      await test.step("press Cmd+K", async () => {
+        await palette.openWithShortcut();
+        await expect(palette.panel).toBeVisible();
+      });
+    });
+  }
+
+  test("close on Escape", async ({ libraryPage }) => {
+    const palette = libraryPage.topNav.searchPalette;
+
+    await test.step("open the palette", async () => {
+      await libraryPage.goto();
+      await palette.open();
+      await expect(palette.panel).toBeVisible();
+      // Escape is handled by the panel, so it needs the focus the input takes a frame after mount.
+      await expect(palette.input).toBeFocused();
+    });
+
+    await test.step("press Escape", async () => {
+      await palette.closeWithEscape();
+      await expect(palette.panel).toHaveCount(0);
+    });
+  });
+
+  test("close on a click outside the panel", async ({ libraryPage }) => {
+    const palette = libraryPage.topNav.searchPalette;
+
+    await test.step("open the palette", async () => {
+      await libraryPage.goto();
+      await palette.open();
+      await expect(palette.panel).toBeVisible();
+    });
+
+    await test.step("click outside the panel", async () => {
+      await palette.clickPageBackground();
+      await expect(palette.panel).toHaveCount(0);
+    });
+
+    await test.step("check the click did not reach the page", async () => {
+      await libraryPage.assertDisplayed();
+    });
+  });
+
+  test("focus the input after the search button so typing works immediately", async ({
+    libraryPage,
   }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    await page.getByTestId("sp-input").fill("smtp");
+    const palette = libraryPage.topNav.searchPalette;
 
-    // The count includes the setting, so a query only a setting answers
-    // never reads as "0 results". Waiting on it also lets the library's
-    // answer land before the arrow press, which would otherwise reset it.
-    await expect(page.getByTestId("sp-result-count")).toContainText(
-      /^1 result /,
-    );
-    const row = page.getByTestId("sp-setting-row");
-    await expect(row).toContainText("Email delivery (SMTP)");
-    await expect(row).toContainText("Administration \u203A Integrations");
+    await test.step("open the palette", async () => {
+      await libraryPage.goto();
+      await palette.open();
+      await expect(palette.panel).toBeVisible();
+      // Typing before the focus lands a frame after mount drops the first keystroke.
+      await expect(palette.input).toBeFocused();
+    });
 
-    // Settings list last, so the first Up lands on one.
-    await page.keyboard.press("ArrowUp");
-    await expect(row).toHaveClass(/selected/);
-    await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/admin\?section=integrations$/);
-  });
-});
-
-// ── Seeded-data tests (books, authors, series, tags) ──────────────────
-
-test.describe("with seeded library", () => {
-  test.beforeAll(async ({ request }) => {
-    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+    await test.step("type without clicking the input", async () => {
+      await palette.typeWithoutFocusing("dracula");
+      await expect(palette.input).toHaveValue("dracula");
+    });
   });
 
-  test("palette shows book results", async ({ page }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("dracula");
-
-    await expect
-      .poll(async () => page.getByTestId("sp-book-row").count())
-      .toBeGreaterThanOrEqual(1);
-  });
-
-  test("palette shows author results", async ({ page }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("stoker");
-
-    await expect
-      .poll(async () => page.getByTestId("sp-author-row").count())
-      .toBeGreaterThanOrEqual(1);
-  });
-
-  test("palette shows result count and timing", async ({ page }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("dracula");
-
-    await expect
-      .poll(async () => page.getByTestId("sp-result-count").count())
-      .toBe(1);
-    await expect(page.getByTestId("sp-result-count")).toContainText(/result/);
-    await expect(page.getByTestId("sp-result-count")).toContainText(/ms/);
-
-    // The meta line is a sibling of the results list, not a child, so it
-    // only lines up with the group heads if it carries the panel gutter
-    // itself. A boundingBox x comparison would not catch a regression here
-    // since both are full-width block children of .sp-panel — compare
-    // computed padding-left instead.
-    const metaPad = await page
-      .getByTestId("sp-result-count")
-      .evaluate((el) => getComputedStyle(el).paddingLeft);
-    const headPad = await page
-      .getByText(/^Books · \d+$/)
-      .evaluate((el) => getComputedStyle(el).paddingLeft);
-    expect(metaPad).toBe(headPad);
-    expect(metaPad).not.toBe("0px");
-  });
-
-  test("a failed search reports the error on the panel gutter", async ({
-    page,
+  test("focus the input after Cmd+K so typing works immediately", async ({
+    libraryPage,
   }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
+    const palette = libraryPage.topNav.searchPalette;
 
-    // A successful search first, so the error notice can be compared with
-    // the meta line that renders in the same slot on the happy path.
-    await input.fill("dracula");
-    await expect(page.getByTestId("sp-result-count")).toHaveCount(1);
-    const metaPad = await page
-      .getByTestId("sp-result-count")
-      .evaluate((el) => getComputedStyle(el).paddingLeft);
+    await test.step("open the palette", async () => {
+      await libraryPage.goto();
+      await palette.openWithShortcut();
+      await expect(palette.panel).toBeVisible();
+      // Typing before the focus lands a frame after mount drops the first keystroke.
+      await expect(palette.input).toBeFocused();
+    });
 
-    await page.route("**/api/rpc/search-palette", (route) =>
-      route.fulfill({
-        status: 500,
-        contentType: "text/plain",
-        body: "search unavailable",
-      }),
-    );
-    await input.fill("stoker");
-
-    const alert = page.getByRole("alert");
-    await expect(alert).toBeVisible();
-    await expect(alert).toContainText(/Couldn.t run that search/);
-    await expect(page.getByTestId("sp-result-count")).toHaveCount(0);
-    const alertPad = await alert.evaluate(
-      (el) => getComputedStyle(el).paddingLeft,
-    );
-    expect(alertPad).toBe(metaPad);
-    expect(alertPad).not.toBe("0px");
+    await test.step("type without clicking the input", async () => {
+      await palette.typeWithoutFocusing("hello");
+      await expect(palette.input).toHaveValue("hello");
+    });
   });
 
-  test("clicking book result navigates to detail", async ({ page }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("dracula");
+  // Settings match in the browser, so no library is needed.
+  test.describe("settings results", () => {
+    test("open a matching setting before the library answers", async ({
+      libraryPage,
+      settingsPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
 
-    await expect
-      .poll(async () => page.getByTestId("sp-book-row").count())
-      .toBeGreaterThanOrEqual(1);
+      const release =
+        await test.step("search for a setting while the library search is held", async () => {
+          await libraryPage.goto();
+          const release = await palette.holdLibrarySearch();
+          await palette.search("kobo");
+          return release;
+        });
 
-    await page.getByTestId("sp-book-row").first().click();
+      await test.step("check the setting shows without the result count", async () => {
+        await expect(palette.row("setting")).toHaveCount(1);
+        await expect(palette.row("setting")).toContainText("Kobo devices");
+        await expect(palette.row("setting")).toContainText(
+          "Settings \u203A Devices",
+        );
+        await expect(palette.resultCountText).toHaveCount(0);
+      });
 
-    // Should navigate to /books/:uuid
-    await expect
-      .poll(async () => new URL(page.url()).pathname)
-      .toMatch(/^\/books\/[0-9a-fA-F-]{36}$/);
+      await test.step("open the setting", async () => {
+        await palette.chooseTopResult("setting");
+        await settingsPage.assertDisplayedFor("devices");
+        await expect(palette.panel).toHaveCount(0);
+      });
+
+      await test.step("release the library search", async () => {
+        await release();
+      });
+    });
+
+    test("open a server setting from the keyboard", async ({
+      libraryPage,
+      adminPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a setting only a setting answers", async () => {
+        await libraryPage.goto();
+        await palette.search("smtp");
+      });
+
+      // The count includes the setting, so waiting on it also lets the library's
+      // answer land before the arrow press, which would otherwise reset it.
+      await test.step("check the setting is counted and named", async () => {
+        await expect(palette.resultCountText).toContainText(/^1 result /);
+        await expect(palette.row("setting")).toContainText(
+          "Email delivery (SMTP)",
+        );
+        await expect(palette.row("setting")).toContainText(
+          "Administration \u203A Integrations",
+        );
+      });
+
+      // Settings list last, so the first Up lands on one.
+      await test.step("select it with the arrow key", async () => {
+        await palette.selectPreviousResult();
+        await expect(palette.row("setting")).toHaveClass(/selected/);
+      });
+
+      await test.step("open it with Enter", async () => {
+        await palette.submit();
+        await adminPage.assertDisplayedFor("integrations");
+      });
+    });
   });
 
-  test("keyboard navigation highlights results", async ({ page }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("dracula");
+  test.describe("with the seeded library", () => {
+    test.beforeAll("seed the library", async ({ request }) => {
+      await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+    });
 
-    // Wait for results to appear.
-    await expect
-      .poll(async () => page.getByTestId("sp-book-row").count())
-      .toBeGreaterThanOrEqual(1);
+    test("show book results", async ({ libraryPage }) => {
+      const palette = libraryPage.topNav.searchPalette;
 
-    // Arrow down should select the first book row.
-    await page.keyboard.press("ArrowDown");
-    await expect(page.getByTestId("sp-book-row").first()).toHaveClass(
-      /selected/,
-    );
-  });
+      await test.step("search for a title", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+      });
 
-  test("clicking author result navigates to author detail page", async ({
-    page,
-  }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    await page.getByTestId("sp-input").fill("stoker");
+      await test.step("check a book matches", async () => {
+        await expect(palette.row("book")).not.toHaveCount(0);
+      });
+    });
 
-    await expect
-      .poll(async () => page.getByTestId("sp-author-row").count())
-      .toBeGreaterThanOrEqual(1);
+    test("show author results", async ({ libraryPage }) => {
+      const palette = libraryPage.topNav.searchPalette;
 
-    await page.getByTestId("sp-author-row").first().click();
-    await expect
-      .poll(async () => new URL(page.url()).pathname)
-      .toMatch(/^\/authors\/\d+$/);
-  });
+      await test.step("search for an author", async () => {
+        await libraryPage.goto();
+        await palette.search("stoker");
+      });
 
-  test("clicking series result navigates to series detail page", async ({
-    page,
-  }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    await page.getByTestId("sp-input").fill("pioneers");
+      await test.step("check an author matches", async () => {
+        await expect(palette.row("author")).not.toHaveCount(0);
+      });
+    });
 
-    await expect
-      .poll(async () => page.getByTestId("sp-series-row").count())
-      .toBeGreaterThanOrEqual(1);
+    test("show the result count and timing", async ({ libraryPage }) => {
+      const palette = libraryPage.topNav.searchPalette;
 
-    await page.getByTestId("sp-series-row").first().click();
-    await expect
-      .poll(async () => new URL(page.url()).pathname)
-      .toMatch(/^\/series\/\d+$/);
-  });
+      await test.step("search for a title", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+      });
 
-  test("pressing Enter without arrow-key navigation goes to /search", async ({
-    page,
-  }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("dracula");
+      await test.step("check the meta line", async () => {
+        await expect(palette.resultCountText).toHaveCount(1);
+        await expect(palette.resultCountText).toContainText(/result/);
+        await expect(palette.resultCountText).toContainText(/ms/);
+      });
 
-    // Wait for at least one result so the palette has loaded, then press
-    // Enter without engaging arrow keys — should route to the full-page
-    // results, not drill into the first result.
-    await expect
-      .poll(async () => page.getByTestId("sp-book-row").count())
-      .toBeGreaterThanOrEqual(1);
+      await test.step("check the meta line shares the group heads' gutter", async () => {
+        // The meta line sits beside the results list, so only its padding shows it carries the gutter.
+        const metaPad = await palette.leftPadding(palette.resultCountText);
+        const headPad = await palette.leftPadding(palette.booksGroupHeading);
+        expect(metaPad).toBe(headPad);
+        expect(metaPad).not.toBe("0px");
+      });
+    });
 
-    await input.press("Enter");
-    await expect
-      .poll(async () => new URL(page.url()).pathname)
-      .toMatch(/^\/search\/dracula$/);
-  });
+    test("report a failed search on the panel gutter", async ({
+      libraryPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+      let metaPad = "";
 
-  test("Enter after arrow-key selection drills into the highlighted result", async ({
-    page,
-  }) => {
-    await gotoReady(page, "/");
-    await page.getByTestId("search-trigger").click();
-    const input = page.getByTestId("sp-input");
-    await input.fill("dracula");
+      await test.step("run a search that succeeds", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+        await expect(palette.resultCountText).toHaveCount(1);
+        // The error takes the slot the meta line fills on the happy path.
+        metaPad = await palette.leftPadding(palette.resultCountText);
+      });
 
-    await expect
-      .poll(async () => page.getByTestId("sp-book-row").count())
-      .toBeGreaterThanOrEqual(1);
+      await test.step("run a search that fails", async () => {
+        await libraryPage.forceServerError(search.palette());
+        await palette.replaceQuery("stoker");
+      });
 
-    // Arrow down to engage selection, then Enter to drill in.
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("Enter");
+      await test.step("check the error sits on the same gutter", async () => {
+        await expect(palette.errorMessage).toBeVisible();
+        await expect(palette.errorMessage).toContainText(
+          /Couldn.t run that search/,
+        );
+        await expect(palette.resultCountText).toHaveCount(0);
+        const alertPad = await palette.leftPadding(palette.errorMessage);
+        expect(alertPad).toBe(metaPad);
+        expect(alertPad).not.toBe("0px");
+      });
+    });
 
-    await expect
-      .poll(async () => new URL(page.url()).pathname)
-      .toMatch(/^\/books\/[0-9a-fA-F-]{36}$/);
+    test("open a book from its result", async ({
+      libraryPage,
+      bookDetailPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a title", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+        await expect(palette.row("book")).not.toHaveCount(0);
+      });
+
+      await test.step("click the top book", async () => {
+        await palette.chooseTopResult("book");
+        await bookDetailPage.assertDisplayedByUuid();
+      });
+    });
+
+    test("highlight results with the arrow keys", async ({ libraryPage }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a title", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+        await expect(palette.row("book")).not.toHaveCount(0);
+      });
+
+      await test.step("press the down arrow", async () => {
+        await palette.selectNextResult();
+        await expect(palette.topResult("book")).toHaveClass(/selected/);
+      });
+    });
+
+    test("open an author from its result", async ({
+      libraryPage,
+      authorPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for an author", async () => {
+        await libraryPage.goto();
+        await palette.search("stoker");
+        await expect(palette.row("author")).not.toHaveCount(0);
+      });
+
+      await test.step("click the top author", async () => {
+        await palette.chooseTopResult("author");
+        await authorPage.assertDisplayed();
+      });
+    });
+
+    test("open a series from its result", async ({
+      libraryPage,
+      seriesPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a series", async () => {
+        await libraryPage.goto();
+        await palette.search("pioneers");
+        await expect(palette.row("series")).not.toHaveCount(0);
+      });
+
+      await test.step("click the top series", async () => {
+        await palette.chooseTopResult("series");
+        await seriesPage.assertDisplayed();
+      });
+    });
+
+    test("go to the full results when Enter is pressed without an arrow key", async ({
+      libraryPage,
+      searchResultsPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a title", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+        await expect(palette.row("book")).not.toHaveCount(0);
+      });
+
+      await test.step("press Enter", async () => {
+        await palette.submit();
+        await searchResultsPage.assertDisplayedFor("dracula");
+      });
+    });
+
+    test("drill into the highlighted result when Enter follows an arrow key", async ({
+      libraryPage,
+      bookDetailPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a title", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+        await expect(palette.row("book")).not.toHaveCount(0);
+      });
+
+      await test.step("press the down arrow and Enter", async () => {
+        await palette.selectNextResult();
+        await palette.submit();
+        await bookDetailPage.assertDisplayedByUuid();
+      });
+    });
   });
 });

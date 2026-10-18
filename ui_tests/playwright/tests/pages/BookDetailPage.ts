@@ -1,20 +1,32 @@
 import type { Locator, Page } from "@playwright/test";
+import { AlignmentModalComponent } from "../components/AlignmentModalComponent";
+import { BookSummaryComponent } from "../components/BookSummaryComponent";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { ChipListEditorComponent } from "../components/ChipListEditorComponent";
+import { DeleteFilesDialogComponent } from "../components/DeleteFilesDialogComponent";
 import { ExportMenuComponent } from "../components/ExportMenuComponent";
 import { FormatRowComponent } from "../components/FormatRowComponent";
+import { JournalEntryOverlayComponent } from "../components/JournalEntryOverlayComponent";
+import { JournalSectionComponent } from "../components/JournalSectionComponent";
 import { ListenFilePickerComponent } from "../components/ListenFilePickerComponent";
+import { MergeDialogComponent } from "../components/MergeDialogComponent";
+import { MiniDockComponent } from "../components/MiniDockComponent";
+import { PhysicalCopyCardComponent } from "../components/PhysicalCopyCardComponent";
 import { QuoteCardModalComponent } from "../components/QuoteCardModalComponent";
 import { RatingComponent } from "../components/RatingComponent";
 import { ReadStatusControlComponent } from "../components/ReadStatusControlComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
+import { ShelfPickerComponent } from "../components/ShelfPickerComponent";
+import { SuggestionsStripComponent } from "../components/SuggestionsStripComponent";
+import { SyncLinkComponent } from "../components/SyncLinkComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { WishlistCardComponent } from "../components/WishlistCardComponent";
 import { accountUrls } from "../contracts/account";
+import { authorBlockUrls } from "../contracts/authorBlock";
 import { kindleUrls } from "../contracts/kindle";
-import { physicalUrls } from "../contracts/physical";
 import type { KindleSendStatus } from "../data/kindle";
-import { expect } from "../fixtures/test";
-import { isPostTo } from "../utils/api";
+import type { CopyRow, WishlistRow } from "../data/physical";
+import { holdRequests, isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /** The six stops of the page in running order, as the dot rail names them. */
@@ -35,6 +47,7 @@ export class BookDetailPage extends BasePage {
   protected readonly urlPattern = /\/books\/[^/?#]+$/;
 
   readonly topNav: TopNavComponent;
+  readonly miniDock: MiniDockComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
   readonly exportMenu: ExportMenuComponent;
   readonly rating: RatingComponent;
@@ -43,6 +56,17 @@ export class BookDetailPage extends BasePage {
   readonly listenFilePicker: ListenFilePickerComponent;
   readonly genreChips: ChipListEditorComponent;
   readonly tagChips: ChipListEditorComponent;
+  readonly summary: BookSummaryComponent;
+  readonly suggestions: SuggestionsStripComponent;
+  readonly journal: JournalSectionComponent;
+  readonly journalEntry: JournalEntryOverlayComponent;
+  readonly deleteFilesDialog: DeleteFilesDialogComponent;
+  readonly mergeDialog: MergeDialogComponent;
+  readonly wishlist: WishlistCardComponent;
+  readonly physicalCopy: PhysicalCopyCardComponent;
+  readonly shelfPicker: ShelfPickerComponent;
+  readonly syncLink: SyncLinkComponent;
+  readonly alignmentModal: AlignmentModalComponent;
 
   readonly titleHeading: Locator;
   readonly authorsLine: Locator;
@@ -63,44 +87,41 @@ export class BookDetailPage extends BasePage {
   readonly snapSections: Locator;
   readonly backToBookButton: Locator;
   readonly formatSwitcher: Locator;
+  readonly formatBadges: Locator;
   readonly formatListenLinks: Locator;
   readonly savedPassagesHeading: Locator;
   readonly savedPassagesSection: Locator;
   readonly savedPassageCards: Locator;
   readonly savedPassagesEmptyMessage: Locator;
   readonly showMorePassagesButton: Locator;
-  readonly newJournalEntryButton: Locator;
-  readonly journalComposer: Locator;
-  readonly cancelJournalEntryButton: Locator;
   readonly moreStop: Locator;
+  readonly seriesShelf: Locator;
+  readonly seriesPageLink: Locator;
   readonly fromSameHandHeading: Locator;
   readonly fromSameHandRow: Locator;
   readonly fromSameHandTiles: Locator;
   readonly fromSameHandLoadingMessage: Locator;
-  readonly onlyBookByNote: Locator;
-  readonly suggestionsStrip: Locator;
-  readonly suggestionsHeading: Locator;
-  readonly bookNotFoundMessage: Locator;
   readonly fromSameHandEmptyMessage: Locator;
-  readonly readButton: Locator;
+  readonly onlyBookByNote: Locator;
+  readonly bookNotFoundMessage: Locator;
   readonly startReadingButton: Locator;
   readonly startListeningButton: Locator;
   readonly startReadingComicButton: Locator;
   readonly startReadingPdfButton: Locator;
-  readonly readPdfButton: Locator;
   readonly listenButton: Locator;
   readonly immersiveReadButton: Locator;
   readonly noFilesMessage: Locator;
   readonly checkInWhenAcquiredButton: Locator;
-  readonly physicalCopyCards: Locator;
   readonly physicalPill: Locator;
-  readonly removeCopyButton: Locator;
-  readonly lastCopyDialog: Locator;
-  readonly removeFromLibraryButton: Locator;
+  readonly editMetadataLink: Locator;
+  readonly progressRuler: Locator;
+  readonly addToShelfButton: Locator;
+  readonly shelvesLoading: Locator;
 
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
+    this.miniDock = new MiniDockComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
     this.exportMenu = new ExportMenuComponent(page);
     this.rating = new RatingComponent(page);
@@ -109,6 +130,17 @@ export class BookDetailPage extends BasePage {
     this.listenFilePicker = new ListenFilePickerComponent(page);
     this.genreChips = new ChipListEditorComponent(page, "genres");
     this.tagChips = new ChipListEditorComponent(page, "tags");
+    this.summary = new BookSummaryComponent(page);
+    this.suggestions = new SuggestionsStripComponent(page);
+    this.journal = new JournalSectionComponent(page);
+    this.journalEntry = new JournalEntryOverlayComponent(page);
+    this.deleteFilesDialog = new DeleteFilesDialogComponent(page);
+    this.mergeDialog = new MergeDialogComponent(page);
+    this.wishlist = new WishlistCardComponent(page);
+    this.physicalCopy = new PhysicalCopyCardComponent(page);
+    this.shelfPicker = new ShelfPickerComponent(page);
+    this.syncLink = new SyncLinkComponent(page);
+    this.alignmentModal = new AlignmentModalComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.authorsLine = page.getByTestId("book-authors");
     // The More stop's tiles draw covers too, so the hero's is found by its
@@ -137,6 +169,7 @@ export class BookDetailPage extends BasePage {
     this.formatSwitcher = page.getByRole("group", {
       name: "Available formats",
     });
+    this.formatBadges = this.formatSwitcher.getByTestId("format-badge");
     this.formatListenLinks = this.formatSwitcher.getByTestId("action-listen");
     this.savedPassagesHeading = page.getByRole("heading", {
       name: "Passages you saved",
@@ -145,15 +178,9 @@ export class BookDetailPage extends BasePage {
     this.savedPassageCards = page.getByTestId("highlight-card");
     this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
     this.showMorePassagesButton = page.getByTestId("highlights-show-more");
-    this.newJournalEntryButton = page.getByRole("button", {
-      name: "New entry",
-    });
-    this.journalComposer = page.getByTestId("journal-composer");
-    this.cancelJournalEntryButton = this.journalComposer.getByRole("button", {
-      name: "Cancel",
-      exact: true,
-    });
     this.moreStop = page.getByTestId("bdmq-more");
+    this.seriesShelf = page.getByTestId("bdmq-series-shelf");
+    this.seriesPageLink = page.getByRole("link", { name: /series page/ });
     this.fromSameHandHeading = page.getByRole("heading", {
       name: "From the same hand",
     });
@@ -164,33 +191,25 @@ export class BookDetailPage extends BasePage {
     this.fromSameHandLoadingMessage = page.getByTestId(
       "from-same-hand-loading",
     );
-    this.onlyBookByNote = page.getByText(/only book by/);
-    this.suggestionsStrip = page.getByTestId("suggestions-strip");
-    this.suggestionsHeading = page.getByRole("heading", {
-      name: "Suggested for you",
-    });
-    this.bookNotFoundMessage = page.getByText("Book not found.");
     this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
-    this.readButton = page.getByTestId("action-read");
+    this.onlyBookByNote = page.getByText(/only book by/);
+    this.bookNotFoundMessage = page.getByText("Book not found.");
     // The labels change with reading progress, so the row is found by test id.
     this.startReadingButton = page.getByTestId("start-reading");
     this.startListeningButton = page.getByTestId("start-listening");
     this.startReadingComicButton = page.getByTestId("start-reading-comic");
     this.startReadingPdfButton = page.getByTestId("start-reading-pdf");
-    this.readPdfButton = page.getByTestId("action-read-pdf");
     this.listenButton = page.getByTestId("listen-secondary");
     this.immersiveReadButton = page.getByTestId("immersive-read");
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
     this.checkInWhenAcquiredButton = page.getByRole("button", {
       name: "Check in when acquired",
     });
-    this.physicalCopyCards = page.getByTestId("physical-copy-card");
     this.physicalPill = page.getByTestId("physical-pill");
-    this.removeCopyButton = page.getByTestId("copy-delete");
-    this.lastCopyDialog = page.getByTestId("last-copy-modal");
-    this.removeFromLibraryButton = this.lastCopyDialog.getByRole("button", {
-      name: "Remove from library",
-    });
+    this.editMetadataLink = page.getByTestId("edit-metadata");
+    this.progressRuler = page.getByTestId("bdmq-ruler");
+    this.addToShelfButton = page.getByTestId("bdmq-add-to-shelf");
+    this.shelvesLoading = page.getByTestId("bdmq-shelves-loading");
   }
 
   protected get readyLocator(): Locator {
@@ -200,6 +219,11 @@ export class BookDetailPage extends BasePage {
   /** The authors line's link to the author called `name`. */
   authorLink(name: string): Locator {
     return this.authorsLine.getByRole("link", { name, exact: true });
+  }
+
+  /** The kicker's link to `series`; exact, so the More stop's covers miss. */
+  seriesLink(series: string): Locator {
+    return this.page.getByRole("link", { name: series, exact: true });
   }
 
   /** The tile for the book called `title` in the "From the same hand" row. */
@@ -222,11 +246,6 @@ export class BookDetailPage extends BasePage {
     );
   }
 
-  /** The kicker's link to `series`; exact, so the More stop's covers miss. */
-  seriesLink(series: string): Locator {
-    return this.page.getByRole("link", { name: series, exact: true });
-  }
-
   /** The dot rail's button for `section`; its label reads "NN · Name". */
   sectionDot(section: MarqueeSection): Locator {
     return this.sectionsNav.getByRole("button", {
@@ -241,9 +260,14 @@ export class BookDetailPage extends BasePage {
     );
   }
 
-  /** The copy card a test filed, picked out by its unique note. */
-  physicalCopyCard(note: string): Locator {
-    return this.physicalCopyCards.filter({ hasText: note });
+  /** The snapped screen's label for `section`, which fades as the screen leaves. */
+  sectionLabel(section: MarqueeSection): Locator {
+    return this.sectionPanel(section).locator(".bdmq-seclab");
+  }
+
+  /** The "scroll, next" cue under the snapped screen for `section`. */
+  nextStopCue(section: MarqueeSection): Locator {
+    return this.sectionPanel(section).locator(".bdmq-next");
   }
 
   /** The saved-passage card whose quote contains `quote`. */
@@ -254,6 +278,27 @@ export class BookDetailPage extends BasePage {
     );
   }
 
+  /** The More stop's tile for a shelf that holds the book. */
+  shelfTile(shelfId: number): Locator {
+    return this.page.getByTestId(`bdmq-shelf-${shelfId}`);
+  }
+
+  /** The Hand-picked or Smart facet on a shelf's tile. */
+  shelfTileKind(shelfId: number): Locator {
+    return this.shelfTile(shelfId).locator(".shv-facet--kind");
+  }
+
+  /** The book's details table: label and value rows such as `Added`. */
+  metaValue(label: string): Locator {
+    const labelCell = this.page.locator(".bd-meta-k", {
+      hasText: new RegExp(`^${label}$`),
+    });
+    return this.page
+      .locator("tr.bd-meta-row")
+      .filter({ has: labelCell })
+      .locator(".bd-meta-v");
+  }
+
   /**
    * Settles because the page fills its widgets from fetches after mount, and
    * a click that lands before they do gets overwritten.
@@ -262,11 +307,8 @@ export class BookDetailPage extends BasePage {
     await this.openAndSettle(`/books/${bookUuid}`);
   }
 
-  /**
-   * Opens the book without waiting for the network to settle, for a test that
-   * holds a request open: the page never goes idle while it is held.
-   */
-  async gotoWhileLoading(bookUuid: string): Promise<void> {
+  /** Opens the book while a held fetch keeps the network from idling. */
+  async gotoUnsettled(bookUuid: string): Promise<void> {
     await this.open(`/books/${bookUuid}`);
   }
 
@@ -278,12 +320,35 @@ export class BookDetailPage extends BasePage {
     await this.startListeningButton.click();
   }
 
+  /** Opens the reader with the book's audiobook docked beside it. */
+  async readImmersively(): Promise<void> {
+    await this.immersiveReadButton.click();
+  }
+
+  /** Opens the comic pager through the CBZ's Start reading action. */
+  async startReadingComic(): Promise<void> {
+    await this.startReadingComicButton.click();
+  }
+
+  /** Opens the PDF reader through the PDF's Start reading action. */
+  async startReadingPdf(): Promise<void> {
+    await this.startReadingPdfButton.click();
+  }
+
+  async checkInWhenAcquired(): Promise<void> {
+    await this.checkInWhenAcquiredButton.click();
+  }
+
   async openAuthor(name: string): Promise<void> {
     await this.authorLink(name).click();
   }
 
   async openSeries(series: string): Promise<void> {
     await this.seriesLink(series).click();
+  }
+
+  async openSeriesPage(): Promise<void> {
+    await this.seriesPageLink.click();
   }
 
   /**
@@ -293,6 +358,16 @@ export class BookDetailPage extends BasePage {
   async openSameHandBook(title: string): Promise<void> {
     await this.fromSameHandRow.hover();
     await this.fromSameHandTile(title).click();
+  }
+
+  async openEditMetadata(): Promise<void> {
+    await this.editMetadataLink.click();
+  }
+
+  /** Opens the picker from the More stop and waits for it to list shelves. */
+  async openShelfPicker(): Promise<void> {
+    await this.addToShelfButton.click();
+    await this.shelfPicker.root.waitFor();
   }
 
   /**
@@ -309,6 +384,15 @@ export class BookDetailPage extends BasePage {
     });
   }
 
+  /** Records the file name of every download the page starts from now on. */
+  recordDownloads(): string[] {
+    const names: string[] = [];
+    this.page.on("download", (download) =>
+      names.push(download.suggestedFilename()),
+    );
+    return names;
+  }
+
   /**
    * Answers the Kindle send with a task id and the status poll after it with
    * `outcome`, so no SMTP relay or Kindle address is needed.
@@ -319,25 +403,25 @@ export class BookDetailPage extends BasePage {
         ? route.fulfill({ json: 1 })
         : route.continue(),
     );
-    await this.page.route(kindleUrls.status, (route) =>
+    await this.page.route(kindleUrls.sendStatus, (route) =>
       route.request().method() === "POST"
         ? route.fulfill({ json: outcome })
         : route.continue(),
     );
   }
 
-  /** Holds the author fetch open until the returned function lets it go. */
+  /** Answers the panel's two on-mount reads, so a stub fixes what it settles on. */
+  async stubPhysicalLoad(
+    copies: CopyRow[],
+    wishlist: WishlistRow | null,
+  ): Promise<void> {
+    await this.physicalCopy.stubLoad(copies);
+    await this.wishlist.stubLoad(wishlist);
+  }
+
+  /** Holds the author fetch open until the returned release lets it through. */
   async holdAuthorFetch(): Promise<() => void> {
-    let release = () => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    // Web fetches the author through the server function, not the REST route.
-    await this.page.route("**/api/rpc/author", async (route) => {
-      await held;
-      await route.continue();
-    });
-    return release;
+    return holdRequests(this.page, authorBlockUrls.author);
   }
 
   /** Scrolls to `section` through its dot on the rail. */
@@ -374,10 +458,10 @@ export class BookDetailPage extends BasePage {
     await saved;
   }
 
-  /** Scrolls the flow until the new journal entry sits level with the rail. */
+  /** Scrolls the flow until the journal's new entry sits level with the rail. */
   async alignNewJournalEntryWithRail(): Promise<void> {
     const [entry, rail] = await Promise.all([
-      this.newJournalEntryButton.boundingBox(),
+      this.journal.newEntryButton.boundingBox(),
       this.sectionsNav.boundingBox(),
     ]);
     if (!entry || !rail) {
@@ -389,62 +473,8 @@ export class BookDetailPage extends BasePage {
     }, offset);
   }
 
-  /**
-   * Clicks the new journal entry 4px from its rail-side end with a real
-   * pointer, since `click()` would retry around anything covering the spot.
-   */
-  async openJournalComposerBesideRail(): Promise<void> {
-    const box = await this.newJournalEntryButton.boundingBox();
-    if (!box) {
-      throw new Error("the new journal entry must show");
-    }
-    await this.page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
-  }
-
-  async cancelJournalEntry(): Promise<void> {
-    await this.cancelJournalEntryButton.click();
-  }
-
   async backToBook(): Promise<void> {
     await this.backToBookButton.click();
-  }
-
-  /** Opens the reader through the EPUB format's Read action. */
-  async read(): Promise<void> {
-    await this.readButton.click();
-  }
-
-  /** Opens the reader with the book's audiobook docked beside it. */
-  async readImmersively(): Promise<void> {
-    await this.immersiveReadButton.click();
-  }
-
-  /** Opens the comic pager through the CBZ's Start reading action. */
-  async startReadingComic(): Promise<void> {
-    await this.startReadingComicButton.click();
-  }
-
-  /** Opens the PDF reader through the PDF's Start reading action. */
-  async startReadingPdf(): Promise<void> {
-    await this.startReadingPdfButton.click();
-  }
-
-  async checkInWhenAcquired(): Promise<void> {
-    await this.checkInWhenAcquiredButton.click();
-  }
-
-  /** Opens the remove dialog, with extra choices for a book's last copy. */
-  async openRemoveCopyDialog(): Promise<void> {
-    await this.removeCopyButton.click();
-  }
-
-  /** Deletes the last copy and its book, then waits for the book delete. */
-  async removeFromLibrary(): Promise<void> {
-    const removed = this.page.waitForResponse(
-      isPostTo(physicalUrls.deleteBook),
-    );
-    await this.removeFromLibraryButton.click();
-    await removed;
   }
 
   async flowScrollTop(): Promise<number> {
@@ -475,7 +505,11 @@ export class BookDetailPage extends BasePage {
 
   /** Checks the page is showing the book `bookUuid`, not just any book. */
   async assertDisplayedFor(bookUuid: string): Promise<void> {
-    await expect(this.page).toHaveURL(new RegExp(`/books/${bookUuid}$`));
-    await expect(this.titleHeading).toBeVisible();
+    await this.assertDisplayedAt(new RegExp(`/books/${bookUuid}$`));
+  }
+
+  /** Checks the page is a book's uuid route, whichever book, and not a numeric id. */
+  async assertDisplayedByUuid(): Promise<void> {
+    await this.assertDisplayedAt(/\/books\/[0-9a-fA-F-]{36}$/);
   }
 }

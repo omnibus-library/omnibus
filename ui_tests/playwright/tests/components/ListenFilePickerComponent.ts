@@ -1,4 +1,4 @@
-import type { Locator, Page, Request } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { audiobookUrls } from "../contracts/audiobooks";
 import { BaseComponent } from "./BaseComponent";
 
@@ -17,26 +17,25 @@ export class ListenFilePickerComponent extends BaseComponent {
     this.fileLinks = this.panel.getByRole("link");
   }
 
-  /** The link to one file, found by the id the server gave it. */
-  fileLink(fileId: number): Locator {
-    return this.panel.getByTestId(`listen-file-picker-item-${fileId}`);
+  /** The link to the file whose row reads `label`, such as `Part 1`. */
+  fileLink(label: string): Locator {
+    return this.fileLinks.filter({ hasText: label });
   }
 
   async open(): Promise<void> {
     await this.triggerButton.click();
   }
 
-  /**
-   * Waits for the player's manifest request; call it before `pick`. Bounded,
-   * so a pick that boots nothing fails in 10 s, not the slowed test's 180 s.
-   */
-  waitForManifest(): Promise<Request> {
-    return this.page.waitForRequest(audiobookUrls.manifest, {
-      timeout: 10_000,
-    });
+  async pick(label: string): Promise<void> {
+    await this.fileLink(label).click();
   }
 
-  async pick(fileId: number): Promise<void> {
-    await this.fileLink(fileId).click();
+  /** Records the URL of every manifest the player requests from now on. */
+  recordManifestRequests(): string[] {
+    const urls: string[] = [];
+    this.page.on("request", (request) => {
+      if (audiobookUrls.manifest.test(request.url())) urls.push(request.url());
+    });
+    return urls;
   }
 }

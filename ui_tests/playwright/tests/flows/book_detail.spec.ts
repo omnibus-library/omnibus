@@ -8,6 +8,7 @@ import {
   AUDIOBOOK_BOOK_COUNT,
   AUDIOBOOK_BOOKS,
   MERGE_ONLY_TITLES,
+  MERGE_SECONDARY,
 } from "../fixtures/audiobooks";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -61,6 +62,12 @@ const SOLO_MP3 = AUDIOBOOK_BOOKS.find(
     b.source === "generated" &&
     !MERGE_ONLY_TITLES.includes(b.title),
 )!;
+
+// The picker names a file by its label, else by its part number. The merge
+// pair's primary file has no label, and a merge labels the file it moves in
+// with its source book's title.
+const FIRST_PART = "Part 1";
+const SECOND_PART = MERGE_SECONDARY.title;
 
 test.describe("book detail page", () => {
   // Its groups share the admin's scroll stops preference and one book each,
@@ -125,8 +132,8 @@ test.describe("book detail page", () => {
     // Its contents depend on a Hardcover key and the external API, so only
     // the section and its heading are checked.
     await test.step("check the suggestions show", async () => {
-      await expect(bookDetailPage.suggestionsStrip).toBeAttached();
-      await expect(bookDetailPage.suggestionsHeading).toBeVisible();
+      await expect(bookDetailPage.suggestions.root).toBeAttached();
+      await expect(bookDetailPage.suggestions.heading).toBeVisible();
     });
   });
 
@@ -291,14 +298,14 @@ test.describe("book detail page", () => {
       await test.step("turn scroll stops on in settings", async () => {
         await settingsPage.goto("preferences");
         await settingsPage.markDocument();
-        await expectMutation(account.setScrollStops(true), () =>
-          settingsPage.toggleScrollStops(),
+        await expectMutation(account.scrollStops(true), () =>
+          settingsPage.account.toggleScrollStops(),
         );
       });
 
       await test.step("return to the book through the library", async () => {
         await settingsPage.topNav.openLibrary();
-        await libraryPage.openBookFromGrid(TARGET.title);
+        await libraryPage.openBook(TARGET.title);
       });
 
       // The save refreshes the app-wide viewer, so the marquee is already in
@@ -351,7 +358,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("turn scroll stops on from the toggle", async () => {
-        await expectMutation(account.setScrollStops(true), () =>
+        await expectMutation(account.scrollStops(true), () =>
           bookDetailPage.toggleScrollStops(),
         );
       });
@@ -377,7 +384,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("turn scroll stops back off from the toggle", async () => {
-        await expectMutation(account.setScrollStops(false), () =>
+        await expectMutation(account.scrollStops(false), () =>
           bookDetailPage.toggleScrollStops(),
         );
       });
@@ -408,11 +415,11 @@ test.describe("book detail page", () => {
 
       await test.step("open the book while saves fail", async () => {
         await bookDetailPage.goto(uuid);
-        await bookDetailPage.forceServerError(account.setScrollStops(true));
+        await bookDetailPage.forceServerError(account.scrollStops(true));
       });
 
       await test.step("turn scroll stops on from the toggle", async () => {
-        await expectMutation(failing(account.setScrollStops(true)), () =>
+        await expectMutation(failing(account.scrollStops(true)), () =>
           bookDetailPage.toggleScrollStops(),
         );
       });
@@ -548,7 +555,7 @@ test.describe("book detail page", () => {
 
       await test.step("open the book", async () => {
         await bookDetailPage.goto(uuid);
-        await expect(bookDetailPage.newJournalEntryButton).toBeVisible();
+        await expect(bookDetailPage.journal.newEntryButton).toBeVisible();
       });
 
       await test.step("scroll the new entry level with the rail", async () => {
@@ -556,11 +563,11 @@ test.describe("book detail page", () => {
       });
 
       await test.step("click the new entry at its rail side", async () => {
-        await bookDetailPage.openJournalComposerBesideRail();
+        await bookDetailPage.journal.clickNewEntryRailEnd();
       });
 
       await test.step("check the composer opens", async () => {
-        await expect(bookDetailPage.journalComposer).toBeVisible();
+        await expect(bookDetailPage.journal.composer).toBeVisible();
       });
     });
 
@@ -578,17 +585,17 @@ test.describe("book detail page", () => {
       await test.step("open the composer beside the rail", async () => {
         await bookDetailPage.goto(uuid);
         await bookDetailPage.alignNewJournalEntryWithRail();
-        await bookDetailPage.openJournalComposerBesideRail();
-        await expect(bookDetailPage.journalComposer).toBeVisible();
+        await bookDetailPage.journal.clickNewEntryRailEnd();
+        await expect(bookDetailPage.journal.composer).toBeVisible();
       });
 
       // Nothing was typed, so closing writes nothing.
       await test.step("cancel the entry", async () => {
-        await bookDetailPage.cancelJournalEntry();
+        await bookDetailPage.journal.closeEmptyComposer();
       });
 
       await test.step("check the composer closes", async () => {
-        await expect(bookDetailPage.journalComposer).toHaveCount(0);
+        await expect(bookDetailPage.journal.composer).toHaveCount(0);
       });
     });
   });
@@ -622,14 +629,16 @@ test.describe("book detail page", () => {
 
       await test.step("show the library as a table", async () => {
         await libraryPage.goto();
-        await libraryPage.switchToTableView();
-        await expect(libraryPage.bookTable).toBeVisible();
+        await libraryPage.table.switchTo();
+        await expect(libraryPage.table.root).toBeVisible();
       });
 
       // #2350: only the cover cell's link opens details, not the row itself.
       await test.step("open the book from its row", async () => {
-        await expect(libraryPage.tableDetailsLink(TARGET.title)).toBeVisible();
-        await libraryPage.openBookFromTable(TARGET.title);
+        await expect(
+          libraryPage.table.openLink(TARGET.slug, TARGET.title),
+        ).toBeVisible();
+        await libraryPage.table.openBook(TARGET.slug, TARGET.title);
       });
 
       await test.step("check the book shows", async () => {
@@ -646,10 +655,12 @@ test.describe("book detail page", () => {
 
       await test.step("open a book from the table view", async () => {
         await libraryPage.goto();
-        await libraryPage.switchToTableView();
-        await expect(libraryPage.bookTable).toBeVisible();
-        await expect(libraryPage.tableDetailsLink(TARGET.title)).toBeVisible();
-        await libraryPage.openBookFromTable(TARGET.title);
+        await libraryPage.table.switchTo();
+        await expect(libraryPage.table.root).toBeVisible();
+        await expect(
+          libraryPage.table.openLink(TARGET.slug, TARGET.title),
+        ).toBeVisible();
+        await libraryPage.table.openBook(TARGET.slug, TARGET.title);
         await bookDetailPage.assertDisplayedFor(uuid);
       });
 
@@ -659,7 +670,7 @@ test.describe("book detail page", () => {
 
       await test.step("check the library shows as a table", async () => {
         await libraryPage.assertDisplayed();
-        await expect(libraryPage.bookTable).toBeVisible();
+        await expect(libraryPage.table.root).toBeVisible();
       });
     });
 
@@ -680,7 +691,7 @@ test.describe("book detail page", () => {
 
       await test.step("check the library shows as a grid", async () => {
         await libraryPage.assertDisplayed();
-        await expect(libraryPage.bookGrid).toBeVisible();
+        await expect(libraryPage.grid).toBeVisible();
       });
     });
 
@@ -837,20 +848,21 @@ test.describe("book detail page", () => {
         await expect(epubRow.koboButton).toBeEnabled();
       });
 
-      const download = await test.step("send it to kobo", async () => {
-        const [file] = await Promise.all([
-          epubRow.waitForKoboDownload(),
-          epubRow.sendToKobo(),
-        ]);
-        return file;
+      const downloads = bookDetailPage.recordDownloads();
+
+      await test.step("send it to kobo", async () => {
+        await epubRow.sendToKobo();
       });
 
       // The stem is the book uuid, which the USB import relies on. The
       // extension is `.kepub.epub` when kepubify converts and `.epub` if not.
       await test.step("check the download is named by the uuid", async () => {
-        expect(download.suggestedFilename()).toMatch(
-          new RegExp(`^${uuid}\\.(kepub\\.)?epub$`),
-        );
+        await expect
+          .poll(() => downloads[0], {
+            message: "kobo download name",
+            timeout: 30_000,
+          })
+          .toMatch(new RegExp(`^${uuid}\\.(kepub\\.)?epub$`));
       });
     });
 
@@ -1017,7 +1029,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("open the book", async () => {
-        await bookDetailPage.gotoWhileLoading(uuid);
+        await bookDetailPage.gotoUnsettled(uuid);
       });
 
       await test.step("check the section says it is still looking", async () => {
@@ -1396,6 +1408,22 @@ test.describe("book detail page", () => {
         await expect(control.segmentButton("reading")).toHaveClass(/active/);
         await expect(control.metaText).toHaveText("Couldn't save — try again");
       });
+
+      await test.step("stop failing saves", async () => {
+        await bookDetailPage.stopForcingServerError(
+          readStatus.set(uuid, "finished"),
+        );
+      });
+
+      await test.step("mark it finished again", async () => {
+        await expectMutation(readStatus.set(uuid, "finished"), () =>
+          control.mark("finished"),
+        );
+      });
+
+      await test.step("check the control shows finished", async () => {
+        await expect(control.segmentButton("finished")).toHaveClass(/active/);
+      });
     });
   });
 
@@ -1476,6 +1504,7 @@ test.describe("book detail page", () => {
       bookDetailPage,
       request,
       highlightOn,
+      seededHighlightIds,
       expectMutation,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, PASSAGES_BOOK.title);
@@ -1495,6 +1524,19 @@ test.describe("book detail page", () => {
       // The row is only dropped once the server confirms.
       await test.step("check the passage is still listed", async () => {
         await expect(card.root).toHaveCount(1);
+      });
+
+      await test.step("stop failing deletes", async () => {
+        await bookDetailPage.stopForcingServerError(highlights.delete());
+      });
+
+      await test.step("delete the passage again", async () => {
+        await expectMutation(highlights.delete(), () => card.delete());
+        seededHighlightIds.delete(passage.id);
+      });
+
+      await test.step("check the passage is gone", async () => {
+        await expect(card.root).toHaveCount(0);
       });
     });
 
@@ -1717,10 +1759,7 @@ test.describe("book detail page", () => {
       bookDetailPage,
       mergedAudiobook,
     }) => {
-      const {
-        uuid,
-        audioFileIds: [firstFile],
-      } = mergedAudiobook;
+      const { uuid } = mergedAudiobook;
       const picker = bookDetailPage.listenFilePicker;
 
       await test.step("open the merged book", async () => {
@@ -1739,7 +1778,7 @@ test.describe("book detail page", () => {
       });
 
       await test.step("check it lists both files", async () => {
-        const firstLink = picker.fileLink(firstFile);
+        const firstLink = picker.fileLink(FIRST_PART);
         await expect(picker.heading).toHaveText("2 files · choose one");
         await expect(picker.fileLinks).toHaveCount(2);
         await expect(firstLink).toContainText("Audiobook ·");
@@ -1763,20 +1802,20 @@ test.describe("book detail page", () => {
         await picker.open();
       });
 
-      const manifest = await test.step("pick the second file", async () => {
-        const [request] = await Promise.all([
-          picker.waitForManifest(),
-          picker.pick(secondFile),
-        ]);
-        return request;
+      const manifests = picker.recordManifestRequests();
+
+      await test.step("pick the second file", async () => {
+        await picker.pick(SECOND_PART);
       });
 
       await test.step("check the player opens on that file", async () => {
-        expect(manifest.url()).toMatch(
-          new RegExp(
-            `/api/audiobooks/${uuid}/manifest\\?file_id=${secondFile}$`,
-          ),
-        );
+        await expect
+          .poll(() => manifests[0], { message: "the manifest the player read" })
+          .toMatch(
+            new RegExp(
+              `/api/audiobooks/${uuid}/manifest\\?file_id=${secondFile}$`,
+            ),
+          );
         await listenPage.assertDisplayedFor(uuid, secondFile);
       });
     });
@@ -1801,16 +1840,21 @@ test.describe("book detail page", () => {
         await bookDetailPage.markDocument();
       });
 
-      // The first manifest is awaited, so it cannot land after the second
-      // waiter is armed.
+      const manifests = picker.recordManifestRequests();
+
+      // The first part's manifest is in before the re-pick, so the last one
+      // recorded afterwards can only be the second part's.
       await test.step("play the first part", async () => {
         await picker.open();
-        await Promise.all([picker.waitForManifest(), picker.pick(firstFile)]);
+        await picker.pick(FIRST_PART);
         await listenPage.assertDisplayedFor(uuid, firstFile);
+        await expect
+          .poll(() => manifests.length, { message: "the first manifest" })
+          .toBeGreaterThan(0);
       });
 
       await test.step("go back to the book", async () => {
-        await listenPage.historyBack();
+        await bookDetailPage.goBack();
         await bookDetailPage.assertDisplayedFor(uuid);
       });
 
@@ -1818,20 +1862,20 @@ test.describe("book detail page", () => {
         await picker.open();
       });
 
-      const secondManifest =
-        await test.step("pick the second part", async () => {
-          const [request] = await Promise.all([
-            picker.waitForManifest(),
-            picker.pick(secondFile),
-          ]);
-          return request;
-        });
+      await test.step("pick the second part", async () => {
+        await picker.pick(SECOND_PART);
+      });
 
       await test.step("check the player reboots onto the second part", async () => {
-        expect(
-          new URL(secondManifest.url()).searchParams.get("file_id"),
-          "re-pick must reboot onto the second part",
-        ).toBe(String(secondFile));
+        await expect
+          .poll(() => manifests.at(-1), {
+            message: "re-pick must reboot onto the second part",
+          })
+          .toMatch(
+            new RegExp(
+              `/api/audiobooks/${uuid}/manifest\\?file_id=${secondFile}$`,
+            ),
+          );
       });
 
       await test.step("check the pages stayed in the app", async () => {

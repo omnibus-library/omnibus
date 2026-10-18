@@ -3,7 +3,6 @@ import { BookmarksDrawerComponent } from "../components/BookmarksDrawerComponent
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
 import { highlightsUrls } from "../contracts/highlights";
 import type { HighlightColor } from "../data/highlights";
-import { expect } from "../fixtures/test";
 import { isPostTo } from "../utils/api";
 import { PagedReaderPage } from "./PagedReaderPage";
 
@@ -171,12 +170,7 @@ export class PdfReaderPage extends PagedReaderPage {
     bookUuid: string,
     pageNumber?: number,
   ): Promise<void> {
-    const expectedPage = pageNumber === undefined ? null : String(pageNumber);
-    await expect(this.page).toHaveURL(
-      (url) =>
-        url.pathname === `/pdf/${bookUuid}` &&
-        url.searchParams.get("page") === expectedPage,
-    );
-    await expect(this.readyLocator).toBeVisible();
+    const query = pageNumber === undefined ? "" : `\\?page=${pageNumber}`;
+    await this.assertDisplayedAt(new RegExp(`/pdf/${bookUuid}${query}$`));
   }
 }

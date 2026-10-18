@@ -1,227 +1,313 @@
+import { shelves } from "../contracts/shelves";
+import { buildShelf } from "../data/shelves";
+import { uniqueSuffix } from "../data/unique";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { createShelf, openShelfFromIndex, shelfCard } from "../utils/shelves";
-import { createReader } from "../utils/users";
 
-// The `/shelves` index lists every shelf the viewer can see, grouped by owner.
-// The suite runs as an admin, who sees every shelf every parallel spec has
-// made — so each test asserts on its own shelves by id, and narrows the list
-// with a per-run stamp before asserting on a count.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-const filterInput = (page: import("@playwright/test").Page) =>
-  page.getByLabel("Filter shelves by name or owner");
-
-test("renders the shelves index layout", async ({ page }) => {
-  await gotoReady(page, "/shelves");
-
-  await expectNavVisible(page);
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Shelves" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("shelves-census")).toBeVisible();
-  await expect(page.getByTestId("new-shelf")).toBeVisible();
-  await expect(filterInput(page)).toBeVisible();
-  // The viewer's own shelves lead the page.
-  await expect(
-    page
-      .getByTestId(/^shelves-group-\d+$/)
-      .first()
-      .getByRole("heading"),
-  ).toHaveText("Your shelves");
-});
-
-test("reaches the index from the library's shelves row", async ({ page }) => {
-  // The library's shelf section is the only way in — the top nav has no
-  // Shelves link.
-  await gotoReady(page, "/");
-  await expect(
-    page
-      .getByRole("navigation", { name: "Primary" })
-      .getByRole("link", { name: "Shelves" }),
-  ).toHaveCount(0);
-
-  await page.getByTestId("gallery-all-shelves").click();
-  await expect(page).toHaveURL(/\/shelves$/);
-  await expect(page.getByTestId("shelves-index")).toBeVisible();
-});
-
-test("opens a shelf from its card", async ({ page, request }) => {
-  const name = `E2E Index Open ${Date.now()}`;
-  const id = await createShelf(request, { kind: "manual", name });
-
-  await openShelfFromIndex(page, id);
-
-  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
-});
-
-test("filters by name and offers a way back when nothing matches", async ({
-  page,
-  request,
-}) => {
-  const stamp = Date.now();
-  const findable = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Findable ${stamp}`,
-  });
-  const other = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Elsewhere ${stamp}`,
+// The admin sees every spec's shelves, so tests assert on their own by id.
+test.describe("shelves index", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  await gotoReady(page, "/shelves");
-  // Terms match independently and case-insensitively.
-  await filterInput(page).fill(`findable ${stamp}`);
-  await expect(shelfCard(page, findable)).toBeVisible();
-  await expect(shelfCard(page, other)).toHaveCount(0);
-  await expect(page.getByTestId(/^shelf-card-\d+$/)).toHaveCount(1);
+  test("show the shelves index layout", async ({ shelvesIndexPage }) => {
+    await test.step("open the index", async () => {
+      await shelvesIndexPage.goto();
+    });
 
-  await filterInput(page).fill(`nothing is called ${stamp}`);
-  await expect(page.getByTestId("shelves-empty")).toContainText(
-    "No shelves match",
-  );
-  await page.getByTestId("shelves-clear-filters").click();
-  await expect(filterInput(page)).toHaveValue("");
-  await expect(shelfCard(page, findable)).toBeVisible();
-});
-
-test("narrows the index to one kind of shelf", async ({ page, request }) => {
-  const id = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Kind ${Date.now()}`,
+    await test.step("check the index and its controls", async () => {
+      await shelvesIndexPage.assertDisplayed();
+      await shelvesIndexPage.topNav.assertDisplayed();
+      await expect(shelvesIndexPage.census).toBeVisible();
+      await expect(shelvesIndexPage.newShelfButton).toBeVisible();
+      await expect(shelvesIndexPage.filterField).toBeVisible();
+      // The viewer's own shelves lead the page.
+      await expect(shelvesIndexPage.firstGroupHeading).toHaveText(
+        "Your shelves",
+      );
+    });
   });
 
-  await gotoReady(page, "/shelves");
-  await expect(shelfCard(page, id)).toBeVisible();
+  // The library's shelf section is the only way in: the top nav has no Shelves link.
+  test("reach the index from the library's shelves row", async ({
+    libraryPage,
+    shelvesIndexPage,
+  }) => {
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
+      await expect(libraryPage.topNav.shelvesLink).toHaveCount(0);
+    });
 
-  await page.getByTestId("shelves-kind-wishlist").click();
-  await expect(page.getByTestId("shelves-kind-wishlist")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(shelfCard(page, id)).toHaveCount(0);
-  // Every account has a Wishlist, so the filter never empties the page.
-  await expect(page.getByTestId(/^shelf-card-\d+$/).first()).toContainText(
-    "Wishlist",
-  );
+    await test.step("follow All shelves", async () => {
+      await libraryPage.shelfGallery.openAllShelves();
+    });
 
-  await page.getByTestId("shelves-kind-manual").click();
-  await expect(shelfCard(page, id)).toBeVisible();
-});
-
-test("sorts by name or by size and remembers the choice", async ({
-  page,
-  request,
-}) => {
-  // Read-only fixture books: nothing here writes to them.
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const beta = await fetchBookUuidByTitle(request, "Beta in the Series");
-  const stamp = Date.now();
-  const small = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Sort A ${stamp}`,
-    book_uuids: [alpha],
-  });
-  const large = await createShelf(request, {
-    kind: "manual",
-    name: `E2E Sort B ${stamp}`,
-    book_uuids: [alpha, beta],
+    await test.step("check the index shows", async () => {
+      await shelvesIndexPage.assertDisplayed();
+      await expect(shelvesIndexPage.indexRoot).toBeVisible();
+    });
   });
 
-  await gotoReady(page, "/shelves");
-  await filterInput(page).fill(`${stamp}`);
-  const cards = page.getByTestId(/^shelf-card-\d+$/);
-  await expect(cards).toHaveCount(2);
-  await expect(cards.nth(0)).toHaveAttribute(
-    "data-testid",
-    `shelf-card-${small}`,
-  );
+  test("open a shelf from its card", async ({
+    shelvesIndexPage,
+    shelfPage,
+    ownShelf,
+  }) => {
+    const shelf = await ownShelf("E2E Index Open");
 
-  await page.getByTestId("shelves-sort-count").click();
-  await expect(cards.nth(0)).toHaveAttribute(
-    "data-testid",
-    `shelf-card-${large}`,
-  );
-  await expect(shelfCard(page, large)).toContainText("2 books");
+    await test.step("open the index", async () => {
+      await shelvesIndexPage.goto();
+    });
 
-  await page.reload();
-  await page.waitForLoadState("networkidle");
-  await expect(page.getByTestId("shelves-sort-count")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-});
+    await test.step("open the shelf's card", async () => {
+      await shelvesIndexPage.openShelf(shelf.id);
+    });
 
-test("groups another reader's shelves under their name and filters to them", async ({
-  page,
-  request,
-}) => {
-  const username = `e2e_shelf_owner_${Date.now()}`;
-  // A second owner on the index needs only the account, which comes with its
-  // public Wishlist shelf; nothing here signs in as them.
-  const readerId = await createReader(request, username, "shelf-owner-pw-0001");
-  try {
-    await gotoReady(page, "/shelves");
-    const group = page.getByTestId(`shelves-group-${readerId}`);
-    await expect(
-      group.getByRole("heading", { name: `${username}’s shelves` }),
-    ).toBeVisible();
-    await expect(group).toContainText(`${username}'s Wishlist`);
+    await test.step("check the shelf shows", async () => {
+      await shelfPage.assertDisplayedFor(shelf.id);
+      await expect(shelfPage.heading(shelf.name)).toBeVisible();
+    });
+  });
 
-    const chip = page.getByTestId(`shelves-owner-${readerId}`);
-    await chip.click();
-    await expect(chip).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId(/^shelves-group-\d+$/)).toHaveCount(1);
-    await expect(group).toBeVisible();
+  test.describe("filters", () => {
+    test("filter shelves by name", async ({ shelvesIndexPage, ownShelf }) => {
+      const findable = await ownShelf("E2E Findable");
+      const other = await ownShelf("E2E Elsewhere");
 
-    // Picking the same owner again widens back to everyone.
-    await chip.click();
-    await expect(page.getByTestId("shelves-owner-anyone")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await expect
-      .poll(async () => page.getByTestId(/^shelves-group-\d+$/).count())
-      .toBeGreaterThan(1);
-  } finally {
-    await request.delete(`/api/admin/users/${readerId}`);
-  }
-});
+      await test.step("open the index", async () => {
+        await shelvesIndexPage.goto();
+      });
 
-test("creates a shelf from the index and lands on it", async ({ page }) => {
-  await gotoReady(page, "/shelves");
+      // Terms match independently and case-insensitively.
+      await test.step("filter by the first shelf's name", async () => {
+        await shelvesIndexPage.filterBy(findable.name.toLowerCase());
+      });
 
-  await page.getByTestId("new-shelf").click();
-  const modal = page.getByTestId("create-shelf-modal");
-  await modal.getByRole("button", { name: /hand-picked/i }).click();
-  const name = `E2E Index Create ${Date.now()}`;
-  await modal.getByTestId("shelf-name-input").fill(name);
+      await test.step("check only that shelf shows", async () => {
+        await expect(shelvesIndexPage.shelfCard(findable.id)).toBeVisible();
+        await expect(shelvesIndexPage.shelfCard(other.id)).toHaveCount(0);
+        await expect(shelvesIndexPage.shelfCards).toHaveCount(1);
+      });
+    });
 
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/create", expectedStatus: 200 },
-    async () => modal.getByTestId("shelf-create-submit").click(),
-  );
+    test("offer a way back when nothing matches", async ({
+      shelvesIndexPage,
+      ownShelf,
+    }) => {
+      const shelf = await ownShelf("E2E Findable");
 
-  await expect(page).toHaveURL(/\/shelves\/\d+$/);
-  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
-});
+      await test.step("filter by a name no shelf has", async () => {
+        await shelvesIndexPage.goto();
+        await shelvesIndexPage.filterBy(`nothing is called ${shelf.name}`);
+        await expect(shelvesIndexPage.emptyMessage).toContainText(
+          "No shelves match",
+        );
+      });
 
-test("surfaces an error when the shelf list fails to load", async ({
-  page,
-}) => {
-  await page.route("**/api/rpc/shelves", (route) =>
-    route.fulfill({ status: 500, body: "boom" }),
-  );
+      await test.step("clear the filters", async () => {
+        await shelvesIndexPage.clearFilters();
+      });
 
-  await page.goto("/shelves");
+      await test.step("check the shelf is back", async () => {
+        await expect(shelvesIndexPage.filterField).toHaveValue("");
+        await expect(shelvesIndexPage.shelfCard(shelf.id)).toBeVisible();
+      });
+    });
 
-  await expect(page.getByRole("alert")).toBeVisible();
-  await expect(page.getByTestId("shelves-index")).toHaveCount(0);
+    test("narrow the index to one kind of shelf", async ({
+      shelvesIndexPage,
+      ownShelf,
+    }) => {
+      const shelf = await ownShelf("E2E Kind");
+
+      await test.step("open the index", async () => {
+        await shelvesIndexPage.goto();
+        await expect(shelvesIndexPage.shelfCard(shelf.id)).toBeVisible();
+      });
+
+      await test.step("narrow to wishlists", async () => {
+        await shelvesIndexPage.narrowToWishlists();
+      });
+
+      await test.step("check only wishlists show", async () => {
+        await expect(shelvesIndexPage.wishlistKindButton).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(shelvesIndexPage.shelfCard(shelf.id)).toHaveCount(0);
+        // Every account has a Wishlist, so the filter never empties the page.
+        await expect(shelvesIndexPage.firstShelfCard).toContainText("Wishlist");
+      });
+
+      await test.step("narrow to hand-picked shelves", async () => {
+        await shelvesIndexPage.narrowToHandPicked();
+        await expect(shelvesIndexPage.shelfCard(shelf.id)).toBeVisible();
+      });
+    });
+  });
+
+  test.describe("sorting", () => {
+    test("sort shelves by size", async ({
+      shelvesIndexPage,
+      ownShelf,
+      request,
+    }) => {
+      // Read-only fixture books: nothing here writes to them.
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const beta = await fetchBookUuidByTitle(request, "Beta in the Series");
+      const stamp = uniqueSuffix();
+      const small = await ownShelf(`E2E Sort A ${stamp}`, {
+        book_uuids: [alpha],
+      });
+      const large = await ownShelf(`E2E Sort B ${stamp}`, {
+        book_uuids: [alpha, beta],
+      });
+
+      await test.step("narrow the index to the two shelves", async () => {
+        await shelvesIndexPage.goto();
+        await shelvesIndexPage.filterBy(stamp);
+      });
+
+      await test.step("check they list by name", async () => {
+        await expect
+          .poll(() => shelvesIndexPage.shelfIds())
+          .toEqual([small.id, large.id]);
+      });
+
+      await test.step("sort by size", async () => {
+        await shelvesIndexPage.sortBySize();
+      });
+
+      await test.step("check the larger shelf leads", async () => {
+        await expect
+          .poll(() => shelvesIndexPage.shelfIds())
+          .toEqual([large.id, small.id]);
+        await expect(shelvesIndexPage.shelfCard(large.id)).toContainText(
+          "2 books",
+        );
+      });
+    });
+
+    test("remember the sort choice across a reload", async ({
+      shelvesIndexPage,
+    }) => {
+      await test.step("sort by size", async () => {
+        await shelvesIndexPage.goto();
+        await shelvesIndexPage.sortBySize();
+      });
+
+      await test.step("reload the index", async () => {
+        await shelvesIndexPage.reload();
+      });
+
+      await test.step("check the sort is still by size", async () => {
+        await expect(shelvesIndexPage.sortBySizeButton).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+    });
+  });
+
+  test.describe("owners", () => {
+    test("group another reader's shelves under their name", async ({
+      shelvesIndexPage,
+      readerAccount,
+    }) => {
+      const { id, username } = readerAccount;
+      // Their account brings a public Wishlist, which is all the index needs.
+      await test.step("open the index", async () => {
+        await shelvesIndexPage.goto();
+      });
+
+      await test.step("check the reader's group names them", async () => {
+        const heading = shelvesIndexPage.ownerGroupHeading(id);
+        await expect(heading).toBeVisible();
+        await expect(heading).toContainText(`${username}’s shelves`);
+        await expect(shelvesIndexPage.ownerGroup(id)).toContainText(
+          `${username}'s Wishlist`,
+        );
+      });
+    });
+
+    test("filter the index to one owner and widen back to everyone", async ({
+      shelvesIndexPage,
+      readerAccount,
+    }) => {
+      const { id } = readerAccount;
+
+      await test.step("pick the reader", async () => {
+        await shelvesIndexPage.goto();
+        await shelvesIndexPage.pickOwner(id);
+      });
+
+      await test.step("check only their group shows", async () => {
+        await expect(shelvesIndexPage.ownerChip(id)).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(shelvesIndexPage.shelfGroups).toHaveCount(1);
+        await expect(shelvesIndexPage.ownerGroup(id)).toBeVisible();
+      });
+
+      await test.step("pick the same reader again", async () => {
+        await shelvesIndexPage.pickOwner(id);
+      });
+
+      await test.step("check everyone shows", async () => {
+        await expect(shelvesIndexPage.everyoneChip).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect
+          .poll(() => shelvesIndexPage.groupCount())
+          .toBeGreaterThan(1);
+      });
+    });
+  });
+
+  test("create a shelf from the index", async ({
+    shelvesIndexPage,
+    shelfPage,
+    createdShelfIds,
+    expectMutation,
+  }) => {
+    const { name } = buildShelf("E2E Index Create");
+    const modal = shelvesIndexPage.createShelfModal;
+
+    await test.step("fill in the New shelf modal", async () => {
+      await shelvesIndexPage.goto();
+      await shelvesIndexPage.openNewShelf();
+      await modal.fillHandPickedShelf(name);
+    });
+
+    await test.step("create the shelf", async () => {
+      const { response } = await expectMutation(shelves.create(), () =>
+        modal.create(),
+      );
+      const { id }: { id: number } = await response.json();
+      createdShelfIds.add(id);
+    });
+
+    await test.step("check the new shelf's page shows", async () => {
+      await shelfPage.assertDisplayed();
+      await expect(shelfPage.heading(name)).toBeVisible();
+    });
+  });
+
+  test("surface an error when the shelf list fails to load", async ({
+    shelvesIndexPage,
+  }) => {
+    await test.step("fail the shelf list and open the index", async () => {
+      await shelvesIndexPage.forceServerError(shelves.list());
+      await shelvesIndexPage.gotoUnavailable();
+    });
+
+    await test.step("check the index says it failed", async () => {
+      await expect(shelvesIndexPage.errorAlert).toBeVisible();
+      await expect(shelvesIndexPage.indexRoot).toHaveCount(0);
+    });
+  });
 });

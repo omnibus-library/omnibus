@@ -1,701 +1,624 @@
-import type { APIRequestContext, Page } from "@playwright/test";
-
+import { shelves } from "../contracts/shelves";
+import { authorRule, buildShelfUpdate, smartShelfBy } from "../data/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { fetchBookUuidByTitle, switchToTableView } from "../utils/ebooks";
-import { gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { bookTile, withManualShelf } from "../utils/shelves";
 
-// The gallery filters the landing book list in place, so it needs the real
-// fixture library plus a manual shelf holding one distinct book. Alpha is
-// also used by shelves.spec.ts rail tests, but only ever read — no spec
-// mutates it, per the fixture-ownership rule.
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-});
-
-const createManualShelf = async (
-  request: APIRequestContext,
-  name: string,
-  bookUuids: string[],
-) => {
-  const resp = await request.post("/api/rpc/shelves/create", {
-    data: {
-      req: {
-        kind: "manual",
-        name,
-        description: null,
-        visibility: "private",
-        match_mode: null,
-        rules: [],
-        book_uuids: bookUuids,
-      },
-    },
+// Alpha and Beta are only read: they join shelves made here.
+test.describe("shelf gallery", () => {
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
-  expect(resp.status(), `POST /api/rpc/shelves/create failed for ${name}`).toBe(
-    200,
-  );
-  const shelf = (await resp.json()) as { id: number };
-  return shelf.id;
-};
 
-test("selects a shelf in place: glow moves, list filters, URL stays put", async ({
-  page,
-  request,
-}) => {
-  const alphaUuid = await fetchBookUuidByTitle(request, "Alpha");
-  const name = `E2E Gallery ${Date.now()}`;
-  const shelfId = await createManualShelf(request, name, [alphaUuid]);
+  test.describe("selecting", () => {
+    test("select a shelf in place: the glow moves, the list filters, the URL stays put", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Gallery", { book_uuids: [alpha] });
+      const gallery = libraryPage.shelfGallery;
+      const tile = libraryPage.galleryShelfTile(shelf.id);
 
-  await gotoReady(page, "/");
-  await switchToTableView(page);
+      await test.step("open the library as a table", async () => {
+        await libraryPage.goto();
+        await libraryPage.table.switchTo();
+        await expect(gallery.allBooksTile).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(tile).toBeVisible();
+      });
 
-  // All Books glows (is selected) by default.
-  await expect(page.getByTestId("gallery-all-books")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+      // The member fetch is a server-fn POST, so awaiting it lands the list swap.
+      await test.step("select the shelf", async () => {
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+      });
 
-  const tile = page.getByTestId(`gallery-shelf-${shelfId}`);
-  await expect(tile).toBeVisible();
-  // The member fetch is a server-fn POST, so await it like a mutation to
-  // guarantee the list swap has landed before asserting UI state.
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
-    async () => tile.click(),
-  );
+      await test.step("check the glow moved and the list filtered", async () => {
+        await expect(tile).toHaveAttribute("aria-pressed", "true");
+        await expect(gallery.allBooksTile).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+        await expect(libraryPage.sectionTitle).toContainText(shelf.name);
+        // The count comes from the member list the grid renders, never a stale aggregate (#2255).
+        await expect(libraryPage.sectionTitle).toContainText(/\b1 book\b/);
+        await expect(libraryPage.table.rows).toHaveCount(1);
+        await expect(libraryPage.table.root).toContainText("Alpha");
+        await libraryPage.assertDisplayed();
+      });
+    });
 
-  await expect(tile).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("gallery-all-books")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  await expect(page.getByTestId("lib-section-title")).toContainText(name);
-  // The header count comes from the member list the grid is rendering, so it
-  // can't report a stale membership aggregate (#2255).
-  await expect(page.getByTestId("lib-section-title")).toContainText(
-    /\b1 book\b/,
-  );
-  // Only the shelf member renders; selection filtered in place (no navigation).
-  await expect(page.getByTestId(/^ebook-row-/)).toHaveCount(1);
-  await expect(page.getByTestId("ebook-table")).toContainText("Alpha");
-  expect(new URL(page.url()).pathname).toBe("/");
-});
+    test("persist the selected shelf across a reload", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Gallery Persist", {
+        book_uuids: [alpha],
+      });
+      const tile = libraryPage.galleryShelfTile(shelf.id);
 
-test("persists the selected shelf across a reload", async ({
-  page,
-  request,
-}) => {
-  const alphaUuid = await fetchBookUuidByTitle(request, "Alpha");
-  const name = `E2E Gallery Persist ${Date.now()}`;
-  const shelfId = await createManualShelf(request, name, [alphaUuid]);
+      await test.step("select the shelf", async () => {
+        await libraryPage.goto();
+        await libraryPage.table.switchTo();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+        await expect(tile).toHaveAttribute("aria-pressed", "true");
+      });
 
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-  const tile = page.getByTestId(`gallery-shelf-${shelfId}`);
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
-    async () => tile.click(),
-  );
-  await expect(tile).toHaveAttribute("aria-pressed", "true");
+      // The saved pick reconciles after mount (rule 07) and refires the member fetch.
+      await test.step("reload the library", async () => {
+        await expectMutation(shelves.page(), () => libraryPage.reload());
+      });
 
-  // The persisted pick reconciles post-mount (rule 07) and refires the
-  // member fetch — await it so the assertions can't race the list swap.
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
-    async () => page.reload(),
-  );
+      await test.step("check the shelf is still selected", async () => {
+        await expect(tile).toHaveAttribute("aria-pressed", "true");
+        await expect(libraryPage.sectionTitle).toContainText(shelf.name);
+        await expect(libraryPage.table.rows).toHaveCount(1);
+      });
+    });
 
-  await expect(page.getByTestId(`gallery-shelf-${shelfId}`)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(page.getByTestId("lib-section-title")).toContainText(name);
-  await expect(page.getByTestId(/^ebook-row-/)).toHaveCount(1);
-});
+    test("return to All Books and restore the full library", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Gallery Back", {
+        book_uuids: [alpha],
+      });
 
-test("returns to All Books and restores the full library", async ({
-  page,
-  request,
-}) => {
-  const alphaUuid = await fetchBookUuidByTitle(request, "Alpha");
-  const name = `E2E Gallery Back ${Date.now()}`;
-  const shelfId = await createManualShelf(request, name, [alphaUuid]);
+      await test.step("select the shelf", async () => {
+        await libraryPage.goto();
+        await libraryPage.table.switchTo();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+        await expect(libraryPage.table.rows).toHaveCount(1);
+      });
 
-  await gotoReady(page, "/");
-  await switchToTableView(page);
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
-    async () => page.getByTestId(`gallery-shelf-${shelfId}`).click(),
-  );
-  await expect(page.getByTestId(/^ebook-row-/)).toHaveCount(1);
+      await test.step("select All Books", async () => {
+        await libraryPage.shelfGallery.selectAllBooks();
+      });
 
-  await page.getByTestId("gallery-all-books").click();
+      await test.step("check the full library is back", async () => {
+        await expect(libraryPage.shelfGallery.allBooksTile).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(libraryPage.sectionTitle).toContainText("All Books");
+        await expect
+          .poll(() => libraryPage.table.rows.count())
+          .toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
+      });
+    });
 
-  await expect(page.getByTestId("gallery-all-books")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(page.getByTestId("lib-section-title")).toContainText(
-    "All Books",
-  );
-  await expect
-    .poll(async () => page.getByTestId(/^ebook-row-/).count())
-    .toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
-});
+    // The wording must not claim a format the shelf isn't restricted to (#2253).
+    test("say an empty shelf is empty, not that a search found nothing", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      const shelf = await ownShelf("E2E Gallery Empty");
 
-test("an empty shelf says it is empty, not that a search found nothing", async ({
-  page,
-  request,
-}) => {
-  // A shelf of its own, created empty — nothing shared is mutated, and the
-  // wording must not claim a format the shelf isn't restricted to (#2253).
-  const name = `E2E Gallery Empty ${Date.now()}`;
-  const shelfId = await createManualShelf(request, name, []);
+      await test.step("select the empty shelf", async () => {
+        await libraryPage.goto();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+      });
 
-  await gotoReady(page, "/");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
-    async () => page.getByTestId(`gallery-shelf-${shelfId}`).click(),
-  );
+      await test.step("check the library says the shelf is empty", async () => {
+        await expect(libraryPage.sectionTitle).toContainText(shelf.name);
+        await expect(libraryPage.sectionTitle).toContainText(/\b0 books\b/);
+        await expect(libraryPage.emptyMessage).toHaveText(
+          "No books in this shelf.",
+        );
+        await expect(libraryPage.pageError).toHaveCount(0);
+      });
+    });
+  });
 
-  await expect(page.getByTestId("lib-section-title")).toContainText(name);
-  await expect(page.getByTestId("lib-section-title")).toContainText(
-    /\b0 books\b/,
-  );
-  await expect(page.getByTestId("lib-empty")).toHaveText(
-    "No books in this shelf.",
-  );
-  await expect(page.getByTestId("lib-page-error")).toHaveCount(0);
-});
+  test.describe("adding books", () => {
+    test("add books to a hand-picked shelf from the landing header", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Gallery Add");
+      const picker = libraryPage.addBooksModal;
 
-/** Pick `shelfId` in the gallery and wait for its members to land. */
-const selectShelf = async (page: Page, shelfId: number) =>
-  expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
-    async () => page.getByTestId(`gallery-shelf-${shelfId}`).click(),
-  );
+      await test.step("select the empty shelf", async () => {
+        await libraryPage.goto();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+        await expect(libraryPage.emptyMessage).toBeVisible();
+      });
 
-test("adds books to a hand-picked shelf from the landing header", async ({
-  page,
-  request,
-}) => {
-  // Alpha is only read here: it joins a shelf this test made.
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const name = `E2E Gallery Add ${Date.now()}`;
-  const shelfId = await createManualShelf(request, name, []);
+      // The button is aria-disabled until the members are known, which the click waits out.
+      await test.step("pick a book in the picker", async () => {
+        await libraryPage.openAddBooks();
+        await expect(picker.heading(shelf.name)).toBeVisible();
+        await picker.search("Alpha");
+        await picker.pick(alpha);
+      });
 
-  await gotoReady(page, "/");
-  await selectShelf(page, shelfId);
-  await expect(page.getByTestId("lib-empty")).toBeVisible();
+      await test.step("add it", async () => {
+        await expectMutation(shelves.addBooks(shelf.id, [alpha]), () =>
+          picker.submit(),
+        );
+      });
 
-  // Aria-disabled until the members are known, which the click waits out.
-  await page.getByTestId("shelf-add-books").click();
-  const modal = page.getByTestId("add-books-modal");
-  await expect(modal.getByRole("heading", { level: 2, name })).toBeVisible();
-  await modal.getByTestId("add-books-search").fill("Alpha");
-  await modal.getByTestId(`picker-tile-${alpha}`).click();
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/shelves/add-books",
-      expectedBody: { id: shelfId, book_uuids: [alpha] },
-      expectedStatus: 200,
-    },
-    async () => modal.getByTestId("add-books-submit").click(),
-  );
+      await test.step("check the shelf lists it", async () => {
+        await expect(picker.root).toHaveCount(0);
+        await expect(libraryPage.bookTile("Alpha")).toBeVisible();
+        await expect(libraryPage.sectionTitle).toContainText(/\b1 book\b/);
+      });
+    });
 
-  await expect(modal).toHaveCount(0);
-  await expect(bookTile(page, "Alpha")).toBeVisible();
-  await expect(page.getByTestId("lib-section-title")).toContainText(
-    /\b1 book\b/,
-  );
-});
+    test("keep the shelf unchanged when adding books from the landing header fails", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Gallery Add Fail");
+      const picker = libraryPage.addBooksModal;
 
-test("keeps the shelf unchanged when adding books from the landing header fails", async ({
-  page,
-  request,
-}) => {
-  // Alpha is only read here: it would only join a shelf this test made.
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  await withManualShelf(
-    request,
-    "E2E Gallery Add Fail",
-    async ({ id: shelfId }) => {
-      await gotoReady(page, "/");
-      await selectShelf(page, shelfId);
-      await expect(page.getByTestId("lib-empty")).toBeVisible();
+      await test.step("pick a book in the picker", async () => {
+        await libraryPage.goto();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+        await expect(libraryPage.emptyMessage).toBeVisible();
+        await libraryPage.openAddBooks();
+        await picker.search("Alpha");
+        await picker.pick(alpha);
+      });
 
-      await page.getByTestId("shelf-add-books").click();
-      const modal = page.getByTestId("add-books-modal");
-      await modal.getByTestId("add-books-search").fill("Alpha");
-      await modal.getByTestId(`picker-tile-${alpha}`).click();
-
-      await page.route("**/api/rpc/shelves/add-books", (route) =>
-        route.fulfill({
-          status: 500,
-          contentType: "text/plain",
-          body: "forced failure",
-        }),
-      );
-      await expectMutation(
-        page,
-        {
-          method: "POST",
-          url: "/api/rpc/shelves/add-books",
-          expectedBody: { id: shelfId, book_uuids: [alpha] },
-          expectedStatus: 500,
-        },
-        async () => modal.getByTestId("add-books-submit").click(),
-      );
-      await page.unroute("**/api/rpc/shelves/add-books");
+      await test.step("add it", async () => {
+        await libraryPage.forceServerError(shelves.addBooks());
+        await expectMutation(failing(shelves.addBooks(shelf.id, [alpha])), () =>
+          picker.submit(),
+        );
+      });
 
       // The modal keeps the pick and says why; the shelf behind it is still empty.
-      await expect(page.getByTestId("add-books-error")).toBeVisible();
-      await expect(modal).toBeVisible();
+      await test.step("check the picker says it failed", async () => {
+        await expect(picker.errorMessage).toBeVisible();
+        await expect(picker.root).toBeVisible();
+      });
 
-      await modal.getByTestId("add-books-close").click();
-      await expect(modal).toHaveCount(0);
-      await expect(page.getByTestId("lib-empty")).toBeVisible();
-      await expect(page.getByTestId("lib-section-title")).toContainText(
-        /\b0 books\b/,
-      );
-    },
-  );
-});
+      await test.step("close the picker", async () => {
+        await picker.close();
+      });
 
-test("a hand-picked shelf's grid ends in an Add books tile", async ({
-  page,
-  request,
-}) => {
-  // Both books are only read: they join a shelf this test made.
-  const alpha = await fetchBookUuidByTitle(request, "Alpha");
-  const beta = await fetchBookUuidByTitle(request, "Beta in the Series");
-  const name = `E2E Gallery Add Tile ${Date.now()}`;
-  const shelfId = await createManualShelf(request, name, [beta]);
+      await test.step("check the shelf is still empty", async () => {
+        await expect(picker.root).toHaveCount(0);
+        await expect(libraryPage.emptyMessage).toBeVisible();
+        await expect(libraryPage.sectionTitle).toContainText(/\b0 books\b/);
+      });
+    });
 
-  await gotoReady(page, "/");
-  await selectShelf(page, shelfId);
+    test("add books from the tile that closes a hand-picked shelf's grid", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+      request,
+    }) => {
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const beta = await fetchBookUuidByTitle(request, "Beta in the Series");
+      const shelf = await ownShelf("E2E Gallery Add Tile", {
+        book_uuids: [beta],
+      });
+      const picker = libraryPage.addBooksModal;
 
-  const grid = page.getByTestId("lib-grid");
-  const tile = grid.getByTestId("shelf-add-tile");
-  // The tile closes the shelf, after its last book.
-  await expect(grid.locator(":scope > *").last()).toHaveAttribute(
-    "data-testid",
-    "shelf-add-tile",
-  );
-  await tile.click();
+      await test.step("select the shelf", async () => {
+        await libraryPage.goto();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+      });
 
-  // The same picker, already knowing what the shelf holds.
-  const modal = page.getByTestId("add-books-modal");
-  await expect(modal.getByRole("heading", { level: 2, name })).toBeVisible();
-  await modal.getByTestId("add-books-search").fill("Beta");
-  await expect(modal.getByTestId(`picker-tile-${beta}`)).toContainText(
-    "On this shelf",
-  );
-  await modal.getByTestId("add-books-search").fill("Alpha");
-  await modal.getByTestId(`picker-tile-${alpha}`).click();
+      await test.step("check the Add books tile closes the grid", async () => {
+        await expect(libraryPage.lastBookGridItem).toHaveAttribute(
+          "data-testid",
+          "shelf-add-tile",
+        );
+      });
 
-  // Hold the member refetch the add triggers.
-  let release = () => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route("**/api/rpc/shelves/page", async (route) => {
-    await held;
-    await route.continue();
-  });
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/shelves/add-books",
-      expectedBody: { id: shelfId, book_uuids: [alpha] },
-      expectedStatus: 200,
-    },
-    async () => modal.getByTestId("add-books-submit").click(),
-  );
+      await test.step("open the picker from the tile", async () => {
+        await libraryPage.openAddBooksFromTile();
+        // The same picker, already knowing what the shelf holds.
+        await expect(picker.heading(shelf.name)).toBeVisible();
+        await picker.search("Beta");
+        await expect(picker.tile(beta)).toContainText("On this shelf");
+        await picker.search("Alpha");
+        await picker.pick(alpha);
+      });
 
-  // Meanwhile the grid keeps its books, but the stale list can't feed the
-  // picker: the button waits and the tile steps aside.
-  await expect(modal).toHaveCount(0);
-  await expect(bookTile(page, "Beta in the Series")).toBeVisible();
-  await expect(page.getByTestId("lib-loading")).toHaveCount(0);
-  await expect(page.getByTestId("shelf-add-books")).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  await expect(tile).toHaveCount(0);
-
-  release();
-  await expect(bookTile(page, "Alpha")).toBeVisible();
-  await expect(bookTile(page, "Beta in the Series")).toBeVisible();
-  await expect(page.getByTestId("shelf-add-books")).toHaveAttribute(
-    "aria-disabled",
-    "false",
-  );
-  await expect(grid.locator(":scope > *").last()).toHaveAttribute(
-    "data-testid",
-    "shelf-add-tile",
-  );
-});
-
-test("edits the selected shelf from the landing header pencil", async ({
-  page,
-  request,
-}) => {
-  // A smart shelf so the facet row has a rule chip to assert. The author
-  // rule only reads fixture books — nothing here mutates a shared fixture.
-  const name = `E2E Gallery Edit ${Date.now()}`;
-  const createResp = await request.post("/api/rpc/shelves/create", {
-    data: {
-      req: {
-        kind: "smart",
-        name,
-        description: null,
-        visibility: "private",
-        match_mode: "any",
-        rules: [{ field: "author", op: "is", value: "Ada Lovelace" }],
-        book_uuids: [],
-      },
-    },
-  });
-  expect(createResp.status(), "POST /api/rpc/shelves/create failed").toBe(200);
-  const shelf = (await createResp.json()) as { id: number };
-
-  await gotoReady(page, "/");
-  await expectMutation(
-    page,
-    { method: "POST", url: "/api/rpc/shelves/page", expectedStatus: 200 },
-    async () => page.getByTestId(`gallery-shelf-${shelf.id}`).click(),
-  );
-
-  // Facet row under the section title states the kind, visibility, and the
-  // rule query once the full-shelf fetch lands.
-  const facets = page.getByTestId("shelf-facets");
-  await expect(facets).toContainText("Smart shelf");
-  await expect(facets).toContainText("Private");
-  await expect(facets).toContainText("Author is Ada Lovelace");
-
-  await page.getByTestId("shelf-edit").click();
-  const modal = page.getByTestId("edit-shelf-modal");
-  await expect(modal.getByTestId("edit-shelf-name")).toHaveValue(name);
-
-  const renamed = `${name} v2`;
-  await modal.getByTestId("edit-shelf-name").fill(renamed);
-  await modal.getByTestId("shelf-vis-public").click();
-
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/shelves/update",
-      expectedBody: {
-        id: shelf.id,
-        req: {
-          name: renamed,
-          description: null,
-          visibility: "public",
-          match_mode: "any",
-          rules: [{ field: "author", op: "is", value: "Ada Lovelace" }],
-          sync_to_kobo: false,
-        },
-      },
-      expectedStatus: 200,
-    },
-    async () => modal.getByTestId("edit-shelf-save").click(),
-  );
-
-  await expect(modal).not.toBeVisible();
-  await expect(page.getByTestId("lib-section-title")).toContainText(renamed);
-  await expect(facets).toContainText("Public");
-  // A smart shelf's members come from its rules, so nothing offers to add.
-  await expect(page.getByTestId("shelf-add-books")).toHaveCount(0);
-});
-
-/**
- * Write an epub position for `uuid`, then load the landing page — repeating
- * until that book's hero card is on the rail.
- *
- * The rail is `recent_progress`: the five newest positions ordered by
- * `COALESCE(client_updated_at, updated_at) DESC, book_uuid`. That timestamp
- * has **second** granularity, so every progress write landing in the same
- * second ties and is ordered by uuid instead — and the suite is
- * `fullyParallel` against one server, with a dozen specs opening readers and
- * players. A book seeded once can therefore be ordered off the end of the
- * rail by uuid alone, with nothing wrong on either side.
- *
- * Re-seeding on each attempt is what converges: a later second breaks the tie
- * in this book's favour.
- */
-async function seedProgressAndOpenLanding(
-  page: import("@playwright/test").Page,
-  request: import("@playwright/test").APIRequestContext,
-  uuid: string,
-): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const resp = await request.post("/api/progress", {
-          data: {
-            book_uuid: uuid,
-            format: "epub",
-            epub_cfi: "epubcfi(/6/4!/4/2/2[c01]/2/1:0)",
-          },
+      const release =
+        await test.step("add a book while the member refetch is held", async () => {
+          const release = await libraryPage.filterBar.holdShelfReads();
+          await expectMutation(shelves.addBooks(shelf.id, [alpha]), () =>
+            picker.submit(),
+          );
+          return release;
         });
-        expect(resp.status(), "POST /api/progress failed").toBe(200);
-        await gotoReady(page, "/");
-        return page.getByTestId(`hero-resume-${uuid}`).count();
-      },
-      {
-        timeout: 30_000,
-        message: `book ${uuid} never reached the continue-reading stack`,
-      },
-    )
-    .toBeGreaterThan(0);
-}
 
-test("shows the continue-reading stack once a book has progress", async ({
-  page,
-  request,
-}) => {
-  // `standalone-mountain` is reserved for this test and read by no other
-  // spec. It used to use Alpha, which `merge.spec.ts` merges an audiobook
-  // into and then undoes — mutating that book's formats and its
-  // `reading_progress` rows mid-suite. `merge.spec.ts` takes `withLock`, but
-  // that only serializes writers; a reader like this one is unprotected, so
-  // the rail could be asserted against Alpha mid-merge.
-  const uuid = await fetchBookUuidByTitle(request, "Berg der Beweise");
-  await seedProgressAndOpenLanding(page, request, uuid);
+      // The grid keeps its books, but the stale list can't feed the picker.
+      await test.step("check Add books waits for the refetch", async () => {
+        await expect(picker.root).toHaveCount(0);
+        await expect(libraryPage.bookTile("Beta in the Series")).toBeVisible();
+        await expect(libraryPage.loading).toHaveCount(0);
+        await expect(libraryPage.shelfAddBooksButton).toHaveAttribute(
+          "aria-disabled",
+          "true",
+        );
+        await expect(libraryPage.shelfAddBooksTile).toHaveCount(0);
+      });
 
-  await expect(page.getByTestId("continue-stack")).toBeVisible();
-  const card = page.getByTestId(`hero-resume-${uuid}`);
-  await expect(card).toBeVisible();
-  // Every card in the fan keeps a real href to its own resume route, whether
-  // or not it is the one out front — that is what preserves middle-click and
-  // open-in-new-tab on the resume affordance.
-  await expect(card).toHaveAttribute("href", `/read/${uuid}`);
-});
+      await test.step("release the refetch", async () => {
+        await release();
+      });
 
-test("drops a book from the continue-reading stack once it is finished", async ({
-  page,
-  request,
-}) => {
-  // `standalone-desert` is reserved for this test and read by no other spec.
-  // Read status is per-(user, book) server state and the suite is
-  // fullyParallel against one server, so marking a book finished is globally
-  // visible the moment it lands — and now also takes it off the rail.
-  const uuid = await fetchBookUuidByTitle(request, "Desert Protocols");
-
-  // Explicitly `reading` rather than relying on the absent-row default, and
-  // set *before* the rail is polled: this test's own last act is to mark the
-  // book finished, and that state outlives the run against the shared dev
-  // server. Without the reset a second run would fail on the state the first
-  // one left — and the filter under test would keep it off the rail forever.
-  const reading = await request.put("/api/read-status", {
-    data: { book_uuid: uuid, status: "reading" },
+      await test.step("check the grid lists both books and the tile is back", async () => {
+        await expect(libraryPage.bookTile("Alpha")).toBeVisible();
+        await expect(libraryPage.bookTile("Beta in the Series")).toBeVisible();
+        await expect(libraryPage.shelfAddBooksButton).toHaveAttribute(
+          "aria-disabled",
+          "false",
+        );
+        await expect(libraryPage.lastBookGridItem).toHaveAttribute(
+          "data-testid",
+          "shelf-add-tile",
+        );
+      });
+    });
   });
-  expect(reading.status(), "PUT /api/read-status failed").toBe(200);
 
-  await seedProgressAndOpenLanding(page, request, uuid);
-  await expect(page.getByTestId(`hero-resume-${uuid}`)).toBeVisible();
+  test.describe("editing", () => {
+    // The author rule only reads fixture books, so nothing here mutates one.
+    test("edit the selected shelf from the landing header pencil", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      const shelf = await ownShelf(
+        "E2E Gallery Edit",
+        smartShelfBy("Ada Lovelace"),
+      );
+      const renamed = `${shelf.name} v2`;
+      const editor = libraryPage.editShelfModal;
 
-  const finished = await request.put("/api/read-status", {
-    data: { book_uuid: uuid, status: "finished" },
+      // The facet row states the kind, visibility and rule once the full shelf lands.
+      await test.step("select the shelf", async () => {
+        await libraryPage.goto();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+        await expect(libraryPage.shelfFacets).toContainText("Smart shelf");
+        await expect(libraryPage.shelfFacets).toContainText("Private");
+        await expect(libraryPage.shelfFacets).toContainText(
+          "Author is Ada Lovelace",
+        );
+      });
+
+      await test.step("rename it and make it public in the editor", async () => {
+        await libraryPage.openEditShelf();
+        await expect(editor.nameField).toHaveValue(shelf.name);
+        await editor.rename(renamed);
+        await editor.makePublic();
+      });
+
+      await test.step("save it", async () => {
+        await expectMutation(
+          shelves.update(
+            shelf.id,
+            buildShelfUpdate({
+              name: renamed,
+              visibility: "public",
+              match_mode: "any",
+              rules: [authorRule("Ada Lovelace")],
+            }),
+          ),
+          () => editor.save(),
+        );
+      });
+
+      await test.step("check the header shows the edit", async () => {
+        await expect(editor.root).not.toBeVisible();
+        await expect(libraryPage.sectionTitle).toContainText(renamed);
+        await expect(libraryPage.shelfFacets).toContainText("Public");
+        // A smart shelf's members come from its rules, so nothing offers to add.
+        await expect(libraryPage.shelfAddBooksButton).toHaveCount(0);
+      });
+    });
   });
-  expect(finished.status(), "PUT /api/read-status failed").toBe(200);
 
-  await gotoReady(page, "/");
-  // Anchor on a landing element that is always present: the stack hides
-  // itself when it has no cards, and whether it has others depends on specs
-  // running in parallel — so asserting the page rendered has to come from
-  // elsewhere, or a card missing because nothing loaded would read as a pass.
-  await expect(page.getByTestId("lib-section-title")).toBeVisible();
-  await expect(page.getByTestId(`hero-resume-${uuid}`)).toBeHidden();
-});
+  test.describe("shelves row", () => {
+    test("page the shelves row and arm only the end with more", async ({
+      libraryPage,
+      ownShelf,
+    }) => {
+      const gallery = libraryPage.shelfGallery;
 
-test("the shelves row pages horizontally and arms only the end with more", async ({
-  page,
-  request,
-}) => {
-  // Enough shelves to overflow the row at any sane viewport. They are this
-  // test's own, created per-run, so nothing else reads them. Names are unique
-  // per owner, and two workers can start this test in the same millisecond.
-  const stamp = `${Date.now()}-${test.info().workerIndex}`;
-  for (let i = 0; i < 8; i++) {
-    await createManualShelf(request, `E2E Paging ${stamp}-${i}`, []);
-  }
-  await gotoReady(page, "/");
+      // Enough shelves to overflow the row at any sane viewport.
+      await test.step("make shelves enough to overflow the row", async () => {
+        for (let shelf = 0; shelf < 8; shelf++) {
+          await ownShelf(`E2E Paging ${shelf}`);
+        }
+        await libraryPage.goto();
+      });
 
-  const row = page.getByTestId("shelf-gallery").locator("#lmq-shelf-row");
-  const prev = page.getByTestId("shelf-row-prev");
-  const next = page.getByTestId("shelf-row-next");
+      // `marquee.js` toggles the `on` class and the tabindex together.
+      await test.step("check only the forward arrow is armed", async () => {
+        await expect(gallery.nextArrow).toHaveClass(/\bon\b/);
+        await expect(gallery.previousArrow).not.toHaveClass(/\bon\b/);
+        await expect(gallery.previousArrow).toHaveAttribute("tabindex", "-1");
+      });
 
-  // At the left end only the forward arrow is armed. `marquee.js` toggles the
-  // `on` class and the tabindex together, so an un-armed arrow is also out of
-  // the tab order rather than a focusable no-op.
-  await expect(next).toHaveClass(/\bon\b/);
-  await expect(prev).not.toHaveClass(/\bon\b/);
-  await expect(prev).toHaveAttribute("tabindex", "-1");
+      // The nudge is a smooth scroll, so poll rather than read the click's frame.
+      await test.step("page forward", async () => {
+        await gallery.pageForward();
+        await expect
+          .poll(() => gallery.scrollLeft(), { timeout: 5_000 })
+          .toBeGreaterThan(0);
+        await expect(gallery.previousArrow).toHaveClass(/\bon\b/);
+        await expect(gallery.previousArrow).toHaveAttribute("tabindex", "0");
+      });
 
-  await next.click();
-  // The nudge is a smooth scroll, so poll rather than asserting the frame
-  // the click returned on.
-  await expect
-    .poll(async () => row.evaluate((n) => n.scrollLeft), { timeout: 5_000 })
-    .toBeGreaterThan(0);
-  await expect(prev).toHaveClass(/\bon\b/);
-  await expect(prev).toHaveAttribute("tabindex", "0");
+      // The row snaps: a plain `scrollBy` back once settled on the first shelf, All Books' width short.
+      await test.step("page back to the start", async () => {
+        await gallery.pageBack();
+        await expect
+          .poll(() => gallery.scrollLeft(), { timeout: 5_000 })
+          .toBe(0);
+        await expect(gallery.previousArrow).not.toHaveClass(/\bon\b/);
+      });
+    });
+  });
 
-  // One press back is the whole way back, whatever shelves the parallel
-  // specs have left ahead of this test's own: the row snaps, and a plain
-  // `scrollBy` back used to settle on the first shelf, All Books' width short.
-  await prev.click();
-  await expect
-    .poll(async () => row.evaluate((n) => n.scrollLeft), { timeout: 5_000 })
-    .toBe(0);
-  await expect(prev).not.toHaveClass(/\bon\b/);
-});
+  // `standalone-island` and `standalone-garden` are reserved: the fan needs both at once.
+  test.describe("continue-reading stack", () => {
+    // `standalone-mountain` is reserved: Alpha is merged by merge.spec mid-suite.
+    test("show the continue-reading stack once a book has progress", async ({
+      libraryPage,
+      seedResumePoint,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, "Berg der Beweise");
+      const stack = libraryPage.continueStack;
 
-test("a book behind the front one comes forward instead of navigating", async ({
-  page,
-  request,
-}) => {
-  // `standalone-island` and `standalone-garden` are reserved for this test and
-  // its keyboard sibling below, and read by no other spec: both need two books
-  // on the stack at once, and any book another spec asserts read status on
-  // could be filtered off the rail mid-run
-  // (`db::progress::recent_progress` drops `unread` and `finished`). Neither
-  // test writes to them beyond that shared progress row, and which card leads
-  // is client-only state, so the two can still run in parallel.
-  const island = await fetchBookUuidByTitle(request, "The Isle of Functions");
-  const garden = await fetchBookUuidByTitle(request, "The Garden of Closures");
-  await seedProgressAndOpenLanding(page, request, island);
-  await seedProgressAndOpenLanding(page, request, garden);
+      await test.step("put the book on the stack", async () => {
+        await libraryPage.assertResumeCardOnStack(uuid, seedResumePoint);
+      });
 
-  const stack = page.getByTestId("continue-stack");
-  const cards = stack.locator(".lmq-fcard");
-  await expect.poll(async () => cards.count()).toBeGreaterThan(1);
+      // A real href on every card keeps middle-click and open-in-new-tab working.
+      await test.step("check the stack shows the book's resume card", async () => {
+        await expect(stack.root).toBeVisible();
+        await expect(stack.card(uuid)).toBeVisible();
+        await expect(stack.card(uuid)).toHaveAttribute("href", `/read/${uuid}`);
+      });
+    });
 
-  // Which book is out front depends on second-granularity ordering with the
-  // uuid as tiebreak, and on whatever the parallel suite has stamped — so
-  // read the fan rather than assuming, exactly as the rail specs do.
-  const front = stack.locator(".lmq-fcard.lead");
-  const behind = stack.locator(".lmq-fcard:not(.lead)").first();
-  const frontId = await front.getAttribute("data-testid");
-  const behindId = await behind.getAttribute("data-testid");
-  expect(frontId, "the fan must have a front card").toBeTruthy();
-  expect(behindId, "the fan must have a card behind it").toBeTruthy();
+    // `standalone-desert` is reserved: finishing a book is global state.
+    test("drop a book from the continue-reading stack once it is finished", async ({
+      libraryPage,
+      setReadStatus,
+      readStatusRequests,
+      seedResumePoint,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, "Desert Protocols");
+      const stack = libraryPage.continueStack;
 
-  // Pointing at the fan spreads it, which is what makes a card behind the
-  // front one reachable at all: the cards overlap by ~74px at rest, so a back
-  // card's centre is under its neighbour. Hover first, then click the left
-  // sliver that is always the back card's own — the click a person makes.
-  await stack.locator(".lmq-fan").hover();
-  // Clicking a card behind the front one means "come forward", not "open" —
-  // the card is a real link, but the router navigation is suppressed for it.
-  await behind.click({ position: { x: 12, y: 60 } });
-  await expect(stack.locator(`[data-testid="${behindId}"]`)).toHaveClass(
-    /\blead\b/,
-  );
-  await expect(stack.locator(`[data-testid="${frontId}"]`)).not.toHaveClass(
-    /\blead\b/,
-  );
-  await expect(page).toHaveURL(/\/$/);
+      // Reset first: this test ends finished, and that outlives the run.
+      await test.step("put a reading book on the stack", async () => {
+        await setReadStatus(uuid, "reading");
+        await libraryPage.assertResumeCardOnStack(uuid, seedResumePoint);
+        await expect(stack.card(uuid)).toBeVisible();
+      });
 
-  // The veil — the resume verb — travels with the front card.
-  await expect(
-    stack.locator(`[data-testid="${behindId}"] .lmq-veil-lab`),
-  ).toBeAttached();
-  await expect(
-    stack.locator(`[data-testid="${frontId}"] .lmq-veil-lab`),
-  ).toHaveCount(0);
-});
+      await test.step("finish the book", async () => {
+        const finished = await readStatusRequests.putReadStatus(
+          uuid,
+          "finished",
+        );
+        await expect(finished).toBeOK();
+      });
 
-test("the fan answers Enter but no longer answers the arrow keys", async ({
-  page,
-  request,
-}) => {
-  // The fan's arrow-key handler was removed: bringing a card forward is a
-  // click or a focused Enter, both of which the cards already carried as real
-  // links. Pinning both halves here means a re-added handler — or a hydration
-  // regression that drops the link activation — cannot pass unnoticed.
-  const island = await fetchBookUuidByTitle(request, "The Isle of Functions");
-  const garden = await fetchBookUuidByTitle(request, "The Garden of Closures");
-  await seedProgressAndOpenLanding(page, request, island);
-  await seedProgressAndOpenLanding(page, request, garden);
+      // The stack hides itself when empty, so the page is anchored on the section title.
+      await test.step("check the reopened library no longer stacks it", async () => {
+        await libraryPage.goto();
+        await expect(libraryPage.sectionTitle).toBeVisible();
+        await expect(stack.card(uuid)).toBeHidden();
+      });
+    });
 
-  const stack = page.getByTestId("continue-stack");
-  const cards = stack.locator(".lmq-fcard");
-  await expect.poll(async () => cards.count()).toBeGreaterThan(1);
+    test("bring a book behind the front one forward instead of navigating", async ({
+      libraryPage,
+      seedResumePoint,
+      request,
+    }) => {
+      const island = await fetchBookUuidByTitle(
+        request,
+        "The Isle of Functions",
+      );
+      const garden = await fetchBookUuidByTitle(
+        request,
+        "The Garden of Closures",
+      );
+      const stack = libraryPage.continueStack;
 
-  // Read the fan rather than assuming an order: the rail is ordered on a
-  // second-granularity timestamp with the uuid as tiebreak.
-  const behind = stack.locator(".lmq-fcard:not(.lead)").first();
-  const behindId = await behind.getAttribute("data-testid");
-  const frontId = await stack
-    .locator(".lmq-fcard.lead")
-    .getAttribute("data-testid");
-  expect(behindId, "the fan must have a card behind it").toBeTruthy();
+      await test.step("put two books on the stack", async () => {
+        await libraryPage.assertResumeCardOnStack(island, seedResumePoint);
+        await libraryPage.assertResumeCardOnStack(garden, seedResumePoint);
+        await expect.poll(() => stack.cardCount()).toBeGreaterThan(1);
+      });
 
-  // An arrow key on a focused card must do nothing at all.
-  await behind.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(stack.locator(`[data-testid="${frontId}"]`)).toHaveClass(
-    /\blead\b/,
-  );
-  await expect(stack.locator(`[data-testid="${behindId}"]`)).not.toHaveClass(
-    /\blead\b/,
-  );
+      // Which book leads follows second-granularity ordering, so read the fan.
+      const front = await stack.frontUuid();
+      const behind = await stack.behindUuid();
 
-  // Enter on that same card still brings it forward, and still suppresses the
-  // link's own navigation.
-  await behind.focus();
-  await page.keyboard.press("Enter");
-  await expect(stack.locator(`[data-testid="${behindId}"]`)).toHaveClass(
-    /\blead\b/,
-  );
-  await expect(page).toHaveURL(/\/$/);
-});
+      await test.step("bring the book behind forward", async () => {
+        await stack.bringForward(behind);
+      });
 
-test("resume stays reachable as an edge ribbon once the stack scrolls away", async ({
-  page,
-  request,
-}) => {
-  const uuid = await fetchBookUuidByTitle(request, "Berg der Beweise");
-  await seedProgressAndOpenLanding(page, request, uuid);
+      await test.step("check it leads and the library did not navigate", async () => {
+        await stack.assertLeads(behind, front);
+        await libraryPage.assertDisplayed();
+      });
 
-  const root = page.locator("#lmq-root");
-  const ribbon = page.getByTestId("resume-edge");
-  // Off-screen and inert while the stack itself is still on screen — the
-  // ribbon exists in the DOM from the first paint so SSR and hydration agree
-  // (rule 07), and `marquee.js` reveals it on scroll.
-  await expect(ribbon).toBeAttached();
-  await expect(root).not.toHaveClass(/lmq--past/);
-  await expect(ribbon).toHaveCSS("opacity", "0");
-  // Pinned to the viewport, not to the column. `.lmq > *` also matches the
-  // ribbon and is only outranked because it stays at (0,1,0) — a `:not()`
-  // there that forgets its `:where()` wrapper silently drops it into the flow,
-  // where the assertions below still pass or fail on scroll position alone.
-  await expect(ribbon).toHaveCSS("position", "fixed");
+      // The veil, the resume verb, travels with the front card.
+      await test.step("check the veil moved with it", async () => {
+        await expect(stack.veil(behind)).toBeAttached();
+        await expect(stack.veil(front)).toHaveCount(0);
+      });
+    });
 
-  await page.evaluate(() => window.scrollTo(0, 600));
-  await expect(root).toHaveClass(/lmq--past/);
-  await expect(ribbon).toHaveCSS("opacity", "1");
-  // Widening on hover is what exposes the control; the collapsed strip is
-  // just the marker.
-  await ribbon.hover();
-  await expect(page.getByTestId(`resume-edge-go-${uuid}`)).toBeVisible();
+    // The fan's arrow-key handler was removed: a card comes forward by click or Enter alone.
+    test("ignore the arrow keys on a card behind the front one", async ({
+      libraryPage,
+      seedResumePoint,
+      request,
+    }) => {
+      const island = await fetchBookUuidByTitle(
+        request,
+        "The Isle of Functions",
+      );
+      const garden = await fetchBookUuidByTitle(
+        request,
+        "The Garden of Closures",
+      );
+      const stack = libraryPage.continueStack;
 
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await expect(root).not.toHaveClass(/lmq--past/);
+      await test.step("put two books on the stack", async () => {
+        await libraryPage.assertResumeCardOnStack(island, seedResumePoint);
+        await libraryPage.assertResumeCardOnStack(garden, seedResumePoint);
+        await expect.poll(() => stack.cardCount()).toBeGreaterThan(1);
+      });
+
+      const front = await stack.frontUuid();
+      const behind = await stack.behindUuid();
+
+      await test.step("press an arrow key on the card behind", async () => {
+        await stack.pressOn(behind, "ArrowRight");
+      });
+
+      await test.step("check nothing moved", async () => {
+        await stack.assertLeads(front, behind);
+      });
+    });
+
+    test("bring a card forward with Enter", async ({
+      libraryPage,
+      seedResumePoint,
+      request,
+    }) => {
+      const island = await fetchBookUuidByTitle(
+        request,
+        "The Isle of Functions",
+      );
+      const garden = await fetchBookUuidByTitle(
+        request,
+        "The Garden of Closures",
+      );
+      const stack = libraryPage.continueStack;
+
+      await test.step("put two books on the stack", async () => {
+        await libraryPage.assertResumeCardOnStack(island, seedResumePoint);
+        await libraryPage.assertResumeCardOnStack(garden, seedResumePoint);
+        await expect.poll(() => stack.cardCount()).toBeGreaterThan(1);
+      });
+
+      const front = await stack.frontUuid();
+      const behind = await stack.behindUuid();
+
+      await test.step("press Enter on the card behind", async () => {
+        await stack.pressOn(behind, "Enter");
+      });
+
+      // Enter still suppresses the link's own navigation.
+      await test.step("check it leads and the library did not navigate", async () => {
+        await stack.assertLeads(behind, front);
+        await libraryPage.assertDisplayed();
+      });
+    });
+
+    test("keep resume reachable as an edge ribbon once the stack scrolls away", async ({
+      libraryPage,
+      seedResumePoint,
+      request,
+    }) => {
+      const uuid = await fetchBookUuidByTitle(request, "Berg der Beweise");
+      const stack = libraryPage.continueStack;
+
+      await test.step("put the book on the stack", async () => {
+        await libraryPage.assertResumeCardOnStack(uuid, seedResumePoint);
+      });
+
+      // The ribbon is in the DOM from first paint so SSR and hydration agree (rule 07).
+      await test.step("check the ribbon waits off-screen", async () => {
+        await expect(stack.edgeRibbon).toBeAttached();
+        await expect(stack.landingRoot).not.toHaveClass(/lmq--past/);
+        await expect(stack.edgeRibbon).toHaveCSS("opacity", "0");
+        // A `:not()` without its `:where()` wrapper would drop the ribbon into the flow.
+        await expect(stack.edgeRibbon).toHaveCSS("position", "fixed");
+      });
+
+      await test.step("scroll the stack away", async () => {
+        await stack.scrollAway();
+        await expect(stack.landingRoot).toHaveClass(/lmq--past/);
+        await expect(stack.edgeRibbon).toHaveCSS("opacity", "1");
+      });
+
+      // Widening on hover is what exposes the control; the collapsed strip is a marker.
+      await test.step("widen the ribbon", async () => {
+        await stack.hoverEdgeRibbon();
+        await expect(stack.edgeRibbonGo(uuid)).toBeVisible();
+      });
+
+      await test.step("scroll back to the stack", async () => {
+        await stack.scrollBackToTop();
+        await expect(stack.landingRoot).not.toHaveClass(/lmq--past/);
+      });
+    });
+  });
 });

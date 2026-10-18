@@ -1,20 +1,13 @@
-import type { MetadataOverrides } from "../data/ebooks";
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
-/** The metadata endpoint a book page posts to. */
+/** The edition picker's endpoints: a GET, and two reads that POST. */
 export const metadataUrls = {
-  saveOverrides: /\/api\/rpc\/ebook\/overrides$/,
+  providers: /\/api\/rpc\/metadata\/providers(?:\?|$)/,
+  search: /\/api\/rpc\/metadata\/editions\/search(?:\?|$)/,
+  hydrate: /\/api\/rpc\/metadata\/editions\/hydrate(?:\?|$)/,
 };
 
-/** The writes a book page makes on a book's metadata. */
+/** The edition picker's reads, which POST but change nothing. */
 export const metadata = {
-  saveOverrides: (
-    bookUuid: string,
-    overrides: MetadataOverrides,
-  ): ExpectMutationOptions => ({
-    method: "POST",
-    url: metadataUrls.saveOverrides,
-    expectedBody: { uuid: bookUuid, overrides },
-    expectedStatus: 200,
-  }),
+  search: (): ExpectMutationOptions => post(metadataUrls.search),
 };

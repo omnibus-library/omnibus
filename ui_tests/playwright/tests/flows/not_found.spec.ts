@@ -1,53 +1,70 @@
-import { expect, test } from "../fixtures/test";
-import { expectNavVisible, gotoReady } from "../utils/nav";
+import { expect, test } from "../fixtures/pageFixtures";
 
-// An unmatched URL used to render dioxus-router's own parse diagnostic as the
-// page body — the complete internal route table, admin paths included, with no
-// nav and no link back (#2214). The catch-all `Route::NotFound` replaces it.
+// An unmatched URL once rendered dioxus-router's own parse diagnostic as the
+// page: the whole internal route table, admin paths included, with no nav and
+// no link back (#2214). The catch-all `Route::NotFound` replaces it.
+test.describe("not-found page", () => {
+  test("show the not-found layout for an unmatched path", async ({
+    notFoundPage,
+  }) => {
+    await test.step("open an unmatched path", async () => {
+      await notFoundPage.goto("/add");
+    });
 
-test("renders the not-found layout for an unmatched path", async ({ page }) => {
-  await gotoReady(page, "/add");
+    await test.step("check the page names the path", async () => {
+      await notFoundPage.assertDisplayed();
+      await notFoundPage.topNav.assertDisplayed();
+      await expect(notFoundPage.heading).toBeVisible();
+      await expect(notFoundPage.root).toContainText("/add");
+    });
+  });
 
-  await expectNavVisible(page);
-  const body = page.getByTestId("not-found-page");
-  await expect(body).toBeVisible();
-  await expect(
-    body.getByRole("heading", { name: "Page not found" }),
-  ).toBeVisible();
-  await expect(body).toContainText("/add");
-});
+  // `/tags` was a real route long enough to be bookmarked. Only a retired
+  // route catches a later `#[route("/tags")]` declared above the catch-all,
+  // which an arbitrary unmatched path would still pass through.
+  test("fall through to not-found from a retired route", async ({
+    notFoundPage,
+  }) => {
+    await test.step("open the retired route", async () => {
+      await notFoundPage.goto("/tags");
+    });
 
-// `/tags` (the tag cloud, #2157) was a real route long enough for a reader to
-// have bookmarked it. Probed by name rather than left to the `/add` case above:
-// only a retired route catches a later `#[route("/tags")]` re-declared above the
-// catch-all, which an arbitrary unmatched path would still pass through.
-test("a retired route falls through to not-found", async ({ page }) => {
-  await gotoReady(page, "/tags");
+    await test.step("check the page names the path", async () => {
+      await expect(notFoundPage.root).toBeVisible();
+      await expect(notFoundPage.root).toContainText("/tags");
+    });
+  });
 
-  const body = page.getByTestId("not-found-page");
-  await expect(body).toBeVisible();
-  await expect(body).toContainText("/tags");
-});
+  test("hide the internal route table from a mistyped url", async ({
+    notFoundPage,
+  }) => {
+    await test.step("open a mistyped path", async () => {
+      await notFoundPage.goto("/nope/deeper/still");
+    });
 
-test("never publishes the internal route table to a mistyped URL", async ({
-  page,
-}) => {
-  await gotoReady(page, "/nope/deeper/still");
+    await test.step("check the page prints no route table", async () => {
+      const body = await notFoundPage.bodyText();
+      expect(body).not.toContain("Attempted Matches");
+      expect(body).not.toContain("Failed to parse route");
+      expect(body).not.toContain("admin/health");
+    });
+  });
 
-  const body = await page.locator("body").innerText();
-  expect(body).not.toContain("Attempted Matches");
-  expect(body).not.toContain("Failed to parse route");
-  expect(body).not.toContain("admin/health");
-});
+  test("return to the library from the not-found page", async ({
+    notFoundPage,
+    libraryPage,
+  }) => {
+    await test.step("open an unmatched path", async () => {
+      await notFoundPage.goto("/add");
+    });
 
-test("returns to the library from the not-found page", async ({ page }) => {
-  await gotoReady(page, "/add");
+    await test.step("follow the link back", async () => {
+      await notFoundPage.backToLibrary();
+    });
 
-  await page
-    .getByTestId("not-found-page")
-    .getByRole("link", { name: "Back to library" })
-    .click();
-
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId("not-found-page")).toHaveCount(0);
+    await test.step("check the library shows", async () => {
+      await libraryPage.assertDisplayed();
+      await expect(notFoundPage.root).toHaveCount(0);
+    });
+  });
 });

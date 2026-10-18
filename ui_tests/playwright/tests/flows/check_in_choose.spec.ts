@@ -80,15 +80,15 @@ test.describe("check-in chooser", () => {
     await test.step("ask to remove its only copy", async () => {
       await bookDetailPage.goto(uuid);
       await expect(bookDetailPage.physicalPill).toBeVisible();
-      await bookDetailPage.openRemoveCopyDialog();
-      await expect(bookDetailPage.lastCopyDialog).toBeVisible();
+      await bookDetailPage.physicalCopy.openDeleteDialog();
+      await expect(bookDetailPage.physicalCopy.lastCopyDialog).toBeVisible();
     });
 
     // One click deletes the copy and then the book, which has no copy left.
     await test.step("remove the book from the library", async () => {
       await expectMutation(physical.deleteCopy(), () =>
         expectMutation(physical.deleteBook(uuid), () =>
-          bookDetailPage.removeFromLibrary(),
+          bookDetailPage.physicalCopy.removeFromLibrary(),
         ),
       );
       createdBookUuids.delete(uuid);

@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
-import { paletteUrls } from "../contracts/palette";
 import { scanUrls } from "../contracts/scan";
+import { searchUrls } from "../contracts/search";
 import type { ExternalBookMeta, ScanOutcome } from "../data/scan";
 import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
@@ -309,7 +309,7 @@ export class CheckInFlowComponent extends BaseComponent {
 
   async searchLibrary(query: string): Promise<void> {
     await this.libraryQueryField.fill(query);
-    const searched = this.page.waitForResponse(isPostTo(paletteUrls.search));
+    const searched = this.page.waitForResponse(isPostTo(searchUrls.palette));
     await this.searchLibraryButton.click();
     await searched;
   }

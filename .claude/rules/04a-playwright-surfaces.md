@@ -12,7 +12,7 @@ against markup that had changed, and timed out.
 `<a>` with **no `href`** and an explicit `role="listitem"`, and the shelf member
 tile (`components/cover_tile.rs`) is a router `Link` that also overrides
 `role="listitem"` — so `getByRole("link", { name: "Open details for …" })`
-matches nothing and times out. Use `bookTile()` from `utils/shelves.ts`
+matches nothing and times out. Use `LibraryPage.bookTile` / `ShelfPage.bookTile`
 (`getByRole("listitem", …)`) or the per-book `ebook-tile-<ident>` testid.
 
 **A shelf page's actions are greyed, not gone.** `/shelves/:id` renders Add
@@ -63,25 +63,25 @@ default) chooses between the flow — one continuous scroller, `#bdmq-flow`,
 sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book
 pill, and no `.bdmq-next` cue — and the snapped marquee, `#bdmq-snap` with
 `.bdmq-sec` screens. Only one exists in the DOM at a time, so a spec asserting
-either must set the preference first
-(`POST /api/account/book-detail-scroll-stops`) and put it back afterwards. Two
-controls are common to both: the dot rail (`bdmq-dots`, six rows, nothing
-else in its box) and the `bdmq-mode-toggle` switch in the stage's top-right
-corner, which flips the preference in place and has no `aria-pressed` until
-the viewer resolves.
+either must set the preference first with the `presetScrollStops(enabled, owner?)`
+fixture, which turns it back off afterwards. Pass `"reader"` when the test then
+flips the worker reader's own Settings switch. Two controls are common to both:
+the dot rail (`bdmq-dots`, six rows, nothing else in its box) and the
+`bdmq-mode-toggle` switch in the stage's top-right corner, which flips the
+preference in place and has no `aria-pressed` until the viewer resolves.
 
 **"From the same hand" has three states, not two.** The author block fetches
 after the page renders, so `from-same-hand-loading` (a quiet note, no count)
 precedes either `from-same-hand` or `from-same-hand-empty` — it used to assert
 "the only book by X" while still fetching (#2478). Playwright's auto-wait
 handles the settled assertions, but a spec that wants the *loading* state must
-hold the request open rather than racing it — and the route to hold is the
-**server function**, `POST /api/rpc/author`, not the REST `GET
-/api/authors/{id}` the mobile client uses; a spec that routes the latter
-catches nothing on web. Holding it also means `networkidle` never arrives, so
-use a plain `page.goto`, not `gotoReady`. A spec asserting "no other books"
-must target
-`from-same-hand-empty`, never the mere absence of tiles.
+hold the request open rather than racing it
+(`BookDetailPage.holdAuthorFetch`), and the route held is the **server
+function**, `POST /api/rpc/author`, not the REST `GET /api/authors/{id}` the
+mobile client uses. Holding it means `networkidle` never arrives, so open the
+page with `bookDetailPage.gotoUnsettled()`, not `goto()`. A spec asserting "no
+other books" must target `from-same-hand-empty`, never the mere absence of
+tiles.
 
 **A saved passage's locator is a chapter title, not "Chapter N".** Once the
 book's structure loads, `highlight-meta` reads `Chapter 12: Inej · saved …`;
@@ -107,11 +107,11 @@ drops by every stacked volume, and a stack's three fanned covers triple the
 `cover` testids in its cell. Opening one mounts `series-cap`
 (`series-cap-page`, `series-cap-fold`) and the volumes as ordinary
 `ebook-tile-*` tiles; Escape folds. Because the pref follows the account, a
-spec that turns it on must use its own user on a cookie-less context
-(`landing_series_stacks.spec.ts`) — stacking the shared admin would fold
-volumes out from under `landing.spec.ts`. `lib-stack-toggle` renders only in
-grid view (absent, not disabled, in the table) and stays disabled until `/me`
-resolves.
+spec that turns it on must run as the worker reader and set it with
+`presetStackSeries(true, "reader")` (`landing_series_stacks.spec.ts`). Stacking
+the shared admin would fold volumes out from under `landing.spec.ts`.
+`lib-stack-toggle` renders only in grid view (absent, not disabled, in the
+table) and stays disabled until `/me` resolves.
 
 **The landing's continue surface is a fan, not a carousel.** `landing/stack.rs`
 replaced the hero carousel, so `continue-hero`, `continue-hero-track`,
@@ -128,14 +128,12 @@ the `.lmq-veil` verb. Three consequences for a spec:
   `hero-crossformat-*` and `hero-link-invite-*` render for the lead card alone,
   so a spec that asserts them must bring its book forward first — clicking a
   card that is *already* lead navigates, so guard on the `lead` class.
-- **`continue-stack` carries the synced marker**, not the card: the stack has
-  no per-card eyebrow, so `Continue · synced` became one kicker line above the
-  front book.
+- **`continue-stack` carries the synced marker**, not the card: with no
+  per-card eyebrow, `Continue · synced` is one kicker line above the front book.
 
 `standalone-island` / `standalone-garden` are reserved for the bring-forward
-spec on the usual grounds: it needs two books on the stack at once, and
-`db::progress::recent_progress` drops `unread` and `finished`, so any book
-another spec sets read status on could be filtered off the fan mid-run.
+spec: it needs two books on the stack at once, and `recent_progress` drops
+`unread` and `finished`, so a book another spec marks could leave the fan mid-run.
 
 **The add-books review is the metadata edit form, not a confirm form.** A
 successful inspect mounts `add-books-review`, which is the edit page's own
@@ -157,7 +155,7 @@ sharing) is covered in [04e-playwright-stats.md](04e-playwright-stats.md).
 **The PDF reader has no ready testid; the text layer is not an element you
 click.** `/pdf/:uuid` renders its chrome on SSR (`pdf-back`, `pdf-fit-*`,
 `pdf-highlights`, `pdf-bookmarks`, `pdf-stage`, `pdf-page-host`, `pdf-prev`,
-`pdf-next`, `pdf-slider`, `pdf-footer`, `pdf-page-label`) with a `pdf-loading`
+`pdf-next`, `pdf-slider`, `pdf-footer`, `pdf-page-label`) and a `pdf-loading`
 overlay; "ready" is that overlay leaving and `pdf-page-label` reading
 `Page N of M` — the count is PDF.js's, not the indexed one, so parse it from
 the label rather than hard-coding it. PDF.js fills `pdf-page-host` with
@@ -168,23 +166,25 @@ run). To highlight, drag with `page.mouse` from the left edge of a
 then the epub reader's `.rd-selection-popover` and its `Highlight <color>`
 swatches appear. The drawers, note composer and quote panel are the epub
 reader's (`reader-highlights-drawer`, `reader-bookmarks-drawer`,
-`reader-highlight-row`, `reader-bookmark-row`, `reader-bookmark-add`,
-`reader-note-composer`); `Escape` on the reader root closes them. Every turn
-POSTs `/api/rpc/progress` with `epub_cfi: "pdf-page:N"`; opening the reader
-POSTs nothing for position (the ready report is treated as already saved) but
-does write read status `reading` on an unread book — pre-set `flatland` to
-`reading` in `beforeAll` (the comic spec's pattern) or assert that write.
+`reader-*-row`, `reader-bookmark-add`, `reader-note-composer`); `Escape` on
+the reader root closes them. Every turn POSTs `/api/rpc/progress` with
+`epub_cfi: "pdf-page:N"`; opening the reader POSTs nothing for position (the
+ready report is treated as already saved) but does write read status `reading`
+on an unread book. Pre-set `flatland` to `reading` in `beforeAll` (the comic
+spec's pattern) or assert that write.
 
 **Settings and Administration are one shell, two routes.** `/settings?section=`
 holds the five personal sections (`settings-nav-<slug>`), `/admin?section=`
-the eight server ones (`admin-nav-<slug>`); pre-split slugs redirect, so a spec
-opens the new URL directly. Three things trip specs:
+the eight server ones (`admin-nav-<slug>`); `SettingsPage` and `AdminPage`
+share the frame in `SettingsShellPage`. Pre-split slugs redirect, so a spec
+opens the new URL (`AdminPage.gotoLegacy` takes an old one). Three things trip
+specs:
 
 - **Under 720px the list and the section never share the screen.** With no
   `?section=` only the sidebar renders; with one, only the section and its
   `settings-back` link. A narrow spec names the section in the URL.
 - **A sidebar click over unsaved edits doesn't navigate.** It opens
-  `unsaved-confirm` (`unsaved-keep` / `unsaved-discard`).
+  `unsaved-confirm`: `SettingsShellPage.keepEditing()` / `discardEdits()`.
 - **Preferences has no Save button.** Each switch saves on change and reports
   in `{slug}-status`; hidden formats is a `fieldset` (`getByRole("group")`) of
   `hidden-format-toggle-<fmt>` that POSTs on every change, and All Books shows

@@ -34,9 +34,9 @@ test.describe("pdf reader", () => {
   // leave unasserted.
   test.beforeAll(
     "mark the pristine pdf reading",
-    async ({ request, presetReadStatus }) => {
+    async ({ request, setReadStatus }) => {
       const uuid = await fetchBookUuidByTitle(request, PRISTINE.title);
-      await presetReadStatus(uuid, "reading");
+      await setReadStatus(uuid, "reading");
     },
   );
 
@@ -203,7 +203,7 @@ test.describe("pdf reader", () => {
       await test.step("check the pdf actions show", async () => {
         await expect(bookDetailPage.startReadingPdfButton).toBeVisible();
         await expect(bookDetailPage.noFilesMessage).toBeHidden();
-        await expect(bookDetailPage.readPdfButton).toBeVisible();
+        await expect(bookDetailPage.formatRow("PDF").readLink).toBeVisible();
       });
     });
 

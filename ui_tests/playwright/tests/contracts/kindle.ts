@@ -1,17 +1,13 @@
-import type { ExpectMutationOptions } from "../utils/api";
+import { type ExpectMutationOptions, post } from "../utils/api";
 
-/** The Kindle endpoints a book page posts to. */
+/** The send-to-Kindle endpoints: enqueue a delivery, then poll its status. */
 export const kindleUrls = {
-  send: /\/api\/rpc\/kindle\/send$/,
-  status: /\/api\/rpc\/kindle\/send\/status$/,
+  send: /\/api\/rpc\/kindle\/send(?:\?|$)/,
+  sendStatus: /\/api\/rpc\/kindle\/send\/status(?:\?|$)/,
 };
 
-/** The writes a book page makes to send a book to a Kindle. */
+/** The write a Send to Kindle action makes. */
 export const kindle = {
-  send: (bookUuid: string): ExpectMutationOptions => ({
-    method: "POST",
-    url: kindleUrls.send,
-    expectedBody: { book_uuid: bookUuid, file_id: null },
-    expectedStatus: 200,
-  }),
+  send: (bookUuid: string): ExpectMutationOptions =>
+    post(kindleUrls.send, { book_uuid: bookUuid, file_id: null }),
 };

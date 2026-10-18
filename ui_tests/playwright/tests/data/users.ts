@@ -26,3 +26,12 @@ export function buildReader(): NewUser {
     },
   };
 }
+
+/** A user the server holds, with the id its delete call takes. */
+export type SeededUser = NewUser & { id: number };
+
+/** A reader who may also upload, for the new-user form's one checked box. */
+export function buildUploader(): NewUser {
+  const { permissions, ...reader } = buildReader();
+  return { ...reader, permissions: { ...permissions, can_upload: true } };
+}

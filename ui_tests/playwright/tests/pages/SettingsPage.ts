@@ -1,39 +1,38 @@
 import type { Locator, Page } from "@playwright/test";
-import { TopNavComponent } from "../components/TopNavComponent";
-import { accountUrls } from "../contracts/account";
-import { isPostTo } from "../utils/api";
-import { BasePage } from "./BasePage";
+import { AccountSectionComponent } from "../components/AccountSectionComponent";
+import { ApiTokensSectionComponent } from "../components/ApiTokensSectionComponent";
+import { KindleSectionComponent } from "../components/KindleSectionComponent";
+import { KoboSectionComponent } from "../components/KoboSectionComponent";
+import { SettingsShellPage } from "./SettingsShellPage";
 
-export class SettingsPage extends BasePage {
-  protected readonly urlPattern = /\/settings(?:\?[^#]*)?$/;
+/** A `?section=` slug of the personal settings sidebar. */
+export type SettingsSection =
+  | "profile"
+  | "preferences"
+  | "goals"
+  | "devices"
+  | "security";
 
-  readonly topNav: TopNavComponent;
+/** Personal settings at `/settings`: the reader's own sections, none of the server's. */
+export class SettingsPage extends SettingsShellPage<SettingsSection> {
+  readonly account: AccountSectionComponent;
+  readonly kindle: KindleSectionComponent;
+  readonly kobo: KoboSectionComponent;
+  readonly apiTokens: ApiTokensSectionComponent;
 
-  readonly titleHeading: Locator;
-  readonly scrollStopsSwitch: Locator;
+  readonly adminLink: Locator;
 
   constructor(page: Page) {
-    super(page);
-    this.topNav = new TopNavComponent(page);
-    this.titleHeading = page.getByRole("heading", { level: 1 });
-    this.scrollStopsSwitch = page.getByRole("switch", {
-      name: "Scroll stops",
-      exact: true,
+    super(page, {
+      path: "/settings",
+      layoutTestId: "settings-layout",
+      title: "Settings",
+      navTestId: "settings-nav",
     });
-  }
-
-  protected get readyLocator(): Locator {
-    return this.titleHeading;
-  }
-
-  async goto(section: "preferences"): Promise<void> {
-    await this.openAndSettle(`/settings?section=${section}`);
-  }
-
-  /** Flips the switch and waits for the save. */
-  async toggleScrollStops(): Promise<void> {
-    const saved = this.page.waitForResponse(isPostTo(accountUrls.scrollStops));
-    await this.scrollStopsSwitch.click();
-    await saved;
+    this.account = new AccountSectionComponent(page);
+    this.kindle = new KindleSectionComponent(page);
+    this.kobo = new KoboSectionComponent(page);
+    this.apiTokens = new ApiTokensSectionComponent(page);
+    this.adminLink = page.getByTestId("settings-nav-admin");
   }
 }
