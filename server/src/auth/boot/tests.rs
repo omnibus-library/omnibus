@@ -95,6 +95,19 @@ impl Drop for EnvGuard {
     }
 }
 
+/// The uuids `username`'s Kobo devices would sync, sorted.
+async fn kobo_synced(pool: &sqlx::SqlitePool, username: &str) -> Vec<String> {
+    let user = db::auth::get_user_by_username(pool, username)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut uuids = db::shelves::kobo_synced_book_uuids(pool, user.id)
+        .await
+        .unwrap();
+    uuids.sort();
+    uuids
+}
+
 #[tokio::test]
 async fn unset_env_is_noop() {
     let _g = EnvGuard::unset("OMNIBUS_INITIAL_ADMIN");
@@ -240,4 +253,35 @@ async fn seed_restores_prior_registration_enabled_flag() {
         !db::auth::registration_enabled(&pool).await.unwrap(),
         "seed_dev_user must restore the prior registration_enabled flag"
     );
+}
+
+#[tokio::test]
+async fn seed_gives_new_admin_a_kobo_shelf_holding_every_kobo_readable_book() {
+    let _g = EnvGuard::set("OMNIBUS_DEV_SEED_USER", "admin:omnibus-dev");
+    let pool = db::init_db("sqlite::memory:").await.unwrap();
+    seed_dev_user(&pool).await.unwrap();
+
+    // Indexed after the seed, as on a fresh dev boot.
+    let epub = db::test_support::seed_synced_ebook(&pool, "a.epub", "A", "Ann").await;
+    let cbz = db::test_support::seed_synced_ebook(&pool, "b.cbz", "B", "Ben").await;
+    let pdf = db::test_support::seed_synced_ebook(&pool, "c.pdf", "C", "Cy").await;
+    db::test_support::seed_synced_audiobook(&pool, "d", "D", "Di").await;
+
+    let mut expected = vec![epub, cbz, pdf];
+    expected.sort();
+    assert_eq!(kobo_synced(&pool, "admin").await, expected);
+}
+
+#[tokio::test]
+async fn seed_adds_no_kobo_shelf_when_user_already_exists() {
+    let pool = db::init_db("sqlite::memory:").await.unwrap();
+    db::auth::create_user(&pool, "admin", "preexisting-password")
+        .await
+        .unwrap();
+
+    let _g = EnvGuard::set("OMNIBUS_DEV_SEED_USER", "admin:omnibus-dev");
+    seed_dev_user(&pool).await.unwrap();
+    db::test_support::seed_synced_ebook(&pool, "a.epub", "A", "Ann").await;
+
+    assert_eq!(kobo_synced(&pool, "admin").await, Vec::<String>::new());
 }

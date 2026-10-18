@@ -3,6 +3,10 @@
 //! [`seed_dev_user`] (dev-only login seeding) for the env vars and gating
 //! each reads.
 
+use omnibus_shared::shelves::{
+    CreateShelfRequest, MatchMode, RuleField, RuleOp, ShelfKind, ShelfRule, UpdateShelfRequest,
+    Visibility,
+};
 use sqlx::SqlitePool;
 
 /// Read `OMNIBUS_INITIAL_ADMIN` and promote the named user (if present) to
@@ -31,9 +35,10 @@ pub async fn apply_initial_admin(pool: &SqlitePool) -> Result<(), omnibus_db::au
 }
 
 /// Read `OMNIBUS_DEV_SEED_USER=<username>:<password>` and create the named user
-/// (promoted to admin) if absent. No-op in release builds, when the variable is
-/// unset, malformed or has empty halves, or when the user already exists.
-pub async fn seed_dev_user(pool: &SqlitePool) -> Result<(), omnibus_db::auth::AuthError> {
+/// (promoted to admin, with a Kobo-synced shelf of every Kobo-readable book) if
+/// absent. No-op in release builds, when the variable is unset, malformed or has
+/// empty halves, or when the user already exists.
+pub async fn seed_dev_user(pool: &SqlitePool) -> anyhow::Result<()> {
     // Release builds must not provision admin credentials from env, even
     // if OMNIBUS_DEV_SEED_USER is somehow set. We additionally warn so a
     // misconfigured deploy is visible in the logs.
@@ -86,7 +91,7 @@ pub async fn seed_dev_user(pool: &SqlitePool) -> Result<(), omnibus_db::auth::Au
     // error — surfacing the underlying failure matters more than a
     // best-effort restore.
     let _ = omnibus_db::auth::set_registration_enabled(pool, prior_registration).await;
-    create_result?;
+    let user = create_result?;
 
     let promoted = omnibus_db::auth::promote_to_admin(pool, username).await?;
     if !promoted {
@@ -95,10 +100,37 @@ pub async fn seed_dev_user(pool: &SqlitePool) -> Result<(), omnibus_db::auth::Au
             "OMNIBUS_DEV_SEED_USER created user but promote_to_admin did not update a row"
         );
     }
+    seed_kobo_shelf(pool, user.id).await?;
     tracing::warn!(
         user = username,
         "OMNIBUS_DEV_SEED_USER created admin user (dev seed hook)"
     );
+    Ok(())
+}
+
+/// Give `owner_id` a smart shelf matching every format a Kobo can download,
+/// opted in to wireless sync, so a mock or real Kobo has the whole library.
+async fn seed_kobo_shelf(pool: &SqlitePool, owner_id: i64) -> anyhow::Result<()> {
+    let format = |value: &str| ShelfRule {
+        field: RuleField::Format,
+        op: RuleOp::Includes,
+        value: value.into(),
+    };
+    let request = CreateShelfRequest {
+        kind: ShelfKind::Smart,
+        name: "Kobo library".into(),
+        description: None,
+        visibility: Visibility::Private,
+        match_mode: Some(MatchMode::Any),
+        rules: ["EPUB", "CBZ", "PDF"].map(format).into(),
+        book_uuids: vec![],
+    };
+    let shelf = omnibus_db::shelves::create_shelf(pool, owner_id, &request).await?;
+    let sync = UpdateShelfRequest {
+        sync_to_kobo: Some(true),
+        ..Default::default()
+    };
+    omnibus_db::shelves::update_shelf(pool, shelf.id, &sync).await?;
     Ok(())
 }
 
