@@ -95,8 +95,8 @@ impl Drop for EnvGuard {
     }
 }
 
-/// The uuids `username`'s Kobo devices would sync, sorted.
-async fn kobo_synced(pool: &sqlx::SqlitePool, username: &str) -> Vec<String> {
+/// The uuids on `username`'s Kobo-synced shelves, sorted.
+async fn kobo_synced(pool: &SqlitePool, username: &str) -> Vec<String> {
     let user = db::auth::get_user_by_username(pool, username)
         .await
         .unwrap()
@@ -284,4 +284,12 @@ async fn seed_adds_no_kobo_shelf_when_user_already_exists() {
     db::test_support::seed_synced_ebook(&pool, "a.epub", "A", "Ann").await;
 
     assert_eq!(kobo_synced(&pool, "admin").await, Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn seed_returns_err_when_password_fails_validation() {
+    let _g = EnvGuard::set("OMNIBUS_DEV_SEED_USER", "admin:short");
+    let pool = db::init_db("sqlite::memory:").await.unwrap();
+
+    assert!(seed_dev_user(&pool).await.is_err());
 }

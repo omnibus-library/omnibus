@@ -1,9 +1,11 @@
 //! Boot-time admin hooks: two opt-in env-driven functions run at server
 //! startup. See [`apply_initial_admin`] (account-recovery promotion) and
-//! [`seed_dev_user`] (dev-only login seeding) for the env vars and gating
-//! each reads.
+//! [`seed_dev_user`] (dev-only admin and Kobo shelf seeding) for the env vars
+//! and gating each reads.
 
-use omnibus_shared::shelves::{
+use anyhow::Context;
+use omnibus_db::ShelfError;
+use omnibus_shared::{
     CreateShelfRequest, MatchMode, RuleField, RuleOp, ShelfKind, ShelfRule, UpdateShelfRequest,
     Visibility,
 };
@@ -100,18 +102,20 @@ pub async fn seed_dev_user(pool: &SqlitePool) -> anyhow::Result<()> {
             "OMNIBUS_DEV_SEED_USER created user but promote_to_admin did not update a row"
         );
     }
-    seed_kobo_shelf(pool, user.id).await?;
     tracing::warn!(
         user = username,
         "OMNIBUS_DEV_SEED_USER created admin user (dev seed hook)"
     );
+    seed_kobo_shelf(pool, user.id)
+        .await
+        .context("OMNIBUS_DEV_SEED_USER: seeding the admin's Kobo library shelf")?;
     Ok(())
 }
 
 /// Give `owner_id` a smart shelf of every EPUB, CBZ and PDF with Kobo sync on.
-/// Those are the only formats a Kobo can download.
-async fn seed_kobo_shelf(pool: &SqlitePool, owner_id: i64) -> anyhow::Result<()> {
-    let format = |value: &str| ShelfRule {
+/// Those are the formats `DOWNLOADABLE_PREDICATE` in `db::kobo` lets a Kobo download.
+async fn seed_kobo_shelf(pool: &SqlitePool, owner_id: i64) -> Result<(), ShelfError> {
+    let includes_format = |value: &str| ShelfRule {
         field: RuleField::Format,
         op: RuleOp::Includes,
         value: value.into(),
@@ -122,7 +126,7 @@ async fn seed_kobo_shelf(pool: &SqlitePool, owner_id: i64) -> anyhow::Result<()>
         description: None,
         visibility: Visibility::Private,
         match_mode: Some(MatchMode::Any),
-        rules: ["EPUB", "CBZ", "PDF"].map(format).into(),
+        rules: ["EPUB", "CBZ", "PDF"].map(includes_format).to_vec(),
         book_uuids: vec![],
     };
     let shelf = omnibus_db::shelves::create_shelf(pool, owner_id, &request).await?;
