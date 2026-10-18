@@ -61,7 +61,7 @@ fn manifest_images(doc: &Package, archive: &mut Archive) -> BTreeMap<String, Boo
         let Ok(entry) = archive_entry(archive, &href) else {
             continue;
         };
-        let byte_size = entry.size() as i64;
+        let byte_size = i64::try_from(entry.size()).unwrap_or(i64::MAX);
         let mut prefix = Vec::new();
         let dimensions = entry
             .take(DIMENSION_PREFIX_BYTES)
