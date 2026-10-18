@@ -141,7 +141,7 @@ test.describe("search palette", () => {
 
   // Settings match in the browser, so no library is needed.
   test.describe("settings results", () => {
-    test("show a matching setting before the library answers and open its section", async ({
+    test("open a matching setting before the library answers", async ({
       libraryPage,
       settingsPage,
     }) => {
@@ -175,7 +175,7 @@ test.describe("search palette", () => {
       });
     });
 
-    test("reach a server setting with the arrow keys and open it with Enter", async ({
+    test("open a server setting from the keyboard", async ({
       libraryPage,
       adminPage,
     }) => {

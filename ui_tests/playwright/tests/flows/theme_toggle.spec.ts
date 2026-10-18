@@ -106,9 +106,7 @@ test.describe("theme toggle", () => {
     });
   });
 
-  test("switch the theme from preferences and persist it", async ({
-    settingsPage,
-  }) => {
+  test("switch the theme from preferences", async ({ settingsPage }) => {
     const { account } = settingsPage;
 
     await test.step("open the preferences section", async () => {

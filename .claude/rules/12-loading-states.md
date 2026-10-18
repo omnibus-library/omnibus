@@ -69,7 +69,7 @@ paint and installs the image-load listener; `use_hydration_marker` stamps
 - **Never read `data-hydrated` in rsx.** It exists outside the vdom so SSR and
   the first client paint stay identical (rule 07); only CSS and tests key on it.
 - **Playwright:** a page object's `open` waits for the marker and `openAndSettle`
-  adds `networkidle` — the marker is what proves handlers are attached. To pin
+  adds `networkidle`. The marker is what proves handlers are attached. To pin
   the pre-hydration page, hold the app's `omnibus_bg*.wasm`
   (`PreHydrationComponent`, used by `boot.spec.ts`), not a `/wasm/` path:
   `dx serve` serves it from `/wasm/`, the release bundle CI runs from a hashed

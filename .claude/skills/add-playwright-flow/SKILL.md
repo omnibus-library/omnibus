@@ -27,41 +27,37 @@ import { expect, test } from "../fixtures/pageFixtures";
 
 ## 2. Add the page objects the flow needs
 
-Extend an existing page or component before adding one. A new page extends
-`BasePage`, and its fixture goes in `fixtures/pageFixtures.ts` (a sketch of the
-shape; Administration's real page is `AdminPage`, which extends
-`SettingsShellPage` and also holds the sidebar and its sections):
+Extend an existing page or component before adding one. A section of a page is
+a component the page holds: `LibrarySectionComponent` is `adminPage.library`,
+built in `AdminPage`'s constructor. A new page extends `BasePage`, sets
+`urlPattern` and `readyLocator`, opens through `openAndSettle(path)` and gets a
+fixture in `fixtures/pageFixtures.ts`.
 
 ```ts
-export class LibrarySourcesPage extends BasePage {
-  protected readonly urlPattern = /\/admin\?section=sources$/;
-
-  readonly topNav: TopNavComponent;
-
+// components/LibrarySectionComponent.ts
+export class LibrarySectionComponent extends BaseComponent {
   readonly saveButton: Locator;
-  readonly statusMessage: Locator;
+  readonly status: Locator;
 
   constructor(page: Page) {
     super(page);
-    this.topNav = new TopNavComponent(page);
-    this.saveButton = page.getByRole("button", { name: "Save library settings" });
-    this.statusMessage = page.getByRole("status");
-  }
-
-  protected get readyLocator(): Locator {
-    return this.saveButton;
-  }
-
-  async goto(): Promise<void> {
-    await this.openAndSettle("/admin?section=sources");
+    this.saveButton = page.getByRole("button", {
+      name: "Save library settings",
+    });
+    this.status = page.getByTestId("settings-status");
   }
 
   async save(): Promise<void> {
-    const saved = this.page.waitForResponse(isPostTo(/\/api\/rpc\/settings$/));
     await this.saveButton.click();
-    await saved;
+  }
+
+  async assertSaved(): Promise<void> {
+    await expect(this.status).toHaveText("Library settings saved.");
   }
 }
+
+// pages/AdminPage.ts, in the constructor
+this.library = new LibrarySectionComponent(page);
 ```
 
 ## 3. Write the layout test
@@ -144,7 +140,7 @@ locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 | an API call to seed, clean up or read back | an `apiRequests/` class, injected from `fixtures/requestFixtures.ts` |
 | a mutation's method, URL, body and status | a `contracts/` builder |
 | a payload type or a unique test value | `data/` |
-| data that must be deleted after the test | a fixture that cleans up after `use`, in `fixtures/dataFixtures.ts` |
+| data that must be deleted after the test | a fixture that cleans up after `use` (`cleanupSet` in `fixtures/lifecycle.ts`), in `fixtures/dataFixtures.ts`, or `fixtures/accountFixtures.ts` for account state |
 
 ## 7. Run
 

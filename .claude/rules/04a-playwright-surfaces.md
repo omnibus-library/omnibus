@@ -63,7 +63,7 @@ default) chooses between the flow — one continuous scroller, `#bdmq-flow`,
 sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book
 pill, and no `.bdmq-next` cue — and the snapped marquee, `#bdmq-snap` with
 `.bdmq-sec` screens. Only one exists in the DOM at a time, so a spec asserting
-either must set the preference first with the `setScrollStops(enabled, owner?)`
+either must set the preference first with the `presetScrollStops(enabled, owner?)`
 fixture, which turns it back off afterwards. Pass `"reader"` when the test then
 flips the worker reader's own Settings switch. Two controls are common to both:
 the dot rail (`bdmq-dots`, six rows, nothing else in its box) and the
@@ -75,12 +75,13 @@ after the page renders, so `from-same-hand-loading` (a quiet note, no count)
 precedes either `from-same-hand` or `from-same-hand-empty` — it used to assert
 "the only book by X" while still fetching (#2478). Playwright's auto-wait
 handles the settled assertions, but a spec that wants the *loading* state must
-hold the request open rather than racing it (`FromSameHandComponent.holdAuthorFetch`),
-and the route held is the **server function**, `POST /api/rpc/author`, not the
-REST `GET /api/authors/{id}` the mobile client uses. Holding it means
-`networkidle` never arrives, so open the page with
-`bookDetailPage.gotoUnsettled()`, not `goto()`. A spec asserting "no other books" must target `from-same-hand-empty`, never the
-mere absence of tiles.
+hold the request open rather than racing it
+(`FromSameHandComponent.holdAuthorFetch`), and the route held is the **server
+function**, `POST /api/rpc/author`, not the REST `GET /api/authors/{id}` the
+mobile client uses. Holding it means `networkidle` never arrives, so open the
+page with `bookDetailPage.gotoUnsettled()`, not `goto()`. A spec asserting "no
+other books" must target `from-same-hand-empty`, never the mere absence of
+tiles.
 
 **A saved passage's locator is a chapter title, not "Chapter N".** Once the
 book's structure loads, `highlight-meta` reads `Chapter 12: Inej · saved …`;
@@ -106,9 +107,9 @@ drops by every stacked volume, and a stack's three fanned covers triple the
 `cover` testids in its cell. Opening one mounts `series-cap`
 (`series-cap-page`, `series-cap-fold`) and the volumes as ordinary
 `ebook-tile-*` tiles; Escape folds. Because the pref follows the account, a
-spec that turns it on must run as the worker reader and `presetStackSeries`
-(`landing_series_stacks.spec.ts`) — stacking the shared admin would fold
-volumes out from under `landing.spec.ts`. `lib-stack-toggle` renders only in
+spec that turns it on must run as the worker reader and set it with
+`presetStackSeries(true, "reader")` (`landing_series_stacks.spec.ts`). Stacking
+the shared admin would fold volumes out from under `landing.spec.ts`. `lib-stack-toggle` renders only in
 grid view (absent, not disabled, in the table) and stays disabled until `/me`
 resolves.
 
@@ -169,14 +170,15 @@ reader's (`reader-highlights-drawer`, `reader-bookmarks-drawer`,
 the reader root closes them. Every turn POSTs `/api/rpc/progress` with
 `epub_cfi: "pdf-page:N"`; opening the reader POSTs nothing for position (the
 ready report is treated as already saved) but does write read status `reading`
-on an unread book — pre-set `flatland` to `reading` in `beforeAll` (the comic
+on an unread book. Pre-set `flatland` to `reading` in `beforeAll` (the comic
 spec's pattern) or assert that write.
 
 **Settings and Administration are one shell, two routes.** `/settings?section=`
 holds the five personal sections (`settings-nav-<slug>`), `/admin?section=`
 the eight server ones (`admin-nav-<slug>`); `SettingsPage` and `AdminPage`
 share the frame in `SettingsShellPage`. Pre-split slugs redirect, so a spec
-opens the new URL (`AdminPage.gotoLegacy` takes an old one). Three things trip specs:
+opens the new URL (`AdminPage.gotoLegacy` takes an old one). Three things trip
+specs:
 
 - **Under 720px the list and the section never share the screen.** With no
   `?section=` only the sidebar renders; with one, only the section and its

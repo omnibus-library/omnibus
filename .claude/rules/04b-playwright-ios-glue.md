@@ -28,8 +28,8 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
   `endSelectionDrag`, the same calls `ReaderWebView.swift` evaluates. Never
   reach into the glue's closure: a test-only export on `OmnibusReader` is API
   the app ships.
-- **Wait on what the glue reports** — `waitForFunction` on the recorded status
-  until `"ready"` — never on a timeout. The one exception is asserting an
+- **Wait on what the glue reports.** `waitForFunction` on the recorded status
+  until `"ready"`, never on a timeout. The one exception is asserting an
   absence (no relocate reported movement), which needs a window, and lives in a
   method named for what it waits out (`waitOutRelocateDebounce`).
 
