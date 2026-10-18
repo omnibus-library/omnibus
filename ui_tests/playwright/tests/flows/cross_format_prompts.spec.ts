@@ -1,9 +1,8 @@
-// Cross-format resume prompts + the unified Continue hero, on the
-// RESERVED "Parallel Latitudes" dual pair (see fixtures/dual_format.ts):
-// this spec confirms a link and writes reading/listening progress — all
-// globally visible server state — so no other spec may touch the book.
-//
-// Serial: the tests share one pair and strictly increasing position clocks.
+// Cross-format resume prompts and the unified Continue hero, on the reserved
+// "Parallel Latitudes" pair (see fixtures/dual_format.ts). It writes progress
+// and confirms a link, so no other spec may touch the book.
+
+// Serial: every test links and unlinks the same reserved pair.
 
 import { crossFormat } from "../contracts/crossFormat";
 import { progress } from "../contracts/progress";
@@ -33,7 +32,7 @@ test.describe("cross-format resume prompts", () => {
   });
 
   // The fixture unlinks the pair after each test, so each one confirms it
-  // afresh — which also turns follow on, the state every test starts from.
+  // afresh. That also turns follow on, the state every test starts from.
   test.beforeEach(
     "link the reserved pair",
     async ({ crossFormatRequests, resumePromptUuid, linkedBookUuids }) => {
@@ -169,7 +168,7 @@ test.describe("cross-format resume prompts", () => {
     expectMutation,
   }) => {
     // The live failure was the restore settle chain yanking the view off the
-    // follow jump, and that chain only engages for a stored CFI restore — a
+    // follow jump, and that chain only engages for a stored CFI restore. A
     // percent-only row skips it.
     await test.step("turn a page to store a real position", async () => {
       await epubReaderPage.goto(uuid);
@@ -248,8 +247,6 @@ test.describe("cross-format resume prompts", () => {
     });
   });
 
-  // The follow tests come last in this serial file on purpose: they flip
-  // follow, which every test above depends on being on. Each restores it.
   test("turn the jumps off with the follow switch without discarding the alignment", async ({
     bookDetailPage,
     resumePromptUuid: uuid,
@@ -318,7 +315,7 @@ test.describe("cross-format resume prompts", () => {
 
     await test.step("check the error shows and the switch stays on", async () => {
       await expect(syncLink.followError).toBeVisible();
-      // Visible is not enough — the message has to READ as a failure. Its class
+      // Visible is not enough: the message has to read as a failure. Its class
       // is the only thing that colours it, and the obvious `bdmq-syncline-warn`
       // exists solely as a compound selector on the line itself.
       await expect(syncLink.followError).toHaveClass(/bdmq-syncerr/);

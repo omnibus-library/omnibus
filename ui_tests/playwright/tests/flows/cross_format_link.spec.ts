@@ -1,11 +1,6 @@
-// Cross-format sync link — the alignment modal and the book-detail entry
-// row (unlinked nudge → linked chip → unlink), for a book carrying BOTH
-// formats. Uses the "Immersive Voyage" auto-attached pair (the one
-// intentional dual-format fixture; see `fixtures/dual_format.ts`).
-//
-// Serial: a confirmed `cross_format_links` row is per-(user, book) server
-// state visible to every worker, so the spec owns its writes and the
-// `linkedBookUuids` fixture restores the unlinked state afterwards.
+// Serial: a confirmed cross-format link is per-(user, book) state every worker
+// sees; the "Immersive Voyage" dual-format pair is the fixture, and
+// linkedBookUuids unlinks it afterwards.
 
 import { crossFormat } from "../contracts/crossFormat";
 import { AUDIOBOOK_BOOK_COUNT } from "../fixtures/audiobooks";
@@ -42,8 +37,8 @@ test.describe("cross-format sync link", () => {
       await bookDetailPage.goto(dualFormatUuid);
     });
 
-    // The position itself is NOT asserted: other specs (immersive, mini-dock)
-    // open this shared fixture in readers and players in parallel.
+    // The position is not asserted: other specs open this fixture in readers
+    // and players in parallel.
     await test.step("check the unlinked entry row shows", async () => {
       await bookDetailPage.assertDisplayedFor(dualFormatUuid);
       await bookDetailPage.topNav.assertDisplayed();

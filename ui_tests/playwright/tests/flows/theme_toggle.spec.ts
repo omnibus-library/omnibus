@@ -1,10 +1,8 @@
 import { expect, test } from "../fixtures/pageFixtures";
 
-// One segmented control lives in the user menu and again in Settings ›
-// Preferences, where it applies to this device alone. The web build keeps the
-// choice under `omn.theme` in localStorage and applies it in a post-hydration
-// effect, so SSR markup stays deterministic. Each test starts with empty
-// localStorage and asserts `data-theme`, which is the contract.
+// The segmented control in the user menu and in Settings › Preferences keeps
+// its choice under `omn.theme` and applies it after hydration. Each test starts
+// with empty localStorage and asserts `data-theme`, the contract.
 
 test.describe("theme toggle", () => {
   test("show the dark theme on first paint", async ({ libraryPage }) => {

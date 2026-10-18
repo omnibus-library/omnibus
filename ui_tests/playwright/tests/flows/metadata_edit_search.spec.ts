@@ -23,9 +23,7 @@ import { expect, test } from "../fixtures/pageFixtures";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Every provider response is stubbed: the suite must never depend on a live
-// provider or a configured key, and a fan-out would spend three real calls per test.
-//
+// Every provider response is stubbed, so no live provider or key is needed.
 // `mathematica-minor-2` ("Minor Lemmas II") is read by no other spec: one test
 // saves a real override on it and reverts it.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "mathematica-minor-2")!;

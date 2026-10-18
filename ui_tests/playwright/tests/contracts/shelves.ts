@@ -29,7 +29,7 @@ export const filteredShelfRead = (request: Request): boolean =>
 export const unfilteredShelfRead = (request: Request): boolean =>
   clauseCount(request) === 0;
 
-/** Each omitted argument leaves the body unchecked, as the originals did. */
+/** An omitted argument leaves the body unchecked. */
 export const shelves = {
   create: (req?: unknown): ExpectMutationOptions =>
     post(shelvesUrls.create, req && { req }),

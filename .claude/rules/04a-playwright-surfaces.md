@@ -64,9 +64,9 @@ sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book
 pill, and no `.bdmq-next` cue — and the snapped marquee, `#bdmq-snap` with
 `.bdmq-sec` screens. Only one exists in the DOM at a time, so a spec asserting
 either must set the preference first with the `setScrollStops(enabled, owner?)`
-fixture, which turns it back off afterwards (`"reader"` for the worker reader
-whose Settings switch a test then flips). Two controls are common to both: the
-dot rail (`bdmq-dots`, six rows, nothing else in its box) and the
+fixture, which turns it back off afterwards. Pass `"reader"` when the test then
+flips the worker reader's own Settings switch. Two controls are common to both:
+the dot rail (`bdmq-dots`, six rows, nothing else in its box) and the
 `bdmq-mode-toggle` switch in the stage's top-right corner, which flips the
 preference in place and has no `aria-pressed` until the viewer resolves.
 
@@ -78,8 +78,8 @@ handles the settled assertions, but a spec that wants the *loading* state must
 hold the request open rather than racing it (`FromSameHandComponent.holdAuthorFetch`),
 and the route held is the **server function**, `POST /api/rpc/author`, not the
 REST `GET /api/authors/{id}` the mobile client uses. Holding it means
-`networkidle` never arrives, so open the page with `open`, not `openAndSettle`.
-A spec asserting "no other books" must target `from-same-hand-empty`, never the
+`networkidle` never arrives, so open the page with
+`bookDetailPage.gotoUnsettled()`, not `goto()`. A spec asserting "no other books" must target `from-same-hand-empty`, never the
 mere absence of tiles.
 
 **A saved passage's locator is a chapter title, not "Chapter N".** Once the

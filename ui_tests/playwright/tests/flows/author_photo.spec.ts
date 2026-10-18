@@ -34,12 +34,9 @@ test.describe("author photo", () => {
   }) => {
     const id = await authorId("Ada Lovelace");
 
-    await test.step("upload a photo as the admin and open the author until it resolves", async () => {
-      // The author loads client-side and one transient photo error drops the image
-      // back to the letter until a fresh mount (`broken_photo_src`), so under
-      // parallel load the first paint can show the letter: reload until the photo does.
-      // A photo lookup queued by an earlier view of the author can also land after
-      // the upload and replace it with the letter marker, so each attempt uploads again.
+    await test.step("upload a photo and reload until it shows", async () => {
+      // One transient photo error drops the image to the letter until a fresh mount,
+      // and a queued lookup can overwrite the upload, so retry both.
       await expect(async () => {
         await uploadAuthorPhoto(id);
         await authorPage.goto(id);

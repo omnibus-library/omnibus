@@ -4,10 +4,9 @@ import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// A real save on the shared admin would hide the CBZ fixtures out from under
-// `landing.spec.ts` in a parallel worker, so the preference is written as the
-// worker's reader. Both CBZ fixtures are reserved for comic_reader.spec.ts's
-// progress writes; the assertions here only read them.
+// A real save on the shared admin would hide the CBZ fixtures from
+// `landing.spec.ts`, so the preference is written as the worker's reader.
+// comic_reader.spec.ts owns both fixtures' progress writes; these only read.
 const COMICS = FIXTURE_BOOKS.filter((book) =>
   book.slug.startsWith("aurora-station-"),
 );

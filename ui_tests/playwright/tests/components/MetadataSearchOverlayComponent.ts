@@ -148,7 +148,7 @@ export class MetadataSearchOverlayComponent extends BaseComponent {
     await this.closeButton.click();
   }
 
-  /** Clicks the scrim, not the card, which must not dismiss. */
+  /** Clicks the scrim rather than the card; a click on the card itself must not dismiss. */
   async closeByClickingOutside(): Promise<void> {
     await this.scrim.click({ position: { x: 5, y: 5 } });
   }

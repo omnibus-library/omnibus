@@ -8,7 +8,7 @@ export const bookmarksUrls = {
 
 /** The writes the bookmarks drawer makes. */
 export const bookmarks = {
-  /** The save "+ Bookmark" makes; at the playhead, whose position the body leaves unpinned, pass none. */
+  /** The save "+ Bookmark" makes. Pass no bookmark for one taken at the playhead, whose position a test cannot pin. */
   create: (bookmark?: NewBookmark): ExpectMutationOptions =>
     post(
       bookmarksUrls.create,

@@ -47,7 +47,7 @@ export class TopNavComponent extends BaseComponent {
     this.userMenuPanel = page.getByTestId("user-menu-panel");
     this.searchButton = page.getByTestId("search-trigger");
     this.searchPalette = new SearchPaletteComponent(page, this.searchButton);
-    // The trail the bar replaced: top-level pages draw none.
+    // Absent on top-level pages.
     this.breadcrumbNav = page.locator("nav.breadcrumb");
 
     this.shelvesLink = this.root.getByRole("link", { name: "Shelves" });

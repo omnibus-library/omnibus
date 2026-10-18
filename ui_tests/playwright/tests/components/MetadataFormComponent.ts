@@ -3,9 +3,8 @@ import { BaseComponent } from "./BaseComponent";
 
 /**
  * The metadata edit form with its cover controls and save bar, shared by the
- * edit page and the add-books review. Its fields are found by label within
- * their own wrappers, since the edition picker mounts inside the form with a
- * Title field and "Copy X from Y" buttons that answer to the same labels.
+ * edit page and the add-books review. Fields are found by label within their
+ * own wrappers: the edition picker mounts inside the form and repeats them.
  */
 export class MetadataFormComponent extends BaseComponent {
   readonly titleField: Locator;

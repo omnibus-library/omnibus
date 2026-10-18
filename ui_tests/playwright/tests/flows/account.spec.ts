@@ -6,12 +6,9 @@ import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
 
-// The suite's seeded session is an admin, a superset of the plain-user surface
-// these sections need. Profile holds the display name and picture, Preferences
-// the switches and hidden formats, Goals the reading targets, Devices the
-// Kindle address and Kobo sync, and Sign-in & security the password and
-// sessions. The admin's stack series, hidden formats and scroll stops are read
-// by other specs, so this file only checks that their controls render.
+// The seeded admin covers the plain-user sections: Profile, Preferences, Goals,
+// Devices and Sign-in & security. Other specs read its stack series, hidden
+// formats and scroll stops, so this file only checks those controls render.
 
 test.describe("profile section", () => {
   test("show the profile section layout", async ({ settingsPage }) => {

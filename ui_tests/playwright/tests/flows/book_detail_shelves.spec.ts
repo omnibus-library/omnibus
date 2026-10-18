@@ -6,13 +6,9 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// The book page's More stop shows every shelf holding the book as a tile, and
-// "Add to shelf" opens a picker that files this book on a hand-picked shelf, or
-// takes it off, without leaving the page.
-//
-// `standalone-forest` is reserved for this spec (see fixtures/epubs.ts). The
-// suite is fullyParallel, so each test makes a shelf of its own and asserts only
-// about that shelf, never about the book's whole shelf list.
+// The More stop tiles every shelf holding the book, and "Add to shelf" files it
+// on a hand-picked shelf or takes it off. `standalone-forest` is reserved here,
+// so each test makes a shelf of its own and asserts about that shelf alone.
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-forest")!;
 

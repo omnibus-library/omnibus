@@ -91,8 +91,7 @@ export class ListenPage extends BasePage {
     this.sleepStatus = page.getByTestId("sleep-status");
     this.sleepScrim = page.locator(".lp-scrim");
     this.syncHereButton = page.getByTestId("listen-sync-here");
-    // The offer card this replaced, pinned to its historical copy so a
-    // resurrected prompt fails where a role or testid that never existed would not.
+    // Matches the retired sync prompt's copy, so its return fails here.
     this.removedSyncPrompt = page.getByText(/Jump ahead|Sync to \d/);
     this.scrubTimes = page.getByTestId("listen-scrub-times");
     this.openPanel = page.locator(".lp-panel:focus-within");

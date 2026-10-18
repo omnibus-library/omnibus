@@ -15,8 +15,8 @@ const CODE_QUARTET = [
 const PIONEERS_STACK = "Pioneers, 5 books";
 const CODE_QUARTET_STACK = "Code Quartet, 4 books";
 
-// Stack series is per-account, so every test but the admin check runs as the
-// worker's reader (see 04a), and the fixture puts its choice back after each.
+// Stack series is per-account, so these tests run as the worker's reader (see
+// 04a), and the fixture turns it off after each.
 test.describe("series stacks", () => {
   test.beforeAll("seed the library", async ({ request }) => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);

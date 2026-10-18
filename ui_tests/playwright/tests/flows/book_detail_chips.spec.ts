@@ -1,10 +1,6 @@
-// Book-detail hero chip editors: the admin-only "+ genres" / "+ tags" pills
-// that swap the hero's chip lists for the shared ChipEditor and save a
-// genres/subjects override on every add.
-//
-// Both editors write `metadata_overrides` on the target, which is globally
-// visible and flips `has_override`, so this file owns `standalone-glacier`
-// outright (see the fixture comment in `tests/fixtures/epubs.ts`).
+// The admin-only "+ genres" / "+ tags" hero pills swap the chip lists for the
+// shared ChipEditor and save an override on every add. Those overrides flip
+// `has_override` for every reader, so this file owns `standalone-glacier`.
 
 import { overrides } from "../contracts/overrides";
 import type { BookRecord } from "../data/bookDetail";

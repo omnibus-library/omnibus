@@ -24,7 +24,7 @@ function switchWrite(url: RegExp, enabled?: boolean): ExpectMutationOptions {
 // The config pins the browser to UTC, so every stats write declares offset 0 (rule 10).
 const UTC = { utc_offset_minutes: 0 };
 
-/** Each omitted argument leaves the body unchecked, as the originals did. */
+/** An omitted argument leaves the body unchecked. */
 export const account = {
   scrollStops: (enabled?: boolean): ExpectMutationOptions =>
     switchWrite(accountUrls.scrollStops, enabled),

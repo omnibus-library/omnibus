@@ -347,10 +347,10 @@ test.describe("listen page", () => {
 
       await test.step("check only the time left follows the speed", async () => {
         const at2x = await listenPage.scrubStamps();
-        // The total is book time — the same at 2x as at 1x (a second of slack
+        // The total is book time, the same at 2x as at 1x (a second of slack
         // absorbs `format_hms` truncation).
         expect(Math.abs(at2x.total - at1x.total)).toBeLessThanOrEqual(1);
-        // The time left is the one rate-adjusted figure — halved at 2x.
+        // The time left is the one rate-adjusted figure, so 2x halves it.
         expect(at2x.remaining).toBeLessThan(at1x.remaining);
         expect(
           Math.abs(at2x.remaining - at1x.remaining / 2),
@@ -496,8 +496,8 @@ test.describe("listen page", () => {
         await expect(listenPage.seekSlider).toBeVisible();
       });
 
-      // Scrubbing persists a per-(user, book) position, so an earlier run — or
-      // a CI retry — can resume mid-way and defeat the baseline below.
+      // Scrubbing persists a per-(user, book) position, so an earlier run, or a
+      // CI retry, can resume mid-way and defeat the baseline below.
       await test.step("park at the start", async () => {
         await listenPage.parkAtStart();
       });
@@ -563,9 +563,9 @@ test.describe("listen page", () => {
         await listenPage.drawers.jumpToNextChapter();
       });
 
-      // Bug #1897: without pushing the seek target into the transport display
-      // immediately, the slider and elapsed readout stay at `before` until a
-      // `timeupdate` — which never fires while paused. No play() call is made.
+      // Without pushing the seek target into the transport display at once, the
+      // slider and elapsed readout stay at `before` until a `timeupdate`, which
+      // never fires while paused.
       await test.step("check the scrubber moved while still paused", async () => {
         await expect(listenPage.playButton).toBeVisible();
         await expect
@@ -755,7 +755,7 @@ test.describe("listen page", () => {
 
       // The fractional offset is the point: `ceil` gives a 3s countdown while
       // the playhead needs 2.1s, so the seam is crossed with the countdown above
-      // zero — the race where the timer re-armed to the next chapter instead.
+      // zero. That is the race the timer lost by re-arming to the next chapter.
       await test.step("park 2.1 seconds before the seam", async () => {
         const armAt = SLEEP_SEAM_SECONDS - 2.1;
         await listenPage.seekTo(armAt);

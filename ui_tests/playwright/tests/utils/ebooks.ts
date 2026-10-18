@@ -2,16 +2,8 @@ import type { APIRequestContext } from "@playwright/test";
 import { expect } from "../fixtures/test";
 
 /**
- * Look up the backend `uuid` for a fixture book by exact title. Hits the
- * same RPC the landing page reads, so the uuid matches what
- * `/books/:uuid` would receive on a real click. Throws if the seeded
- * library does not contain a book with that title.
- *
- * The route is uuid-keyed (not id-keyed) so bookmarked URLs survive
- * reindexes — `books.id` is `AUTOINCREMENT` and renumbers on every
- * `replace_books` run, while `books.uuid` is deterministic UUIDv5 of
- * `(library_path, filename)` and stays stable across reindexes and
- * re-installs. See `db::queries::stable_uuid`.
+ * Looks up a seeded book's `uuid` by exact title, polling until it is indexed.
+ * A uuid is a random v4 minted once per book, so it survives reindexes.
  */
 export async function fetchBookUuidByTitle(
   request: APIRequestContext,

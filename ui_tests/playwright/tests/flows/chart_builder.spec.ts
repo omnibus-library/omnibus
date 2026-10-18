@@ -2,10 +2,8 @@ import { chartBuilder } from "../contracts/chartBuilder";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 
-// Every test is about the picker's contract, never plotted values: reading
-// history is shared state the reader and read-status specs write. Tests that
-// need marks stub the chart read, so what the page does with a well-formed
-// result is covered here and what the server computes is db::stats::builder's.
+// Reading history is shared state, so marks are never asserted: tests that need
+// them stub the chart read.
 test.describe("chart builder", () => {
   // Nothing in the UI links to the builder yet, so the specs reach it by URL, a
   // departure from rule 04's navigation clause that lapses when /stats links it.

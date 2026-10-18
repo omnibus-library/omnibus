@@ -5,9 +5,9 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Reserved: every test here writes overrides and then drops them all, so they
-// run one at a time and no other spec may read this book (alpha is
-// metadata_edit's).
+// Reserved: the saving tests write overrides on this book and revert them
+// afterwards, so the file runs one test at a time and no other spec may read it
+// (alpha is metadata_edit's).
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-ocean")!;
 const NEW_TAG = "Speculative Fiction";
 

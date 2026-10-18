@@ -63,7 +63,7 @@ export class BookDetailStopsComponent extends BaseComponent {
     return this.section(index).locator(".bdmq-seclab");
   }
 
-  /** The "scroll — next" cue under a snapped screen. */
+  /** The next-screen cue under a snapped screen. */
   nextCue(index: number): Locator {
     return this.section(index).locator(".bdmq-next");
   }

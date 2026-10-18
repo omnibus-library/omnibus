@@ -4,6 +4,7 @@ import { BasePage } from "./BasePage";
 
 /** What the router shows for any path it has no route for. */
 export class NotFoundPage extends BasePage {
+  // Any unmatched path lands here; the spec checks the path in the page text.
   protected readonly urlPattern = /.*/;
 
   readonly topNav: TopNavComponent;

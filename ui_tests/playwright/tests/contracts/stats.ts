@@ -13,8 +13,8 @@ export const statsUrls = {
 export const stats = {
   /**
    * The summary a period pill fetches. The suite pins `timezoneId` to UTC, so
-   * the offset is 0 (rule 10); `reader` is null on your own page, which Dioxus
-   * encodes as an omitted argument.
+   * the offset is 0 (rule 10); `reader` is null on your own page, and Dioxus
+   * sends that omitted argument as `user_id: null`.
    */
   summary: (range: StatsRange, reader: number | null = null) =>
     post(statsUrls.summary, { range, utc_offset_minutes: 0, user_id: reader }),

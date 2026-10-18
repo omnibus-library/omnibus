@@ -29,8 +29,8 @@ import { expect, test } from "../fixtures/pageFixtures";
 
 Extend an existing page or component before adding one. A new page extends
 `BasePage`, and its fixture goes in `fixtures/pageFixtures.ts` (a sketch of the
-shape; the real `AdminPage` extends `SettingsShellPage` and also holds the
-sidebar and its sections):
+shape; Administration's real page is `AdminPage`, which extends
+`SettingsShellPage` and also holds the sidebar and its sections):
 
 ```ts
 export class LibrarySourcesPage extends BasePage {
@@ -53,7 +53,7 @@ export class LibrarySourcesPage extends BasePage {
   }
 
   async goto(): Promise<void> {
-    await this.open("/admin?section=sources");
+    await this.openAndSettle("/admin?section=sources");
   }
 
   async save(): Promise<void> {
@@ -70,15 +70,15 @@ One per spec, first in the file, with no user actions: open the page, then
 check its URL, the shared nav and the page's key elements.
 
 ```ts
-test("show the library sources layout", async ({ librarySourcesPage }) => {
+test("show the library sources layout", async ({ adminPage }) => {
   await test.step("open the library sources", async () => {
-    await librarySourcesPage.goto();
+    await adminPage.goto("sources");
   });
 
   await test.step("check the page and its nav", async () => {
-    await librarySourcesPage.assertDisplayed();
-    await librarySourcesPage.topNav.assertDisplayed();
-    await expect(librarySourcesPage.saveButton).toBeVisible();
+    await adminPage.assertDisplayedFor("sources");
+    await adminPage.topNav.assertDisplayed();
+    await expect(adminPage.library.saveButton).toBeVisible();
   });
 });
 ```
@@ -90,14 +90,21 @@ Happy path and error path each get their own test, and each phase is a
 
 ```ts
 test.describe("library sources", () => {
-  test("save the library paths", async ({ librarySourcesPage, expectMutation }) => {
+  test("save the library paths", async ({
+    adminPage,
+    expectMutation,
+    scratchLibrary,
+  }) => {
     await test.step("open the library sources", async () => {
-      await librarySourcesPage.goto();
+      await adminPage.goto("sources");
     });
 
     await test.step("save the form", async () => {
-      await expectMutation(settings.save(paths), () => librarySourcesPage.save());
-      await expect(librarySourcesPage.statusMessage).toHaveText("Library settings saved.");
+      await adminPage.library.fillForm(scratchLibrary);
+      await expectMutation(settings.saveLibrary(scratchLibrary), () =>
+        adminPage.library.save(),
+      );
+      await adminPage.library.assertSaved();
     });
   });
 });

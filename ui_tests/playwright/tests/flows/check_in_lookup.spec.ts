@@ -143,7 +143,7 @@ test.describe("check-in lookup", () => {
 
     await test.step("check the library shows without the flow", async () => {
       await libraryPage.assertDisplayed();
-      await expect(libraryPage.libraryHeading).toBeVisible();
+      await expect(libraryPage.libraryHeading).toHaveText("Your Library");
       await expect(flow.root).toHaveCount(0);
     });
   });

@@ -40,10 +40,11 @@ context, in localStorage). The three states a filtered shelf can be in:
 the shelf cases run as the worker reader (`readerLibraryPage`, `readerShelfPage`)
 with the hand-picked `filterShelf` only that reader owns.
 
-- A held read is a page-object pair (`ShelfPage.holdShelfReads` /
-  `releaseShelfReads`): the route handler awaits a gate, and release goes through
-  `page.unrouteAll({ behavior: "wait" })` — a plain `unroute` while a handler is
-  parked throws "Route is already handled".
+- A held read is `FilterBarComponent.holdShelfReads(clauses?)`, which parks the
+  shelf reads carrying that many clauses (all, when omitted) and returns the
+  release. The release drops the routes with `page.unrouteAll({ behavior: "wait"
+  })`: a plain `unroute` while a handler is parked throws "Route is already
+  handled".
 - A state that exists only between two events (a tile re-enabled before it
   leaves) is recorded by a `record*` observer (`recordRemoveButtonStates`) and
   asserted afterwards, never polled for.

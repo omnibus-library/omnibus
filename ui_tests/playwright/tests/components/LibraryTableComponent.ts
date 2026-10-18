@@ -212,8 +212,9 @@ export class LibraryTableComponent extends BaseComponent {
     await expect(this.cell(book.slug, "series")).toHaveText(
       expectedSeriesText(book),
     );
-    // Public-domain books carry long subject lists, and standalone-ocean's tags
-    // are edited by a spec, so their fixtures leave tags unpinned.
+    // Public-domain books carry long subject lists, and standalone-ocean's
+    // title, authors and tags are edited by a spec, so their fixtures leave
+    // tags unpinned.
     if (book.tags) {
       await expect(this.cell(book.slug, "tags")).toHaveText(
         book.tags.join(", "),

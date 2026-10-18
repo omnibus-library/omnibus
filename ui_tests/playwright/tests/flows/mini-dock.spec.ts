@@ -303,7 +303,7 @@ test.describe("mini-dock", () => {
     });
 
     // Freshly landed at a chapter start (≤ 3 s in), the target is the previous
-    // chapter's start — back to 0.
+    // chapter's start, back to 0.
     await test.step("jump back to the previous chapter", async () => {
       const afterNext = await listenPage.audioPosition();
       await miniDock.jumpToPreviousChapter();

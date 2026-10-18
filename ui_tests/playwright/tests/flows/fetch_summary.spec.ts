@@ -4,10 +4,9 @@ import { expect, test } from "../fixtures/pageFixtures";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// "Fetch Summary" pulls a blurb from the source cascade (Hardcover → Google
-// Books → Open Library). The generated fixtures ship no descriptions, so every
-// book is "sparse" (< 10 words), which is when the button appears. The cascade
-// and the save are stubbed, so CI never touches a live external API.
+// "Fetch Summary" pulls a blurb from the source cascade. The fixtures ship no
+// descriptions, so every book is sparse (< 10 words), which is when the button
+// appears; the cascade and the save are stubbed, so CI calls no live API.
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 
