@@ -1,5 +1,5 @@
 ---
-paths: "ui_tests/playwright/tests/ios_glue/**, ui_tests/playwright/tests/utils/ios_glue.ts, omnibus-ios/omnibus/Reader/Web/**"
+paths: "ui_tests/playwright/tests/ios_glue/**, ui_tests/playwright/tests/pages/IosGluePage.ts, ui_tests/playwright/tests/data/iosGlue.ts, omnibus-ios/omnibus/Reader/Web/**"
 ---
 # 04b — The iOS reader glue harness
 

@@ -27,7 +27,7 @@ The `playwright-driver.browsers` package in [flake.nix](../../flake.nix) provide
 
 ## Style — page objects, injected by fixtures
 
-Every spec is built from page, component and request objects that fixtures inject. The layout, the rules and the worked example live in [04d-playwright-page-objects.md](04d-playwright-page-objects.md).
+Every spec is built from page, component and request objects that fixtures inject, and holds tests and nothing else: its locators and actions are page-object members, its API calls request objects, its payloads contracts. The layout, the rules and the worked example live in [04d-playwright-page-objects.md](04d-playwright-page-objects.md).
 
 ## Selectors — semantic first, `locator()` last, never XPath
 
@@ -41,9 +41,9 @@ Preference order:
 
 Never use XPath. If you want XPath, the SSR markup probably needs a role, label, or testid added instead.
 
-Per-surface gotchas — which selector each screen actually answers to, and
-the ones that look right and match nothing — live in
-[04a-playwright-surfaces.md](04a-playwright-surfaces.md) (the filter's: [04c](04c-playwright-filters.md); the stats page's: [04e](04e-playwright-stats.md)).
+Per-surface gotchas — the selector each screen answers to, and the ones that
+look right and match nothing — live in [04a](04a-playwright-surfaces.md) (the
+filter's: [04c](04c-playwright-filters.md); the stats page's: [04e](04e-playwright-stats.md)).
 Read it before writing a selector against the landing grid/table, the continue
 fan, the book detail panel, or the stats page.
 
@@ -55,9 +55,9 @@ not for a route with no affordance pointing at it, which tests a surface no user
 can reach and hides the fact that it is unreachable.
 
 **The discovery back arrow is mobile-only markup.** `series-back` and
-`author-back` are emitted by the mobile shell alone
-(`components/back_link.rs`, #2291); on web the top nav is the way back and
-those testids do not exist. `tags-back` went with the tag cloud page (#2157).
+`author-back` come from the mobile shell alone (`components/back_link.rs`,
+#2291); on web the top nav is the way back. `tags-back` went with the tag
+cloud page (#2157).
 
 **A shelf opens two ways on web, and they are different surfaces.** Both start
 in the landing library's shelf section, because **the top nav has no Shelves
@@ -85,8 +85,6 @@ Under `tests/flows/`, each `*.spec.ts` contains:
 
 1. **One layout test** (`show the <page> layout`) asserting the destination page's structure: key elements visible, shared nav present (`topNav.assertDisplayed()`). No user actions.
 2. **One or more action tests**, one per user action, covering happy path and error path. Action tests drive the UI, assert network contracts, then assert UI state.
-
-A spec holds tests and nothing else: its locators and actions are page-object members, its API calls request objects, its payloads contracts.
 
 ## Waits — `expect.poll` and auto-waiting only
 
@@ -128,14 +126,14 @@ Call the page's `forceServerError(contract)` before triggering the action, then 
 
 ```ts
 test("save the library paths", async ({
-  settingsPage,
+  adminPage,
   scratchLibrary,
   expectMutation,
 }) => {
-  const { library } = settingsPage;
+  const { library } = adminPage;
 
   await test.step("fill in the library paths", async () => {
-    await settingsPage.goto("library");
+    await adminPage.goto("sources");
     await library.fillForm(scratchLibrary);
   });
 

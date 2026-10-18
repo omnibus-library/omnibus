@@ -174,14 +174,15 @@ spec's pattern) or assert that write.
 
 **Settings and Administration are one shell, two routes.** `/settings?section=`
 holds the five personal sections (`settings-nav-<slug>`), `/admin?section=`
-the eight server ones (`admin-nav-<slug>`); pre-split slugs redirect, so a spec
-opens the new URL directly. Three things trip specs:
+the eight server ones (`admin-nav-<slug>`); `SettingsPage` and `AdminPage`
+share the frame in `SettingsShellPage`. Pre-split slugs redirect, so a spec
+opens the new URL (`AdminPage.gotoLegacy` takes an old one). Three things trip specs:
 
 - **Under 720px the list and the section never share the screen.** With no
   `?section=` only the sidebar renders; with one, only the section and its
   `settings-back` link. A narrow spec names the section in the URL.
 - **A sidebar click over unsaved edits doesn't navigate.** It opens
-  `unsaved-confirm` (`unsaved-keep` / `unsaved-discard`).
+  `unsaved-confirm`: `SettingsShellPage.keepEditing()` / `discardEdits()`.
 - **Preferences has no Save button.** Each switch saves on change and reports
   in `{slug}-status`; hidden formats is a `fieldset` (`getByRole("group")`) of
   `hidden-format-toggle-<fmt>` that POSTs on every change, and All Books shows

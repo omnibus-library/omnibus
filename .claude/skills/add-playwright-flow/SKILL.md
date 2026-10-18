@@ -29,7 +29,8 @@ import { expect, test } from "../fixtures/pageFixtures";
 
 Extend an existing page or component before adding one. A new page extends
 `BasePage`, and its fixture goes in `fixtures/pageFixtures.ts` (a sketch of the
-shape; the real `SettingsPage` also holds the sidebar and its sections):
+shape; the real `AdminPage` extends `SettingsShellPage` and also holds the
+sidebar and its sections):
 
 ```ts
 export class LibrarySourcesPage extends BasePage {

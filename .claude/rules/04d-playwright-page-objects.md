@@ -11,7 +11,7 @@ Every spec is built this way. The `tests/flows/check_in_*.spec.ts` specs are the
 
 | Directory | Holds |
 |---|---|
-| `tests/pages/` | `<Name>Page.ts`, one class per page, extending `BasePage`, or a shared abstract base when pages draw the same chrome (`PagedReaderPage`) |
+| `tests/pages/` | `<Name>Page.ts`, one class per page, extending `BasePage`, or a shared abstract base when pages draw the same chrome (`PagedReaderPage`, `SettingsShellPage`) |
 | `tests/components/` | `<Name>Component.ts`, extending `BaseComponent`: widgets on several pages (top nav, the check-in flow and its overlay) |
 | `tests/apiRequests/` | `<Area>Requests.ts`, extending `BaseRequests`: the API calls a spec makes to seed, clean up or read back |
 | `tests/contracts/` | named `expectMutation` contracts per endpoint family (`scan.checkIn(book)`) and the URL patterns behind them |
@@ -47,7 +47,7 @@ and once for its bearer token, and deleted when the worker ends.
 `readerFixtures.ts` overrides `storageState`, so the test's own `page` is
 already that user's. A spec whose page stays the admin's reaches the reader
 through `readerPage` and the page objects built on it (`readerLibraryPage`,
-`readerBookDetailPage`, `readerSettingsPage`, `readerShelfPage`), each in a
+`readerBookDetailPage`, `readerSettingsPage`, `readerAdminPage`, `readerShelfPage`), each in a
 browser context signed in as them; `readerExpectMutation` is bound to that page
 and `readerRequest` makes the API calls. A household needs a second reader:
 `secondReaderAccount`, `secondReaderPage` and `secondReaderExpectMutation`.
