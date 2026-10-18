@@ -40,15 +40,42 @@ impl SyncDelta {
 }
 
 /// Compute what `device_id` still needs, given `user_id`'s opted-in books.
-/// **Read-only**: [`record_synced`] advances the snapshot once the entitlements
-/// are written to the response, so a device that drops the connection mid-body
-/// sees the same delta again rather than silently losing books.
+/// This plain delta is read-only. [`record_synced`] advances the snapshot once the entitlements
+/// are written to the response, so a device that drops the connection mid-body sees the same
+/// delta again. [`fresh_sync_delta`] also forgets the still-synced books up front, which is
+/// idempotent, so its dropped body replays too.
 pub async fn sync_delta(
     pool: &SqlitePool,
     user_id: i64,
     device_id: i64,
 ) -> Result<SyncDelta, KoboError> {
+    delta(pool, user_id, device_id, false).await
+}
+
+/// [`sync_delta`] for a device that may hold any library, so every still-synced book comes back
+/// as new. Rows for books no longer synced stay, so their removal is still owed.
+pub async fn fresh_sync_delta(
+    pool: &SqlitePool,
+    user_id: i64,
+    device_id: i64,
+) -> Result<SyncDelta, KoboError> {
+    delta(pool, user_id, device_id, true).await
+}
+
+async fn delta(
+    pool: &SqlitePool,
+    user_id: i64,
+    device_id: i64,
+    fresh: bool,
+) -> Result<SyncDelta, KoboError> {
     let wanted = sync_books(pool, user_id).await?;
+    if fresh {
+        // Committed, so page 2 of a continue loop (the plain path) still finds them gone.
+        let uuids: Vec<&str> = wanted.iter().map(|b| b.uuid.as_str()).collect();
+        let mut tx = pool.begin().await?;
+        delete_removed(&mut tx, device_id, &uuids).await?;
+        tx.commit().await?;
+    }
     let held = held_snapshot(pool, device_id).await?;
     let wanted_uuid_list: Vec<String> = wanted.iter().map(|b| b.uuid.clone()).collect();
     let states = super::reading_state_for(pool, user_id, &wanted_uuid_list).await?;
@@ -207,22 +234,6 @@ async fn delete_removed(
         }
         q.execute(&mut **tx).await?;
     }
-    Ok(())
-}
-
-/// Forget the books `user_id` still syncs that `device_id` holds, so its next
-/// sync resends them as new. Rows for books no longer synced stay, so
-/// [`sync_delta`] still owes the device their removal.
-pub async fn clear_snapshot(
-    pool: &SqlitePool,
-    user_id: i64,
-    device_id: i64,
-) -> Result<(), KoboError> {
-    let wanted = sync_books(pool, user_id).await?;
-    let uuids: Vec<&str> = wanted.iter().map(|b| b.uuid.as_str()).collect();
-    let mut tx = pool.begin().await?;
-    delete_removed(&mut tx, device_id, &uuids).await?;
-    tx.commit().await?;
     Ok(())
 }
 

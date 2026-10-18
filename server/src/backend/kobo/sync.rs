@@ -31,25 +31,25 @@ const SPAN_DERIVATIONS_PER_SYNC: usize = 8;
 const SYNC_TOKEN_HEADER: &str = "x-kobo-synctoken";
 const SYNC_TOKEN: &str = "omnibus";
 
-/// `GET library/sync`: the per-device delta, streamed as a JSON array via [`Body::from_stream`].
-/// A request without our sync token is a fresh library: it clears the device's still-synced books
-/// up front, so they resend as `NewEntitlement`s while owed `IsRemoved` entitlements still go out.
-/// One that echoes the token gets only changes and removals, paged at [`SYNC_PAGE_SIZE`]
-/// (`x-kobo-sync: continue`). The snapshot advances in the final poll, so a dropped body replays.
+/// `GET library/sync`, the per-device delta streamed as a JSON array via [`Body::from_stream`] and
+/// paged at [`SYNC_PAGE_SIZE`] (`x-kobo-sync: continue`). A request without our sync token (first
+/// sync, factory reset, re-sign-in, a Kobo store token) may hold any library, so the still-synced
+/// books resend as `NewEntitlement`s and owed removals still go out. The snapshot advances in the
+/// final poll, so a dropped body replays.
 pub async fn library_sync(
     auth: KoboAuthUser,
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    if headers
+    let fresh = headers
         .get(SYNC_TOKEN_HEADER)
-        .is_none_or(|v| v != SYNC_TOKEN)
-    {
-        if let Err(e) = db::kobo::clear_snapshot(state.pool(), auth.user_id, auth.device_id).await {
-            return internal("kobo clear_snapshot", e);
-        }
-    }
-    let delta = match db::kobo::sync_delta(state.pool(), auth.user_id, auth.device_id).await {
+        .is_none_or(|v| v != SYNC_TOKEN);
+    let delta = if fresh {
+        db::kobo::fresh_sync_delta(state.pool(), auth.user_id, auth.device_id).await
+    } else {
+        db::kobo::sync_delta(state.pool(), auth.user_id, auth.device_id).await
+    };
+    let delta = match delta {
         Ok(d) => d,
         Err(e) => return internal("kobo sync_delta", e),
     };
