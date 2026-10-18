@@ -13,11 +13,12 @@ use dioxus::prelude::*;
 use dioxus_router::{Link, Outlet};
 use omnibus_shared::{AuthorReading, AuthorSort, AuthorSummary};
 
-use super::index_shell::{use_index_page_shell, IndexPageState};
-use super::AuthorPage;
 use crate::components::loading::RowSkeletons;
 use crate::components::{Loading, LoadingKind};
 use crate::{data, index_prefs, use_server_url, Route};
+
+use super::index_shell::{use_index_page_shell, IndexPageState};
+use super::AuthorPage;
 
 mod order;
 mod rail;
@@ -52,29 +53,37 @@ impl ReadingState {
 pub enum Preview {
     /// The list or the reader's progress is still loading.
     Pending,
-    /// No author to show: an empty library, or a list that failed to load.
+    /// The library has no authors.
     Empty,
+    /// The list failed to load and there is nothing earlier to show.
+    Unavailable,
     Author(i64),
 }
 
 /// What the layout shares with the pane below it: `/authors`' [`Preview`],
-/// and the rows, so a delete can drop its author from the mounted list.
+/// and the rows and progress, so a delete can drop its author from both.
 #[derive(Clone, Copy)]
 struct AuthorsListContext {
     preview: Memo<Preview>,
     // Read only by the web-only delete, through `use_forget_author`.
     #[cfg_attr(feature = "mobile", allow(dead_code))]
     authors: Signal<Vec<AuthorSummary>>,
+    #[cfg_attr(feature = "mobile", allow(dead_code))]
+    reading: Signal<ReadingState>,
 }
 
-/// Drops a deleted author from the mounted list, so neither its row nor the
-/// preview outlives the delete. A no-op outside the authors layout.
+/// Drops a deleted author from the mounted list and its progress, so neither
+/// the row, the preview nor the Reading count outlives the delete. A no-op
+/// outside the authors layout.
 #[cfg(not(feature = "mobile"))]
 pub fn use_forget_author() -> impl FnMut(i64) + Copy {
     let ctx = try_use_context::<AuthorsListContext>();
     move |id| {
         if let Some(mut ctx) = ctx {
             ctx.authors.write().retain(|a| a.id != id);
+            if let ReadingState::Ready(map) = &mut *ctx.reading.write() {
+                map.remove(&id);
+            }
         }
     }
 }
@@ -99,43 +108,25 @@ pub fn AuthorsBrowser(routed: Option<i64>) -> Element {
     );
     let reading = use_author_reading(server_url);
     let mut only_reading = use_signal(|| false);
-
-    // Waits for the progress too, so the preview never lands on one author
-    // and then jumps to the one the reader was actually reading.
-    let preview = use_memo(move || {
-        if error.read().is_some() {
-            return Preview::Empty;
-        }
-        if loading() || *reading.read() == ReadingState::Pending {
-            return Preview::Pending;
-        }
-        default_author(&authors.read(), reading.read().ready())
-            .map_or(Preview::Empty, Preview::Author)
+    let preview = use_preview(authors, loading, error, reading);
+    use_context_provider(|| AuthorsListContext {
+        preview,
+        authors,
+        reading,
     });
-    use_context_provider(|| AuthorsListContext { preview, authors });
     let shown = routed.or(match preview() {
         Preview::Author(id) => Some(id),
         _ => None,
     });
-
-    let groups = use_memo(move || {
-        let state = reading.read();
-        compute_author_groups(
-            &authors.read(),
-            ListQuery {
-                text: &filter.read(),
-                sort: sort(),
-                reading: state.ready(),
-                only_reading: only_reading(),
-            },
-        )
-    });
+    let groups = use_author_groups(authors, filter, sort, reading, only_reading);
     let reading_count = reading
         .read()
         .ready()
         .map(|m| m.values().filter(|r| r.reading > 0).count());
     let total = (!loading() && error.read().is_none()).then(|| authors.read().len());
-    use_reveal_current_row(loading);
+    let rows_pending =
+        loading() || (sort() == AuthorSort::Recent && *reading.read() == ReadingState::Pending);
+    use_reveal_current_row(shown.is_some() && !rows_pending);
 
     rsx! {
         div {
@@ -149,11 +140,9 @@ pub fn AuthorsBrowser(routed: Option<i64>) -> Element {
                     reading_count,
                     only_reading: only_reading(),
                     on_filter: move |v| filter.set(v),
-                    on_sort: move |s: AuthorSort| {
+                    on_sort: move |s| {
                         sort.set(s);
-                        let mut prefs = index_prefs::load();
-                        prefs.authors_sort = s;
-                        index_prefs::save(&prefs);
+                        save_author_sort(s);
                     },
                     on_only_reading: move |on| only_reading.set(on),
                 }
@@ -177,6 +166,57 @@ pub fn AuthorsBrowser(routed: Option<i64>) -> Element {
     }
 }
 
+/// Which author `/authors` previews. Waits for the progress too, so the
+/// preview never lands on one author and then jumps to the one the reader
+/// was reading. A failed refresh keeps the rows it had, so only a first load
+/// that fails leaves nothing to preview.
+fn use_preview(
+    authors: Signal<Vec<AuthorSummary>>,
+    loading: Signal<bool>,
+    error: Signal<Option<String>>,
+    reading: Signal<ReadingState>,
+) -> Memo<Preview> {
+    use_memo(move || {
+        if error.read().is_some() && authors.read().is_empty() {
+            return Preview::Unavailable;
+        }
+        if loading() || *reading.read() == ReadingState::Pending {
+            return Preview::Pending;
+        }
+        default_author(&authors.read(), reading.read().ready())
+            .map_or(Preview::Empty, Preview::Author)
+    })
+}
+
+/// The visible rows, in order and grouped, rerun only when an input moves.
+fn use_author_groups(
+    authors: Signal<Vec<AuthorSummary>>,
+    filter: Signal<String>,
+    sort: Signal<AuthorSort>,
+    reading: Signal<ReadingState>,
+    only_reading: Signal<bool>,
+) -> Memo<AuthorGroups> {
+    use_memo(move || {
+        let state = reading.read();
+        compute_author_groups(
+            &authors.read(),
+            ListQuery {
+                text: &filter.read(),
+                sort: sort(),
+                reading: state.ready(),
+                only_reading: only_reading(),
+            },
+        )
+    })
+}
+
+/// Persists the reader's sort for the next visit.
+fn save_author_sort(sort: AuthorSort) {
+    let mut prefs = index_prefs::load();
+    prefs.authors_sort = sort;
+    index_prefs::save(&prefs);
+}
+
 /// `/authors`' pane: the [`Preview`] author's page, without claiming the
 /// route (no page title, no `aria-current` on its row).
 #[component]
@@ -185,6 +225,9 @@ pub fn AuthorsIndexPage() -> Element {
     match preview() {
         Preview::Pending => rsx! {
             Loading { kind: LoadingKind::Section, label: "Gathering every author" }
+        },
+        Preview::Unavailable => rsx! {
+            p { class: "au-pane-empty subtitle", "Couldn\u{2019}t load authors." }
         },
         Preview::Empty => rsx! {
             p { class: "au-pane-empty subtitle", "No authors yet \u{2014} the library is empty." }
@@ -217,14 +260,14 @@ fn by_author(rows: Vec<AuthorReading>) -> ReadingMap {
     rows.into_iter().map(|r| (r.author_id, r)).collect()
 }
 
-/// Once the list first renders, scrolls the pane's author to the middle of
-/// the list's own scroller, so a deep link to someone under W doesn't open on
-/// the A's. Only that scroller moves: on a phone the list scrolls with the
-/// page, and moving the page would hide the filter.
-fn use_reveal_current_row(loading: Signal<bool>) {
+/// Once the pane's author has a row on screen (`ready`), scrolls it to the
+/// middle of the list's own scroller, so a deep link to someone under W
+/// doesn't open on the A's. Only that scroller moves: on a phone the list
+/// scrolls with the page, and moving the page would hide the filter.
+fn use_reveal_current_row(ready: bool) {
     let mut done = use_signal(|| false);
-    use_effect(move || {
-        if loading() || done() {
+    use_effect(use_reactive!(|ready| {
+        if !ready || *done.peek() {
             return;
         }
         done.set(true);
@@ -236,7 +279,7 @@ fn use_reveal_current_row(loading: Signal<bool>) {
                  list.scrollTop = row.offsetTop - (list.clientHeight - row.offsetHeight) / 2;
              })",
         );
-    });
+    }));
 }
 
 /// Title, filter, sort and the Reading filter above the list.
@@ -365,7 +408,7 @@ fn list_body(view: ListView<'_>) -> Element {
             div { class: "au-scroll", "data-testid": "authors-list",
                 if waiting {
                     RowSkeletons { count: 12, avatar: false }
-                } else if let Some(msg) = error {
+                } else if let Some(msg) = error.filter(|_| !any) {
                     p { class: "au-list-note error", role: "alert", "Couldn\u{2019}t load authors: {msg}" }
                 } else if groups.filtered.is_empty() {
                     p { class: "au-list-note subtitle",
@@ -449,10 +492,10 @@ fn author_row(a: &AuthorSummary, state: RowState<'_>) -> Element {
 /// The row's progress: finished in the author's accent, in-progress in a
 /// lighter tint of it. A skeleton while pending; blank if it never loads.
 fn row_bar(count: usize, progress: Option<&AuthorReading>, state: &ReadingState) -> Element {
-    let class = match state {
-        ReadingState::Pending => "au-bar ld-skel",
-        ReadingState::Ready(_) => "au-bar",
-        ReadingState::Failed => "au-bar is-unknown",
+    let (class, data_state) = match state {
+        ReadingState::Pending => ("au-bar ld-skel", "pending"),
+        ReadingState::Ready(_) => ("au-bar", "ready"),
+        ReadingState::Failed => ("au-bar is-unknown", "unknown"),
     };
     let pct = |n: usize| {
         if count == 0 {
@@ -463,9 +506,16 @@ fn row_bar(count: usize, progress: Option<&AuthorReading>, state: &ReadingState)
     };
     let (done, now) = progress.map_or((0.0, 0.0), |p| (pct(p.finished), pct(p.reading)));
     rsx! {
-        span { class, "aria-hidden": "true",
+        span {
+            class,
+            "aria-hidden": "true",
+            "data-testid": "author-row-bar",
+            "data-state": data_state,
             span { class: "au-bar-done", style: "width: {done}%" }
             span { class: "au-bar-now", style: "width: {now}%" }
         }
     }
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests;

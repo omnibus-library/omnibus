@@ -50,13 +50,21 @@ pub fn AuthorPage(id: i64, #[props(default)] preview: bool) -> Element {
     // See `BookDetailPage` for why `id` needs `use_reactive!`.
     let url = server_url.clone();
     let generation = crate::use_cache_generation();
+    let mut wanted = use_signal(|| id);
     use_effect(use_reactive!(|id| {
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
+        wanted.set(id);
         let url = url.clone();
         spawn(async move {
             loading.set(true);
-            match data::get_author(&url, id).await {
+            let reply = data::get_author(&url, id).await;
+            // Clicking down the list outruns the network: a reply for an
+            // author the reader has already left must not land on the next.
+            if *wanted.peek() != id {
+                return;
+            }
+            match reply {
                 Ok(a) => {
                     author.set(a);
                     error.set(None);

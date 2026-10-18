@@ -115,9 +115,12 @@ test("authors index leaves progress unknown when it fails to load", async ({
   await expect(page.getByTestId("author-card").first()).toBeVisible();
   // Can't tell is not "read nothing": no empty bars, no Reading count.
   await expect(page.getByTestId("authors-reading-filter")).toBeDisabled();
-  await expect(
-    page.getByTestId("authors-list").locator(".au-bar:not(.is-unknown)"),
-  ).toHaveCount(0);
+  await expect(page.getByTestId("author-row-bar").first()).toHaveAttribute(
+    "data-state",
+    "unknown",
+  );
+  // The preview gives up waiting on progress and shows an author anyway.
+  await expect(page.getByTestId("author-name")).toBeVisible();
 });
 
 test("authors index card navigates to the detail page", async ({ page }) => {

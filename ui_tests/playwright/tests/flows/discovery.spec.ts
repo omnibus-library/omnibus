@@ -70,7 +70,7 @@ test("renders the author page layout", async ({ page, request }) => {
   await expect(page.getByTestId("author-name")).toHaveText(authorName);
 
   // Book count, the reader's progress strip, and the library shortcut.
-  await expect(page.locator(".au-meta")).toContainText("book");
+  await expect(page.getByTestId("author-meta")).toContainText("book");
   await expect(page.getByTestId("author-reading")).toBeVisible();
   await expect(page.getByTestId("author-show-in-library")).toBeVisible();
 });
@@ -100,9 +100,22 @@ test("author page shows the author's books in the library", async ({
   const authorId = await fetchAuthorIdByName(request, "Niklaus Wirth");
   await gotoReady(page, `/authors/${authorId}`);
 
+  // The library's first page asks for this author's books alone.
+  const filtered = page.waitForResponse(
+    (res) =>
+      res.url().includes("/api/rpc/ebooks/page") &&
+      (res.request().postData() ?? "").includes("Niklaus Wirth"),
+  );
   await page.getByTestId("author-show-in-library").click();
+  await filtered;
 
   await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("filter-chip-0")).toContainText(
+    "Niklaus Wirth",
+  );
+
+  // Saved once the library answered, so it outlives a reload.
+  await gotoReady(page, "/");
   await expect(page.getByTestId("filter-chip-0")).toContainText(
     "Niklaus Wirth",
   );

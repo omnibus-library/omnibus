@@ -36,6 +36,9 @@ pub fn AuthorHero(
                     &[name.as_str()],
                 )],
             }));
+            // A saved shelf pick outranks the library on the landing, and one
+            // without this author would show nothing.
+            crate::shelf_selection::save(crate::shelf_selection::ShelfSelection::All);
             nav.push(Route::Landing {});
         }
     };
@@ -44,7 +47,9 @@ pub fn AuthorHero(
             {author_avatar(id, &name, has_photo, &server_url, author)}
             div { class: "au-hero-body",
                 h2 { class: "au-name", "data-testid": "author-name", "{name}" }
-                p { class: "au-meta", "{hero_meta(book_count, series_count)}" }
+                p { class: "au-meta", "data-testid": "author-meta",
+                    "{hero_meta(book_count, series_count)}"
+                }
             }
             div { class: "au-hero-actions",
                 button {
@@ -140,68 +145,93 @@ fn AuthorMoreMenu(
     server_url: String,
     is_admin: bool,
 ) -> Element {
-    #[cfg(not(feature = "mobile"))]
-    {
-        use super::delete::{AuthorDeleteModal, AuthorDeleteState};
-
-        let mut open = use_signal(|| false);
-        let mut show_confirm = use_signal(|| false);
-        let deleting = use_signal(|| false);
-        let mut delete_error: Signal<Option<String>> = use_signal(|| None);
-        if !is_admin {
-            return rsx! {};
-        }
-        rsx! {
-            div { class: "shd-more",
-                button {
-                    r#type: "button",
-                    class: "au-btn au-more-btn",
+    let mut open = use_signal(|| false);
+    let mut show_confirm = use_signal(|| false);
+    let deleting = use_signal(|| false);
+    let mut delete_error: Signal<Option<String>> = use_signal(|| None);
+    if !is_admin || cfg!(feature = "mobile") {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "shd-more",
+            button {
+                r#type: "button",
+                class: "au-btn au-more-btn",
+                "aria-label": "More actions for {name}",
+                "aria-haspopup": "menu",
+                "aria-expanded": if open() { "true" } else { "false" },
+                "data-testid": "author-more",
+                onclick: move |_| open.toggle(),
+                "\u{22EF}"
+            }
+            if open() {
+                div { class: "shd-menu-scrim", onclick: move |_| open.set(false) }
+                div {
+                    class: "shelf-actions-menu shd-menu",
+                    role: "menu",
                     "aria-label": "More actions for {name}",
-                    "aria-haspopup": "menu",
-                    "aria-expanded": if open() { "true" } else { "false" },
-                    "data-testid": "author-more",
-                    onclick: move |_| open.toggle(),
-                    "\u{22EF}"
-                }
-                if open() {
-                    div { class: "shd-menu-scrim", onclick: move |_| open.set(false) }
-                    div {
-                        class: "shelf-actions-menu shd-menu",
-                        role: "menu",
-                        "aria-label": "More actions for {name}",
-                        button {
-                            r#type: "button",
-                            class: "shelf-menu-item shelf-menu-item--danger shd-menu-item",
-                            role: "menuitem",
-                            "data-testid": "author-delete-btn",
-                            onclick: move |_| {
-                                open.set(false);
-                                delete_error.set(None);
-                                show_confirm.set(true);
-                            },
-                            "Delete author\u{2026}"
-                        }
+                    button {
+                        r#type: "button",
+                        class: "shelf-menu-item shelf-menu-item--danger shd-menu-item",
+                        role: "menuitem",
+                        "data-testid": "author-delete-btn",
+                        onclick: move |_| {
+                            open.set(false);
+                            delete_error.set(None);
+                            show_confirm.set(true);
+                        },
+                        "Delete author\u{2026}"
                     }
                 }
             }
-            if show_confirm() {
-                AuthorDeleteModal {
-                    author_id: id,
-                    author_name: name.clone(),
-                    book_count,
-                    server_url: server_url.clone(),
-                    state: AuthorDeleteState {
-                        show_confirm,
-                        deleting,
-                        delete_error,
-                    },
-                }
-            }
+        }
+        if show_confirm() {
+            {delete_modal(DeleteTarget { id, name: name.clone(), book_count, server_url: server_url.clone() }, show_confirm, deleting, delete_error)}
         }
     }
-    #[cfg(feature = "mobile")]
-    {
-        let _ = (id, name, book_count, server_url, is_admin);
-        rsx! {}
+}
+
+/// The author a delete would remove.
+// Read only by the web modal; the mobile stub drops it.
+#[cfg_attr(feature = "mobile", allow(dead_code))]
+struct DeleteTarget {
+    id: i64,
+    name: String,
+    book_count: usize,
+    server_url: String,
+}
+
+/// The delete confirmation; web-only, like the RPC behind it.
+#[cfg(not(feature = "mobile"))]
+fn delete_modal(
+    target: DeleteTarget,
+    show_confirm: Signal<bool>,
+    deleting: Signal<bool>,
+    delete_error: Signal<Option<String>>,
+) -> Element {
+    use super::delete::{AuthorDeleteModal, AuthorDeleteState};
+    rsx! {
+        AuthorDeleteModal {
+            author_id: target.id,
+            author_name: target.name,
+            book_count: target.book_count,
+            server_url: target.server_url,
+            state: AuthorDeleteState {
+                show_confirm,
+                deleting,
+                delete_error,
+            },
+        }
     }
+}
+
+/// Mobile stub: the menu never opens there.
+#[cfg(feature = "mobile")]
+fn delete_modal(
+    _target: DeleteTarget,
+    _show_confirm: Signal<bool>,
+    _deleting: Signal<bool>,
+    _delete_error: Signal<Option<String>>,
+) -> Element {
+    rsx! {}
 }

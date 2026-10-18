@@ -24,8 +24,7 @@ pub struct AuthorDeleteState {
 /// calls `rpc_delete_author` (un-links every book, adds the name to
 /// `ignored_authors`, refreshes FTS) then navigates to `/authors`. The
 /// blocklist insert keeps the delete durable: a later `Task::Scan` would
-/// otherwise recreate the row from OPF metadata; the author also leaves the
-/// mounted list, which a route change alone would not refetch.
+/// otherwise recreate the row from OPF metadata.
 #[component]
 pub fn AuthorDeleteModal(
     author_id: i64,
@@ -58,6 +57,8 @@ pub fn AuthorDeleteModal(
             match data::delete_author(&server_url, author_id).await {
                 Ok(_) => {
                     show_confirm.set(false);
+                    // The list stays mounted across the redirect, so it would
+                    // never refetch the author away on its own.
                     forget(author_id);
                     nav.push(Route::AuthorsIndex {});
                 }

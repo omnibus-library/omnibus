@@ -82,7 +82,7 @@ fn current_meta_names_series_percent_and_when() {
     let b = book("a", Some(("Earthsea", "2")));
     let (_, s) = state("a", ReadStatus::Reading, Some(42), Some(10 * DAY));
     assert_eq!(
-        current_meta(&b, &s, 13 * DAY),
+        current_meta(&b, &s, 13 * DAY, |t| t),
         "Earthsea 2 \u{b7} 42% \u{b7} read 3 days ago"
     );
 }
@@ -91,12 +91,15 @@ fn current_meta_names_series_percent_and_when() {
 fn current_meta_drops_what_it_does_not_know() {
     let b = book("a", None);
     let (_, s) = state("a", ReadStatus::Reading, None, None);
-    assert_eq!(current_meta(&b, &s, DAY), "");
+    assert_eq!(current_meta(&b, &s, DAY, |t| t), "");
 }
 
 #[test]
 fn ago_steps_from_days_to_weeks_months_and_years() {
     assert_eq!(ago(DAY / 2, 0), "today");
+    // Calendar days, not 24-hour spans: 23:00 then 08:00 is yesterday.
+    assert_eq!(ago(DAY + 8 * 3_600, 23 * 3_600), "yesterday");
+    assert_eq!(ago(DAY - 1, DAY / 2), "today");
     assert_eq!(ago(DAY, 0), "yesterday");
     assert_eq!(ago(20 * DAY, 0), "2 weeks ago");
     assert_eq!(ago(95 * DAY, 0), "3 months ago");

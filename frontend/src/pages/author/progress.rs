@@ -6,10 +6,11 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{BookReading, EbookMetadata, ReadStatus};
 
-use super::BookStates;
 use crate::components::atrium::Cover;
 use crate::components::cover_tile::thumb_srcs;
 use crate::{reader_route, Route};
+
+use super::BookStates;
 
 /// Finished / reading / unread counts over the author's books.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -55,7 +56,12 @@ pub fn current_book<'a>(
 
 /// The meta line under the current book: "Earthsea 2 · 42% · read 3 days ago",
 /// each part dropped when unknown.
-pub fn current_meta(book: &EbookMetadata, state: &BookReading, now: i64) -> String {
+pub fn current_meta(
+    book: &EbookMetadata,
+    state: &BookReading,
+    now: i64,
+    to_local: impl Fn(i64) -> i64,
+) -> String {
     let series = book.series.as_ref().map(|s| match &book.series_index {
         Some(i) => format!("{s} {i}"),
         None => s.clone(),
@@ -63,7 +69,7 @@ pub fn current_meta(book: &EbookMetadata, state: &BookReading, now: i64) -> Stri
     let percent = state.percent.map(|p| format!("{p}%"));
     let when = state
         .last_read_at
-        .map(|at| format!("read {}", ago(now, at)));
+        .map(|at| format!("read {}", ago(to_local(now), to_local(at))));
     [series, percent, when]
         .into_iter()
         .flatten()
@@ -71,9 +77,10 @@ pub fn current_meta(book: &EbookMetadata, state: &BookReading, now: i64) -> Stri
         .join(" \u{b7} ")
 }
 
-/// "today", "yesterday", "3 days ago", "5 weeks ago", "2 years ago".
+/// "today", "yesterday", "3 days ago", "5 weeks ago", "2 years ago", counted
+/// in calendar days: both times are already on the reader's local clock.
 pub fn ago(now: i64, then: i64) -> String {
-    let days = (now - then).max(0) / 86_400;
+    let days = (now.div_euclid(86_400) - then.div_euclid(86_400)).max(0);
     let plural = |n: i64, unit: &str| format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" });
     match days {
         0 => "today".to_string(),
@@ -126,7 +133,10 @@ fn progress_bar(total: usize, t: Tally) -> Element {
 fn current_card(book: &EbookMetadata, state: &BookReading, server_url: &str) -> Element {
     let uuid = book.unique_identifier.clone().unwrap_or_default();
     let title = book.display_title();
-    let meta = current_meta(book, state, crate::time::now_unix());
+    // Day boundaries are the reader's own midnights.
+    let meta = current_meta(book, state, crate::time::now_unix(), |t| {
+        t + crate::time::local_utc_offset_secs(t)
+    });
     let resume = reader_route(
         uuid.clone(),
         state.format,
@@ -152,11 +162,14 @@ fn current_card(book: &EbookMetadata, state: &BookReading, server_url: &str) -> 
                 Link { to: Route::BookDetail { uuid }, class: "au-current-title", "{title}" }
                 p { class: "au-current-meta", "{meta}" }
             }
-            Link {
-                to: crate::routes::link_target(resume),
-                class: "au-resume",
-                "data-testid": "author-resume",
-                "Resume"
+            // A physical-only copy can be marked reading, but there is nothing to open.
+            if !book.formats.is_empty() {
+                Link {
+                    to: crate::routes::link_target(resume),
+                    class: "au-resume",
+                    "data-testid": "author-resume",
+                    "Resume"
+                }
             }
         }
     }

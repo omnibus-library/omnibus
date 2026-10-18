@@ -7,11 +7,12 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{EbookMetadata, ReadStatus};
 
-use super::progress::{state_of, status_of};
-use super::BookStates;
 use crate::components::atrium::Cover;
 use crate::components::cover_tile::thumb_srcs;
 use crate::Route;
+
+use super::progress::{state_of, status_of};
+use super::BookStates;
 
 /// One series' books, in the order the author read returned them.
 #[derive(Debug, Clone, PartialEq)]
@@ -133,24 +134,25 @@ fn shelf_tile(book: EbookMetadata, states: &BookStates, server_url: &str) -> Ele
     };
     let id = book.id;
     rsx! {
-        Link {
-            key: "{id}",
-            to: Route::BookDetail { uuid },
-            class: "au-tile",
-            role: "listitem",
-            "aria-label": "Open details for {title}",
-            Cover {
-                book,
-                src_override: src,
-                srcset,
-                sizes: Some("(max-width: 720px) 30vw, 150px".to_string()),
-            }
-            span { class: "au-tile-bar", "aria-hidden": "true",
-                if let Some(pct) = bar {
-                    span { class: "au-tile-fill", style: "width: {pct}%" }
+        // The list role sits on a wrapper so the tile stays a link to assistive tech.
+        div { key: "{id}", class: "au-tile-item", role: "listitem",
+            Link {
+                to: Route::BookDetail { uuid },
+                class: "au-tile",
+                "aria-label": "Open details for {title}",
+                Cover {
+                    book,
+                    src_override: src,
+                    srcset,
+                    sizes: Some("(max-width: 720px) 30vw, 150px".to_string()),
                 }
+                span { class: "au-tile-bar", "aria-hidden": "true",
+                    if let Some(pct) = bar {
+                        span { class: "au-tile-fill", style: "width: {pct}%" }
+                    }
+                }
+                span { class: "au-tile-title", "{title}" }
             }
-            span { class: "au-tile-title", "{title}" }
         }
     }
 }
