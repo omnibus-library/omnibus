@@ -95,6 +95,13 @@ test.describe("stats page", () => {
       // The hero leads with the run the reader is on, above the switcher.
       await expect(statsPage.hero).toBeVisible();
       await expect(statsPage.currentStreak).toContainText(/\d/);
+      // The reader's own page carries the two preferences it reports on: who
+      // may see it, and the goals it measures against.
+      await expect(statsPage.shareSwitch).toBeVisible();
+      await expect(statsPage.goalsLink).toHaveAttribute(
+        "href",
+        "/settings?section=goals",
+      );
     });
 
     await test.step("check the scope switch and the period pills", async () => {
@@ -972,9 +979,7 @@ test.describe("stats page", () => {
   });
 
   test.describe("goals", () => {
-    // Goals are account configuration, and all three are set together in
-    // Settings → Account. This page reports them but must not grow an editor
-    // back: that split is the whole reason there is one Edit button.
+    // Goals are edited in Settings; the hero only reports them and links there.
     test("report the goals without an editor", async ({
       statsPage,
       presetGoals,
@@ -1037,7 +1042,28 @@ test.describe("stats page", () => {
       });
     });
 
-    test("open the goal editor from the hero", async ({
+    test("open the goals section from the hero to edit set goals", async ({
+      statsPage,
+      settingsPage,
+      presetGoals,
+    }) => {
+      await test.step("set an annual goal and open the stats page", async () => {
+        await presetGoals({ books: 24 });
+        await statsPage.goto();
+      });
+
+      await test.step("follow the link into Settings", async () => {
+        await expect(statsPage.goalsLink).toHaveText("Edit goals");
+        await statsPage.openGoals();
+      });
+
+      await test.step("check the goals form holds the saved goal", async () => {
+        await settingsPage.assertDisplayedFor("goals");
+        await expect(settingsPage.account.goalField("books")).toHaveValue("24");
+      });
+    });
+
+    test("open the goals section from the hero when no goals are set", async ({
       statsPage,
       settingsPage,
       presetGoals,
@@ -1047,10 +1073,15 @@ test.describe("stats page", () => {
         await statsPage.goto();
       });
 
-      await test.step("follow the link to the one place goals are set", async () => {
-        await expect(statsPage.dailySetLink).toBeVisible();
-        await statsPage.openGoalEditor();
-        await settingsPage.assertDisplayedFor("account");
+      // One link for every goal, into the Goals section of Settings.
+      await test.step("follow the one link into Settings", async () => {
+        await expect(statsPage.goalsLink).toHaveText("Set goals");
+        await expect(statsPage.goalEditors).toHaveCount(0);
+        await statsPage.openGoals();
+      });
+
+      await test.step("check the goals form shows", async () => {
+        await settingsPage.assertDisplayedFor("goals");
         await expect(settingsPage.account.goalsCard).toBeVisible();
       });
     });

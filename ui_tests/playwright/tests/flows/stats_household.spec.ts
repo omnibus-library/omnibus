@@ -6,6 +6,7 @@ import { stats } from "../contracts/stats";
 import { TARGET_BOOK_TITLE } from "../data/stats";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/readerFixtures";
+import { failing } from "../utils/api";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 const NOT_SHARING = "This reader isn't sharing their stats";
@@ -35,6 +36,8 @@ test.describe("household stats", () => {
       );
       await expect(statsPage.heroWho).toHaveCount(0);
       await expect(statsPage.emptyState).toBeVisible();
+      // The caller's own page offers their sharing switch, on by default.
+      await expect(statsPage.shareSwitch).toBeChecked();
     });
 
     // The options sit in the DOM while the menu is hidden, so a layout test
@@ -71,8 +74,9 @@ test.describe("household stats", () => {
       );
       await expect(statsPage.emptyState).toHaveCount(0);
       await expect(statsPage.inProgress).toContainText(TARGET_BOOK_TITLE);
-      await expect(statsPage.goalSetLink).toHaveCount(0);
-      await expect(statsPage.dailySetLink).toHaveCount(0);
+      // Someone else's sharing and goals aren't the viewer's to change.
+      await expect(statsPage.shareToggle).toHaveCount(0);
+      await expect(statsPage.goalsLink).toHaveCount(0);
     });
   });
 
@@ -203,23 +207,57 @@ test.describe("household stats", () => {
     });
   });
 
+  test("put the sharing switch back when a change is refused", async ({
+    statsPage,
+    householdTarget,
+    secondReaderStatsPage,
+    secondReaderExpectMutation,
+  }) => {
+    const turnOff = account.shareStats(false);
+
+    await test.step("open the target's own stats with the change refused", async () => {
+      await secondReaderStatsPage.goto();
+      await secondReaderStatsPage.forceServerError(turnOff);
+      await expect(secondReaderStatsPage.shareSwitch).toBeChecked();
+    });
+
+    await test.step("turn sharing off", async () => {
+      await secondReaderExpectMutation(failing(turnOff), () =>
+        secondReaderStatsPage.toggleShare(),
+      );
+    });
+
+    await test.step("check the switch is back on with an error", async () => {
+      await expect(secondReaderStatsPage.shareError).toBeVisible();
+      await expect(secondReaderStatsPage.shareSwitch).toBeChecked();
+    });
+
+    // Still shared, so the viewer still finds them.
+    await test.step("check the viewer still finds the target", async () => {
+      await statsPage.goto();
+      await expect(
+        statsPage.readerPicker.option(householdTarget.id),
+      ).toHaveCount(1);
+    });
+  });
+
   test("drop the target from the picker and refuse a direct link once sharing is off", async ({
     statsPage,
     householdTarget,
-    secondReaderSettingsPage,
+    secondReaderStatsPage,
     secondReaderExpectMutation,
   }) => {
-    await test.step("open the target's account settings", async () => {
-      await secondReaderSettingsPage.goto("account");
-      await expect(
-        secondReaderSettingsPage.account.shareStatsSwitch,
-      ).toBeChecked();
+    // Turned off from the target's own stats page, where its effect is seen.
+    await test.step("open the target's own stats", async () => {
+      await secondReaderStatsPage.goto();
+      await expect(secondReaderStatsPage.shareSwitch).toBeChecked();
     });
 
     await test.step("turn the target's sharing off", async () => {
       await secondReaderExpectMutation(account.shareStats(false), () =>
-        secondReaderSettingsPage.account.toggleShareStats(),
+        secondReaderStatsPage.toggleShare(),
       );
+      await expect(secondReaderStatsPage.shareSwitch).not.toBeChecked();
     });
 
     // The options sit in the DOM even while the menu is closed.

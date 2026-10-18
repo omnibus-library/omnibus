@@ -31,14 +31,16 @@ export class StatsPage extends BasePage {
   readonly goalFigure: Locator;
   readonly goalProgress: Locator;
   readonly goalYearToDate: Locator;
-  readonly goalSetLink: Locator;
+  readonly goalsLink: Locator;
   readonly dailyGoals: Locator;
   readonly dailyPagesFigure: Locator;
   readonly dailyPagesToday: Locator;
   readonly dailyPagesProgress: Locator;
   readonly dailyMinutesToday: Locator;
-  readonly dailySetLink: Locator;
   readonly goalEditors: Locator;
+  readonly shareSwitch: Locator;
+  readonly shareToggle: Locator;
+  readonly shareError: Locator;
 
   readonly scopeSwitch: Locator;
   readonly userScope: Locator;
@@ -108,19 +110,23 @@ export class StatsPage extends BasePage {
     this.goalFigure = page.getByTestId("stats-goal-figure");
     this.goalProgress = page.getByTestId("stats-goal-progress");
     this.goalYearToDate = page.getByTestId("stats-goal-year-to-date");
-    this.goalSetLink = page.getByTestId("stats-goal-set-link");
+    this.goalsLink = page.getByTestId("stats-goals-link");
     this.dailyGoals = page.getByTestId("stats-daily-goals");
     this.dailyPagesFigure = page.getByTestId("stats-daily-pages-figure");
     this.dailyPagesToday = page.getByTestId("stats-daily-pages-today");
     this.dailyPagesProgress = page.getByTestId("stats-daily-pages-progress");
     this.dailyMinutesToday = page.getByTestId("stats-daily-minutes-today");
-    this.dailySetLink = page.getByTestId("stats-daily-set-link");
+    // Goals are edited in Settings, so none of these in-place controls exist.
     this.goalEditors = page
-      .getByTestId("stats-goal-edit")
-      .or(page.getByTestId("stats-goal-input"))
-      .or(page.getByTestId("stats-goal-save"))
-      .or(page.getByTestId("stats-daily-pages-edit"))
-      .or(page.getByTestId("stats-daily-minutes-edit"));
+      .getByTestId("stats-goals-edit")
+      .or(page.getByTestId("stats-goals-editor"))
+      .or(page.getByTestId("stats-goal-set-link"))
+      .or(page.getByTestId("stats-daily-set-link"));
+    this.shareSwitch = page.getByRole("switch", {
+      name: "Visible to your household",
+    });
+    this.shareToggle = page.getByTestId("stats-share-toggle");
+    this.shareError = page.getByTestId("stats-share-error");
 
     this.scopeSwitch = page.getByTestId("stats-scope-switch");
     this.userScope = page.getByTestId("stats-scope-user");
@@ -232,9 +238,13 @@ export class StatsPage extends BasePage {
     await this.libraryScope.waitFor();
   }
 
-  /** Follows the hero's link to the one place goals are set. */
-  async openGoalEditor(): Promise<void> {
-    await this.goalSetLink.click();
+  /** Follows the hero's one link, whatever the goals, to Settings › Goals. */
+  async openGoals(): Promise<void> {
+    await this.goalsLink.click();
+  }
+
+  async toggleShare(): Promise<void> {
+    await this.shareSwitch.click();
   }
 
   async backToYourStats(): Promise<void> {
