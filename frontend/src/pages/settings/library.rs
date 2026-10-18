@@ -123,14 +123,6 @@ pub fn LibraryLocationSection() -> Element {
                 ScanIntervalField { scan_interval_hours: form.scan_interval_hours, error: form.interval_error }
 
                 div { class: "settings-actions",
-                    button {
-                        r#type: "submit",
-                        class: "btn",
-                        "data-testid": "library-save",
-                        disabled: load != Load::Ready || saving,
-                        "aria-busy": if saving { "true" } else { "false" },
-                        BusyLabel { busy: saving, label: "Save library settings", busy_label: "Saving\u{2026}" }
-                    }
                     if load == Load::Failed {
                         button {
                             r#type: "button",
@@ -139,6 +131,14 @@ pub fn LibraryLocationSection() -> Element {
                             onclick: move |_| reload += 1,
                             "Try again"
                         }
+                    }
+                    button {
+                        r#type: "submit",
+                        class: "btn primary",
+                        "data-testid": "library-save",
+                        disabled: load != Load::Ready || saving,
+                        "aria-busy": if saving { "true" } else { "false" },
+                        BusyLabel { busy: saving, label: "Save library settings", busy_label: "Saving\u{2026}" }
                     }
                 }
             }

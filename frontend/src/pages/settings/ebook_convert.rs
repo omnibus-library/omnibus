@@ -204,14 +204,6 @@ pub fn EbookConvertField() -> Element {
                 }
             }
             div { class: "settings-actions",
-                button {
-                    r#type: "submit",
-                    class: "btn",
-                    disabled: busy,
-                    "aria-busy": if busy { "true" } else { "false" },
-                    "data-testid": "ebook-convert-save",
-                    BusyLabel { busy, label: "Save ebook-convert path", busy_label: "Saving\u{2026}" }
-                }
                 if overridden {
                     button {
                         r#type: "button",
@@ -221,6 +213,14 @@ pub fn EbookConvertField() -> Element {
                         onclick: on_clear,
                         "Use auto-detection"
                     }
+                }
+                button {
+                    r#type: "submit",
+                    class: "btn primary",
+                    disabled: busy,
+                    "aria-busy": if busy { "true" } else { "false" },
+                    "data-testid": "ebook-convert-save",
+                    BusyLabel { busy, label: "Save ebook-convert path", busy_label: "Saving\u{2026}" }
                 }
             }
             {credential_status_line("ebook-convert-status", available, (sigs.status_failed)(), &detail, "Not detected")}

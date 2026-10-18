@@ -1,4 +1,4 @@
-// Administration › Health & activity › Overview and its live-update poll loop.
+// Administration › Health and its live-update poll loop.
 // `HealthOverview` fires a POST /api/rpc/admin-health on mount and again
 // every POLL_INTERVAL_MS (5s, `frontend/src/pages/admin_health.rs`) from a
 // post-mount `use_future`, with no other UI trigger on the page (unlike the
@@ -132,9 +132,9 @@ test("renders the admin health layout", async ({ page }) => {
   );
 
   await expect(
-    page.getByRole("heading", { level: 2, name: "Health & activity" }),
+    page.getByRole("heading", { level: 2, name: "Health" }),
   ).toBeVisible();
-  await expect(page.getByTestId("health-tab-overview")).toHaveAttribute(
+  await expect(page.getByTestId("admin-nav-health")).toHaveAttribute(
     "aria-current",
     "page",
   );

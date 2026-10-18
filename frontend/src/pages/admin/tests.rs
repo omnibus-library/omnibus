@@ -13,19 +13,19 @@ enum PeopleRoute {
 #[component]
 fn PeopleHost() -> Element {
     provide_current_user(Some(Some(test_user(true, true))));
-    rsx! { AdminPage { section: Some("people".to_string()), tab: None } }
+    rsx! { AdminPage { section: Some("people".to_string()) } }
 }
 
 #[derive(Clone, Debug, PartialEq, Routable)]
-enum LogsRoute {
+enum MaintenanceRoute {
     #[route("/")]
-    LogsHost {},
+    MaintenanceHost {},
 }
 
 #[component]
-fn LogsHost() -> Element {
+fn MaintenanceHost() -> Element {
     provide_current_user(Some(Some(test_user(true, true))));
-    rsx! { AdminPage { section: Some("health".to_string()), tab: Some("logs".to_string()) } }
+    rsx! { AdminPage { section: Some("maintenance".to_string()) } }
 }
 
 #[derive(Clone, Debug, PartialEq, Routable)]
@@ -37,7 +37,7 @@ enum ReaderRoute {
 #[component]
 fn ReaderHost() -> Element {
     provide_current_user(Some(Some(test_user(false, true))));
-    rsx! { AdminPage { section: Some("people".to_string()), tab: None } }
+    rsx! { AdminPage { section: Some("people".to_string()) } }
 }
 
 #[derive(Clone, Debug, PartialEq, Routable)]
@@ -49,30 +49,33 @@ enum UnresolvedRoute {
 #[component]
 fn UnresolvedHost() -> Element {
     provide_current_user(None);
-    rsx! { AdminPage { section: Some("people".to_string()), tab: None } }
+    rsx! { AdminPage { section: Some("people".to_string()) } }
 }
 
 #[test]
 fn admin_page_groups_its_sections_under_library_and_server() {
     let html = render_in_vdom(|| rsx! { Router::<PeopleRoute> {} });
-    for slug in [
-        "sources",
-        "metadata",
-        "cleanup",
-        "people",
-        "integrations",
-        "health",
-    ] {
-        assert!(
-            html.contains(&format!("admin-nav-{slug}")),
-            "{slug}: {html}"
-        );
-    }
+    let position = |slug: &str| {
+        html.find(&format!("admin-nav-{slug}"))
+            .unwrap_or_else(|| panic!("{slug}: {html}"))
+    };
     let library = html.find(">Library<").expect("Library group");
     let server = html.find(">Server<").expect("Server group");
-    assert!(library < html.find("admin-nav-sources").unwrap());
-    assert!(server < html.find("admin-nav-people").unwrap());
-    assert!(library < server, "{html}");
+    for slug in ["sources", "maintenance", "metadata", "cleanup"] {
+        assert!(
+            library < position(slug) && position(slug) < server,
+            "{slug}"
+        );
+    }
+    for slug in ["people", "integrations", "health", "logs"] {
+        assert!(server < position(slug), "{slug}");
+    }
+}
+
+#[test]
+fn admin_page_shows_no_line_under_the_section_heading() {
+    let html = render_in_vdom(|| rsx! { Router::<PeopleRoute> {} });
+    assert!(!html.contains("settings-section-desc"), "{html}");
 }
 
 #[test]
@@ -93,15 +96,12 @@ fn admin_page_links_back_to_personal_settings() {
 }
 
 #[test]
-fn admin_page_opens_a_health_tab_and_marks_it_current() {
-    let html = render_in_vdom(|| rsx! { Router::<LogsRoute> {} });
-    for tab in ["overview", "activity", "maintenance", "logs"] {
-        assert!(html.contains(&format!("health-tab-{tab}")), "{tab}: {html}");
-    }
-    assert!(
-        html.contains(r#"data-testid="health-tab-logs" aria-current="page""#),
-        "{html}"
-    );
+fn admin_page_puts_recent_tasks_under_the_maintenance_commands() {
+    let html = render_in_vdom(|| rsx! { Router::<MaintenanceRoute> {} });
+    let commands = html.find("maintenance-card").expect("commands");
+    let tasks = html.find("background-tasks-card").expect("recent tasks");
+    assert!(commands < tasks, "{html}");
+    assert!(!html.contains("settings-tabs"), "{html}");
 }
 
 #[test]

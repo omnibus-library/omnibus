@@ -380,7 +380,7 @@ fn SpSettingRow(
 fn setting_breadcrumb(target: SettingsTarget) -> String {
     match target {
         SettingsTarget::Personal(section) => format!("Settings \u{203A} {}", section.label()),
-        SettingsTarget::Admin(section, _) => {
+        SettingsTarget::Admin(section) => {
             format!("Administration \u{203A} {}", section.label())
         }
     }

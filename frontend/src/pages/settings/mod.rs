@@ -91,7 +91,7 @@ pub fn SettingsPage(section: Option<String>) -> Element {
             back_to: crate::Route::Settings { section: None },
             has_section: section.is_some(),
             nav: rsx! { PersonalNav { active, is_admin } },
-            shell::SectionHeader { title: active.label(), description: section_description(active) }
+            shell::SectionHeader { title: active.label() }
             {section_content(active)}
         }
     }
@@ -140,28 +140,12 @@ fn PersonalNav(active: SettingsSection, is_admin: bool) -> Element {
         if is_admin {
             NavGroup {
                 NavItem {
-                    to: Route::Admin { section: None, tab: None },
+                    to: Route::Admin { section: None },
                     label: "Administration",
                     testid: "settings-nav-admin".to_string(),
                     active: false,
                 }
             }
-        }
-    }
-}
-
-/// The line under a personal section's heading.
-#[cfg(not(feature = "mobile"))]
-fn section_description(section: SettingsSection) -> &'static str {
-    match section {
-        SettingsSection::Profile => "How you appear to other readers on this server.",
-        SettingsSection::Preferences => "How Omnibus looks and behaves for you.",
-        SettingsSection::Goals => {
-            "Targets for the year and the day. Progress shows on your Stats page."
-        }
-        SettingsSection::Devices => "Send books to a Kindle, or sync them to a Kobo.",
-        SettingsSection::Security => {
-            "Your password, where you're signed in, and tokens for other apps."
         }
     }
 }

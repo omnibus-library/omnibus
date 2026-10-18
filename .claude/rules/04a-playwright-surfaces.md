@@ -171,9 +171,9 @@ does write read status `reading` on an unread book — pre-set `flatland` to
 `reading` in `beforeAll` (the comic spec's pattern) or assert that write.
 
 **Settings and Administration are one shell, two routes.** `/settings?section=`
-holds the five personal sections (`settings-nav-<slug>`), `/admin?section=&tab=`
-the server ones (`admin-nav-<slug>`, Health's `health-tab-<slug>`); pre-split
-slugs redirect, so a spec opens the new URL directly. Three things trip specs:
+holds the five personal sections (`settings-nav-<slug>`), `/admin?section=`
+the eight server ones (`admin-nav-<slug>`); pre-split slugs redirect, so a spec
+opens the new URL directly. Three things trip specs:
 
 - **Under 720px the list and the section never share the screen.** With no
   `?section=` only the sidebar renders; with one, only the section and its

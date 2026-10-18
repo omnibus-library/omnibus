@@ -189,15 +189,6 @@ pub fn MetadataPrecedenceField() -> Element {
             }
             p { class: "ld-sr", role: "status", "aria-live": "polite", "{announcement}" }
             div { class: "settings-actions",
-                button {
-                    r#type: "button",
-                    class: "btn",
-                    disabled: busy || !loaded,
-                    "aria-busy": if busy { "true" } else { "false" },
-                    "data-testid": "metadata-precedence-save",
-                    onclick: on_save,
-                    BusyLabel { busy, label: "Save metadata order", busy_label: "Saving\u{2026}" }
-                }
                 if failed() {
                     button {
                         r#type: "button",
@@ -209,6 +200,15 @@ pub fn MetadataPrecedenceField() -> Element {
                         },
                         "Try again"
                     }
+                }
+                button {
+                    r#type: "button",
+                    class: "btn primary",
+                    disabled: busy || !loaded,
+                    "aria-busy": if busy { "true" } else { "false" },
+                    "data-testid": "metadata-precedence-save",
+                    onclick: on_save,
+                    BusyLabel { busy, label: "Save metadata order", busy_label: "Saving\u{2026}" }
                 }
             }
             p {

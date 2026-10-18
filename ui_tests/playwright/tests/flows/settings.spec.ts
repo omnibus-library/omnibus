@@ -10,7 +10,7 @@ import { expectNavVisible, gotoReady } from "../utils/nav";
 // dev user is an admin, so every admin section is present.
 const ADMIN_SOURCES = "/admin?section=sources";
 const ADMIN_INTEGRATIONS = "/admin?section=integrations";
-const ADMIN_MAINTENANCE = "/admin?section=health&tab=maintenance";
+const ADMIN_MAINTENANCE = "/admin?section=maintenance";
 
 const ebookInput = (page: Page) => page.getByLabel("Ebook library path");
 const audiobookInput = (page: Page) =>
@@ -81,11 +81,13 @@ test("renders the administration sidebar with every admin section", async ({
   ).toBeVisible();
   for (const slug of [
     "sources",
+    "maintenance",
     "metadata",
     "cleanup",
     "people",
     "integrations",
     "health",
+    "logs",
   ]) {
     await expect(page.getByTestId(`admin-nav-${slug}`)).toBeVisible();
   }
@@ -118,7 +120,7 @@ test("renders the Sources section controls", async ({ page }) => {
   await expect(audiobookInput(page)).toBeVisible();
   await expect(scanIntervalInput(page)).toBeVisible();
   await expect(saveButton(page)).toBeEnabled();
-  // The maintenance commands live on Health & activity, not in this form.
+  // The maintenance commands are their own section, not part of this form.
   await expect(page.getByTestId("scan-library")).toHaveCount(0);
   await expect(settingsStatus(page)).toBeAttached();
   await expect(page.getByTestId("ebook-library-summary")).toBeAttached();
@@ -166,9 +168,14 @@ test("navigates between admin sections from the sidebar and updates the URL", as
   await expect(page).toHaveURL(/\/admin\?section=health$/);
   await expect(page.getByTestId("admin-health-page")).toBeVisible();
 
-  await page.getByTestId("health-tab-maintenance").click();
-  await expect(page).toHaveURL(/\/admin\?section=health&tab=maintenance$/);
+  await page.getByTestId("admin-nav-maintenance").click();
+  await expect(page).toHaveURL(/\/admin\?section=maintenance$/);
   await expect(page.getByTestId("maintenance-card")).toBeVisible();
+  await expect(page.getByTestId("background-tasks-card")).toBeVisible();
+
+  await page.getByTestId("admin-nav-logs").click();
+  await expect(page).toHaveURL(/\/admin\?section=logs$/);
+  await expect(page.getByTestId("logs-page")).toBeVisible();
 });
 
 test("saves the SMTP config and shows a configured status", async ({
@@ -424,7 +431,9 @@ test("bakes overrides into every EPUB and shows a queued status", async ({
     async () => page.getByTestId("rewrite-all-epubs").click(),
   );
 
-  await expect(maintenanceStatus(page)).toHaveText("EPUB override bake queued.");
+  await expect(maintenanceStatus(page)).toHaveText(
+    "EPUB override bake queued.",
+  );
   await expect(maintenanceStatus(page)).not.toHaveClass(/error/);
 });
 

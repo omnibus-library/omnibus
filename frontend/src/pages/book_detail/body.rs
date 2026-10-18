@@ -289,7 +289,6 @@ fn SuggestionsConnectCard(is_admin: bool) -> Element {
                 Link {
                     to: crate::routes::link_target(Route::Admin {
                         section: Some("integrations".into()),
-                        tab: None,
                     }),
                     class: "btn primary sm",
                     "data-testid": "suggestions-connect-link",

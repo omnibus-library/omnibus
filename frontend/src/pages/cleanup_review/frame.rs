@@ -24,7 +24,7 @@ pub fn CleanupCrumb(kind: Option<CleanupKind>) -> Element {
     rsx! {
         nav { class: "bd-crumb crx-crumb", "aria-label": "breadcrumb",
             Link {
-                to: crate::routes::link_target(Route::Admin { section: None, tab: None }),
+                to: crate::routes::link_target(Route::Admin { section: None }),
                 class: "bd-crumb-home",
                 "Administration"
             }
@@ -32,7 +32,6 @@ pub fn CleanupCrumb(kind: Option<CleanupKind>) -> Element {
             Link {
                 to: crate::routes::link_target(Route::Admin {
                     section: Some("cleanup".to_string()),
-                    tab: None,
                 }),
                 class: "bd-crumb-step",
                 "Cleanup"

@@ -369,13 +369,15 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
                 }
             }
             div { class: "settings-actions",
-                button {
-                    r#type: "submit",
-                    class: "btn",
-                    disabled: busy || known.is_none(),
-                    "aria-busy": if busy { "true" } else { "false" },
-                    "data-testid": "{testid}-save",
-                    BusyLabel { busy, label: format!("Save {} key", kind.noun()), busy_label: "Saving\u{2026}" }
+                if configured {
+                    button {
+                        r#type: "button",
+                        class: "btn ghost danger settings-action-start",
+                        disabled: busy,
+                        "data-testid": "{testid}-clear",
+                        onclick: move |_| confirm_clear.set(true),
+                        "Clear\u{2026}"
+                    }
                 }
                 if (sigs.status_failed)() {
                     button {
@@ -386,15 +388,13 @@ pub fn SecretKeyField(kind: SecretKeyKind) -> Element {
                         "Try again"
                     }
                 }
-                if configured {
-                    button {
-                        r#type: "button",
-                        class: "btn ghost",
-                        disabled: busy,
-                        "data-testid": "{testid}-clear",
-                        onclick: move |_| confirm_clear.set(true),
-                        "Clear\u{2026}"
-                    }
+                button {
+                    r#type: "submit",
+                    class: "btn primary",
+                    disabled: busy || known.is_none(),
+                    "aria-busy": if busy { "true" } else { "false" },
+                    "data-testid": "{testid}-save",
+                    BusyLabel { busy, label: format!("Save {} key", kind.noun()), busy_label: "Saving\u{2026}" }
                 }
             }
             {credential_status_line(&format!("{testid}-status"), known, (sigs.status_failed)(), &detail, "Not connected")}

@@ -5259,7 +5259,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   grid-template-columns: 220px minmax(0, 1fr);
   gap: 3rem;
   align-items: start;
-  padding-top: 1.5rem;
+  padding: 1.5rem 0 5rem;
 }
 .settings-content {
   display: flex;
@@ -5269,8 +5269,11 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   max-width: 760px;
 }
 .settings-content > * { min-width: 0; }
-/* Health & activity and the accounts table are dashboards and tables, not forms. */
-.settings-content:has(.settings-tabs, [data-testid="users-table"]) { max-width: 1120px; }
+/* Health, Logs, Maintenance's task history and the accounts table are
+   dashboards and tables, not forms. */
+.settings-content:has(.ah-page, .logs-page, [data-testid="background-tasks-card"], [data-testid="users-table"]) {
+  max-width: 1120px;
+}
 .settings-sidebar {
   display: flex;
   flex-direction: column;
@@ -5308,20 +5311,13 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   font-weight: 600;
 }
 .settings-nav-item:focus-visible,
-.settings-back:focus-visible,
-.settings-tab:focus-visible {
+.settings-back:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .settings-back { display: none; }
 
 .settings-section-head h2 { --lh: 1.1; font-size: 32px; }
-.settings-section-desc {
-  margin-top: 0.4rem;
-  color: var(--ink-2);
-  font-size: 0.925rem;
-  max-width: 62ch;
-}
 .settings-content > .card {
   background: none;
   border: 0;
@@ -5344,27 +5340,6 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   margin: 0.3rem 0 0;
   max-width: 62ch;
 }
-
-/* Health & activity's views: links, so each one deep-links. */
-.settings-tabs {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--line-2);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.settings-tab {
-  padding: 0.6rem 0.85rem;
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
-  color: var(--ink-2);
-  font-size: 0.9rem;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: color .15s, border-color .15s;
-}
-@media (hover: hover) { .settings-tab:hover { color: var(--ink-0); } }
-.settings-tab.active { color: var(--ink-0); border-bottom-color: var(--accent); font-weight: 600; }
 
 /* A setting's name and effect on the left, its control on the right. */
 .setting-row {
@@ -5429,7 +5404,7 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   .settings-section-head h2 { font-size: 28px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .settings-nav-item, .settings-tab { transition: none; }
+  .settings-nav-item { transition: none; }
 }
 
 /* Small print in settings stays legible: the muted ink and an 11px floor. */
@@ -13507,13 +13482,20 @@ html {
   letter-spacing: 0;
   line-height: var(--lh);
 }
+/* A card's actions are its last row: the primary action rightmost, a
+   destructive one (`settings-action-start`) and the form's status at the
+   far left. */
 .settings-layout .settings-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.5rem;
+  margin-top: 1.25rem;
 }
 .settings-layout .settings-actions .settings-status { margin: 0; }
+.settings-layout .settings-actions .settings-action-start,
+.settings-layout .settings-actions .settings-action-status { margin-right: auto; }
 
 /* Maintenance: each command says what it does beside the button that runs it. */
 .maint-list { list-style: none; margin: 1rem 0 0; padding: 0; }

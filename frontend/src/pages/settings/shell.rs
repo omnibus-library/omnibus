@@ -144,13 +144,12 @@ fn DiscardEditsModal() -> Element {
     }
 }
 
-/// The open section's heading and the one line that says what it holds.
+/// The open section's heading; each card below says what it holds.
 #[component]
-pub(crate) fn SectionHeader(title: &'static str, description: &'static str) -> Element {
+pub(crate) fn SectionHeader(title: &'static str) -> Element {
     rsx! {
         header { class: "settings-section-head",
             h2 { "{title}" }
-            p { class: "settings-section-desc", "{description}" }
         }
     }
 }

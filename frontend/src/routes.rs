@@ -25,11 +25,8 @@ pub enum Route {
     Settings { section: Option<String> },
     #[route("/settings/cleanup/:kind")]
     LegacyCleanupReview { kind: String },
-    #[route("/admin?:section&:tab")]
-    Admin {
-        section: Option<String>,
-        tab: Option<String>,
-    },
+    #[route("/admin?:section")]
+    Admin { section: Option<String> },
     #[route("/admin/cleanup/:kind")]
     CleanupReview { kind: String },
     #[route("/logs")]
@@ -127,17 +124,16 @@ pub fn Settings(section: Option<String>) -> Element {
 }
 
 /// Route target for `/admin` — server administration, wrapped in the platform
-/// screen layout. `section` and `tab` pick the sidebar section and, inside
-/// Health & activity, its tab.
+/// screen layout. `section` picks the sidebar section.
 #[cfg(not(feature = "mobile"))]
 #[component]
-pub fn Admin(section: Option<String>, tab: Option<String>) -> Element {
-    let title = use_memo(use_reactive!(|section, tab| {
-        crate::pages::admin_page_title(section.as_deref(), tab.as_deref())
+pub fn Admin(section: Option<String>) -> Element {
+    let title = use_memo(use_reactive!(|section| {
+        crate::pages::admin_page_title(section.as_deref())
     }));
     use_page_title(move || Some(title()));
     rsx! {
-        ScreenLayout { AdminPage { section, tab } }
+        ScreenLayout { AdminPage { section } }
     }
 }
 
@@ -145,8 +141,8 @@ pub fn Admin(section: Option<String>, tab: Option<String>) -> Element {
 /// admin cards it supports, so open that.
 #[cfg(feature = "mobile")]
 #[component]
-pub fn Admin(section: Option<String>, tab: Option<String>) -> Element {
-    let _ = (section, tab);
+pub fn Admin(section: Option<String>) -> Element {
+    let _ = section;
     let nav = dioxus_router::use_navigator();
     use_effect(move || {
         nav.replace(link_target(Route::Settings { section: None }));
@@ -192,18 +188,16 @@ pub fn CleanupReview(kind: String) -> Element {
     redirecting(TO_LIBRARY)
 }
 
-/// Route target for `/logs` — the server log viewer is the Logs tab of
-/// Administration › Health & activity, so the standalone route is a redirect
-/// that keeps old bookmarks working. Mobile has no log viewer, so it
-/// redirects to the landing page instead.
+/// Route target for `/logs` — the server log viewer is Administration › Logs,
+/// so the standalone route is a redirect that keeps old bookmarks working.
+/// Mobile has no log viewer, so it redirects to the landing page instead.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn Logs() -> Element {
     let nav = dioxus_router::use_navigator();
     use_effect(move || {
         nav.replace(link_target(Route::Admin {
-            section: Some("health".into()),
-            tab: Some("logs".into()),
+            section: Some("logs".into()),
         }));
     });
     redirecting("Opening the logs")
@@ -221,8 +215,8 @@ pub fn Logs() -> Element {
     redirecting(TO_LIBRARY)
 }
 
-/// Route target for `/admin/health` — server health is the Overview tab of
-/// Administration › Health & activity now, so this redirects there.
+/// Route target for `/admin/health` — server health is Administration ›
+/// Health now, so this redirects there.
 #[cfg(not(feature = "mobile"))]
 #[component]
 pub fn AdminHealth() -> Element {
@@ -230,7 +224,6 @@ pub fn AdminHealth() -> Element {
     use_effect(move || {
         nav.replace(link_target(Route::Admin {
             section: Some("health".into()),
-            tab: None,
         }));
     });
     redirecting("Opening server health")
@@ -684,19 +677,15 @@ mod tests {
     }
 
     #[test]
-    fn route_from_str_parses_admin_with_its_section_and_tab() {
+    fn route_from_str_parses_admin_with_its_section() {
         assert_eq!(
             Route::from_str("/admin").unwrap(),
-            Route::Admin {
-                section: None,
-                tab: None
-            }
+            Route::Admin { section: None }
         );
         assert_eq!(
-            Route::from_str("/admin?section=health&tab=logs").unwrap(),
+            Route::from_str("/admin?section=logs").unwrap(),
             Route::Admin {
-                section: Some("health".into()),
-                tab: Some("logs".into())
+                section: Some("logs".into())
             }
         );
     }
@@ -718,27 +707,16 @@ mod tests {
     }
 
     #[test]
-    fn link_target_writes_only_the_admin_arguments_that_are_set() {
+    fn link_target_writes_the_admin_section_only_when_it_is_set() {
         assert_eq!(
-            link_target(Route::Admin {
-                section: None,
-                tab: None
-            }),
+            link_target(Route::Admin { section: None }),
             NavigationTarget::Internal("/admin".into())
         );
         assert_eq!(
             link_target(Route::Admin {
-                section: Some("people".into()),
-                tab: None
+                section: Some("people".into())
             }),
             NavigationTarget::Internal("/admin?section=people".into())
-        );
-        assert_eq!(
-            link_target(Route::Admin {
-                section: Some("health".into()),
-                tab: Some("logs".into())
-            }),
-            NavigationTarget::Internal("/admin?section=health&tab=logs".into())
         );
     }
 

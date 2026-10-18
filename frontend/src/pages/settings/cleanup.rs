@@ -40,7 +40,7 @@ pub fn CleanupSection() -> Element {
             }
             if is_admin() {
                 CleanupCountsList { counts, error, generation }
-                div { class: "cleanup-actions",
+                div { class: "settings-actions cleanup-actions",
                     button {
                         class: "btn",
                         "data-testid": "cleanup-detect",
@@ -148,7 +148,7 @@ fn CleanupCountsList(
     if error() {
         return rsx! {
             div { class: "settings-actions",
-                p { class: "settings-status error", role: "status", "data-testid": "cleanup-counts-error",
+                p { class: "settings-status settings-action-status error", role: "status", "data-testid": "cleanup-counts-error",
                     "Couldn\u{2019}t load the cleanup counts."
                 }
                 button {

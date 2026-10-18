@@ -3,13 +3,13 @@ import { expect, test } from "../fixtures/test";
 import { expectMutation } from "../utils/api";
 import { expectNavVisible, gotoReady } from "../utils/nav";
 
-// The admin log viewer — the Logs tab of Administration › Health & activity;
+// The admin log viewer — Administration › Logs;
 // the legacy `/logs` route redirects here. The layout test runs against the real on-disk
 // logs the server is already writing (proving AC1 end-to-end); the filter /
 // error / pagination tests mock `/api/rpc/logs` after the initial load so the
 // rows under assertion are deterministic.
-const LOGS = "/admin?section=health&tab=logs";
-const LOGS_URL = /\/admin\?section=health&tab=logs$/;
+const LOGS = "/admin?section=logs";
+const LOGS_URL = /\/admin\?section=logs$/;
 const logsHeading = (page: Page) =>
   page.getByRole("heading", { level: 3, name: "Server logs" });
 
@@ -68,11 +68,7 @@ test("renders the log viewer layout from the on-disk logs", async ({
   );
 
   await expect(logsHeading(page)).toBeVisible();
-  await expect(page.getByTestId("admin-nav-health")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(page.getByTestId("health-tab-logs")).toHaveAttribute(
+  await expect(page.getByTestId("admin-nav-logs")).toHaveAttribute(
     "aria-current",
     "page",
   );
@@ -244,19 +240,19 @@ test("shows an error status when the log read fails", async ({ page }) => {
   await expect(page.getByTestId("logs-retry")).toBeVisible();
 });
 
-test("reaches the log viewer from the Health & activity Logs tab", async ({
+test("reaches the log viewer from the Administration sidebar", async ({
   page,
 }) => {
   await gotoReady(page, "/admin?section=health");
 
-  await page.getByTestId("health-tab-logs").click();
+  await page.getByTestId("admin-nav-logs").click();
 
   await expect(page).toHaveURL(LOGS_URL);
   await expect(logsHeading(page)).toBeVisible();
   await expect(page.getByTestId("logs-page")).toBeVisible();
 });
 
-test("the legacy /logs route redirects into the Logs tab", async ({
+test("the legacy /logs route redirects into the Logs section", async ({
   page,
 }) => {
   await gotoReady(page, "/logs");

@@ -18,27 +18,21 @@ fn settings_section_parse_opens_profile_when_the_slug_is_absent_or_unknown() {
 
 #[test]
 fn legacy_settings_target_sends_each_old_slug_to_its_new_home() {
-    use crate::pages::admin::sections::{AdminSection as A, HealthTab as T};
+    use crate::pages::admin::sections::AdminSection as A;
     use SettingsSection as S;
     let cases = [
         ("account", SettingsTarget::Personal(S::Profile)),
         ("kindle", SettingsTarget::Personal(S::Devices)),
         ("kobo", SettingsTarget::Personal(S::Devices)),
         ("api-tokens", SettingsTarget::Personal(S::Security)),
-        ("library", SettingsTarget::Admin(A::Sources, None)),
-        ("metadata", SettingsTarget::Admin(A::Metadata, None)),
-        ("email", SettingsTarget::Admin(A::Integrations, None)),
-        ("cleanup", SettingsTarget::Admin(A::Cleanup, None)),
-        ("users", SettingsTarget::Admin(A::People, None)),
-        (
-            "health",
-            SettingsTarget::Admin(A::Health, Some(T::Overview)),
-        ),
-        (
-            "background-tasks",
-            SettingsTarget::Admin(A::Health, Some(T::Activity)),
-        ),
-        ("logs", SettingsTarget::Admin(A::Health, Some(T::Logs))),
+        ("library", SettingsTarget::Admin(A::Sources)),
+        ("metadata", SettingsTarget::Admin(A::Metadata)),
+        ("email", SettingsTarget::Admin(A::Integrations)),
+        ("cleanup", SettingsTarget::Admin(A::Cleanup)),
+        ("users", SettingsTarget::Admin(A::People)),
+        ("health", SettingsTarget::Admin(A::Health)),
+        ("background-tasks", SettingsTarget::Admin(A::Maintenance)),
+        ("logs", SettingsTarget::Admin(A::Logs)),
     ];
     for (slug, target) in cases {
         assert_eq!(legacy_settings_target(slug), Some(target), "{slug}");
@@ -116,20 +110,12 @@ fn settings_target_route_opens_a_personal_section_under_settings() {
 }
 
 #[test]
-fn settings_target_route_opens_an_admin_section_and_tab_under_admin() {
-    use crate::pages::admin::sections::{AdminSection, HealthTab};
+fn settings_target_route_opens_an_admin_section_under_admin() {
+    use crate::pages::admin::sections::AdminSection;
     assert_eq!(
-        SettingsTarget::Admin(AdminSection::Sources, None).route(),
+        SettingsTarget::Admin(AdminSection::Logs).route(),
         Route::Admin {
-            section: Some("sources".into()),
-            tab: None
-        }
-    );
-    assert_eq!(
-        SettingsTarget::Admin(AdminSection::Health, Some(HealthTab::Logs)).route(),
-        Route::Admin {
-            section: Some("health".into()),
-            tab: Some("logs".into())
+            section: Some("logs".into())
         }
     );
 }

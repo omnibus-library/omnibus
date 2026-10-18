@@ -5,7 +5,7 @@
 // The mobile shell has no sidebar or `/admin`; it reads only the page title.
 #![cfg_attr(feature = "mobile", allow(dead_code))]
 
-use crate::pages::admin::sections::{AdminSection, HealthTab};
+use crate::pages::admin::sections::AdminSection;
 use crate::Route;
 
 /// A section of the personal `/settings` page. Every reader sees all five.
@@ -64,12 +64,11 @@ pub(crate) fn settings_page_title(raw: Option<&str>) -> String {
     format!("{} · Settings", SettingsSection::parse(raw).label())
 }
 
-/// Where a settings link lands: a personal section, or an admin section (with
-/// a Health & activity tab when it names one).
+/// Where a settings link lands: a personal section or an admin section.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SettingsTarget {
     Personal(SettingsSection),
-    Admin(AdminSection, Option<HealthTab>),
+    Admin(AdminSection),
 }
 
 /// The new home of a `?section=` slug that predates the `/admin` split, or
@@ -80,14 +79,14 @@ pub(crate) fn legacy_settings_target(slug: &str) -> Option<SettingsTarget> {
         "account" => Personal(SettingsSection::Profile),
         "kindle" | "kobo" => Personal(SettingsSection::Devices),
         "api-tokens" => Personal(SettingsSection::Security),
-        "library" => Admin(AdminSection::Sources, None),
-        "metadata" => Admin(AdminSection::Metadata, None),
-        "email" => Admin(AdminSection::Integrations, None),
-        "cleanup" => Admin(AdminSection::Cleanup, None),
-        "users" => Admin(AdminSection::People, None),
-        "health" => Admin(AdminSection::Health, Some(HealthTab::Overview)),
-        "background-tasks" => Admin(AdminSection::Health, Some(HealthTab::Activity)),
-        "logs" => Admin(AdminSection::Health, Some(HealthTab::Logs)),
+        "library" => Admin(AdminSection::Sources),
+        "metadata" => Admin(AdminSection::Metadata),
+        "email" => Admin(AdminSection::Integrations),
+        "cleanup" => Admin(AdminSection::Cleanup),
+        "users" => Admin(AdminSection::People),
+        "health" => Admin(AdminSection::Health),
+        "background-tasks" => Admin(AdminSection::Maintenance),
+        "logs" => Admin(AdminSection::Logs),
         _ => return None,
     };
     Some(target)
@@ -105,9 +104,8 @@ impl SettingsTarget {
             SettingsTarget::Personal(section) => Route::Settings {
                 section: Some(section.slug().to_string()),
             },
-            SettingsTarget::Admin(section, tab) => Route::Admin {
+            SettingsTarget::Admin(section) => Route::Admin {
                 section: Some(section.slug().to_string()),
-                tab: tab.map(|tab| tab.slug().to_string()),
             },
         }
     }
@@ -138,12 +136,11 @@ const fn admin(
     label: &'static str,
     keywords: &'static [&'static str],
     section: AdminSection,
-    tab: Option<HealthTab>,
 ) -> SettingsEntry {
     SettingsEntry {
         label,
         keywords,
-        target: SettingsTarget::Admin(section, tab),
+        target: SettingsTarget::Admin(section),
     }
 }
 
@@ -225,67 +222,52 @@ const SETTINGS_INDEX: &[SettingsEntry] = &[
             "scan interval",
         ],
         AdminSection::Sources,
-        None,
     ),
     admin(
         "Metadata order",
         &["precedence", "provider", "metadata"],
         AdminSection::Metadata,
-        None,
     ),
     admin(
         "Library cleanup",
         &["duplicates", "merge", "authors"],
         AdminSection::Cleanup,
-        None,
     ),
     admin(
         "Users",
         &["accounts", "people", "registration", "permissions"],
         AdminSection::People,
-        None,
     ),
     admin(
         "Email delivery (SMTP)",
         &["smtp", "mail server"],
         AdminSection::Integrations,
-        None,
     ),
     admin(
         "Hardcover",
         &["api key", "suggestions"],
         AdminSection::Integrations,
-        None,
     ),
     admin(
         "Google Books",
         &["api key", "metadata lookup"],
         AdminSection::Integrations,
-        None,
     ),
     admin(
         "Calibre conversion",
         &["calibre", "ebook-convert", "convert"],
         AdminSection::Integrations,
-        None,
     ),
-    admin(
-        "Hosted MCP endpoint",
-        &["mcp"],
-        AdminSection::Integrations,
-        None,
-    ),
+    admin("Hosted MCP endpoint", &["mcp"], AdminSection::Integrations),
     admin(
         "Server health",
         &["health", "status", "errors", "worker queue", "storage"],
         AdminSection::Health,
-        Some(HealthTab::Overview),
     ),
     admin(
         "Background tasks",
         &["tasks", "history", "activity"],
-        AdminSection::Health,
-        Some(HealthTab::Activity),
+        AdminSection::Maintenance,
     ),
     admin(
         "Maintenance",
@@ -295,15 +277,9 @@ const SETTINGS_INDEX: &[SettingsEntry] = &[
             "extract chapters",
             "bake overrides",
         ],
-        AdminSection::Health,
-        Some(HealthTab::Maintenance),
+        AdminSection::Maintenance,
     ),
-    admin(
-        "Server logs",
-        &["logs"],
-        AdminSection::Health,
-        Some(HealthTab::Logs),
-    ),
+    admin("Server logs", &["logs"], AdminSection::Logs),
 ];
 
 /// Most results the palette shows for settings, so they never bury the books.

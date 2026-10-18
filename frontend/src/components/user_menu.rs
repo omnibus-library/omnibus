@@ -358,7 +358,7 @@ fn UmAccountRows(open: Signal<bool>, is_admin: bool) -> Element {
             }
             if is_admin {
                 Link {
-                    to: crate::routes::link_target(Route::Admin { section: None, tab: None }),
+                    to: crate::routes::link_target(Route::Admin { section: None }),
                     class: "um-row",
                     "data-testid": "user-menu-admin",
                     onclick: move |_| open.set(false),

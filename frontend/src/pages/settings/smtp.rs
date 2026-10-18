@@ -450,13 +450,15 @@ fn SmtpTestActions(
         .unwrap_or_default();
     rsx! {
         div { class: "settings-actions",
-            button {
-                r#type: "submit",
-                class: "btn",
-                disabled: busy || !loaded,
-                "aria-busy": if busy { "true" } else { "false" },
-                "data-testid": "smtp-save",
-                BusyLabel { busy, label: "Save SMTP settings", busy_label: "Saving\u{2026}" }
+            if configured {
+                button {
+                    r#type: "button",
+                    class: "btn ghost danger settings-action-start",
+                    disabled: busy,
+                    "data-testid": "smtp-clear",
+                    onclick: move |e| on_clear.call(e),
+                    "Clear\u{2026}"
+                }
             }
             if status_failed() {
                 button {
@@ -476,14 +478,14 @@ fn SmtpTestActions(
                     onclick: move |e| on_test.call(e),
                     "Send test email"
                 }
-                button {
-                    r#type: "button",
-                    class: "btn ghost",
-                    disabled: busy,
-                    "data-testid": "smtp-clear",
-                    onclick: move |e| on_clear.call(e),
-                    "Clear\u{2026}"
-                }
+            }
+            button {
+                r#type: "submit",
+                class: "btn primary",
+                disabled: busy || !loaded,
+                "aria-busy": if busy { "true" } else { "false" },
+                "data-testid": "smtp-save",
+                BusyLabel { busy, label: "Save SMTP settings", busy_label: "Saving\u{2026}" }
             }
         }
         {credential_status_line("smtp-status", status.as_ref().map(|s| s.configured), status_failed(), &detail, "Not configured")}

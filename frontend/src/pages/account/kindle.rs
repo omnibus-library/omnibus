@@ -289,7 +289,6 @@ fn kindle_delivery_line(delivery: Option<Option<KindleDelivery>>, access: Access
                 Link {
                     to: crate::routes::link_target(Route::Admin {
                         section: Some("integrations".to_string()),
-                        tab: None,
                     }),
                     "Set up email delivery"
                 }
