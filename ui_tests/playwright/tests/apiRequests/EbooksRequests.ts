@@ -7,13 +7,11 @@ export class EbooksRequests extends BaseRequests {
     return this.get("/api/rpc/ebooks");
   }
 
-  // batch-C:
   /** One book as the detail page reads it, with its overrides and files. */
   getEbook(bookUuid: string): Promise<APIResponse> {
     return this.get(`/api/ebooks/${bookUuid}`);
   }
 
-  // batch-D: one book's metadata
   /** Answers the book's metadata, or `null` once the book is gone. */
   postEbookDetail(bookUuid: string): Promise<APIResponse> {
     return this.post("/api/rpc/ebook", { uuid: bookUuid });

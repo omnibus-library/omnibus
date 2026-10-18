@@ -64,7 +64,6 @@ export function pagePercent(index: number, pages: number): number {
   return Math.round(((index + 1) * 100) / pages);
 }
 
-// batch-J: audio and cross-format
 /** Strictly increasing event clocks that stay at or behind wall time, which the server clamps later ones to. */
 export class EventClock {
   private seconds = 0;

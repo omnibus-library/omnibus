@@ -12,7 +12,6 @@ export class MiniDockComponent extends BaseComponent {
     this.titleLabel = this.root.getByTestId("mini-dock-title");
   }
 
-  // batch-J: audio and cross-format
   readonly toggleButton = this.page.getByTestId("mini-dock-toggle");
   readonly expandButton = this.page.getByTestId("mini-dock-expand-btn");
   readonly dismissButton = this.page.getByTestId("mini-dock-dismiss");
@@ -130,7 +129,6 @@ export class MiniDockComponent extends BaseComponent {
   }
 }
 
-// batch-J: audio and cross-format
 /** The dock's box against the viewport it is fixed to. */
 export type DockBounds = {
   x: number;

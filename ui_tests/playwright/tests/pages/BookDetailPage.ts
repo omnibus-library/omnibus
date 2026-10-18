@@ -146,7 +146,6 @@ export class BookDetailPage extends BasePage {
     await expect(this.titleHeading).toBeVisible();
   }
 
-  // #region batch-C: book detail
   readonly formats = new FormatSwitcherComponent(this.page);
   readonly exportMenu = new BookExportComponent(this.page);
   readonly rating = new RatingComponent(this.page);
@@ -218,9 +217,7 @@ export class BookDetailPage extends BasePage {
       () => Reflect.get(window, "__fullLoadSentinel") === true,
     );
   }
-  // #endregion batch-C
 
-  // #region batch-D: book detail writes
   readonly journal = new JournalSectionComponent(this.page);
   readonly journalEntry = new JournalEntryOverlayComponent(this.page);
   readonly deleteFilesDialog = new DeleteFilesDialogComponent(this.page);
@@ -250,17 +247,13 @@ export class BookDetailPage extends BasePage {
   async stopForcingServerError(contract: ExpectMutationOptions): Promise<void> {
     await this.page.unroute(contract.url);
   }
-  // #endregion batch-D
 
-  // #region batch-E: metadata edit
   readonly genreList = this.page.getByTestId("bd-genre-list");
 
   async openEditMetadata(): Promise<void> {
     await this.editMetadataLink.click();
   }
-  // #endregion batch-E
 
-  // #region batch-H: filters and book-detail shelves
   readonly shelfPicker = new ShelfPickerComponent(this.page);
 
   readonly addToShelfButton = this.page.getByTestId("bdmq-add-to-shelf");
@@ -286,9 +279,7 @@ export class BookDetailPage extends BasePage {
   async markFinished(): Promise<void> {
     await this.markFinishedButton.click();
   }
-  // #endregion batch-H
 
-  // #region batch-I: search, nav and discovery
   async openSeriesPage(): Promise<void> {
     await this.stops.seriesPageLink.click();
   }
@@ -298,9 +289,7 @@ export class BookDetailPage extends BasePage {
     await expect(this.page).toHaveURL(/\/books\/[0-9a-fA-F-]{36}$/);
     await expect(this.titleHeading).toBeVisible();
   }
-  // #endregion batch-I
 
-  // #region batch-J: audio and cross-format
   readonly syncLink = new SyncLinkComponent(this.page);
   readonly alignmentModal = new AlignmentModalComponent(this.page);
   readonly listenActionButton = this.page.getByTestId("action-listen");
@@ -309,5 +298,4 @@ export class BookDetailPage extends BasePage {
   async listen(): Promise<void> {
     await this.listenActionButton.click();
   }
-  // #endregion batch-J
 }

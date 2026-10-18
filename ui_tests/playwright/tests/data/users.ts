@@ -27,8 +27,6 @@ export function buildReader(): NewUser {
   };
 }
 
-// batch-B: the Users section creates, lists and deletes accounts.
-
 /** A user the server holds, with the id its delete call takes. */
 export type SeededUser = NewUser & { id: number };
 

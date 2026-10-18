@@ -19,7 +19,6 @@ export class SavedPassageCardComponent extends BaseComponent {
     await this.openLink.click();
   }
 
-  // batch-C:
   get noteText(): Locator {
     return this.root.getByTestId("highlight-note");
   }

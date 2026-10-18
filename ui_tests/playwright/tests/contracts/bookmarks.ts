@@ -16,7 +16,6 @@ export const bookmarks = {
     expectedStatus: 200,
   }),
 
-  // batch-J: audio and cross-format
   /** The save "+ Bookmark" makes at the playhead, whose position the body leaves unpinned. */
   createAtPlayhead: (): ExpectMutationOptions => ({
     method: "POST",

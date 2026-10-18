@@ -22,7 +22,6 @@ export const readStatus = {
     timeout: 20_000,
   }),
 
-  // batch-C:
   /** The write the book page's control makes; no body is pinned. */
   change: (): ExpectMutationOptions => ({
     method: "POST",

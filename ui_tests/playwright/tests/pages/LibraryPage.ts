@@ -67,7 +67,6 @@ export class LibraryPage extends BasePage {
     await this.sectionTitle.filter({ hasText: shelf.name }).waitFor();
   }
 
-  // #region batch-C: book detail
   readonly libraryGrid = this.page.getByTestId("lib-grid");
 
   /** The link on a table row's cover cell that opens the book. */
@@ -85,9 +84,7 @@ export class LibraryPage extends BasePage {
   async openFromNav(): Promise<void> {
     await this.topNav.libraryLink.click();
   }
-  // #endregion batch-C
 
-  // #region batch-E: metadata edit
   /** The Genres cell of a book's table row, a chip editor once clicked. */
   genresCell(slug: string): Locator {
     return this.table.cell(slug, "genres");
@@ -129,9 +126,7 @@ export class LibraryPage extends BasePage {
   async paletteBookRowTexts(): Promise<string[]> {
     return this.topNav.searchPalette.row("book").allInnerTexts();
   }
-  // #endregion batch-E
 
-  // #region batch-F: landing and add books
   readonly bulkEditBar = new BulkEditBarComponent(this.page);
   readonly bulkEditModal = new BulkEditModalComponent(this.page);
   readonly seriesCap = new SeriesCapComponent(this.page);
@@ -261,9 +256,7 @@ export class LibraryPage extends BasePage {
       label,
     );
   }
-  // #endregion batch-F
 
-  // #region batch-G: shelves
   readonly shelfGallery = new ShelfGalleryComponent(this.page);
   readonly createShelfModal = new CreateShelfModalComponent(this.page);
   readonly editShelfModal = new EditShelfModalComponent(this.page);
@@ -344,9 +337,7 @@ export class LibraryPage extends BasePage {
       )
       .toBeGreaterThan(0);
   }
-  // #endregion batch-G
 
-  // #region batch-H: filters and book-detail shelves
   readonly filterBar = new FilterBarComponent(this.page);
 
   readonly loading = this.page.getByTestId("lib-loading");
@@ -428,9 +419,7 @@ export class LibraryPage extends BasePage {
       .poll(() => this.tileSlugs(), { message: "tiles on the grid" })
       .toEqual(expect.arrayContaining(slugs));
   }
-  // #endregion batch-H
 
-  // #region batch-I: search, nav and discovery
   readonly scroll = new PageScrollComponent(this.page);
 
   /** The titles on the grid tiles, in the order they are painted. */
@@ -453,9 +442,7 @@ export class LibraryPage extends BasePage {
     });
     return bodies;
   }
-  // #endregion batch-I
 
-  // #region batch-J: audio and cross-format
   /** Whether the continue fan shows a card for `bookUuid` within 3 s, rather than failing the wait. */
   async showsResumeCard(bookUuid: string): Promise<boolean> {
     return this.continueStack
@@ -476,5 +463,4 @@ export class LibraryPage extends BasePage {
   async openBook(title: string): Promise<void> {
     await this.bookTile(title).click();
   }
-  // #endregion batch-J
 }

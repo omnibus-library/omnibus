@@ -5,11 +5,10 @@ export type LibraryBook = {
   formats: string[];
 };
 
-// batch-D: a book a delete test uploads for itself
 /** An EPUB uploaded for a delete test, and the folder it was filed under. */
 export type UploadedEbook = { uuid: string; folder: string };
 
-// batch-F: dates as the landing table and the detail page print them.
+// Dates as the landing table and the detail page print them.
 
 /** One book in `GET /api/rpc/ebooks`, with the instant it entered the library. */
 export type AddedBook = LibraryBook & { added_at: string | null };

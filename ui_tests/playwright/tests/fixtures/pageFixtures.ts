@@ -208,7 +208,6 @@ type PageFixtures = {
   ) => Promise<ShelfRef>;
   mergeLock: MergeLock;
 
-  // #region batch-A: auth and account settings
   registerPage: RegisterPage;
   mcpRequests: McpRequests;
   readerExpectMutation: ExpectMutation;
@@ -223,9 +222,7 @@ type PageFixtures = {
   ownKoboDevice: (name: string) => Promise<number>;
   createdApiTokenIds: Set<number>;
   ownApiToken: (name: string) => Promise<number>;
-  // #endregion batch-A
 
-  // #region batch-B: admin settings
   usersRequests: UsersRequests;
   createdUserIds: Set<number>;
   seedUser: () => Promise<SeededUser>;
@@ -235,9 +232,7 @@ type PageFixtures = {
   savedMetadataKeys: Set<MetadataProvider>;
   cleanupReviewPage: CleanupReviewPage;
   adminHealthPage: AdminHealthPage;
-  // #endregion batch-B
 
-  // #region batch-C: book detail
   bookRatingRequests: BookRatingRequests;
   ebooksRequests: EbooksRequests;
   ratedBookUuids: Set<string>;
@@ -246,9 +241,7 @@ type PageFixtures = {
   startReadStatusAt: (bookUuid: string, status: ReadStatus) => Promise<void>;
   clearHighlights: (bookUuid: string) => Promise<void>;
   mergedMp3Book: string;
-  // #endregion batch-C
 
-  // #region batch-D: book detail writes
   journalsRequests: JournalsRequests;
   uploadsRequests: UploadsRequests;
   createdJournalIds: Set<number>;
@@ -259,16 +252,12 @@ type PageFixtures = {
   ) => Promise<JournalEntryRef>;
   uploadedEbook: UploadedEbook;
   bookExists: (bookUuid: string) => Promise<boolean>;
-  // #endregion batch-D
 
-  // #region batch-E: metadata edit
   metadataEditPage: MetadataEditPage;
   genreSearchPage: GenreSearchPage;
   overriddenBookUuids: Set<string>;
   assignGenres: (bookUuid: string, genres: string[]) => Promise<void>;
-  // #endregion batch-E
 
-  // #region batch-F: landing and add books
   addBooksPage: AddBooksPage;
   notFoundPage: NotFoundPage;
   preHydration: PreHydrationComponent;
@@ -276,20 +265,14 @@ type PageFixtures = {
   thumbsRequests: ThumbsRequests;
   revertOverridesOf: (...titles: string[]) => Promise<void>;
   presetStackSeries: (enabled: boolean) => Promise<void>;
-  // #endregion batch-F
 
-  // #region batch-G: shelves
   shelvesIndexPage: ShelvesIndexPage;
   seedResumePoint: (bookUuid: string) => Promise<void>;
-  // #endregion batch-G
 
-  // #region batch-H: filters and book-detail shelves
   filterShelf: FilterShelf;
   changedReadStatusUuids: Set<string>;
   scheduleScrollStopsReset: () => void;
-  // #endregion batch-H
 
-  // #region batch-I: search, nav and discovery
   searchResultsPage: SearchResultsPage;
   authorPage: AuthorPage;
   seriesPage: SeriesPage;
@@ -305,9 +288,7 @@ type PageFixtures = {
     format: "epub" | "audio",
     bookFileId?: number,
   ) => Promise<RecentBook>;
-  // #endregion batch-I
 
-  // #region batch-J: audio and cross-format
   audiobooksRequests: AudiobooksRequests;
   crossFormatRequests: CrossFormatRequests;
   signedInUserId: number;
@@ -316,9 +297,7 @@ type PageFixtures = {
   linkedBookUuids: Set<string>;
   eventClock: EventClock;
   newestStoredClock: (bookUuid: string) => Promise<number>;
-  // #endregion batch-J
 
-  // #region batch-K: stats
   statsPage: StatsPage;
   chartBuilderPage: ChartBuilderPage;
   statsRequests: StatsRequests;
@@ -328,11 +307,8 @@ type PageFixtures = {
     clear(): Promise<void>;
   };
   householdTarget: ReaderAccount;
-  // #endregion batch-K
 
-  // #region batch-L: iOS reader glue
   iosGluePage: IosGluePage;
-  // #endregion batch-L
 };
 
 /** Retries a sign-in the limiter answered 429 until it clears, for up to 70 s. */
@@ -791,7 +767,6 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     });
   },
 
-  // #region batch-A: auth and account settings
   registerPage: async ({ page }, use) => {
     await use(new RegisterPage(page));
   },
@@ -927,9 +902,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       return token.id;
     });
   },
-  // #endregion batch-A
 
-  // #region batch-B: admin settings
   usersRequests: async ({ request }, use) => {
     await use(new UsersRequests(request));
   },
@@ -987,9 +960,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   adminHealthPage: async ({ page }, use) => {
     await use(new AdminHealthPage(page));
   },
-  // #endregion batch-B
 
-  // #region batch-C: book detail
   bookRatingRequests: async ({ request }, use) => {
     await use(new BookRatingRequests(request));
   },
@@ -1079,9 +1050,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     ).toHaveLength(2);
     await use(primaryUuid);
   },
-  // #endregion batch-C
 
-  // #region batch-D: book detail writes
   journalsRequests: async ({ request }, use) => {
     await use(new JournalsRequests(request));
   },
@@ -1136,9 +1105,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       return (await detail.json()) !== null;
     });
   },
-  // #endregion batch-D
 
-  // #region batch-E: metadata edit
   metadataEditPage: async ({ page }, use) => {
     await use(new MetadataEditPage(page));
   },
@@ -1166,9 +1133,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       overriddenBookUuids.add(bookUuid);
     });
   },
-  // #endregion batch-E
 
-  // #region batch-F: landing and add books
   addBooksPage: async ({ page }, use) => {
     await use(new AddBooksPage(page));
   },
@@ -1208,9 +1173,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     await use(save);
     await save(false);
   },
-  // #endregion batch-F
 
-  // #region batch-G: shelves
   shelvesIndexPage: async ({ page }, use) => {
     await use(new ShelvesIndexPage(page));
   },
@@ -1220,9 +1183,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       await expect(saved, `seed progress for ${bookUuid}`).toBeOK();
     });
   },
-  // #endregion batch-G
 
-  // #region batch-H: filters and book-detail shelves
   // The reader owns it, because a shelf on the admin would move every other
   // spec's shelf counts.
   filterShelf: async ({ request, ownShelf }, use) => {
@@ -1268,9 +1229,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     const off = await readerAccountRequests.postScrollStops(false);
     await expect(off, "turn the reader's scroll stops off").toBeOK();
   },
-  // #endregion batch-H
 
-  // #region batch-I: search, nav and discovery
   searchResultsPage: async ({ page }, use) => {
     await use(new SearchResultsPage(page));
   },
@@ -1399,9 +1358,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       return { uuid, title: target.title, point };
     });
   },
-  // #endregion batch-I
 
-  // #region batch-J: audio and cross-format
   audiobooksRequests: async ({ request }, use) => {
     await use(new AudiobooksRequests(request));
   },
@@ -1493,9 +1450,7 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       return newest;
     });
   },
-  // #endregion batch-J
 
-  // #region batch-K: stats
   statsPage: async ({ page }, use) => {
     await use(new StatsPage(page));
   },
@@ -1573,13 +1528,10 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
       "turn the target's sharing off",
     ).toBeOK();
   },
-  // #endregion batch-K
 
-  // #region batch-L: iOS reader glue
   iosGluePage: async ({ page }, use) => {
     await use(new IosGluePage(page));
   },
-  // #endregion batch-L
 });
 
 export { expect };

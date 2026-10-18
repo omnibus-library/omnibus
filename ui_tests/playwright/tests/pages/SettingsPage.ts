@@ -76,7 +76,6 @@ export class SettingsPage extends BasePage {
     );
   }
 
-  // #region batch-A: auth and account settings
   readonly kindle = new KindleSectionComponent(this.page);
   readonly kobo = new KoboSectionComponent(this.page);
   readonly apiTokens = new ApiTokensSectionComponent(this.page);
@@ -85,9 +84,7 @@ export class SettingsPage extends BasePage {
   async gotoLegacyAccountRoute(): Promise<void> {
     await this.openAndSettle("/account");
   }
-  // #endregion batch-A
 
-  // #region batch-B: admin settings
   readonly library = new LibrarySectionComponent(this.page);
   readonly workerStatus = new WorkerStatusComponent(this.page);
   readonly metadata = new MetadataSectionComponent(this.page);
@@ -98,5 +95,4 @@ export class SettingsPage extends BasePage {
   // The sidebar tour needs only these two cards of the Kindle and Kobo sections.
   readonly kindleCard = this.page.getByTestId("account-kindle-card");
   readonly koboDevicesCard = this.page.getByTestId("kobo-devices-card");
-  // #endregion batch-B
 }

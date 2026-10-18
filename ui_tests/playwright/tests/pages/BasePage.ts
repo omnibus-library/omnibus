@@ -56,7 +56,6 @@ export abstract class BasePage {
     await this.readyLocator.waitFor({ timeout: this.readyTimeout });
   }
 
-  // batch-I:
   /** Reloads, then waits for the page's first fetches to settle. */
   async reloadAndSettle(): Promise<void> {
     await this.reload();

@@ -21,7 +21,6 @@ export class ProgressRequests extends BaseRequests {
     });
   }
 
-  // batch-G:
   /** Saves a position now, which puts the book on the continue-reading stack. */
   postResumePoint(bookUuid: string): Promise<APIResponse> {
     return this.post("/api/progress", {
@@ -31,7 +30,6 @@ export class ProgressRequests extends BaseRequests {
     });
   }
 
-  // batch-J: audio and cross-format
   /** Saves a whole-book epub percent stamped `clientUpdatedAt`, as another device would. */
   postEpubPercent(
     bookUuid: string,

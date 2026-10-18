@@ -160,7 +160,6 @@ export class ShelfPage extends BasePage {
     await expect(this.titleHeading).toBeVisible();
   }
 
-  // #region batch-H: filters and book-detail shelves
   readonly filterBar = new FilterBarComponent(this.page);
 
   readonly count = this.page.getByTestId("shelf-count");
@@ -304,5 +303,4 @@ export class ShelfPage extends BasePage {
       }
     });
   }
-  // #endregion batch-H
 }

@@ -4,7 +4,6 @@ import type { ExpectMutationOptions } from "../utils/api";
 export const progressUrls = {
   save: /\/api\/rpc\/progress(?:\?|$)/,
   get: /\/api\/rpc\/progress\/get(?:\?|$)/,
-  // batch-I:
   recent: /\/api\/rpc\/progress\/recent(?:\?|$)/,
 };
 
@@ -40,7 +39,6 @@ export const progress = {
     timeout: 20_000,
   }),
 
-  // batch-I:
   /** The read the user menu makes for its resume rows, a POST that changes nothing. */
   recent: (): ExpectMutationOptions => ({
     method: "POST",
@@ -48,7 +46,6 @@ export const progress = {
     expectedStatus: 200,
   }),
 
-  // batch-J: audio and cross-format
   /** The save the audio player makes for a position, filed under the part it plays. */
   saveAudio: (
     bookUuid: string,

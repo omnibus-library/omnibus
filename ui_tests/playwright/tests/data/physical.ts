@@ -9,7 +9,6 @@ export type PhysicalCopy = {
 /** A copy a test filed, told apart from every other copy by its note. */
 export type FiledCopy = { bookUuid: string; note: string };
 
-// batch-D: the physical-collection rows a spec stubs the panel's reads with
 /** A copy as `POST /api/rpc/physical/copies` lists it. */
 export type CopyRow = PhysicalCopy & {
   isbn: string | null;
