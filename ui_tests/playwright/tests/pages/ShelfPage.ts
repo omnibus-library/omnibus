@@ -33,4 +33,7 @@ export class ShelfPage extends BasePage {
   private shelfCard(shelfId: number): Locator {
     return this.page.getByTestId(`shelf-card-${shelfId}`);
   }
+
+  // #region batch-H: filters and book-detail shelves
+  // #endregion batch-H
 }

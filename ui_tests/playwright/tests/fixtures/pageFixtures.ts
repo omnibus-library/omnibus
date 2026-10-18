@@ -1,9 +1,23 @@
 import { join } from "node:path";
-import type { Request, Response } from "@playwright/test";
+import type {
+  APIRequest,
+  APIRequestContext,
+  APIResponse,
+  Browser,
+  Page,
+  Request,
+  Response,
+  ViewportSize,
+  WorkerInfo,
+} from "@playwright/test";
+import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthRequests } from "../apiRequests/AuthRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
+import { GoalsRequests } from "../apiRequests/GoalsRequests";
 import { HighlightsRequests } from "../apiRequests/HighlightsRequests";
+import { MergeRequests } from "../apiRequests/MergeRequests";
+import { OverridesRequests } from "../apiRequests/OverridesRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
 import { ReadStatusRequests } from "../apiRequests/ReadStatusRequests";
@@ -20,19 +34,29 @@ import {
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import type { BookProgress, ProgressRecord } from "../data/progress";
 import type { ReadStatus, ReadStatusRecord } from "../data/readStatus";
-import { type ShelfRef, wishlistOf } from "../data/shelves";
+import {
+  buildShelf,
+  type NewShelf,
+  type ShelfRef,
+  wishlistOf,
+} from "../data/shelves";
 import { buildReader, type Credentials } from "../data/users";
+import { AuthorsIndexPage } from "../pages/AuthorsIndexPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
 import { CheckInPage } from "../pages/CheckInPage";
 import { ComicReaderPage } from "../pages/ComicReaderPage";
 import { EpubReaderPage } from "../pages/EpubReaderPage";
 import { LibraryPage } from "../pages/LibraryPage";
+import { ListenPage } from "../pages/ListenPage";
+import { LoginPage } from "../pages/LoginPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
+import { SettingsPage } from "../pages/SettingsPage";
 import { ShelfPage } from "../pages/ShelfPage";
 import {
   type ExpectMutationOptions,
   expectMutation as expectMutationOn,
 } from "../utils/api";
+import { withLock } from "../utils/lock";
 import { DUAL_FORMAT_BOOK } from "./dual_format";
 import {
   test as base,
@@ -54,8 +78,15 @@ export type ReaderAccount = Credentials & {
   bearerToken: string;
 };
 
+/** Registers merges so each is undone, newest first, before the lock frees. */
+export type MergeLock = {
+  undoAfter(mergeLogId: number): void;
+  undone(mergeLogId: number): void;
+};
+
 type PageWorkerFixtures = {
   readerAccount: ReaderAccount;
+  secondReaderAccount: ReaderAccount;
 };
 
 type PageFixtures = {
@@ -91,8 +122,142 @@ type PageFixtures = {
   ) => Promise<void>;
   adminWishlist: ShelfRef;
   dualFormatUuid: string;
+  readerPage: Page;
+  readerRequest: APIRequestContext;
+  readerShelvesRequests: ShelvesRequests;
+  readerAccountRequests: AccountRequests;
+  readerLibraryPage: LibraryPage;
+  readerBookDetailPage: BookDetailPage;
+  readerSettingsPage: SettingsPage;
   readerShelfPage: ShelfPage;
+  secondReaderPage: Page;
+  secondReaderRequest: APIRequestContext;
+  secondReaderSettingsPage: SettingsPage;
+  settingsPage: SettingsPage;
+  loginPage: LoginPage;
+  authorsIndexPage: AuthorsIndexPage;
+  listenPage: ListenPage;
+  shelvesRequests: ShelvesRequests;
+  accountRequests: AccountRequests;
+  overridesRequests: OverridesRequests;
+  mergeRequests: MergeRequests;
+  goalsRequests: GoalsRequests;
+  createdShelfIds: Set<number>;
+  ownShelf: (
+    label: string,
+    shelf?: Partial<NewShelf>,
+    owner?: "admin" | "reader",
+  ) => Promise<ShelfRef>;
+  mergeLock: MergeLock;
+
+  // #region batch-A: auth and account settings
+  // #endregion batch-A
+
+  // #region batch-B: admin settings
+  // #endregion batch-B
+
+  // #region batch-C: book detail
+  // #endregion batch-C
+
+  // #region batch-D: book detail writes
+  // #endregion batch-D
+
+  // #region batch-E: metadata edit
+  // #endregion batch-E
+
+  // #region batch-F: landing and add books
+  // #endregion batch-F
+
+  // #region batch-G: shelves
+  // #endregion batch-G
+
+  // #region batch-H: filters and book-detail shelves
+  // #endregion batch-H
+
+  // #region batch-I: search, nav and discovery
+  // #endregion batch-I
+
+  // #region batch-J: audio and cross-format
+  // #endregion batch-J
+
+  // #region batch-K: stats
+  // #endregion batch-K
+
+  // #region batch-L: iOS reader glue
+  // #endregion batch-L
 };
+
+/** Retries a sign-in the limiter answered 429 until it clears, for up to 70 s. */
+async function signInPastLimit(
+  attempt: () => Promise<APIResponse>,
+): Promise<APIResponse> {
+  let response = await attempt();
+  await expect
+    .poll(
+      async () => {
+        if (response.status() === 429) response = await attempt();
+        return response.status();
+      },
+      {
+        message: "sign-in stays rate limited",
+        timeout: 70_000,
+        intervals: [1_000, 5_000],
+      },
+    )
+    .not.toBe(429);
+  return response;
+}
+
+/** Signs up a reader and signs it in for a cookie and a bearer; deletes it after `use`. */
+async function withReaderAccount(
+  api: APIRequest,
+  workerInfo: WorkerInfo,
+  use: (account: ReaderAccount) => Promise<void>,
+): Promise<void> {
+  const options = workerInfo.project.use;
+  const admin = await newBearerContext(api, options, loadAdminBearerToken());
+  const users = new UsersRequests(admin);
+  const reader = buildReader();
+  const created = await users.postUser(reader);
+  await expect(created, `create ${reader.username}`).toBeOK();
+  const { id } = await created.json();
+
+  const session = await newBearerContext(api, options, null);
+  const auth = new AuthRequests(session);
+  await expect(
+    await signInPastLimit(() => auth.postCookieLogin(reader)),
+  ).toBeOK();
+  const storageStatePath = join(
+    workerInfo.project.outputDir,
+    ".auth",
+    `${reader.username}.json`,
+  );
+  await session.storageState({ path: storageStatePath });
+  const bearer = await signInPastLimit(() => auth.postBearerLogin(reader));
+  await expect(bearer).toBeOK();
+  const { token } = await bearer.json();
+  await session.dispose();
+
+  await use({ ...reader, id, storageStatePath, bearerToken: token });
+
+  await expect(await users.deleteUser(id)).toBeOK();
+  await admin.dispose();
+}
+
+/** A page in a context of its own signed in as `account`, closed after `use`. */
+async function usePageAs(
+  browser: Browser,
+  account: ReaderAccount,
+  viewport: ViewportSize | null,
+  use: (page: Page) => Promise<void>,
+): Promise<void> {
+  const context = await browser.newContext({
+    storageState: account.storageStatePath,
+    viewport,
+  });
+  await use(await context.newPage());
+  await context.close();
+}
 
 /**
  * The suite admin's fixtures: its page and page objects, its API calls and
@@ -103,39 +268,14 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
   // One account per worker rather than per test, because sign-in allows ten
   // calls a minute per IP and a worker runs its tests one at a time.
   readerAccount: [
-    async ({ playwright }, use, workerInfo) => {
-      const options = workerInfo.project.use;
-      const admin = await newBearerContext(
-        playwright.request,
-        options,
-        loadAdminBearerToken(),
-      );
-      const users = new UsersRequests(admin);
-      const reader = buildReader();
-      const created = await users.postUser(reader);
-      await expect(created, `create ${reader.username}`).toBeOK();
-      const { id } = await created.json();
-
-      const session = await newBearerContext(playwright.request, options, null);
-      const auth = new AuthRequests(session);
-      await expect(await auth.postCookieLogin(reader)).toBeOK();
-      const storageStatePath = join(
-        workerInfo.project.outputDir,
-        ".auth",
-        `${reader.username}.json`,
-      );
-      await session.storageState({ path: storageStatePath });
-      const bearer = await auth.postBearerLogin(reader);
-      await expect(bearer).toBeOK();
-      const { token } = await bearer.json();
-      await session.dispose();
-
-      await use({ ...reader, id, storageStatePath, bearerToken: token });
-
-      await expect(await users.deleteUser(id)).toBeOK();
-      await admin.dispose();
-    },
-    { scope: "worker" },
+    async ({ playwright }, use, workerInfo) =>
+      withReaderAccount(playwright.request, workerInfo, use),
+    { scope: "worker", timeout: 120_000 },
+  ],
+  secondReaderAccount: [
+    async ({ playwright }, use, workerInfo) =>
+      withReaderAccount(playwright.request, workerInfo, use),
+    { scope: "worker", timeout: 120_000 },
   ],
 
   expectMutation: async ({ page }, use) => {
@@ -368,13 +508,176 @@ export const test = base.extend<PageFixtures, PageWorkerFixtures>({
     await use(match.unique_identifier);
   },
 
-  readerShelfPage: async ({ browser, readerAccount }, use) => {
-    const context = await browser.newContext({
-      storageState: readerAccount.storageStatePath,
-    });
-    await use(new ShelfPage(await context.newPage()));
-    await context.close();
+  readerPage: async ({ browser, readerAccount, viewport }, use) => {
+    await usePageAs(browser, readerAccount, viewport, use);
   },
+
+  readerRequest: async (
+    { playwright, baseURL, extraHTTPHeaders, readerAccount },
+    use,
+  ) => {
+    const context = await newBearerContext(
+      playwright.request,
+      { baseURL, extraHTTPHeaders },
+      readerAccount.bearerToken,
+    );
+    await use(context);
+    await context.dispose();
+  },
+
+  readerShelvesRequests: async ({ readerRequest }, use) => {
+    await use(new ShelvesRequests(readerRequest));
+  },
+
+  readerAccountRequests: async ({ readerRequest }, use) => {
+    await use(new AccountRequests(readerRequest));
+  },
+
+  readerLibraryPage: async ({ readerPage }, use) => {
+    await use(new LibraryPage(readerPage));
+  },
+  readerBookDetailPage: async ({ readerPage }, use) => {
+    await use(new BookDetailPage(readerPage));
+  },
+  readerSettingsPage: async ({ readerPage }, use) => {
+    await use(new SettingsPage(readerPage));
+  },
+  readerShelfPage: async ({ readerPage }, use) => {
+    await use(new ShelfPage(readerPage));
+  },
+
+  secondReaderPage: async ({ browser, secondReaderAccount, viewport }, use) => {
+    await usePageAs(browser, secondReaderAccount, viewport, use);
+  },
+
+  secondReaderRequest: async (
+    { playwright, baseURL, extraHTTPHeaders, secondReaderAccount },
+    use,
+  ) => {
+    const context = await newBearerContext(
+      playwright.request,
+      { baseURL, extraHTTPHeaders },
+      secondReaderAccount.bearerToken,
+    );
+    await use(context);
+    await context.dispose();
+  },
+
+  secondReaderSettingsPage: async ({ secondReaderPage }, use) => {
+    await use(new SettingsPage(secondReaderPage));
+  },
+
+  settingsPage: async ({ page }, use) => {
+    await use(new SettingsPage(page));
+  },
+  loginPage: async ({ page }, use) => {
+    await use(new LoginPage(page));
+  },
+  authorsIndexPage: async ({ page }, use) => {
+    await use(new AuthorsIndexPage(page));
+  },
+  listenPage: async ({ page }, use) => {
+    await use(new ListenPage(page));
+  },
+
+  shelvesRequests: async ({ request }, use) => {
+    await use(new ShelvesRequests(request));
+  },
+  accountRequests: async ({ request }, use) => {
+    await use(new AccountRequests(request));
+  },
+  overridesRequests: async ({ request }, use) => {
+    await use(new OverridesRequests(request));
+  },
+  mergeRequests: async ({ request }, use) => {
+    await use(new MergeRequests(request));
+  },
+  goalsRequests: async ({ request }, use) => {
+    await use(new GoalsRequests(request));
+  },
+
+  createdShelfIds: async ({ shelvesRequests }, use) => {
+    const ids = new Set<number>();
+    await use(ids);
+    for (const id of ids) {
+      const deleted = await shelvesRequests.deleteShelf(id);
+      await expect(deleted, `delete shelf ${id}`).toBeOK();
+    }
+  },
+
+  ownShelf: async ({ shelvesRequests, readerShelvesRequests }, use) => {
+    const made: { id: number; requests: ShelvesRequests }[] = [];
+    await use(async (label, shelf, owner = "admin") => {
+      const requests =
+        owner === "admin" ? shelvesRequests : readerShelvesRequests;
+      const req = buildShelf(label, shelf);
+      const created = await requests.postShelf(req);
+      await expect(created, `create shelf ${req.name}`).toBeOK();
+      const { id } = await created.json();
+      made.push({ id, requests });
+      return { id, name: req.name };
+    });
+    for (const { id, requests } of made) {
+      const deleted = await requests.deleteShelf(id);
+      await expect(deleted, `delete shelf ${id}`).toBeOK();
+    }
+  },
+
+  // Holds the lock from setup to teardown, because a reader takes none and
+  // the merged fixture must be restored before the next writer starts.
+  mergeLock: async ({ mergeRequests }, use) => {
+    const merged = new Set<number>();
+    await withLock("audiobook-merge", async () => {
+      await use({
+        undoAfter: (mergeLogId) => {
+          merged.add(mergeLogId);
+        },
+        undone: (mergeLogId) => {
+          merged.delete(mergeLogId);
+        },
+      });
+      for (const mergeLogId of [...merged].reverse()) {
+        const undone = await mergeRequests.postUndo(mergeLogId);
+        await expect(undone, `undo merge ${mergeLogId}`).toBeOK();
+      }
+    });
+  },
+
+  // #region batch-A: auth and account settings
+  // #endregion batch-A
+
+  // #region batch-B: admin settings
+  // #endregion batch-B
+
+  // #region batch-C: book detail
+  // #endregion batch-C
+
+  // #region batch-D: book detail writes
+  // #endregion batch-D
+
+  // #region batch-E: metadata edit
+  // #endregion batch-E
+
+  // #region batch-F: landing and add books
+  // #endregion batch-F
+
+  // #region batch-G: shelves
+  // #endregion batch-G
+
+  // #region batch-H: filters and book-detail shelves
+  // #endregion batch-H
+
+  // #region batch-I: search, nav and discovery
+  // #endregion batch-I
+
+  // #region batch-J: audio and cross-format
+  // #endregion batch-J
+
+  // #region batch-K: stats
+  // #endregion batch-K
+
+  // #region batch-L: iOS reader glue
+  // #endregion batch-L
 });
 
 export { expect };

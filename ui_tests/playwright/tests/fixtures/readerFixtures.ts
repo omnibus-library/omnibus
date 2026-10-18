@@ -1,15 +1,10 @@
-import type { APIRequestContext } from "@playwright/test";
 import { ScanRequests } from "../apiRequests/ScanRequests";
-import { ShelvesRequests } from "../apiRequests/ShelvesRequests";
 import type { ExternalBookMeta, Wish } from "../data/scan";
 import { wishlistOf } from "../data/shelves";
 import { test as base, expect } from "./pageFixtures";
-import { newBearerContext } from "./test";
 
 type ReaderFixtures = {
-  readerRequest: APIRequestContext;
   readerScanRequests: ScanRequests;
-  readerShelvesRequests: ShelvesRequests;
   wishFor: (book: ExternalBookMeta) => Promise<Wish>;
 };
 
@@ -19,25 +14,8 @@ export const test = base.extend<ReaderFixtures>({
     await use(readerAccount.storageStatePath);
   },
 
-  readerRequest: async (
-    { playwright, baseURL, extraHTTPHeaders, readerAccount },
-    use,
-  ) => {
-    const context = await newBearerContext(
-      playwright.request,
-      { baseURL, extraHTTPHeaders },
-      readerAccount.bearerToken,
-    );
-    await use(context);
-    await context.dispose();
-  },
-
   readerScanRequests: async ({ readerRequest }, use) => {
     await use(new ScanRequests(readerRequest));
-  },
-
-  readerShelvesRequests: async ({ readerRequest }, use) => {
-    await use(new ShelvesRequests(readerRequest));
   },
 
   wishFor: async (

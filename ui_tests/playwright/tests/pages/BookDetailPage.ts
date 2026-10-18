@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { BookDetailStopsComponent } from "../components/BookDetailStopsComponent";
 import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { SavedPassageCardComponent } from "../components/SavedPassageCardComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
@@ -12,6 +13,7 @@ export class BookDetailPage extends BasePage {
 
   readonly topNav: TopNavComponent;
   readonly checkInOverlay: CheckInOverlayComponent;
+  readonly stops: BookDetailStopsComponent;
 
   readonly titleHeading: Locator;
   readonly fromSameHandEmptyMessage: Locator;
@@ -34,6 +36,7 @@ export class BookDetailPage extends BasePage {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.checkInOverlay = new CheckInOverlayComponent(page);
+    this.stops = new BookDetailStopsComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
     this.readButton = page.getByTestId("action-read");
@@ -121,4 +124,22 @@ export class BookDetailPage extends BasePage {
     await expect(this.page).toHaveURL(new RegExp(`/books/${bookUuid}$`));
     await expect(this.titleHeading).toBeVisible();
   }
+
+  // #region batch-C: book detail
+  // #endregion batch-C
+
+  // #region batch-D: book detail writes
+  // #endregion batch-D
+
+  // #region batch-E: metadata edit
+  // #endregion batch-E
+
+  // #region batch-H: filters and book-detail shelves
+  // #endregion batch-H
+
+  // #region batch-I: search, nav and discovery
+  // #endregion batch-I
+
+  // #region batch-J: audio and cross-format
+  // #endregion batch-J
 }

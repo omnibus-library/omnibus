@@ -33,16 +33,26 @@ export abstract class BasePage {
     );
   }
 
+  /** Reloads and waits until the hydrated page is ready again. */
+  async reload(): Promise<void> {
+    await this.page.reload();
+    await this.waitUntilReady();
+  }
+
   /** Navigates to `path` and waits until the hydrated page is ready. */
   protected async open(path: string): Promise<void> {
     await this.page.goto(path);
-    await waitForHydration(this.page);
-    await this.readyLocator.waitFor({ timeout: this.readyTimeout });
+    await this.waitUntilReady();
   }
 
   /** Opens `path`, then waits for the page's first fetches to settle. */
   protected async openAndSettle(path: string): Promise<void> {
     await this.open(path);
     await this.page.waitForLoadState("networkidle");
+  }
+
+  private async waitUntilReady(): Promise<void> {
+    await waitForHydration(this.page);
+    await this.readyLocator.waitFor({ timeout: this.readyTimeout });
   }
 }
