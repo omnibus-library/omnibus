@@ -1,298 +1,246 @@
-// The household reader picker on /stats: choosing another sharing reader,
-// seeing their figures under a third-person heading, and a refusal once they
-// turn sharing off. Runs on two dedicated cookie-less readers — never the
-// shared admin, whose `share_stats` flag `account.spec.ts` reads as "on" —
-// so flipping one reader's sharing can't ripple into any other file.
+// The household reader picker on /stats. It runs as the worker's two readers,
+// never the shared admin, whose share_stats flag account.spec.ts reads as "on".
 
-import type { APIRequestContext, Page } from "@playwright/test";
+import { account } from "../contracts/account";
+import { stats } from "../contracts/stats";
+import { TARGET_BOOK_TITLE } from "../data/stats";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
-import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { expectNavVisible, gotoReady, waitForHydration } from "../utils/nav";
+import { expect, test } from "../fixtures/readerFixtures";
 import { fixturesDir, seedLibrary } from "../utils/seed";
-import { logInThroughUi, provisionUser } from "../utils/users";
 
-// The tests walk the two readers' shared state through its states in order.
-test.describe.configure({ mode: "serial" });
-
-const VIEWER = "household-viewer";
-const TARGET = "household-target";
-const PASSWORD = "household-stats-pw-01";
-const ACCOUNT = "/settings?section=account";
 const NOT_SHARING = "This reader isn't sharing their stats";
 
-const readerTrigger = (page: Page) => page.getByTestId("stats-reader-trigger");
+test.describe("household stats", () => {
+  // The target's sharing is one reader's state, so the tests stay on one worker.
+  test.describe.configure({ mode: "serial" });
 
-let viewer: Page;
-let target: Page;
-let targetId: number;
-let targetApi: APIRequestContext;
-
-test.beforeAll(async ({ browser, request, playwright, baseURL }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  await provisionUser(request, VIEWER, PASSWORD);
-  await provisionUser(request, TARGET, PASSWORD);
-
-  // A bearer session for the target, kept spec-local — the `createShelfAs`
-  // shape in shelf_detail.spec.ts. Used to read its own id, reset its own
-  // sharing preference, and seed one book's worth of activity, all without
-  // touching the shared admin's cookie session.
-  targetApi = await playwright.request.newContext({ baseURL });
-  const login = await targetApi.post("/api/auth/login", {
-    data: { username: TARGET, password: PASSWORD, client_kind: "bearer" },
-  });
-  expect(login.status(), "bearer login failed for household-target").toBe(200);
-  const { token } = (await login.json()) as { token: string };
-  const auth = { Authorization: `Bearer ${token}` };
-
-  const me = (await (
-    await targetApi.get("/api/auth/me", { headers: auth })
-  ).json()) as { id: number };
-  targetId = me.id;
-
-  const shareResp = await targetApi.post("/api/account/share-stats", {
-    headers: auth,
-    data: { enabled: true },
-  });
-  expect(shareResp.status(), "resetting the target's sharing on failed").toBe(
-    200,
-  );
-
-  const uuid = await fetchBookUuidByTitle(request, "Beta in the Series");
-  const now = Math.floor(Date.now() / 1000);
-  const sessionResp = await targetApi.post("/api/progress/sessions", {
-    headers: auth,
-    data: [
-      {
-        book_uuid: uuid,
-        format: "epub",
-        started_at: now - 60,
-        ended_at: now,
-        progress_units: 60,
-        utc_offset_minutes: 0,
-      },
-    ],
-  });
-  expect(
-    sessionResp.status(),
-    "seeding the target's reading session failed",
-  ).toBe(200);
-  const sessionBody = (await sessionResp.json()) as { recorded: number };
-  expect(sessionBody.recorded, "the seeded session was skipped").toBe(1);
-
-  const positionResp = await targetApi.post("/api/progress", {
-    headers: auth,
-    data: {
-      book_uuid: uuid,
-      format: "epub",
-      epub_cfi: "epubcfi(/6/4!/4/2/2[c01]/2/1:0)",
-    },
-  });
-  expect(
-    positionResp.status(),
-    "seeding the target's reading position failed",
-  ).toBe(200);
-
-  const viewerContext = await browser.newContext({
-    storageState: { cookies: [], origins: [] },
-  });
-  viewer = await viewerContext.newPage();
-  await logInThroughUi(viewer, VIEWER, PASSWORD);
-
-  const targetContext = await browser.newContext({
-    storageState: { cookies: [], origins: [] },
-  });
-  target = await targetContext.newPage();
-  await logInThroughUi(target, TARGET, PASSWORD);
-});
-
-test.afterAll(async () => {
-  await viewer.context().close();
-  await target.context().close();
-  await targetApi.dispose();
-});
-
-test("renders the stats page layout with a picker listing the sharing target", async () => {
-  await gotoReady(viewer, "/stats");
-  await expectNavVisible(viewer);
-
-  await expect(readerTrigger(viewer)).toHaveAttribute(
-    "aria-label",
-    "Stats for You",
-  );
-  await expect(viewer.getByTestId("stats-hero-who")).toHaveCount(0);
-  await expect(viewer.getByTestId("stats-empty")).toBeVisible();
-
-  // Options live in the DOM while the menu is `hidden` — asserted without
-  // opening it (rule 04: a layout test takes no actions).
-  const you = viewer.getByTestId("stats-reader-option-you");
-  await expect(you).toContainText("You");
-  await expect(you.locator(".st-reader-avatar")).toHaveCount(1);
-
-  const targetOption = viewer.getByTestId(`stats-reader-option-${targetId}`);
-  await expect(targetOption).toContainText(TARGET);
-  await expect(targetOption.locator(".st-reader-avatar")).toHaveCount(1);
-});
-
-test("picking the target shows their figures under a third-person heading", async () => {
-  await gotoReady(viewer, "/stats");
-  await readerTrigger(viewer).click();
-  await expect(viewer.getByTestId("stats-reader-menu")).toBeVisible();
-  await viewer.getByTestId(`stats-reader-option-${targetId}`).click();
-
-  await expect(viewer).toHaveURL(new RegExp(`/stats\\?user=${targetId}$`));
-  await expect(viewer.getByTestId("stats-hero-who")).toHaveText(
-    `${TARGET}'s stats`,
-  );
-  await expect(viewer.getByTestId("stats-empty")).toHaveCount(0);
-  await expect(viewer.getByTestId("stats-in-progress")).toContainText(
-    "Beta in the Series",
-  );
-  await expect(viewer.getByTestId("stats-goal-set-link")).toHaveCount(0);
-  await expect(viewer.getByTestId("stats-daily-set-link")).toHaveCount(0);
-
-  await expectMutation(
-    viewer,
-    {
-      method: "POST",
-      url: "/api/rpc/stats",
-      // `utc_offset_minutes` is 0 because the suite pins `timezoneId` to UTC
-      // (rule 10); `user_id` follows the route's `?user=`, not the caller.
-      expectedBody: {
-        range: "year",
-        utc_offset_minutes: 0,
-        user_id: targetId,
-      },
-      expectedStatus: 200,
-    },
-    async () => viewer.getByTestId("stats-range-year").click(),
-  );
-
-  // A fresh load of the same URL (not a client-side nav) reads identically —
-  // the SSR half of `?user=` has to agree with the hydrated one.
-  await gotoReady(viewer, `/stats?user=${targetId}`);
-  await expect(viewer.getByTestId("stats-hero-who")).toHaveText(
-    `${TARGET}'s stats`,
-  );
-  await expect(readerTrigger(viewer)).toHaveAttribute(
-    "aria-label",
-    `Stats for ${TARGET}`,
-  );
-
-  // Library scope still works while viewing another reader.
-  await viewer.getByTestId("stats-scope-tab-library").click();
-  await expect(viewer.getByTestId("stats-scope-library")).toBeVisible();
-
-  // Choosing "You" returns to the caller's own page.
-  await viewer.getByTestId("stats-scope-tab-user").click();
-  await readerTrigger(viewer).click();
-  await viewer.getByTestId("stats-reader-option-you").click();
-  await expect(viewer).toHaveURL(/\/stats$/);
-  await expect(viewer.getByTestId("stats-empty")).toBeVisible();
-  await expect(viewer.getByTestId("stats-hero-who")).toHaveCount(0);
-});
-
-test("a slower fetch for the previous reader can't overwrite the target's in-progress card", async () => {
-  // Hold the viewer's own in-progress fetch (user_id null, the page's own
-  // limit — not the user-menu's separate limit=1 call) so it resolves after
-  // the switch below, and prove the epoch guard drops it as stale.
-  let releaseOwnFetch: () => void = () => {};
-  const ownFetchHeld = new Promise<void>((resolve) => {
-    releaseOwnFetch = resolve;
-  });
-  await viewer.route("**/api/rpc/progress/recent", async (route) => {
-    const body = route.request().postDataJSON() as {
-      limit: number;
-      user_id: number | null;
-    };
-    if (body.user_id === null && body.limit > 1) {
-      await ownFetchHeld;
-    }
-    await route.continue();
+  test.beforeAll("seed the library", async ({ request }) => {
+    await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  // Plain goto, not gotoReady: the held request keeps the page from ever
-  // reaching networkidle (rule 04b's pattern for holding a request open).
-  await viewer.goto("/stats");
-  await waitForHydration(viewer);
-  await expect(readerTrigger(viewer)).toHaveAttribute(
-    "aria-label",
-    "Stats for You",
-  );
+  test("show the stats page layout with a picker listing the sharing target", async ({
+    statsPage,
+    householdTarget,
+  }) => {
+    await test.step("open the stats page", async () => {
+      await statsPage.goto();
+    });
 
-  await readerTrigger(viewer).click();
-  await viewer.getByTestId(`stats-reader-option-${targetId}`).click();
-  await expect(viewer.getByTestId("stats-hero-who")).toHaveText(
-    `${TARGET}'s stats`,
-  );
-  await expect(viewer.getByTestId("stats-in-progress")).toContainText(
-    "Beta in the Series",
-  );
+    await test.step("check the page shows your own empty stats", async () => {
+      await statsPage.assertDisplayed();
+      await statsPage.topNav.assertDisplayed();
+      await expect(statsPage.readerPicker.trigger).toHaveAttribute(
+        "aria-label",
+        "Stats for You",
+      );
+      await expect(statsPage.heroWho).toHaveCount(0);
+      await expect(statsPage.emptyState).toBeVisible();
+    });
 
-  const stalePromise = viewer.waitForResponse(
-    (resp) =>
-      resp.url().includes("/api/rpc/progress/recent") &&
-      (resp.request().postDataJSON() as { user_id: number | null }).user_id ===
-        null,
-  );
-  releaseOwnFetch();
-  await stalePromise;
-
-  await expect(viewer.getByTestId("stats-in-progress")).toContainText(
-    "Beta in the Series",
-  );
-
-  await viewer.unroute("**/api/rpc/progress/recent");
-  await readerTrigger(viewer).click();
-  await viewer.getByTestId("stats-reader-option-you").click();
-  await expect(viewer).toHaveURL(/\/stats$/);
-});
-
-test("a failed reader-list fetch still renders the hero, without a picker", async () => {
-  await viewer.route("**/api/rpc/household-readers", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "text/plain",
-      body: "forced failure",
-    }),
-  );
-  await gotoReady(viewer, "/stats");
-  await expect(viewer.getByTestId("stats-hero")).toBeVisible();
-  await expect(viewer.getByTestId("stats-reader-picker")).toHaveCount(0);
-  await viewer.unroute("**/api/rpc/household-readers");
-});
-
-test("turning sharing off drops the target from the picker and refuses a direct link", async () => {
-  await gotoReady(target, ACCOUNT);
-  const shareSwitch = target.getByRole("switch", {
-    name: "Share stats with household",
+    // The options sit in the DOM while the menu is hidden, so a layout test
+    // reads them without opening it.
+    await test.step("check the picker lists you and the target", async () => {
+      const picker = statsPage.readerPicker;
+      await expect(picker.option("you")).toContainText("You");
+      await expect(picker.optionAvatar("you")).toHaveCount(1);
+      await expect(picker.option(householdTarget.id)).toContainText(
+        householdTarget.username,
+      );
+      await expect(picker.optionAvatar(householdTarget.id)).toHaveCount(1);
+    });
   });
-  await expect(shareSwitch).toBeChecked();
-  await expectMutation(
-    target,
-    {
-      method: "POST",
-      url: "/api/rpc/account/share-stats",
-      expectedBody: { enabled: false },
-      expectedStatus: 200,
-    },
-    async () => shareSwitch.click(),
-  );
 
-  // Options live in the DOM even while the menu is closed, so this doesn't
-  // need to open it first.
-  await gotoReady(viewer, "/stats");
-  await expect(
-    viewer.getByTestId(`stats-reader-option-${targetId}`),
-  ).toHaveCount(0);
+  test("pick the sharing target from the picker", async ({
+    statsPage,
+    householdTarget,
+  }) => {
+    await test.step("open the picker", async () => {
+      await statsPage.goto();
+      await statsPage.readerPicker.open();
+      await expect(statsPage.readerPicker.menu).toBeVisible();
+    });
 
-  await gotoReady(viewer, `/stats?user=${targetId}`);
-  await expect(viewer.getByRole("alert")).toHaveText(NOT_SHARING);
-  await viewer.getByRole("link", { name: "Back to your stats" }).click();
-  await expect(viewer).toHaveURL(/\/stats$/);
+    await test.step("choose the target", async () => {
+      await statsPage.readerPicker.choose(householdTarget.id);
+      await statsPage.assertDisplayedFor(householdTarget.id);
+    });
 
-  // An id naming no reader at all gets the same refusal, not a crash.
-  await gotoReady(viewer, "/stats?user=2147483647");
-  await expect(viewer.getByRole("alert")).toHaveText(NOT_SHARING);
+    await test.step("check their figures show under a third-person heading", async () => {
+      await expect(statsPage.heroWho).toHaveText(
+        `${householdTarget.username}'s stats`,
+      );
+      await expect(statsPage.emptyState).toHaveCount(0);
+      await expect(statsPage.inProgress).toContainText(TARGET_BOOK_TITLE);
+      await expect(statsPage.goalSetLink).toHaveCount(0);
+      await expect(statsPage.dailySetLink).toHaveCount(0);
+    });
+  });
+
+  test("query the target's stats for the selected period", async ({
+    statsPage,
+    householdTarget,
+    expectMutation,
+  }) => {
+    await test.step("open the target's stats", async () => {
+      await statsPage.goto(householdTarget.id);
+    });
+
+    // user_id follows the route's ?user=, not the caller.
+    await test.step("select the year pill", async () => {
+      await expectMutation(stats.summary("year", householdTarget.id), () =>
+        statsPage.selectPeriod("year"),
+      );
+    });
+  });
+
+  // The SSR half of ?user= has to agree with the hydrated one.
+  test("load the target's stats from a direct link", async ({
+    statsPage,
+    householdTarget,
+  }) => {
+    await test.step("open the target's stats by url", async () => {
+      await statsPage.goto(householdTarget.id);
+    });
+
+    await test.step("check the page reads as the target's", async () => {
+      await expect(statsPage.heroWho).toHaveText(
+        `${householdTarget.username}'s stats`,
+      );
+      await expect(statsPage.readerPicker.trigger).toHaveAttribute(
+        "aria-label",
+        `Stats for ${householdTarget.username}`,
+      );
+    });
+  });
+
+  test("open the library scope while viewing the target", async ({
+    statsPage,
+    householdTarget,
+  }) => {
+    await test.step("open the target's stats", async () => {
+      await statsPage.goto(householdTarget.id);
+    });
+
+    await test.step("open the library scope", async () => {
+      await statsPage.openLibraryScope();
+      await expect(statsPage.libraryScope).toBeVisible();
+    });
+  });
+
+  test("return to your own stats from the picker", async ({
+    statsPage,
+    householdTarget,
+  }) => {
+    await test.step("open the target's stats", async () => {
+      await statsPage.goto(householdTarget.id);
+    });
+
+    await test.step("choose you", async () => {
+      await statsPage.readerPicker.pick("you");
+    });
+
+    await test.step("check your own page shows", async () => {
+      await statsPage.assertDisplayed();
+      await expect(statsPage.emptyState).toBeVisible();
+      await expect(statsPage.heroWho).toHaveCount(0);
+    });
+  });
+
+  test("keep the target's in-progress card when the previous reader's fetch lands late", async ({
+    statsPage,
+    householdTarget,
+  }) => {
+    // The page's own in-progress fetch (user_id null, with its own limit; the
+    // user menu makes a separate limit-1 call) resolves after the switch below.
+    await test.step("hold your own in-progress fetch", async () => {
+      await statsPage.holdOwnInProgress();
+    });
+
+    await test.step("open the stats page", async () => {
+      await statsPage.gotoUnsettled();
+      await expect(statsPage.readerPicker.trigger).toHaveAttribute(
+        "aria-label",
+        "Stats for You",
+      );
+    });
+
+    await test.step("switch to the target", async () => {
+      await statsPage.readerPicker.pick(householdTarget.id);
+      await expect(statsPage.heroWho).toHaveText(
+        `${householdTarget.username}'s stats`,
+      );
+      await expect(statsPage.inProgress).toContainText(TARGET_BOOK_TITLE);
+    });
+
+    await test.step("let the held fetch land", async () => {
+      await statsPage.releaseOwnInProgress();
+    });
+
+    await test.step("check the target's card survived the stale answer", async () => {
+      await expect(statsPage.inProgress).toContainText(TARGET_BOOK_TITLE);
+    });
+
+    await test.step("return to your own stats", async () => {
+      await statsPage.readerPicker.pick("you");
+      await statsPage.assertDisplayed();
+    });
+  });
+
+  test("show the hero without a picker when the reader list fails", async ({
+    statsPage,
+  }) => {
+    await test.step("fail the reader list", async () => {
+      await statsPage.forceServerError(stats.householdReaders());
+    });
+
+    await test.step("open the stats page", async () => {
+      await statsPage.goto();
+    });
+
+    await test.step("check the hero shows without a picker", async () => {
+      await expect(statsPage.hero).toBeVisible();
+      await expect(statsPage.readerPicker.root).toHaveCount(0);
+    });
+  });
+
+  test("drop the target from the picker and refuse a direct link once sharing is off", async ({
+    statsPage,
+    householdTarget,
+    secondReaderSettingsPage,
+    secondReaderExpectMutation,
+  }) => {
+    await test.step("open the target's account settings", async () => {
+      await secondReaderSettingsPage.goto("account");
+      await expect(
+        secondReaderSettingsPage.account.shareStatsSwitch,
+      ).toBeChecked();
+    });
+
+    await test.step("turn the target's sharing off", async () => {
+      await secondReaderExpectMutation(account.shareStats(false), () =>
+        secondReaderSettingsPage.account.toggleShareStats(),
+      );
+    });
+
+    // The options sit in the DOM even while the menu is closed.
+    await test.step("check the picker drops the target", async () => {
+      await statsPage.goto();
+      await expect(
+        statsPage.readerPicker.option(householdTarget.id),
+      ).toHaveCount(0);
+    });
+
+    await test.step("check a direct link is refused", async () => {
+      await statsPage.goto(householdTarget.id);
+      await expect(statsPage.failureMessage).toHaveText(NOT_SHARING);
+      await statsPage.backToYourStats();
+      await statsPage.assertDisplayed();
+    });
+
+    // An id naming no reader at all gets the same refusal, not a crash.
+    await test.step("check an unknown reader is refused the same way", async () => {
+      await statsPage.goto(2147483647);
+      await expect(statsPage.failureMessage).toHaveText(NOT_SHARING);
+    });
+  });
 });

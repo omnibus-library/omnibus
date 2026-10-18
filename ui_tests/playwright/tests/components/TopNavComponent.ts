@@ -151,4 +151,9 @@ export class TopNavComponent extends BaseComponent {
     await expect(this.page).toHaveURL(/\/settings\?section=account$/);
     await expect(this.accountProfileCard).toBeVisible();
   }
+
+  // batch-K:
+  async openStats(): Promise<void> {
+    await this.root.getByRole("link", { name: "Stats" }).click();
+  }
 }

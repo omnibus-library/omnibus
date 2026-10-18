@@ -1,0 +1,15 @@
+import type { ExpectMutationOptions } from "../utils/api";
+
+/** The server function the chart builder plots through. */
+export const chartBuilderUrls = {
+  series: /\/api\/rpc\/chart-series(?:\?|$)/,
+};
+
+export const chartBuilder = {
+  /** The chart read, a POST because it is a server function. */
+  series: (): ExpectMutationOptions => ({
+    method: "POST",
+    url: chartBuilderUrls.series,
+    expectedStatus: 200,
+  }),
+};

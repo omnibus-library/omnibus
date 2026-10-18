@@ -1,1203 +1,1043 @@
-// Reading-stats page (/stats): layout, the Week / Month / Year / Lifetime
-// pills in the windowed band's own header, the standing band's immunity to
-// period changes, the User / Library scope switch, and the zero-activity
-// empty state.
-//
-// The page's load-bearing contract is the windowed / standing split: the pills
-// govern everything under "In this window" and nothing under "Outside the
-// window" or in the hero, and several tests below exist only to hold that
-// line.
-//
-// Sessions are seeded once in beforeAll — before the first /stats visit — so
-// the server-side 60s stats cache never captures an empty summary for the
-// shared test user. The session recorder skips uuids that don't resolve to an
-// indexed book, so the library is seeded first and sessions ride a real
-// fixture uuid.
+// The load-bearing contract is the windowed / standing split: the pills govern
+// everything under "In this window" and nothing in the hero or "Outside the
+// window", and several tests exist only to hold that line.
 
-import type { APIRequestContext, Page } from "@playwright/test";
+import { stats } from "../contracts/stats";
+import { buildSession, buildSummary, LIBRARY_COMPOSITION } from "../data/stats";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
-import { expect, test } from "../fixtures/test";
-import { expectMutation } from "../utils/api";
+import { expect, test } from "../fixtures/pageFixtures";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { expectNavVisible, gotoReady } from "../utils/nav";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// Serial: the beforeAll seed mutates shared server state (library reindex +
-// session inserts). Under the suite's fullyParallel default it would re-run
-// per worker and the concurrent writes 500 on SQLite's write lock.
-test.describe.configure({ mode: "serial" });
-
-/**
- * Genre assigned to this spec's donut feeder. Deliberately unusual so a
- * future fixture can't collide with it and change the slice count.
- */
+// Unusual so a future fixture can't collide with it and change the slice count.
 const DONUT_GENRE = "Stats Spec Gothic";
 
-/** Late-2023 anchor: inside Lifetime, outside the week/month/year windows. */
+// Late 2023: inside Lifetime, outside the week, month and year windows.
 const OLD_SESSION_AT = 1_700_000_000;
 
-/** The period pill for one range — they live in the windowed band's header. */
-function periodPill(page: Page, range: "week" | "month" | "year" | "all_time") {
-  return page.getByTestId(`stats-range-${range}`);
-}
+// A report with no capture offset is excluded from the time-pattern strips.
+const TIME_PATTERN_OFFSET = -420;
 
-/**
- * Switch the window and wait for the refetch it triggers, so a caller can
- * assert against the new summary rather than racing the old one.
- */
-async function selectPeriod(
-  page: Page,
-  range: "week" | "month" | "year" | "all_time",
-) {
-  await expectMutation(
-    page,
-    {
-      method: "POST",
-      url: "/api/rpc/stats",
-      // The testid *is* the wire name (`StatsRange::as_query`), so the pill
-      // and the request it fires can't drift apart. `utc_offset_minutes` is
-      // the browser's own offset, which the config pins to UTC (`timezoneId`)
-      // so it is deterministically 0 — it is where the server cuts the
-      // answer's day boundaries (rule 10). `user_id: null` is the Dioxus
-      // encoding of the omitted argument — the web page never reads another
-      // reader's stats.
-      expectedBody: { range, utc_offset_minutes: 0, user_id: null },
-      expectedStatus: 200,
+test.describe("stats page", () => {
+  // The seed writes shared server state; under fullyParallel it would re-run
+  // per worker and the concurrent writes would 500 on SQLite's write lock.
+  test.describe.configure({ mode: "serial" });
+
+  // Seeded before the first /stats visit, so the server's 60s stats cache never
+  // captures an empty summary; sessions need an indexed book, so library first.
+  test.beforeAll(
+    "seed the library and its reading history",
+    async ({ request, overridesRequests, statsRequests }) => {
+      await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+      const uuid = await fetchBookUuidByTitle(request, FIXTURE_BOOKS[0]!.title);
+
+      // The genre donut counts books that have a genre, and nothing scans one.
+      // Dracula is the designated feeder; only its genres key is written, so
+      // the "Vampires" tag that search.spec reads stays untouched.
+      const genredUuid = await fetchBookUuidByTitle(request, "Dracula");
+      const genred = await overridesRequests.postOverrides(genredUuid, {
+        genres: [DONUT_GENRE],
+      });
+      await expect(genred, "seed the donut genre").toBeOK();
+
+      const now = Math.floor(Date.now() / 1000);
+      const sitting = (
+        bookUuid: string,
+        startedAt: number,
+        seconds: number,
+        format: "epub" | "audio",
+      ) =>
+        buildSession(bookUuid, {
+          startedAt,
+          seconds,
+          format,
+          utcOffsetMinutes: TIME_PATTERN_OFFSET,
+        });
+      const sessions = await statsRequests.postSessions([
+        sitting(uuid, now - 60, 600, "epub"),
+        sitting(uuid, OLD_SESSION_AT, 900, "epub"),
+        sitting(uuid, now - 120, 900, "audio"),
+        sitting(genredUuid, now - 300, 300, "epub"),
+      ]);
+      await expect(sessions, "seed the sessions").toBeOK();
+      const { recorded } = await sessions.json();
+      expect(recorded, "the session seeds were skipped").toBe(4);
+
+      // Feeds the headline tiles: a star rating and a finished (100%) journal.
+      const rating = await statsRequests.postRating(uuid, 4.5);
+      await expect(rating, "seed a rating").toBeOK();
+      const journal = await statsRequests.postJournal(
+        uuid,
+        "Finished it — stats spec seed.",
+        100,
+      );
+      await expect(journal, "seed a finished journal").toBeOK();
     },
-    async () => periodPill(page, range).click(),
-  );
-  await expect(periodPill(page, range)).toHaveAttribute("aria-pressed", "true");
-}
-
-/** Move to the Library scope, where the shelf's own figures live. */
-async function openLibraryScope(page: Page) {
-  await page.getByTestId("stats-scope-tab-library").click();
-  await expect(page.getByTestId("stats-scope-library")).toBeVisible();
-}
-
-test.beforeAll(async ({ request }) => {
-  await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
-  const uuid = await fetchBookUuidByTitle(request, FIXTURE_BOOKS[0]!.title);
-
-  // The genre donut shares by book count over active books that have a
-  // *genre*. Nothing scans one, so it has to be assigned here. Dracula is
-  // this spec's designated donut feeder; only its `genres` key is written,
-  // so the "Vampires" tag search.spec.ts reads stays untouched.
-  const genredUuid = await fetchBookUuidByTitle(request, "Dracula");
-  const genreResp = await request.post(`/api/ebooks/${genredUuid}/overrides`, {
-    data: { genres: [DONUT_GENRE] },
-  });
-  expect(genreResp.status(), "seeding the donut genre failed").toBe(200);
-
-  const now = Math.floor(Date.now() / 1000);
-  const session = (
-    bookUuid: string,
-    startedAt: number,
-    secs: number,
-    format: "epub" | "audio",
-  ) => ({
-    book_uuid: bookUuid,
-    format,
-    started_at: startedAt,
-    ended_at: startedAt + secs,
-    progress_units: secs,
-    // The time-pattern strips bucket on the offset the recording device
-    // stamped at capture; a report without one is excluded from them by
-    // design, so these seeds carry a fixed non-UTC zone.
-    utc_offset_minutes: -420,
-  });
-  const resp = await request.post("/api/progress/sessions", {
-    data: [
-      session(uuid, now - 60, 600, "epub"),
-      session(uuid, OLD_SESSION_AT, 900, "epub"),
-      session(uuid, now - 120, 900, "audio"),
-      session(genredUuid, now - 300, 300, "epub"),
-    ],
-  });
-  expect(resp.status(), "seeding stats sessions failed").toBe(200);
-  const body = (await resp.json()) as { recorded: number };
-  expect(body.recorded, "session seeds were skipped").toBe(4);
-
-  // Feed the headline tiles: a star rating and a finished (100%) journal.
-  const rating = await request.post("/api/ratings", {
-    data: { book_uuid: uuid, stars: 4.5 },
-  });
-  expect(rating.status(), "seeding a rating failed").toBe(200);
-  const journal = await request.post("/api/journals", {
-    data: {
-      book_uuid: uuid,
-      body_md: "Finished it — stats spec seed.",
-      progress: 100,
-    },
-  });
-  expect(journal.status(), "seeding a finished journal failed").toBe(200);
-});
-
-test("renders the stats page layout", async ({ page }) => {
-  await gotoReady(page, "/");
-  await expectNavVisible(page);
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Stats" })
-    .click();
-  await expect(page).toHaveURL(/\/stats$/);
-  await page.waitForLoadState("networkidle");
-
-  // The hero leads with the run the reader is on — a standing figure, above
-  // the switcher entirely.
-  await expect(page.getByTestId("stats-hero")).toBeVisible();
-  await expect(page.getByTestId("stats-current-streak")).toContainText(/\d/);
-
-  // The scope switch, then the windowed band with its own pills. All four
-  // periods are offered, Month pre-selected (the default range).
-  await expect(page.getByTestId("stats-scope-switch")).toBeVisible();
-  await expect(page.getByTestId("stats-scope-user")).toBeVisible();
-  for (const range of ["week", "month", "year", "all_time"] as const) {
-    await expect(periodPill(page, range)).toBeVisible();
-  }
-  await expect(periodPill(page, "month")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  // The pills sit under a label that says what they govern, and beside a
-  // window label that says what the current one covers.
-  await expect(page.getByTestId("stats-window-head")).toContainText(
-    "In this window",
-  );
-  await expect(page.getByTestId("stats-window-label")).toContainText(
-    /month to date$/,
   );
 
-  await expect(page.getByTestId("stats-period-section")).toBeVisible();
-  // The reading clock renders in both its states (the dial or the
-  // no-local-time note), so its presence is structural.
-  await expect(page.getByTestId("stats-when")).toBeVisible();
-  // The dial is the live end of the whole local-time path — the seeded
-  // reports' `utc_offset_minutes` reaching the session column, the shifted
-  // rollup, and the wire fields. Every other assertion in this file mocks
-  // `/api/rpc/stats`, so without this one a serde rename or a dropped bind
-  // would leave the suite green with the card stuck in its empty state.
-  await expect(page.getByTestId("stats-when-empty")).toHaveCount(0);
-  await expect(page.getByTestId("stats-clock-dial")).toBeVisible();
-  await expect(page.getByTestId("stats-when-weekdays")).toBeVisible();
-
-  // The standing band is labelled by what the pills *can't* reach, and
-  // carries no accent rule of its own — the absence is the signal.
-  await expect(page.getByText("Outside the window")).toBeVisible();
-  await expect(page.getByTestId("stats-alltime-section")).toBeVisible();
-});
-
-test("headline tiles render finished, avg rating, pages, and listening", async ({
-  page,
-}) => {
-  await gotoReady(page, "/stats");
-
-  // Values are asserted by shape, not exact numbers — other specs sharing the
-  // test user can add sessions/ratings/journals; the arithmetic is covered by
-  // the db::stats unit tests.
-  await expect(page.getByTestId("stats-tile-finished")).toContainText(/\d/);
-  await expect(page.getByTestId("stats-tile-finished")).toContainText(
-    "Finished",
-  );
-  await expect(page.getByTestId("stats-tile-avg-rating")).toContainText(
-    /\d\.\d\s*★/,
-  );
-  // #2139: the tile counts pages *turned* in the window, not the length of the
-  // books finished in it, so the finished journal seeded in beforeAll no longer
-  // gives it a value — only real position writes do, and this spec deliberately
-  // makes none. They would join the Continue fan the landing specs assert on,
-  // and land on a book those specs read. Both a digit and the em-dash are
-  // legitimate here; the label is the contract this test pins, and the
-  // arithmetic lives in the db::stats unit tests.
-  const pages = page.getByTestId("stats-tile-pages");
-  await expect(pages).toContainText("Pages read");
-  await expect(pages).toContainText(/\d|—/);
-  await expect(page.getByTestId("stats-tile-listening")).toContainText(
-    /\d+\s*(m|h)/,
-  );
-});
-
-test("the Pages read drill-in explains its coverage and states the cutover", async ({
-  page,
-}) => {
-  await gotoReady(page, "/stats");
-
-  await page.getByTestId("stats-tile-pages").click();
-  const drillIn = page.getByTestId("stats-drill-in");
-  await expect(drillIn).toBeVisible();
-  await expect(drillIn).toContainText("Pages read");
-
-  // AC6: the panel renders content rather than opening to nothing, whatever
-  // the window holds.
-  await expect(page.getByTestId("stats-drill-pages-note")).toBeVisible();
-  // AC9: page progress is differenced from stored positions and none exist
-  // before the ledger began, so the tile changes meaning at a date — which the
-  // UI states rather than leaving it as an unexplained discontinuity.
-  await expect(page.getByTestId("stats-drill-pages-cutover")).toContainText(
-    /Page tracking began \d{4}-\d{2}-\d{2}/,
-  );
-
-  await page.getByTestId("stats-drill-close").click();
-  await expect(drillIn).toHaveCount(0);
-});
-
-test("a tile's grip opens its drill-in and the close button dismisses it", async ({
-  page,
-}) => {
-  await gotoReady(page, "/stats");
-
-  await page.getByTestId("stats-tile-avg-rating").click();
-  const drillIn = page.getByTestId("stats-drill-in");
-  await expect(drillIn).toBeVisible();
-  await expect(drillIn).toContainText("Avg rating");
-  // Every drill-in shows a delta chip (or the "not enough data" fallback) and
-  // a trend chart — AC2.
-  await expect(page.getByTestId("stats-drill-delta")).toBeVisible();
-  await expect(page.getByTestId("stats-drill-trend")).toBeVisible();
-  // Avg rating also carries the distribution, or its empty state when nothing
-  // was rated in the window — other specs write ratings on the shared fixture,
-  // so which one shows isn't ours to pin here.
-  await expect(
-    page
-      .getByTestId("stats-drill-histogram")
-      .or(page.getByTestId("stats-drill-histogram-empty")),
-  ).toBeVisible();
-
-  await page.getByTestId("stats-drill-close").click();
-  await expect(drillIn).toHaveCount(0);
-
-  // The selected period is untouched by opening/closing (AC4).
-  await expect(periodPill(page, "month")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-});
-
-test("the Avg rating drill-in charts every half-star bucket on a star axis", async ({
-  page,
-}) => {
-  // Route-mocked so the buckets are pinned: the shared fixture's ratings are
-  // written by other specs, so asserting bar labels against live data would
-  // race them.
-  const histogram = Array.from({ length: 10 }, (_, i) => ({
-    half_stars: i + 1,
-    books: i === 6 ? 2 : i === 9 ? 3 : 0,
-  }));
-  // Oct 2025 through Sep 2026, rated in three months only.
-  const ratingMonthly = Array.from({ length: 12 }, (_, i) => {
-    const [year, month] = i < 3 ? [2025, 10 + i] : [2026, i - 2];
-    const value = i === 4 ? 3.5 : i === 5 ? 4.25 : i === 11 ? 5 : 0;
-    return { label: `${year}-${String(month).padStart(2, "0")}`, value };
-  });
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        range: "month",
-        reading_seconds: 600,
-        listening_seconds: 0,
-        avg_stars: 4.4,
-        sessions: 1,
-        active_days: 1,
-        longest_streak_days: 1,
-        current_streak_days: 1,
-        busiest_week_start: null,
-        busiest_week_seconds: 600,
-        books_finished: 1,
-        heatmap: [],
-        top_authors: [],
-        top_tags: [],
-        finished_books: [],
-        rating_histogram: histogram,
-        rating_monthly: ratingMonthly,
-      }),
-    }),
-  );
-
-  await gotoReady(page, "/stats");
-  await page.getByTestId("stats-tile-avg-rating").click();
-  const drillIn = page.getByTestId("stats-drill-in");
-
-  // Ten columns — empty buckets keep their place, or the shape lies — labelled
-  // in stars rather than the stored 1..=10 half-star scale.
-  const chart = page.getByTestId("stats-drill-histogram");
-  await expect(chart).toBeVisible();
-  await expect
-    .poll(() => chart.getByTestId("stats-drill-bar-label").allInnerTexts())
-    .toEqual(["0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5"]);
-  // The tallest bucket carries its book count on hover.
-  await expect(chart.locator('[title="5 ★ · 3 books"]')).toBeVisible();
-  // …and every rated bucket prints its count, so the shape reads without a
-  // hover; the eight empty ones are slots, not stubs.
-  await expect(chart.getByTestId("stats-drill-bar-value")).toHaveText([
-    "2",
-    "3",
-  ]);
-  await expect(chart.getByTestId("stats-drill-bar-empty")).toHaveCount(8);
-  await expect(drillIn).toContainText("Books at each rating");
-  await expect(page.getByTestId("stats-drill-histogram-caption")).toHaveText(
-    "Rated this month",
-  );
-
-  // The trend names what it measures and the period it covers — the trailing
-  // year, not the window the delta and histogram follow.
-  await expect(drillIn).toContainText("Average rating by month");
-  await expect(page.getByTestId("stats-drill-trend-caption")).toHaveText(
-    "Oct 2025 – Sep 2026 · the last 12 months, whatever period is selected",
-  );
-  const trend = page.getByTestId("stats-drill-trend");
-  // Twelve distinct month names — June and July no longer both read "J".
-  await expect(trend.getByTestId("stats-drill-bar-label")).toHaveText([
-    "Oct",
-    "Nov",
-    "Dec",
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-  ]);
-  await expect(trend.getByTestId("stats-drill-bar-value")).toHaveText([
-    "3.5",
-    "4.3",
-    "5.0",
-  ]);
-  await expect(trend.getByTestId("stats-drill-bar-empty")).toHaveCount(9);
-});
-
-test("the Pages drill-in reports a reading rate, and says so when it can't", async ({
-  page,
-}) => {
-  // Route-mocked, like the histogram above: the rate is computed off finished
-  // books and recorded reading time on the shared fixture, both of which other
-  // specs write. Two fulfilments in one test so the em-dash branch is pinned
-  // against the same page.
-  // Every key without `#[serde(default)]` on the Rust struct has to be here,
-  // or the client fails the whole decode and renders its error state.
-  const summary = (pagesPerHour: number | null) => ({
-    range: "month",
-    reading_seconds: 600,
-    listening_seconds: 0,
-    sessions: 1,
-    active_days: 1,
-    longest_streak_days: 1,
-    busiest_week_start: null,
-    busiest_week_seconds: 600,
-    books_finished: 1,
-    heatmap: [],
-    top_authors: [],
-    top_tags: [],
-    finished_books: [],
-    pages_read: 412,
-    pages_per_hour: pagesPerHour,
-  });
-
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(summary(32.6)),
-    }),
-  );
-  await gotoReady(page, "/stats");
-  await page.getByTestId("stats-tile-pages").click();
-
-  // Whole pages above ten an hour — the decimal would dress an estimate as a
-  // measurement — and labelled an estimate, like the tile it expands.
-  const rate = page.getByTestId("stats-drill-pages-rate");
-  await expect(rate).toBeVisible();
-  await expect(rate).toContainText("33");
-  await expect(rate).toContainText("est. pages an hour");
-
-  await page.getByTestId("stats-drill-close").click();
-
-  // No rate is a "can't tell", never a zero: a reader whose finished books
-  // carry no recorded time has not read at 0 pages an hour.
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(summary(null)),
-    }),
-  );
-  await gotoReady(page, "/stats");
-  await page.getByTestId("stats-tile-pages").click();
-
-  // The copy names both halves — either a missing length or missing time
-  // produces this state, and the tile must not blame only one of them.
-  await expect(page.getByTestId("stats-drill-pages-rate")).toContainText(
-    "both a measurable length and recorded reading time",
-  );
-});
-
-test("the superlatives card names each standout, and omits the ones it can't", async ({
-  page,
-}) => {
-  // Route-mocked: the superlatives rank over finished books and recorded
-  // sessions on the shared fixture, which other specs write. Every key without
-  // `#[serde(default)]` on the Rust struct has to be present or the client
-  // fails the whole decode.
-  const base = {
-    range: "month",
-    reading_seconds: 600,
-    listening_seconds: 0,
-    sessions: 1,
-    active_days: 1,
-    longest_streak_days: 1,
-    busiest_week_start: "2023-11-13",
-    busiest_week_seconds: 14_400,
-    books_finished: 2,
-    heatmap: [],
-    top_authors: [{ name: "Ursula K. Le Guin", seconds: 3600 }],
-    top_tags: [],
-    finished_books: [],
-  };
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...base,
-        superlatives: {
-          longest_book: {
-            book_uuid: "u1",
-            title: "Doorstopper",
-            author: "A. Writer",
-            value: 900,
-          },
-          fastest_read: {
-            book_uuid: "u2",
-            title: "Sprint",
-            author: null,
-            value: 3,
-          },
-        },
-      }),
-    }),
-  );
-  await gotoReady(page, "/stats");
-
-  const card = page.getByTestId("stats-superlatives");
-  await expect(card).toBeVisible();
-  await expect(card).toContainText("Doorstopper");
-  await expect(card).toContainText("900 pages");
-  await expect(card).toContainText("in 3 days");
-  // The busiest week and the most-read author come off fields the payload has
-  // always carried and the web page never drew.
-  await expect(card).toContainText("Week of 13 Nov 2023");
-  await expect(card).toContainText("Ursula K. Le Guin");
-  // Absent superlatives cost their row, not an em-dash.
-  await expect(card).not.toContainText("Shortest book");
-  await expect(card).not.toContainText("Longest sitting");
-  // The fastest read is a lower bound, and says so.
-  await expect(page.getByTestId("stats-superlatives-note")).toContainText(
-    "tracked session",
-  );
-
-  // No superlative at all, and no busiest week: the card is absent rather
-  // than an empty heading.
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...base,
-        busiest_week_start: null,
-        busiest_week_seconds: 0,
-        top_authors: [],
-      }),
-    }),
-  );
-  await gotoReady(page, "/stats");
-  // Wait on a period-owned element, not the section: until the period fetch
-  // resolves, PeriodSummary renders a bare placeholder that is visible and
-  // carries no card — so asserting absence here would pass on the loading
-  // state and miss the regression this half of the test exists to catch.
-  await expect(page.getByTestId("stats-tile-finished")).toBeVisible();
-  await expect(page.getByTestId("stats-superlatives")).toHaveCount(0);
-});
-
-test("the Finished drill-in lists the books completed in the window", async ({
-  page,
-}) => {
-  await gotoReady(page, "/stats");
-
-  await page.getByTestId("stats-tile-finished").click();
-  const list = page.getByTestId("stats-drill-finished-list");
-  await expect(list).toBeVisible();
-  await expect(list).toContainText(FIXTURE_BOOKS[0]!.title);
-
-  // Clicking the scrim (outside the sheet/modal) also dismisses it.
-  await page.getByTestId("stats-drill-in").click({ position: { x: 4, y: 4 } });
-  await expect(page.getByTestId("stats-drill-in")).toHaveCount(0);
-});
-
-// Regression for #2454: the Finished tile read "−2" while its sheet read
-// "▼100%", and a "flat" tile opened onto "Not enough data yet to compare".
-test("a tile's delta and its drill-in state the same comparison", async ({
-  page,
-}) => {
-  // Route-mocked so both sides of each comparison are pinned. Every key
-  // without `#[serde(default)]` on the Rust struct has to be here.
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        range: "week",
-        reading_seconds: 600,
-        listening_seconds: 0,
-        sessions: 1,
-        active_days: 1,
-        longest_streak_days: 1,
-        busiest_week_start: null,
-        busiest_week_seconds: 600,
-        books_finished: 0,
-        heatmap: [],
-        top_authors: [],
-        top_tags: [],
-        finished_books: [],
-        previous: {
-          books_finished: 2,
-          avg_stars: null,
-          listening_seconds: 0,
-          pages_read: 0,
-        },
-      }),
-    }),
-  );
-  await gotoReady(page, "/stats");
-
-  for (const [tile, label] of [
-    ["finished", "\u{2212}2"],
-    ["listening", "flat"],
-  ] as const) {
-    await expect(page.getByTestId(`stats-tile-${tile}-delta`)).toHaveText(
-      label,
-    );
-    await page.getByTestId(`stats-tile-${tile}`).click();
-    const delta = page.getByTestId("stats-drill-delta");
-    await expect(delta).toContainText(label);
-    await expect(delta).toContainText("vs last week");
-    await page.getByTestId("stats-drill-close").click();
-    await expect(page.getByTestId("stats-drill-in")).toHaveCount(0);
-  }
-});
-
-// Regression for #2465: the sheet is a modal scrim over the page, and Escape
-// did nothing — the Close button was the only way out.
-test("Escape closes an open drill sheet", async ({ page }) => {
-  await gotoReady(page, "/stats");
-
-  await page.getByTestId("stats-tile-finished").click();
-  await expect(page.getByTestId("stats-drill-in")).toBeVisible();
-
-  await page.keyboard.press("Escape");
-
-  await expect(page.getByTestId("stats-drill-in")).toHaveCount(0);
-});
-
-test("switching the period re-queries and relabels the window", async ({
-  page,
-}) => {
-  await gotoReady(page, "/stats");
-
-  await selectPeriod(page, "week");
-
-  // The window label follows the pills — it is the sentence that says what
-  // "this window" currently means.
-  await expect(page.getByTestId("stats-window-label")).toContainText(
-    /^Week of \d{1,2} \w{3} \d{4} · to date$/,
-  );
-  await expect(periodPill(page, "month")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-
-  // Lifetime has no previous window, so every tile drops its comparison
-  // rather than measuring against a zero nobody recorded.
-  await selectPeriod(page, "all_time");
-  await expect(page.getByTestId("stats-window-label")).toContainText(
-    "Everything you have tracked",
-  );
-  await expect(page.getByTestId("stats-tile-finished-delta")).toHaveCount(0);
-});
-
-test("the heatmap and genre donut render from seeded activity", async ({
-  page,
-}) => {
-  await gotoReady(page, "/stats");
-
-  // Heatmap: trailing-year grid with the coverage figures and the record in
-  // its header, and at least one active cell — keyed off the cell tooltip
-  // ("… on YYYY-MM-DD", which only active cells carry) rather than the
-  // intensity CSS classes.
-  const heatmap = page.getByTestId("stats-heatmap");
-  await expect(heatmap).toBeVisible();
-  await expect(page.getByTestId("stats-days-read")).toContainText("days read");
-  // The record stands here; the run the reader is *on* leads the hero, and a
-  // second copy two bands apart is where two surfaces start to disagree.
-  await expect(heatmap.getByTestId("stats-longest-streak")).toContainText(
-    "best run",
-  );
-  await expect(heatmap.getByTestId("stats-current-streak")).toHaveCount(0);
-  expect(await heatmap.locator('[title*=" on "]').count()).toBeGreaterThan(0);
-
-  // Donut: the seeded genre appears in the legend with a percentage; the
-  // center counts the books the ring actually describes ("tagged"), not every
-  // active book. This spec seeds activity on an ungenred book too, so the
-  // untagged disclosure always renders — matched by pattern because the suite
-  // shares one server and other specs contribute their own active books.
-  const donut = page.getByTestId("stats-genre-donut");
-  await expect(donut).toBeVisible();
-  await expect(donut).toContainText(DONUT_GENRE);
-  await expect(donut).toContainText("%");
-  await expect(donut).toContainText("tagged");
-  await expect(page.getByTestId("stats-donut-untagged")).toHaveText(
-    /^\+\d+ books? without a genre$/,
-  );
-
-  // The read-vs-listened split rides the same card's foot: the ring says what
-  // was read and the bars say how, and splitting them across two cards left a
-  // reader comparing them to answer one question.
-  const split = donut.getByTestId("stats-format-split");
-  await expect(split).toContainText("Read");
-  await expect(split).toContainText("Listened");
-});
-
-test("the length distribution buckets finished books and never hides the unknown ones", async ({
-  page,
-}) => {
-  // Route-mocked: the bars depend on what the shared fixture user has finished
-  // in the window, which other specs move.
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        range: "month",
-        reading_seconds: 600,
-        listening_seconds: 0,
-        sessions: 1,
-        active_days: 1,
-        longest_streak_days: 1,
-        current_streak_days: 1,
-        busiest_week_start: null,
-        busiest_week_seconds: 600,
-        books_finished: 6,
-        heatmap: [],
-        top_authors: [],
-        top_tags: [],
-        finished_books: [],
-        length_buckets: [
-          { label: "Under 300", books: 3 },
-          { label: "300–499", books: 2 },
-          { label: "500+", books: 0 },
-          { label: "Unknown", books: 1 },
-        ],
-      }),
-    }),
-  );
-
-  await gotoReady(page, "/stats");
-
-  // How long the finished books were is a fact *about* the Finished tile, not
-  // a peer of it, so it lives inside that tile's drill-in.
-  await page.getByTestId("stats-tile-finished").click();
-  const card = page.getByTestId("stats-length-split");
-  await expect(card).toBeVisible();
-  // Every bucket the server sent is rendered, including the empty one and —
-  // the point of the bucket — the unmeasurable one.
-  for (const label of ["Under 300", "300–499", "500+", "Unknown"]) {
-    await expect(card).toContainText(label);
-  }
-  // Counts, not shares: "3 books" needs no denominator to be read.
-  await expect(card.getByTestId("stats-length-row").first()).toContainText("3");
-});
-
-test("the books-per-month chart renders twelve bars with the current month highlighted", async ({
-  page,
-}) => {
-  await gotoReady(page, "/stats");
-
-  const chart = page.getByTestId("stats-monthly-chart");
-  await expect(chart).toBeVisible();
-  await expect(chart).toContainText("avg");
-
-  const bars = chart.getByTestId("stats-monthly-bar");
-  await expect(bars).toHaveCount(12);
-  // The trailing (current) month is the last bar and carries the highlight.
-  await expect(bars.last()).toHaveClass(/current/);
-});
-
-test("the library-size card states each total with its coverage", async ({
-  page,
-}) => {
-  // Route-mocked: the real totals depend on how far the word-count backfill
-  // has run against the shared fixture library, which no spec can pin.
-  await page.route("**/api/rpc/library-size", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        books: 1510,
-        words: { total: 412_000_000, books: 1204 },
-        pages: { total: 1_600_000, books: 1204 },
-        // Nothing probed yet — the figure is absent, never a zero.
-        listening_seconds: { total: 0, books: 0 },
-      }),
-    }),
-  );
-  await gotoReady(page, "/stats");
-  await openLibraryScope(page);
-
-  const card = page.getByTestId("stats-library-size");
-  await expect(card).toBeVisible();
-  // The scope reads as a sentence before it reads as figures.
-  await expect(card).toContainText("1,510 books.");
-  await expect(card).toContainText("412 million words");
-  await expect(card).toContainText("412M");
-  await expect(card).toContainText("1.6M");
-  // Never a bare total: the denominator is what makes the number a fact.
-  await expect(card).toContainText("across 1,204 of 1,510 books");
-  await expect(card.getByTestId("stats-library-figure")).toHaveCount(2);
-
-  // The scope switch says these figures are the shelf's, not the reader's —
-  // and the pills are absent here rather than present and inert.
-  await expect(page.getByTestId("stats-scope-switch")).toContainText(
-    "not period-scoped",
-  );
-  await expect(periodPill(page, "week")).toHaveCount(0);
-});
-
-test("a library measured for nothing renders no size card at all", async ({
-  page,
-}) => {
-  await page.route("**/api/rpc/library-size", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ books: 40 }),
-    }),
-  );
-  await gotoReady(page, "/stats");
-  await openLibraryScope(page);
-
-  // Three zeroes would read as a claim about the collection rather than about
-  // the backfill.
-  await expect(page.getByTestId("stats-scope-library")).toBeVisible();
-  await expect(page.getByTestId("stats-library-size")).toHaveCount(0);
-});
-
-// A composition with one dimension deliberately absent, so the empty-state
-// assertion has something to bite on.
-const COMPOSITION = {
-  books: 1510,
-  ghosted_books: 4,
-  formats: {
-    slices: [
-      { label: "EPUB", books: 1400 },
-      { label: "M4B", books: 180 },
-    ],
-    // 1,580 placements over 1,510 books: seventy are held in both formats.
-    coverage: { total: 1580, books: 1510 },
-  },
-  languages: {
-    slices: [{ label: "eng", books: 1180 }],
-    coverage: { total: 1180, books: 1180 },
-  },
-  // No publisher metadata anywhere — the AC7 case.
-  publishers: { slices: [], coverage: { total: 0, books: 0 } },
-  decades: {
-    slices: [
-      { label: "1990s", books: 200 },
-      { label: "2000s", books: 620 },
-    ],
-    coverage: { total: 820, books: 820 },
-  },
-  genres: {
-    slices: [
-      { label: "Fantasy", books: 40 },
-      { label: "Horror", books: 22 },
-    ],
-    // 62 placements over 58 books — genres are hand-assigned, so this is a
-    // sample of the 1,510, and the card has to say so.
-    coverage: { total: 62, books: 58 },
-  },
-};
-
-test("the library-composition card states each dimension with its coverage", async ({
-  page,
-}) => {
-  // Route-mocked: the real mix depends on what the shared fixture library
-  // holds, which no spec can pin without mutating it for every other one.
-  await page.route("**/api/rpc/library-composition", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(COMPOSITION),
-    }),
-  );
-  await gotoReady(page, "/stats");
-  await openLibraryScope(page);
-
-  const card = page.getByTestId("stats-library-composition");
-  await expect(card).toBeVisible();
-  // Each panel titles itself; the scope switch above them already says these
-  // are the shelf's figures, so a section heading would be a third statement
-  // of the same thing.
-  for (const title of ["Formats", "Languages", "Publishers", "Genres"]) {
-    await expect(card).toContainText(title);
-  }
-  await expect(card.getByTestId("stats-composition-formats")).toContainText(
-    "EPUB",
-  );
-  await expect(card.getByTestId("stats-composition-decades")).toContainText(
-    "1990s",
-  );
-  // The genre coverage is the whole point: genres are hand-assigned, so the
-  // slices describe 58 books, not 1,510.
-  await expect(card.getByTestId("stats-composition-genres")).toContainText(
-    "hand-assigned \u2014 across 58 of 1,510 books",
-  );
-  // Dual-format books are counted in both bars, and said so.
-  await expect(card.getByTestId("stats-composition-formats")).toContainText(
-    "+70 books held in more than one format",
-  );
-  // Ghosted rows are named rather than left to make the bars not add up.
-  await expect(page.getByTestId("stats-composition-ghosted")).toContainText(
-    "4 books excluded",
-  );
-});
-
-test("a composition dimension with no data renders an empty state, not an empty chart", async ({
-  page,
-}) => {
-  await page.route("**/api/rpc/library-composition", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(COMPOSITION),
-    }),
-  );
-  await gotoReady(page, "/stats");
-  await openLibraryScope(page);
-
-  const publishers = page.getByTestId("stats-composition-publishers");
-  await expect(publishers).toContainText("No publisher metadata yet.");
-  // An axis with no bars on it is the failure this replaces.
-  await expect(publishers.getByTestId("stats-composition-bar")).toHaveCount(0);
-});
-
-test("a library with nothing to describe renders no composition card at all", async ({
-  page,
-}) => {
-  await page.route("**/api/rpc/library-composition", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ books: 0 }),
-    }),
-  );
-  // The card is also absent when the fetch never happened, so waiting on the
-  // mocked response is what makes this test fail if the route moves rather
-  // than pass for the wrong reason.
-  const answered = page.waitForResponse("**/api/rpc/library-composition");
-  await gotoReady(page, "/stats");
-  await answered;
-  await openLibraryScope(page);
-
-  await expect(page.getByTestId("stats-scope-library")).toBeVisible();
-  await expect(page.getByTestId("stats-library-composition")).toHaveCount(0);
-});
-
-test("the standing band and the hero do not change with the switcher", async ({
-  page,
-}) => {
-  // The load-bearing contract: the pills govern the windowed band and nothing
-  // else. A regression here is the whole redesign undone.
-  await gotoReady(page, "/stats");
-  const standing = page.getByTestId("stats-alltime-section");
-  const hero = page.getByTestId("stats-hero");
-  await expect(standing).toBeVisible();
-  const standingBefore = await standing.textContent();
-  const heroBefore = await hero.textContent();
-
-  await selectPeriod(page, "year");
-
-  await expect(page.getByTestId("stats-window-label")).toContainText(
-    "year to date",
-  );
-  await expect.poll(() => standing.textContent()).toBe(standingBefore);
-  await expect.poll(() => hero.textContent()).toBe(heroBefore);
-});
-
-test("a user with no activity sees the friendly empty state", async ({
-  page,
-}) => {
-  // Forcing an all-zero summary through the rpc route is the deterministic
-  // stand-in for a fresh user — self-registration is disabled after the first
-  // account, and the shared test user has seeded sessions.
-  const emptySummary = {
-    range: "month",
-    reading_seconds: 0,
-    listening_seconds: 0,
-    sessions: 0,
-    active_days: 0,
-    longest_streak_days: 0,
-    busiest_week_start: null,
-    busiest_week_seconds: 0,
-    books_finished: 0,
-    heatmap: [],
-    top_authors: [],
-    top_tags: [],
-    finished_books: [],
-  };
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(emptySummary),
-    }),
-  );
-
-  await gotoReady(page, "/stats");
-  await expect(page.getByTestId("stats-empty")).toBeVisible();
-  await expect(page.getByText("No reading activity yet")).toBeVisible();
-  await expect(page.getByTestId("stats-period-section")).toHaveCount(0);
-  await expect(page.getByTestId("stats-alltime-section")).toHaveCount(0);
-  // The hero stays: the goals are set from it, and a reader with no activity
-  // is exactly who wants to set one.
-  await expect(page.getByTestId("stats-hero")).toBeVisible();
-});
-
-/**
- * A summary carrying whatever time-pattern fields a test wants to pin,
- * over the same minimal scaffold the other route-mocked tests here use.
- */
-function summaryWith(extra: Record<string, unknown>) {
-  return {
-    range: "month",
-    reading_seconds: 18720,
-    listening_seconds: 0,
-    sessions: 2,
-    active_days: 2,
-    longest_streak_days: 1,
-    current_streak_days: 1,
-    busiest_week_start: null,
-    busiest_week_seconds: 18720,
-    books_finished: 1,
-    heatmap: [],
-    top_authors: [],
-    top_tags: [],
-    finished_books: [],
-    ...extra,
-  };
-}
-
-test("the reading clock draws every local hour and names the peak", async ({
-  page,
-}) => {
-  // Route-mocked so the buckets are pinned: the suite shares one server and
-  // one user, and any other spec posting a session moves these ticks.
-  const hours = Array.from({ length: 24 }, (_, hour) => ({
-    hour,
-    seconds: hour === 21 ? 15120 : hour === 9 ? 3600 : 0,
-  }));
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
-    (label, weekday) => ({
-      weekday,
-      label,
-      seconds: label === "Sun" ? 15120 : 0,
-    }),
-  );
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(
-        summaryWith({
-          hour_of_day: hours,
-          day_of_week: days,
-          unzoned_seconds: 15120,
-        }),
-      ),
-    }),
-  );
-
-  await gotoReady(page, "/stats");
-
-  // All 24 ticks render, quiet hours included — the shape of a day is the
-  // information, so an omitted hour would misdescribe it.
-  const dial = page.getByTestId("stats-clock-dial");
-  await expect(dial).toBeVisible();
-  await expect(dial.locator(".st-clock-tick")).toHaveCount(24);
-  // The peak is derived, and reads as a clock time rather than an index. An
-  // all-zero window has none, which the next test pins.
-  await expect(page.getByTestId("stats-clock-peak")).toHaveText("9pm");
-  // The sentence beside the dial names the part of the day, not just a number.
-  // 9pm is the last hour of the evening band, so this window is an evening
-  // one — the late band starts at 10.
-  await expect(page.getByTestId("stats-clock-line")).toContainText(
-    "Evenings are yours",
-  );
-
-  // Weekdays are the server's own labels in the server's own order — the web
-  // never decides where the week starts.
-  const dayStrip = page.getByTestId("stats-when-weekdays");
-  await expect
-    .poll(() => dayStrip.locator(".st-day-label").allInnerTexts())
-    .toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
-  // A day with nothing on it reads as an absence, never as a measured zero.
-  await expect
-    .poll(() => dayStrip.locator(".st-day-readout").allInnerTexts())
-    .toEqual([
-      "\u2014",
-      "\u2014",
-      "\u2014",
-      "\u2014",
-      "\u2014",
-      "\u2014",
-      "4h 12m",
-    ]);
-
-  // Activity the server couldn't place on a local clock is disclosed, not
-  // folded into a UTC hour.
-  await expect(page.getByTestId("stats-when-unzoned")).toContainText("4h 12m");
-});
-
-test("the reading clock says so rather than drawing an empty dial", async ({
-  page,
-}) => {
-  // A window whose sessions all predate capture-time timezones: the strips are
-  // zero-filled to a fixed width, so drawing them would show 24 empty columns
-  // that look like a measured day.
-  await page.route("**/api/rpc/stats", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(
-        summaryWith({
-          hour_of_day: Array.from({ length: 24 }, (_, hour) => ({
-            hour,
-            seconds: 0,
-          })),
-          // Zero-filled to 7 like the server always sends it — the card's
-          // empty state keys on the hour strip, not on a missing weekday
-          // array, so the mock has no business being a shape the server
-          // can't produce.
-          day_of_week: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
-            (label, weekday) => ({ weekday, label, seconds: 0 }),
-          ),
-          unzoned_seconds: 18720,
-        }),
-      ),
-    }),
-  );
-
-  await gotoReady(page, "/stats");
-
-  await expect(page.getByTestId("stats-when-empty")).toBeVisible();
-  await expect(page.getByTestId("stats-clock-dial")).toHaveCount(0);
-  // No peak hour is an em-dash, never midnight: the first maximum of a row of
-  // zeros is index 0, and reporting it would invent a habit.
-  await expect(page.getByTestId("stats-clock-peak")).toHaveCount(0);
-  await expect(page.getByTestId("stats-when-unzoned")).toContainText("5h 12m");
-});
-
-/**
- * Reset every goal so the read-only assertions below start from a known
- * state. The REST writes invalidate this user's stats cache, so the page reads
- * the cleared values immediately rather than after the TTL.
- */
-async function clearAllGoals(request: APIRequestContext) {
-  const annual = await request.put("/api/stats/goal", {
-    data: { target: null },
-  });
-  expect(annual.status(), "clearing the reading goal failed").toBe(200);
-  for (const kind of ["pages", "minutes"]) {
-    const resp = await request.put("/api/stats/goal/daily", {
-      data: { kind, target: null },
+  test("show the stats page layout", async ({ libraryPage, statsPage }) => {
+    await test.step("open the stats page from the nav", async () => {
+      await libraryPage.goto();
+      await libraryPage.topNav.openStats();
+      await statsPage.assertDisplayed();
+      await statsPage.waitForSettled();
     });
-    expect(resp.status(), `clearing the daily ${kind} goal failed`).toBe(200);
-  }
-}
 
-test("the stats page reports goals but never edits them", async ({
-  page,
-  request,
-}) => {
-  // Goals are account configuration and all three are set together in
-  // Settings → Account. The page that *reports* them must not grow an editor
-  // back: that split is the whole reason there is one Edit button.
-  await request.put("/api/stats/goal", { data: { target: 24 } });
-  await request.put("/api/stats/goal/daily", {
-    data: { kind: "pages", target: 30 },
+    await test.step("check the nav and the hero", async () => {
+      await statsPage.topNav.assertDisplayed();
+      // The hero leads with the run the reader is on, above the switcher.
+      await expect(statsPage.hero).toBeVisible();
+      await expect(statsPage.currentStreak).toContainText(/\d/);
+    });
+
+    await test.step("check the scope switch and the period pills", async () => {
+      await expect(statsPage.scopeSwitch).toBeVisible();
+      await expect(statsPage.userScope).toBeVisible();
+      for (const range of ["week", "month", "year", "all_time"] as const) {
+        await expect(statsPage.periodPill(range)).toBeVisible();
+      }
+      await statsPage.assertPeriodSelected("month");
+      await expect(statsPage.windowHead).toContainText("In this window");
+      await expect(statsPage.windowLabel).toContainText(/month to date$/);
+    });
+
+    await test.step("check the windowed band and the reading clock", async () => {
+      await expect(statsPage.periodSection).toBeVisible();
+      await expect(statsPage.readingClock).toBeVisible();
+      // The dial is the live end of the local-time path; every other test
+      // stubs /api/rpc/stats, so a serde rename or dropped bind would leave
+      // the suite green with this card stuck in its empty state.
+      await expect(statsPage.clockEmpty).toHaveCount(0);
+      await expect(statsPage.clockDial).toBeVisible();
+      await expect(statsPage.clockWeekdays).toBeVisible();
+    });
+
+    await test.step("check the standing band", async () => {
+      await expect(statsPage.outsideWindowLabel).toBeVisible();
+      await expect(statsPage.standingSection).toBeVisible();
+    });
   });
-  await gotoReady(page, "/stats");
 
-  await expect(page.getByTestId("stats-goal-figure")).toContainText(
-    /of 24 books/,
-  );
-  await expect(page.getByTestId("stats-goal-progress")).toHaveAttribute(
-    "aria-valuemax",
-    "24",
-  );
-  await expect(page.getByTestId("stats-daily-pages-figure")).toContainText(
-    /of 30 pages/,
-  );
-  // The untargeted kind still reports today's figure — a readout, not a goal —
-  // and carries its own timeframe, since the card header has moved to "Every
-  // day" for the targeted row's sake.
-  await expect(page.getByTestId("stats-daily-minutes-today")).toBeVisible();
-  await expect(page.getByTestId("stats-daily-goals")).toContainText(
-    "Minutes today",
-  );
+  test("show the headline tiles", async ({ statsPage }) => {
+    await test.step("open the stats page", async () => {
+      await statsPage.goto();
+    });
 
-  for (const gone of [
-    "stats-goal-edit",
-    "stats-goal-input",
-    "stats-goal-save",
-    "stats-daily-pages-edit",
-    "stats-daily-minutes-edit",
-  ]) {
-    await expect(page.getByTestId(gone)).toHaveCount(0);
-  }
-});
+    // Shapes, not numbers: other specs add sessions, ratings and journals for
+    // the shared user, and db::stats owns the arithmetic.
+    await test.step("check the four tiles", async () => {
+      await expect(statsPage.tile("finished")).toContainText(/\d/);
+      await expect(statsPage.tile("finished")).toContainText("Finished");
+      await expect(statsPage.tile("avg-rating")).toContainText(/\d\.\d\s*★/);
+      // Pages read counts pages turned in the window (#2139), and this spec
+      // makes no position writes, which would join the landing's Continue fan.
+      await expect(statsPage.tile("pages")).toContainText("Pages read");
+      await expect(statsPage.tile("pages")).toContainText(/\d|—/);
+      await expect(statsPage.tile("listening")).toContainText(/\d+\s*(m|h)/);
+    });
+  });
 
-test("with no goals the hero reports the real figures and links to the editor", async ({
-  page,
-  request,
-}) => {
-  await clearAllGoals(request);
-  await gotoReady(page, "/stats");
+  test.describe("drill-ins", () => {
+    test("open the pages read drill-in", async ({ statsPage }) => {
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
 
-  // No target means no ring and no bar — both are claims a target makes — but
-  // the figures behind them are still worth showing, so the reader can see
-  // where they stand before committing to anything.
-  await expect(page.getByTestId("stats-goal-progress")).toHaveCount(0);
-  await expect(page.getByTestId("stats-goal-year-to-date")).toBeVisible();
-  await expect(page.getByTestId("stats-daily-pages-today")).toBeVisible();
-  await expect(page.getByTestId("stats-daily-minutes-today")).toBeVisible();
-  await expect(page.getByTestId("stats-daily-pages-progress")).toHaveCount(0);
+      await test.step("open the drill-in", async () => {
+        await statsPage.openDrillIn("pages");
+        await expect(statsPage.drillIn.root).toBeVisible();
+        await expect(statsPage.drillIn.root).toContainText("Pages read");
+      });
 
-  // Each label says its timeframe exactly once: the annual kicker carries the
-  // year, and the daily card's header carries "Today" so its rows don't.
-  const hero = page.getByTestId("stats-hero");
-  await expect(hero).toContainText(/\d{4} so far/);
-  await expect(hero).not.toContainText("This year");
-  await expect(page.getByTestId("stats-daily-goals")).not.toContainText(
-    "Pages a day",
-  );
+      // Page progress is differenced from stored positions and none exist
+      // before the ledger began, so the tile changes meaning at a date.
+      await test.step("check it explains its coverage and cutover", async () => {
+        await expect(statsPage.drillIn.pagesNote).toBeVisible();
+        await expect(statsPage.drillIn.pagesCutover).toContainText(
+          /Page tracking began \d{4}-\d{2}-\d{2}/,
+        );
+      });
 
-  // Both halves link to the one place goals are set.
-  await expect(page.getByTestId("stats-daily-set-link")).toBeVisible();
-  await page.getByTestId("stats-goal-set-link").click();
-  await expect(page).toHaveURL(/\/settings\?section=account$/);
-  await expect(page.getByTestId("account-goals-card")).toBeVisible();
+      await test.step("close the drill-in", async () => {
+        await statsPage.drillIn.close();
+        await expect(statsPage.drillIn.root).toHaveCount(0);
+      });
+    });
+
+    test("open the avg rating drill-in", async ({ statsPage }) => {
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("open the drill-in", async () => {
+        await statsPage.openDrillIn("avg-rating");
+        await expect(statsPage.drillIn.root).toBeVisible();
+        await expect(statsPage.drillIn.root).toContainText("Avg rating");
+      });
+
+      // Other specs write ratings on the shared fixture, so which of the
+      // histogram and its empty state shows isn't ours to pin.
+      await test.step("check it shows a delta, a trend and a histogram", async () => {
+        await expect(statsPage.drillIn.delta).toBeVisible();
+        await expect(statsPage.drillIn.trend).toBeVisible();
+        await expect(statsPage.drillIn.histogramOrEmpty).toBeVisible();
+      });
+    });
+
+    // The ratings are stubbed so the buckets are pinned; live ones would race
+    // the specs that write ratings.
+    test("show the avg rating buckets on a star axis", async ({
+      statsPage,
+    }) => {
+      await test.step("stub a month of ratings", async () => {
+        const histogram = Array.from({ length: 10 }, (_, i) => ({
+          half_stars: i + 1,
+          books: i === 6 ? 2 : i === 9 ? 3 : 0,
+        }));
+        // Oct 2025 through Sep 2026, rated in three months only.
+        const ratingMonthly = Array.from({ length: 12 }, (_, i) => {
+          const [year, month] = i < 3 ? [2025, 10 + i] : [2026, i - 2];
+          const value = i === 4 ? 3.5 : i === 5 ? 4.25 : i === 11 ? 5 : 0;
+          return { label: `${year}-${String(month).padStart(2, "0")}`, value };
+        });
+        await statsPage.stubSummary(
+          buildSummary({
+            avg_stars: 4.4,
+            current_streak_days: 1,
+            rating_histogram: histogram,
+            rating_monthly: ratingMonthly,
+          }),
+        );
+      });
+
+      await test.step("open the avg rating drill-in", async () => {
+        await statsPage.goto();
+        await statsPage.openDrillIn("avg-rating");
+      });
+
+      // Empty buckets keep their place, or the shape lies, and the labels are
+      // stars rather than the stored 1..=10 half-star scale.
+      await test.step("check the histogram has ten star-labelled columns", async () => {
+        await expect(statsPage.drillIn.histogram).toBeVisible();
+        await expect
+          .poll(() => statsPage.drillIn.histogramBarLabels.allInnerTexts())
+          .toEqual([
+            "0.5",
+            "1",
+            "1.5",
+            "2",
+            "2.5",
+            "3",
+            "3.5",
+            "4",
+            "4.5",
+            "5",
+          ]);
+        await expect(
+          statsPage.drillIn.histogramBar("5 ★ · 3 books"),
+        ).toBeVisible();
+        // Every rated bucket prints its count; the eight empty ones are slots.
+        await expect(statsPage.drillIn.histogramBarValues).toHaveText([
+          "2",
+          "3",
+        ]);
+        await expect(statsPage.drillIn.histogramEmptyBars).toHaveCount(8);
+        await expect(statsPage.drillIn.root).toContainText(
+          "Books at each rating",
+        );
+        await expect(statsPage.drillIn.histogramCaption).toHaveText(
+          "Rated this month",
+        );
+      });
+
+      // The trend covers the trailing year, not the window the delta and
+      // histogram follow.
+      await test.step("check the trend names its period", async () => {
+        await expect(statsPage.drillIn.root).toContainText(
+          "Average rating by month",
+        );
+        await expect(statsPage.drillIn.trendCaption).toHaveText(
+          "Oct 2025 – Sep 2026 · the last 12 months, whatever period is selected",
+        );
+        // Twelve distinct month names: June and July no longer both read "J".
+        await expect(statsPage.drillIn.trendBarLabels).toHaveText([
+          "Oct",
+          "Nov",
+          "Dec",
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+        ]);
+        await expect(statsPage.drillIn.trendBarValues).toHaveText([
+          "3.5",
+          "4.3",
+          "5.0",
+        ]);
+        await expect(statsPage.drillIn.trendEmptyBars).toHaveCount(9);
+      });
+    });
+
+    // The rate comes from finished books and recorded time on the shared
+    // fixture, which other specs write, so both answers are stubbed.
+    test("show the pages reading rate", async ({ statsPage }) => {
+      await test.step("stub a reading rate", async () => {
+        await statsPage.stubSummary(
+          buildSummary({ pages_read: 412, pages_per_hour: 32.6 }),
+        );
+      });
+
+      await test.step("open the pages drill-in", async () => {
+        await statsPage.goto();
+        await statsPage.openDrillIn("pages");
+      });
+
+      // Whole pages above ten an hour (a decimal would dress an estimate as a
+      // measurement), labelled an estimate like the tile it expands.
+      await test.step("check the rate is a whole estimate", async () => {
+        await expect(statsPage.drillIn.pagesRate).toBeVisible();
+        await expect(statsPage.drillIn.pagesRate).toContainText("33");
+        await expect(statsPage.drillIn.pagesRate).toContainText(
+          "est. pages an hour",
+        );
+      });
+    });
+
+    test("explain a missing pages reading rate", async ({ statsPage }) => {
+      await test.step("stub finished books with no recorded time", async () => {
+        await statsPage.stubSummary(
+          buildSummary({ pages_read: 412, pages_per_hour: null }),
+        );
+      });
+
+      await test.step("open the pages drill-in", async () => {
+        await statsPage.goto();
+        await statsPage.openDrillIn("pages");
+      });
+
+      // No rate is a "can't tell", never a zero, and the copy names both
+      // halves because either a missing length or missing time produces it.
+      await test.step("check it says why there is no rate", async () => {
+        await expect(statsPage.drillIn.pagesRate).toContainText(
+          "both a measurable length and recorded reading time",
+        );
+      });
+    });
+
+    test("list the books finished in the window", async ({ statsPage }) => {
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("open the finished drill-in", async () => {
+        await statsPage.openDrillIn("finished");
+        await expect(statsPage.drillIn.finishedList).toBeVisible();
+        await expect(statsPage.drillIn.finishedList).toContainText(
+          FIXTURE_BOOKS[0]!.title,
+        );
+      });
+    });
+
+    // The bars depend on what the shared user has finished in the window.
+    test("show the length distribution of finished books", async ({
+      statsPage,
+    }) => {
+      await test.step("stub finished books of four lengths", async () => {
+        await statsPage.stubSummary(
+          buildSummary({
+            current_streak_days: 1,
+            books_finished: 6,
+            length_buckets: [
+              { label: "Under 300", books: 3 },
+              { label: "300–499", books: 2 },
+              { label: "500+", books: 0 },
+              { label: "Unknown", books: 1 },
+            ],
+          }),
+        );
+      });
+
+      // How long the finished books were is a fact about the Finished tile,
+      // not a peer of it, so it lives inside that tile's drill-in.
+      await test.step("open the finished drill-in", async () => {
+        await statsPage.goto();
+        await statsPage.openDrillIn("finished");
+        await expect(statsPage.drillIn.lengthSplit).toBeVisible();
+      });
+
+      // The empty bucket and the unmeasurable one are rendered too.
+      await test.step("check every bucket shows, with counts", async () => {
+        for (const label of ["Under 300", "300–499", "500+", "Unknown"]) {
+          await expect(statsPage.drillIn.lengthSplit).toContainText(label);
+        }
+        // Counts, not shares: "3 books" needs no denominator to be read.
+        await expect(statsPage.drillIn.firstLengthRow).toContainText("3");
+      });
+    });
+
+    // Regression for #2454: the Finished tile read "−2" while its sheet read
+    // "▼100%", and a "flat" tile opened onto "Not enough data yet to compare".
+    test("match each tile's delta to its drill-in", async ({ statsPage }) => {
+      await test.step("stub a week against the week before", async () => {
+        await statsPage.stubSummary(
+          buildSummary({
+            range: "week",
+            books_finished: 0,
+            previous: {
+              books_finished: 2,
+              avg_stars: null,
+              listening_seconds: 0,
+              pages_read: 0,
+            },
+          }),
+        );
+      });
+
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      for (const [tile, label] of [
+        ["finished", "\u{2212}2"],
+        ["listening", "flat"],
+      ] as const) {
+        await test.step(`compare the ${tile} tile with its drill-in`, async () => {
+          await expect(statsPage.tileDelta(tile)).toHaveText(label);
+          await statsPage.openDrillIn(tile);
+          await expect(statsPage.drillIn.delta).toContainText(label);
+          await expect(statsPage.drillIn.delta).toContainText("vs last week");
+          await statsPage.drillIn.close();
+          await expect(statsPage.drillIn.root).toHaveCount(0);
+        });
+      }
+    });
+
+    test("close a drill-in with its close button", async ({ statsPage }) => {
+      await test.step("open a drill-in", async () => {
+        await statsPage.goto();
+        await statsPage.openDrillIn("avg-rating");
+        await expect(statsPage.drillIn.root).toBeVisible();
+      });
+
+      await test.step("close it", async () => {
+        await statsPage.drillIn.close();
+        await expect(statsPage.drillIn.root).toHaveCount(0);
+      });
+
+      await test.step("check the selected period is untouched", async () => {
+        await statsPage.assertPeriodSelected("month");
+      });
+    });
+
+    test("close a drill-in from its backdrop", async ({ statsPage }) => {
+      await test.step("open a drill-in", async () => {
+        await statsPage.goto();
+        await statsPage.openDrillIn("finished");
+        await expect(statsPage.drillIn.root).toBeVisible();
+      });
+
+      await test.step("click outside the sheet", async () => {
+        await statsPage.drillIn.closeFromBackdrop();
+        await expect(statsPage.drillIn.root).toHaveCount(0);
+      });
+    });
+
+    // Regression for #2465: the sheet is a modal scrim over the page, and
+    // Escape did nothing; the Close button was the only way out.
+    test("close a drill-in with escape", async ({ statsPage }) => {
+      await test.step("open a drill-in", async () => {
+        await statsPage.goto();
+        await statsPage.openDrillIn("finished");
+        await expect(statsPage.drillIn.root).toBeVisible();
+      });
+
+      await test.step("press escape", async () => {
+        await statsPage.drillIn.closeWithEscape();
+        await expect(statsPage.drillIn.root).toHaveCount(0);
+      });
+    });
+  });
+
+  test.describe("window", () => {
+    test("switch the window to a week", async ({
+      statsPage,
+      expectMutation,
+    }) => {
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("select the week pill", async () => {
+        await expectMutation(stats.summary("week"), () =>
+          statsPage.selectPeriod("week"),
+        );
+        await statsPage.assertPeriodSelected("week");
+      });
+
+      // The window label says what "this window" currently means.
+      await test.step("check the window follows the pill", async () => {
+        await expect(statsPage.windowLabel).toContainText(
+          /^Week of \d{1,2} \w{3} \d{4} · to date$/,
+        );
+        await expect(statsPage.periodPill("month")).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      });
+    });
+
+    // Lifetime has no previous window, so every tile drops its comparison
+    // rather than measuring against a zero nobody recorded.
+    test("switch the window to lifetime", async ({
+      statsPage,
+      expectMutation,
+    }) => {
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("select the lifetime pill", async () => {
+        await expectMutation(stats.summary("all_time"), () =>
+          statsPage.selectPeriod("all_time"),
+        );
+        await statsPage.assertPeriodSelected("all_time");
+      });
+
+      await test.step("check the tiles drop their comparison", async () => {
+        await expect(statsPage.windowLabel).toContainText(
+          "Everything you have tracked",
+        );
+        await expect(statsPage.tileDelta("finished")).toHaveCount(0);
+      });
+    });
+
+    // The pills govern the windowed band and nothing else; a regression here
+    // is the whole redesign undone.
+    test("keep the hero and the standing band when the window changes", async ({
+      statsPage,
+      expectMutation,
+    }) => {
+      const before =
+        await test.step("note the hero and the standing band", async () => {
+          await statsPage.goto();
+          await expect(statsPage.standingSection).toBeVisible();
+          return {
+            hero: await statsPage.hero.textContent(),
+            standing: await statsPage.standingSection.textContent(),
+          };
+        });
+
+      await test.step("select the year pill", async () => {
+        await expectMutation(stats.summary("year"), () =>
+          statsPage.selectPeriod("year"),
+        );
+        await statsPage.assertPeriodSelected("year");
+        await expect(statsPage.windowLabel).toContainText("year to date");
+      });
+
+      await test.step("check the hero and the standing band are unchanged", async () => {
+        await expect
+          .poll(() => statsPage.standingSection.textContent())
+          .toBe(before.standing);
+        await expect.poll(() => statsPage.hero.textContent()).toBe(before.hero);
+      });
+    });
+  });
+
+  test.describe("activity", () => {
+    test("show the heatmap and genre donut", async ({ statsPage }) => {
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("check the heatmap", async () => {
+        await expect(statsPage.heatmap).toBeVisible();
+        await expect(statsPage.daysRead).toContainText("days read");
+        // The record stands here; the run the reader is on leads the hero, and
+        // a second copy two bands apart is where two surfaces start to disagree.
+        await expect(statsPage.heatmapLongestStreak).toContainText("best run");
+        await expect(statsPage.heatmapCurrentStreak).toHaveCount(0);
+        await expect(statsPage.heatmapActiveCells).not.toHaveCount(0);
+      });
+
+      // The centre counts the books the ring describes ("tagged"). This spec
+      // also seeds activity on an ungenred book, so the untagged disclosure
+      // always renders; it is matched by pattern because other specs add books.
+      await test.step("check the genre donut", async () => {
+        await expect(statsPage.genreDonut).toBeVisible();
+        await expect(statsPage.genreDonut).toContainText(DONUT_GENRE);
+        await expect(statsPage.genreDonut).toContainText("%");
+        await expect(statsPage.genreDonut).toContainText("tagged");
+        await expect(statsPage.donutUntagged).toHaveText(
+          /^\+\d+ books? without a genre$/,
+        );
+      });
+
+      // The split rides the donut's foot: the ring says what was read and the
+      // bars say how, and two cards left a reader comparing them.
+      await test.step("check the read and listened split", async () => {
+        await expect(statsPage.formatSplit).toContainText("Read");
+        await expect(statsPage.formatSplit).toContainText("Listened");
+      });
+    });
+
+    test("show the books-per-month chart", async ({ statsPage }) => {
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("check twelve bars with the current month highlighted", async () => {
+        await expect(statsPage.monthlyChart).toBeVisible();
+        await expect(statsPage.monthlyChart).toContainText("avg");
+        await expect(statsPage.monthlyBars).toHaveCount(12);
+        await expect(statsPage.currentMonthBar).toHaveClass(/current/);
+      });
+    });
+
+    // The superlatives rank over finished books and sessions on the shared
+    // fixture, which other specs write, so both answers are stubbed.
+    test("show the superlatives", async ({ statsPage }) => {
+      await test.step("stub two standouts", async () => {
+        await statsPage.stubSummary(
+          buildSummary({
+            books_finished: 2,
+            busiest_week_start: "2023-11-13",
+            busiest_week_seconds: 14_400,
+            top_authors: [{ name: "Ursula K. Le Guin", seconds: 3600 }],
+            superlatives: {
+              longest_book: {
+                book_uuid: "u1",
+                title: "Doorstopper",
+                author: "A. Writer",
+                value: 900,
+              },
+              fastest_read: {
+                book_uuid: "u2",
+                title: "Sprint",
+                author: null,
+                value: 3,
+              },
+            },
+          }),
+        );
+      });
+
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("check the card names each standout", async () => {
+        await expect(statsPage.superlatives).toBeVisible();
+        await expect(statsPage.superlatives).toContainText("Doorstopper");
+        await expect(statsPage.superlatives).toContainText("900 pages");
+        await expect(statsPage.superlatives).toContainText("in 3 days");
+        // The busiest week and the most-read author come off fields the
+        // payload has always carried and the web page never drew.
+        await expect(statsPage.superlatives).toContainText(
+          "Week of 13 Nov 2023",
+        );
+        await expect(statsPage.superlatives).toContainText("Ursula K. Le Guin");
+        // Absent superlatives cost their row, not an em-dash.
+        await expect(statsPage.superlatives).not.toContainText("Shortest book");
+        await expect(statsPage.superlatives).not.toContainText(
+          "Longest sitting",
+        );
+        // The fastest read is a lower bound, and says so.
+        await expect(statsPage.superlativesNote).toContainText(
+          "tracked session",
+        );
+      });
+    });
+
+    test("omit the superlatives when nothing stands out", async ({
+      statsPage,
+    }) => {
+      await test.step("stub a window with no standouts", async () => {
+        await statsPage.stubSummary(
+          buildSummary({
+            books_finished: 2,
+            busiest_week_start: null,
+            busiest_week_seconds: 0,
+          }),
+        );
+      });
+
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      // Wait on a period-owned element, not the section: until the period
+      // fetch resolves a bare placeholder renders with no card, so asserting
+      // the absence first would pass on the loading state.
+      await test.step("check the card is absent, not an empty heading", async () => {
+        await expect(statsPage.tile("finished")).toBeVisible();
+        await expect(statsPage.superlatives).toHaveCount(0);
+      });
+    });
+
+    // The buckets are stubbed: any other spec posting a session moves the
+    // ticks on the shared server and user.
+    test("show the reading clock and name the peak", async ({ statsPage }) => {
+      await test.step("stub a window read at 9am and mostly at 9pm", async () => {
+        const hours = Array.from({ length: 24 }, (_, hour) => ({
+          hour,
+          seconds: hour === 21 ? 15120 : hour === 9 ? 3600 : 0,
+        }));
+        const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
+          (label, weekday) => ({
+            weekday,
+            label,
+            seconds: label === "Sun" ? 15120 : 0,
+          }),
+        );
+        await statsPage.stubSummary(
+          buildSummary({
+            reading_seconds: 18720,
+            sessions: 2,
+            active_days: 2,
+            current_streak_days: 1,
+            busiest_week_seconds: 18720,
+            hour_of_day: hours,
+            day_of_week: days,
+            unzoned_seconds: 15120,
+          }),
+        );
+      });
+
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      // All 24 ticks render, quiet hours included: the shape of a day is the
+      // information, so an omitted hour would misdescribe it.
+      await test.step("check the dial draws every hour and names the peak", async () => {
+        await expect(statsPage.clockDial).toBeVisible();
+        await expect(statsPage.clockTicks).toHaveCount(24);
+        await expect(statsPage.clockPeak).toHaveText("9pm");
+        // 9pm is the last hour of the evening band (the late band starts at
+        // 10), so the sentence names the part of the day, not just a number.
+        await expect(statsPage.clockLine).toContainText("Evenings are yours");
+      });
+
+      // Weekdays are the server's labels in the server's order: the web never
+      // decides where the week starts.
+      await test.step("check the weekday strip", async () => {
+        await expect
+          .poll(() => statsPage.weekdayLabels.allInnerTexts())
+          .toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+        // A day with nothing on it is an absence, never a measured zero.
+        await expect
+          .poll(() => statsPage.weekdayReadouts.allInnerTexts())
+          .toEqual(["—", "—", "—", "—", "—", "—", "4h 12m"]);
+      });
+
+      // Activity the server couldn't place on a local clock is disclosed, not
+      // folded into a UTC hour.
+      await test.step("check the unplaced activity is disclosed", async () => {
+        await expect(statsPage.clockUnzoned).toContainText("4h 12m");
+      });
+    });
+
+    // A window whose sessions all predate capture-time timezones: the strips
+    // are zero-filled to a fixed width, so drawing them would show 24 empty
+    // columns that look like a measured day.
+    test("say so instead of drawing an empty reading clock", async ({
+      statsPage,
+    }) => {
+      await test.step("stub a window with only unplaced activity", async () => {
+        await statsPage.stubSummary(
+          buildSummary({
+            reading_seconds: 18720,
+            sessions: 2,
+            active_days: 2,
+            current_streak_days: 1,
+            busiest_week_seconds: 18720,
+            hour_of_day: Array.from({ length: 24 }, (_, hour) => ({
+              hour,
+              seconds: 0,
+            })),
+            // Zero-filled to 7 like the server always sends it: the empty
+            // state keys on the hour strip, so the mock must be a real shape.
+            day_of_week: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
+              (label, weekday) => ({ weekday, label, seconds: 0 }),
+            ),
+            unzoned_seconds: 18720,
+          }),
+        );
+      });
+
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      // No peak hour is an absence, never midnight: the first maximum of a row
+      // of zeros is index 0, and reporting it would invent a habit.
+      await test.step("check the card says so rather than drawing a dial", async () => {
+        await expect(statsPage.clockEmpty).toBeVisible();
+        await expect(statsPage.clockDial).toHaveCount(0);
+        await expect(statsPage.clockPeak).toHaveCount(0);
+        await expect(statsPage.clockUnzoned).toContainText("5h 12m");
+      });
+    });
+
+    // Self-registration is disabled after the first account and the shared
+    // user has seeded sessions, so an all-zero summary stands in for a new one.
+    test("show the friendly empty state for a reader with no activity", async ({
+      statsPage,
+    }) => {
+      await test.step("stub a summary with no activity", async () => {
+        await statsPage.stubSummary(
+          buildSummary({
+            reading_seconds: 0,
+            sessions: 0,
+            active_days: 0,
+            longest_streak_days: 0,
+            busiest_week_seconds: 0,
+            books_finished: 0,
+          }),
+        );
+      });
+
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("check the empty state shows", async () => {
+        await expect(statsPage.emptyState).toBeVisible();
+        await expect(statsPage.noActivityMessage).toBeVisible();
+        await expect(statsPage.periodSection).toHaveCount(0);
+        await expect(statsPage.standingSection).toHaveCount(0);
+      });
+
+      // The goals are set from the hero, and a reader with no activity is
+      // exactly who wants to set one.
+      await test.step("check the hero stays", async () => {
+        await expect(statsPage.hero).toBeVisible();
+      });
+    });
+  });
+
+  // The real size and mix depend on the backfill and the fixture library,
+  // which no spec can pin, so the library figures are stubbed.
+  test.describe("library scope", () => {
+    test("show the library size with its coverage", async ({ statsPage }) => {
+      await test.step("stub a library measured for words and pages", async () => {
+        await statsPage.stubLibrarySize({
+          books: 1510,
+          words: { total: 412_000_000, books: 1204 },
+          pages: { total: 1_600_000, books: 1204 },
+          // Nothing probed yet: the figure is absent, never a zero.
+          listening_seconds: { total: 0, books: 0 },
+        });
+      });
+
+      await test.step("open the library scope", async () => {
+        await statsPage.goto();
+        await statsPage.openLibraryScope();
+      });
+
+      await test.step("check the card states each total with its coverage", async () => {
+        await expect(statsPage.librarySize).toBeVisible();
+        // The scope reads as a sentence before it reads as figures.
+        await expect(statsPage.librarySize).toContainText("1,510 books.");
+        await expect(statsPage.librarySize).toContainText("412 million words");
+        await expect(statsPage.librarySize).toContainText("412M");
+        await expect(statsPage.librarySize).toContainText("1.6M");
+        // Never a bare total: the denominator is what makes it a fact.
+        await expect(statsPage.librarySize).toContainText(
+          "across 1,204 of 1,510 books",
+        );
+        await expect(statsPage.libraryFigures).toHaveCount(2);
+      });
+
+      // These are the shelf's figures, not the reader's, and the pills are
+      // absent here rather than present and inert.
+      await test.step("check the scope switch drops the period pills", async () => {
+        await expect(statsPage.scopeSwitch).toContainText("not period-scoped");
+        await expect(statsPage.periodPill("week")).toHaveCount(0);
+      });
+    });
+
+    test("omit the size card for a library measured for nothing", async ({
+      statsPage,
+    }) => {
+      await test.step("stub a library with no measurements", async () => {
+        await statsPage.stubLibrarySize({ books: 40 });
+      });
+
+      await test.step("open the library scope", async () => {
+        await statsPage.goto();
+        await statsPage.openLibraryScope();
+      });
+
+      // Three zeroes would read as a claim about the collection rather than
+      // about the backfill.
+      await test.step("check no size card shows", async () => {
+        await expect(statsPage.librarySize).toHaveCount(0);
+      });
+    });
+
+    test("show the library composition with its coverage", async ({
+      statsPage,
+    }) => {
+      await test.step("stub a mixed library", async () => {
+        await statsPage.stubLibraryComposition(LIBRARY_COMPOSITION);
+      });
+
+      await test.step("open the library scope", async () => {
+        await statsPage.goto();
+        await statsPage.openLibraryScope();
+      });
+
+      await test.step("check each panel titles itself", async () => {
+        await expect(statsPage.libraryComposition).toBeVisible();
+        // The scope switch already says these are the shelf's figures, so a
+        // section heading would be a third statement of the same thing.
+        for (const title of ["Formats", "Languages", "Publishers", "Genres"]) {
+          await expect(statsPage.libraryComposition).toContainText(title);
+        }
+        await expect(statsPage.compositionFormats).toContainText("EPUB");
+        await expect(statsPage.compositionDecades).toContainText("1990s");
+      });
+
+      await test.step("check the notes on coverage and exclusions", async () => {
+        // Genres are hand-assigned, so the slices describe 58 books, not 1,510.
+        await expect(statsPage.compositionGenres).toContainText(
+          "hand-assigned — across 58 of 1,510 books",
+        );
+        // Dual-format books are counted in both bars, and said so.
+        await expect(statsPage.compositionFormats).toContainText(
+          "+70 books held in more than one format",
+        );
+        // Ghosted rows are named rather than left to make the bars not add up.
+        await expect(statsPage.compositionGhosted).toContainText(
+          "4 books excluded",
+        );
+      });
+    });
+
+    test("show an empty state for a composition dimension with no data", async ({
+      statsPage,
+    }) => {
+      await test.step("stub a library with no publisher metadata", async () => {
+        await statsPage.stubLibraryComposition(LIBRARY_COMPOSITION);
+      });
+
+      await test.step("open the library scope", async () => {
+        await statsPage.goto();
+        await statsPage.openLibraryScope();
+      });
+
+      // An axis with no bars on it is the failure this replaces.
+      await test.step("check publishers say so instead of drawing an empty chart", async () => {
+        await expect(statsPage.compositionPublishers).toContainText(
+          "No publisher metadata yet.",
+        );
+        await expect(statsPage.compositionPublisherBars).toHaveCount(0);
+      });
+    });
+
+    test("omit the composition card for a library with nothing to describe", async ({
+      statsPage,
+    }) => {
+      await test.step("stub an empty library", async () => {
+        await statsPage.stubLibraryComposition({ books: 0 });
+      });
+
+      // The card is also absent when the fetch never happened, so waiting on
+      // the stubbed response fails the test if the route moves.
+      await test.step("open the library scope once the fetch is answered", async () => {
+        const answered = statsPage.waitForLibraryComposition();
+        await statsPage.goto();
+        await answered;
+        await statsPage.openLibraryScope();
+      });
+
+      await test.step("check no composition card shows", async () => {
+        await expect(statsPage.libraryComposition).toHaveCount(0);
+      });
+    });
+  });
+
+  test.describe("goals", () => {
+    // Goals are account configuration, and all three are set together in
+    // Settings → Account. This page reports them but must not grow an editor
+    // back: that split is the whole reason there is one Edit button.
+    test("report the goals without an editor", async ({ statsPage, goals }) => {
+      await test.step("set an annual and a daily pages goal", async () => {
+        await goals.set({ annual: 24, dailyPages: 30 });
+      });
+
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      await test.step("check the goals are reported", async () => {
+        await expect(statsPage.goalFigure).toContainText(/of 24 books/);
+        await expect(statsPage.goalProgress).toHaveAttribute(
+          "aria-valuemax",
+          "24",
+        );
+        await expect(statsPage.dailyPagesFigure).toContainText(/of 30 pages/);
+        // The untargeted kind still reports today's figure, a readout rather
+        // than a goal, and carries its own timeframe because the card header
+        // has moved to "Every day" for the targeted row's sake.
+        await expect(statsPage.dailyMinutesToday).toBeVisible();
+        await expect(statsPage.dailyGoals).toContainText("Minutes today");
+      });
+
+      await test.step("check no editor shows", async () => {
+        await expect(statsPage.goalEditors).toHaveCount(0);
+      });
+    });
+
+    test("report the real figures when no goals are set", async ({
+      statsPage,
+      goals,
+    }) => {
+      await test.step("clear every goal", async () => {
+        await goals.clear();
+      });
+
+      await test.step("open the stats page", async () => {
+        await statsPage.goto();
+      });
+
+      // No target means no ring and no bar, since both are claims a target
+      // makes, but the figures behind them still show where the reader stands.
+      await test.step("check the figures show without a ring or bar", async () => {
+        await expect(statsPage.goalProgress).toHaveCount(0);
+        await expect(statsPage.goalYearToDate).toBeVisible();
+        await expect(statsPage.dailyPagesToday).toBeVisible();
+        await expect(statsPage.dailyMinutesToday).toBeVisible();
+        await expect(statsPage.dailyPagesProgress).toHaveCount(0);
+      });
+
+      // The annual kicker carries the year and the daily card's header carries
+      // "Today", so each label says its timeframe exactly once.
+      await test.step("check each label names its timeframe once", async () => {
+        await expect(statsPage.hero).toContainText(/\d{4} so far/);
+        await expect(statsPage.hero).not.toContainText("This year");
+        await expect(statsPage.dailyGoals).not.toContainText("Pages a day");
+      });
+    });
+
+    test("open the goal editor from the hero", async ({ statsPage, goals }) => {
+      await test.step("clear every goal and open the stats page", async () => {
+        await goals.clear();
+        await statsPage.goto();
+      });
+
+      await test.step("follow the link to the one place goals are set", async () => {
+        await expect(statsPage.dailySetLink).toBeVisible();
+        await statsPage.openGoalEditor();
+        await statsPage.assertGoalEditorOpened();
+      });
+    });
+  });
 });
