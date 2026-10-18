@@ -87,10 +87,15 @@ const DECODE_MAX_ALLOC: u64 = 256 * 1024 * 1024;
 /// JPEG quality of an opaque preview.
 const PREVIEW_JPEG_QUALITY: u8 = 85;
 
-/// A downscaled, viewable copy of `bytes` as `(bytes, media type)`: PNG when the
-/// image has alpha, else JPEG. `None` unless the bytes themselves sniff as a raster
-/// (never the manifest's claim) and decode within the limits, so an SVG or a
-/// crafted header gets the URL only. CPU-bound: call inside `spawn_blocking`.
+/// Largest encoded preview attached: base64 keeps it under the 5 MB per-image
+/// limit, so the block never costs the result its download URL.
+const PREVIEW_MAX_BYTES: usize = 3_500_000;
+
+/// A downscaled, viewable copy of `bytes` as `(bytes, media type)`: PNG when some
+/// pixel is not opaque, else JPEG. `None` unless the bytes themselves sniff as a
+/// raster (never the manifest's claim), decode within the limits and encode within
+/// [`PREVIEW_MAX_BYTES`], so an SVG or a crafted header gets the URL only.
+/// CPU-bound: call inside `spawn_blocking`.
 fn preview(bytes: &[u8]) -> Option<(Vec<u8>, &'static str)> {
     omnibus_shared::detect_image_format(bytes)?;
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
@@ -103,25 +108,25 @@ fn preview(bytes: &[u8]) -> Option<(Vec<u8>, &'static str)> {
     reader.limits(limits);
     let decoded = reader.decode().ok()?;
     let fitted = if decoded.width().max(decoded.height()) > PREVIEW_MAX_EDGE {
-        decoded.resize(
-            PREVIEW_MAX_EDGE,
-            PREVIEW_MAX_EDGE,
-            image::imageops::FilterType::Triangle,
-        )
+        decoded.thumbnail(PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE)
     } else {
         decoded
     };
+    let translucent =
+        fitted.color().has_alpha() && fitted.to_rgba8().pixels().any(|p| p.0[3] != 255);
     let mut out = Vec::new();
-    if fitted.color().has_alpha() {
+    let media_type = if translucent {
         fitted
             .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
             .ok()?;
-        return Some((out, "image/png"));
-    }
-    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, PREVIEW_JPEG_QUALITY)
-        .encode_image(&fitted.to_rgb8())
-        .ok()?;
-    Some((out, "image/jpeg"))
+        "image/png"
+    } else {
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, PREVIEW_JPEG_QUALITY)
+            .encode_image(&fitted.to_rgb8())
+            .ok()?;
+        "image/jpeg"
+    };
+    (out.len() <= PREVIEW_MAX_BYTES).then_some((out, media_type))
 }
 
 /// Map an image endpoint's status to the message that tells the model what to

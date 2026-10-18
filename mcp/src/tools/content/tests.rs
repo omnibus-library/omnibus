@@ -714,6 +714,37 @@ fn preview_encodes_png_when_the_image_has_alpha() {
 }
 
 #[test]
+fn preview_encodes_jpeg_for_an_rgba_image_with_no_transparent_pixel() {
+    let pixels = image::RgbaImage::from_pixel(32, 32, image::Rgba([10, 20, 30, 255]));
+    let (_, media_type) = preview(&encode_png(image::DynamicImage::ImageRgba8(pixels))).unwrap();
+
+    assert_eq!(media_type, "image/jpeg");
+}
+
+#[test]
+fn preview_encodes_png_when_one_pixel_is_transparent() {
+    let mut pixels = image::RgbaImage::from_pixel(32, 32, image::Rgba([10, 20, 30, 255]));
+    pixels.put_pixel(5, 7, image::Rgba([10, 20, 30, 0]));
+    let (_, media_type) = preview(&encode_png(image::DynamicImage::ImageRgba8(pixels))).unwrap();
+
+    assert_eq!(media_type, "image/png");
+}
+
+#[test]
+fn preview_returns_none_when_the_encoded_copy_exceeds_the_byte_cap() {
+    // Noise with alpha does not compress, so its PNG copy runs past 3.5 MB.
+    let mut seed = 0x2545_f491_u32;
+    let pixels = image::RgbaImage::from_fn(1200, 1200, |_, _| {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        image::Rgba(seed.to_le_bytes())
+    });
+
+    assert!(preview(&encode_png(image::DynamicImage::ImageRgba8(pixels))).is_none());
+}
+
+#[test]
 fn preview_returns_none_for_an_image_wider_than_the_decode_limit() {
     assert!(preview(&opaque_png(DECODE_MAX_EDGE + 1, 1)).is_none());
 }
