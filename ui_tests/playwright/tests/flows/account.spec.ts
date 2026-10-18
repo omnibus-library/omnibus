@@ -1,5 +1,5 @@
 import { account } from "../contracts/account";
-import { koboDevices } from "../contracts/kobo";
+import { kobo } from "../contracts/kobo";
 import type { CreatedKoboDevice } from "../data/account";
 import { uniqueSuffix } from "../data/unique";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -281,7 +281,7 @@ test.describe("devices section", () => {
     createdKoboDeviceIds,
     expectMutation,
   }) => {
-    const { kobo } = settingsPage;
+    const { kobo: section } = settingsPage;
     const name = `E2E Kobo ${uniqueSuffix()}`;
 
     await test.step("open the devices section", async () => {
@@ -289,8 +289,8 @@ test.describe("devices section", () => {
     });
 
     await test.step("add a device", async () => {
-      const { response } = await expectMutation(koboDevices.create(name), () =>
-        kobo.addDevice(name),
+      const { response } = await expectMutation(kobo.create(name), () =>
+        section.addDevice(name),
       );
       const created: CreatedKoboDevice = await response.json();
       createdKoboDeviceIds.add(created.id);
@@ -298,14 +298,14 @@ test.describe("devices section", () => {
 
     // A Kobo on its own Wi-Fi can't resolve a bare path against the web app's origin.
     await test.step("check its endpoint is a full url", async () => {
-      await expect(kobo.endpointField(name)).toHaveValue(
+      await expect(section.endpointField(name)).toHaveValue(
         /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
       );
     });
 
     await test.step("check the device joins the list below the form", async () => {
-      expect(await topEdge(kobo.deviceRow(name))).toBeGreaterThan(
-        await topEdge(kobo.addButton),
+      expect(await topEdge(section.deviceRow(name))).toBeGreaterThan(
+        await topEdge(section.addButton),
       );
     });
   });
@@ -345,7 +345,7 @@ test.describe("devices section", () => {
     createdKoboDeviceIds,
     expectMutation,
   }) => {
-    const { kobo } = settingsPage;
+    const { kobo: section } = settingsPage;
     const name = `E2E Kobo ${uniqueSuffix()}`;
 
     const id = await test.step("add a device through the api", () =>
@@ -354,18 +354,18 @@ test.describe("devices section", () => {
     // Removing asks first, naming the device it would stop syncing.
     await test.step("ask to remove the device", async () => {
       await settingsPage.goto("devices");
-      await kobo.startRemove(name);
-      await expect(kobo.removeConfirmation(name)).toBeVisible();
+      await section.startRemove(name);
+      await expect(section.removeConfirmation(name)).toBeVisible();
     });
 
     await test.step("confirm the removal", async () => {
-      await expectMutation(koboDevices.revoke(id), () => kobo.confirmRemove());
+      await expectMutation(kobo.revoke(id), () => section.confirmRemove());
       createdKoboDeviceIds.delete(id);
     });
 
     await test.step("check the dialog closed and the device is gone", async () => {
-      await expect(kobo.removeConfirmation(name)).toHaveCount(0);
-      await expect(kobo.deviceRow(name)).toHaveCount(0);
+      await expect(section.removeConfirmation(name)).toHaveCount(0);
+      await expect(section.deviceRow(name)).toHaveCount(0);
     });
   });
 

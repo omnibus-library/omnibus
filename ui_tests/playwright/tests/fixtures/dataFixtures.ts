@@ -140,7 +140,7 @@ type DataFixtures = {
   seriesId: (name: string) => Promise<number>;
   linkedAuthorNames: () => Promise<string[]>;
   deletedAuthors: Set<string>;
-  createdAuthorPhotoIds: Set<number>;
+  photographedAuthorIds: Set<number>;
   uploadAuthorPhoto: (authorId: number) => Promise<void>;
   recentBook: (
     format: "epub" | "audio",
@@ -614,7 +614,7 @@ export const test = base.extend<DataFixtures>({
     }
   },
 
-  createdAuthorPhotoIds: async ({ authorsRequests }, use) =>
+  photographedAuthorIds: async ({ authorsRequests }, use) =>
     cleanupSet(
       use,
       (id: number) => authorsRequests.deletePhoto(id),
@@ -622,13 +622,13 @@ export const test = base.extend<DataFixtures>({
     ),
 
   uploadAuthorPhoto: async (
-    { authorsRequests, createdAuthorPhotoIds },
+    { authorsRequests, photographedAuthorIds },
     use,
   ) => {
     await use(async (authorId) => {
       const put = await authorsRequests.putPhoto(authorId);
       await expect(put, `upload a photo for author ${authorId}`).toBeOK();
-      createdAuthorPhotoIds.add(authorId);
+      photographedAuthorIds.add(authorId);
     });
   },
 

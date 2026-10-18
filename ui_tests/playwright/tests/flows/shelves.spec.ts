@@ -8,6 +8,7 @@ import {
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
+import { topEdge } from "../utils/dom";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
@@ -52,7 +53,7 @@ test.describe("shelves on the library page", () => {
       // An in-flow overlay scrolls away with the column; a floating one does not.
       await test.step("scroll the page under it", async () => {
         await modal.scrollPageUnder();
-        await expect.poll(() => modal.top()).toBe(0);
+        await expect.poll(() => topEdge(modal.root)).toBe(0);
       });
     });
 

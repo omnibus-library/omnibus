@@ -21,7 +21,7 @@ export const settingsUrls = {
   } satisfies Record<MetadataProvider, RegExp>,
 };
 
-/** The writes an admin makes from the Administration sections. */
+/** The requests an admin makes from the Administration sections. */
 export const settings = {
   /** The read the library form fills itself from. */
   load: (): ForcedRequest => ({ method: "GET", url: settingsUrls.settings }),

@@ -35,11 +35,6 @@ export class CreateShelfModalComponent extends BaseComponent {
     return this.root.evaluate((el) => getComputedStyle(el).position);
   }
 
-  /** The modal's distance from the top of the viewport, if it has a box. */
-  async top(): Promise<number | undefined> {
-    return (await this.root.boundingBox())?.y;
-  }
-
   /** Scrolls the page underneath the modal with the mouse wheel. */
   async scrollPageUnder(): Promise<void> {
     await this.page.mouse.wheel(0, 600);

@@ -43,6 +43,7 @@ test.describe("api tokens section", () => {
     settingsPage,
     createdApiTokenIds,
     expectMutation,
+    baseURL,
   }) => {
     const tokens = settingsPage.apiTokens;
     const name = `e2e once ${uniqueSuffix()}`;
@@ -68,7 +69,7 @@ test.describe("api tokens section", () => {
         expect(shown).toMatch(/^omni_/);
         await expect(tokens.secretCopyButton).toBeVisible();
         await expect(tokens.mcpCommand).toContainText(shown);
-        await expect(tokens.mcpCommand).toContainText(tokens.instanceMcpUrl());
+        await expect(tokens.mcpCommand).toContainText(`${baseURL}/mcp`);
         await expect(tokens.mcpCommandCopyButton).toBeVisible();
         return shown;
       });
@@ -360,7 +361,7 @@ test.describe("copying the secret", () => {
 // instance-wide: `presetMcpEndpoint` holds a lock for the tests that write it
 // and puts it back off, the shipped default.
 test.describe("hosted mcp endpoint", () => {
-  test("show the hosted mcp endpoint card", async ({ adminPage }) => {
+  test("show the hosted mcp endpoint card", async ({ adminPage, baseURL }) => {
     const { mcp } = adminPage.integrations;
 
     await test.step("open the integrations section", async () => {
@@ -371,7 +372,7 @@ test.describe("hosted mcp endpoint", () => {
       await expect(mcp.card).toBeVisible();
       await expect(mcp.heading).toBeVisible();
       await expect(mcp.state).toBeVisible();
-      await expect(mcp.endpointField).toHaveText(mcp.instanceMcpUrl());
+      await expect(mcp.endpointField).toHaveText(`${baseURL}/mcp`);
     });
 
     // The card waits for the status read before offering the switch.

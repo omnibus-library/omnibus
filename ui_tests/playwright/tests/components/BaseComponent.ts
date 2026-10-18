@@ -8,9 +8,4 @@ export abstract class BaseComponent {
   async clickPageBackground(): Promise<void> {
     await this.page.mouse.click(40, 500);
   }
-
-  /** The endpoint this instance serves MCP on, which the Integrations card and the API tokens command both carry. */
-  instanceMcpUrl(): string {
-    return `${new URL(this.page.url()).origin}/mcp`;
-  }
 }

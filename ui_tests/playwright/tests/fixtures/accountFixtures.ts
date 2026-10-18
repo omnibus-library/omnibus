@@ -197,7 +197,6 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
     await use(new ScanRequests(readerRequest));
   },
 
-  // The one place an owner picks whose account a preset writes to.
   accountFor: async ({ accountRequests, readerAccountRequests }, use) => {
     await use((owner) =>
       owner === "admin" ? accountRequests : readerAccountRequests,
@@ -258,7 +257,7 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
   // Sharing is on for every other spec, so that is where a test leaves it.
   presetShareStats: async ({ accountRequests }, use) =>
     presetting(use, {
-      write: (enabled: boolean) => accountRequests.postShareStats(enabled),
+      write: (enabled) => accountRequests.postShareStats(enabled),
       reset: true,
       label: (enabled) => `set share stats to ${enabled}`,
     }),
@@ -283,7 +282,7 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
   presetMcpEndpoint: async ({ mcpRequests }, use) =>
     withLock("mcp-endpoint", () =>
       presetting(use, {
-        write: (enabled: boolean) => mcpRequests.postMcp(enabled),
+        write: (enabled) => mcpRequests.postMcp(enabled),
         reset: false,
         label: (enabled) => `set the MCP endpoint to ${enabled}`,
       }),
@@ -291,8 +290,7 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
 
   presetHiddenFormats: async ({ accountFor }, use) =>
     presetting(use, {
-      write: (formats: string[], owner: Owner) =>
-        accountFor(owner).postHiddenFormats(formats),
+      write: (formats, owner) => accountFor(owner).postHiddenFormats(formats),
       reset: [],
       label: (formats) => `hide formats [${formats}]`,
     }),
@@ -367,8 +365,7 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
   // detail test reads the flow.
   presetScrollStops: async ({ accountFor }, use) =>
     presetting(use, {
-      write: (enabled: boolean, owner: Owner) =>
-        accountFor(owner).postScrollStops(enabled),
+      write: (enabled, owner) => accountFor(owner).postScrollStops(enabled),
       reset: false,
       label: (enabled) => `set scroll stops to ${enabled}`,
     }),
@@ -376,8 +373,7 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
   // The preference outlives the test, so it goes back to off after.
   presetStackSeries: async ({ accountFor }, use) =>
     presetting(use, {
-      write: (enabled: boolean, owner: Owner) =>
-        accountFor(owner).postStackSeries(enabled),
+      write: (enabled, owner) => accountFor(owner).postStackSeries(enabled),
       reset: false,
       label: (enabled) => `save stack series ${enabled}`,
     }),

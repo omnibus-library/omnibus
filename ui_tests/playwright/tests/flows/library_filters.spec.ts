@@ -862,6 +862,10 @@ test.describe("library filters", () => {
             "aria-disabled",
             "true",
           );
+          await expect(readerLibraryPage.shelfAddBooksButton).toHaveAttribute(
+            "title",
+            "This shelf’s books couldn’t be loaded.",
+          );
         });
       });
 
@@ -874,6 +878,10 @@ test.describe("library filters", () => {
           await expect(readerLibraryPage.shelfAddBooksButton).toHaveAttribute(
             "aria-disabled",
             "true",
+          );
+          await expect(readerLibraryPage.shelfAddBooksButton).toHaveAttribute(
+            "title",
+            "This shelf’s books couldn’t be loaded.",
           );
         });
 

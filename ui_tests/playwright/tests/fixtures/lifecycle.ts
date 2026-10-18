@@ -18,31 +18,19 @@ export async function cleanupSet<T>(
 }
 
 /** How a preset writes, the value it ends on, and how a failed write reads. */
-type Preset<T, Write> = {
-  write: Write;
+type Preset<T> = {
+  write: (value: T, owner: Owner) => Promise<APIResponse>;
   reset: T;
   label: (value: T) => string;
 };
 
 /**
  * Hands `use` a checked setter and, once it returns, puts `reset` back on every
- * owner it wrote to. A `write` that takes an owner gives the setter one too.
+ * owner it wrote to.
  */
 export async function presetting<T>(
-  use: (set: (value: T) => Promise<void>) => Promise<void>,
-  preset: Preset<T, (value: T) => Promise<APIResponse>>,
-): Promise<void>;
-export async function presetting<T>(
   use: (set: (value: T, owner?: Owner) => Promise<void>) => Promise<void>,
-  preset: Preset<T, (value: T, owner: Owner) => Promise<APIResponse>>,
-): Promise<void>;
-export async function presetting<T>(
-  use: (set: (value: T, owner?: Owner) => Promise<void>) => Promise<void>,
-  {
-    write,
-    reset,
-    label,
-  }: Preset<T, (value: T, owner: Owner) => Promise<APIResponse>>,
+  { write, reset, label }: Preset<T>,
 ): Promise<void> {
   const touched = new Set<Owner>();
   const set = async (value: T, owner: Owner = "admin") => {
