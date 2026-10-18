@@ -1,3 +1,6 @@
+---
+paths: "ui_tests/**"
+---
 # 04a — Playwright per-surface selectors
 
 Companion to [04-playwright.md](04-playwright.md), which owns the toolchain

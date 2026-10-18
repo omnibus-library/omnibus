@@ -1,3 +1,6 @@
+---
+paths: "frontend/**"
+---
 # 07 — SSR/WASM hydration parity
 
 Omnibus is a Dioxus fullstack app: the server renders HTML (SSR), and the

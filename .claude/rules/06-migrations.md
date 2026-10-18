@@ -1,3 +1,6 @@
+---
+paths: "db/migrations/**, db/src/merge/**, db/src/pool.rs, db/src/normalize.rs, db/src/normalize/**"
+---
 # 06 — SQL migrations
 
 Schema lives as numbered SQL files under
